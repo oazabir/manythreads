@@ -7,3 +7,5 @@ export * from './verify-email.ts';
 export * from './bootstrap.ts';
 export * from './test-session.ts';
 export * from './oidc.ts';
+export * from './change-password.ts';
+export * from './account.ts';

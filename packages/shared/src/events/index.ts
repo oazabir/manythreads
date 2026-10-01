@@ -26,3 +26,6 @@ export * from './team.tag.removed.ts';
 export * from './identity.provider.changed.ts';
 export * from './identity.oidc.signed_in.ts';
 export * from './identity.oidc.refused.ts';
+export * from './identity.password.changed.ts';
+export * from './workspace.settings.updated.ts';
+export * from './workspace.member.role_changed.ts';

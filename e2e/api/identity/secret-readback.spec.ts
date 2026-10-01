@@ -11,6 +11,7 @@ const FORBIDDEN_KEY = /hash|secret|ciphertext|wrapped.?key|password|passwd|priva
 /** Keys that match by name but are not secrets. Keep this empty unless a reviewed route needs an entry. */
 const ALLOWED_KEYS = new Set<string>([
   'hasSecret', // OIDC provider admin API: a boolean that says a client secret is stored; the secret itself is never returned
+  'passwordForMembers', // workspace settings: a boolean switch (members may use the password form), admin-only route
 ]);
 
 const PARAM_VALUES: Record<string, string> = {

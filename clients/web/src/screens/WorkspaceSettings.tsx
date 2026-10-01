@@ -1,30 +1,93 @@
-import { fetchTeamTags, fetchTeams, fetchWorkspaceMembers } from '../api/endpoints';
-import { useSession } from '../app/session';
+import { useState, type FormEvent } from 'react';
+import { isApiError } from '../api/client';
+import { fetchTeamTags, fetchTeams, fetchWorkspace, fetchWorkspaceMembers, updateWorkspace } from '../api/endpoints';
+import { useSession, useSessionState } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { QueryView } from '../components/states';
-import { Time } from '../components/ui';
+import { Alert, Field, Notice, Time, Toggle } from '../components/ui';
+import type { UpdateWorkspaceRequest, WorkspaceSettings } from '@manythreads/shared';
 
 export function WorkspaceGeneral() {
   const session = useSession();
+  const { setSession } = useSessionState();
   const q = useQuery('workspace-summary', async () => {
-    const [members, teams] = await Promise.all([fetchWorkspaceMembers(), fetchTeams()]);
-    return { people: members.members.length, teams: teams.teams.length };
+    const [members, teams, ws] = await Promise.all([fetchWorkspaceMembers(), fetchTeams(), fetchWorkspace()]);
+    return { people: members.members.length, teams: teams.teams.length, workspace: ws.workspace };
   });
+  const [saved, setSaved] = useState<WorkspaceSettings | null>(null);
+  const [name, setName] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function save(change: UpdateWorkspaceRequest, message: string) {
+    setError(null);
+    setNote(null);
+    setBusy(true);
+    try {
+      const { workspace } = await updateWorkspace(change);
+      setSaved(workspace);
+      setName(workspace.name);
+      // The header shows the workspace name from the session, so it follows the edit.
+      setSession({ ...session, workspace: { ...session.workspace, name: workspace.name } });
+      setNote(message);
+    } catch (err) {
+      setError(isApiError(err) ? err.message : 'Something went wrong. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <h1 className="pane-title">General</h1>
       <p className="lede">The workspace name appears in the header and in invitations.</p>
       <QueryView q={q}>
-        {(summary) => (
-          <div className="block">
-            <div className="block-body">
-              <div className="kv"><span className="k">Workspace</span><span>{session.workspace.name}</span></div>
-              <div className="kv"><span className="k">People</span><span>{summary.people}</span></div>
-              <div className="kv"><span className="k">Teams</span><span>{summary.teams}</span></div>
-              <div className="kv"><span className="k">Your session ends</span><span><Time iso={session.expiresAt} /></span></div>
-            </div>
-          </div>
-        )}
+        {(summary) => {
+          const ws = saved ?? summary.workspace;
+          const draft = name ?? ws.name;
+          const onName = (e: FormEvent) => {
+            e.preventDefault();
+            void save({ name: draft }, 'Workspace name saved.');
+          };
+          return (
+            <>
+              {error ? <Alert>{error}</Alert> : null}
+              {note ? <Notice>{note}</Notice> : null}
+              <section className="block" aria-labelledby="ws-name">
+                <h2 className="bh" id="ws-name">Workspace</h2>
+                <div className="block-body">
+                  <form className="inline-form" onSubmit={onName} noValidate>
+                    <Field label="Workspace name" value={draft} onChange={(e) => setName(e.target.value)} maxLength={80} />
+                    <button type="submit" className="btn primary" disabled={busy || draft.trim() === '' || draft.trim() === ws.name}>Save name</button>
+                  </form>
+                  <div className="kv"><span className="k">People</span><span>{summary.people}</span></div>
+                  <div className="kv"><span className="k">Teams</span><span>{summary.teams}</span></div>
+                  <div className="kv"><span className="k">Your session ends</span><span><Time iso={session.expiresAt} /></span></div>
+                </div>
+              </section>
+              <section className="block" aria-labelledby="ws-access">
+                <h2 className="bh" id="ws-access">Access</h2>
+                <ul className="rows">
+                  <li className="srow">
+                    <div>
+                      <div id="ws-signup">Let people create their own account</div>
+                      <div className="d">People who sign in with an allowed single sign-on domain get an account without an invitation.</div>
+                    </div>
+                    <Toggle label="Let people create their own account" checked={ws.selfSignup} disabled={busy} onChange={(v) => void save({ selfSignup: v }, v ? 'Self sign-up is on.' : 'Self sign-up is off.')} />
+                  </li>
+                  <li className="srow">
+                    <div>
+                      <div id="ws-password">Members can sign in with a password</div>
+                      <div className="d">Admins and owners always can, so a broken provider never locks everyone out.</div>
+                    </div>
+                    <Toggle label="Members can sign in with a password" checked={ws.passwordForMembers} disabled={busy} onChange={(v) => void save({ passwordForMembers: v }, v ? 'Members can use the password form.' : 'The password form is hidden from members.')} />
+                  </li>
+                </ul>
+              </section>
+            </>
+          );
+        }}
       </QueryView>
     </>
   );

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ChannelMessagePostedEvent } from './channel.message.posted.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
+import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
 import { IdentityPasswordResetEvent } from './identity.password.reset.ts';
 import { IdentitySessionSignInFailedEvent } from './identity.session.sign_in_failed.ts';
 import { IdentitySessionSignedInEvent } from './identity.session.signed_in.ts';
@@ -23,6 +24,8 @@ import { TeamTagRemovedEvent } from './team.tag.removed.ts';
 import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
 import { IdentityOidcSignedInEvent } from './identity.oidc.signed_in.ts';
 import { IdentityOidcRefusedEvent } from './identity.oidc.refused.ts';
+import { WorkspaceMemberRoleChangedEvent } from './workspace.member.role_changed.ts';
+import { WorkspaceSettingsUpdatedEvent } from './workspace.settings.updated.ts';
 import { KernelCapabilityDeniedEvent } from './kernel.capability.denied.ts';
 import { KernelTestPingedEvent } from './kernel.test.pinged.ts';
 import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.test.pinged.v2.ts';
@@ -32,6 +35,7 @@ export const eventRegistry = {
   'channel.message.posted': { 1: ChannelMessagePostedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
+  'identity.password.changed': { 1: IdentityPasswordChangedEvent },
   'identity.session.sign_in_failed': { 1: IdentitySessionSignInFailedEvent },
   'identity.session.signed_in': { 1: IdentitySessionSignedInEvent },
   'identity.session.signed_out': { 1: IdentitySessionSignedOutEvent },
@@ -53,6 +57,8 @@ export const eventRegistry = {
   'identity.provider.changed': { 1: IdentityProviderChangedEvent },
   'identity.oidc.signed_in': { 1: IdentityOidcSignedInEvent },
   'identity.oidc.refused': { 1: IdentityOidcRefusedEvent },
+  'workspace.settings.updated': { 1: WorkspaceSettingsUpdatedEvent },
+  'workspace.member.role_changed': { 1: WorkspaceMemberRoleChangedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
@@ -63,6 +69,7 @@ export type EventType = keyof typeof eventRegistry;
 export type AnyEvent =
   | z.infer<typeof IdentityEmailVerifiedEvent>
   | z.infer<typeof IdentityPasswordResetEvent>
+  | z.infer<typeof IdentityPasswordChangedEvent>
   | z.infer<typeof IdentitySessionSignInFailedEvent>
   | z.infer<typeof IdentitySessionSignedInEvent>
   | z.infer<typeof IdentitySessionSignedOutEvent>
@@ -84,6 +91,8 @@ export type AnyEvent =
   | z.infer<typeof IdentityProviderChangedEvent>
   | z.infer<typeof IdentityOidcSignedInEvent>
   | z.infer<typeof IdentityOidcRefusedEvent>
+  | z.infer<typeof WorkspaceSettingsUpdatedEvent>
+  | z.infer<typeof WorkspaceMemberRoleChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
@@ -93,6 +102,7 @@ export type AnyEvent =
 export type LatestEvent =
   | z.infer<typeof IdentityEmailVerifiedEvent>
   | z.infer<typeof IdentityPasswordResetEvent>
+  | z.infer<typeof IdentityPasswordChangedEvent>
   | z.infer<typeof IdentitySessionSignInFailedEvent>
   | z.infer<typeof IdentitySessionSignedInEvent>
   | z.infer<typeof IdentitySessionSignedOutEvent>
@@ -114,6 +124,8 @@ export type LatestEvent =
   | z.infer<typeof IdentityProviderChangedEvent>
   | z.infer<typeof IdentityOidcSignedInEvent>
   | z.infer<typeof IdentityOidcRefusedEvent>
+  | z.infer<typeof WorkspaceSettingsUpdatedEvent>
+  | z.infer<typeof WorkspaceMemberRoleChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEventV2>;

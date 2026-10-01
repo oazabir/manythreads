@@ -9,6 +9,8 @@ import {
   AssignTeamTagResponse,
   BootstrapWorkspaceRequest,
   BootstrapWorkspaceResponse,
+  ChangePasswordRequest,
+  ChangePasswordResponse,
   CheckBootstrapResponse,
   CreateInvitationRequest,
   CreateInvitationResponse,
@@ -24,6 +26,7 @@ import {
   GetSessionResponse,
   GetTeamResponse,
   GetTeamRosterResponse,
+  GetWorkspaceResponse,
   InviteTeamMemberRequest,
   ListOidcMethodsResponse,
   ListOidcProvidersResponse,
@@ -52,7 +55,13 @@ import {
   TestOidcProviderResponse,
   UnarchiveTeamResponse,
   UnassignTeamTagResponse,
+  UpdateAccountRequest,
+  UpdateAccountResponse,
   UpdateOidcProviderRequest,
+  UpdateWorkspaceMemberRequest,
+  UpdateWorkspaceMemberResponse,
+  UpdateWorkspaceRequest,
+  UpdateWorkspaceResponse,
   VerifyEmailRequest,
   VerifyEmailResponse,
   acceptInvitationRoute,
@@ -61,6 +70,7 @@ import {
   archiveTeamRoute,
   assignTeamTagRoute,
   bootstrapWorkspaceRoute,
+  changePasswordRoute,
   checkBootstrapRoute,
   createInvitationRoute,
   createOidcProviderRoute,
@@ -75,6 +85,7 @@ import {
   getSessionRoute,
   getTeamRoute,
   getTeamRosterRoute,
+  getWorkspaceRoute,
   listOidcMethodsRoute,
   listOidcProvidersRoute,
   listSessionsRoute,
@@ -96,7 +107,10 @@ import {
   testOidcProviderRoute,
   unarchiveTeamRoute,
   unassignTeamTagRoute,
+  updateAccountRoute,
   updateOidcProviderRoute,
+  updateWorkspaceMemberRoute,
+  updateWorkspaceRoute,
   verifyEmailRoute,
   type AuthenticatedSession,
 } from '@manythreads/shared';
@@ -128,6 +142,12 @@ export const requestEmailVerification = () => call(requestEmailVerificationRoute
 
 export const signOut = () => call(signOutRoute, { response: SignOutResponse }, undefined, undefined, PUBLIC);
 export const signOutEverywhere = () => call(signOutEverywhereRoute, { response: SignOutEverywhereResponse }, undefined, undefined, PUBLIC);
+
+/** Change the signed-in person's password; every other session ends. A wrong current password is a 400, not a 401. */
+export const changePassword = (body: ChangePasswordRequest) =>
+  call(changePasswordRoute, { request: ChangePasswordRequest, response: ChangePasswordResponse }, body);
+export const updateAccount = (body: UpdateAccountRequest) =>
+  call(updateAccountRoute, { request: UpdateAccountRequest, response: UpdateAccountResponse }, body);
 
 export const fetchSessions = () => call(listSessionsRoute, { response: ListSessionsResponse });
 export const revokeSession = (id: string) => call(revokeSessionRoute, { response: RevokeSessionResponse }, undefined, { id });
@@ -169,6 +189,11 @@ export const createWorkspaceInvitation = (body: CreateInvitationRequest) =>
 
 // ---- workspace -----------------------------------------------------------------------------------------
 export const fetchWorkspaceMembers = () => call(listWorkspaceMembersRoute, { response: ListWorkspaceMembersResponse });
+export const fetchWorkspace = () => call(getWorkspaceRoute, { response: GetWorkspaceResponse });
+export const updateWorkspace = (body: UpdateWorkspaceRequest) =>
+  call(updateWorkspaceRoute, { request: UpdateWorkspaceRequest, response: UpdateWorkspaceResponse }, body);
+export const updateWorkspaceMember = (personId: string, body: UpdateWorkspaceMemberRequest) =>
+  call(updateWorkspaceMemberRoute, { request: UpdateWorkspaceMemberRequest, response: UpdateWorkspaceMemberResponse }, body, { personId });
 
 // ---- teams ---------------------------------------------------------------------------------------------
 export const fetchTemplates = () => call(listTemplatesRoute, { response: ListTemplatesResponse });

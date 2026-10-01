@@ -86,6 +86,26 @@ describe('identity audit events', () => {
     ]);
   });
 
+  it('a password change emits one identity.password.changed with the number of other sessions it ended, and nothing else', async () => {
+    const before = await latestId(s);
+    const a = createApiClient(s.url);
+    const b = createApiClient(s.url);
+    await a.signIn(NADIA.email, PERSONA_PASSWORD);
+    await b.signIn(NADIA.email, PERSONA_PASSWORD);
+    const mark = await latestId(s);
+    expect((await a.post('/api/auth/password/change', { currentPassword: PERSONA_PASSWORD, newPassword: 'another-long-passphrase' })).status).toBe(200);
+    expect((await a.post('/api/auth/password/change', { currentPassword: 'wrong-current-password', newPassword: 'yet-another-passphrase' })).status).toBe(400);
+
+    const all = await rows(s, mark);
+    expect(all.map((r) => r.type)).toEqual(['identity.password.changed']);
+    expect(() => parseEvent(eventToRaw(all[0] as EventRow))).not.toThrow();
+    expect(all[0]?.workspace_id).toBe(NADIA.workspaceId);
+    expect(all[0]?.payload).toMatchObject({ personId: NADIA.personId });
+    expect((all[0]?.payload as { revokedSessions: number }).revokedSessions).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(all[0]?.payload)).not.toMatch(/passphrase|password":/);
+    expect(before).not.toBeUndefined();
+  });
+
   it('an unknown email emits nothing (no workspace to attach it to) and the owner is not touched', async () => {
     const before = await latestId(s);
     await createApiClient(s.url).signIn('nobody@kahf.example', 'definitely-wrong-password');

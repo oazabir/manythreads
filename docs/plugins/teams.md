@@ -14,7 +14,7 @@ Code: `packages/plugins/teams`. Request and response schemas: `packages/shared/s
 | Rename, archive, unarchive, add or remove members, set a team role, define or give role tags, invite to the team | team `lead` or workspace admin | 403 |
 | Leave a team | the member themself | |
 | Invite an admin, a member without a team, or a guest | workspace admin | 403 |
-| `GET /api/workspace/members` | workspace admin | 404 (workspace settings do not exist for anyone else) |
+| `GET /api/workspace/members`, `GET/PATCH /api/workspace`, `PATCH /api/workspace/members/:personId` | workspace admin (only an owner grants or changes `owner`: 403) | 404 (workspace settings do not exist for anyone else) |
 
 An archived team is read-only (409 on changes) until unarchived.
 
@@ -35,6 +35,8 @@ An archived team is read-only (409 on changes) until unarchived.
 | `POST /api/invitations` `{email, role, channels?}` | Admin only. `admin` or `member` without a team, or `guest` with `channels: [{teamSlug, channel}]`, which are recorded in `grant.channels` (with the team id) for the channels plugin to apply; a guest invitation never has a team. |
 | `GET /api/invitations/:token`, `POST /api/invitations/:token/accept` `{name?}` | Public (the token is the credential; rate limited). Accept finds or creates the person and their actor, grants the workspace role (never lowers one; a guest invited as a member is promoted), seats them on the team, and marks the invitation used. A used or expired token is **410** `gone`, an unknown one 404, a suspended person 403. Raising a workspace role (a new admin, a guest becoming member or admin) needs an inviter who is still an admin: a team lead's invitation for a guest's address is 403, and a team invitation whose lead was demoted or removed is 410. A team lead may define a new role tag but only a workspace admin may attach an existing workspace role (one an admin made or another team defines) to a team; removing a tag only touches tags the team defines. Setting a password and starting a session is the sign-in plugin's step after accepting. |
 | `GET /api/workspace/members` | Admin only: everyone with workspace role and all role tags they hold. |
+| `GET /api/workspace`, `PATCH /api/workspace` `{name?, selfSignup?, passwordForMembers?}` | Admin only: the General settings. `passwordForMembers` lives in `workspaces.settings` (off hides the password form from plain members; admins and owners keep it as break-glass). A change that alters nothing writes nothing; otherwise emits `workspace.settings.updated`. |
+| `PATCH /api/workspace/members/:personId` `{role}` | Admin only: set `owner`, `admin`, `member` or `guest`. Demoting the last owner is **409** (trigger `workspace_owner_guard`, migration kernel `0009`, binds every writer including the system role); a team member becoming a guest is 409. Emits `workspace.member.role_changed`. |
 
 ## Role tags
 
@@ -61,6 +63,8 @@ transaction as the change. Names follow `domain.noun.verb`, so team lifecycle an
 | `team.tag.assigned`, `team.tag.removed` | `teamId, personId, tag` |
 | `workspace.invitation.created` | `teamId` (null for workspace and guest invitations), `invitationId, email, role, teamRole` |
 | `workspace.invitation.accepted` | `teamId, invitationId, personId, role, teamRole, createdPerson` (written by the accept function as the new person) |
+| `workspace.settings.updated` | `personId, changes` (only the changed fields, with their new values) |
+| `workspace.member.role_changed` | `personId, previousRole, role, changedBy` |
 
 Tokens never appear in an event.
 

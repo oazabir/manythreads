@@ -7,6 +7,7 @@ export const AUDIT_EVENTS = [
   'identity.session.signed_out',
   'identity.workspace.bootstrapped',
   'identity.password.reset',
+  'identity.password.changed',
   'identity.email.verified',
 ] as const;
 

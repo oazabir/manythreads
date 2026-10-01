@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { AUDIT_EVENTS } from './audit.ts';
 import { createLockout } from './lockout.ts';
+import { registerAccountRoutes } from './routes/account.ts';
 import { registerBootstrap } from './routes/bootstrap.ts';
 import { registerResetRoutes } from './routes/reset.ts';
 import { registerSessionRoutes } from './routes/session.ts';
@@ -26,6 +27,7 @@ export default definePlugin({
     registerSignIn(ctx, lockout);
     registerSessionRoutes(ctx);
     registerResetRoutes(ctx);
+    registerAccountRoutes(ctx);
     registerBootstrap(ctx);
   },
 });

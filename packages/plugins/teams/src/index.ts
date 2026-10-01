@@ -35,6 +35,8 @@ export default definePlugin({
         'team.tag.removed',
         'workspace.invitation.created',
         'workspace.invitation.accepted',
+        'workspace.settings.updated',
+        'workspace.member.role_changed',
       ],
       consumes: [],
     },
@@ -52,6 +54,6 @@ export default definePlugin({
     registerRosterRoutes(ctx, deps);
     registerTagRoutes(ctx, deps);
     registerInvitationRoutes(ctx, deps);
-    registerWorkspaceRoutes(ctx);
+    registerWorkspaceRoutes(ctx, deps);
   },
 });

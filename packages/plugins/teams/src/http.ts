@@ -53,6 +53,8 @@ export function route(
         case '23514':
         case '23503':
           throw conflict(message ?? 'That change is not allowed');
+        case '40P01':
+          throw conflict('Another change was in progress. Try again.');
         case '22P02':
           throw new HttpError(400, 'Malformed identifier');
         default:

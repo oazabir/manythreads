@@ -2,6 +2,7 @@ import {
   AcceptInvitationResponse,
   AuthenticatedSession,
   CreateInvitationResponse,
+  ChangePasswordRequest,
   CreateOidcProviderRequest,
   GetInvitationResponse,
   GetSessionResponse,
@@ -15,6 +16,7 @@ import {
   archiveTeamRoute,
   assignTeamTagRoute,
   bootstrapWorkspaceRoute,
+  changePasswordRoute,
   checkBootstrapRoute,
   createInvitationRoute,
   createOidcProviderRoute,
@@ -29,6 +31,7 @@ import {
   getSessionRoute,
   getTeamRoute,
   getTeamRosterRoute,
+  getWorkspaceRoute,
   listOidcMethodsRoute,
   listOidcProvidersRoute,
   listSessionsRoute,
@@ -50,7 +53,10 @@ import {
   testOidcProviderRoute,
   unarchiveTeamRoute,
   unassignTeamTagRoute,
+  updateAccountRoute,
   updateOidcProviderRoute,
+  updateWorkspaceMemberRoute,
+  updateWorkspaceRoute,
   verifyEmailRoute,
   type ErrorCode,
   type OidcProviderKind,
@@ -203,6 +209,11 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   const invitations: InvitationState[] = [];
 
   let workspaceName = 'Kahf Software';
+  let selfSignup = false;
+  let passwordForMembers = true;
+  /** Per-person passwords changed in this tab; everyone else still has MOCK_PASSWORD. */
+  const passwords = new Map<string, string>();
+  const passwordOf = (p: Person): string => passwords.get(p.id) ?? MOCK_PASSWORD;
   let currentId: string | null = options.anon ? null : (people.find((p) => p.id === uuid('c', ['omar', 'nadia', 'rafi', 'sameera', 'tariq', 'priya', 'lena'].indexOf(options.as ?? 'omar') + 1))?.id ?? people[0]!.id);
   let sessions = [
     { id: uuid('f', 1), label: 'Chrome on macOS', current: true, createdAt: '2026-10-01T08:00:00.000Z', lastSeenAt: NOW, expiresAt: '2026-10-31T08:00:00.000Z' },
@@ -339,7 +350,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     const email = String(body.email).trim().toLowerCase();
     if ((failures.get(email) ?? 0) >= 5) throw new MockHttpError(429, 'rate_limited', 'Too many failed attempts. Try again in 15 minutes.');
     const found = people.find((p) => p.email === email);
-    if (!found || body.password !== MOCK_PASSWORD) {
+    if (!found || body.password !== passwordOf(found)) {
       failures.set(email, (failures.get(email) ?? 0) + 1);
       throw new MockHttpError(401, 'unauthenticated', 'Incorrect email or password.');
     }
@@ -351,6 +362,23 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   on(resetPasswordRoute, ({ body }) => {
     if (String(body.token).startsWith('expired')) gone('This link has expired or was already used.');
     return { ok: true };
+  });
+  on(changePasswordRoute, ({ body }) => {
+    const p = me();
+    const b = ChangePasswordRequest.parse(body);
+    if (b.currentPassword !== passwordOf(p)) throw new MockHttpError(400, 'validation_failed', 'Your current password is incorrect.');
+    if (b.newPassword === b.currentPassword) throw new MockHttpError(400, 'validation_failed', 'Choose a password you have not used just now.');
+    passwords.set(p.id, b.newPassword);
+    const others = sessions.filter((x) => !x.current).length;
+    sessions = sessions.filter((x) => x.current);
+    return { ok: true, revokedSessions: others };
+  });
+  on(updateAccountRoute, ({ body }) => {
+    const p = me();
+    const name = String(body.displayName ?? '').trim();
+    if (!name) throw new MockHttpError(400, 'validation_failed', 'Enter your name.', ['displayName']);
+    p.name = name;
+    return { person: { id: p.id, name: p.name, email: p.email } };
   });
   on(requestEmailVerificationRoute, () => ({ status: 202, body: { accepted: true } }));
   on(verifyEmailRoute, ({ body }) => {
@@ -476,6 +504,29 @@ export function createMockTransport(options: MockOptions = {}): Transport {
         tags: [...new Set(teams.flatMap((t) => [...t.tags].filter(([, h]) => h.has(p.id)).map(([tag]) => tag)))],
       })),
     };
+  });
+
+  const workspaceBody = () => ({ workspace: { id: WORKSPACE_ID, name: workspaceName, selfSignup, passwordForMembers } });
+  on(getWorkspaceRoute, () => (requireAdmin(), workspaceBody()));
+  on(updateWorkspaceRoute, ({ body }) => {
+    requireAdmin();
+    if (typeof body.name === 'string') workspaceName = body.name.trim();
+    if (typeof body.selfSignup === 'boolean') selfSignup = body.selfSignup;
+    if (typeof body.passwordForMembers === 'boolean') passwordForMembers = body.passwordForMembers;
+    return workspaceBody();
+  });
+  on(updateWorkspaceMemberRoute, ({ params, body }) => {
+    const caller = me();
+    requireAdmin();
+    const target = people.find((x) => x.id === params.personId);
+    if (!target) throw new MockHttpError(404, 'not_found', 'No such member');
+    const role = body.role as WorkspaceRole;
+    if ((target.role === 'owner' || role === 'owner') && caller.role !== 'owner') throw new MockHttpError(403, 'forbidden', 'Only an owner can change an owner');
+    if (target.role === 'owner' && role !== 'owner' && people.filter((x) => x.role === 'owner').length === 1) {
+      throw new MockHttpError(409, 'conflict', 'a workspace must keep at least one owner; make someone else an owner first');
+    }
+    target.role = role;
+    return { personId: target.id, role };
   });
 
   // ---- teams
