@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   AcceptInvitationResponse,
   ApplyTeamTemplateResponse,
@@ -237,7 +237,9 @@ describe('invitations, roster, roles and tags (P2-09)', () => {
       tx.query("UPDATE app.invitations SET expires_at = now() - interval '1 minute' WHERE id = $1", [fresh.invitation.id]),
     );
     expect((await w.call(null, 'GET', `/api/invitations/${fresh.token}`)).status).toBe(410);
-    expect((await w.call(null, 'POST', `/api/invitations/${fresh.token}/accept`, {})).status).toBe(410);
+    const accept = (token: string) =>
+      w.system(async (tx) => (await tx.query<{ r: { outcome: string } }>('SELECT app.teams_invitation_accept($1, NULL) AS r', [createHash('sha256').update(token).digest()])).rows[0]?.r);
+    expect(await accept(fresh.token)).toEqual({ outcome: 'gone' });
     await w.system(async (tx) => {
       const n = await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.people WHERE primary_email = 'late@kahf.example'");
       expect(n.rows[0]?.n).toBe(0);
@@ -413,6 +415,31 @@ describe('workspace and guest invitations', () => {
     expect(ListTeamsResponse.parse(ok(await w.call(guest, 'GET', '/api/teams'))).teams).toEqual([]);
     expect((await w.call(guest, 'GET', '/api/teams/engineering')).status).toBe(403);
     expect((await w.call(guest, 'GET', '/api/workspace/members')).status).toBe(404);
+  });
+
+  it('a team lead cannot use a team invitation to promote a guest, and a stale lead invitation is dead', async () => {
+    // Tariq leads Marketing and holds the token, so he could accept it himself: it must not raise Lena above guest.
+    const inv = CreateTeamInvitationResponse.parse(
+      ok(await w.call(tariq, 'POST', '/api/teams/marketing/invitations', { email: lena.email }), 201),
+    );
+    const res = await w.call(null, 'POST', `/api/invitations/${inv.token}/accept`, {});
+    expect(res.status).toBe(403);
+    await w.system(async (tx) => {
+      const r = await tx.query<{ role: string }>('SELECT role FROM app.workspace_members WHERE person_id = $1', [lena.personId]);
+      expect(r.rows.map((x) => x.role)).toEqual(['guest']);
+      const m = await tx.query('SELECT 1 FROM app.team_members tm JOIN app.actors a ON a.id = tm.actor_id WHERE a.ref_id = $1', [lena.personId]);
+      expect(m.rows).toHaveLength(0);
+    });
+
+    // (Called as SQL: the accept endpoint allows ten calls a minute per address and this file spends them sparingly.) Once the lead is demoted the pending invitation stops working.
+    const fresh = CreateTeamInvitationResponse.parse(
+      ok(await w.call(tariq, 'POST', '/api/teams/marketing/invitations', { email: 'stale@kahf.example' }), 201),
+    );
+    ok(await w.call(omar, 'PATCH', `/api/teams/marketing/members/${tariq.personId}`, { role: 'member' }));
+    const accept = (token: string) =>
+      w.system(async (tx) => (await tx.query<{ r: { outcome: string } }>('SELECT app.teams_invitation_accept($1, NULL) AS r', [createHash('sha256').update(token).digest()])).rows[0]?.r);
+    expect(await accept(fresh.token)).toEqual({ outcome: 'gone' });
+    ok(await w.call(omar, 'PATCH', `/api/teams/marketing/members/${tariq.personId}`, { role: 'lead' }));
   });
 
   it('an invitation promotes an existing guest to member but never lowers anyone', async () => {

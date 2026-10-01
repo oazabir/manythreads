@@ -188,6 +188,7 @@ export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): vo
       if (!result || result.outcome === 'not_found') throw notFound('This invitation link is not valid');
       if (result.outcome === 'gone') return gone('This invitation has expired or was already used');
       if (result.outcome === 'forbidden') throw forbidden('This account is suspended');
+      if (result.outcome === 'needs_admin') throw forbidden('A workspace admin has to invite this person');
       return json(AcceptInvitationResponse.parse(result));
     }),
   });

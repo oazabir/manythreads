@@ -107,6 +107,41 @@ describe('teams plugin: RLS and definer functions', () => {
     ).rejects.toMatchObject({ code: '23514' }); // a guest is never a team member (team_members_guard)
   });
 
+  it('a lead cannot take over a role the team does not own, nor strip one it does not define', async () => {
+    const tariq = personas.tariq;
+    const marketing = '00000000-0000-7000-8000-0000000b0003';
+    // role:on-call belongs to Engineering (linked in beforeAll); role:release-owner is an admin-made role no team owns.
+    await denied(as(tariq, (tx) => tx.query('SELECT * FROM app.teams_tag_define($1, $2)', [marketing, 'role:on-call'])));
+    await denied(as(tariq, (tx) => tx.query('SELECT * FROM app.teams_tag_assign($1, $2, $3)', [marketing, tariq.personId, 'role:on-call'])));
+    await denied(as(tariq, (tx) => tx.query('SELECT * FROM app.teams_tag_assign($1, $2, $3)', [marketing, tariq.personId, 'role:release-owner'])));
+    const holds = (who: string, tag: string) =>
+      withSystem(
+        async (tx) =>
+          (await tx.query<{ n: number }>(
+            'SELECT count(*)::int AS n FROM app.role_members rm JOIN app.roles r ON r.id = rm.role_id WHERE rm.person_id = $1 AND r.name = $2',
+            [who, tag],
+          )).rows[0]?.n,
+        { pool: sysPool },
+      );
+    expect(await holds(tariq.personId, 'role:on-call')).toBe(0);
+
+    // Priya sits in Marketing and holds Engineering's role:on-call: Tariq cannot remove it, Omar (admin) defines it for any team.
+    await withSystem(
+      async (tx) => {
+        await tx.query(
+          "INSERT INTO app.role_members (role_id, person_id, workspace_id) SELECT r.id, $1, r.workspace_id FROM app.roles r WHERE r.name = 'role:on-call' ON CONFLICT DO NOTHING",
+          [priya.personId],
+        );
+      },
+      { pool: sysPool },
+    );
+    const removed = await as(tariq, async (tx) => (await tx.query('SELECT app.teams_tag_unassign($1, $2, $3) AS r', [marketing, priya.personId, 'role:on-call'])).rows[0]);
+    expect(removed).toEqual({ r: false });
+    expect(await holds(priya.personId, 'role:on-call')).toBe(1);
+    const shared = await as(omar, async (tx) => (await tx.query('SELECT * FROM app.teams_tag_define($1, $2)', [marketing, 'role:on-call'])).rows);
+    expect(shared).toHaveLength(1);
+  });
+
   it('invitation functions never expose the token hash and only answer for a real token', async () => {
     const info = await as(lena, async (tx) => (await tx.query('SELECT app.teams_invitation_info($1) AS info', [Buffer.from('nope')])).rows[0]);
     expect(info).toEqual({ info: { outcome: 'not_found' } });
