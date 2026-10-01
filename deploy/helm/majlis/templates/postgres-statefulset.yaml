@@ -23,7 +23,6 @@ data:
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<SQL
     CREATE EXTENSION IF NOT EXISTS vector;
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
-    CREATE ROLE {{ .Values.postgres.appRole }} LOGIN PASSWORD '$APP_PASSWORD';
     SQL
 ---
 apiVersion: apps/v1
@@ -58,8 +57,6 @@ spec:
             - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
             - name: POSTGRES_PASSWORD
               valueFrom: { secretKeyRef: { name: majlis-db-owner, key: password } }
-            - name: APP_PASSWORD
-              valueFrom: { secretKeyRef: { name: majlis-db-app, key: password } }
           ports: [{ containerPort: 5432 }]
           readinessProbe:
             exec: { command: [sh, -c, "pg_isready -U {{ .Values.postgres.owner }} -d {{ .Values.postgres.database }}"] }

@@ -21,13 +21,6 @@ spec:
       postInitSQL:
         - CREATE EXTENSION IF NOT EXISTS vector
         - CREATE EXTENSION IF NOT EXISTS pg_trgm
-  managed:
-    roles:
-      - name: {{ .Values.postgres.appRole }}
-        ensure: present
-        login: true
-        passwordSecret:
-          name: majlis-db-app
   storage:
     size: {{ .Values.postgres.storage.size }}
     storageClass: {{ .Values.postgres.storage.storageClass }}

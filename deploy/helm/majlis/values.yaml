@@ -19,6 +19,7 @@ postgres:
   database: majlis
   owner: majlis_owner
   appRole: majlis_app
+  systemRole: majlis_system   # roles are created by the server's migrations; the chart only supplies passwords
   uid: 999
   gid: 999
   storage:
