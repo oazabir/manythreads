@@ -1,4 +1,4 @@
-# Majlis — Engineering Specification v1.4.1 (handover)
+# ManyThreads — Engineering Specification v1.4.1 (handover)
 
 One document, one prototype. Supersedes v1.3. This revision applies the buildability review: Hindsight is now the default memory provider with a git-backed mirror, replacing three memory providers and Memory Exchange, and attachments, clients, deployment and the wait-for-a-person model are all simplified to what the product needs. See the appendix for `BUILDABILITY-REVIEW.md`.
 
@@ -48,7 +48,7 @@ Runtimes   Hermes profiles in per-team containers or on runners; Claude Code / C
 - **Data:** Postgres with row-level security for messages, threads, conversations, read state, ACL, tasks, approvals, audit. A git repo per team for text configuration and durable text pages — bots, skills, routines, knowledge definitions, the memory mirror, pages (§5); attachments live in Files storage, not git.
 - **Durable waits:** our own Postgres job and outbox tables (`FOR UPDATE SKIP LOCKED`, `LISTEN/NOTIFY`) and a small state machine per approval/rhythm by default; a Temporal-class queue is an optional plugin for heavier workflow needs. No Redis. Ephemeral state (presence, typing, leases) in UNLOGGED tables; rate-limit counters in process memory, per replica.
 - **Shared schemas:** every entity, API payload, event and `BOT.md` frontmatter is a Zod schema in `packages/shared`; server and clients use the same types; no client-side proxy entities.
-- **Deployment:** `docker compose up` starts five containers by default — Postgres, LiteLLM, Hindsight, Majlis, Hermes. NATS, a Temporal-class queue, S3/MinIO, OpenBao/KMS and Activepieces are optional plugins. Helm plus a controller that reads the DB manages the same services on k3s/Kubernetes — no CRDs; one namespace with per-team labels and NetworkPolicies by default, namespace-per-team as an option; per-team egress proxy; gVisor RuntimeClass. Air-gapped supported. See `DEPLOY-k3s.md`.
+- **Deployment:** `docker compose up` starts five containers by default — Postgres, LiteLLM, Hindsight, ManyThreads, Hermes. NATS, a Temporal-class queue, S3/MinIO, OpenBao/KMS and Activepieces are optional plugins. Helm plus a controller that reads the DB manages the same services on k3s/Kubernetes — no CRDs; one namespace with per-team labels and NetworkPolicies by default, namespace-per-team as an option; per-team egress proxy; gVisor RuntimeClass. Air-gapped supported. See `DEPLOY-k3s.md`.
 
 **Week one:** benchmark a 5,000-message list in React Native on a mid-range Android device. This gates the phone client only — the web/desktop client is plain React and is not blocked on it.
 
@@ -109,13 +109,13 @@ The repo holds text configuration and durable text pages only; attachments live 
 
 ### 5.2 Files `[proto §02, §11]`
 
-The Files section is a view over two stores: the repo's text configuration and pages (git, §5.1), and attachments in Files storage — object storage (S3/MinIO) or local disk by default — tracked in a `files` table carrying the folder path and the channel's ACL. Files posted in a channel land under `channels/<name>/` in that table, not in git; bot outputs land in `pages/`, which is git. Tree column, breadcrumb, file list and right-panel preview don't distinguish the two stores. Visibility follows the folder's channel or the team, enforced by Majlis on every read (principle 8). Viewers: Markdown WYSIWYG (Tiptap) with slash commands and a raw toggle; CSV as an editable table; PDF; Office read-only; Mermaid; images, video, audio; code. A folder with `index.html` and no `index.md` renders as a sandboxed embedded app. A `.md` with `google:` frontmatter shows a link-preview card — not a live embed.
+The Files section is a view over two stores: the repo's text configuration and pages (git, §5.1), and attachments in Files storage — object storage (S3/MinIO) or local disk by default — tracked in a `files` table carrying the folder path and the channel's ACL. Files posted in a channel land under `channels/<name>/` in that table, not in git; bot outputs land in `pages/`, which is git. Tree column, breadcrumb, file list and right-panel preview don't distinguish the two stores. Visibility follows the folder's channel or the team, enforced by ManyThreads on every read (principle 8). Viewers: Markdown WYSIWYG (Tiptap) with slash commands and a raw toggle; CSV as an editable table; PDF; Office read-only; Mermaid; images, video, audio; code. A folder with `index.html` and no `index.md` renders as a sandboxed embedded app. A `.md` with `google:` frontmatter shows a link-preview card — not a live embed.
 
 Pages are edited through a server-held Yjs document with Tiptap bindings; edits merge live and the repo gets one commit per editing session (on idle or close) with every contributor as a co-author. Bots write pages through the same document, so a person and a routine cannot clobber each other.
 
 ### 5.3 Templates `[proto §01, §11]`
 
-**Team templates** (Engineering, Marketing, Research, Product design, Customer support) create channels, a board, default bots, knowledge slots and suggested connections. **Every team template includes Brain.** **Outcome templates** ("Clear the inbox", "Rank the bug queue", "Build the customer QBR", "Prepare every 1:1", "Answer customers from the manuals", "Ship a release", "Weekly board brief", "Competitor watch") add bots, routines, knowledge slots and connectors to an existing team. A template is a folder of `BOT.md` files, routines and knowledge slots in a git repo. Team templates ship in v1; outcome templates ship as example repos in the docs — the `majlis add owner/template` registry waits until a third party has published one. Community templates are just repos.
+**Team templates** (Engineering, Marketing, Research, Product design, Customer support) create channels, a board, default bots, knowledge slots and suggested connections. **Every team template includes Brain.** **Outcome templates** ("Clear the inbox", "Rank the bug queue", "Build the customer QBR", "Prepare every 1:1", "Answer customers from the manuals", "Ship a release", "Weekly board brief", "Competitor watch") add bots, routines, knowledge slots and connectors to an existing team. A template is a folder of `BOT.md` files, routines and knowledge slots in a git repo. Team templates ship in v1; outcome templates ship as example repos in the docs — the `manythreads add owner/template` registry waits until a third party has published one. Community templates are just repos.
 
 ---
 
@@ -259,7 +259,7 @@ The Orchestrator is a Hermes profile whose `BOT.md` body is the pipeline; no pri
 
 ### 10.1 The LLM gateway
 
-Every model call goes through one LiteLLM proxy (MIT) in `majlis-llm`, except subscription runtimes. Configured once at Workspace → LLM: providers; aliases `smart`, `fast`, `code`, `local`, `embed`, `vision`, `image`, `transcribe`; fallbacks; budgets workspace → team → bot → session; rate limits; guard presets `standard`, `strict-egress`, `air-gapped`, `customer-facing`; caching; observability. Keys are minted and deleted with the bot. The gateway's DLP pre-call hook is the second guardrail. Model-provider domains appear on no team allowlist.
+Every model call goes through one LiteLLM proxy (MIT) in `manythreads-llm`, except subscription runtimes. Configured once at Workspace → LLM: providers; aliases `smart`, `fast`, `code`, `local`, `embed`, `vision`, `image`, `transcribe`; fallbacks; budgets workspace → team → bot → session; rate limits; guard presets `standard`, `strict-egress`, `air-gapped`, `customer-facing`; caching; observability. Keys are minted and deleted with the bot. The gateway's DLP pre-call hook is the second guardrail. Model-provider domains appear on no team allowlist.
 
 ### 10.2 How Hermes reaches it
 
@@ -273,7 +273,7 @@ A person signs in to Claude Code or Codex at Workspace → LLM → Subscriptions
 
 ## 11. Connections and the MCP gateway `[proto §10]`
 
-One MCP endpoint per bot. Behind it: native tools; the team's Activepieces project (MIT; 700+ pieces auto-exposed as MCP; OAuth with limited scopes; credentials encrypted, no read-back) for **team** connections, installed by the "Add connection" flow the first time a team wants a non-first-party app; GitHub MCP server + Majlis GitHub App; GitLab's official MCP server; SSH broker (step-ca or Teleport; certs per task ≤ 1 h); Kubernetes broker (`TokenRequest` per task, 1 h); email connections. **Person** connections are a small first-party set held by Majlis — Google (Drive, Gmail, Calendar), Microsoft Graph (OneDrive/SharePoint, Outlook), Notion — on the same OAuth apps as sign-in where possible, so a Drive grant is an incremental scope on the existing Google app, not a new integration. The MCP gateway resolves `person:*` from Majlis's own token store; a bot with that grant searches those only in a conversation or mention run, never a routine. Each connection: scope, per-bot grants with a tool allowlist and optional `needsApproval`, environment tag, owner, expiry, audit. Onboarding sets up GitHub and GitLab at the workspace level.
+One MCP endpoint per bot. Behind it: native tools; the team's Activepieces project (MIT; 700+ pieces auto-exposed as MCP; OAuth with limited scopes; credentials encrypted, no read-back) for **team** connections, installed by the "Add connection" flow the first time a team wants a non-first-party app; GitHub MCP server + ManyThreads GitHub App; GitLab's official MCP server; SSH broker (step-ca or Teleport; certs per task ≤ 1 h); Kubernetes broker (`TokenRequest` per task, 1 h); email connections. **Person** connections are a small first-party set held by ManyThreads — Google (Drive, Gmail, Calendar), Microsoft Graph (OneDrive/SharePoint, Outlook), Notion — on the same OAuth apps as sign-in where possible, so a Drive grant is an incremental scope on the existing Google app, not a new integration. The MCP gateway resolves `person:*` from ManyThreads's own token store; a bot with that grant searches those only in a conversation or mention run, never a routine. Each connection: scope, per-bot grants with a tool allowlist and optional `needsApproval`, environment tag, owner, expiry, audit. Onboarding sets up GitHub and GitLab at the workspace level.
 
 ---
 
@@ -315,7 +315,7 @@ Every template bot ships with an eval set and a setup prompt in the house style.
 
 ## 14. Surfaces `[proto §09, §12]`
 
-OpenUI (MIT) for bot-generated UI: `surface.render/update/event`; data binding through the MCP gateway; primitives, Majlis-aware components, and app components (`ImageGenerator`, `FormFlow`, `ReportBuilder`, **`Answer`**). Surfaces export to `pages/` by default and can be pinned to a channel.
+OpenUI (MIT) for bot-generated UI: `surface.render/update/event`; data binding through the MCP gateway; primitives, ManyThreads-aware components, and app components (`ImageGenerator`, `FormFlow`, `ReportBuilder`, **`Answer`**). Surfaces export to `pages/` by default and can be pinned to a channel.
 
 ---
 
@@ -352,7 +352,7 @@ The first goal for every team is a question to Brain, so the first thing a new t
 | OpenBao | MPL-2.0 |
 | Teleport Community | AGPL-3.0 |
 | Claude Code, Codex CLIs | Provider terms; the customer's own subscription, never redistributed |
-| **Majlis** | **AGPL-3.0 + CLA** |
+| **ManyThreads** | **AGPL-3.0 + CLA** |
 
 ---
 
@@ -417,7 +417,7 @@ M1 only, four engineers, six months, roughly £250k. Ship it AGPL and see who se
 
 ## 20. Non-goals and open questions
 
-**Non-goals:** pipeline designer; plugin marketplace with payments; voice/video; E2EE for channels with agents or for DMs; hand-building connectors Activepieces has; any second agent runtime; a browser extension (personal MCP keys cover the coding-tool case; revisit after GA); run-time loading of third-party JS client plugins (until a plugin marketplace exists); MemPalace and memory providers beyond Hindsight and the git mirror (`provider.memory` stays open to a community plugin); a non-linear `VideoEditor` surface and a separate `Board` surface (duplicates the Boards plugin); Memory Exchange as a subsystem (a digest is now a page share, §6.4); Google Docs/Sheets/Slides live editing inside Majlis (link preview only, §5.2); Kubernetes CRDs for `Team`/`Bot`/`Connection`/`Environment` (a DB-reading controller replaces them); `board_change`/`connection_event` as separate trigger types (merged into task events and `webhook`); `visibility: folder` on a bot (undefined scope; `team`/`workspace` cover it).
+**Non-goals:** pipeline designer; plugin marketplace with payments; voice/video; E2EE for channels with agents or for DMs; hand-building connectors Activepieces has; any second agent runtime; a browser extension (personal MCP keys cover the coding-tool case; revisit after GA); run-time loading of third-party JS client plugins (until a plugin marketplace exists); MemPalace and memory providers beyond Hindsight and the git mirror (`provider.memory` stays open to a community plugin); a non-linear `VideoEditor` surface and a separate `Board` surface (duplicates the Boards plugin); Memory Exchange as a subsystem (a digest is now a page share, §6.4); Google Docs/Sheets/Slides live editing inside ManyThreads (link preview only, §5.2); Kubernetes CRDs for `Team`/`Bot`/`Connection`/`Environment` (a DB-reading controller replaces them); `board_change`/`connection_event` as separate trigger types (merged into task events and `webhook`); `visibility: folder` on a bot (undefined scope; `team`/`workspace` cover it).
 
 **Open:** whether Brain should be allowed `person:*` on mail by default; until decided, the build default is opt-in per person.
 

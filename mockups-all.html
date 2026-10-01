@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Majlis — complete prototype</title>
+<title>ManyThreads — complete prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
 <style>
@@ -1654,7 +1654,7 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
 </style></head>
 <body id="top">
 <div class="cover">
-  <h1>Majlis — complete prototype</h1>
+  <h1>ManyThreads — complete prototype</h1>
   <p>Every screen designed for the platform, on one page, in the order a new team meets them. Companion to <b>SPEC-FINAL.md</b> v1.4. Bots are Hermes profiles; there are no bot modes; what waits for a person is in one Approvals inbox. Twelve sections.</p>
   <p style="font-size:13px;color:#8A929C">Reflects SPEC-FINAL.md v1.4.</p>
   <p style="font-size:13px;color:#8A929C">Desktop frames scroll horizontally on narrow screens. Names, numbers and content are illustrative.</p>
@@ -1755,7 +1755,7 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
           <div class="prov"><div class="pic an">AN</div><div>Anthropic<div class="d">key sk-ant-…4f1c · verified</div></div><span class="chip ok">connected</span></div>
           <div class="prov"><div class="pic ds">DS</div><div>DeepSeek<div class="d">key sk-…9a2e · verified</div></div><span class="chip ok">connected</span></div>
           <div class="prov"><div class="pic oa">OA</div><div>OpenAI<div class="d">not added</div></div><span class="btn s">Add key</span></div>
-          <div class="prov"><div class="pic lo">LO</div><div>Local — Ollama / vLLM<div class="d">http://ollama.majlis-models.svc:11434 · qwen3, nomic-embed</div></div><span class="chip ok">reachable</span></div>
+          <div class="prov"><div class="pic lo">LO</div><div>Local — Ollama / vLLM<div class="d">http://ollama.manythreads-models.svc:11434 · qwen3, nomic-embed</div></div><span class="chip ok">reachable</span></div>
           <div style="margin-top:10px"><span class="btn s q">＋ Google · Mistral · Groq · any OpenAI-compatible</span></div>
         </div>
         <div class="box">
@@ -1821,7 +1821,7 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
       <div class="grid2">
         <div class="box">
           <h4><div class="pic gh" style="width:24px;height:24px;font-size:8px">GH</div> GitHub <span class="ok">installed</span></h4>
-          <div style="font-size:12.5px;color:var(--mute)">Majlis app installed on <b style="color:var(--ink)">kahf</b> · 4 repositories · installation tokens rotate hourly · push is branch-scoped per task.</div>
+          <div style="font-size:12.5px;color:var(--mute)">ManyThreads app installed on <b style="color:var(--ink)">kahf</b> · 4 repositories · installation tokens rotate hourly · push is branch-scoped per task.</div>
           <div style="margin-top:8px"><span class="chip ok">kahf/router</span><span class="chip ok">kahf/apps</span><span class="chip ok">kahf/firmware</span><span class="chip ok">kahf/docs</span></div>
         </div>
         <div class="box">
@@ -1833,16 +1833,16 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
         <div class="box">
           <h4><div class="pic k8" style="width:24px;height:24px;font-size:8px">K8</div> Kubernetes</h4>
           <div class="fld"><label>Cluster name · environment</label><div class="inp">prod-eu · production</div></div>
-<div class="code">kubectl apply -f https://majlis.kahf.io/setup/k8s/prod-eu.yaml
-<span class="c"># ServiceAccounts majlis-deploy, majlis-observe · narrow Roles · one broker identity</span>
+<div class="code">kubectl apply -f https://manythreads.kahf.io/setup/k8s/prod-eu.yaml
+<span class="c"># ServiceAccounts manythreads-deploy, manythreads-observe · narrow Roles · one broker identity</span>
 <span class="c"># No kubeconfig upload. Bots get 1-hour tokens per task.</span></div>
           <div class="wait"><span class="dot warn"></span> Waiting for the cluster to answer a TokenRequest…</div>
         </div>
         <div class="box">
           <h4><div class="pic ssh" style="width:24px;height:24px;font-size:8px">SSH</div> SSH hosts</h4>
-          <div style="font-size:12.5px;color:var(--mute);margin-bottom:8px">Add this line to <span class="mono">sshd_config</span> on each host, then reload sshd. Majlis mints a certificate per task, valid at most one hour. No private keys anywhere.</div>
-<div class="code">TrustedUserCAKeys /etc/ssh/majlis_ca.pub
-<span class="c"># curl -o /etc/ssh/majlis_ca.pub https://majlis.kahf.io/setup/ssh/ca.pub</span></div>
+          <div style="font-size:12.5px;color:var(--mute);margin-bottom:8px">Add this line to <span class="mono">sshd_config</span> on each host, then reload sshd. ManyThreads mints a certificate per task, valid at most one hour. No private keys anywhere.</div>
+<div class="code">TrustedUserCAKeys /etc/ssh/manythreads_ca.pub
+<span class="c"># curl -o /etc/ssh/manythreads_ca.pub https://manythreads.kahf.io/setup/ssh/ca.pub</span></div>
           <div class="test" style="margin-top:8px"><span class="dot up"></span> build-01, build-02 trust the CA · principal <span class="mono" style="color:#2E5F41">builder</span></div>
         </div>
       </div>
@@ -2007,13 +2007,13 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
     </div>
     <div class="pane">
       <h3>LLM gateway</h3>
-      <p class="lede">LiteLLM proxy · 2 replicas · <span class="mono">llm-gateway.majlis-llm.svc:4000</span> · 41,209 requests this month · 0 provider keys outside this page.</p>
+      <p class="lede">LiteLLM proxy · 2 replicas · <span class="mono">llm-gateway.manythreads-llm.svc:4000</span> · 41,209 requests this month · 0 provider keys outside this page.</p>
       <div class="block">
         <div class="bh">Providers <span class="cnt">3 + local</span><span class="act"><span class="btn s">Add provider</span></span></div>
         <div class="row"><div>Anthropic<div class="d">sk-ant-…4f1c · rotated 2 Sept · prompt caching on</div></div><span class="tog on"></span></div>
         <div class="row"><div>DeepSeek<div class="d">sk-…9a2e · rotated 2 Sept</div></div><span class="tog on"></span></div>
         <div class="row"><div>OpenAI<div class="d">sk-…c771 · added 9 Sept · used by vision fallback only</div></div><span class="tog on"></span></div>
-        <div class="row"><div>Local · Ollama<div class="d">majlis-models · qwen3, nomic-embed-text · GPU node gpu-01</div></div><span class="tog on"></span></div>
+        <div class="row"><div>Local · Ollama<div class="d">manythreads-models · qwen3, nomic-embed-text · GPU node gpu-01</div></div><span class="tog on"></span></div>
       </div>
       <div class="block">
         <div class="bh">Aliases and fallbacks <span class="cnt">6</span></div>
@@ -2049,7 +2049,7 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
 <div class="wrap">
 
 <div class="masthead">
-  <h1>Majlis — app prototype</h1>
+  <h1>ManyThreads — app prototype</h1>
   <p>The sidebar is five plugins side by side: Files, Boards, Threads, Approvals and channel groups, Bots. The kernel owns the frame, the team switcher, the search box, the read-state badges, and the right panel. Plugins contribute sections, attachments, composer actions, and panel contents.</p>
   <p>Six screens: the channel with a thread open in the right panel, the Threads inbox, Files, Boards, Bots, and the phone.</p>
 </div>
@@ -2712,7 +2712,7 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
         <div class="bh">Runners <span class="cnt">3</span><span class="act"><button class="btn p">Add a server</button></span></div>
         <div class="mrow">
           <div><div>build-01</div><div class="d">In-cluster node · 16 cores · warm build cache on /cache</div></div>
-          <div><span class="chip srv">node · majlis.io/server=build-01</span></div>
+          <div><span class="chip srv">node · manythreads.io/server=build-01</span></div>
           <div><span class="chip cap">docker</span><span class="chip cap">git</span><span class="chip cap">node</span><span class="chip cap">rust</span></div>
           <div class="mono">hosts: coder, reviewer</div>
           <div><span class="dot up"></span><span class="mono">load 0.4</span></div>
@@ -2736,7 +2736,7 @@ section{border-top:1px solid #D4D8DE;scroll-margin-top:12px}
         <div class="bh">Add a server</div>
         <div style="padding:13px 15px;font-size:13px;color:var(--mute)">
           On the server, as a user that can run Chrome:
-          <div class="mono" style="background:#1B2430;color:#D5DAE0;padding:10px 12px;border-radius:6px;margin:8px 0;font-size:12px">curl -sfL https://majlis.kahf.io/runner | sh -s -- --team engineering --token mjr_…  --capabilities chrome,cdp,playwright</div>
+          <div class="mono" style="background:#1B2430;color:#D5DAE0;padding:10px 12px;border-radius:6px;margin:8px 0;font-size:12px">curl -sfL https://manythreads.kahf.io/runner | sh -s -- --team engineering --token mjr_…  --capabilities chrome,cdp,playwright</div>
           It connects outbound, appears above within a few seconds, and starts Chrome with remote debugging on boot. The pairing token is scoped to this team and can be revoked here.
         </div>
       </div>
@@ -2817,7 +2817,7 @@ You plan, assign, check, and close.
             <div class="row"><div class="l">Placement</div><span class="chip srv">any · pool=teams</span></div>
           </div>
           <div class="blk"><div class="bh">Tools</div>
-            <div class="row"><span class="chip on">majlis.tasks · create, assign</span><span class="chip on">majlis.messages</span><span class="chip on">majlis.memory</span><span class="chip on">majlis.deploy.request</span><span class="chip on">git.read</span><span class="chip no">shell</span><span class="chip no">files.write</span></div>
+            <div class="row"><span class="chip on">manythreads.tasks · create, assign</span><span class="chip on">manythreads.messages</span><span class="chip on">manythreads.memory</span><span class="chip on">manythreads.deploy.request</span><span class="chip on">git.read</span><span class="chip no">shell</span><span class="chip no">files.write</span></div>
           </div>
           <div class="blk"><div class="bh">May tag</div>
             <div class="row"><span class="chip on">Coder</span><span class="chip on">Reviewer</span><span class="chip on">Tester</span><span class="chip no">Deploy</span><span class="chip no">other teams</span></div>
@@ -2900,7 +2900,7 @@ task's branch. You do not touch other branches.
             <div class="row"><div class="l">Isolation</div>shared team pod on that node</div>
           </div>
           <div class="blk"><div class="bh">Tools</div>
-            <div class="row"><span class="chip on">shell</span><span class="chip on">files</span><span class="chip on">git · push task branch</span><span class="chip on">majlis.tasks</span><span class="chip on">majlis.messages</span><span class="chip no">browser</span><span class="chip no">deploy</span></div>
+            <div class="row"><span class="chip on">shell</span><span class="chip on">files</span><span class="chip on">git · push task branch</span><span class="chip on">manythreads.tasks</span><span class="chip on">manythreads.messages</span><span class="chip no">browser</span><span class="chip no">deploy</span></div>
           </div>
           <div class="blk"><div class="bh">Repos</div>
             <div class="row"><span class="mono">kahf-router</span> · push · branch-scoped token per task</div>
@@ -2984,7 +2984,7 @@ You verify. You do not fix. You cannot push.
             <div class="row"><div class="l">Placement</div><span class="chip srv">runner · test-server-01</span></div>
           </div>
           <div class="blk"><div class="bh">Tools</div>
-            <div class="row"><span class="chip on">shell</span><span class="chip on">files</span><span class="chip on">git · read</span><span class="chip on">browser.cdp</span><span class="chip on">majlis.files · screenshots</span><span class="chip on">majlis.tasks</span><span class="chip on">majlis.messages</span><span class="chip no">git push</span><span class="chip no">deploy</span></div>
+            <div class="row"><span class="chip on">shell</span><span class="chip on">files</span><span class="chip on">git · read</span><span class="chip on">browser.cdp</span><span class="chip on">manythreads.files · screenshots</span><span class="chip on">manythreads.tasks</span><span class="chip on">manythreads.messages</span><span class="chip no">git push</span><span class="chip no">deploy</span></div>
           </div>
           <div class="blk"><div class="bh">May tag</div>
             <div class="row"><span class="chip on">Coder</span><span class="chip on">Reviewer</span></div>
@@ -4269,7 +4269,7 @@ You answer customer emails from the product manuals. You do not guess.
 
 <div class="masthead">
   <h1>Connections</h1>
-  <p>How a person gives a bot access to Gmail, Slack, Trello, GitHub, GitLab, a server, or a cluster — without the bot ever holding a credential. A person's own Google, Microsoft or Notion is a first-party grant held by Majlis, scoped to their own conversations. Team apps come from a self-hosted Activepieces project, installed on first use. Code hosts use their official MCP servers. Infrastructure access is minted per task and expires with it.</p>
+  <p>How a person gives a bot access to Gmail, Slack, Trello, GitHub, GitLab, a server, or a cluster — without the bot ever holding a credential. A person's own Google, Microsoft or Notion is a first-party grant held by ManyThreads, scoped to their own conversations. Team apps come from a self-hosted Activepieces project, installed on first use. Code hosts use their official MCP servers. Infrastructure access is minted per task and expires with it.</p>
 </div>
 
 <!-- ================= 1. CONNECTIONS LIST ================= -->
@@ -4289,7 +4289,7 @@ You answer customer emails from the product manuals. You do not guess.
       <p class="lede">9 connections. Bots reach every one of them through the MCP gateway, which shows each bot only the tools it's been granted and logs every call to the thread it ran in.</p>
 
       <div class="block">
-        <div class="bh">Person connections <span class="cnt">held by Majlis, same OAuth apps as sign-in</span></div>
+        <div class="bh">Person connections <span class="cnt">held by ManyThreads, same OAuth apps as sign-in</span></div>
         <div class="crow"><div class="pic gd">G</div><div><div>Google — Drive, Gmail, Calendar</div><div class="d">used only in your own conversations and mentions; never in a routine</div></div><div><span class="kind app">person</span></div><div class="avs"><div class="av s">OZ</div></div><div class="mono">incremental scope</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
         <div class="crow"><div class="pic gm">M</div><div><div>Microsoft — OneDrive/SharePoint, Outlook</div><div class="d">used only in your own conversations and mentions; never in a routine</div></div><div><span class="kind app">person</span></div><div class="avs"><div class="av s">NR</div></div><div class="mono">not connected</div><div><span class="chip no">not connected</span></div></div>
         <div class="crow"><div class="pic tr">N</div><div><div>Notion</div><div class="d">used only in your own conversations and mentions; never in a routine</div></div><div><span class="kind app">person</span></div><div class="avs"><div class="av s">OZ</div></div><div class="mono">incremental scope</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
@@ -4306,17 +4306,17 @@ You answer customer emails from the product manuals. You do not guess.
 
       <div class="block">
         <div class="bh">Code <span class="cnt">2 · official MCP servers</span></div>
-        <div class="crow"><div class="pic gh">GH</div><div><div>GitHub · kahf org</div><div class="d">Majlis app installed on 4 repos · installation tokens, 1h · branch-scoped push per task</div></div><div><span class="kind code">code</span></div><div class="avs"><div class="av a">CD</div><div class="av a">RV</div><div class="av a">TS</div><div class="av a">OR</div></div><div class="mono">used 2m ago</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
-        <div class="crow"><div class="pic gl">GL</div><div><div>GitLab · gitlab.kahf.internal</div><div class="d">Service user majlis-eng · group kahf/firmware · GitLab MCP, OAuth</div></div><div><span class="kind code">code</span></div><div class="avs"><div class="av a">CD</div><div class="av a">RV</div></div><div class="mono">used Fri</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
+        <div class="crow"><div class="pic gh">GH</div><div><div>GitHub · kahf org</div><div class="d">ManyThreads app installed on 4 repos · installation tokens, 1h · branch-scoped push per task</div></div><div><span class="kind code">code</span></div><div class="avs"><div class="av a">CD</div><div class="av a">RV</div><div class="av a">TS</div><div class="av a">OR</div></div><div class="mono">used 2m ago</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
+        <div class="crow"><div class="pic gl">GL</div><div><div>GitLab · gitlab.kahf.internal</div><div class="d">Service user manythreads-eng · group kahf/firmware · GitLab MCP, OAuth</div></div><div><span class="kind code">code</span></div><div class="avs"><div class="av a">CD</div><div class="av a">RV</div></div><div class="mono">used Fri</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
       </div>
 
       <div class="block">
         <div class="bh">Infrastructure <span class="cnt">2 · credentials minted per task, expire with it</span></div>
-        <div class="crow on"><div class="pic k8s">K8</div><div><div>Kubernetes · prod-eu <span class="env prod">production</span></div><div class="d">ServiceAccounts: majlis-deploy (patch deployments, router-api), majlis-observe (get pods, logs) · TokenRequest, 1h</div></div><div><span class="kind infra">k8s</span></div><div class="avs"><div class="av a">DP</div><div class="av a">TS</div></div><div class="mono">used 10:08</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
-        <div class="crow"><div class="pic ssh">SSH</div><div><div>SSH · build fleet <span class="env dev">dev</span></div><div class="d">3 hosts trust the Majlis CA · principals: builder · certs ≤ 1h · force-command for Tester</div></div><div><span class="kind infra">ssh</span></div><div class="avs"><div class="av a">CD</div><div class="av a">TS</div></div><div class="mono">used 09:31</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
+        <div class="crow on"><div class="pic k8s">K8</div><div><div>Kubernetes · prod-eu <span class="env prod">production</span></div><div class="d">ServiceAccounts: manythreads-deploy (patch deployments, router-api), manythreads-observe (get pods, logs) · TokenRequest, 1h</div></div><div><span class="kind infra">k8s</span></div><div class="avs"><div class="av a">DP</div><div class="av a">TS</div></div><div class="mono">used 10:08</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
+        <div class="crow"><div class="pic ssh">SSH</div><div><div>SSH · build fleet <span class="env dev">dev</span></div><div class="d">3 hosts trust the ManyThreads CA · principals: builder · certs ≤ 1h · force-command for Tester</div></div><div><span class="kind infra">ssh</span></div><div class="avs"><div class="av a">CD</div><div class="av a">TS</div></div><div class="mono">used 09:31</div><div><span class="dot up"></span><span class="mono">ok</span></div></div>
       </div>
 
-      <div class="src"><b>Backed by</b> Activepieces (MIT, self-hosted, project per team) · GitHub MCP server + Majlis GitHub App · GitLab MCP server · step-ca for SSH certificates · Kubernetes TokenRequest · OpenBao for the CA and broker keys. No bot holds any of it.</div>
+      <div class="src"><b>Backed by</b> Activepieces (MIT, self-hosted, project per team) · GitHub MCP server + ManyThreads GitHub App · GitLab MCP server · step-ca for SSH certificates · Kubernetes TokenRequest · OpenBao for the CA and broker keys. No bot holds any of it.</div>
     </div>
 
     <div class="rp">
@@ -4324,8 +4324,8 @@ You answer customer emails from the product manuals. You do not guess.
       <div class="rpb">
         <div class="kv"><b>API</b><span class="mono">https://k8s.prod-eu.kahf.internal:6443</span><b>Stored</b><span>cluster CA + the broker's own credential, in OpenBao. Nothing else.</span><b>Minted per task</b><span>1-hour ServiceAccount token, kubeconfig written into the bot's sandbox</span><b>Protections</b><span>release-owner approval · Mon–Thu 09–16 · 3 deploys/day · auto-rollback</span></div>
         <div class="sec">Grants</div>
-        <div class="grant"><div class="who"><div class="av a">DP</div>Deploy</div><div><span class="chip ok">majlis-deploy</span><span class="mono">get, list, patch · deployments, rollouts · ns router-api</span><br><span class="chip rd">needs approval: patch</span></div></div>
-        <div class="grant"><div class="who"><div class="av a">TS</div>Tester</div><div><span class="chip ok">majlis-observe</span><span class="mono">get, list · pods, logs · ns router-api</span></div></div>
+        <div class="grant"><div class="who"><div class="av a">DP</div>Deploy</div><div><span class="chip ok">manythreads-deploy</span><span class="mono">get, list, patch · deployments, rollouts · ns router-api</span><br><span class="chip rd">needs approval: patch</span></div></div>
+        <div class="grant"><div class="who"><div class="av a">TS</div>Tester</div><div><span class="chip ok">manythreads-observe</span><span class="mono">get, list · pods, logs · ns router-api</span></div></div>
         <div class="grant"><div class="who"><div class="av a">CD</div>Coder</div><div><span class="chip no">no access</span></div></div>
         <div class="sec">Last calls</div>
         <div class="log">
@@ -4363,27 +4363,27 @@ You answer customer emails from the product manuals. You do not guess.
           <div class="ws done"><i>✓</i><div>Authorise<small>manifest applied, 2 ServiceAccounts seen</small></div></div>
           <div class="ws on"><i>3</i><div>Scope<small>namespaces, verbs, environment</small></div></div>
           <div class="ws"><i>4</i><div>Grant<small>which bots, which role</small></div></div>
-          <div style="margin-top:22px" class="src"><b>Other providers</b><br>Apps — OAuth popup via Activepieces<br>GitHub — install the Majlis app<br>GitLab — OAuth as a service user<br>SSH — add one line to sshd_config</div>
+          <div style="margin-top:22px" class="src"><b>Other providers</b><br>Apps — OAuth popup via Activepieces<br>GitHub — install the ManyThreads app<br>GitLab — OAuth as a service user<br>SSH — add one line to sshd_config</div>
         </div>
         <div>
-          <div class="status" style="margin-bottom:14px"><span class="dot up"></span> Cluster <b style="margin:0 4px">prod-eu</b> reachable · ServiceAccounts <span class="mono" style="margin:0 4px">majlis-deploy</span> and <span class="mono" style="margin:0 4px">majlis-observe</span> answered a TokenRequest</div>
+          <div class="status" style="margin-bottom:14px"><span class="dot up"></span> Cluster <b style="margin:0 4px">prod-eu</b> reachable · ServiceAccounts <span class="mono" style="margin:0 4px">manythreads-deploy</span> and <span class="mono" style="margin:0 4px">manythreads-observe</span> answered a TokenRequest</div>
 
           <div class="fld"><label>What you applied in step 2 — kept here for reference</label>
-<div class="code"><span class="c"># kubectl apply -f majlis-prod-eu.yaml</span>
+<div class="code"><span class="c"># kubectl apply -f manythreads-prod-eu.yaml</span>
 apiVersion: v1
 kind: ServiceAccount
-metadata: { name: majlis-deploy, namespace: router-api }
+metadata: { name: manythreads-deploy, namespace: router-api }
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: { name: majlis-deploy, namespace: router-api }
+metadata: { name: manythreads-deploy, namespace: router-api }
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments", "deployments/rollback"]
     verbs: ["get", "list", "patch"]
 ---
-<span class="c"># … RoleBinding, and majlis-observe with get/list on pods and pods/log …</span>
-<span class="c"># The broker identity Majlis uses to call TokenRequest is the only long-lived credential,</span>
+<span class="c"># … RoleBinding, and manythreads-observe with get/list on pods and pods/log …</span>
+<span class="c"># The broker identity ManyThreads uses to call TokenRequest is the only long-lived credential,</span>
 <span class="c"># stored in OpenBao. Bots receive 1-hour tokens per task.</span></div></div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
@@ -4424,8 +4424,8 @@ rules:
 
       <div class="block">
         <div class="bh">Connections this bot may use <span class="cnt">4 of 9</span></div>
-        <div class="grant"><div class="who"><div class="pic k8s" style="width:26px;height:26px;font-size:8px">K8</div>prod-eu <span class="env prod">prod</span></div><div><span class="tog on"></span><span class="chip ok">majlis-deploy</span><span class="chip">get</span><span class="chip">list</span><span class="chip rd">patch · approval</span><span class="chip no">delete</span><span class="chip no">exec</span></div></div>
-        <div class="grant"><div class="who"><div class="pic k8s" style="width:26px;height:26px;font-size:8px">K8</div>dev-eu <span class="env dev">dev</span></div><div><span class="tog on"></span><span class="chip ok">majlis-deploy</span><span class="chip">get</span><span class="chip">list</span><span class="chip">patch</span><span class="chip">rollout</span><span class="chip no">delete</span></div></div>
+        <div class="grant"><div class="who"><div class="pic k8s" style="width:26px;height:26px;font-size:8px">K8</div>prod-eu <span class="env prod">prod</span></div><div><span class="tog on"></span><span class="chip ok">manythreads-deploy</span><span class="chip">get</span><span class="chip">list</span><span class="chip rd">patch · approval</span><span class="chip no">delete</span><span class="chip no">exec</span></div></div>
+        <div class="grant"><div class="who"><div class="pic k8s" style="width:26px;height:26px;font-size:8px">K8</div>dev-eu <span class="env dev">dev</span></div><div><span class="tog on"></span><span class="chip ok">manythreads-deploy</span><span class="chip">get</span><span class="chip">list</span><span class="chip">patch</span><span class="chip">rollout</span><span class="chip no">delete</span></div></div>
         <div class="grant"><div class="who"><div class="pic gh" style="width:26px;height:26px;font-size:8px">GH</div>GitHub · kahf</div><div><span class="tog on"></span><span class="chip">read repos</span><span class="chip">releases: create</span><span class="chip">checks: read</span><span class="chip no">push</span><span class="chip no">merge</span></div></div>
         <div class="grant"><div class="who"><div class="pic sl" style="width:26px;height:26px;font-size:8px">SL</div>Slack · partners</div><div><span class="tog on"></span><span class="chip">post · #firmware-odm</span><span class="chip no">read DMs</span><span class="chip no">other channels</span></div></div>
         <div class="grant"><div class="who"><div class="pic gm" style="width:26px;height:26px;font-size:8px">GM</div>Gmail · eng-notifications</div><div><span class="tog"></span><span class="chip no">not granted</span></div></div>
@@ -4435,7 +4435,7 @@ rules:
       <div class="block">
         <div class="bh">What happens on a production call</div>
         <div style="padding:12px 15px;font-size:13px;color:var(--mute);line-height:1.7">
-          Deploy calls <span class="mono">k8s.patch</span> through the gateway → gateway sees <span class="env prod">prod</span> + a write verb → checks the change window → posts an approval card to the release owner in the run thread → waits → on approval, mints a 60-minute token for <span class="mono">majlis-deploy</span>, writes the kubeconfig into Deploy's sandbox, and lets the call proceed → logs the call with task, thread, approver and token ID → the token expires on its own.
+          Deploy calls <span class="mono">k8s.patch</span> through the gateway → gateway sees <span class="env prod">prod</span> + a write verb → checks the change window → posts an approval card to the release owner in the run thread → waits → on approval, mints a 60-minute token for <span class="mono">manythreads-deploy</span>, writes the kubeconfig into Deploy's sandbox, and lets the call proceed → logs the call with task, thread, approver and token ID → the token expires on its own.
         </div>
       </div>
 
