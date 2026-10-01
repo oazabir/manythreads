@@ -1,0 +1,4 @@
+{{- /* LiteLLM, Hindsight and Hermes are placeholders until their phases; nothing renders while disabled. */ -}}
+{{- if or .Values.litellm.enabled .Values.hindsight.enabled .Values.hermes.enabled }}
+{{- fail "litellm/hindsight/hermes are not implemented yet; keep them disabled" }}
+{{- end }}
