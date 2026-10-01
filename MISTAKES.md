@@ -16,3 +16,4 @@ Format: `- [phase/task] what went wrong → what to do instead`
 - [P1-13 deploy] `pnpm install --frozen-lockfile` failed in the image because tools/bench was missing from pnpm-lock.yaml → docker contexts exclude `tools/`; whoever owns the lockfile should re-run `pnpm install`.
 - [P1 CI] Parallel test DBs race on cluster-wide ALTER ROLE (XX000 tuple concurrently updated); advisory locks are per-database so they don't help → retry XX000 in migrate.ts.
 - [P1 exit] git push of tags is 403 from the sandbox proxy → tag via the release.yml workflow (dispatch with MCP actions_run_trigger).
+- [P2] The old product name was used everywhere → the name is manythreads; never write the old name.

@@ -1,4 +1,7 @@
-# Majlis — CLAUDE.md (AGENTS.md is a symlink to this file)
+# manythreads — CLAUDE.md (AGENTS.md is a symlink to this file)
+
+**Naming (owner rule): the product is `manythreads`. Never write the old name ("majlis") anywhere — code, packages
+(`@manythreads/*`), env vars (`MANYTHREADS_*`), DB roles (`manythreads_*`), docs, UI copy, commits.**
 
 Majlis is a self-hosted team collaboration platform (channels, threads, bots, Brain).
 Build plan: `PLAN.md` (13 phases, binding decisions D1–D4 in its §3).
