@@ -19,6 +19,8 @@ Progress: `STATUS.md`. Known mistakes to avoid: `MISTAKES.md` — read it before
   `deploy/postgres/Dockerfile`; build with `docker build --secret id=cacert,src=/root/.ccr/ca-bundle.crt -t majlis/postgres:19 deploy/postgres`), driver `pg` (node-postgres). No ORM. No Redis/Valkey (D3).
 - Tests: Vitest (unit/integration), Playwright (`e2e/`, projects `desktop` 1440×900, `mobile-web` 390×844).
 - Web: React 19 + Vite, plain CSS with tokens in `clients/web/src/styles/tokens.css`.
+- **Mobile (owner decision, replaces React Native): the same web app wrapped in Capacitor** (`clients/mobile`,
+  phase 11). Desktop: the same web app in Tauri 2 (phase 10). One UI codebase for all clients.
 - Lint: ESLint 9 flat config + typescript-eslint; Stylelint for CSS. `pnpm lint` and `pnpm typecheck` must pass.
 - Deploy: docker compose (`deploy/compose`) for dev/CI/self-host; Helm chart (`deploy/helm`) on k3s with
   CloudNativePG (D4). Five default workloads: Postgres, LiteLLM, Hindsight, Majlis server(+web), Hermes.
@@ -94,6 +96,13 @@ Keep command output small: pipe through `tail -n 40` or grep for failures. Never
 ## Sidebar contract (every client, every team)
 Files (10) · Boards (20) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) ·
 Bots (50). The Bots header opens the team roster; a bot's name opens its conversation view.
+
+## Owner decisions (durable)
+- Approved: the orchestrator merges its own phase PRs into `main` without asking.
+- Mobile = web app inside Capacitor (not React Native). The RN benchmark gate is replaced by a Capacitor
+  WebView check in phase 11.
+- Owner asked for free-form ops workflows (any command / any SQL); the permission classifier blocks committing
+  them, so they stay out of the repo until the owner adds a permission rule.
 
 ## Environment notes
 - Local docker daemon: start with `(dockerd >/tmp/dockerd.log 2>&1 &)` if `docker info` fails.

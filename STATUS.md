@@ -18,7 +18,8 @@ Screens: `docs/retro/screens/phase-1/`.
 - CNPG `majlis_owner` is superuser (needed for extensions/roles); CNPG chart version unpinned.
 - `it.todo`: Zod enum vs SQL CHECK comparison test — do in phase 2 when first enum tables land.
 - pnpm cyclic workspace dep warning (kernel ↔ test-utils ↔ server devDeps).
-- RN on-device benchmark deferred to phase 11 gate (Chromium proxy passed).
+- Mobile is Capacitor (owner decision): phase 11 builds clients/mobile wrapping the web app; the RN benchmark
+  is replaced by a Capacitor WebView check (the Chromium 390×844 proxy already passed).
 - Dev-header actor (`packages/server/src/dev-actor.ts`) must be replaced by real auth in phase 2
   (keep a test-only auth bypass for screenshots, gated by env).
 
@@ -26,4 +27,6 @@ Screens: `docs/retro/screens/phase-1/`.
 - SSH to the server is blocked from the sandbox; deploys run from GitHub Actions (secret ROOT_PASSWORD).
   Deploy rule (owner): pushing a version tag `v*` deploys latest `main`. Each phase exit: PR → main,
   tag `phase-N` + `v0.N.0`. Ops workflows: ops-rollout/restart/rollback/logs/status (dispatch from main).
-- Free-form ops workflows (any command / SQL) were declined by the permission classifier — owner decision pending.
+- Owner approved self-merge of phase PRs to main. Owner requested ops-run / ops-db free-form workflows; the
+  permission classifier blocks committing them — needs an owner permission rule.
+- Owner rule: product name is manythreads; repo-wide rename pending (after the P2 schema agent commits).
