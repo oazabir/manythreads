@@ -1,0 +1,115 @@
+name: deploy-majlis
+description: Build Majlis images, ship them to the k3s node over SSH, install helm + CNPG operator, helm upgrade, smoke test.
+inputs:
+  label:
+    description: Human label for this deploy (ref or sha), logging only
+    default: ""
+  ssh-password:
+    description: Root password for the k3s node (pass secrets.ROOT_PASSWORD)
+    required: true
+  rebuild-postgres:
+    description: Rebuild and re-import majlis/postgres:19 even if the node already has it
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Prepare
+      shell: bash
+      env:
+        LABEL: ${{ inputs.label }}
+      run: |
+        sudo apt-get install -y -qq sshpass
+        echo "TAG=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
+        echo "Deploying '$LABEL' at $(git rev-parse HEAD)"
+
+    - name: Build images
+      shell: bash
+      run: |
+        docker build -f deploy/docker/server.Dockerfile -t "majlis/server:$TAG" .
+        docker build -f deploy/docker/web.Dockerfile -t "majlis/web:$TAG" .
+
+    - name: Ship images to the node
+      shell: bash
+      env:
+        SSHPASS: ${{ inputs.ssh-password }}
+        REBUILD_PG: ${{ inputs.rebuild-postgres }}
+      run: |
+        source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+        have_pg=$(remote 'k3s ctr -n k8s.io images ls -q | grep -c "majlis/postgres:19" || true')
+        images=("majlis/server:$TAG" "majlis/web:$TAG")
+        if [ "$have_pg" = "0" ] || [ "$REBUILD_PG" = "true" ]; then
+          docker build -t majlis/postgres:19 deploy/postgres
+          images+=("majlis/postgres:19")
+        else
+          echo "majlis/postgres:19 already on node; skipping"
+        fi
+        for img in "${images[@]}"; do
+          echo "importing $img"
+          docker save "$img" | gzip | remote 'gunzip | k3s ctr -n k8s.io images import -' | tail -n 2
+        done
+        # keep only the 3 newest tags of server/web on the node
+        remote_sh <<'REMOTE'
+        for n in server web; do
+          k3s ctr -n k8s.io images ls -q | grep "majlis/$n:" | sort | head -n -3 | xargs -r k3s ctr -n k8s.io images rm || true
+        done
+        REMOTE
+
+    - name: Ensure helm and CNPG operator
+      shell: bash
+      env:
+        SSHPASS: ${{ inputs.ssh-password }}
+      run: |
+        source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+        remote_sh <<'REMOTE'
+        if ! command -v helm >/dev/null; then
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+        fi
+        helm version --short
+        helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null 2>&1 || true
+        helm repo update cnpg >/dev/null
+        helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace --wait --timeout 5m
+        kubectl get pods -n cnpg-system
+        REMOTE
+
+    - name: Helm upgrade
+      shell: bash
+      env:
+        SSHPASS: ${{ inputs.ssh-password }}
+      run: |
+        source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+        tar czf - deploy/helm/majlis | remote 'rm -rf /root/majlis-chart && mkdir -p /root/majlis-chart && tar xz -C /root/majlis-chart'
+        # The server may crash while packages/server/src/main.ts is a stub; that must not mask the web rollout.
+        remote_sh "TAG=$TAG" <<'REMOTE' || rc=$?
+        # Retire the test app once Majlis takes over the domain (same host => same ingress rule would clash).
+        kubectl delete ingress/manythreads deploy/whoami svc/whoami -n manythreads --ignore-not-found
+        helm upgrade --install majlis /root/majlis-chart/deploy/helm/majlis -n manythreads \
+          --set imageTag="$TAG" --wait --timeout 10m
+        REMOTE
+        if [ "${rc:-0}" != "0" ]; then
+          echo "::warning::helm --wait failed (rc=$rc); checking web + postgres readiness"
+          remote_sh <<'REMOTE'
+          kubectl get pods -n manythreads
+          kubectl rollout status deploy/majlis-web -n manythreads --timeout=60s
+          kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts majlis-pg -n manythreads
+          REMOTE
+        fi
+
+    - name: Smoke test
+      shell: bash
+      env:
+        SSHPASS: ${{ inputs.ssh-password }}
+      run: |
+        ok=0
+        for i in $(seq 1 30); do
+          if curl -fsSk -o /dev/null https://manythreads.kahf.to/; then ok=1; break; fi
+          sleep 5
+        done
+        curl -fsSk https://manythreads.kahf.to/healthz || echo "::warning::/healthz not healthy (server may still be a stub)"
+        echo
+        echo "plain http status: $(curl -s -o /dev/null -w '%{http_code}' http://manythreads.kahf.to/)"
+        echo "https (verified cert): $(curl -s -o /dev/null -w '%{http_code}' https://manythreads.kahf.to/ || echo no-valid-cert)"
+        source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+        remote_sh <<'REMOTE'
+        kubectl get pods -n manythreads
+        REMOTE
+        [ "$ok" = "1" ] || { echo "::error::site did not respond"; exit 1; }
