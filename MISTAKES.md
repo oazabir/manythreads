@@ -17,3 +17,4 @@ Format: `- [phase/task] what went wrong → what to do instead`
 - [P1 CI] Parallel test DBs race on cluster-wide ALTER ROLE (XX000 tuple concurrently updated); advisory locks are per-database so they don't help → retry XX000 in migrate.ts.
 - [P1 exit] git push of tags is 403 from the sandbox proxy → tag via the release.yml workflow (dispatch with MCP actions_run_trigger).
 - [P2] The old product name was used everywhere → the name is manythreads; never write the old name.
+- [P2-10] UI copy mentioned build phases ("created in phase 3") → never expose plan/phase wording in product UI; reviewers check copy.
