@@ -1,11 +1,12 @@
 # STATUS
 
-Current phase: **2 · Identity, workspace and teams** (next)
+Current phase: **2 · Identity, workspace and teams** — gate green locally; release pending CI
 
 | Phase | State | Tag |
 |---|---|---|
 | 1 Foundations | done — gate green locally and in CI; retro `docs/retro/phase-1.md` | phase-1 / v0.1.0 |
-| 2–13 | not started | |
+| 2 Identity, workspace, teams | gate green locally (retro docs/retro/phase-2.md) | pending |
+| 3–13 | not started | |
 
 ## Phase 1 summary
 All tasks P1-01…P1-13 merged with reviewer PASS (P1-04b security hardening added: system actor = real
@@ -23,11 +24,14 @@ Screens: `docs/retro/screens/phase-1/`.
 - Dev-header actor (`packages/server/src/dev-actor.ts`) must be replaced by real auth in phase 2
   (keep a test-only auth bypass for screenshots, gated by env).
 
-## Phase 2 follow-ups (from schema review 2773304)
-- Wire MANYTHREADS_KMS_KEY into helm (generated Secret) and compose before the P2 deploy (prod throws without it).
-- KMS re-wrap job for key rotation (`previousKeys` exists, no job).
-- Last-owner protection (owner can delete the final owner row).
-- person_emails uniqueness: global lower(email) lets unverified rows squat; make unique among verified only / per workspace.
+## Carried into phase 3 (first tasks)
+- RLS policy cost: app.can() per row → 77s unscoped count on 300k rows; build caller's readable-team set once per
+  query (prototype 0.48s) — first phase 3 task, design in docs/retro/phase-2.md.
+- Server hosts no job worker yet (KMS re-wrap job exists but nothing runs it).
+- Flaky load of kernel/test/events/emit.test.ts (~1 in 4) — parallel test-DB setup.
+- Plugins duplicate kernel helpers (get-or-create, template loader) — add SDK helpers.
+- Zod enum vs SQL CHECK map test; last-lead protection; invite-accept rate-limit tests.
+- New kernel migrations start at 0011.
 
 ## Environment / blockers
 - SSH to the server is blocked from the sandbox; deploys run from GitHub Actions (secret ROOT_PASSWORD).
