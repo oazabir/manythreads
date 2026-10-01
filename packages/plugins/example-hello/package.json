@@ -1,15 +1,19 @@
 {
-  "name": "@majlis/sdk",
+  "name": "@majlis/plugin-example-hello",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
+  "majlis": {
+    "entry": "./src/index.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@majlis/sdk": "workspace:*",
     "@majlis/shared": "workspace:*"
   }
 }

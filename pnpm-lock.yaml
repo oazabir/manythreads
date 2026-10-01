@@ -75,6 +75,9 @@ importers:
 
   packages/kernel:
     dependencies:
+      '@majlis/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@majlis/shared':
         specifier: workspace:*
         version: link:../shared
@@ -92,11 +95,17 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  packages/plugins/example-hello:
+    dependencies:
+      '@majlis/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@majlis/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
   packages/sdk:
     dependencies:
-      '@majlis/kernel':
-        specifier: workspace:*
-        version: link:../kernel
       '@majlis/shared':
         specifier: workspace:*
         version: link:../shared

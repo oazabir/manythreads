@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { ChannelMessagePostedEvent } from './channel.message.posted.ts';
+import { KernelCapabilityDeniedEvent } from './kernel.capability.denied.ts';
 import { KernelTestPingedEvent } from './kernel.test.pinged.ts';
 import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.test.pinged.v2.ts';
 
 /** type -> schemaVersion -> schema. A breaking change adds a new version beside the old one (B.4). */
 export const eventRegistry = {
   'channel.message.posted': { 1: ChannelMessagePostedEvent },
+  'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 
@@ -14,11 +16,15 @@ export type EventType = keyof typeof eventRegistry;
 /** Every stored shape, any version. */
 export type AnyEvent =
   | z.infer<typeof ChannelMessagePostedEvent>
+  | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
   | z.infer<typeof KernelTestPingedEventV2>;
 
 /** The newest version of every event: what `upcast` returns and emitters write. */
-export type LatestEvent = z.infer<typeof ChannelMessagePostedEvent> | z.infer<typeof KernelTestPingedEventV2>;
+export type LatestEvent =
+  | z.infer<typeof ChannelMessagePostedEvent>
+  | z.infer<typeof KernelCapabilityDeniedEvent>
+  | z.infer<typeof KernelTestPingedEventV2>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

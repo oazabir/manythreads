@@ -12,7 +12,8 @@
   "dependencies": {
     "pg": "^8",
     "zod": "^4",
-    "@majlis/shared": "workspace:*"
+    "@majlis/shared": "workspace:*",
+    "@majlis/sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "^8",
