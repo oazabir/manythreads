@@ -7,13 +7,15 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run --root ../.. --project unit clients/web"
   },
   "dependencies": {
     "@majlis/shared": "workspace:*",
     "react": "^19",
     "react-dom": "^19",
-    "react-router": "^8.4.0"
+    "react-router": "^8.4.0",
+    "zod": "^4"
   },
   "devDependencies": {
     "@types/react": "^19",

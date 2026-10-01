@@ -8,3 +8,4 @@ export * from './bot-md/index.ts';
 export * from './tokens.ts';
 export * from './plugins/index.ts';
 export * from './transport/index.ts';
+export * from './api/client/index.ts';

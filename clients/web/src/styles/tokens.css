@@ -32,6 +32,26 @@
   --warn: #B08A3E;
   --alert: #B4472E;
   --alert-wash: #FDF6F3;
+
+  /* prototype washes, borders and inks used by identity / teams / settings screens (P2-10) */
+  --hairline: #EDEFF2;
+  --table-head: #FAFBFC;
+  --nav-on: #E3E7EB;
+  --human-wash: #EEF3F8;
+  --human-border: #B9CBDD;
+  --ok-wash: #EFF5F1;
+  --ok-border: #BBD4C4;
+  --ok-ink: #2E5F41;
+  --agent-border: #DCD2EC;
+  --agent-ink: #4E3B6E;
+  --warn-wash: #FBF7EE;
+  --warn-border: #E3D3AC;
+  --warn-ink: #7A5D1F;
+  --alert-border: #E4BCB0;
+  --alert-ink: #8E3722;
+  --bot-grey: #6E7681;
+  --dot-off: #C3C8CE;
+  --toggle-off: #CFD4DA;
   --sans: "Inter Tight", "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", monospace;
 }
