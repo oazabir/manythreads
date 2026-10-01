@@ -25,6 +25,8 @@ function fakeClock(start = new Date()) {
 }
 
 const json = async <T = unknown>(res: Response): Promise<T> => (await res.json()) as T;
+const methodKinds = async (c: ReturnType<typeof createApiClient>): Promise<string[]> =>
+  ((await (await c.get('/api/session')).json()) as { methods: { kind: string }[] }).methods.map((m) => m.kind);
 const errorOf = async (res: Response) => ErrorEnvelope.parse(await res.json()).error;
 
 async function sql<T>(s: TestServer, text: string, values: unknown[] = []): Promise<T[]> {
@@ -332,9 +334,15 @@ describe('password sign-in, sessions, CSRF, break-glass', () => {
     expect((await c.request('POST', '/api/auth/sign-out', { headers: { 'x-csrf-token': csrf } })).status).toBe(200);
   });
 
-  it('break-glass: with password off for members, a member gets a clear error and an admin still signs in', async () => {
+  it('break-glass: with password off for members (and SSO on), a member gets a clear error and an admin still signs in', async () => {
+    const wsId = (await sql<{ id: string }>(s, 'SELECT id FROM app.workspaces'))[0]?.id as string;
     await sql(s, `UPDATE app.workspaces SET settings = settings || '{"passwordForMembers": false}'::jsonb`);
     try {
+      // the setting alone never locks members out: without an enabled single sign-on provider the password form stays on
+      expect((await createApiClient(s.url).signIn(NADIA.email, PERSONA_PASSWORD)).status).toBe(200);
+      expect(await methodKinds(createApiClient(s.url))).toContain('password');
+
+      await sql(s, "INSERT INTO app.auth_providers (workspace_id, kind, enabled) VALUES ($1, 'oidc', true)", [wsId]);
       const member = createApiClient(s.url);
       const res = await member.signIn(NADIA.email, PERSONA_PASSWORD);
       expect(res.status).toBe(403);
@@ -343,12 +351,16 @@ describe('password sign-in, sessions, CSRF, break-glass', () => {
       expect(err.message).toMatch(/turned off for members/);
       expect(member.cookies.size).toBe(0);
 
+      // the sign-in page no longer lists the password method; an admin who is signed in still sees it
+      expect(await methodKinds(createApiClient(s.url))).toEqual(['oidc']);
       const admin = createApiClient(s.url);
       expect((await admin.signIn(OMAR.email, PERSONA_PASSWORD)).status).toBe(200);
+      expect(await methodKinds(admin)).toContain('password');
 
       // a wrong password still looks like any wrong password (the setting is not revealed to a guesser)
       expect((await errorOf(await createApiClient(s.url).signIn(TARIQ.email, 'wrong-password-123'))).message).toBe('Incorrect email or password.');
     } finally {
+      await sql(s, "DELETE FROM app.auth_providers WHERE kind = 'oidc'");
       await sql(s, `UPDATE app.workspaces SET settings = settings - 'passwordForMembers'`);
     }
     expect((await createApiClient(s.url).signIn(NADIA.email, PERSONA_PASSWORD)).status).toBe(200);

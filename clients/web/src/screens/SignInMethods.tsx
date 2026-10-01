@@ -7,10 +7,11 @@ import {
   disableOidcProvider,
   enableOidcProvider,
   fetchOidcProviders,
+  fetchWorkspace,
   testOidcProvider,
   updateOidcProvider,
+  updateWorkspace,
 } from '../api/endpoints';
-import { useSession } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { QueryView } from '../components/states';
 import { Alert, Field, Time, Toggle } from '../components/ui';
@@ -149,17 +150,42 @@ function ProviderBox({ kind, initial, onChanged }: { kind: OidcProviderKind; ini
   );
 }
 
+/**
+ * Username and password. The switch is the workspace setting `passwordForMembers` (the same one General shows):
+ * off sends members to single sign-on, admins keep the form as break-glass.
+ */
 function PasswordBox() {
-  const session = useSession();
-  const on = session.methods.some((m) => m.kind === 'password');
+  const q = useQuery('workspace-password-setting', fetchWorkspace);
+  const [override, setOverride] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const on = override ?? (q.status === 'ok' ? q.data.workspace.passwordForMembers : true);
+
+  async function set(value: boolean) {
+    setError(null);
+    setBusy(true);
+    try {
+      const { workspace } = await updateWorkspace({ passwordForMembers: value });
+      setOverride(workspace.passwordForMembers);
+    } catch (e) {
+      setError(failure(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="box" aria-labelledby="prov-password" data-landmark="provider-password">
       <h2 className="box-h" id="prov-password">
         Username and password
-        <span className="push"><span className={on ? 'status ok' : 'chip no'}>{on ? 'on' : 'off for members'}</span></span>
+        <span className="push">
+          <span className={on ? 'status ok' : 'chip no'}>{on ? 'on' : 'off for members'}</span>{' '}
+          <Toggle label="Members can sign in with a password" checked={on} disabled={busy || q.status !== 'ok'} onChange={(v) => void set(v)} />
+        </span>
       </h2>
       <div className="fld"><span className="fld-label">Password policy</span><div className="inp-static">min 12 characters</div></div>
       <div className="fld-hint">Admins keep username and password as a break-glass login even when single sign-on is the only method for members.</div>
+      {error ? <Alert>{error}</Alert> : null}
     </section>
   );
 }

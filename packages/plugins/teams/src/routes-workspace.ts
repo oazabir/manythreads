@@ -13,7 +13,7 @@ import {
   type WorkspaceSettings,
 } from '@manythreads/shared';
 import { z } from 'zod';
-import { forbidden, json, notFound, route } from './http.ts';
+import { conflict, forbidden, json, notFound, route } from './http.ts';
 import { isWorkspaceAdmin, type Deps } from './teams.ts';
 
 interface WorkspaceRow extends Record<string, unknown> {
@@ -104,6 +104,15 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
       if (body.selfSignup !== undefined && body.selfSignup !== was.selfSignup) changes.selfSignup = body.selfSignup;
       if (body.passwordForMembers !== undefined && body.passwordForMembers !== was.passwordForMembers) {
         changes.passwordForMembers = body.passwordForMembers;
+      }
+      if (changes.passwordForMembers === false) {
+        // Break-glass: members can only be sent to single sign-on when there is one that works (identity-password enforces the same rule).
+        const sso = await tx.query(
+          "SELECT 1 FROM app.auth_providers WHERE workspace_id = app.workspace_id() AND kind <> 'password' AND enabled LIMIT 1",
+        );
+        if (sso.rows.length === 0) {
+          throw conflict('Turn on a single sign-on provider first, so members still have a way to sign in.');
+        }
       }
       if (Object.keys(changes).length === 0) return json(UpdateWorkspaceResponse.parse({ workspace: was }));
       const res = await tx.query<WorkspaceRow>(

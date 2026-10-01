@@ -14,11 +14,20 @@ export interface Candidate {
   /** argon2id hash, or null when the person has no password (OIDC-only). */
   hash: string | null;
   role: string | null;
-  /** Workspace password provider row: false only when an admin switched it off. */
-  passwordEnabled: boolean;
-  /** `workspaces.settings.passwordForMembers`: false hides the password form from plain members (break-glass stays). */
+  /**
+   * Whether plain members may use the password form. The ONE source of truth is `workspaces.settings.passwordForMembers`
+   * (written by `PATCH /api/workspace`); it only bites while single sign-on is enabled, so a workspace without any
+   * working provider can never lock its members out. Admins and owners are not affected (break-glass).
+   */
   passwordForMembers: boolean;
 }
+
+/** SQL: is an enabled single sign-on provider (google, microsoft, oidc) configured for the workspace column `col`? */
+const sso = (col: string): string =>
+  `EXISTS (SELECT 1 FROM app.auth_providers ap WHERE ap.workspace_id = ${col} AND ap.kind <> 'password' AND ap.enabled)`;
+
+/** The effective switch: off only when the setting is the literal `false` AND single sign-on is available instead. */
+const membersMayUsePassword = (pfm: string | null, ssoEnabled: boolean): boolean => pfm !== 'false' || !ssoEnabled;
 
 /** People with this primary email, oldest first. Runs as system: sign-in happens before anyone is known. */
 export async function findCandidates(tx: PluginTx, email: string): Promise<Candidate[]> {
@@ -30,13 +39,12 @@ export async function findCandidates(tx: PluginTx, email: string): Promise<Candi
     status: string;
     hash: string | null;
     role: string | null;
-    password_enabled: boolean | null;
     pfm: string | null;
+    sso: boolean;
   }>(
     `SELECT p.id, p.workspace_id, p.display_name, p.primary_email, p.status, pc.hash, wm.role,
-            (SELECT ap.enabled FROM app.auth_providers ap
-              WHERE ap.workspace_id = p.workspace_id AND ap.kind = 'password' ORDER BY ap.created_at LIMIT 1) AS password_enabled,
-            w.settings ->> 'passwordForMembers' AS pfm
+            w.settings ->> 'passwordForMembers' AS pfm,
+            ${sso('p.workspace_id')} AS sso
      FROM app.people p
      JOIN app.workspaces w ON w.id = p.workspace_id
      LEFT JOIN app.password_credentials pc ON pc.person_id = p.id
@@ -53,15 +61,14 @@ export async function findCandidates(tx: PluginTx, email: string): Promise<Candi
     status: r.status,
     hash: r.hash,
     role: r.role,
-    passwordEnabled: r.password_enabled !== false,
-    passwordForMembers: r.pfm !== 'false',
+    passwordForMembers: membersMayUsePassword(r.pfm, r.sso),
   }));
 }
 
 /** May this person use the password form? Admins and owners always can (break-glass); members only when it is on. */
-export function passwordAllowed(c: Pick<Candidate, 'role' | 'passwordEnabled' | 'passwordForMembers'>): boolean {
+export function passwordAllowed(c: Pick<Candidate, 'role' | 'passwordForMembers'>): boolean {
   if (c.role === 'owner' || c.role === 'admin') return true;
-  return c.passwordEnabled && c.passwordForMembers;
+  return c.passwordForMembers;
 }
 
 const LABELS: Record<string, string> = {
@@ -71,17 +78,26 @@ const LABELS: Record<string, string> = {
   oidc: 'Single sign-on',
 };
 
-/** Sign-in methods the workspace shows on its sign-in page (password counts as enabled unless an admin turned it off). */
-export async function loadMethods(tx: PluginTx, workspaceId: string): Promise<SignInMethod[]> {
+/**
+ * Sign-in methods the workspace shows. Password is listed unless members may not use it (`passwordForMembers` off while
+ * single sign-on is enabled); a signed-in admin or owner (`admin: true`) always sees it, because break-glass keeps working.
+ */
+export async function loadMethods(tx: PluginTx, workspaceId: string, opts: { admin?: boolean } = {}): Promise<SignInMethod[]> {
   const res = await tx.query<{ kind: SignInMethod['kind']; enabled: boolean; name: string | null }>(
-    `SELECT kind, enabled, config ->> 'name' AS name FROM app.auth_providers WHERE workspace_id = $1 ORDER BY created_at, id`,
+    `SELECT kind, enabled, config ->> 'name' AS name FROM app.auth_providers WHERE workspace_id = $1 AND kind <> 'password' ORDER BY created_at, id`,
     [workspaceId],
   );
+  const setting = await tx.query<{ pfm: string | null }>(
+    `SELECT settings ->> 'passwordForMembers' AS pfm FROM app.workspaces WHERE id = $1`,
+    [workspaceId],
+  );
+  const ssoEnabled = res.rows.some((r) => r.enabled);
   const methods: SignInMethod[] = [];
-  const passwordRow = res.rows.find((r) => r.kind === 'password');
-  if (!passwordRow || passwordRow.enabled) methods.push({ kind: 'password', label: LABELS['password'] ?? 'Password' });
+  if (opts.admin || membersMayUsePassword(setting.rows[0]?.pfm ?? null, ssoEnabled)) {
+    methods.push({ kind: 'password', label: LABELS['password'] ?? 'Password' });
+  }
   for (const r of res.rows) {
-    if (r.kind === 'password' || !r.enabled) continue;
+    if (!r.enabled) continue;
     methods.push({ kind: r.kind, label: r.kind === 'oidc' && r.name ? r.name : (LABELS[r.kind] ?? r.kind) });
   }
   return methods;
@@ -131,7 +147,7 @@ export async function loadAuthenticated(
     workspace: { id: row.workspace_id as never, name: row.workspace_name },
     role: row.role,
     teams: teams.rows,
-    methods: await loadMethods(tx, row.workspace_id),
+    methods: await loadMethods(tx, row.workspace_id, { admin: row.role === 'owner' || row.role === 'admin' }),
     expiresAt,
   };
 }

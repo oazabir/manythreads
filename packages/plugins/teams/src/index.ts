@@ -10,7 +10,7 @@ import { loadTeamTemplates } from './templates.ts';
 export { loadTeamTemplates } from './templates.ts';
 
 /**
- * Teams: templates, teams, roster, team roles, role tags and invitations (SPEC section 5, PLAN P2-08 and P2-09).
+ * Teams: templates, teams, roster, team roles, role tags and invitations (SPEC section 5, templates and the teams API).
  * Every mutation emits a registry event as the caller; docs/plugins/teams.md lists them.
  */
 export default definePlugin({

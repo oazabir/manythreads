@@ -60,7 +60,23 @@ describe('workspace General settings', () => {
     }
   });
 
+  it('refuses to turn the member password form off while no single sign-on provider is enabled (nobody could sign in)', async () => {
+    const res = await w.call(omar, 'PATCH', '/api/workspace', { passwordForMembers: false });
+    expect(res.status).toBe(409);
+    expect(errorOf(res).message).toMatch(/single sign-on/);
+    const { workspace } = GetWorkspaceResponse.parse(ok(await w.call(omar, 'GET', '/api/workspace')));
+    expect(workspace.passwordForMembers).toBe(true);
+    // a provider that is saved but switched off does not count
+    await w.system(async (tx) => {
+      await tx.query("INSERT INTO app.auth_providers (workspace_id, kind, enabled) SELECT id, 'oidc', false FROM app.workspaces");
+    });
+    expect((await w.call(omar, 'PATCH', '/api/workspace', { passwordForMembers: false })).status).toBe(409);
+  });
+
   it('changes the name, self-signup and the member password form; each change is audited with its new value', async () => {
+    await w.system(async (tx) => {
+      await tx.query("UPDATE app.auth_providers SET enabled = true WHERE kind = 'oidc'");
+    });
     const before = (await events('workspace.settings.updated')).length;
     const res = await w.call(omar, 'PATCH', '/api/workspace', { name: '  Kahf Group ', selfSignup: true, passwordForMembers: false });
     const { workspace } = GetWorkspaceResponse.parse(ok(res));

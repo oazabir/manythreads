@@ -106,7 +106,7 @@ may change providers and workspace settings without touching the shared servers.
 The issuer is the in-process fake (`startFakeOidc`, `fixtures/oidc.ts`): its authorize endpoint redirects the browser straight back, so
 Playwright follows the whole flow and the spec sets the claims with `fake.nextLogin(issuerId, claims)` before clicking. `tools/mock-oidc`
 (the navikt container, with a login form) serves the same layout for manual runs. Needs `clients/web/dist` (the Playwright config builds it).
-Specs: `identity/oidc-google`, `oidc-microsoft`, `oidc-any` (admin drives Settings, Sign-in), `break-glass`.
+Specs: `identity/oidc-google`, `oidc-microsoft`, `oidc-any` (admin drives Settings, Sign-in), `break-glass` (the admin turns the member password form off in Settings, Sign-in; no SQL arrangement), `teams/roles`.
 `MANYTHREADS_E2E_LOG=1` streams the stack's server log.
 
 ## First-admin bootstrap in tests
