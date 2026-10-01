@@ -42,7 +42,10 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   schemas `.strict()`. Ids are branded. Dates are ISO strings on the wire.
 - **One mapper per table** (`.../db/mappers/<table>.ts`) turns a row into the shared type. Nothing else.
 - **One DB entry:** `withActor(actor, fn)` (sets `SET LOCAL app.actor_id/app.workspace_id/app.run_id`).
-  No bare `pool.query` outside `packages/kernel/src/db/` (lint-enforced). Use `withSystem` for system actor.
+  No bare `pool.query` outside `packages/kernel/src/db/` (lint-enforced). System work uses `withSystem`, which
+  connects as the real `majlis_system` role (`app.is_system()` = `current_user`); never trust a GUC for privilege.
+  Three DB roles: `majlis_owner` (migrations), `majlis_app` (requests), `majlis_system` (system/workers).
+  Non-system code that must touch system tables calls a narrow SECURITY DEFINER function (e.g. `app.enqueue_job`).
 - **One event registry:** `emit` validates against `packages/shared/src/events/registry.ts`, writes
   `events` + `outbox` in the same transaction. Event types are `domain.noun.verb`.
 - **Schema task = triple:** Zod schema + SQL migration with RLS + mapper, in one diff.
@@ -53,7 +56,9 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   Migrations: plain SQL, numbered, forward-only, never edit an applied file. Get-or-create via
   `INSERT … ON CONFLICT … DO SELECT RETURNING` through the one helper.
 - Rate limits in process memory (sliding window), per replica. Never in the DB.
-- Plugins import only `@majlis/sdk` and `@majlis/shared`, never kernel internals.
+- Plugins import only `@majlis/sdk` and `@majlis/shared`, never kernel internals. Plugin HTTP routes mount at
+  their declared absolute path (e.g. `/api/channels/:id/messages`); duplicates fail at load.
+- Test-only HTTP actor: header-based dev actor only with `NODE_ENV=test` or `MAJLIS_DEV_AUTH=1`, never `system`.
 - Capability names `namespace.verb` with a destructive tag. The broker denies bot actors writes to
   `bots/`, `TEAM.md`, `skills/`, `routines/`; `person:*` only for `conversation`/`mention` triggers.
 - Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter Tight, JetBrains Mono.
@@ -71,7 +76,9 @@ pnpm install            pnpm lint     pnpm typecheck     pnpm build
 pnpm test               # vitest, all packages (needs DB: pnpm db:up)
 pnpm test:rls  pnpm test:events  pnpm test:schema-compat  (later: test:memory-cross-team, test:runtime-rules)
 pnpm db:up / db:down    # dev Postgres 19 via deploy/compose (port 55432, user majlis_owner)
-pnpm e2e                # playwright;  pnpm vt / vt:update  # plate visual comparison
+pnpm e2e                # playwright (runs from e2e/; never `playwright` from root);  pnpm e2e --project=api
+pnpm vt / vt:update     # plate visual comparison (tools/plates)
+pnpm --filter @majlis/tools-bench bench:server   # benchmarks
 ```
 Keep command output small: pipe through `tail -n 40` or grep for failures. Never paste whole logs.
 
@@ -87,4 +94,6 @@ Bots (50). The Bots header opens the team roster; a bot's name opens its convers
 
 ## Environment notes
 - Local docker daemon: start with `(dockerd >/tmp/dockerd.log 2>&1 &)` if `docker info` fails.
-- Deploy target: k3s at manythreads.kahf.to (SSH not reachable from the cloud sandbox; see STATUS.md).
+- Deploy target: k3s at manythreads.kahf.to via GitHub Actions only (SSH not reachable from the sandbox).
+  Tag `v*` → deploys latest main (`.github/workflows/deploy.yml`); `ops-*` workflows; see `docs/deploy.md`.
+  Read Actions results with GitHub MCP tools (`mcp__github__actions_list`, `get_job_logs`, tail ≤ 150).

@@ -1,32 +1,29 @@
 # STATUS
 
-Current phase: **1 · Foundations** (in progress)
+Current phase: **2 · Identity, workspace and teams** (next)
 
 | Phase | State | Tag |
 |---|---|---|
-| 1 Foundations | in progress | |
+| 1 Foundations | done — gate green locally and in CI; retro `docs/retro/phase-1.md` | phase-1 / v0.1.0 |
 | 2–13 | not started | |
 
-## Phase 1 tasks
-| ID | State | Notes |
-|---|---|---|
-| P1-01 scaffold | done, in review | 685e515 |
-| P1-02 shared | done, in review | 460ce69 |
-| P1-03 migrations | in progress | |
-| P1-04 withActor/RLS harness | in progress | |
-| P1-05 identity/events | todo | |
-| P1-06 outbox/jobs | todo | |
-| P1-07 plugin host | todo | |
-| P1-08 capability broker | todo | |
-| P1-09 transport/Fastify | todo | |
-| P1-10 plate harness | todo | |
-| P1-11 benchmarks | todo | |
-| P1-12 PG19 probe | in progress | |
-| P1-13 test-utils/web/CI/compose | web+CI+compose done (421c0c7); deploy infra in progress; test-utils todo | |
+## Phase 1 summary
+All tasks P1-01…P1-13 merged with reviewer PASS (P1-04b security hardening added: system actor = real
+`majlis_system` role). Benchmarks: `docs/retro/bench-phase-1.md`. Deploy: `docs/deploy.md`.
+Screens: `docs/retro/screens/phase-1/`.
+
+## Follow-ups carried into later phases
+- Trigram search plan under RLS needs scoping/plan check before phase 3 search.
+- Response schemas enforced for 200 only; extend per route as needed.
+- CNPG `majlis_owner` is superuser (needed for extensions/roles); CNPG chart version unpinned.
+- `it.todo`: Zod enum vs SQL CHECK comparison test — do in phase 2 when first enum tables land.
+- pnpm cyclic workspace dep warning (kernel ↔ test-utils ↔ server devDeps).
+- RN on-device benchmark deferred to phase 11 gate (Chromium proxy passed).
+- Dev-header actor (`packages/server/src/dev-actor.ts`) must be replaced by real auth in phase 2
+  (keep a test-only auth bypass for screenshots, gated by env).
 
 ## Environment / blockers
-- Postgres 19 is beta (19beta4) on Docker Hub; we build `majlis/postgres:19` from it + pgvector.
-- SSH to the server is blocked from the sandbox; deploys run from GitHub Actions using secret ROOT_PASSWORD.
-  Deploy rule (owner): pushing a version tag `v*` deploys latest `main`. Each phase exit: PR → main, tag `phase-N` + `v0.N.0`.
-- Server: k3s v1.36 single node, traefik, local-path; helm/CNPG installed by the deploy action.
-- Free-form ops workflows (run any command / SQL) were declined by the permission classifier — awaiting owner decision.
+- SSH to the server is blocked from the sandbox; deploys run from GitHub Actions (secret ROOT_PASSWORD).
+  Deploy rule (owner): pushing a version tag `v*` deploys latest `main`. Each phase exit: PR → main,
+  tag `phase-N` + `v0.N.0`. Ops workflows: ops-rollout/restart/rollback/logs/status (dispatch from main).
+- Free-form ops workflows (any command / SQL) were declined by the permission classifier — owner decision pending.
