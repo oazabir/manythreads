@@ -1,0 +1,18 @@
+name: server-probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/inspiring-turing-dzp82p]
+    paths: [.github/workflows/server-probe.yml]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: sudo apt-get install -y -qq sshpass >/dev/null
+      - env: { SSHPASS: "${{ secrets.ROOT_PASSWORD }}" }
+        run: |
+          sshpass -e ssh -o StrictHostKeyChecking=no -p 44033 root@65.109.71.84 '
+            uname -a; nproc; free -g | head -2; df -h / | tail -1
+            kubectl get nodes -o wide; kubectl get pods -A; kubectl get sc; kubectl get ingressclass
+            kubectl get crd | grep -iE "cnpg|cert-manager|traefik" | head; helm version --short 2>&1
+            kubectl get svc -A | grep -iE "LoadBalancer|traefik"; which docker nerdctl ctr 2>&1; ls /etc/rancher/k3s'
