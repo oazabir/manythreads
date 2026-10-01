@@ -122,6 +122,12 @@ export function registerResetRoutes(ctx: Ctx): void {
            ON CONFLICT (person_id) DO UPDATE SET hash = EXCLUDED.hash, must_change = false, updated_at = EXCLUDED.updated_at`,
           [claim.personId, hash, ctx.runtime.now()],
         );
+        // Every other reset link of this person dies with the old password; so does every session.
+        await tx.query(
+          `UPDATE app.email_verifications SET used_at = $3
+           WHERE person_id = $1 AND purpose = $2 AND used_at IS NULL`,
+          [claim.personId, 'reset_password', ctx.runtime.now()],
+        );
         await ctx.identity.sessions.revokeAll(tx, { personId: claim.personId });
         await emitAudit(ctx, tx, { type: 'identity.password.reset', workspaceId: claim.workspaceId, personId: claim.personId });
       });

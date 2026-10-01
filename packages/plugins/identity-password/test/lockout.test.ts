@@ -40,4 +40,19 @@ describe('lockout', () => {
     expect(l.check('victim').locked).toBe(true);
     expect(l.check('other').locked).toBe(false);
   });
+
+  it('counts attempts that are still being verified, so a parallel burst cannot outrun the limit', () => {
+    const c = clock();
+    const l = createLockout({ now: c.now });
+    const started = Array.from({ length: 10 }, () => l.begin('k').locked);
+    expect(started.filter((locked) => !locked)).toHaveLength(5);
+    expect(started.filter((locked) => locked)).toHaveLength(5);
+    for (let i = 0; i < 5; i++) l.end('k');
+    // Nothing was recorded as a failure, so once the attempts are over the key is free again.
+    expect(l.begin('k').locked).toBe(false);
+    l.end('k');
+    // A success (reset) after an in-flight attempt leaves nothing behind.
+    l.reset('k');
+    expect(l.check('k').locked).toBe(false);
+  });
 });

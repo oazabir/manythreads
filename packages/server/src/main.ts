@@ -10,7 +10,9 @@ import { startServer } from './start.ts';
  *   MANYTHREADS_SYSTEM_DATABASE_URL / MANYTHREADS_SYSTEM_PASSWORD   same for the kernel's manythreads_system login
  *   MANYTHREADS_TEST_PLUGINS=1     also load test-kernel and example-hello
  *   MANYTHREADS_PUBLIC_URL         public base URL (links in mails, the first-admin bootstrap line); default http://localhost:PORT
- *   MANYTHREADS_TRUST_PROXY=1      believe x-forwarded-for (behind an ingress); the sign-in lockout keys on the client address
+ *   MANYTHREADS_TRUST_PROXY=1      believe x-forwarded-for from ONE proxy hop (the ingress, which must append to it); N = N hops,
+ *                                  or a list of proxy CIDRs. The sign-in lockout and rate limits key on the client address
+ *   MANYTHREADS_OIDC_ALLOW_PRIVATE_ISSUERS=1   production only: let OIDC discovery reach private/loopback hosts (in-cluster IdP)
  *   MANYTHREADS_SMTP_URL           smtp://user:pass@host:587 (dev mailpit: smtp://localhost:1025); unset = mail is not sent
  *   MANYTHREADS_MAIL_FROM          From address of outgoing mail
  *   MANYTHREADS_SESSION_IDLE_MINUTES (30) / MANYTHREADS_SESSION_ABSOLUTE_DAYS (30) / MANYTHREADS_SESSION_ROTATE_HOURS (4)

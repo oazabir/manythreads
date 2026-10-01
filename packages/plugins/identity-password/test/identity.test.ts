@@ -13,6 +13,8 @@ import {
 } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { hashLinkToken } from '../src/tokens.ts';
+
 const TEST_AUTH_TOKEN = 'test-auth-token-for-vitest-0123456789';
 const MINUTE = 60_000;
 
@@ -210,6 +212,16 @@ describe('password sign-in, sessions, CSRF, break-glass', () => {
 
     clock.advance(16 * MINUTE);
     expect((await c.signIn(RAFI.email, PERSONA_PASSWORD)).status).toBe(200);
+  });
+
+  it('a parallel burst of guesses is cut off at the limit, not after it', async () => {
+    const c = createApiClient(s.url);
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => c.signIn(TARIQ.email, `wrong-parallel-guess-${i}`)));
+    const statuses = results.map((r) => r.status);
+    expect(statuses.filter((x) => x === 401).length).toBeLessThanOrEqual(5);
+    expect(statuses.filter((x) => x === 429).length).toBeGreaterThanOrEqual(7);
+    expect(statuses.every((x) => x === 401 || x === 429)).toBe(true);
+    clock.advance(16 * MINUTE);
   });
 
   it('records sign-in successes and failures as audit events', async () => {
@@ -419,6 +431,24 @@ describe('rotation and absolute expiry', () => {
     clock.advance(20 * MINUTE); // 80 minutes after sign-in, 20 idle
     expect((await c.get('/api/auth/sessions')).status).toBe(401);
   });
+  it('abandoned sessions lose their token rows at the next sign-in sweep', async () => {
+    const abandoned = createApiClient(s.url);
+    await abandoned.signIn(OMAR.email, PERSONA_PASSWORD);
+    const rowsFor = async (email: string): Promise<number> =>
+      (
+        await sql<{ n: number }>(
+          s,
+          `SELECT count(*)::int AS n FROM app.session_tokens t JOIN app.sessions x ON x.id = t.session_id
+           JOIN app.people p ON p.id = x.person_id WHERE p.primary_email = $1`,
+          [email],
+        )
+      )[0]?.n ?? -1;
+    expect(await rowsFor(OMAR.email)).toBeGreaterThan(0);
+    clock.advance(45 * MINUTE); // idle (30 minutes), never used again
+    await createApiClient(s.url).signIn(TARIQ.email, PERSONA_PASSWORD);
+    expect(await rowsFor(OMAR.email)).toBe(0);
+    expect((await abandoned.get('/api/auth/sessions')).status).toBe(401);
+  });
 });
 
 describe('password reset and email verification', () => {
@@ -473,6 +503,22 @@ describe('password reset and email verification', () => {
     expect((await other.get('/api/auth/sessions')).status).toBe(401); // every session was ended
     const types = (await sql<{ type: string }>(s, "SELECT type FROM app.events WHERE type = 'identity.password.reset'")).length;
     expect(types).toBe(1);
+  });
+
+  it('a reset spends every other reset link of that person too', async () => {
+    const c = createApiClient(s.url);
+    await c.post('/api/auth/password/reset-request', { email: OMAR.email });
+    const real = tokenFrom(OMAR.email);
+    const planted = 'planted-reset-token-for-the-test-0123456789ab';
+    await sql(
+      s,
+      `INSERT INTO app.email_verifications (workspace_id, person_id, purpose, token_hash, expires_at)
+       SELECT workspace_id, person_id, 'reset_password', $2, now() + interval '1 hour' FROM app.email_verifications WHERE token_hash = $1`,
+      [hashLinkToken(real), hashLinkToken(planted)],
+    );
+    expect((await c.post('/api/auth/password/reset', { token: real, password: 'omar-new-passphrase-1' })).status).toBe(200);
+    expect((await c.post('/api/auth/password/reset', { token: planted, password: 'attacker-passphrase-2' })).status).toBe(410);
+    expect((await createApiClient(s.url).signIn(OMAR.email, 'omar-new-passphrase-1')).status).toBe(200);
   });
 
   it('a reset token expires after an hour, and a newer request replaces the older token', async () => {

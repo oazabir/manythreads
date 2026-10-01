@@ -40,6 +40,8 @@ export interface SessionServiceOptions {
   now?: () => Date;
 }
 
+const PURGE_EVERY_MS = 5 * 60_000;
+
 /** `last_seen_at` is only rewritten when it is this stale: one write per minute per session, not per request. */
 const touchIntervalMs = (config: SessionConfig): number => Math.min(60_000, Math.max(1_000, Math.floor(config.idleMs / 4)));
 
@@ -102,6 +104,18 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
     await tx.query('DELETE FROM app.session_tokens WHERE session_id = ANY($1::uuid[])', [ids]);
   }
 
+  /**
+   * Abandoned sessions (never used again, so `resolve` never ended them) would keep their token and cache rows forever.
+   * Every few minutes a sign-in sweeps the rows of sessions that are revoked, past their absolute end or idle too long.
+   */
+  let lastPurge = Number.NEGATIVE_INFINITY;
+  async function purgeDeadTokens(tx: Tx, now: Date): Promise<void> {
+    const dead = `SELECT id FROM app.sessions WHERE revoked_at IS NOT NULL OR expires_at <= $1 OR last_seen_at <= $2`;
+    const args = [now, new Date(now.getTime() - config.idleMs)];
+    await tx.query(`DELETE FROM app.session_cache WHERE session_id IN (${dead})`, args);
+    await tx.query(`DELETE FROM app.session_tokens WHERE session_id IN (${dead})`, args);
+  }
+
   const isLive = (row: { expires_at: Date; last_seen_at: Date }, now: Date): boolean =>
     row.expires_at.getTime() > now.getTime() && row.last_seen_at.getTime() + config.idleMs > now.getTime();
 
@@ -112,6 +126,10 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
     async issue(tx: PluginTx, input) {
       const t = tx as unknown as Tx;
       const now = clock();
+      if (now.getTime() - lastPurge >= PURGE_EVERY_MS) {
+        lastPurge = now.getTime();
+        await purgeDeadTokens(t, now);
+      }
       const expiresAt = new Date(now.getTime() + config.absoluteMs);
       const created = await t.query<{ id: string }>(
         `INSERT INTO app.sessions (workspace_id, person_id, created_at, last_seen_at, expires_at, device)

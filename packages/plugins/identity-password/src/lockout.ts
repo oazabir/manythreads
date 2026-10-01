@@ -20,6 +20,13 @@ export interface LockState {
 export interface Lockout {
   /** Is this key locked right now? */
   check(key: string): LockState;
+  /**
+   * Starts an attempt: like `check`, but the attempt counts as a failure-in-waiting until `end` is called, so a burst of
+   * parallel guesses cannot all slip past the limit while the first one is still being verified.
+   */
+  begin(key: string): LockState;
+  /** Finishes an attempt started with `begin` (whatever its outcome; `fail` / `reset` record the result). */
+  end(key: string): void;
   /** Record a failed attempt; `locked` is true when it was the one that tripped the lock. */
   fail(key: string): LockState;
   /** A successful sign-in clears the key. */
@@ -37,6 +44,8 @@ export function createLockout(options: LockoutOptions): Lockout {
   const lockMs = options.lockMs ?? 15 * 60_000;
   const maxKeys = options.maxKeys ?? 50_000;
   const entries = new Map<string, Entry>();
+  /** Attempts being verified right now, per key (bounded by the number of in-flight requests). */
+  const pending = new Map<string, number>();
   const nowMs = (): number => options.now().getTime();
 
   const prune = (t: number): void => {
@@ -56,6 +65,21 @@ export function createLockout(options: LockoutOptions): Lockout {
       const e = entries.get(key);
       if (e && e.lockedUntil > t) return { locked: true, retryAfterMs: e.lockedUntil - t };
       return { locked: false, retryAfterMs: 0 };
+    },
+    begin(key) {
+      const t = nowMs();
+      const e = entries.get(key);
+      if (e && e.lockedUntil > t) return { locked: true, retryAfterMs: e.lockedUntil - t };
+      const inFlight = pending.get(key) ?? 0;
+      const recent = e ? e.failures.filter((f) => f > t - windowMs).length : 0;
+      if (recent + inFlight >= max) return { locked: true, retryAfterMs: 1_000 };
+      pending.set(key, inFlight + 1);
+      return { locked: false, retryAfterMs: 0 };
+    },
+    end(key) {
+      const n = (pending.get(key) ?? 0) - 1;
+      if (n > 0) pending.set(key, n);
+      else pending.delete(key);
     },
     fail(key) {
       const t = nowMs();

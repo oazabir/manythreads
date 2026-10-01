@@ -1,4 +1,7 @@
+import type { FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
+import { buildServer } from '../src/build-server.ts';
+import { resolveTestAuthToken, trustProxyFromEnv } from '../src/start.ts';
 import { DEFAULT_SESSION_CONFIG, sessionConfigFromEnv } from '../src/session/config.ts';
 import { deviceLabel } from '../src/session/device.ts';
 import { csrfTokenFor, hashToken, newSessionToken, safeEqual } from '../src/session/tokens.ts';
@@ -66,5 +69,46 @@ describe('device label', () => {
     expect(deviceLabel('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit Safari/604.1')).toBe('Safari on iOS');
     expect(deviceLabel(undefined)).toBe('Unknown device');
     expect(deviceLabel('')).toBe('Unknown device');
+  });
+});
+
+describe('proxy trust and the test endpoint token', () => {
+  it('MANYTHREADS_TRUST_PROXY is never "trust everything": 1 or true is one hop, N is N hops, else a list', () => {
+    expect(trustProxyFromEnv(undefined)).toBe(false);
+    expect(trustProxyFromEnv('')).toBe(false);
+    expect(trustProxyFromEnv('0')).toBe(false);
+    expect(trustProxyFromEnv('false')).toBe(false);
+    expect(trustProxyFromEnv('1')).toBe(1);
+    expect(trustProxyFromEnv('true')).toBe(1);
+    expect(trustProxyFromEnv('2')).toBe(2);
+    expect(trustProxyFromEnv('10.0.0.0/8, 172.16.0.0/12')).toEqual(['10.0.0.0/8', '172.16.0.0/12']);
+  });
+
+  it('behind one proxy the client address is what the proxy appended, not what the client wrote first', async () => {
+    const reflect = (trustProxy: boolean | number): Promise<FastifyInstance> =>
+      buildServer({ trustProxy, routes: (a) => void a.get('/whoami', { config: { public: true } }, (req) => ({ ip: req.ip })) });
+    const probe = async (app: FastifyInstance): Promise<string> => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/whoami',
+        remoteAddress: '10.0.0.1',
+        headers: { 'x-forwarded-for': '6.6.6.6, 203.0.113.9' },
+      });
+      return (res.json() as { ip: string }).ip;
+    };
+    const on = await reflect(true);
+    const off = await reflect(false);
+    expect(await probe(on)).toBe('203.0.113.9');
+    expect(await probe(off)).toBe('10.0.0.1');
+    await on.close();
+    await off.close();
+  });
+
+  it('refuses to start with the test sign-in token in production or with a weak one', () => {
+    expect(resolveTestAuthToken(undefined, {})).toBeNull();
+    expect(resolveTestAuthToken(null, { MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30) })).toBeNull();
+    expect(resolveTestAuthToken(undefined, { MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30), NODE_ENV: 'test' })).toBe('x'.repeat(30));
+    expect(() => resolveTestAuthToken(undefined, { MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30), NODE_ENV: 'production' })).toThrow(/production/);
+    expect(() => resolveTestAuthToken('short', { NODE_ENV: 'test' })).toThrow(/16 characters/);
   });
 });

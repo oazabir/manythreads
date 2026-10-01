@@ -59,10 +59,12 @@ export interface BuildServerOptions {
   /** Fastify logger setting (default false). */
   logger?: boolean | object;
   /**
-   * Believe `x-forwarded-for` (the server sits behind a reverse proxy or ingress that sets it). Off by default: with it
-   * on and no proxy, anybody could claim any client address and sidestep the sign-in lockout.
+   * Believe `x-forwarded-for` (the server sits behind a reverse proxy or ingress that appends to it). Off by default:
+   * with it on and no proxy, anybody could claim any client address and sidestep the sign-in lockout. `true` means ONE
+   * proxy hop (the client address is the entry the nearest proxy appended, never what the client wrote at the front of
+   * the header); a number is that many hops; a string or list is the proxy addresses / CIDRs to trust.
    */
-  trustProxy?: boolean;
+  trustProxy?: boolean | number | string | string[];
   /** Replace the in-memory limiter (tests). Each server builds its own by default: limits are per replica. */
   limiter?: RateLimiter;
   /** Migration files the kernel and loaded plugins ship; /readyz fails while fewer are applied. */
@@ -74,6 +76,17 @@ export interface BuildServerOptions {
 /** The nil person: no workspace, no memberships. */
 const ANONYMOUS: Actor = { kind: 'person', id: NIL_UUID as ActorId, workspaceId: NIL_UUID as WorkspaceId };
 
+/**
+ * Fastify's own `true` takes the LEFTMOST x-forwarded-for entry (client-written), and its numeric form does not count
+ * hops the way proxy-addr does, so hop counts become an explicit function: trust the first N addresses starting at the
+ * socket peer, and the client is the first address that is not trusted (what the Nth proxy appended).
+ */
+function trustProxySetting(value: BuildServerOptions['trustProxy']): boolean | string | string[] | ((address: string, hop: number) => boolean) {
+  if (value === undefined || value === false || value === 0) return false;
+  const hops = value === true ? 1 : value;
+  return typeof hops === 'number' ? (_address: string, hop: number): boolean => hop < hops : hops;
+}
+
 const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.actor.id}` : `ip:${req.ip}`);
 
 /**
@@ -81,7 +94,7 @@ const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.act
  * OpenAPI generated from the same schemas, health endpoints, plugin routes and the WebSocket hub.
  */
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false, trustProxy: options.trustProxy ?? false });
+  const app = Fastify({ logger: options.logger ?? false, trustProxy: trustProxySetting(options.trustProxy) });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(errorHandler);

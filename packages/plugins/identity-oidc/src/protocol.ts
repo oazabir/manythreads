@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import * as client from 'openid-client';
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, customFetch as joseCustomFetch, jwtVerify, type JWTPayload } from 'jose';
+import { assertPublicUrl, guardedFetch, privateIssuersBlocked } from './net-guard.ts';
 import type { IdClaims } from './rules.ts';
 
 /** Thrown for anything wrong with the provider's discovery document or endpoints; the message is shown to admins. */
@@ -36,6 +37,15 @@ function assertTransport(issuer: string): void {
   } catch {
     throw new DiscoveryError('The issuer URL is not a valid URL.');
   }
+  if (privateIssuersBlocked()) {
+    // Production: public https hosts only (no loopback mock, no 10.x / 169.254.x / localhost); see net-guard.ts.
+    try {
+      assertPublicUrl(issuer);
+    } catch (err) {
+      throw new DiscoveryError(`The issuer URL is not allowed: ${err instanceof Error ? err.message : 'refused'}`);
+    }
+    return;
+  }
   const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
   if (u.protocol !== 'https:' && !(u.protocol === 'http:' && loopback)) {
     throw new DiscoveryError('The issuer URL must use https.');
@@ -54,6 +64,7 @@ export async function discoverIssuer(issuer: string, clientId: string, options: 
   try {
     const config = await client.discovery(new URL(issuer), clientId, undefined, undefined, {
       timeout: DISCOVERY_TIMEOUT_S,
+      ...(privateIssuersBlocked() ? { [client.customFetch]: guardedFetch } : {}),
       ...(isHttp(issuer) ? { execute: [client.allowInsecureRequests] } : {}),
     });
     metadata = config.serverMetadata();
@@ -90,6 +101,8 @@ const describe = (err: unknown): string => {
 function configurationFor(metadata: client.ServerMetadata, clientId: string, clientSecret: string): client.Configuration {
   const config = new client.Configuration(metadata, clientId, clientSecret);
   if (isHttp(metadata.issuer)) client.allowInsecureRequests(config);
+  // The token endpoint comes from the provider's discovery document: it gets the same public-hosts-only treatment.
+  if (privateIssuersBlocked()) config[client.customFetch] = guardedFetch as client.CustomFetch;
   return config;
 }
 
@@ -162,7 +175,11 @@ export async function completeAuthorization(input: {
   if (!jwksUri) throw new TokenError('The provider has no jwks_uri.');
   let jwks = jwksCache.get(jwksUri);
   if (!jwks) {
-    jwks = createRemoteJWKSet(new URL(jwksUri), { timeoutDuration: DISCOVERY_TIMEOUT_S * 1000, cooldownDuration: 30_000 });
+    jwks = createRemoteJWKSet(new URL(jwksUri), {
+      timeoutDuration: DISCOVERY_TIMEOUT_S * 1000,
+      cooldownDuration: 30_000,
+      ...(privateIssuersBlocked() ? { [joseCustomFetch]: guardedFetch as never } : {}),
+    });
     jwksCache.set(jwksUri, jwks);
   }
   const advertised = input.metadata.id_token_signing_alg_values_supported?.filter((a) => SIGNING_ALGS.includes(a));

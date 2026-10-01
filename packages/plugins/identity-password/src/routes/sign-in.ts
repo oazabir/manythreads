@@ -43,7 +43,7 @@ export function registerSignIn(ctx: Ctx, lockout: Lockout): void {
       const email = normalizeEmail(body.email);
       const key = `${email}\n${req.ip}`;
 
-      const state = lockout.check(key);
+      const state = lockout.begin(key);
       if (state.locked) {
         const minutes = Math.max(1, Math.ceil(state.retryAfterMs / 60_000));
         return {
@@ -53,91 +53,95 @@ export function registerSignIn(ctx: Ctx, lockout: Lockout): void {
         };
       }
 
-      const candidates = await ctx.identity.runAsSystem((tx) => findCandidates(tx, email));
-      let match: Candidate | undefined;
-      for (const c of candidates) {
-        if (c.hash && (await ctx.identity.verifyPassword(c.hash, body.password))) {
-          match = c;
-          break;
+      try {
+        const candidates = await ctx.identity.runAsSystem((tx) => findCandidates(tx, email));
+        let match: Candidate | undefined;
+        for (const c of candidates) {
+          if (c.hash && (await ctx.identity.verifyPassword(c.hash, body.password))) {
+            match = c;
+            break;
+          }
         }
-      }
-      if (candidates.every((c) => !c.hash)) await ctx.identity.verifyPassword(await decoyHash(), body.password);
+        if (candidates.every((c) => !c.hash)) await ctx.identity.verifyPassword(await decoyHash(), body.password);
 
-      const fail = async (person: Candidate | undefined, reason: 'wrong_password' | 'suspended' | 'method_disabled') => {
-        const tripped = lockout.fail(key).locked;
-        const target = person ?? candidates[0];
-        if (target) {
-          await ctx.identity.runAsSystem(
-            async (tx) => {
-              await emitAudit(ctx, tx, {
-                type: 'identity.session.sign_in_failed',
-                workspaceId: target.workspaceId,
-                personId: target.personId,
-                method: 'password',
-                reason,
-                ip: req.ip,
-              });
-              if (tripped) {
+        const fail = async (person: Candidate | undefined, reason: 'wrong_password' | 'suspended' | 'method_disabled') => {
+          const tripped = lockout.fail(key).locked;
+          const target = person ?? candidates[0];
+          if (target) {
+            await ctx.identity.runAsSystem(
+              async (tx) => {
                 await emitAudit(ctx, tx, {
                   type: 'identity.session.sign_in_failed',
                   workspaceId: target.workspaceId,
                   personId: target.personId,
                   method: 'password',
-                  reason: 'locked',
+                  reason,
                   ip: req.ip,
                 });
-              }
-            },
-            { workspaceId: target.workspaceId },
-          );
-        }
-      };
-
-      if (!match) {
-        await fail(undefined, 'wrong_password');
-        return { status: 401, body: errorBody('unauthenticated', GENERIC) };
-      }
-      if (match.status !== 'active') {
-        await fail(match, 'suspended');
-        return { status: 401, body: errorBody('unauthenticated', GENERIC) };
-      }
-      if (!passwordAllowed(match)) {
-        await fail(match, 'method_disabled');
-        return {
-          status: 403,
-          body: errorBody('forbidden', 'Password sign-in is turned off for members of this workspace. Use your organisation sign-in, or ask an admin.'),
-        };
-      }
-
-      const result = await ctx.identity.runAsSystem(
-        async (tx) => {
-          const previous = req.caller;
-          if (previous?.sessionId && previous.personId) {
-            await ctx.identity.sessions.revoke(tx, { sessionId: previous.sessionId, personId: previous.personId });
+                if (tripped) {
+                  await emitAudit(ctx, tx, {
+                    type: 'identity.session.sign_in_failed',
+                    workspaceId: target.workspaceId,
+                    personId: target.personId,
+                    method: 'password',
+                    reason: 'locked',
+                    ip: req.ip,
+                  });
+                }
+              },
+              { workspaceId: target.workspaceId },
+            );
           }
-          const issued = await ctx.identity.sessions.issue(tx, {
-            workspaceId: match.workspaceId,
-            personId: match.personId,
-            device: req.headers['user-agent'] ?? null,
-          });
-          await emitAudit(ctx, tx, {
-            type: 'identity.session.signed_in',
-            workspaceId: match.workspaceId,
-            personId: match.personId,
-            sessionId: issued.sessionId,
-            method: 'password',
-            ip: req.ip,
-          });
-          return { issued, view: await loadAuthenticated(tx, match.personId, issued.expiresAt) };
-        },
-        { workspaceId: match.workspaceId },
-      );
-      lockout.reset(key);
-      if (!result.view) {
-        // A person with a password but no workspace membership: nothing to show them.
-        return { status: 403, body: errorBody('forbidden', 'This account has no access to a workspace.') };
+        };
+
+        if (!match) {
+          await fail(undefined, 'wrong_password');
+          return { status: 401, body: errorBody('unauthenticated', GENERIC) };
+        }
+        if (match.status !== 'active') {
+          await fail(match, 'suspended');
+          return { status: 401, body: errorBody('unauthenticated', GENERIC) };
+        }
+        if (!passwordAllowed(match)) {
+          await fail(match, 'method_disabled');
+          return {
+            status: 403,
+            body: errorBody('forbidden', 'Password sign-in is turned off for members of this workspace. Use your organisation sign-in, or ask an admin.'),
+          };
+        }
+
+        const result = await ctx.identity.runAsSystem(
+          async (tx) => {
+            const previous = req.caller;
+            if (previous?.sessionId && previous.personId) {
+              await ctx.identity.sessions.revoke(tx, { sessionId: previous.sessionId, personId: previous.personId });
+            }
+            const issued = await ctx.identity.sessions.issue(tx, {
+              workspaceId: match.workspaceId,
+              personId: match.personId,
+              device: req.headers['user-agent'] ?? null,
+            });
+            await emitAudit(ctx, tx, {
+              type: 'identity.session.signed_in',
+              workspaceId: match.workspaceId,
+              personId: match.personId,
+              sessionId: issued.sessionId,
+              method: 'password',
+              ip: req.ip,
+            });
+            return { issued, view: await loadAuthenticated(tx, match.personId, issued.expiresAt) };
+          },
+          { workspaceId: match.workspaceId },
+        );
+        lockout.reset(key);
+        if (!result.view) {
+          // A person with a password but no workspace membership: nothing to show them.
+          return { status: 403, body: errorBody('forbidden', 'This account has no access to a workspace.') };
+        }
+        return { body: result.view, setSession: result.issued };
+      } finally {
+        lockout.end(key);
       }
-      return { body: result.view, setSession: result.issued };
     },
   });
 }

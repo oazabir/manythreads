@@ -35,6 +35,33 @@ import type pg from 'pg';
 import { buildServer } from './build-server.ts';
 import { createSessionService, sessionConfigFromEnv, type SessionConfig, type SessionService } from './session/index.ts';
 
+/**
+ * `MANYTHREADS_TRUST_PROXY`: unset/0/false = off; 1/true = one proxy hop (the ingress); a number N = N hops; anything
+ * else = a comma-separated list of proxy addresses or CIDRs to trust. Never "trust everything": Fastify would then take
+ * the LEFTMOST x-forwarded-for entry, which the client writes, and a spoofed address defeats the sign-in lockout.
+ */
+export function trustProxyFromEnv(raw: string | undefined): boolean | number | string[] {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === '' || v === '0' || v === 'false') return false;
+  if (v === '1' || v === 'true') return 1;
+  if (/^\d+$/.test(v)) return Number(v);
+  return v.split(',').map((p) => p.trim()).filter(Boolean);
+}
+
+/**
+ * The token behind `POST /api/test/session`. It is a way to sign in as anyone without a password, so a production
+ * process refuses to start with it set, and a weak value is refused anywhere.
+ */
+export function resolveTestAuthToken(explicit: string | null | undefined, env: NodeJS.ProcessEnv): string | null {
+  const token = explicit === undefined ? (env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? null) : explicit;
+  if (token === null || token === '') return null;
+  if (env['NODE_ENV'] === 'production') {
+    throw new Error('MANYTHREADS_TEST_AUTH_TOKEN is set in production: the test sign-in endpoint must never run on a real deployment.');
+  }
+  if (token.length < 16) throw new Error('MANYTHREADS_TEST_AUTH_TOKEN must be at least 16 characters.');
+  return token;
+}
+
 export const pluginsDir = fileURLToPath(new URL('../../plugins/', import.meta.url));
 
 /** Packages under packages/plugins that only exist for tests and examples; loaded when MANYTHREADS_TEST_PLUGINS=1. */
@@ -61,8 +88,8 @@ export interface StartServerOptions {
   /** The test-only dev header (only ever honoured when NODE_ENV=test; see dev-actor.ts). */
   devAuth?: boolean;
   logger?: boolean | object;
-  /** Behind a reverse proxy that sets x-forwarded-for (default: `MANYTHREADS_TRUST_PROXY=1`). */
-  trustProxy?: boolean;
+  /** Behind a reverse proxy that appends to x-forwarded-for (default from `MANYTHREADS_TRUST_PROXY`, see `trustProxyFromEnv`). */
+  trustProxy?: boolean | number | string | string[];
   /** Public base URL (`MANYTHREADS_PUBLIC_URL`) used for links in mails and the bootstrap line. Default http://localhost:<port>. */
   publicUrl?: string;
   /** Delivers mail (default: SMTP from `MANYTHREADS_SMTP_URL`, otherwise it logs that nothing was sent). */
@@ -107,10 +134,14 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     return options.testPlugins === true || !TEST_ONLY_PLUGIN_DIRS.has(dirName);
   });
 
+  const testAuthToken = resolveTestAuthToken(options.testAuthToken, process.env);
   const clock = options.now ?? (() => new Date());
   const publicUrl = (options.publicUrl ?? process.env['MANYTHREADS_PUBLIC_URL'] ?? `http://localhost:${options.port ?? 3000}`).replace(/\/+$/, '');
+  // The Secure flag follows the URL the operator configured, not the localhost fallback above: a production server
+  // started without MANYTHREADS_PUBLIC_URL must not end up with plain cookies.
+  const configuredPublicUrl = options.publicUrl ?? process.env['MANYTHREADS_PUBLIC_URL'];
   const sessionConfig: SessionConfig = {
-    ...sessionConfigFromEnv({ ...process.env, MANYTHREADS_PUBLIC_URL: publicUrl }),
+    ...sessionConfigFromEnv({ ...process.env, MANYTHREADS_PUBLIC_URL: configuredPublicUrl }),
     ...options.session,
   };
   const sessions = createSessionService({ pool: systemPool, config: sessionConfig, now: clock });
@@ -173,8 +204,8 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     systemPool,
     expectedMigrations,
     sessions,
-    trustProxy: options.trustProxy ?? process.env['MANYTHREADS_TRUST_PROXY'] === '1',
-    testAuthToken: options.testAuthToken === undefined ? (process.env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? null) : options.testAuthToken,
+    trustProxy: options.trustProxy ?? trustProxyFromEnv(process.env['MANYTHREADS_TRUST_PROXY']),
+    testAuthToken,
     ...(options.devAuth !== undefined ? { devAuth: options.devAuth } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
