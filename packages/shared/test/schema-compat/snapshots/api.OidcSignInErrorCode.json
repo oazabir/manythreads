@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "domain_not_allowed",
+    "tenant_not_allowed",
+    "email_not_verified",
+    "account_unverified",
+    "identity_mismatch",
+    "signup_closed",
+    "account_suspended",
+    "provider_disabled",
+    "state_invalid",
+    "token_invalid",
+    "access_denied",
+    "sign_in_failed"
+  ]
+}

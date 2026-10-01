@@ -23,3 +23,6 @@ export * from './team.tag.created.ts';
 export * from './team.tag.deleted.ts';
 export * from './team.tag.assigned.ts';
 export * from './team.tag.removed.ts';
+export * from './identity.provider.changed.ts';
+export * from './identity.oidc.signed_in.ts';
+export * from './identity.oidc.refused.ts';

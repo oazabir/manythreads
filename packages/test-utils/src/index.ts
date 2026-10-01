@@ -4,3 +4,4 @@ export * from './create-personas.ts';
 export * from './actors.ts';
 export * from './server.ts';
 export * from './client.ts';
+export * from './fake-oidc.ts';

@@ -1,0 +1,29 @@
+{
+  "name": "@manythreads/plugin-identity-oidc",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "manythreads": {
+    "entry": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
+    "jose": "^6.2.12",
+    "openid-client": "^6.8.8",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/server": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
+    "@types/pg": "^8",
+    "pg": "^8"
+  }
+}

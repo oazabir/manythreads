@@ -20,6 +20,9 @@ import { TeamTagCreatedEvent } from './team.tag.created.ts';
 import { TeamTagDeletedEvent } from './team.tag.deleted.ts';
 import { TeamTagAssignedEvent } from './team.tag.assigned.ts';
 import { TeamTagRemovedEvent } from './team.tag.removed.ts';
+import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
+import { IdentityOidcSignedInEvent } from './identity.oidc.signed_in.ts';
+import { IdentityOidcRefusedEvent } from './identity.oidc.refused.ts';
 import { KernelCapabilityDeniedEvent } from './kernel.capability.denied.ts';
 import { KernelTestPingedEvent } from './kernel.test.pinged.ts';
 import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.test.pinged.v2.ts';
@@ -27,15 +30,15 @@ import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.
 /** type -> schemaVersion -> schema. A breaking change adds a new version beside the old one (B.4). */
 export const eventRegistry = {
   'channel.message.posted': { 1: ChannelMessagePostedEvent },
-  'workspace.team.created': { 1: WorkspaceTeamCreatedEvent },
-  'workspace.team.renamed': { 1: WorkspaceTeamRenamedEvent },
-  'workspace.team.archived': { 1: WorkspaceTeamArchivedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
   'identity.session.sign_in_failed': { 1: IdentitySessionSignInFailedEvent },
   'identity.session.signed_in': { 1: IdentitySessionSignedInEvent },
   'identity.session.signed_out': { 1: IdentitySessionSignedOutEvent },
   'identity.workspace.bootstrapped': { 1: IdentityWorkspaceBootstrappedEvent },
+  'workspace.team.created': { 1: WorkspaceTeamCreatedEvent },
+  'workspace.team.renamed': { 1: WorkspaceTeamRenamedEvent },
+  'workspace.team.archived': { 1: WorkspaceTeamArchivedEvent },
   'workspace.team.unarchived': { 1: WorkspaceTeamUnarchivedEvent },
   'workspace.invitation.created': { 1: WorkspaceInvitationCreatedEvent },
   'workspace.invitation.accepted': { 1: WorkspaceInvitationAcceptedEvent },
@@ -47,6 +50,9 @@ export const eventRegistry = {
   'team.tag.deleted': { 1: TeamTagDeletedEvent },
   'team.tag.assigned': { 1: TeamTagAssignedEvent },
   'team.tag.removed': { 1: TeamTagRemovedEvent },
+  'identity.provider.changed': { 1: IdentityProviderChangedEvent },
+  'identity.oidc.signed_in': { 1: IdentityOidcSignedInEvent },
+  'identity.oidc.refused': { 1: IdentityOidcRefusedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
@@ -55,18 +61,18 @@ export type EventType = keyof typeof eventRegistry;
 
 /** Every stored shape, any version. */
 export type AnyEvent =
-  | z.infer<typeof WorkspaceTeamCreatedEvent>
-  | z.infer<typeof WorkspaceTeamRenamedEvent>
-  | z.infer<typeof WorkspaceTeamArchivedEvent>
-  | z.infer<typeof WorkspaceTeamUnarchivedEvent>
-  | z.infer<typeof WorkspaceInvitationCreatedEvent>
-  | z.infer<typeof WorkspaceInvitationAcceptedEvent>
   | z.infer<typeof IdentityEmailVerifiedEvent>
   | z.infer<typeof IdentityPasswordResetEvent>
   | z.infer<typeof IdentitySessionSignInFailedEvent>
   | z.infer<typeof IdentitySessionSignedInEvent>
   | z.infer<typeof IdentitySessionSignedOutEvent>
   | z.infer<typeof IdentityWorkspaceBootstrappedEvent>
+  | z.infer<typeof WorkspaceTeamCreatedEvent>
+  | z.infer<typeof WorkspaceTeamRenamedEvent>
+  | z.infer<typeof WorkspaceTeamArchivedEvent>
+  | z.infer<typeof WorkspaceTeamUnarchivedEvent>
+  | z.infer<typeof WorkspaceInvitationCreatedEvent>
+  | z.infer<typeof WorkspaceInvitationAcceptedEvent>
   | z.infer<typeof TeamTemplateAppliedEvent>
   | z.infer<typeof TeamMemberAddedEvent>
   | z.infer<typeof TeamMemberRemovedEvent>
@@ -75,6 +81,9 @@ export type AnyEvent =
   | z.infer<typeof TeamTagDeletedEvent>
   | z.infer<typeof TeamTagAssignedEvent>
   | z.infer<typeof TeamTagRemovedEvent>
+  | z.infer<typeof IdentityProviderChangedEvent>
+  | z.infer<typeof IdentityOidcSignedInEvent>
+  | z.infer<typeof IdentityOidcRefusedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
@@ -82,6 +91,12 @@ export type AnyEvent =
 
 /** The newest version of every event: what `upcast` returns and emitters write. */
 export type LatestEvent =
+  | z.infer<typeof IdentityEmailVerifiedEvent>
+  | z.infer<typeof IdentityPasswordResetEvent>
+  | z.infer<typeof IdentitySessionSignInFailedEvent>
+  | z.infer<typeof IdentitySessionSignedInEvent>
+  | z.infer<typeof IdentitySessionSignedOutEvent>
+  | z.infer<typeof IdentityWorkspaceBootstrappedEvent>
   | z.infer<typeof WorkspaceTeamCreatedEvent>
   | z.infer<typeof WorkspaceTeamRenamedEvent>
   | z.infer<typeof WorkspaceTeamArchivedEvent>
@@ -91,17 +106,14 @@ export type LatestEvent =
   | z.infer<typeof TeamTemplateAppliedEvent>
   | z.infer<typeof TeamMemberAddedEvent>
   | z.infer<typeof TeamMemberRemovedEvent>
-  | z.infer<typeof IdentityEmailVerifiedEvent>
-  | z.infer<typeof IdentityPasswordResetEvent>
-  | z.infer<typeof IdentitySessionSignInFailedEvent>
-  | z.infer<typeof IdentitySessionSignedInEvent>
-  | z.infer<typeof IdentitySessionSignedOutEvent>
-  | z.infer<typeof IdentityWorkspaceBootstrappedEvent>
   | z.infer<typeof TeamRoleChangedEvent>
   | z.infer<typeof TeamTagCreatedEvent>
   | z.infer<typeof TeamTagDeletedEvent>
   | z.infer<typeof TeamTagAssignedEvent>
   | z.infer<typeof TeamTagRemovedEvent>
+  | z.infer<typeof IdentityProviderChangedEvent>
+  | z.infer<typeof IdentityOidcSignedInEvent>
+  | z.infer<typeof IdentityOidcRefusedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEventV2>;

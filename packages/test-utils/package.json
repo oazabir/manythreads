@@ -11,9 +11,10 @@
   },
   "dependencies": {
     "@manythreads/kernel": "workspace:*",
+    "@manythreads/server": "workspace:*",
     "@manythreads/shared": "workspace:*",
-    "pg": "^8",
-    "@manythreads/server": "workspace:*"
+    "jose": "^6.2.12",
+    "pg": "^8"
   },
   "devDependencies": {
     "@types/pg": "^8"

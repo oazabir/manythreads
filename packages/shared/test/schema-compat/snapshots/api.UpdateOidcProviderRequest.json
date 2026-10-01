@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "clientId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "clientSecret": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "allowedDomains": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+      }
+    },
+    "tenantId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "issuer": {
+      "type": "string",
+      "maxLength": 2048,
+      "format": "uri"
+    }
+  },
+  "additionalProperties": false
+}

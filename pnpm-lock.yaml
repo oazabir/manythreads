@@ -131,6 +131,40 @@ importers:
         specifier: workspace:*
         version: link:../../shared
 
+  packages/plugins/identity-oidc:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
+      openid-client:
+        specifier: ^6.8.8
+        version: 6.8.8
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/server':
+        specifier: workspace:*
+        version: link:../../server
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
   packages/plugins/identity-password:
     dependencies:
       '@manythreads/sdk':
@@ -271,6 +305,9 @@ importers:
       '@manythreads/shared':
         specifier: workspace:*
         version: link:../shared
+      jose:
+        specifier: ^6.2.12
+        version: 6.2.12
       pg:
         specifier: ^8
         version: 8.23.1
