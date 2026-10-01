@@ -47,10 +47,14 @@ runs:
           echo "importing $img"
           docker save "$img" | gzip | remote 'gunzip | k3s ctr -n k8s.io images import -' | tail -n 2
         done
-        # keep only the 3 newest tags of server/web on the node
-        remote_sh <<'REMOTE'
-        for n in server web; do
-          k3s ctr -n k8s.io images ls -q | grep "majlis/$n:" | sort | head -n -3 | xargs -r k3s ctr -n k8s.io images rm || true
+        # Prune old server/web images, keeping the new tag and anything a pod currently uses (rollback target).
+        remote_sh "TAG=$TAG" <<'REMOTE'
+        used=$(kubectl get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' | sort -u)
+        k3s ctr -n k8s.io images ls -q | grep -E 'majlis/(server|web):' | while read -r ref; do
+          short=${ref#docker.io/}
+          case "$short" in *":$TAG") continue;; esac
+          echo "$used" | grep -qx "$short" && continue
+          k3s ctr -n k8s.io images rm "$ref" || true
         done
         REMOTE
 

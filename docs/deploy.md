@@ -9,7 +9,7 @@ using the repo secret `ROOT_PASSWORD` (via `sshpass -e`, never echoed).
 - `ops-rollout` does the same for any branch/sha without tagging.
 - The action: builds `majlis/server:<sha>` and `majlis/web:<sha>` (and `majlis/postgres:19` the first time,
   or with `rebuild-postgres`), ships them with `docker save | gzip | ssh 'gunzip | k3s ctr -n k8s.io images import -'`
-  (no registry; `imagePullPolicy: IfNotPresent`; the 3 newest server/web tags are kept on the node),
+  (no registry; `imagePullPolicy: IfNotPresent`; old server/web tags are pruned except the new one and those in use by pods),
   installs helm if missing and the CloudNativePG operator (`cnpg/cloudnative-pg` into `cnpg-system`),
   copies `deploy/helm/majlis` over, runs `helm upgrade --install majlis ... --wait --timeout 10m`
   and smoke-tests `https://manythreads.kahf.to/` (and `/healthz`, soft-fail).
@@ -35,7 +35,7 @@ nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`,
 | ops-logs | `component`, `lines` (1-2000) | logs (+previous) and describe of non-ready pods |
 
 ## Rollback
-Run `ops-rollback` (empty revision = previous). Old images stay on the node (3 newest tags kept).
+Run `ops-rollback` (empty revision = previous). Images in use by running pods stay on the node, so the previous revision normally still has its images.
 
 ## Temporary test triggers
 `ops-rollout.yml` and `ops-status.yml` carry a `push:` trigger on branch `claude/inspiring-turing-dzp82p`
