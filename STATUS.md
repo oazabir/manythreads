@@ -23,6 +23,12 @@ Screens: `docs/retro/screens/phase-1/`.
 - Dev-header actor (`packages/server/src/dev-actor.ts`) must be replaced by real auth in phase 2
   (keep a test-only auth bypass for screenshots, gated by env).
 
+## Phase 2 follow-ups (from schema review 2773304)
+- Wire MANYTHREADS_KMS_KEY into helm (generated Secret) and compose before the P2 deploy (prod throws without it).
+- KMS re-wrap job for key rotation (`previousKeys` exists, no job).
+- Last-owner protection (owner can delete the final owner row).
+- person_emails uniqueness: global lower(email) lets unverified rows squat; make unique among verified only / per workspace.
+
 ## Environment / blockers
 - SSH to the server is blocked from the sandbox; deploys run from GitHub Actions (secret ROOT_PASSWORD).
   Deploy rule (owner): pushing a version tag `v*` deploys latest `main`. Each phase exit: PR → main,

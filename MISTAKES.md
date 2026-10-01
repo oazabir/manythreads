@@ -18,3 +18,4 @@ Format: `- [phase/task] what went wrong → what to do instead`
 - [P1 exit] git push of tags is 403 from the sandbox proxy → tag via the release.yml workflow (dispatch with MCP actions_run_trigger).
 - [P2] The old product name was used everywhere → the name is manythreads; never write the old name.
 - [P2-10] UI copy mentioned build phases ("created in phase 3") → never expose plan/phase wording in product UI; reviewers check copy.
+- [P2 review] Definer/RLS checks only tested 'is admin' → also guard owner rows, same-workspace references (triggers), and terminal states (revoked, accepted) as system-only.
