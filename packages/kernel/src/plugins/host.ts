@@ -7,6 +7,7 @@ import type pg from 'pg';
 import { CapabilityRegistry } from '../capabilities/registry.ts';
 import { kernelMigrationSource, runMigrations, type MigrationSource } from '../db/migrate.ts';
 import { withSystem } from '../db/with-actor.ts';
+import { createDbKv } from '../storage/kv.ts';
 import { createMemoryKv, createPluginContext } from './context.ts';
 import { PluginError } from './errors.ts';
 import { ExtensionRegistries } from './registries.ts';
@@ -36,14 +37,20 @@ export interface LoadPluginsOptions {
   database?: {
     /** majlis_owner connection string: the role that owns tables and runs migrations. */
     ownerUrl: string;
-    /** majlis_app pool used to write `app.plugins` (default: the shared app pool). */
+    /** majlis_app pool (unused by the host itself; kept so callers can share one options object). */
     pool?: pg.Pool;
+    /** majlis_system pool used to write `app.plugins` and back the default storage (default: the shared system pool). */
+    systemPool?: pg.Pool;
     appPassword?: string | null;
     /** Migration sources ahead of the plugins (default: the kernel directory). */
     baseSources?: readonly MigrationSource[];
   };
   emit?: EmitEvent;
-  storage?: ScopedKv;
+  /**
+   * Storage handed to plugins: one instance, or a factory called with the plugin name. Default: `app.scoped_kv`
+   * (namespaced per plugin) when `database` is set, in-memory otherwise.
+   */
+  storage?: ScopedKv | ((plugin: string) => ScopedKv);
   capabilities?: CapabilityRegistry;
   registries?: ExtensionRegistries;
 }
@@ -219,16 +226,22 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
           );
         }
       },
-      database.pool ? { pool: database.pool } : {},
+      database.systemPool ? { pool: database.systemPool } : {},
     );
   }
 
   const registries = options.registries ?? new ExtensionRegistries();
-  const storage = options.storage ?? createMemoryKv();
+  const memoryKv = createMemoryKv();
+  const storageFor = (plugin: string): ScopedKv => {
+    const configured = options.storage;
+    if (typeof configured === 'function') return configured(plugin);
+    if (configured) return configured;
+    return database ? createDbKv({ plugin, ...(database.systemPool ? { pool: database.systemPool } : {}) }) : memoryKv;
+  };
   for (const p of ordered) {
     const ctx = createPluginContext(p.manifest, {
       registries,
-      storage,
+      storage: storageFor(p.manifest.name),
       ...(options.emit ? { emit: options.emit } : {}),
     });
     try {

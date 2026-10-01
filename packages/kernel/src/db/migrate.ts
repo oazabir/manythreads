@@ -20,6 +20,8 @@ export interface MigrateOptions {
    * exist). `null` leaves it alone. Defaults to MAJLIS_APP_PASSWORD, then the dev default 'majlis_app'.
    */
   appPassword?: string | null;
+  /** Same for `majlis_system`; defaults to MAJLIS_SYSTEM_PASSWORD, then the dev default 'majlis_system'. */
+  systemPassword?: string | null;
 }
 
 export interface MigrationFile {
@@ -36,6 +38,7 @@ export const kernelMigrationsDir = fileURLToPath(new URL('../../migrations/', im
 export const kernelMigrationSource: MigrationSource = { namespace: 'kernel', dir: kernelMigrationsDir };
 
 export const DEFAULT_APP_PASSWORD = 'majlis_app';
+export const DEFAULT_SYSTEM_PASSWORD = 'majlis_system';
 
 /** Arbitrary constant; one lock per database serialises concurrent server starts. */
 const ADVISORY_LOCK_KEY = 7_450_001;
@@ -129,18 +132,27 @@ export async function runMigrations(options: MigrateOptions): Promise<number> {
         count += 1;
       }
 
-      const password =
-        options.appPassword === undefined
-          ? (process.env['MAJLIS_APP_PASSWORD'] ?? DEFAULT_APP_PASSWORD)
-          : options.appPassword;
-      if (password !== null) {
+      const setPassword = async (role: string, password: string | null): Promise<void> => {
+        if (password === null) return;
         const alter = await client.query<{ sql: string }>(
-          `SELECT format('ALTER ROLE majlis_app WITH LOGIN PASSWORD %L', $1::text) AS sql
-           WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'majlis_app')`,
-          [password],
+          `SELECT format('ALTER ROLE %I WITH LOGIN PASSWORD %L', $1::text, $2::text) AS sql
+           WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`,
+          [role, password],
         );
         if (alter.rows[0]) await client.query(alter.rows[0].sql);
-      }
+      };
+      await setPassword(
+        'majlis_app',
+        options.appPassword === undefined
+          ? (process.env['MAJLIS_APP_PASSWORD'] ?? DEFAULT_APP_PASSWORD)
+          : options.appPassword,
+      );
+      await setPassword(
+        'majlis_system',
+        options.systemPassword === undefined
+          ? (process.env['MAJLIS_SYSTEM_PASSWORD'] ?? DEFAULT_SYSTEM_PASSWORD)
+          : options.systemPassword,
+      );
       return count;
     } finally {
       await client.query('SELECT pg_advisory_unlock($1)', [ADVISORY_LOCK_KEY]).catch(() => undefined);

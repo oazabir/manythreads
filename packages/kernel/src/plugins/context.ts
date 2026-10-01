@@ -1,3 +1,4 @@
+import { guardPluginTx } from '@majlis/sdk';
 import type {
   CapabilityHandler,
   EmitEvent,
@@ -48,7 +49,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
             { plugin: name },
           );
         }
-        registries.eventSubscriptions.add(name, { type, handler });
+        registries.eventSubscriptions.add(name, { type, handler: (event, tx) => handler(event, guardPluginTx(tx)) });
       },
       async emit(tx: PluginTx, event: PluginEvent) {
         use('event.emit');
@@ -59,17 +60,17 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           );
         }
         if (!deps.emit) throw new PluginError(`Plugin "${name}": no event emitter is wired into the host`, { plugin: name });
-        await deps.emit(tx, event);
+        await deps.emit(guardPluginTx(tx), event);
       },
     },
     hooks: {
       prePersist(hook) {
         use('hook.pre_persist');
-        registries.prePersist.add(name, hook);
+        registries.prePersist.add(name, (input, tx) => hook(input, guardPluginTx(tx)));
       },
       preEgress(hook) {
         use('hook.pre_egress');
-        registries.preEgress.add(name, hook);
+        registries.preEgress.add(name, (input, tx) => hook(input, guardPluginTx(tx)));
       },
     },
     providers: {
@@ -81,7 +82,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     commands: {
       register(definition) {
         use('command.register');
-        registries.commands.add(name, definition);
+        registries.commands.add(name, { ...definition, run: (args, tx) => definition.run(args, guardPluginTx(tx)) });
       },
     },
     triggers: {
@@ -134,12 +135,16 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
             { plugin: name },
           );
         }
-        registries.capabilityHandlers.set(capability, { plugin: name, handler });
+        registries.capabilityHandlers.set(capability, { plugin: name, handler: (input, tx) => handler(input, guardPluginTx(tx)) });
       },
     },
     http: {
       route(definition) {
-        registries.httpRoutes.add(name, { ...definition, fullPath: mount(definition.path) });
+        registries.httpRoutes.add(name, {
+          ...definition,
+          handler: (request, tx) => definition.handler(request, guardPluginTx(tx)),
+          fullPath: mount(definition.path),
+        });
       },
     },
     storage: deps.storage,

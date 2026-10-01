@@ -1,6 +1,6 @@
 import type { ActorId, RunId, WorkspaceId } from '@majlis/shared';
 import type pg from 'pg';
-import { getAppPool } from './pool.ts';
+import { getAppPool, getSystemPool } from './pool.ts';
 
 export type ActorKind = 'person' | 'bot' | 'system';
 
@@ -32,7 +32,7 @@ export function systemActor(workspaceId: WorkspaceId = NIL_UUID as WorkspaceId):
 }
 
 export interface WithActorOptions {
-  /** Defaults to the shared majlis_app pool. */
+  /** Defaults to the shared majlis_app pool, or the majlis_system pool for the system actor. */
   pool?: pg.Pool;
 }
 
@@ -45,7 +45,7 @@ export async function withActor<T>(
   fn: (tx: Tx) => Promise<T>,
   options: WithActorOptions = {},
 ): Promise<T> {
-  const client = await (options.pool ?? getAppPool()).connect();
+  const client = await (options.pool ?? (actor.kind === 'system' ? getSystemPool() : getAppPool())).connect();
   let released = false;
   try {
     await client.query('BEGIN');
@@ -77,7 +77,10 @@ export async function withActor<T>(
   }
 }
 
-/** `withActor` as the system actor (bypasses team-scoped RLS through app.is_system()). */
+/**
+ * `withActor` as the system actor. The pool must log in as majlis_system (the default): app.is_system() is true only
+ * for that Postgres role, so on any other pool the transaction is an ordinary one that just carries the system GUCs.
+ */
 export function withSystem<T>(
   fn: (tx: Tx) => Promise<T>,
   options: WithActorOptions & { workspaceId?: WorkspaceId } = {},

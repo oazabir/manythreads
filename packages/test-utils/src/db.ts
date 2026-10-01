@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   DEFAULT_APP_PASSWORD,
+  DEFAULT_SYSTEM_PASSWORD,
   kernelMigrationSource,
   runMigrations,
   type MigrationSource,
@@ -20,6 +21,8 @@ export interface TestDatabase {
   ownerUrl: string;
   /** majlis_app connection string to the temp database. */
   appUrl: string;
+  /** majlis_system connection string to the temp database (the only login for which app.is_system() is true). */
+  systemUrl: string;
   /** Files applied by the initial migrate (0 when `migrate: false`). */
   applied: number;
 }
@@ -66,8 +69,9 @@ export function migrateTestDatabase(
   db: Pick<TestDatabase, 'ownerUrl'>,
   sources: readonly MigrationSource[] = [kernelMigrationSource],
   appPassword: string | null = DEFAULT_APP_PASSWORD,
+  systemPassword: string | null = DEFAULT_SYSTEM_PASSWORD,
 ): Promise<number> {
-  return withClusterLock(() => runMigrations({ connectionString: db.ownerUrl, sources, appPassword }));
+  return withClusterLock(() => runMigrations({ connectionString: db.ownerUrl, sources, appPassword, systemPassword }));
 }
 
 /** Creates a fresh `majlis_test_*` database and (by default) migrates it. Drop it with dropTestDatabase. */
@@ -76,6 +80,7 @@ export async function createTestDatabase(options: CreateTestDatabaseOptions = {}
   const name = `majlis_test_${randomBytes(6).toString('hex')}`;
   const ownerUrl = withDatabase(adminUrl, name);
   const appUrl = withDatabase(adminUrl, name, { name: 'majlis_app', password: DEFAULT_APP_PASSWORD });
+  const systemUrl = withDatabase(adminUrl, name, { name: 'majlis_system', password: DEFAULT_SYSTEM_PASSWORD });
   const admin = new pg.Client({ connectionString: adminUrl });
   await admin.connect();
   try {
@@ -83,7 +88,7 @@ export async function createTestDatabase(options: CreateTestDatabaseOptions = {}
   } finally {
     await admin.end();
   }
-  const db: TestDatabase = { name, ownerUrl, appUrl, applied: 0 };
+  const db: TestDatabase = { name, ownerUrl, appUrl, systemUrl, applied: 0 };
   if (options.migrate !== false) {
     db.applied = await migrateTestDatabase(db, [kernelMigrationSource, ...(options.sources ?? [])]);
   }

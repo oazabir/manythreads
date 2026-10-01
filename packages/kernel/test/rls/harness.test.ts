@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createAppPool, withActor, withSystem, type Actor } from '../../src/index.ts';
+import { createAppPool, createSystemPool, withActor, withSystem, type Actor } from '../../src/index.ts';
 import { ActorId, WorkspaceId } from '@majlis/shared';
 import {
   createTestDatabase,
@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 let db: TestDatabase;
 let owner: pg.Client;
 let appPool: pg.Pool;
+let sysPool: pg.Pool;
 
 const workspaceId = WorkspaceId.parse(randomUUID());
 const person: Actor = { kind: 'person', id: ActorId.parse(randomUUID()), workspaceId };
@@ -22,10 +23,12 @@ beforeAll(async () => {
   owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
   appPool = createAppPool(db.appUrl, 4);
+  sysPool = createSystemPool(db.systemUrl, 4);
 }, 60_000);
 
 afterAll(async () => {
   await appPool?.end();
+  await sysPool?.end();
   await owner?.end();
   if (db) await dropTestDatabase(db);
 }, 60_000);
@@ -66,11 +69,14 @@ describe('RLS harness', () => {
     }
   });
 
-  it('majlis_app cannot bypass RLS', async () => {
-    const r = await owner.query<{ rolbypassrls: boolean; rolsuper: boolean }>(
-      "SELECT rolbypassrls, rolsuper FROM pg_roles WHERE rolname = 'majlis_app'",
+  it('majlis_app and majlis_system cannot bypass RLS', async () => {
+    const r = await owner.query<{ rolname: string; rolbypassrls: boolean; rolsuper: boolean }>(
+      "SELECT rolname, rolbypassrls, rolsuper FROM pg_roles WHERE rolname IN ('majlis_app', 'majlis_system') ORDER BY rolname",
     );
-    expect(r.rows[0]).toEqual({ rolbypassrls: false, rolsuper: false });
+    expect(r.rows).toEqual([
+      { rolname: 'majlis_app', rolbypassrls: false, rolsuper: false },
+      { rolname: 'majlis_system', rolbypassrls: false, rolsuper: false },
+    ]);
   });
 });
 
@@ -86,7 +92,7 @@ describe('cross-team isolation', () => {
            VALUES ($1, 'message', $2, 'task', $3, 'relates')`,
           [teamId, randomUUID(), randomUUID()],
         ),
-      { pool: appPool },
+      { pool: sysPool },
     );
 
   beforeAll(async () => {
@@ -101,7 +107,7 @@ describe('cross-team isolation', () => {
         const r = await tx.query<{ n: string }>(`SELECT count(*)::text AS n FROM entity_links ${where}`, values);
         return Number(r.rows[0]?.n);
       },
-      { pool: appPool },
+      { pool: actor.kind === 'system' ? sysPool : appPool },
     );
 
   it('the system actor sees both teams', async () => {

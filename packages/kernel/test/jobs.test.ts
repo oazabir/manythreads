@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createAppPool, withSystem } from '../src/db/index.ts';
+import { createSystemPool, withSystem } from '../src/db/index.ts';
 import { cronMatches, enqueue, latestSlot, parseCron, reapJobs, schedule, startWorker, tickSchedules } from '../src/jobs/index.ts';
 
 let db: TestDatabase;
@@ -11,10 +11,10 @@ let owner: pg.Pool;
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  pool = createAppPool(db.appUrl, 24);
+  pool = createSystemPool(db.systemUrl, 24);
   owner = new pg.Pool({ connectionString: db.ownerUrl, max: 2 });
   await owner.query(`CREATE TABLE public.job_effects (job_id uuid PRIMARY KEY, n int NOT NULL DEFAULT 1, worker text)`);
-  await owner.query(`GRANT ALL ON public.job_effects TO majlis_app`);
+  await owner.query(`GRANT ALL ON public.job_effects TO majlis_app, majlis_system`);
 }, 60_000);
 
 afterAll(async () => {

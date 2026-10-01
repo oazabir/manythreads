@@ -1,6 +1,5 @@
 import type pg from 'pg';
-import { toJob, getAppPool, getOneOrCreate, withSystem, type Tx, type JobRow } from '../db/index.ts';
-import { runAsSystem } from '../identity/index.ts';
+import { toJob, getSystemPool, withSystem, type Tx, type JobRow } from '../db/index.ts';
 import { backoffMs, listen, sleepUnlessWoken } from '../outbox/listen.ts';
 import { latestSlot, parseCron } from './cron.ts';
 
@@ -15,9 +14,9 @@ export interface EnqueueOptions {
 }
 
 /**
- * Adds a job in the caller's transaction (it becomes visible, and workers are notified, at commit). With a
- * `dedupeKey` the partial unique index decides, through the one getOneOrCreate helper. `jobs` is system-only, so
- * the write runs under runAsSystem for the duration of the statement.
+ * Adds a job in the caller's transaction (it becomes visible, and workers are notified, at commit). `jobs` is
+ * system-only, so the insert goes through the SECURITY DEFINER function app.enqueue_job, which does a fixed
+ * get-or-create on the dedupe index and never elevates the caller's transaction.
  */
 export async function enqueue(
   tx: Tx,
@@ -25,29 +24,13 @@ export async function enqueue(
   payload: unknown,
   options: EnqueueOptions = {},
 ): Promise<Job> {
-  return runAsSystem(tx, async () => {
-    const values: Record<string, unknown> = { queue, payload: JSON.stringify(payload ?? {}) };
-    if (options.runAt) values['run_at'] = options.runAt;
-    let row: JobRow;
-    if (options.dedupeKey !== undefined) {
-      values['dedupe_key'] = options.dedupeKey;
-      row = await getOneOrCreate<JobRow>(tx, {
-        table: 'app.jobs',
-        values,
-        conflict: ['queue', 'dedupe_key'],
-        conflictWhere: "state IN ('ready', 'running')",
-      });
-    } else {
-      const cols = Object.keys(values);
-      const res = await tx.query<JobRow>(
-        `INSERT INTO app.jobs (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING *`,
-        Object.values(values),
-      );
-      row = res.rows[0] as JobRow;
-    }
-    await tx.query(`SELECT pg_notify('majlis_jobs', $1)`, [queue]);
-    return toJob(row);
-  });
+  const res = await tx.query<JobRow>('SELECT * FROM app.enqueue_job($1, $2::jsonb, $3, $4)', [
+    queue,
+    JSON.stringify(payload ?? {}),
+    options.runAt ?? null,
+    options.dedupeKey ?? null,
+  ]);
+  return toJob(res.rows[0] as JobRow);
 }
 
 export interface JobContext {
@@ -73,6 +56,7 @@ export interface WorkerOptions {
   maxAttempts?: number;
   backoffBaseMs?: number;
   backoffCapMs?: number;
+  /** Must log in as majlis_system (default: the shared system pool). */
   pool?: pg.Pool;
 }
 
@@ -160,7 +144,7 @@ export function startWorker(options: WorkerOptions): Worker {
     backoffCapMs = 300_000,
   } = options;
   const reaperMs = options.reaperMs ?? Math.max(50, Math.floor(leaseMs / 2));
-  const pool = options.pool ?? getAppPool();
+  const pool = options.pool ?? getSystemPool();
   const poolOpt = { pool };
   const signal: { wake: (() => void) | null } = { wake: null };
   const held = new Map<string, number>(); // job id -> attempt claimed
@@ -296,14 +280,12 @@ export async function schedule(
   payload: unknown = {},
 ): Promise<void> {
   parseCron(cronExpr); // reject bad expressions at write time
-  await runAsSystem(tx, () =>
-    tx.query(
-      `INSERT INTO app.job_schedules (name, cron_expr, queue, payload) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (name) DO UPDATE SET cron_expr = EXCLUDED.cron_expr, queue = EXCLUDED.queue,
-         payload = EXCLUDED.payload, enabled = true`,
-      [name, cronExpr, queue, JSON.stringify(payload ?? {})],
-    ),
-  );
+  await tx.query('SELECT app.upsert_job_schedule($1, $2, $3, $4::jsonb)', [
+    name,
+    cronExpr,
+    queue,
+    JSON.stringify(payload ?? {}),
+  ]);
 }
 
 /**

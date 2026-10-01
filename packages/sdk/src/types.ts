@@ -1,4 +1,5 @@
 import type { ExtensionPoint, PluginManifest } from '@majlis/shared';
+import type { ZodType } from 'zod';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -100,6 +101,20 @@ export interface HttpRouteDefinition {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   /** Relative to the plugin's mount point (`/plugins/<name>`), starts with `/`. */
   path: string;
+  /** Zod schemas the server validates with; a failure is a 400 `validation_failed` with the field path. Use `z.strictObject` for bodies. */
+  schema?: {
+    body?: ZodType;
+    query?: ZodType;
+    /** Shape of a 200 response; a handler that returns something else is a 500 (a bug), never sent to the client. */
+    response?: ZodType;
+  };
+  /** Per-key limit for this route, counted in the server process (per replica). Keyed by actor, else client IP. */
+  rateLimit?: { limit: number; windowMs: number };
+  /**
+   * Reachable without an actor (health-like or test routes). Default false: until phase 2 adds sign-in only
+   * dev-header actors (NODE_ENV=test / MAJLIS_DEV_AUTH=1) can call non-public routes.
+   */
+  public?: boolean;
   handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 

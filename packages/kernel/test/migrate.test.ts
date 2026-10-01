@@ -70,6 +70,17 @@ describe('migration runner', () => {
     }
   });
 
+  it('sets the majlis_system password and the role is the only system identity', async () => {
+    const sys = new pg.Client({ connectionString: db.systemUrl });
+    await sys.connect();
+    try {
+      const r = await sys.query('SELECT current_user AS u, app.is_system() AS s');
+      expect(r.rows[0]).toEqual({ u: 'majlis_system', s: true });
+    } finally {
+      await sys.end();
+    }
+  });
+
   it('namespaces ids, so a plugin directory can reuse file numbers', async () => {
     const dir = await tempDir({ '0001_things.sql': 'CREATE TABLE public.mig_ns_probe (id int);' });
     const options = {

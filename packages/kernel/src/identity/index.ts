@@ -39,17 +39,3 @@ export async function ensureActor(tx: Tx, input: EnsureActorInput): Promise<Acto
   });
   return { kind: input.kind, id: row.id as ActorId, workspaceId: input.workspaceId };
 }
-
-/**
- * Runs `fn` with `app.actor_kind = 'system'` for this transaction only, then restores the previous value.
- * For kernel code that must touch a system-only table (jobs) on behalf of an ordinary actor's transaction.
- */
-export async function runAsSystem<T>(tx: Tx, fn: () => Promise<T>): Promise<T> {
-  const prev = await tx.query<{ v: string }>(`SELECT coalesce(current_setting('app.actor_kind', true), '') AS v`);
-  await tx.query(`SELECT set_config('app.actor_kind', 'system', true)`);
-  try {
-    return await fn();
-  } finally {
-    await tx.query(`SELECT set_config('app.actor_kind', $1, true)`, [prev.rows[0]?.v ?? '']);
-  }
-}

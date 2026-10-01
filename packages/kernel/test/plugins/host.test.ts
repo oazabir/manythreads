@@ -5,7 +5,7 @@ import { ActorId, TeamId, WorkspaceId } from '@majlis/shared';
 import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase } from '@majlis/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createAppPool, loadPlugins, withActor, withSystem, type PluginSource } from '../../src/index.ts';
+import { createAppPool, createSystemPool, loadPlugins, withActor, withSystem, type PluginSource } from '../../src/index.ts';
 
 const pluginsDir = fileURLToPath(new URL('../../../plugins/', import.meta.url));
 const helloDir = fileURLToPath(new URL('../../../plugins/example-hello', import.meta.url));
@@ -130,20 +130,23 @@ describe('plugin host: example-hello against Postgres', () => {
   let db: TestDatabase;
   let owner: pg.Client;
   let pool: pg.Pool;
+  let sys: pg.Pool;
   beforeAll(async () => {
     db = await createTestDatabase();
     owner = new pg.Client({ connectionString: db.ownerUrl });
     await owner.connect();
     pool = createAppPool(db.appUrl, 4);
+    sys = createSystemPool(db.systemUrl, 4);
   }, 60_000);
   afterAll(async () => {
     await pool?.end();
+    await sys?.end();
     await owner?.end();
     if (db) await dropTestDatabase(db);
   }, 60_000);
 
   it('applies the plugin migration, records the plugin, passes the RLS harness, and runs the subscriber', async () => {
-    const options = { plugins: [{ dir: helloDir }], database: { ownerUrl: db.ownerUrl, pool } };
+    const options = { plugins: [{ dir: helloDir }], database: { ownerUrl: db.ownerUrl, pool, systemPool: sys } };
     const host = await loadPlugins(options);
 
     const applied = await owner.query<{ id: string }>("SELECT id FROM app.schema_migrations WHERE id LIKE 'example-hello/%'");
@@ -165,9 +168,9 @@ describe('plugin host: example-hello against Postgres', () => {
           { type: 'channel.message.posted', schemaVersion: 1, teamId, workspaceId },
           tx,
         ),
-      { pool },
+      { pool: sys },
     );
-    const rows = await withSystem((tx) => tx.query('SELECT team_id FROM app.hello_greetings'), { pool });
+    const rows = await withSystem((tx) => tx.query('SELECT team_id FROM app.hello_greetings'), { pool: sys });
     expect(rows.rows).toEqual([{ team_id: teamId }]);
 
     // RLS: a non-system actor that is not a member of the team sees nothing.
@@ -180,7 +183,7 @@ describe('plugin host: example-hello against Postgres', () => {
     await expect(
       loadPlugins({
         plugins: [{ ...fake('nomig', [], { migrations: 'nope' }), dir: '/tmp' } as PluginSource],
-        database: { ownerUrl: db.ownerUrl, pool },
+        database: { ownerUrl: db.ownerUrl, pool, systemPool: sys },
       }),
     ).rejects.toThrow(/Plugin "nomig".*"nope"/);
   });

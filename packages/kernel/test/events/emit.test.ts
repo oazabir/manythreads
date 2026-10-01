@@ -3,35 +3,38 @@ import { ActorId, parseEvent, WorkspaceId } from '@majlis/shared';
 import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createAppPool, withActor, withSystem } from '../../src/db/index.ts';
+import { createAppPool, createSystemPool, withActor, withSystem } from '../../src/db/index.ts';
 import { emit, eventToRaw, subscribe } from '../../src/events/index.ts';
 import { ensureActor, personActor } from '../../src/identity/index.ts';
 
 let db: TestDatabase;
 let pool: pg.Pool;
+let sys: pg.Pool;
 const workspaceId = WorkspaceId.parse(randomUUID());
 
 beforeAll(async () => {
   db = await createTestDatabase();
   pool = createAppPool(db.appUrl, 4);
+  sys = createSystemPool(db.systemUrl, 4);
   await withSystem(
     async (tx) => {
       await subscribe(tx, 'sub-a', 'kernel.test.pinged');
       await subscribe(tx, 'sub-b', 'kernel.test.pinged');
       await subscribe(tx, 'sub-c', 'channel.message.posted');
     },
-    { pool },
+    { pool: sys },
   );
 }, 60_000);
 
 afterAll(async () => {
   await pool?.end();
+  await sys?.end();
   if (db) await dropTestDatabase(db);
 }, 60_000);
 
 const count = (table: string): Promise<number> =>
   withSystem(async (tx) => Number((await tx.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`)).rows[0]?.n), {
-    pool,
+    pool: sys,
   });
 
 describe('ensureActor', () => {
@@ -42,7 +45,7 @@ describe('ensureActor', () => {
         await ensureActor(tx, { kind: 'person', workspaceId, refId }),
         await ensureActor(tx, { kind: 'person', workspaceId, refId }),
       ],
-      { pool },
+      { pool: sys },
     );
     expect(a.id).toBe(b.id);
     expect(a.kind).toBe('person');
@@ -65,7 +68,7 @@ describe('emit', () => {
         ob: (await tx.query('SELECT subscriber FROM app.outbox WHERE event_id = $1 ORDER BY subscriber', [result.record.id]))
           .rows,
       }),
-      { pool },
+      { pool: sys },
     );
     expect(rows.ev).toHaveLength(1);
     expect(rows.ob.map((r) => r["subscriber"])).toEqual(['sub-a', 'sub-b']);

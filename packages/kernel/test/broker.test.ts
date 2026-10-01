@@ -6,7 +6,7 @@ import {
   CapabilityBroker,
   CapabilityError,
   CapabilityRegistry,
-  createAppPool,
+  createSystemPool,
   createDbGrantSource,
   createEventAuditSink,
   createGrant,
@@ -204,10 +204,10 @@ describe('capability registry and grants', () => {
 
 describe('broker with Postgres grants and the event audit sink', () => {
   let db: TestDatabase;
-  let pool: ReturnType<typeof createAppPool>;
+  let pool: ReturnType<typeof createSystemPool>;
   beforeAll(async () => {
     db = await createTestDatabase();
-    pool = createAppPool(db.appUrl, 4);
+    pool = createSystemPool(db.systemUrl, 4);
   }, 60_000);
   afterAll(async () => {
     await pool?.end();

@@ -1,6 +1,6 @@
 import { upcast, type LatestEvent } from '@majlis/shared';
 import type pg from 'pg';
-import { getAppPool, withSystem, type Tx } from '../db/index.ts';
+import { getSystemPool, withSystem, type Tx } from '../db/index.ts';
 import { eventToRaw } from '../events/index.ts';
 import { backoffMs, listen, sleepUnlessWoken } from './listen.ts';
 
@@ -110,7 +110,7 @@ export function startConsumer(options: ConsumerOptions): Consumer {
     backoffBaseMs = 1000,
     backoffCapMs = 300_000,
   } = options;
-  const pool = options.pool ?? getAppPool();
+  const pool = options.pool ?? getSystemPool();
   const poolOpt = { pool };
   const signal: { wake: (() => void) | null } = { wake: null };
   let running = true;

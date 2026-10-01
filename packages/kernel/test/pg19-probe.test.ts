@@ -1,4 +1,4 @@
-import { createAppPool, getOneOrCreate, resetDoSelectProbe, supportsDoSelect, withSystem } from '../src/index.ts';
+import { createSystemPool, getOneOrCreate, resetDoSelectProbe, supportsDoSelect, withSystem } from '../src/index.ts';
 import type { Tx } from '../src/index.ts';
 import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
 import pg from 'pg';
@@ -12,7 +12,7 @@ beforeAll(async () => {
   db = await createTestDatabase();
   owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
-  appPool = createAppPool(db.appUrl, 4);
+  appPool = createSystemPool(db.systemUrl, 4);
 }, 60_000);
 
 afterAll(async () => {

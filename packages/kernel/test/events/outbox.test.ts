@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createAppPool, withSystem } from '../../src/db/index.ts';
+import { createSystemPool, withSystem } from '../../src/db/index.ts';
 import { claimOutbox, processedOnce, startConsumer } from '../../src/outbox/index.ts';
 
 let db: TestDatabase;
@@ -25,7 +25,7 @@ async function seed(subscriber: string, n: number): Promise<void> {
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  pool = createAppPool(db.appUrl, 12);
+  pool = createSystemPool(db.systemUrl, 12);
   owner = new pg.Pool({ connectionString: db.ownerUrl, max: 2 });
 }, 60_000);
 

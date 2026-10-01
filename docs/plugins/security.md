@@ -1,0 +1,32 @@
+# Plugin database security
+
+## What plugins can and cannot do
+
+- Plugins never get a pool. They receive a `PluginTx`: queries inside one actor transaction, nothing else.
+- The **system** identity is a Postgres role (`majlis_system`). `app.is_system()` is true only for connections that log in
+  as that role, which only kernel code (`withSystem`, workers, outbox consumers) holds. A plugin transaction runs as
+  `majlis_app`; it cannot `SET ROLE majlis_system`, and the `app.actor_kind` setting grants nothing.
+- Plugin tables are created by the plugin's own migrations with RLS, as for kernel tables. Grant `majlis_app` what it needs;
+  `majlis_system` gets the standard privileges on every table in schema `app` automatically.
+- To write system-only kernel tables from a plugin transaction, use the kernel API (`emit`, `enqueue`), which call narrow
+  SECURITY DEFINER functions (`app.enqueue_outbox`, `app.enqueue_job`).
+
+## Known gap: person/bot identity is still a setting
+
+`app.actor()`, `app.workspace_id()` and `app.run_id()` read session settings that `withActor` sets. Code that can run
+arbitrary SQL in the transaction can change them with `set_config` and act as another person or bot. In-process kernel code
+is trusted; plugin code is not.
+
+## Stopgap: statement filter (not a sandbox)
+
+`@majlis/sdk` exports `guardPluginTx(tx)` and `assertSafePluginSql(text)`. The plugin context wraps every `tx` it hands to
+plugin handlers (event subscribers, hooks, commands, HTTP routes, capability handlers, `emit`). A statement is rejected with
+`ForbiddenPluginSqlError` when, after removing `--` and `/* */` comments and ignoring case, it contains:
+
+- `set_config(...)` anywhere;
+- a statement starting with `SET`, `RESET`, `DO` or `EXECUTE` (including after a `;`), `SET ROLE`, `SET SESSION AUTHORIZATION`;
+- `ALTER ROLE|USER|DATABASE|SYSTEM`.
+
+This stops the obvious spoofing paths and is easy to bypass (for example through a function that calls `set_config`
+internally). The durable fix is a dedicated plugin database role with a signed, non-settable identity; until then treat
+installed plugins as trusted code.
