@@ -81,6 +81,10 @@ runs:
         # The server may crash while packages/server/src/main.ts is a stub; that must not mask the web rollout.
         remote_sh "TAG=$TAG" <<'REMOTE' || rc=$?
         # Retire the test app once Majlis takes over the domain (same host => same ingress rule would clash).
+        # Idempotent: extensions must be created by a superuser (the owner role cannot create pgvector). Covers
+        # clusters initialised before postInitApplicationSQL; no-op on first install (no pod yet) or when present.
+        kubectl exec -n manythreads majlis-pg-1 -c postgres -- psql -U postgres -d majlis -v ON_ERROR_STOP=1 \
+          -c 'CREATE EXTENSION IF NOT EXISTS vector' -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' || true
         kubectl delete ingress/manythreads deploy/whoami svc/whoami -n manythreads --ignore-not-found
         helm upgrade --install majlis /root/majlis-chart/deploy/helm/majlis -n manythreads \
           --set imageTag="$TAG" --wait --timeout 10m
