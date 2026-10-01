@@ -95,6 +95,6 @@ Bots (50). The Bots header opens the team roster; a bot's name opens its convers
 ## Environment notes
 - Local docker daemon: start with `(dockerd >/tmp/dockerd.log 2>&1 &)` if `docker info` fails.
 - Deploy target: k3s at manythreads.kahf.to via GitHub Actions only (SSH not reachable from the sandbox).
-  Phase exit: merge PR to main, then dispatch `release.yml` (input phase=N) via `mcp__github__actions_run_trigger`:
+  Phase exit: merge PR to main, with title "Phase N · <name>" — `release.yml` runs on that merge:
   it tags `phase-N` + `v0.N.0` and deploys latest main (the sandbox cannot push tags: 403). `ops-*` workflows; `docs/deploy.md`.
   Read Actions results with GitHub MCP tools (`mcp__github__actions_list`, `get_job_logs`, tail ≤ 150).

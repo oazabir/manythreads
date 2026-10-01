@@ -1,13 +1,17 @@
 name: release
 # Phase exit: tag main as phase-N and v0.N.0, then deploy latest main.
+# Runs automatically when a push to main has a head commit titled "Phase N · ..." (the phase PR
+# merge commit), or manually via workflow_dispatch.
 # Exists because the coding sandbox cannot push tags; tags pushed with GITHUB_TOKEN
 # do not trigger deploy.yml, so this workflow deploys itself.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       phase:
         description: Phase number (e.g. 1)
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -22,20 +26,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Validate input
-        env: { PHASE: "${{ inputs.phase }}" }
-        run: '[[ "$PHASE" =~ ^[0-9]{1,2}$ ]] || { echo "phase must be a number"; exit 1; }'
-      - uses: actions/checkout@v4
+      - name: Resolve phase
+        id: phase
+        env:
+          INPUT: ${{ inputs.phase }}
+          TITLE: ${{ github.event.head_commit.message }}
+        run: |
+          P="$INPUT"
+          if [ -z "$P" ]; then P=$(printf '%s\n' "$TITLE" | head -1 | sed -nE 's/^Phase ([0-9]{1,2}) ·.*/\1/p'); fi
+          if [[ "$P" =~ ^[0-9]{1,2}$ ]]; then echo "phase=$P" >> "$GITHUB_OUTPUT"; else echo "No phase release for this push."; fi
+      - if: steps.phase.outputs.phase != ''
+        uses: actions/checkout@v4
         with: { ref: main, fetch-depth: 0 }
       - name: Tag main
-        env: { PHASE: "${{ inputs.phase }}" }
+        if: steps.phase.outputs.phase != ''
+        env: { PHASE: "${{ steps.phase.outputs.phase }}" }
         run: |
           git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
           for t in "phase-$PHASE" "v0.$PHASE.0"; do
             if git rev-parse -q --verify "refs/tags/$t" >/dev/null; then echo "$t exists, keeping it"; continue; fi
             git tag -a "$t" -m "Phase $PHASE" && git push -q origin "refs/tags/$t"
           done
-      - uses: ./.github/actions/deploy-majlis
+      - if: steps.phase.outputs.phase != ''
+        uses: ./.github/actions/deploy-majlis
         with:
           label: main
           ssh-password: ${{ secrets.ROOT_PASSWORD }}
