@@ -1,6 +1,6 @@
 # manythreads — CLAUDE.md (AGENTS.md is a symlink to this file)
 
-**Naming (owner rule): the product is `manythreads`. Never write the old name ("manythreads") anywhere — code, packages
+**Naming (owner rule): the product is `manythreads`. Never write the previous product name anywhere (the 6-letter Arabic word for "council") — code, packages
 (`@manythreads/*`), env vars (`MANYTHREADS_*`), DB roles (`manythreads_*`), docs, UI copy, commits.**
 
 manythreads is a self-hosted team collaboration platform (channels, threads, bots, Brain).
