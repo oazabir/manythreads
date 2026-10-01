@@ -91,6 +91,10 @@ after they are applied (the runner checks checksums and stops the start naming t
 - `uuid PRIMARY KEY DEFAULT uuidv7()`, `timestamptz`, `text` (never `varchar`), enums as `text` + `CHECK`, every FK indexed.
 - Every team- or person-scoped table: `ENABLE` **and** `FORCE ROW LEVEL SECURITY` plus a policy, otherwise `pnpm test:rls`
   fails and names the table. A truly global table must be on the `global_tables` allowlist with a comment.
+- Every such table also carries `COMMENT ON TABLE app.x IS 'rls: team|person|workspace|system|global'` (free text may
+  follow the kind); `pnpm test:rls` reports a missing or unknown kind. Policies go through the helpers of schema `app`
+  (`is_team_member`, `team_role`, `is_workspace_admin`, `can(type, id, permission)`, `can_in_team(team_id, permission)`);
+  a policy cannot look its own new row up by id, so write policies judge the row's `team_id` (`can_in_team`).
 - `GRANT` `majlis_app` only what requests need.
 
 ```sql
@@ -98,6 +102,7 @@ CREATE TABLE app.tasks_task (id uuid PRIMARY KEY DEFAULT uuidv7(), team_id uuid 
 CREATE INDEX tasks_task_team ON app.tasks_task (team_id);
 ALTER TABLE app.tasks_task ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.tasks_task FORCE ROW LEVEL SECURITY;
+COMMENT ON TABLE app.tasks_task IS 'rls: team — T: tasks of one team.';
 CREATE POLICY tasks_task_team ON app.tasks_task
   USING (app.is_team_member(team_id)) WITH CHECK (app.is_team_member(team_id));
 GRANT SELECT, INSERT, UPDATE ON app.tasks_task TO majlis_app;

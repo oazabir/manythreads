@@ -54,7 +54,7 @@ describe('server against a fresh database with the test plugin', () => {
     const anon = { kind: 'person', id: nil, workspaceId: nil } as never;
     await readAs(anon, async (tx) => {
       const tables = await tx.query<{ relname: string }>(
-        "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND c.relkind = 'r' AND c.relrowsecurity",
+        "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'app' AND c.relkind = 'r' AND c.relrowsecurity AND has_table_privilege(c.oid, 'SELECT')",
       );
       expect(tables.rows.length).toBeGreaterThan(0);
       for (const { relname } of tables.rows) {

@@ -1,8 +1,7 @@
 import type { Actor } from '@majlis/kernel';
-import type { ActorId, PersonId, TeamId, WorkspaceId } from '@majlis/shared';
+import type { ActorId, PersonId, TeamId, TeamRole, WorkspaceId, WorkspaceRole } from '@majlis/shared';
 
-export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
-export type TeamRole = 'lead' | 'member';
+export type { TeamRole, WorkspaceRole };
 export type TeamName = 'Engineering' | 'Customer support' | 'Marketing';
 
 export interface PersonaTeamMembership {
@@ -12,7 +11,7 @@ export interface PersonaTeamMembership {
   tags: string[];
 }
 
-/** One of the seven personas of PLAN.md section 4. Roles are data only until phase 2 adds membership tables. */
+/** One of the seven personas of PLAN.md section 4. `createPersonas(db)` (create-personas.ts) writes them to a database. */
 export interface Persona {
   key: 'omar' | 'nadia' | 'rafi' | 'sameera' | 'tariq' | 'priya' | 'lena';
   name: string;

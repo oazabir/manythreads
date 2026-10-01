@@ -4,7 +4,9 @@ import { ActorId, WorkspaceId } from '@majlis/shared';
 import {
   createTestDatabase,
   dropTestDatabase,
+  explainRlsViolations,
   findRlsViolations,
+  parseRlsComment,
   type TestDatabase,
 } from '@majlis/test-utils';
 import pg from 'pg';
@@ -39,9 +41,74 @@ describe('RLS harness', () => {
     expect(violations, `tables without RLS: ${violations.join(', ')}`).toEqual([]);
   });
 
-  it('keeps the global allowlist to the three known tables', async () => {
+  it('keeps the global allowlist to the known tables', async () => {
     const rows = await owner.query<{ name: string }>('SELECT name FROM app.global_tables ORDER BY name');
-    expect(rows.rows.map((r) => r.name)).toEqual(['global_tables', 'plugins', 'schema_migrations']);
+    expect(rows.rows.map((r) => r.name)).toEqual(['global_tables', 'plugins', 'resource_kinds', 'schema_migrations']);
+  });
+
+  it("every other table carries an 'rls: <kind>' comment (kernel tables got theirs in 0004)", async () => {
+    const rows = await owner.query<{ name: string; comment: string | null }>(
+      `SELECT c.relname AS name, obj_description(c.oid, 'pg_class') AS comment
+       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = 'app' AND c.relkind IN ('r', 'p') AND c.relname NOT IN (SELECT name FROM app.global_tables)`,
+    );
+    expect(rows.rows.length).toBeGreaterThan(20);
+    for (const r of rows.rows) expect(parseRlsComment(r.comment), r.name).toBeDefined();
+    const kinds = Object.fromEntries(rows.rows.map((r) => [r.name, parseRlsComment(r.comment)]));
+    expect(kinds).toMatchObject({
+      events: 'team',
+      jobs: 'system',
+      secrets: 'system',
+      password_credentials: 'system',
+      sessions: 'person',
+      teams: 'team',
+      team_members: 'team',
+      workspaces: 'workspace',
+    });
+  });
+
+  it("reports a table that has RLS but no 'rls:' comment, or an unknown kind, or a stray 'global'", async () => {
+    await owner.query(`
+      CREATE TABLE app.rls_uncommented (id uuid PRIMARY KEY);
+      ALTER TABLE app.rls_uncommented ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app.rls_uncommented FORCE ROW LEVEL SECURITY;
+      CREATE POLICY p ON app.rls_uncommented USING (app.is_system());
+      CREATE TABLE app.rls_bad_kind (id uuid PRIMARY KEY);
+      ALTER TABLE app.rls_bad_kind ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app.rls_bad_kind FORCE ROW LEVEL SECURITY;
+      CREATE POLICY p ON app.rls_bad_kind USING (app.is_system());
+      COMMENT ON TABLE app.rls_bad_kind IS 'rls: everyone';
+      CREATE TABLE app.rls_fake_global (id uuid PRIMARY KEY);
+      ALTER TABLE app.rls_fake_global ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app.rls_fake_global FORCE ROW LEVEL SECURITY;
+      CREATE POLICY p ON app.rls_fake_global USING (app.is_system());
+      COMMENT ON TABLE app.rls_fake_global IS 'rls: global';
+      CREATE TABLE app.rls_fine (id uuid PRIMARY KEY);
+      ALTER TABLE app.rls_fine ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app.rls_fine FORCE ROW LEVEL SECURITY;
+      CREATE POLICY p ON app.rls_fine USING (app.is_system());
+      COMMENT ON TABLE app.rls_fine IS 'rls: team — free text may follow the kind';
+    `);
+    try {
+      const problems = await explainRlsViolations(owner);
+      expect(problems.map((p) => p.name)).toEqual(['rls_bad_kind', 'rls_fake_global', 'rls_uncommented']);
+      expect(problems.find((p) => p.name === 'rls_uncommented')?.problems).toEqual([
+        expect.stringContaining("missing table comment 'rls:"),
+      ]);
+      expect(problems.find((p) => p.name === 'rls_fake_global')?.problems[0]).toContain('not in app.global_tables');
+      expect(await findRlsViolations(owner)).toEqual(['rls_bad_kind', 'rls_fake_global', 'rls_uncommented']);
+    } finally {
+      await owner.query('DROP TABLE app.rls_uncommented, app.rls_bad_kind, app.rls_fake_global, app.rls_fine');
+    }
+  });
+
+  it('parses the comment convention', () => {
+    expect(parseRlsComment('rls: team')).toBe('team');
+    expect(parseRlsComment('rls:person — own rows')).toBe('person');
+    expect(parseRlsComment('RLS: team')).toBeUndefined();
+    expect(parseRlsComment('rls: teams')).toBeUndefined();
+    expect(parseRlsComment(null)).toBeUndefined();
+    expect(parseRlsComment('GLOBAL (G): applied migration files')).toBeUndefined();
   });
 
   it('names a table that has no RLS', async () => {

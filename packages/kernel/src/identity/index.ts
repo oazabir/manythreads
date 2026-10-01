@@ -39,3 +39,4 @@ export async function ensureActor(tx: Tx, input: EnsureActorInput): Promise<Acto
   });
   return { kind: input.kind, id: row.id as ActorId, workspaceId: input.workspaceId };
 }
+export * from './password.ts';

@@ -158,7 +158,10 @@ describe('plugin host: example-hello against Postgres', () => {
     const host = await loadPlugins(options);
 
     const applied = await owner.query<{ id: string }>("SELECT id FROM app.schema_migrations WHERE id LIKE 'example-hello/%'");
-    expect(applied.rows.map((r) => r.id)).toEqual(['example-hello/0001_hello_greetings.sql']);
+    expect(applied.rows.map((r) => r.id)).toEqual([
+      'example-hello/0001_hello_greetings.sql',
+      'example-hello/0002_rls_comment.sql',
+    ]);
     const plugins = await owner.query<{ name: string; version: string }>('SELECT name, version FROM app.plugins');
     expect(plugins.rows).toEqual([{ name: 'example-hello', version: '0.1.0' }]);
     expect(await findRlsViolations(owner)).toEqual([]);

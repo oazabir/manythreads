@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_APP_PASSWORD,
   DEFAULT_SYSTEM_PASSWORD,
@@ -7,6 +8,12 @@ import {
   type MigrationSource,
 } from '@majlis/kernel';
 import pg from 'pg';
+
+/** Migrations of the test-only plugin test-kernel (holds `stub_resources`); pass it in `sources` next to the kernel's. */
+export const testKernelMigrationSource: MigrationSource = {
+  namespace: 'test-kernel',
+  dir: fileURLToPath(new URL('../../plugins/test-kernel/migrations/', import.meta.url)),
+};
 
 export const DEV_TEST_DATABASE_URL = 'postgresql://majlis_owner:majlis@localhost:55432/majlis';
 
@@ -107,25 +114,62 @@ export async function dropTestDatabase(db: TestDatabase): Promise<void> {
   }
 }
 
+/** Valid kinds in a `COMMENT ON TABLE x IS 'rls: <kind>'` (PLAN.md P2-00; global tables are exempt from the comment). */
+export const RLS_KINDS = ['team', 'person', 'workspace', 'system', 'global'] as const;
+export type RlsKind = (typeof RLS_KINDS)[number];
+
+const RLS_COMMENT = /^rls:\s*(team|person|workspace|system|global)\b/;
+
+/** The kind named by a table comment, or undefined when it has none (or an unknown one). */
+export function parseRlsComment(comment: string | null | undefined): RlsKind | undefined {
+  const kind = comment ? RLS_COMMENT.exec(comment)?.[1] : undefined;
+  return kind as RlsKind | undefined;
+}
+
+export interface RlsProblem {
+  name: string;
+  problems: string[];
+}
+
+interface Queryable {
+  query(text: string): Promise<{ rows: Array<Record<string, unknown>> }>;
+}
+
 /**
- * Names of tables in schema `app` that break the RLS rule (PLAN.md D3, P1-04): not on the `global_tables`
- * allowlist and missing ENABLE, FORCE or at least one policy. Run it as the owner.
+ * Tables in schema `app` that break the RLS rule (PLAN.md D3, P1-04, P2-00), with the reasons: not on the
+ * `global_tables` allowlist and missing ENABLE, FORCE, a policy, or a valid `rls: <kind>` table comment; or tagged
+ * `rls: global` without being on the allowlist. Run it as the owner.
  */
-export async function findRlsViolations(client: {
-  query(text: string): Promise<{ rows: { name: string }[] }>;
-}): Promise<string[]> {
+export async function explainRlsViolations(client: Queryable): Promise<RlsProblem[]> {
   const result = await client.query(`
-    SELECT c.relname AS name
+    SELECT c.relname AS name,
+           c.relrowsecurity AS enabled,
+           c.relforcerowsecurity AS forced,
+           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid) AS has_policy,
+           obj_description(c.oid, 'pg_class') AS comment
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'app'
       AND c.relkind IN ('r', 'p')
       AND NOT c.relispartition
       AND c.relname NOT IN (SELECT name FROM app.global_tables)
-      AND (NOT c.relrowsecurity
-           OR NOT c.relforcerowsecurity
-           OR NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid))
     ORDER BY c.relname
   `);
-  return result.rows.map((r) => r.name);
+  const out: RlsProblem[] = [];
+  for (const row of result.rows) {
+    const problems: string[] = [];
+    if (!row['enabled']) problems.push('row level security is not enabled');
+    if (!row['forced']) problems.push('row level security is not forced');
+    if (!row['has_policy']) problems.push('no policy');
+    const kind = parseRlsComment(row['comment'] as string | null);
+    if (!kind) problems.push("missing table comment 'rls: team|person|workspace|system|global'");
+    else if (kind === 'global') problems.push("tagged 'rls: global' but not in app.global_tables");
+    if (problems.length > 0) out.push({ name: String(row['name']), problems });
+  }
+  return out;
+}
+
+/** Names of the tables explainRlsViolations reports. */
+export async function findRlsViolations(client: Queryable): Promise<string[]> {
+  return (await explainRlsViolations(client)).map((p) => p.name);
 }

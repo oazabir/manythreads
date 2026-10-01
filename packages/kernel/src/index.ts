@@ -8,3 +8,4 @@ export * from './plugins/index.ts';
 export * from './transport/index.ts';
 export * from './storage/index.ts';
 export * from './templates/index.ts';
+export * from './kms/index.ts';
