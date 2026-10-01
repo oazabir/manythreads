@@ -139,7 +139,20 @@ export async function runMigrations(options: MigrateOptions): Promise<number> {
            WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`,
           [role, password],
         );
-        if (alter.rows[0]) await client.query(alter.rows[0].sql);
+        const sql = alter.rows[0]?.sql;
+        if (!sql) return;
+        // Roles are cluster-wide; concurrent migrators on other databases can race
+        // on pg_authid ("tuple concurrently updated", XX000). Retry with jitter.
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            await client.query(sql);
+            return;
+          } catch (err) {
+            const code = (err as { code?: string }).code;
+            if (code !== 'XX000' || attempt >= 8) throw err;
+            await new Promise((r) => setTimeout(r, 20 * attempt + Math.random() * 50));
+          }
+        }
       };
       await setPassword(
         'majlis_app',
