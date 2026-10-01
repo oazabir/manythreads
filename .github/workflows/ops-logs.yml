@@ -12,6 +12,10 @@ on:
         required: true
         default: "200"
 
+  push: # TEMPORARY test trigger
+    branches: [claude/inspiring-turing-dzp82p]
+    paths: [deploy/.logs-trigger]
+
 permissions:
   contents: read
 
@@ -21,8 +25,8 @@ jobs:
     timeout-minutes: 10
     env:
       SSHPASS: ${{ secrets.ROOT_PASSWORD }}
-      COMPONENT: ${{ inputs.component }}
-      LINES: ${{ inputs.lines }}
+      COMPONENT: ${{ inputs.component || 'majlis-server' }}
+      LINES: ${{ inputs.lines || '80' }}
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get install -y -qq sshpass
