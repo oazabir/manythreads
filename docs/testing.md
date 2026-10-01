@@ -20,10 +20,10 @@ await nadia.get('/api/session');
 `testAuthToken`, `publicUrl`, `logger`. The server exposes `s.mailer` (every mail sent, in memory), `s.logs` and
 `s.bootstrapToken()` (the one-time first-admin token printed at start while no workspace exists).
 
-## 2. The test-only session endpoint (e2e runs, screenshots)
+## 2. The test-only session endpoint (e2e runs)
 
-For a server that is already running (Playwright `api`, `desktop`, `mobile-web` projects, plate screenshots) a persona
-can get a real session without typing a password:
+For a server that is already running (Playwright `api`, `desktop`, `mobile-web` projects) a persona
+can get a real session without typing a password. **Never on the live site**: the screenshots workflow does not use it (section 4):
 
 ```
 POST /api/test/session            x-test-auth: <MANYTHREADS_TEST_AUTH_TOKEN>
@@ -47,12 +47,40 @@ await ctx.post('/api/test/session', { data: { email: PERSONA_EMAILS.omar }, head
 // ctx now carries the cookies; for a browser: context.addCookies((await ctx.storageState()).cookies)
 ```
 
+## 3a. Visual specs (`e2e/visual/<area>/*.visual.spec.ts`, `pnpm vt`)
+
+Each visual spec starts its own web origin + server on a fresh seeded database (`fixtures/stack.ts`; `MANYTHREADS_STACK_SEED=none`
+gives an empty one that prints the first-admin link, `stack.bootstrapToken`) and signs the persona in through the real password
+route (`visual/support/vt.ts`, `openPage`). Classes (PLAN section 5): **W** is `expectWireframe` (landmark order plus the frame against
+its own baseline in `e2e/__baselines__/`, at most 0.2% differing, `[data-vt-mask]` painted over); **P / P-loose** is `comparePlate`:
+the content box of the plate's pane (stepper rail and settings nav are not part of the screen) against the live region, both cut
+to the same size; it prints `[vt] <class> <spec>: x% differing` and attaches plate, live and diff (`MANYTHREADS_VT_DUMP=<dir>`
+also writes the two PNGs). Plates declare `regions` (landmarks) and `copy` (`data-copy` texts, exact under P). Change a baseline
+only with `pnpm vt:update`, in a PR that says why.
+
 ## 3. The dev-header actor (NODE_ENV=test only)
 
 `x-manythreads-dev-actor: {"kind":"person"|"bot","id":"<actors.id>","workspaceId":"<uuid>"}` names an actor directly.
 It is honoured **only when `NODE_ENV=test`** (vitest and the Playwright `api` server set it); in any other environment it is
 ignored, whatever options or variables say. It never makes a request cookie-authenticated, so it skips CSRF. Use it for
 bots, personas without a password, or low-level host tests; prefer sessions for anything about sign-in.
+
+## 4. Screenshots of the live site (no bypass)
+
+The live site has `testAuth.enabled: false`, so `/api/test/session` does not exist there. `e2e/screens/live.shots.ts` signs in through
+the sign-in form with a password the screenshots workflow sets first, with the server's admin CLI:
+
+```
+printf '%s\n' "$PW" | pnpm --filter @manythreads/server admin set-password nadia@kahf.example
+```
+
+`set-password <email>` (`packages/server/src/cli/admin.ts`) reads the new password from **stdin only** (a TTY is refused; one trailing
+newline is stripped), requires at least 12 characters, stores an argon2id hash, revokes every session of that person and every unused
+reset link, and writes an `identity.password.admin_set` audit event (person and number of sessions revoked, never the password). It
+connects as `manythreads_system` from `MANYTHREADS_SYSTEM_DATABASE_URL` (or derives it from `DATABASE_URL`), so it runs in the server
+pod (`kubectl exec -i deploy/manythreads-server -- ...`, see `remote_set_password` in `.github/actions/lib/remote.sh`) and in a dev
+checkout against `pnpm db:up`. Locally against a stack: `MANYTHREADS_LIVE_URL=<origin> MANYTHREADS_LIVE_PASSWORD=<pw> pnpm -C e2e exec
+playwright test -c screens/live.config.ts`.
 
 ## Seed v2 and `pnpm seed`
 

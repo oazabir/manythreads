@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ChannelMessagePostedEvent } from './channel.message.posted.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
+import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
 import { IdentityPasswordResetEvent } from './identity.password.reset.ts';
 import { IdentitySessionSignInFailedEvent } from './identity.session.sign_in_failed.ts';
@@ -34,6 +35,7 @@ import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.
 export const eventRegistry = {
   'channel.message.posted': { 1: ChannelMessagePostedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
+  'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
   'identity.password.changed': { 1: IdentityPasswordChangedEvent },
   'identity.session.sign_in_failed': { 1: IdentitySessionSignInFailedEvent },
@@ -68,6 +70,7 @@ export type EventType = keyof typeof eventRegistry;
 /** Every stored shape, any version. */
 export type AnyEvent =
   | z.infer<typeof IdentityEmailVerifiedEvent>
+  | z.infer<typeof IdentityPasswordAdminSetEvent>
   | z.infer<typeof IdentityPasswordResetEvent>
   | z.infer<typeof IdentityPasswordChangedEvent>
   | z.infer<typeof IdentitySessionSignInFailedEvent>
@@ -101,6 +104,7 @@ export type AnyEvent =
 /** The newest version of every event: what `upcast` returns and emitters write. */
 export type LatestEvent =
   | z.infer<typeof IdentityEmailVerifiedEvent>
+  | z.infer<typeof IdentityPasswordAdminSetEvent>
   | z.infer<typeof IdentityPasswordResetEvent>
   | z.infer<typeof IdentityPasswordChangedEvent>
   | z.infer<typeof IdentitySessionSignInFailedEvent>

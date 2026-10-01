@@ -9,7 +9,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "admin": "tsx src/cli/admin.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

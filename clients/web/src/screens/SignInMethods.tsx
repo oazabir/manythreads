@@ -167,9 +167,9 @@ function PasswordBox() {
 export function SignInMethods() {
   const q = useQuery('oidc-providers', fetchOidcProviders);
   return (
-    <>
-      <h1 className="pane-title">How will people sign in?</h1>
-      <p className="lede">Add a preset for Google or Microsoft, and decide whether username and password stays on alongside it.</p>
+    <div className="signin-methods" data-landmark="signin-methods">
+      <h1 className="pane-title" data-landmark="title">How will people sign in?</h1>
+      <p className="lede" data-landmark="lede">Add a preset for Google or Microsoft, and decide whether username and password stays on alongside it.</p>
       <QueryView q={q}>
         {({ providers }) => {
           const of = (k: OidcProviderKind) => providers.filter((p) => p.kind === k);
@@ -182,7 +182,7 @@ export function SignInMethods() {
           return (
             <>
               <div className="grid2">
-                <section className="box box-col" aria-labelledby="presets-h">
+                <section className="box box-col" aria-labelledby="presets-h" data-landmark="presets">
                   <h2 className="box-h" id="presets-h">Presets</h2>
                   {boxes('google')}
                   {boxes('microsoft')}
@@ -197,6 +197,6 @@ export function SignInMethods() {
           );
         }}
       </QueryView>
-    </>
+    </div>
   );
 }

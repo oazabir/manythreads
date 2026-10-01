@@ -69,7 +69,7 @@ export function SignIn() {
     <AuthFrame title={mode === 'forgot' ? 'Reset your password' : 'Sign in'}>
       {loading ? <p className="loading" aria-busy="true">Loading…</p> : null}
       {!loading && mode === 'sign-in' && hasProviders ? (
-        <div className="providers">
+        <div className="providers" data-landmark="providers">
           {providers.map((p) => (
             <a key={p.id} className="btn provider" href={oidcStartUrl(p.startUrl, returnPath)}>
               <span className={`pmark ${MARKS[p.kind].cls}`} aria-hidden="true">{MARKS[p.kind].text}</span>Continue with {p.label}
@@ -85,7 +85,7 @@ export function SignIn() {
         </p>
       ) : null}
       {!loading && passwordVisible ? (
-        <form onSubmit={onSubmit} noValidate>
+        <form onSubmit={onSubmit} noValidate data-landmark="form">
           <Field label="Email" type="email" name="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
           {mode === 'sign-in' ? (
             <Field label="Password" type="password" name="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />

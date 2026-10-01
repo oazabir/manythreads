@@ -13,6 +13,8 @@ export interface Stack {
   origin: string;
   ownerUrl: string;
   testAuthToken: string;
+  /** The one-time first-admin token of an empty stack (`MANYTHREADS_STACK_SEED=none`), else null. */
+  bootstrapToken: string | null;
   /** SQL as the database owner, to arrange or inspect state the API cannot reach. */
   sql<T extends Record<string, unknown> = Record<string, unknown>>(text: string, params?: readonly unknown[]): Promise<T[]>;
   stop(): Promise<void>;
@@ -28,7 +30,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
-  const ready = await new Promise<{ origin: string; ownerUrl: string; testAuthToken: string }>((resolve, reject) => {
+  const ready = await new Promise<{ origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null }>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`stack did not start in time:\n${output.slice(-1500)}`)), 120_000);
     const onData = (chunk: Buffer): void => {
       output += chunk.toString('utf8');
@@ -36,7 +38,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
       const line = /MANYTHREADS_STACK (\{.*\})/.exec(output);
       if (line?.[1]) {
         clearTimeout(timer);
-        resolve(JSON.parse(line[1]) as { origin: string; ownerUrl: string; testAuthToken: string });
+        resolve(JSON.parse(line[1]) as { origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null });
       }
     };
     child.stdout?.on('data', onData);
@@ -53,6 +55,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
     origin: ready.origin,
     ownerUrl: ready.ownerUrl,
     testAuthToken: ready.testAuthToken,
+    bootstrapToken: ready.bootstrapToken,
     sql: (text, params) => ownerSql(ready.ownerUrl, text, params),
     stop: () =>
       new Promise<void>((resolve) => {

@@ -948,24 +948,60 @@ a.btn.primary {
   font-size: 12px;
 }
 
+.tpl .nm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* the name is an editable pill (proto §01 plate 4): the input sizes itself to its text, a pencil closes the pill */
 .tpl .nm {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  margin: 10px 0 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   padding: 2px 7px;
   border: 1px solid var(--rule);
   border-radius: 4px;
   background: var(--surface);
   color: var(--ink);
-  font: inherit;
   font-size: 12px;
 }
 
-.tpl .d {
-  margin-top: 2px;
+.tpl .nm input {
+  field-sizing: content;
+  min-width: 3ch;
+  padding: 0;
+  border: 0;
+  outline-offset: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.tpl .slug {
+  display: inline-flex;
+  align-items: center;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.tpl .slug input {
+  field-sizing: content;
+  min-width: 3ch;
+  padding: 1px 3px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
   color: var(--mute);
-  font-size: 12.5px;
+  font: inherit;
+}
+
+.tpl .slug input:hover,
+.tpl .slug input:focus {
+  border-color: var(--rule);
+  background: var(--surface);
 }
 
 .tpl .ch {
@@ -988,30 +1024,53 @@ a.btn.primary {
   margin-top: 8px;
 }
 
+.tpl .needs .chip {
+  margin: 0 4px 4px 0;
+}
+
+.tpl .needs .chip.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
 .tpl .fld.inv {
-  margin: 8px 0 0;
+  margin: 8px 0 11px;
 }
 
 .tpl .fld.inv input {
   width: 100%;
   box-sizing: border-box;
-  padding: 4px 8px;
+  padding: 7px 10px;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: 5px;
   font: inherit;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .tpl .fld.inv label {
   font-size: 11.5px;
 }
 
+/* the create-teams screen reads like the plate's pane: larger title, 14px lede */
+.teams .pane-title {
+  margin-bottom: 4px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.teams .lede {
+  max-width: 640px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
 .actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 22px;
-  padding-top: 16px;
+  margin-top: 26px;
+  padding-top: 18px;
   border-top: 1px solid var(--rule);
 }
 

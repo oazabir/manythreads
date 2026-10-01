@@ -1,0 +1,250 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { expect, request, test, type Browser, type BrowserContext, type Locator, type Page, type TestInfo } from '@playwright/test';
+import {
+  CLASS_P,
+  CLASS_P_LOOSE,
+  CLASS_W,
+  MOCKUPS_URL,
+  checkOrder,
+  comparePngs,
+  compareLandmarks,
+  landmarks,
+  type Landmark,
+  type SectionId,
+} from '../../../tools/plates/src/index.ts';
+import { PERSONA_PASSWORD, personaEmail, type PersonaKey } from '../../support/env.ts';
+import type { Stack } from '../../fixtures/stack.ts';
+
+/*
+ * Shared helpers of the visual specs (PLAN section 5, Plate comparison).
+ *
+ *  - W (wireframe)   own committed baseline through toHaveScreenshot (<= 0.2% differing pixels, data-vt-mask masked) and the
+ *                    landmarks of the live screen in reading order.
+ *  - P-loose / P     the live screen against a plate of docs/spec/mockups-all.html. A plate is an onboarding step or a
+ *                    settings pane with its own chrome (stepper rail, nav), so the comparison is of the pane: the content box of the
+ *                    plate's pane (`paneSelector`) against the live content region, both cut to the same size from their top left corner.
+ *                    The plate is rendered at the viewport width that gives its pane the live region's width.
+ *
+ * Every visual spec runs on its own server + web origin (fixtures/stack.ts) on a fresh seeded database, so what is on screen
+ * does not depend on what other specs changed, and signs in through the real password route (the same call global-setup makes
+ * for e2e/.auth), because a session of the shared servers is not valid on another database.
+ */
+
+export const DESKTOP = { width: 1440, height: 900 } as const;
+export const MOBILE = { width: 390, height: 844 } as const;
+
+export const W_OPTIONS = { maxDiffPixelRatio: CLASS_W.maxDiffRatio, animations: 'disabled', caret: 'hide' } as const;
+
+/** Storage state of a persona signed in through POST /api/auth/password/sign-in on the stack's origin. */
+export async function personaState(stack: Stack, key: PersonaKey): Promise<Awaited<ReturnType<BrowserContext['storageState']>>> {
+  const api = await request.newContext({ baseURL: stack.origin });
+  try {
+    const res = await api.post('/api/auth/password/sign-in', { data: { email: personaEmail(key), password: PERSONA_PASSWORD } });
+    expect(res.status(), `password sign-in as ${key}`).toBe(200);
+    return await api.storageState();
+  } finally {
+    await api.dispose();
+  }
+}
+
+/** A page of a browser context signed in as `key` on `stack` (anonymous when `key` is null). */
+export async function openPage(
+  browser: Browser,
+  stack: Stack,
+  key: PersonaKey | null,
+  viewport: { width: number; height: number } = DESKTOP,
+  mobile = false,
+): Promise<{ page: Page; close: () => Promise<void> }> {
+  const storageState = key ? await personaState(stack, key) : undefined;
+  const context = await browser.newContext({
+    baseURL: stack.origin,
+    viewport,
+    reducedMotion: 'reduce',
+    ...(mobile ? { isMobile: true, hasTouch: true } : {}),
+    ...(storageState ? { storageState } : {}),
+  });
+  const page = await context.newPage();
+  return { page, close: () => context.close() };
+}
+
+export const frameOf = (page: Page): Locator => page.locator('[data-testid="app-frame"]');
+
+/** The frame is on screen, fonts are loaded and nothing is still loading. */
+export async function settle(page: Page): Promise<Locator> {
+  const frame = frameOf(page);
+  await frame.waitFor();
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  await page.evaluate(() => document.fonts?.ready);
+  return frame;
+}
+
+/** Class W: the landmarks appear in this reading order, and the frame matches its own committed baseline. */
+export async function expectWireframe(page: Page, name: string, order: string[] | string[][]): Promise<void> {
+  const frame = await settle(page);
+  const found = await landmarks(page);
+  const groups = Array.isArray(order[0]) ? (order as string[][]) : [order as string[]];
+  for (const g of groups) expect(checkOrder(found, g), `landmark order and presence of ${g.join(', ')}`).toEqual([]);
+  await expect(frame).toHaveScreenshot(`${name}.png`, { ...W_OPTIONS, mask: [page.locator('[data-vt-mask]')] });
+}
+
+// ---- plate comparison ---------------------------------------------------------------------------------------------
+
+export interface Box { x: number; y: number; w: number; h: number }
+
+export interface PlateSpec {
+  section: SectionId;
+  /** 1-based plate number inside the section. */
+  n: number;
+  /** The plate's pane (inside `.frame`) whose content box is compared, for example `.obr`. */
+  paneSelector: string;
+  /** Padding of that pane (top, right, bottom, left), which the content box excludes. */
+  padding: [number, number, number, number];
+  /** Fixed chrome (a rail) to the left of the pane, in px; used to pick the plate's viewport width. */
+  railWidth: number;
+  /** Plate regions by landmark name (selectors inside the frame), measured relative to the pane content box. */
+  regions: Record<string, string>;
+  /** Plate texts by `data-copy` name (selectors inside the frame); each must equal the live `[data-copy]` text exactly. */
+  copy?: Record<string, { selector: string; index?: number; /** Descendants left out of the text (plate-only affordances). */ omit?: string }>;
+}
+
+
+async function pageBox(locator: Locator): Promise<Box> {
+  return locator.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x + window.scrollX, y: r.y + window.scrollY, w: r.width, h: r.height };
+  });
+}
+
+export interface PlateRender {
+  png: Buffer;
+  box: Box;
+  landmarks: Landmark[];
+  copy: Record<string, string>;
+}
+
+/**
+ * Renders the plate at the viewport width whose pane content is `contentWidth` px wide and cuts out the pane's content box
+ * (at most `height` px tall). Landmarks are relative to that box.
+ */
+export async function renderPlatePane(browser: Browser, spec: PlateSpec, contentWidth: number, height: number): Promise<PlateRender> {
+  const [pt, pr, , pl] = spec.padding;
+  // the plate's wrapper leaves 24px each side of the frame
+  const viewportWidth = Math.ceil(contentWidth + pl + pr + spec.railWidth + 48);
+  const context = await browser.newContext({ viewport: { width: viewportWidth, height: 900 }, reducedMotion: 'reduce' });
+  try {
+    const page = await context.newPage();
+    await page.goto(`${MOCKUPS_URL}#${spec.section}`);
+    await page.evaluate(() => document.fonts?.ready);
+    const frame = page.locator(`#${spec.section} .plate`).nth(spec.n - 1).locator('.frame').first();
+    await frame.scrollIntoViewIfNeeded();
+    const pane = frame.locator(spec.paneSelector).first();
+    const p = await pageBox(pane);
+    const box: Box = { x: p.x + pl, y: p.y + pt, w: p.w - pl - pr, h: Math.min(height, p.h - pt) };
+    const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: box.w, height: box.h }, fullPage: true, animations: 'disabled' });
+    const marks: Landmark[] = [];
+    for (const [name, selector] of Object.entries(spec.regions)) {
+      const r = await pageBox(frame.locator(selector).first());
+      marks.push({ name, x: r.x - box.x, y: r.y - box.y, w: r.w, h: r.h });
+    }
+    const copy: Record<string, string> = {};
+    for (const [name, c] of Object.entries(spec.copy ?? {})) {
+      copy[name] = await frame
+        .locator(c.selector)
+        .nth(c.index ?? 0)
+        .evaluate((el, omit) => {
+          const node = el.cloneNode(true) as Element;
+          if (omit) node.querySelectorAll(omit).forEach((n) => n.remove());
+          return (node.textContent ?? '').replace(/\s+/g, ' ').trim();
+        }, c.omit);
+    }
+    return { png, box, landmarks: marks, copy };
+  } finally {
+    await context.close();
+  }
+}
+
+/** The live region's content box, its landmarks relative to it, and its `data-copy` texts. */
+export async function renderLiveRegion(page: Page, regionSelector: string, height: number) {
+  const region = page.locator(regionSelector).first();
+  await region.waitFor();
+  await page.evaluate(() => document.fonts?.ready);
+  const box = await pageBox(region);
+  const clip = { x: box.x, y: box.y, width: box.w, height: Math.min(height, box.h) };
+  const png = await page.screenshot({
+    clip,
+    fullPage: true,
+    animations: 'disabled',
+    caret: 'hide',
+    mask: [page.locator('[data-vt-mask]')],
+    maskColor: 'black',
+  });
+  const marks: Landmark[] = await region.evaluate((root) => {
+    const r0 = root.getBoundingClientRect();
+    return Array.from(root.querySelectorAll('[data-landmark]')).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { name: el.getAttribute('data-landmark') ?? '', x: r.x - r0.x, y: r.y - r0.y, w: r.width, h: r.height };
+    });
+  });
+  const copy: Record<string, string> = await region.evaluate((root) => {
+    const out: Record<string, string> = {};
+    for (const el of Array.from(root.querySelectorAll('[data-copy]'))) {
+      out[el.getAttribute('data-copy') ?? ''] = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+    }
+    return out;
+  });
+  return { png, box, landmarks: marks, copy };
+}
+
+export interface PlateCompareOptions {
+  cls: 'P' | 'P-loose';
+  spec: PlateSpec;
+  /** Live region whose content box is compared (its top-left corner is the origin). */
+  liveRegion: string;
+  /** Names that must exist in the live screen in this reading order (one list, or one list per nesting level). */
+  order: string[] | string[][];
+  /** P: landmarks held to +-6px (x, y, width, height). */
+  exact?: string[];
+  /** P: `data-copy` names compared exactly. */
+  copy?: string[];
+  /** Plate pixels never differ in these live-only parts: live selectors painted over on both sides. */
+  height?: number;
+}
+
+/** Compares a live page with a plate under class P or P-loose; attaches the diff and prints the measured ratio. */
+export async function comparePlate(page: Page, browser: Browser, testInfo: TestInfo, o: PlateCompareOptions): Promise<{ diffRatio: number }> {
+  const height = o.height ?? 640;
+  await settle(page);
+  const live = await renderLiveRegion(page, o.liveRegion, height);
+  const plate = await renderPlatePane(browser, o.spec, live.box.w, height);
+
+  const dump = process.env['MANYTHREADS_VT_DUMP'];
+  if (dump) {
+    mkdirSync(dump, { recursive: true });
+    const base = (testInfo.file.split('/visual/')[1] ?? 'spec').replace(/[^a-z0-9]+/gi, '-');
+    for (const [n, b] of [['plate', plate.png], ['live', live.png]] as const) writeFileSync(`${dump}/${base}-${n}.png`, b);
+  }
+  const limit = o.cls === 'P' ? CLASS_P.maxDiffRatio : CLASS_P_LOOSE.maxDiffRatio;
+  const diff = comparePngs(plate.png, live.png);
+  await testInfo.attach('plate.png', { body: plate.png, contentType: 'image/png' });
+  await testInfo.attach('live.png', { body: live.png, contentType: 'image/png' });
+  await testInfo.attach('diff.png', { body: diff.diffPng, contentType: 'image/png' });
+  const line = `${o.cls} ${testInfo.file.split('/visual/')[1] ?? testInfo.title}: ${(diff.diffRatio * 100).toFixed(2)}% differing (limit ${(limit * 100).toFixed(0)}%, region ${Math.round(live.box.w)}x${Math.round(Math.min(height, live.box.h))})`;
+  console.log(`[vt] ${line}`);
+  await testInfo.attach('diff-ratio', { body: line });
+
+  const groups = Array.isArray(o.order[0]) ? (o.order as string[][]) : [o.order as string[]];
+  for (const g of groups) expect(checkOrder(live.landmarks, g), `landmark order and presence of ${g.join(', ')}`).toEqual([]);
+  if (o.cls === 'P') {
+    const expected = plate.landmarks.filter((l) => (o.exact ?? []).includes(l.name));
+    expect(expected.map((l) => l.name).sort(), 'plate defines every exact landmark').toEqual([...(o.exact ?? [])].sort());
+    expect(compareLandmarks(expected, live.landmarks, CLASS_P.landmarkPx), `landmarks within ${CLASS_P.landmarkPx}px`).toEqual([]);
+    for (const name of o.copy ?? []) {
+      expect(plate.copy[name], `plate text ${name}`).toBeTruthy();
+      expect(live.copy[name], `data-copy ${name}`).toBe(plate.copy[name]);
+    }
+  }
+  expect(diff.diffRatio, `${o.cls} differing pixels`).toBeLessThanOrEqual(limit);
+  return { diffRatio: diff.diffRatio };
+}
+
+export { test, expect };

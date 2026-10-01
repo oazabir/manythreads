@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createTestDatabase, dropTestDatabase, withClusterLock } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, parseBootstrapToken, withClusterLock } from '@manythreads/test-utils';
 import { seedWorld } from './seed.ts';
 
 const dist = resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
@@ -64,8 +64,11 @@ const front = createServer((req, res) => (isApi(req.url ?? '/') ? proxy(req, res
 await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
+// MANYTHREADS_STACK_SEED=none: an empty database, so the server prints a first-admin link (visual/identity/bootstrap).
+const seeded = process.env['MANYTHREADS_STACK_SEED'] !== 'none';
 const db = await createTestDatabase();
-await seedWorld(db);
+if (seeded) await seedWorld(db);
+const logs: string[] = [];
 const token = process.env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? 'e2e-test-auth-token';
 const server = await startServer({
   port: 0,
@@ -76,9 +79,10 @@ const server = await startServer({
   publicUrl: origin,
   testAuthToken: token,
   trustProxy: 1,
+  logger: { level: 'info', stream: { write: (line: string) => void (logs.length < 2000 && logs.push(line)) } },
 });
 apiPort = server.port;
-console.log(`MANYTHREADS_STACK ${JSON.stringify({ origin, ownerUrl: db.ownerUrl, database: db.name, testAuthToken: token })}`);
+console.log(`MANYTHREADS_STACK ${JSON.stringify({ origin, ownerUrl: db.ownerUrl, database: db.name, testAuthToken: token, bootstrapToken: parseBootstrapToken(logs) ?? null })}`);
 
 let closing = false;
 const stop = async (): Promise<void> => {

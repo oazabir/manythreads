@@ -1,4 +1,4 @@
-import { DEFAULT_APP_PASSWORD, DEFAULT_SYSTEM_PASSWORD, DEV_OWNER_URL } from '@manythreads/kernel';
+import { databaseUrlsFromEnv } from './db-env.ts';
 import { startServer } from './start.ts';
 
 /**
@@ -22,24 +22,14 @@ import { startServer } from './start.ts';
  *   NODE_ENV=test                  the only setting that honours the x-manythreads-dev-actor header
  */
 const env = process.env;
-const ownerUrl = env['DATABASE_URL'] ?? env['MANYTHREADS_DATABASE_URL'] ?? DEV_OWNER_URL;
-const appPassword = env['MANYTHREADS_APP_PASSWORD'] ?? DEFAULT_APP_PASSWORD;
-
-const systemPassword = env['MANYTHREADS_SYSTEM_PASSWORD'] ?? DEFAULT_SYSTEM_PASSWORD;
-
-function deriveUrl(owner: string, user: string, password: string): string {
-  const u = new URL(owner);
-  u.username = user;
-  u.password = password;
-  return u.toString();
-}
+const { ownerUrl, appUrl, systemUrl, appPassword } = databaseUrlsFromEnv(env);
 
 const server = await startServer({
   port: Number(env['PORT'] ?? 3000),
   host: env['HOST'] ?? '0.0.0.0',
   ownerUrl,
-  appUrl: env['MANYTHREADS_APP_DATABASE_URL'] ?? deriveUrl(ownerUrl, 'manythreads_app', appPassword),
-  systemUrl: env['MANYTHREADS_SYSTEM_DATABASE_URL'] ?? deriveUrl(ownerUrl, 'manythreads_system', systemPassword),
+  appUrl,
+  systemUrl,
   appPassword,
   testPlugins: env['MANYTHREADS_TEST_PLUGINS'] === '1',
   logger: true,

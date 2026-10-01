@@ -58,8 +58,8 @@ mailpit:
 # (MANYTHREADS_KMS_KEY, base64 of 32 bytes: envelope encryption of provider client secrets; losing it loses them) and the
 # test sign-in token. The secret has helm.sh/resource-policy: keep, so `helm uninstall` leaves it.
 #
-# testAuth: TEST ENVIRONMENTS ONLY. Exposes POST /api/test/session (sign in as any persona with header x-test-auth) so the
-# screenshots workflow can take pictures of the live site. The server refuses to start in production with the token set
+# testAuth: TEST ENVIRONMENTS ONLY. Exposes POST /api/test/session (sign in as any persona with header x-test-auth). The
+# screenshots workflow does NOT need it (it sets a one-off password with the admin CLI and signs in through the form). The server refuses to start in production with the token set
 # unless MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION=1 as well, which this flag sets. The Secret is generated either way;
 # enabled only controls whether the server gets the variables. Never enable it on a real deployment.
 testAuth:
@@ -67,7 +67,7 @@ testAuth:
 
 # Seed: a post-install/upgrade Job runs `pnpm seed --demo` from the server image: workspace Kahf Software, the seven
 # personas, three teams. Idempotent (a second run changes nothing) and the passwords are random and unknown (hashes only),
-# so the public site has no credentials; people get in through single sign-on, an invitation or the test session.
+# so the public site has no credentials; people get in through single sign-on, an invitation, or a password an operator sets with the admin CLI.
 seed:
   demo: true
 

@@ -45,7 +45,7 @@ export function Bootstrap() {
 
   return (
     <AuthFrame title="Set up your workspace" footer="This link works once.">
-      <form onSubmit={onSubmit} noValidate>
+      <form onSubmit={onSubmit} noValidate data-landmark="form">
         <Field label="Workspace" name="workspace" value={workspaceName} onChange={(e) => setWorkspaceName(e.target.value)} placeholder="Kahf Software" autoComplete="organization" />
         <Field label="Name" name="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" autoComplete="name" />
         <Field label="Email" type="email" name="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="username" />

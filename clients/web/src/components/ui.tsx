@@ -13,7 +13,7 @@ export function Brand({ name = 'manythreads', mark = 'm' }: { name?: string; mar
 /** Error text for a failed action. role="alert" so it is announced and testable. */
 export function Alert({ children }: { children: ReactNode }) {
   return (
-    <div className="alert" role="alert">
+    <div className="alert" role="alert" data-landmark="alert">
       <span className="bang" aria-hidden="true">!</span>
       <span>{children}</span>
     </div>

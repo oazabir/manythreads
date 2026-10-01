@@ -4,6 +4,7 @@ export * from './kernel.test.pinged.v2.ts';
 export * from './registry.ts';
 export * from './kernel.capability.denied.ts';
 export * from './identity.email.verified.ts';
+export * from './identity.password.admin_set.ts';
 export * from './identity.password.reset.ts';
 export * from './identity.session.sign_in_failed.ts';
 export * from './identity.session.signed_in.ts';

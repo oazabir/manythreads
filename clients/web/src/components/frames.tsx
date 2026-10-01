@@ -14,7 +14,7 @@ export function AuthFrame({ title, lede, children, footer }: { title: string; le
         <header data-landmark="header">
           <Brand />
         </header>
-        <h1 className="auth-title">{title}</h1>
+        <h1 className="auth-title" data-landmark="title">{title}</h1>
         {lede ? <p className="auth-lede">{lede}</p> : null}
         <div data-landmark="content">{children}</div>
         {footer ? <p className="auth-foot" data-landmark="footer">{footer}</p> : null}

@@ -1,14 +1,15 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, request, test, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 
 /**
- * Pictures of the live site for the phase record. Personas get a real session from POST /api/test/session with the
- * `x-test-auth` token (docs/testing.md); the token comes from the environment, is only ever sent as that header and is
- * never printed. Output: <MANYTHREADS_SHOTS_DIR>/{desktop,mobile}/<name>.png (default e2e/screens/out).
+ * Pictures of the live site for the phase record. Personas sign in exactly like people do: the sign-in page's email and
+ * password form. The password is a random one-off the screenshots workflow set through the server's admin CLI
+ * (docs/deploy.md); it comes from the environment, is only ever typed into that form and is never printed.
+ * Output: <MANYTHREADS_SHOTS_DIR>/{desktop,mobile}/<name>.png (default e2e/screens/out).
  */
 const BASE = (process.env['MANYTHREADS_LIVE_URL'] ?? 'https://manythreads.kahf.to').replace(/\/+$/, '');
-const TOKEN = process.env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? '';
+const PASSWORD = process.env['MANYTHREADS_LIVE_PASSWORD'] ?? '';
 const OUT = process.env['MANYTHREADS_SHOTS_DIR'] ?? join(import.meta.dirname, 'out');
 
 const EMAIL = { omar: 'omar@kahf.example', nadia: 'nadia@kahf.example', lena: 'lena@kahf.example' } as const;
@@ -18,18 +19,35 @@ const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
 
 test.beforeAll(() => {
-  if (TOKEN.length < 16) throw new Error('MANYTHREADS_TEST_AUTH_TOKEN is not set (the live test sign-in token)');
+  if (PASSWORD.length < 12) throw new Error('MANYTHREADS_LIVE_PASSWORD is not set (the one-off password of the screenshot personas)');
 });
+
+// One real sign-in per persona and worker; later screens start from the cookies it produced.
+const signedIn = new Map<Persona, Promise<NonNullable<BrowserContextOptions['storageState']>>>();
+
+async function signInThroughTheForm(browser: Browser, persona: Persona): Promise<NonNullable<BrowserContextOptions['storageState']>> {
+  const context = await browser.newContext({ baseURL: BASE, ignoreHTTPSErrors: true, viewport: DESKTOP, reducedMotion: 'reduce' });
+  try {
+    const page = await context.newPage();
+    await page.goto('/sign-in');
+    await page.getByLabel('Email').fill(EMAIL[persona]);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    // the form leaves /sign-in once the session exists; a refusal would show an alert instead
+    await expect(page, `password sign-in as ${persona} (was the one-off password set?)`).not.toHaveURL(/\/sign-in/);
+    return await context.storageState();
+  } finally {
+    await context.close();
+  }
+}
 
 /** A browser context signed in as the persona (or anonymous when `persona` is null). */
 async function open(browser: Browser, persona: Persona | null, viewport: { width: number; height: number }, mobile: boolean): Promise<Page> {
   let storageState: BrowserContextOptions['storageState'];
   if (persona) {
-    const ctx = await request.newContext({ baseURL: BASE, ignoreHTTPSErrors: true });
-    const res = await ctx.post('/api/test/session', { data: { email: EMAIL[persona] }, headers: { 'x-test-auth': TOKEN } });
-    expect(res.status(), `test sign-in as ${persona} (is testAuth enabled on the site?)`).toBe(200);
-    storageState = await ctx.storageState();
-    await ctx.dispose();
+    let state = signedIn.get(persona);
+    if (!state) signedIn.set(persona, (state = signInThroughTheForm(browser, persona)));
+    storageState = await state;
   }
   const context = await browser.newContext({
     baseURL: BASE,

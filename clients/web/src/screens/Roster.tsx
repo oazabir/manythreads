@@ -171,9 +171,9 @@ export function Roster() {
         const candidates = workspace.status === 'ok' ? workspace.data.members.filter((m) => m.role !== 'guest' && !onTeam.has(m.personId)) : [];
         const tagNames = tags.status === 'ok' ? tags.data.tags.map((x) => x.name) : [];
         return (
-          <>
-            <h1 className="pane-title">{t.name}{t.archivedAt ? ' (archived)' : ''}</h1>
-            <p className="lede">
+          <div className="roster" data-landmark="roster">
+            <h1 className="pane-title" data-landmark="title">{t.name}{t.archivedAt ? ' (archived)' : ''}</h1>
+            <p className="lede" data-landmark="lede">
               {members.length} {members.length === 1 ? 'person' : 'people'}{def ? `, ${def.bots.length} bots, ${def.channels.length} channels` : ''}. This team's memory is stored in the <span className="mono">team:{t.slug}</span> bank and is not readable from other teams.
             </p>
             {error ? <Alert>{error}</Alert> : null}
@@ -248,7 +248,7 @@ export function Roster() {
                 <div className="mono">Hindsight · team:{t.slug}</div>
               </div>
             </section>
-          </>
+          </div>
         );
       }}
     </QueryView>
