@@ -15,8 +15,8 @@
     "db:up": "docker compose -f deploy/compose/docker-compose.dev.yml up -d --wait postgres",
     "db:down": "docker compose -f deploy/compose/docker-compose.dev.yml down",
     "e2e": "playwright test -c e2e/playwright.config.ts",
-    "vt": "echo \"P1-10: plate comparison not built yet\"",
-    "vt:update": "echo \"P1-10: plate comparison not built yet\""
+    "vt": "tsx tools/plates/src/cli.ts",
+    "vt:update": "tsx tools/plates/src/cli.ts --update"
   },
   "devDependencies": {
     "@eslint/js": "^9",
