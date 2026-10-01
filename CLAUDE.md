@@ -9,11 +9,11 @@ Progress: `STATUS.md`. Known mistakes to avoid: `MISTAKES.md` — read it before
 
 ## Stack (pinned)
 - Node 22, pnpm 10 workspaces, TypeScript strict, ESM only (`"type": "module"`), `moduleResolution: bundler`
-  for libs consumed by Vite, `NodeNext` for server packages. Run TS with `tsx` in dev/tests.
+  everywhere. Packages export TS source (`"exports": {".": "./src/index.ts"}`); run with `tsx`, no build step.
 - Server: Fastify 5 + `fastify-type-provider-zod` (Zod type provider on every route), `@fastify/websocket`.
 - Schemas: **Zod 4** in `packages/shared` (D1). Types via `z.infer`. JSON Schema via `z.toJSONSchema`.
-- DB: **Postgres 19** (image `majlis/postgres:19` = `postgres:19beta4` + pgvector, built from
-  `deploy/postgres/Dockerfile`), driver `pg` (node-postgres). No ORM. No Redis/Valkey (D3).
+- DB: **Postgres 19** (image `majlis/postgres:19` = `postgres:19beta4` + pgvector 0.8.7, built from
+  `deploy/postgres/Dockerfile`; build with `docker build --secret id=cacert,src=/root/.ccr/ca-bundle.crt -t majlis/postgres:19 deploy/postgres`), driver `pg` (node-postgres). No ORM. No Redis/Valkey (D3).
 - Tests: Vitest (unit/integration), Playwright (`e2e/`, projects `desktop` 1440×900, `mobile-web` 390×844).
 - Web: React 19 + Vite, plain CSS with tokens in `clients/web/src/styles/tokens.css`.
 - Lint: ESLint 9 flat config + typescript-eslint; Stylelint for CSS. `pnpm lint` and `pnpm typecheck` must pass.
