@@ -8,6 +8,8 @@ export const ErrorCode = z.enum([
   'conflict',
   'internal',
   'unauthenticated',
+  /** 410: a one-time link or token that was used, expired or never existed. */
+  'gone',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

@@ -51,7 +51,8 @@ that is not in `extends`, or an event not in `events.emits` / `events.consumes`,
 | `provider.<kind>` | `ctx.providers.register(kind, impl)` |
 | `command.register`, `trigger.register`, `component.register` | `ctx.commands`, `ctx.triggers`, `ctx.components` |
 | `surface.nav/screen/card/panel`, `settings.page`, `composer.action` | declarative client surfaces (`ctx.surfaces`, `ctx.settings`, `ctx.composer`); no client JS is loaded at run time |
-| (always available) | `ctx.http.route(def)`, `ctx.capabilities.register(name, handler)`, `ctx.storage` |
+| (always available) | `ctx.http.route(def)`, `ctx.capabilities.register(name, handler)`, `ctx.storage`, `ctx.mail.send({ template: 'verify' \| 'reset' \| 'invite', to, ... })`, `ctx.runtime` (`publicUrl`, `now()`) |
+| `provider.identity` | `ctx.identity`: run as the system actor, create and end sessions, hash passwords, a start-up task. Sign-in plugins only; read [security.md](./security.md) |
 
 ### HTTP routes
 
@@ -73,8 +74,14 @@ ctx.http.route({
 - Over the limit is `429 rate_limited`. Counters live in the process, so with N replicas each allows the full limit.
 - Routes need a signed-in actor. `public: true` opts a route out (health-like or test routes); it then runs as an
   anonymous actor that RLS lets see nothing.
-- Until phase 2 adds sign-in, tests and local dev send `x-manythreads-dev-actor: {"kind":"person","id":"<uuid>","workspaceId":"<uuid>"}`.
-  The server honours it **only** when `NODE_ENV=test` or `MANYTHREADS_DEV_AUTH=1`; phase 2 deletes it.
+- Real callers authenticate with the session cookie (`manythreads_session`); unsafe methods (POST, PUT, PATCH, DELETE) on a
+  cookie-authenticated request also need the double-submit `x-csrf-token` header or they are `403`. The handler's `tx` runs as
+  that person. `req.caller` (actor id, person id, session id) and `req.headers` / `req.ip` are on the request.
+- Tests send `x-manythreads-dev-actor: {"kind":"person","id":"<uuid>","workspaceId":"<uuid>"}`, honoured **only** when
+  `NODE_ENV=test`, or use real sessions; see [../testing.md](../testing.md).
+- Throw `HttpError(status, code, message)` (from `@manythreads/sdk`) to answer with the error envelope; the transaction rolls
+  back. Return `{ status, body, headers }` instead to keep the writes. `setSession` / `clearSession` on the response set or
+  clear the session cookies (sign-in plugins only).
 
 ### Events
 

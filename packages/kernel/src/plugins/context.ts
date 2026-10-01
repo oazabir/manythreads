@@ -2,10 +2,14 @@ import { guardPluginTx } from '@manythreads/sdk';
 import type {
   CapabilityHandler,
   EmitEvent,
+  IdentityServices,
+  MailService,
   PluginContext,
   PluginEvent,
+  PluginRuntime,
   PluginTx,
   ScopedKv,
+  SecretService,
   StorageScope,
 } from '@manythreads/sdk';
 import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
@@ -16,6 +20,12 @@ export interface ContextDeps {
   registries: ExtensionRegistries;
   emit?: EmitEvent;
   storage: ScopedKv;
+  mail: MailService;
+  runtime: PluginRuntime;
+  /** Handed only to plugins that extend `provider.identity`. */
+  identity?: IdentityServices;
+  /** Secret storage for plugins that extend `provider.identity` (default: the kernel's KMS-backed one). */
+  secrets?: SecretService;
 }
 
 /** The `ctx` handed to `register`. Using an extension point the manifest did not declare throws. */
@@ -158,6 +168,22 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       },
     },
     storage: deps.storage,
+    mail: deps.mail,
+    runtime: deps.runtime,
+    get identity(): IdentityServices {
+      use('provider.identity');
+      if (!deps.identity) {
+        throw new PluginError(`Plugin "${name}": no identity services are wired into the host`, { plugin: name });
+      }
+      return deps.identity;
+    },
+    get secrets(): SecretService {
+      use('provider.identity');
+      if (!deps.secrets) {
+        throw new PluginError(`Plugin "${name}": no secret service is wired into the host`, { plugin: name });
+      }
+      return deps.secrets;
+    },
   };
 }
 

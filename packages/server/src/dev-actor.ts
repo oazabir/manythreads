@@ -3,12 +3,14 @@ import { ActorId, RunId, WorkspaceId } from '@manythreads/shared';
 import { z } from 'zod';
 
 /**
- * DEV AUTH, test-only. Phase 2 replaces this with real sessions and bearer tokens and this file is deleted.
+ * DEV AUTH, NODE_ENV=test only. Real requests authenticate with a session cookie (see ./session). This stays for
+ * unit and API tests that need an arbitrary actor (a bot, a person without a password) without a sign-in.
  *
- * When enabled (NODE_ENV=test or MANYTHREADS_DEV_AUTH=1) a request may carry
+ * When NODE_ENV=test a request may carry
  *   x-manythreads-dev-actor: {"kind":"person"|"bot","id":"<actors.id uuid>","workspaceId":"<uuid>"}
- * and is then treated as that actor. With neither switch set the header is ignored, so a production server
- * can never be impersonated this way.
+ * and is then treated as that actor. In any other environment the header is ignored, whatever else is configured, so
+ * a production server can never be impersonated this way. (For e2e runs and screenshots against a running server use
+ * the session test endpoint, docs/testing.md.)
  */
 export const DEV_ACTOR_HEADER = 'x-manythreads-dev-actor';
 
@@ -22,7 +24,7 @@ const DevActorHeader = z.strictObject({
 });
 
 export function devAuthEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env['NODE_ENV'] === 'test' || env['MANYTHREADS_DEV_AUTH'] === '1';
+  return env['NODE_ENV'] === 'test';
 }
 
 /** Parses the dev header; returns null when absent or malformed (the request is then anonymous). */

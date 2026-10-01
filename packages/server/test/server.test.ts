@@ -96,20 +96,23 @@ describe('dev auth gating', () => {
   const actor = JSON.stringify({ kind: 'person', id: '00000000-0000-7000-8000-0000000d0001', workspaceId: '00000000-0000-7000-8000-00000000a001' });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('is enabled only by NODE_ENV=test or MANYTHREADS_DEV_AUTH=1', () => {
+  it('is enabled only by NODE_ENV=test; the old MANYTHREADS_DEV_AUTH switch no longer does anything', () => {
     expect(devAuthEnabled({ NODE_ENV: 'production' })).toBe(false);
     expect(devAuthEnabled({})).toBe(false);
-    expect(devAuthEnabled({ MANYTHREADS_DEV_AUTH: '0' })).toBe(false);
+    expect(devAuthEnabled({ NODE_ENV: 'development' })).toBe(false);
+    expect(devAuthEnabled({ MANYTHREADS_DEV_AUTH: '1' })).toBe(false);
+    expect(devAuthEnabled({ NODE_ENV: 'production', MANYTHREADS_DEV_AUTH: '1' })).toBe(false);
     expect(devAuthEnabled({ NODE_ENV: 'test' })).toBe(true);
-    expect(devAuthEnabled({ NODE_ENV: 'production', MANYTHREADS_DEV_AUTH: '1' })).toBe(true);
   });
 
-  it('a production server with default options ignores the header', async () => {
+  it('a production server ignores the header even when devAuth is passed explicitly', async () => {
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('MANYTHREADS_DEV_AUTH', '');
-    const app = await server();
-    const res = await app.inject({ method: 'GET', url: '/t/private', headers: { [DEV_ACTOR_HEADER]: actor } });
-    expect(res.statusCode).toBe(401);
+    vi.stubEnv('MANYTHREADS_DEV_AUTH', '1');
+    for (const opts of [{}, { devAuth: true }]) {
+      const app = await server(opts);
+      const res = await app.inject({ method: 'GET', url: '/t/private', headers: { [DEV_ACTOR_HEADER]: actor } });
+      expect(res.statusCode).toBe(401);
+    }
   });
 
   it('the header can never claim the system actor', () => {

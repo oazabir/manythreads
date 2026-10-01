@@ -6,10 +6,14 @@ import {
   DEFAULT_APP_PASSWORD,
   createAppPool,
   createSystemPool,
-    createDbGrantSource,
+  createDbGrantSource,
   createEventAuditSink,
   discoverPlugins,
   emit,
+  ensureActor,
+  hashPassword,
+  verifyPassword,
+  mailerFromEnv,
   kernelMigrationSource,
   loadPlugins,
   processedOnce,
@@ -18,15 +22,18 @@ import {
   subscribe,
   withSystem,
   type Consumer,
+  type Mailer,
   type MigrationSource,
   type PluginHost,
   type PluginSource,
   type Tx,
 } from '@manythreads/kernel';
-import type { WorkspaceId } from '@manythreads/shared';
+import { guardPluginTx, type IdentityServices, type PluginLogger, type PluginTx } from '@manythreads/sdk';
+import type { PersonId, WorkspaceId } from '@manythreads/shared';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { buildServer } from './build-server.ts';
+import { createSessionService, sessionConfigFromEnv, type SessionConfig, type SessionService } from './session/index.ts';
 
 export const pluginsDir = fileURLToPath(new URL('../../plugins/', import.meta.url));
 
@@ -51,13 +58,32 @@ export interface StartServerOptions {
   migrationLock?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Load the test-only plugins (test-kernel, example-hello). */
   testPlugins?: boolean;
+  /** The test-only dev header (only ever honoured when NODE_ENV=test; see dev-actor.ts). */
   devAuth?: boolean;
   logger?: boolean | object;
+  /** Behind a reverse proxy that sets x-forwarded-for (default: `MANYTHREADS_TRUST_PROXY=1`). */
+  trustProxy?: boolean;
+  /** Public base URL (`MANYTHREADS_PUBLIC_URL`) used for links in mails and the bootstrap line. Default http://localhost:<port>. */
+  publicUrl?: string;
+  /** Delivers mail (default: SMTP from `MANYTHREADS_SMTP_URL`, otherwise it logs that nothing was sent). */
+  mailer?: Mailer;
+  /** The server's clock; tests inject one to prove idle and absolute session expiry. */
+  now?: () => Date;
+  /** Session lifetimes and cookie flags; defaults come from the environment (`sessionConfigFromEnv`). */
+  session?: Partial<SessionConfig>;
+  /**
+   * TEST ONLY. When set, `POST /api/test/session` exists and answers requests carrying `x-test-auth: <value>`.
+   * Default: `MANYTHREADS_TEST_AUTH_TOKEN`. Pass `null` to ignore the environment.
+   */
+  testAuthToken?: string | null;
 }
 
 export interface RunningServer {
   app: FastifyInstance;
   host: PluginHost;
+  sessions: SessionService;
+  mailer: Mailer;
+  publicUrl: string;
   pools: { app: pg.Pool; system: pg.Pool };
   /** `http://127.0.0.1:<port>` */
   url: string;
@@ -81,11 +107,41 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     return options.testPlugins === true || !TEST_ONLY_PLUGIN_DIRS.has(dirName);
   });
 
+  const clock = options.now ?? (() => new Date());
+  const publicUrl = (options.publicUrl ?? process.env['MANYTHREADS_PUBLIC_URL'] ?? `http://localhost:${options.port ?? 3000}`).replace(/\/+$/, '');
+  const sessionConfig: SessionConfig = {
+    ...sessionConfigFromEnv({ ...process.env, MANYTHREADS_PUBLIC_URL: publicUrl }),
+    ...options.session,
+  };
+  const sessions = createSessionService({ pool: systemPool, config: sessionConfig, now: clock });
+  let mailWarn: (line: string) => void = () => undefined; // bound to the app logger once the app exists
+  const mailer = options.mailer ?? mailerFromEnv(process.env, (line) => mailWarn(line));
+  const startTasks: Array<(tx: PluginTx, log: PluginLogger) => Promise<void>> = [];
+  // What a sign-in plugin (extends provider.identity) may do beyond a normal plugin; see docs/plugins/security.md.
+  const identity: IdentityServices = {
+    runAsSystem: (fn, opts) =>
+      withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), {
+        pool: systemPool,
+        ...(opts?.workspaceId ? { workspaceId: opts.workspaceId as WorkspaceId } : {}),
+      }),
+    ensureActor: async (tx, input) =>
+      (await ensureActor(tx as unknown as Tx, { kind: 'person', workspaceId: input.workspaceId as WorkspaceId, refId: input.personId as PersonId })).id,
+    hashPassword,
+    verifyPassword,
+    sessions,
+    onStart: (task) => {
+      startTasks.push(task);
+    },
+  };
+
   const capabilities = new CapabilityRegistry();
   const lock = options.migrationLock ?? (<T>(fn: () => Promise<T>) => fn());
   const host = await lock(() => loadPlugins({
     plugins: sources,
     capabilities,
+    mailer,
+    runtime: { publicUrl, now: clock },
+    identity,
     database: {
       ownerUrl: options.ownerUrl,
       pool: appPool,
@@ -116,10 +172,18 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     pool: appPool,
     systemPool,
     expectedMigrations,
+    sessions,
+    trustProxy: options.trustProxy ?? process.env['MANYTHREADS_TRUST_PROXY'] === '1',
+    testAuthToken: options.testAuthToken === undefined ? (process.env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? null) : options.testAuthToken,
     ...(options.devAuth !== undefined ? { devAuth: options.devAuth } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
   app.decorate('broker', broker);
+  mailWarn = (line) => app.log.warn(line);
+
+  // Start-up tasks of identity plugins (first-admin bootstrap line) run once, as the system actor, before listening.
+  const log: PluginLogger = { info: (m) => app.log.info(m), warn: (m) => app.log.warn(m) };
+  for (const task of startTasks) await withSystem((tx) => task(guardPluginTx(tx as unknown as PluginTx), log), { pool: systemPool });
 
   // Plugin event subscribers: one outbox consumer fans events out to host.dispatch, exactly once in effect.
   const consumers: Consumer[] = [];
@@ -153,6 +217,9 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   return {
     app,
     host,
+    sessions,
+    mailer,
+    publicUrl,
     port,
     pools: { app: appPool, system: systemPool },
     url: `http://127.0.0.1:${port}`,

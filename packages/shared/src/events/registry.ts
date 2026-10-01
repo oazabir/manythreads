@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import { ChannelMessagePostedEvent } from './channel.message.posted.ts';
+import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
+import { IdentityPasswordResetEvent } from './identity.password.reset.ts';
+import { IdentitySessionSignInFailedEvent } from './identity.session.sign_in_failed.ts';
+import { IdentitySessionSignedInEvent } from './identity.session.signed_in.ts';
+import { IdentitySessionSignedOutEvent } from './identity.session.signed_out.ts';
+import { IdentityWorkspaceBootstrappedEvent } from './identity.workspace.bootstrapped.ts';
 import { WorkspaceTeamCreatedEvent } from './workspace.team.created.ts';
 import { WorkspaceTeamRenamedEvent } from './workspace.team.renamed.ts';
 import { WorkspaceTeamArchivedEvent } from './workspace.team.archived.ts';
@@ -24,6 +30,12 @@ export const eventRegistry = {
   'workspace.team.created': { 1: WorkspaceTeamCreatedEvent },
   'workspace.team.renamed': { 1: WorkspaceTeamRenamedEvent },
   'workspace.team.archived': { 1: WorkspaceTeamArchivedEvent },
+  'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
+  'identity.password.reset': { 1: IdentityPasswordResetEvent },
+  'identity.session.sign_in_failed': { 1: IdentitySessionSignInFailedEvent },
+  'identity.session.signed_in': { 1: IdentitySessionSignedInEvent },
+  'identity.session.signed_out': { 1: IdentitySessionSignedOutEvent },
+  'identity.workspace.bootstrapped': { 1: IdentityWorkspaceBootstrappedEvent },
   'workspace.team.unarchived': { 1: WorkspaceTeamUnarchivedEvent },
   'workspace.invitation.created': { 1: WorkspaceInvitationCreatedEvent },
   'workspace.invitation.accepted': { 1: WorkspaceInvitationAcceptedEvent },
@@ -49,6 +61,12 @@ export type AnyEvent =
   | z.infer<typeof WorkspaceTeamUnarchivedEvent>
   | z.infer<typeof WorkspaceInvitationCreatedEvent>
   | z.infer<typeof WorkspaceInvitationAcceptedEvent>
+  | z.infer<typeof IdentityEmailVerifiedEvent>
+  | z.infer<typeof IdentityPasswordResetEvent>
+  | z.infer<typeof IdentitySessionSignInFailedEvent>
+  | z.infer<typeof IdentitySessionSignedInEvent>
+  | z.infer<typeof IdentitySessionSignedOutEvent>
+  | z.infer<typeof IdentityWorkspaceBootstrappedEvent>
   | z.infer<typeof TeamTemplateAppliedEvent>
   | z.infer<typeof TeamMemberAddedEvent>
   | z.infer<typeof TeamMemberRemovedEvent>
@@ -73,6 +91,12 @@ export type LatestEvent =
   | z.infer<typeof TeamTemplateAppliedEvent>
   | z.infer<typeof TeamMemberAddedEvent>
   | z.infer<typeof TeamMemberRemovedEvent>
+  | z.infer<typeof IdentityEmailVerifiedEvent>
+  | z.infer<typeof IdentityPasswordResetEvent>
+  | z.infer<typeof IdentitySessionSignInFailedEvent>
+  | z.infer<typeof IdentitySessionSignedInEvent>
+  | z.infer<typeof IdentitySessionSignedOutEvent>
+  | z.infer<typeof IdentityWorkspaceBootstrappedEvent>
   | z.infer<typeof TeamRoleChangedEvent>
   | z.infer<typeof TeamTagCreatedEvent>
   | z.infer<typeof TeamTagDeletedEvent>

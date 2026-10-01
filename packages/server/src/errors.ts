@@ -1,6 +1,7 @@
 import type { ErrorCode, ErrorEnvelope } from '@manythreads/shared';
 import { hasZodFastifySchemaValidationErrors, isResponseSerializationError } from 'fastify-type-provider-zod';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
+import { HttpError } from '@manythreads/sdk';
 import { ZodError } from 'zod';
 
 type PathSegment = string | number;
@@ -42,6 +43,7 @@ const STATUS_CODES: Record<number, ErrorCode> = {
   413: 'validation_failed',
   415: 'validation_failed',
   422: 'validation_failed',
+  410: 'gone',
   429: 'rate_limited',
 };
 
@@ -67,6 +69,11 @@ export function errorHandler(err: FastifyError | Error, req: FastifyRequest, rep
   if (isResponseSerializationError(err)) {
     req.log.error({ err, method: err.method, url: err.url }, 'response failed its schema: server bug');
     void reply.status(500).send(envelope('internal', 'Internal server error'));
+    return;
+  }
+  if (err instanceof HttpError) {
+    for (const [k, v] of Object.entries(err.headers)) void reply.header(k, v);
+    void reply.status(err.status).send(envelope(err.code, err.message));
     return;
   }
   const status = (err as FastifyError).statusCode;

@@ -29,7 +29,12 @@ export default defineConfig({
             reuseExistingServer: false,
             timeout: 120_000,
             gracefulShutdown: { signal: 'SIGTERM' as const, timeout: 10_000 },
-            env: { MANYTHREADS_TEST_PLUGINS: '1', MANYTHREADS_API_PORT: String(apiPort), NODE_ENV: 'test' },
+            env: {
+              MANYTHREADS_TEST_PLUGINS: '1',
+              MANYTHREADS_API_PORT: String(apiPort),
+              NODE_ENV: 'test',
+              MANYTHREADS_TEST_AUTH_TOKEN: process.env.MANYTHREADS_TEST_AUTH_TOKEN ?? 'e2e-test-auth-token',
+            },
           },
         ]),
     ...(external || apiOnly

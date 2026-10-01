@@ -9,7 +9,15 @@ import { startServer } from './start.ts';
  *   MANYTHREADS_APP_PASSWORD       password for manythreads_app (set by the migration runner; default is dev-only)
  *   MANYTHREADS_SYSTEM_DATABASE_URL / MANYTHREADS_SYSTEM_PASSWORD   same for the kernel's manythreads_system login
  *   MANYTHREADS_TEST_PLUGINS=1     also load test-kernel and example-hello
- *   MANYTHREADS_DEV_AUTH=1         accept the x-manythreads-dev-actor header (never in production; phase 2 removes it)
+ *   MANYTHREADS_PUBLIC_URL         public base URL (links in mails, the first-admin bootstrap line); default http://localhost:PORT
+ *   MANYTHREADS_TRUST_PROXY=1      believe x-forwarded-for (behind an ingress); the sign-in lockout keys on the client address
+ *   MANYTHREADS_SMTP_URL           smtp://user:pass@host:587 (dev mailpit: smtp://localhost:1025); unset = mail is not sent
+ *   MANYTHREADS_MAIL_FROM          From address of outgoing mail
+ *   MANYTHREADS_SESSION_IDLE_MINUTES (30) / MANYTHREADS_SESSION_ABSOLUTE_DAYS (30) / MANYTHREADS_SESSION_ROTATE_HOURS (4)
+ *   MANYTHREADS_COOKIE_SECURE      1|0 forces the Secure flag on session cookies (default: on, except NODE_ENV=test|development
+ *                                  or an http:// public URL)
+ *   MANYTHREADS_TEST_AUTH_TOKEN    TEST ONLY: mounts POST /api/test/session (see docs/testing.md); never set in production
+ *   NODE_ENV=test                  the only setting that honours the x-manythreads-dev-actor header
  */
 const env = process.env;
 const ownerUrl = env['DATABASE_URL'] ?? env['MANYTHREADS_DATABASE_URL'] ?? DEV_OWNER_URL;

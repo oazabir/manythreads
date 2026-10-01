@@ -61,6 +61,7 @@ describe('ErrorEnvelope', () => {
       'conflict',
       'internal',
       'unauthenticated',
+      'gone',
     ]);
   });
 });

@@ -1,12 +1,26 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { EmitEvent, PluginDefinition, PluginEvent, PluginTx, ScopedKv } from '@manythreads/sdk';
+import type {
+  EmitEvent,
+  IdentityServices,
+  MailService,
+  PluginDefinition,
+  PluginEvent,
+  PluginRuntime,
+  PluginTx,
+  ScopedKv,
+  SecretService,
+} from '@manythreads/sdk';
 import { PluginManifest } from '@manythreads/shared';
 import type pg from 'pg';
 import { CapabilityRegistry } from '../capabilities/registry.ts';
 import { kernelMigrationSource, runMigrations, type MigrationSource } from '../db/migrate.ts';
+import { createMemoryMailer } from '../mail/memory.ts';
+import { renderMail } from '../mail/templates.ts';
+import type { Mailer } from '../mail/types.ts';
 import { withSystem } from '../db/with-actor.ts';
+import { createSecretService } from '../kms/service.ts';
 import { createDbKv } from '../storage/kv.ts';
 import { createMemoryKv, createPluginContext } from './context.ts';
 import { PluginError } from './errors.ts';
@@ -53,6 +67,14 @@ export interface LoadPluginsOptions {
   storage?: ScopedKv | ((plugin: string) => ScopedKv);
   capabilities?: CapabilityRegistry;
   registries?: ExtensionRegistries;
+  /** Delivers `ctx.mail.send` (default: an in-memory mailer that keeps messages, i.e. nothing is delivered). */
+  mailer?: Mailer;
+  /** `ctx.runtime`: public URL and clock (default: http://localhost:3000 and the system clock). */
+  runtime?: PluginRuntime;
+  /** `ctx.identity`, for plugins that extend `provider.identity`. The server builds it (it owns sessions). */
+  identity?: IdentityServices;
+  /** `ctx.secrets` (default: envelope encryption with the process KMS, see kms/service.ts). */
+  secrets?: SecretService;
 }
 
 export interface PluginHost {
@@ -238,10 +260,35 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
     if (configured) return configured;
     return database ? createDbKv({ plugin, ...(database.systemPool ? { pool: database.systemPool } : {}) }) : memoryKv;
   };
+  // Without the server (unit tests of the host) a sign-in plugin still loads; using the services is what fails.
+  const unavailable = (what: string) => (): never => {
+    throw new PluginError(`ctx.identity.${what} is only available when the plugin host runs inside the server`);
+  };
+  const identity: IdentityServices = options.identity ?? {
+    runAsSystem: unavailable('runAsSystem'),
+    ensureActor: unavailable('ensureActor'),
+    hashPassword: unavailable('hashPassword'),
+    verifyPassword: unavailable('verifyPassword'),
+    sessions: {
+      issue: unavailable('sessions.issue'),
+      list: unavailable('sessions.list'),
+      revoke: unavailable('sessions.revoke'),
+      revokeAll: unavailable('sessions.revokeAll'),
+    },
+    onStart: () => undefined,
+  };
+  const mailer = options.mailer ?? createMemoryMailer();
+  const mail: MailService = { send: (message) => mailer.send(renderMail(message)) };
+  const secrets = createSecretService();
+  const runtime: PluginRuntime = options.runtime ?? { publicUrl: 'http://localhost:3000', now: () => new Date() };
   for (const p of ordered) {
     const ctx = createPluginContext(p.manifest, {
       registries,
       storage: storageFor(p.manifest.name),
+      mail,
+      runtime,
+      identity,
+      secrets: options.secrets ?? secrets,
       ...(options.emit ? { emit: options.emit } : {}),
     });
     try {

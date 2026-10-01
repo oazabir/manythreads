@@ -30,3 +30,20 @@ plugin handlers (event subscribers, hooks, commands, HTTP routes, capability han
 This stops the obvious spoofing paths and is easy to bypass (for example through a function that calls `set_config`
 internally). The durable fix is a dedicated plugin database role with a signed, non-settable identity; until then treat
 installed plugins as trusted code.
+
+## Sign-in plugins: `provider.identity`
+
+Sign-in happens before anybody is known, so it cannot run as a person. A plugin whose manifest lists `provider.identity` in
+`extends` gets `ctx.identity` (every other plugin throws when it touches it):
+
+- `runAsSystem(fn)` runs one transaction as the real `manythreads_system` role. **RLS does not apply**; the handler must scope
+  every query itself (by the caller's person id, by a token hash, by an email). Treat each query like a privileged API.
+- `sessions.issue / list / revoke / revokeAll` write the session tables, which only the system role can. `revoke` and `list`
+  take the person id: always pass the caller's, never one from the request.
+- `ensureActor`, `hashPassword` / `verifyPassword` (argon2id), and `onStart(task)` for a one-off task at server start (the
+  first-admin link).
+
+A route returns `setSession` (the `issue` result) or `clearSession`; the server turns that into the `manythreads_session`
+(HttpOnly, SameSite=Lax, Secure outside local http) and readable `manythreads_csrf` cookies. The token is opaque random bytes;
+only its sha256 is stored (`app.session_tokens`, with the UNLOGGED `app.session_cache` in front for the hot lookup). Never log,
+return in a body, or store a session token or a CSRF token.

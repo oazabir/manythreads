@@ -63,7 +63,8 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
 - Rate limits in process memory (sliding window), per replica. Never in the DB.
 - Plugins import only `@manythreads/sdk` and `@manythreads/shared`, never kernel internals. Plugin HTTP routes mount at
   their declared absolute path (e.g. `/api/channels/:id/messages`); duplicates fail at load.
-- Test-only HTTP actor: header-based dev actor only with `NODE_ENV=test` or `MANYTHREADS_DEV_AUTH=1`, never `system`.
+- Test-only HTTP actor: header-based dev actor only with `NODE_ENV=test`, never `system`. Sessions (cookie + CSRF header) are the real
+  auth; e2e/screenshots use `POST /api/test/session` (only when `MANYTHREADS_TEST_AUTH_TOKEN` is set; see `docs/testing.md`).
 - Capability names `namespace.verb` with a destructive tag. The broker denies bot actors writes to
   `bots/`, `TEAM.md`, `skills/`, `routines/`; `person:*` only for `conversation`/`mention` triggers.
 - Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter Tight, JetBrains Mono.

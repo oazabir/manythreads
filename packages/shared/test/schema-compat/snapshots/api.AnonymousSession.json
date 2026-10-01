@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "authenticated": {
+      "type": "boolean",
+      "const": false
+    },
+    "methods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "google",
+              "microsoft",
+              "password",
+              "oidc"
+            ]
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "label"
+        ]
+      }
+    }
+  },
+  "required": [
+    "authenticated",
+    "methods"
+  ]
+}
