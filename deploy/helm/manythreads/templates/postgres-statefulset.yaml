@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: majlis-pg-rw
+  name: manythreads-pg-rw
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
 spec:
   selector:
     app.kubernetes.io/component: postgres
@@ -15,7 +15,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: majlis-pg-init
+  name: manythreads-pg-init
 data:
   10-init.sh: |
     #!/bin/sh
@@ -28,11 +28,11 @@ data:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: majlis-pg
+  name: manythreads-pg
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
 spec:
-  serviceName: majlis-pg-rw
+  serviceName: manythreads-pg-rw
   replicas: 1
   selector:
     matchLabels:
@@ -41,7 +41,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/component: postgres
-        cnpg.io/cluster: majlis-pg
+        cnpg.io/cluster: manythreads-pg
     spec:
       securityContext:
         runAsUser: {{ .Values.postgres.uid }}
@@ -56,7 +56,7 @@ spec:
             - { name: POSTGRES_DB, value: {{ .Values.postgres.database }} }
             - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
             - name: POSTGRES_PASSWORD
-              valueFrom: { secretKeyRef: { name: majlis-db-owner, key: password } }
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
           ports: [{ containerPort: 5432 }]
           readinessProbe:
             exec: { command: [sh, -c, "pg_isready -U {{ .Values.postgres.owner }} -d {{ .Values.postgres.database }}"] }
@@ -66,7 +66,7 @@ spec:
             - { name: init, mountPath: /docker-entrypoint-initdb.d }
       volumes:
         - name: init
-          configMap: { name: majlis-pg-init, defaultMode: 0555 }
+          configMap: { name: manythreads-pg-init, defaultMode: 0555 }
   volumeClaimTemplates:
     - metadata: { name: data }
       spec:

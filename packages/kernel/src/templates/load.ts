@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { TeamTemplate } from '@majlis/shared';
+import { TeamTemplate } from '@manythreads/shared';
 import { parse } from 'yaml';
 import type { z } from 'zod';
 

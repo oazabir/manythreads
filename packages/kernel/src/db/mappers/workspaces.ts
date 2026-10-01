@@ -1,4 +1,4 @@
-import { Workspace } from '@majlis/shared';
+import { Workspace } from '@manythreads/shared';
 
 export interface WorkspaceRow {
   id: string;

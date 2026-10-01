@@ -1,4 +1,4 @@
-import { ScopedKvEntry } from '@majlis/shared';
+import { ScopedKvEntry } from '@manythreads/shared';
 
 export interface ScopedKvRow {
   plugin: string;

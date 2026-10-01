@@ -29,8 +29,8 @@ jobs:
           if [ -n "$REVISION" ] && ! printf '%s' "$REVISION" | grep -Eq '^[0-9]{1,6}$'; then echo "revision must be digits"; exit 1; fi
           source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
           remote_sh "REVISION=$REVISION" <<'REMOTE'
-          helm history majlis -n manythreads | tail -n 10
-          helm rollback majlis ${REVISION:+"$REVISION"} -n manythreads --wait --timeout 10m
-          helm history majlis -n manythreads | tail -n 3
+          helm history manythreads -n manythreads | tail -n 10
+          helm rollback manythreads ${REVISION:+"$REVISION"} -n manythreads --wait --timeout 10m
+          helm history manythreads -n manythreads | tail -n 3
           kubectl get pods -n manythreads
           REMOTE

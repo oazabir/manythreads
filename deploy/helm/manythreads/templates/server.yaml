@@ -2,9 +2,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: majlis-server
+  name: manythreads-server
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
     app.kubernetes.io/component: server
 spec:
   replicas: {{ .Values.server.replicas }}
@@ -14,7 +14,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "majlis.labels" . | nindent 8 }}
+        {{- include "manythreads.labels" . | nindent 8 }}
         app.kubernetes.io/component: server
     spec:
       containers:
@@ -25,17 +25,17 @@ spec:
           env:
             - { name: PORT, value: {{ .Values.server.port | quote }} }
             - name: OWNER_PW
-              valueFrom: { secretKeyRef: { name: majlis-db-owner, key: password } }
-            - name: MAJLIS_APP_PASSWORD
-              valueFrom: { secretKeyRef: { name: majlis-db-app, key: password } }
-            - name: MAJLIS_SYSTEM_PASSWORD
-              valueFrom: { secretKeyRef: { name: majlis-db-system, key: password } }
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+            - name: MANYTHREADS_APP_PASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-app, key: password } }
+            - name: MANYTHREADS_SYSTEM_PASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-system, key: password } }
             - name: DATABASE_URL
-              value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "majlis.pgHost" . }}:5432/{{ .Values.postgres.database }}
-            - name: MAJLIS_APP_DATABASE_URL
-              value: postgres://{{ .Values.postgres.appRole }}:$(MAJLIS_APP_PASSWORD)@{{ include "majlis.pgHost" . }}:5432/{{ .Values.postgres.database }}
-            - name: MAJLIS_SYSTEM_DATABASE_URL
-              value: postgres://{{ .Values.postgres.systemRole }}:$(MAJLIS_SYSTEM_PASSWORD)@{{ include "majlis.pgHost" . }}:5432/{{ .Values.postgres.database }}
+              value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MANYTHREADS_APP_DATABASE_URL
+              value: postgres://{{ .Values.postgres.appRole }}:$(MANYTHREADS_APP_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MANYTHREADS_SYSTEM_DATABASE_URL
+              value: postgres://{{ .Values.postgres.systemRole }}:$(MANYTHREADS_SYSTEM_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
             {{- range $k, $v := .Values.server.env }}
             - { name: {{ $k }}, value: {{ $v | quote }} }
             {{- end }}
@@ -54,9 +54,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: majlis-server
+  name: manythreads-server
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
 spec:
   selector:
     app.kubernetes.io/component: server

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createAppPool, createSystemPool, withActor, withSystem } from '../../src/index.ts';
-import { ActorId, WorkspaceId } from '@majlis/shared';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { ActorId, WorkspaceId } from '@manythreads/shared';
+import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -32,8 +32,8 @@ afterAll(async () => {
   if (db) await dropTestDatabase(db);
 }, 60_000);
 
-// Acceptance criterion 8: events is append-only for majlis_app and majlis_system.
-describe('events is append-only for majlis_app and majlis_system', () => {
+// Acceptance criterion 8: events is append-only for manythreads_app and manythreads_system.
+describe('events is append-only for manythreads_app and manythreads_system', () => {
   const system = { kind: 'system', id: actorId, workspaceId } as const;
 
   it('INSERT works', async () => {

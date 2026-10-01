@@ -1,4 +1,4 @@
-import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase } from '@majlis/test-utils';
+import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../src/index.ts';

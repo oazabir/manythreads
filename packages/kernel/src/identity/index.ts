@@ -1,4 +1,4 @@
-import type { ActorId, BotId, PersonId, RunId, WorkspaceId } from '@majlis/shared';
+import type { ActorId, BotId, PersonId, RunId, WorkspaceId } from '@manythreads/shared';
 import { getOneOrCreate, systemActor, type Actor, type ActorKind, type Tx } from '../db/index.ts';
 
 /** A person acting as themselves; `id` is their `actors` row id (see ensureActor). */

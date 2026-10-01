@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { definePlugin, type PluginDefinition } from '@majlis/sdk';
-import { ActorId, TeamId, WorkspaceId } from '@majlis/shared';
-import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase } from '@majlis/test-utils';
+import { definePlugin, type PluginDefinition } from '@manythreads/sdk';
+import { ActorId, TeamId, WorkspaceId } from '@manythreads/shared';
+import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, createSystemPool, loadPlugins, withActor, withSystem, type PluginSource } from '../../src/index.ts';
@@ -128,7 +128,7 @@ describe('plugin host: ordering and validation (no database)', () => {
     ).rejects.toThrow(/GET \/api\/ping.*"p"|"p".*GET \/api\/ping/);
   });
 
-  it('discovers plugins by the package.json majlis field', async () => {
+  it('discovers plugins by the package.json manythreads field', async () => {
     const host = await loadPlugins({ scanDir: pluginsDir });
     expect(host.plugins.map((p) => p.manifest.name)).toContain('example-hello');
   });

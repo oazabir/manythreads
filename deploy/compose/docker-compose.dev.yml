@@ -1,17 +1,17 @@
 services:
   postgres:
     build: ../postgres
-    image: majlis/postgres:19
+    image: manythreads/postgres:19
     environment:
-      POSTGRES_USER: majlis_owner
-      POSTGRES_PASSWORD: majlis
-      POSTGRES_DB: majlis
+      POSTGRES_USER: manythreads_owner
+      POSTGRES_PASSWORD: manythreads
+      POSTGRES_DB: manythreads
     ports:
       - "55432:5432"
     volumes:
-      - majlis_pgdata:/var/lib/postgresql
+      - manythreads_pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U majlis_owner -d majlis"]
+      test: ["CMD-SHELL", "pg_isready -U manythreads_owner -d manythreads"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -33,4 +33,4 @@ services:
       - "1025:1025"
 
 volumes:
-  majlis_pgdata:
+  manythreads_pgdata:

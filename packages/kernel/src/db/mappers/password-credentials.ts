@@ -1,4 +1,4 @@
-import { PasswordCredential } from '@majlis/shared';
+import { PasswordCredential } from '@manythreads/shared';
 
 /** The `hash` column is deliberately absent: it is read only by the password plugin's verify query. */
 export interface PasswordCredentialRow {

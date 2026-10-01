@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { SecretId } from '@majlis/shared';
+import { SecretId } from '@manythreads/shared';
 import type { Tx } from '../db/index.ts';
 import { getKms, KmsError, openAesGcm, sealAesGcm, type Kms } from './kms.ts';
 
 /**
  * Stores a secret (envelope: a random data key encrypts it, the Kms wraps the data key) and returns its id.
  * Callable by a workspace admin's transaction or by system code: `app.put_secret` enforces that in the database,
- * because `majlis_app` has no privilege on `app.secrets`. The ciphertext is bound to the secret id (AAD), so a blob
+ * because `manythreads_app` has no privilege on `app.secrets`. The ciphertext is bound to the secret id (AAD), so a blob
  * copied to another row does not decrypt.
  */
 export async function putSecret(tx: Tx, plaintext: string | Uint8Array, kms: Kms = getKms()): Promise<SecretId> {
@@ -22,7 +22,7 @@ export async function putSecret(tx: Tx, plaintext: string | Uint8Array, kms: Kms
 }
 
 /**
- * Reads and decrypts a secret. System context only (a transaction on the majlis_system pool): no other role can
+ * Reads and decrypts a secret. System context only (a transaction on the manythreads_system pool): no other role can
  * SELECT `app.secrets`, and there is deliberately no API route, event or mapper that carries the plaintext to a client.
  */
 export async function getSecretBytes(tx: Tx, secretId: SecretId | string, kms: Kms = getKms()): Promise<Buffer> {

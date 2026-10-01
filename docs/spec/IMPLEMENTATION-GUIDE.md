@@ -1,6 +1,6 @@
-# Majlis — implementation guide for Claude
+# manythreads — implementation guide for Claude
 
-Written for Claude, running as an orchestrating coding agent, to build Majlis. Not written for a person. Every instruction is actionable and checkable against `SPEC-FINAL.md` v1.4 and `mockups-all.html`.
+Written for Claude, running as an orchestrating coding agent, to build manythreads. Not written for a person. Every instruction is actionable and checkable against `SPEC-FINAL.md` v1.4 and `mockups-all.html`.
 
 ---
 
@@ -40,7 +40,7 @@ This is the owner's delegation model. It is not optional and it is not a style p
 ### 1.1 Prompt template — coder (Sonnet)
 
 ```
-You are writing code for Majlis, a self-hosted collaboration platform (see /docs/spec/SPEC-FINAL.md).
+You are writing code for manythreads, a self-hosted collaboration platform (see /docs/spec/SPEC-FINAL.md).
 
 Goal: <one sentence — what this change accomplishes>
 Paths: <files/directories you may create or edit>
@@ -59,7 +59,7 @@ Return: a summary only — what changed, exact paths touched, any errors. Do not
 ### 1.2 Prompt template — reviewer (Sonnet, fresh)
 
 ```
-You are reviewing a diff for Majlis. You did not write this code and have no other context.
+You are reviewing a diff for manythreads. You did not write this code and have no other context.
 
 Diff: <paste diff only>
 Requirements: <paste the coder prompt's Goal, Paths and Constraints verbatim>
@@ -92,7 +92,7 @@ Return: exit code, pass/fail, and only the relevant lines of output (filter out 
 A pnpm TypeScript monorepo. Propose and create this tree:
 
 ```
-majlis/
+manythreads/
   packages/
     kernel/                  identity · event log · plugin host · capability broker · transport ·
                               scoped storage · entity-link table · read-state service · right-panel back stack
@@ -132,7 +132,7 @@ Each `packages/plugins/<name>` is one npm workspace package: a manifest, server-
 Write this file verbatim at the repository root before any other work starts:
 
 ````markdown
-# Majlis — CLAUDE.md
+# manythreads — CLAUDE.md
 
 ## Stack
 - Server: Node/TypeScript, Fastify. One language for plugin SDK, client and server.
@@ -147,7 +147,7 @@ Write this file verbatim at the repository root before any other work starts:
   for phones, with a deliberately reduced surface per spec §2: channels, threads,
   conversations, approvals, notifications; a WebView for the rest.
 - Deployment: docker compose starts five containers by default — Postgres, LiteLLM,
-  Hindsight, Majlis, Hermes. Every other service (NATS, a Temporal-class queue,
+  Hindsight, manythreads, Hermes. Every other service (NATS, a Temporal-class queue,
   S3/MinIO, OpenBao/KMS, Activepieces) is an optional plugin, not a default dependency.
   Helm + a DB-reading controller for k3s/Kubernetes. No CRDs, ever.
 
@@ -199,7 +199,7 @@ Direct messages (45) · Bots (50). The Bots header opens the team roster; a bot'
 name opens its conversation view.
 
 ## Default install
-docker compose up → five containers: Postgres, LiteLLM, Hindsight, Majlis, Hermes.
+docker compose up → five containers: Postgres, LiteLLM, Hindsight, manythreads, Hermes.
 Nothing else starts by default.
 ````
 
@@ -313,7 +313,7 @@ Self-setup (§9) → Workshop (Build/Rehearse/Live) → connections + `gateway-m
 
 ### 4.4 M3 (month 15–16) — ordered, lower resolution
 
-`ImageGenerator` surface → terminal into a bot's sandbox (admin-only, credentials revoked on open) → plugin registry (`majlis add owner/template`) → admin console → audit store + signed auditor export → pen-test checklist → App Store and Play Store submissions → docs and SDK publication.
+`ImageGenerator` surface → terminal into a bot's sandbox (admin-only, credentials revoked on open) → plugin registry (`manythreads add owner/template`) → admin console → audit store + signed auditor export → pen-test checklist → App Store and Play Store submissions → docs and SDK publication.
 
 ---
 
@@ -376,7 +376,7 @@ Follow this checklist for every plugin in §3 above.
 ```ts
 // packages/plugins/channels/test/messages.test.ts
 import { describe, it, expect } from "vitest";
-import { createTestTeam, createTestPerson, postMessage } from "@majlis/test-utils";
+import { createTestTeam, createTestPerson, postMessage } from "@manythreads/test-utils";
 
 describe("channels: messages.post", () => {
   it("posts a message the author can read", async () => {
@@ -453,7 +453,7 @@ pnpm test:pen -- --release      # pen-test checklist, release cadence only
 
 Run this end to end. Every step must pass without manual intervention beyond what is listed.
 
-1. `docker compose up` in `deploy/compose` — five containers reach healthy: Postgres, LiteLLM, Hindsight, Majlis, Hermes.
+1. `docker compose up` in `deploy/compose` — five containers reach healthy: Postgres, LiteLLM, Hindsight, manythreads, Hermes.
 2. Sign in as the first admin (password bootstrap).
 3. Create team **Engineering** from the Engineering template.
 4. Post a message in **#dev**.
@@ -483,7 +483,7 @@ Run this end to end. Every step must pass without manual intervention beyond wha
 
 - `ImageGenerator` surface works via the `image` alias.
 - Terminal into a bot's sandbox: admin-only, never on production placements, credentials minted for the run are revoked the instant the terminal opens.
-- Plugin registry (`majlis add owner/template`) lists and installs community templates.
+- Plugin registry (`manythreads add owner/template`) lists and installs community templates.
 - Admin console covers workspace, teams, connections, budgets, guard presets.
 - Audit store records who asked, what was reached, what was withheld, when — plus git history; signed, content-blind auditor export covers a date range.
 - Pen-test checklist passed.
@@ -496,7 +496,7 @@ Run this end to end. Every step must pass without manual intervention beyond wha
 
 ### 10.1 Non-goals (spec §20) — do not build these
 
-Pipeline designer · plugin marketplace with payments · voice/video · end-to-end encryption for agent channels or DMs · hand-building connectors the team-connections tool already covers · a second agent runtime · a browser extension · run-time loading of third-party JS client plugins · memory providers beyond the default provider and its git mirror · a non-linear video-editing surface and a separate board surface duplicating Boards · a standalone cross-team digest subsystem (a digest is a page written into another team's `knowledge/` folder, approved like any share) · live editing of Google Docs/Sheets/Slides inside Majlis (link-preview card only) · Kubernetes CRDs for Team/Bot/Connection/Environment · separate trigger types for board changes or connection events beyond task events and `webhook` · a folder-level visibility scope on a bot.
+Pipeline designer · plugin marketplace with payments · voice/video · end-to-end encryption for agent channels or DMs · hand-building connectors the team-connections tool already covers · a second agent runtime · a browser extension · run-time loading of third-party JS client plugins · memory providers beyond the default provider and its git mirror · a non-linear video-editing surface and a separate board surface duplicating Boards · a standalone cross-team digest subsystem (a digest is a page written into another team's `knowledge/` folder, approved like any share) · live editing of Google Docs/Sheets/Slides inside manythreads (link-preview card only) · Kubernetes CRDs for Team/Bot/Connection/Environment · separate trigger types for board changes or connection events beyond task events and `webhook` · a folder-level visibility scope on a bot.
 
 ### 10.2 Process anti-patterns — never do these regardless of task
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { ActorId, WorkspaceId } from '@majlis/shared';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { ActorId, WorkspaceId } from '@manythreads/shared';
+import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, createSystemPool, enqueue, withActor, withSystem, type Actor } from '../../src/index.ts';
@@ -68,13 +68,13 @@ describe('system escalation is a Postgres role, not a setting', () => {
     ).rejects.toThrow(/row-level security|foreign key/);
   });
 
-  it('majlis_app cannot SET ROLE majlis_system, nor SET SESSION AUTHORIZATION', async () => {
-    await expect(asPerson((tx) => tx.query('SET ROLE majlis_system'))).rejects.toThrow(/permission denied/);
-    await expect(asPerson((tx) => tx.query('SET SESSION AUTHORIZATION majlis_system'))).rejects.toThrow(
+  it('manythreads_app cannot SET ROLE manythreads_system, nor SET SESSION AUTHORIZATION', async () => {
+    await expect(asPerson((tx) => tx.query('SET ROLE manythreads_system'))).rejects.toThrow(/permission denied/);
+    await expect(asPerson((tx) => tx.query('SET SESSION AUTHORIZATION manythreads_system'))).rejects.toThrow(
       /permission denied/,
     );
     const m = await withSystem(
-      (tx) => tx.query<{ m: boolean }>(`SELECT pg_has_role('majlis_app', 'majlis_system', 'member') AS m`),
+      (tx) => tx.query<{ m: boolean }>(`SELECT pg_has_role('manythreads_app', 'manythreads_system', 'member') AS m`),
       { pool: sysPool },
     );
     expect(m.rows[0]?.m).toBe(false);

@@ -1,4 +1,4 @@
-import { OutboxDelivery } from '@majlis/shared';
+import { OutboxDelivery } from '@manythreads/shared';
 
 export interface OutboxRow {
   id: string;

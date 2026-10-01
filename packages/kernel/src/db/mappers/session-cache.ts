@@ -1,4 +1,4 @@
-import { SessionCacheEntry } from '@majlis/shared';
+import { SessionCacheEntry } from '@manythreads/shared';
 
 export interface SessionCacheRow {
   token_hash: Buffer;

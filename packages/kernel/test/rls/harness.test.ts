@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createAppPool, createSystemPool, withActor, withSystem, type Actor } from '../../src/index.ts';
-import { ActorId, WorkspaceId } from '@majlis/shared';
+import { ActorId, WorkspaceId } from '@manythreads/shared';
 import {
   createTestDatabase,
   dropTestDatabase,
@@ -8,7 +8,7 @@ import {
   findRlsViolations,
   parseRlsComment,
   type TestDatabase,
-} from '@majlis/test-utils';
+} from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -136,13 +136,13 @@ describe('RLS harness', () => {
     }
   });
 
-  it('majlis_app and majlis_system cannot bypass RLS', async () => {
+  it('manythreads_app and manythreads_system cannot bypass RLS', async () => {
     const r = await owner.query<{ rolname: string; rolbypassrls: boolean; rolsuper: boolean }>(
-      "SELECT rolname, rolbypassrls, rolsuper FROM pg_roles WHERE rolname IN ('majlis_app', 'majlis_system') ORDER BY rolname",
+      "SELECT rolname, rolbypassrls, rolsuper FROM pg_roles WHERE rolname IN ('manythreads_app', 'manythreads_system') ORDER BY rolname",
     );
     expect(r.rows).toEqual([
-      { rolname: 'majlis_app', rolbypassrls: false, rolsuper: false },
-      { rolname: 'majlis_system', rolbypassrls: false, rolsuper: false },
+      { rolname: 'manythreads_app', rolbypassrls: false, rolsuper: false },
+      { rolname: 'manythreads_system', rolbypassrls: false, rolsuper: false },
     ]);
   });
 });

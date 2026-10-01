@@ -48,7 +48,7 @@ jobs:
             git tag -a "$t" -m "Phase $PHASE" && git push -q origin "refs/tags/$t"
           done
       - if: steps.phase.outputs.phase != ''
-        uses: ./.github/actions/deploy-majlis
+        uses: ./.github/actions/deploy-manythreads
         with:
           label: main
           ssh-password: ${{ secrets.ROOT_PASSWORD }}

@@ -2,9 +2,9 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: majlis-pg
+  name: manythreads-pg
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
 spec:
   instances: {{ .Values.postgres.instances }}
   imageName: {{ .Values.postgres.image }}
@@ -17,7 +17,7 @@ spec:
       database: {{ .Values.postgres.database }}
       owner: {{ .Values.postgres.owner }}
       secret:
-        name: majlis-db-owner
+        name: manythreads-db-owner
       postInitApplicationSQL:
         - CREATE EXTENSION IF NOT EXISTS vector
         - CREATE EXTENSION IF NOT EXISTS pg_trgm

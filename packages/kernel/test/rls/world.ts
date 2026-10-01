@@ -6,7 +6,7 @@ import {
   testKernelMigrationSource,
   type Persona,
   type TestDatabase,
-} from '@majlis/test-utils';
+} from '@manythreads/test-utils';
 import type pg from 'pg';
 import { createAppPool, createSystemPool, withActor, withSystem, type Tx } from '../../src/index.ts';
 
@@ -15,9 +15,9 @@ export interface World {
   db: TestDatabase;
   appPool: pg.Pool;
   sysPool: pg.Pool;
-  /** Run as `persona` on the majlis_app pool (RLS applies exactly as for that person's request). */
+  /** Run as `persona` on the manythreads_app pool (RLS applies exactly as for that person's request). */
   as<T>(persona: Persona, fn: (tx: Tx) => Promise<T>): Promise<T>;
-  /** Run as the system actor on the majlis_system pool. */
+  /** Run as the system actor on the manythreads_system pool. */
   system<T>(fn: (tx: Tx) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }

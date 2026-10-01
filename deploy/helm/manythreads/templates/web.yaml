@@ -2,9 +2,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: majlis-web
+  name: manythreads-web
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
     app.kubernetes.io/component: web
 spec:
   replicas: {{ .Values.web.replicas }}
@@ -14,7 +14,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "majlis.labels" . | nindent 8 }}
+        {{- include "manythreads.labels" . | nindent 8 }}
         app.kubernetes.io/component: web
     spec:
       containers:
@@ -22,8 +22,8 @@ spec:
           image: {{ .Values.web.image }}:{{ .Values.imageTag }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
           env:
-            - { name: MAJLIS_SERVER_HOST, value: majlis-server }
-            - { name: MAJLIS_SERVER_PORT, value: {{ .Values.server.port | quote }} }
+            - { name: MANYTHREADS_SERVER_HOST, value: manythreads-server }
+            - { name: MANYTHREADS_SERVER_PORT, value: {{ .Values.server.port | quote }} }
           ports: [{ name: http, containerPort: 80 }]
           readinessProbe:
             httpGet: { path: /, port: http }
@@ -36,9 +36,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: majlis-web
+  name: manythreads-web
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
 spec:
   selector:
     app.kubernetes.io/component: web

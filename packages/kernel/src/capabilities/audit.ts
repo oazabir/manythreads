@@ -1,4 +1,4 @@
-import type { ActorId, RunId, WorkspaceId } from '@majlis/shared';
+import type { ActorId, RunId, WorkspaceId } from '@manythreads/shared';
 import type { Tx } from '../db/with-actor.ts';
 import { withSystem } from '../db/with-actor.ts';
 

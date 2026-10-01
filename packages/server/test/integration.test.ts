@@ -1,5 +1,5 @@
-import { HealthResponse, KernelTestPingedEventV2, ReadyResponse } from '@majlis/shared';
-import { readAs, startTestServer, OMAR, captureEvent, type TestServer } from '@majlis/test-utils';
+import { HealthResponse, KernelTestPingedEventV2, ReadyResponse } from '@manythreads/shared';
+import { readAs, startTestServer, OMAR, captureEvent, type TestServer } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 describe('server against a fresh database with the test plugin', () => {
@@ -11,7 +11,7 @@ describe('server against a fresh database with the test plugin', () => {
     await s.close();
   });
 
-  const actorHeader = { 'x-majlis-dev-actor': JSON.stringify({ kind: 'person', id: OMAR.actorId, workspaceId: OMAR.workspaceId }) };
+  const actorHeader = { 'x-manythreads-dev-actor': JSON.stringify({ kind: 'person', id: OMAR.actorId, workspaceId: OMAR.workspaceId }) };
   const get = (path: string) => fetch(s.url + path, { headers: actorHeader });
   const post = (path: string, body: unknown) =>
     fetch(s.url + path, { method: 'POST', headers: { 'content-type': 'application/json', ...actorHeader }, body: JSON.stringify(body) });

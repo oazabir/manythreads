@@ -1,4 +1,4 @@
-import { EmailVerification } from '@majlis/shared';
+import { EmailVerification } from '@manythreads/shared';
 
 /** The `token_hash` column is not mapped. */
 export interface EmailVerificationRow {

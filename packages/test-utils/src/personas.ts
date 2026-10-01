@@ -1,5 +1,5 @@
-import type { Actor } from '@majlis/kernel';
-import type { ActorId, PersonId, TeamId, TeamRole, WorkspaceId, WorkspaceRole } from '@majlis/shared';
+import type { Actor } from '@manythreads/kernel';
+import type { ActorId, PersonId, TeamId, TeamRole, WorkspaceId, WorkspaceRole } from '@manythreads/shared';
 
 export type { TeamRole, WorkspaceRole };
 export type TeamName = 'Engineering' | 'Customer support' | 'Marketing';

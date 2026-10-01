@@ -59,13 +59,13 @@ BEGIN
     )
     SELECT subscriber FROM ins
   LOOP
-    PERFORM pg_notify('majlis_outbox', sub);
+    PERFORM pg_notify('manythreads_outbox', sub);
     RETURN NEXT sub;
   END LOOP;
 END
 $$;
 REVOKE ALL ON FUNCTION app.enqueue_outbox(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.enqueue_outbox(uuid) TO majlis_app;
+GRANT EXECUTE ON FUNCTION app.enqueue_outbox(uuid) TO manythreads_app;
 
 -- jobs --------------------------------------------------------------------------------------------------------
 ALTER TABLE app.jobs
@@ -87,4 +87,4 @@ ALTER TABLE app.job_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.job_schedules FORCE ROW LEVEL SECURITY;
 CREATE POLICY job_schedules_system ON app.job_schedules FOR ALL USING (app.is_system()) WITH CHECK (app.is_system());
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.outbox_processed, app.event_subscriptions, app.job_schedules TO majlis_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.outbox_processed, app.event_subscriptions, app.job_schedules TO manythreads_app;

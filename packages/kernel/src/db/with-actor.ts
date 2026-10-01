@@ -1,4 +1,4 @@
-import type { ActorId, RunId, WorkspaceId } from '@majlis/shared';
+import type { ActorId, RunId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import { getAppPool, getSystemPool } from './pool.ts';
 
@@ -32,12 +32,12 @@ export function systemActor(workspaceId: WorkspaceId = NIL_UUID as WorkspaceId):
 }
 
 export interface WithActorOptions {
-  /** Defaults to the shared majlis_app pool, or the majlis_system pool for the system actor. */
+  /** Defaults to the shared manythreads_app pool, or the manythreads_system pool for the system actor. */
   pool?: pg.Pool;
 }
 
 /**
- * The one DB entry. Opens a transaction on the majlis_app pool, sets the actor for RLS with SET LOCAL
+ * The one DB entry. Opens a transaction on the manythreads_app pool, sets the actor for RLS with SET LOCAL
  * semantics (`set_config(..., true)`), runs `fn`, then commits; any throw rolls back.
  */
 export async function withActor<T>(
@@ -78,7 +78,7 @@ export async function withActor<T>(
 }
 
 /**
- * `withActor` as the system actor. The pool must log in as majlis_system (the default): app.is_system() is true only
+ * `withActor` as the system actor. The pool must log in as manythreads_system (the default): app.is_system() is true only
  * for that Postgres role, so on any other pool the transaction is an ordinary one that just carries the system GUCs.
  */
 export function withSystem<T>(

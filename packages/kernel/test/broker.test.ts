@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { ActorId, TeamId, WorkspaceId, parseEvent } from '@majlis/shared';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { ActorId, TeamId, WorkspaceId, parseEvent } from '@manythreads/shared';
+import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   CapabilityBroker,

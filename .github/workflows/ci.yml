@@ -26,20 +26,20 @@ jobs:
           cache: pnpm
 
       - name: Build Postgres 19 image
-        run: docker build -t majlis/postgres:19 deploy/postgres
+        run: docker build -t manythreads/postgres:19 deploy/postgres
 
       - name: Start Postgres
         run: |
-          docker run -d --name majlis-pg -p 55432:5432 \
-            -e POSTGRES_USER=majlis_owner \
-            -e POSTGRES_PASSWORD=majlis \
-            -e POSTGRES_DB=majlis \
-            majlis/postgres:19
+          docker run -d --name manythreads-pg -p 55432:5432 \
+            -e POSTGRES_USER=manythreads_owner \
+            -e POSTGRES_PASSWORD=manythreads \
+            -e POSTGRES_DB=manythreads \
+            manythreads/postgres:19
           for i in $(seq 1 60); do
-            if docker exec majlis-pg pg_isready -U majlis_owner -d majlis; then exit 0; fi
+            if docker exec manythreads-pg pg_isready -U manythreads_owner -d manythreads; then exit 0; fi
             sleep 2
           done
-          docker logs majlis-pg | tail -n 40
+          docker logs manythreads-pg | tail -n 40
           exit 1
 
       - run: pnpm install --frozen-lockfile

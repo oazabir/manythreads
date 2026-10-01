@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSystemPool, withSystem } from '../src/db/index.ts';
@@ -14,7 +14,7 @@ beforeAll(async () => {
   pool = createSystemPool(db.systemUrl, 24);
   owner = new pg.Pool({ connectionString: db.ownerUrl, max: 2 });
   await owner.query(`CREATE TABLE public.job_effects (job_id uuid PRIMARY KEY, n int NOT NULL DEFAULT 1, worker text)`);
-  await owner.query(`GRANT ALL ON public.job_effects TO majlis_app, majlis_system`);
+  await owner.query(`GRANT ALL ON public.job_effects TO manythreads_app, manythreads_system`);
 }, 60_000);
 
 afterAll(async () => {

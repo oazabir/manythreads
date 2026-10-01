@@ -2,8 +2,8 @@
 -- app.is_team_member / app.team_role / app.can helpers. Forward-only: never edit this file once applied.
 --
 -- RECURSION. Same scheme as 0004: the public helpers are invoker functions `app.is_system() OR <lookup>`; each lookup
--- is a SECURITY DEFINER function owned by majlis_system that answers only about the caller (app.actor()). Inside it
--- current_user = majlis_system, so the policies of team_members / roles / acl_entries pass on `app.is_system()`, their
+-- is a SECURITY DEFINER function owned by manythreads_system that answers only about the caller (app.actor()). Inside it
+-- current_user = manythreads_system, so the policies of team_members / roles / acl_entries pass on `app.is_system()`, their
 -- first operand, and never call a helper again. tests: kernel/test/rls/teams.test.ts ("no policy recursion").
 --
 -- app.can(resource_type, resource_id, permission). Permissions are ordered read < post < manage. A resource type is
@@ -22,7 +22,7 @@ CREATE TABLE app.resource_kinds (
   team_column   text CHECK (team_column IS NULL OR team_column ~ '^[a-z][a-z0-9_]*$'),
   created_at    timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE app.resource_kinds IS 'rls: global — registry of resource types for app.can(); written by migrations only (majlis_app has no grant).';
+COMMENT ON TABLE app.resource_kinds IS 'rls: global — registry of resource types for app.can(); written by migrations only (manythreads_app has no grant).';
 INSERT INTO app.global_tables (name) VALUES ('resource_kinds');
 
 -- teams (T; admin all) -------------------------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ CREATE TABLE app.team_pending_files (
 );
 COMMENT ON TABLE app.team_pending_files IS 'rls: system — S: TEAM.md awaiting the repo; leads and admins write through app.put_team_pending_files.';
 
--- Lookups (SECURITY DEFINER, owned by majlis_system) --------------------------------------------------------------------------
+-- Lookups (SECURITY DEFINER, owned by manythreads_system) --------------------------------------------------------------------------
 -- The caller's role in a team; NULL when not a member. A person counts only while active and a non-guest workspace member,
 -- so suspending or demoting someone to guest cuts team access immediately, even if a roster row survives.
 CREATE FUNCTION app.lookup_team_role(p_team_id uuid) RETURNS text
@@ -272,7 +272,7 @@ CREATE FUNCTION app.put_team_pending_files(p_team_id uuid, p_files jsonb) RETURN
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
 AS $$
 BEGIN
-  IF session_user <> 'majlis_system' AND NOT app.lookup_can('team', p_team_id, 'manage') THEN
+  IF session_user <> 'manythreads_system' AND NOT app.lookup_can('team', p_team_id, 'manage') THEN
     RAISE EXCEPTION 'only a team lead or workspace admin may hold team files' USING ERRCODE = 'insufficient_privilege';
   END IF;
   INSERT INTO app.team_pending_files (team_id, files) VALUES (p_team_id, coalesce(p_files, '{}'::jsonb))
@@ -437,22 +437,22 @@ CREATE POLICY scoped_kv_select ON app.scoped_kv FOR SELECT USING (
 
 -- Privileges ----------------------------------------------------------------------------------------------------------------------
 GRANT SELECT, INSERT, UPDATE, DELETE ON app.teams, app.team_members, app.roles, app.role_members, app.acl_entries
-  TO majlis_app;
-REVOKE ALL ON app.team_pending_files, app.resource_kinds FROM PUBLIC, majlis_app;
+  TO manythreads_app;
+REVOKE ALL ON app.team_pending_files, app.resource_kinds FROM PUBLIC, manythreads_app;
 -- resource_kinds is migration-written: nobody but the owner changes it.
-REVOKE INSERT, UPDATE, DELETE ON app.resource_kinds FROM majlis_system;
+REVOKE INSERT, UPDATE, DELETE ON app.resource_kinds FROM manythreads_system;
 
 REVOKE ALL ON FUNCTION app.put_team_pending_files(uuid, jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.put_team_pending_files(uuid, jsonb) TO majlis_app, majlis_system;
+GRANT EXECUTE ON FUNCTION app.put_team_pending_files(uuid, jsonb) TO manythreads_app, manythreads_system;
 GRANT EXECUTE ON FUNCTION app.lookup_team_role(uuid), app.lookup_has_role(uuid), app.lookup_can(text, uuid, text),
-  app.lookup_can_team(uuid, text), app.can_in_team(uuid, text), app.permission_rank(text), app.has_role(uuid) TO majlis_app, majlis_system;
+  app.lookup_can_team(uuid, text), app.can_in_team(uuid, text), app.permission_rank(text), app.has_role(uuid) TO manythreads_app, manythreads_system;
 
-GRANT CREATE ON SCHEMA app TO majlis_system;
-ALTER FUNCTION app.lookup_team_role(uuid) OWNER TO majlis_system;
-ALTER FUNCTION app.lookup_has_role(uuid) OWNER TO majlis_system;
-ALTER FUNCTION app.lookup_can(text, uuid, text) OWNER TO majlis_system;
-ALTER FUNCTION app.lookup_can_team(uuid, text) OWNER TO majlis_system;
-ALTER FUNCTION app.put_team_pending_files(uuid, jsonb) OWNER TO majlis_system;
-ALTER FUNCTION app.team_members_guard() OWNER TO majlis_system;
-ALTER FUNCTION app.workspace_members_guard() OWNER TO majlis_system;
-REVOKE CREATE ON SCHEMA app FROM majlis_system;
+GRANT CREATE ON SCHEMA app TO manythreads_system;
+ALTER FUNCTION app.lookup_team_role(uuid) OWNER TO manythreads_system;
+ALTER FUNCTION app.lookup_has_role(uuid) OWNER TO manythreads_system;
+ALTER FUNCTION app.lookup_can(text, uuid, text) OWNER TO manythreads_system;
+ALTER FUNCTION app.lookup_can_team(uuid, text) OWNER TO manythreads_system;
+ALTER FUNCTION app.put_team_pending_files(uuid, jsonb) OWNER TO manythreads_system;
+ALTER FUNCTION app.team_members_guard() OWNER TO manythreads_system;
+ALTER FUNCTION app.workspace_members_guard() OWNER TO manythreads_system;
+REVOKE CREATE ON SCHEMA app FROM manythreads_system;

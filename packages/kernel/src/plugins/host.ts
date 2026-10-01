@@ -1,8 +1,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { EmitEvent, PluginDefinition, PluginEvent, PluginTx, ScopedKv } from '@majlis/sdk';
-import { PluginManifest } from '@majlis/shared';
+import type { EmitEvent, PluginDefinition, PluginEvent, PluginTx, ScopedKv } from '@manythreads/sdk';
+import { PluginManifest } from '@manythreads/shared';
 import type pg from 'pg';
 import { CapabilityRegistry } from '../capabilities/registry.ts';
 import { kernelMigrationSource, runMigrations, type MigrationSource } from '../db/migrate.ts';
@@ -13,7 +13,7 @@ import { PluginError } from './errors.ts';
 import { ExtensionRegistries } from './registries.ts';
 
 /**
- * Where a plugin comes from: a package directory (its package.json `majlis.entry` default-exports a
+ * Where a plugin comes from: a package directory (its package.json `manythreads.entry` default-exports a
  * `definePlugin` result), or an already-built definition (tests, in-process plugins).
  */
 export type PluginSource = { dir: string } | { definition: PluginDefinition; dir?: string };
@@ -28,18 +28,18 @@ export interface LoadedPlugin {
 export interface LoadPluginsOptions {
   /** Explicit list. Combined with `scanDir` when both are given. */
   plugins?: readonly PluginSource[];
-  /** Directory scanned for subdirectories whose package.json has a `majlis` field, e.g. `packages/plugins`. */
+  /** Directory scanned for subdirectories whose package.json has a `manythreads` field, e.g. `packages/plugins`. */
   scanDir?: string;
   /**
    * Database to migrate and record plugins in. Omit to load without touching Postgres (ordering and
    * registration only).
    */
   database?: {
-    /** majlis_owner connection string: the role that owns tables and runs migrations. */
+    /** manythreads_owner connection string: the role that owns tables and runs migrations. */
     ownerUrl: string;
-    /** majlis_app pool (unused by the host itself; kept so callers can share one options object). */
+    /** manythreads_app pool (unused by the host itself; kept so callers can share one options object). */
     pool?: pg.Pool;
-    /** majlis_system pool used to write `app.plugins` and back the default storage (default: the shared system pool). */
+    /** manythreads_system pool used to write `app.plugins` and back the default storage (default: the shared system pool). */
     systemPool?: pg.Pool;
     appPassword?: string | null;
     /** Migration sources ahead of the plugins (default: the kernel directory). */
@@ -64,14 +64,14 @@ export interface PluginHost {
   dispatch(event: PluginEvent, tx: PluginTx): Promise<void>;
 }
 
-interface PackageJsonMajlis {
+interface PackageJsonmanythreads {
   entry: string;
 }
 
 const formatIssues = (issues: readonly { path: PropertyKey[]; message: string }[]): string =>
   issues.map((i) => `${i.path.map(String).join('.') || '(manifest)'}: ${i.message}`).join('; ');
 
-/** Package directories under `scanDir` whose package.json has a `majlis` field. Sorted by directory name. */
+/** Package directories under `scanDir` whose package.json has a `manythreads` field. Sorted by directory name. */
 export async function discoverPlugins(scanDir: string): Promise<PluginSource[]> {
   const out: PluginSource[] = [];
   const names = (await readdir(scanDir, { withFileTypes: true }))
@@ -86,8 +86,8 @@ export async function discoverPlugins(scanDir: string): Promise<PluginSource[]> 
     } catch {
       continue;
     }
-    const pkg = JSON.parse(text) as { majlis?: unknown };
-    if (pkg.majlis !== undefined) out.push({ dir });
+    const pkg = JSON.parse(text) as { manythreads?: unknown };
+    if (pkg.manythreads !== undefined) out.push({ dir });
   }
   return out;
 }
@@ -100,15 +100,15 @@ async function loadSource(source: PluginSource): Promise<LoadedPlugin> {
     dir = source.dir === undefined ? undefined : resolve(source.dir);
   } else {
     dir = resolve(source.dir);
-    let pkg: { majlis?: Partial<PackageJsonMajlis> };
+    let pkg: { manythreads?: Partial<PackageJsonmanythreads> };
     try {
       pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8')) as typeof pkg;
     } catch (err) {
       throw new PluginError(`Cannot read package.json of plugin at ${dir}`, { cause: err });
     }
-    const entry = pkg.majlis?.entry;
+    const entry = pkg.manythreads?.entry;
     if (typeof entry !== 'string') {
-      throw new PluginError(`package.json at ${dir} has no majlis.entry field`);
+      throw new PluginError(`package.json at ${dir} has no manythreads.entry field`);
     }
     const mod = (await import(pathToFileURL(join(dir, entry)).href)) as { default?: PluginDefinition };
     if (!mod.default || typeof mod.default.register !== 'function') {

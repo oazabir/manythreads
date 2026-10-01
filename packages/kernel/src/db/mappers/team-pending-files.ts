@@ -1,4 +1,4 @@
-import { TeamPendingFile } from '@majlis/shared';
+import { TeamPendingFile } from '@manythreads/shared';
 
 export interface TeamPendingFileRow {
   team_id: string;

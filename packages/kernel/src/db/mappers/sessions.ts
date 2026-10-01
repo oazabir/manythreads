@@ -1,4 +1,4 @@
-import { Session } from '@majlis/shared';
+import { Session } from '@manythreads/shared';
 
 export interface SessionRow {
   id: string;

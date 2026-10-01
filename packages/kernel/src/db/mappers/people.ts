@@ -1,4 +1,4 @@
-import { Person } from '@majlis/shared';
+import { Person } from '@manythreads/shared';
 
 export interface PersonRow {
   id: string;

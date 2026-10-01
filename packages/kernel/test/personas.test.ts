@@ -11,7 +11,7 @@ import {
   TEAM_IDS,
   testKernelMigrationSource,
   type TestDatabase,
-} from '@majlis/test-utils';
+} from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createSystemPool,

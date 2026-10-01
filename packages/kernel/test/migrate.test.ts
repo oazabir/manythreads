@@ -9,7 +9,7 @@ import {
   runMigrations,
   sha256,
 } from '../src/index.ts';
-import { createTestDatabase, dropTestDatabase, migrateTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { createTestDatabase, dropTestDatabase, migrateTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -17,7 +17,7 @@ let db: TestDatabase;
 const dirs: string[] = [];
 
 async function tempDir(files: Record<string, string>): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'majlis-mig-'));
+  const dir = await mkdtemp(join(tmpdir(), 'manythreads-mig-'));
   dirs.push(dir);
   for (const [name, sql] of Object.entries(files)) await writeFile(join(dir, name), sql);
   return dir;
@@ -33,7 +33,7 @@ async function query<T extends pg.QueryResultRow>(sql: string, values: unknown[]
   }
 }
 
-// Same as runMigrations, serialised across test files because the majlis_app role is cluster-wide.
+// Same as runMigrations, serialised across test files because the manythreads_app role is cluster-wide.
 const run = (options: { connectionString: string; sources: readonly MigrationSource[] }) =>
   migrateTestDatabase({ ownerUrl: options.connectionString }, options.sources);
 
@@ -59,7 +59,7 @@ describe('migration runner', () => {
     expect(kernel?.checksum).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('sets the majlis_app password so the role can log in', async () => {
+  it('sets the manythreads_app password so the role can log in', async () => {
     const app = new pg.Client({ connectionString: db.appUrl });
     await app.connect();
     try {
@@ -70,12 +70,12 @@ describe('migration runner', () => {
     }
   });
 
-  it('sets the majlis_system password and the role is the only system identity', async () => {
+  it('sets the manythreads_system password and the role is the only system identity', async () => {
     const sys = new pg.Client({ connectionString: db.systemUrl });
     await sys.connect();
     try {
       const r = await sys.query('SELECT current_user AS u, app.is_system() AS s');
-      expect(r.rows[0]).toEqual({ u: 'majlis_system', s: true });
+      expect(r.rows[0]).toEqual({ u: 'manythreads_system', s: true });
     } finally {
       await sys.end();
     }

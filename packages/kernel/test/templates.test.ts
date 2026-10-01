@@ -63,7 +63,7 @@ roleTags: []
   };
   const fresh = async (): Promise<void> => {
     if (tmp) await rm(tmp, { recursive: true, force: true });
-    tmp = await mkdtemp(path.join(os.tmpdir(), 'majlis-tpl-'));
+    tmp = await mkdtemp(path.join(os.tmpdir(), 'manythreads-tpl-'));
   };
 
   beforeAll(fresh);

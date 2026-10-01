@@ -1,4 +1,4 @@
-import { EventRecord } from '@majlis/shared';
+import { EventRecord } from '@manythreads/shared';
 
 export interface EventRow {
   id: string;

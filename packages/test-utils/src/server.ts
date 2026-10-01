@@ -1,4 +1,4 @@
-import { startServer, type RunningServer, type StartServerOptions } from '@majlis/server';
+import { startServer, type RunningServer, type StartServerOptions } from '@manythreads/server';
 import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase } from './db.ts';
 
 export interface TestServer extends RunningServer {

@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/server",
+  "name": "@manythreads/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,9 +15,9 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/swagger": "^9",
     "@fastify/websocket": "^11",
-    "@majlis/kernel": "workspace:*",
-    "@majlis/sdk": "workspace:*",
-    "@majlis/shared": "workspace:*",
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
     "fastify": "^5",
     "fastify-type-provider-zod": "^7",
     "jose": "^6.2.12",
@@ -27,7 +27,7 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@majlis/test-utils": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
     "@types/pg": "^8"
   }
 }

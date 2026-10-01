@@ -2,15 +2,15 @@
 -- auth_providers, secrets, identities), the real workspace-role helpers, and the `rls:` table comment convention.
 -- Forward-only: never edit this file once applied.
 --
--- HELPER DESIGN (read with 0003). app.is_system() is `current_user = 'majlis_system'` and SECURITY INVOKER, so a
+-- HELPER DESIGN (read with 0003). app.is_system() is `current_user = 'manythreads_system'` and SECURITY INVOKER, so a
 -- definer function can never be mistaken for the system actor by its *callers*. Membership lookups need to read
 -- RLS-protected tables (workspace_members, team_members, ...) on behalf of whoever is asking, which would recurse
 -- if they ran under the caller's own policies. So every lookup is a narrow SECURITY DEFINER function
--- `app.lookup_*` OWNED BY majlis_system with a pinned search_path: inside it current_user = majlis_system, the
+-- `app.lookup_*` OWNED BY manythreads_system with a pinned search_path: inside it current_user = manythreads_system, the
 -- tables' `app.is_system() OR ...` policy short-circuits on its first operand, and no policy is re-entered.
 -- A lookup only ever answers about the CALLER (app.actor(), app.workspace_id()); it takes no person id. The public
 -- helpers keep the 0003 shape: invoker functions `app.is_system() OR <lookup>`; only the lookup is a definer.
--- Ownership by majlis_system (not majlis_owner) keeps them working when the owner is not a superuser (CNPG-style
+-- Ownership by manythreads_system (not manythreads_owner) keeps them working when the owner is not a superuser (CNPG-style
 -- setups still make it one, but nothing here depends on that).
 
 -- RLS table comments --------------------------------------------------------------------------------------------
@@ -82,7 +82,7 @@ COMMENT ON TABLE app.workspace_members IS 'rls: workspace — WR: non-guest memb
 
 -- secrets (S) ----------------------------------------------------------------------------------------------------------
 -- Envelope encryption (see packages/kernel/src/kms): ciphertext = nonce|tag|AES-256-GCM(data key) of the secret,
--- wrapped_key = the data key wrapped by the KMS master key. majlis_app has NO privilege on this table; the only
+-- wrapped_key = the data key wrapped by the KMS master key. manythreads_app has NO privilege on this table; the only
 -- door is app.put_secret / app.delete_secret below. Reading is the system role's alone (getSecret in the kernel).
 CREATE TABLE app.secrets (
   id          uuid PRIMARY KEY DEFAULT uuidv7(),
@@ -91,7 +91,7 @@ CREATE TABLE app.secrets (
   key_id      text NOT NULL CHECK (key_id <> ''),
   created_at  timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE app.secrets IS 'rls: system — S: envelope-encrypted blobs; no privilege for majlis_app, never returned by any API.';
+COMMENT ON TABLE app.secrets IS 'rls: system — S: envelope-encrypted blobs; no privilege for manythreads_app, never returned by any API.';
 
 -- auth_providers (W) --------------------------------------------------------------------------------------------------
 CREATE TABLE app.auth_providers (
@@ -124,7 +124,7 @@ CREATE INDEX identities_person ON app.identities (person_id);
 CREATE INDEX identities_workspace ON app.identities (workspace_id);
 COMMENT ON TABLE app.identities IS 'rls: person — P: own links (may unlink); W: admins; linking happens at sign-in, as system.';
 
--- Lookups (SECURITY DEFINER, owned by majlis_system; see the header) -------------------------------------------------------
+-- Lookups (SECURITY DEFINER, owned by manythreads_system; see the header) -------------------------------------------------------
 -- The caller's workspace role in app.workspace_id(); NULL for a bot, a suspended or unknown person, a person with no
 -- membership, or an actor of another workspace.
 CREATE FUNCTION app.lookup_workspace_role() RETURNS text
@@ -151,14 +151,14 @@ CREATE OR REPLACE FUNCTION app.is_workspace_admin() RETURNS boolean
   LANGUAGE sql STABLE SET search_path = pg_catalog, app, pg_temp
   AS $$ SELECT app.is_system() OR coalesce(app.lookup_workspace_role() IN ('owner', 'admin'), false) $$;
 
--- Secrets: the only write doors for majlis_app ------------------------------------------------------------------------------
--- put_secret / delete_secret run as majlis_system but only for a workspace admin (or the system pool itself:
+-- Secrets: the only write doors for manythreads_app ------------------------------------------------------------------------------
+-- put_secret / delete_secret run as manythreads_system but only for a workspace admin (or the system pool itself:
 -- session_user is the LOGIN role, which SET ROLE and definer ownership do not change).
 CREATE FUNCTION app.put_secret(p_id uuid, p_ciphertext bytea, p_wrapped_key bytea, p_key_id text) RETURNS uuid
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
 AS $$
 BEGIN
-  IF session_user <> 'majlis_system' AND coalesce(app.lookup_workspace_role() NOT IN ('owner', 'admin'), true) THEN
+  IF session_user <> 'manythreads_system' AND coalesce(app.lookup_workspace_role() NOT IN ('owner', 'admin'), true) THEN
     RAISE EXCEPTION 'only a workspace admin may store a secret' USING ERRCODE = 'insufficient_privilege';
   END IF;
   INSERT INTO app.secrets (id, ciphertext, wrapped_key, key_id) VALUES (p_id, p_ciphertext, p_wrapped_key, p_key_id);
@@ -172,7 +172,7 @@ AS $$
 DECLARE
   n integer;
 BEGIN
-  IF session_user <> 'majlis_system' AND coalesce(app.lookup_workspace_role() NOT IN ('owner', 'admin'), true) THEN
+  IF session_user <> 'manythreads_system' AND coalesce(app.lookup_workspace_role() NOT IN ('owner', 'admin'), true) THEN
     RAISE EXCEPTION 'only a workspace admin may delete a secret' USING ERRCODE = 'insufficient_privilege';
   END IF;
   DELETE FROM app.secrets WHERE id = p_id;
@@ -289,23 +289,23 @@ CREATE POLICY identities_delete ON app.identities FOR DELETE USING (
   app.is_system() OR person_id = app.person_id() OR (workspace_id = app.workspace_id() AND app.is_workspace_admin())
 );
 
--- Privileges (system gets everything through the default privileges of 0003; secrets get nothing for majlis_app) --------------
-GRANT SELECT, UPDATE ON app.workspaces TO majlis_app;
-GRANT SELECT, INSERT, UPDATE ON app.people TO majlis_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.person_emails, app.workspace_members, app.auth_providers TO majlis_app;
-GRANT SELECT, DELETE ON app.identities TO majlis_app;
-REVOKE ALL ON app.secrets FROM PUBLIC, majlis_app;
+-- Privileges (system gets everything through the default privileges of 0003; secrets get nothing for manythreads_app) --------------
+GRANT SELECT, UPDATE ON app.workspaces TO manythreads_app;
+GRANT SELECT, INSERT, UPDATE ON app.people TO manythreads_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.person_emails, app.workspace_members, app.auth_providers TO manythreads_app;
+GRANT SELECT, DELETE ON app.identities TO manythreads_app;
+REVOKE ALL ON app.secrets FROM PUBLIC, manythreads_app;
 
 REVOKE ALL ON FUNCTION app.put_secret(uuid, bytea, bytea, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app.delete_secret(uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.put_secret(uuid, bytea, bytea, text) TO majlis_app, majlis_system;
-GRANT EXECUTE ON FUNCTION app.delete_secret(uuid) TO majlis_app, majlis_system;
-GRANT EXECUTE ON FUNCTION app.lookup_workspace_role() TO majlis_app, majlis_system;
-GRANT EXECUTE ON FUNCTION app.workspace_role() TO majlis_app, majlis_system;
+GRANT EXECUTE ON FUNCTION app.put_secret(uuid, bytea, bytea, text) TO manythreads_app, manythreads_system;
+GRANT EXECUTE ON FUNCTION app.delete_secret(uuid) TO manythreads_app, manythreads_system;
+GRANT EXECUTE ON FUNCTION app.lookup_workspace_role() TO manythreads_app, manythreads_system;
+GRANT EXECUTE ON FUNCTION app.workspace_role() TO manythreads_app, manythreads_system;
 
--- Definer functions belong to majlis_system (ALTER ... OWNER needs CREATE on the schema for the new owner). ------------------------
-GRANT CREATE ON SCHEMA app TO majlis_system;
-ALTER FUNCTION app.lookup_workspace_role() OWNER TO majlis_system;
-ALTER FUNCTION app.put_secret(uuid, bytea, bytea, text) OWNER TO majlis_system;
-ALTER FUNCTION app.delete_secret(uuid) OWNER TO majlis_system;
-REVOKE CREATE ON SCHEMA app FROM majlis_system;
+-- Definer functions belong to manythreads_system (ALTER ... OWNER needs CREATE on the schema for the new owner). ------------------------
+GRANT CREATE ON SCHEMA app TO manythreads_system;
+ALTER FUNCTION app.lookup_workspace_role() OWNER TO manythreads_system;
+ALTER FUNCTION app.put_secret(uuid, bytea, bytea, text) OWNER TO manythreads_system;
+ALTER FUNCTION app.delete_secret(uuid) OWNER TO manythreads_system;
+REVOKE CREATE ON SCHEMA app FROM manythreads_system;

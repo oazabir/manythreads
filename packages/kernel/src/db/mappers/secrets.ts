@@ -1,4 +1,4 @@
-import { Secret } from '@majlis/shared';
+import { Secret } from '@manythreads/shared';
 
 /** Only the metadata columns; `ciphertext` and `wrapped_key` have no shared type and are read by getSecret alone. */
 export interface SecretRow {

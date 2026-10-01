@@ -1,4 +1,4 @@
-import { WsErrorEnvelope, ErrorEnvelope } from '@majlis/shared';
+import { WsErrorEnvelope, ErrorEnvelope } from '@manythreads/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -96,17 +96,17 @@ describe('dev auth gating', () => {
   const actor = JSON.stringify({ kind: 'person', id: '00000000-0000-7000-8000-0000000d0001', workspaceId: '00000000-0000-7000-8000-00000000a001' });
   afterEach(() => vi.unstubAllEnvs());
 
-  it('is enabled only by NODE_ENV=test or MAJLIS_DEV_AUTH=1', () => {
+  it('is enabled only by NODE_ENV=test or MANYTHREADS_DEV_AUTH=1', () => {
     expect(devAuthEnabled({ NODE_ENV: 'production' })).toBe(false);
     expect(devAuthEnabled({})).toBe(false);
-    expect(devAuthEnabled({ MAJLIS_DEV_AUTH: '0' })).toBe(false);
+    expect(devAuthEnabled({ MANYTHREADS_DEV_AUTH: '0' })).toBe(false);
     expect(devAuthEnabled({ NODE_ENV: 'test' })).toBe(true);
-    expect(devAuthEnabled({ NODE_ENV: 'production', MAJLIS_DEV_AUTH: '1' })).toBe(true);
+    expect(devAuthEnabled({ NODE_ENV: 'production', MANYTHREADS_DEV_AUTH: '1' })).toBe(true);
   });
 
   it('a production server with default options ignores the header', async () => {
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('MAJLIS_DEV_AUTH', '');
+    vi.stubEnv('MANYTHREADS_DEV_AUTH', '');
     const app = await server();
     const res = await app.inject({ method: 'GET', url: '/t/private', headers: { [DEV_ACTOR_HEADER]: actor } });
     expect(res.statusCode).toBe(401);

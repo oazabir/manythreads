@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ApiRoute } from '@majlis/shared';
+import type { ApiRoute } from '@manythreads/shared';
 
 /*
  * PLACEHOLDER API schemas for the identity / teams / settings screens (P2-10a).

@@ -13,7 +13,7 @@ import {
   allPersonas,
   personaActor,
   type Persona,
-} from '@majlis/test-utils';
+} from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   toAclEntry,

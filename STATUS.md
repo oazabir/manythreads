@@ -9,13 +9,13 @@ Current phase: **2 · Identity, workspace and teams** (next)
 
 ## Phase 1 summary
 All tasks P1-01…P1-13 merged with reviewer PASS (P1-04b security hardening added: system actor = real
-`majlis_system` role). Benchmarks: `docs/retro/bench-phase-1.md`. Deploy: `docs/deploy.md`.
+`manythreads_system` role). Benchmarks: `docs/retro/bench-phase-1.md`. Deploy: `docs/deploy.md`.
 Screens: `docs/retro/screens/phase-1/`.
 
 ## Follow-ups carried into later phases
 - Trigram search plan under RLS needs scoping/plan check before phase 3 search.
 - Response schemas enforced for 200 only; extend per route as needed.
-- CNPG `majlis_owner` is superuser (needed for extensions/roles); CNPG chart version unpinned.
+- CNPG `manythreads_owner` is superuser (needed for extensions/roles); CNPG chart version unpinned.
 - `it.todo`: Zod enum vs SQL CHECK comparison test — do in phase 2 when first enum tables land.
 - pnpm cyclic workspace dep warning (kernel ↔ test-utils ↔ server devDeps).
 - Mobile is Capacitor (owner decision): phase 11 builds clients/mobile wrapping the web app; the RN benchmark

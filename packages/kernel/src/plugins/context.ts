@@ -1,4 +1,4 @@
-import { guardPluginTx } from '@majlis/sdk';
+import { guardPluginTx } from '@manythreads/sdk';
 import type {
   CapabilityHandler,
   EmitEvent,
@@ -7,8 +7,8 @@ import type {
   PluginTx,
   ScopedKv,
   StorageScope,
-} from '@majlis/sdk';
-import type { ExtensionPoint, PluginManifest } from '@majlis/shared';
+} from '@manythreads/sdk';
+import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
 import { PluginError } from './errors.ts';
 import type { ExtensionRegistries } from './registries.ts';
 

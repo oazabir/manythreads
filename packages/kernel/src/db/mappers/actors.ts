@@ -1,4 +1,4 @@
-import { Actor } from '@majlis/shared';
+import { Actor } from '@manythreads/shared';
 
 export interface ActorRow {
   id: string;

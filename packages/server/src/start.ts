@@ -22,27 +22,27 @@ import {
   type PluginHost,
   type PluginSource,
   type Tx,
-} from '@majlis/kernel';
-import type { WorkspaceId } from '@majlis/shared';
+} from '@manythreads/kernel';
+import type { WorkspaceId } from '@manythreads/shared';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { buildServer } from './build-server.ts';
 
 export const pluginsDir = fileURLToPath(new URL('../../plugins/', import.meta.url));
 
-/** Packages under packages/plugins that only exist for tests and examples; loaded when MAJLIS_TEST_PLUGINS=1. */
+/** Packages under packages/plugins that only exist for tests and examples; loaded when MANYTHREADS_TEST_PLUGINS=1. */
 export const TEST_ONLY_PLUGIN_DIRS: ReadonlySet<string> = new Set(['test-kernel', 'example-hello']);
 
 export interface StartServerOptions {
   port?: number;
   host?: string;
-  /** majlis_owner URL: migrations only. */
+  /** manythreads_owner URL: migrations only. */
   ownerUrl: string;
-  /** majlis_app URL for request handling. */
+  /** manythreads_app URL for request handling. */
   appUrl: string;
-  /** majlis_system URL: the kernel's system actor (outbox, jobs, plugin registry). Never used for requests. */
+  /** manythreads_system URL: the kernel's system actor (outbox, jobs, plugin registry). Never used for requests. */
   systemUrl: string;
-  /** Password given to majlis_app by the migration runner (null leaves it alone). */
+  /** Password given to manythreads_app by the migration runner (null leaves it alone). */
   appPassword?: string | null;
   /**
    * Wraps migration and plugin loading (default: none). Roles are cluster-wide, so tests that migrate several

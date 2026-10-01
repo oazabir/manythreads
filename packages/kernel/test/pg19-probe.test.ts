@@ -1,6 +1,6 @@
 import { createSystemPool, getOneOrCreate, resetDoSelectProbe, supportsDoSelect, withSystem } from '../src/index.ts';
 import type { Tx } from '../src/index.ts';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -55,7 +55,7 @@ describe('Postgres 19 probe', () => {
     );
     expect(r.rows.map((x) => x.extname)).toEqual(['pg_trgm', 'vector']);
     const sim = await owner.query<{ s: number; d: number }>(
-      "SELECT similarity('majlis', 'majlist') AS s, ('[1,2,3]'::vector <-> '[1,2,4]'::vector) AS d",
+      "SELECT similarity('manythreads', 'manythreadx') AS s, ('[1,2,3]'::vector <-> '[1,2,4]'::vector) AS d",
     );
     expect(sim.rows[0]?.s).toBeGreaterThan(0.5);
     expect(sim.rows[0]?.d).toBeCloseTo(1);

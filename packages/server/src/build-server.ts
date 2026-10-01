@@ -8,8 +8,8 @@ import {
   type Actor,
   type PluginHost,
   type RateLimiter,
-} from '@majlis/kernel';
-import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@majlis/shared';
+} from '@manythreads/kernel';
+import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@manythreads/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -26,11 +26,11 @@ import './types.ts';
 export interface BuildServerOptions {
   /** Loaded plugins: their http routes are mounted and their names listed in /healthz. */
   host?: PluginHost;
-  /** majlis_app pool used by health checks and plugin routes (default: the shared app pool). */
+  /** manythreads_app pool used by health checks and plugin routes (default: the shared app pool). */
   pool?: pg.Pool;
-  /** majlis_system pool, used only for a system actor (default: the shared system pool). Never for requests. */
+  /** manythreads_system pool, used only for a system actor (default: the shared system pool). Never for requests. */
   systemPool?: pg.Pool;
-  /** Honour the x-majlis-dev-actor header. Default: NODE_ENV=test or MAJLIS_DEV_AUTH=1. Phase 2 removes it. */
+  /** Honour the x-manythreads-dev-actor header. Default: NODE_ENV=test or MANYTHREADS_DEV_AUTH=1. Phase 2 removes it. */
   devAuth?: boolean;
   /** Fastify logger setting (default false). */
   logger?: boolean | object;
@@ -68,7 +68,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   const poolOpt = options.pool ? { pool: options.pool } : {};
 
   await app.register(swagger, {
-    openapi: { info: { title: 'Majlis', version: '0.0.0' } },
+    openapi: { info: { title: 'manythreads', version: '0.0.0' } },
     transform: jsonSchemaTransform,
   });
   await app.register(websocket);

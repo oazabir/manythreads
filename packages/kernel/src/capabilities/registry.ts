@@ -1,4 +1,4 @@
-import { CapabilityName } from '@majlis/shared';
+import { CapabilityName } from '@manythreads/shared';
 
 export class CapabilityError extends Error {
   override readonly name = 'CapabilityError';

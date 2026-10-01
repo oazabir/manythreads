@@ -3,11 +3,11 @@
 ## What plugins can and cannot do
 
 - Plugins never get a pool. They receive a `PluginTx`: queries inside one actor transaction, nothing else.
-- The **system** identity is a Postgres role (`majlis_system`). `app.is_system()` is true only for connections that log in
+- The **system** identity is a Postgres role (`manythreads_system`). `app.is_system()` is true only for connections that log in
   as that role, which only kernel code (`withSystem`, workers, outbox consumers) holds. A plugin transaction runs as
-  `majlis_app`; it cannot `SET ROLE majlis_system`, and the `app.actor_kind` setting grants nothing.
-- Plugin tables are created by the plugin's own migrations with RLS, as for kernel tables. Grant `majlis_app` what it needs;
-  `majlis_system` gets the standard privileges on every table in schema `app` automatically.
+  `manythreads_app`; it cannot `SET ROLE manythreads_system`, and the `app.actor_kind` setting grants nothing.
+- Plugin tables are created by the plugin's own migrations with RLS, as for kernel tables. Grant `manythreads_app` what it needs;
+  `manythreads_system` gets the standard privileges on every table in schema `app` automatically.
 - To write system-only kernel tables from a plugin transaction, use the kernel API (`emit`, `enqueue`), which call narrow
   SECURITY DEFINER functions (`app.enqueue_outbox`, `app.enqueue_job`).
 
@@ -19,7 +19,7 @@ is trusted; plugin code is not.
 
 ## Stopgap: statement filter (not a sandbox)
 
-`@majlis/sdk` exports `guardPluginTx(tx)` and `assertSafePluginSql(text)`. The plugin context wraps every `tx` it hands to
+`@manythreads/sdk` exports `guardPluginTx(tx)` and `assertSafePluginSql(text)`. The plugin context wraps every `tx` it hands to
 plugin handlers (event subscribers, hooks, commands, HTTP routes, capability handlers, `emit`). A statement is rejected with
 `ForbiddenPluginSqlError` when, after removing `--` and `/* */` comments and ignoring case, it contains:
 

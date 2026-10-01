@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { KernelTestPingedEventV2 } from '@majlis/shared';
+import { KernelTestPingedEventV2 } from '@manythreads/shared';
 import { devActor, KAHF_WORKSPACE_ID, TEST } from '../support/api.ts';
 
 test('ping emits one event and the plugin subscriber gets exactly one valid delivery', async ({ request }) => {

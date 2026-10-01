@@ -1,4 +1,4 @@
-import { TeamMember } from '@majlis/shared';
+import { TeamMember } from '@manythreads/shared';
 
 export interface TeamMemberRow {
   team_id: string;

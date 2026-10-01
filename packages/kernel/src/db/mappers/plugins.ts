@@ -1,4 +1,4 @@
-import { PluginRecord } from '@majlis/shared';
+import { PluginRecord } from '@manythreads/shared';
 
 export interface PluginRow {
   name: string;

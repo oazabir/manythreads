@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - uses: ./.github/actions/deploy-majlis
+      - uses: ./.github/actions/deploy-manythreads
         with:
           label: main
           ssh-password: ${{ secrets.ROOT_PASSWORD }}

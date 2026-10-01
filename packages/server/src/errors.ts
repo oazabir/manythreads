@@ -1,4 +1,4 @@
-import type { ErrorCode, ErrorEnvelope } from '@majlis/shared';
+import type { ErrorCode, ErrorEnvelope } from '@manythreads/shared';
 import { hasZodFastifySchemaValidationErrors, isResponseSerializationError } from 'fastify-type-provider-zod';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';

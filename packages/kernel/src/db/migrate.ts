@@ -11,16 +11,16 @@ export interface MigrationSource {
 }
 
 export interface MigrateOptions {
-  /** Connection string for majlis_owner (the role that owns the tables). */
+  /** Connection string for manythreads_owner (the role that owns the tables). */
   connectionString: string;
   /** Kernel first, then plugin directories in load order. Defaults to the kernel directory. */
   sources?: readonly MigrationSource[];
   /**
-   * Password for the `majlis_app` role, set with ALTER ROLE after the files run (skipped if the role does not
-   * exist). `null` leaves it alone. Defaults to MAJLIS_APP_PASSWORD, then the dev default 'majlis_app'.
+   * Password for the `manythreads_app` role, set with ALTER ROLE after the files run (skipped if the role does not
+   * exist). `null` leaves it alone. Defaults to MANYTHREADS_APP_PASSWORD, then the dev default 'manythreads_app'.
    */
   appPassword?: string | null;
-  /** Same for `majlis_system`; defaults to MAJLIS_SYSTEM_PASSWORD, then the dev default 'majlis_system'. */
+  /** Same for `manythreads_system`; defaults to MANYTHREADS_SYSTEM_PASSWORD, then the dev default 'manythreads_system'. */
   systemPassword?: string | null;
 }
 
@@ -37,8 +37,8 @@ export interface MigrationFile {
 export const kernelMigrationsDir = fileURLToPath(new URL('../../migrations/', import.meta.url));
 export const kernelMigrationSource: MigrationSource = { namespace: 'kernel', dir: kernelMigrationsDir };
 
-export const DEFAULT_APP_PASSWORD = 'majlis_app';
-export const DEFAULT_SYSTEM_PASSWORD = 'majlis_system';
+export const DEFAULT_APP_PASSWORD = 'manythreads_app';
+export const DEFAULT_SYSTEM_PASSWORD = 'manythreads_system';
 
 /** Arbitrary constant; one lock per database serialises concurrent server starts. */
 const ADVISORY_LOCK_KEY = 7_450_001;
@@ -155,15 +155,15 @@ export async function runMigrations(options: MigrateOptions): Promise<number> {
         }
       };
       await setPassword(
-        'majlis_app',
+        'manythreads_app',
         options.appPassword === undefined
-          ? (process.env['MAJLIS_APP_PASSWORD'] ?? DEFAULT_APP_PASSWORD)
+          ? (process.env['MANYTHREADS_APP_PASSWORD'] ?? DEFAULT_APP_PASSWORD)
           : options.appPassword,
       );
       await setPassword(
-        'majlis_system',
+        'manythreads_system',
         options.systemPassword === undefined
-          ? (process.env['MAJLIS_SYSTEM_PASSWORD'] ?? DEFAULT_SYSTEM_PASSWORD)
+          ? (process.env['MANYTHREADS_SYSTEM_PASSWORD'] ?? DEFAULT_SYSTEM_PASSWORD)
           : options.systemPassword,
       );
       return count;

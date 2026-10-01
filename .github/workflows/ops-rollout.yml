@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
-      - uses: ./.github/actions/deploy-majlis
+      - uses: ./.github/actions/deploy-manythreads
         with:
           label: ${{ inputs.ref || github.sha }}
           ssh-password: ${{ secrets.ROOT_PASSWORD }}

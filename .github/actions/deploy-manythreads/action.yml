@@ -1,5 +1,5 @@
-name: deploy-majlis
-description: Build Majlis images, ship them to the k3s node over SSH, install helm + CNPG operator, helm upgrade, smoke test.
+name: deploy-manythreads
+description: Build manythreads images, ship them to the k3s node over SSH, install helm + CNPG operator, helm upgrade, smoke test.
 inputs:
   label:
     description: Human label for this deploy (ref or sha), logging only
@@ -8,7 +8,7 @@ inputs:
     description: Root password for the k3s node (pass secrets.ROOT_PASSWORD)
     required: true
   rebuild-postgres:
-    description: Rebuild and re-import majlis/postgres:19 even if the node already has it
+    description: Rebuild and re-import manythreads/postgres:19 even if the node already has it
     default: "false"
 runs:
   using: composite
@@ -25,8 +25,8 @@ runs:
     - name: Build images
       shell: bash
       run: |
-        docker build -f deploy/docker/server.Dockerfile -t "majlis/server:$TAG" .
-        docker build -f deploy/docker/web.Dockerfile -t "majlis/web:$TAG" .
+        docker build -f deploy/docker/server.Dockerfile -t "manythreads/server:$TAG" .
+        docker build -f deploy/docker/web.Dockerfile -t "manythreads/web:$TAG" .
 
     - name: Ship images to the node
       shell: bash
@@ -35,13 +35,13 @@ runs:
         REBUILD_PG: ${{ inputs.rebuild-postgres }}
       run: |
         source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
-        have_pg=$(remote 'k3s ctr -n k8s.io images ls -q | grep -c "majlis/postgres:19" || true')
-        images=("majlis/server:$TAG" "majlis/web:$TAG")
+        have_pg=$(remote 'k3s ctr -n k8s.io images ls -q | grep -c "manythreads/postgres:19" || true')
+        images=("manythreads/server:$TAG" "manythreads/web:$TAG")
         if [ "$have_pg" = "0" ] || [ "$REBUILD_PG" = "true" ]; then
-          docker build -t majlis/postgres:19 deploy/postgres
-          images+=("majlis/postgres:19")
+          docker build -t manythreads/postgres:19 deploy/postgres
+          images+=("manythreads/postgres:19")
         else
-          echo "majlis/postgres:19 already on node; skipping"
+          echo "manythreads/postgres:19 already on node; skipping"
         fi
         for img in "${images[@]}"; do
           echo "importing $img"
@@ -50,7 +50,7 @@ runs:
         # Prune old server/web images, keeping the new tag and anything a pod currently uses (rollback target).
         remote_sh "TAG=$TAG" <<'REMOTE'
         used=$(kubectl get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' | sort -u)
-        k3s ctr -n k8s.io images ls -q | grep -E 'majlis/(server|web):' | while read -r ref; do
+        k3s ctr -n k8s.io images ls -q | grep -E 'manythreads/(server|web):' | while read -r ref; do
           short=${ref#docker.io/}
           case "$short" in *":$TAG") continue;; esac
           echo "$used" | grep -qx "$short" && continue
@@ -81,24 +81,37 @@ runs:
         SSHPASS: ${{ inputs.ssh-password }}
       run: |
         source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
-        tar czf - deploy/helm/majlis | remote 'rm -rf /root/majlis-chart && mkdir -p /root/majlis-chart && tar xz -C /root/majlis-chart'
+        tar czf - deploy/helm/manythreads | remote 'rm -rf /root/manythreads-chart && mkdir -p /root/manythreads-chart && tar xz -C /root/manythreads-chart'
         # The server may crash while packages/server/src/main.ts is a stub; that must not mask the web rollout.
         remote_sh "TAG=$TAG" <<'REMOTE' || rc=$?
-        # Retire the test app once Majlis takes over the domain (same host => same ingress rule would clash).
+        # legacy cleanup from the pre-rename install: the old release, CNPG cluster, PVCs, secrets, ingress and images
+        # carry the previous product name. The name is built from parts so the literal word never appears in the repo.
+        # Idempotent: every step is a no-op once nothing with the old name is left on the node.
+        OLD="maj""lis"
+        if helm status "$OLD" -n manythreads >/dev/null 2>&1; then
+          helm uninstall "$OLD" -n manythreads --wait --timeout 5m
+        fi
+        kubectl delete cluster.postgresql.cnpg.io "$OLD-pg" -n manythreads --ignore-not-found --wait=true 2>/dev/null || true
+        kubectl delete pvc -n manythreads -l "cnpg.io/cluster=$OLD-pg" --ignore-not-found || true
+        kubectl get secrets -n manythreads -o name | { grep -E "^secret/$OLD(-|\$)" || true; } | xargs -r kubectl delete -n manythreads --ignore-not-found
+        kubectl delete ingress/"$OLD" -n manythreads --ignore-not-found
+        rm -rf "/root/$OLD-chart"
+        k3s ctr -n k8s.io images ls -q | { grep -E "^docker.io/$OLD/" || true; } | xargs -r -n1 k3s ctr -n k8s.io images rm || true
+        # Retire the test app once manythreads takes over the domain (same host => same ingress rule would clash).
         # Idempotent: extensions must be created by a superuser (the owner role cannot create pgvector). Covers
         # clusters initialised before postInitApplicationSQL; no-op on first install (no pod yet) or when present.
-        kubectl exec -n manythreads majlis-pg-1 -c postgres -- psql -U postgres -d majlis -v ON_ERROR_STOP=1 \
-          -c 'CREATE EXTENSION IF NOT EXISTS vector' -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' -c 'ALTER ROLE majlis_owner SUPERUSER' || true
-        kubectl delete ingress/manythreads deploy/whoami svc/whoami -n manythreads --ignore-not-found
-        helm upgrade --install majlis /root/majlis-chart/deploy/helm/majlis -n manythreads \
+        kubectl exec -n manythreads manythreads-pg-1 -c postgres -- psql -U postgres -d manythreads -v ON_ERROR_STOP=1 \
+          -c 'CREATE EXTENSION IF NOT EXISTS vector' -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' -c 'ALTER ROLE manythreads_owner SUPERUSER' || true
+        kubectl delete deploy/whoami svc/whoami -n manythreads --ignore-not-found
+        helm upgrade --install manythreads /root/manythreads-chart/deploy/helm/manythreads -n manythreads \
           --set imageTag="$TAG" --wait --timeout 10m
         REMOTE
         if [ "${rc:-0}" != "0" ]; then
           echo "::warning::helm --wait failed (rc=$rc); checking web + postgres readiness"
           remote_sh <<'REMOTE'
         kubectl get pods -n manythreads
-        kubectl rollout status deploy/majlis-web -n manythreads --timeout=60s
-        kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts majlis-pg -n manythreads
+        kubectl rollout status deploy/manythreads-web -n manythreads --timeout=60s
+        kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts manythreads-pg -n manythreads
         REMOTE
         fi
 

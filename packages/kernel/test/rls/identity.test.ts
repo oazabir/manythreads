@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { LENA, NADIA, OMAR, PRIYA, RAFI, SAMEERA, TARIQ, TEAM_IDS, KAHF_WORKSPACE_ID } from '@majlis/test-utils';
+import { LENA, NADIA, OMAR, PRIYA, RAFI, SAMEERA, TARIQ, TEAM_IDS, KAHF_WORKSPACE_ID } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type PersonRow,
@@ -129,13 +129,13 @@ describe('workspaces, people, workspace_members (WR, P)', () => {
   });
 });
 
-describe('S tables: nobody as majlis_app can read secrets, password hashes, verification tokens or the session cache', () => {
+describe('S tables: nobody as manythreads_app can read secrets, password hashes, verification tokens or the session cache', () => {
   const tables = ['secrets', 'password_credentials', 'email_verifications', 'session_cache', 'team_pending_files'];
 
-  it('majlis_app has no privilege at all', async () => {
+  it('manythreads_app has no privilege at all', async () => {
     const r = await w.system((tx) =>
       tx.query<{ t: string; priv: string; ok: boolean }>(
-        `SELECT t, priv, has_table_privilege('majlis_app', 'app.' || t, priv) AS ok
+        `SELECT t, priv, has_table_privilege('manythreads_app', 'app.' || t, priv) AS ok
          FROM unnest($1::text[]) AS t, unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']) AS priv`,
         [tables],
       ),

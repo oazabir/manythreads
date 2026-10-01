@@ -1,5 +1,5 @@
-import { createSystemPool, hashPassword, withSystem } from '@majlis/kernel';
-import type { RoleId } from '@majlis/shared';
+import { createSystemPool, hashPassword, withSystem } from '@manythreads/kernel';
+import type { RoleId } from '@manythreads/shared';
 import type { TestDatabase } from './db.ts';
 import {
   allPersonas,

@@ -1,5 +1,5 @@
 -- test-kernel: records every kernel.test.pinged delivery so API tests can count them. Test-only plugin
--- (loaded only when MAJLIS_TEST_PLUGINS=1). Workspace-scoped (W) with RLS.
+-- (loaded only when MANYTHREADS_TEST_PLUGINS=1). Workspace-scoped (W) with RLS.
 CREATE TABLE app.test_kernel_deliveries (
   id           uuid PRIMARY KEY DEFAULT uuidv7(),
   workspace_id uuid NOT NULL,
@@ -14,4 +14,4 @@ CREATE POLICY test_kernel_deliveries_workspace ON app.test_kernel_deliveries
   USING (workspace_id = app.workspace_id() OR app.is_system())
   WITH CHECK (workspace_id = app.workspace_id() OR app.is_system());
 
-GRANT SELECT, INSERT ON app.test_kernel_deliveries TO majlis_app;
+GRANT SELECT, INSERT ON app.test_kernel_deliveries TO manythreads_app;

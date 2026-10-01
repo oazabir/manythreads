@@ -1,4 +1,4 @@
-import { Job } from '@majlis/shared';
+import { Job } from '@manythreads/shared';
 
 export interface JobRow {
   id: string;

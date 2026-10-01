@@ -44,7 +44,7 @@ importers:
 
   clients/web:
     dependencies:
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       react:
@@ -75,13 +75,13 @@ importers:
 
   e2e:
     devDependencies:
-      '@majlis/server':
+      '@manythreads/server':
         specifier: workspace:*
         version: link:../packages/server
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../packages/shared
-      '@majlis/test-utils':
+      '@manythreads/test-utils':
         specifier: workspace:*
         version: link:../packages/test-utils
       '@playwright/test':
@@ -90,10 +90,10 @@ importers:
 
   packages/kernel:
     dependencies:
-      '@majlis/sdk':
+      '@manythreads/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../shared
       '@node-rs/argon2':
@@ -112,7 +112,7 @@ importers:
         specifier: ^4
         version: 4.6.5
     devDependencies:
-      '@majlis/test-utils':
+      '@manythreads/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       '@types/nodemailer':
@@ -124,19 +124,19 @@ importers:
 
   packages/plugins/example-hello:
     dependencies:
-      '@majlis/sdk':
+      '@manythreads/sdk':
         specifier: workspace:*
         version: link:../../sdk
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../../shared
 
   packages/plugins/test-kernel:
     dependencies:
-      '@majlis/sdk':
+      '@manythreads/sdk':
         specifier: workspace:*
         version: link:../../sdk
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../../shared
       zod:
@@ -145,7 +145,7 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../shared
       zod:
@@ -163,13 +163,13 @@ importers:
       '@fastify/websocket':
         specifier: ^11
         version: 11.3.1
-      '@majlis/kernel':
+      '@manythreads/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@majlis/sdk':
+      '@manythreads/sdk':
         specifier: workspace:*
         version: link:../sdk
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../shared
       fastify:
@@ -194,7 +194,7 @@ importers:
         specifier: ^4
         version: 4.6.5
     devDependencies:
-      '@majlis/test-utils':
+      '@manythreads/test-utils':
         specifier: workspace:*
         version: link:../test-utils
       '@types/pg':
@@ -209,13 +209,13 @@ importers:
 
   packages/test-utils:
     dependencies:
-      '@majlis/kernel':
+      '@manythreads/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@majlis/server':
+      '@manythreads/server':
         specifier: workspace:*
         version: link:../server
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../shared
       pg:
@@ -228,13 +228,13 @@ importers:
 
   tools/bench:
     dependencies:
-      '@majlis/kernel':
+      '@manythreads/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
-      '@majlis/shared':
+      '@manythreads/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@majlis/test-utils':
+      '@manythreads/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
       pg:

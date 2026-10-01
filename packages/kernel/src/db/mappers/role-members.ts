@@ -1,4 +1,4 @@
-import { RoleMember } from '@majlis/shared';
+import { RoleMember } from '@manythreads/shared';
 
 export interface RoleMemberRow {
   role_id: string;

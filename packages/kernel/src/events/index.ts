@@ -1,4 +1,4 @@
-import { EventRecord, parseEvent, type AnyEvent } from '@majlis/shared';
+import { EventRecord, parseEvent, type AnyEvent } from '@manythreads/shared';
 import { toEventRecord, type EventRow, type Tx } from '../db/index.ts';
 
 const ENVELOPE = new Set(['type', 'schemaVersion', 'workspaceId']);
@@ -12,7 +12,7 @@ export interface EmitResult {
 /**
  * Validates `event` against the registry (throws a ZodError naming the field; nothing is written), appends it to
  * `app.events` as `tx.actor`, and fans it out to every registered subscriber through app.enqueue_outbox, all in the
- * caller's transaction. NOTIFY majlis_outbox is delivered when that transaction commits.
+ * caller's transaction. NOTIFY manythreads_outbox is delivered when that transaction commits.
  *
  * Stored shape: type, schema_version, workspace_id and team_id (when the event has `teamId`) are columns; the rest
  * of the event object is `payload`. `eventToRaw` rebuilds the original object.

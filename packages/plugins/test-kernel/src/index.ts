@@ -1,4 +1,4 @@
-import { definePlugin } from '@majlis/sdk';
+import { definePlugin } from '@manythreads/sdk';
 import { z } from 'zod';
 
 const EchoBody = z.strictObject({ message: z.string().min(1).max(200), count: z.number().int().min(0).max(1000).optional() });
@@ -7,7 +7,7 @@ const NoteQuery = z.object({ note: z.string().min(1) });
 
 /**
  * Test-only plugin exercising the host: strict body validation, a rate-limited route, emitting an event and
- * recording its delivery. Loaded only when MAJLIS_TEST_PLUGINS=1. Mounted at /api/test/*. echo and limited are public;
+ * recording its delivery. Loaded only when MANYTHREADS_TEST_PLUGINS=1. Mounted at /api/test/*. echo and limited are public;
  * ping and deliveries need a (dev header) actor because they write and read under RLS.
  */
 export default definePlugin({

@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/web",
+  "name": "@manythreads/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "test": "vitest run --root ../.. --project unit clients/web"
   },
   "dependencies": {
-    "@majlis/shared": "workspace:*",
+    "@manythreads/shared": "workspace:*",
     "react": "^19",
     "react-dom": "^19",
     "react-router": "^8.4.0",

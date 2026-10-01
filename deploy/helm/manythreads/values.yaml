@@ -14,12 +14,12 @@ ingress:
 
 postgres:
   mode: cnpg             # cnpg | statefulset
-  image: majlis/postgres:19
+  image: manythreads/postgres:19
   instances: 1
-  database: majlis
-  owner: majlis_owner
-  appRole: majlis_app
-  systemRole: majlis_system   # roles are created by the server's migrations; the chart only supplies passwords
+  database: manythreads
+  owner: manythreads_owner
+  appRole: manythreads_app
+  systemRole: manythreads_system   # roles are created by the server's migrations; the chart only supplies passwords
   uid: 999
   gid: 999
   storage:
@@ -29,7 +29,7 @@ postgres:
 
 server:
   enabled: true
-  image: majlis/server
+  image: manythreads/server
   replicas: 1
   port: 3000
   env: {}
@@ -37,7 +37,7 @@ server:
 
 web:
   enabled: true
-  image: majlis/web
+  image: manythreads/web
   replicas: 1
   resources: {}
 

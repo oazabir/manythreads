@@ -1,4 +1,4 @@
-import { Invitation } from '@majlis/shared';
+import { Invitation } from '@manythreads/shared';
 
 /** The `token_hash` column is not mapped: the accept flow looks it up with its own query. */
 export interface InvitationRow {

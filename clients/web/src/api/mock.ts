@@ -1,4 +1,4 @@
-import type { ErrorCode } from '@majlis/shared';
+import type { ErrorCode } from '@manythreads/shared';
 import type { Transport } from './client';
 import * as s from './schemas';
 

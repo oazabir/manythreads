@@ -1,4 +1,4 @@
-import { AuthProvider } from '@majlis/shared';
+import { AuthProvider } from '@manythreads/shared';
 
 export interface AuthProviderRow {
   id: string;

@@ -1,4 +1,4 @@
-# Writing a Majlis plugin
+# Writing a manythreads plugin
 
 A plugin is one package under `packages/plugins/<name>` that adds behaviour through the extension points of spec §3.
 Start from `packages/plugins/example-hello` (see [example-hello.md](./example-hello.md)); read
@@ -8,7 +8,7 @@ Start from `packages/plugins/example-hello` (see [example-hello.md](./example-he
 
 ```
 packages/plugins/<name>/
-  package.json        "majlis": { "entry": "./src/index.ts" }, deps: @majlis/sdk, @majlis/shared, zod
+  package.json        "manythreads": { "entry": "./src/index.ts" }, deps: @manythreads/sdk, @manythreads/shared, zod
   src/index.ts        export default definePlugin({ manifest, register })
   migrations/         0001_<what>.sql ... (optional)
   tsconfig.json
@@ -19,7 +19,7 @@ scoped storage.
 
 ## SDK-only imports
 
-A plugin imports **only `@majlis/sdk` and `@majlis/shared`** (plus `zod`). Never `@majlis/kernel`, `pg`, or another
+A plugin imports **only `@manythreads/sdk` and `@manythreads/shared`** (plus `zod`). Never `@manythreads/kernel`, `pg`, or another
 plugin's files. Everything a plugin may touch is on the `ctx` that `register(ctx)` receives. This is the public API;
 the kernel can change behind it.
 
@@ -73,8 +73,8 @@ ctx.http.route({
 - Over the limit is `429 rate_limited`. Counters live in the process, so with N replicas each allows the full limit.
 - Routes need a signed-in actor. `public: true` opts a route out (health-like or test routes); it then runs as an
   anonymous actor that RLS lets see nothing.
-- Until phase 2 adds sign-in, tests and local dev send `x-majlis-dev-actor: {"kind":"person","id":"<uuid>","workspaceId":"<uuid>"}`.
-  The server honours it **only** when `NODE_ENV=test` or `MAJLIS_DEV_AUTH=1`; phase 2 deletes it.
+- Until phase 2 adds sign-in, tests and local dev send `x-manythreads-dev-actor: {"kind":"person","id":"<uuid>","workspaceId":"<uuid>"}`.
+  The server honours it **only** when `NODE_ENV=test` or `MANYTHREADS_DEV_AUTH=1`; phase 2 deletes it.
 
 ### Events
 
@@ -95,7 +95,7 @@ after they are applied (the runner checks checksums and stops the start naming t
   follow the kind); `pnpm test:rls` reports a missing or unknown kind. Policies go through the helpers of schema `app`
   (`is_team_member`, `team_role`, `is_workspace_admin`, `can(type, id, permission)`, `can_in_team(team_id, permission)`);
   a policy cannot look its own new row up by id, so write policies judge the row's `team_id` (`can_in_team`).
-- `GRANT` `majlis_app` only what requests need.
+- `GRANT` `manythreads_app` only what requests need.
 
 ```sql
 CREATE TABLE app.tasks_task (id uuid PRIMARY KEY DEFAULT uuidv7(), team_id uuid NOT NULL, title text NOT NULL);
@@ -105,7 +105,7 @@ ALTER TABLE app.tasks_task FORCE ROW LEVEL SECURITY;
 COMMENT ON TABLE app.tasks_task IS 'rls: team — T: tasks of one team.';
 CREATE POLICY tasks_task_team ON app.tasks_task
   USING (app.is_team_member(team_id)) WITH CHECK (app.is_team_member(team_id));
-GRANT SELECT, INSERT, UPDATE ON app.tasks_task TO majlis_app;
+GRANT SELECT, INSERT, UPDATE ON app.tasks_task TO manythreads_app;
 ```
 
 Plugins never get a pool: handlers receive a `PluginTx` bound to the acting person or bot, so RLS decides what rows exist.
@@ -127,9 +127,9 @@ not for records (use a migration).
 
 - Unit: build the definition with `definePlugin`, load it with `loadPlugins({ plugins: [{ definition }] })` (no DB) to check
   ordering and registration.
-- Integration (Vitest): `startTestServer()` from `@majlis/test-utils` gives a fresh migrated database and a server on a
+- Integration (Vitest): `startTestServer()` from `@manythreads/test-utils` gives a fresh migrated database and a server on a
   random port with dev auth on. Helpers: `readAs(persona, fn)` runs queries as Omar, Nadia, Rafi, Sameera, Tariq, Priya
   or Lena under RLS; `captureEvent(type, fn, { pool })` returns the event `fn` emitted.
-- API (Playwright `request`): `pnpm e2e --project=api` starts the server with `MAJLIS_TEST_PLUGINS=1` on a fresh database.
+- API (Playwright `request`): `pnpm e2e --project=api` starts the server with `MANYTHREADS_TEST_PLUGINS=1` on a fresh database.
   `packages/plugins/test-kernel` is the reference for echo, rate limit and event round trips.
 - `pnpm test:rls` proves every table has RLS; `pnpm lint` and `pnpm typecheck` must stay green.

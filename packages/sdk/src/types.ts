@@ -1,4 +1,4 @@
-import type { ExtensionPoint, PluginManifest } from '@majlis/shared';
+import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
 import type { ZodType } from 'zod';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
@@ -112,7 +112,7 @@ export interface HttpRouteDefinition {
   rateLimit?: { limit: number; windowMs: number };
   /**
    * Reachable without an actor (health-like or test routes). Default false: until phase 2 adds sign-in only
-   * dev-header actors (NODE_ENV=test / MAJLIS_DEV_AUTH=1) can call non-public routes.
+   * dev-header actors (NODE_ENV=test / MANYTHREADS_DEV_AUTH=1) can call non-public routes.
    */
   public?: boolean;
   handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;

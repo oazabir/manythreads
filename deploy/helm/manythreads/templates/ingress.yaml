@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: majlis
+  name: manythreads
   labels:
-    {{- include "majlis.labels" . | nindent 4 }}
+    {{- include "manythreads.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -27,5 +27,5 @@ spec:
           - path: /
             pathType: Prefix
             backend:
-              service: { name: majlis-web, port: { name: http } }
+              service: { name: manythreads-web, port: { name: http } }
 {{- end }}

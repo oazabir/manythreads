@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/kernel",
+  "name": "@manythreads/kernel",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@majlis/sdk": "workspace:*",
-    "@majlis/shared": "workspace:*",
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
     "@node-rs/argon2": "^2.2.1",
     "nodemailer": "^10.0.13",
     "pg": "^8",
@@ -19,7 +19,7 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@majlis/test-utils": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8"
   }

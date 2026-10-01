@@ -1,7 +1,7 @@
 -- 0005_sessions: PLAN.md A.2 credential and session tables: password_credentials, sessions, session_cache (UNLOGGED),
 -- invitations, email_verifications. Forward-only: never edit this file once applied.
 -- The sign-in flows run before any actor exists, so they use the system pool; everything a person may touch about
--- their own sessions is policy-limited below. majlis_app has no privilege at all on the S tables.
+-- their own sessions is policy-limited below. manythreads_app has no privilege at all on the S tables.
 
 -- password_credentials (S) -----------------------------------------------------------------------------------------------
 CREATE TABLE app.password_credentials (
@@ -11,7 +11,7 @@ CREATE TABLE app.password_credentials (
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE app.password_credentials IS 'rls: system — S: argon2id hashes; no privilege for majlis_app, never returned by any API.';
+COMMENT ON TABLE app.password_credentials IS 'rls: system — S: argon2id hashes; no privilege for manythreads_app, never returned by any API.';
 
 -- sessions (P; W) ------------------------------------------------------------------------------------------------------------
 CREATE TABLE app.sessions (
@@ -76,7 +76,7 @@ CREATE TABLE app.email_verifications (
 CREATE UNIQUE INDEX email_verifications_token ON app.email_verifications (token_hash);
 CREATE INDEX email_verifications_person ON app.email_verifications (person_id);
 CREATE INDEX email_verifications_workspace ON app.email_verifications (workspace_id);
-COMMENT ON TABLE app.email_verifications IS 'rls: system — S: verify and reset links (hashes only); no privilege for majlis_app.';
+COMMENT ON TABLE app.email_verifications IS 'rls: system — S: verify and reset links (hashes only); no privilege for manythreads_app.';
 
 -- Row level security -------------------------------------------------------------------------------------------------------------
 ALTER TABLE app.password_credentials ENABLE ROW LEVEL SECURITY;
@@ -138,7 +138,7 @@ CREATE POLICY email_verifications_system ON app.email_verifications FOR ALL
   USING (app.is_system()) WITH CHECK (app.is_system());
 
 -- Privileges -----------------------------------------------------------------------------------------------------------------------
-GRANT SELECT, DELETE ON app.sessions TO majlis_app;
-GRANT UPDATE (revoked_at) ON app.sessions TO majlis_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.invitations TO majlis_app;
-REVOKE ALL ON app.password_credentials, app.session_cache, app.email_verifications FROM PUBLIC, majlis_app;
+GRANT SELECT, DELETE ON app.sessions TO manythreads_app;
+GRANT UPDATE (revoked_at) ON app.sessions TO manythreads_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.invitations TO manythreads_app;
+REVOKE ALL ON app.password_credentials, app.session_cache, app.email_verifications FROM PUBLIC, manythreads_app;

@@ -1,4 +1,4 @@
-import { AclEntry } from '@majlis/shared';
+import { AclEntry } from '@manythreads/shared';
 
 export interface AclEntryRow {
   id: string;

@@ -1,4 +1,4 @@
-import { ErrorEnvelope, type ApiRoute, type ApiSchemas, type ErrorCode } from '@majlis/shared';
+import { ErrorEnvelope, type ApiRoute, type ApiSchemas, type ErrorCode } from '@manythreads/shared';
 
 /** Typed API client (PLAN Appendix B.3): parse the request, send, map errors, parse the response. */
 

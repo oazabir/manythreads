@@ -1,7 +1,7 @@
 /* stylelint-disable color-hex-length -- values copied verbatim from the prototype */
 
 /*
- * Majlis design tokens. Copied from the prototype `:root` in docs/spec/mockups-all.html.
+ * manythreads design tokens. Copied from the prototype `:root` in docs/spec/mockups-all.html.
  * This is the only file where raw hex colours are allowed (stylelint color-no-hex).
  *
  * not yet tokens (prototype CSS values seen in section #app, kept out until a screen needs them):

@@ -1,5 +1,5 @@
 -- test-kernel: a team-scoped stub resource that proves team-level denial through app.can() (PLAN.md P2-07).
--- Test-only: exists only where the test plugins are loaded (MAJLIS_TEST_PLUGINS=1 or the test sources).
+-- Test-only: exists only where the test plugins are loaded (MANYTHREADS_TEST_PLUGINS=1 or the test sources).
 CREATE TABLE app.stub_resources (
   id           uuid PRIMARY KEY DEFAULT uuidv7(),
   workspace_id uuid NOT NULL REFERENCES app.workspaces (id) ON DELETE CASCADE,
@@ -27,7 +27,7 @@ CREATE POLICY stub_resources_update ON app.stub_resources FOR UPDATE
 CREATE POLICY stub_resources_delete ON app.stub_resources FOR DELETE
   USING (app.is_system() OR app.can_in_team(team_id, 'manage') OR app.can('stub_resource', id, 'manage'));
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.stub_resources TO majlis_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.stub_resources TO manythreads_app;
 
 -- 0001's table, tagged with the RLS kind the harness requires.
 COMMENT ON TABLE app.test_kernel_deliveries IS 'rls: workspace — W: deliveries of the test event, per workspace.';

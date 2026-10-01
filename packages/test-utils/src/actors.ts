@@ -1,5 +1,5 @@
-import { toEventRecord, withActor, withSystem, type Actor, type EventRow, type Tx, type WithActorOptions } from '@majlis/kernel';
-import type { EventRecord } from '@majlis/shared';
+import { toEventRecord, withActor, withSystem, type Actor, type EventRow, type Tx, type WithActorOptions } from '@manythreads/kernel';
+import type { EventRecord } from '@manythreads/shared';
 import { personaActor, type Persona } from './personas.ts';
 
 /** Run `fn` inside a transaction as `persona` (RLS applies exactly as for that person's request). */
