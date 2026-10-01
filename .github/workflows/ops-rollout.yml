@@ -7,9 +7,6 @@ on:
         description: Branch or commit sha to deploy
         required: true
         default: main
-  push: # TEMPORARY test trigger (remove before merge to main; see docs/deploy.md)
-    branches: [claude/inspiring-turing-dzp82p]
-    paths: [deploy/.rollout-trigger]
 
 permissions:
   contents: read

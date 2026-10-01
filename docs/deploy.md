@@ -38,6 +38,12 @@ nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`,
 Run `ops-rollback` (empty revision = previous). Images in use by running pods stay on the node, so the previous revision normally still has its images.
 
 ## Temporary test triggers
-`ops-rollout.yml` and `ops-status.yml` carry a `push:` trigger on branch `claude/inspiring-turing-dzp82p`
-(paths `deploy/.rollout-trigger`, `deploy/.status-trigger`). They were used to test before the files existed
-on main; they have been removed again once testing finished (workflow_dispatch works once the files are on main).
+During development `ops-rollout`, `ops-status` and `ops-logs` had a temporary `push:` trigger on branch
+`claude/inspiring-turing-dzp82p` (paths `deploy/.rollout-trigger`, `.status-trigger`, `.logs-trigger`) because
+workflow_dispatch only works once a workflow file is on main. The triggers and files are removed; after merging to
+main use the Actions tab (Run workflow).
+
+## Notes
+- The kernel migrations need `majlis_owner` to be SUPERUSER (create pgvector, create/alter roles); the chart sets this
+  via CNPG `postInitApplicationSQL` and the deploy action re-applies it idempotently.
+- Plain `http://` on the domain returns 404 from the front proxy; use https.

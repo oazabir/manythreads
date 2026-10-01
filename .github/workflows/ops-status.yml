@@ -2,9 +2,6 @@ name: ops-status
 # Fixed-purpose: cluster status for the manythreads namespace. No inputs.
 on:
   workflow_dispatch:
-  push: # TEMPORARY test trigger (remove before merge to main; see docs/deploy.md)
-    branches: [claude/inspiring-turing-dzp82p]
-    paths: [deploy/.status-trigger]
 
 permissions:
   contents: read
