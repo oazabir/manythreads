@@ -88,10 +88,10 @@ runs:
         if [ "${rc:-0}" != "0" ]; then
           echo "::warning::helm --wait failed (rc=$rc); checking web + postgres readiness"
           remote_sh <<'REMOTE'
-          kubectl get pods -n manythreads
-          kubectl rollout status deploy/majlis-web -n manythreads --timeout=60s
-          kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts majlis-pg -n manythreads
-          REMOTE
+        kubectl get pods -n manythreads
+        kubectl rollout status deploy/majlis-web -n manythreads --timeout=60s
+        kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts majlis-pg -n manythreads
+        REMOTE
         fi
 
     - name: Smoke test
