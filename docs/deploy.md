@@ -25,6 +25,39 @@ No CRDs of our own (D4). Postgres is a CNPG `Cluster` `manythreads-pg` (service 
 `manythreads-db-app` (generated once, kept across upgrades). LiteLLM/Hindsight/Hermes are disabled placeholders.
 nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`, `/ws` to `manythreads-server`.
 
+## Server environment (set by the chart)
+| Variable | Value / source |
+|---|---|
+| `MANYTHREADS_KMS_KEY` | Secret `manythreads-server-secrets` key `kms-key`: base64 of 32 random bytes, generated once (`lookup`, so upgrades never rotate it) and kept on `helm uninstall` (`helm.sh/resource-policy: keep`). Envelope encryption of provider client secrets; lose it and they must be re-entered. Required in production. |
+| `MANYTHREADS_PUBLIC_URL` | `publicUrl`, default `https://<domain>` (`https://manythreads.kahf.to`). Mail links, OIDC redirect URIs; Secure cookies follow it. |
+| `MANYTHREADS_TRUST_PROXY` | `server.trustProxy`, **2**: Traefik and the web pod's nginx each append to `X-Forwarded-For`, so the client is two hops out (1 would make every visitor look like Traefik: one shared sign-in lockout). Set it to the number of proxies in front of the server pod. |
+| `MANYTHREADS_SMTP_URL` | `mail.smtpUrl`, or `smtp://manythreads-mailpit:1025` while `mailpit.enabled` (default). |
+| `MANYTHREADS_MAIL_FROM` | `mail.from`. |
+| `MANYTHREADS_TEST_AUTH_TOKEN` | Secret key `test-auth-token` (40 random alphanumerics), injected **only when `testAuth.enabled`**. |
+
+**Mailpit** (`mailpit.enabled`, default on for the test environment) is a Deployment + ClusterIP Service `manythreads-mailpit`
+(SMTP 1025, UI 8025). The ingress never routes to it; read mail with
+`kubectl -n manythreads port-forward svc/manythreads-mailpit 8025`. Set `mailpit.enabled=false` and `mail.smtpUrl` for a real relay.
+
+**Test sign-in on the live site (`testAuth.enabled`, default false).** `POST /api/test/session` with header `x-test-auth` lets the
+screenshots workflow sign in as a persona. The server refuses to start in production with the token set, so enabling it also
+passes `MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION=1`, which `resolveTestAuthToken` (`packages/server/src/start.ts`) must honour
+(with a loud warning at start). Until the server does, keep the flag off; the Secret is generated either way. Never enable it on a real deployment.
+
+**Demo seed.** A post-install/post-upgrade Job (`seed.demo`, default true) runs `pnpm seed --demo` from the server image once the
+server is ready: workspace Kahf Software, seven personas, three teams with their template definitions. It is idempotent (a second run
+changes nothing and never replaces a password) and every persona gets a random password that is stored only as an argon2id hash and
+printed nowhere, so the public site has no known credentials. The first-admin bootstrap link is not offered once the workspace exists.
+Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--migrate] [--wait <secs>]`.
+
+## Screenshots of the live site
+`.github/workflows/screenshots.yml` runs when `release` completes successfully for a `Phase N ·` merge (and by hand: Actions, screenshots,
+Run workflow, optional phase). It reads the test-auth token from the cluster over SSH (`kubectl get secret manythreads-server-secrets`,
+masked, never echoed), signs in as Omar, Nadia and Lena through `/api/test/session`, runs `e2e/screens/live.shots.ts`
+(`pnpm -C e2e exec playwright test -c screens/live.config.ts`; sign-in, teams, roster, members, account, settings sign-in at 1440x900,
+sign-in and members at 390x844), uploads them as the artifact `screenshots-phase-N` and commits them to the `screenshots` branch under
+`phase-N/{desktop,mobile}/` (created on first use; the workflow writes no other ref). It needs `testAuth.enabled` on the site.
+
 ## Ops workflows (Actions tab, workflow_dispatch; inputs strictly validated, no free-form commands)
 | Workflow | Inputs | Does |
 |---|---|---|

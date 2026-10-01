@@ -173,3 +173,18 @@ export async function explainRlsViolations(client: Queryable): Promise<RlsProble
 export async function findRlsViolations(client: Queryable): Promise<string[]> {
   return (await explainRlsViolations(client)).map((p) => p.name);
 }
+
+/** One query as the database owner (bypasses RLS): for specs that arrange or inspect state the API cannot reach. */
+export async function ownerSql<T extends Record<string, unknown> = Record<string, unknown>>(
+  ownerUrl: string,
+  text: string,
+  params: readonly unknown[] = [],
+): Promise<T[]> {
+  const client = new pg.Client({ connectionString: ownerUrl });
+  await client.connect();
+  try {
+    return (await client.query<T>(text, [...params])).rows;
+  } finally {
+    await client.end();
+  }
+}

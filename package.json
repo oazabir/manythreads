@@ -13,6 +13,7 @@
     "test:events": "vitest run --project events",
     "test:schema-compat": "vitest run --project schema-compat",
     "db:up": "docker compose -f deploy/compose/docker-compose.dev.yml up -d --wait postgres",
+    "seed": "tsx packages/test-utils/src/seed-cli.ts",
     "db:down": "docker compose -f deploy/compose/docker-compose.dev.yml down",
     "e2e": "pnpm -C e2e exec playwright test -c playwright.config.ts",
     "vt": "tsx tools/plates/src/cli.ts",

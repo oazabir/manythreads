@@ -16,6 +16,11 @@ export interface Persona {
   key: 'omar' | 'nadia' | 'rafi' | 'sameera' | 'tariq' | 'priya' | 'lena';
   name: string;
   email: string;
+  /**
+   * Further verified addresses (seed v2, `createPersonas(db, { verifiedEmails: true })`): the address a person has at an
+   * identity provider that does not use the `kahf.example` test domain, e.g. Tariq's Google Workspace login at kahf.co.
+   */
+  aliases: string[];
   personId: PersonId;
   /** The `actors` row id that goes into `withActor`. */
   actorId: ActorId;
@@ -39,10 +44,11 @@ export const TEAM_IDS: Record<TeamName, TeamId> = {
 
 const make = (
   n: number,
-  p: Omit<Persona, 'personId' | 'actorId' | 'workspaceId' | 'email' | 'guestChannels'> & { guestChannels?: string[] },
+  p: Omit<Persona, 'personId' | 'actorId' | 'workspaceId' | 'email' | 'guestChannels' | 'aliases'> & { guestChannels?: string[]; aliases?: string[] },
 ): Persona => ({
   ...p,
   email: `${p.key}@kahf.example`,
+  aliases: p.aliases ?? [],
   personId: `00000000-0000-7000-8000-0000000c000${n}` as PersonId,
   actorId: `00000000-0000-7000-8000-0000000d000${n}` as ActorId,
   workspaceId: KAHF_WORKSPACE_ID,
@@ -76,6 +82,7 @@ export const SAMEERA = make(4, {
 export const TARIQ = make(5, {
   key: 'tariq',
   name: 'Tariq',
+  aliases: ['tariq@kahf.co'],
   workspaceRoles: ['member'],
   teams: [{ team: 'Marketing', role: 'lead', tags: [] }],
 });

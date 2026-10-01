@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createSystemPool, hashPassword, withSystem } from '@manythreads/kernel';
 import type { RoleId } from '@manythreads/shared';
 import type { TestDatabase } from './db.ts';
@@ -28,12 +29,23 @@ export const ROLE_IDS = {
   'role:support-agent': '00000000-0000-7000-8000-0000000e0003' as RoleId,
 } as const;
 
+export interface CreatePersonasOptions {
+  /** `fixed` (default): everybody has `PERSONA_PASSWORD`. `random`: unknown, unrecoverable passwords (demo deployments). */
+  passwords?: 'fixed' | 'random';
+  /**
+   * Also write a verified `person_emails` row for the primary address and every alias, so OIDC sign-in can link an
+   * identity to the person (the linker only trusts verified addresses). Default false.
+   */
+  verifiedEmails?: boolean;
+}
+
 export interface CreatedPersonas {
   workspaceId: typeof KAHF_WORKSPACE_ID;
   teams: typeof TEAM_IDS;
   roles: typeof ROLE_IDS;
   personas: readonly Persona[];
-  password: string;
+  /** The shared password, or null when the passwords are random (nobody knows them). */
+  password: string | null;
 }
 
 const workspaceRoleOf = (roles: readonly WorkspaceRole[]): WorkspaceRole =>
@@ -45,8 +57,16 @@ const workspaceRoleOf = (roles: readonly WorkspaceRole[]): WorkspaceRole =>
  * role tags) and an argon2id password credential for each (`PERSONA_PASSWORD`). Ids are fixed (see personas.ts).
  * Idempotent: a second call changes nothing. `db` is any object with a `systemUrl` (a TestDatabase).
  */
-export async function createPersonas(db: Pick<TestDatabase, 'systemUrl'>): Promise<CreatedPersonas> {
-  const hashes = await Promise.all(allPersonas.map(() => hashPassword(PERSONA_PASSWORD)));
+export async function createPersonas(
+  db: Pick<TestDatabase, 'systemUrl'>,
+  options: CreatePersonasOptions = {},
+): Promise<CreatedPersonas> {
+  const random = options.passwords === 'random';
+  // 'random': a fresh 192-bit secret per person that is hashed and then dropped; nothing prints or keeps it, so a
+  // public deployment has no known password. Existing credentials are never replaced (ON CONFLICT DO NOTHING).
+  const hashes = await Promise.all(
+    allPersonas.map(() => hashPassword(random ? randomBytes(24).toString('base64url') : PERSONA_PASSWORD)),
+  );
   const pool = createSystemPool(db.systemUrl, 2);
   try {
     await withSystem(
@@ -75,6 +95,15 @@ export async function createPersonas(db: Pick<TestDatabase, 'systemUrl'>): Promi
              ON CONFLICT DO NOTHING`,
             [p.personId, ws, p.name, p.email],
           );
+          if (options.verifiedEmails) {
+            for (const email of [p.email, ...p.aliases]) {
+              await tx.query(
+                `INSERT INTO app.person_emails (workspace_id, person_id, email, verified_at) VALUES ($1, $2, $3, now())
+                 ON CONFLICT DO NOTHING`,
+                [ws, p.personId, email],
+              );
+            }
+          }
           await tx.query(
             `INSERT INTO app.actors (id, kind, workspace_id, ref_id) VALUES ($1, 'person', $2, $3) ON CONFLICT DO NOTHING`,
             [p.actorId, ws, p.personId],
@@ -109,5 +138,5 @@ export async function createPersonas(db: Pick<TestDatabase, 'systemUrl'>): Promi
   } finally {
     await pool.end();
   }
-  return { workspaceId: KAHF_WORKSPACE_ID, teams: TEAM_IDS, roles: ROLE_IDS, personas: allPersonas, password: PERSONA_PASSWORD };
+  return { workspaceId: KAHF_WORKSPACE_ID, teams: TEAM_IDS, roles: ROLE_IDS, personas: allPersonas, password: random ? null : PERSONA_PASSWORD };
 }

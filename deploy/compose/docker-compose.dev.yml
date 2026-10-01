@@ -35,5 +35,31 @@ services:
       - "8025:8025"
       - "1025:1025"
 
+  # Optional (profile `app`): the server image against the dev Postgres, with the same environment the Helm chart sets
+  # (KMS key, public URL, proxy trust, mail through mailpit). `docker compose -f deploy/compose/docker-compose.dev.yml
+  # --profile app up -d --build server`; `pnpm db:up` does not start it. Set MANYTHREADS_KMS_KEY first (see dev.env.example).
+  # A self-host compose file (all five workloads) comes in phase 10.
+  server:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/server.Dockerfile
+    image: manythreads/server:dev
+    depends_on:
+      postgres: { condition: service_healthy }
+      mailpit: { condition: service_started }
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://manythreads_owner:manythreads@postgres:5432/manythreads
+      MANYTHREADS_APP_DATABASE_URL: postgres://manythreads_app:manythreads_app@postgres:5432/manythreads
+      MANYTHREADS_SYSTEM_DATABASE_URL: postgres://manythreads_system:manythreads_system@postgres:5432/manythreads
+      MANYTHREADS_KMS_KEY: ${MANYTHREADS_KMS_KEY:-}  # required by the production image: openssl rand -base64 32
+      MANYTHREADS_PUBLIC_URL: ${MANYTHREADS_PUBLIC_URL:-http://localhost:3000}
+      MANYTHREADS_TRUST_PROXY: ${MANYTHREADS_TRUST_PROXY:-0}
+      MANYTHREADS_SMTP_URL: smtp://mailpit:1025
+      MANYTHREADS_MAIL_FROM: ${MANYTHREADS_MAIL_FROM:-manythreads <no-reply@localhost>}
+    ports:
+      - "3000:3000"
+
 volumes:
   manythreads_pgdata:

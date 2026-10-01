@@ -3,6 +3,8 @@ imageTag: dev
 imagePullPolicy: IfNotPresent
 
 domain: manythreads.kahf.to
+# Public base URL (links in mails, OIDC redirect URIs; Secure cookies follow it). Empty = https://<domain>.
+publicUrl: ""
 
 ingress:
   enabled: true
@@ -32,8 +34,42 @@ server:
   image: manythreads/server
   replicas: 1
   port: 3000
+  # MANYTHREADS_TRUST_PROXY: how many reverse-proxy hops append to X-Forwarded-For before the server. The ingress (Traefik)
+  # and the web pod's nginx each append one, so the real client is two hops out; 1 would make every visitor look like
+  # Traefik (one shared sign-in lockout). Set it to the number of proxies in front of the server pod.
+  trustProxy: "2"
   env: {}
   resources: {}
+
+# Mail. The server sends sign-in, reset and invitation mail over SMTP (MANYTHREADS_SMTP_URL).
+mail:
+  from: "manythreads <no-reply@manythreads.kahf.to>"
+  # Empty = the in-cluster mailpit below (only when mailpit.enabled). A real relay: smtp://user:pass@host:587
+  smtpUrl: ""
+
+# In-cluster mail catcher for the test environment: a Deployment + ClusterIP Service, never exposed by the ingress
+# (read mail with `kubectl -n manythreads port-forward svc/manythreads-mailpit 8025`). Turn off with a real relay.
+mailpit:
+  enabled: true
+  image: axllent/mailpit:v1.31
+  resources: {}
+
+# Secrets generated once and kept across upgrades (lookup): manythreads-server-secrets holds the KMS master key
+# (MANYTHREADS_KMS_KEY, base64 of 32 bytes: envelope encryption of provider client secrets; losing it loses them) and the
+# test sign-in token. The secret has helm.sh/resource-policy: keep, so `helm uninstall` leaves it.
+#
+# testAuth: TEST ENVIRONMENTS ONLY. Exposes POST /api/test/session (sign in as any persona with header x-test-auth) so the
+# screenshots workflow can take pictures of the live site. The server refuses to start in production with the token set
+# unless MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION=1 as well, which this flag sets. The Secret is generated either way;
+# enabled only controls whether the server gets the variables. Never enable it on a real deployment.
+testAuth:
+  enabled: false
+
+# Seed: a post-install/upgrade Job runs `pnpm seed --demo` from the server image: workspace Kahf Software, the seven
+# personas, three teams. Idempotent (a second run changes nothing) and the passwords are random and unknown (hashes only),
+# so the public site has no credentials; people get in through single sign-on, an invitation or the test session.
+seed:
+  demo: true
 
 web:
   enabled: true

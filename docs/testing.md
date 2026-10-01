@@ -54,6 +54,33 @@ It is honoured **only when `NODE_ENV=test`** (vitest and the Playwright `api` se
 ignored, whatever options or variables say. It never makes a request cookie-authenticated, so it skips CSRF. Use it for
 bots, personas without a password, or low-level host tests; prefer sessions for anything about sign-in.
 
+## Seed v2 and `pnpm seed`
+
+`seedWorld(db, { demo })` (`packages/test-utils/src/seed.ts`, re-exported by `e2e/fixtures/seed.ts`) builds workspace **Kahf Software**:
+teams Engineering, Customer support and Marketing (each with the template it was created from), the seven personas of PLAN.md section 4
+with workspace roles, team seats, role tags and argon2id passwords, and a **verified `person_emails` row** per persona so OIDC can link
+identities (Tariq also has `tariq@kahf.co`, his Google Workspace and Microsoft login; everyone else uses `<name>@kahf.example`). Ids are
+fixed (`personas.ts`). It is idempotent, never replaces a password, and does nothing in a database that holds another workspace.
+`createPersonas(db, { passwords: 'random', verifiedEmails: true })` is the building block.
+
+```
+pnpm seed                     # DATABASE_URL (default: dev compose Postgres), everyone has PERSONA_PASSWORD
+pnpm seed --demo              # random passwords, hashed and printed nowhere (public deployments)
+pnpm seed --migrate --wait 60 # apply kernel migrations first / wait for the server's migrations
+```
+
+## Browser specs with their own origin (OIDC, break-glass)
+
+`e2e/fixtures/stack.ts` starts, per spec file, `fixtures/stack-server.ts`: the built web client and a real server on a fresh, seeded
+database behind one origin (`http://127.0.0.1:<port>`; `/api` is proxied), so OIDC redirect URIs and cookies are same-origin and a spec
+may change providers and workspace settings without touching the shared servers. `startStack({ MANYTHREADS_OIDC_MOCK_BASE })` returns
+`{ origin, sql(), stop() }`; `signedInContext()` gives a persona's API session (test-session endpoint) and `createProvider()` the admin call.
+The issuer is the in-process fake (`startFakeOidc`, `fixtures/oidc.ts`): its authorize endpoint redirects the browser straight back, so
+Playwright follows the whole flow and the spec sets the claims with `fake.nextLogin(issuerId, claims)` before clicking. `tools/mock-oidc`
+(the navikt container, with a login form) serves the same layout for manual runs. Needs `clients/web/dist` (the Playwright config builds it).
+Specs: `identity/oidc-google`, `oidc-microsoft`, `oidc-any` (admin drives Settings, Sign-in), `break-glass`.
+`MANYTHREADS_E2E_LOG=1` streams the stack's server log.
+
 ## First-admin bootstrap in tests
 
 A server started on an empty database prints one line, `first-admin setup: open <url>/bootstrap/<token> ...`. In tests read
