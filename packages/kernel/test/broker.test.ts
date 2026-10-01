@@ -63,6 +63,13 @@ describe('broker: path guard (bot actors)', () => {
     '%62ots/x',
     'pages/%2e%2e/bots/x',
     'pages/..%2fbots/x',
+    'Bots/x.md',
+    'team.md',
+    'TEAM.MD',
+    'Skills/x',
+    'TEAM.md.',
+    'pages/%252e%252e/bots/x',
+    '%2e/./TEAM.md',
   ];
 
   for (const capability of all) {
@@ -87,8 +94,8 @@ describe('broker: path guard (bot actors)', () => {
     expect((await broker.authorize(bot('conversation'), 'files.write')).allowed).toBe(false);
   });
 
-  it.each(['pages/x.md', 'pages/../pages/x.md', './pages/x.md', 'Bots/x.md', 'team.md', 'docs/bots/x.md'])(
-    'allows a granted write to %s (case-sensitive, only the guarded roots)',
+  it.each(['pages/x.md', 'pages/../pages/x.md', './pages/x.md', 'docs/bots/x.md', 'docs/TEAM.md'])(
+    'allows a granted write to %s (only the guarded roots)',
     async (path) => {
       const { broker, denials } = setup(all);
       const d = await broker.authorize(bot('conversation'), 'files.write', { path });

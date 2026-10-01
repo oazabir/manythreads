@@ -4,7 +4,7 @@
  */
 
 const GUARDED_DIRS: ReadonlySet<string> = new Set(['bots', 'skills', 'routines']);
-const GUARDED_FILES: ReadonlySet<string> = new Set(['TEAM.md']);
+const GUARDED_FILES: ReadonlySet<string> = new Set(['team.md']);
 
 /** `files.*` verbs that only read. Everything else under `files.` is treated as a write (fail closed). */
 const READ_ONLY_FILE_VERBS: ReadonlySet<string> = new Set(['read', 'list', 'search', 'get', 'stat', 'diff', 'history']);
@@ -36,9 +36,12 @@ export function normalizeRepoPath(raw: string): NormalizedPath {
   return { ok: true, path: out.join('/') };
 }
 
+// Compared case-insensitively and NFKC-folded, trailing dots/spaces trimmed: the repo may live on a
+// case-insensitive filesystem (macOS/Windows), where `team.md` or `Bots/` is the same file. Fail closed.
+const fold = (segment: string): string => segment.normalize('NFKC').toLowerCase().replace(/[. ]+$/, '');
 const isGuarded = (normalized: string): boolean => {
-  const first = normalized.split('/')[0] ?? '';
-  return GUARDED_DIRS.has(first) || GUARDED_FILES.has(normalized);
+  const parts = normalized.split('/').map(fold);
+  return GUARDED_DIRS.has(parts[0] ?? '') || GUARDED_FILES.has(parts.join('/'));
 };
 
 export interface PathVerdict {
@@ -49,12 +52,15 @@ export interface PathVerdict {
 /** Decide one path for a bot write. Also checks the percent-decoded form so `%2e%2e/` tricks do not pass. */
 export function checkBotWritePath(raw: string): PathVerdict {
   const forms = [raw];
-  if (raw.includes('%')) {
+  // Decode repeatedly (double encoding such as %252e%252e), up to 4 layers.
+  let current = raw;
+  for (let i = 0; i < 4 && current.includes('%'); i++) {
     try {
-      forms.push(decodeURIComponent(raw));
+      current = decodeURIComponent(current);
     } catch {
       return { allowed: false, reason: `path "${raw}" has invalid percent-encoding` };
     }
+    forms.push(current);
   }
   for (const form of forms) {
     const normalized = normalizeRepoPath(form);
