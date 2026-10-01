@@ -1,5 +1,5 @@
 import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
-import { PASSWORD_MIN } from '../api/schemas';
+import { PASSWORD_MIN_LENGTH as PASSWORD_MIN } from '@manythreads/shared';
 
 export function Brand({ name = 'manythreads', mark = 'm' }: { name?: string; mark?: string }) {
   return (

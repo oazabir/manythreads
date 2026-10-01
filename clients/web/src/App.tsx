@@ -9,6 +9,7 @@ import { Account } from './screens/Account';
 import { AdminOnly } from './screens/AdminOnly';
 import { Bootstrap } from './screens/Bootstrap';
 import { Invite } from './screens/Invite';
+import { ResetPassword, VerifyEmail } from './screens/ResetPassword';
 import { Roster, TeamChannels, TeamRedirect, TeamTemplate } from './screens/Roster';
 import { SignIn } from './screens/SignIn';
 import { SignInMethods } from './screens/SignInMethods';
@@ -17,7 +18,8 @@ import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 
 function ExpiredRoute() {
   const [params] = useSearchParams();
-  return <ExpiredLinkPage kind={params.get('kind') === 'bootstrap' ? 'bootstrap' : 'invitation'} />;
+  const kind = params.get('kind');
+  return <ExpiredLinkPage kind={kind === 'bootstrap' ? 'bootstrap' : kind === 'reset' ? 'reset' : 'invitation'} />;
 }
 
 function AppRoutes() {
@@ -28,14 +30,14 @@ function AppRoutes() {
         <Route path="/sign-in" element={<SignIn />} />
         <Route path="/bootstrap/:token" element={<Bootstrap />} />
         <Route path="/invite/:token" element={<Invite />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/verify-email/:token" element={<VerifyEmail />} />
         <Route path="/expired" element={<ExpiredRoute />} />
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/dev/tokens" element={<DevTokens />} />
 
-        {/* The empty app frame stays public until the real session API lands (phase 1 visual specs load it unauthenticated). */}
-        <Route path="/" element={<AppFrame />} />
-
         <Route element={<RequireSession />}>
+          <Route path="/" element={<AppFrame />} />
           <Route path="/account" element={<Account />} />
           <Route element={<SettingsFrame />}>
             <Route path="/teams" element={<Teams />} />

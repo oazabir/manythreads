@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router';
 import { fetchTeams } from '../api/endpoints';
-import type { TeamSummary } from '../api/schemas';
+import type { TeamSummary } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { Brand } from './ui';
@@ -57,7 +57,7 @@ export function SettingsFrame() {
   const loc = useLocation();
   const navigate = useNavigate();
   const q = useQuery('settings-teams', fetchTeams);
-  const loaded = q.status === 'ok' ? q.data : undefined;
+  const loaded = q.status === 'ok' ? q.data.teams : undefined;
   const teams = useMemo(() => loaded ?? [], [loaded]);
   const teamsValue = useMemo<TeamsContextValue>(() => ({ teams, loading: q.status === 'loading', reload: q.reload }), [teams, q.status, q.reload]);
 

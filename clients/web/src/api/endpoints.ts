@@ -1,67 +1,208 @@
-import { call, isApiError } from './client';
-import * as s from './schemas';
+import {
+  AcceptInvitationRequest,
+  AcceptInvitationResponse,
+  AddTeamMemberRequest,
+  AddTeamMemberResponse,
+  ApplyTeamTemplateRequest,
+  ApplyTeamTemplateResponse,
+  ArchiveTeamResponse,
+  AssignTeamTagResponse,
+  BootstrapWorkspaceRequest,
+  BootstrapWorkspaceResponse,
+  CheckBootstrapResponse,
+  CreateInvitationRequest,
+  CreateInvitationResponse,
+  CreateOidcProviderRequest,
+  CreateTeamInvitationResponse,
+  CreateTeamRequest,
+  CreateTeamResponse,
+  CreateTeamTagRequest,
+  CreateTeamTagResponse,
+  DeleteOidcProviderResponse,
+  DeleteTeamTagResponse,
+  GetInvitationResponse,
+  GetSessionResponse,
+  GetTeamResponse,
+  GetTeamRosterResponse,
+  InviteTeamMemberRequest,
+  ListOidcMethodsResponse,
+  ListOidcProvidersResponse,
+  ListSessionsResponse,
+  ListTeamInvitationsResponse,
+  ListTeamTagsResponse,
+  ListTeamsResponse,
+  ListTemplatesResponse,
+  ListWorkspaceMembersResponse,
+  OidcProviderResponse,
+  RemoveTeamMemberResponse,
+  RenameTeamRequest,
+  RenameTeamResponse,
+  RequestEmailVerificationResponse,
+  RequestPasswordResetRequest,
+  RequestPasswordResetResponse,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
+  RevokeSessionResponse,
+  SetTeamMemberRoleRequest,
+  SetTeamMemberRoleResponse,
+  SignInWithPasswordRequest,
+  SignInWithPasswordResponse,
+  SignOutEverywhereResponse,
+  SignOutResponse,
+  TestOidcProviderResponse,
+  UnarchiveTeamResponse,
+  UnassignTeamTagResponse,
+  UpdateOidcProviderRequest,
+  VerifyEmailRequest,
+  VerifyEmailResponse,
+  acceptInvitationRoute,
+  addTeamMemberRoute,
+  applyTeamTemplateRoute,
+  archiveTeamRoute,
+  assignTeamTagRoute,
+  bootstrapWorkspaceRoute,
+  checkBootstrapRoute,
+  createInvitationRoute,
+  createOidcProviderRoute,
+  createTeamInvitationRoute,
+  createTeamRoute,
+  createTeamTagRoute,
+  deleteOidcProviderRoute,
+  deleteTeamTagRoute,
+  disableOidcProviderRoute,
+  enableOidcProviderRoute,
+  getInvitationRoute,
+  getSessionRoute,
+  getTeamRoute,
+  getTeamRosterRoute,
+  listOidcMethodsRoute,
+  listOidcProvidersRoute,
+  listSessionsRoute,
+  listTeamInvitationsRoute,
+  listTeamTagsRoute,
+  listTeamsRoute,
+  listTemplatesRoute,
+  listWorkspaceMembersRoute,
+  removeTeamMemberRoute,
+  renameTeamRoute,
+  requestEmailVerificationRoute,
+  requestPasswordResetRoute,
+  resetPasswordRoute,
+  revokeSessionRoute,
+  setTeamMemberRoleRoute,
+  signInWithPasswordRoute,
+  signOutEverywhereRoute,
+  signOutRoute,
+  testOidcProviderRoute,
+  unarchiveTeamRoute,
+  unassignTeamTagRoute,
+  updateOidcProviderRoute,
+  verifyEmailRoute,
+  type AuthenticatedSession,
+} from '@manythreads/shared';
+import { call } from './client';
 
 /*
- * The one place screens get data from. Each function wraps one typed route; when the shared API schemas
- * land, swap the imports in this file and nothing else changes.
+ * The one place screens get data from. Every function wraps exactly one real route descriptor and its shared
+ * request and response schemas (D1: no client-side copies). Public sign-in, bootstrap and invitation calls opt out of
+ * "a 401 means the session expired" so a wrong password is just an error on the form.
  */
 
-/** Current session, or null when nobody is signed in (a 401 here is not "session expired"). */
-export async function fetchSession(): Promise<s.SessionInfo | null> {
-  try {
-    return await call(s.sessionRoute, { response: s.SessionInfo }, undefined, undefined, { noSessionExpiry: true });
-  } catch (e) {
-    if (isApiError(e) && e.status === 401) return null;
-    throw e;
-  }
-}
+const PUBLIC = { noSessionExpiry: true } as const;
 
-export const fetchSignInOptions = () => call(s.signInOptionsRoute, { response: s.SignInOptions }, undefined, undefined, { noSessionExpiry: true });
+// ---- session and sign-in -------------------------------------------------------------------------------
+/** Who is signed in, or the enabled sign-in methods when nobody is (the server answers 200 either way). */
+export const fetchSession = (): Promise<GetSessionResponse> =>
+  call(getSessionRoute, { response: GetSessionResponse }, undefined, undefined, PUBLIC);
 
-export const signInWithPassword = (body: s.PasswordSignInRequest) =>
-  call(s.passwordSignInRoute, { request: s.PasswordSignInRequest, response: s.SessionInfo }, body, undefined, { noSessionExpiry: true });
+export const signInWithPassword = (body: SignInWithPasswordRequest) =>
+  call(signInWithPasswordRoute, { request: SignInWithPasswordRequest, response: SignInWithPasswordResponse }, body, undefined, PUBLIC);
 
 export const requestPasswordReset = (email: string) =>
-  call(s.forgotPasswordRoute, { request: s.ForgotPasswordRequest, response: s.NoContent }, { email }, undefined, { noSessionExpiry: true });
+  call(requestPasswordResetRoute, { request: RequestPasswordResetRequest, response: RequestPasswordResetResponse }, { email }, undefined, PUBLIC);
+export const resetPassword = (token: string, password: string) =>
+  call(resetPasswordRoute, { request: ResetPasswordRequest, response: ResetPasswordResponse }, { token, password }, undefined, PUBLIC);
+export const verifyEmail = (token: string) =>
+  call(verifyEmailRoute, { request: VerifyEmailRequest, response: VerifyEmailResponse }, { token }, undefined, PUBLIC);
+export const requestEmailVerification = () => call(requestEmailVerificationRoute, { response: RequestEmailVerificationResponse });
 
-export const signOut = () => call(s.signOutRoute, { response: s.NoContent }, undefined, undefined, { noSessionExpiry: true });
-export const signOutEverywhere = () => call(s.signOutEverywhereRoute, { response: s.NoContent }, undefined, undefined, { noSessionExpiry: true });
+export const signOut = () => call(signOutRoute, { response: SignOutResponse }, undefined, undefined, PUBLIC);
+export const signOutEverywhere = () => call(signOutEverywhereRoute, { response: SignOutEverywhereResponse }, undefined, undefined, PUBLIC);
 
-export const checkBootstrapToken = (token: string) =>
-  call(s.bootstrapInfoRoute, { response: s.BootstrapInfo }, undefined, { token }, { noSessionExpiry: true });
-export const bootstrapWorkspace = (token: string, body: s.BootstrapRequest) =>
-  call(s.bootstrapRoute, { request: s.BootstrapRequest, response: s.SessionInfo }, body, { token }, { noSessionExpiry: true });
+export const fetchSessions = () => call(listSessionsRoute, { response: ListSessionsResponse });
+export const revokeSession = (id: string) => call(revokeSessionRoute, { response: RevokeSessionResponse }, undefined, { id });
 
-export const fetchInvitation = (token: string) =>
-  call(s.invitationInfoRoute, { response: s.InvitationInfo }, undefined, { token }, { noSessionExpiry: true });
-export const acceptInvitation = (token: string, body: s.AcceptInvitationRequest) =>
-  call(s.acceptInvitationRoute, { request: s.AcceptInvitationRequest, response: s.SessionInfo }, body, { token }, { noSessionExpiry: true });
+// ---- OIDC (public buttons and the admin provider API) --------------------------------------------------
+export const fetchOidcMethods = () => call(listOidcMethodsRoute, { response: ListOidcMethodsResponse }, undefined, undefined, PUBLIC);
 
-export const fetchAccountSessions = () => call(s.accountSessionsRoute, { response: s.AccountSessions });
-export const revokeAccountSession = (id: string) => call(s.revokeSessionRoute, { response: s.NoContent }, undefined, { id });
-export const fetchLinkedMethods = () => call(s.linkedMethodsRoute, { response: s.LinkedMethods });
-export const renameAccount = (name: string) =>
-  call(s.renameAccountRoute, { request: s.RenameAccountRequest, response: s.SessionInfo }, { name });
-export const changePassword = (body: s.ChangePasswordRequest) =>
-  call(s.changePasswordRoute, { request: s.ChangePasswordRequest, response: s.NoContent }, body);
+/** Where the browser goes to start an OIDC sign-in (a full-page navigation, not an XHR). */
+export function oidcStartUrl(startUrl: string, returnPath: string): string {
+  if (returnPath === '/') return startUrl;
+  return `${startUrl}${startUrl.includes('?') ? '&' : '?'}returnTo=${encodeURIComponent(returnPath)}`;
+}
 
-export const fetchWorkspace = () => call(s.workspaceRoute, { response: s.WorkspaceInfo });
-export const renameWorkspace = (name: string) =>
-  call(s.renameWorkspaceRoute, { request: s.RenameWorkspaceRequest, response: s.WorkspaceInfo }, { name });
-export const fetchSignInSettings = () => call(s.signInSettingsRoute, { response: s.SignInSettings });
-export const saveProvider = (provider: s.ProviderKind, body: s.SaveProviderRequest) =>
-  call(s.saveProviderRoute, { request: s.SaveProviderRequest, response: s.ProviderConfig }, body, { provider });
-export const testProvider = (provider: s.ProviderKind) =>
-  call(s.testProviderRoute, { response: s.ProviderTestResult }, undefined, { provider });
-export const savePasswordPolicy = (body: s.SavePasswordPolicyRequest) =>
-  call(s.savePasswordPolicyRoute, { request: s.SavePasswordPolicyRequest, response: s.PasswordPolicy }, body);
-export const fetchMembers = () => call(s.membersRoute, { response: s.Members });
-export const fetchRoles = () => call(s.rolesRoute, { response: s.RoleTags });
+export const fetchOidcProviders = () => call(listOidcProvidersRoute, { response: ListOidcProvidersResponse });
+export const createOidcProvider = (body: CreateOidcProviderRequest) =>
+  call(createOidcProviderRoute, { request: CreateOidcProviderRequest, response: OidcProviderResponse }, body);
+export const updateOidcProvider = (providerId: string, body: UpdateOidcProviderRequest) =>
+  call(updateOidcProviderRoute, { request: UpdateOidcProviderRequest, response: OidcProviderResponse }, body, { providerId });
+export const testOidcProvider = (providerId: string) =>
+  call(testOidcProviderRoute, { response: TestOidcProviderResponse }, undefined, { providerId });
+export const enableOidcProvider = (providerId: string) =>
+  call(enableOidcProviderRoute, { response: OidcProviderResponse }, undefined, { providerId });
+export const disableOidcProvider = (providerId: string) =>
+  call(disableOidcProviderRoute, { response: OidcProviderResponse }, undefined, { providerId });
+export const deleteOidcProvider = (providerId: string) =>
+  call(deleteOidcProviderRoute, { response: DeleteOidcProviderResponse }, undefined, { providerId });
 
-export const fetchTemplates = () => call(s.templatesRoute, { response: s.TemplateInfos });
-export const fetchTeams = () => call(s.teamsRoute, { response: s.TeamSummaries });
-export const createTeam = (body: s.CreateTeamRequest) =>
-  call(s.createTeamRoute, { request: s.CreateTeamRequest, response: s.TeamSummary }, body);
-export const fetchTeam = (slug: string) => call(s.teamRoute, { response: s.TeamDetail }, undefined, { slug });
-export const inviteToTeam = (slug: string, email: string) =>
-  call(s.inviteToTeamRoute, { request: s.InviteToTeamRequest, response: s.NoContent }, { email }, { slug });
+// ---- bootstrap and invitations -------------------------------------------------------------------------
+export const checkBootstrapToken = (token: string) => call(checkBootstrapRoute, { response: CheckBootstrapResponse }, undefined, { token }, PUBLIC);
+export const bootstrapWorkspace = (token: string, body: BootstrapWorkspaceRequest) =>
+  call(bootstrapWorkspaceRoute, { request: BootstrapWorkspaceRequest, response: BootstrapWorkspaceResponse }, body, { token }, PUBLIC);
+
+export const fetchInvitation = (token: string) => call(getInvitationRoute, { response: GetInvitationResponse }, undefined, { token }, PUBLIC);
+export const acceptInvitation = (token: string, body: AcceptInvitationRequest) =>
+  call(acceptInvitationRoute, { request: AcceptInvitationRequest, response: AcceptInvitationResponse }, body, { token }, PUBLIC);
+
+export const createWorkspaceInvitation = (body: CreateInvitationRequest) =>
+  call(createInvitationRoute, { request: CreateInvitationRequest, response: CreateInvitationResponse }, body);
+
+// ---- workspace -----------------------------------------------------------------------------------------
+export const fetchWorkspaceMembers = () => call(listWorkspaceMembersRoute, { response: ListWorkspaceMembersResponse });
+
+// ---- teams ---------------------------------------------------------------------------------------------
+export const fetchTemplates = () => call(listTemplatesRoute, { response: ListTemplatesResponse });
+export const fetchTeams = (includeArchived = false) =>
+  call(listTeamsRoute, { response: ListTeamsResponse }, includeArchived ? { includeArchived: 'true' as const } : undefined);
+export const fetchTeam = (slug: string) => call(getTeamRoute, { response: GetTeamResponse }, undefined, { slug });
+export const createBlankTeam = (body: CreateTeamRequest) => call(createTeamRoute, { request: CreateTeamRequest, response: CreateTeamResponse }, body);
+export const applyTeamTemplate = (body: ApplyTeamTemplateRequest) =>
+  call(applyTeamTemplateRoute, { request: ApplyTeamTemplateRequest, response: ApplyTeamTemplateResponse }, body);
+export const renameTeam = (slug: string, name: string) =>
+  call(renameTeamRoute, { request: RenameTeamRequest, response: RenameTeamResponse }, { name }, { slug });
+export const archiveTeam = (slug: string) => call(archiveTeamRoute, { response: ArchiveTeamResponse }, undefined, { slug });
+export const unarchiveTeam = (slug: string) => call(unarchiveTeamRoute, { response: UnarchiveTeamResponse }, undefined, { slug });
+
+export const fetchRoster = (slug: string) => call(getTeamRosterRoute, { response: GetTeamRosterResponse }, undefined, { slug });
+export const addTeamMember = (slug: string, body: AddTeamMemberRequest) =>
+  call(addTeamMemberRoute, { request: AddTeamMemberRequest, response: AddTeamMemberResponse }, body, { slug });
+export const removeTeamMember = (slug: string, personId: string) =>
+  call(removeTeamMemberRoute, { response: RemoveTeamMemberResponse }, undefined, { slug, personId });
+export const setTeamMemberRole = (slug: string, personId: string, role: SetTeamMemberRoleRequest['role']) =>
+  call(setTeamMemberRoleRoute, { request: SetTeamMemberRoleRequest, response: SetTeamMemberRoleResponse }, { role }, { slug, personId });
+
+export const fetchTeamTags = (slug: string) => call(listTeamTagsRoute, { response: ListTeamTagsResponse }, undefined, { slug });
+export const createTeamTag = (slug: string, name: string) =>
+  call(createTeamTagRoute, { request: CreateTeamTagRequest, response: CreateTeamTagResponse }, { name }, { slug });
+export const deleteTeamTag = (slug: string, tag: string) => call(deleteTeamTagRoute, { response: DeleteTeamTagResponse }, undefined, { slug, tag });
+export const assignTeamTag = (slug: string, personId: string, tag: string) =>
+  call(assignTeamTagRoute, { response: AssignTeamTagResponse }, undefined, { slug, personId, tag });
+export const unassignTeamTag = (slug: string, personId: string, tag: string) =>
+  call(unassignTeamTagRoute, { response: UnassignTeamTagResponse }, undefined, { slug, personId, tag });
+
+export const inviteToTeam = (slug: string, email: string, teamRole: 'lead' | 'member' = 'member') =>
+  call(createTeamInvitationRoute, { request: InviteTeamMemberRequest, response: CreateTeamInvitationResponse }, { email, teamRole }, { slug });
+export const fetchTeamInvitations = (slug: string) =>
+  call(listTeamInvitationsRoute, { response: ListTeamInvitationsResponse }, undefined, { slug });
+
+export type { AuthenticatedSession };

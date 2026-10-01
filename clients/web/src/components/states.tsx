@@ -13,7 +13,8 @@ export function FullPageMessage({ title, detail, tone, busy, children }: {
   children?: ReactNode;
 }) {
   return (
-    <div className="auth" data-testid="app-frame">
+    // a loading screen is transitional: it is not a frame, so screenshots wait for the real one
+    <div className="auth" data-testid={busy ? undefined : 'app-frame'}>
       <main className="auth-card" data-landmark="content" aria-busy={busy || undefined}>
         <Brand />
         <h1 className={`auth-title ${tone ?? ''}`}>{title}</h1>
@@ -74,7 +75,7 @@ export function NotFoundPage() {
 }
 
 /** Expired or used one-time link (bootstrap URL, invitation). */
-export function ExpiredLinkPage({ kind }: { kind: 'invitation' | 'bootstrap' }) {
+export function ExpiredLinkPage({ kind }: { kind: 'invitation' | 'bootstrap' | 'reset' }) {
   return (
     <div className="auth" data-testid="app-frame">
       <main className="auth-card" data-landmark="content">
@@ -83,7 +84,9 @@ export function ExpiredLinkPage({ kind }: { kind: 'invitation' | 'bootstrap' }) 
         <p className="auth-lede">
           {kind === 'invitation'
             ? 'Invitations stop working after a while, or once they are accepted. Ask the person who invited you to send a new one.'
-            : 'The first-admin link works once. If your workspace already exists, sign in instead.'}
+            : kind === 'reset'
+              ? 'Links in mail work once and expire after a while. Request a new reset link from the sign-in page.'
+              : 'The first-admin link works once. If your workspace already exists, sign in instead.'}
         </p>
         <div className="auth-actions">
           <Link className="btn primary" to="/sign-in">Go to sign in</Link>

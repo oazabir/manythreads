@@ -1,63 +1,103 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { setTransport, onSessionExpired } from '../src/api/client';
+import { OIDC_SIGN_IN_ERROR_MESSAGES } from '@manythreads/shared';
+import { onSessionExpired, setTransport } from '../src/api/client';
 import * as api from '../src/api/endpoints';
 import { createMockTransport, MOCK_PASSWORD } from '../src/api/mock';
+import { oidcErrorMessage } from '../src/screens/SignIn';
 
 const use = (opts: Parameters<typeof createMockTransport>[0] = {}) => setTransport(createMockTransport({ latencyMs: 0, ...opts }));
 
-describe('mock transport serves schema-valid fixtures', () => {
+async function signedIn() {
+  const s = await api.fetchSession();
+  if (!s.authenticated) throw new Error('expected a session');
+  return s;
+}
+
+describe('mock transport serves fixtures that parse with the shared schemas', () => {
   beforeEach(() => use());
 
-  it('session, teams, roster, members, sign-in settings parse with the route schemas', async () => {
-    const session = await api.fetchSession();
-    expect(session?.workspace.name).toBe('Kahf Software');
-    expect(session?.person.name).toBe('Omar Al Zabir');
-    expect(await api.fetchTeams()).toHaveLength(3);
-    const eng = await api.fetchTeam('engineering');
-    expect(eng.template?.channels).toEqual(['#general', '#dev', '#releases', '#incidents', '#alerts', '#standup']);
-    expect(eng.members.find((m) => m.role === 'lead')?.name).toBe('Omar Al Zabir');
-    expect(await api.fetchMembers()).toHaveLength(7);
-    const settings = await api.fetchSignInSettings();
-    expect(JSON.stringify(settings)).not.toMatch(/secret"?:\s*"/i);
+  it('session, teams, roster, tags, members and OIDC providers', async () => {
+    const session = await signedIn();
+    expect(session.workspace.name).toBe('Kahf Software');
+    expect(session.person.name).toBe('Omar Al Zabir');
+    expect((await api.fetchTeams()).teams).toHaveLength(3);
+    const { team } = await api.fetchTeam('engineering');
+    expect(team.template).toBe('engineering');
+    expect(team.myRole).toBe('lead');
+    const roster = await api.fetchRoster('engineering');
+    expect(roster.members.find((m) => m.role === 'lead')?.displayName).toBe('Omar Al Zabir');
+    expect(roster.members.find((m) => m.displayName === 'Rafi K.')?.tags).toEqual(['role:on-call']);
+    expect((await api.fetchTeamTags('engineering')).tags.map((t) => t.name)).toContain('role:on-call');
+    expect((await api.fetchWorkspaceMembers()).members).toHaveLength(7);
+    const { providers } = await api.fetchOidcProviders();
+    expect(providers).toHaveLength(1);
+    expect(JSON.stringify(providers)).not.toMatch(/client_?secret"?:\s*"/i);
+    expect(providers[0]?.hasSecret).toBe(true);
+    expect((await api.fetchTemplates()).templates).toHaveLength(5);
   });
 
-  it('returns null session when anonymous and signs in with the mock password', async () => {
-    use({ anon: true });
-    expect(await api.fetchSession()).toBeNull();
-    await expect(api.signInWithPassword({ email: 'nadia@kahf.co', password: 'wrong' })).rejects.toMatchObject({ status: 401, message: 'Email or password is incorrect.' });
-    await expect(api.signInWithPassword({ email: 'x@other.com', password: 'whatever' })).rejects.toMatchObject({ message: 'That domain is not allowed.' });
-    expect((await api.signInWithPassword({ email: 'nadia@kahf.co', password: MOCK_PASSWORD })).person.name).toBe('Nadia R.');
-    expect((await api.fetchSession())?.person.email).toBe('nadia@kahf.co');
+  it('anonymous session lists methods; sign-in matches the real messages and locks after 5', async () => {
+    use({ anon: true, providers: ['google', 'microsoft'] });
+    const anon = await api.fetchSession();
+    expect(anon.authenticated).toBe(false);
+    expect(anon.methods.map((m) => m.kind)).toEqual(['password', 'google', 'microsoft']);
+    expect((await api.fetchOidcMethods()).methods).toHaveLength(2);
+    for (let i = 0; i < 5; i++) {
+      await expect(api.signInWithPassword({ email: 'nadia@kahf.co', password: 'wrong' })).rejects.toMatchObject({ status: 401, message: 'Incorrect email or password.' });
+    }
+    await expect(api.signInWithPassword({ email: 'nadia@kahf.co', password: MOCK_PASSWORD })).rejects.toMatchObject({ status: 429, message: expect.stringContaining('Too many failed attempts') });
+    const ok = await api.signInWithPassword({ email: 'rafi@kahf.co', password: MOCK_PASSWORD });
+    expect(ok.person.name).toBe('Rafi K.');
   });
 
-  it('applies ACL like the real server will: guest 404 on workspace settings, 403 on another team', async () => {
+  it('maps ?error= codes to the shared sentences', () => {
+    expect(oidcErrorMessage('domain_not_allowed')).toBe('That domain is not allowed.');
+    expect(oidcErrorMessage('domain_not_allowed')).toBe(OIDC_SIGN_IN_ERROR_MESSAGES.domain_not_allowed);
+    expect(oidcErrorMessage('nonsense')).toBeNull();
+    expect(oidcErrorMessage(null)).toBeNull();
+  });
+
+  it('applies ACL like the real server: non-admin 404 on workspace settings, 403 on another team', async () => {
     use({ as: 'priya' });
-    await expect(api.fetchMembers()).rejects.toMatchObject({ status: 404 });
+    await expect(api.fetchWorkspaceMembers()).rejects.toMatchObject({ status: 404 });
     await expect(api.fetchTeam('customer-support')).rejects.toMatchObject({ status: 403 });
-    expect((await api.fetchTeam('engineering')).slug).toBe('engineering');
+    expect((await api.fetchTeam('engineering')).team.slug).toBe('engineering');
+    expect((await api.fetchTeams()).teams.map((t) => t.slug)).toEqual(['engineering', 'marketing']);
     use({ as: 'lena' });
-    expect(await api.fetchTeams()).toEqual([]);
+    expect((await api.fetchTeams()).teams).toEqual([]);
+    await expect(api.fetchTeam('engineering')).rejects.toMatchObject({ status: 403 });
   });
 
   it('a used bootstrap link is gone (410) and a 401 raises session-expired', async () => {
-    await expect(api.checkBootstrapToken('used')).rejects.toMatchObject({ status: 410 });
+    await expect(api.checkBootstrapToken('used')).rejects.toMatchObject({ status: 410, code: 'gone' });
     use({ anon: true });
     let expired = 0;
     const off = onSessionExpired(() => expired++);
-    await expect(api.fetchAccountSessions()).rejects.toMatchObject({ status: 401 });
+    await expect(api.fetchSessions()).rejects.toMatchObject({ status: 401 });
     off();
     expect(expired).toBe(1);
   });
 
-  it('creating the same team twice duplicates nothing', async () => {
+  it('applying a template twice duplicates nothing; invite, accept and tag flow through', async () => {
     use({ noTeams: true });
-    const a = await api.createTeam({ templateId: 'engineering', name: 'Engineering', invite: [] });
-    const b = await api.createTeam({ templateId: 'engineering', name: 'Engineering', invite: [] });
-    expect(b.slug).toBe(a.slug);
-    expect(await api.fetchTeams()).toHaveLength(1);
+    const a = await api.applyTeamTemplate({ templateId: 'engineering', name: 'Platform', slug: 'platform' });
+    const b = await api.applyTeamTemplate({ templateId: 'engineering', name: 'Platform', slug: 'platform' });
+    expect([a.created, b.created]).toEqual([true, false]);
+    expect((await api.fetchTeams()).teams).toHaveLength(1);
+    const inv = await api.inviteToTeam('platform', 'rafi@kahf.co');
+    expect(inv.token.length).toBeGreaterThanOrEqual(20);
+    expect((await api.fetchInvitation(inv.token)).teamName).toBe('Platform');
+    expect((await api.acceptInvitation(inv.token, {})).createdPerson).toBe(false);
+    const rafi = (await api.fetchRoster('platform')).members.find((m) => m.email === 'rafi@kahf.co')!;
+    await api.assignTeamTag('platform', rafi.personId, 'role:on-call');
+    expect((await api.fetchRoster('platform')).members.find((m) => m.email === 'rafi@kahf.co')?.tags).toEqual(['role:on-call']);
   });
 
-  it('refuses a short password on the client before any request', async () => {
-    await expect(api.bootstrapWorkspace('tok', { workspaceName: 'W', name: 'N', email: 'a@b.co', password: 'short-11-ch' })).rejects.toMatchObject({ code: 'validation_failed', path: ['password'] });
+  it('refuses a short password on the client before any request, with the shared message', async () => {
+    await expect(api.bootstrapWorkspace('tok', { workspaceName: 'W', name: 'N', email: 'a@b.co', password: 'short-11-ch' })).rejects.toMatchObject({
+      code: 'validation_failed',
+      path: ['password'],
+      message: 'Password must be at least 12 characters.',
+    });
   });
 });

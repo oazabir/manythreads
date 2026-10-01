@@ -521,6 +521,10 @@ a.btn.primary {
   font-size: 11.5px;
 }
 
+.mrow.person-row {
+  grid-template-columns: 34px minmax(150px, 1fr) 70px minmax(300px, 2fr) 80px;
+}
+
 .mrow.tpl-row {
   grid-template-columns: 90px 1fr;
 }
@@ -945,8 +949,10 @@ a.btn.primary {
 }
 
 .tpl .nm {
-  display: inline-block;
-  margin-bottom: 6px;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 10px 0 6px;
   padding: 2px 7px;
   border: 1px solid var(--rule);
   border-radius: 4px;
@@ -954,6 +960,12 @@ a.btn.primary {
   color: var(--ink);
   font: inherit;
   font-size: 12px;
+}
+
+.tpl .d {
+  margin-top: 2px;
+  color: var(--mute);
+  font-size: 12.5px;
 }
 
 .tpl .ch {
@@ -978,6 +990,20 @@ a.btn.primary {
 
 .tpl .fld.inv {
   margin: 8px 0 0;
+}
+
+.tpl .fld.inv input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.tpl .fld.inv label {
+  font-size: 11.5px;
 }
 
 .actions {
@@ -1115,4 +1141,57 @@ a.btn.primary {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 0;
+}
+
+/* ---- app frame header ---- */
+.app-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+}
+
+.app-head-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.app-head-links {
+  display: flex;
+  gap: 14px;
+  font-size: 13px;
+}
+
+/* ---- roster actions ---- */
+.roster-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-x {
+  margin-left: 4px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tag-add {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.person-row .roster-cell .tag-add input {
+  width: 130px;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
 }

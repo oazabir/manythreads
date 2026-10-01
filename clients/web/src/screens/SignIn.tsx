@@ -1,36 +1,49 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
+import { OIDC_SIGN_IN_ERROR_MESSAGES, OidcSignInErrorCode, type OidcProviderKind } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { fetchSignInOptions, requestPasswordReset, signInWithPassword } from '../api/endpoints';
-import { oidcStartPath, type SignInOptions } from '../api/schemas';
+import { fetchOidcMethods, fetchSession, oidcStartUrl, requestPasswordReset, signInWithPassword } from '../api/endpoints';
 import { safeReturnPath } from '../app/paths';
 import { useSessionState } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { AuthFrame } from '../components/frames';
 import { Alert, Field, Notice } from '../components/ui';
 
-const FALLBACK: SignInOptions = { workspaceName: null, google: false, microsoft: false, oidc: null, password: true };
+const MARKS: Record<OidcProviderKind, { text: string; cls: string }> = {
+  google: { text: 'G', cls: 'g' },
+  microsoft: { text: 'MS', cls: 'ms' },
+  oidc: { text: 'ID', cls: '' },
+};
+
+/** The sentence for `/sign-in?error=<code>` (an OIDC refusal), or null. */
+export function oidcErrorMessage(code: string | null): string | null {
+  const parsed = OidcSignInErrorCode.safeParse(code);
+  return parsed.success ? OIDC_SIGN_IN_ERROR_MESSAGES[parsed.data] : null;
+}
 
 export function SignIn() {
   const [params] = useSearchParams();
   const returnPath = safeReturnPath(params.get('return')) ?? '/';
   const { state, setSession } = useSessionState();
   const navigate = useNavigate();
-  const options = useQuery('sign-in-options', fetchSignInOptions);
+  const discovery = useQuery('sign-in-discovery', fetchSession);
+  const oidc = useQuery('sign-in-oidc', () => fetchOidcMethods().catch(() => ({ methods: [] })));
   const [mode, setMode] = useState<'sign-in' | 'forgot'>('sign-in');
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(oidcErrorMessage(params.get('error')));
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
   if (state.status === 'ready') return <Navigate to={returnPath} replace />;
 
-  // if the options cannot be loaded, still offer the password form
-  const o = options.status === 'ok' ? options.data : FALLBACK;
-  const passwordVisible = o.password || showPassword;
-  const hasProviders = o.google || o.microsoft || o.oidc !== null;
+  const loading = discovery.status === 'loading' || oidc.status === 'loading';
+  // if discovery cannot be loaded, still offer the password form
+  const passwordOn = discovery.status === 'ok' ? discovery.data.methods.some((m) => m.kind === 'password') : true;
+  const providers = oidc.status === 'ok' ? oidc.data.methods : [];
+  const passwordVisible = passwordOn || showPassword;
+  const hasProviders = providers.length > 0;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -53,35 +66,25 @@ export function SignIn() {
   }
 
   return (
-    <AuthFrame title={mode === 'forgot' ? 'Reset your password' : 'Sign in'} lede={o.workspaceName ?? undefined}>
-      {options.status === 'loading' ? <p className="loading" aria-busy="true">Loading…</p> : null}
-      {options.status !== 'loading' && mode === 'sign-in' && hasProviders ? (
+    <AuthFrame title={mode === 'forgot' ? 'Reset your password' : 'Sign in'}>
+      {loading ? <p className="loading" aria-busy="true">Loading…</p> : null}
+      {!loading && mode === 'sign-in' && hasProviders ? (
         <div className="providers">
-          {o.google ? (
-            <a className="btn provider" href={oidcStartPath('google', returnPath)}>
-              <span className="pmark g" aria-hidden="true">G</span>Continue with Google
+          {providers.map((p) => (
+            <a key={p.id} className="btn provider" href={oidcStartUrl(p.startUrl, returnPath)}>
+              <span className={`pmark ${MARKS[p.kind].cls}`} aria-hidden="true">{MARKS[p.kind].text}</span>Continue with {p.label}
             </a>
-          ) : null}
-          {o.microsoft ? (
-            <a className="btn provider" href={oidcStartPath('microsoft', returnPath)}>
-              <span className="pmark ms" aria-hidden="true">MS</span>Continue with Microsoft
-            </a>
-          ) : null}
-          {o.oidc ? (
-            <a className="btn provider" href={oidcStartPath('oidc', returnPath)}>
-              <span className="pmark" aria-hidden="true">ID</span>Continue with {o.oidc.name}
-            </a>
-          ) : null}
+          ))}
         </div>
       ) : null}
-      {mode === 'sign-in' && hasProviders && passwordVisible ? <div className="or" role="separator"><span>or</span></div> : null}
-      {options.status !== 'loading' && !passwordVisible ? (
+      {!loading && mode === 'sign-in' && hasProviders && passwordVisible ? <div className="or" role="separator"><span>or</span></div> : null}
+      {!loading && !passwordVisible ? (
         <p className="auth-foot">
           Your workspace uses single sign-on. Admins can still{' '}
           <button type="button" className="linkish" onClick={() => setShowPassword(true)}>sign in with a password</button>.
         </p>
       ) : null}
-      {options.status !== 'loading' && passwordVisible ? (
+      {!loading && passwordVisible ? (
         <form onSubmit={onSubmit} noValidate>
           <Field label="Email" type="email" name="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" />
           {mode === 'sign-in' ? (
