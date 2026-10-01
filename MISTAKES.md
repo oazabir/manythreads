@@ -20,3 +20,4 @@ Format: `- [phase/task] what went wrong → what to do instead`
 - [P2-10] UI copy mentioned build phases ("created in phase 3") → never expose plan/phase wording in product UI; reviewers check copy.
 - [P2 review] Definer/RLS checks only tested 'is admin' → also guard owner rows, same-workspace references (triggers), and terminal states (revoked, accepted) as system-only.
 - [P2 review] Inside SECURITY DEFINER functions owned by manythreads_system, app.is_system()/is_workspace_admin() are TRUE (current_user) → in definer code check the caller with app.lookup_workspace_role()/lookup_team_role(), never the is_* helpers. Get-or-create on shared entities (roles) can attach things the caller doesn't own → check ownership.
+- [P2 review] trustProxy:true trusts the client-written leftmost X-Forwarded-For → trust exactly one hop (the ingress). Admin-supplied URLs fetched by the server need an SSRF guard (public https only, connect-time DNS check).
