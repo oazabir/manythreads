@@ -7,3 +7,4 @@ export * from './capabilities/index.ts';
 export * from './plugins/index.ts';
 export * from './transport/index.ts';
 export * from './storage/index.ts';
+export * from './templates/index.ts';
