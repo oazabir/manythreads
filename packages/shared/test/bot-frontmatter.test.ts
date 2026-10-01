@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { BOT_SECTIONS, BotFrontmatter, BotSection, botFrontmatterJsonSchema } from '../src/index.ts';
 
 // SPEC §7.1 example, verbatim.
@@ -94,5 +95,9 @@ describe('BotFrontmatter JSON Schema', () => {
   it('is generated and strict', () => {
     expect(botFrontmatterJsonSchema.additionalProperties).toBe(false);
     expect(Object.keys(botFrontmatterJsonSchema.properties)).toContain('capabilities');
+  });
+
+  it('committed file matches the Zod schema (re-run gen:json-schema if this fails)', () => {
+    expect(botFrontmatterJsonSchema).toEqual(JSON.parse(JSON.stringify(z.toJSONSchema(BotFrontmatter, { io: 'input' }))));
   });
 });
