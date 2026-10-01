@@ -51,6 +51,8 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   connects as the real `manythreads_system` role (`app.is_system()` = `current_user`); never trust a GUC for privilege.
   Three DB roles: `manythreads_owner` (migrations), `manythreads_app` (requests), `manythreads_system` (system/workers).
   Non-system code that must touch system tables calls a narrow SECURITY DEFINER function (e.g. `app.enqueue_job`).
+  Inside such definer functions `app.is_system()`/`is_workspace_admin()` are TRUE — check the caller with
+  `app.lookup_workspace_role()` / `app.lookup_team_role()` instead.
 - **One event registry:** `emit` validates against `packages/shared/src/events/registry.ts`, writes
   `events` + `outbox` in the same transaction. Event types are `domain.noun.verb`.
 - **Schema task = triple:** Zod schema + SQL migration with RLS + mapper, in one diff.
