@@ -131,6 +131,34 @@ importers:
         specifier: workspace:*
         version: link:../../shared
 
+  packages/plugins/teams:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
   packages/plugins/test-kernel:
     dependencies:
       '@manythreads/sdk':

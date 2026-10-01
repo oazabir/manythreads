@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "removed": {
+      "type": "boolean"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^role:[a-z][a-z0-9-]*$"
+      }
+    }
+  },
+  "required": [
+    "removed",
+    "tags"
+  ]
+}
