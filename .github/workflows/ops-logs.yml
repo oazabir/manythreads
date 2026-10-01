@@ -1,0 +1,50 @@
+name: ops-logs
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: Component
+        type: choice
+        options: [majlis-server, majlis-web, postgres]
+        default: majlis-server
+      lines:
+        description: Log lines (1-2000)
+        required: true
+        default: "200"
+
+
+permissions:
+  contents: read
+
+jobs:
+  logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+      COMPONENT: ${{ inputs.component }}
+      LINES: ${{ inputs.lines }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -qq sshpass
+      - shell: bash
+        run: |
+          case "$COMPONENT" in majlis-server|majlis-web|postgres) ;; *) echo "invalid component"; exit 1;; esac
+          printf '%s' "$LINES" | grep -Eq '^[0-9]{1,4}$' && [ "$LINES" -ge 1 ] && [ "$LINES" -le 2000 ] || { echo "lines must be 1-2000"; exit 1; }
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          remote_sh "COMPONENT=$COMPONENT" "LINES=$LINES" <<'REMOTE'
+          set +e
+          case "$COMPONENT" in
+            majlis-server) sel="app.kubernetes.io/component=server" ;;
+            majlis-web)    sel="app.kubernetes.io/component=web" ;;
+            postgres)      sel="cnpg.io/cluster=majlis-pg" ;;
+          esac
+          kubectl get pods -n manythreads -l "$sel" -o wide
+          for p in $(kubectl get pods -n manythreads -l "$sel" -o name); do
+            echo "=== logs $p"; kubectl logs -n manythreads "$p" --all-containers --tail="$LINES"
+            echo "=== previous logs $p"; kubectl logs -n manythreads "$p" --all-containers --previous --tail="$LINES" 2>&1 | tail -n "$LINES"
+          done
+          for p in $(kubectl get pods -n manythreads -l "$sel" --no-headers | awk '{split($2,a,"/"); if (a[1]!=a[2]) print $1}'); do
+            echo "=== describe (not ready) $p"; kubectl describe pod -n manythreads "$p" | tail -n 40
+          done
+          REMOTE

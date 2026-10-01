@@ -1,0 +1,36 @@
+name: ops-rollback
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Helm revision number (digits only; empty = previous)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+      REVISION: ${{ inputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -qq sshpass
+      - shell: bash
+        run: |
+          if [ -n "$REVISION" ] && ! printf '%s' "$REVISION" | grep -Eq '^[0-9]{1,6}$'; then echo "revision must be digits"; exit 1; fi
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          remote_sh "REVISION=$REVISION" <<'REMOTE'
+          helm history majlis -n manythreads | tail -n 10
+          helm rollback majlis ${REVISION:+"$REVISION"} -n manythreads --wait --timeout 10m
+          helm history majlis -n manythreads | tail -n 3
+          kubectl get pods -n manythreads
+          REMOTE

@@ -1,0 +1,47 @@
+# Image tags default to .Values.imageTag (the deploy action sets it to the git sha).
+imageTag: dev
+imagePullPolicy: IfNotPresent
+
+domain: manythreads.kahf.to
+
+ingress:
+  enabled: true
+  className: ""          # empty = cluster default IngressClass (Traefik)
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""
+
+postgres:
+  mode: cnpg             # cnpg | statefulset
+  image: majlis/postgres:19
+  instances: 1
+  database: majlis
+  owner: majlis_owner
+  appRole: majlis_app
+  systemRole: majlis_system   # roles are created by the server's migrations; the chart only supplies passwords
+  uid: 999
+  gid: 999
+  storage:
+    size: 10Gi
+    storageClass: local-path
+  resources: {}
+
+server:
+  enabled: true
+  image: majlis/server
+  replicas: 1
+  port: 3000
+  env: {}
+  resources: {}
+
+web:
+  enabled: true
+  image: majlis/web
+  replicas: 1
+  resources: {}
+
+# Disabled-by-default placeholders (filled in later phases).
+litellm: { enabled: false }
+hindsight: { enabled: false }
+hermes: { enabled: false }

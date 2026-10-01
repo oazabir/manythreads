@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - packages/plugins/*
+  - clients/*
+  - tools/*
+  - e2e
+onlyBuiltDependencies:
+  - esbuild

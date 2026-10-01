@@ -1,0 +1,33 @@
+name: ops-restart
+on:
+  workflow_dispatch:
+    inputs:
+      deployment:
+        description: Which deployment to restart
+        type: choice
+        options: [all, majlis-server, majlis-web]
+        default: all
+
+permissions:
+  contents: read
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+      DEPLOYMENT: ${{ inputs.deployment }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get install -y -qq sshpass
+      - shell: bash
+        run: |
+          case "$DEPLOYMENT" in all|majlis-server|majlis-web) ;; *) echo "invalid deployment"; exit 1;; esac
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          remote_sh "DEPLOYMENT=$DEPLOYMENT" <<'REMOTE'
+          if [ "$DEPLOYMENT" = all ]; then targets="majlis-server majlis-web"; else targets="$DEPLOYMENT"; fi
+          for d in $targets; do kubectl rollout restart "deploy/$d" -n manythreads; done
+          for d in $targets; do kubectl rollout status "deploy/$d" -n manythreads --timeout=180s || true; done
+          kubectl get pods -n manythreads
+          REMOTE

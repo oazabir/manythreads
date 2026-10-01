@@ -1,0 +1,37 @@
+/* stylelint-disable color-hex-length -- values copied verbatim from the prototype */
+
+/*
+ * Majlis design tokens. Copied from the prototype `:root` in docs/spec/mockups-all.html.
+ * This is the only file where raw hex colours are allowed (stylelint color-no-hex).
+ *
+ * not yet tokens (prototype CSS values seen in section #app, kept out until a screen needs them):
+ *   - #E3E7EB  selected sidebar item background (.it.on)
+ *   - #EDEFF2  hairline between list rows (.trow, .frow, .brow)
+ *   - #FAFBFC  table header background (.frow.hd)
+ *   - #C3C8CE  muted pill / offline dot
+ *   - #6E7681  file-type icon background
+ *   - #EEF3F8  human wash (chips, selected rows)
+ *   - #EFF5F1  ok wash; #BBD4C4 ok border; #2E5F41 ok ink
+ *   - #B9CBDD  human border; #DCD2EC agent border; #4E3B6E agent ink
+ *   - #FBF7EE warn wash; #E3D3AC warn border; #8E5A2E warn ink
+ *   - rgba(27, 36, 48, 0.06) frame shadow (ink at 6%)
+ *   - radii 5/6/10/12 px, frame grid 248px | 1fr | 380px
+ */
+:root {
+  --paper: #EDEEF0;
+  --surface: #FFFFFF;
+  --shell: #F3F4F6;
+  --ink: #1B2430;
+  --mute: #5A6472;
+  --faint: #8A929C;
+  --rule: #D4D8DE;
+  --human: #2E5C8A;
+  --agent: #7B5EA7;
+  --agent-wash: #FBF9FE;
+  --ok: #3F7D58;
+  --warn: #B08A3E;
+  --alert: #B4472E;
+  --alert-wash: #FDF6F3;
+  --sans: "Inter Tight", "Inter", system-ui, sans-serif;
+  --mono: "JetBrains Mono", monospace;
+}

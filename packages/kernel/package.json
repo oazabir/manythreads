@@ -1,0 +1,22 @@
+{
+  "name": "@majlis/kernel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "pg": "^8",
+    "zod": "^4",
+    "@majlis/shared": "workspace:*",
+    "@majlis/sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/pg": "^8",
+    "@majlis/test-utils": "workspace:*"
+  }
+}

@@ -1,0 +1,578 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "default": 1,
+      "type": "number",
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "automation"
+      ]
+    },
+    "runtime": {
+      "type": "string",
+      "enum": [
+        "hermes",
+        "rules"
+      ]
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "aliases": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          }
+        },
+        "effort": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          }
+        },
+        "budgets": {
+          "type": "object",
+          "properties": {
+            "dailyUsd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "monthlyUsd": {
+              "type": "number",
+              "minimum": 0
+            },
+            "maxTokensPerRun": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        },
+        "rateLimit": {
+          "type": "object",
+          "properties": {
+            "requestsPerMinute": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "requestsPerMinute"
+          ],
+          "additionalProperties": false
+        },
+        "subscription": {
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "visibility": {
+      "type": "string",
+      "enum": [
+        "team",
+        "workspace"
+      ]
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "conversation"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "mention"
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "channels": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^#[a-z0-9][a-z0-9._-]*$"
+                    }
+                  }
+                },
+                "required": [
+                  "channels"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "routine"
+              },
+              "routine": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "cron": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "task_assigned"
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "inbox"
+              },
+              "connection": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "folder": {
+                "type": "string",
+                "minLength": 1
+              },
+              "filter": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "channel_message"
+              },
+              "source": {
+                "type": "object",
+                "properties": {
+                  "channels": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^#[a-z0-9][a-z0-9._-]*$"
+                    }
+                  }
+                },
+                "required": [
+                  "channels"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "webhook"
+              },
+              "connection": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "event": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "native": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.([a-z][a-z0-9_]*|\\*))+$"
+          }
+        },
+        "runtime": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          }
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  {
+                    "type": "string",
+                    "const": "person:*"
+                  }
+                ]
+              },
+              "tools": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*(\\.([a-z][a-z0-9_]*|\\*))+$"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "tools"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "base": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "answer_only_from": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "base"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "memory": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxLines": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "people": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grants": {
+          "maxItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "bank": {
+                "type": "string",
+                "pattern": "^team:[a-z0-9][a-z0-9-]*$"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "readwrite"
+                ]
+              }
+            },
+            "required": [
+              "bank",
+              "access"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      }
+    },
+    "guard": {
+      "type": "object",
+      "properties": {
+        "preset": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "gate": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "approvals": {
+      "type": "object",
+      "properties": {
+        "needsApproval": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(\\.([a-z][a-z0-9_]*|\\*))+$"
+          }
+        },
+        "approvers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(role|person):[^\\s:]+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "handover": {
+      "type": "object",
+      "properties": {
+        "mayTag": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          }
+        },
+        "toPerson": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(role|person):[^\\s:]+$"
+          }
+        },
+        "escalation": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(role|person):[^\\s:]+$"
+              }
+            },
+            "afterMinutes": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "placement": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "runner": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          }
+        },
+        "isolation": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "sessionMinutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "hops": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "contract": {
+      "type": "object",
+      "properties": {
+        "outputs": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "boolean",
+              "url",
+              "datetime"
+            ]
+          }
+        }
+      },
+      "required": [
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "evals": {
+      "type": "object",
+      "properties": {
+        "set": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "minScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "set",
+        "minScore"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "name",
+    "role",
+    "kind",
+    "runtime"
+  ],
+  "additionalProperties": false
+}

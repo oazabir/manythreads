@@ -1,0 +1,36 @@
+services:
+  postgres:
+    build: ../postgres
+    image: majlis/postgres:19
+    environment:
+      POSTGRES_USER: majlis_owner
+      POSTGRES_PASSWORD: majlis
+      POSTGRES_DB: majlis
+    ports:
+      - "55432:5432"
+    volumes:
+      - majlis_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U majlis_owner -d majlis"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Mock OIDC provider that plays Google and Microsoft in dev and e2e.
+  oidc:
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.10
+    environment:
+      SERVER_PORT: "8080"
+      JSON_CONFIG: '{"interactiveLogin": true}'
+    ports:
+      - "8080:8080"
+
+  # Catches outgoing mail (SMTP 1025, web UI 8025).
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+volumes:
+  majlis_pgdata:

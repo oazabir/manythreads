@@ -1,0 +1,21 @@
+{
+  "name": "@majlis/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@majlis/kernel": "workspace:*",
+    "@majlis/shared": "workspace:*",
+    "pg": "^8",
+    "@majlis/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/pg": "^8"
+  }
+}

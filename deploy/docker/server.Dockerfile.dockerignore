@@ -1,0 +1,8 @@
+# tools/ excluded: workspace members not needed at runtime (and tools/bench was missing from the lockfile)
+**/node_modules
+**/dist
+.git
+e2e
+docs
+deploy
+tools

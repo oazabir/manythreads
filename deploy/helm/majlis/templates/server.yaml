@@ -1,0 +1,65 @@
+{{- if .Values.server.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: majlis-server
+  labels:
+    {{- include "majlis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "majlis.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      containers:
+        - name: server
+          image: {{ .Values.server.image }}:{{ .Values.imageTag }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports: [{ name: http, containerPort: {{ .Values.server.port }} }]
+          env:
+            - { name: PORT, value: {{ .Values.server.port | quote }} }
+            - name: OWNER_PW
+              valueFrom: { secretKeyRef: { name: majlis-db-owner, key: password } }
+            - name: MAJLIS_APP_PASSWORD
+              valueFrom: { secretKeyRef: { name: majlis-db-app, key: password } }
+            - name: MAJLIS_SYSTEM_PASSWORD
+              valueFrom: { secretKeyRef: { name: majlis-db-system, key: password } }
+            - name: DATABASE_URL
+              value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "majlis.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MAJLIS_APP_DATABASE_URL
+              value: postgres://{{ .Values.postgres.appRole }}:$(MAJLIS_APP_PASSWORD)@{{ include "majlis.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MAJLIS_SYSTEM_DATABASE_URL
+              value: postgres://{{ .Values.postgres.systemRole }}:$(MAJLIS_SYSTEM_PASSWORD)@{{ include "majlis.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            {{- range $k, $v := .Values.server.env }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: majlis-server
+  labels:
+    {{- include "majlis.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: server
+  ports:
+    - { name: http, port: {{ .Values.server.port }}, targetPort: http }
+{{- end }}

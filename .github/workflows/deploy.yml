@@ -1,0 +1,26 @@
+name: deploy
+# Pushing a v* tag deploys the LATEST main (owner's instruction), not the tagged commit.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: ./.github/actions/deploy-majlis
+        with:
+          label: main
+          ssh-password: ${{ secrets.ROOT_PASSWORD }}

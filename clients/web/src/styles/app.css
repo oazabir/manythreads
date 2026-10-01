@@ -1,0 +1,267 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* App frame: 248px rail | centre | 380px right panel (prototype §02 plate 1). */
+.frame {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  height: 100vh;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.frame:has(.right-panel:not([hidden])) {
+  grid-template-columns: 248px 1fr 380px;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--shell);
+  border-right: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.rail .team-switch {
+  min-height: 50px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.rail .search {
+  min-height: 34px;
+  margin: 10px 12px 4px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.rail .sidebar {
+  flex: 1;
+  padding: 6px 8px 12px;
+  overflow: auto;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.center .header {
+  min-height: 50px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.center .content {
+  flex: 1;
+  overflow: auto;
+}
+
+.right-panel {
+  border-left: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+/* Shared button + chip styles (prototype .btn / .chip). */
+.btn {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.btn.primary {
+  background: var(--ink);
+  color: var(--surface);
+  border-color: var(--ink);
+}
+
+.btn.human {
+  background: var(--human);
+  color: var(--surface);
+  border-color: var(--human);
+}
+
+.btn.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--mute);
+}
+
+.btn:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn.hover,
+.btn:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.btn.primary.hover,
+.btn.primary:hover:not(:disabled) {
+  background: var(--mute);
+  border-color: var(--mute);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+}
+
+.chip.human {
+  border-color: var(--human);
+  color: var(--human);
+}
+
+.chip.agent {
+  border-color: var(--agent);
+  background: var(--agent-wash);
+  color: var(--agent);
+}
+
+.chip.ok {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.chip.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.chip.alert {
+  border-color: var(--alert);
+  background: var(--alert-wash);
+  color: var(--alert);
+}
+
+/* /dev/tokens */
+.dev {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+.dev h1 {
+  margin: 0 0 4px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.dev h2 {
+  margin: 36px 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dev .lede {
+  margin: 0;
+  color: var(--mute);
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.swatch {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.swatch .chipcolor {
+  height: 56px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.swatch .meta {
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+
+.swatch .name {
+  display: block;
+  font-weight: 600;
+}
+
+.swatch .value {
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.fonts {
+  display: grid;
+  gap: 12px;
+}
+
+.sample {
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.sample small {
+  display: block;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.sample.sans {
+  font-family: var(--sans);
+  font-size: 20px;
+}
+
+.sample.mono {
+  font-family: var(--mono);
+  font-size: 16px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.row .label {
+  width: 90px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
