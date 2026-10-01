@@ -1,0 +1,20 @@
+{
+  "name": "@majlis/tools-plates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "pixelmatch": "^7",
+    "pngjs": "^7",
+    "@playwright/test": "1.56.1"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6"
+  }
+}
