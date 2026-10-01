@@ -15,6 +15,7 @@
     "@majlis/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/pg": "^8"
+    "@types/pg": "^8",
+    "@majlis/test-utils": "workspace:*"
   }
 }
