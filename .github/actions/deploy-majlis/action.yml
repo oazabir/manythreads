@@ -88,7 +88,7 @@ runs:
         # Idempotent: extensions must be created by a superuser (the owner role cannot create pgvector). Covers
         # clusters initialised before postInitApplicationSQL; no-op on first install (no pod yet) or when present.
         kubectl exec -n manythreads majlis-pg-1 -c postgres -- psql -U postgres -d majlis -v ON_ERROR_STOP=1 \
-          -c 'CREATE EXTENSION IF NOT EXISTS vector' -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' || true
+          -c 'CREATE EXTENSION IF NOT EXISTS vector' -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm' -c 'ALTER ROLE majlis_owner SUPERUSER' || true
         kubectl delete ingress/manythreads deploy/whoami svc/whoami -n manythreads --ignore-not-found
         helm upgrade --install majlis /root/majlis-chart/deploy/helm/majlis -n manythreads \
           --set imageTag="$TAG" --wait --timeout 10m

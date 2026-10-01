@@ -21,6 +21,8 @@ spec:
       postInitApplicationSQL:
         - CREATE EXTENSION IF NOT EXISTS vector
         - CREATE EXTENSION IF NOT EXISTS pg_trgm
+        # kernel migrations create/alter the app+system roles and pgvector, which needs SUPERUSER (same as dev compose)
+        - ALTER ROLE {{ .Values.postgres.owner }} SUPERUSER
   storage:
     size: {{ .Values.postgres.storage.size }}
     storageClass: {{ .Values.postgres.storage.storageClass }}
