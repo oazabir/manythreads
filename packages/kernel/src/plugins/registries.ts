@@ -40,7 +40,7 @@ export class ExtensionRegistry<T> {
 }
 
 export interface MountedRoute extends HttpRouteDefinition {
-  /** `/plugins/<name><path>` */
+  /** The absolute API path the plugin declared (e.g. `/api/channels/:channelId/messages`). */
   fullPath: string;
 }
 

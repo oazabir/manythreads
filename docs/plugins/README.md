@@ -55,12 +55,12 @@ that is not in `extends`, or an event not in `events.emits` / `events.consumes`,
 
 ### HTTP routes
 
-Routes are mounted under `/plugins/<name>` + `path`. Give the server what it needs to validate and protect them:
+Routes are mounted at the absolute `path` you declare (spec paths such as `/api/channels/:channelId/messages`); two plugins declaring the same method + path fail at load, naming both. Give the server what it needs to validate and protect them:
 
 ```ts
 ctx.http.route({
   method: 'POST',
-  path: '/echo',                               // -> POST /plugins/<name>/echo
+  path: '/api/echo',                           // -> POST /api/echo
   schema: { body: z.strictObject({ message: z.string().min(1) }), response: z.object({ echoed: z.string() }) },
   rateLimit: { limit: 60, windowMs: 60_000 },  // per caller, in server memory, per replica
   handler: (req, tx) => ({ body: { echoed: (req.body as { message: string }).message } }),

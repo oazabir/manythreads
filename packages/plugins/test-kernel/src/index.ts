@@ -7,7 +7,7 @@ const NoteQuery = z.object({ note: z.string().min(1) });
 
 /**
  * Test-only plugin exercising the host: strict body validation, a rate-limited route, emitting an event and
- * recording its delivery. Loaded only when MAJLIS_TEST_PLUGINS=1. Mounted under /plugins/test-kernel. echo and limited are public;
+ * recording its delivery. Loaded only when MAJLIS_TEST_PLUGINS=1. Mounted at /api/test/*. echo and limited are public;
  * ping and deliveries need a (dev header) actor because they write and read under RLS.
  */
 export default definePlugin({

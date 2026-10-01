@@ -113,11 +113,19 @@ describe('plugin host: ordering and validation (no database)', () => {
     ).rejects.toThrow(/"x\.do" is already registered by plugin "p"/);
   });
 
-  it('http routes are mounted under /plugins/<name>', async () => {
+  it('http routes are mounted at their declared absolute path', async () => {
     const host = await loadPlugins({
-      plugins: [fake('p', [], {}, (ctx) => ctx.http.route({ method: 'GET', path: '/ping', handler: () => ({ body: 'pong' }) }))],
+      plugins: [fake('p', [], {}, (ctx) => ctx.http.route({ method: 'GET', path: '/api/ping', handler: () => ({ body: 'pong' }) }))],
     });
-    expect(host.registries.httpRoutes.values()[0]?.fullPath).toBe('/plugins/p/ping');
+    expect(host.registries.httpRoutes.values()[0]?.fullPath).toBe('/api/ping');
+  });
+
+  it('duplicate method+path across plugins fails at load naming both plugins', async () => {
+    const route = (ctx: { http: { route: (d: never) => void } }): void =>
+      ctx.http.route({ method: 'GET', path: '/api/ping', handler: () => ({ body: 'pong' }) } as never);
+    await expect(
+      loadPlugins({ plugins: [fake('p', [], {}, route as never), fake('q', [], {}, route as never)] }),
+    ).rejects.toThrow(/GET \/api\/ping.*"p"|"p".*GET \/api\/ping/);
   });
 
   it('discovers plugins by the package.json majlis field', async () => {

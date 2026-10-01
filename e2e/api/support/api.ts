@@ -9,4 +9,4 @@ export function devActor(id: string = randomUUID()): Record<string, string> {
   };
 }
 
-export const TEST = '/plugins/test-kernel/api/test';
+export const TEST = '/api/test';

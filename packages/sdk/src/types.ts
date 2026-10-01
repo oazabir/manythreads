@@ -99,7 +99,7 @@ export interface HttpResponse {
 }
 export interface HttpRouteDefinition {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  /** Relative to the plugin's mount point (`/plugins/<name>`), starts with `/`. */
+  /** Absolute API path, mounted as declared (e.g. `/api/channels/:channelId/messages`). Duplicate method+path across plugins fails at load. */
   path: string;
   /** Zod schemas the server validates with; a failure is a 400 `validation_failed` with the field path. Use `z.strictObject` for bodies. */
   schema?: {
@@ -160,7 +160,7 @@ export interface PluginContext {
   readonly composer: { action(definition: ComposerActionDefinition): void };
   /** Bind an implementation to a capability this plugin declared in its manifest. */
   readonly capabilities: { register(name: string, handler: CapabilityHandler): void };
-  /** Routes the server mounts under `/plugins/<name>`. */
+  /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;
 }

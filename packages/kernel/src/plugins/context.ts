@@ -35,7 +35,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
 
   const mount = (path: string): string => {
     if (!path.startsWith('/')) throw new PluginError(`Plugin "${name}": http route path "${path}" must start with "/"`, { plugin: name });
-    return `/plugins/${name}${path}`;
+    return path;
   };
 
   return {
@@ -140,10 +140,20 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     },
     http: {
       route(definition) {
+        const fullPath = mount(definition.path);
+        const clash = registries.httpRoutes
+          .list()
+          .find((e) => e.value.method === definition.method && e.value.fullPath === fullPath);
+        if (clash) {
+          throw new PluginError(
+            `Plugin "${name}" route ${definition.method} ${fullPath} is already registered by plugin "${clash.plugin}"`,
+            { plugin: name },
+          );
+        }
         registries.httpRoutes.add(name, {
           ...definition,
           handler: (request, tx) => definition.handler(request, guardPluginTx(tx)),
-          fullPath: mount(definition.path),
+          fullPath,
         });
       },
     },
