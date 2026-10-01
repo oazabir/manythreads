@@ -7,13 +7,24 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "bench:server": "tsx src/server.ts",
+    "bench:list": "tsx src/list.ts"
   },
   "dependencies": {
     "pg": "^8",
-    "@majlis/kernel": "workspace:*"
+    "@majlis/kernel": "workspace:*",
+    "@majlis/shared": "workspace:*",
+    "@majlis/test-utils": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19"
   },
   "devDependencies": {
-    "@types/pg": "^8"
+    "@types/pg": "^8",
+    "@playwright/test": "1.56.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "vite": "^7",
+    "@vitejs/plugin-react": "^5"
   }
 }
