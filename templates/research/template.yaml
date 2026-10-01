@@ -1,0 +1,34 @@
+# Source: SPEC-FINAL §13 (Research row), §5.3; prototype #onboarding Step 5 · Teams.
+id: research
+name: Research
+description: Read, run experiments and keep a shared record of what the team learned.
+version: 1
+channels:
+  - name: "#papers"
+    purpose: "Papers worth reading and short summaries."
+  - name: "#experiments"
+    purpose: "Experiment plans, runs and results."
+  - name: "#notes"
+    purpose: "Working notes and ideas."
+  - name: "#reading-group"
+    purpose: "Weekly reading-group schedule and discussion."
+board:
+  name: Research board
+  columns: [Open, In progress, Verify, Waiting on a person, Done]
+bots:
+  - slug: brain
+    name: Brain
+    role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: literature-scout
+    name: Literature scout
+    role: "Finds new papers on the team's topics and posts the relevant ones."
+  - slug: summariser
+    name: Summariser
+    role: "Summarises a paper or thread into a short page."
+  - slug: experiment-tracker
+    name: Experiment tracker
+    role: "Records experiment parameters and results and keeps the board current."
+  - slug: citation-checker
+    name: Citation checker
+    role: "Checks that cited sources exist and say what the draft claims."
+roleTags: [role:principal-investigator, role:reading-group-host]

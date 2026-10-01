@@ -1,0 +1,37 @@
+# Source: SPEC-FINAL §13 (Marketing row), §5.3; prototype #onboarding Step 5 · Teams.
+id: marketing
+name: Marketing
+description: Plan campaigns, draft and schedule content, and watch what works.
+version: 1
+channels:
+  - name: "#campaigns"
+    purpose: "Campaign planning and status."
+  - name: "#content"
+    purpose: "Drafts, reviews and the editorial calendar."
+  - name: "#social"
+    purpose: "Social posts, scheduling and replies."
+  - name: "#analytics"
+    purpose: "Performance digests and questions about the numbers."
+  - name: "#brand"
+    purpose: "Voice, tone and brand-asset questions."
+board:
+  name: Marketing board
+  columns: [Open, In progress, Verify, Waiting on a person, Done]
+bots:
+  - slug: brain
+    name: Brain
+    role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: content-drafter
+    name: Content drafter
+    role: "Drafts posts, emails and pages in the team's voice."
+  - slug: social-scheduler
+    name: Social scheduler
+    role: "Schedules approved posts to the connected social accounts."
+    automation: true
+  - slug: analytics-digest
+    name: Analytics digest
+    role: "Summarises campaign and channel performance on a schedule."
+  - slug: brand-reviewer
+    name: Brand reviewer
+    role: "Checks drafts against the brand guidelines before they go out."
+roleTags: [role:brand-owner, role:campaign-owner]

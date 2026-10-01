@@ -1,0 +1,36 @@
+# Source: SPEC-FINAL §13 (Customer support row, Support responder and Enquiry bot reference bots), §5.3;
+# prototype #onboarding Step 5 · Teams.
+id: customer-support
+name: Customer support
+description: Answer customers from the manuals, triage enquiries and escalate what needs a person.
+version: 1
+channels:
+  - name: "#support"
+    purpose: "Customer conversations and drafted replies."
+  - name: "#escalations"
+    purpose: "Cases that need a person or another team."
+  - name: "#enquiries"
+    purpose: "New leads and enquiries classified by the Enquiry bot."
+  - name: "#kb-updates"
+    purpose: "Proposed changes to the knowledge base."
+board:
+  name: Support board
+  columns: [Open, In progress, Verify, Waiting on a person, Done]
+bots:
+  - slug: brain
+    name: Brain
+    role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: support-responder
+    name: Support responder
+    role: "Drafts answers from the manuals knowledge base; sending email needs approval."
+  - slug: enquiry-bot
+    name: Enquiry bot
+    role: "Classifies an email, extracts a typed lead, drafts a reply and opens a board card."
+  - slug: escalation-router
+    name: Escalation router
+    role: "Routes a case to the right person by role tag."
+    automation: true
+  - slug: kb-gardener
+    name: KB gardener
+    role: "Finds gaps and stale pages in the manuals and proposes edits."
+roleTags: [role:support-lead, role:escalation-owner]
