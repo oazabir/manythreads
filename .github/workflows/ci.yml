@@ -51,7 +51,7 @@ jobs:
       - run: pnpm test:schema-compat
 
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm -C e2e exec playwright install --with-deps chromium
 
       - name: End-to-end
         run: pnpm e2e --pass-with-no-tests
