@@ -69,6 +69,15 @@ importers:
 
   e2e:
     devDependencies:
+      '@majlis/server':
+        specifier: workspace:*
+        version: link:../packages/server
+      '@majlis/shared':
+        specifier: workspace:*
+        version: link:../packages/shared
+      '@majlis/test-utils':
+        specifier: workspace:*
+        version: link:../packages/test-utils
       '@playwright/test':
         specifier: 1.56.1
         version: 1.56.1
@@ -104,11 +113,26 @@ importers:
         specifier: workspace:*
         version: link:../../shared
 
+  packages/plugins/test-kernel:
+    dependencies:
+      '@majlis/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@majlis/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+
   packages/sdk:
     dependencies:
       '@majlis/shared':
         specifier: workspace:*
         version: link:../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
 
   packages/server:
     dependencies:
@@ -136,9 +160,19 @@ importers:
       openapi-types:
         specifier: ^12.1.3
         version: 12.1.3
+      pg:
+        specifier: ^8
+        version: 8.23.1
       zod:
         specifier: ^4
         version: 4.6.5
+    devDependencies:
+      '@majlis/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
 
   packages/shared:
     dependencies:
@@ -151,6 +185,9 @@ importers:
       '@majlis/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@majlis/server':
+        specifier: workspace:*
+        version: link:../server
       '@majlis/shared':
         specifier: workspace:*
         version: link:../shared
@@ -167,13 +204,40 @@ importers:
       '@majlis/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@majlis/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@majlis/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
       pg:
         specifier: ^8
         version: 8.23.1
+      react:
+        specifier: ^19
+        version: 19.3.0
+      react-dom:
+        specifier: ^19
+        version: 19.3.0(react@19.3.0)
     devDependencies:
+      '@playwright/test':
+        specifier: 1.56.1
+        version: 1.56.1
       '@types/pg':
         specifier: ^8
         version: 8.23.1
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      '@vitejs/plugin-react':
+        specifier: ^5
+        version: 5.2.0(vite@7.3.6(@types/node@22.20.4)(tsx@4.23.15)(yaml@2.9.1))
+      vite:
+        specifier: ^7
+        version: 7.3.6(@types/node@22.20.4)(tsx@4.23.15)(yaml@2.9.1)
 
   tools/plates:
     dependencies:

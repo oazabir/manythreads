@@ -20,6 +20,11 @@
     "zod": "^4",
     "@majlis/kernel": "workspace:*",
     "@majlis/sdk": "workspace:*",
-    "@majlis/shared": "workspace:*"
+    "@majlis/shared": "workspace:*",
+    "pg": "^8"
+  },
+  "devDependencies": {
+    "@majlis/test-utils": "workspace:*",
+    "@types/pg": "^8"
   }
 }

@@ -7,6 +7,9 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1"
+    "@playwright/test": "1.56.1",
+    "@majlis/shared": "workspace:*",
+    "@majlis/test-utils": "workspace:*",
+    "@majlis/server": "workspace:*"
   }
 }
