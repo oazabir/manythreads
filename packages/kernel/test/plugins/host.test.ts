@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { definePlugin, type PluginDefinition } from '@manythreads/sdk';
 import { ActorId, TeamId, WorkspaceId } from '@manythreads/shared';
-import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase, testClient } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, createSystemPool, loadPlugins, withActor, withSystem, type PluginSource } from '../../src/index.ts';
@@ -150,7 +150,7 @@ describe('plugin host: example-hello against Postgres', () => {
   let sys: pg.Pool;
   beforeAll(async () => {
     db = await createTestDatabase();
-    owner = new pg.Client({ connectionString: db.ownerUrl });
+    owner = testClient({ connectionString: db.ownerUrl });
     await owner.connect();
     pool = createAppPool(db.appUrl, 4);
     sys = createSystemPool(db.systemUrl, 4);

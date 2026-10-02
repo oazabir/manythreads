@@ -244,12 +244,14 @@ export function startWorker(options: WorkerOptions): Worker {
     }
   })();
 
-  const shutdown = async (): Promise<void> => {
-    clearInterval(heartbeat);
-    clearInterval(reaper);
-    await loop;
-    await stopListening?.();
-  };
+  let shutdownDone: Promise<void> | undefined;
+  const shutdown = (): Promise<void> =>
+    (shutdownDone ??= (async () => {
+      clearInterval(heartbeat);
+      clearInterval(reaper);
+      await loop;
+      await stopListening?.();
+    })());
 
   return {
     completed: () => completedCount,
@@ -257,7 +259,7 @@ export function startWorker(options: WorkerOptions): Worker {
       halted = true;
       running = false;
       signal.wake?.();
-      void shutdown();
+      shutdown().catch(() => undefined);
     },
     async stop() {
       running = false;

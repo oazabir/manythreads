@@ -16,6 +16,7 @@ import {
   TEAM_IDS,
   type Persona,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -60,7 +61,7 @@ beforeAll(async () => {
   }
   await apply(ENG, sha(1), sha(2), ['pages/runbook.md', 'pages/deploy.md']);
   // enough rows that the planner prefers the trigram indexes to a scan of the primary key (a small table never does)
-  const owner = new pg.Client({ connectionString: db.ownerUrl });
+  const owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();
   await owner.query(
     `INSERT INTO app.repo_entries (team_id, path, blob_sha, size, last_commit_sha, text_plain)
@@ -79,7 +80,7 @@ afterAll(async () => {
 
 describe('the repo tables pass the RLS harness', () => {
   it('RLS enabled and forced, policies, an rls comment, and no per-row helper call in the read plan', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);

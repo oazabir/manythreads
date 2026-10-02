@@ -9,6 +9,7 @@ import {
   personas,
   testKernelMigrationSource,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -48,7 +49,7 @@ afterAll(async () => {
 
 describe('teams plugin: RLS and definer functions', () => {
   it('the new table passes the RLS harness (enabled, forced, policy, comment)', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);

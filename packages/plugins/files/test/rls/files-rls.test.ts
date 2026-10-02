@@ -15,6 +15,7 @@ import {
   TEAM_IDS,
   type Persona,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -95,7 +96,7 @@ afterAll(async () => {
 
 describe('the files table passes the RLS harness', () => {
   it('RLS is enabled and forced, with policies and an rls comment; no policy calls a per-row helper in the read plan', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);
@@ -304,7 +305,7 @@ describe('cascade', () => {
   it('deleting a channel (nothing in the product does; the owner role in maintenance) removes its files rows', async () => {
     const c = await channel('doomed', TEAM_IDS.Engineering);
     await insertFile(c, null, nadia, 'doomed.txt');
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       await admin.query('DELETE FROM app.channels WHERE id = $1', [c]);

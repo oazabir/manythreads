@@ -23,6 +23,7 @@ import {
   teamsMigrationSource,
   testKernelMigrationSource,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -71,7 +72,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource] });
-  owner = new pg.Client({ connectionString: db.ownerUrl });
+  owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();
   const rows = await owner.query<{ table: string; column: string; def: string }>(`
     SELECT c.relname AS "table", a.attname AS "column", pg_get_constraintdef(con.oid) AS def

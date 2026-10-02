@@ -13,6 +13,7 @@ import {
   TEAM_IDS,
   type Persona,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -130,7 +131,7 @@ describe('search runs as the caller', () => {
 
 describe('the trigram indexes are usable under row level security', () => {
   it('the pg_trgm operators are LEAKPROOF (what lets the planner hand them to the GIN index behind a policy)', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       const r = await admin.query<{ proname: string; proleakproof: boolean }>(

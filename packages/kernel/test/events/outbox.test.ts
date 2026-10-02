@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, type TestDatabase, testPool } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSystemPool, withSystem } from '../../src/db/index.ts';
@@ -26,7 +26,7 @@ async function seed(subscriber: string, n: number): Promise<void> {
 beforeAll(async () => {
   db = await createTestDatabase();
   pool = createSystemPool(db.systemUrl, 12);
-  owner = new pg.Pool({ connectionString: db.ownerUrl, max: 2 });
+  owner = testPool({ connectionString: db.ownerUrl, max: 2 });
 }, 60_000);
 
 afterAll(async () => {

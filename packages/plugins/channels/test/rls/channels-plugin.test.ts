@@ -13,6 +13,7 @@ import {
   TEAM_IDS,
   type Persona,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -102,7 +103,7 @@ afterAll(async () => {
 
 describe('the channels tables pass the RLS harness', () => {
   it('RLS is enabled and forced, with a policy and an rls comment, on every table', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);

@@ -95,3 +95,4 @@ Format: `- [phase/task] what went wrong → what to do instead`
 - P4: a screen stylesheet (files.css) redefined the shared `.linkish` class and added an always-present empty flex slot to the shell
   header; this broke the sign-in and phone channel W baselines. Prefix screen classes; hide empty slots (`:empty { display: none }`);
   run the whole visual suite before the gate, not only your area's specs.
+- P4 tests: a raw `pg.Pool`/`pg.Client` in a test needs an `'error'` listener: `dropTestDatabase` runs `DROP DATABASE ... WITH (FORCE)`, which terminates any connection still open (57P01) and an unhandled 'error' event crashed a CI run ("Uncaught Exception" attributed to jobs.test.ts, all tests green) → use `testPool`/`testClient` from `@manythreads/test-utils`, never `new pg.Pool`/`new pg.Client` in tests; end every worker and pool before the drop.

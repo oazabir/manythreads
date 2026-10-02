@@ -9,7 +9,7 @@ import {
   runMigrations,
   sha256,
 } from '../src/index.ts';
-import { createTestDatabase, dropTestDatabase, migrateTestDatabase, type TestDatabase } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, migrateTestDatabase, type TestDatabase, testClient } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -24,7 +24,7 @@ async function tempDir(files: Record<string, string>): Promise<string> {
 }
 
 async function query<T extends pg.QueryResultRow>(sql: string, values: unknown[] = []): Promise<T[]> {
-  const client = new pg.Client({ connectionString: db.ownerUrl });
+  const client = testClient({ connectionString: db.ownerUrl });
   await client.connect();
   try {
     return (await client.query<T>(sql, values)).rows;
@@ -60,7 +60,7 @@ describe('migration runner', () => {
   });
 
   it('sets the manythreads_app password so the role can log in', async () => {
-    const app = new pg.Client({ connectionString: db.appUrl });
+    const app = testClient({ connectionString: db.appUrl });
     await app.connect();
     try {
       const r = await app.query('SHOW search_path');
@@ -71,7 +71,7 @@ describe('migration runner', () => {
   });
 
   it('sets the manythreads_system password and the role is the only system identity', async () => {
-    const sys = new pg.Client({ connectionString: db.systemUrl });
+    const sys = testClient({ connectionString: db.systemUrl });
     await sys.connect();
     try {
       const r = await sys.query('SELECT current_user AS u, app.is_system() AS s');

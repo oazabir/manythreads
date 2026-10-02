@@ -1,4 +1,4 @@
-import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase, testClient } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer } from '../src/index.ts';
@@ -24,7 +24,7 @@ describe('server start runs migrations (criterion 1)', () => {
       testPlugins: false,
     });
   const owner = async <T>(fn: (c: pg.Client) => Promise<T>): Promise<T> => {
-    const c = new pg.Client({ connectionString: db.ownerUrl });
+    const c = testClient({ connectionString: db.ownerUrl });
     await c.connect();
     try {
       return await fn(c);

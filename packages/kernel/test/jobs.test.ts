@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, type TestDatabase, testPool } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createSystemPool, withSystem } from '../src/db/index.ts';
@@ -12,7 +12,7 @@ let owner: pg.Pool;
 beforeAll(async () => {
   db = await createTestDatabase();
   pool = createSystemPool(db.systemUrl, 24);
-  owner = new pg.Pool({ connectionString: db.ownerUrl, max: 2 });
+  owner = testPool({ connectionString: db.ownerUrl, max: 2 });
   await owner.query(`CREATE TABLE public.job_effects (job_id uuid PRIMARY KEY, n int NOT NULL DEFAULT 1, worker text)`);
   await owner.query(`GRANT ALL ON public.job_effects TO manythreads_app, manythreads_system`);
 }, 60_000);
@@ -147,7 +147,7 @@ describe('job queue', () => {
     await waitFor(async () => (await states(q))['done'] === 50);
     release.fn?.(); // the zombie handler finishes late; its outcome must be ignored
     await sleep(100);
-    await Promise.all(workers.map((w) => w.stop()));
+    await Promise.all([victim.stop(), ...workers.map((w) => w.stop())]); // the zombie's connection is released before the pool ends
 
     expect(await states(q)).toEqual({ done: 50 });
     expect(overlap).toBe(false);

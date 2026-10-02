@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { EntityRef } from '@manythreads/shared';
-import { LENA, NADIA, OMAR, PRIYA, SAMEERA, TARIQ, TEAM_IDS, KAHF_WORKSPACE_ID } from '@manythreads/test-utils';
+import { LENA, NADIA, OMAR, PRIYA, SAMEERA, TARIQ, TEAM_IDS, KAHF_WORKSPACE_ID, testClient } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createEntityLinkService, type EntityResolvers } from '../../src/entity-links/index.ts';
@@ -22,7 +22,7 @@ const page = () => ({ type: 'page' as const, id: randomUUID() });
 
 beforeAll(async () => {
   w = await createWorld();
-  owner = new pg.Client({ connectionString: w.db.ownerUrl });
+  owner = testClient({ connectionString: w.db.ownerUrl });
   await owner.connect();
 }, 120_000);
 afterAll(async () => {
