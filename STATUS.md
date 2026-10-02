@@ -1,6 +1,6 @@
 # STATUS
 
-Current phase: **3 · Channels, threads and direct messages** (gate verified locally; exit = merge PR "Phase 3 · Channels, threads and direct messages")
+Current phase: **4 · Files and the team repo** — Wave A in progress (P4-00 refactor + P4-13 storage-s3; P4-01..05 repo-git plugin/writer; P4-09/10 web viewers + embedded apps). WIP snapshot ec1dded. Next: Wave B (P4-06 files tree API, P4-07 pages.write, P4-08 history/diff/restore, P4-11 Files screen, seed v4), then Wave C (e2e, visual, security review, gate, retro, PR "Phase 4 · Files and the team repo"). Phases 1–3 done and deployed (tags phase-1..3 / v0.1.0..v0.3.0).
 
 | Phase | State | Tag |
 |---|---|---|
