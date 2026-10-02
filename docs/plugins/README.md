@@ -78,10 +78,16 @@ const template = await ctx.templates.get('engineering');   // or await ctx.templ
 `ctx.audit.emit` is `ctx.events.emit` with defaults: it needs `event.emit` in `extends` and the type in `events.emits`, and the
 registry validates the payload. Conflict targets and `conflictWhere` (a partial unique index predicate) are trusted SQL, never user input.
 
+### Asking the capability broker
+
+`ctx.capabilities.authorize(tx, capability, { path?, paths?, trigger?, constraints? })` asks the kernel's broker whether `tx.actor` may use a capability: the `files.*` path guard (`bots/`, `TEAM.md`, `skills/`,
+`routines/` are never bot-writable), the destructive tag, `person:*` scopes and the bot's allowlist. A person is allowed (check your own ACL); every denial is logged as `kernel.capability.denied`. It rejects
+when the host has no broker. Declare the capability in your manifest (`files.write`, non-destructive; `files.delete`, destructive) and call it before you write; do not copy the guard. See [repo-git.md](./repo-git.md).
+
 ### Using another plugin's provider
 
 `ctx.providers.get('storage')` returns what some plugin registered with `ctx.providers.register('storage', impl)` (the first, in load order), or `undefined`. Look it up when a request arrives,
-not in `register`: the provider's plugin may load after yours. It needs no `extends` entry (using a provider is not providing one). The files plugin uses it for attachment bytes.
+not in `register`: the provider's plugin may load after yours. It needs no `extends` entry (using a provider is not providing one). The files plugin uses it for attachment bytes; `ctx.providers.get<RepoProvider>('repo')` is the team repo's one writer ([repo-git.md](./repo-git.md)).
 
 ### Cohesion services: read state, entity links, live push
 

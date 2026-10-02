@@ -34,6 +34,7 @@ nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`,
 | `MANYTHREADS_SMTP_URL` | `mail.smtpUrl`, or `smtp://manythreads-mailpit:1025` while `mailpit.enabled` (default). |
 | `MANYTHREADS_MAIL_FROM` | `mail.from`. |
 | `MANYTHREADS_STORAGE_DIR` | `server.blobs.persistence.mountPath`, `/data/blobs`: the PVC `manythreads-blobs` (below). |
+| `MANYTHREADS_REPO_DIR` | `server.repos.persistence.mountPath`, `/data/repos`: the PVC `manythreads-repos` (below). The server image includes `git`. |
 | `MANYTHREADS_KMS_PREVIOUS_KEYS` | Secret key `kms-previous-keys` from `kms.previousKeys` (empty by default; rotation below). |
 | `MANYTHREADS_TEST_AUTH_TOKEN` | Secret key `test-auth-token` (40 random alphanumerics), injected **only when `testAuth.enabled`** (test environments; not used by the screenshots workflow). |
 
@@ -62,6 +63,10 @@ A stored list is kept when a later deploy does not pass the value, so the deploy
 and its Deployment uses the `Recreate` strategy: on a deploy the old pod stops before the new one starts, so the site is unavailable for a few seconds. More than one replica needs a
 `ReadWriteMany` class or an object-storage provider instead. Growing the volume: raise the claim's `spec.resources.requests.storage` by hand (`local-path` does not enforce the size; the node disk is the limit).
 With `persistence.enabled=false` the server gets an `emptyDir` (blobs are lost on restart).
+
+**Team repositories (`server.repos.persistence`).** repo-git keeps one bare git repository per team at `MANYTHREADS_REPO_DIR/<team id>.git`, the mount point (`/data/repos`) of the PVC
+`manythreads-repos`: same class, access mode and `keep` rule as the blob volume, **2Gi** by default. It holds every page, `TEAM.md` and bot definition with its history, so back it up with the database
+([plugins/repo-git.md](./plugins/repo-git.md)). The repository of every existing team is created by a job the repo-git migration enqueues, and of any later team when it is created.
 
 **Demo seed.** A post-install/post-upgrade Job (`seed.demo`, default true) runs `pnpm seed --demo` from the server image once the
 server is ready: workspace Kahf Software, seven personas, three teams with their template definitions, and their conversations (seed v3:
