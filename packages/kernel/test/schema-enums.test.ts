@@ -1,5 +1,11 @@
 import {
   AclPermission,
+  BotKind,
+  BotRuntime,
+  BotRunStatus,
+  BotRunTrigger,
+  BotStatus,
+  BotVisibility,
   ChannelKind,
   MentionKind,
   PresenceStatus,
@@ -12,6 +18,7 @@ import {
   JobState,
   PersonStatus,
   ReadTargetType,
+  RunSourceScope,
   ScopedKvScopeType,
   TeamRole,
   WorkspaceRole,
@@ -19,6 +26,7 @@ import {
 import {
   createTestDatabase,
   dropTestDatabase,
+  botsMigrationSource,
   channelsMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
@@ -55,6 +63,13 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'channels.kind': ChannelKind,
   'message_mentions.kind': MentionKind,
   'presence.status': PresenceStatus,
+  'bots.kind': BotKind,
+  'bots.runtime': BotRuntime,
+  'bots.visibility': BotVisibility,
+  'bots.status': BotStatus,
+  'bot_runs.trigger_type': BotRunTrigger,
+  'bot_runs.status': BotRunStatus,
+  'run_source_log.scope': RunSourceScope,
 };
 
 /**
@@ -71,7 +86,9 @@ let found: Map<string, string[]>;
 const checkValues = (definition: string): string[] => [...definition.matchAll(/'((?:[^']|'')*)'::/g)].map((m) => (m[1] ?? '').replace(/''/g, "'"));
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource] });
+  db = await createTestDatabase({
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource],
+  });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();
   const rows = await owner.query<{ table: string; column: string; def: string }>(`

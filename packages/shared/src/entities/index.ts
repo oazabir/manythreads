@@ -13,3 +13,4 @@ export * from './file.ts';
 export * from './notification.ts';
 export * from './repo.ts';
 export * from './repo-paths.ts';
+export * from './bot.ts';

@@ -33,6 +33,12 @@ export const filesMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/files/migrations/', import.meta.url)),
 };
 
+/** Migrations of the bots plugin (`bots`, `bot_pairing_tokens`, `bot_runs`, `run_source_log`); after `channelsMigrationSource` (bot_runs references app.threads). */
+export const botsMigrationSource: MigrationSource = {
+  namespace: 'bots',
+  dir: fileURLToPath(new URL('../../plugins/bots/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',
