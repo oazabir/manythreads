@@ -149,7 +149,7 @@ export function FileList({ teamName, folder, info, state, selected, filters, onF
           <div role="columnheader">Size</div>
           <div role="columnheader" aria-label="Actions" />
         </div>
-        <div className="frows" data-vt-scroll>
+        <div className="frows" role="rowgroup">
           {loading ? (
             <p className="loading" aria-busy="true">Loading…</p>
           ) : state?.status === 'error' && !state.listing ? (

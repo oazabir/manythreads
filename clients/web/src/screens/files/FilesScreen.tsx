@@ -67,7 +67,7 @@ export function FilesScreen() {
   const rootState = folders.get(ROOT);
   const rows = state?.listing?.rows ?? [];
   const fileCount = rows.filter((r) => r.kind === 'file').length;
-  useHeaderTopic(files ? (folder === ROOT ? `${files.teamName} · team repo` : `${files.teamName} · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`) : null);
+  useHeaderTopic(files ? (open ? `${files.teamName} · ${open}` : folder === ROOT ? `${files.teamName} · team repo` : `${files.teamName} · ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`) : null);
 
   const go = useCallback(
     (next: { folder?: string; open?: string | null }): void => {

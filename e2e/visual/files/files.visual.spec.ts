@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../../fixtures/stack.ts';
 import { apiOn } from '../../support/stack-browser.ts';
-import { buildStory, type Story } from '../support/story.ts';
+import { buildStory } from '../support/story.ts';
 import { DESKTOP, comparePlate, openPage, type PlateSpec } from '../support/vt.ts';
 
 /*
