@@ -42,3 +42,4 @@ export * from './channel.member.removed.ts';
 export * from './files.file.uploaded.ts';
 export * from './files.file.deleted.ts';
 export * from './channel.mention.created.ts';
+export * from './notifications.notification.created.ts';

@@ -10,3 +10,4 @@ export * from './entity-link.ts';
 export * from './channel.ts';
 export * from './message-thread.ts';
 export * from './file.ts';
+export * from './notification.ts';

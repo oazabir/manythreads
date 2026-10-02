@@ -101,4 +101,77 @@ describe('toPlainText', () => {
       expect(() => toPlainText(s)).not.toThrow();
     }
   });
+
+  it('keeps a bare [[text]] as typed and typed entity refs verbatim (the canonical text; channels used to drop the brackets)', () => {
+    expect(toPlainText('see [[x]] and [[Deploy plan]]')).toBe('see [[x]] and [[Deploy plan]]');
+    expect(toPlainText('[[thread:3f2a]] [[file:abc]]')).toBe('[[thread:3f2a]] [[file:abc]]');
+  });
+
+  it('turns a linked image into its alt text, and keeps line breaks', () => {
+    expect(toPlainText('[![logo](a.png)](https://x.example) done\nnext **line**')).toBe('logo done\nnext line');
+  });
+
+  it('matches what a chat composer produces for the former channels cases', () => {
+    expect(toPlainText('**Merged** `rollback` plan, see [runbook](https://x.example)')).toBe('Merged rollback plan, see runbook');
+    expect(toPlainText('```sh\nkubectl rollout undo\n```\nthen check')).toBe('kubectl rollout undo\nthen check');
+    expect(toPlainText('# Heading\n> quoted\n- one\n- two\n1. three')).toBe('Heading\nquoted\none\ntwo\nthree');
+  });
+});
+
+describe('toPlainText on hostile input', () => {
+  const N = 40_000;
+  const repeat = (unit: string): string => unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
+  const hostile: Record<string, string> = {
+    'open brackets': repeat('['),
+    'nested brackets': repeat('[[') + repeat(']]').slice(0, N / 2),
+    'unclosed labels': repeat('[a'),
+    'link starts': repeat('[a]('),
+    'chained destinations': repeat('[a]((x)'),
+    'image starts': repeat('![a]('),
+    'titles without end': repeat('[a](x "t '),
+    'reference starts': repeat('[a][b'),
+    backticks: repeat('`'),
+    'backtick pairs': repeat('` ``'),
+    'growing backtick runs': Array.from({ length: 300 }, (_, i) => '`'.repeat(i + 1)).join(' ').slice(0, N),
+    'open fences': repeat('```\n'),
+    stars: repeat('*'),
+    'star openers': repeat('*a '),
+    'star closers': repeat('a* '),
+    'mixed stars and underscores': repeat('*_*_'),
+    'mixed emphasis': repeat('*a _b '),
+    'emphasis over lines': repeat('*a\n'),
+    underscores: repeat('_'),
+    'underscore openers': repeat('_a '),
+    'strike openers': repeat('~~a '),
+    tildes: repeat('~'),
+    'angle starts': repeat('<a '),
+    'tag starts': repeat('<b'),
+    'autolink starts': repeat('<http:'),
+    'entity starts': repeat('[[task:'),
+    backslashes: repeat('\\'),
+    newlines: repeat('\n'),
+    'long blank run': ' '.repeat(N) + 'x',
+    'long tab run': '\t'.repeat(N) + '-',
+    'heading blanks': '# a' + ' '.repeat(N) + 'b',
+    'list blanks': '-' + ' '.repeat(N) + 'x',
+    'table pipes': repeat('| a '),
+    'rule dashes': repeat('|-'),
+    'hash runs': repeat('#'),
+    'reference definitions': repeat('[a]: '),
+    quotes: repeat('> '),
+    'everything at once': repeat('[`*_~<![]()|#>\\\n '),
+  };
+
+  it.each(Object.entries(hostile))('%s: 40,000 characters in under 50 ms', (_name, input) => {
+    expect(input.length).toBeGreaterThanOrEqual(N - 100);
+    toPlainText('warm up **x** [a](b) `c`');
+    const start = performance.now();
+    toPlainText(input);
+    expect(performance.now() - start).toBeLessThan(50);
+  });
+
+  it('returns the same text for a long plain paragraph as for a short one', () => {
+    const sentence = 'Rollback finished for release 42, see #dev and @nadia. ';
+    expect(toPlainText(sentence.repeat(700)).length).toBe(sentence.repeat(700).trim().length);
+  });
 });

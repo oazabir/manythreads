@@ -84,3 +84,6 @@ export type AclEntryId = z.infer<typeof AclEntryId>;
 
 export const ChannelGroupId = z.uuid().brand<'ChannelGroupId'>();
 export type ChannelGroupId = z.infer<typeof ChannelGroupId>;
+
+export const NotificationId = z.uuid().brand<'NotificationId'>();
+export type NotificationId = z.infer<typeof NotificationId>;

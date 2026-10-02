@@ -2,7 +2,7 @@ import type { PluginContext, PluginTx, ResolvedEntity } from '@manythreads/sdk';
 
 /** First line of a message as a link title: at most 80 characters of its plain text. */
 const titleOf = (plain: string): string => {
-  const t = plain.trim();
+  const t = plain.trim().split('\n', 1)[0]?.trim() ?? '';
   return t === '' ? 'Message' : t.length > 80 ? `${t.slice(0, 79)}…` : t;
 };
 

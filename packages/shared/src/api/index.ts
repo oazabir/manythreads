@@ -10,3 +10,4 @@ export * from './files/index.ts';
 export * from './search/index.ts';
 export * from './threads/index.ts';
 export * from './dm/index.ts';
+export * from './notifications/index.ts';

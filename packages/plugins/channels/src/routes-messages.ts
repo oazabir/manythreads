@@ -23,10 +23,10 @@ import {
   postMessageRoute,
   reactRoute,
   unreactRoute,
+  toPlainText,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, json, notFound, route } from './http.ts';
 import { syncMessageRefs } from './mentions.ts';
-import { markdownToPlain } from './plain.ts';
 import {
   MESSAGE_COLUMNS,
   toChannelMessage,
@@ -95,7 +95,7 @@ export function registerMessageRoutes(deps: Deps): void {
       const res = await tx.query<MessageRow>(
         `INSERT INTO app.messages AS m (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
          VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::jsonb) RETURNING ${MESSAGE_COLUMNS}`,
-        [channelId, body.body, markdownToPlain(body.body), body.threadRootId, JSON.stringify(attachmentIds.length > 0 ? { attachments: attachmentIds } : {})],
+        [channelId, body.body, toPlainText(body.body), body.threadRootId, JSON.stringify(attachmentIds.length > 0 ? { attachments: attachmentIds } : {})],
       );
       const row = res.rows[0]!;
       await emit(tx, {
@@ -183,7 +183,7 @@ export function registerMessageRoutes(deps: Deps): void {
       await requirePost(tx, channel);
       const res = await tx.query(
         `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now() WHERE id = $1 AND channel_id = $2 RETURNING id`,
-        [messageId, channelId, body, markdownToPlain(body)],
+        [messageId, channelId, body, toPlainText(body)],
       );
       if (res.rows.length === 0) throw forbidden('You cannot edit this message');
       await emit(tx, {

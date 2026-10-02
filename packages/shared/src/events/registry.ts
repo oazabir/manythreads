@@ -9,6 +9,7 @@ import { ChannelChannelArchivedEvent } from './channel.channel.archived.ts';
 import { ChannelMemberAddedEvent } from './channel.member.added.ts';
 import { ChannelMemberRemovedEvent } from './channel.member.removed.ts';
 import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
+import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
 import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
 import { FilesFileDeletedEvent } from './files.file.deleted.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
@@ -55,6 +56,7 @@ export const eventRegistry = {
   'channel.member.added': { 1: ChannelMemberAddedEvent },
   'channel.member.removed': { 1: ChannelMemberRemovedEvent },
   'channel.mention.created': { 1: ChannelMentionCreatedEvent },
+  'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
   'files.file.uploaded': { 1: FilesFileUploadedEvent },
   'files.file.deleted': { 1: FilesFileDeletedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
@@ -130,6 +132,7 @@ export type AnyEvent =
   | z.infer<typeof ChannelMemberAddedEvent>
   | z.infer<typeof ChannelMemberRemovedEvent>
   | z.infer<typeof ChannelMentionCreatedEvent>
+  | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
@@ -176,6 +179,7 @@ export type LatestEvent =
   | z.infer<typeof ChannelMemberAddedEvent>
   | z.infer<typeof ChannelMemberRemovedEvent>
   | z.infer<typeof ChannelMentionCreatedEvent>
+  | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
