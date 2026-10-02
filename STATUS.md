@@ -33,6 +33,12 @@ Screens: `docs/retro/screens/phase-1/`.
 - Zod enum vs SQL CHECK map test; last-lead protection; invite-accept rate-limit tests.
 - New kernel migrations start at 0011.
 
+## Phase 3 review follow-ups (e5fe15e)
+- Deleting a message leaves its attached files downloadable to channel readers — decide (hide/delete with message).
+- read_state_bump callable with arbitrary recipients from plugin SQL (not HTTP) — tighten when plugins become third-party.
+- Channel/team cascade delete orphans blobs (no delete route yet) — add blob GC job before delete routes exist.
+- Lead/admin can self-add to a private channel of their team (by design, audited) — confirm with spec wording.
+
 ## Environment / blockers
 - SSH to the server is blocked from the sandbox; deploys run from GitHub Actions (secret ROOT_PASSWORD).
   Deploy rule (owner): pushing a version tag `v*` deploys latest `main`. Each phase exit: PR → main,
