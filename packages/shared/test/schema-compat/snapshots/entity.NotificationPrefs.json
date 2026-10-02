@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mention": {
+      "type": "object",
+      "properties": {
+        "inApp": {
+          "type": "boolean"
+        },
+        "browser": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "inApp",
+        "browser"
+      ],
+      "additionalProperties": false
+    },
+    "reply": {
+      "type": "object",
+      "properties": {
+        "inApp": {
+          "type": "boolean"
+        },
+        "browser": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "inApp",
+        "browser"
+      ],
+      "additionalProperties": false
+    },
+    "dm": {
+      "type": "object",
+      "properties": {
+        "inApp": {
+          "type": "boolean"
+        },
+        "browser": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "inApp",
+        "browser"
+      ],
+      "additionalProperties": false
+    },
+    "mutedChannels": {
+      "maxItems": 500,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+      }
+    }
+  },
+  "required": [
+    "mention",
+    "reply",
+    "dm",
+    "mutedChannels"
+  ],
+  "additionalProperties": false
+}
