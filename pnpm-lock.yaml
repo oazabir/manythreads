@@ -202,6 +202,27 @@ importers:
         specifier: ^4
         version: 4.6.5
     devDependencies:
+  packages/plugins/read-state:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+
+  packages/plugins/storage-local:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+
       '@manythreads/kernel':
         specifier: workspace:*
         version: link:../../kernel

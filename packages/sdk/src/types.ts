@@ -397,3 +397,61 @@ export interface SecretService {
   /** Deletes a secret of the caller's workspace. False when it did not exist. */
   delete(tx: PluginTx, secretId: string): Promise<boolean>;
 }
+
+/** Result of `BlobStorage.put`: what the `files` table records about the stored bytes. */
+export interface BlobPutResult {
+  /** Opaque key the provider chose; hand it back to `get`/`head`/`delete`. */
+  blobKey: string;
+  size: number;
+  /** Lower-case hex SHA-256 of the stored bytes. */
+  sha256: string;
+}
+
+export interface BlobHead {
+  size: number;
+}
+
+/** Thrown by `put` when the stream is longer than `maxBytes`; nothing is stored. */
+export class BlobTooLargeError extends Error {
+  readonly maxBytes: number;
+  constructor(maxBytes: number) {
+    super(`Blob is larger than the ${maxBytes} byte limit`);
+    this.name = 'BlobTooLargeError';
+    this.maxBytes = maxBytes;
+  }
+}
+
+/** Thrown for a key this provider could never have issued (never touches storage). */
+export class InvalidBlobKeyError extends Error {
+  constructor() {
+    super('Invalid blob key');
+    this.name = 'InvalidBlobKeyError';
+  }
+}
+
+/** Thrown by `get` when the key is well formed but nothing is stored under it. */
+export class BlobNotFoundError extends Error {
+  constructor() {
+    super('Blob not found');
+    this.name = 'BlobNotFoundError';
+  }
+}
+
+/**
+ * The `provider.storage` contract (spec §5.2): attachment bytes only. Who may read a blob is decided by the caller from
+ * the `files` row and the channel ACL before it calls `get` (principle 8); a provider never sees identities.
+ * Streams are `AsyncIterable<Uint8Array>` (a Node `Readable` is one), so the SDK stays free of `node:` types.
+ */
+export interface BlobStorage extends ProviderImpl {
+  /**
+   * Stores the stream and returns where it went. Rejects with `BlobTooLargeError` as soon as more than `maxBytes` have
+   * arrived (the source is destroyed when it supports it, partial data is removed). Any other failure also leaves nothing behind.
+   */
+  put(stream: AsyncIterable<Uint8Array>, options: { maxBytes: number }): Promise<BlobPutResult>;
+  /** The bytes as a stream. Rejects with `BlobNotFoundError` when nothing is stored. */
+  get(blobKey: string): Promise<AsyncIterable<Uint8Array>>;
+  /** True when something was removed. */
+  delete(blobKey: string): Promise<boolean>;
+  /** Size of the stored bytes, or null when nothing is stored. */
+  head(blobKey: string): Promise<BlobHead | null>;
+}
