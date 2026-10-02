@@ -4,6 +4,7 @@ import { createS3BlobStorage, createS3Client, s3ConfigFromEnv } from './s3-stora
 export {
   createS3BlobStorage,
   createS3Client,
+  ensureBucket,
   s3ConfigFromEnv,
   DEFAULT_PREFIX,
   PART_SIZE,

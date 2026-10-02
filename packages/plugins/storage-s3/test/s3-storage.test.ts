@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import {
-  CreateBucketCommand,
   DeleteObjectsCommand,
   ListMultipartUploadsCommand,
   AbortMultipartUploadCommand,
@@ -10,7 +9,7 @@ import {
 import { BlobNotFoundError, BlobTooLargeError, type BlobStorage, type PluginContext } from '@manythreads/sdk';
 import { blobStorageContract } from '@manythreads/test-utils/blob-contract';
 import { describe, expect, it } from 'vitest';
-import plugin, { createS3BlobStorage, createS3Client, s3ConfigFromEnv, type S3Config } from '../src/index.ts';
+import plugin, { createS3BlobStorage, createS3Client, ensureBucket, s3ConfigFromEnv, type S3Config } from '../src/index.ts';
 
 // Config parsing and the plugin run everywhere. The provider contract (the same suite storage-local runs) needs an S3 endpoint: MinIO from
 // deploy/compose (`docker compose --profile s3 up -d minio`, `pnpm s3:up`) or the CI step. It runs when MANYTHREADS_TEST_S3=1.
@@ -102,9 +101,7 @@ function liveConfig(prefix: string): S3Config {
 async function liveTarget() {
   const config = liveConfig(`test-${randomBytes(6).toString('hex')}/`);
   const client = createS3Client(config);
-  await client.send(new CreateBucketCommand({ Bucket: config.bucket })).catch((err: { name?: string }) => {
-    if (err.name !== 'BucketAlreadyOwnedByYou' && err.name !== 'BucketAlreadyExists') throw err;
-  });
+  await ensureBucket(client, config.bucket);
   const storage = createS3BlobStorage({ client, bucket: config.bucket, prefix: config.prefix });
   const listAll = async () => {
     const keys: string[] = [];

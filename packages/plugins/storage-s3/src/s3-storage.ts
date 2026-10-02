@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PassThrough, Transform, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -216,4 +217,14 @@ export function createS3BlobStorage(options: S3BlobStorageOptions): BlobStorage 
       return { items, next: res.IsTruncated === true && last !== undefined ? last.slice(prefix.length) : null };
     },
   };
+}
+
+/** Creates the bucket when it does not exist (dev and tests; the server never calls it: a deployment's bucket is the operator's to create). */
+export async function ensureBucket(client: S3Client, bucket: string): Promise<void> {
+  try {
+    await client.send(new CreateBucketCommand({ Bucket: bucket }));
+  } catch (err) {
+    const name = (err as { name?: string }).name;
+    if (name !== 'BucketAlreadyOwnedByYou' && name !== 'BucketAlreadyExists') throw err;
+  }
 }
