@@ -176,3 +176,21 @@ describe('L3: the writer refuses guarded paths for a bot whatever the capability
     expect(ok.noop).toBe(false);
   });
 });
+
+describe('L6: creating a repository without the right to post is a refusal, not a 500', () => {
+  it('maps the insufficient_privilege of repo_register to 403', async () => {
+    const svc = w.replica();
+    const team = '00000000-0000-7000-8000-00000000f006';
+    const tx = {
+      actor: { id: sameera.actorId, kind: 'person', workspaceId: sameera.workspaceId },
+      query: (text: string) => {
+        if (text.includes('FROM app.teams')) return Promise.resolve({ rows: [{ id: team, slug: 'x', name: 'X', archived_at: null }] });
+        if (text.includes('FROM app.repos')) return Promise.resolve({ rows: [] });
+        if (text.includes('repo_register')) return Promise.reject(Object.assign(new Error('you may not open the repository of this team'), { code: '42501' }));
+        return Promise.resolve({ rows: [] });
+      },
+    };
+    const err = await svc.ensure(tx as never, team).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 403, code: 'forbidden' });
+  });
+});

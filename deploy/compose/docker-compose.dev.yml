@@ -48,8 +48,9 @@ services:
       MINIO_ROOT_USER: manythreads
       MINIO_ROOT_PASSWORD: manythreads-secret
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # loopback only: a fixed root password must not be reachable from the network the dev machine is on
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - manythreads_minio:/data
     healthcheck:

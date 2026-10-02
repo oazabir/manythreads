@@ -286,7 +286,13 @@ export function createRepoService(deps: RepoServiceDeps) {
   /** Creates what is missing (the bare repo, the `repos` row, the first commit) and catches the index up. Caller holds the team lock. */
   async function ensureLocked(tx: PluginTx, t: TeamInfo): Promise<{ gitDir: string; head: string }> {
     const gitDir = gitDirFor(t.id);
-    const row = (await tx.query<{ head_sha: string | null }>('SELECT head_sha FROM app.repo_register($1, $2)', [t.id, `${t.id}.git`])).rows[0];
+    const row = (
+      await tx.query<{ head_sha: string | null }>('SELECT head_sha FROM app.repo_register($1, $2)', [t.id, `${t.id}.git`]).catch((err: unknown) => {
+        // Creating the repository needs `post` on the team; whoever lacks it is refused, not a 500 (L6 of the Phase 4 review).
+        if ((err as { code?: string }).code === '42501') throw repoForbidden('You cannot open the repository of this team');
+        throw err;
+      })
+    ).rows[0];
     if (!existsSync(join(gitDir, 'HEAD'))) {
       await mkdir(repoDir, { recursive: true });
       await git.initBare(gitDir);
