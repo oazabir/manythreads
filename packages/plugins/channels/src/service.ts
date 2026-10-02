@@ -2,6 +2,7 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   ChannelMessage,
   type ChannelCreatedPush,
+  type FileSummary,
   type MessageDeletedPush,
   type MessagePostedPush,
   type ReactionChangedPush,
@@ -84,6 +85,32 @@ export async function reactionsFor(tx: PluginTx, messageIds: readonly string[]):
   return out;
 }
 
+/**
+ * The files attached to messages (`meta.attachments`) as cards, in the order the sender listed them, for what the caller may read: a file in
+ * a channel they cannot see, or one that was deleted, is left out. Touches `app.files` (the files plugin) only when a message has attachments.
+ */
+export async function attachmentsFor(
+  tx: PluginTx,
+  messages: readonly { id: string; meta: Record<string, unknown> }[],
+): Promise<Map<string, FileSummary[]>> {
+  const out = new Map<string, FileSummary[]>();
+  const wanted = new Map<string, string[]>();
+  for (const m of messages) {
+    const ids = m.meta['attachments'];
+    if (Array.isArray(ids) && ids.length > 0) wanted.set(m.id, ids.filter((x): x is string => typeof x === 'string'));
+  }
+  if (wanted.size === 0) return out;
+  const res = await tx.query<{ id: string; name: string; size: string; mime: string }>(
+    'SELECT f.id, f.name, f.size, f.mime FROM app.files f WHERE f.id = ANY ($1::uuid[])',
+    [[...new Set([...wanted.values()].flat())]],
+  );
+  const byId = new Map(res.rows.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
+  for (const [messageId, ids] of wanted) {
+    out.set(messageId, ids.flatMap((id) => byId.get(id) ?? []));
+  }
+  return out;
+}
+
 /** One message of a channel with its reactions and thread counters; undefined when it is not there for this caller. */
 export async function findChannelMessage(tx: PluginTx, channelId: string, messageId: string): Promise<ChannelMessage | undefined> {
   const res = await tx.query<MessageWithThreadRow>(
@@ -95,7 +122,8 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   const row = res.rows[0];
   if (!row) return undefined;
   const reactions = await reactionsFor(tx, [row.id]);
-  return toChannelMessage(row, reactions.get(row.id) ?? []);
+  const attachments = await attachmentsFor(tx, [row]);
+  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? []);
 }
 
 /** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. */

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { Message, Emoji } from '../../entities/message.ts';
 import { IsoDateTime } from '../../common/time.ts';
+import { FileSummary } from '../../entities/file.ts';
 
 /** A channel name as a client may write it: with or without the leading `#` (the server stores it without). */
 export const ChannelNameInput = z.string().regex(/^#?[a-z0-9][a-z0-9-]{0,62}$/, 'channel name like "dev" or "#dev"');
@@ -20,5 +21,7 @@ export const ChannelMessage = Message.extend({
   reactions: z.array(ReactionSummary),
   replyCount: z.number().int().nonnegative(),
   lastReplyAt: IsoDateTime.nullable(),
+  /** `meta.attachments` resolved for the caller (a file they cannot read is left out). Always sent; optional here so older fixtures still parse. */
+  attachments: z.array(FileSummary).optional(),
 });
 export type ChannelMessage = z.infer<typeof ChannelMessage>;

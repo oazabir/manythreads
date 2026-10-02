@@ -110,6 +110,11 @@ export interface HttpRequest {
   ip: string;
   /** The authenticated caller, or null on a public route reached anonymously. */
   caller: HttpCaller | null;
+  /**
+   * The request body as an unparsed byte stream. Only on a route declared with `rawBody` (uploads); `body` is then undefined. It is the
+   * socket itself: read it once, and stop reading to refuse (the server still answers). Any content type is accepted on such a route.
+   */
+  stream?: AsyncIterable<Uint8Array>;
 }
 export interface HttpResponse {
   status?: number;
@@ -161,6 +166,11 @@ export interface HttpRouteDefinition {
    * routes that must work with a stale or missing token (none of the built-in ones need it).
    */
   csrfExempt?: boolean;
+  /**
+   * The body is not parsed: the handler reads `request.stream` (uploads of any content type). No `schema.body` on such a route. A
+   * `body` that is a Node `Readable` in the response is piped to the client unserialised (downloads; give no `schema.response`).
+   */
+  rawBody?: boolean;
   handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 
@@ -192,7 +202,14 @@ export interface PluginContext {
     prePersist(hook: Hook): void;
     preEgress(hook: Hook): void;
   };
-  readonly providers: { register(kind: ProviderKind, impl: ProviderImpl): void };
+  readonly providers: {
+    register(kind: ProviderKind, impl: ProviderImpl): void;
+    /**
+     * The implementation another plugin registered for `kind` (the first one, in load order), or undefined. Look it up when a request
+     * arrives, not in `register`: the provider's plugin may load after yours. Needs no `extends` entry (using a provider is not providing one).
+     */
+    get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind): T | undefined;
+  };
   readonly commands: { register(definition: CommandDefinition): void };
   readonly triggers: { register(definition: TriggerDefinition): void };
   readonly components: { register(definition: ComponentDefinition): void };

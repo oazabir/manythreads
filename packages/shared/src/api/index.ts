@@ -6,5 +6,7 @@ export * from './workspace/index.ts';
 export * from './read-state/index.ts';
 export * from './links/index.ts';
 export * from './channels/index.ts';
+export * from './files/index.ts';
+export * from './search/index.ts';
 export * from './threads/index.ts';
 export * from './dm/index.ts';

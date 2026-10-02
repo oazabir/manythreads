@@ -16,6 +16,8 @@ import type {
   PluginRealtime,
   PluginRuntime,
   PluginTx,
+  ProviderImpl,
+  ProviderKind,
   ScopedKv,
   SecretService,
   StorageScope,
@@ -127,6 +129,9 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       register(kind, impl) {
         use(`provider.${kind}`);
         registries.providers[kind].add(name, impl);
+      },
+      get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind): T | undefined {
+        return registries.providers[kind].values()[0] as T | undefined;
       },
     },
     commands: {

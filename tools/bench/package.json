@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p .",
     "bench:server": "tsx src/server.ts",
     "bench:rls": "tsx src/rls.ts",
-    "bench:list": "tsx src/list.ts"
+    "bench:list": "tsx src/list.ts",
+    "bench:search": "tsx src/search.ts"
   },
   "dependencies": {
     "pg": "^8",
@@ -18,7 +19,9 @@
     "@manythreads/shared": "workspace:*",
     "@manythreads/test-utils": "workspace:*",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "@manythreads/plugin-search": "workspace:*",
+    "@manythreads/sdk": "workspace:*"
   },
   "devDependencies": {
     "@types/pg": "^8",

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, ChannelId, MessageId, WorkspaceId } from '../ids.ts';
+import { ActorId, ChannelId, FileId, MessageId, WorkspaceId } from '../ids.ts';
+import { MAX_ATTACHMENTS_PER_MESSAGE } from './file.ts';
 
 export const Message = z.object({
   id: MessageId,
@@ -12,7 +13,12 @@ export const Message = z.object({
   threadRootId: MessageId.nullable(),
   editedAt: IsoDateTime.nullable(),
   deletedAt: IsoDateTime.nullable(),
-  meta: z.object({ answerRef: z.string().optional(), surfaceRef: z.string().optional() }),
+  meta: z.object({
+    answerRef: z.string().optional(),
+    surfaceRef: z.string().optional(),
+    /** Files attached to the message, in the order the sender listed them (rows of `files` in the same channel, uploaded by the author). */
+    attachments: z.array(FileId).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),
+  }),
   createdAt: IsoDateTime,
 });
 export type Message = z.infer<typeof Message>;

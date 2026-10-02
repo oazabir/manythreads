@@ -39,4 +39,6 @@ export * from './channel.channel.updated.ts';
 export * from './channel.channel.archived.ts';
 export * from './channel.member.added.ts';
 export * from './channel.member.removed.ts';
+export * from './files.file.uploaded.ts';
+export * from './files.file.deleted.ts';
 export * from './channel.mention.created.ts';

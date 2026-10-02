@@ -8,6 +8,7 @@ import {
   Reaction,
   Thread,
   ThreadFollow,
+  type FileSummary,
   type ReactionSummary,
 } from '@manythreads/shared';
 import { DELETED_BODY } from './plain.ts';
@@ -108,10 +109,15 @@ const messageFields = (r: MessageRow) => ({
 export const toMessage = (r: MessageRow): Message => Message.parse(messageFields(r));
 
 export type MessageWithThreadRow = MessageRow & { reply_count: number | null; last_reply_at: Date | null };
-export const toChannelMessage = (r: MessageWithThreadRow, reactions: readonly ReactionSummary[]): ChannelMessage =>
+export const toChannelMessage = (
+  r: MessageWithThreadRow,
+  reactions: readonly ReactionSummary[],
+  attachments: readonly FileSummary[] = [],
+): ChannelMessage =>
   ChannelMessage.parse({
     ...messageFields(r),
     reactions,
+    attachments,
     replyCount: r.reply_count ?? 0,
     lastReplyAt: iso(r.last_reply_at),
   });

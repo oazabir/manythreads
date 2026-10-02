@@ -27,6 +27,18 @@ export const channelsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/channels/migrations/', import.meta.url)),
 };
 
+/** Migrations of the files plugin (`files`); pass it in `sources` after `channelsMigrationSource`. */
+export const filesMigrationSource: MigrationSource = {
+  namespace: 'files',
+  dir: fileURLToPath(new URL('../../plugins/files/migrations/', import.meta.url)),
+};
+
+/** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
+export const searchMigrationSource: MigrationSource = {
+  namespace: 'search',
+  dir: fileURLToPath(new URL('../../plugins/search/migrations/', import.meta.url)),
+};
+
 /** Migrations of the direct-messages plugin (`app.dms_get_or_create`); pass it in `sources` after `channelsMigrationSource`. */
 export const directMessagesMigrationSource: MigrationSource = {
   namespace: 'direct-messages',

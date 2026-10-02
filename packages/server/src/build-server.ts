@@ -8,6 +8,7 @@ import {
   createWsHub,
   withActor,
   type Actor,
+  type MountedRoute,
   type PluginHost,
   type RateLimiter,
   type Realtime,
@@ -21,6 +22,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { HttpError, type HttpRequest } from '@manythreads/sdk';
+import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
@@ -245,7 +247,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   if (options.testAuthToken && sessions && options.systemPool) {
     mountTestAuth(app, { token: options.testAuthToken, sessions, pool: options.systemPool });
   }
-  mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
+  await mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
   await options.routes?.(app);
   return app;
 }
@@ -259,20 +261,23 @@ function sameHost(origin: string, host: string): boolean {
   }
 }
 
-function mountPluginRoutes(
+/** A response body a handler hands over as bytes (a Node Readable from a blob store): sent as is, never serialised. */
+const isByteStream = (body: unknown): body is Readable => body instanceof Readable;
+
+async function mountPluginRoutes(
   app: FastifyInstance,
   host: PluginHost | undefined,
   poolOpt: { pool?: pg.Pool },
   systemPool: pg.Pool | undefined,
   sessions: SessionService | undefined,
-): void {
+): Promise<void> {
   if (!host) return;
-  for (const { plugin, value: def } of host.registries.httpRoutes.list()) {
+  const mount = (target: FastifyInstance, plugin: string, def: MountedRoute): void => {
     const schema: Record<string, unknown> = {};
     if (def.schema?.body) schema['body'] = def.schema.body;
     if (def.schema?.query) schema['querystring'] = def.schema.query;
     if (def.schema?.response) schema['response'] = { 200: def.schema.response };
-    app.route({
+    target.route({
       method: def.method,
       url: def.fullPath,
       schema: schema as never,
@@ -288,7 +293,8 @@ function mountPluginRoutes(
         const request: HttpRequest = {
           params: req.params as Record<string, string>,
           query: req.query as Record<string, string | undefined>,
-          body: req.body,
+          body: def.rawBody ? undefined : req.body,
+          ...(def.rawBody ? { stream: req.raw } : {}),
           headers: Object.fromEntries(
             Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v]),
           ),
@@ -316,8 +322,23 @@ function mountPluginRoutes(
           if (res.setSession) setSessionCookies(reply, res.setSession, sessions.config);
           else if (res.clearSession) clearSessionCookies(reply, sessions.config);
         }
+        if (isByteStream(res.body)) return reply.status(res.status ?? 200).send(res.body);
         return reply.status(res.status ?? 200).send(res.body ?? null);
       },
+    });
+  };
+  const routes = host.registries.httpRoutes.list();
+  for (const { plugin, value } of routes) if (!value.rawBody) mount(app, plugin, value);
+  const raw = routes.filter((r) => r.value.rawBody);
+  if (raw.length > 0) {
+    // Routes with `rawBody` live in their own encapsulated context so the catch-all body parser (the socket itself, unparsed, any
+    // content type) cannot change how every other route treats an unknown content type. Hooks of the root are inherited.
+    await app.register((scope, _opts, done) => {
+      // Drop the built-in JSON and text parsers too: they would consume the upload before the handler sees it.
+      scope.removeAllContentTypeParsers();
+      scope.addContentTypeParser('*', (_req, payload, parsed) => parsed(null, payload));
+      for (const { plugin, value } of raw) mount(scope, plugin, value);
+      done();
     });
   }
 }
