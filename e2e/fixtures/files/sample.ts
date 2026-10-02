@@ -1,14 +1,16 @@
-import { z } from 'zod';
-
 /** A release checklist item. */
-export const Item = z.object({
-  id: z.string(),
-  title: z.string().min(1),
-  done: z.boolean().default(false),
-});
-export type Item = z.infer<typeof Item>;
+export interface Item {
+  id: string;
+  title: string;
+  done: boolean;
+}
 
 export function remaining(items: readonly Item[]): number {
   // count the ones still open
   return items.filter((i) => !i.done).length;
 }
+
+export const defaults: Item[] = [
+  { id: 'tag', title: 'Tag the release', done: false },
+  { id: 'notes', title: 'Update the changelog', done: true },
+];

@@ -23,7 +23,7 @@ const PLATE: PlateSpec = {
     content: '.main .stream, .main .composer',
     'right-panel': '.rp',
   },
-  // times and day labels, the avatars, the prototype's bot lanes (no bots before phase 5) and the sidebar's channel groups and bots
+  // times and day labels, the avatars, the prototype's bot lanes (no bots before phase 5), the reply counters (they carry the time of the last reply) and the sidebar's channel groups and bots
   // (workspace data of the seed; the prototype lists channels of another workspace and six bots)
   masks: ['.av', 'time', '.nav .pill', '.daysep', '.lane', '.nav > .grp', '.nav > .grp ~ *', '.rph .sub'],
 };
@@ -62,7 +62,7 @@ test('the channel with a thread matches plate 1 (P)', async ({ browser }, testIn
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 700,
-      liveMasks: ['.av', '.rail .hint', '.jump', '.panel-sub', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec'],
+      liveMasks: ['.av', '.replies', '.rail .hint', '.jump', '.panel-sub', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec'],
       order: ['team-switch', 'search', 'sidebar', 'header', 'content', 'right-panel'],
       exact: ['team-switch', 'search', 'sidebar', 'header', 'content', 'right-panel'],
     });

@@ -174,3 +174,35 @@ test('Markdown: untouched text keeps its bytes, and Raw round-trips exactly', as
   await expect(raw).toHaveValue(original);
   await expect(md.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
 });
+
+/** `MANYTHREADS_SCREENS_DIR=docs/retro/screens/phase-4 pnpm e2e --project=desktop files/viewers.spec.ts -g screenshots` writes one picture per viewer. */
+test('screenshots of each viewer (only when MANYTHREADS_SCREENS_DIR is set)', async ({ page }) => {
+  const dir = process.env['MANYTHREADS_SCREENS_DIR'];
+  test.skip(!dir, 'set MANYTHREADS_SCREENS_DIR to write the pictures');
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await page.goto('/dev/viewers');
+  const ready = async (id: string) => {
+    const t = tile(page, id);
+    if (id === 'pdf' || id === 'office-pdf') await expect(t.getByTestId('pdf-canvas')).toHaveAttribute('data-rendered', '1');
+    else if (id.startsWith('mermaid')) await expect(t.getByTestId('viewer-mermaid')).not.toHaveAttribute('data-state', 'loading', { timeout: 30_000 });
+    else if (id === 'app') await page.frames().find((f) => f.url().includes('/repo/app/'))?.waitForSelector('html[data-probed="1"]');
+    else if (id === 'image') await expect.poll(() => t.locator('img').evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBeGreaterThan(0);
+    else await expect(t.locator('[data-testid^="viewer-"]').first()).toBeVisible();
+  };
+  const ids = await page.locator('[data-testid^="dev-viewer-"]').evaluateAll((els) => els.map((e) => (e.getAttribute('data-testid') ?? '').slice('dev-viewer-'.length)));
+  for (const id of ids) {
+    await ready(id);
+    await tile(page, id).scrollIntoViewIfNeeded();
+    await tile(page, id).screenshot({ path: `${dir}/viewer-${id}.png` });
+  }
+  // a page edited with the slash menu open (the menu hangs below the tile: take the picture of the page around it)
+  const md = tile(page, 'markdown');
+  await md.locator('.md-prose p').last().click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/');
+  await expect(page.getByTestId('slash-menu')).toBeVisible();
+  const box = await md.boundingBox();
+  if (box) await page.screenshot({ path: `${dir}/viewer-markdown-slash-menu.png`, fullPage: true, clip: { x: box.x, y: box.y, width: box.width, height: box.height + 260 } });
+});

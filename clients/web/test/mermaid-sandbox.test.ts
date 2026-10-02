@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MERMAID_CHANNEL, SANDBOX_CSP, buildSandboxDoc, escapeForScript, parseSandboxMessage, reduceMermaid, type MermaidState } from '../src/viewers/mermaid/sandbox';
+import { MERMAID_CHANNEL, SANDBOX_CSP, buildSandboxDoc, parseSandboxMessage, reduceMermaid, type MermaidState } from '../src/viewers/mermaid/sandbox';
 
 const msg = (m: Record<string, unknown>) => parseSandboxMessage({ channel: MERMAID_CHANNEL, ...m });
 
