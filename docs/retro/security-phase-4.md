@@ -7,6 +7,7 @@ Summary: 1 critical, 0 high, 4 medium, 6 low. The git runner, the guarded-path w
 ## Critical
 
 ### C1. The embedded-app CSP and sandbox are bypassed by a percent-encoded path, so a team member gets same-origin script execution (stored XSS) in any viewer's session (verified)
+- **Fixed in b2ad2c3 (the app handler sets the headers itself; hooks key on the matched route; non-canonical spellings are 404; CSP gains form-action and base-uri).**
 - `packages/server/src/build-server.ts:189` (`onSend`: `REPO_APP_PATH_RE.test(req.url)`), `packages/shared/src/surfaces/viewer.ts:165` (the regex), `packages/plugins/repo-git/src/app-routes.ts` (the handler returns `text/html` and sets no CSP of its own).
 - The server adds `Content-Security-Policy: ...; sandbox allow-scripts` by testing the RAW `req.url` against `^/api/teams/[^/]+/repo/app/`. find-my-way decodes the path before routing, so `/api/teams/engineering/repo/%61pp/apps/evil/index.html` (or `ap%70`) reaches the same handler but does not match the regex. Probe results through the real server: the canonical URL answers `200 text/html` with the CSP; the `%61pp` URL answers `200 text/html; charset=utf-8` with NO `content-security-policy` and no `content-disposition`.
 - Exploit: Mallory (any team member who may post; no lead role needed) commits `apps/evil/index.html` containing `<script>` through `POST /repo/commit`. She sends the victim (for example the workspace admin) the link `/api/teams/<slug>/repo/%61pp/apps/evil/index.html`. The session cookie is SameSite=Lax, so it is sent on that top-level navigation. The page runs on the application origin with no sandbox and no CSP. The CSRF cookie is not HttpOnly (`session/cookies.ts:14`), so the script reads it and calls any `/api/*` endpoint as the victim: post messages, change roles, read every channel the victim reads, mint credentials. This is full account takeover of any user, admin included, with one click.
@@ -15,43 +16,53 @@ Summary: 1 critical, 0 high, 4 medium, 6 low. The git runner, the guarded-path w
 ## Medium
 
 ### M1. A commit message can forge co-author trailers, and a malformed one makes the team's History endpoint fail for everyone (verified)
+- **Fixed in 671b208 and 42d4907 (trailers only from the validated argument; user trailer lines quoted; final block only; full ActorId validation; History reads co-authors from the index).**
 - `packages/plugins/repo-git/src/git/ops.ts:116-146` (`TRAILER`, `parseCoAuthors` run over the whole message), `packages/plugins/repo-git/src/repo.ts:599` (history) and `:224` (reindex). The message is user text (`CommitRepoRequest.message`, 4000 chars, newlines allowed). The writer sanitises the trailers it appends but then reads trailers back out of the whole message.
 - Exploit 1 (attribution forgery): message `x\n\nCo-authored-by: Omar <OMAR-UUID@actors.manythreads.invalid>` makes `GET /repo/history` report Omar's id in `coAuthorIds` (verified). Anyone can attribute their commits to any actor.
 - Exploit 2 (poisoned history): a trailer with a shape-valid but non-UUID id (for example `11111111-1111-1111-1111-111111111111`, which `ActorId` rejects) makes `GetRepoHistoryResponse.parse` fail, so `GET /repo/history` answers 400 for every page that contains the commit, for every member (verified). Pages are cursor-based, so the poisoned page cannot be skipped, and commits cannot be removed. The same input in `reindex` (`co_authors` cast to `uuid[]`, for example `-` repeated 36 times, which passes the `[0-9a-f-]{36}` regex) raises 22P02 in `repo_index_apply`, which would wedge every write of the team whenever git is ahead of the index.
 - Fix: take co-authors from the index (`repo_commits.co_authors`, written from the validated list) instead of parsing the message; for the reindex path parse only the final trailer block and require a full UUID; neutralise `Co-authored-by:` lines in user messages (indent them); never let a response-schema failure on stored data turn into a 400.
 
 ### M2. No quota on repo growth, no repack, and cheap amplification (any member or bot with `files.write`)
+- **Fixed in 42d4907 (413 `repo_quota_exceeded` by bytes and files, listing capped at 5,000 names, weekly `repo-git.gc` job).**
 - `packages/plugins/repo-git/src/repo.ts` (`write`: 1 MB per file, 200 files per commit, no per-team or per-actor size cap), `routes.ts` (`rateLimit` 120/min on commit), `git/exec.ts` (`gc.auto=0`, `maintenance.auto=false`), `deploy/helm/manythreads/values.yaml` (`repos` PVC 2Gi). Each commit writes loose objects that are never packed, plus up to 1 MB of `text_plain` into Postgres with two trigram GIN indexes per file.
 - Exploit: one member loops the commit route with changing 1 MB bodies at 120 per minute and fills the 2Gi claim in minutes; repo-git then fails for every team on the node (and Postgres bloats). A member can also create tens of thousands of files so every Files tree request at the root scans and groups the whole index (`list`, `repo.ts:546`: no pagination, `limit` is applied after the query).
 - Fix: per-team byte and file-count quotas enforced in `write` (reject with 413), a lower per-actor rate on large writes, a scheduled `git gc` or repack per team under the team lock, `LIMIT` and a prefix-bounded plan in `list`, and an alert on PVC use.
 
 ### M3. Read routes spawn git with no per-actor limit, a global pool of 8 and an unbounded queue
+- **Fixed in 42d4907 (per-actor limits on every read route, git queue bounded at 64 with 503, per-repository share of the pool).**
 - `packages/plugins/repo-git/src/routes.ts` (tree, blob, content, history, diff have no `rateLimit`), `git/exec.ts` (`poolSize` 8, `waiting` unbounded, 20 s timeout, 8 MB output). History and diff accept pathspecs (see L1), so `path=*` over a large history is an expensive scan.
 - Exploit: a member issues a few dozen concurrent history or diff calls on a large repo; the 8 slots stay busy and every other team's reads and writes queue behind them.
 - Fix: a rate limit on the read routes, a bounded wait queue (reject with 503 past N), a per-team or per-actor concurrency cap in the runner.
 
 ### M4. GC on by default can delete another deployment's blobs when a bucket or prefix is shared
+- **Fixed in 1942a57 (dry-run by default, instance marker in the database and the store, missing LastModified is now; a provider with no marker is never collected).**
 - `packages/plugins/files/src/gc.ts:128` (a blob is garbage when no local `files` row names it), `packages/plugins/storage-s3/src/s3-storage.ts` (`DEFAULT_PREFIX = 'blobs/'`), `values.yaml` (`blobGc.mode: "on"`). The empty-database guard only helps when the local database has no rows at all; a staging and a production deployment (or a restored database copy) that share a bucket and prefix each see the other's blobs as unreferenced and delete them after the 24 h grace.
 - Fix: write an instance marker (a random id stored in the database and as an object under the prefix) and refuse to delete when the marker in the store does not match; document that a bucket or prefix must belong to one database; consider defaulting to `dry-run` for the first run on a new store. Related hardening: `s3-storage.ts:214` treats a missing `LastModified` as epoch 0, which makes the blob immediately deletable, so use "now" instead.
 
 ## Low
 
 ### L1. Git pathspec magic in `path` (verified)
+- **Fixed in 42d4907 (`GIT_LITERAL_PATHSPECS=1`).**
 `packages/plugins/repo-git/src/git/ops.ts:214, 283, 318, 325, 350`: `--` protects against options but not against pathspecs, and `GIT_LITERAL_PATHSPECS` is not set. `history?path=pages/*` and `history?path=:(glob)pages/*.md` return commits for many files; `diff?path=:(glob)*` runs. No data outside the team is reachable (one repo per team, team-wide read), but results are wrong, `pathStatuses` compares names literally, and it feeds M3. Fix: add `GIT_LITERAL_PATHSPECS=1` to `buildEnv` (or `--literal-pathspecs`).
 
 ### L2. Binary detection only looks at the first 8 KB (verified)
+- **Fixed in 42d4907 (a NUL anywhere and invalid UTF-8 are refused).**
 `packages/plugins/repo-git/src/rules.ts:7`: 8192 bytes of `A` followed by NUL and 0xFF bytes passes `checkRepoContent` (`{"ok":true}`). Any format that tolerates leading text (some PDFs, GIF with a NUL-free header, polyglots) can be stored up to 1 MB and is then served inline with its extension's mime type (still under `sandbox` CSP on the content route, so no script runs). Also invalid UTF-8 is accepted. Fix: reject any NUL in the whole file (it is at most 1 MB) and, optionally, invalid UTF-8.
 
 ### L3. The writer trusts the broker for bots; guarded paths are not re-checked in the writer
+- **Fixed in 42d4907 (the writer refuses guarded paths for a bot after the broker answers).**
 `packages/plugins/repo-git/src/repo.ts:327,334`: for a bot the only guard is `deps.authorize(tx, options.capability ?? 'files.write', { path })`. `options.capability` is chosen by the calling plugin; a capability name that `isFilesMutation` does not know (anything not `files.*` or `pages.write`) skips the broker's path guard. No current caller does this, but phase 5 and 6 plugins will call `repo.write`. Fix: also refuse `isGuardedRepoPath` for any bot actor inside `authorizeWrite`, and make `capability` an allow-listed enum.
 
 ### L4. Embedded-app token appears in server logs
+- **Fixed in eddd841 (request serializer redacts `~mta.` segments, also in the schema-failure log).**
 `packages/server/src/main.ts:39` (`logger: true`) logs `req.url` of every request, including `/repo/app/~mta.<token>/...` (and `app token refused` lines). The token is a 5-minute bearer capability for one team folder (read only, as the person). Fix: a request serializer that redacts the `~mta.` segment. Also note: tokens are not bound to the session, so sign-out, session revocation or suspension does not end them before expiry (5 minutes at most).
 
 ### L5. Orphan marking can race with a new attachment
+- **Fixed in 550e2d3 (file row lock protocol: `files_lock_for_attach` in the post path, `FOR UPDATE` before the probe in `files_mark_orphaned`).**
 `packages/plugins/files/migrations/0002_message_files_gc.sql:61`: if the uploader deletes message M1 while a concurrent request posts M2 attaching the same file, the trigger's `NOT EXISTS` does not see the uncommitted M2, the file is stamped, hidden, and purged with its bytes after 30 days although M2 is live. Self-inflicted (only the uploader can attach the file) and narrow. Fix: re-check under a row lock (`SELECT ... FOR UPDATE` on the file in the post path) or let the GC purge re-verify "no live message lists it" before deleting. The definer functions themselves are fine: `files_mark_orphaned` and `files_after_message_deleted` are revoked from PUBLIC and the test asserts 42501 for the app role; attachments are validated at post time as the sender's own files of that channel, so a user cannot hide other people's files.
 
 ### L6. Smaller hardening notes
+- **Fixed in 53700ce (MinIO bound to 127.0.0.1; the read-only first-repo 500 could not be reproduced: every actor who can read a team can post, so `repo_register` never refuses a reader; its 42501 is now a 403 anyway. The NTFS/HFS folding and the `~mta.*` folder name notes are left as documented, as is the app self-navigation note).**
 - `repo_register` and `repo_seed` require `post` (`migrations/0001_repo.sql`) but `ensure()` claims "anyone who can read" may trigger creation: a read-only member opening a team whose repo does not exist yet gets a 500 instead of a repo. Availability only (not verified with a read-only persona).
 - Guard fold is NFKC plus lower case plus trailing dot or space. Characters that HFS+ or NTFS ignore (zero-width joiners, `bots::$DATA`, `BOTS~1`) are not folded; they only matter for a checkout on those file systems. Consider refusing `Default_Ignorable_Code_Point`, `:` and `~\d` in segments.
 - The restored or written root folder name `~mta.*` cannot be opened as an app (treated as a token). Functional only.
