@@ -40,6 +40,15 @@ export interface RepoWriteResult {
   paths: { path: string; op: 'put' | 'delete'; blobSha: string | null; size: number | null }[];
 }
 
+/**
+ * How a write is authorized for a bot. Default: the broker's `files.write` (`files.delete` for a delete) for every path. A plugin that offers the write under
+ * its own capability (`pages.write`) says so here: the bot then needs that grant instead of `files.write`. The broker's path guard applies either way, and a
+ * delete is always `files.delete`. Ignored for people (team role) and the system.
+ */
+export interface RepoWriteOptions {
+  capability?: 'files.write' | 'pages.write';
+}
+
 export interface RepoBlob {
   commitSha: string;
   sha: string;
@@ -52,6 +61,20 @@ export interface RepoTreeListing {
   entries: { name: string; path: string; type: 'blob' | 'tree'; sha: string; size: number | null }[];
 }
 
+/** One row of a folder listing, straight from the index: a file with its last change, or a folder with the newest change below it. */
+export interface RepoFolderEntry {
+  name: string;
+  path: string;
+  kind: 'file' | 'folder';
+  /** The blob of a file; null for a folder. */
+  blobSha: string | null;
+  size: number | null;
+  /** The commit time of the last change (a folder: the newest below it). */
+  updatedAt: string | null;
+  /** The actor of that commit; null for a system commit. */
+  updatedBy: string | null;
+}
+
 export interface RepoProvider extends ProviderImpl {
   /** Commit `changes` to the team's repo as `actor`, in `tx` (the index and the `repo.repo.committed` event are written in the same transaction). */
   write(
@@ -61,9 +84,12 @@ export interface RepoProvider extends ProviderImpl {
     changes: readonly RepoWriteChange[],
     message: string,
     coAuthors?: readonly RepoCommitIdentity[],
+    options?: RepoWriteOptions,
   ): Promise<RepoWriteResult>;
   /** Put `path` back as it was at commit `sha`, as a new commit; the old commits stay. */
-  restore(tx: PluginTx, teamId: string, actor: RepoWriteActor, path: string, sha: string, coAuthors?: readonly RepoCommitIdentity[]): Promise<RepoWriteResult>;
+  restore(tx: PluginTx, teamId: string, actor: RepoWriteActor, path: string, sha: string, coAuthors?: readonly RepoCommitIdentity[], message?: string): Promise<RepoWriteResult>;
+  /** The files and folders directly below `path` ('' is the root) from the index, with who changed them last and when. `.gitkeep` placeholders are not listed. */
+  list(tx: PluginTx, teamId: string, path: string): Promise<RepoFolderEntry[]>;
   /** One file at `ref` (`main`, `HEAD` or a commit sha). Rejects 404 when it does not exist, 413 over `maxBytes` (default 1 MB). */
   blob(tx: PluginTx, teamId: string, path: string, ref: string, maxBytes?: number): Promise<RepoBlob>;
   /** The folders and files directly below `path` ('' is the root) at `ref`. */

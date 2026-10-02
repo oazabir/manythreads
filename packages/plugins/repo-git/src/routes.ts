@@ -4,14 +4,27 @@ import {
   CommitRepoResponse,
   GetRepoBlobQuery,
   GetRepoBlobResponse,
+  GetRepoContentQuery,
+  GetRepoDiffQuery,
+  GetRepoDiffResponse,
+  GetRepoHistoryQuery,
+  GetRepoHistoryResponse,
   GetRepoTreeQuery,
   GetRepoTreeResponse,
   RepoConflictResponse,
   RepoPathParams,
+  RestoreRepoFileRequest,
+  RestoreRepoFileResponse,
   commitRepoRoute,
   getRepoBlobRoute,
+  getRepoContentRoute,
+  getRepoDiffRoute,
+  getRepoHistoryRoute,
   getRepoTreeRoute,
+  repoMimeOf,
+  restoreRepoFileRoute,
 } from '@manythreads/shared';
+import { parseUnifiedPatch } from './diff.ts';
 import { RepoError, repoForbidden, repoInvalid, repoNotFound } from './errors.ts';
 import type { RepoService, RepoWriteChange } from './repo.ts';
 import { textOf } from './rules.ts';
@@ -47,6 +60,12 @@ async function guarded(fn: () => Promise<HttpResponse>): Promise<HttpResponse> {
     throw err;
   }
 }
+
+// What a browser would run when it is opened directly: served as opaque bytes. SVG is the exception, served as an image (it runs nothing in an
+// `<img>`, and under `sandbox` a direct visit runs nothing either).
+const RUNNABLE_TYPES: ReadonlySet<string> = new Set(['text/html', 'text/xml', 'application/xhtml+xml', 'text/javascript', 'text/css']);
+const INLINE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml', 'application/pdf']);
+const asciiName = (name: string): string => name.replace(/[^\x20-\x7e]|["\\]/g, '_');
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
@@ -119,6 +138,90 @@ export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void 
         );
         const result = await repo.write(tx, teamId, { id: tx.actor.id, kind: tx.actor.kind }, changes, body.message);
         return { status: result.noop ? 200 : 201, body: CommitRepoResponse.parse(result) };
+      }),
+  });
+
+  ctx.http.route({
+    ...getRepoContentRoute,
+    schema: { query: GetRepoContentQuery },
+    handler: (req, tx) =>
+      guarded(async () => {
+        const { slug } = RepoPathParams.parse(req.params);
+        const q = GetRepoContentQuery.parse(req.query);
+        const teamId = await teamIdBySlug(tx, slug);
+        const blob = await repo.blob(tx, teamId, q.path, q.ref);
+        const mime = repoMimeOf(q.path);
+        const name = q.path.slice(q.path.lastIndexOf('/') + 1);
+        const inline = q.download !== '1' && (INLINE_TYPES.has(mime) || mime.startsWith('text/'));
+        return {
+          status: 200,
+          body: Buffer.from(blob.content),
+          headers: {
+            'content-type': RUNNABLE_TYPES.has(mime) ? 'application/octet-stream' : mime.startsWith('text/') ? `${mime}; charset=utf-8` : mime,
+            'content-length': String(blob.size),
+            'content-disposition': `${inline ? 'inline' : 'attachment'}; filename="${asciiName(name)}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+            'x-content-type-options': 'nosniff',
+            'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+            'cross-origin-resource-policy': 'same-origin',
+            // Access is decided again on every read.
+            'cache-control': 'private, no-cache',
+          },
+        };
+      }),
+  });
+
+  ctx.http.route({
+    ...getRepoHistoryRoute,
+    schema: { query: GetRepoHistoryQuery },
+    handler: (req, tx) =>
+      guarded(async () => {
+        const { slug } = RepoPathParams.parse(req.params);
+        const q = GetRepoHistoryQuery.parse(req.query);
+        const teamId = await teamIdBySlug(tx, slug);
+        const page = await repo.history(tx, teamId, { path: q.path, limit: q.limit, cursor: q.cursor });
+        return { body: GetRepoHistoryResponse.parse({ path: q.path, commits: page.commits, nextCursor: page.nextCursor }) };
+      }),
+  });
+
+  ctx.http.route({
+    ...getRepoDiffRoute,
+    schema: { query: GetRepoDiffQuery },
+    handler: (req, tx) =>
+      guarded(async () => {
+        const { slug } = RepoPathParams.parse(req.params);
+        const q = GetRepoDiffQuery.parse(req.query);
+        const teamId = await teamIdBySlug(tx, slug);
+        const d = await repo.diffFile(tx, teamId, { path: q.path, from: q.from, to: q.to });
+        const parsed = parseUnifiedPatch(d.patch);
+        const status = d.files.find((f) => f.path === q.path)?.status;
+        return {
+          body: GetRepoDiffResponse.parse({
+            path: q.path,
+            fromCommitSha: d.from,
+            toCommitSha: d.to,
+            status: status === 'A' ? 'added' : status === 'D' ? 'deleted' : status === undefined ? 'unchanged' : 'modified',
+            binary: parsed.binary,
+            additions: parsed.additions,
+            deletions: parsed.deletions,
+            hunks: parsed.hunks,
+            truncated: d.truncated,
+          }),
+        };
+      }),
+  });
+
+  // A restore is a write like any other: the writer's rules apply (a member cannot restore bots/ or TEAM.md; a bot goes through the broker).
+  ctx.http.route({
+    ...restoreRepoFileRoute,
+    schema: { body: RestoreRepoFileRequest },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    handler: (req, tx) =>
+      guarded(async () => {
+        const { slug } = RepoPathParams.parse(req.params);
+        const body = RestoreRepoFileRequest.parse(req.body);
+        const teamId = await teamIdBySlug(tx, slug);
+        const result = await repo.restore(tx, teamId, { id: tx.actor.id, kind: tx.actor.kind }, body.path, body.sha, [], body.message);
+        return { status: result.noop ? 200 : 201, body: RestoreRepoFileResponse.parse({ ...result, restoredFromSha: body.sha }) };
       }),
   });
 }

@@ -56,6 +56,8 @@ describe('queries and requests', () => {
     expect(RestoreRepoFileRequest.safeParse({ path: 'pages/a.md', sha: 'b'.repeat(40), extra: 1 }).success).toBe(false);
     expect(WritePageRequest.parse({ mode: 'create', path: 'pages/x.md', content: 'hi' }).mode).toBe('create');
     expect(WritePageRequest.safeParse({ mode: 'create', path: 'pages/x.md', content: 'hi', teamId: 'x' }).success).toBe(false);
+    // the schema lets a guarded path through so that the server can refuse it with 403 (and audit it)
+    expect(WritePageRequest.safeParse({ mode: 'create', path: 'bots/x/BOT.md', content: 'hi' }).success).toBe(true);
     expect(WritePageRequest.safeParse({ mode: 'merge', path: 'pages/x.md', content: 'hi' }).success).toBe(false);
   });
   it('a page lives under pages/', () => {

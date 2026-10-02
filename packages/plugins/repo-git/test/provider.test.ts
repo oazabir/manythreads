@@ -16,7 +16,7 @@ describe('the repo provider', () => {
     const host = await loadPlugins({ plugins: [{ definition: reader }, { definition: repoGit }] });
     const found = host.registries.providers.repo.values()[0] as RepoProvider | undefined;
     expect(found?.id).toBe('repo-git');
-    expect(Object.keys(found ?? {}).sort()).toEqual(['blob', 'id', 'restore', 'tree', 'write']);
+    expect(Object.keys(found ?? {}).sort()).toEqual(['blob', 'id', 'list', 'restore', 'tree', 'write']);
     expect(host.plugins.map((p) => p.manifest.name)).toContain('repo-git');
     expect(host.capabilities.get('files.write')).toMatchObject({ destructive: false, plugin: 'repo-git' });
     expect(host.capabilities.get('files.delete')).toMatchObject({ destructive: true, plugin: 'repo-git' });

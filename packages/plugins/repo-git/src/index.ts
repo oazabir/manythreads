@@ -46,8 +46,9 @@ export default definePlugin({
     // What other plugins (pages, bots, memory) call: `ctx.providers.get<RepoProvider>('repo')`.
     const provider: RepoProvider = {
       id: 'repo-git',
-      write: (tx, teamId, actor, changes, message, coAuthors) => repo.write(tx, teamId, actor, changes, message, coAuthors),
-      restore: (tx, teamId, actor, path, sha, coAuthors) => repo.restore(tx, teamId, actor, path, sha, coAuthors),
+      write: (tx, teamId, actor, changes, message, coAuthors, options) => repo.write(tx, teamId, actor, changes, message, coAuthors, options),
+      restore: (tx, teamId, actor, path, sha, coAuthors, message) => repo.restore(tx, teamId, actor, path, sha, coAuthors, message),
+      list: (tx, teamId, path) => repo.list(tx, teamId, path),
       blob: (tx, teamId, path, ref, maxBytes) => repo.blob(tx, teamId, path, ref, maxBytes),
       tree: (tx, teamId, path, ref) => repo.tree(tx, teamId, path, ref),
     };

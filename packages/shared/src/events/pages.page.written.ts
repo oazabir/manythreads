@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ActorId, TeamId, WorkspaceId } from '../ids.ts';
 
 /**
- * A page (a text file under `pages/` of a team repo) was written through `pages.write`: created, replaced or appended to, by a person or a bot. One event
+ * A page (a text file under `pages/` of a team repo) was written through `pages.write`: created, replaced or appended to, by a person, a bot or the system. One event
  * per write that changed the page, in the transaction of its commit, next to `repo.repo.committed` (which carries the same commit as a path list). Carries
  * ids, the path and sizes, never the content. `actorKind` says whether a person or a bot wrote it.
  */
@@ -17,6 +17,6 @@ export const PagesPageWrittenEvent = z.object({
   blobSha: z.string().regex(/^[0-9a-f]{40}$/),
   size: z.number().int().nonnegative(),
   authorId: ActorId,
-  actorKind: z.enum(['person', 'bot']),
+  actorKind: z.enum(['person', 'bot', 'system']),
 });
 export type PagesPageWrittenEvent = z.infer<typeof PagesPageWrittenEvent>;

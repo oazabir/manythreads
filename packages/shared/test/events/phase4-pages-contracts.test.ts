@@ -40,7 +40,7 @@ describe('pages.page.written', () => {
     ['sha', { sha: 'main' }],
     ['blobSha', { blobSha: null }],
     ['authorId', { authorId: null }],
-    ['actorKind', { actorKind: 'system' }],
+    ['actorKind', { actorKind: 'robot' }],
     ['path', { path: '' }],
     ['size', { size: -1 }],
     ['teamId', { teamId: 'engineering' }],

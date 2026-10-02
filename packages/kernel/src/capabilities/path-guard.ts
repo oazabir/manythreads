@@ -7,8 +7,12 @@ import { isGuardedRepoPath } from '@manythreads/shared';
 /** `files.*` verbs that only read. Everything else under `files.` is treated as a write (fail closed). */
 const READ_ONLY_FILE_VERBS: ReadonlySet<string> = new Set(['read', 'list', 'search', 'get', 'stat', 'diff', 'history']);
 
-/** True for `files.write`, `files.delete`, `files.move`, ... and any unknown `files.*` verb. */
+/** Capabilities outside `files.*` that write a repo path (`pages.write` is a file write that is only ever offered under `pages/`): guarded like `files.write`. */
+const PATH_WRITE_CAPABILITIES: ReadonlySet<string> = new Set(['pages.write']);
+
+/** True for `files.write`, `files.delete`, `files.move`, ... any unknown `files.*` verb, and `pages.write`. */
 export function isFilesMutation(capability: string): boolean {
+  if (PATH_WRITE_CAPABILITIES.has(capability)) return true;
   if (!capability.startsWith('files.')) return false;
   return !READ_ONLY_FILE_VERBS.has(capability.slice('files.'.length));
 }

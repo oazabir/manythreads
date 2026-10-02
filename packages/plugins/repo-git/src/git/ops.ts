@@ -329,6 +329,28 @@ export function createGitLayer(options: GitLayerOptions = {}) {
     return { ...info, files: parseNameStatus(names.stdout), patch: patch.stdout.toString('utf8'), truncated: patch.truncated };
   }
 
+  /**
+   * What each commit in `shas` did to `path` when it names exactly that one file: sha to `A`, `M` or `D`. A commit that touched other paths below it (a
+   * folder) is left out. One process for the whole page of history.
+   */
+  async function pathStatuses(gitDir: string, shas: readonly string[], path: string): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (shas.length === 0) return out;
+    assertGitPath(path);
+    for (const s of shas) assertSha(s, 'commit');
+    const res = await run(gitDir, ['log', '--no-walk=unsorted', '--format=%x01%H', '--name-status', '--no-renames', '--end-of-options', ...shas, '--', path]);
+    for (const block of res.stdout.toString('utf8').split('\x01')) {
+      if (block === '') continue;
+      const lines = block.split('\n').filter((l) => l !== '');
+      const sha = lines[0];
+      const rest = lines.slice(1);
+      if (sha === undefined || rest.length !== 1) continue;
+      const [status, name] = rest[0]!.split('\t');
+      if (name === path && status !== undefined && /^[AMD]$/.test(status)) out.set(sha, status);
+    }
+    return out;
+  }
+
   /** Paths a commit changed (for the history index). */
   async function commitPaths(gitDir: string, sha: string): Promise<string[]> {
     assertSha(sha, 'commit');
@@ -422,7 +444,7 @@ export function createGitLayer(options: GitLayerOptions = {}) {
     return { path, op: 'put', content: await readBlob(gitDir, entry.sha, maxBytes) };
   }
 
-  return { runner, initBare, resolve, tree, statPaths, blob, readBlob, readBlobs, listFiles, log, commitInfo, diff, show, commitPaths, commitsBetween, commit, restoreChange };
+  return { runner, initBare, resolve, tree, statPaths, blob, readBlob, readBlobs, listFiles, log, commitInfo, diff, show, pathStatuses, commitPaths, commitsBetween, commit, restoreChange };
 }
 
 export type GitLayer = ReturnType<typeof createGitLayer>;

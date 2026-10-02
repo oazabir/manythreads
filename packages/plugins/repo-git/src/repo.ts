@@ -7,15 +7,19 @@ import type {
   CapabilityDecision,
   PluginTx,
   RepoCommitIdentity,
+  RepoFolderEntry,
   RepoWriteActor,
+  RepoWriteOptions,
   RepoWriteChange,
   RepoWriteResult,
 } from '@manythreads/sdk';
 import {
+  FILES_CHANNELS_DIR,
   MAX_REPO_CHANGES_PER_COMMIT,
   MAX_REPO_MESSAGE_LENGTH,
   REPO_BRANCH,
   REPO_MAX_FILE_BYTES,
+  REPO_PLACEHOLDER,
   isGuardedRepoPath,
   parseRepoPath,
   type RepoConflict,
@@ -46,6 +50,8 @@ import { REPO_COLUMNS, REPO_COMMIT_COLUMNS, REPO_ENTRY_COLUMNS, toRepo, toRepoCo
 // another replica) waits at the lock until the first one's index rows are committed, then reads the head it left. The queue only orders the
 // writers of one process and stops them from starting git processes they would have to wait for anyway.
 
+/** The tree git knows without an object: what a file is compared with when it did not exist yet. */
+const EMPTY_TREE = '4b825dc642cb6eb9a416c4ca7ae7f5fe1c2d8fbc';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** The e-mail of every identity the writer puts in a commit: the actor id, so a commit maps back to the actor. */
 export const ACTOR_EMAIL_DOMAIN = 'actors.manythreads.invalid';
@@ -55,7 +61,7 @@ const actorIdOfEmail = (email: string): string | null => ACTOR_EMAIL.exec(email)
 
 export type RepoActor = RepoWriteActor;
 export type CommitIdentity = RepoCommitIdentity;
-export type { RepoWriteChange, RepoWriteResult };
+export type { RepoWriteChange, RepoWriteResult, RepoWriteOptions, RepoFolderEntry };
 
 export interface RepoServiceDeps {
   /** `MANYTHREADS_REPO_DIR`, absolute. */
@@ -294,6 +300,10 @@ export function createRepoService(deps: RepoServiceDeps) {
     for (const c of changes) {
       const parsed = parseRepoPath(c.path);
       if (!parsed.ok) throw repoInvalid(`path "${c.path}": ${parsed.reason}`);
+      // `channels/<name>/` of the Files tree is where channel attachments appear: a repo file there would be hidden by (or hide) them.
+      if (parsed.path.split('/')[0]?.normalize('NFKC').toLowerCase() === FILES_CHANNELS_DIR) {
+        throw repoInvalid(`path "${parsed.path}": channels/ is reserved for the attachments of channels; put the page under pages/`);
+      }
       if (seen.has(parsed.path)) throw repoInvalid(`path "${parsed.path}" appears twice in one commit`);
       seen.add(parsed.path);
       prepared.push({
@@ -308,7 +318,7 @@ export function createRepoService(deps: RepoServiceDeps) {
   }
 
   /** Who may write what (PLAN P4-05). Bots go through the kernel broker; people by team role; guests never. */
-  async function authorizeWrite(tx: PluginTx, t: TeamInfo, actor: RepoActor, prepared: readonly Prepared[]): Promise<void> {
+  async function authorizeWrite(tx: PluginTx, t: TeamInfo, actor: RepoActor, prepared: readonly Prepared[], options: RepoWriteOptions): Promise<void> {
     if (actor.kind === 'system') return;
     const res = await tx.query<{ post: boolean; manage: boolean }>("SELECT app.can('team', $1, 'post') AS post, app.can('team', $1, 'manage') AS manage", [t.id]);
     const row = res.rows[0];
@@ -316,7 +326,8 @@ export function createRepoService(deps: RepoServiceDeps) {
     if (t.archived) throw new RepoError(409, 'conflict', 'This team is archived; unarchive it first');
     if (actor.kind === 'bot') {
       for (const c of prepared) {
-        const decision = await deps.authorize(tx, c.op === 'delete' ? 'files.delete' : 'files.write', { path: c.path });
+        const capability = c.op === 'delete' ? 'files.delete' : (options.capability ?? 'files.write');
+        const decision = await deps.authorize(tx, capability, { path: c.path });
         if (!decision.allowed) throw repoForbidden(decision.reason);
         if (decision.needsApproval) throw repoForbidden(`Writing "${c.path}" needs a person's approval`);
       }
@@ -348,12 +359,13 @@ export function createRepoService(deps: RepoServiceDeps) {
     changes: readonly RepoWriteChange[],
     message: string,
     coAuthors: readonly CommitIdentity[] = [],
+    options: RepoWriteOptions = {},
   ): Promise<RepoWriteResult> {
     // The author is the transaction's actor: a caller cannot commit as somebody else.
     if (actor.id !== tx.actor.id || actor.kind !== tx.actor.kind) throw repoForbidden('The author of a commit is the actor of the transaction');
     const t = await team(tx, teamId);
     const { prepared, message: text } = plan(changes, message);
-    await authorizeWrite(tx, t, actor, prepared);
+    await authorizeWrite(tx, t, actor, prepared, options);
     for (const c of prepared) {
       if (c.content === null) continue;
       const verdict = checkRepoContent(c.content);
@@ -497,7 +509,15 @@ export function createRepoService(deps: RepoServiceDeps) {
   }
 
   /** Puts `path` back as it was at commit `sha`, as a new commit (history keeps every old commit). */
-  async function restore(tx: PluginTx, teamId: string, actor: RepoActor, path: string, sha: string, coAuthors: readonly CommitIdentity[] = []): Promise<RepoWriteResult> {
+  async function restore(
+    tx: PluginTx,
+    teamId: string,
+    actor: RepoActor,
+    path: string,
+    sha: string,
+    coAuthors: readonly CommitIdentity[] = [],
+    message?: string,
+  ): Promise<RepoWriteResult> {
     const parsed = parseRepoPath(path);
     if (!parsed.ok) throw repoInvalid(`path "${path}": ${parsed.reason}`);
     const gitDir = await ensure(tx, teamId);
@@ -508,7 +528,7 @@ export function createRepoService(deps: RepoServiceDeps) {
       return mapGit(err);
     }
     const write1: RepoWriteChange = change.op === 'put' ? { path: parsed.path, op: 'put', content: change.content } : { path: parsed.path, op: 'delete' };
-    return write(tx, teamId, actor, [write1], `Restore ${parsed.path} to ${sha.slice(0, 7)}`, coAuthors);
+    return write(tx, teamId, actor, [write1], message ?? `Restore ${parsed.path} to ${sha.slice(0, 7)}`, coAuthors);
   }
 
   // ---- reads ----------------------------------------------------------------------------------------------------------------------
@@ -521,11 +541,99 @@ export function createRepoService(deps: RepoServiceDeps) {
     }
   }
 
+  /**
+   * The files and folders directly below `folder` ('' is the root), from the index: one query, grouped by the next path segment, with the commit that last
+   * touched each file (a folder: the newest below it). `.gitkeep` placeholders keep a folder in the list but are not rows themselves.
+   */
+  async function list(tx: PluginTx, teamId: string, folder: string): Promise<RepoFolderEntry[]> {
+    await ensure(tx, teamId);
+    const prefix = folder === '' ? '' : `${folder}/`;
+    const res = await tx.query<{
+      name: string;
+      is_dir: boolean;
+      blob_sha: string | null;
+      size: string | number | null;
+      updated_at: Date | null;
+      updated_by: string | null;
+    }>(
+      `SELECT r.seg AS name, r.is_dir,
+              CASE WHEN r.is_dir THEN NULL ELSE min(r.blob_sha) END AS blob_sha,
+              CASE WHEN r.is_dir THEN NULL ELSE min(r.size) END AS size,
+              max(c.committed_at) AS updated_at,
+              (array_agg(c.author_id ORDER BY c.committed_at DESC, c.seq DESC))[1] AS updated_by
+         FROM (SELECT split_part(substr(e.path, char_length($2::text) + 1), '/', 1) AS seg,
+                      position('/' IN substr(e.path, char_length($2::text) + 1)) > 0 AS is_dir,
+                      e.blob_sha, e.size, e.last_commit_sha
+                 FROM app.repo_entries e
+                WHERE e.team_id = $1 AND left(e.path, char_length($2::text)) = $2::text) r
+         LEFT JOIN app.repo_commits c ON c.team_id = $1 AND c.sha = r.last_commit_sha
+        GROUP BY r.seg, r.is_dir`,
+      [teamId, prefix],
+    );
+    if (res.rows.length === 0 && folder !== '') throw repoNotFound(`"${folder}" is not a folder of this repository`);
+    return res.rows
+      .filter((r) => r.is_dir || r.name !== REPO_PLACEHOLDER)
+      .map((r) => ({
+        name: r.name,
+        path: `${prefix}${r.name}`,
+        kind: r.is_dir ? ('folder' as const) : ('file' as const),
+        blobSha: r.blob_sha,
+        size: r.size === null ? null : Number(r.size),
+        updatedAt: r.updated_at ? r.updated_at.toISOString() : null,
+        updatedBy: r.updated_by,
+      }))
+      .sort((a, b) => (a.kind === b.kind ? (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) : a.kind === 'folder' ? -1 : 1));
+  }
+
+  /** Commits that touched `path` (a file, a folder, or '' for everything), newest first, with what each did to a single file. */
+  async function history(tx: PluginTx, teamId: string, opts: { path: string; limit: number; cursor?: string | undefined }) {
+    return guarded(async () => {
+      const gitDir = await ensure(tx, teamId);
+      const page = await git.log(gitDir, { limit: opts.limit, ...(opts.path !== '' ? { path: opts.path } : {}), ...(opts.cursor ? { cursor: opts.cursor } : {}) });
+      const statuses = opts.path === '' ? new Map<string, string>() : await git.pathStatuses(gitDir, page.commits.map((c) => c.sha), opts.path);
+      return {
+        nextCursor: page.nextCursor,
+        commits: page.commits.map((c) => ({
+          sha: c.sha,
+          parentSha: c.parents[0] ?? null,
+          authorId: actorIdOfEmail(c.author.email),
+          authorName: c.author.name,
+          coAuthorIds: c.coAuthors.map((a) => actorIdOfEmail(a.email)).filter((id): id is string => id !== null),
+          subject: c.subject,
+          message: c.message,
+          committedAt: c.authoredAt,
+          change: ({ A: 'added', M: 'modified', D: 'deleted' } as const)[statuses.get(c.sha) as 'A' | 'M' | 'D'] ?? null,
+        })),
+      };
+    });
+  }
+
+  /** One file between two commits as a patch. `from` null/absent: the parent of `to` (the empty tree for a first commit). */
+  async function diffFile(tx: PluginTx, teamId: string, opts: { path: string; from?: string | undefined; to: string }) {
+    return guarded(async () => {
+      const gitDir = await ensure(tx, teamId);
+      const to = await git.resolve(gitDir, opts.to);
+      if (!to) throw new GitNotFoundError(`ref "${opts.to}" does not exist`);
+      let from: string | null;
+      if (opts.from) {
+        from = await git.resolve(gitDir, opts.from);
+        if (!from) throw new GitNotFoundError(`ref "${opts.from}" does not exist`);
+      } else {
+        from = (await git.commitInfo(gitDir, to)).parents[0] ?? null;
+      }
+      const result = await git.diff(gitDir, from ?? EMPTY_TREE, to, opts.path);
+      return { from, to, ...result };
+    });
+  }
+
   return {
     gitDirFor,
     ensure,
     write,
     restore,
+    list,
+    history,
+    diffFile,
     /** Folders and files directly below `path` (empty string: the root) at `ref`. */
     tree: (tx: PluginTx, teamId: string, path: string, ref: string) =>
       guarded(async () => git.tree(await ensure(tx, teamId), path, ref)),

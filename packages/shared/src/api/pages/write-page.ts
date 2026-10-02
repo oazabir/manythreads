@@ -13,7 +13,7 @@ export type PageWriteMode = z.infer<typeof PageWriteMode>;
 
 export const MAX_PAGE_BYTES = 1_048_576;
 
-/** A path inside `pages/` (strict, same rules as every repo path). */
+/** A path inside `pages/` (strict, same rules as every repo path): what a client checks before it sends. */
 export const PagePath = RepoFilePath.refine((p) => p.startsWith(`${PAGES_DIR}/`) && p.length > PAGES_DIR.length + 1, {
   message: 'a page lives under pages/ (for example pages/reports/week-37.md)',
 });
@@ -28,7 +28,11 @@ export type WritePagePathParams = z.infer<typeof WritePagePathParams>;
  */
 export const WritePageRequest = z.strictObject({
   mode: PageWriteMode,
-  path: PagePath,
+  /**
+   * Any valid repo path is accepted by the schema so that the server can say why it refuses one: 403 for `bots/`, `TEAM.md`, `skills/` and `routines/` (for
+   * a bot the broker's denial is audited as `kernel.capability.denied`), 400 for anything else outside `pages/`.
+   */
+  path: RepoFilePath,
   content: z.string().max(2_000_000),
   baseBlobSha: GitSha.optional(),
   /** The commit message; default `<Create|Replace|Append to> <path>`. */

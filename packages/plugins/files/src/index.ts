@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerFileRoutes } from './routes.ts';
 import { registerFileLinks } from './links.ts';
+import { registerTreeRoute } from './tree.ts';
 import { BLOB_GC_CRON, BLOB_GC_QUEUE, blobGcHandler } from './gc.ts';
 
 export { sanitizeFileName, numberedName } from './names.ts';
@@ -24,6 +25,7 @@ export default definePlugin({
   register(ctx) {
     registerFileRoutes(ctx);
     registerFileLinks(ctx);
+    registerTreeRoute(ctx);
     // Daily: delete the rows of long-hidden deleted-message files, then the blobs nothing references (docs/plugins/files.md, "Blob garbage collection").
     ctx.jobs.register(BLOB_GC_QUEUE, blobGcHandler(ctx), { cron: BLOB_GC_CRON, maxAttempts: 3 });
   },
