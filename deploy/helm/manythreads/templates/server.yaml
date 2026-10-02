@@ -8,6 +8,11 @@ metadata:
     app.kubernetes.io/component: server
 spec:
   replicas: {{ .Values.server.replicas }}
+  {{- if .Values.server.blobs.persistence.enabled }}
+  # the blob volume is ReadWriteOnce: the old pod releases it before the new one starts (see values server.blobs)
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/component: server
@@ -17,6 +22,10 @@ spec:
         {{- include "manythreads.labels" . | nindent 8 }}
         app.kubernetes.io/component: server
     spec:
+      {{- if .Values.server.blobs.persistence.enabled }}
+      securityContext:
+        fsGroup: 1000   # `node` in the image; a no-op on local-path, needed on volumes that honour fsGroup
+      {{- end }}
       containers:
         - name: server
           image: {{ .Values.server.image }}:{{ .Values.imageTag }}
@@ -46,6 +55,9 @@ spec:
             {{- if $smtp }}
             - { name: MANYTHREADS_SMTP_URL, value: {{ $smtp | quote }} }
             {{- end }}
+            - { name: MANYTHREADS_STORAGE_DIR, value: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+            - name: MANYTHREADS_KMS_PREVIOUS_KEYS
+              valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-previous-keys, optional: true } }
             {{- if .Values.testAuth.enabled }}
             # TEST ENVIRONMENT ONLY (see values.yaml testAuth)
             - name: MANYTHREADS_TEST_AUTH_TOKEN
@@ -62,9 +74,18 @@ spec:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 20
             periodSeconds: 10
+          volumeMounts:
+            - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }} }
           {{- with .Values.server.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: blobs
+          {{- if .Values.server.blobs.persistence.enabled }}
+          persistentVolumeClaim: { claimName: manythreads-blobs }
+          {{- else }}
+          emptyDir: {}
           {{- end }}
 ---
 apiVersion: v1

@@ -3,7 +3,9 @@
   Demo seed: after every install and upgrade, once the server has migrated, `pnpm seed --demo` creates workspace Kahf
   Software, the seven personas, three teams and their conversations (channels, about 40 messages each, a thread, a DM, a
   5,000-message channel) if they are not there (idempotent, random unknown passwords, nothing is printed). Runs the server
-  image; --wait covers a slow first migration. --no-attachment: this pod's filesystem is not the server's blob directory.
+  image; --wait covers a slow first migration. The demo attachment is written into the server's blob volume: the Job mounts
+  the same claim (ReadWriteOnce is per node, so it must run on the node of the server pod: required pod affinity) and
+  sets the same MANYTHREADS_STORAGE_DIR. Without a persistent volume there is no shared disk, so it passes --no-attachment.
 */ -}}
 apiVersion: batch/v1
 kind: Job
@@ -27,12 +29,28 @@ spec:
         app.kubernetes.io/component: seed
     spec:
       restartPolicy: Never
+      {{- if .Values.server.blobs.persistence.enabled }}
+      securityContext:
+        fsGroup: 1000
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+      {{- end }}
       containers:
         - name: seed
           image: {{ .Values.server.image }}:{{ .Values.imageTag }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          command: ["pnpm", "seed", "--demo", "--wait", "600", "--no-attachment"]
+          command: ["pnpm", "seed", "--demo", "--wait", "600"{{ if not .Values.server.blobs.persistence.enabled }}, "--no-attachment"{{ end }}]
+          {{- if .Values.server.blobs.persistence.enabled }}
+          volumeMounts:
+            - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+          {{- end }}
           env:
+            - { name: MANYTHREADS_STORAGE_DIR, value: {{ .Values.server.blobs.persistence.mountPath | quote }} }
             - name: OWNER_PW
               valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
             - name: MANYTHREADS_SYSTEM_PASSWORD
@@ -41,4 +59,9 @@ spec:
               value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
             - name: MANYTHREADS_SYSTEM_DATABASE_URL
               value: postgres://{{ .Values.postgres.systemRole }}:$(MANYTHREADS_SYSTEM_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+      {{- if .Values.server.blobs.persistence.enabled }}
+      volumes:
+        - name: blobs
+          persistentVolumeClaim: { claimName: manythreads-blobs }
+      {{- end }}
 {{- end }}

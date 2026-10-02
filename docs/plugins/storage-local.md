@@ -37,9 +37,11 @@ file older than a few minutes.
 |---|---|---|
 | `MANYTHREADS_STORAGE_DIR` | `./data/blobs` | Root directory, created on first upload. Relative paths resolve against the server's working directory. |
 
-The directory must be on persistent storage. Compose and Helm will mount a volume (a PVC on k3s) at this path in a later
-task; until then a container restart loses blobs. With more than one server replica the volume must be shared
-(ReadWriteMany) or the deployment must use an object-storage provider instead.
+The directory must be on persistent storage. The Helm chart mounts the PVC `manythreads-blobs` (local-path, 5Gi by default,
+`server.blobs.persistence` in values) at `/data/blobs` and sets this variable to it; the server Deployment uses the `Recreate`
+strategy because the volume is ReadWriteOnce, and the demo seed Job mounts the same claim (on the server's node) so the seeded
+attachment is where the server looks (docs/deploy.md). With more than one server replica the volume must be shared
+(ReadWriteMany) or the deployment must use an object-storage provider instead. Compose dev uses `./data/blobs`.
 
 ## Not here
 

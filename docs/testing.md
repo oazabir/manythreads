@@ -109,7 +109,7 @@ tables missing `SeedResult.content.skipped` says so and nothing is written):
 Timestamps: ids always carry the same times (history starts Monday 2026-03-02 09:00 UTC, ten working days, `#load-test` after it).
 `created_at` is the same with `MANYTHREADS_CLOCK=fixed` (or `contentOptions: { baseDate }`); otherwise the newest message is half an
 hour old, so a demo site reads like a live team. The attachment is written to `MANYTHREADS_STORAGE_DIR` (default `./data/blobs`) where
-`storage-local` looks; `--no-attachment` leaves it (and its card) out for a process that does not share the server's disk.
+`storage-local` looks; `--no-attachment` leaves it (and its card) out for a process that does not share the server's disk (the Helm seed Job shares it: it mounts the server's blob PVC).
 
 ```
 pnpm seed                     # DATABASE_URL (default: dev compose Postgres), everyone has PERSONA_PASSWORD, with content
