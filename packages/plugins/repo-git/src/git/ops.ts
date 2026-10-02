@@ -479,7 +479,28 @@ export function createGitLayer(options: GitLayerOptions = {}) {
     return { path, op: 'put', content: await readBlob(gitDir, entry.sha, maxBytes) };
   }
 
-  return { runner, initBare, resolve, tree, statPaths, blob, readBlob, readBlobs, listFiles, log, commitInfo, diff, show, pathStatuses, commitPaths, commitsBetween, commit, restoreChange };
+  /** Bytes the repository takes (loose objects, packs, garbage), from `git count-objects -v` (one cheap process, no directory walk). */
+  async function sizeBytes(gitDir: string): Promise<number> {
+    const out = (await run(gitDir, ['count-objects', '-v'])).stdout.toString('utf8');
+    let kib = 0;
+    for (const line of out.split('\n')) {
+      const m = /^(size|size-pack|size-garbage):\s*(\d+)\s*$/.exec(line);
+      if (m) kib += Number(m[2]);
+    }
+    return kib * 1024;
+  }
+
+  /**
+   * `git gc --auto` with a threshold of our own (the runner sets `gc.auto=0` so no ordinary command repacks by surprise): packs loose objects once a
+   * repository holds `looseObjects` of them, in the foreground (a detached gc would outlive the process group the runner can kill).
+   */
+  async function gc(gitDir: string, options: { looseObjects?: number; timeoutMs?: number } = {}): Promise<void> {
+    await run(gitDir, ['-c', `gc.auto=${options.looseObjects ?? 1000}`, '-c', 'gc.autoDetach=false', '-c', 'maintenance.auto=false', 'gc', '--auto', '--quiet'], {
+      timeoutMs: options.timeoutMs ?? 10 * 60_000,
+    });
+  }
+
+  return { runner, initBare, sizeBytes, gc, resolve, tree, statPaths, blob, readBlob, readBlobs, listFiles, log, commitInfo, diff, show, pathStatuses, commitPaths, commitsBetween, commit, restoreChange };
 }
 
 export type GitLayer = ReturnType<typeof createGitLayer>;

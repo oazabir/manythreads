@@ -25,7 +25,7 @@ import {
   parseRepoPath,
   type RepoConflict,
 } from '@manythreads/shared';
-import { repoForbidden, repoInvalid, repoNotFound, notInRepo, RepoError } from './errors.ts';
+import { repoBusy, repoForbidden, repoInvalid, repoNotFound, repoQuota, notInRepo, RepoError } from './errors.ts';
 import {
   GitBlobTooLargeError,
   GitError,
@@ -67,7 +67,27 @@ export type RepoActor = RepoWriteActor;
 export type CommitIdentity = RepoCommitIdentity;
 export type { RepoWriteChange, RepoWriteResult, RepoWriteOptions, RepoFolderEntry };
 
+/** A team repository may hold this many bytes on disk (loose objects and packs, so history counts) and this many files. `MANYTHREADS_REPO_MAX_BYTES`, `MANYTHREADS_REPO_MAX_FILES`. */
+export const DEFAULT_REPO_MAX_BYTES = 512 * 1024 * 1024;
+export const DEFAULT_REPO_MAX_FILES = 20_000;
+/** Names in one folder listing of the Files tree; the rest is cut off (the root of a repo with tens of thousands of files must not be grouped and sent whole). */
+export const REPO_LIST_MAX_ENTRIES = 5000;
+
+const posInt = (raw: string | undefined, fallback: number): number => {
+  const v = Number(raw);
+  return Number.isSafeInteger(v) && v > 0 ? v : fallback;
+};
+export const repoLimitsFromEnv = (env: Record<string, string | undefined> = process.env): { maxRepoBytes: number; maxRepoFiles: number } => ({
+  maxRepoBytes: posInt(env['MANYTHREADS_REPO_MAX_BYTES'], DEFAULT_REPO_MAX_BYTES),
+  maxRepoFiles: posInt(env['MANYTHREADS_REPO_MAX_FILES'], DEFAULT_REPO_MAX_FILES),
+});
+
 export interface RepoServiceDeps {
+  /** Quota per team repository (default: the constants above). */
+  maxRepoBytes?: number;
+  maxRepoFiles?: number;
+  /** Names per folder listing (default `REPO_LIST_MAX_ENTRIES`). */
+  listLimit?: number;
   /** `MANYTHREADS_REPO_DIR`, absolute. */
   repoDir: string;
   git: GitLayer;
@@ -334,6 +354,9 @@ export function createRepoService(deps: RepoServiceDeps) {
         const decision = await deps.authorize(tx, capability, { path: c.path });
         if (!decision.allowed) throw repoForbidden(decision.reason);
         if (decision.needsApproval) throw repoForbidden(`Writing "${c.path}" needs a person's approval`);
+        // Defence in depth (L3): the broker's path guard only knows the capability names it knows (and is asked first, so its denial is audited); whatever
+        // `options.capability` a calling plugin chose, a bot never writes a guarded path through this writer.
+        if (isGuardedRepoPath(c.path)) throw repoForbidden(`Bots do not change "${c.path}" directly: bots/, TEAM.md, skills/ and routines/ change by pull request`);
       }
       return;
     }
@@ -350,6 +373,7 @@ export function createRepoService(deps: RepoServiceDeps) {
     if (err instanceof GitPathError) throw repoInvalid(err.message);
     if (err instanceof GitBlobTooLargeError) throw new RepoError(413, 'validation_failed', err.message);
     if (err instanceof GitError) {
+      if (err.code === 'busy') throw repoBusy();
       if (err.code === 'ref_conflict') throw new RepoError(409, 'conflict', 'The repository changed while this commit was being made; reload and try again');
       throw new RepoError(500, 'internal', `git ${err.code}`);
     }
@@ -386,7 +410,7 @@ export function createRepoService(deps: RepoServiceDeps) {
     // Co-author trailers come from this argument only (validated here), never from the message text.
     for (const c of coAuthors) {
       if (!UUID.test(c.actorId) || !ActorId.safeParse(c.actorId).success || c.actorId === authorId || co.some((x) => x.actorId === c.actorId)) continue;
-      if (/[\r\n\u0000]/.test(c.name)) continue; // a name with a line break is a forged trailer in the making: no trailer, no attribution
+      if (/[\r\n]/.test(c.name) || c.name.includes('\0')) continue; // a name with a line break is a forged trailer in the making: no trailer, no attribution
       co.push(c);
     }
 
@@ -399,6 +423,25 @@ export function createRepoService(deps: RepoServiceDeps) {
         return mapGit(err);
       }
     });
+  }
+
+  /**
+   * Quota (M2 of the Phase 4 review): a commit that adds bytes is refused (413 `repo_quota_exceeded`, nothing written) when the repository, with the new
+   * content, would pass the byte limit, or when new files would pass the file limit. A commit that only deletes or shrinks is always allowed.
+   */
+  async function assertQuota(tx: PluginTx, t: TeamInfo, gitDir: string, finals: readonly { path: string; op: 'put' | 'delete'; content?: Buffer }[], stat: ReadonlyMap<string, GitTreeEntry>): Promise<void> {
+    const added = finals.reduce((n, f) => n + (f.op === 'put' ? (f.content?.length ?? 0) : 0), 0);
+    if (added === 0) return;
+    const maxBytes = deps.maxRepoBytes ?? DEFAULT_REPO_MAX_BYTES;
+    const used = await git.sizeBytes(gitDir);
+    if (used + added > maxBytes) {
+      throw repoQuota(`This team's repository is full (${Math.round(used / 1048576)} of ${Math.round(maxBytes / 1048576)} MB): delete files you no longer need, or ask an admin to raise the limit`);
+    }
+    const created = finals.filter((f) => f.op === 'put' && !stat.has(f.path)).length;
+    if (created === 0) return;
+    const maxFiles = deps.maxRepoFiles ?? DEFAULT_REPO_MAX_FILES;
+    const count = Number((await tx.query<{ n: string | number }>('SELECT count(*) AS n FROM app.repo_entries WHERE team_id = $1', [t.id])).rows[0]?.n ?? 0);
+    if (count + created > maxFiles) throw repoQuota(`This team's repository would hold more than ${maxFiles} files: delete files you no longer need, or ask an admin to raise the limit`);
   }
 
   async function commitUnderLock(
@@ -498,6 +541,8 @@ export function createRepoService(deps: RepoServiceDeps) {
 
     if (finals.length === 0) return { sha: head, parentSha: head, noop: true, authorId, paths: [] };
 
+    await assertQuota(tx, t, gitDir, finals, stat);
+
     const made = await git.commit(gitDir, {
       expectedOld: head,
       changes: finals.map((f) => (f.op === 'put' ? { path: f.path, op: 'put' as const, content: f.content ?? Buffer.alloc(0) } : { path: f.path, op: 'delete' as const })),
@@ -576,8 +621,10 @@ export function createRepoService(deps: RepoServiceDeps) {
                  FROM app.repo_entries e
                 WHERE e.team_id = $1 AND left(e.path, char_length($2::text)) = $2::text) r
          LEFT JOIN app.repo_commits c ON c.team_id = $1 AND c.sha = r.last_commit_sha
-        GROUP BY r.seg, r.is_dir`,
-      [teamId, prefix],
+        GROUP BY r.seg, r.is_dir
+        ORDER BY r.is_dir DESC, r.seg COLLATE "C"
+        LIMIT $3`,
+      [teamId, prefix, deps.listLimit ?? REPO_LIST_MAX_ENTRIES],
     );
     if (res.rows.length === 0 && folder !== '') throw repoNotFound(`"${folder}" is not a folder of this repository`);
     return res.rows
@@ -646,8 +693,28 @@ export function createRepoService(deps: RepoServiceDeps) {
     });
   }
 
+  /** Packs the loose objects of every team repository that has enough of them (`git gc --auto`). One repository's failure is logged by the caller and does not stop the others. */
+  async function gcAll(tx: PluginTx, onError: (teamId: string, err: unknown) => void = () => undefined): Promise<{ repos: number; failed: number }> {
+    const rows = (await tx.query<{ team_id: string }>('SELECT team_id FROM app.repos ORDER BY team_id')).rows;
+    let repos = 0;
+    let failed = 0;
+    for (const r of rows) {
+      const dir = gitDirFor(r.team_id);
+      if (!existsSync(join(dir, 'HEAD'))) continue;
+      try {
+        await git.gc(dir);
+        repos += 1;
+      } catch (err) {
+        failed += 1;
+        onError(r.team_id, err);
+      }
+    }
+    return { repos, failed };
+  }
+
   return {
     gitDirFor,
+    gcAll,
     ensure,
     write,
     restore,

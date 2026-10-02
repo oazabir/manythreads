@@ -22,7 +22,7 @@ export interface RepoCommitIdentity {
 /**
  * One change. `baseBlobSha` is the blob the caller edited: if the file now holds another, the whole write is refused (409, nothing written) with the
  * current content; `null` means "must not exist yet"; left out means the last write wins. `append` adds to the end of the file and creates it.
- * Content is text (a string, or UTF-8 bytes); anything with a NUL byte in its first 8 KB, or over 1 MB, is refused with 422 `attachment_not_in_repo`.
+ * Content is text (a string, or UTF-8 bytes); anything with a NUL byte anywhere, that is not valid UTF-8, or over 1 MB, is refused with 422 `attachment_not_in_repo`.
  */
 export type RepoWriteChange =
   | { path: string; op: 'put'; content: string | Uint8Array; baseBlobSha?: string | null }

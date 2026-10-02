@@ -11,6 +11,7 @@ export type GitErrorCode =
   | 'output_too_large' // it wrote more than the cap allows and was killed
   | 'failed' // it exited non-zero
   | 'ref_conflict' // update-ref found the ref at another sha than the expected one (the compare-and-swap lost)
+  | 'busy' // too many calls waiting for a process slot: refused at once (503), not queued without bound
   | 'unavailable'; // git could not be started
 
 export class GitError extends Error {
@@ -62,6 +63,10 @@ export interface GitRunnerOptions {
   bin?: string;
   /** Most processes at once in this runner (default `MANYTHREADS_GIT_WORKERS`, else 8). */
   poolSize?: number;
+  /** Calls allowed to wait for a slot; one more is refused with `busy` (default `MANYTHREADS_GIT_MAX_QUEUE`, else 64). */
+  maxQueue?: number;
+  /** Most processes one repository may run at once, so a team hammering its history cannot take every slot (default: the pool minus two, so two slots stay free for other teams; a pool of one or two has no cap). */
+  perRepoMax?: number;
   defaultTimeoutMs?: number;
   defaultMaxOutputBytes?: number;
 }
@@ -106,6 +111,8 @@ function buildEnv(extra: Readonly<Record<string, string>> | undefined): Record<s
     GIT_ASKPASS: '/bin/false',
     GIT_NO_REPLACE_OBJECTS: '1',
     GIT_OPTIONAL_LOCKS: '0',
+    // A path from a user is a name, never a pattern: `pages/*`, `:(glob)**` and `:(top)` would otherwise widen history, diff and log (L1 of the Phase 4 review).
+    GIT_LITERAL_PATHSPECS: '1',
     GIT_PAGER: 'cat',
   };
   for (const [key, value] of Object.entries(extra ?? {})) {
@@ -120,20 +127,39 @@ export function createGitRunner(options: GitRunnerOptions = {}): GitRunner {
   const poolSize = Math.max(1, options.poolSize ?? (Number(process.env['MANYTHREADS_GIT_WORKERS']) || 8));
   const defaultTimeout = options.defaultTimeoutMs ?? 20_000;
   const defaultMax = options.defaultMaxOutputBytes ?? 8 * 1024 * 1024;
+  const maxQueue = Math.max(0, options.maxQueue ?? (Number(process.env['MANYTHREADS_GIT_MAX_QUEUE']) || 64));
+  const perRepoMax = Math.max(1, options.perRepoMax ?? (poolSize <= 2 ? poolSize : poolSize - 2));
   let running = 0;
-  const waiting: (() => void)[] = [];
+  const perRepo = new Map<string, number>();
+  const waiting: { key: string; start: () => void }[] = [];
+  const canStart = (key: string): boolean => running < poolSize && (perRepo.get(key) ?? 0) < perRepoMax;
+  const take = (key: string): void => {
+    running += 1;
+    perRepo.set(key, (perRepo.get(key) ?? 0) + 1);
+  };
 
-  const acquire = (): Promise<void> => {
-    if (running < poolSize) {
-      running += 1;
+  const acquire = (key: string): Promise<void> => {
+    if (canStart(key)) {
+      take(key);
       return Promise.resolve();
     }
-    return new Promise((resolve) => waiting.push(resolve));
+    if (waiting.length >= maxQueue) return Promise.reject(new GitError('busy', `git is busy: ${waiting.length} calls are already waiting`));
+    return new Promise((resolve) => waiting.push({ key, start: resolve }));
   };
-  const release = (): void => {
-    const next = waiting.shift();
-    if (next) next();
-    else running -= 1;
+  /** Frees a slot and hands free capacity to the oldest waiters that may run (a waiter whose repository is at its own cap is passed over, not blocked on). */
+  const release = (key: string): void => {
+    running -= 1;
+    const n = (perRepo.get(key) ?? 1) - 1;
+    if (n <= 0) perRepo.delete(key);
+    else perRepo.set(key, n);
+    for (let i = 0; i < waiting.length && running < poolSize; ) {
+      const w = waiting[i]!;
+      if (canStart(w.key)) {
+        waiting.splice(i, 1);
+        take(w.key);
+        w.start();
+      } else i += 1;
+    }
   };
 
   const spawnOnce = (args: readonly string[], opts: GitRunOptions): Promise<GitResult> =>
@@ -223,11 +249,12 @@ export function createGitRunner(options: GitRunnerOptions = {}): GitRunner {
   return {
     bin,
     async run(args, opts = {}) {
-      await acquire();
+      const key = opts.gitDir ?? '';
+      await acquire(key);
       try {
         return await spawnOnce(args, opts);
       } finally {
-        release();
+        release(key);
       }
     },
     stats: () => ({ running, waiting: waiting.length }),

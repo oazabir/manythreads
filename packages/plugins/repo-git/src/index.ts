@@ -2,11 +2,11 @@ import { resolve } from 'node:path';
 import { definePlugin, type RepoProvider } from '@manythreads/sdk';
 import { TeamTemplateAppliedEvent, WorkspaceTeamCreatedEvent } from '@manythreads/shared';
 import { createGitLayer } from './git/index.ts';
-import { createRepoService } from './repo.ts';
+import { createRepoService, repoLimitsFromEnv } from './repo.ts';
 import { registerRepoAppRoute } from './app-routes.ts';
 import { registerRepoRoutes } from './routes.ts';
 
-export { createRepoService, ACTOR_EMAIL_DOMAIN, type RepoService, type RepoActor, type RepoWriteChange, type RepoWriteResult, type CommitIdentity } from './repo.ts';
+export { createRepoService, repoLimitsFromEnv, DEFAULT_REPO_MAX_BYTES, DEFAULT_REPO_MAX_FILES, REPO_LIST_MAX_ENTRIES, ACTOR_EMAIL_DOMAIN, type RepoService, type RepoActor, type RepoWriteChange, type RepoWriteResult, type CommitIdentity } from './repo.ts';
 export { createGitLayer, createGitRunner, GitError, type GitLayer } from './git/index.ts';
 export { RepoError } from './errors.ts';
 
@@ -15,6 +15,9 @@ export const DEFAULT_REPO_DIR = './data/repos';
 export const repoDirFromEnv = (env: Record<string, string | undefined> = process.env): string => resolve(env['MANYTHREADS_REPO_DIR']?.trim() || DEFAULT_REPO_DIR);
 
 const INIT_QUEUE = 'repo-git.init';
+/** Weekly (Sunday 04:41 UTC): `git gc --auto` per team repository packs loose objects once a repository has about a thousand of them. */
+export const GC_QUEUE = 'repo-git.gc';
+export const GC_CRON = '41 4 * * 0';
 
 /**
  * repo-git: the team repo (SPEC section 5.1, PLAN P4-01 to P4-05). One bare git repository per team under `MANYTHREADS_REPO_DIR`, one writer
@@ -40,6 +43,7 @@ export default definePlugin({
     const repo = createRepoService({
       repoDir: repoDirFromEnv(),
       git: createGitLayer(),
+      ...repoLimitsFromEnv(),
       authorize: (tx, capability, context) => ctx.capabilities.authorize(tx, capability, context),
       emit: (tx, event) => ctx.audit.emit(tx, event),
     });
@@ -65,6 +69,14 @@ export default definePlugin({
         await repo.ensure(tx, teamId);
       },
       { concurrency: 2 },
+    );
+    ctx.jobs.register(
+      GC_QUEUE,
+      async (_payload, tx, job) => {
+        const done = await repo.gcAll(tx, (teamId, err) => job.log.warn(`${GC_QUEUE} ${teamId}: ${err instanceof Error ? err.message : String(err)}`));
+        job.log.info(`${GC_QUEUE} ${JSON.stringify(done)}`);
+      },
+      { cron: GC_CRON, maxAttempts: 2, concurrency: 1 },
     );
     ctx.events.subscribe('workspace.team.created', async (raw, tx) => {
       const e = WorkspaceTeamCreatedEvent.parse(raw);

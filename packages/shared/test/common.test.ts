@@ -49,6 +49,7 @@ describe('ErrorEnvelope', () => {
       'unauthenticated',
       'gone',
       'attachment_not_in_repo',
+      'repo_quota_exceeded',
     ]);
   });
 });

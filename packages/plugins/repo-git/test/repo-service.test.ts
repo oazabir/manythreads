@@ -3,6 +3,7 @@ import { RepoRepoCommittedEvent } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RepoError } from '../src/errors.ts';
 import { createGitLayer } from '../src/git/index.ts';
+import { checkRepoContent } from '../src/rules.ts';
 import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from './world.ts';
 
 // The writer without HTTP: author and co-authors, the lock across replicas, catching the index up after a rolled-back transaction, the 1 MB rule,
@@ -93,15 +94,22 @@ describe('commits', () => {
     expect(entry?.textPlain?.length).toBe(1_048_576);
   });
 
-  it('binary is judged on the first 8 KB: a NUL there is refused, a NUL later is stored without search text', async () => {
+  it('binary is judged on the whole file: a NUL anywhere is refused, and so is invalid UTF-8 (8 KB of text in front changes nothing)', async () => {
     const svc = w.replica();
     const early = Buffer.concat([Buffer.from('text'), Buffer.from([0]), Buffer.from('more')]);
     const err = await w.as(sameera, (tx) => svc.write(tx, sup, person(sameera), [{ path: 'pages/early.dat', op: 'put', content: early }], 'early nul')).catch((e: unknown) => e);
     expect(err).toMatchObject({ status: 422, code: 'attachment_not_in_repo' });
     const late = Buffer.concat([Buffer.alloc(9000, 97), Buffer.from([0]), Buffer.from('tail')]);
-    await w.as(sameera, (tx) => svc.write(tx, sup, person(sameera), [{ path: 'pages/late.dat', op: 'put', content: late }], 'late nul'));
-    const entry = (await w.as(sameera, (tx) => svc.index.entries(tx, sup, 'pages/late.dat')))[0];
-    expect(entry).toMatchObject({ size: late.length, textPlain: null });
+    const lateErr = await w.as(sameera, (tx) => svc.write(tx, sup, person(sameera), [{ path: 'pages/late.dat', op: 'put', content: late }], 'late nul')).catch((e: unknown) => e);
+    expect(lateErr).toMatchObject({ status: 422, code: 'attachment_not_in_repo' });
+    const polyglot = Buffer.concat([Buffer.alloc(8192, 65), Buffer.from([0, 0xff, 0xfe])]);
+    expect(await w.as(sameera, (tx) => svc.write(tx, sup, person(sameera), [{ path: 'pages/poly.pdf', op: 'put', content: polyglot }], 'polyglot')).catch((e: unknown) => e)).toMatchObject({ status: 422 });
+    const latin1 = Buffer.from([0x63, 0x61, 0x66, 0xe9]); // "café" in Latin-1: not UTF-8
+    expect(await w.as(sameera, (tx) => svc.write(tx, sup, person(sameera), [{ path: 'pages/latin.txt', op: 'put', content: latin1 }], 'latin1')).catch((e: unknown) => e)).toMatchObject({ status: 422 });
+    // an append that would add a NUL is refused too
+    expect(await (async () => { const t0 = performance.now(); checkRepoContent(Buffer.alloc(1_048_576, 97)); return performance.now() - t0; })()).toBeLessThan(100);
+    expect(checkRepoContent(Buffer.from('café — ✓\n', 'utf8'))).toEqual({ ok: true });
+    expect(checkRepoContent(Buffer.concat([Buffer.alloc(100, 97), Buffer.from([0xc3])]))).toEqual({ ok: false, reason: 'binary' });
   });
 });
 

@@ -6,6 +6,7 @@ import type { ActorId, WorkspaceId } from '@manythreads/shared';
 import { personaActor, personas, seedWorld, startTestServer, TEAM_IDS, type Persona, type TestServer } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { createGitLayer, createRepoService, type RepoService } from '../src/index.ts';
+import type { RepoServiceDeps } from '../src/repo.ts';
 
 export { personas, TEAM_IDS };
 export type { Persona };
@@ -35,7 +36,7 @@ export interface RepoWorld {
   /** A transaction as `who` on the app pool (what a request handler gets). */
   as<T>(who: Who, fn: (tx: PluginTx & Tx) => Promise<T>): Promise<T>;
   /** A repo service of its own (its own queue and git runner): another replica of the server on the same directory and database. */
-  replica(): RepoService;
+  replica(overrides?: Partial<RepoServiceDeps>): RepoService;
   gitDir(teamId: string): string;
   /** A bot on the roster of the team with the grants given (default: `files.write`). */
   makeBot(teamId: string, grants?: string[]): Promise<Bot>;
@@ -66,7 +67,7 @@ export async function createRepoWorld(): Promise<RepoWorld> {
     system: (fn) => withSystem(fn, { pool: systemPool, workspaceId: personas.omar.workspaceId }),
     as: (who, fn) =>
       withActor({ kind: who.kind ?? 'person', id: who.actorId as ActorId, workspaceId: who.workspaceId as WorkspaceId } as Actor, (tx) => fn(tx as PluginTx & Tx), { pool: appPool }),
-    replica: () =>
+    replica: (overrides = {}) =>
       createRepoService({
         repoDir,
         git: createGitLayer(),
@@ -75,6 +76,7 @@ export async function createRepoWorld(): Promise<RepoWorld> {
         emit: async (tx, event) => {
           await emit(tx as unknown as Tx, { schemaVersion: 1, workspaceId: tx.actor.workspaceId, ...event });
         },
+        ...overrides,
       }),
     gitDir: (teamId) => join(repoDir, `${teamId}.git`),
     async makeBot(teamId, grants = ['files.write']) {

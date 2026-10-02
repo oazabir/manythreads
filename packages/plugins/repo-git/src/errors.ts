@@ -4,7 +4,7 @@ import type { ErrorCode, RepoConflict } from '@manythreads/shared';
 export class RepoError extends Error {
   override readonly name = 'RepoError';
   constructor(
-    readonly status: 400 | 403 | 404 | 409 | 413 | 422 | 500,
+    readonly status: 400 | 403 | 404 | 409 | 413 | 422 | 500 | 503,
     readonly code: ErrorCode,
     message: string,
     readonly conflicts: readonly RepoConflict[] = [],
@@ -17,3 +17,5 @@ export const repoForbidden = (message: string): RepoError => new RepoError(403, 
 export const repoNotFound = (message: string): RepoError => new RepoError(404, 'not_found', message);
 export const repoInvalid = (message: string): RepoError => new RepoError(400, 'validation_failed', message);
 export const notInRepo = (message: string): RepoError => new RepoError(422, 'attachment_not_in_repo', message);
+export const repoQuota = (message: string): RepoError => new RepoError(413, 'repo_quota_exceeded', message);
+export const repoBusy = (): RepoError => new RepoError(503, 'internal', 'The repository service is busy; try again in a moment');

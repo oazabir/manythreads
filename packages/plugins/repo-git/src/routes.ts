@@ -29,6 +29,14 @@ import { RepoError, repoForbidden, repoInvalid, repoNotFound } from './errors.ts
 import type { RepoService, RepoWriteChange } from './repo.ts';
 import { textOf } from './rules.ts';
 
+/**
+ * Per-actor limits (sliding window, in process memory, per replica: the server's limiter keys them on the actor). Reads start git processes, so
+ * they are limited too (M3 of the Phase 4 review); History and diff accept a path and are the dear ones.
+ */
+export const READ_LIMIT = { limit: 600, windowMs: 60_000 } as const;
+export const HISTORY_LIMIT = { limit: 120, windowMs: 60_000 } as const;
+export const APP_READ_LIMIT = { limit: 1200, windowMs: 60_000 } as const;
+
 // HTTP for the team repo: tree, blob and commit (PLAN P4-01..P4-05). The Files tree, history and restore routes of P4-06 and P4-08 build on the service.
 
 /** The team the caller may see; a team they cannot see is 403 (an admin sees every team, so for them a missing slug is 404). */
@@ -49,6 +57,7 @@ function refusal(err: RepoError): HttpResponse {
     return { status: 409, body: RepoConflictResponse.parse({ error: { code: 'conflict', message: err.message }, conflicts: err.conflicts }) };
   }
   if (err.status === 500) throw new HttpError(500, 'internal', 'The repository could not be updated');
+  if (err.status === 503) return { status: 503, body: { error: { code: err.code, message: err.message } }, headers: { 'retry-after': '2' } };
   return { status: err.status, body: { error: { code: err.code, message: err.message } } };
 }
 
@@ -78,6 +87,7 @@ function decode(content: string, encoding: 'utf8' | 'base64', path: string): str
 export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void {
   ctx.http.route({
     ...getRepoTreeRoute,
+    rateLimit: READ_LIMIT,
     schema: { query: GetRepoTreeQuery },
     handler: (req, tx) =>
       guarded(async () => {
@@ -98,6 +108,7 @@ export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void 
 
   ctx.http.route({
     ...getRepoBlobRoute,
+    rateLimit: READ_LIMIT,
     schema: { query: GetRepoBlobQuery },
     handler: (req, tx) =>
       guarded(async () => {
@@ -143,6 +154,7 @@ export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void 
 
   ctx.http.route({
     ...getRepoContentRoute,
+    rateLimit: READ_LIMIT,
     schema: { query: GetRepoContentQuery },
     handler: (req, tx) =>
       guarded(async () => {
@@ -172,6 +184,7 @@ export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void 
 
   ctx.http.route({
     ...getRepoHistoryRoute,
+    rateLimit: HISTORY_LIMIT,
     schema: { query: GetRepoHistoryQuery },
     handler: (req, tx) =>
       guarded(async () => {
@@ -185,6 +198,7 @@ export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void 
 
   ctx.http.route({
     ...getRepoDiffRoute,
+    rateLimit: HISTORY_LIMIT,
     schema: { query: GetRepoDiffQuery },
     handler: (req, tx) =>
       guarded(async () => {

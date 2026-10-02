@@ -2,7 +2,7 @@ import { HttpError, type HttpResponse, type PluginContext } from '@manythreads/s
 import { APP_BRIDGE_CLIENT_FILE, APP_BRIDGE_CLIENT_JS, embeddedAppHeaders, parseRepoPath, repoMimeOf, splitRepoAppRest } from '@manythreads/shared';
 import { RepoError } from './errors.ts';
 import type { RepoService } from './repo.ts';
-import { teamIdBySlug } from './routes.ts';
+import { APP_READ_LIMIT, teamIdBySlug } from './routes.ts';
 
 // The content route of embedded apps (SPEC section 5.2, PLAN P4-10): the files of a folder that holds an `index.html`, served with the mime type
 // of the file so the browser runs the page inside the sandboxed frame. The server adds the strict CSP and `sandbox` to everything under this path
@@ -25,6 +25,7 @@ export function registerRepoAppRoute(ctx: PluginContext, repo: RepoService): voi
   ctx.http.route({
     method: 'GET',
     path: '/api/teams/:slug/repo/app/*',
+    rateLimit: APP_READ_LIMIT,
     handler: async (req, tx): Promise<HttpResponse> => withAppHeaders(await serve(repo, req, tx)),
   });
 }

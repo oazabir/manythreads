@@ -205,7 +205,7 @@ describe('text only (criterion 4)', () => {
     expect(await head(eng)).toBe(before);
     expect((await blob(nadia, 'engineering', 'pages/logo.png')).status).toBe(404);
     await w.system(async (tx) => expect((await tx.query("SELECT 1 FROM app.repo_entries WHERE team_id = $1 AND path = 'pages/logo.png'", [eng])).rows).toHaveLength(0));
-    // text with a NUL, in the first 8 KB, is binary too; a good file in the same commit is not written either
+    // text with a NUL is binary too; a good file in the same commit is not written either
     const nul = await w.commit(nadia, 'engineering', [put('pages/ok2.md', 'fine\n'), put('pages/nul.md', 'a\u0000b')], 'nul');
     expect(nul.status).toBe(422);
     expect(await head(eng)).toBe(before);

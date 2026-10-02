@@ -62,11 +62,23 @@ blob(tx, teamId, path, ref, maxBytes?)  tree(tx, teamId, path, ref)
 | a bot | only through the kernel broker: `ctx.capabilities.authorize(tx, 'files.write' \| 'files.delete', { path })`. The broker's path guard denies `bots/`, `TEAM.md`, `skills/`, `routines/` (case-folded, percent-decoded, traversal-proof) and logs each denial as `kernel.capability.denied`; the bot also needs a `files.write` grant. `files.delete` is declared destructive: never grantable. This plugin has no copy of the guard: the paths live once in `isGuardedRepoPath` (`@manythreads/shared`), which the broker uses |
 | a guest, a person outside the team, an anonymous caller | never (403, 403, 401); an archived team takes no write (409) |
 
-Content: **text only**. A NUL byte in the first 8 KB, or more than 1 MB (1,048,576 bytes is allowed), is **422 `attachment_not_in_repo`**; nothing is committed, and a good file in
+Content: **text only**. A NUL byte anywhere, bytes that are not valid UTF-8, or more than 1 MB (1,048,576 bytes is allowed), are **422 `attachment_not_in_repo`**; nothing is committed, and a good file in
 the same request is not written either. Upload such bytes as a channel attachment. (Through HTTP the JSON body limit is the practical ceiling for text.)
 
 Paths (strict, NFC-normalised, never "fixed"): relative; no `..`, `.` or empty segment; no backslash or control character; no segment `.git` (any case) or `.gitmodules`; no segment that
 ends in a dot or a space; at most 1,024 bytes (255 per segment). Refused with 400 `validation_failed`. A file and a folder of one name in one request are refused too.
+
+## Limits and upkeep (Phase 4 security review)
+
+- **Quota per team.** `MANYTHREADS_REPO_MAX_BYTES` (default 512 MiB, the repository's size on disk: loose objects, packs, so history counts) and `MANYTHREADS_REPO_MAX_FILES` (default 20,000).
+  A commit that adds bytes past either is **413 `repo_quota_exceeded`** and writes nothing; a commit that only deletes or shrinks is always allowed.
+- **Files tree.** One folder listing returns at most 5,000 names (folders first, then by name).
+- **Rate limits** (per actor, sliding window, in process memory of each replica): tree, blob and content 600 per minute, history and diff 120, commit 120, restore 60, app files 1,200.
+- **The git runner** runs `MANYTHREADS_GIT_WORKERS` processes at once (default 8), lets at most that number minus two work for one repository, and refuses with **503** (`Retry-After: 2`)
+  when `MANYTHREADS_GIT_MAX_QUEUE` calls (default 64) are already waiting. Every call runs with `GIT_LITERAL_PATHSPECS=1`: a path is a name, never a pattern.
+- **Repacking.** The queue `repo-git.gc` runs weekly (Sunday 04:41 UTC) and calls `git gc --auto` (threshold about 1,000 loose objects) for each team repository, in the foreground.
+- **Co-authors** come from the validated `coAuthors` argument of `write` and the index (`repo_commits.co_authors`), never from the message: `Co-authored-by:` (and `Signed-off-by:` and similar) lines
+  typed into a message are quoted with `> `, and History skips any trailer whose id is not a full actor id.
 
 ## The git layer (`src/git`)
 

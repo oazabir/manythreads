@@ -315,6 +315,36 @@ describe('the process boundary', () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(850); // three waves of 300 ms
   });
 
+  it('refuses with `busy` once maxQueue calls are waiting, and recovers when they finish', async () => {
+    const r = createGitRunner({ bin: script('nap2.sh', 'sleep 0.3'), poolSize: 1, maxQueue: 2 });
+    const results = await Promise.allSettled(Array.from({ length: 5 }, () => r.run(['log'])));
+    const refused = results.filter((x) => x.status === 'rejected' && (x.reason as GitError).code === 'busy');
+    expect(refused).toHaveLength(2); // 1 running + 2 waiting; the other two are turned away at once
+    expect(r.stats()).toEqual({ running: 0, waiting: 0 });
+    await expect(r.run(['log'])).resolves.toBeTruthy();
+  });
+
+  it('one repository cannot take every slot: another repository starts while the first has calls waiting', async () => {
+    const r = createGitRunner({ bin: script('nap3.sh', 'sleep 0.4'), poolSize: 4, perRepoMax: 2, maxQueue: 50 });
+    const t0 = Date.now();
+    let otherDone = 0;
+    const flood = Array.from({ length: 6 }, () => r.run(['log'], { gitDir: join(root, 'a.git') }));
+    const other = r.run(['log'], { gitDir: join(root, 'b.git') }).then(() => (otherDone = Date.now() - t0));
+    expect(r.stats().running).toBe(3); // two of A, one of B at once
+    await Promise.all([...flood, other]);
+    expect(otherDone).toBeLessThan(700); // not queued behind A's six calls (three waves, 1.2 s)
+  });
+
+  it('literal pathspecs: a pattern in a path matches nothing but a file of that name', async () => {
+    const dir = await fresh();
+    const r = await git.commit(dir, { expectedOld: null, changes: [{ path: 'pages/a.md', op: 'put', content: text('a') }, { path: 'pages/b.md', op: 'put', content: text('b') }], message: 'two', author: ada });
+    if (r.noop) throw new Error('x');
+    expect((await git.log(dir, { limit: 10, path: 'pages/a.md' })).commits).toHaveLength(1);
+    for (const pattern of ['pages/*', ':(glob)pages/**', ':(top)pages', 'pages/?.md']) {
+      expect((await git.log(dir, { limit: 10, path: pattern })).commits, pattern).toHaveLength(0);
+    }
+  });
+
   it('reports a missing git binary as unavailable', async () => {
     const err = await createGitRunner({ bin: join(root, 'no-such-git') }).run(['version']).catch((e: unknown) => e);
     expect((err as GitError).code).toBe('unavailable');
