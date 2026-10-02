@@ -145,3 +145,6 @@ export function nameProblem(raw: string): string | null {
 
 /** A page (`.md`) in `pages/`: shown with the read view of a durable page. */
 export const isPage = (path: string): boolean => path.startsWith('pages/') && /\.(md|markdown)$/i.test(path);
+
+/** A folder is an embedded app when it holds `index.html` and no `index.md` (SPEC section 5.2). */
+export const isAppFolder = (names: readonly string[]): boolean => names.includes('index.html') && !names.includes('index.md');

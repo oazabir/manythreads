@@ -255,6 +255,7 @@ export function FilesScreen() {
             onOpen={openInCentre}
             onAction={(a: RowAction, r: FileRow) => rowActions.start(a, r)}
             onBrowse={narrow ? () => setDialog('sheet') : undefined}
+            onOpenApp={() => go({ open: folder })}
             actions={narrow ? actions : undefined}
             notice={notice}
             dropping={dropping}

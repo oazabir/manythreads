@@ -1,12 +1,11 @@
-import { useSession } from '../../app/session';
 import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
-import { FileViewer } from '../../viewers/FileViewer';
 import { ViewerMessage } from '../../viewers/common';
 import { RowMenu, useRowActions } from './actions';
 import { whenLabel } from './FileList';
 import { MEMORY_COPY, READ_ONLY_COPY, type FileRow } from './model';
 import { useTeamFiles, type TeamFiles } from './store';
+import { RowViewer } from './RowViewer';
 import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
 
@@ -26,10 +25,9 @@ export function FileView({ path, onClose, onMoved, onGone }: { path: string; onC
 
 function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFiles; row: FileRow; onClose: () => void; onMoved: (to: string) => void; onGone: () => void }) {
   const panel = usePanel();
-  const session = useSession();
   const { content, save } = useContent(files, row);
   const actions = useRowActions(files, { onDone: (r) => (r.action === 'delete' ? onGone() : onMoved(r.to)) });
-  const git = row.store === 'git';
+  const git = row.store === 'git' && row.kind === 'file';
   const pr = row.readOnlyReason === 'change_by_pull_request';
   return (
     <div className="fview" data-landmark="file-view" data-testid="file-view" data-path={row.path}>
@@ -50,14 +48,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
       ) : null}
       {row.managedBy ? <p className="fnote memory" role="note"><b>{MEMORY_COPY}.</b> Edits to facts are kept by the team's memory.</p> : null}
       <div className="fvb">
-        <FileViewer
-          path={row.path}
-          {...(row.mime ? { mime: row.mime } : {})}
-          source={content.source}
-          readOnly={row.readOnly}
-          {...(save ? { onSave: save } : {})}
-          context={{ teamSlug: files.slug, teamName: files.teamName, authorName: session.person.name }}
-        />
+        <RowViewer files={files} row={row} content={content} save={save} readOnly={row.readOnly} />
       </div>
       {actions.dialog}
     </div>

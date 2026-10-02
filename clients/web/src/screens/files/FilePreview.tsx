@@ -4,14 +4,13 @@ import { fileKind, fileSize } from '../../channels/format';
 import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { usePanelSub, usePanelTitle } from '../../kernel/panel/sub';
-import { FileViewer } from '../../viewers/FileViewer';
 import { ViewerMessage } from '../../viewers/common';
-import { useSession } from '../../app/session';
 import { RowMenu, useRowActions } from './actions';
 import { whenLabel } from './FileList';
 import { READ_ONLY_COPY, MEMORY_COPY, isPage, parentOf, type FileRow } from './model';
 import { filesHref } from './paths';
 import { useTeamFiles, type TeamFiles } from './store';
+import { RowViewer } from './RowViewer';
 import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
 
@@ -60,8 +59,7 @@ export function FilePreview({ entry }: { entry: { type: string; id: string } }) 
 function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
   const navigate = useNavigate();
   const panel = usePanel();
-  const session = useSession();
-  const git = row.store === 'git';
+  const git = row.store === 'git' && row.kind === 'file';
   const page = git && isPage(row.path);
   const [editing, setEditing] = useState(false);
   const { content, save } = useContent(files, row);
@@ -93,14 +91,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
         </p>
       ) : null}
       {row.managedBy ? <p className="fnote memory" role="note"><b>{MEMORY_COPY}.</b> Edits to facts are kept by the team's memory.</p> : null}
-      <FileViewer
-        path={row.path}
-        {...(row.mime ? { mime: row.mime } : {})}
-        source={content.source}
-        readOnly={reading || row.readOnly}
-        {...(save ? { onSave: save } : {})}
-        context={{ teamSlug: files.slug, teamName: files.teamName, authorName: session.person.name }}
-      />
+      <RowViewer files={files} row={row} content={content} save={save} readOnly={reading || row.readOnly} />
       {row.store === 'attachments' ? <Kv row={row} files={files} /> : null}
       {actions.dialog}
     </div>

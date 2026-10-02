@@ -12,7 +12,7 @@ export function useContent(files: TeamFiles, row: FileRow): { content: FileConte
   useEffect(() => {
     const known = content.sha?.();
     if (row.blobSha && known && known !== row.blobSha) setContent(files.backend.open(row));
-  }, [row.blobSha, content, files]);
+  }, [row, content, files]);
   const saver = content.save;
   const save = saver
     ? async (text: string): Promise<void> => {

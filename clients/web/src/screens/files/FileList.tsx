@@ -5,6 +5,7 @@ import { RowMenu, type RowAction } from './actions';
 import {
   MEMORY_COPY,
   READ_ONLY_COPY,
+  isAppFolder,
   ROOT,
   matchesSource,
   matchesType,
@@ -68,13 +69,15 @@ type Props = {
   onAction: (action: RowAction, row: FileRow) => void;
   /** Phone: the breadcrumb opens the folder sheet. */
   onBrowse?: (() => void) | undefined;
+  /** The folder is an embedded app: its row of the list opens it in the centre. */
+  onOpenApp: () => void;
   actions?: React.ReactNode;
   notice?: React.ReactNode;
   dropping: boolean;
 };
 
 /** Breadcrumb, filters and the file list of one folder. Folders and files of both stores look the same. */
-export function FileList({ teamName, folder, info, state, selected, filters, onFilters, onFolder, onSelect, onOpen, onAction, onBrowse, actions, notice, dropping }: Props) {
+export function FileList({ teamName, folder, info, state, selected, filters, onFilters, onFolder, onSelect, onOpen, onAction, onBrowse, onOpenApp, actions, notice, dropping }: Props) {
   const parts = segments(folder);
   const rows = state?.listing ? sortRows(state.listing.rows.filter((r) => matchesType(r, filters.type) && matchesSource(r, filters.source)), filters.order) : [];
   const all = state?.listing?.rows ?? [];
@@ -115,6 +118,12 @@ export function FileList({ teamName, folder, info, state, selected, filters, onF
       {info?.readOnlyReason === 'change_by_pull_request' ? (
         <p className="fnote" data-testid="read-only-note" role="note">
           <b>{READ_ONLY_COPY}.</b> Files here are changed by a pull request to the team repo, not from this screen.
+        </p>
+      ) : null}
+      {isAppFolder(all.map((r) => r.name)) ? (
+        <p className="fnote" data-testid="app-note" role="note">
+          <span><b>This folder is an app.</b> It runs in a sandbox and cannot read your session or other files.</span>
+          <button type="button" className="btn s" data-testid="open-app" onClick={onOpenApp}>Open app</button>
         </p>
       ) : null}
       {notice}
