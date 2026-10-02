@@ -1,6 +1,6 @@
 # STATUS
 
-Current phase: **4 · Files and the team repo** — Wave A done (P4-00, P4-01..05, P4-09/10, P4-13 storage-s3). Wave B running: P4-06/07/08 server API; P4-11 Files screen; seed v4 + helm S3/GC env + app per-open token. P4-12 (optional LibreOffice) deferred. Then Wave C: gate (run with agents idle), security review, retro, PR "Phase 4 · Files and the team repo".
+Current phase: **4 · Files and the team repo** — all tasks done except optional P4-12 (deferred); security review fixed; local gate green (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e + vt). Exit: merge PR "Phase 4 · Files and the team repo", release + live screenshots. Retro: docs/retro/phase-4.md.
 
 Owner instruction (2026-10-02): **stop the loop after phase 4 finishes** (merge + release + live screenshots), do not start phase 5.
 
@@ -8,7 +8,8 @@ Owner instruction (2026-10-02): **stop the loop after phase 4 finishes** (merge 
 |---|---|---|
 | 1 Foundations | done — gate green locally and in CI; retro `docs/retro/phase-1.md` | phase-1 / v0.1.0 |
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
-| 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | pending release.yml |
+| 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
+| 4 Files and the team repo | gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247 + fixes, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | pending release.yml |
 | 4–13 | not started | |
 
 ## Phase 1 summary

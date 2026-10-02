@@ -91,3 +91,7 @@ Format: `- [phase/task] what went wrong → what to do instead`
 - [P4-11 web] A file open in the editor reloaded after every save (the screen refetched the row and built new content) and, worse, did not reload after a restore from History (the same object was kept) → the content object remembers the blob it read or wrote (`sha()`); it is rebuilt only when the row's blob is another one than that (a restore, a move), never after its own save.
 - [P4-11 web] Hiding a hidden file and a missing one the same way (403 for both) made the panel say "Page not found" for a file the person may not read, and the generic not-found page for a missing file named a page → a 403 is "You do not have access", a 404 is "This file no longer exists"; never turn a 403 into null.
 - [P4-11 plates] The prototype's tree is 220 px wide in the Files plate and 230 px in the repo plate, and its list table has six columns that overflow beside a 380 px panel (the plate clips them) → one width inside both 6 px bands (225), and the "Where" column goes first when the list is narrower than 720 px (container query), instead of copying a clipped table.
+
+- P4: a screen stylesheet (files.css) redefined the shared `.linkish` class and added an always-present empty flex slot to the shell
+  header; this broke the sign-in and phone channel W baselines. Prefix screen classes; hide empty slots (`:empty { display: none }`);
+  run the whole visual suite before the gate, not only your area's specs.
