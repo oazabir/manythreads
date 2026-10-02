@@ -61,3 +61,49 @@ export const REPO_BRANCH = 'main';
 /** The largest text file the writer accepts (bytes), and how much of the start it inspects for a NUL byte. Beyond either it is an attachment. */
 export const REPO_MAX_FILE_BYTES = 1_048_576;
 export const REPO_BINARY_SNIFF_BYTES = 8192;
+
+const MIME_BY_EXT: Readonly<Record<string, string>> = {
+  md: 'text/markdown',
+  markdown: 'text/markdown',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  tsv: 'text/tab-separated-values',
+  json: 'application/json',
+  yaml: 'application/yaml',
+  yml: 'application/yaml',
+  toml: 'application/toml',
+  xml: 'text/xml',
+  html: 'text/html',
+  htm: 'text/html',
+  css: 'text/css',
+  js: 'text/javascript',
+  mjs: 'text/javascript',
+  ts: 'text/x-typescript',
+  tsx: 'text/x-typescript',
+  jsx: 'text/javascript',
+  py: 'text/x-python',
+  sh: 'text/x-shellscript',
+  sql: 'application/sql',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  mmd: 'text/vnd.mermaid',
+  mermaid: 'text/vnd.mermaid',
+};
+
+/** The type a repo file is served with, from its extension (git stores no type); `text/plain` for an unknown extension (the repo holds text only). */
+export function repoMimeOf(path: string): string {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return 'text/plain';
+  return MIME_BY_EXT[name.slice(dot + 1).toLowerCase()] ?? 'text/plain';
+}
+
+/** Where attachments of channels appear in the Files tree: `channels/<name>/<file>` (SPEC section 5.2). Not a folder of the git repo. */
+export const FILES_CHANNELS_DIR = 'channels';
+/** `memory/` is written by the team's memory (journal, facts); the tree shows a note, people may still edit facts. */
+export const FILES_MEMORY_DIR = 'memory';
