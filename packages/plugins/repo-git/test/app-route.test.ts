@@ -154,6 +154,20 @@ describe('the per-open token', () => {
     expect((await anonymous(resolve('style.css'))).status).toBe(200);
   });
 
+  it('never reaches the server log: the token segment of the request line is redacted (L4)', async () => {
+    const { url, token } = await tokenFor();
+    expect((await anonymous(url)).status).toBe(200);
+    const bad = url.replace(token, `${token.slice(0, -2)}xx`);
+    expect((await anonymous(bad)).status).toBe(403);
+    const lines = server.logs.filter((l) => l.includes('/repo/app/'));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.some((l) => l.includes('~mta.[redacted]'))).toBe(true);
+    for (const line of server.logs) {
+      expect(line).not.toContain(token);
+      expect(line).not.toContain(token.slice(0, 20));
+    }
+  });
+
   it('is refused to people who cannot read the team, and for an unknown team', async () => {
     expect((await issue(tariq, 'engineering', 'apps/demo')).status).toBe(403); // Marketing, not Engineering
     expect((await issue(lena, 'engineering', 'apps/demo')).status).toBe(403); // a guest

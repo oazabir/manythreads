@@ -37,6 +37,7 @@ import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
 import { createAppTokens, type AppTokensOptions } from './app-token.ts';
+import { withRedactedLogs } from './log-redact.ts';
 import { authenticateAppToken, isAppRoute, isCanonicalAppRequest, mountAppTokenRoute } from './app-token-route.ts';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
 import { envelope, errorHandler, notFoundHandler } from './errors.ts';
@@ -126,7 +127,7 @@ const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.act
  * OpenAPI generated from the same schemas, health endpoints, plugin routes and the WebSocket hub.
  */
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false, trustProxy: trustProxySetting(options.trustProxy) });
+  const app = Fastify({ logger: withRedactedLogs(options.logger), trustProxy: trustProxySetting(options.trustProxy) });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(errorHandler);
