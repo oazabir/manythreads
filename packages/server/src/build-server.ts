@@ -13,7 +13,18 @@ import {
   type RateLimiter,
   type Realtime,
 } from '@manythreads/kernel';
-import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@manythreads/shared';
+import {
+  type ActorId,
+  type WorkspaceId,
+  HealthResponse,
+  ErrorEnvelope,
+  ReadyResponse,
+  REPO_APP_PATH_RE,
+  embeddedAppHeaders,
+  healthRoute,
+  readyRoute,
+  WsEnvelope,
+} from '@manythreads/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -159,6 +170,13 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
       }
     }
     return undefined;
+  });
+
+  // Embedded apps (SPEC 5.2, PLAN P4-10): whatever answers under the app content route, the strict CSP rides on it (an app cannot call /api,
+  // load another origin or be framed by another site). Set here, not in the route, so a 401 or a 404 from that path carries it too.
+  app.addHook('onSend', (req, reply, payload, done) => {
+    if (REPO_APP_PATH_RE.test(req.url)) for (const [name, value] of Object.entries(embeddedAppHeaders())) void reply.header(name, value);
+    done(null, payload);
   });
 
   if (sessions) {

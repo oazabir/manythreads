@@ -48,6 +48,7 @@ describe('ErrorEnvelope', () => {
       'internal',
       'unauthenticated',
       'gone',
+      'attachment_not_in_repo',
     ]);
   });
 });

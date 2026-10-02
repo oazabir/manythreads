@@ -97,6 +97,9 @@ if (!['none', 'world', 'content', 'personas'].includes(seedMode)) throw new Erro
 // Attachments (storage-local) go to a directory of this stack, removed on exit, never into the working tree.
 const storageDir = process.env['MANYTHREADS_STORAGE_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-blobs-'));
 process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
+// Team repositories (repo-git) likewise.
+const repoDir = process.env['MANYTHREADS_REPO_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-repos-'));
+process.env['MANYTHREADS_REPO_DIR'] = repoDir;
 const db = await createTestDatabase();
 if (seedMode === 'personas') await createPersonas(db);
 else if (seedMode !== 'none') await seedWorld(db);
@@ -131,6 +134,7 @@ const stop = async (): Promise<void> => {
   } finally {
     await dropTestDatabase(db).catch(() => undefined);
     rmSync(storageDir, { recursive: true, force: true });
+    rmSync(repoDir, { recursive: true, force: true });
     process.exit(0);
   }
 };

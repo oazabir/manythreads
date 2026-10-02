@@ -62,8 +62,8 @@ const post = (path: string, body: unknown) =>
 
 describe('job worker host', () => {
   it('starts a worker for the kernel queue and for each plugin queue', () => {
-    expect([...s.jobQueues].sort()).toEqual(['kms.rewrap', 'test-kernel.record']);
-    expect(s.host.registries.jobs.list().map((e) => [e.plugin, e.value.queue])).toEqual([['test-kernel', 'test-kernel.record']]);
+    expect([...s.jobQueues].sort()).toEqual(['files.blob-gc', 'kms.rewrap', 'test-kernel.record']);
+    expect(s.host.registries.jobs.list().map((e) => [e.plugin, e.value.queue]).sort()).toEqual([['files', 'files.blob-gc'], ['test-kernel', 'test-kernel.record']]);
   });
 
   it('runs a plugin job as the system actor in the payload workspace, then marks it done', async () => {

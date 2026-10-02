@@ -29,8 +29,8 @@ export interface World {
  * were made from) and a server on a random port with dev auth on. Template channels appear when somebody first asks for a
  * team's directory (or when `team.template.applied` is consumed): call `ensureChannels` to make them now.
  */
-export async function createWorld(): Promise<World> {
-  const server = await startTestServer();
+export async function createWorld(options: { storage?: 'local' | 's3' } = {}): Promise<World> {
+  const server = await startTestServer(options.storage ? { storage: options.storage } : {});
   await seedWorld(server.db);
   const systemPool: pg.Pool = createSystemPool(server.db.systemUrl, 2);
   const call: World['call'] = async (who, method, path, body) => {

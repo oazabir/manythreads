@@ -1,12 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { mkdir, open, rename, rm, stat } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
   BlobNotFoundError,
   BlobTooLargeError,
   InvalidBlobKeyError,
   type BlobHead,
+  type BlobListItem,
+  type BlobListPage,
   type BlobPutResult,
   type BlobStorage,
 } from '@manythreads/sdk';
@@ -90,6 +92,31 @@ export function createLocalBlobStorage(options: LocalBlobStorageOptions): BlobSt
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
         throw err;
       }
+    },
+
+    async list({ after, limit }): Promise<BlobListPage> {
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new RangeError('limit must be an integer from 1 to 1000');
+      const items: BlobListItem[] = [];
+      let shards: string[];
+      try {
+        shards = (await readdir(root)).filter((d) => /^[0-9a-f]{2}$/.test(d)).sort();
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { items, next: null };
+        throw err;
+      }
+      const from = after === undefined ? '' : after;
+      for (const shard of shards) {
+        if (from !== '' && shard < from.slice(0, 2)) continue;
+        const names = (await readdir(join(root, shard))).filter((n) => KEY.test(n) && n.startsWith(shard) && n > from).sort();
+        for (const name of names) {
+          // A blob can be deleted between the listing and the stat: skip it.
+          const info = await stat(join(root, shard, name)).catch(() => null);
+          if (!info?.isFile()) continue;
+          items.push({ blobKey: name, size: info.size, modifiedAt: info.mtime });
+          if (items.length === limit) return { items, next: name };
+        }
+      }
+      return { items, next: null };
     },
 
     async head(blobKey): Promise<BlobHead | null> {

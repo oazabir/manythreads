@@ -322,6 +322,8 @@ export interface JobInfo {
   /** 1 on the first run. */
   attempt: number;
   workerId: string;
+  /** The server's logger: one line per call, no secrets. Put run metrics here (counts, bytes, milliseconds). */
+  log: PluginLogger;
 }
 
 /**
@@ -336,6 +338,12 @@ export interface JobOptions {
   concurrency?: number;
   /** Attempts before the job is dead-lettered (default 5). */
   maxAttempts?: number;
+  /**
+   * A 5-field cron expression in UTC (`17 3 * * *`): the server stores the schedule under the queue's name when it starts and enqueues the
+   * latest due slot with an empty payload (missed slots coalesce into one run; several replicas enqueue once). Only for queues whose
+   * handler needs no payload to start; a handler can still enqueue follow-ups with `ctx.jobs.enqueue`.
+   */
+  cron?: string;
 }
 
 export interface EnqueueJobOptions {
@@ -461,6 +469,22 @@ export interface BlobHead {
   size: number;
 }
 
+/** One stored blob as `list` reports it. */
+export interface BlobListItem {
+  blobKey: string;
+  size: number;
+  /** When the bytes were last written (S3 `LastModified`, file mtime): the blob GC leaves anything newer than its grace period alone. */
+  modifiedAt: Date;
+}
+
+/** A page of `BlobStorage.list`. */
+export interface BlobListPage {
+  /** Ascending by `blobKey`, at most `limit`. Blobs being uploaded are not listed until they are complete. */
+  items: BlobListItem[];
+  /** Pass as `after` for the next page; null on the last one. */
+  next: string | null;
+}
+
 /** Thrown by `put` when the stream is longer than `maxBytes`; nothing is stored. */
 export class BlobTooLargeError extends Error {
   readonly maxBytes: number;
@@ -504,4 +528,10 @@ export interface BlobStorage extends ProviderImpl {
   delete(blobKey: string): Promise<boolean>;
   /** Size of the stored bytes, or null when nothing is stored. */
   head(blobKey: string): Promise<BlobHead | null>;
+  /**
+   * Every stored blob, ascending by key, `limit` (1 to 1000) at a time: `after` is the exclusive key to continue from (the previous
+   * page's `next`). Only the blob GC (`files.blob-gc`) calls it, to find blobs no `files` row references; it must list exactly the keys
+   * this provider issued and nothing else in a shared bucket or directory.
+   */
+  list(options: { after?: string; limit: number }): Promise<BlobListPage>;
 }

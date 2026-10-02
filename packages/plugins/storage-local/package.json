@@ -15,5 +15,8 @@
   "dependencies": {
     "@manythreads/sdk": "workspace:*",
     "@manythreads/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@manythreads/test-utils": "workspace:*"
   }
 }

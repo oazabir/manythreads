@@ -11,3 +11,4 @@ export * from './search/index.ts';
 export * from './threads/index.ts';
 export * from './dm/index.ts';
 export * from './notifications/index.ts';
+export * from './repo/index.ts';

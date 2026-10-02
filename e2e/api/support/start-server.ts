@@ -10,6 +10,9 @@ const port = Number(process.env['MANYTHREADS_API_PORT'] ?? 3100);
 // Attachments (storage-local) go to a directory of their own, removed on exit, never into the working tree.
 const storageDir = process.env['MANYTHREADS_STORAGE_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-e2e-blobs-'));
 process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
+// Team repositories (repo-git) likewise.
+const repoDir = process.env['MANYTHREADS_REPO_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-e2e-repos-'));
+process.env['MANYTHREADS_REPO_DIR'] = repoDir;
 // Kernel migrations first so the seed world (workspace Kahf Software and the seven personas) exists before the server
 // starts: no first-admin link is needed, and specs sign in as a persona through POST /api/test/session.
 const db = await createTestDatabase();
@@ -35,6 +38,7 @@ const stop = async (): Promise<void> => {
   } finally {
     await dropTestDatabase(db).catch(() => undefined);
     rmSync(storageDir, { recursive: true, force: true });
+    rmSync(repoDir, { recursive: true, force: true });
     process.exit(0);
   }
 };

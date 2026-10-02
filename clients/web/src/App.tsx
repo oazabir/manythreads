@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router';
 import { RequireSession, SessionProvider } from './app/session';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -19,6 +20,9 @@ import { ThreadsInbox } from './screens/ThreadsInbox';
 import { Teams } from './screens/Teams';
 import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 
+// developer page: its viewers load on demand, not with the app
+const DevViewers = lazy(() => import('./pages/DevViewers').then((m) => ({ default: m.DevViewers })));
+
 function ExpiredRoute() {
   const [params] = useSearchParams();
   const kind = params.get('kind');
@@ -38,6 +42,7 @@ function AppRoutes() {
         <Route path="/expired" element={<ExpiredRoute />} />
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/dev/tokens" element={<DevTokens />} />
+        <Route path="/dev/viewers" element={<Suspense fallback={null}><DevViewers /></Suspense>} />
 
         <Route element={<RequireSession />}>
           <Route element={<Shell />}>

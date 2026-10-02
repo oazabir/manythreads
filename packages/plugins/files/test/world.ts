@@ -28,10 +28,10 @@ const headersFor = (who: Persona | null): Record<string, string> =>
   who ? { 'x-manythreads-dev-actor': JSON.stringify({ kind: 'person', id: who.actorId, workspaceId: who.workspaceId }) } : {};
 
 /** The channels world plus a storage directory of its own and upload/download helpers. */
-export async function createWorld(): Promise<FilesWorld> {
+export async function createWorld(options: { storage?: 'local' | 's3' } = {}): Promise<FilesWorld> {
   const storageDir = mkdtempSync(join(tmpdir(), 'manythreads-files-test-'));
   process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
-  const w = await createChannelsWorld();
+  const w = await createChannelsWorld(options);
   const files: FilesWorld = {
     ...w,
     storageDir,

@@ -10,6 +10,8 @@ export const ErrorCode = z.enum([
   'unauthenticated',
   /** 410: a one-time link or token that was used, expired or never existed. */
   'gone',
+  /** 422: bytes that are not text (a NUL byte in the first 8 KB) or larger than 1 MB were sent to the team repo, which holds text only; upload them as an attachment. */
+  'attachment_not_in_repo',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

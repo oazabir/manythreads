@@ -23,7 +23,9 @@ import {
   loadPlugins,
   processedOnce,
   readMigrationFiles,
+  schedule,
   startConsumer,
+  startScheduler,
   startWorker,
   subscribe,
   withSystem,
@@ -74,6 +76,17 @@ export const pluginsDir = fileURLToPath(new URL('../../plugins/', import.meta.ur
 /** Packages under packages/plugins that only exist for tests and examples; loaded when MANYTHREADS_TEST_PLUGINS=1. */
 export const TEST_ONLY_PLUGIN_DIRS: ReadonlySet<string> = new Set(['test-kernel', 'example-hello']);
 
+/** The two plugins that register the one `storage` provider; `MANYTHREADS_STORAGE` decides which of them loads. */
+export const STORAGE_PLUGIN_DIRS: Readonly<Record<'local' | 's3', string>> = { local: 'storage-local', s3: 'storage-s3' };
+
+/** `MANYTHREADS_STORAGE`: `local` (default, `storage-local`) or `s3` (`storage-s3`). Anything else stops the start: a typo must not pick a store. */
+export function storageFromEnv(raw: string | undefined): 'local' | 's3' {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (v === '' || v === 'local') return 'local';
+  if (v === 's3') return 's3';
+  throw new Error(`MANYTHREADS_STORAGE must be "local" or "s3" (got "${raw}")`);
+}
+
 export interface StartServerOptions {
   port?: number;
   host?: string;
@@ -99,6 +112,8 @@ export interface StartServerOptions {
   jobPollMs?: number;
   /** Load the test-only plugins (test-kernel, example-hello). */
   testPlugins?: boolean;
+  /** Which storage plugin loads: `local` (storage-local) or `s3` (storage-s3). Default from `MANYTHREADS_STORAGE`, else `local`. */
+  storage?: 'local' | 's3';
   /** The test-only dev header (only ever honoured when NODE_ENV=test; see dev-actor.ts). */
   devAuth?: boolean;
   logger?: boolean | object;
@@ -144,9 +159,13 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   const appPool = createAppPool(options.appUrl);
   const systemPool = createSystemPool(options.systemUrl);
 
+  // One `storage` provider only: the plugin of the other store is not even loaded.
+  const storage = options.storage ?? storageFromEnv(process.env['MANYTHREADS_STORAGE']);
+  const storageDirs = new Set(Object.values(STORAGE_PLUGIN_DIRS));
   const sources: PluginSource[] = (await discoverPlugins(pluginsDir)).filter((s) => {
     if (!('dir' in s) || s.dir === undefined) return true;
     const dirName = s.dir.split('/').filter(Boolean).pop() ?? '';
+    if (storageDirs.has(dirName)) return dirName === STORAGE_PLUGIN_DIRS[storage];
     return options.testPlugins === true || !TEST_ONLY_PLUGIN_DIRS.has(dirName);
   });
 
@@ -182,10 +201,18 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   };
 
   const capabilities = new CapabilityRegistry();
+  // Denials by the capability broker become kernel.capability.denied events (the audit log). Built before the plugins load so
+  // `ctx.capabilities.authorize` can reach it; the registry fills as manifests are read.
+  const broker = new CapabilityBroker({
+    registry: capabilities,
+    grants: createDbGrantSource({ pool: systemPool }),
+    audit: createEventAuditSink(emit, { withTx: (fn) => withSystem(fn, { pool: systemPool }) }),
+  });
   const lock = options.migrationLock ?? (<T>(fn: () => Promise<T>) => fn());
   const host = await lock(() => loadPlugins({
     plugins: sources,
     capabilities,
+    broker,
     mailer,
     runtime: { publicUrl, now: clock },
     identity,
@@ -198,13 +225,6 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     // Plugins see the kernel's emit; validation against the event registry happens there.
     emit: (tx, event) => emit(tx as unknown as Tx, event),
   }));
-
-  // Denials by the capability broker become kernel.capability.denied events (the audit log).
-  const broker = new CapabilityBroker({
-    registry: capabilities,
-    grants: createDbGrantSource({ pool: systemPool }),
-    audit: createEventAuditSink(emit, { withTx: (fn) => withSystem(fn, { pool: systemPool }) }),
-  });
 
   const migrationSources: MigrationSource[] = [kernelMigrationSource];
   for (const p of host.plugins) {
@@ -296,13 +316,29 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
             const workspaceId = typeof payload['workspaceId'] === 'string' ? (payload['workspaceId'] as WorkspaceId) : undefined;
             return withSystem(
               async (tx) => {
-                await value.handler(payload, guardPluginTx(tx as unknown as PluginTx), job);
+                await value.handler(payload, guardPluginTx(tx as unknown as PluginTx), { ...job, log });
               },
               { pool: systemPool, ...(workspaceId ? { workspaceId } : {}) },
             );
           },
         }),
       );
+    }
+  }
+
+  // Cron schedules declared by plugins (`ctx.jobs.register(queue, handler, { cron })`): stored under the queue's name (idempotent), then one
+  // ticker per process enqueues the latest due slot; replicas race safely (the schedule row is locked, the dedupe key is name@slot).
+  let scheduler: { stop(): void } | undefined;
+  if (options.jobWorkers !== false) {
+    const scheduled = host.registries.jobs.list().filter((e) => e.value.options.cron !== undefined);
+    if (scheduled.length > 0) {
+      await withSystem(
+        async (tx) => {
+          for (const { value } of scheduled) await schedule(tx, value.queue, value.options.cron as string, value.queue, {});
+        },
+        { pool: systemPool },
+      );
+      scheduler = startScheduler({ pool: systemPool });
     }
   }
 
@@ -321,6 +357,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     pools: { app: appPool, system: systemPool },
     url: `http://127.0.0.1:${port}`,
     async close() {
+      scheduler?.stop();
       await Promise.all([...consumers.map((c) => c.stop()), ...workers.map((x) => x.stop())]);
       await realtime.stop();
       await app.close();
