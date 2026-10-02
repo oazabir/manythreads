@@ -49,3 +49,10 @@ Screens: `docs/retro/screens/phase-1/`.
 - Owner approved self-merge of phase PRs to main. Owner requested ops-run / ops-db free-form workflows; the
   permission classifier blocks committing them — needs an owner permission rule.
 - Owner rule: product name is manythreads; repo-wide rename pending (after the P2 schema agent commits).
+
+## Phase 4 Wave A follow-ups (for Wave B)
+- P4-09/10 done (2810c42). FilePanel reads/saves via repo-git blob + commit routes (baseBlobSha); repo blobs have no `url`
+  (SVG in repo won't render) — tree/content API should serve a URL. `channels/` paths wait for the tree API (P4-06).
+- Sandboxed app subresources lack SameSite cookies (opaque origin): real app content route needs a signed per-open token.
+- Markdown >200 KB opens Raw only (marked quadratic on hostile emphasis).
+- `pnpm vt` / full e2e flake under parallel agents (Postgres connection slots) — run gates with agents idle.
