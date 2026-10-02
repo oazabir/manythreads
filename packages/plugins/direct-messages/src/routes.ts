@@ -70,7 +70,7 @@ export function registerDmRoutes(ctx: PluginContext): void {
         await ctx.audit.emit(tx, { type: 'channel.channel.created', channelId, teamId: null, name: '', kind: 'dm', private: true });
         // The other people see the conversation appear in their sidebar.
         const push = ChannelCreatedPush.parse({ channel: summary.channel });
-        for (const p of summary.participants) if (p.personId !== person) await ctx.realtime.pushToPerson(tx, p.personId, WS_CHANNEL_CREATED, push);
+        await ctx.realtime.pushToPeople(tx, summary.participants.filter((p) => p.personId !== person).map((p) => p.personId), WS_CHANNEL_CREATED, push);
       }
       return json(OpenDmResponse.parse({ dm: summary, created }), created ? 201 : 200);
     }),

@@ -1,12 +1,15 @@
 import { guardPluginTx } from '@manythreads/sdk';
 import type {
   AuditEvent,
+  CapabilityAuthorizeContext,
+  CapabilityDecision,
   CapabilityHandler,
   EmitEvent,
   EnqueueJobOptions,
   GetOneOrCreateInput,
   JobHandler,
   JobOptions,
+  PluginAccess,
   PluginDb,
   PluginTemplates,
   IdentityServices,
@@ -45,6 +48,8 @@ export interface ContextDeps {
   templates?: PluginTemplates;
   /** Secret storage for plugins that extend `provider.identity` (default: the kernel's KMS-backed one). */
   secrets?: SecretService;
+  /** The capability broker behind `ctx.capabilities.authorize`; without one the call rejects (fail closed). */
+  broker?: { authorize(actor: Tx['actor'], capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision> };
 }
 
 /** The `ctx` handed to `register`. Using an extension point the manifest did not declare throws. */
@@ -89,6 +94,23 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   const realtime: PluginRealtime = {
     pushToPerson: (tx, personId, type, payload) =>
       publishRealtime(guardPluginTx(tx), [{ workspaceId: tx.actor.workspaceId, personId, type, payload }]),
+    // One publish call (one statement) for the whole audience, whatever its size.
+    pushToPeople: (tx, personIds, type, payload) =>
+      publishRealtime(
+        guardPluginTx(tx),
+        [...new Set(personIds)].map((personId) => ({ workspaceId: tx.actor.workspaceId, personId, type, payload })),
+      ),
+    pushMany: (tx, pushes) =>
+      publishRealtime(guardPluginTx(tx), pushes.map((p) => ({ workspaceId: tx.actor.workspaceId, ...p }))),
+  };
+
+  const idsOf = async (tx: PluginTx, text: string, perm: string): Promise<string[]> => {
+    const res = await guardPluginTx(tx).query<{ ids: string[] | null }>(text, [perm]);
+    return res.rows[0]?.ids ?? [];
+  };
+  const access: PluginAccess = {
+    readableTeamIds: (tx, perm) => idsOf(tx, 'SELECT app.readable_team_ids($1::text) AS ids', perm),
+    readableChannelIds: (tx, perm) => idsOf(tx, 'SELECT app.visible_channel_ids($1::text) AS ids', perm),
   };
 
   const ownQueue = (queue: string): void => {
@@ -183,6 +205,10 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       },
     },
     capabilities: {
+      async authorize(tx: PluginTx, capability: string, context: CapabilityAuthorizeContext = {}) {
+        if (!deps.broker) throw new PluginError(`Plugin "${name}": no capability broker is wired into the host`, { plugin: name });
+        return deps.broker.authorize(tx.actor, capability, context);
+      },
       register(capability: string, handler: CapabilityHandler) {
         if (!manifest.capabilities.some((c) => c.name === capability)) {
           throw new PluginError(
@@ -242,6 +268,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     readState: createReadStateService({ counters: registries.unreadCounters, plugin: name }),
     links: createEntityLinkService({ resolvers: registries.entityResolvers, plugin: name }),
     realtime,
+    access,
     get identity(): IdentityServices {
       use('provider.identity');
       if (!deps.identity) {

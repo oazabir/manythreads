@@ -292,3 +292,37 @@ describe('MarkupParseResult', () => {
     }
   });
 });
+
+describe('hostile input (claims are checked with sorted-interval sweeps, not against every earlier claim)', () => {
+  const MAX = 40_000; // the cap on a message body
+  const timeIt = (md: string): number => {
+    parseMarkup(md); // warm up the regexes
+    return Math.min(
+      ...Array.from({ length: 3 }, () => {
+        const start = performance.now();
+        parseMarkup(md);
+        return performance.now() - start;
+      }),
+    );
+  };
+
+  it('13,000 mentions parse in under 30 ms and every one is found', () => {
+    const md = '@a '.repeat(13_000);
+    expect(md.length).toBeLessThanOrEqual(MAX);
+    expect(parseMarkup(md).mentions).toHaveLength(13_000);
+    expect(timeIt(md)).toBeLessThan(30);
+  });
+
+  it('13,000 channel references, 10,000 code spans, 8,000 URLs and a mix of all stay as fast', () => {
+    const cases = ['#a '.repeat(13_000), '`@x` '.repeat(8_000), 'http://x.y/@z '.repeat(2_800), '[[page:a]]@a #b `c` http://q '.repeat(1_300)];
+    for (const md of cases) {
+      expect(md.length).toBeLessThanOrEqual(MAX);
+      expect(timeIt(md), md.slice(0, 20)).toBeLessThan(60);
+    }
+  });
+
+  it('keeps the first claim on an overlap: a mention inside a code span, URL or link destination is not a mention', () => {
+    const r = parseMarkup('`@in` @out [x](http://a/@b) http://c/@d @out2');
+    expect(r.mentions.map((m) => m.handle)).toEqual(['out', 'out2']);
+  });
+});

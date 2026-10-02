@@ -1,6 +1,6 @@
 import type { ErrorCode, ExtensionPoint, PluginManifest, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
-import type { PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
+import type { PluginAccess, PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -174,6 +174,21 @@ export interface HttpRouteDefinition {
   handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 
+/** What the broker needs beyond the actor: repo-relative paths for `files.*` mutations, the trigger of the run, request constraints. */
+export interface CapabilityAuthorizeContext {
+  path?: string;
+  paths?: readonly string[];
+  trigger?: string;
+  constraints?: Record<string, unknown>;
+}
+
+/** The broker's answer. `needsApproval` comes from the bot's grant: the call waits in the Approvals inbox. */
+export interface CapabilityDecision {
+  allowed: boolean;
+  reason: string;
+  needsApproval: boolean;
+}
+
 export type CapabilityHandler = (input: Record<string, unknown>, tx: PluginTx) => unknown | Promise<unknown>;
 
 export type ScopeType = 'workspace' | 'team' | 'person';
@@ -221,8 +236,17 @@ export interface PluginContext {
   };
   readonly settings: { page(definition: SettingsPageDefinition): void };
   readonly composer: { action(definition: ComposerActionDefinition): void };
-  /** Bind an implementation to a capability this plugin declared in its manifest. */
-  readonly capabilities: { register(name: string, handler: CapabilityHandler): void };
+  /** Bind an implementation to a capability this plugin declared in its manifest, and ask the broker whether the caller may use one. */
+  readonly capabilities: {
+    register(name: string, handler: CapabilityHandler): void;
+    /**
+     * Asks the kernel's capability broker (spec section 3, guide section 7) whether the transaction's actor may use `capability`: the path guard
+     * (`bots/`, `TEAM.md`, `skills/`, `routines/` are never bot-writable), the destructive tag, `person:*` scopes and the bot's allowlist. A
+     * person is allowed (the owning plugin checks its ACL); a denial is logged as `kernel.capability.denied`. Fails closed: it rejects when the
+     * host has no broker wired in.
+     */
+    authorize(tx: PluginTx, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+  };
   /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;
@@ -242,6 +266,8 @@ export interface PluginContext {
   readonly links: PluginLinks;
   /** Live push to a person's sockets. */
   readonly realtime: PluginRealtime;
+  /** The caller's readable team and channel sets (typed wrappers over the visibility functions policies use). */
+  readonly access: PluginAccess;
   /** Only for plugins whose manifest extends `provider.identity`; any other plugin throws on access. */
   readonly identity: IdentityServices;
   /** Envelope-encrypted secrets (client secrets of sign-in providers). Only for plugins that extend `provider.identity`. */

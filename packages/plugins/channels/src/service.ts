@@ -143,7 +143,7 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id));
 }
 
-/** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. */
+/** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. One statement for any audience size. */
 async function pushToPeople(
   { ctx }: Deps,
   tx: PluginTx,
@@ -151,7 +151,7 @@ async function pushToPeople(
   type: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  for (const personId of people) await ctx.realtime.pushToPerson(tx, personId, type, payload);
+  await ctx.realtime.pushToPeople(tx, people, type, payload);
 }
 
 /** `message.posted` and `message.edited`: the message rides along when it is small enough, else the client fetches it. */

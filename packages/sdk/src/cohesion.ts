@@ -107,6 +107,13 @@ export interface PluginLinks {
   registerResolver(type: EntityType, resolver: EntityResolver): void;
 }
 
+/** One live push: who gets it and the `{ type, payload }` of the WebSocket envelope. */
+export interface RealtimePush {
+  personId: string;
+  type: string;
+  payload: Record<string, unknown>;
+}
+
 /** Live push to a person's open sockets (every server replica delivers to its own connections). */
 export interface PluginRealtime {
   /**
@@ -114,4 +121,31 @@ export interface PluginRealtime {
    * pushed). `payload` must stay under about 7 KB: push an id and let the client fetch the rest.
    */
   pushToPerson(tx: PluginTx, personId: string, type: string, payload: Record<string, unknown>): Promise<void>;
+  /**
+   * The same push for every person in `personIds`, in ONE statement (one `pg_notify` per person inside a single `unnest`), however large the
+   * audience: a post to a 2,000-member channel is one round trip, not 2,000. Duplicates are dropped; an empty list does nothing. Same
+   * delivery rules and payload cap as `pushToPerson`.
+   */
+  pushToPeople(tx: PluginTx, personIds: readonly string[], type: string, payload: Record<string, unknown>): Promise<void>;
+  /** Pushes with a payload of their own per person (notification cards), still in one statement. Same rules as `pushToPeople`. */
+  pushMany(tx: PluginTx, pushes: readonly RealtimePush[]): Promise<void>;
+}
+
+/** What a permission set is asked for: `read` < `post` < `manage` (the same ranks as `app.permission_rank`). */
+export type AccessPermission = 'read' | 'post' | 'manage';
+
+/**
+ * The caller's visibility sets, computed once per statement by the database (the hoisted-set idiom of the row level security policies).
+ * Use these instead of hand-writing `SELECT app.readable_team_ids(...)` in a plugin, and ask for the sets side by side when a screen
+ * merges two stores (team repo paths by team, `channels/<name>/` by channel). The answer is for `tx`'s actor: a system transaction gets
+ * empty sets (system work does not go through visibility), a guest an empty team set.
+ */
+export interface PluginAccess {
+  /** Teams the caller may `perm` in: member teams for a person (every team of the workspace for an owner or admin), none for a guest. */
+  readableTeamIds(tx: PluginTx, perm: AccessPermission): Promise<string[]>;
+  /**
+   * Channels, DMs and bot conversations the caller may `perm` in (`read` or `post`; `manage` is not a channel set: use `app.channel_can`).
+   * Needs the channels plugin's migrations (it owns `app.visible_channel_ids`); rejects when they are not applied.
+   */
+  readableChannelIds(tx: PluginTx, perm: Exclude<AccessPermission, 'manage'>): Promise<string[]>;
 }

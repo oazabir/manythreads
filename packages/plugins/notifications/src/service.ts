@@ -1,4 +1,4 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import type { PluginContext, PluginTx, RealtimePush } from '@manythreads/sdk';
 import {
   NotificationCreatedPush,
   NotificationsNotificationCreatedEvent,
@@ -133,19 +133,20 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
   );
   const byId = new Map(rows.rows.map((r) => [r.id, r]));
 
+  // Each person's card differs (their own row and browser preference), so the pushes are batched, not broadcast: one statement for all.
+  const pushes: RealtimePush[] = [];
   for (const w of written.rows) {
     const row = byId.get(w.id);
     if (!row) continue;
     const notification = toNotification(row);
-    await ctx.realtime.pushToPerson(
-      tx,
-      w.person_id,
-      notificationCreatedPushType,
-      NotificationCreatedPush.parse({
+    pushes.push({
+      personId: w.person_id,
+      type: notificationCreatedPushType,
+      payload: NotificationCreatedPush.parse({
         notification,
         browser: prefsOf.get(w.person_id)?.[notification.kind].browser ?? false,
       }),
-    );
+    });
     await ctx.audit.emit(
       tx,
       NotificationsNotificationCreatedEvent.parse({
@@ -162,4 +163,5 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
       }),
     );
   }
+  await ctx.realtime.pushMany(tx, pushes);
 }

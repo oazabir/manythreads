@@ -95,9 +95,8 @@ export function registerEphemeralRoutes(deps: Deps): void {
       const row = res.rows[0]!;
       if (row.remaining_ms === null || row.remaining_ms < REPUSH_BELOW_MS) {
         const payload = TypingStartedPush.parse({ channelId, personId: me, threadRootId, expiresAt: iso(row.expires_at) });
-        for (const person of await audience(tx, channelId)) {
-          if (person !== me) await ctx.realtime.pushToPerson(tx, person, WS_TYPING_STARTED, payload);
-        }
+        const others = (await audience(tx, channelId)).filter((person) => person !== me);
+        await ctx.realtime.pushToPeople(tx, others, WS_TYPING_STARTED, payload);
       }
       return json(TypingResponse.parse({ expiresAt: iso(row.expires_at) }));
     }),
