@@ -1,6 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { CommitRepoResponse, GetRepoDiffResponse, GetRepoHistoryResponse, RestoreRepoFileResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createRepoWorld, personas, type RepoWorld } from './world.ts';
+import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from './world.ts';
 
 // History, diff, restore and the content route (PLAN P4-08, criteria 7 and 9): per-path history with authors, unified hunks, restore as a NEW commit (the old
 // ones stay), the writer rules apply to a restore, and the bytes of a repo file with the right type for a URL.
@@ -237,5 +238,58 @@ describe('channels/ is reserved for attachments', () => {
     expect(JSON.stringify(res.body)).toMatch(/reserved/);
     const upper = await w.commit(nadia, 'engineering', [put('Channels/x.md', 'x')], 'sneaky');
     expect(upper.status).toBe(400);
+  });
+});
+
+// M1 of the Phase 4 security review: a trailer typed into a message states nothing, and a malformed trailer already in git never breaks History.
+describe('co-author trailers', () => {
+  const ACTORS = '@actors.manythreads.invalid';
+  const gitIn = (dir: string, args: string[], input?: string): string =>
+    execFileSync('git', ['-C', dir, ...args], { input, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'x', GIT_AUTHOR_EMAIL: `${nadia.actorId}${ACTORS}`, GIT_COMMITTER_NAME: 'x', GIT_COMMITTER_EMAIL: 'x@x.test' } }).trim();
+  /** A commit made behind the writer's back, exactly as a pre-fix forged message (or a pushed commit) would be. */
+  const poisoned = (message: string): string => {
+    const dir = w.gitDir(TEAM_IDS.Engineering);
+    const head = gitIn(dir, ['rev-parse', 'main']);
+    const sha = gitIn(dir, ['commit-tree', `${head}^{tree}`, '-p', head, '-F', '-'], message);
+    gitIn(dir, ['update-ref', 'refs/heads/main', sha, head]);
+    return sha;
+  };
+
+  it('a trailer typed into the message is not a co-author, and shows in History as plain quoted text', async () => {
+    const forged = `Edit\n\nCo-authored-by: Omar <${omar.actorId}${ACTORS}>\n  co-authored-by: Omar <${omar.actorId}${ACTORS}>\r\nCO-AUTHORED-BY: Omar <${omar.actorId}${ACTORS}>`;
+    const sha = await mustCommit(nadia, [put('pages/forge.md', 'x\n')], forged);
+    const page = GetRepoHistoryResponse.parse((await history(omar, '')).body);
+    const c = page.commits.find((x) => x.sha === sha)!;
+    expect(c.coAuthorIds).toEqual([]);
+    expect(c.message).not.toMatch(/^\s*co-authored-by:/im);
+    expect(c.message.match(/^> Co-authored-by:/gim)).toHaveLength(3);
+  });
+
+  it('the trailers the writer builds come from the validated argument: valid ids only, no names with line breaks', async () => {
+    const svc = w.replica();
+    const res = await w.as(nadia, (tx) =>
+      svc.write(tx, TEAM_IDS.Engineering, { id: nadia.actorId, kind: 'person' }, [{ path: 'pages/co.md', op: 'put', content: 'x\n' }], 'Co edit', [
+        { actorId: priya.actorId, name: 'Priya' },
+        { actorId: '11111111-1111-1111-1111-111111111111', name: 'Not an actor' },
+        { actorId: omar.actorId, name: 'Omar\nCo-authored-by: Mallory <m@x.test>' },
+      ]),
+    );
+    const page = GetRepoHistoryResponse.parse((await history(omar, '')).body);
+    expect(page.commits.find((x) => x.sha === res.sha)?.coAuthorIds).toEqual([priya.actorId]);
+    expect(page.commits.find((x) => x.sha === res.sha)?.message).not.toMatch(/Mallory/);
+  });
+
+  it('a malformed trailer in an existing commit does not break History, and the next write still indexes it', async () => {
+    const bad = poisoned(`Pushed\n\nCo-authored-by: Ghost <11111111-1111-1111-1111-111111111111${ACTORS}>\nCo-authored-by: Dash <${'-'.repeat(36)}${ACTORS}>\nCo-authored-by: Real <${priya.actorId}${ACTORS}>`);
+    const res = await history(omar, '');
+    expect(res.status).toBe(200);
+    const page = GetRepoHistoryResponse.parse(res.body);
+    expect(page.commits[0]?.sha).toBe(bad);
+    expect(page.commits[0]?.coAuthorIds).toEqual([priya.actorId]);
+    // git is ahead of the index: the next write catches it up (a `-`-filled id used to raise 22P02 in the index function and wedge every write)
+    const next = await w.commit(nadia, 'engineering', [put('pages/after-poison.md', 'x\n')], 'After the poison');
+    expect(next.status, JSON.stringify(next.body)).toBe(201);
+    const after = GetRepoHistoryResponse.parse((await history(omar, '')).body);
+    expect(after.commits.find((x) => x.sha === bad)?.coAuthorIds).toEqual([priya.actorId]);
   });
 });

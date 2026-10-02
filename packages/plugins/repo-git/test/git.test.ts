@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRepoPath } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { assertGitPath, createGitLayer, createGitRunner, GitBlobTooLargeError, GitError, GitNotFoundError, GitPathError, type GitLayer } from '../src/git/index.ts';
+import { assertGitPath, neutraliseTrailerLines, parseCoAuthors, createGitLayer, createGitRunner, GitBlobTooLargeError, GitError, GitNotFoundError, GitPathError, type GitLayer } from '../src/git/index.ts';
 
 // Real git in temporary directories: the git layer's contract (PLAN P4-03). No database.
 
@@ -20,6 +20,38 @@ const bo = { name: 'Bo Bot', email: 'bo@actors.manythreads.invalid' };
 const text = (s: string): Uint8Array => Buffer.from(s);
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+describe('trailers in messages', () => {
+  const t = (name: string): string => `Co-authored-by: ${name} <a@actors.manythreads.invalid>`;
+  it('reads co-authors only from a final paragraph made of trailers, from column 0', () => {
+    expect(parseCoAuthors(`Subject\n\nbody\n\n${t('Bo')}\n${t('Cy')}\n`).map((c) => c.name)).toEqual(['Bo', 'Cy']);
+    expect(parseCoAuthors(`Subject\n\n${t('Bo')}\n\nmore text after`)).toEqual([]); // not the final paragraph
+    expect(parseCoAuthors(`Subject\n${t('Bo')}`)).toEqual([]); // the subject paragraph is not a trailer block
+    expect(parseCoAuthors(`Subject\n\n  ${t('Bo')}`)).toEqual([]); // indented
+    expect(parseCoAuthors(`Subject\n\nsome words\n${t('Bo')}`)).toEqual([]); // a block with prose in it
+    expect(parseCoAuthors('')).toEqual([]);
+  });
+  it('neutralises attribution lines of any case, indentation and line ending, and nothing else', () => {
+    const out = neutraliseTrailerLines(`Fix\n\n${t('A')}\n  CO-AUTHORED-BY: B <b@x.test>\r\nSigned-off-by: C <c@x.test>\rFixes: 12\nco-authored-by:D`);
+    expect(out).toBe('Fix\n\n> Co-authored-by: A <a@actors.manythreads.invalid>\n> CO-AUTHORED-BY: B <b@x.test>\n> Signed-off-by: C <c@x.test>\nFixes: 12\n> co-authored-by:D');
+    expect(parseCoAuthors(out)).toEqual([]);
+  });
+  it('a hostile message is linear', () => {
+    const hostile = `x\n\n${'Co-authored-by: '.repeat(20000)}<${'a'.repeat(40000)}`;
+    const t0 = performance.now();
+    neutraliseTrailerLines(hostile);
+    parseCoAuthors(hostile);
+    expect(performance.now() - t0).toBeLessThan(200);
+  });
+  it('commit() neutralises user trailers and appends only its own', async () => {
+    const dir = await fresh();
+    const r = await git.commit(dir, { expectedOld: null, changes: [{ path: 'a.md', op: 'put', content: text('x') }], message: `Msg\n\n${t('Mallory')}`, author: ada, coAuthors: [bo] });
+    if (r.noop) throw new Error('x');
+    const info = await git.commitInfo(dir, r.sha);
+    expect(info.coAuthors.map((c) => c.email)).toEqual(['bo@actors.manythreads.invalid']);
+    expect(info.message).toContain('> Co-authored-by: Mallory');
+  });
+});
 
 describe('init', () => {
   it('creates a bare repository without hooks and is idempotent', async () => {

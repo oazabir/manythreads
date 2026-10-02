@@ -19,6 +19,7 @@ import {
   MAX_REPO_MESSAGE_LENGTH,
   REPO_BRANCH,
   REPO_MAX_FILE_BYTES,
+  ActorId,
   REPO_PLACEHOLDER,
   isGuardedRepoPath,
   parseRepoPath,
@@ -55,7 +56,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const ACTOR_EMAIL_DOMAIN = 'actors.manythreads.invalid';
 const SYSTEM_IDENTITY: GitIdentity = { name: 'manythreads', email: 'system@manythreads.invalid' };
 const ACTOR_EMAIL = new RegExp(`^([0-9a-f-]{36})@${ACTOR_EMAIL_DOMAIN.replaceAll('.', '\\.')}$`);
-const actorIdOfEmail = (email: string): string | null => ACTOR_EMAIL.exec(email)?.[1] ?? null;
+/** A git identity's e-mail as an actor id, only when it is a FULL valid actor id: a trailer in a commit is a claim, and must never reach a uuid column or a response schema unchecked. */
+const actorIdOfEmail = (email: string): string | null => {
+  const id = ACTOR_EMAIL.exec(email)?.[1];
+  return id !== undefined && ActorId.safeParse(id).success ? id : null;
+};
+const validActorIds = (emails: readonly { email: string }[]): string[] => [...new Set(emails.map((c) => actorIdOfEmail(c.email)).filter((id): id is string => id !== null))];
 
 export type RepoActor = RepoWriteActor;
 export type CommitIdentity = RepoCommitIdentity;
@@ -221,7 +227,7 @@ export function createRepoService(deps: RepoServiceDeps) {
         sha,
         parent_sha: info.parents[0] ?? null,
         author_id: actorIdOfEmail(info.author.email),
-        co_authors: info.coAuthors.map((c) => actorIdOfEmail(c.email)).filter((id): id is string => id !== null),
+        co_authors: validActorIds(info.coAuthors),
         message: info.message,
         committed_at: info.authoredAt,
         paths,
@@ -377,7 +383,12 @@ export function createRepoService(deps: RepoServiceDeps) {
     }
     const { identity, authorId } = await authorOf(tx, actor);
     const co: CommitIdentity[] = [];
-    for (const c of coAuthors) if (UUID.test(c.actorId) && c.actorId !== authorId && !co.some((x) => x.actorId === c.actorId)) co.push(c);
+    // Co-author trailers come from this argument only (validated here), never from the message text.
+    for (const c of coAuthors) {
+      if (!UUID.test(c.actorId) || !ActorId.safeParse(c.actorId).success || c.actorId === authorId || co.some((x) => x.actorId === c.actorId)) continue;
+      if (/[\r\n\u0000]/.test(c.name)) continue; // a name with a line break is a forged trailer in the making: no trailer, no attribution
+      co.push(c);
+    }
 
     return queue.run(t.id, async () => {
       try {
@@ -583,11 +594,22 @@ export function createRepoService(deps: RepoServiceDeps) {
       .sort((a, b) => (a.kind === b.kind ? (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) : a.kind === 'folder' ? -1 : 1));
   }
 
+  /** `sha -> co-author ids` for the commits the index knows. A commit it has not indexed yet (a rolled-back write git still holds) falls back to a strict parse. */
+  async function indexedCoAuthors(tx: PluginTx, teamId: string, shas: readonly string[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (shas.length === 0) return out;
+    const res = await tx.query<{ sha: string; co_authors: string[] }>('SELECT sha, co_authors FROM app.repo_commits WHERE team_id = $1 AND sha = ANY($2::text[])', [teamId, [...shas]]);
+    for (const r of res.rows) out.set(r.sha, r.co_authors.filter((id) => ActorId.safeParse(id).success));
+    return out;
+  }
+
   /** Commits that touched `path` (a file, a folder, or '' for everything), newest first, with what each did to a single file. */
   async function history(tx: PluginTx, teamId: string, opts: { path: string; limit: number; cursor?: string | undefined }) {
     return guarded(async () => {
       const gitDir = await ensure(tx, teamId);
       const page = await git.log(gitDir, { limit: opts.limit, ...(opts.path !== '' ? { path: opts.path } : {}), ...(opts.cursor ? { cursor: opts.cursor } : {}) });
+      // Attribution is the index's (written from the validated co-author list), not the message's: a trailer typed into a message states nothing.
+      const indexed = await indexedCoAuthors(tx, teamId, page.commits.map((c) => c.sha));
       const statuses = opts.path === '' ? new Map<string, string>() : await git.pathStatuses(gitDir, page.commits.map((c) => c.sha), opts.path);
       return {
         nextCursor: page.nextCursor,
@@ -596,7 +618,7 @@ export function createRepoService(deps: RepoServiceDeps) {
           parentSha: c.parents[0] ?? null,
           authorId: actorIdOfEmail(c.author.email),
           authorName: c.author.name,
-          coAuthorIds: c.coAuthors.map((a) => actorIdOfEmail(a.email)).filter((id): id is string => id !== null),
+          coAuthorIds: indexed.get(c.sha) ?? validActorIds(c.coAuthors),
           subject: c.subject,
           message: c.message,
           committedAt: c.authoredAt,

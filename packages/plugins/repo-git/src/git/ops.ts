@@ -113,12 +113,38 @@ const assertRef = (ref: string): void => {
   if (!REF.test(ref)) throw new GitPathError(`invalid ref "${ref}"`);
 };
 
-const TRAILER = /^Co-authored-by:[ \t]*(.+?)[ \t]*<([^<>\s]+)>[ \t]*$/i;
+const TRAILER = /^Co-authored-by:[ \t]*([^<>\r\n]{1,200}?)[ \t]*<([^<>\s]{1,200})>[ \t]*$/i;
+/** Any `Token: value` line: what git itself reads as a trailer (and what a reader of the log takes for one). */
+const TRAILER_LINE = /^[A-Za-z][A-Za-z0-9-]{0,40}[ \t]*:/;
+/** Trailers that carry attribution or sign-off: a user's message must not be able to state them. */
+const ATTRIBUTION_KEY = /^[ \t]*(co-authored-by|signed-off-by|reviewed-by|acked-by|tested-by|reported-by|helped-by|suggested-by|on-behalf-of)[ \t]*:/i;
 
+/**
+ * User text out of the trailer position: a line that states an attribution (`Co-authored-by:`, `Signed-off-by:` ...) is indented by `> ` so it
+ * can neither be read back as a trailer nor look like one in `git log`. Line breaks are normalised to `\n` first (a lone `\r` ends a line for
+ * some readers). Linear: one pass over the lines.
+ */
+export function neutraliseTrailerLines(message: string): string {
+  return message
+    .split(/\r\n|\r|\n/)
+    .map((line) => (ATTRIBUTION_KEY.test(line) ? `> ${line.trimStart()}` : line))
+    .join('\n');
+}
+
+/**
+ * The co-authors a commit states: only the FINAL paragraph of the message counts, and only when every line of it is a trailer (that is where
+ * the writer puts its own, after the user's text), and the line must start in column 0. The e-mail of a trailer is a claim, not a fact: the
+ * repo service maps it to an actor only if it is a full actor id, and takes attribution from its index when it has one.
+ */
 export function parseCoAuthors(message: string): GitIdentity[] {
+  const lines = message.replace(/\s+$/, '').split('\n');
+  let start = lines.length;
+  while (start > 0 && lines[start - 1]!.trim() !== '') start -= 1;
+  const block = lines.slice(start);
+  if (start === 0 || block.length === 0 || !block.every((l) => TRAILER_LINE.test(l))) return [];
   const out: GitIdentity[] = [];
-  for (const line of message.split('\n')) {
-    const m = TRAILER.exec(line.trim());
+  for (const line of block) {
+    const m = TRAILER.exec(line);
     if (m) out.push({ name: m[1]!, email: m[2]! });
   }
   return out;
@@ -417,7 +443,7 @@ export function createGitLayer(options: GitLayerOptions = {}) {
         seen.add(id.email);
         trailers.push(`Co-authored-by: ${id.name} <${id.email}>`);
       }
-      const message = `${input.message.replace(/\s+$/, '')}\n${trailers.length > 0 ? `\n${trailers.join('\n')}\n` : ''}`;
+      const message = `${neutraliseTrailerLines(input.message).replace(/\s+$/, '')}\n${trailers.length > 0 ? `\n${trailers.join('\n')}\n` : ''}`;
       const stamp = `@${Math.floor((input.date ?? new Date()).getTime() / 1000)} +0000`;
       const env = {
         GIT_AUTHOR_NAME: author.name,
