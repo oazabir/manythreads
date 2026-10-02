@@ -34,6 +34,11 @@ function useAppSrc(slug: string, folder: string, plainUrl: string | undefined): 
   useEffect(() => {
     let alive = true;
     setSrc(null);
+    // The /dev/viewers fixtures (team `_dev`) have no session and a stand-in route: no token to ask for.
+    if (slug === '_dev') {
+      setSrc(plainUrl ?? '');
+      return;
+    }
     call(issueAppTokenRoute, { request: IssueAppTokenRequest, response: IssueAppTokenResponse }, { path: folder }, { slug }, { noSessionExpiry: true }).then(
       (issued) => alive && setSrc(issued.url),
       () => alive && setSrc(plainUrl ?? ''),
