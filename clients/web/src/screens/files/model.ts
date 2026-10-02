@@ -6,6 +6,8 @@
 
 export type Actor = { id: string | null; name: string; kind: 'person' | 'bot' | 'system' };
 
+export type ReadOnlyReason = 'change_by_pull_request' | 'attachment' | 'no_write_access';
+
 export type FileRow = {
   path: string;
   name: string;
@@ -15,32 +17,57 @@ export type FileRow = {
   mime: string | null;
   modifiedAt: string | null;
   by: Actor | null;
-  /** Where an attachment was posted ("thread", "message"); empty for a file nobody posted. */
+  /** Where an attachment came from ("# release-eng"); null for a file of the repo. */
   where: string | null;
-  /** The person may read but not change it (bots/, TEAM.md for a member who does not lead the team). */
+  /** The person cannot change it in place (bots/, TEAM.md for a member who does not lead the team; an attachment never changes in place). */
   readOnly: boolean;
-  readOnlyReason: 'change_by_pull_request' | null;
+  readOnlyReason: ReadOnlyReason | null;
   /** Another part of the product owns the content (`memory/` mirrors the team's memory bank). */
   managedBy: 'team_memory' | null;
   fileId: string | null;
   channelId: string | null;
-  /** The message that posted an attachment, for "Open in thread". */
-  messageId: string | null;
+  /** Repo files: the blob that was listed, sent back as `baseBlobSha` when saving. */
+  blobSha: string | null;
+  /** Where the bytes are, usable as `<img src>`; null for a folder. */
+  contentUrl: string | null;
 };
 
-export type Listing = { path: string; rows: FileRow[] };
+/** What is true of the folder being listed. */
+export type FolderInfo = {
+  path: string;
+  store: 'git' | 'attachments';
+  readOnly: boolean;
+  readOnlyReason: ReadOnlyReason | null;
+  managedBy: 'team_memory' | null;
+  /** The channel behind `channels/<name>`; null elsewhere. */
+  channelId: string | null;
+};
+
+export type Listing = { path: string; folder: FolderInfo; rows: FileRow[]; truncated: boolean };
 
 export type Commit = {
   sha: string;
+  parentSha: string | null;
   author: Actor | null;
   coAuthors: Actor[];
+  subject: string;
   message: string;
   committedAt: string;
-  paths: string[];
+  /** What the commit did to the file whose history this is. */
+  change: 'added' | 'modified' | 'deleted' | null;
 };
 
-/** The text of one path before and after a commit (null: the file did not exist, or is not text). */
-export type CommitDiff = { sha: string; path: string; before: string | null; after: string | null };
+export type DiffLine = { type: 'context' | 'add' | 'del'; text: string; oldLine: number | null; newLine: number | null };
+export type DiffHunk = { header: string; lines: DiffLine[] };
+/** The change one commit made to one file, as unified hunks. */
+export type FileDiff = {
+  status: 'added' | 'modified' | 'deleted' | 'unchanged';
+  binary: boolean;
+  additions: number;
+  deletions: number;
+  hunks: DiffHunk[];
+  truncated: boolean;
+};
 
 export const ROOT = '';
 

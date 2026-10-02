@@ -28,7 +28,7 @@ test.describe('Nadia, a member', () => {
     await expect(sidebar).toBeVisible();
     // the rows arrive once the team list has loaded
     await expect.poll(() => sidebarRows(page)).toEqual(['Files', 'Boards', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
-    await expect(sidebar).toContainText('No files yet');
+    await expect(sidebar).not.toContainText('No files yet');
     await expect(sidebar).toContainText('No boards yet');
     await expect(sidebar).toContainText('Nothing waiting');
     await expect(sidebar).toContainText('No bots yet');
@@ -40,7 +40,8 @@ test.describe('Nadia, a member', () => {
 
   test('Bots opens the team roster; sections and channels have their own URLs', async ({ page, isMobile }) => {
     await page.goto('/t/engineering/files');
-    await expect(page.locator('[data-landmark="content"]')).toContainText('No files yet');
+    await expect(page.getByTestId('files-screen')).toBeVisible();
+    await expect(page.locator('[data-landmark="header"]')).toContainText('Files');
     await page.goto(`/t/engineering/c/${dev}`);
     await expect(page.locator('[data-landmark="header"]')).toContainText(`# ${dev}`);
     await expect(page.locator('[data-landmark="content"]')).toContainText(`This is the start of #${dev}.`);
@@ -93,7 +94,7 @@ test.describe('Priya, a member of two teams', () => {
     await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
     await menu.getByRole('menuitemradio', { name: 'Marketing' }).click();
     await expect(page).toHaveURL(/\/t\/marketing\/files$/);
-    await expect(page.locator('[data-landmark="content"]')).toContainText('No files yet');
+    await expect(page.getByTestId('files-screen')).toBeVisible();
   });
 });
 

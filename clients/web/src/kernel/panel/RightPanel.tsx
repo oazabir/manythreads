@@ -2,13 +2,14 @@ import { useState } from 'react';
 import './builtins';
 import { BackIcon, CloseIcon } from '../../shell/icons';
 import { panelRegistry } from './registry';
-import { PanelSubContext } from './sub';
+import { PanelSubContext, PanelTitleContext } from './sub';
 import { useEscapeToClose, usePanel } from './usePanel';
 
 /** The right-hand panel (landmark `right-panel`): hidden until an entry is open; the top entry is rendered, Back walks down. */
 export function RightPanel() {
   const panel = usePanel();
   const [sub, setSub] = useState<string | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
   useEscapeToClose(panel.open, panel.close);
   const top = panel.entries.at(-1);
   const def = top ? panelRegistry.get(top.type) : undefined;
@@ -21,7 +22,7 @@ export function RightPanel() {
               <button type="button" className="icon-btn" aria-label="Back" onClick={panel.back}><BackIcon /></button>
             ) : null}
             <div className="panel-titles">
-              <h2 className="panel-title">{def?.label ?? 'Panel'}</h2>
+              <h2 className="panel-title" data-testid="panel-title">{title ?? def?.label ?? 'Panel'}</h2>
               {sub ? <p className="panel-sub" data-testid="thread-channel">{sub}</p> : null}
             </div>
             <button type="button" className="icon-btn panel-close" aria-label="Close panel" onClick={panel.close}><CloseIcon /></button>
@@ -29,7 +30,9 @@ export function RightPanel() {
           <div className="panel-body" data-landmark="panel-body" data-panel-entry={`${top.type}:${top.id}`}>
             {def ? (
               <PanelSubContext.Provider value={setSub}>
-                <def.Component entry={top} />
+                <PanelTitleContext.Provider value={setTitle}>
+                  <def.Component entry={top} />
+                </PanelTitleContext.Provider>
               </PanelSubContext.Provider>
             ) : (
               <div className="panel-empty">

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppBridgeRequest, EMBEDDED_APP_SANDBOX, type AppBridgeResponse } from '@manythreads/shared';
+import { AppBridgeRequest, EMBEDDED_APP_SANDBOX, IssueAppTokenRequest, IssueAppTokenResponse, issueAppTokenRoute, type AppBridgeResponse } from '@manythreads/shared';
+import { call } from '../../api/client';
 import type { ViewerProps } from '../../kernel/viewers';
 import { baseName } from '../mime';
 
@@ -23,6 +24,28 @@ export function answerBridge(data: unknown, ctx: { app: string; team: string }):
 }
 
 /**
+ * The address for the iframe. A sandboxed frame has an opaque origin and does not send the SameSite session cookie with its sub-resource
+ * requests, so the signed-in page asks for a short-lived token for this one app and puts it in the address (a path segment, so the app's
+ * relative URLs keep it). Until the answer arrives there is no frame; if the server cannot issue one (an older server, the dev fixtures'
+ * stand-in route) the plain address is used, which works for the page itself with the cookie.
+ */
+function useAppSrc(slug: string, folder: string, plainUrl: string | undefined): string | null {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setSrc(null);
+    call(issueAppTokenRoute, { request: IssueAppTokenRequest, response: IssueAppTokenResponse }, { path: folder }, { slug }, { noSessionExpiry: true }).then(
+      (issued) => alive && setSrc(issued.url),
+      () => alive && setSrc(plainUrl ?? ''),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [slug, folder, plainUrl]);
+  return src;
+}
+
+/**
  * An embedded app: a repo folder with an `index.html` and no `index.md`, served by the content route (`repoAppPath`) with a strict
  * CSP and shown in an iframe with `sandbox="allow-scripts"` and no `allow-same-origin`. The app runs on an opaque origin: it has no
  * cookies, no storage and no DOM of ours; the only way out is the postMessage bridge below.
@@ -31,6 +54,7 @@ export default function AppViewer({ path, url, context }: ViewerProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [info, setInfo] = useState(false);
   const name = baseName(path);
+  const src = useAppSrc(context.teamSlug, path, url);
 
   useEffect(() => {
     const onMessage = (ev: MessageEvent) => {
@@ -55,15 +79,19 @@ export default function AppViewer({ path, url, context }: ViewerProps) {
         </span>
       </div>
       {info ? <p className="app-about" role="note">Apps run in a locked frame. They have no access to your sign-in, to other files or to the network.</p> : null}
-      <iframe
-        ref={frame}
-        className="app-frame"
-        title={`App ${name}`}
-        data-testid="app-frame-embed"
-        sandbox={EMBEDDED_APP_SANDBOX}
-        referrerPolicy="no-referrer"
-        src={url}
-      />
+      {src ? (
+        <iframe
+          ref={frame}
+          className="app-frame"
+          title={`App ${name}`}
+          data-testid="app-frame-embed"
+          sandbox={EMBEDDED_APP_SANDBOX}
+          referrerPolicy="no-referrer"
+          src={src}
+        />
+      ) : (
+        <div className="vw-loading" role="status" aria-busy="true">Opening the app…</div>
+      )}
       <p className="vw-note app-note">{APP_COPY}</p>
     </div>
   );

@@ -15,6 +15,11 @@ export const FilesIcon = () => (
     <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
   </Svg>
 );
+export const FolderIcon = () => (
+  <Svg size={14}>
+    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
+  </Svg>
+);
 export const BoardsIcon = () => (
   <Svg>
     <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />

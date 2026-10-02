@@ -16,7 +16,7 @@ import { MenuIcon, SearchIcon } from './icons';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { Sidebar } from './Sidebar';
-import { HeaderTopicContext } from './topic';
+import { HeaderActionsContext, HeaderTopicContext } from './topic';
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
@@ -39,6 +39,7 @@ export function Shell() {
   const counts = useNavCounts();
   const narrow = useNarrow();
   const [topic, setTopic] = useState<string | null>(null);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
 
   useRealtime();
   const teamsData = q.status === 'ok' ? q.data.teams : undefined;
@@ -79,6 +80,7 @@ export function Shell() {
     <ShellContext.Provider value={value}>
       <PeopleContext.Provider value={people}>
       <HeaderTopicContext.Provider value={setTopic}>
+      <HeaderActionsContext.Provider value={actionsSlot}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
           <div className="ws">
@@ -109,6 +111,7 @@ export function Shell() {
             </h1>
             {topic ? <span className="topic" data-testid="channel-topic">{topic}</span> : null}
             <div className="right chead-tools">
+              <div className="chead-actions" ref={setActionsSlot} />
               {dmId && dm ? <SearchBox className="head-search" placeholder="Search this conversation" label="Search this conversation" channelId={dmId} /> : null}
               <button type="button" className="icon-btn find-btn" aria-label="Find" onClick={openSearch}>
                 <SearchIcon />
@@ -123,6 +126,7 @@ export function Shell() {
         </main>
         <RightPanel />
       </div>
+      </HeaderActionsContext.Provider>
       </HeaderTopicContext.Provider>
       </PeopleContext.Provider>
     </ShellContext.Provider>

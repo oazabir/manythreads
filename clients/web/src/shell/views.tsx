@@ -73,7 +73,6 @@ export function DirectMessageView() {
   return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: dmLabel(dm, session.person.id) }} />;
 }
 const SECTIONS = {
-  files: { title: 'No files yet', body: 'Files shared in channels and kept by the team show up here.' },
   boards: { title: 'No boards yet', body: 'Boards the team creates show up here.' },
   approvals: { title: 'Nothing waiting', body: 'Requests that need a person to decide show up here.' },
 } as const;
