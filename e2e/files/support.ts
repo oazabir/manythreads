@@ -5,11 +5,11 @@ import { apiOn, openOn, type StackApi } from '../support/stack-browser.ts';
 import type { PersonaKey } from '../support/env.ts';
 
 /*
- * Helpers of the Files specs (PLAN P4-11). Each spec starts a stack of its own seeded with `content` (seed v3 channels and seed v4 team repos),
+ * Helpers of the Files specs (PLAN P4-11). Each spec starts a stack of its own seeded with `repo` (seed v3 channels and seed v4 team repos and attachments),
  * because every one of them writes to the team repo or reads it as someone who would see another spec's writes.
  */
 
-export const STACK_ENV = { MANYTHREADS_STACK_SEED: 'content' } as const;
+export const STACK_ENV = { MANYTHREADS_STACK_SEED: 'repo' } as const;
 
 export const actorOf = (key: PersonaKey): string => personas[key].actorId;
 
