@@ -34,3 +34,44 @@ Answers to PLAN Phase 4 section 0, and what was done before the repo store was w
 - The Helm chart does not template the `MANYTHREADS_STORAGE` / `MANYTHREADS_S3_*` variables or `MANYTHREADS_BLOB_GC*` (set them through the chart's extra environment).
 - The seed writes its attachment to a local directory: with `MANYTHREADS_STORAGE=s3` the seeded file has a row and no object.
 - `.tmp/*.part` leftovers of storage-local are not collected (they are not blobs and are not listed).
+
+## 2. What phase 4 delivered
+
+- **Team repo (P4-01..05, `repo-git`):** a bare git repo per team created by a job on team creation, first commit lays out §5.1 with
+  `TEAM.md`. One writer per team (queue + `pg_advisory_xact_lock`, CAS on `baseBlobSha`); a stale write is 409 with current content.
+  Text only (NUL anywhere or invalid UTF-8 → 422 `attachment_not_in_repo`), 1 MB per file, per-team quota (413 `repo_quota_exceeded`).
+  Guarded paths (`bots/`, `TEAM.md`, `skills/`, `routines/`) refused for bots (broker + writer) and for non-leads ("change by pull request").
+  Other plugins use `ctx.providers.get<RepoProvider>('repo')`.
+- **Files (P4-06):** one tree over repo entries and `channels/<name>/` attachments with identical rows; team ACL for repo folders,
+  channel ACL for attachment folders; `memory/` marked as managed by team memory; repo content route with safe mime and CSP.
+- **Pages (P4-07):** `pages.write` (create/replace/append), event `pages.page.written` (PLAN says `page.written`; event types have three
+  segments).
+- **History (P4-08):** commits per path, unified diff, rendered Markdown diff in the client, restore as a new commit.
+- **Viewers and apps (P4-09/10):** Markdown (Tiptap, raw round-trip), CSV (single-cell diff), PDF (pdf.js legacy build), media, code,
+  Mermaid in a sandboxed frame, Office card, Google link card; embedded apps in `sandbox="allow-scripts"` with a strict CSP and a
+  5-minute HMAC per-open token for sub-resources.
+- **Files screen (P4-11):** tree, breadcrumb, list, preview, upload, new, rename, move, delete, History panel, restore confirm, page read
+  view, phone breadcrumb sheet. Plates: files 3.3%, history 4.3% (P), page 2.3% (P-loose).
+- **Storage (P4-13):** `storage-s3` (MinIO in CI), blob GC (dry-run unless `MANYTHREADS_BLOB_GC=on`, instance marker), seed v4 (repo
+  content with history, CSV, Mermaid, app, memory, bots placeholders; PDF/PNG/MP4/docx attachments through the storage provider).
+- **Deferred:** P4-12 (optional LibreOffice worker) — Office files show a card with download.
+
+## 3. Security review
+
+`docs/retro/security-phase-4.md`: 1 critical (embedded-app CSP bypass via a percent-encoded path), 4 medium (forged co-author trailers,
+no repo quota, unrated read routes, blob GC across deployments), 6 low. All fixed with tests before the gate.
+
+## 4. Gate
+
+Run with no agents active: lint, typecheck, `pnpm test` (2,076), `test:rls` (262), `test:events` (122), `test:schema-compat` (370) green;
+`pnpm e2e` 247 passed with two phone W baselines failing — both real regressions from the Files stylesheet (it redefined the shared
+`.linkish` and its empty header slot squeezed the phone channel title); fixed in 1cf2c6a.
+
+## 5. Carried into later phases
+
+- Guests (Lena) get 403 on the whole team tree, including their granted channel's files; a guest view of granted folders is open.
+- Files with no channel have no upload route; "Open in thread"/Share on attachment rows; Export PDF and Pin on pages.
+- Web client has no specific copy for `repo_quota_exceeded`.
+- Markdown files over 200 KB open in Raw only.
+- A commit made but not recorded (request rolled back) is indexed by the next write without an event.
+- Parallel agents exhaust the shared dev Postgres (100 connections): run gates with agents idle; vitest `--maxWorkers=3`.
