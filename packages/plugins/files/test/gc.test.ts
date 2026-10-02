@@ -5,6 +5,9 @@ import { Readable } from 'node:stream';
 import { ChannelMessage, FileMeta, ListChannelFilesResponse } from '@manythreads/shared';
 import type { BlobStorage, PluginTx } from '@manythreads/sdk';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createAppPool, withActor } from '@manythreads/kernel';
+import { personaActor } from '@manythreads/test-utils';
+import type pg from 'pg';
 import { createLocalBlobStorage } from '../../storage-local/src/index.ts';
 import { BLOB_GC_CRON, BLOB_GC_QUEUE, blobGcConfigFromEnv, runBlobGc, type BlobGcOptions } from '../src/index.ts';
 import { createWorld, ensureChannels, personas, type ApiResult, type FilesWorld } from './world.ts';
@@ -316,5 +319,77 @@ describe('the job', () => {
     expect(metrics['deleted']).toBeGreaterThanOrEqual(1);
     expect(await store.head(stray)).toBeNull();
     expect(await status(rafi, f.id)).toBe(200);
+  });
+});
+
+// L5 of the Phase 4 review: deleting the last other message that lists a file while another request attaches it must never hide a file a live message lists.
+describe('orphan marking races with a new attachment', () => {
+  const appPool = (): pg.Pool => createAppPool(w.server.db.appUrl, 4);
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+  const orphanedAt = async (fileId: string): Promise<Date | null> =>
+    (await sys((tx) => tx.query<{ orphaned_at: Date | null }>('SELECT orphaned_at FROM app.files WHERE id = $1', [fileId]))).rows[0]!.orphaned_at;
+
+  it('the poster commits first: the delete waits for it and the file stays visible', async () => {
+    const pool = appPool();
+    try {
+      const f = await upload(nadia, 'race-post-first.txt');
+      const m1 = await post(nadia, 'first message', [f.id]);
+      let postedM2 = '';
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((r) => (release = r));
+      let locked: () => void = () => undefined;
+      const hasLock = new Promise<void>((r) => (locked = r));
+      const poster = withActor(personaActor(nadia), async (tx) => {
+        await tx.query('SELECT app.files_lock_for_attach($1::uuid[])', [[f.id]]);
+        locked();
+        await gate;
+        const res = await tx.query<{ id: string }>(
+          `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, meta) VALUES (app.workspace_id(), $1, app.actor(), 'second', 'second', $2::jsonb) RETURNING id`,
+          [dev, JSON.stringify({ attachments: [f.id] })],
+        );
+        postedM2 = res.rows[0]!.id;
+      }, { pool });
+      await hasLock;
+      let deleted = false;
+      const deleter = withActor(personaActor(nadia), async (tx) => {
+        await tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [m1]); // the trigger waits for the poster's lock
+      }, { pool }).then(() => (deleted = true));
+      await sleep(400);
+      expect(deleted, 'the delete is waiting for the poster').toBe(false);
+      release();
+      await Promise.all([poster, deleter]);
+      expect(postedM2).not.toBe('');
+      expect(await orphanedAt(f.id)).toBeNull();
+      expect(await status(rafi, f.id)).toBe(200);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('the delete commits first: the file is hidden and the late post is refused (never a live message on a hidden file)', async () => {
+    const pool = appPool();
+    try {
+      const f = await upload(nadia, 'race-delete-first.txt');
+      const m1 = await post(nadia, 'only message', [f.id]);
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((r) => (release = r));
+      let deleted: () => void = () => undefined;
+      const hasDeleted = new Promise<void>((r) => (deleted = r));
+      const deleter = withActor(personaActor(nadia), async (tx) => {
+        await tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [m1]);
+        deleted();
+        await gate;
+      }, { pool });
+      await hasDeleted;
+      const late = w.call(nadia, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'too late', threadRootId: null, attachments: [f.id] });
+      await sleep(400);
+      release();
+      await deleter;
+      const res = await late;
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(await orphanedAt(f.id)).not.toBeNull();
+    } finally {
+      await pool.end();
+    }
   });
 });
