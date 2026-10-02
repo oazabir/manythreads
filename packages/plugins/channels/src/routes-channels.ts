@@ -104,12 +104,16 @@ export function registerChannelRoutes(deps: Deps): void {
               )
             ).rows
           : await teamDirectory(deps, tx, slug);
+      // Unread badges come from the person's read state (nothing for a bot, which has none).
+      const me = await myPersonId(tx);
+      const unread = new Map<string, number>();
+      if (me) for (const c of (await ctx.readState.unreadSummary(tx, me)).channels) unread.set(c.channelId, c.unreadCount);
       const groups = new Map<string, { id: string; name: string; channels: { id: string; name: string; isPrivate: boolean; unread: number }[] }>();
       for (const r of rows) {
         const key = r.group_id ?? `ungrouped:${r.team_id ?? 'none'}`;
         let g = groups.get(key);
         if (!g) groups.set(key, (g = { id: r.group_id ?? r.team_id ?? 'channels', name: r.group_name ?? 'Channels', channels: [] }));
-        g.channels.push({ id: r.id, name: r.name, isPrivate: r.private, unread: 0 });
+        g.channels.push({ id: r.id, name: r.name, isPrivate: r.private, unread: unread.get(r.id) ?? 0 });
       }
       return json(NavChannelDirectory.parse({ groups: [...groups.values()] }));
     }),

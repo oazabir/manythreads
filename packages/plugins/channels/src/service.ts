@@ -98,37 +98,44 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   return toChannelMessage(row, reactions.get(row.id) ?? []);
 }
 
-/** Sends one push to everyone who can read the channel, atomically with the change (delivered when `tx` commits). */
-async function pushToAudience(
+/** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. */
+async function pushToPeople(
   { ctx }: Deps,
   tx: PluginTx,
-  channelId: string,
+  people: readonly string[],
   type: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  for (const personId of await audience(tx, channelId)) await ctx.realtime.pushToPerson(tx, personId, type, payload);
+  for (const personId of people) await ctx.realtime.pushToPerson(tx, personId, type, payload);
 }
 
 /** `message.posted` and `message.edited`: the message rides along when it is small enough, else the client fetches it. */
 export async function pushMessage(
   deps: Deps,
   tx: PluginTx,
+  people: readonly string[],
   type: 'message.posted' | 'message.edited',
   message: ChannelMessage,
 ): Promise<void> {
   const full: MessagePostedPush = { channelId: message.channelId, messageId: message.id, threadRootId: message.threadRootId, message };
   const small = JSON.stringify(full).length <= MAX_PUSH_BYTES;
   const payload: MessagePostedPush = small ? full : { channelId: message.channelId, messageId: message.id, threadRootId: message.threadRootId };
-  await pushToAudience(deps, tx, message.channelId, type, payload);
+  await pushToPeople(deps, tx, people, type, payload);
 }
 
-export const pushMessageDeleted = (deps: Deps, tx: PluginTx, payload: MessageDeletedPush): Promise<void> =>
-  pushToAudience(deps, tx, payload.channelId, 'message.deleted', payload);
+export const pushMessageDeleted = (deps: Deps, tx: PluginTx, people: readonly string[], payload: MessageDeletedPush): Promise<void> =>
+  pushToPeople(deps, tx, people, 'message.deleted', payload);
 
-export const pushReaction = (deps: Deps, tx: PluginTx, payload: ReactionChangedPush): Promise<void> =>
-  pushToAudience(deps, tx, payload.channelId, 'reaction.changed', payload);
+export const pushReaction = (deps: Deps, tx: PluginTx, people: readonly string[], payload: ReactionChangedPush): Promise<void> =>
+  pushToPeople(deps, tx, people, 'reaction.changed', payload);
 
-export const pushChannelCreated = (deps: Deps, tx: PluginTx, row: ChannelRow): Promise<void> => {
+export const pushChannelCreated = async (deps: Deps, tx: PluginTx, row: ChannelRow): Promise<void> => {
   const payload: ChannelCreatedPush = { channel: toChannel(row) };
-  return pushToAudience(deps, tx, row.id, 'channel.created', payload);
+  await pushToPeople(deps, tx, await audience(tx, row.id), 'channel.created', payload);
 };
+
+/** The people who follow a thread (and can still read its channel): who its replies count as unread for. */
+export async function threadFollowers(tx: PluginTx, rootId: string): Promise<string[]> {
+  const res = await tx.query<{ person_id: string }>('SELECT person_id FROM app.thread_follower_ids($1)', [rootId]);
+  return res.rows.map((r) => r.person_id);
+}

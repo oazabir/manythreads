@@ -100,6 +100,8 @@ describe('POST /api/read-state/mark', () => {
     expect((await call(nadia, 'POST', '/api/read-state/mark', { targetType: 'channel', targetId: ch, upTo: randomUUID(), extra: 1 })).status).toBe(400);
     expect((await call(nadia, 'POST', '/api/read-state/mark', { targetType: 'channel', targetId: 'nope', upTo: randomUUID() })).status).toBe(400);
     expect((await call(nadia, 'POST', '/api/read-state/mark', { targetType: 'dm', targetId: ch, upTo: randomUUID() })).status).toBe(400);
+    // The channels plugin registers the `thread` counter; take it away to see what a target nobody can count answers.
+    server.host.registries.unreadCounters.delete('thread');
     const noCounter = await call(nadia, 'POST', '/api/read-state/mark', { targetType: 'thread', targetId: ch, upTo: randomUUID() });
     expect(noCounter.status).toBe(501);
   });

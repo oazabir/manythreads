@@ -150,7 +150,8 @@ BEGIN
   END IF;
   IF p_permission = 'manage' THEN
     SELECT c.team_id, c.kind INTO v_team, v_kind FROM app.channels c WHERE c.id = p_channel_id AND c.workspace_id = v_ws;
-    RETURN v_kind = 'channel' AND v_team IS NOT NULL AND app.lookup_can_team(v_team, 'manage');
+    -- lookup_can_team answers NULL (not false) for a non-member: coalesce, or `NOT NULL` slips past an IF.
+    RETURN coalesce(v_kind = 'channel' AND v_team IS NOT NULL AND app.lookup_can_team(v_team, 'manage'), false);
   END IF;
   RETURN p_channel_id = ANY (app.visible_channel_ids(p_permission));
 END
@@ -342,7 +343,7 @@ DECLARE
   v_id       uuid;
   v_ord      integer;
 BEGIN
-  IF session_user <> 'manythreads_system' AND NOT app.lookup_can_team(p_team_id, 'read') THEN
+  IF session_user <> 'manythreads_system' AND NOT coalesce(app.lookup_can_team(p_team_id, 'read'), false) THEN
     RAISE EXCEPTION 'you cannot see this team' USING ERRCODE = 'insufficient_privilege';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('channels.sync:' || p_team_id::text, 0));

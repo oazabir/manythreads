@@ -8,6 +8,7 @@ import {
   findPerRowPolicyCalls,
   findRlsViolations,
   parseRlsComment,
+  channelsMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
   type TestDatabase,
@@ -24,7 +25,7 @@ const workspaceId = WorkspaceId.parse(randomUUID());
 const person: Actor = { kind: 'person', id: ActorId.parse(randomUUID()), workspaceId };
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource] });
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource] });
   owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
   appPool = createAppPool(db.appUrl, 4);

@@ -207,7 +207,8 @@ Rules of the idiom:
   (a new team, a new private channel) is not in the array: give the policy a second branch that does not look the row up (as `teams_select` does for admins), or do not `RETURNING`.
 - **Not team-based visibility (private channels, DMs: one membership row per channel).** Same idiom with a helper of your own: a `SECURITY DEFINER` function owned by
   `manythreads_system` (migration pattern of kernel 0006/0011), caller from `app.actor()`, checked with `app.lookup_*` (never `is_*`, which are always true inside a definer
-  owned by the system role), returning the ids the caller may see (`channels` will ship `app.visible_channel_ids()`), and `channel_id = ANY ((SELECT app.visible_channel_ids())::uuid[])` in the policy.
+  owned by the system role), returning the ids the caller may see (`app.visible_channel_ids(permission)` of the channels plugin is the worked example: [channels.md](./channels.md)), and `channel_id = ANY ((SELECT app.visible_channel_ids('read'))::uuid[])` in the policy.
+  Two traps found there: `app.lookup_can_team()` answers NULL, not false, for a non-member, so `IF NOT app.lookup_can_team(...)` in a definer function lets everyone through (wrap it in `coalesce(..., false)`); and in a policy subquery an unqualified column name resolves to the inner table first (`m.id = thread_root_id` compared `messages.thread_root_id` with itself): qualify it.
 - Single-row checks (a route, an INSERT/UPDATE `WITH CHECK`) keep `app.can()` / `app.can_in_team()`.
 - `pnpm test:rls` enforces it: `findPerRowPolicyCalls` (test-utils) runs `EXPLAIN (VERBOSE)` of `SELECT count(*)` as `manythreads_app` for every table and fails one whose plan
   calls `app.can`, `can_in_team`, `is_team_member`, `team_role` or `has_role` outside an InitPlan. A table that is genuinely per row goes on the allowlist in

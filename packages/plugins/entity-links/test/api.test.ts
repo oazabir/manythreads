@@ -16,6 +16,8 @@ const known = new Map<string, { team: string; title: string }>();
 beforeAll(async () => {
   server = await startTestServer();
   await createPersonas(server.db);
+  // The channels plugin registers the real `message` and `thread` resolvers; this suite swaps in stand-ins that answer from `known`.
+  server.host.registries.entityResolvers.clear();
   links = createEntityLinkService({ resolvers: server.host.registries.entityResolvers, plugin: 'test' });
   // Stand-ins for the owning plugins: a resolver answers from its own RLS-filtered query, here "is the caller on the team".
   for (const type of ['message', 'page', 'task'] as const) {

@@ -33,6 +33,7 @@ import {
   type MessageWithThreadRow,
 } from './rows.ts';
 import {
+  audience,
   can,
   findChannelMessage,
   pushMessage,
@@ -41,6 +42,7 @@ import {
   reactionsFor,
   requireChannel,
   requirePost,
+  threadFollowers,
   type Deps,
 } from './service.ts';
 
@@ -83,7 +85,17 @@ export function registerMessageRoutes(deps: Deps): void {
         authorId: row.author_id,
         threadRootId: row.thread_root_id,
       });
-      await pushMessage(deps, tx, 'message.posted', toChannelMessage({ ...row, reply_count: null, last_reply_at: null }, []));
+      const readers = await audience(tx, channelId);
+      await pushMessage(deps, tx, readers, 'message.posted', toChannelMessage({ ...row, reply_count: null, last_reply_at: null }, []));
+      // Unread: a channel message counts for every reader, a reply for the followers of its thread (the replier and the root's author
+      // follow it by themselves, see the messages triggers).
+      await ctx.readState.onPosted(tx, {
+        targetType: row.thread_root_id ? 'thread' : 'channel',
+        targetId: row.thread_root_id ?? channelId,
+        messageId: row.id,
+        authorId: row.author_id,
+        recipientPersonIds: row.thread_root_id ? await threadFollowers(tx, row.thread_root_id) : readers,
+      });
       return json(PostMessageResponse.parse(toMessage(row)), 201);
     }),
   });
@@ -158,7 +170,7 @@ export function registerMessageRoutes(deps: Deps): void {
         threadRootId: current.threadRootId,
       });
       const edited = (await findChannelMessage(tx, channelId, messageId))!;
-      await pushMessage(deps, tx, 'message.edited', edited);
+      await pushMessage(deps, tx, await audience(tx, channelId), 'message.edited', edited);
       return json(EditMessageResponse.parse(edited));
     }),
   });
@@ -189,7 +201,7 @@ export function registerMessageRoutes(deps: Deps): void {
         deletedBy: tx.actor.id,
         threadRootId: current.threadRootId,
       });
-      await pushMessageDeleted(deps, tx, MessageDeletedPush.parse({ channelId, messageId, threadRootId: current.threadRootId }));
+      await pushMessageDeleted(deps, tx, await audience(tx, channelId), MessageDeletedPush.parse({ channelId, messageId, threadRootId: current.threadRootId }));
       return json(DeleteMessageResponse.parse({ deleted: true }));
     }),
   });
@@ -218,6 +230,7 @@ export function registerMessageRoutes(deps: Deps): void {
         await pushReaction(
           deps,
           tx,
+          await audience(tx, channelId),
           ReactionChangedPush.parse({
             channelId, messageId, actorId: tx.actor.id, emoji, added: true,
             count: reactions.find((r) => r.emoji === emoji)?.count ?? 1,
@@ -245,6 +258,7 @@ export function registerMessageRoutes(deps: Deps): void {
         await pushReaction(
           deps,
           tx,
+          await audience(tx, channelId),
           ReactionChangedPush.parse({
             channelId, messageId, actorId: tx.actor.id, emoji, added: false,
             count: reactions.find((r) => r.emoji === emoji)?.count ?? 0,

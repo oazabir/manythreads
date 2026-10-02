@@ -213,6 +213,13 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   hub.on('ping', (msg) => WsEnvelope.parse({ type: 'pong', id: msg.id, payload: msg.payload }));
   typed.get('/ws', { websocket: true, config: { public: true } }, (socket, req) => {
     const peer = { send: (d: string) => socket.send(d) };
+    // A browser always sends Origin on an upgrade. The session cookie is SameSite=Lax (a cross-site page cannot send it); this also
+    // refuses a same-site page of another origin (a sibling subdomain): its socket would carry the cookie and read the person's pushes.
+    const origin = req.headers.origin;
+    if (origin !== undefined && !sameHost(origin, req.host)) {
+      socket.close(1008, 'origin not allowed');
+      return;
+    }
     // A signed-in person's sockets receive live pushes (read state, notifications). The upgrade request carried the cookie.
     let detach: (() => void) | undefined;
     let closed = false;
@@ -241,6 +248,15 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
   await options.routes?.(app);
   return app;
+}
+
+/** The `host[:port]` of an Origin header equals the host the request was addressed to. */
+function sameHost(origin: string, host: string): boolean {
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 function mountPluginRoutes(

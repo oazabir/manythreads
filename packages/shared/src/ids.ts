@@ -79,3 +79,8 @@ export type RoleId = z.infer<typeof RoleId>;
 
 export const AclEntryId = z.uuid().brand<'AclEntryId'>();
 export type AclEntryId = z.infer<typeof AclEntryId>;
+
+// Phase 3: channels.
+
+export const ChannelGroupId = z.uuid().brand<'ChannelGroupId'>();
+export type ChannelGroupId = z.infer<typeof ChannelGroupId>;

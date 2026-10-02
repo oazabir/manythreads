@@ -378,3 +378,86 @@ describe('messages', () => {
     expect((await w.call(rafi, 'GET', `/api/channels/${id}/messages?before=nope`)).status).toBe(400);
   }, 120_000);
 });
+
+describe('read state and links (the kernel cohesion services)', () => {
+  let general = '';
+  const unread = async (who: typeof nadia, channelId: string): Promise<number> => {
+    const dir = await directory(who, 'engineering');
+    return dir.groups.flatMap((g) => g.channels).find((c) => c.id === channelId)?.unread ?? -1;
+  };
+  const state = async (who: typeof nadia, target: string): Promise<{ unreadCount: number; followed: boolean }> =>
+    ok<{ states: { unreadCount: number; followed: boolean }[] }>(await w.call(who, 'GET', `/api/read-state?targets=${target}`)).states[0]!;
+  beforeAll(async () => {
+    general = await w.channelId('engineering', 'general');
+  });
+
+  it("a post is unread for every other reader, shows in the sidebar badge, and clears when the reader marks it read", async () => {
+    expect(await unread(rafi, general)).toBe(0);
+    const first = Message.parse(ok(await post(nadia, general, 'one'), 201));
+    await post(nadia, general, 'two');
+    const third = Message.parse(ok(await post(nadia, general, 'three'), 201));
+    expect(await unread(rafi, general)).toBe(3);
+    expect(await unread(priya, general)).toBe(3);
+    expect(await unread(nadia, general)).toBe(0);
+    expect(await unread(sameera, general)).toBe(-1);
+    // Reading up to the first leaves the two newer ones (counted by the channel counter, not guessed).
+    ok(await w.call(rafi, 'POST', '/api/read-state/mark', { targetType: 'channel', targetId: general, upTo: first.id }));
+    expect(await unread(rafi, general)).toBe(2);
+    ok(await w.call(rafi, 'POST', '/api/read-state/mark', { targetType: 'channel', targetId: general, upTo: third.id }));
+    expect(await unread(rafi, general)).toBe(0);
+    expect(await unread(priya, general)).toBe(3);
+    await post(nadia, general, 'four');
+    expect(await unread(rafi, general)).toBe(1);
+  });
+
+  it('a reply counts for the followers of its thread (the replier and the root author), not as channel unread', async () => {
+    const root = Message.parse(ok(await post(nadia, general, 'Thread root'), 201));
+    ok(await w.call(rafi, 'POST', '/api/read-state/mark', { targetType: 'channel', targetId: general, upTo: root.id }));
+    const reply = Message.parse(ok(await post(rafi, general, 'First reply', root.id), 201));
+    expect(await unread(rafi, general)).toBe(0);
+    expect(await unread(nadia, general)).toBe(0);
+    expect((await state(nadia, `thread:${root.id}`)).unreadCount).toBe(1);
+    expect((await state(rafi, `thread:${root.id}`)).unreadCount).toBe(0);
+    expect((await state(priya, `thread:${root.id}`)).unreadCount).toBe(0);
+    await post(rafi, general, 'Second reply', root.id);
+    expect((await state(nadia, `thread:${root.id}`)).unreadCount).toBe(2);
+    ok(await w.call(nadia, 'POST', '/api/read-state/mark', { targetType: 'thread', targetId: root.id, upTo: reply.id }));
+    expect((await state(nadia, `thread:${root.id}`)).unreadCount).toBe(1);
+    const followers = await w.system(async (tx) => (await tx.query<{ person_id: string }>('SELECT person_id FROM app.thread_follows WHERE thread_root_id = $1', [root.id])).rows.map((r) => r.person_id));
+    expect(followers.sort()).toEqual([nadia.personId, rafi.personId].sort());
+  });
+
+  it('a private channel counts only for its members', async () => {
+    const id = Channel.parse(ok<{ channel: unknown }>(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: 'unread-private', private: true }), 201).channel).id;
+    ok(await w.call(omar, 'POST', `/api/channels/${id}/members`, { personId: rafi.personId }));
+    await post(omar, id, 'secret one');
+    expect(await unread(rafi, id)).toBe(1);
+    expect(await unread(nadia, id)).toBe(-1);
+    expect(ok<{ states: { unreadCount: number }[] }>(await w.call(nadia, 'GET', `/api/read-state?targets=channel:${id}`)).states[0]?.unreadCount).toBe(0);
+  });
+
+  it('messages and threads resolve for links, for the people who can see them and nobody else', async () => {
+    const pub = Message.parse(ok(await post(nadia, general, '**Rollback** plan for the release'), 201));
+    const secretChannel = Channel.parse(ok<{ channel: unknown }>(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: 'links-private', private: true }), 201).channel).id;
+    const secret = Message.parse(ok(await post(omar, secretChannel, 'hidden decision'), 201));
+    await w.system(async (tx) => {
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      await tx.query("INSERT INTO app.entity_links (team_id, src_type, src_id, dst_type, dst_id, kind) VALUES ($1, 'message', $2, 'message', $3, 'related')", [team, pub.id, secret.id]);
+    });
+    const links = async (who: typeof nadia, id: string) =>
+      ok<{ links: { other: { id: string; title: string; subtitle: string | null; href: string | null } }[] }>(await w.call(who, 'GET', `/api/links?type=message&id=${id}`)).links;
+    expect(await links(nadia, pub.id)).toEqual([]);                               // the other end is private
+    const asOmar = await links(omar, pub.id);
+    expect(asOmar).toHaveLength(1);
+    expect(asOmar[0]?.other).toMatchObject({ id: secret.id, title: 'hidden decision', subtitle: '#links-private', href: `/t/engineering/c/links-private?message=${secret.id}` });
+    expect(await links(nadia, secret.id)).toEqual([]);                            // she cannot see the asked-about message
+    const root = Message.parse(ok(await post(nadia, general, 'Deploy plan thread'), 201));
+    await post(rafi, general, 'ok', root.id);
+    await w.system(async (tx) => {
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      await tx.query("INSERT INTO app.entity_links (team_id, src_type, src_id, dst_type, dst_id, kind) VALUES ($1, 'message', $2, 'thread', $3, 'related')", [team, pub.id, root.id]);
+    });
+    const threadLinks = (await links(nadia, pub.id)).map((l) => l.other);
+    expect(threadLinks).toEqual([{ type: 'thread', id: root.id, title: 'Deploy plan thread', subtitle: '#general · 1 reply', href: `/t/engineering/c/general?panel=thread:${root.id}` }]);
+  });
+});

@@ -1,5 +1,7 @@
 import {
   AclPermission,
+  ChannelKind,
+  MentionKind,
   AclSubjectType,
   ActorKind,
   AuthProviderKind,
@@ -16,6 +18,7 @@ import {
 import {
   createTestDatabase,
   dropTestDatabase,
+  channelsMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
   type TestDatabase,
@@ -47,6 +50,8 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'read_state.target_type': ReadTargetType,
   'entity_links.src_type': EntityType,
   'entity_links.dst_type': EntityType,
+  'channels.kind': ChannelKind,
+  'message_mentions.kind': MentionKind,
 };
 
 /**
@@ -63,7 +68,7 @@ let found: Map<string, string[]>;
 const checkValues = (definition: string): string[] => [...definition.matchAll(/'((?:[^']|'')*)'::/g)].map((m) => (m[1] ?? '').replace(/''/g, "'"));
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource] });
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource] });
   owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
   const rows = await owner.query<{ table: string; column: string; def: string }>(`

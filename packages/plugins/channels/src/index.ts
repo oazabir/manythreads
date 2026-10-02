@@ -1,4 +1,5 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerCohesion } from './cohesion.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerMessageRoutes } from './routes-messages.ts';
 import { registerTemplateConsumer } from './templates.ts';
@@ -34,5 +35,6 @@ export default definePlugin({
     registerChannelRoutes(deps);
     registerMessageRoutes(deps);
     registerTemplateConsumer(ctx);
+    registerCohesion(ctx);
   },
 });

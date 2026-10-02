@@ -107,11 +107,38 @@ BEGIN
   SELECT m.id, m.channel_id, left(m.body_plain, 120), 1, NEW.created_at FROM app.messages m WHERE m.id = NEW.thread_root_id
   ON CONFLICT (root_message_id) DO UPDATE
     SET reply_count = app.threads.reply_count + 1, last_reply_at = greatest(app.threads.last_reply_at, EXCLUDED.last_reply_at);
+  -- Whoever replies and whoever wrote the root follows the thread (the people who get its unread counts); a bot has no follows.
+  INSERT INTO app.thread_follows (person_id, thread_root_id)
+  SELECT DISTINCT a.ref_id, NEW.thread_root_id FROM app.actors a
+   WHERE a.kind = 'person' AND a.workspace_id = NEW.workspace_id
+     AND a.id IN (NEW.author_id, (SELECT m.author_id FROM app.messages m WHERE m.id = NEW.thread_root_id))
+  ON CONFLICT DO NOTHING;
   RETURN NEW;
 END
 $$;
 CREATE TRIGGER messages_after_insert AFTER INSERT ON app.messages FOR EACH ROW
   WHEN (NEW.thread_root_id IS NOT NULL) EXECUTE FUNCTION app.messages_after_insert();
+
+-- The people following a thread who can still read its channel: the recipients of its unread counts. Only for a caller who can
+-- read the channel (and the system role).
+CREATE FUNCTION app.thread_follower_ids(p_root_id uuid) RETURNS TABLE (person_id uuid)
+  LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
+AS $$
+#variable_conflict use_column
+DECLARE
+  v_channel uuid;
+BEGIN
+  SELECT m.channel_id INTO v_channel FROM app.messages m WHERE m.id = p_root_id AND m.workspace_id = app.workspace_id();
+  IF v_channel IS NULL OR (session_user <> 'manythreads_system' AND NOT coalesce(app.lookup_channel_can(v_channel, 'read'), false)) THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+  SELECT f.person_id FROM app.thread_follows f
+   WHERE f.thread_root_id = p_root_id AND f.person_id IN (SELECT a.person_id FROM app.channel_audience(v_channel) a);
+END
+$$;
+REVOKE ALL ON FUNCTION app.thread_follower_ids(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.thread_follower_ids(uuid) TO manythreads_app, manythreads_system;
 
 -- Deleting a reply takes it out of the count.
 CREATE FUNCTION app.messages_after_delete_mark() RETURNS trigger
@@ -225,7 +252,7 @@ CREATE POLICY thread_follows_select ON app.thread_follows FOR SELECT
 -- Following needs a root message the caller can read (the messages policy filters that lookup).
 CREATE POLICY thread_follows_insert ON app.thread_follows FOR INSERT WITH CHECK (
   (SELECT app.is_system()) OR (
-    person_id = (SELECT app.person_id()) AND EXISTS (SELECT 1 FROM app.messages m WHERE m.id = thread_root_id)));
+    person_id = (SELECT app.person_id()) AND EXISTS (SELECT 1 FROM app.messages m WHERE m.id = thread_follows.thread_root_id)));
 CREATE POLICY thread_follows_delete ON app.thread_follows FOR DELETE
   USING ((SELECT app.is_system()) OR person_id = (SELECT app.person_id()));
 
@@ -241,4 +268,5 @@ ALTER FUNCTION app.messages_before_insert() OWNER TO manythreads_system;
 ALTER FUNCTION app.messages_after_insert() OWNER TO manythreads_system;
 ALTER FUNCTION app.messages_after_delete_mark() OWNER TO manythreads_system;
 ALTER FUNCTION app.message_children_before_insert() OWNER TO manythreads_system;
+ALTER FUNCTION app.thread_follower_ids(uuid) OWNER TO manythreads_system;
 REVOKE CREATE ON SCHEMA app FROM manythreads_system;
