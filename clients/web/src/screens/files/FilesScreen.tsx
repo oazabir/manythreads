@@ -237,7 +237,7 @@ export function FilesScreen() {
       <div className="fbody">
         {narrow ? null : tree}
         {open ? (
-          <div className="flist file-open">
+          <div className="flist file-open" data-landmark="list">
             <FileCrumb narrow={narrow} onBrowse={() => setDialog('sheet')} />
             <FileView key={open} path={open} onClose={() => go({ folder })} onMoved={(to) => go({ open: to })} onGone={() => go({ folder })} />
           </div>

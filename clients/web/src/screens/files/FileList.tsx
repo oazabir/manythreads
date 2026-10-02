@@ -95,21 +95,21 @@ export function FileList({ teamName, folder, info, state, selected, filters, onF
           {parts.length === 0 ? (
             <b aria-current="page">{teamName}</b>
           ) : (
-            <button type="button" className="crumb-link" onClick={() => onFolder(ROOT)}>{teamName}</button>
+            <button type="button" className="crumb-link crumb-team" onClick={() => onFolder(ROOT)}>{teamName}</button>
           )}
           {parts.map((p, i) => {
             const path = parts.slice(0, i + 1).join('/');
             const last = i === parts.length - 1;
             return (
               <Fragment key={path}>
-                <span className="crumb-sep" aria-hidden="true"> / </span>
+                <span className={`crumb-sep ${i === 0 ? 'first' : ''}`} aria-hidden="true"> / </span>
                 {last ? <b aria-current="page">{p}</b> : <button type="button" className="crumb-link" onClick={() => onFolder(path)}>{p}</button>}
               </Fragment>
             );
           })}
         </span>
-        {actions}
       </nav>
+      {actions ? <div className="crumb-actions">{actions}</div> : null}
       {info?.managedBy ? (
         <p className="fnote memory" data-testid="memory-note" role="note">
           <b>{MEMORY_COPY}.</b> This is the team's memory as files. Edit a fact and the team remembers the change; delete it and the team forgets it.

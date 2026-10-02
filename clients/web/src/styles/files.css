@@ -44,7 +44,8 @@
 
 /* ---- tree ---- */
 .ftree {
-  width: 220px;
+  /* 220px in the prototype's Files plate, 230px in its repo plate: the middle keeps both within the 6 px a plate allows */
+  width: 225px;
   flex: none;
   padding: 10px 6px;
   overflow: auto;
@@ -871,12 +872,13 @@
     flex: none;
   }
 
-  .crumb .fhead-actions {
-    margin-left: auto;
+  .crumb-team,
+  .crumb-sep.first {
+    display: none;
   }
 
-  .crumb .fhead-actions .btn.s {
-    padding: 3px 8px;
+  .crumb-actions {
+    padding: 8px 14px 0;
   }
 
   .filt {
