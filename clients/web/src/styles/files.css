@@ -635,25 +635,32 @@
 
 .msg2 {
   display: block;
-  margin: 3px 0 0 30px;
+  margin: 3px 0 0 38px;
   color: var(--mute);
   overflow-wrap: anywhere;
 }
 
 .co {
   display: block;
-  margin: 2px 0 0 30px;
+  margin: 2px 0 0 38px;
   color: var(--faint);
   font-size: 11.5px;
 }
 
 .cdetail {
-  margin-top: 8px;
+  margin: 10px 0 0 38px;
+}
+
+.cdetail-tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 11.5px;
 }
 
 .seg {
   display: inline-flex;
-  margin-bottom: 8px;
   border: 1px solid var(--rule);
   border-radius: 5px;
   overflow: hidden;

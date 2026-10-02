@@ -65,7 +65,7 @@ test('Files matches plate 3 (P)', async ({ browser }, testInfo) => {
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 700,
-      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.ftree', '.frow .src', '.panel-body', '.panel-sub', '.chead .topic', '.bell'],
+      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.rail .dm-empty', '.rail .dm-new', '.fhead-actions', '.ftree', '.frow .src', '.panel-body', '.panel-sub', '.chead .topic', '.bell'],
       order: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
       exact: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
     });

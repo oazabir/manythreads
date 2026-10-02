@@ -38,20 +38,22 @@ function useLoad<T>(key: string, run: () => Promise<T>, deps: readonly unknown[]
   return state.key === key ? state.value : { status: 'loading' };
 }
 
-function DiffBlock({ diff }: { diff: FileDiff }) {
+function DiffBlock({ diff, context }: { diff: FileDiff; context: boolean }) {
   if (diff.binary) return <p className="vw-note">This version is not text, so there is nothing to compare.</p>;
   if (diff.hunks.length === 0) return <p className="vw-note">No lines changed.</p>;
   return (
     <div className="diff" data-testid="text-diff" role="group" aria-label="Changes">
       {diff.hunks.map((h, i) => (
         <div key={i} className="hunk">
-          <span className="hh">{h.header}</span>
-          {h.lines.map((l, j) => (
-            <span key={j} className={l.type === 'add' ? 'add' : l.type === 'del' ? 'del' : 'ctx'} data-line={l.type}>
-              {l.type === 'add' ? '+ ' : l.type === 'del' ? '− ' : '  '}
-              {l.text}
-            </span>
-          ))}
+          {context ? <span className="hh">{h.header}</span> : null}
+          {h.lines
+            .filter((l) => context || l.type !== 'context')
+            .map((l, j) => (
+              <span key={j} className={l.type === 'add' ? 'add' : l.type === 'del' ? 'del' : 'ctx'} data-line={l.type}>
+                {l.type === 'add' ? '+ ' : l.type === 'del' ? '− ' : '  '}
+                {l.text}
+              </span>
+            ))}
         </div>
       ))}
       {diff.truncated ? <p className="vw-note">The change is longer than what is shown here.</p> : null}
@@ -61,6 +63,7 @@ function DiffBlock({ diff }: { diff: FileDiff }) {
 
 function CommitDetail({ files, path, commit, markdown }: { files: TeamFiles; path: string; commit: Commit; markdown: boolean }) {
   const [mode, setMode] = useState<'text' | 'rendered'>('text');
+  const [context, setContext] = useState(false);
   const diff = useLoad(`${path}@${commit.sha}`, () => files.backend.diff(path, commit), [files]);
   const versions = useLoad(
     mode === 'rendered' ? `${path}@${commit.sha}:text` : '',
@@ -69,12 +72,6 @@ function CommitDetail({ files, path, commit, markdown }: { files: TeamFiles; pat
   );
   return (
     <div className="cdetail" data-testid="commit-detail">
-      {markdown ? (
-        <div className="seg" role="group" aria-label="Show changes as">
-          <button type="button" className={mode === 'text' ? 'on' : ''} aria-pressed={mode === 'text'} onClick={() => setMode('text')}>Text</button>
-          <button type="button" className={mode === 'rendered' ? 'on' : ''} aria-pressed={mode === 'rendered'} onClick={() => setMode('rendered')}>Rendered</button>
-        </div>
-      ) : null}
       {mode === 'rendered' ? (
         versions.status === 'ok' ? (
           <Suspense fallback={<p className="loading" aria-busy="true">Loading…</p>}>
@@ -86,12 +83,23 @@ function CommitDetail({ files, path, commit, markdown }: { files: TeamFiles; pat
           <p className="loading" aria-busy="true">Loading…</p>
         )
       ) : diff.status === 'ok' ? (
-        <DiffBlock diff={diff.value} />
+        <DiffBlock diff={diff.value} context={context} />
       ) : diff.status === 'error' ? (
         <p className="vw-error" role="alert">{diff.message}</p>
       ) : (
         <p className="loading" aria-busy="true">Loading…</p>
       )}
+      <div className="cdetail-tools">
+        {markdown ? (
+          <div className="seg" role="group" aria-label="Show changes as">
+            <button type="button" className={mode === 'text' ? 'on' : ''} aria-pressed={mode === 'text'} onClick={() => setMode('text')}>Text</button>
+            <button type="button" className={mode === 'rendered' ? 'on' : ''} aria-pressed={mode === 'rendered'} onClick={() => setMode('rendered')}>Rendered</button>
+          </div>
+        ) : null}
+        {mode === 'text' ? (
+          <button type="button" className="linkish" aria-pressed={context} onClick={() => setContext((c) => !c)}>{context ? 'Hide context' : 'Show context'}</button>
+        ) : null}
+      </div>
     </div>
   );
 }

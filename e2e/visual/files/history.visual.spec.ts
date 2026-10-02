@@ -6,7 +6,7 @@ import { DESKTOP, comparePlate, openPage, type PlateSpec } from '../support/vt.t
 /*
  * The team repo with a file open and its History in the right panel vs [proto §11 plate 1 · Team repo and history] (section cabinet, plate 1).
  * Class P: landmarks within 6 px, at most 6% differing pixels of the whole frame (1440x700). The plate's tree is the prototype's own and its
- * editor shows the prototype's BOT.md: both are masked on both sides, with times and avatars. What is compared is the layout: the shell, the
+ * editor shows the prototype's BOT.md: both are masked on both sides, with times, avatars and the names of authors. What is compared is the layout: the shell, the
  * header, the file's own band (path, who and when, History), the right panel's head, the commit list with the diff of the selected one, and the
  * Restore button.
  */
@@ -26,7 +26,7 @@ const PLATE: PlateSpec = {
     list: '.flist',
     'right-panel': '.rp',
   },
-  masks: ['.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.ftree', '.fvb', '.fvh .m', '.t2', '.rph .sub', '.chead .topic'],
+  masks: ['.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.ftree', '.fvb', '.fvh .m', '.t2', '.rph .sub', '.chead .topic', '.commit .who2 b'],
 };
 
 // what happened to the bot, oldest first: the plate's five commits (all Omar's here: only a team lead changes bots/)
@@ -75,7 +75,7 @@ test('the team repo with History matches plate 1 (P)', async ({ browser }, testI
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 700,
-      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.ftree', '.fvb', '.fvh .m', '.t2', '.panel-sub', '.chead .topic', '.bell'],
+      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.rail .dm-empty', '.rail .dm-new', '.fhead-actions', '.ftree', '.fvb', '.fvh .m', '.t2', '.panel-sub', '.chead .topic', '.bell', '.commit .who2 b'],
       order: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
       exact: ['team-switch', 'search', 'sidebar', 'header', 'tree', 'list', 'right-panel'],
     });
