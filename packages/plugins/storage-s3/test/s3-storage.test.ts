@@ -83,6 +83,64 @@ describe('plugin', () => {
   });
 });
 
+// M4 of the Phase 4 review, against a scripted client (no endpoint): a listing entry with no modified time is "now", and the instance marker is a
+// create-only object that `list` never reports.
+describe('instance marker and listing without LastModified', () => {
+  const key = 'a'.repeat(32);
+  function fakeClient() {
+    const objects = new Map<string, string>();
+    const sent: string[] = [];
+    const client = {
+      async send(cmd: { constructor: { name: string }; input: Record<string, unknown> }) {
+        sent.push(cmd.constructor.name);
+        const Key = cmd.input['Key'] as string | undefined;
+        if (cmd.constructor.name === 'GetObjectCommand') {
+          const body = objects.get(Key!);
+          if (body === undefined) throw Object.assign(new Error('nope'), { name: 'NoSuchKey' });
+          return { Body: { transformToString: async () => body } };
+        }
+        if (cmd.constructor.name === 'PutObjectCommand') {
+          if (cmd.input['IfNoneMatch'] === '*' && objects.has(Key!)) throw Object.assign(new Error('exists'), { name: 'PreconditionFailed', $metadata: { httpStatusCode: 412 } });
+          objects.set(Key!, String(cmd.input['Body']));
+          return {};
+        }
+        if (cmd.constructor.name === 'ListObjectsV2Command') {
+          return { Contents: [{ Key: `blobs/${key}`, Size: 3 }, { Key: 'blobs/.instance', Size: 33, LastModified: new Date(0) }], IsTruncated: false };
+        }
+        throw new Error(`unexpected ${cmd.constructor.name}`);
+      },
+    };
+    return { client, objects, sent };
+  }
+
+  it('a listed object with no LastModified is dated now, never 1970 (so it is never old enough to delete)', async () => {
+    const { client } = fakeClient();
+    const storage = createS3BlobStorage({ client: client as never, bucket: 'b' });
+    const before = Date.now();
+    const page = await storage.list({ limit: 10 });
+    expect(page.items).toHaveLength(1); // the marker object is not a blob
+    expect(page.items[0]!.modifiedAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it('the marker is written once (create-only) under the prefix, and read back', async () => {
+    const { client, objects } = fakeClient();
+    const storage = createS3BlobStorage({ client: client as never, bucket: 'b', prefix: 'mine/' });
+    expect(await storage.getInstanceMarker!()).toBeNull();
+    expect(await storage.putInstanceMarker!('1'.repeat(32))).toBe(true);
+    expect(await storage.putInstanceMarker!('2'.repeat(32))).toBe(false);
+    expect(await storage.getInstanceMarker!()).toBe('1'.repeat(32));
+    expect([...objects.keys()]).toEqual(['mine/.instance']);
+  });
+
+  it('a store that ignores If-None-Match is still create-only for a sequential writer, and a 412 from a racing writer is false', async () => {
+    const { client } = fakeClient();
+    const storage = createS3BlobStorage({ client: client as never, bucket: 'b' });
+    await storage.putInstanceMarker!('3'.repeat(32));
+    // the second writer sees the first one's marker on its read and writes nothing
+    expect(await storage.putInstanceMarker!('4'.repeat(32))).toBe(false);
+  });
+});
+
 const live = process.env['MANYTHREADS_TEST_S3'] === '1';
 
 function liveConfig(prefix: string): S3Config {

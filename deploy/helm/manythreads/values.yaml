@@ -76,10 +76,13 @@ server:
       accessKey: ""
       secretKey: ""
   # Garbage collection of attachment bytes no row references (job files.blob-gc, daily 03:17 UTC; docs/plugins/files.md). `mode`: on | dry-run | off
-  # (anything else means dry-run: a typo never deletes). `allowEmpty` lifts the "database holds no files row" guard: set it once only on
-  # a deployment that really deleted its last file.
+  # (anything but the word `on` means dry-run: a typo never deletes). It ships as dry-run: read the job's log line, then set "on" once you are sure the
+  # bucket/prefix (or the blobs volume) belongs to this deployment's database ALONE; the GC also refuses to delete when the instance marker kept in the
+  # store differs from the database's. `allowEmpty` lifts the "database holds no files row" guard: set it once only on a deployment that really
+  # deleted its last file. `adoptMarker` adopts the store's marker for a database restored from a backup (set it once, then unset it).
   blobGc:
-    mode: "on"
+    mode: "dry-run"
+    adoptMarker: false
     graceHours: 24
     orphanDays: 30
     allowEmpty: false

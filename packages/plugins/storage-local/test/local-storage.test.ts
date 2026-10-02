@@ -70,6 +70,25 @@ describe('keys cannot escape the root', () => {
   });
 });
 
+describe('instance marker', () => {
+  it('is create-only, read back, and never listed as a blob', async () => {
+    const store = createLocalBlobStorage({ dir });
+    expect(await store.getInstanceMarker!()).toBeNull();
+    expect(await store.putInstanceMarker!('a'.repeat(32))).toBe(true);
+    expect(await store.putInstanceMarker!('b'.repeat(32))).toBe(false);
+    expect(await store.getInstanceMarker!()).toBe('a'.repeat(32));
+    expect((await store.list({ limit: 10 })).items).toEqual([]);
+    expect((await readdir(join(dir, '.tmp'))).filter((n) => n.startsWith('marker-'))).toEqual([]); // no temporary file left behind
+  });
+
+  it('two writers at once: exactly one wins', async () => {
+    const store = createLocalBlobStorage({ dir });
+    const results = await Promise.all(Array.from({ length: 8 }, (_, i) => store.putInstanceMarker!(String(i).repeat(32))));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await store.getInstanceMarker!()).toBe(String(results.findIndex(Boolean)).repeat(32));
+  });
+});
+
 describe('list', () => {
   it('is empty before the root exists, and ignores .tmp parts, directories and stray files', async () => {
     expect(await storage.list({ limit: 10 })).toEqual({ items: [], next: null });

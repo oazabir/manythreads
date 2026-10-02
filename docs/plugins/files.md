@@ -111,13 +111,23 @@ one run however many replicas) cleans all of them up:
 
 | Setting | Default | |
 |---|---|---|
-| `MANYTHREADS_BLOB_GC` | `on` | `on`, `dry-run` (everything except the deletions: counts and bytes are reported as "would delete"), `off`. Anything else means `dry-run`: a typo never deletes. A job payload `{ "dryRun": true }` also forces a dry run once. |
+| `MANYTHREADS_BLOB_GC` | `dry-run` | `dry-run` (everything except the deletions: counts and bytes are reported as "would delete"), `on`, `off`. Only the word `on` deletes: unset, empty or anything else means `dry-run`, so a deployment opts in and a typo never deletes. A job payload `{ "dryRun": true }` also forces a dry run once. Helm: `server.blobGc.mode`, shipped as `dry-run`. |
 | `MANYTHREADS_BLOB_GC_GRACE_HOURS` | `24` | Minimum 1. |
 | `MANYTHREADS_FILES_ORPHAN_DAYS` | `30` | Minimum 1. |
-| `MANYTHREADS_BLOB_GC_ALLOW_EMPTY` | unset | `1` lifts the guard below. |
+| `MANYTHREADS_BLOB_GC_ALLOW_EMPTY` | unset | `1` lifts the empty-database guard below. |
+| `MANYTHREADS_BLOB_GC_ADOPT_MARKER` | unset | `1` adopts the store's instance marker for a database that has none (see "Instance marker"). |
 
 **Guard.** If the database holds no `files` row at all but the store holds old unreferenced blobs, the run deletes nothing and logs a warning: the server is probably pointed at the wrong
 database (every blob would look like garbage). A deployment that really deleted its last file sets `MANYTHREADS_BLOB_GC_ALLOW_EMPTY=1` once.
+
+**Instance marker (a bucket, prefix or directory belongs to ONE database).** "No row names this blob" is only garbage when the store is this database's alone: two deployments that share a
+bucket and prefix, or a staging database restored from production, would each delete the other's blobs after the grace period. So before the first deletion of a run the GC compares two ids:
+one in the table `app.blob_gc_instance` and one in the store (S3: the object `<prefix>.instance`; local: `<dir>/.instance`; neither is ever listed as a blob). On a fresh pair the first deleting
+run writes both (the store's write is create-only). It deletes only while they are equal; it refuses (`refused` in the metrics line, a warning) when the store's marker is another id, when the
+database has none but the store has one (use `MANYTHREADS_BLOB_GC_ADOPT_MARKER=1` once to adopt it, for a database restored from a backup that predates the marker), or when the provider
+cannot keep a marker. Give every deployment its own bucket or prefix (`MANYTHREADS_S3_PREFIX`); a database copied for another deployment keeps the copied id, so point the copy at its own store
+and clear the id (`DELETE FROM app.blob_gc_instance` as the system role) before turning the GC on. A listing entry without a modified time counts as "now", so it is never old enough to delete.
+The shipped default is `dry-run`: read the metrics line first, then set `on`.
 
 **Metrics** are one line per run in the server log (`job.log`, level info; warn when something failed or the guard refused): `files.blob-gc {"provider":"local","graceHours":24,"dryRun":false,"purgedFiles":3,"scanned":12044,
 "referenced":12031,"withinGrace":4,"orphans":9,"deleted":9,"bytes":1843022,"failed":0,"refused":null,"next":null,"ms":812}`. A failed deletion is counted and retried by the next sweep. To try it on

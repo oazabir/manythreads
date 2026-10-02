@@ -60,6 +60,9 @@ spec:
             - { name: MANYTHREADS_BLOB_GC, value: {{ .Values.server.blobGc.mode | quote }} }
             - { name: MANYTHREADS_BLOB_GC_GRACE_HOURS, value: {{ .Values.server.blobGc.graceHours | quote }} }
             - { name: MANYTHREADS_FILES_ORPHAN_DAYS, value: {{ .Values.server.blobGc.orphanDays | quote }} }
+            {{- if .Values.server.blobGc.adoptMarker }}
+            - { name: MANYTHREADS_BLOB_GC_ADOPT_MARKER, value: "1" }
+            {{- end }}
             {{- if .Values.server.blobGc.allowEmpty }}
             - { name: MANYTHREADS_BLOB_GC_ALLOW_EMPTY, value: "1" }
             {{- end }}

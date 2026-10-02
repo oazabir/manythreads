@@ -1,4 +1,5 @@
-import { utimesSync } from 'node:fs';
+import { mkdtempSync, utimesSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { ChannelMessage, FileMeta, ListChannelFilesResponse } from '@manythreads/shared';
@@ -176,9 +177,11 @@ describe('blob GC', () => {
   it('refuses to delete when the database has no files row at all (a server pointed at the wrong database)', async () => {
     // A second, empty database: the same store, no rows. Everything old looks unreferenced; the guard must stop it.
     const stray = await putStray('guarded', 3 * DAY);
+    const marker = await store.getInstanceMarker!(); // the empty database is otherwise this store's: only the empty-database guard is under test
     const fake = {
       query: async (text: string) => {
         if (text.includes('count(*)')) return { rows: [{ n: 0 }] };
+        if (text.startsWith('SELECT instance_id')) return { rows: [{ instance_id: marker }] };
         if (text.includes('EXISTS')) return { rows: [{ found: false }] };
         return { rows: [] };
       },
@@ -193,14 +196,94 @@ describe('blob GC', () => {
   });
 });
 
+describe('instance marker (M4): the GC deletes only blobs of its own store', () => {
+  const strayIn = async (s: BlobStorage, dir: string, text: string): Promise<string> => {
+    const { blobKey } = await s.put(Readable.from([Buffer.from(text)]), { maxBytes: 1000 });
+    const when = new Date(Date.now() - 3 * DAY);
+    utimesSync(join(dir, blobKey.slice(0, 2), blobKey), when, when);
+    return blobKey;
+  };
+
+  it('the first deleting run stamps the same id in the database and in the store; a second store with no marker gets the database\'s', async () => {
+    const f = await upload(nadia, 'marker-anchor.txt'); // the database has a files row
+    expect(f.id).toBeTruthy();
+    await gc(); // stamps `store` (the earlier tests may have done so already)
+    const dbId = (await sys((tx) => tx.query<{ instance_id: string }>('SELECT instance_id FROM app.blob_gc_instance'))).rows[0]?.instance_id;
+    expect(dbId).toMatch(/^[0-9a-f]{32}$/);
+    expect(await store.getInstanceMarker!()).toBe(dbId);
+    const dir = mkdtempSync(join(tmpdir(), 'manythreads-gc-marker-'));
+    const other = createLocalBlobStorage({ dir });
+    const key = await strayIn(other, dir, 'in a fresh store');
+    expect((await sys((tx) => runBlobGc(tx, other, { dryRun: false, graceMs: DAY, orphanDays: 30 }))).deleted).toBe(1);
+    expect(await other.head(key)).toBeNull();
+    expect(await other.getInstanceMarker!()).toBe(dbId);
+  });
+
+  it('refuses, and deletes nothing, when the store\'s marker is another deployment\'s', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'manythreads-gc-marker-'));
+    const theirs = createLocalBlobStorage({ dir });
+    await theirs.putInstanceMarker!('f'.repeat(32));
+    const key = await strayIn(theirs, dir, 'belongs to the other deployment');
+    const report = await sys((tx) => runBlobGc(tx, theirs, { dryRun: false, graceMs: DAY, orphanDays: 30 }));
+    expect(report.deleted).toBe(0);
+    expect(report.refused).toMatch(/marker differs/);
+    expect(await theirs.head(key)).not.toBeNull();
+    expect(await theirs.getInstanceMarker!()).toBe('f'.repeat(32)); // untouched
+  });
+
+  it('a provider that cannot keep a marker is never collected', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'manythreads-gc-marker-'));
+    const real = createLocalBlobStorage({ dir });
+    const key = await strayIn(real, dir, 'no marker support');
+    const bare: BlobStorage = { ...real };
+    delete bare.getInstanceMarker;
+    delete bare.putInstanceMarker;
+    const report = await sys((tx) => runBlobGc(tx, bare, { dryRun: false, graceMs: DAY, orphanDays: 30 }));
+    expect(report).toMatchObject({ deleted: 0 });
+    expect(report.refused).toMatch(/cannot keep an instance marker/);
+    expect(await real.head(key)).not.toBeNull();
+  });
+
+  it('a database with no marker facing a store that has one is refused, unless the operator adopts it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'manythreads-gc-marker-'));
+    const mine = createLocalBlobStorage({ dir });
+    const key = await strayIn(mine, dir, 'restored database');
+    const previous = (await sys((tx) => tx.query<{ instance_id: string }>('SELECT instance_id FROM app.blob_gc_instance'))).rows[0]!.instance_id;
+    await sys((tx) => tx.query('DELETE FROM app.blob_gc_instance'));
+    await mine.putInstanceMarker!('a'.repeat(32));
+    const refused = await sys((tx) => runBlobGc(tx, mine, { dryRun: false, graceMs: DAY, orphanDays: 30 }));
+    expect(refused.deleted).toBe(0);
+    expect(refused.refused).toMatch(/another database/);
+    expect(await mine.head(key)).not.toBeNull();
+    const adopted = await sys((tx) => runBlobGc(tx, mine, { dryRun: false, graceMs: DAY, orphanDays: 30, adoptMarker: true }));
+    expect(adopted.deleted).toBe(1);
+    expect((await sys((tx) => tx.query<{ instance_id: string }>('SELECT instance_id FROM app.blob_gc_instance'))).rows[0]?.instance_id).toBe('a'.repeat(32));
+    // put the original id back for the rest of the file
+    await sys((tx) => tx.query('UPDATE app.blob_gc_instance SET instance_id = $1', [previous]));
+  });
+
+  it('a dry run never touches the marker', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'manythreads-gc-marker-'));
+    const s = createLocalBlobStorage({ dir });
+    await strayIn(s, dir, 'dry');
+    const report = await sys((tx) => runBlobGc(tx, s, { dryRun: true, graceMs: DAY, orphanDays: 30 }));
+    expect(report.orphans).toBe(1);
+    expect(await s.getInstanceMarker!()).toBeNull();
+  });
+});
+
 describe('configuration', () => {
   it('reads mode, grace period and orphan period from the environment; a typo is a dry run, never a deletion', () => {
-    expect(blobGcConfigFromEnv({})).toEqual({ mode: 'on', graceMs: DAY, orphanDays: 30, allowEmpty: false });
-    expect(blobGcConfigFromEnv({ MANYTHREADS_BLOB_GC: 'dry-run', MANYTHREADS_BLOB_GC_GRACE_HOURS: '48', MANYTHREADS_FILES_ORPHAN_DAYS: '7', MANYTHREADS_BLOB_GC_ALLOW_EMPTY: '1' })).toEqual({
+    // M4: nothing is deleted unless the deployment says `on` by name
+    expect(blobGcConfigFromEnv({})).toEqual({ mode: 'dry-run', graceMs: DAY, orphanDays: 30, allowEmpty: false, adoptMarker: false });
+    expect(blobGcConfigFromEnv({ MANYTHREADS_BLOB_GC: '' }).mode).toBe('dry-run');
+    expect(blobGcConfigFromEnv({ MANYTHREADS_BLOB_GC: ' On ' }).mode).toBe('on');
+    expect(blobGcConfigFromEnv({ MANYTHREADS_BLOB_GC: 'dry-run', MANYTHREADS_BLOB_GC_GRACE_HOURS: '48', MANYTHREADS_FILES_ORPHAN_DAYS: '7', MANYTHREADS_BLOB_GC_ALLOW_EMPTY: '1', MANYTHREADS_BLOB_GC_ADOPT_MARKER: '1' })).toEqual({
       mode: 'dry-run',
       graceMs: 2 * DAY,
       orphanDays: 7,
       allowEmpty: true,
+      adoptMarker: true,
     });
     expect(blobGcConfigFromEnv({ MANYTHREADS_BLOB_GC: 'OFF' }).mode).toBe('off');
     expect(blobGcConfigFromEnv({ MANYTHREADS_BLOB_GC: 'yes please' }).mode).toBe('dry-run');
@@ -216,6 +299,7 @@ describe('the job', () => {
     expect(schedules.rows).toEqual([{ cron_expr: BLOB_GC_CRON, queue: BLOB_GC_QUEUE }]);
     expect(BLOB_GC_CRON).toBe('17 3 * * *');
 
+    process.env['MANYTHREADS_BLOB_GC'] = 'on'; // the default is a dry run; this deployment opts in by name
     const stray = await putStray('swept by the worker', 3 * DAY);
     const f = await upload(nadia, 'keeps-the-table-non-empty.txt');
     age(await blobKeyOf(f.id), 3 * DAY);

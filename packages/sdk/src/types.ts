@@ -536,4 +536,13 @@ export interface BlobStorage extends ProviderImpl {
    * this provider issued and nothing else in a shared bucket or directory.
    */
   list(options: { after?: string; limit: number }): Promise<BlobListPage>;
+  /**
+   * The instance marker (M4 of the Phase 4 review): a random id stored in this store (a hidden object beside the blobs, never listed by `list`).
+   * The blob GC keeps the same id in its database and deletes only when the two match, so a bucket, prefix or directory shared by two deployments
+   * (or a database restored from another deployment) can never have one deployment delete the other's blobs. `get` answers null when there is none.
+   * A provider without both marker methods is never garbage-collected.
+   */
+  getInstanceMarker?(): Promise<string | null>;
+  /** Writes the marker only if the store has none (create-if-absent); true when it was written, false when one already exists. */
+  putInstanceMarker?(id: string): Promise<boolean>;
 }

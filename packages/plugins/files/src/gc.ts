@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { BlobStorage, JobHandler, PluginContext, PluginTx } from '@manythreads/sdk';
 
 /** The job queue, and its schedule: every day at 03:17 UTC (an odd minute, so replicas of many deployments do not all wake on the hour). */
@@ -23,6 +24,8 @@ export interface BlobGcConfig {
   orphanDays: number;
   /** Refuse to delete when the database holds no `files` row at all but the store holds old blobs (the server is probably pointed at the wrong database). */
   allowEmpty: boolean;
+  /** Take the store's instance marker as this database's when the database has none (a database restored from a backup, pointed at its own store). */
+  adoptMarker: boolean;
 }
 
 const posInt = (raw: string | undefined, fallback: number, min: number): number => {
@@ -31,18 +34,20 @@ const posInt = (raw: string | undefined, fallback: number, min: number): number 
 };
 
 /**
- * `MANYTHREADS_BLOB_GC` = `on` (default) | `dry-run` (count and log, delete nothing) | `off`; `MANYTHREADS_BLOB_GC_GRACE_HOURS` (default 24, at
- * least 1); `MANYTHREADS_FILES_ORPHAN_DAYS` (default 30, at least 1); `MANYTHREADS_BLOB_GC_ALLOW_EMPTY=1` lifts the empty-database guard.
- * An unknown mode is `dry-run`, never `on`: a typo must not delete anything.
+ * `MANYTHREADS_BLOB_GC` = `dry-run` (default: count and log, delete nothing) | `on` (delete, only when asked for by name) | `off`; `MANYTHREADS_BLOB_GC_GRACE_HOURS` (default 24, at
+ *  least 1); `MANYTHREADS_FILES_ORPHAN_DAYS` (default 30, at least 1); `MANYTHREADS_BLOB_GC_ALLOW_EMPTY=1` lifts the empty-database guard;
+ * `MANYTHREADS_BLOB_GC_ADOPT_MARKER=1` adopts the store's instance marker. An unset, empty or unknown mode is `dry-run`, never `on`: only the word
+ * `on` deletes (a deployment must opt in, and a typo must not delete anything).
  */
 export function blobGcConfigFromEnv(env: Record<string, string | undefined> = process.env): BlobGcConfig {
-  const raw = (env['MANYTHREADS_BLOB_GC'] ?? 'on').trim().toLowerCase();
-  const mode: BlobGcMode = raw === 'on' || raw === '' ? 'on' : raw === 'off' ? 'off' : 'dry-run';
+  const raw = (env['MANYTHREADS_BLOB_GC'] ?? '').trim().toLowerCase();
+  const mode: BlobGcMode = raw === 'on' ? 'on' : raw === 'off' ? 'off' : 'dry-run';
   return {
     mode,
     graceMs: posInt(env['MANYTHREADS_BLOB_GC_GRACE_HOURS'], DEFAULT_GRACE_HOURS, MIN_GRACE_HOURS) * 3_600_000,
     orphanDays: posInt(env['MANYTHREADS_FILES_ORPHAN_DAYS'], DEFAULT_ORPHAN_DAYS, 1),
     allowEmpty: env['MANYTHREADS_BLOB_GC_ALLOW_EMPTY'] === '1',
+    adoptMarker: env['MANYTHREADS_BLOB_GC_ADOPT_MARKER'] === '1',
   };
 }
 
@@ -51,6 +56,7 @@ export interface BlobGcOptions {
   graceMs: number;
   orphanDays: number;
   allowEmpty?: boolean;
+  adoptMarker?: boolean;
   now?: Date;
   /** Continue a sweep after this key (the previous run's `next`); a sweep that starts at the beginning also purges expired orphan rows. */
   cursor?: string;
@@ -81,6 +87,40 @@ export interface BlobGcReport {
   /** Where the next run continues; null when the sweep reached the end of the store. */
   next: string | null;
   ms: number;
+}
+
+/**
+ * Ties this database to its store before anything is deleted (M4). Returns why not to delete, or null when the database's id and the store's marker
+ * are the same. No marker anywhere: both are written now (the store's write is create-only, so two deployments starting at once cannot both win).
+ */
+export async function checkInstanceMarker(tx: PluginTx, storage: BlobStorage, adopt: boolean): Promise<string | null> {
+  if (typeof storage.getInstanceMarker !== 'function' || typeof storage.putInstanceMarker !== 'function') {
+    return `the storage provider "${storage.id}" cannot keep an instance marker, so the GC cannot tell this deployment's blobs from another's`;
+  }
+  const dbRow = async (): Promise<string | null> =>
+    ((await tx.query<{ instance_id: string }>('SELECT instance_id FROM app.blob_gc_instance')).rows[0]?.instance_id ?? null);
+  let dbId = await dbRow();
+  let storeId = await storage.getInstanceMarker();
+  if (dbId === null && storeId !== null) {
+    if (!adopt) {
+      return 'the store belongs to another database (its instance marker is not this database\'s): a bucket or prefix must serve one database only; to adopt it for a database restored from a backup, set MANYTHREADS_BLOB_GC_ADOPT_MARKER=1';
+    }
+    if (!/^[0-9a-f]{32}$/.test(storeId)) return 'the store\'s instance marker is malformed';
+    await tx.query('INSERT INTO app.blob_gc_instance (instance_id) VALUES ($1) ON CONFLICT (singleton) DO NOTHING', [storeId]);
+    dbId = await dbRow();
+  }
+  if (dbId === null) {
+    await tx.query('INSERT INTO app.blob_gc_instance (instance_id) VALUES ($1) ON CONFLICT (singleton) DO NOTHING', [randomBytes(16).toString('hex')]);
+    dbId = await dbRow();
+  }
+  if (storeId === null && dbId !== null) {
+    if (!(await storage.putInstanceMarker(dbId))) storeId = await storage.getInstanceMarker();
+    else storeId = dbId;
+  }
+  if (dbId === null || storeId === null || dbId !== storeId) {
+    return 'the store\'s instance marker differs from this database\'s: the bucket, prefix or directory is shared with another deployment (or the database was restored from another one); nothing was deleted';
+  }
+  return null;
 }
 
 /**
@@ -119,6 +159,7 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
 
   const graceCutoff = now.getTime() - options.graceMs;
   let emptyDatabase: boolean | undefined;
+  let markerRefusal: string | null | undefined;
   let after = options.cursor;
   for (;;) {
     const page = await storage.list({ ...(after !== undefined ? { after } : {}), limit: pageSize });
@@ -141,6 +182,8 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
         }
         if (emptyDatabase === true) {
           report.refused = 'the database has no files rows but the store holds unreferenced blobs: wrong database? (MANYTHREADS_BLOB_GC_ALLOW_EMPTY=1 lifts this)';
+        } else if ((markerRefusal ??= await checkInstanceMarker(tx, storage, options.adoptMarker === true)) !== null) {
+          report.refused = markerRefusal;
         } else {
           for (let i = 0; i < doomed.length; i += DELETE_CONCURRENCY) {
             await Promise.all(
@@ -188,7 +231,7 @@ export function blobGcHandler(ctx: PluginContext): JobHandler {
     // The payload is whatever was enqueued (this plugin only): take a well-formed cursor and nothing else from it.
     const cursor = typeof payload['cursor'] === 'string' && BLOB_KEY.test(payload['cursor']) ? payload['cursor'] : undefined;
     const dryRun = config.mode === 'dry-run' || payload['dryRun'] === true;
-    const report = await runBlobGc(tx, storage, { dryRun, graceMs: config.graceMs, orphanDays: config.orphanDays, allowEmpty: config.allowEmpty, ...(cursor !== undefined ? { cursor } : {}) });
+    const report = await runBlobGc(tx, storage, { dryRun, graceMs: config.graceMs, orphanDays: config.orphanDays, allowEmpty: config.allowEmpty, adoptMarker: config.adoptMarker, ...(cursor !== undefined ? { cursor } : {}) });
     const line = `${BLOB_GC_QUEUE} ${JSON.stringify({ provider: storage.id, graceHours: config.graceMs / 3_600_000, ...report })}`;
     if (report.refused !== null || report.failed > 0) job.log.warn(line);
     else job.log.info(line);

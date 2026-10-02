@@ -7,6 +7,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
   type S3ClientConfig,
 } from '@aws-sdk/client-s3';
@@ -44,6 +45,8 @@ export interface S3Config {
 }
 
 export const DEFAULT_PREFIX = 'blobs/';
+/** The instance marker object, directly under the prefix. */
+export const MARKER_NAME = '.instance';
 
 const truthy = (v: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes((v ?? '').trim().toLowerCase());
 
@@ -196,6 +199,29 @@ export function createS3BlobStorage(options: S3BlobStorageOptions): BlobStorage 
 
     head,
 
+    // The instance marker lives beside the blobs (`<prefix>.instance`, not a 32-hex key, so `list` never reports it).
+    async getInstanceMarker(): Promise<string | null> {
+      try {
+        const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: `${prefix}${MARKER_NAME}` }));
+        return ((await res.Body?.transformToString('utf8')) ?? '').trim();
+      } catch (err) {
+        if (isMissing(err)) return null;
+        throw err;
+      }
+    },
+
+    async putInstanceMarker(id): Promise<boolean> {
+      // `If-None-Match: *` makes the write create-only on stores that honour it (S3, recent MinIO); the read first covers the ones that ignore it.
+      if ((await this.getInstanceMarker!()) !== null) return false;
+      try {
+        await client.send(new PutObjectCommand({ Bucket: bucket, Key: `${prefix}${MARKER_NAME}`, Body: `${id}\n`, ContentType: 'text/plain', IfNoneMatch: '*' }));
+        return true;
+      } catch (err) {
+        if (statusOf(err) === 412 || (err as { name?: string }).name === 'PreconditionFailed') return false;
+        throw err;
+      }
+    },
+
     async list({ after, limit }): Promise<BlobListPage> {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new RangeError('limit must be an integer from 1 to 1000');
       const res = await client.send(
@@ -211,7 +237,8 @@ export function createS3BlobStorage(options: S3BlobStorageOptions): BlobStorage 
         const blobKey = (o.Key ?? '').slice(prefix.length);
         // Only what this provider issued: anything else under the prefix (a console upload, a lifecycle marker) is not ours to garbage-collect.
         if (!KEY.test(blobKey)) continue;
-        items.push({ blobKey, size: o.Size ?? 0, modifiedAt: o.LastModified ?? new Date(0) });
+        // A listing without a modified time is "now": a blob whose age cannot be told is never old enough to garbage-collect (it used to be 1970).
+        items.push({ blobKey, size: o.Size ?? 0, modifiedAt: o.LastModified ?? new Date() });
       }
       const last = res.Contents?.at(-1)?.Key;
       return { items, next: res.IsTruncated === true && last !== undefined ? last.slice(prefix.length) : null };
