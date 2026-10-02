@@ -298,7 +298,7 @@ describe('hostile input (claims are checked with sorted-interval sweeps, not aga
   const timeIt = (md: string): number => {
     parseMarkup(md); // warm up the regexes
     return Math.min(
-      ...Array.from({ length: 3 }, () => {
+      ...Array.from({ length: 5 }, () => {
         const start = performance.now();
         parseMarkup(md);
         return performance.now() - start;

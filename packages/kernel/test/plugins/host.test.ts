@@ -129,8 +129,17 @@ describe('plugin host: ordering and validation (no database)', () => {
   });
 
   it('discovers plugins by the package.json manythreads field', async () => {
-    const host = await loadPlugins({ scanDir: pluginsDir });
-    expect(host.plugins.map((p) => p.manifest.name)).toContain('example-hello');
+    // The scan loads every plugin directory, storage-s3 included, and that one refuses to load without a bucket (the server loads it only
+    // when MANYTHREADS_STORAGE=s3): give it one, the plugin never connects while registering.
+    const saved = process.env['MANYTHREADS_S3_BUCKET'];
+    process.env['MANYTHREADS_S3_BUCKET'] = 'discovery-test';
+    try {
+      const host = await loadPlugins({ scanDir: pluginsDir });
+      expect(host.plugins.map((p) => p.manifest.name)).toContain('example-hello');
+    } finally {
+      if (saved === undefined) delete process.env['MANYTHREADS_S3_BUCKET'];
+      else process.env['MANYTHREADS_S3_BUCKET'] = saved;
+    }
   });
 });
 
