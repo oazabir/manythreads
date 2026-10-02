@@ -47,6 +47,18 @@ const raw = (path: string): Promise<{ status: number; body: string }> =>
     req.end();
   });
 
+const rawFull = (path: string): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> =>
+  new Promise((resolve, reject) => {
+    const u = new URL(server.url);
+    const req = request({ host: u.hostname, port: u.port, path, method: 'GET', headers: as(nadia) }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString() }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+
 const INDEX = '<!doctype html><title>Demo</title><script src="__manythreads.js"></script><script src="js/app.js"></script><p id="x">demo</p>';
 const commit = async (who: typeof omar, slug: string, changes: unknown[], message: string) => {
   const res = await call(who, 'POST', `/api/teams/${slug}/repo/commit`, { changes, message });
@@ -83,6 +95,39 @@ describe('the app content route', () => {
     expect(missing.status).toBe(404);
     expect(missing.headers.get('content-security-policy')).toContain("connect-src 'none'");
     expect((await call(nadia, 'GET', '/api/teams/engineering/repo/app/apps/demo/.git/config')).status).toBe(404);
+  });
+
+  // C1 of the Phase 4 review: `/repo/%61pp/...` reached the handler with no CSP and no sandbox (same-origin script execution for a victim who clicked it).
+  it('answers no spelling of the path without the CSP and sandbox: a 404, or the headers', async () => {
+    await commit(omar, 'engineering', [put('apps/evil/index.html', '<script>document.title = "pwned"</script>')], 'Add an app');
+    const csp = embeddedAppHeaders()['content-security-policy'] ?? '';
+    expect(csp).toContain('sandbox allow-scripts');
+    const canonical = await rawFull('/api/teams/engineering/repo/app/apps/evil/index.html');
+    expect(canonical.status).toBe(200);
+    expect(canonical.headers['content-security-policy']).toBe(csp);
+    for (const url of [
+      '/api/teams/engineering/repo/%61pp/apps/evil/index.html',
+      '/api/teams/engineering/repo/ap%70/apps/evil/index.html',
+      '/api/teams/engineering/repo/%2561pp/apps/evil/index.html',
+      '/api/teams/engineering/repo/%41PP/apps/evil/index.html',
+      '/api/teams/engineering/repo/App/apps/evil/index.html',
+      '/api/teams/engineering/repo//app/apps/evil/index.html',
+      '/api/teams/engineering//repo/app/apps/evil/index.html',
+      '/api/teams/%65ngineering/repo/%61pp/apps/evil/index.html',
+      '/api/teams/engineering/repo/app/apps/%65vil/index.html',
+      '/api/teams/engineering/repo/app/apps/evil/index%2ehtml',
+      '/api/teams/engineering/repo/app/apps/evil%2Findex.html',
+    ]) {
+      const res = await rawFull(url);
+      if (res.status === 404) continue;
+      expect(res.headers['content-security-policy'], url).toBe(csp);
+      expect(res.headers['content-security-policy'], url).toContain('sandbox allow-scripts');
+    }
+    expect((await rawFull('/api/teams/engineering/repo/%61pp/apps/evil/index.html')).status).toBe(404);
+    expect((await rawFull('/api/teams/engineering/repo/ap%70/apps/evil/index.html')).status).toBe(404);
+    // a token on a non-canonical spelling authenticates nobody
+    const { token } = await tokenFor('engineering', 'apps/evil');
+    expect((await raw(`/api/teams/engineering/repo/%61pp/~mta.${token}/apps/evil/index.html`)).status).toBe(404);
   });
 
   it('is the team\'s: a member of another team, a guest and nobody get 403 or 401', async () => {

@@ -116,6 +116,19 @@ describe('app token in the content route', () => {
     expect(post.statusCode).toBe(401);
   });
 
+  it('a token is read from the matched route only: a non-canonical spelling of the route is a 404, never an authenticated request', async () => {
+    const app = await server();
+    const token = issue();
+    for (const url of [urlOf(token).replace('/repo/app/', '/repo/%61pp/'), urlOf(token).replace('/repo/app/', '/repo/ap%70/'), urlOf(token).replace('/repo/app/', '/repo/%2561pp/')]) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(404);
+      expect(res.body).not.toContain(ACTOR);
+    }
+    // another route that merely has the token in a wildcard: no actor comes of it
+    const other = await app.inject({ method: 'GET', url: `/api/teams/engineering/repo/blob/~mta.${token}/apps/release-checklist/index.html` });
+    expect(other.statusCode).toBe(404);
+  });
+
   it('a valid token is the only way in: a stale one is refused even for a request that also carries an actor header', async () => {
     const app = await server();
     const token = issue();

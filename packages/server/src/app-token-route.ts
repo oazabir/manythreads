@@ -2,6 +2,7 @@ import {
   IssueAppTokenRequest,
   IssueAppTokenResponse,
   REPO_APP_PATH_RE,
+  REPO_APP_ROUTE_PREFIX,
   issueAppTokenRoute,
   repoAppTokenPath,
   splitRepoAppRest,
@@ -16,21 +17,25 @@ import type { AppTokens } from './app-token.ts';
 /** What the person hears for every refused token: expired, tampered, for another app or team all read the same. */
 const REFUSED = 'This app link has expired or is not valid. Reopen the app.';
 
+/** True when Fastify matched this request to the app content route (decoded, routed: never the raw URL, which can spell the same route differently). */
+export const isAppRoute = (req: FastifyRequest): boolean => req.routeOptions.url?.startsWith(REPO_APP_ROUTE_PREFIX) === true;
+
 /**
- * `req.url` of a request to the app content route as `{ slug, rest }`, both percent-decoded, or null when it is not one (or cannot be decoded).
- * `rest` is what follows `/repo/app/`; the query string is not part of it.
+ * The app content route's request as `{ slug, rest }` from the router's own decoded params (the very strings the handler reads), or null when
+ * the request did not match that route. `rest` is what follows `/repo/app/`; the query string is not part of it.
  */
-export function parseAppUrl(url: string): { slug: string; rest: string } | null {
-  if (!REPO_APP_PATH_RE.test(url)) return null;
-  const path = url.split(/[?#]/, 1)[0] ?? '';
-  const m = /^\/api\/teams\/([^/]+)\/repo\/app\/(.*)$/s.exec(path);
-  if (!m) return null;
-  try {
-    return { slug: decodeURIComponent(m[1] ?? ''), rest: decodeURIComponent(m[2] ?? '') };
-  } catch {
-    return null;
-  }
+export function matchedAppRequest(req: FastifyRequest): { slug: string; rest: string } | null {
+  if (!isAppRoute(req)) return null;
+  const params = req.params as Record<string, string | undefined> | undefined;
+  return { slug: params?.['slug'] ?? '', rest: params?.['*'] ?? '' };
 }
+
+/**
+ * The app route is only reachable by its canonical spelling: the raw path must start with `/api/teams/<slug>/repo/app/` (no `%61pp`, no
+ * `ap%70`, no doubled slashes). The router decodes before it matches, so a non-canonical spelling would reach the handler by a path every
+ * raw-URL check misses; refusing it here keeps one spelling per resource.
+ */
+export const isCanonicalAppRequest = (req: FastifyRequest): boolean => REPO_APP_PATH_RE.test(req.url);
 
 /**
  * The part of the server's `onRequest` hook that lets a token stand in for the session cookie on the app content route. Called after the
@@ -40,7 +45,7 @@ export function parseAppUrl(url: string): { slug: string; rest: string } | null 
  */
 export function authenticateAppToken(req: FastifyRequest, reply: FastifyReply, tokens: AppTokens): FastifyReply | undefined {
   if (req.method !== 'GET' && req.method !== 'HEAD') return undefined;
-  const parsed = parseAppUrl(req.url);
+  const parsed = matchedAppRequest(req);
   if (!parsed) return undefined;
   const { token, path } = splitRepoAppRest(parsed.rest);
   if (token === null) return undefined;

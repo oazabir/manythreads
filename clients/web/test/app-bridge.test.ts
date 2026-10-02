@@ -34,7 +34,7 @@ describe('embedded app contract', () => {
   it('is sandboxed to scripts only, with a CSP that stops every request', () => {
     expect(EMBEDDED_APP_SANDBOX).toBe('allow-scripts');
     expect(EMBEDDED_APP_CSP).toBe(
-      "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob: 'self'; connect-src 'none'; frame-ancestors 'self'",
+      "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob: 'self'; connect-src 'none'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'",
     );
   });
 

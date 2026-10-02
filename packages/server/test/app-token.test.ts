@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import { APP_TOKEN_PREFIX, APP_TOKEN_TTL_SECONDS, isPathInsideFolder, repoAppTokenPath, splitRepoAppRest } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { appTokenSecretFromEnv, createAppTokens } from '../src/app-token.ts';
-import { parseAppUrl } from '../src/app-token-route.ts';
 
 // Per-open tokens of embedded apps (PLAN P4-10): signature, expiry, scope (team and folder), tampering.
 
@@ -125,12 +124,6 @@ describe('the token in the route', () => {
     const url = repoAppTokenPath('engineering', 'v1.AAA_-.BBB', 'apps/release-checklist');
     expect(url).toBe('/api/teams/engineering/repo/app/~mta.v1.AAA_-.BBB/apps/release-checklist/index.html');
     expect(new URL('__manythreads.js', `http://x${url}`).pathname).toBe('/api/teams/engineering/repo/app/~mta.v1.AAA_-.BBB/apps/release-checklist/__manythreads.js');
-  });
-
-  it('reads a request address into slug and rest, decoded; anything else is not the route', () => {
-    expect(parseAppUrl('/api/teams/engineering/repo/app/apps/a%20b/index.html?x=1')).toEqual({ slug: 'engineering', rest: 'apps/a b/index.html' });
-    expect(parseAppUrl('/api/teams/engineering/repo/blob?path=x')).toBeNull();
-    expect(parseAppUrl('/api/teams/engineering/repo/app/%E0%A4%A')).toBeNull();
   });
 
   it('knows what is inside a folder', () => {

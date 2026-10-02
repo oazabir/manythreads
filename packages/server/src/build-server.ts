@@ -37,7 +37,7 @@ import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
 import { createAppTokens, type AppTokensOptions } from './app-token.ts';
-import { authenticateAppToken, mountAppTokenRoute } from './app-token-route.ts';
+import { authenticateAppToken, isAppRoute, isCanonicalAppRequest, mountAppTokenRoute } from './app-token-route.ts';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
 import { envelope, errorHandler, notFoundHandler } from './errors.ts';
 import {
@@ -157,6 +157,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 
   app.addHook('onRequest', async (req, reply) => {
     if (req.is404) return;
+    // The router decodes the path before it matches: the app route has one canonical spelling, any other (`%61pp`) is a plain 404.
+    if (isAppRoute(req) && !isCanonicalAppRequest(req)) return reply.status(404).send(envelope('not_found', 'Not found'));
     if (devAuth) req.actor = parseDevActor(req.headers[DEV_ACTOR_HEADER]);
     if (!req.actor && sessions) await authenticateCookie(req, reply, sessions);
     // Embedded apps: a sandboxed frame sends no cookie, so a signed token in the path of the content route stands in for it (GET and HEAD only).
@@ -186,7 +188,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   // Embedded apps (SPEC 5.2, PLAN P4-10): whatever answers under the app content route, the strict CSP rides on it (an app cannot call /api,
   // load another origin or be framed by another site). Set here, not in the route, so a 401 or a 404 from that path carries it too.
   app.addHook('onSend', (req, reply, payload, done) => {
-    if (REPO_APP_PATH_RE.test(req.url)) for (const [name, value] of Object.entries(embeddedAppHeaders())) void reply.header(name, value);
+    // Keyed on the MATCHED route (the router decodes `%61pp` before it matches), with the raw spelling as a second net. The route's own handler sets them too.
+    if (isAppRoute(req) || REPO_APP_PATH_RE.test(req.url)) for (const [name, value] of Object.entries(embeddedAppHeaders())) void reply.header(name, value);
     done(null, payload);
   });
 

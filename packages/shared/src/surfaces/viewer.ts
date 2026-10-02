@@ -164,12 +164,15 @@ export const repoAppPath = (slug: string, folder: string, file = 'index.html'): 
 /** The route as a Fastify/URL-pattern prefix; the server adds the app headers to every response under it. */
 export const REPO_APP_PATH_RE = /^\/api\/teams\/[^/]+\/repo\/app\//;
 
+/** The same route as Fastify names it once matched (`req.routeOptions.url`): server hooks key on this, never on the raw request URL. */
+export const REPO_APP_ROUTE_PREFIX = '/api/teams/:slug/repo/app/';
+
 /** `sandbox` attribute of the iframe: scripts only. Never `allow-same-origin` (that would hand the app our cookies and DOM). */
 export const EMBEDDED_APP_SANDBOX = 'allow-scripts';
 
 /** CSP sent with every embedded-app file (PLAN P4-10). `connect-src 'none'`: an app cannot call /api or anything else. */
 export const EMBEDDED_APP_CSP =
-  "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob: 'self'; connect-src 'none'; frame-ancestors 'self'";
+  "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data: blob: 'self'; connect-src 'none'; frame-ancestors 'self'; form-action 'none'; base-uri 'none'";
 
 /**
  * The bridge between an embedded app and the page that frames it (window.postMessage; the app's origin is opaque).
