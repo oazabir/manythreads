@@ -39,6 +39,8 @@ export const PROVIDER_KINDS = [
   'llm',
   'knowledge',
   'viewer',
+  /** The team repo's one writer (repo-git): `RepoProvider` in ./repo.ts. */
+  'repo',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

@@ -1,7 +1,16 @@
 import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AuditEvent, CapabilityAuthorizeContext, CapabilityDecision, PluginTx } from '@manythreads/sdk';
+import type {
+  AuditEvent,
+  CapabilityAuthorizeContext,
+  CapabilityDecision,
+  PluginTx,
+  RepoCommitIdentity,
+  RepoWriteActor,
+  RepoWriteChange,
+  RepoWriteResult,
+} from '@manythreads/sdk';
 import {
   MAX_REPO_CHANGES_PER_COMMIT,
   MAX_REPO_MESSAGE_LENGTH,
@@ -44,29 +53,9 @@ const SYSTEM_IDENTITY: GitIdentity = { name: 'manythreads', email: 'system@manyt
 const ACTOR_EMAIL = new RegExp(`^([0-9a-f-]{36})@${ACTOR_EMAIL_DOMAIN.replaceAll('.', '\\.')}$`);
 const actorIdOfEmail = (email: string): string | null => ACTOR_EMAIL.exec(email)?.[1] ?? null;
 
-export interface RepoActor {
-  id: string;
-  kind: 'person' | 'bot' | 'system';
-  /** Name for the commit's author line; a person's is read from `people` when absent. */
-  name?: string;
-}
-export interface CommitIdentity {
-  actorId: string;
-  name: string;
-}
-export type RepoWriteChange =
-  | { path: string; op: 'put'; content: string | Uint8Array; baseBlobSha?: string | null }
-  | { path: string; op: 'append'; content: string | Uint8Array }
-  | { path: string; op: 'delete'; baseBlobSha?: string | null };
-
-export interface RepoWriteResult {
-  sha: string;
-  parentSha: string | null;
-  /** True when the changes left the tree as it was: no commit, no event, `sha` is the unchanged head. */
-  noop: boolean;
-  authorId: string | null;
-  paths: { path: string; op: 'put' | 'delete'; blobSha: string | null; size: number | null }[];
-}
+export type RepoActor = RepoWriteActor;
+export type CommitIdentity = RepoCommitIdentity;
+export type { RepoWriteChange, RepoWriteResult };
 
 export interface RepoServiceDeps {
   /** `MANYTHREADS_REPO_DIR`, absolute. */

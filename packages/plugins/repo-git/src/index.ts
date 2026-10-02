@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { definePlugin } from '@manythreads/sdk';
+import { definePlugin, type RepoProvider } from '@manythreads/sdk';
 import { TeamTemplateAppliedEvent, WorkspaceTeamCreatedEvent } from '@manythreads/shared';
 import { createGitLayer } from './git/index.ts';
 import { createRepoService } from './repo.ts';
@@ -25,7 +25,7 @@ export default definePlugin({
     name: 'repo-git',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit', 'event.subscribe', 'job.register'],
+    extends: ['event.emit', 'event.subscribe', 'job.register', 'provider.repo'],
     // `files.write` and `files.delete` are the names the broker's path guard knows: a bot's write to bots/, TEAM.md, skills/ or routines/ is
     // denied under them. Deleting is never grantable to a bot (destructive).
     capabilities: [
@@ -43,6 +43,15 @@ export default definePlugin({
       emit: (tx, event) => ctx.audit.emit(tx, event),
     });
     registerRepoRoutes(ctx, repo);
+    // What other plugins (pages, bots, memory) call: `ctx.providers.get<RepoProvider>('repo')`.
+    const provider: RepoProvider = {
+      id: 'repo-git',
+      write: (tx, teamId, actor, changes, message, coAuthors) => repo.write(tx, teamId, actor, changes, message, coAuthors),
+      restore: (tx, teamId, actor, path, sha, coAuthors) => repo.restore(tx, teamId, actor, path, sha, coAuthors),
+      blob: (tx, teamId, path, ref, maxBytes) => repo.blob(tx, teamId, path, ref, maxBytes),
+      tree: (tx, teamId, path, ref) => repo.tree(tx, teamId, path, ref),
+    };
+    ctx.providers.register('repo', provider);
 
     // A team's repository is created by a job (retried with backoff, one per team at a time) when the team is created or a template is
     // applied; the first request for a team without one (seeded straight into the database) creates it the same way, so both are idempotent.
