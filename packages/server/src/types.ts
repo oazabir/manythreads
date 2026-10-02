@@ -1,4 +1,4 @@
-import type { Actor, CapabilityBroker, RateLimit, RateLimiter, WsHub } from '@manythreads/kernel';
+import type { Actor, CapabilityBroker, RateLimit, RateLimiter, Realtime, WsHub } from '@manythreads/kernel';
 import type { RequestSession } from './session/authenticate.ts';
 
 /** Per-route settings read from `config` by the server's hooks. */
@@ -24,6 +24,8 @@ declare module 'fastify' {
   }
   interface FastifyInstance {
     readonly wsHub: WsHub;
+    /** Open sockets by person and the listener that feeds them (see `ctx.realtime`). */
+    readonly realtime: Realtime;
     readonly rateLimiter: RateLimiter;
     /** Set by startServer; undefined on servers built directly with buildServer. */
     readonly broker: CapabilityBroker;

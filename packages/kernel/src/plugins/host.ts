@@ -8,6 +8,7 @@ import type {
   PluginDefinition,
   PluginEvent,
   PluginRuntime,
+  PluginTemplates,
   PluginTx,
   ScopedKv,
   SecretService,
@@ -21,6 +22,7 @@ import { renderMail } from '../mail/templates.ts';
 import type { Mailer } from '../mail/types.ts';
 import { withSystem } from '../db/with-actor.ts';
 import { createSecretService } from '../kms/service.ts';
+import { createTemplateService } from '../templates/service.ts';
 import { createDbKv } from '../storage/kv.ts';
 import { createMemoryKv, createPluginContext } from './context.ts';
 import { PluginError } from './errors.ts';
@@ -73,6 +75,8 @@ export interface LoadPluginsOptions {
   runtime?: PluginRuntime;
   /** `ctx.identity`, for plugins that extend `provider.identity`. The server builds it (it owns sessions). */
   identity?: IdentityServices;
+  /** `ctx.templates` (default: the repository's `templates/` directory, or `MANYTHREADS_TEMPLATES_DIR`). */
+  templates?: PluginTemplates;
   /** `ctx.secrets` (default: envelope encryption with the process KMS, see kms/service.ts). */
   secrets?: SecretService;
 }
@@ -280,6 +284,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
   const mailer = options.mailer ?? createMemoryMailer();
   const mail: MailService = { send: (message) => mailer.send(renderMail(message)) };
   const secrets = createSecretService();
+  const templates = options.templates ?? createTemplateService();
   const runtime: PluginRuntime = options.runtime ?? { publicUrl: 'http://localhost:3000', now: () => new Date() };
   for (const p of ordered) {
     const ctx = createPluginContext(p.manifest, {
@@ -289,6 +294,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
       runtime,
       identity,
       secrets: options.secrets ?? secrets,
+      templates,
       ...(options.emit ? { emit: options.emit } : {}),
     });
     try {

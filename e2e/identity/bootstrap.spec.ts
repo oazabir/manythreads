@@ -28,7 +28,8 @@ test('first admin creates the workspace; reusing the link shows the expired page
   await expect(page).toHaveURL(`${WEB_EMPTY}/`);
   const header = page.locator('[data-landmark="header"]');
   await expect(header).toContainText('Kahf Software');
-  await expect(header).toContainText('Omar Al Zabir');
+  // the signed-in person is named at the bottom of the sidebar (account menu), not in the header
+  await expect(page.locator('[data-landmark="sidebar"] ~ .foot')).toContainText('Omar Al Zabir');
 
   // the owner can see the workspace members: Omar is the first and only member
   await page.goto(`${WEB_EMPTY}/settings/workspace/members`);

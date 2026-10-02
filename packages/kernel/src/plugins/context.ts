@@ -1,18 +1,35 @@
 import { guardPluginTx } from '@manythreads/sdk';
 import type {
+  AuditEvent,
   CapabilityHandler,
   EmitEvent,
+  EnqueueJobOptions,
+  GetOneOrCreateInput,
+  JobHandler,
+  JobOptions,
+  PluginDb,
+  PluginTemplates,
   IdentityServices,
   MailService,
   PluginContext,
   PluginEvent,
+  PluginRealtime,
   PluginRuntime,
   PluginTx,
+  ProviderImpl,
+  ProviderKind,
   ScopedKv,
   SecretService,
   StorageScope,
 } from '@manythreads/sdk';
 import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
+import { getOneOrCreate } from '../db/get-or-create.ts';
+import { createEntityLinkService } from '../entity-links/index.ts';
+import { createReadStateService } from '../read-state/index.ts';
+import { publishRealtime } from '../transport/realtime.ts';
+import type { Tx } from '../db/with-actor.ts';
+import { enqueue } from '../jobs/index.ts';
+import { createTemplateService } from '../templates/service.ts';
 import { PluginError } from './errors.ts';
 import type { ExtensionRegistries } from './registries.ts';
 
@@ -24,6 +41,8 @@ export interface ContextDeps {
   runtime: PluginRuntime;
   /** Handed only to plugins that extend `provider.identity`. */
   identity?: IdentityServices;
+  /** `ctx.templates` (default: the shipped `templates/` directory). */
+  templates?: PluginTemplates;
   /** Secret storage for plugins that extend `provider.identity` (default: the kernel's KMS-backed one). */
   secrets?: SecretService;
 }
@@ -48,6 +67,39 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     return path;
   };
 
+  const emitChecked = async (tx: PluginTx, event: PluginEvent): Promise<void> => {
+    use('event.emit');
+    if (!manifest.events.emits.includes(event.type)) {
+      throw new PluginError(
+        `Plugin "${name}" emitted "${event.type}" but its manifest does not list it in events.emits`,
+        { plugin: name },
+      );
+    }
+    if (!deps.emit) throw new PluginError(`Plugin "${name}": no event emitter is wired into the host`, { plugin: name });
+    await deps.emit(guardPluginTx(tx), event);
+  };
+
+  const db: PluginDb = {
+    getOneOrCreate: <R extends Record<string, unknown>>(tx: PluginTx, input: GetOneOrCreateInput) =>
+      getOneOrCreate<R>(guardPluginTx(tx) as unknown as Tx, input),
+  };
+
+  const templates = deps.templates ?? createTemplateService();
+
+  const realtime: PluginRealtime = {
+    pushToPerson: (tx, personId, type, payload) =>
+      publishRealtime(guardPluginTx(tx), [{ workspaceId: tx.actor.workspaceId, personId, type, payload }]),
+  };
+
+  const ownQueue = (queue: string): void => {
+    if (!queue.startsWith(`${name}.`) || !/^[a-z][a-z0-9-]*\.[a-z][a-z0-9_.-]{0,62}$/.test(queue)) {
+      throw new PluginError(
+        `Plugin "${name}": job queue "${queue}" must be named "${name}.<name>" (lowercase letters, digits, dot, dash, underscore)`,
+        { plugin: name },
+      );
+    }
+  };
+
   return {
     manifest,
     events: {
@@ -61,17 +113,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
         }
         registries.eventSubscriptions.add(name, { type, handler: (event, tx) => handler(event, guardPluginTx(tx)) });
       },
-      async emit(tx: PluginTx, event: PluginEvent) {
-        use('event.emit');
-        if (!manifest.events.emits.includes(event.type)) {
-          throw new PluginError(
-            `Plugin "${name}" emitted "${event.type}" but its manifest does not list it in events.emits`,
-            { plugin: name },
-          );
-        }
-        if (!deps.emit) throw new PluginError(`Plugin "${name}": no event emitter is wired into the host`, { plugin: name });
-        await deps.emit(guardPluginTx(tx), event);
-      },
+      emit: emitChecked,
     },
     hooks: {
       prePersist(hook) {
@@ -87,6 +129,9 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       register(kind, impl) {
         use(`provider.${kind}`);
         registries.providers[kind].add(name, impl);
+      },
+      get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind): T | undefined {
+        return registries.providers[kind].values()[0] as T | undefined;
       },
     },
     commands: {
@@ -168,8 +213,35 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       },
     },
     storage: deps.storage,
+    db,
+    audit: {
+      emit: (tx: PluginTx, event: AuditEvent) =>
+        emitChecked(tx, { ...event, schemaVersion: event.schemaVersion ?? 1, workspaceId: event.workspaceId ?? tx.actor.workspaceId }),
+    },
+    templates,
+    get jobs() {
+      use('job.register');
+      return {
+        register(queue: string, handler: JobHandler, options: JobOptions = {}) {
+          ownQueue(queue);
+          const clash = registries.jobs.list().find((e) => e.value.queue === queue);
+          if (clash) {
+            throw new PluginError(`Plugin "${name}" job queue "${queue}" is already registered by plugin "${clash.plugin}"`, { plugin: name });
+          }
+          registries.jobs.add(name, { queue, handler, options });
+        },
+        async enqueue(tx: PluginTx, queue: string, payload: Record<string, unknown>, options: EnqueueJobOptions = {}) {
+          ownQueue(queue);
+          const job = await enqueue(guardPluginTx(tx) as unknown as Tx, queue, payload, options);
+          return job.id;
+        },
+      };
+    },
     mail: deps.mail,
     runtime: deps.runtime,
+    readState: createReadStateService({ counters: registries.unreadCounters, plugin: name }),
+    links: createEntityLinkService({ resolvers: registries.entityResolvers, plugin: name }),
+    realtime,
     get identity(): IdentityServices {
       use('provider.identity');
       if (!deps.identity) {

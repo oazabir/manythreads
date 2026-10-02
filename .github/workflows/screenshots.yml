@@ -1,9 +1,9 @@
 name: screenshots
-# Pictures of the live site after a phase release. `release` (tag + deploy on a "Phase N ·" merge to main) finishing
-# successfully triggers this; it can also be run by hand. It signs in as Omar, Nadia and Lena through the real password form,
+# Pictures of the live site after a phase release (output folder phase-<N>/, N from the "Phase N ·" merge title or the latest phase-* tag). `release` (tag + deploy on a "Phase N ·" merge to main) finishing
+# successfully triggers this; it can also be run by hand. It signs in as Omar, Nadia, Rafi and Lena through the real password form,
 # with a random one-off password it sets first through the server's admin CLI (`pnpm --filter @manythreads/server admin
 # set-password`, run in the server pod over SSH, password on stdin only, masked, never in a command line or log), saves the
-# screens (1440x900 and 390x844) as a workflow artifact and commits them to the `screenshots` branch under phase-<N>/. The
+# screens (1440x900 and 390x844: sign-in, settings, the phase 3 conversations from the demo seed) as a workflow artifact and commits them to the `screenshots` branch under phase-<N>/. The
 # passwords are rotated to fresh unknown values when the job ends. No test-auth bypass is involved (`testAuth.enabled` stays
 # false). It never pushes to main or to a claude/* branch.
 on:
@@ -82,7 +82,7 @@ jobs:
           PW=$(openssl rand -hex 24)
           echo "::add-mask::$PW"
           echo "MANYTHREADS_LIVE_PASSWORD=$PW" >> "$GITHUB_ENV"
-          for who in omar nadia lena; do
+          for who in omar nadia rafi lena; do
             remote_set_password "$who@kahf.example" "$PW"
           done
 
@@ -154,6 +154,6 @@ jobs:
           source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
           NEW=$(openssl rand -hex 24)
           echo "::add-mask::$NEW"
-          for who in omar nadia lena; do
+          for who in omar nadia rafi lena; do
             remote_set_password "$who@kahf.example" "$NEW" || echo "::warning::could not rotate the password of $who"
           done

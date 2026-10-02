@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type pg from 'pg';
 import { enqueue, type Job, type JobHandler } from '../jobs/index.ts';
 import { withSystem, type Tx } from '../db/index.ts';
 import { getKms, KmsError, openAesGcm, sealAesGcm, type Kms } from './kms.ts';
@@ -62,10 +63,13 @@ export async function rewrapSecrets(tx: Tx, kms: Kms = getKms(), options: { batc
   }
 }
 
-/** Handler for the `kms.rewrap` queue: one system transaction that re-wraps everything still on an old key. */
-export function createKmsRewrapHandler(kms?: Kms): JobHandler {
+/**
+ * Handler for the `kms.rewrap` queue: one system transaction that re-wraps everything still on an old key. `pool` must be a
+ * manythreads_system pool (default: the shared one); the server passes its own.
+ */
+export function createKmsRewrapHandler(kms?: Kms, options: { pool?: pg.Pool } = {}): JobHandler {
   return async () => {
-    const result = await withSystem((tx) => rewrapSecrets(tx, kms ?? getKms()));
+    const result = await withSystem((tx) => rewrapSecrets(tx, kms ?? getKms()), options.pool ? { pool: options.pool } : {});
     if (result.failed > 0) throw new KmsError(`${result.failed} secret(s) are wrapped by a key this process does not hold`);
   };
 }

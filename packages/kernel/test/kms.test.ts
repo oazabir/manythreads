@@ -8,6 +8,7 @@ import {
   getSecretBytes,
   KmsError,
   masterKeyFromEnv,
+  previousKeysFromEnv,
   openAesGcm,
   putSecret,
   rewrapSecrets,
@@ -175,3 +176,14 @@ describe('putSecret / getSecret on the database', () => {
   });
 });
 
+
+describe('previousKeysFromEnv', () => {
+  it('reads comma-separated base64 keys, ignoring blanks; unset gives none; a wrong length is refused', () => {
+    const a = randomBytes(32);
+    const b = randomBytes(32);
+    expect(previousKeysFromEnv({})).toEqual([]);
+    expect(previousKeysFromEnv({ MANYTHREADS_KMS_PREVIOUS_KEYS: '' })).toEqual([]);
+    expect(previousKeysFromEnv({ MANYTHREADS_KMS_PREVIOUS_KEYS: ` ${a.toString('base64')}, ,${b.toString('base64')} ` })).toEqual([a, b]);
+    expect(() => previousKeysFromEnv({ MANYTHREADS_KMS_PREVIOUS_KEYS: randomBytes(16).toString('base64') })).toThrow(/exactly 32 bytes/);
+  });
+});

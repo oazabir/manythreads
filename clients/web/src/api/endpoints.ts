@@ -1,4 +1,29 @@
 import {
+  ListLinksRequest,
+  ListLinksResponse,
+  listLinksRoute,
+  GetNotificationPrefsResponse,
+  GetNotificationSummaryResponse,
+  ListDmsQuery,
+  ListDmsResponse,
+  ListNotificationsQuery,
+  ListNotificationsResponse,
+  MarkNotificationsReadRequest,
+  MarkNotificationsReadResponse,
+  OpenDmRequest,
+  OpenDmResponse,
+  SearchQuery,
+  SearchResponse,
+  UpdateNotificationPrefsRequest,
+  UpdateNotificationPrefsResponse,
+  getNotificationPrefsRoute,
+  getNotificationSummaryRoute,
+  listDmsRoute,
+  listNotificationsRoute,
+  markNotificationsReadRoute,
+  openDmRoute,
+  searchRoute,
+  updateNotificationPrefsRoute,
   AcceptInvitationRequest,
   AcceptInvitationResponse,
   AddTeamMemberRequest,
@@ -9,6 +34,41 @@ import {
   AssignTeamTagResponse,
   BootstrapWorkspaceRequest,
   BootstrapWorkspaceResponse,
+  DeleteMessageResponse,
+  FollowThreadResponse,
+  GetThreadQuery,
+  GetThreadResponse,
+  ListThreadsQuery,
+  ListThreadsResponse,
+  TypingRequest,
+  TypingResponse,
+  ListChannelFilesQuery,
+  ListChannelFilesResponse,
+  UploadFileResponse,
+  followThreadRoute,
+  listChannelFilesRoute,
+  getThreadRoute,
+  listThreadsRoute,
+  typingRoute,
+  unfollowThreadRoute,
+  uploadFileRoute,
+  EditMessageRequest,
+  EditMessageResponse,
+  GetChannelResponse,
+  GetMessageResponse,
+  GetReadStateRequest,
+  GetReadStateResponse,
+  GetUnreadSummaryResponse,
+  JoinChannelResponse,
+  ListMessagesQuery,
+  ListMessagesResponse,
+  MarkReadRequest,
+  MarkReadResponse,
+  PostMessageRequest,
+  PostMessageResponse,
+  ReactRequest,
+  ReactResponse,
+  UnreactResponse,
   ChangePasswordRequest,
   ChangePasswordResponse,
   CheckBootstrapResponse,
@@ -36,6 +96,7 @@ import {
   ListTeamsResponse,
   ListTemplatesResponse,
   ListWorkspaceMembersResponse,
+  NavChannelDirectory,
   OidcProviderResponse,
   RemoveTeamMemberResponse,
   RenameTeamRequest,
@@ -70,6 +131,18 @@ import {
   archiveTeamRoute,
   assignTeamTagRoute,
   bootstrapWorkspaceRoute,
+  deleteMessageRoute,
+  editMessageRoute,
+  getChannelRoute,
+  getMessageRoute,
+  getReadStateRoute,
+  getUnreadSummaryRoute,
+  joinChannelRoute,
+  listMessagesRoute,
+  markReadRoute,
+  postMessageRoute,
+  reactRoute,
+  unreactRoute,
   changePasswordRoute,
   checkBootstrapRoute,
   createInvitationRoute,
@@ -94,6 +167,7 @@ import {
   listTeamsRoute,
   listTemplatesRoute,
   listWorkspaceMembersRoute,
+  navChannelDirectoryRoute,
   removeTeamMemberRoute,
   renameTeamRoute,
   requestEmailVerificationRoute,
@@ -114,7 +188,7 @@ import {
   verifyEmailRoute,
   type AuthenticatedSession,
 } from '@manythreads/shared';
-import { call } from './client';
+import { CSRF_COOKIE, CSRF_HEADER, ApiError, buildPath, call, readCookie } from './client';
 
 /*
  * The one place screens get data from. Every function wraps exactly one real route descriptor and its shared
@@ -231,3 +305,131 @@ export const fetchTeamInvitations = (slug: string) =>
   call(listTeamInvitationsRoute, { response: ListTeamInvitationsResponse }, undefined, { slug });
 
 export type { AuthenticatedSession };
+
+// ---- sidebar ---------------------------------------------------------------------------------------------
+/** The team's channel groups as the sidebar lists them. The route exists once the channels plugin is loaded; callers feature-detect. */
+export const fetchNavChannels = (slug: string) => call(navChannelDirectoryRoute, { response: NavChannelDirectory }, undefined, { slug });
+
+// ---- channels, messages, read state ------------------------------------------------------------------------
+export const fetchChannel = (channelId: string) => call(getChannelRoute, { response: GetChannelResponse }, undefined, { channelId });
+export const joinChannel = (channelId: string) => call(joinChannelRoute, { response: JoinChannelResponse }, undefined, { channelId });
+
+/** Newest first; `before` is the id of the oldest message held (the previous page's `nextCursor`). */
+export const fetchMessages = (channelId: string, query: { before?: string; limit?: number; threadRootId?: string } = {}) =>
+  call(listMessagesRoute, { request: ListMessagesQuery, response: ListMessagesResponse }, { limit: 50, ...query } as ListMessagesQuery, { channelId });
+export const fetchMessage = (channelId: string, messageId: string) =>
+  call(getMessageRoute, { response: GetMessageResponse }, undefined, { channelId, messageId });
+export const postMessage = (channelId: string, body: string, threadRootId: string | null = null, attachments: readonly string[] = []) =>
+  call(
+    postMessageRoute,
+    { request: PostMessageRequest, response: PostMessageResponse },
+    { channelId, body, threadRootId, ...(attachments.length > 0 ? { attachments } : {}) } as PostMessageRequest,
+    { channelId },
+  );
+export const editMessage = (channelId: string, messageId: string, body: string) =>
+  call(editMessageRoute, { request: EditMessageRequest, response: EditMessageResponse }, { body }, { channelId, messageId });
+export const deleteMessage = (channelId: string, messageId: string) =>
+  call(deleteMessageRoute, { response: DeleteMessageResponse }, undefined, { channelId, messageId });
+export const addReaction = (channelId: string, messageId: string, emoji: string) =>
+  call(reactRoute, { request: ReactRequest, response: ReactResponse }, { emoji }, { channelId, messageId });
+export const removeReaction = (channelId: string, messageId: string, emoji: string) =>
+  call(unreactRoute, { response: UnreactResponse }, undefined, { channelId, messageId, emoji });
+
+/** `targets` is `channel:<id>,thread:<id>` (1 to 100). */
+export const fetchReadStates = (targets: string) => call(getReadStateRoute, { request: GetReadStateRequest, response: GetReadStateResponse }, { targets });
+export const fetchUnreadSummary = () => call(getUnreadSummaryRoute, { response: GetUnreadSummaryResponse });
+export const markRead = (targetType: 'channel' | 'thread', targetId: string, upTo: string) =>
+  call(markReadRoute, { request: MarkReadRequest, response: MarkReadResponse }, { targetType, targetId, upTo } as MarkReadRequest);
+
+// ---- entity links ----------------------------------------------------------------------------------------
+/** What an entity is linked to, resolved and filtered for the caller (kernel entity-link service). */
+export const fetchLinks = (type: ListLinksRequest['type'], id: string) =>
+  call(listLinksRoute, { request: ListLinksRequest, response: ListLinksResponse }, { type, id, direction: 'both', limit: 20 } as ListLinksRequest);
+
+// ---- threads ---------------------------------------------------------------------------------------------
+/** A thread: its root, the caller's state and a page of replies (newest first). The route belongs to the threads plugin; callers feature-detect. */
+export const fetchThread = (rootId: string, query: { before?: string; limit?: number } = {}) =>
+  call(getThreadRoute, { request: GetThreadQuery, response: GetThreadResponse }, { limit: 50, ...query } as GetThreadQuery, { rootId });
+export const followThread = (rootId: string) => call(followThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
+export const unfollowThread = (rootId: string) => call(unfollowThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
+export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'mine', cursor?: string) =>
+  call(listThreadsRoute, { request: ListThreadsQuery, response: ListThreadsResponse }, { tab, limit: 30, ...(cursor ? { cursor } : {}) } as ListThreadsQuery, { slug });
+
+/** "I am typing here": best effort, repeated every few seconds while the person types. */
+export const sendTyping = (channelId: string, threadRootId: string | null) =>
+  call(typingRoute, { request: TypingRequest, response: TypingResponse }, { threadRootId } as TypingRequest, { channelId });
+
+// ---- files -----------------------------------------------------------------------------------------------
+/** Does this server store attachments? The files plugin answers its list route; a server without it answers 404 (the clip button then stays hidden). */
+export const probeFiles = (channelId: string) =>
+  call(listChannelFilesRoute, { request: ListChannelFilesQuery, response: ListChannelFilesResponse }, { limit: 1 } as ListChannelFilesQuery, { channelId });
+
+export const fileContentUrl = (fileId: string): string => `/api/files/${encodeURIComponent(fileId)}/content`;
+
+/**
+ * Upload one file to a channel as a raw byte stream, with progress (`fetch` cannot report upload progress, so this is an XHR).
+ * The result is parsed with the shared `UploadFileResponse`; a refusal comes back as the same `ApiError` as every other call.
+ */
+export function uploadChannelFile(
+  channelId: string,
+  file: File,
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadFileResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(uploadFileRoute.method, buildPath(uploadFileRoute.path, { channelId }));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('accept', 'application/json');
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name));
+    const csrf = readCookie(CSRF_COOKIE, document.cookie);
+    if (csrf) xhr.setRequestHeader(CSRF_HEADER, csrf);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError({ code: 'network', status: 0, message: 'Network error' }));
+    xhr.onabort = () => reject(new ApiError({ code: 'network', status: 0, message: 'Cancelled' }));
+    xhr.onload = () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const parsed = UploadFileResponse.safeParse(body);
+        if (parsed.success) resolve(parsed.data);
+        else reject(new ApiError({ code: 'bad_response', status: xhr.status, message: 'The server sent a response this app does not understand.' }));
+        return;
+      }
+      const message = typeof (body as { error?: { message?: unknown } } | undefined)?.error?.message === 'string' ? (body as { error: { message: string } }).error.message : `Upload failed (${xhr.status})`;
+      reject(new ApiError({ code: xhr.status === 413 ? 'validation_failed' : 'internal', status: xhr.status, message }));
+    };
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(file);
+  });
+}
+
+// ---- search, notifications, direct messages ---------------------------------------------------------------
+/** Messages, threads and files the caller can read (the server filters by what they can see; a guest only inside a grant). */
+export const searchEverything = (q: string, opts: { scope?: SearchQuery['scope']; teamId?: string; limit?: number } = {}) =>
+  call(searchRoute, { request: SearchQuery, response: SearchResponse }, { q, scope: opts.scope ?? 'all', limit: opts.limit ?? 20, ...(opts.teamId ? { teamId: opts.teamId } : {}) } as SearchQuery);
+
+export const fetchNotifications = (query: { cursor?: string; limit?: number; unread?: boolean } = {}) =>
+  call(
+    listNotificationsRoute,
+    { request: ListNotificationsQuery, response: ListNotificationsResponse },
+    { limit: query.limit ?? 30, unread: query.unread ? 'true' : 'false', ...(query.cursor ? { cursor: query.cursor } : {}) } as ListNotificationsQuery,
+  );
+export const fetchNotificationSummary = () => call(getNotificationSummaryRoute, { response: GetNotificationSummaryResponse });
+export const markNotificationsRead = (body: MarkNotificationsReadRequest) =>
+  call(markNotificationsReadRoute, { request: MarkNotificationsReadRequest, response: MarkNotificationsReadResponse }, body);
+export const fetchNotificationPrefs = () => call(getNotificationPrefsRoute, { response: GetNotificationPrefsResponse });
+export const saveNotificationPrefs = (body: UpdateNotificationPrefsRequest) =>
+  call(updateNotificationPrefsRoute, { request: UpdateNotificationPrefsRequest, response: UpdateNotificationPrefsResponse }, body);
+
+export const fetchDms = () => call(listDmsRoute, { request: ListDmsQuery, response: ListDmsResponse }, { limit: 200 } as ListDmsQuery);
+/** Open (or create) the conversation with these people; opening the same set twice gives the same channel. */
+export const openDm = (personIds: readonly string[]) =>
+  call(openDmRoute, { request: OpenDmRequest, response: OpenDmResponse }, { personIds } as OpenDmRequest);

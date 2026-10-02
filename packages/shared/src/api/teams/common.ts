@@ -9,10 +9,12 @@ export type TeamSlug = z.infer<typeof TeamSlug>;
 export const RoleTagName = z.string().regex(/^role:[a-z][a-z0-9-]*$/, "role tag like 'role:on-call'");
 export type RoleTagName = z.infer<typeof RoleTagName>;
 
-/** A channel a guest invitation will grant, by team and name (applied when the channel exists). */
+/** A channel a guest invitation will grant, by team and name (applied when the invitation is accepted, if the channel exists). */
 export const GuestChannelGrant = z.strictObject({
   teamSlug: TeamSlug,
   channel: z.string().regex(/^#[a-z0-9][a-z0-9-]{0,62}$/, "channel name like '#releases'"),
+  /** `read` (the default when absent) or `post`: a guest posts only where the grant says so. */
+  permission: z.enum(['read', 'post']).optional(),
 });
 export type GuestChannelGrant = z.infer<typeof GuestChannelGrant>;
 

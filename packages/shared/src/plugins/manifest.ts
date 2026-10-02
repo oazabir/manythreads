@@ -22,6 +22,9 @@ export const EXTENSION_POINTS = [
   'command.register',
   'trigger.register',
   'component.register',
+  // Not in SPEC-FINAL section 3: a plugin that runs background work declares it, like a sign-in plugin declares provider.identity,
+  // because job handlers run as the system actor (P3-00; docs/plugins/README.md "Background jobs").
+  'job.register',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);

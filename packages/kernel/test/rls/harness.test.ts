@@ -5,8 +5,14 @@ import {
   createTestDatabase,
   dropTestDatabase,
   explainRlsViolations,
+  findPerRowPolicyCalls,
   findRlsViolations,
   parseRlsComment,
+  channelsMigrationSource,
+  filesMigrationSource,
+  searchMigrationSource,
+  teamsMigrationSource,
+  testKernelMigrationSource,
   type TestDatabase,
 } from '@manythreads/test-utils';
 import pg from 'pg';
@@ -21,7 +27,7 @@ const workspaceId = WorkspaceId.parse(randomUUID());
 const person: Actor = { kind: 'person', id: ActorId.parse(randomUUID()), workspaceId };
 
 beforeAll(async () => {
-  db = await createTestDatabase();
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, searchMigrationSource] });
   owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
   appPool = createAppPool(db.appUrl, 4);
@@ -144,6 +150,68 @@ describe('RLS harness', () => {
       { rolname: 'manythreads_app', rolbypassrls: false, rolsuper: false },
       { rolname: 'manythreads_system', rolbypassrls: false, rolsuper: false },
     ]);
+  });
+});
+
+/**
+ * Tables whose read plan may call a per-row policy helper, with the reason. Empty on purpose: every table that has a
+ * team-visibility policy hoists it (kernel 0011). Add a table here only with a justification a reviewer can check, e.g. a
+ * table bounded by headcount whose policy is genuinely per row; a stale entry fails the test below.
+ */
+const PER_ROW_ALLOWLIST: Record<string, string> = {};
+
+describe('RLS cost: read policies hoist team visibility (P3-00)', () => {
+  it('no table calls app.can / can_in_team / is_team_member / team_role / has_role per row in its read plan', async () => {
+    const tables = (
+      await owner.query<{ name: string }>(
+        `SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'app' AND c.relkind IN ('r', 'p') AND NOT c.relispartition ORDER BY c.relname`,
+      )
+    ).rows.map((r) => r.name);
+    expect(tables.length).toBeGreaterThan(25);
+    expect(tables).toEqual(expect.arrayContaining(['teams', 'team_members', 'stub_resources', 'team_role_tags', 'events', 'scoped_kv']));
+    const offenders: string[] = [];
+    const used = new Set<string>();
+    for (const table of tables) {
+      const calls = await findPerRowPolicyCalls(owner, table);
+      if (calls.length === 0) continue;
+      if (PER_ROW_ALLOWLIST[table]) used.add(table);
+      else offenders.push(`${table}: ${calls.map((c) => `${c.function} in ${c.node} ${c.clause}`).join('; ')}`);
+    }
+    expect(offenders, `per-row policy calls (hoist them: docs/plugins/README.md, Visibility sets):\n${offenders.join('\n')}`).toEqual([]);
+    expect([...used].sort(), 'allowlist entries that no longer need it').toEqual(Object.keys(PER_ROW_ALLOWLIST).sort());
+  });
+
+  it('the check catches a per-row policy and accepts the hoisted form of the same rule', async () => {
+    await owner.query(`
+      CREATE TABLE app.rls_perrow_probe (id uuid PRIMARY KEY DEFAULT uuidv7(), team_id uuid NOT NULL);
+      ALTER TABLE app.rls_perrow_probe ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app.rls_perrow_probe FORCE ROW LEVEL SECURITY;
+      GRANT SELECT ON app.rls_perrow_probe TO manythreads_app;
+      CREATE POLICY slow ON app.rls_perrow_probe FOR SELECT USING (app.is_system() OR app.can_in_team(team_id, 'read'));
+      CREATE TABLE app.rls_hoisted_probe (id uuid PRIMARY KEY DEFAULT uuidv7(), team_id uuid NOT NULL);
+      ALTER TABLE app.rls_hoisted_probe ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app.rls_hoisted_probe FORCE ROW LEVEL SECURITY;
+      GRANT SELECT ON app.rls_hoisted_probe TO manythreads_app;
+      CREATE POLICY fast ON app.rls_hoisted_probe FOR SELECT
+        USING (app.is_system() OR team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[]));
+    `);
+    try {
+      const slow = await findPerRowPolicyCalls(owner, 'rls_perrow_probe');
+      expect(slow.map((c) => c.function)).toEqual(['app.can_in_team']);
+      expect(slow[0]).toMatchObject({ table: 'rls_perrow_probe', clause: 'Filter' });
+      expect(await findPerRowPolicyCalls(owner, 'rls_hoisted_probe')).toEqual([]);
+    } finally {
+      await owner.query('DROP TABLE app.rls_perrow_probe, app.rls_hoisted_probe');
+    }
+  });
+
+  it('a table the app role cannot read has no plan to check', async () => {
+    expect(await findPerRowPolicyCalls(owner, 'secrets')).toEqual([]);
+  });
+
+  it('rejects anything but a plain table name', async () => {
+    await expect(findPerRowPolicyCalls(owner, 'teams; DROP TABLE app.teams')).rejects.toThrow(/Unsafe table name/);
   });
 });
 

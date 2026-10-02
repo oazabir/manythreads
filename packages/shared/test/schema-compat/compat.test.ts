@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as api from '../../src/api/index.ts';
 import { BotFrontmatter } from '../../src/bot-md/frontmatter.ts';
 import * as entities from '../../src/entities/index.ts';
+import * as markup from '../../src/markup/index.ts';
 import { eventRegistry } from '../../src/events/registry.ts';
 
 // A breaking schema change fails here unless the snapshot is updated (`vitest -u`), which a reviewer
@@ -24,6 +25,7 @@ const all: [string, z.ZodType, 'input' | 'output'][] = [
   ...eventSchemas.map(([n, s]): [string, z.ZodType, 'input' | 'output'] => [n, s, 'output']),
   ...namedSchemas('entity', entities).map(([n, s]): [string, z.ZodType, 'input' | 'output'] => [n, s, 'output']),
   ...namedSchemas('api', api).map(([n, s]): [string, z.ZodType, 'input' | 'output'] => [n, s, 'input']),
+  ...namedSchemas('markup', markup).map(([n, s]): [string, z.ZodType, 'input' | 'output'] => [n, s, 'output']),
   ['bot-md.BotFrontmatter', BotFrontmatter, 'input'],
 ];
 

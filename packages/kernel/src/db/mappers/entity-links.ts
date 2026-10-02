@@ -1,4 +1,4 @@
-import { EntityLink } from '@manythreads/shared';
+import { EntityLink, EntityLinkView } from '@manythreads/shared';
 
 export interface EntityLinkRow {
   id: string;
@@ -19,6 +19,17 @@ export const toEntityLink = (row: EntityLinkRow): EntityLink =>
     srcId: row.src_id,
     dstType: row.dst_type,
     dstId: row.dst_id,
+    kind: row.kind,
+    createdAt: row.created_at.toISOString(),
+  });
+
+/** The service shape: `src` and `dst` as refs. */
+export const toEntityLinkView = (row: EntityLinkRow): EntityLinkView =>
+  EntityLinkView.parse({
+    id: row.id,
+    teamId: row.team_id,
+    src: { type: row.src_type, id: row.src_id },
+    dst: { type: row.dst_type, id: row.dst_id },
     kind: row.kind,
     createdAt: row.created_at.toISOString(),
   });

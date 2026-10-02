@@ -1,6 +1,6 @@
 import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { MIN_PASSWORD_LENGTH, createSystemPool, emit, hashPassword, withSystem, type Tx } from '@manythreads/kernel';
+import { MIN_PASSWORD_LENGTH, createSystemPool, emit, enqueueKmsRewrap, hashPassword, withSystem, type Tx } from '@manythreads/kernel';
 import type { PluginTx } from '@manythreads/sdk';
 import type { PersonId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
@@ -11,11 +11,17 @@ import { createSessionService, sessionConfigFromEnv } from '../session/index.ts'
  * Operator commands for a running deployment, run inside the server image (`kubectl exec`), never over HTTP:
  *
  *   pnpm --filter @manythreads/server admin set-password <email>      new password on stdin
+ *   pnpm --filter @manythreads/server admin kms-rewrap                 queue the move of every secret to the current master key
  *
  * `set-password` reads the new password from standard input (never from the command line, so it is not in `ps`, shell
  * history or logs), refuses one shorter than the policy minimum, stores its argon2id hash, signs the person out
  * everywhere and records an `identity.password.admin_set` audit event. It connects as the kernel's system role
  * (`MANYTHREADS_SYSTEM_DATABASE_URL`, or derived from `DATABASE_URL` like the server does).
+ *
+ * `kms-rewrap` is the last step of a master-key rotation: set the new `MANYTHREADS_KMS_KEY`, keep the old one in
+ * `MANYTHREADS_KMS_PREVIOUS_KEYS`, restart the server (its job worker runs the `kms.rewrap` queue), then run the command. It only
+ * enqueues the job (one at a time: asking again while one waits or runs returns that job) and prints the job id; progress is the
+ * job's state in `app.jobs`. Once it is `done`, drop the old key from the previous list.
  */
 
 export class AdminError extends Error {
@@ -101,11 +107,53 @@ export interface AdminIo {
   now?: () => Date;
 }
 
-const USAGE = 'usage: admin set-password <email>   (the new password is read from standard input)';
+const USAGE = [
+  'usage: admin set-password <email>   (the new password is read from standard input)',
+  '       admin kms-rewrap             (queue the move of every secret to the current master key)',
+].join('\n');
+
+export interface KmsRewrapResult {
+  jobId: string;
+  /** False when a re-wrap was already waiting or running and this call returned it. */
+  queued: boolean;
+}
+
+/** Enqueue the `kms.rewrap` job (deduplicated while one is ready or running). */
+export async function queueKmsRewrap(pool: pg.Pool): Promise<KmsRewrapResult> {
+  return withSystem(
+    async (tx: Tx) => {
+      const before = await tx.query<{ id: string }>(`SELECT id FROM app.jobs WHERE queue = 'kms.rewrap' AND state IN ('ready', 'running') LIMIT 1`);
+      const job = await enqueueKmsRewrap(tx);
+      return { jobId: job.id, queued: before.rows[0]?.id !== job.id };
+    },
+    { pool },
+  );
+}
 
 /** Runs one admin command; returns the process exit code. Never prints the password. */
 export async function runAdmin(argv: readonly string[], io: AdminIo): Promise<number> {
   const [command, ...rest] = argv;
+  if (command === 'kms-rewrap') {
+    if (rest.length > 0) {
+      io.err(USAGE);
+      return 2;
+    }
+    const pool = (io.pool ?? (() => createSystemPool(databaseUrlsFromEnv(io.env).systemUrl, 2)))();
+    try {
+      const r = await queueKmsRewrap(pool);
+      io.out(
+        r.queued
+          ? `Key re-wrap queued (job ${r.jobId}). A running server picks it up; when the job is done, drop the old key from MANYTHREADS_KMS_PREVIOUS_KEYS.`
+          : `A key re-wrap is already waiting or running (job ${r.jobId}).`,
+      );
+      return 0;
+    } catch (err) {
+      io.err(`admin failed: ${err instanceof Error ? err.message : String(err)}`);
+      return 1;
+    } finally {
+      await pool.end().catch(() => undefined);
+    }
+  }
   if (command !== 'set-password') {
     io.err(command ? `unknown command "${command}"\n${USAGE}` : USAGE);
     return 2;

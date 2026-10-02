@@ -95,11 +95,30 @@ export function masterKeyFromEnv(env: NodeJS.ProcessEnv = process.env): Buffer {
   return createHash('sha256').update(DEV_KEY_SEED).digest();
 }
 
+/**
+ * Earlier master keys from `MANYTHREADS_KMS_PREVIOUS_KEYS` (comma-separated base64, 32 bytes each): after rotating
+ * `MANYTHREADS_KMS_KEY` they still unwrap what is stored, which is what the `kms.rewrap` job needs to move it to the new key.
+ * Drop a key from the list once `admin kms-rewrap` has finished and nothing is wrapped by it.
+ */
+export function previousKeysFromEnv(env: NodeJS.ProcessEnv = process.env): Buffer[] {
+  const raw = env['MANYTHREADS_KMS_PREVIOUS_KEYS'];
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const key = Buffer.from(part, 'base64');
+      if (key.length !== 32) throw new KmsError('MANYTHREADS_KMS_PREVIOUS_KEYS must hold base64 of exactly 32 bytes per key');
+      return key;
+    });
+}
+
 let defaultKms: Kms | undefined;
 
 /** The process-wide Kms built from the environment (cached). */
 export function getKms(): Kms {
-  return (defaultKms ??= createPostgresKms({ masterKey: masterKeyFromEnv() }));
+  return (defaultKms ??= createPostgresKms({ masterKey: masterKeyFromEnv(), previousKeys: previousKeysFromEnv() }));
 }
 
 /** Test hook: forget the cached Kms and the dev-key warning. */

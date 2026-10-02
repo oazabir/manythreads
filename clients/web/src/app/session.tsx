@@ -1,9 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router';
 import { fetchSession } from '../api/endpoints';
 import { onSessionExpired } from '../api/client';
 import type { AuthenticatedSession } from '@manythreads/shared';
 import { FullPageMessage } from '../components/states';
+import { dropPersonData } from './caches';
 import { signInUrl } from './paths';
 
 export type SessionState =
@@ -36,6 +37,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       live = false;
     };
   }, [tick]);
+
+  // Whatever was loaded for one person is not shown to the next one in this tab.
+  const who = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (state.status === 'loading' || state.status === 'error') return;
+    const id = state.status === 'ready' ? state.session.person.id : null;
+    if (who.current !== undefined && who.current !== id) dropPersonData();
+    who.current = id;
+  }, [state]);
 
   // A 401 anywhere means the session expired: RequireSession then redirects to /sign-in?return=<path>.
   useEffect(() => onSessionExpired(() => setState({ status: 'anonymous' })), []);

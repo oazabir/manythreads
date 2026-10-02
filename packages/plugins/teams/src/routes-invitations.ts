@@ -136,8 +136,15 @@ export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): vo
         const byId = new Map(teams.rows.map((t) => [t.slug, t.id]));
         const missing = slugs.find((s) => !byId.has(s));
         if (missing) throw notFound(`No team "${missing}"`);
-        // Recorded now, applied when channels exist (the channel does not have to be there yet).
-        grant = { channels: channels.map((c) => ({ teamId: byId.get(c.teamSlug), teamSlug: c.teamSlug, channel: c.channel })) };
+        // Recorded now, applied when the invitation is accepted (a channel that does not exist by then is skipped).
+        grant = {
+          channels: channels.map((c) => ({
+            teamId: byId.get(c.teamSlug),
+            teamSlug: c.teamSlug,
+            channel: c.channel,
+            ...(c.permission ? { permission: c.permission } : {}),
+          })),
+        };
       }
       const { row, token } = await insertInvitation(tx, { teamId: null, email: body.email, role: body.role, grant });
       await emit(tx, {

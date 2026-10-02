@@ -36,6 +36,13 @@ describe('mock transport serves fixtures that parse with the shared schemas', ()
     expect((await api.fetchTemplates()).templates).toHaveLength(5);
   });
 
+  it('the sidebar channel feed lists the template channels, and a guest gets only the granted one', async () => {
+    const { groups } = await api.fetchNavChannels('engineering');
+    expect(groups.flatMap((g) => g.channels.map((c) => c.name))).toEqual(['#general', '#dev', '#releases', '#incidents', '#alerts', '#standup']);
+    use({ as: 'lena' });
+    expect((await api.fetchNavChannels('engineering')).groups.flatMap((g) => g.channels.map((c) => c.name))).toEqual(['#releases']);
+  });
+
   it('anonymous session lists methods; sign-in matches the real messages and locks after 5', async () => {
     use({ anon: true, providers: ['google', 'microsoft'] });
     const anon = await api.fetchSession();

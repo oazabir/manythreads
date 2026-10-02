@@ -66,9 +66,12 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
 - Plugins import only `@manythreads/sdk` and `@manythreads/shared`, never kernel internals. Plugin HTTP routes mount at
   their declared absolute path (e.g. `/api/channels/:id/messages`); duplicates fail at load.
 - Test-only HTTP actor: header-based dev actor only with `NODE_ENV=test`, never `system`. Sessions (cookie + CSRF header) are the real
-  auth; e2e/screenshots use `POST /api/test/session` (only when `MANYTHREADS_TEST_AUTH_TOKEN` is set; see `docs/testing.md`).
+  auth; local e2e may use `POST /api/test/session` (only with `MANYTHREADS_TEST_AUTH_TOKEN`, refused in production). Live
+  screenshots (`screenshots.yml`, runs after each release, commits to branch `screenshots`) set a per-run password via
+  the admin CLI `pnpm --filter @manythreads/server admin set-password <email>` (stdin) and sign in through the real form.
 - Capability names `namespace.verb` with a destructive tag. The broker denies bot actors writes to
   `bots/`, `TEAM.md`, `skills/`, `routines/`; `person:*` only for `conversation`/`mention` triggers.
+- Fonts are self-hosted (`clients/web/public/fonts`); never load Google Fonts at runtime (breaks visual baselines).
 - Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter Tight, JetBrains Mono.
 - Screens carry `data-testid="app-frame"`; dynamic regions `data-vt-mask`; landmarks `data-landmark`.
 - Commit messages start with the task id, e.g. `P1-03: migration runner`.

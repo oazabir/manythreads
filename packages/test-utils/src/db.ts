@@ -15,6 +15,36 @@ export const testKernelMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/test-kernel/migrations/', import.meta.url)),
 };
 
+/** Migrations of the teams plugin (holds `team_role_tags`); pass it in `sources` when a test needs those tables. */
+export const teamsMigrationSource: MigrationSource = {
+  namespace: 'teams',
+  dir: fileURLToPath(new URL('../../plugins/teams/migrations/', import.meta.url)),
+};
+
+/** Migrations of the channels plugin (channels, messages, threads); pass it in `sources` after `teamsMigrationSource`. */
+export const channelsMigrationSource: MigrationSource = {
+  namespace: 'channels',
+  dir: fileURLToPath(new URL('../../plugins/channels/migrations/', import.meta.url)),
+};
+
+/** Migrations of the files plugin (`files`); pass it in `sources` after `channelsMigrationSource`. */
+export const filesMigrationSource: MigrationSource = {
+  namespace: 'files',
+  dir: fileURLToPath(new URL('../../plugins/files/migrations/', import.meta.url)),
+};
+
+/** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
+export const searchMigrationSource: MigrationSource = {
+  namespace: 'search',
+  dir: fileURLToPath(new URL('../../plugins/search/migrations/', import.meta.url)),
+};
+
+/** Migrations of the direct-messages plugin (`app.dms_get_or_create`); pass it in `sources` after `channelsMigrationSource`. */
+export const directMessagesMigrationSource: MigrationSource = {
+  namespace: 'direct-messages',
+  dir: fileURLToPath(new URL('../../plugins/direct-messages/migrations/', import.meta.url)),
+};
+
 export const DEV_TEST_DATABASE_URL = 'postgresql://manythreads_owner:manythreads@localhost:55432/manythreads';
 
 /** Owner connection string of the cluster's admin database; tests create and drop temp databases through it. */
@@ -172,6 +202,79 @@ export async function explainRlsViolations(client: Queryable): Promise<RlsProble
 /** Names of the tables explainRlsViolations reports. */
 export async function findRlsViolations(client: Queryable): Promise<string[]> {
   return (await explainRlsViolations(client)).map((p) => p.name);
+}
+
+/**
+ * Policy helpers that answer "may the caller see this team / resource?" for ONE row. In a read policy they run once per row
+ * (70 to 250 microseconds each, so an unscoped count over 300,000 rows took 77 s); the policy must instead probe a set
+ * computed once per statement: `team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])` (kernel 0011, which also
+ * documents the idiom). Names are matched schema-qualified in the plan.
+ */
+export const PER_ROW_POLICY_FUNCTIONS = ['can', 'can_in_team', 'is_team_member', 'team_role', 'has_role'] as const;
+
+/** A per-row call the planner left in a scan, join or index condition of a table's read plan. */
+export interface PerRowPolicyCall {
+  table: string;
+  /** Plan node type, e.g. `Seq Scan`. */
+  node: string;
+  /** Which condition: `Filter`, `Index Cond`, ... */
+  clause: string;
+  /** The offending function, e.g. `app.can_in_team`. */
+  function: string;
+  /** The full condition text from EXPLAIN. */
+  condition: string;
+}
+
+interface PlanNode {
+  'Node Type'?: string;
+  'Parent Relationship'?: string;
+  Plans?: PlanNode[];
+  [key: string]: unknown;
+}
+
+const PLAN_CONDITIONS = ['Filter', 'Index Cond', 'Join Filter', 'Recheck Cond', 'One-Time Filter', 'Hash Cond', 'Merge Cond', 'TID Cond'];
+const PER_ROW_CALL = new RegExp(`\\bapp\\.(${PER_ROW_POLICY_FUNCTIONS.join('|')})\\s*\\(`);
+
+function collectPerRowCalls(node: PlanNode, table: string, out: PerRowPolicyCall[]): void {
+  // An InitPlan runs once per statement, so a call inside it is exactly what the idiom wants.
+  if (node['Parent Relationship'] === 'InitPlan') return;
+  for (const clause of PLAN_CONDITIONS) {
+    const condition = node[clause];
+    if (typeof condition !== 'string') continue;
+    const hit = PER_ROW_CALL.exec(condition);
+    if (hit) out.push({ table, node: String(node['Node Type'] ?? '?'), clause, function: `app.${hit[1]}`, condition });
+  }
+  for (const child of node.Plans ?? []) collectPerRowCalls(child, table, out);
+}
+
+/**
+ * EXPLAIN (VERBOSE) of `SELECT count(*) FROM app.<table>` as the non-system role manythreads_app (the plan carries the
+ * table's row-level-security conditions) and every per-row call of app.can / can_in_team / is_team_member / team_role /
+ * has_role left outside an InitPlan. Empty means the read policy hoists its team visibility. Tables manythreads_app cannot
+ * read at all (system-only) have no plan to check and give []. Runs in a rolled-back transaction, so `client` may be the
+ * owner connection (a superuser may SET ROLE; the plan does not depend on who the actor is).
+ */
+export async function findPerRowPolicyCalls(
+  client: { query(text: string, values?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }> },
+  table: string,
+): Promise<PerRowPolicyCall[]> {
+  if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error(`Unsafe table name "${table}"`);
+  const readable = await client.query(`SELECT has_table_privilege('manythreads_app', 'app.${table}', 'SELECT') AS ok`);
+  if (readable.rows[0]?.['ok'] !== true) return [];
+  const out: PerRowPolicyCall[] = [];
+  await client.query('BEGIN');
+  try {
+    await client.query('SET LOCAL ROLE manythreads_app');
+    await client.query('SET LOCAL search_path = pg_catalog'); // EXPLAIN qualifies function names that are not on the path
+    const res = await client.query(`EXPLAIN (VERBOSE, FORMAT JSON) SELECT count(*) FROM app.${table}`);
+    const raw = res.rows[0]?.['QUERY PLAN'];
+    const parsed = (typeof raw === 'string' ? JSON.parse(raw) : raw) as Array<{ Plan: PlanNode }>;
+    const root = parsed[0]?.Plan;
+    if (root) collectPerRowCalls(root, table, out);
+  } finally {
+    await client.query('ROLLBACK');
+  }
+  return out;
 }
 
 /** One query as the database owner (bypasses RLS): for specs that arrange or inspect state the API cannot reach. */

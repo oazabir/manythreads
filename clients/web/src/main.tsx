@@ -3,6 +3,9 @@ import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/app.css';
 import './styles/screens.css';
+import './styles/shell.css';
+import './styles/channels.css';
+import './styles/discover.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
 

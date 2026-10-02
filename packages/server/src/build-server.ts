@@ -4,11 +4,14 @@ import swagger from '@fastify/swagger';
 import {
   NIL_UUID,
   createRateLimiter,
+  createRealtime,
   createWsHub,
   withActor,
   type Actor,
+  type MountedRoute,
   type PluginHost,
   type RateLimiter,
+  type Realtime,
 } from '@manythreads/kernel';
 import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@manythreads/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
@@ -19,6 +22,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { HttpError, type HttpRequest } from '@manythreads/sdk';
+import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
@@ -65,6 +69,16 @@ export interface BuildServerOptions {
    * the header); a number is that many hops; a string or list is the proxy addresses / CIDRs to trust.
    */
   trustProxy?: boolean | number | string | string[];
+  /**
+   * Live pushes (`ctx.realtime`, read-state changes): sockets of signed-in people register here. The caller starts it
+   * (`realtime.start(pool)`) so pushes from every replica arrive; default: a registry nobody feeds.
+   */
+  realtime?: Realtime;
+  /**
+   * How often the sockets of cookie sessions are re-checked (default 15 s): a socket whose session was signed out, revoked, expired, went
+   * idle, or whose person was suspended is closed (1008) within one interval. 0 turns the check off.
+   */
+  wsRevalidateMs?: number;
   /** Replace the in-memory limiter (tests). Each server builds its own by default: limits are per replica. */
   limiter?: RateLimiter;
   /** Migration files the kernel and loaded plugins ship; /readyz fails while fewer are applied. */
@@ -104,6 +118,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   const hub = createWsHub();
   app.decorate('rateLimiter', limiter);
   app.decorate('wsHub', hub);
+  const realtime = options.realtime ?? createRealtime();
+  app.decorate('realtime', realtime);
   app.decorateRequest('actor', null);
   app.decorateRequest('authSession', null);
   app.decorateRequest('staleSessionCookie', false);
@@ -116,7 +132,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     openapi: { info: { title: 'manythreads', version: '0.0.0' } },
     transform: jsonSchemaTransform,
   });
-  await app.register(websocket);
+  // Frames are small envelopes (ping): `ws` would otherwise take 100 MiB per frame, from anybody (the route is public: it only answers pings).
+  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
   await app.register(cookie);
 
   app.addHook('onRequest', async (req, reply) => {
@@ -200,36 +217,132 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     () => app.swagger(),
   );
 
+  // Sockets that rode in on a cookie session, by session id. One timer re-checks all of them with ONE read-only query per interval,
+  // so a sign-out, 'sign out everywhere', an admin revoke or a suspension ends the live stream instead of leaving it open.
+  const sessionSockets = new Map<string, Set<() => void>>();
+  const revalidateMs = options.wsRevalidateMs ?? 15_000;
+  let revalidateTimer: ReturnType<typeof setInterval> | undefined;
+  let revalidating = false;
+  const revalidateSockets = async (): Promise<void> => {
+    if (revalidating || !sessions || sessionSockets.size === 0) return;
+    revalidating = true;
+    try {
+      const ids = [...sessionSockets.keys()];
+      const live = await sessions.live(ids);
+      for (const id of ids) {
+        if (live.has(id)) continue;
+        for (const end of [...(sessionSockets.get(id) ?? [])]) end();
+      }
+    } catch {
+      // The database was unreachable for this round: keep the sockets, check again at the next one (a failed check is not a revoke).
+    } finally {
+      revalidating = false;
+    }
+  };
+  const trackSocket = (sessionId: string, end: () => void): (() => void) => {
+    let set = sessionSockets.get(sessionId);
+    if (!set) sessionSockets.set(sessionId, (set = new Set()));
+    set.add(end);
+    if (!revalidateTimer && revalidateMs > 0) {
+      revalidateTimer = setInterval(() => void revalidateSockets(), revalidateMs);
+      revalidateTimer.unref();
+    }
+    return () => {
+      const current = sessionSockets.get(sessionId);
+      current?.delete(end);
+      if (current && current.size === 0) sessionSockets.delete(sessionId);
+      if (sessionSockets.size === 0 && revalidateTimer) {
+        clearInterval(revalidateTimer);
+        revalidateTimer = undefined;
+      }
+    };
+  };
+  app.addHook('onClose', () => {
+    if (revalidateTimer) clearInterval(revalidateTimer);
+    revalidateTimer = undefined;
+  });
+
   // WebSocket: every frame is a validated { type, id, payload } envelope, in both directions.
   hub.on('ping', (msg) => WsEnvelope.parse({ type: 'pong', id: msg.id, payload: msg.payload }));
-  typed.get('/ws', { websocket: true, config: { public: true } }, (socket) => {
+  typed.get('/ws', { websocket: true, config: { public: true } }, (socket, req) => {
+    const peer = { send: (d: string) => socket.send(d) };
+    // A browser always sends Origin on an upgrade. The session cookie is SameSite=Lax (a cross-site page cannot send it); this also
+    // refuses a same-site page of another origin (a sibling subdomain): its socket would carry the cookie and read the person's pushes.
+    const origin = req.headers.origin;
+    if (origin !== undefined && !sameHost(origin, req.host)) {
+      socket.close(1008, 'origin not allowed');
+      return;
+    }
+    // A signed-in person's sockets receive live pushes (read state, notifications). The upgrade request carried the cookie.
+    let detach: (() => void) | undefined;
+    let untrack: (() => void) | undefined;
+    let closed = false;
+    // Ending a socket for a dead session stops its pushes at once (it does not wait for the peer to finish the close handshake).
+    const endForSession = (): void => {
+      closed = true;
+      detach?.();
+      untrack?.();
+      try {
+        socket.close(1008, 'session ended');
+      } catch {
+        /* already closing */
+      }
+    };
+    if (req.authSession && sessions) untrack = trackSocket(req.authSession.sessionId, endForSession);
+    if (req.actor && req.actor.kind === 'person') {
+      const actor = req.actor;
+      const known = req.authSession?.personId ?? null;
+      const person = known
+        ? Promise.resolve(known)
+        : withActor(actor, async (tx) => (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0]?.id ?? null, poolOpt).catch(() => null);
+      void person.then((personId) => {
+        if (personId && !closed) detach = realtime.attach(personId, peer);
+      });
+    }
+    socket.on('close', () => {
+      closed = true;
+      detach?.();
+      untrack?.();
+    });
     socket.on('message', (data: Buffer) => {
-      void hub.receive({ send: (d) => socket.send(d) }, data.toString());
+      void hub.receive(peer, data.toString());
     });
   });
 
   if (options.testAuthToken && sessions && options.systemPool) {
     mountTestAuth(app, { token: options.testAuthToken, sessions, pool: options.systemPool });
   }
-  mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
+  await mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
   await options.routes?.(app);
   return app;
 }
 
-function mountPluginRoutes(
+/** The `host[:port]` of an Origin header equals the host the request was addressed to. */
+function sameHost(origin: string, host: string): boolean {
+  try {
+    return new URL(origin).host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/** A response body a handler hands over as bytes (a Node Readable from a blob store): sent as is, never serialised. */
+const isByteStream = (body: unknown): body is Readable => body instanceof Readable;
+
+async function mountPluginRoutes(
   app: FastifyInstance,
   host: PluginHost | undefined,
   poolOpt: { pool?: pg.Pool },
   systemPool: pg.Pool | undefined,
   sessions: SessionService | undefined,
-): void {
+): Promise<void> {
   if (!host) return;
-  for (const { plugin, value: def } of host.registries.httpRoutes.list()) {
+  const mount = (target: FastifyInstance, plugin: string, def: MountedRoute): void => {
     const schema: Record<string, unknown> = {};
     if (def.schema?.body) schema['body'] = def.schema.body;
     if (def.schema?.query) schema['querystring'] = def.schema.query;
     if (def.schema?.response) schema['response'] = { 200: def.schema.response };
-    app.route({
+    target.route({
       method: def.method,
       url: def.fullPath,
       schema: schema as never,
@@ -245,7 +358,8 @@ function mountPluginRoutes(
         const request: HttpRequest = {
           params: req.params as Record<string, string>,
           query: req.query as Record<string, string | undefined>,
-          body: req.body,
+          body: def.rawBody ? undefined : req.body,
+          ...(def.rawBody ? { stream: req.raw } : {}),
           headers: Object.fromEntries(
             Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v]),
           ),
@@ -273,8 +387,23 @@ function mountPluginRoutes(
           if (res.setSession) setSessionCookies(reply, res.setSession, sessions.config);
           else if (res.clearSession) clearSessionCookies(reply, sessions.config);
         }
+        if (isByteStream(res.body)) return reply.status(res.status ?? 200).send(res.body);
         return reply.status(res.status ?? 200).send(res.body ?? null);
       },
+    });
+  };
+  const routes = host.registries.httpRoutes.list();
+  for (const { plugin, value } of routes) if (!value.rawBody) mount(app, plugin, value);
+  const raw = routes.filter((r) => r.value.rawBody);
+  if (raw.length > 0) {
+    // Routes with `rawBody` live in their own encapsulated context so the catch-all body parser (the socket itself, unparsed, any
+    // content type) cannot change how every other route treats an unknown content type. Hooks of the root are inherited.
+    await app.register((scope, _opts, done) => {
+      // Drop the built-in JSON and text parsers too: they would consume the upload before the handler sees it.
+      scope.removeAllContentTypeParsers();
+      scope.addContentTypeParser('*', (_req, payload, parsed) => parsed(null, payload));
+      for (const { plugin, value } of raw) mount(scope, plugin, value);
+      done();
     });
   }
 }

@@ -1,3 +1,4 @@
+import type { GetOneOrCreateInput } from '@manythreads/sdk';
 import type pg from 'pg';
 import type { Tx } from './with-actor.ts';
 
@@ -40,18 +41,7 @@ export function resetDoSelectProbe(): void {
   doSelectSupported = undefined;
 }
 
-export interface GetOneOrCreateInput {
-  /** `table` or `schema.table`. */
-  table: string;
-  /** Column to value for the insert; must include every column of the conflict target. */
-  values: Readonly<Record<string, unknown>>;
-  /** Columns of the unique index the conflict is detected on. */
-  conflict: readonly string[];
-  /** Predicate of a partial unique index (`kind = 'dm'`), written as trusted SQL, never from user input. */
-  conflictWhere?: string;
-  /** Columns to return; defaults to all. */
-  returning?: readonly string[];
-}
+export type { GetOneOrCreateInput };
 
 /**
  * The one get-or-create: inserts the row, or returns the existing one for the conflict target, in a single

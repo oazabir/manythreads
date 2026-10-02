@@ -1,5 +1,6 @@
-import type { ErrorCode, ExtensionPoint, PluginManifest } from '@manythreads/shared';
+import type { ErrorCode, ExtensionPoint, PluginManifest, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
+import type { PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -109,6 +110,11 @@ export interface HttpRequest {
   ip: string;
   /** The authenticated caller, or null on a public route reached anonymously. */
   caller: HttpCaller | null;
+  /**
+   * The request body as an unparsed byte stream. Only on a route declared with `rawBody` (uploads); `body` is then undefined. It is the
+   * socket itself: read it once, and stop reading to refuse (the server still answers). Any content type is accepted on such a route.
+   */
+  stream?: AsyncIterable<Uint8Array>;
 }
 export interface HttpResponse {
   status?: number;
@@ -160,6 +166,11 @@ export interface HttpRouteDefinition {
    * routes that must work with a stale or missing token (none of the built-in ones need it).
    */
   csrfExempt?: boolean;
+  /**
+   * The body is not parsed: the handler reads `request.stream` (uploads of any content type). No `schema.body` on such a route. A
+   * `body` that is a Node `Readable` in the response is piped to the client unserialised (downloads; give no `schema.response`).
+   */
+  rawBody?: boolean;
   handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 
@@ -191,7 +202,14 @@ export interface PluginContext {
     prePersist(hook: Hook): void;
     preEgress(hook: Hook): void;
   };
-  readonly providers: { register(kind: ProviderKind, impl: ProviderImpl): void };
+  readonly providers: {
+    register(kind: ProviderKind, impl: ProviderImpl): void;
+    /**
+     * The implementation another plugin registered for `kind` (the first one, in load order), or undefined. Look it up when a request
+     * arrives, not in `register`: the provider's plugin may load after yours. Needs no `extends` entry (using a provider is not providing one).
+     */
+    get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind): T | undefined;
+  };
   readonly commands: { register(definition: CommandDefinition): void };
   readonly triggers: { register(definition: TriggerDefinition): void };
   readonly components: { register(definition: ComponentDefinition): void };
@@ -208,12 +226,106 @@ export interface PluginContext {
   /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;
+  /** Database helpers that keep plugins from re-implementing kernel statements (get-or-create). */
+  readonly db: PluginDb;
+  /** Audit events: `ctx.events.emit` with the envelope filled in. Needs `event.emit` and the type in `events.emits`. */
+  readonly audit: PluginAudit;
+  /** The shipped team templates (`templates/` at the repository root, or `MANYTHREADS_TEMPLATES_DIR`). */
+  readonly templates: PluginTemplates;
+  /** Background jobs. Only for plugins whose manifest extends `job.register`; any other plugin throws on access. */
+  readonly jobs: PluginJobs;
   readonly mail: MailService;
   readonly runtime: PluginRuntime;
+  /** Unread counters per person per channel and thread (spec §3 cohesion service). */
+  readonly readState: PluginReadState;
+  /** Links among messages, threads, tasks, pages, bots and files, and the resolvers that summarise them. */
+  readonly links: PluginLinks;
+  /** Live push to a person's sockets. */
+  readonly realtime: PluginRealtime;
   /** Only for plugins whose manifest extends `provider.identity`; any other plugin throws on access. */
   readonly identity: IdentityServices;
   /** Envelope-encrypted secrets (client secrets of sign-in providers). Only for plugins that extend `provider.identity`. */
   readonly secrets: SecretService;
+}
+
+/** Input of `ctx.db.getOneOrCreate`: one `INSERT ... ON CONFLICT ... DO SELECT` (Postgres 19). */
+export interface GetOneOrCreateInput {
+  /** `table` or `schema.table`. Identifiers are validated (lowercase letters, digits, underscore). */
+  table: string;
+  /** Column to value for the insert; must include every column of the conflict target. */
+  values: Readonly<Record<string, unknown>>;
+  /** Columns of the unique index the conflict is detected on. */
+  conflict: readonly string[];
+  /** Predicate of a partial unique index (`kind = 'dm'`), written as trusted SQL, never from user input. */
+  conflictWhere?: string;
+  /** Columns to return; defaults to all. */
+  returning?: readonly string[];
+}
+
+export interface PluginDb {
+  /**
+   * The kernel's one get-or-create: inserts the row or returns the existing one for the conflict target, in a single
+   * statement, so concurrent callers converge on one row and a hit writes nothing. To know whether you created it, put a
+   * pre-drawn id in `values` (`SELECT uuidv7()`) and compare it with the returned `id`.
+   */
+  getOneOrCreate<R extends Record<string, unknown> = Record<string, unknown>>(tx: PluginTx, input: GetOneOrCreateInput): Promise<R>;
+}
+
+/** An audit event as a plugin writes it: `schemaVersion` defaults to 1 and `workspaceId` to the transaction's workspace. */
+export interface AuditEvent {
+  type: string;
+  schemaVersion?: number;
+  workspaceId?: string;
+  [field: string]: unknown;
+}
+
+export interface PluginAudit {
+  /** Validated against the event registry and written with the outbox rows in `tx`, like `ctx.events.emit`. */
+  emit(tx: PluginTx, event: AuditEvent): Promise<void>;
+}
+
+export interface PluginTemplates {
+  /** Every template, sorted by id. Read once and cached; an invalid template file fails here, naming file and field. */
+  list(): Promise<readonly TeamTemplate[]>;
+  get(id: string): Promise<TeamTemplate | undefined>;
+}
+
+/** What a job handler learns about the run it is in. */
+export interface JobInfo {
+  jobId: string;
+  /** 1 on the first run. */
+  attempt: number;
+  workerId: string;
+}
+
+/**
+ * Runs once per claimed job inside one transaction as the SYSTEM actor (no RLS), scoped to `payload.workspaceId` when it is a
+ * string. A throw rolls the transaction back and the job is retried with backoff, then dead-lettered; a return commits it. Check
+ * everything the payload says: it is whatever was enqueued, by anyone who could call `ctx.jobs.enqueue`.
+ */
+export type JobHandler = (payload: Record<string, unknown>, tx: PluginTx, job: JobInfo) => void | Promise<void>;
+
+export interface JobOptions {
+  /** Jobs of this queue in flight at once in one server process (default 1). */
+  concurrency?: number;
+  /** Attempts before the job is dead-lettered (default 5). */
+  maxAttempts?: number;
+}
+
+export interface EnqueueJobOptions {
+  runAt?: Date;
+  /** While a job with this key is ready or running in the queue, enqueue returns it instead of adding another. */
+  dedupeKey?: string;
+}
+
+export interface PluginJobs {
+  /**
+   * Handle `queue`. The queue must be named `<plugin>.<name>` (the plugin's own namespace) and may be registered once.
+   * The server starts the worker; handlers must be idempotent (a job can run again after a crash or a failed commit).
+   */
+  register(queue: string, handler: JobHandler, options?: JobOptions): void;
+  /** Adds a job in `tx`: it exists, and workers are woken, when `tx` commits. Same queue-name rule. Returns the job id. */
+  enqueue(tx: PluginTx, queue: string, payload: Record<string, unknown>, options?: EnqueueJobOptions): Promise<string>;
 }
 
 /** What `identity.sessions.issue` returns: the opaque token and the CSRF token it is bound to. Never log either. */
@@ -308,4 +420,62 @@ export interface SecretService {
   get(tx: PluginTx, secretId: string): Promise<string>;
   /** Deletes a secret of the caller's workspace. False when it did not exist. */
   delete(tx: PluginTx, secretId: string): Promise<boolean>;
+}
+
+/** Result of `BlobStorage.put`: what the `files` table records about the stored bytes. */
+export interface BlobPutResult {
+  /** Opaque key the provider chose; hand it back to `get`/`head`/`delete`. */
+  blobKey: string;
+  size: number;
+  /** Lower-case hex SHA-256 of the stored bytes. */
+  sha256: string;
+}
+
+export interface BlobHead {
+  size: number;
+}
+
+/** Thrown by `put` when the stream is longer than `maxBytes`; nothing is stored. */
+export class BlobTooLargeError extends Error {
+  readonly maxBytes: number;
+  constructor(maxBytes: number) {
+    super(`Blob is larger than the ${maxBytes} byte limit`);
+    this.name = 'BlobTooLargeError';
+    this.maxBytes = maxBytes;
+  }
+}
+
+/** Thrown for a key this provider could never have issued (never touches storage). */
+export class InvalidBlobKeyError extends Error {
+  constructor() {
+    super('Invalid blob key');
+    this.name = 'InvalidBlobKeyError';
+  }
+}
+
+/** Thrown by `get` when the key is well formed but nothing is stored under it. */
+export class BlobNotFoundError extends Error {
+  constructor() {
+    super('Blob not found');
+    this.name = 'BlobNotFoundError';
+  }
+}
+
+/**
+ * The `provider.storage` contract (spec §5.2): attachment bytes only. Who may read a blob is decided by the caller from
+ * the `files` row and the channel ACL before it calls `get` (principle 8); a provider never sees identities.
+ * Streams are `AsyncIterable<Uint8Array>` (a Node `Readable` is one), so the SDK stays free of `node:` types.
+ */
+export interface BlobStorage extends ProviderImpl {
+  /**
+   * Stores the stream and returns where it went. Rejects with `BlobTooLargeError` as soon as more than `maxBytes` have
+   * arrived (the source is destroyed when it supports it, partial data is removed). Any other failure also leaves nothing behind.
+   */
+  put(stream: AsyncIterable<Uint8Array>, options: { maxBytes: number }): Promise<BlobPutResult>;
+  /** The bytes as a stream. Rejects with `BlobNotFoundError` when nothing is stored. */
+  get(blobKey: string): Promise<AsyncIterable<Uint8Array>>;
+  /** True when something was removed. */
+  delete(blobKey: string): Promise<boolean>;
+  /** Size of the stored bytes, or null when nothing is stored. */
+  head(blobKey: string): Promise<BlobHead | null>;
 }

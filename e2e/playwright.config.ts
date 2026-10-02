@@ -16,6 +16,7 @@ const baseURL = external ?? `http://localhost:${WEB_PORT}`;
 const argv = process.argv;
 const projectArgs = argv.flatMap((a, i) => (a === '--project' ? [argv[i + 1]] : a.startsWith('--project=') ? [a.slice(10)] : []));
 const apiOnly = projectArgs.length > 0 && projectArgs.every((p) => p === 'api');
+// Free ports picked when the config loads (support/ports.ts), so parallel runs never meet on a fixed number.
 const apiPort = API_PORT;
 const apiURL = process.env.MANYTHREADS_API_URL ?? `http://127.0.0.1:${apiPort}`;
 
@@ -50,7 +51,8 @@ export default defineConfig({
   testDir: '.',
   globalSetup: './support/global-setup.ts',
   testMatch: '**/*.spec.ts',
-  outputDir: 'test-results',
+  // Two runs side by side keep their own results: MANYTHREADS_E2E_OUTPUT_DIR (and PLAYWRIGHT_HTML_REPORT for the report).
+  outputDir: process.env['MANYTHREADS_E2E_OUTPUT_DIR'] ?? 'test-results',
   snapshotPathTemplate: '{testDir}/__baselines__/{testFilePath}/{arg}{ext}',
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: { baseURL, browserName: 'chromium' },

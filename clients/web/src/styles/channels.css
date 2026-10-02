@@ -1,0 +1,1098 @@
+/*
+ * Channel view, message row, composer, thread panel, Threads inbox (PLAN P3-13). Layout and copy follow prototype section 02,
+ * plates 1 (channel with a thread in the right panel) and 2 (Threads). Tokens only: no raw colours here.
+ */
+
+.chview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.chview-list {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.vlist {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px 8px;
+  overflow: hidden auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+/* a row is its own formatting context, so the height the list measures includes the gap below it */
+.vrow {
+  display: flow-root;
+  padding-bottom: 6px;
+  contain: layout style;
+}
+
+.start {
+  min-height: 34px;
+  padding: 0 0 14px;
+}
+
+.start-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.start-body {
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.start:not(.top) .start-body {
+  margin: 0;
+  line-height: 20px;
+}
+
+.daysep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.daysep::before,
+.daysep::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--rule);
+}
+
+.daysep.unread-sep {
+  color: var(--human);
+  font-weight: 600;
+}
+
+.daysep.unread-sep::before,
+.daysep.unread-sep::after {
+  border-top-color: var(--human);
+}
+
+/* ---- message ---- */
+.msg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 11px;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.msg:hover,
+.msg:focus-within,
+.msg.tapped {
+  background: var(--msg-hover);
+}
+
+.msg:focus-visible {
+  outline: 2px solid var(--human-border);
+  outline-offset: -2px;
+}
+
+.msg.hl {
+  background: var(--human-wash);
+  box-shadow: inset 2px 0 0 var(--human);
+}
+
+.msg .av {
+  margin-top: 1px;
+}
+
+.msg-main {
+  min-width: 0;
+}
+
+.who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.who b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.who time {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.who .edited {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.txt {
+  color: var(--txt);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.txt.tomb {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.msg.gone .av {
+  opacity: 0.5;
+}
+
+.md p {
+  margin: 0;
+}
+
+.md ul,
+.md ol {
+  margin: 4px 0;
+  padding-left: 22px;
+}
+
+.md blockquote {
+  margin: 4px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--rule);
+  color: var(--mute);
+}
+
+.md p + p,
+.md p + ul,
+.md p + ol,
+.md p + blockquote,
+.md p + pre {
+  margin-top: 6px;
+}
+
+.md code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--shell);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.md pre.md-code {
+  margin: 6px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--shell);
+  white-space: pre;
+}
+
+.md pre.md-code code {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+}
+
+.md .md-heading {
+  font-weight: 600;
+}
+
+.md a,
+.md .chref {
+  color: var(--human);
+  text-decoration: none;
+}
+
+.md a:hover,
+.md .chref:hover {
+  text-decoration: underline;
+}
+
+.md .m {
+  color: var(--human);
+  font-weight: 500;
+}
+
+.atts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  vertical-align: top;
+}
+
+.att {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 8px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.att:hover {
+  background: var(--table-head);
+}
+
+.att .ic {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: var(--bot-grey);
+  color: var(--surface);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.att .ic.img {
+  background: var(--ok);
+}
+
+.att .ic.pdf {
+  background: var(--alert);
+}
+
+.att .ic.md {
+  background: var(--human);
+}
+
+.att .ic.zip {
+  background: var(--zip);
+}
+
+.att-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.att small {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.rx {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--mute);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rx.mine {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.rx:disabled {
+  cursor: default;
+}
+
+.replies {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--human);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.replies:hover {
+  text-decoration: underline;
+}
+
+.replies .last {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+/* hover toolbar (reply, react, more) */
+.msg .acts {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(27 36 48 / 6%);
+}
+
+.act {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.act:hover,
+.act[aria-expanded="true"] {
+  background: var(--nav-on);
+  color: var(--ink);
+}
+
+.acts .menu {
+  top: calc(100% + 4px);
+  right: 0;
+  left: auto;
+  width: max-content;
+  min-width: 140px;
+}
+
+.acts .emoji-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  width: 172px;
+  min-width: 0;
+}
+
+.emoji {
+  width: 34px;
+  height: 30px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.emoji:hover {
+  background: var(--nav-on);
+}
+
+.menu-item.danger {
+  color: var(--alert);
+}
+
+.edit-box textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--human-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.edit-error {
+  color: var(--alert);
+  font-size: 12px;
+}
+
+.btn.s {
+  padding: 3px 9px;
+  font-size: 11.5px;
+}
+
+/* a message being sent, or that failed */
+.msg.pending {
+  opacity: 0.85;
+}
+
+.msg.pending.failed {
+  background: var(--alert-wash);
+  opacity: 1;
+}
+
+.send-state {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.msg.failed .send-state {
+  color: var(--alert-ink);
+  font-weight: 500;
+}
+
+.link-btn {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--human);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn.quiet {
+  color: var(--mute);
+  font-weight: 400;
+}
+
+.typing {
+  margin: 4px 0 0;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.jump {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transform: translateX(-50%);
+}
+
+.net-banner,
+.read-only {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 12.5px;
+}
+
+.read-only {
+  border-top: 1px solid var(--rule);
+  border-bottom: 0;
+  background: var(--table-head);
+  color: var(--mute);
+}
+
+.loading-rows {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+
+.skel {
+  height: 38px;
+  border-radius: 6px;
+  background: var(--hairline);
+}
+
+/* ---- composer ---- */
+.composer {
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.cbox {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.cbox:focus-within {
+  border-color: var(--human);
+}
+
+.composer.dragging .cbox {
+  border-color: var(--human);
+  background: var(--human-wash);
+}
+
+.ctools {
+  display: flex;
+  gap: 2px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+/* at rest (nothing typed, nothing attached, no focus) the box is one line, as in the prototype; the toolbar opens with the caret */
+.composer.resting:not(:focus-within) .ctools {
+  display: none;
+}
+
+.ctool {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ctool.mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.ctool:hover {
+  background: var(--nav-on);
+  color: var(--ink);
+}
+
+.cinput {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.cinput textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 188px;
+  padding: 3px 4px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 20px;
+  resize: none;
+}
+
+.cinput .clip {
+  flex: none;
+}
+
+.cinput .send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.picker {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 8px;
+  z-index: 10;
+  width: min(280px, 90%);
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  list-style: none;
+}
+
+.picker li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.picker li.on,
+.picker li:hover {
+  background: var(--nav-on);
+}
+
+.picker small {
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.cfiles {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 8px 0;
+  list-style: none;
+}
+
+.cfile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--table-head);
+  font-size: 12.5px;
+}
+
+.cfile.error {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+}
+
+.cfile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cfile-size,
+.cfile-pct {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.cfile-bar {
+  flex: 1;
+  height: 5px;
+  min-width: 40px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--rule);
+}
+
+.cfile-bar span {
+  display: block;
+  height: 100%;
+  background: var(--human);
+}
+
+.cfile-error {
+  margin-left: auto;
+  color: var(--alert-ink);
+  font-weight: 500;
+}
+
+.cfile .icon-btn {
+  margin-left: auto;
+}
+
+.cfile-error + .icon-btn {
+  margin-left: 4px;
+}
+
+/* ---- thread (right panel and Threads main area) ---- */
+.panel-body:has(.thread) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.thread .rpb {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.thread .msg {
+  margin-bottom: 6px;
+}
+
+.thread.main .rpb {
+  padding: 14px 20px;
+}
+
+.thread .rpf {
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.thread .rpf .composer {
+  padding: 10px 16px 12px;
+  border-top: 0;
+}
+
+.thread .root {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.thread .follow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.thread .linked {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.thread .linked b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.thread .linked .lk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.thread .linked a.lk:hover {
+  color: var(--human);
+}
+
+.thread .linked svg {
+  width: 12px;
+  height: 12px;
+}
+
+.thread-empty {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.load-earlier {
+  margin-bottom: 8px;
+}
+
+.thread-head {
+  flex: none;
+}
+
+.thread-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 15.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-head .topic {
+  flex: none;
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.thread-head .right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.thread-head .btn {
+  white-space: nowrap;
+}
+
+.thread-head a.btn {
+  text-decoration: none;
+}
+
+/* ---- Threads inbox ---- */
+.inbox {
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  min-width: 0;
+  height: 100%;
+}
+
+.inbox.narrow {
+  grid-template-columns: 1fr;
+}
+
+.inl {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--rule);
+}
+
+.inbox.narrow .inl {
+  border-right: 0;
+}
+
+.inh {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.inh-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.tabs2 {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-size: 11.5px;
+}
+
+.tabs2 button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs2 button.on {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.inlist {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.trow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trow.on {
+  background: var(--human-wash);
+}
+
+.trow-main {
+  display: block;
+  min-width: 0;
+}
+
+.trow .ch {
+  display: block;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.trow .ttl {
+  display: block;
+  margin: 2px 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trow.unread .ttl {
+  font-weight: 600;
+}
+
+.trow .last {
+  display: block;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trow .meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.trow .rc {
+  margin-top: 2px;
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 11px;
+}
+
+.trow .cnt {
+  margin-top: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--human);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.inl-empty,
+.inr-empty {
+  padding: 28px 20px;
+}
+
+.inr {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* the bell keeps one place while threads open and close (the shell's header band is not drawn on this screen) */
+.inr-bell {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  z-index: 3;
+}
+
+.inr .thread-head {
+  padding-right: 60px;
+}
+
+.back-to-list {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  margin: 8px 12px 0;
+}
+
+/* ---- phone ---- */
+@media (width <= 760px) {
+  .vlist {
+    padding: 12px 14px 6px;
+  }
+
+  .composer {
+    padding: 8px 12px 10px;
+  }
+
+  .cinput .send span {
+    display: none;
+  }
+
+  .net-banner,
+  .read-only {
+    padding: 8px 14px;
+  }
+
+  .thread .rpb,
+  .thread.main .rpb {
+    padding: 10px 14px 14px;
+  }
+
+  .thread .rpf .composer {
+    padding: 8px 12px 10px;
+  }
+
+  .acts .menu {
+    right: 0;
+  }
+}

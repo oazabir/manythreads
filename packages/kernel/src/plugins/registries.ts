@@ -6,12 +6,16 @@ import type {
   EventHandler,
   Hook,
   HttpRouteDefinition,
+  JobHandler,
+  JobOptions,
   ProviderImpl,
   ProviderKind,
   SettingsPageDefinition,
   SurfaceDefinition,
   TriggerDefinition,
 } from '@manythreads/sdk';
+import type { EntityResolvers } from '../entity-links/index.ts';
+import type { UnreadCounters } from '../read-state/index.ts';
 
 export interface RegistryEntry<T> {
   plugin: string;
@@ -67,8 +71,14 @@ export class ExtensionRegistries {
   readonly panels = new ExtensionRegistry<SurfaceDefinition>();
   readonly settingsPages = new ExtensionRegistry<SettingsPageDefinition>();
   readonly composerActions = new ExtensionRegistry<ComposerActionDefinition>();
+  /** Queue handlers of plugins that extend `job.register`; the server starts one worker per entry. */
+  readonly jobs = new ExtensionRegistry<{ queue: string; handler: JobHandler; options: JobOptions }>();
   /** Not an extension point: plugins may always offer routes; the server mounts them later. */
   readonly httpRoutes = new ExtensionRegistry<MountedRoute>();
+  /** Entity summarisers by entity type (`ctx.links.registerResolver`), one per type. */
+  readonly entityResolvers: EntityResolvers = new Map();
+  /** Unread counters by target type (`ctx.readState.registerCounter`), one per type. */
+  readonly unreadCounters: UnreadCounters = new Map();
   /** Implementations bound to declared capability names, by capability name. */
   readonly capabilityHandlers = new Map<string, { plugin: string; handler: CapabilityHandler }>();
 }

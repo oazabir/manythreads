@@ -50,8 +50,13 @@
   --alert-border: #E4BCB0;
   --alert-ink: #8E3722;
   --bot-grey: #6E7681;
+  --msg-hover: #F7F8F9;
+  --txt: #2A3340;
+  --zip: #8E5A2E;
   --dot-off: #C3C8CE;
   --toggle-off: #CFD4DA;
+  --scrim: rgb(27 36 48 / 40%);
+  --menu-shadow: 0 6px 20px rgb(27 36 48 / 14%);
   --sans: "Inter Tight", "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", monospace;
 }

@@ -1,5 +1,17 @@
 import { z } from 'zod';
 import { ChannelMessagePostedEvent } from './channel.message.posted.ts';
+import { ChannelMessageEditedEvent } from './channel.message.edited.ts';
+import { ChannelMessageDeletedEvent } from './channel.message.deleted.ts';
+import { ChannelReactionChangedEvent } from './channel.reaction.changed.ts';
+import { ChannelChannelCreatedEvent } from './channel.channel.created.ts';
+import { ChannelChannelUpdatedEvent } from './channel.channel.updated.ts';
+import { ChannelChannelArchivedEvent } from './channel.channel.archived.ts';
+import { ChannelMemberAddedEvent } from './channel.member.added.ts';
+import { ChannelMemberRemovedEvent } from './channel.member.removed.ts';
+import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
+import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
+import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
+import { FilesFileDeletedEvent } from './files.file.deleted.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
@@ -28,12 +40,25 @@ import { IdentityOidcRefusedEvent } from './identity.oidc.refused.ts';
 import { WorkspaceMemberRoleChangedEvent } from './workspace.member.role_changed.ts';
 import { WorkspaceSettingsUpdatedEvent } from './workspace.settings.updated.ts';
 import { KernelCapabilityDeniedEvent } from './kernel.capability.denied.ts';
+import { ReadingStateChangedEvent } from './reading.state.changed.ts';
 import { KernelTestPingedEvent } from './kernel.test.pinged.ts';
 import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.test.pinged.v2.ts';
 
 /** type -> schemaVersion -> schema. A breaking change adds a new version beside the old one (B.4). */
 export const eventRegistry = {
   'channel.message.posted': { 1: ChannelMessagePostedEvent },
+  'channel.message.edited': { 1: ChannelMessageEditedEvent },
+  'channel.message.deleted': { 1: ChannelMessageDeletedEvent },
+  'channel.reaction.changed': { 1: ChannelReactionChangedEvent },
+  'channel.channel.created': { 1: ChannelChannelCreatedEvent },
+  'channel.channel.updated': { 1: ChannelChannelUpdatedEvent },
+  'channel.channel.archived': { 1: ChannelChannelArchivedEvent },
+  'channel.member.added': { 1: ChannelMemberAddedEvent },
+  'channel.member.removed': { 1: ChannelMemberRemovedEvent },
+  'channel.mention.created': { 1: ChannelMentionCreatedEvent },
+  'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
+  'files.file.uploaded': { 1: FilesFileUploadedEvent },
+  'files.file.deleted': { 1: FilesFileDeletedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
@@ -61,6 +86,7 @@ export const eventRegistry = {
   'identity.oidc.refused': { 1: IdentityOidcRefusedEvent },
   'workspace.settings.updated': { 1: WorkspaceSettingsUpdatedEvent },
   'workspace.member.role_changed': { 1: WorkspaceMemberRoleChangedEvent },
+  'reading.state.changed': { 1: ReadingStateChangedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
@@ -97,6 +123,19 @@ export type AnyEvent =
   | z.infer<typeof WorkspaceSettingsUpdatedEvent>
   | z.infer<typeof WorkspaceMemberRoleChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
+  | z.infer<typeof ChannelMessageEditedEvent>
+  | z.infer<typeof ChannelMessageDeletedEvent>
+  | z.infer<typeof ChannelReactionChangedEvent>
+  | z.infer<typeof ChannelChannelCreatedEvent>
+  | z.infer<typeof ChannelChannelUpdatedEvent>
+  | z.infer<typeof ChannelChannelArchivedEvent>
+  | z.infer<typeof ChannelMemberAddedEvent>
+  | z.infer<typeof ChannelMemberRemovedEvent>
+  | z.infer<typeof ChannelMentionCreatedEvent>
+  | z.infer<typeof NotificationsNotificationCreatedEvent>
+  | z.infer<typeof FilesFileUploadedEvent>
+  | z.infer<typeof FilesFileDeletedEvent>
+  | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
   | z.infer<typeof KernelTestPingedEventV2>;
@@ -131,6 +170,19 @@ export type LatestEvent =
   | z.infer<typeof WorkspaceSettingsUpdatedEvent>
   | z.infer<typeof WorkspaceMemberRoleChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
+  | z.infer<typeof ChannelMessageEditedEvent>
+  | z.infer<typeof ChannelMessageDeletedEvent>
+  | z.infer<typeof ChannelReactionChangedEvent>
+  | z.infer<typeof ChannelChannelCreatedEvent>
+  | z.infer<typeof ChannelChannelUpdatedEvent>
+  | z.infer<typeof ChannelChannelArchivedEvent>
+  | z.infer<typeof ChannelMemberAddedEvent>
+  | z.infer<typeof ChannelMemberRemovedEvent>
+  | z.infer<typeof ChannelMentionCreatedEvent>
+  | z.infer<typeof NotificationsNotificationCreatedEvent>
+  | z.infer<typeof FilesFileUploadedEvent>
+  | z.infer<typeof FilesFileDeletedEvent>
+  | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEventV2>;
 

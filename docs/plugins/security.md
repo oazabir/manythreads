@@ -47,3 +47,10 @@ A route returns `setSession` (the `issue` result) or `clearSession`; the server 
 (HttpOnly, SameSite=Lax, Secure outside local http) and readable `manythreads_csrf` cookies. The token is opaque random bytes;
 only its sha256 is stored (`app.session_tokens`, with the UNLOGGED `app.session_cache` in front for the hot lookup). Never log,
 return in a body, or store a session token or a CSRF token.
+
+## Background jobs: `job.register`
+
+A plugin that extends `job.register` gets queues named `<plugin>.<name>` and a worker in the server. Its handler receives one transaction **as the
+system actor** (`app.is_system()` is true: no RLS), scoped to `payload.workspaceId` when the payload has one. That is the same trust as `provider.identity`,
+so it is declared in the manifest, and a reviewer should read every handler of such a plugin like a migration: validate the payload (it is whatever any caller of `ctx.jobs.enqueue`
+put there), re-check access to every row it touches, never trust ids from the payload for another workspace. The statement filter (`guardPluginTx`) still applies to handler SQL.

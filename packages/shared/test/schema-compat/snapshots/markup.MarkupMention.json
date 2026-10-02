@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "person",
+        "bot"
+      ]
+    },
+    "handle": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "start": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "end": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "kind",
+    "handle",
+    "start",
+    "end"
+  ],
+  "additionalProperties": false
+}

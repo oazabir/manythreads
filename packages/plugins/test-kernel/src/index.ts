@@ -6,6 +6,9 @@ const PingBody = z.strictObject({ workspaceId: z.uuid(), note: z.string().min(1)
 const NoteQuery = z.object({ note: z.string().min(1) });
 const StubCreateBody = z.strictObject({ teamId: z.uuid(), name: z.string().min(1).max(100) });
 const StubParams = z.object({ id: z.string() });
+const BulkMessagesBody = z.strictObject({ channelId: z.uuid(), count: z.number().int().min(1).max(10_000) });
+const ChannelGrantBody = z.strictObject({ channelId: z.uuid(), personId: z.uuid(), permission: z.enum(['read', 'post']) });
+const JobBody = z.strictObject({ note: z.string().min(1).max(200), fail: z.boolean().optional() });
 
 /**
  * Test-only plugin exercising the host: strict body validation, a rate-limited route, emitting an event and
@@ -17,7 +20,7 @@ export default definePlugin({
     name: 'test-kernel',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit', 'event.subscribe'],
+    extends: ['event.emit', 'event.subscribe', 'job.register'],
     events: { emits: ['kernel.test.pinged'], consumes: ['kernel.test.pinged'] },
     migrations: 'migrations',
   },
@@ -107,6 +110,72 @@ export default definePlugin({
         if (!allowed) return { status: 403, body: { error: { code: 'forbidden', message: 'You cannot read this resource' } } };
         const res = await tx.query('SELECT id, team_id AS "teamId", name FROM app.stub_resources WHERE id = $1', [id]);
         return { body: res.rows[0] ?? null };
+      },
+    });
+
+    // Channels fixtures for the api specs (they have no database handle): both run AS THE CALLER, so row level security decides.
+    // A bulk of messages by the caller (e2e/api/messages/pagination.spec.ts) ...
+    ctx.http.route({
+      method: 'POST',
+      path: '/api/test/bulk-messages',
+      schema: { body: BulkMessagesBody, response: z.object({ inserted: z.number() }) },
+      handler: async (req, tx) => {
+        const body = BulkMessagesBody.parse(req.body);
+        const res = await tx.query(
+          `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain)
+           SELECT app.workspace_id(), $1, app.actor(), 'bulk ' || n, 'bulk ' || n FROM generate_series(1, $2::int) n`,
+          [body.channelId, body.count],
+        ).catch((err: unknown) => {
+          if ((err as { code?: string }).code === '42501') return null;
+          throw err;
+        });
+        if (!res) return { status: 403, body: { error: { code: 'forbidden', message: 'You cannot post in this channel' } } };
+        return { body: { inserted: body.count } };
+      },
+    });
+
+    // ... and a channel grant for a person (a guest invitation applies it for real in a later task; admins only through the ACL policy).
+    ctx.http.route({
+      method: 'POST',
+      path: '/api/test/channel-grants',
+      schema: { body: ChannelGrantBody, response: z.object({ ok: z.boolean() }) },
+      handler: async (req, tx) => {
+        const body = ChannelGrantBody.parse(req.body);
+        try {
+          await tx.query(
+            `INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission)
+             VALUES ($1, 'channel', $2, 'person', $3, $4) ON CONFLICT DO NOTHING`,
+            [tx.actor.workspaceId, body.channelId, body.personId, body.permission],
+          );
+        } catch (err) {
+          if ((err as { code?: string }).code === '42501') {
+            return { status: 403, body: { error: { code: 'forbidden', message: 'Only a workspace admin grants access' } } };
+          }
+          throw err;
+        }
+        return { body: { ok: true } };
+      },
+    });
+
+    // Job host (P3-00): the handler runs as the system actor in the job's workspace and records a delivery; `fail` makes the
+    // first attempt throw, which proves the rollback and the retry.
+    ctx.jobs.register('test-kernel.record', async (payload, tx, job) => {
+      const body = JobBody.parse({ note: payload['note'], ...(payload['fail'] === true ? { fail: true } : {}) });
+      await tx.query('INSERT INTO app.test_kernel_deliveries (workspace_id, event) VALUES ($1, $2::jsonb)', [
+        tx.actor.workspaceId,
+        JSON.stringify({ type: 'job', note: body.note, attempt: job.attempt, actor: tx.actor.kind }),
+      ]);
+      if (body.fail === true && job.attempt === 1) throw new Error('first attempt fails on purpose');
+    }, { maxAttempts: 3 });
+
+    ctx.http.route({
+      method: 'POST',
+      path: '/api/test/jobs',
+      schema: { body: JobBody, response: z.object({ jobId: z.string() }) },
+      handler: async (req, tx) => {
+        const body = JobBody.parse(req.body);
+        const jobId = await ctx.jobs.enqueue(tx, 'test-kernel.record', { workspaceId: tx.actor.workspaceId, ...body });
+        return { body: { jobId } };
       },
     });
 

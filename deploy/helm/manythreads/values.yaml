@@ -40,6 +40,20 @@ server:
   trustProxy: "2"
   env: {}
   resources: {}
+  # Attachment bytes (storage-local, MANYTHREADS_STORAGE_DIR). Without a volume an upload lives in the pod's disk and
+  # vanishes on restart. One PVC (local-path, ReadWriteOnce) mounted at mountPath in the server pod and in the seed Job.
+  # ReadWriteOnce means ONE server replica: the Deployment uses the Recreate strategy (the old pod lets go of the volume
+  # before the new one starts, a few seconds of downtime per deploy), and the seed Job is pinned to the server's node.
+  # More than one replica needs a ReadWriteMany class or an object-storage provider. `keep` leaves the claim (and so every
+  # upload) behind on `helm uninstall`; set it false only for a throwaway environment.
+  blobs:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: local-path
+      accessMode: ReadWriteOnce
+      keep: true
+      mountPath: /data/blobs
 
 # Mail. The server sends sign-in, reset and invitation mail over SMTP (MANYTHREADS_SMTP_URL).
 mail:
@@ -65,9 +79,18 @@ mailpit:
 testAuth:
   enabled: false
 
+# KMS master-key rotation. MANYTHREADS_KMS_PREVIOUS_KEYS: comma-separated base64 (32 bytes each) of the keys the current
+# MANYTHREADS_KMS_KEY replaced, until `admin kms-rewrap` has finished (docs/deploy.md). Empty (the default) = none, and a
+# value already stored in the cluster is kept, so a later deploy that does not pass it does not drop it. It lives in the
+# Secret manythreads-server-secrets (key kms-previous-keys), never in the Deployment. Clear it after the rewrap with `-`.
+kms:
+  previousKeys: ""
+
 # Seed: a post-install/upgrade Job runs `pnpm seed --demo` from the server image: workspace Kahf Software, the seven
 # personas, three teams. Idempotent (a second run changes nothing) and the passwords are random and unknown (hashes only),
 # so the public site has no credentials; people get in through single sign-on, an invitation, or a password an operator sets with the admin CLI.
+# The Job mounts the server's blob volume (server.blobs) and runs on the server's node, so the demo attachment lands in the
+# directory the server reads; with server.blobs.persistence.enabled=false it runs with --no-attachment instead.
 seed:
   demo: true
 

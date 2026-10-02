@@ -452,3 +452,36 @@ describe('workspace and guest invitations', () => {
     expect(AcceptInvitationResponse.parse(ok(await w.call(null, 'POST', `/api/invitations/${down.token}/accept`, {}))).workspaceRole).toBe('owner');
   });
 });
+
+describe('last-lead guard (P3-00)', () => {
+  const message = (res: { body: unknown }): string => (res.body as { error: { message: string } }).error.message;
+
+  it('the only lead can neither leave nor step down (409); a workspace admin can override; with a second lead they can', async () => {
+    const created = ok<{ team: { slug: string } }>(await w.call(omar, 'POST', '/api/teams', { name: 'Hand Over Lab' }), 201);
+    const slug = created.team.slug;
+    ok(await w.call(omar, 'POST', `/api/teams/${slug}/members`, { personId: nadia.personId }), 201);
+    ok(await w.call(omar, 'POST', `/api/teams/${slug}/members`, { personId: rafi.personId }), 201);
+    ok(await w.call(omar, 'PATCH', `/api/teams/${slug}/members/${nadia.personId}`, { role: 'lead' }));
+    // Omar (admin) steps out of the lead seat he created the team with: Nadia still leads, so even a lead could do this.
+    ok(await w.call(omar, 'DELETE', `/api/teams/${slug}/members/${omar.personId}`));
+
+    // Nadia is the only lead now.
+    const leave = await w.call(nadia, 'DELETE', `/api/teams/${slug}/members/${nadia.personId}`);
+    expect(leave.status).toBe(409);
+    expect(errorCode(leave)).toBe('conflict');
+    expect(message(leave)).toContain('at least one lead');
+    const demote = await w.call(nadia, 'PATCH', `/api/teams/${slug}/members/${nadia.personId}`, { role: 'member' });
+    expect(demote.status).toBe(409);
+    expect(message(demote)).toContain('at least one lead');
+    expect(ok<{ members: Array<{ role: string }> }>(await w.call(nadia, 'GET', `/api/teams/${slug}/roster`)).members.filter((m) => m.role === 'lead')).toHaveLength(1);
+
+    // With a second lead she can step down; the survivor is protected in turn.
+    ok(await w.call(nadia, 'PATCH', `/api/teams/${slug}/members/${rafi.personId}`, { role: 'lead' }));
+    ok(await w.call(nadia, 'DELETE', `/api/teams/${slug}/members/${nadia.personId}`));
+    expect((await w.call(rafi, 'DELETE', `/api/teams/${slug}/members/${rafi.personId}`)).status).toBe(409);
+
+    // The workspace owner can still remove the last lead (hand-over, offboarding); the guard is not a lock-out.
+    ok(await w.call(omar, 'DELETE', `/api/teams/${slug}/members/${rafi.personId}`));
+    expect(ok<{ members: unknown[] }>(await w.call(omar, 'GET', `/api/teams/${slug}/roster`)).members).toEqual([]);
+  });
+});

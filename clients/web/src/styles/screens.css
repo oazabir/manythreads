@@ -1202,27 +1202,6 @@ a.btn.primary {
   gap: 2px 0;
 }
 
-/* ---- app frame header ---- */
-.app-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 16px;
-}
-
-.app-head-name {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.app-head-links {
-  display: flex;
-  gap: 14px;
-  font-size: 13px;
-}
-
 /* ---- roster actions ---- */
 .roster-cell {
   display: flex;

@@ -13,7 +13,7 @@ export interface TestServer extends RunningServer {
 }
 
 export type StartTestServerOptions = Partial<
-  Pick<StartServerOptions, 'testPlugins' | 'devAuth' | 'logger' | 'port' | 'now' | 'session' | 'testAuthToken' | 'publicUrl'>
+  Pick<StartServerOptions, 'testPlugins' | 'devAuth' | 'logger' | 'port' | 'now' | 'session' | 'testAuthToken' | 'publicUrl' | 'jobWorkers' | 'jobPollMs'>
 >;
 
 /** Pulls the token out of the `first-admin setup: open <url>/bootstrap/<token> ...` log line. */
@@ -47,6 +47,9 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
       testAuthToken: options.testAuthToken ?? null,
       publicUrl: options.publicUrl ?? 'http://localhost:3000',
       ...(options.now ? { now: options.now } : {}),
+      ...(options.jobWorkers !== undefined ? { jobWorkers: options.jobWorkers } : {}),
+      // Poll fast so a test does not wait out the production interval (NOTIFY wakes the worker anyway).
+      jobPollMs: options.jobPollMs ?? 200,
       ...(options.session ? { session: options.session } : {}),
       logger: options.logger ?? {
         level: 'info',

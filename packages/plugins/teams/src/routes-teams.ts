@@ -31,7 +31,7 @@ import {
   type Deps,
 } from './teams.ts';
 
-export function registerTeamRoutes(ctx: PluginContext, { emit, templates }: Deps): void {
+export function registerTeamRoutes(ctx: PluginContext, { emit, templates, db }: Deps): void {
   // Only the teams the caller can see: row level security does the filtering, not this query.
   ctx.http.route({
     ...listTeamsRoute,
@@ -61,7 +61,7 @@ export function registerTeamRoutes(ctx: PluginContext, { emit, templates }: Deps
     handler: route(async (req, tx) => {
       const body = CreateTeamRequest.parse(req.body);
       const slug = slugFor(body.name, body.slug);
-      const { team, created } = await getOrCreateTeam(tx, { name: body.name, slug, template: null });
+      const { team, created } = await getOrCreateTeam(tx, db, { name: body.name, slug, template: null });
       if (!created) throw conflict(`A team with the slug "${slug}" already exists`);
       await emit(tx, { type: 'workspace.team.created', teamId: team.id, slug: team.slug, name: team.name, template: null });
       return json(CreateTeamResponse.parse({ team: toTeamDetail(team) }), 201);
@@ -73,11 +73,11 @@ export function registerTeamRoutes(ctx: PluginContext, { emit, templates }: Deps
     schema: { body: ApplyTeamTemplateRequest, response: ApplyTeamTemplateResponse },
     handler: route(async (req, tx) => {
       const body = ApplyTeamTemplateRequest.parse(req.body);
-      const template = templates.find((t) => t.id === body.templateId);
+      const template = await templates.get(body.templateId);
       if (!template) throw notFound(`No team template "${body.templateId}"`);
       const name = body.name ?? template.name;
       const slug = slugFor(name, body.slug);
-      const { team, created } = await getOrCreateTeam(tx, { name, slug, template });
+      const { team, created } = await getOrCreateTeam(tx, db, { name, slug, template });
       if (!created) {
         // Applying the same template for the same slug again is a no-op that returns the team; another template or a
         // hand-made team on that slug is a different thing and must not be overwritten.

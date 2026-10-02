@@ -6,3 +6,4 @@ playwright-report
 *.tsbuildinfo
 .env
 e2e/.auth
+e2e/data/

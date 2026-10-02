@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
+import { type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
 import { startFakeOidc, type FakeLoginClaims, type FakeOidc } from '@manythreads/test-utils';
 import { PERSONA_EMAILS, TEST_AUTH_TOKEN } from '../support/api.ts';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+const iso = useIsolatedStack();
 
 /**
  * OpenID Connect sign-in through the HTTP API, against the in-process fake issuer (the container in tools/mock-oidc
@@ -70,15 +74,15 @@ async function browse(
   return { location: res.headers()['location'] ?? '', ctx };
 }
 
-test.beforeAll(async ({ playwright, baseURL }) => {
+test.beforeAll(async ({ playwright }) => {
   fake = await startFakeOidc();
   fake.addClient('any', { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET });
   fake.addClient('down', { clientId: CLIENT_ID, clientSecret: CLIENT_SECRET });
-  admin = await signedIn(playwright, baseURL as string, PERSONA_EMAILS.omar);
+  admin = await signedIn(playwright, (await iso.start()).origin, PERSONA_EMAILS.omar);
 });
 
 test.afterAll(async () => {
-  if (providerId) await adminCall('delete', `/api/auth/oidc/providers/${providerId}`);
+  // the provider goes with the file's own stack; nothing to clean up on a shared server
   await admin?.dispose();
   await fake?.close();
 });

@@ -29,6 +29,9 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
     env: { ...process.env, NODE_ENV: 'test', ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  // A worker that dies (timeout, crash, Ctrl-C) must not leave its stack and database behind.
+  const killOnExit = (): void => void child.kill('SIGTERM');
+  process.once('exit', killOnExit);
   let output = '';
   const ready = await new Promise<{ origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null }>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`stack did not start in time:\n${output.slice(-1500)}`)), 120_000);
@@ -59,6 +62,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
     sql: (text, params) => ownerSql(ready.ownerUrl, text, params),
     stop: () =>
       new Promise<void>((resolve) => {
+        process.off('exit', killOnExit);
         if (child.exitCode !== null) return resolve();
         child.once('exit', () => resolve());
         child.kill('SIGTERM');

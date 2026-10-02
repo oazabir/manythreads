@@ -1,0 +1,514 @@
+/*
+ * Search results, the notifications bell, direct messages and the welcome card (PLAN P3-14, P3-16). No prototype plate exists for
+ * these: they follow the wireframes of PLAN phase 3 section 2 in the tokens of the rest of the app.
+ */
+
+/* ---- header tools: conversation search, find (phone), bell ---- */
+.chead-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.chead-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.head-search {
+  width: 220px;
+}
+
+.find-btn {
+  display: none;
+}
+
+.bell {
+  position: relative;
+  display: flex;
+}
+
+.bell-btn {
+  position: relative;
+}
+
+.bell-badge {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--alert);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
+.ntf-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 25;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.ntf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 13.5px;
+}
+
+.ntf-head .link-btn:disabled {
+  color: var(--faint);
+  cursor: default;
+  text-decoration: none;
+}
+
+.ntf-list {
+  max-height: min(420px, 60vh);
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.ntf {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ntf:hover {
+  background: var(--msg-hover);
+}
+
+.ntf.unread {
+  background: var(--human-wash);
+  color: var(--ink);
+}
+
+.ntf-ic {
+  flex: none;
+  width: 16px;
+  color: var(--human);
+  font-weight: 600;
+  text-align: center;
+}
+
+.ntf-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ntf-title {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ntf-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ntf-time {
+  flex: none;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.ntf-note {
+  margin: 0;
+  padding: 14px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.ntf-allow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--rule);
+  font-size: 12.5px;
+}
+
+.ntf-allow .btn {
+  margin-left: auto;
+}
+
+.ntf-error {
+  color: var(--alert-ink);
+}
+
+/* ---- search results (right panel) ---- */
+.search-box.head-search {
+  padding: 4px 9px;
+}
+
+.search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.search-q {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.search-scope,
+.search-note {
+  color: var(--mute);
+}
+
+.search-empty {
+  margin: 0;
+  color: var(--mute);
+  font-size: 13.5px;
+}
+
+.sr-group h3 {
+  margin: 0 0 6px;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.sr-group ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hit {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.hit:hover {
+  background: var(--msg-hover);
+}
+
+.hit-where {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.hit-ch {
+  color: var(--mute);
+  font-weight: 500;
+}
+
+.hit-snip {
+  overflow-wrap: anywhere;
+  color: var(--txt);
+}
+
+.hit mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--warn-wash);
+  box-shadow: 0 0 0 1px var(--warn-border);
+  color: inherit;
+}
+
+.hit-file {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.hit-file .ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: var(--bot-grey);
+  color: var(--surface);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.hit-file .ic.pdf {
+  background: var(--alert);
+}
+
+.hit-file .ic.img {
+  background: var(--ok);
+}
+
+.hit-file .ic.md {
+  background: var(--human);
+}
+
+.hit-file .ic.zip {
+  background: var(--zip);
+}
+
+.hit-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ---- direct messages (sidebar) ---- */
+.dm-list {
+  position: relative;
+}
+
+.dm-list .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.dm-list .dot.on {
+  background: var(--human);
+}
+
+.dm-empty {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  color: var(--faint);
+}
+
+.dm-new {
+  position: relative;
+}
+
+.dm-new-btn {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dm-new-btn:hover {
+  background: var(--nav-on);
+}
+
+.menu.dm-picker {
+  top: 100%;
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.dm-filter {
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.dm-people {
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.dm-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 5px;
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dm-person:hover {
+  background: var(--nav-on);
+}
+
+.dm-person .av {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+
+.dm-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dm-error {
+  color: var(--alert-ink);
+}
+
+/* ---- welcome card (Threads home) ---- */
+.threads-home {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.threads-home > .inbox {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.welcome {
+  flex: none;
+  margin: 14px 20px;
+  padding: 12px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.wc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.wc-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.wc-steps {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wc-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.wc-box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--surface);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.wc-step.done .wc-box {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.wc-step.done .wc-label {
+  color: var(--mute);
+  text-decoration: line-through;
+}
+
+.wc-step.inert {
+  color: var(--faint);
+}
+
+.wc-aside {
+  margin-left: auto;
+}
+
+.wc-hint {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.wc-error {
+  margin: 8px 0 0;
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+@media (width <= 760px) {
+  .head-search {
+    display: none;
+  }
+
+  .find-btn {
+    display: inline-grid;
+  }
+
+  .ntf-pop {
+    position: fixed;
+    top: 52px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+  }
+
+  .welcome {
+    margin: 10px 14px;
+  }
+}

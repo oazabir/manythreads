@@ -3,6 +3,7 @@ import { createSystemPool, loadTemplates, withSystem } from '@manythreads/kernel
 import { createPersonas, KAHF_WORKSPACE, type CreatedPersonas } from './create-personas.ts';
 import type { TestDatabase } from './db.ts';
 import { KAHF_WORKSPACE_ID, TEAM_IDS, type TeamName } from './personas.ts';
+import { seedContent, type SeedContentOptions, type SeedContentResult } from './seed-content.ts';
 
 /** Team template each seeded team was created from (folder names under `templates/`). */
 export const TEAM_TEMPLATE_IDS: Record<TeamName, string> = {
@@ -20,6 +21,15 @@ export interface SeedOptions {
   demo?: boolean;
   /** Where team templates live (default: `MANYTHREADS_TEMPLATES_DIR`, else `templates/` at the repository root). */
   templatesDir?: string;
+  /**
+   * Seed v3 content (seed-content.ts): channels, about 40 messages each, a thread, a private channel, a DM, a 5,000-message channel,
+   * Lena's grant on #releases, reactions, mentions, one attachment. Default false (tests that want an empty world keep it); the CLI
+   * and the e2e stack with `MANYTHREADS_STACK_SEED=content` turn it on. Needs the plugin tables: when they are not migrated yet the
+   * content is skipped and `SeedResult.content.skipped` says so.
+   */
+  content?: boolean;
+  /** Where the content's attachment is written (default: `MANYTHREADS_STORAGE_DIR`, else `./data/blobs`) and the history's start. */
+  contentOptions?: Omit<SeedContentOptions, 'templatesDir' | 'log'>;
   /** One line per step; the CLI prints them. */
   log?: (line: string) => void;
 }
@@ -31,6 +41,8 @@ export interface SeedResult {
   /** Set when the database holds a different workspace (somebody ran the first-admin bootstrap): nothing was seeded. */
   skipped: string | null;
   personas: CreatedPersonas | null;
+  /** What the content step wrote (null when `content` was not asked for or the database was skipped). */
+  content: SeedContentResult | null;
   passwordMode: 'fixed' | 'random';
 }
 
@@ -39,10 +51,12 @@ const defaultTemplatesDir = (): string =>
   process.env['MANYTHREADS_TEMPLATES_DIR'] ?? fileURLToPath(new URL('../../../templates/', import.meta.url));
 
 /**
- * Seed v2 (PLAN.md section 5): workspace Kahf Software, the three teams Engineering, Customer support and Marketing (with
+ * Seed v2/v3 (PLAN.md section 5): workspace Kahf Software, the three teams Engineering, Customer support and Marketing (with
  * the template each was created from), the seven personas of section 4 with workspace roles, team seats, role tags and
  * argon2id passwords, and a verified `person_emails` row for each persona's address (Tariq also has `tariq@kahf.co`, his
  * Google Workspace login) so OIDC can link identities. All ids are fixed (personas.ts), so screenshots are stable.
+ *
+ * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist.
  *
  * Idempotent: a second run inserts nothing new and never replaces an existing password, so a demo site keeps the random
  * passwords of its first seeding. When the database already holds a different workspace the seed does nothing.
@@ -65,7 +79,7 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
   if (foreign.length > 0) {
     const reason = 'this database already has another workspace (first-admin bootstrap was used); seed left it alone';
     log(`skipped: ${reason}`);
-    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, passwordMode };
+    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, passwordMode };
   }
   const created = existing.length === 0;
 
@@ -98,5 +112,8 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
       ? 'passwords: random for every persona (hashed, not printed, not recoverable)'
       : 'passwords: the shared test password',
   );
-  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, passwordMode };
+  const content = options.content
+    ? await seedContent(db, { ...options.contentOptions, templatesDir: options.templatesDir ?? defaultTemplatesDir(), log })
+    : null;
+  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, passwordMode };
 }
