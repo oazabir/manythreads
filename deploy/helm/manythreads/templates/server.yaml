@@ -8,8 +8,8 @@ metadata:
     app.kubernetes.io/component: server
 spec:
   replicas: {{ .Values.server.replicas }}
-  {{- if .Values.server.blobs.persistence.enabled }}
-  # the blob volume is ReadWriteOnce: the old pod releases it before the new one starts (see values server.blobs)
+  {{- if or .Values.server.blobs.persistence.enabled .Values.server.repos.persistence.enabled }}
+  # the blob and repository volumes are ReadWriteOnce: the old pod releases them before the new one starts (see values server.blobs, server.repos)
   strategy:
     type: Recreate
   {{- end }}
@@ -22,7 +22,7 @@ spec:
         {{- include "manythreads.labels" . | nindent 8 }}
         app.kubernetes.io/component: server
     spec:
-      {{- if .Values.server.blobs.persistence.enabled }}
+      {{- if or .Values.server.blobs.persistence.enabled .Values.server.repos.persistence.enabled }}
       securityContext:
         fsGroup: 1000   # `node` in the image; a no-op on local-path, needed on volumes that honour fsGroup
       {{- end }}
@@ -55,7 +55,14 @@ spec:
             {{- if $smtp }}
             - { name: MANYTHREADS_SMTP_URL, value: {{ $smtp | quote }} }
             {{- end }}
+            {{- include "manythreads.storageEnv" . | nindent 12 }}
             - { name: MANYTHREADS_STORAGE_DIR, value: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+            - { name: MANYTHREADS_BLOB_GC, value: {{ .Values.server.blobGc.mode | quote }} }
+            - { name: MANYTHREADS_BLOB_GC_GRACE_HOURS, value: {{ .Values.server.blobGc.graceHours | quote }} }
+            - { name: MANYTHREADS_FILES_ORPHAN_DAYS, value: {{ .Values.server.blobGc.orphanDays | quote }} }
+            {{- if .Values.server.blobGc.allowEmpty }}
+            - { name: MANYTHREADS_BLOB_GC_ALLOW_EMPTY, value: "1" }
+            {{- end }}
             - { name: MANYTHREADS_REPO_DIR, value: {{ .Values.server.repos.persistence.mountPath | quote }} }
             - name: MANYTHREADS_KMS_PREVIOUS_KEYS
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-previous-keys, optional: true } }

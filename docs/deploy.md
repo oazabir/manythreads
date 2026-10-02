@@ -33,7 +33,11 @@ nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`,
 | `MANYTHREADS_TRUST_PROXY` | `server.trustProxy`, **2**: Traefik and the web pod's nginx each append to `X-Forwarded-For`, so the client is two hops out (1 would make every visitor look like Traefik: one shared sign-in lockout). Set it to the number of proxies in front of the server pod. |
 | `MANYTHREADS_SMTP_URL` | `mail.smtpUrl`, or `smtp://manythreads-mailpit:1025` while `mailpit.enabled` (default). |
 | `MANYTHREADS_MAIL_FROM` | `mail.from`. |
-| `MANYTHREADS_STORAGE_DIR` | `server.blobs.persistence.mountPath`, `/data/blobs`: the PVC `manythreads-blobs` (below). |
+| `MANYTHREADS_STORAGE` | `server.storage.type`: `local` (default, `storage-local`) or `s3` (`storage-s3`); anything else stops the render (as it stops the server). See "Attachment storage" below. |
+| `MANYTHREADS_S3_BUCKET`, `_REGION`, `_PREFIX`, `_FORCE_PATH_STYLE`, `_ENDPOINT` | `server.storage.s3.*`, only when `type: s3` (the endpoint only when set). |
+| `MANYTHREADS_S3_ACCESS_KEY`, `MANYTHREADS_S3_SECRET_KEY` | A Secret, never text in the Deployment: `server.storage.s3.existingSecret` (keys `accessKeyKey` / `secretKeyKey`, default `access-key` / `secret-key`), else the chart's own Secret `manythreads-s3` made from `accessKey` / `secretKey` values (pass them with `--set-file`; kept on uninstall), else nothing and the pod's AWS credential chain applies. Both or neither. |
+| `MANYTHREADS_BLOB_GC`, `_BLOB_GC_GRACE_HOURS`, `MANYTHREADS_FILES_ORPHAN_DAYS`, `_BLOB_GC_ALLOW_EMPTY` | `server.blobGc.{mode,graceHours,orphanDays,allowEmpty}`: the daily `files.blob-gc` job (`on` / `dry-run` / `off`; [plugins/files.md](./plugins/files.md)). `allowEmpty` adds `MANYTHREADS_BLOB_GC_ALLOW_EMPTY=1` and is for a deployment that really deleted its last file. |
+| `MANYTHREADS_STORAGE_DIR` | `server.blobs.persistence.mountPath`, `/data/blobs`: the PVC `manythreads-blobs` (below), used by `storage-local`. |
 | `MANYTHREADS_REPO_DIR` | `server.repos.persistence.mountPath`, `/data/repos`: the PVC `manythreads-repos` (below). The server image includes `git`. |
 | `MANYTHREADS_KMS_PREVIOUS_KEYS` | Secret key `kms-previous-keys` from `kms.previousKeys` (empty by default; rotation below). |
 | `MANYTHREADS_TEST_AUTH_TOKEN` | Secret key `test-auth-token` (40 random alphanumerics), injected **only when `testAuth.enabled`** (test environments; not used by the screenshots workflow). |
@@ -64,21 +68,33 @@ and its Deployment uses the `Recreate` strategy: on a deploy the old pod stops b
 `ReadWriteMany` class or an object-storage provider instead. Growing the volume: raise the claim's `spec.resources.requests.storage` by hand (`local-path` does not enforce the size; the node disk is the limit).
 With `persistence.enabled=false` the server gets an `emptyDir` (blobs are lost on restart).
 
+**Object storage instead of the volume (`server.storage.type: s3`).** `helm upgrade ... --set server.storage.type=s3 --set server.storage.s3.bucket=<bucket> --set server.storage.s3.endpoint=<url>
+--set server.storage.s3.existingSecret=<secret>` (MinIO and most self-hosted stores also need `forcePathStyle=true`). The bucket must exist and be private; `blobs.persistence.enabled` can be set to false. The
+server loads `storage-s3` instead of `storage-local` (only one `storage` provider loads), and the seed Job gets the same variables, so the demo attachments go to the bucket. Switching does not move
+blobs already stored: copy `<key[0..2]>/<key>` on the volume to `<prefix><key>` in the bucket first ([plugins/storage-s3.md](./plugins/storage-s3.md)). The Deployment keeps the `Recreate` strategy while the
+repository volume is `ReadWriteOnce`, so it stays one replica either way.
+
 **Team repositories (`server.repos.persistence`).** repo-git keeps one bare git repository per team at `MANYTHREADS_REPO_DIR/<team id>.git`, the mount point (`/data/repos`) of the PVC
 `manythreads-repos`: same class, access mode and `keep` rule as the blob volume, **2Gi** by default. It holds every page, `TEAM.md` and bot definition with its history, so back it up with the database
 ([plugins/repo-git.md](./plugins/repo-git.md)). The repository of every existing team is created by a job the repo-git migration enqueues, and of any later team when it is created.
 
 **Demo seed.** A post-install/post-upgrade Job (`seed.demo`, default true) runs `pnpm seed --demo` from the server image once the
-server is ready: workspace Kahf Software, seven personas, three teams with their template definitions, and their conversations (seed v3:
-the template channels, about 40 messages in each, the "Deploy plan" thread with its attachment `deploy-plan-v2.14.pdf`, a private channel, a DM, a 5,000-message `#load-test`, Lena's
-read grant on `#releases`, reactions and mentions). The attachment's bytes must land where the server reads them, so the Job **mounts the same PVC** `manythreads-blobs` at
-`/data/blobs` (same `MANYTHREADS_STORAGE_DIR`) and carries a required pod affinity to the server pod (`kubernetes.io/hostname`): a `ReadWriteOnce` local-path volume can be mounted by several pods
-of one node, so the Job is scheduled next to the server. No `--no-attachment` any more; this was chosen over seeding from the server process because the Job stays the only
-thing that writes seed data and the server needs no demo code or flag. The seed writes the blob only when the file is missing, so a re-run also restores bytes after the volume was recreated. With
-`server.blobs.persistence.enabled=false` the Job falls back to `--no-attachment`. It is idempotent (a second run
-changes nothing and never replaces a password) and every persona gets a random password that is stored only as an argon2id hash and
-printed nowhere, so the public site has no known credentials. The first-admin bootstrap link is not offered once the workspace exists.
-Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-attachment] [--migrate] [--wait <secs>]`.
+server is ready: workspace Kahf Software, seven personas, three teams with their template definitions, their conversations (seed v3: the template channels, about 40 messages in each, the "Deploy plan"
+thread with its attachment `deploy-plan-v2.14.pdf`, a private channel, a DM, a 5,000-message `#load-test`, Lena's read grant on `#releases`, reactions and mentions) and **seed v4**: the content of each team's
+repository (`pages/runbook.md` with two commits by two people, `pages/reports/signups.csv`, a digest, a changelog, a Mermaid diagram, the embedded app `apps/release-checklist/`, `memory/facts/` and
+`memory/journal/`, a bot placeholder under `bots/`, `TEAM.md` from the template), committed through the repo writer as the people who would have written them, and a PNG, an MP4 and an Office file next to the PDF
+in `#dev` ([plugins/repo-git.md](./plugins/repo-git.md), "Seed v4"). The Job writes where the server reads:
+
+- **Repositories:** it mounts the same PVC `manythreads-repos` at `/data/repos` with the same `MANYTHREADS_REPO_DIR`, and the server image it runs carries `git` (the repo writer drives the `git` CLI). Without
+  the repository volume (`server.repos.persistence.enabled=false`) it passes `--no-repo`: a repository made in the Job's own disk would be a different one from the server's.
+- **Attachments:** they go **through the storage provider** (`MANYTHREADS_STORAGE`, as the server reads it), not into a directory. With `local` the Job mounts the same PVC `manythreads-blobs` at
+  `/data/blobs` (same `MANYTHREADS_STORAGE_DIR`); with `s3` it gets the same `MANYTHREADS_S3_*` and Secret as the server and needs no volume. With `local` and no blob volume it passes `--no-attachment`.
+- A required pod affinity to the server pod (`kubernetes.io/hostname`) puts it on the node of the server, since a `ReadWriteOnce` local-path volume is mounted by several pods of one node only.
+
+This was chosen over seeding from the server process because the Job stays the only thing that writes seed data and the server needs no demo code or flag. A re-run is idempotent: a repository step whose commit message
+is already in the team's history is skipped (a person's later edit is never undone), and an attachment whose bytes are gone (a recreated volume or bucket) gets them put again under the same row. Every persona gets
+a random password that is stored only as an argon2id hash and printed nowhere, so the public site has no known credentials. The first-admin bootstrap link is not offered once the workspace exists.
+Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-repo] [--no-attachment] [--migrate] [--wait <secs>]`.
 
 ## Screenshots of the live site
 `.github/workflows/screenshots.yml` runs when `release` completes successfully for a `Phase N ·` merge (and by hand: Actions, screenshots,
