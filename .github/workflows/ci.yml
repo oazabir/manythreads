@@ -25,8 +25,15 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The image build downloads from apt and GitHub; a stalled network call must fail fast and retry, not hold the job for 30 minutes.
       - name: Build Postgres 19 image
-        run: docker build -t manythreads/postgres:19 deploy/postgres
+        timeout-minutes: 20
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 360 docker build -t manythreads/postgres:19 deploy/postgres; then exit 0; fi
+            echo "docker build attempt $attempt failed or timed out"
+          done
+          exit 1
 
       - name: Start Postgres
         run: |
