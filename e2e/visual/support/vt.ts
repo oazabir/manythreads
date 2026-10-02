@@ -7,6 +7,7 @@ import {
   MOCKUPS_URL,
   checkOrder,
   comparePngs,
+  useLocalFonts,
   compareLandmarks,
   landmarks,
   type Landmark,
@@ -132,6 +133,7 @@ export async function renderPlatePane(browser: Browser, spec: PlateSpec, content
   const viewportWidth = Math.ceil(contentWidth + pl + pr + spec.railWidth + 48);
   const context = await browser.newContext({ viewport: { width: viewportWidth, height: 900 }, reducedMotion: 'reduce' });
   try {
+    await useLocalFonts(context);
     const page = await context.newPage();
     await page.goto(`${MOCKUPS_URL}#${spec.section}`);
     await page.evaluate(() => document.fonts?.ready);
