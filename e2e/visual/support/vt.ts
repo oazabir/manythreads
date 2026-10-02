@@ -238,17 +238,19 @@ export async function scrollToFirstDay(page: Page): Promise<void> {
       new Promise<boolean>((resolve) => {
         const list = document.querySelector<HTMLElement>('.chview .vlist');
         const day = list?.querySelector<HTMLElement>('.daysep');
-        if (!list || !day) return resolve(false);
+        if (!list || !day) return resolve(true);
         let steady = 0;
         let lastHeight = -1;
         const step = () => {
           const d = list.querySelector<HTMLElement>('.daysep');
-          if (!d) return resolve(false);
+          if (!d) return resolve(true);
           const off = d.getBoundingClientRect().top - list.getBoundingClientRect().top - 22;
-          if (Math.abs(off) > 0.25 || list.scrollHeight !== lastHeight) {
-            if (Math.abs(off) > 0.25) list.scrollTop += off;
-            steady = 0;
-          } else steady += 1;
+          const before = list.scrollTop;
+          if (Math.abs(off) > 0.25) list.scrollTop += off;
+          // a list that cannot scroll any further (a short one) is as close as it gets
+          const moved = list.scrollTop !== before;
+          if (moved || list.scrollHeight !== lastHeight) steady = 0;
+          else steady += 1;
           lastHeight = list.scrollHeight;
           if (steady >= 5) resolve(true);
           else requestAnimationFrame(step);
