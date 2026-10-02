@@ -1,4 +1,4 @@
-import type { ErrorCode, ExtensionPoint, PluginManifest } from '@manythreads/shared';
+import type { ErrorCode, ExtensionPoint, PluginManifest, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
@@ -208,12 +208,100 @@ export interface PluginContext {
   /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;
+  /** Database helpers that keep plugins from re-implementing kernel statements (get-or-create). */
+  readonly db: PluginDb;
+  /** Audit events: `ctx.events.emit` with the envelope filled in. Needs `event.emit` and the type in `events.emits`. */
+  readonly audit: PluginAudit;
+  /** The shipped team templates (`templates/` at the repository root, or `MANYTHREADS_TEMPLATES_DIR`). */
+  readonly templates: PluginTemplates;
+  /** Background jobs. Only for plugins whose manifest extends `job.register`; any other plugin throws on access. */
+  readonly jobs: PluginJobs;
   readonly mail: MailService;
   readonly runtime: PluginRuntime;
   /** Only for plugins whose manifest extends `provider.identity`; any other plugin throws on access. */
   readonly identity: IdentityServices;
   /** Envelope-encrypted secrets (client secrets of sign-in providers). Only for plugins that extend `provider.identity`. */
   readonly secrets: SecretService;
+}
+
+/** Input of `ctx.db.getOneOrCreate`: one `INSERT ... ON CONFLICT ... DO SELECT` (Postgres 19). */
+export interface GetOneOrCreateInput {
+  /** `table` or `schema.table`. Identifiers are validated (lowercase letters, digits, underscore). */
+  table: string;
+  /** Column to value for the insert; must include every column of the conflict target. */
+  values: Readonly<Record<string, unknown>>;
+  /** Columns of the unique index the conflict is detected on. */
+  conflict: readonly string[];
+  /** Predicate of a partial unique index (`kind = 'dm'`), written as trusted SQL, never from user input. */
+  conflictWhere?: string;
+  /** Columns to return; defaults to all. */
+  returning?: readonly string[];
+}
+
+export interface PluginDb {
+  /**
+   * The kernel's one get-or-create: inserts the row or returns the existing one for the conflict target, in a single
+   * statement, so concurrent callers converge on one row and a hit writes nothing. To know whether you created it, put a
+   * pre-drawn id in `values` (`SELECT uuidv7()`) and compare it with the returned `id`.
+   */
+  getOneOrCreate<R extends Record<string, unknown> = Record<string, unknown>>(tx: PluginTx, input: GetOneOrCreateInput): Promise<R>;
+}
+
+/** An audit event as a plugin writes it: `schemaVersion` defaults to 1 and `workspaceId` to the transaction's workspace. */
+export interface AuditEvent {
+  type: string;
+  schemaVersion?: number;
+  workspaceId?: string;
+  [field: string]: unknown;
+}
+
+export interface PluginAudit {
+  /** Validated against the event registry and written with the outbox rows in `tx`, like `ctx.events.emit`. */
+  emit(tx: PluginTx, event: AuditEvent): Promise<void>;
+}
+
+export interface PluginTemplates {
+  /** Every template, sorted by id. Read once and cached; an invalid template file fails here, naming file and field. */
+  list(): Promise<readonly TeamTemplate[]>;
+  get(id: string): Promise<TeamTemplate | undefined>;
+}
+
+/** What a job handler learns about the run it is in. */
+export interface JobInfo {
+  jobId: string;
+  /** 1 on the first run. */
+  attempt: number;
+  workerId: string;
+}
+
+/**
+ * Runs once per claimed job inside one transaction as the SYSTEM actor (no RLS), scoped to `payload.workspaceId` when it is a
+ * string. A throw rolls the transaction back and the job is retried with backoff, then dead-lettered; a return commits it. Check
+ * everything the payload says: it is whatever was enqueued, by anyone who could call `ctx.jobs.enqueue`.
+ */
+export type JobHandler = (payload: Record<string, unknown>, tx: PluginTx, job: JobInfo) => void | Promise<void>;
+
+export interface JobOptions {
+  /** Jobs of this queue in flight at once in one server process (default 1). */
+  concurrency?: number;
+  /** Attempts before the job is dead-lettered (default 5). */
+  maxAttempts?: number;
+}
+
+export interface EnqueueJobOptions {
+  runAt?: Date;
+  /** While a job with this key is ready or running in the queue, enqueue returns it instead of adding another. */
+  dedupeKey?: string;
+}
+
+export interface PluginJobs {
+  /**
+   * Handle `queue`. The queue must be named `<plugin>.<name>` (the plugin's own namespace) and may be registered once.
+   * The server starts the worker; handlers must be idempotent (a job can run again after a crash or a failed commit).
+   */
+  register(queue: string, handler: JobHandler, options?: JobOptions): void;
+  /** Adds a job in `tx`: it exists, and workers are woken, when `tx` commits. Same queue-name rule. Returns the job id. */
+  enqueue(tx: PluginTx, queue: string, payload: Record<string, unknown>, options?: EnqueueJobOptions): Promise<string>;
 }
 
 /** What `identity.sessions.issue` returns: the opaque token and the CSRF token it is bound to. Never log either. */

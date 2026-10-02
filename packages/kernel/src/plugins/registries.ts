@@ -6,6 +6,8 @@ import type {
   EventHandler,
   Hook,
   HttpRouteDefinition,
+  JobHandler,
+  JobOptions,
   ProviderImpl,
   ProviderKind,
   SettingsPageDefinition,
@@ -67,6 +69,8 @@ export class ExtensionRegistries {
   readonly panels = new ExtensionRegistry<SurfaceDefinition>();
   readonly settingsPages = new ExtensionRegistry<SettingsPageDefinition>();
   readonly composerActions = new ExtensionRegistry<ComposerActionDefinition>();
+  /** Queue handlers of plugins that extend `job.register`; the server starts one worker per entry. */
+  readonly jobs = new ExtensionRegistry<{ queue: string; handler: JobHandler; options: JobOptions }>();
   /** Not an extension point: plugins may always offer routes; the server mounts them later. */
   readonly httpRoutes = new ExtensionRegistry<MountedRoute>();
   /** Implementations bound to declared capability names, by capability name. */

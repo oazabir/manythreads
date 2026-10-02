@@ -1,4 +1,4 @@
-import type { PluginTx } from '@manythreads/sdk';
+import type { PluginDb, PluginTemplates, PluginTx } from '@manythreads/sdk';
 import type { TeamTemplate } from '@manythreads/shared';
 import { conflict, forbidden, HttpError, notFound } from './http.ts';
 import { TEAM_WITH_COUNTS, type TeamRow } from './rows.ts';
@@ -8,7 +8,10 @@ export type EmitTeamEvent = (tx: PluginTx, event: { type: string; [field: string
 
 export interface Deps {
   emit: EmitTeamEvent;
-  templates: readonly TeamTemplate[];
+  /** `ctx.templates`: the shipped templates (read once, cached by the kernel). */
+  templates: PluginTemplates;
+  /** `ctx.db`: the kernel's get-or-create. */
+  db: PluginDb;
 }
 
 /** `Core Platform` -> `core-platform`. Empty when the text has no letters or digits. */
@@ -88,21 +91,25 @@ export interface NewTeam {
 }
 
 /**
- * Get-or-create on (workspace, slug) with one `INSERT ... ON CONFLICT DO SELECT`: a repeat returns the existing team and
- * writes nothing. When the team is new the caller becomes `lead`, the template's role tags are defined, and TEAM.md is held
- * in team_pending_files; the caller emits the events. (Plugins cannot import the kernel's getOneOrCreate helper, so the
- * statement is spelled out here; Postgres 19 is the pinned database.)
+ * Get-or-create on (workspace, slug) with the kernel's one `INSERT ... ON CONFLICT DO SELECT` (`ctx.db.getOneOrCreate`): a
+ * repeat returns the existing team and writes nothing. When the team is new (its pre-drawn id came back) the caller becomes
+ * `lead`, the template's role tags are defined, and TEAM.md is held in team_pending_files; the caller emits the events.
  */
-export async function getOrCreateTeam(tx: PluginTx, input: NewTeam): Promise<{ team: TeamRow; created: boolean }> {
+export async function getOrCreateTeam(tx: PluginTx, db: PluginDb, input: NewTeam): Promise<{ team: TeamRow; created: boolean }> {
   const id = await newId(tx);
-  const res = await tx.query<{ id: string }>(
-    `INSERT INTO app.teams (id, workspace_id, slug, name, template, template_definition)
-     VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-     ON CONFLICT (workspace_id, slug) DO SELECT RETURNING id`,
-    [id, tx.actor.workspaceId, input.slug, input.name, input.template?.id ?? null, input.template ? JSON.stringify(input.template) : null],
-  );
-  const row = res.rows[0];
-  if (!row) throw new Error('team insert returned no row');
+  const row = await db.getOneOrCreate<{ id: string }>(tx, {
+    table: 'app.teams',
+    values: {
+      id,
+      workspace_id: tx.actor.workspaceId,
+      slug: input.slug,
+      name: input.name,
+      template: input.template?.id ?? null,
+      template_definition: input.template ? JSON.stringify(input.template) : null,
+    },
+    conflict: ['workspace_id', 'slug'],
+    returning: ['id'],
+  });
   const created = row.id === id;
   if (created) {
     await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'lead')`, [

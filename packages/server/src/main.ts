@@ -19,6 +19,9 @@ import { startServer } from './start.ts';
  *   MANYTHREADS_COOKIE_SECURE      1|0 forces the Secure flag on session cookies (default: on, except NODE_ENV=test|development
  *                                  or an http:// public URL)
  *   MANYTHREADS_TEST_AUTH_TOKEN    TEST ONLY: mounts POST /api/test/session (see docs/testing.md); never set in production
+ *   MANYTHREADS_JOB_WORKERS=0      do not run job workers in this process (the kms.rewrap queue and plugin queues); default on
+ *   MANYTHREADS_KMS_KEY / MANYTHREADS_KMS_PREVIOUS_KEYS   master key, and (comma-separated base64) the keys it replaced until
+ *                                  `admin kms-rewrap` has moved every secret
  *   NODE_ENV=test                  the only setting that honours the x-manythreads-dev-actor header
  */
 const env = process.env;
@@ -32,6 +35,7 @@ const server = await startServer({
   systemUrl,
   appPassword,
   testPlugins: env['MANYTHREADS_TEST_PLUGINS'] === '1',
+  jobWorkers: env['MANYTHREADS_JOB_WORKERS'] !== '0',
   logger: true,
 });
 

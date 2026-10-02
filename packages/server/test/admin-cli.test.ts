@@ -127,3 +127,57 @@ describe('admin set-password', () => {
     expect(await verifyPassword(await hashOf(NADIA.personId), NEW_PASSWORD)).toBe(true);
   });
 });
+
+describe('admin kms-rewrap', () => {
+  let s: TestServer;
+  beforeAll(async () => {
+    // No job worker: the job must stay `ready` so the test can look at it (the worker host has its own test).
+    s = await startTestServer({ jobWorkers: false });
+  }, 120_000);
+  afterAll(async () => {
+    await s.close();
+  });
+
+  const sql = <T>(text: string, values: unknown[] = []): Promise<T[]> =>
+    withSystem(async (tx) => (await tx.query(text, values)).rows as T[], { pool: s.pools.system });
+
+  async function run(argv: string[]) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const io: AdminIo = {
+      stdin: Object.assign(Readable.from([]), { isTTY: false }),
+      out: (l) => void out.push(l),
+      err: (l) => void err.push(l),
+      env: { NODE_ENV: 'test' },
+      pool: () => createSystemPool(s.db.systemUrl, 2),
+    };
+    const code = await runAdmin(argv, io);
+    return { code, out: out.join('\n'), err: err.join('\n') };
+  }
+
+  it('queues one kms.rewrap job, and asking again returns that job instead of adding another', async () => {
+    expect(s.jobQueues).toEqual([]);
+    const first = await run(['kms-rewrap']);
+    expect(first.code).toBe(0);
+    expect(first.out).toMatch(/^Key re-wrap queued \(job [0-9a-f-]{36}\)/);
+    const jobs = await sql<{ id: string; state: string; queue: string }>(`SELECT id, state, queue FROM app.jobs WHERE queue = 'kms.rewrap'`);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ state: 'ready' });
+    expect(first.out).toContain(jobs[0]?.id);
+
+    const again = await run(['kms-rewrap']);
+    expect(again.code).toBe(0);
+    expect(again.out).toMatch(/^A key re-wrap is already waiting or running \(job /);
+    expect(again.out).toContain(jobs[0]?.id);
+    expect(await sql(`SELECT id FROM app.jobs WHERE queue = 'kms.rewrap'`)).toHaveLength(1);
+  });
+
+  it('takes no arguments and is named in the usage text', async () => {
+    const extra = await run(['kms-rewrap', 'now']);
+    expect(extra.code).toBe(2);
+    expect(extra.err).toContain('kms-rewrap');
+    const unknown = await run(['frobnicate']);
+    expect(unknown.code).toBe(2);
+    expect(unknown.err).toContain('admin kms-rewrap');
+  });
+});

@@ -16,17 +16,17 @@ export function registerTemplateRoutes(ctx: PluginContext, { templates }: Deps):
   ctx.http.route({
     ...listTemplatesRoute,
     schema: { response: ListTemplatesResponse },
-    handler: route(() => Promise.resolve(json(ListTemplatesResponse.parse({ templates: templates.map(toTemplateSummary) })))),
+    handler: route(async () => json(ListTemplatesResponse.parse({ templates: (await templates.list()).map(toTemplateSummary) }))),
   });
 
   ctx.http.route({
     ...getTemplateRoute,
     schema: { response: GetTemplateResponse },
-    handler: route((req) => {
+    handler: route(async (req) => {
       const { id } = IdParams.parse(req.params);
-      const template = templates.find((t) => t.id === id);
+      const template = await templates.get(id);
       if (!template) throw notFound(`No team template "${id}"`);
-      return Promise.resolve(json(GetTemplateResponse.parse({ template })));
+      return json(GetTemplateResponse.parse({ template }));
     }),
   });
 }

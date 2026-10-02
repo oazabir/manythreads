@@ -1,12 +1,16 @@
+import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CapabilityBroker,
   CapabilityRegistry,
   DEFAULT_APP_PASSWORD,
+  KMS_REWRAP_QUEUE,
   createAppPool,
   createSystemPool,
   createDbGrantSource,
+  createKmsRewrapHandler,
   createEventAuditSink,
   discoverPlugins,
   emit,
@@ -19,6 +23,7 @@ import {
   processedOnce,
   readMigrationFiles,
   startConsumer,
+  startWorker,
   subscribe,
   withSystem,
   type Consumer,
@@ -27,6 +32,7 @@ import {
   type PluginHost,
   type PluginSource,
   type Tx,
+  type Worker,
 } from '@manythreads/kernel';
 import { guardPluginTx, type IdentityServices, type PluginLogger, type PluginTx } from '@manythreads/sdk';
 import type { PersonId, WorkspaceId } from '@manythreads/shared';
@@ -83,6 +89,13 @@ export interface StartServerOptions {
    * databases concurrently pass a cluster lock here.
    */
   migrationLock?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /**
+   * Run the job workers: the kernel's `kms.rewrap` queue and every queue a plugin registered with `ctx.jobs.register`
+   * (default true; `MANYTHREADS_JOB_WORKERS=0` turns it off for the `main` entry point, e.g. for a web-only replica).
+   */
+  jobWorkers?: boolean;
+  /** How often an idle job worker polls (it is also woken by NOTIFY); default 5000 ms. */
+  jobPollMs?: number;
   /** Load the test-only plugins (test-kernel, example-hello). */
   testPlugins?: boolean;
   /** The test-only dev header (only ever honoured when NODE_ENV=test; see dev-actor.ts). */
@@ -107,6 +120,8 @@ export interface StartServerOptions {
 
 export interface RunningServer {
   app: FastifyInstance;
+  /** Queues with a running worker in this process (kernel and plugin queues). */
+  jobQueues: readonly string[];
   host: PluginHost;
   sessions: SessionService;
   mailer: Mailer;
@@ -241,6 +256,50 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     );
   }
 
+  // Job workers: the kernel's own queue and the queues plugins registered. Handlers of plugins run as the system actor, one
+  // transaction per attempt (see `JobHandler` in the SDK); a throw rolls back and the worker retries with backoff.
+  const workers: Worker[] = [];
+  const jobQueues: string[] = [];
+  if (options.jobWorkers !== false) {
+    const workerBase = `${hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
+    const pollMs = options.jobPollMs ?? 5000;
+    jobQueues.push(KMS_REWRAP_QUEUE);
+    workers.push(
+      startWorker({
+        queue: KMS_REWRAP_QUEUE,
+        handler: createKmsRewrapHandler(undefined, { pool: systemPool }),
+        workerId: `${workerBase}-${KMS_REWRAP_QUEUE}`,
+        pool: systemPool,
+        pollMs,
+      }),
+    );
+    for (const { plugin, value } of host.registries.jobs.list()) {
+      if (jobQueues.includes(value.queue)) {
+        throw new Error(`Plugin "${plugin}" job queue "${value.queue}" collides with a kernel queue`);
+      }
+      jobQueues.push(value.queue);
+      workers.push(
+        startWorker({
+          queue: value.queue,
+          workerId: `${workerBase}-${value.queue}`,
+          pool: systemPool,
+          pollMs,
+          ...(value.options.concurrency !== undefined ? { concurrency: value.options.concurrency } : {}),
+          ...(value.options.maxAttempts !== undefined ? { maxAttempts: value.options.maxAttempts } : {}),
+          handler: (payload, job) => {
+            const workspaceId = typeof payload['workspaceId'] === 'string' ? (payload['workspaceId'] as WorkspaceId) : undefined;
+            return withSystem(
+              async (tx) => {
+                await value.handler(payload, guardPluginTx(tx as unknown as PluginTx), job);
+              },
+              { pool: systemPool, ...(workspaceId ? { workspaceId } : {}) },
+            );
+          },
+        }),
+      );
+    }
+  }
+
   await app.listen({ port: options.port ?? 0, host: options.host ?? '127.0.0.1' });
   const address = app.server.address();
   const port = typeof address === 'object' && address ? address.port : (options.port ?? 0);
@@ -248,6 +307,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   return {
     app,
     host,
+    jobQueues,
     sessions,
     mailer,
     publicUrl,
@@ -255,7 +315,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     pools: { app: appPool, system: systemPool },
     url: `http://127.0.0.1:${port}`,
     async close() {
-      await Promise.all(consumers.map((c) => c.stop()));
+      await Promise.all([...consumers.map((c) => c.stop()), ...workers.map((x) => x.stop())]);
       await app.close();
       await Promise.all([appPool.end(), systemPool.end()]);
     },

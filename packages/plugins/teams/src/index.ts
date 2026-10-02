@@ -1,13 +1,10 @@
-import { definePlugin, type PluginTx } from '@manythreads/sdk';
+import { definePlugin } from '@manythreads/sdk';
 import { registerInvitationRoutes } from './routes-invitations.ts';
 import { registerRosterRoutes } from './routes-roster.ts';
 import { registerTagRoutes } from './routes-tags.ts';
 import { registerTeamRoutes } from './routes-teams.ts';
 import { registerTemplateRoutes } from './routes-templates.ts';
 import { registerWorkspaceRoutes } from './routes-workspace.ts';
-import { loadTeamTemplates } from './templates.ts';
-
-export { loadTeamTemplates } from './templates.ts';
 
 /**
  * Teams: templates, teams, roster, team roles, role tags and invitations (SPEC section 5, templates and the teams API).
@@ -43,12 +40,9 @@ export default definePlugin({
     migrations: 'migrations',
   },
   async register(ctx) {
-    const templates = await loadTeamTemplates();
-    const deps = {
-      templates,
-      emit: (tx: PluginTx, event: { type: string; [field: string]: unknown }) =>
-        ctx.events.emit(tx, { ...event, schemaVersion: 1, workspaceId: tx.actor.workspaceId }),
-    };
+    // Templates are read (and validated) at start-up so a broken template file stops the server, not the first request.
+    await ctx.templates.list();
+    const deps = { templates: ctx.templates, db: ctx.db, emit: ctx.audit.emit };
     registerTemplateRoutes(ctx, deps);
     registerTeamRoutes(ctx, deps);
     registerRosterRoutes(ctx, deps);
