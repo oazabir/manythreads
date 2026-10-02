@@ -37,9 +37,13 @@ export function registerRepoAppRoute(ctx: PluginContext, repo: RepoService): voi
         try {
           blob = await repo.blob(tx, teamId, path, 'main');
         } catch (err) {
-          // A folder named like an app root (`apps/x` without a slash) answers its index.html.
-          if (err instanceof RepoError && err.status === 404 && !wantsIndex) blob = await repo.blob(tx, teamId, `${path}/index.html`, 'main');
-          else throw err;
+          // `apps/x` without the slash names a folder: it answers its index.html (404 if there is none, as for any missing file).
+          if (!(err instanceof RepoError) || (err.status !== 404 && err.status !== 400) || wantsIndex) throw err;
+          try {
+            blob = await repo.blob(tx, teamId, `${path}/index.html`, 'main');
+          } catch {
+            throw err.status === 400 ? new RepoError(404, 'not_found', 'No such file') : err;
+          }
         }
         const mime = repoMimeOf(path);
         return {

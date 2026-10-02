@@ -1,5 +1,5 @@
 import { type APIRequestContext } from '@playwright/test';
-import { GetRepoTreeResponse, ErrorEnvelope } from '@manythreads/shared';
+import { ErrorEnvelope, GetRepoTreeResponse, IssueAppTokenResponse } from '@manythreads/shared';
 import { personas, SEED_IDS, SEED_REPO_IDS, type Persona } from '@manythreads/test-utils';
 import { expect, signedIn, test, useIsolatedStack } from '../support/isolated.ts';
 
@@ -100,4 +100,36 @@ test('#dev holds a PDF, a PNG, an MP4 and an Office file: Nadia downloads them, 
     expect(check(await res.body()), id).toBe(true);
     for (const p of [personas.lena, personas.sameera]) expect((await (await as(playwright, p)).get(`/api/files/${id}/content`)).status(), `${p.key} ${id}`).toBe(403);
   }
+});
+
+test('the seeded app opens over the real route with a per-open token and no cookie (a sandboxed frame has none)', async ({ playwright }) => {
+  const nadia = await as(playwright, personas.nadia);
+  const csrf = (await nadia.storageState()).cookies.find((c) => c.name === 'manythreads_csrf')?.value ?? '';
+  const issued = await nadia.post('/api/teams/engineering/repo/app-token', { data: { path: 'apps/release-checklist' }, headers: { 'x-csrf-token': csrf } });
+  expect(issued.status()).toBe(200);
+  const { url } = IssueAppTokenResponse.parse(await issued.json());
+
+  // a request context with no cookie at all: what the sandboxed frame sends for its sub-resources
+  const origin = (await iso.start()).origin;
+  const bare = await playwright.request.newContext({ baseURL: origin });
+  try {
+    const page = await bare.get(url);
+    expect(page.status()).toBe(200);
+    expect(page.headers()['content-type']).toContain('text/html');
+    expect(page.headers()['content-security-policy']).toContain("connect-src 'none'");
+    expect(page.headers()['content-security-policy']).toContain('sandbox allow-scripts');
+    expect(await page.text()).toContain('__manythreads.js');
+    expect((await bare.get(new URL('__manythreads.js', `${origin}${url}`).pathname)).status()).toBe(200);
+    // without the token the same address needs a session
+    expect((await bare.get('/api/teams/engineering/repo/app/apps/release-checklist/index.html')).status()).toBe(401);
+    // another app of the team, and another team's app, are out of the token's reach
+    expect((await bare.get(url.replace('/apps/release-checklist/', '/apps/other/'))).status()).toBe(403);
+    expect((await bare.get(url.replace('/teams/engineering/', '/teams/marketing/'))).status()).toBe(403);
+  } finally {
+    await bare.dispose();
+  }
+  // Lena (a guest) cannot get a token for it
+  const lena = await as(playwright, personas.lena);
+  const lenaCsrf = (await lena.storageState()).cookies.find((c) => c.name === 'manythreads_csrf')?.value ?? '';
+  expect((await lena.post('/api/teams/engineering/repo/app-token', { data: { path: 'apps/release-checklist' }, headers: { 'x-csrf-token': lenaCsrf } })).status()).toBe(403);
 });

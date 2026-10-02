@@ -87,12 +87,31 @@ nothing else reaches git.
 | `GET /api/teams/:slug/repo/history?path=&limit=&cursor=` | `GetRepoHistoryResponse`: commits that touched a file, a folder or (empty path) the repo, **newest first** (`git log`, so renames of folders and deleted files work): `sha, parentSha, authorId` (from the author line `<actor id>@actors.manythreads.invalid`; null for the system's first commit), `authorName, coAuthorIds, subject, message, committedAt`, and `change: added \| modified \| deleted` when the path names one file (one `git log --name-status` for the whole page; null for a folder). `limit` 1 to 100 (default 30), `cursor` is `nextCursor` (the last sha of the page). Readable by anyone who can read the team |
 | `GET /api/teams/:slug/repo/diff?path=&from=&to=` | one file between two commits as **unified hunks** (`GetRepoDiffResponse`: `status`, `additions`, `deletions`, `hunks[{ oldStart, oldLines, newStart, newLines, header, lines[{ type: context \| add \| del, text, oldLine, newLine }] }]`, `binary`, `truncated` at the 8 MB output cap). `to` defaults to `main`; `from` defaults to the parent of `to` (a root commit diffs against nothing). The parser (`src/diff.ts`) is one linear pass with a hostile-input timing test. A **rendered Markdown diff** is made by the client from the two versions (`blob?ref=<sha>`) |
 | `POST /api/teams/:slug/repo/restore` | `{ path, sha, message? }` (strict): puts `path` back as it was at `sha` (the file is **deleted** if it did not exist then) as a **new commit by the caller**: 201 `RestoreRepoFileResponse` (a commit response plus `restoredFromSha`), 200 `noop: true` when it already is as it was; old commits stay. It is a write like any other, so the writer rules apply: a member cannot restore `bots/` or `TEAM.md` (403, change by pull request), a bot goes through the broker, an unknown commit is 404, a folder is 400. 60 per minute |
+| `GET /api/teams/:slug/repo/app/<folder>/<file>` | **embedded apps** (`src/app-routes.ts`): the file at that repo path with the mime type of its extension (HTML, JS and CSS run: that is the point), a folder or `<folder>/` answers its `index.html`, and `__manythreads.js` in any folder is the bridge client. The server adds the strict CSP, `sandbox allow-scripts` and `nosniff` to every answer under the path (`embeddedAppHeaders`), 401 and 404 included. Needs the session cookie **or a per-open token** (below) |
+| `POST /api/teams/:slug/repo/app-token` | `{ path: "apps/release-checklist" }` (strict) answers `{ token, expiresAt, path, url }`: signed-in **person** who can read the team (a guest, another team's member and a bot get 403; an admin gets 404 for a missing slug); 120 per minute; `cache-control: no-store`. Served by the host (`packages/server/src/app-token-route.ts`), not by this plugin |
 
 `channels/` is **reserved** (400 on write, any case): the Files tree shows channel attachments there ([files.md](./files.md)), so a repo file of that name would hide or be hidden. The provider has `list(tx, teamId, folder)`: the
 files and folders directly below a folder from the index (one grouped query over `repo_entries` joined to `repo_commits`: size, blob, the commit time and author of the last change, a folder's newest below it; `.gitkeep` is
 never a row; a folder that does not exist is 404). `write` takes `options.capability` (`files.write` default, `pages.write` for [pages](./pages.md)).
 
 Refusals are returned as the error envelope without rolling the request back, so a repository the request had to create (its first commit is already in git) keeps its index rows.
+
+### Embedded apps and the per-open token
+
+A frame with `sandbox="allow-scripts"` and no `allow-same-origin` has an opaque origin, and a browser does not send the SameSite session cookie with its sub-resource requests (`__manythreads.js`, `js/app.js`).
+So the viewer (`clients/web/src/viewers/app/AppViewer.tsx`) asks `POST .../app-token` first and puts the returned `url` in the iframe: `/api/teams/<slug>/repo/app/~mta.<token>/<folder>/index.html`. The token is a
+**path segment**, not a query parameter, so the app's relative URLs keep it. If the server cannot issue one the viewer falls back to the plain address (works for the page itself with the cookie).
+
+- **Format** `v1.<claim>.<signature>`; the claim is `{ a: actor id, w: workspace id, t: team slug, p: app folder, e: expiry }`, the signature HMAC-SHA256 under a key derived (HKDF) from `MANYTHREADS_KMS_KEY`
+  (so replicas and restarts agree; without a master key, a development server, the key is random per process).
+- **Lifetime** 5 minutes (`APP_TOKEN_TTL_SECONDS`), per open: reopening the app asks again. A token already in use is not extended.
+- **Scope** one team and one folder: the request's slug must be the claim's, and the path must be the folder or below it, with no `..`, `.` or empty segment (`apps/demo` does not open `apps/demo2`, `apps/demo/../x` or `bots/`).
+  A first segment starting `~mta.` is always treated as a token and refused when it is not a valid one, even when the request also carries a cookie: a stale link is never half working. (So a repo folder literally named `~mta.x` cannot be an app.)
+- **What it grants** the request becomes that person's for this `GET` or `HEAD` under the app route only (the check is in the server's `onRequest` hook, `authenticateAppToken`). Reads still go through row level
+  security as the person: leave the team, and the token stops working at once. It does not outlive a sign-out by more than its lifetime. A `POST` under the route, or the same string anywhere else, is not authorised.
+- **Refusals** expired, tampered, signed with another key, for another team or folder: one answer, **403** "This app link has expired or is not valid. Reopen the app." (the reason is only in the server log).
+- Never log or store a token. Tests: `packages/server/test/app-token.test.ts` (signature, expiry, scope, tampering), `app-token-hook.test.ts` (the hook, no database), `packages/plugins/repo-git/test/app-route.test.ts`
+  (the real route and routes end to end), `e2e/api/seed/seed-v4.spec.ts` (the seeded app, no cookie).
 
 ## Tables (`migrations/0001_repo.sql`, PLAN A.4)
 
