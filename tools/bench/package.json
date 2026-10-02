@@ -9,6 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "bench:server": "tsx src/server.ts",
+    "bench:rls": "tsx src/rls.ts",
     "bench:list": "tsx src/list.ts"
   },
   "dependencies": {
