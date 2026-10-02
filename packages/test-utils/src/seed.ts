@@ -4,6 +4,7 @@ import { createPersonas, KAHF_WORKSPACE, type CreatedPersonas } from './create-p
 import type { TestDatabase } from './db.ts';
 import { KAHF_WORKSPACE_ID, TEAM_IDS, type TeamName } from './personas.ts';
 import { seedContent, type SeedContentOptions, type SeedContentResult } from './seed-content.ts';
+import { seedRepo, type SeedRepoOptions, type SeedRepoResult } from './seed-repo.ts';
 
 /** Team template each seeded team was created from (folder names under `templates/`). */
 export const TEAM_TEMPLATE_IDS: Record<TeamName, string> = {
@@ -30,6 +31,15 @@ export interface SeedOptions {
   content?: boolean;
   /** Where the content's attachment is written (default: `MANYTHREADS_STORAGE_DIR`, else `./data/blobs`) and the history's start. */
   contentOptions?: Omit<SeedContentOptions, 'templatesDir' | 'log'>;
+  /**
+   * Seed v4 (seed-repo.ts): the content of each team's repository (pages with history, a CSV, a Mermaid diagram, an embedded app, memory, a bot
+   * placeholder, committed through the repo writer as the right people) and, with `content`, a PNG, an MP4 and an Office file in `#dev` through
+   * the storage provider. Default false; the CLI turns it on with the content, and the e2e stack with `MANYTHREADS_STACK_SEED=repo`. Needs the
+   * repo tables (the repo-git plugin's migrations): without them `SeedResult.repo.skipped` says so.
+   */
+  repo?: boolean;
+  /** Where the repositories and attachments go (default: `MANYTHREADS_REPO_DIR`, `MANYTHREADS_STORAGE`, `MANYTHREADS_STORAGE_DIR`, `MANYTHREADS_S3_*`). */
+  repoOptions?: Omit<SeedRepoOptions, 'log'>;
   /** One line per step; the CLI prints them. */
   log?: (line: string) => void;
 }
@@ -43,6 +53,8 @@ export interface SeedResult {
   personas: CreatedPersonas | null;
   /** What the content step wrote (null when `content` was not asked for or the database was skipped). */
   content: SeedContentResult | null;
+  /** What seed v4 wrote (null when `repo` was not asked for or the database was skipped). */
+  repo: SeedRepoResult | null;
   passwordMode: 'fixed' | 'random';
 }
 
@@ -56,7 +68,7 @@ const defaultTemplatesDir = (): string =>
  * argon2id passwords, and a verified `person_emails` row for each persona's address (Tariq also has `tariq@kahf.co`, his
  * Google Workspace login) so OIDC can link identities. All ids are fixed (personas.ts), so screenshots are stable.
  *
- * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist.
+ * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist, and with `repo: true` seed v4 (seed-repo.ts).
  *
  * Idempotent: a second run inserts nothing new and never replaces an existing password, so a demo site keeps the random
  * passwords of its first seeding. When the database already holds a different workspace the seed does nothing.
@@ -79,7 +91,7 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
   if (foreign.length > 0) {
     const reason = 'this database already has another workspace (first-admin bootstrap was used); seed left it alone';
     log(`skipped: ${reason}`);
-    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, passwordMode };
+    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, repo: null, passwordMode };
   }
   const created = existing.length === 0;
 
@@ -115,5 +127,9 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
   const content = options.content
     ? await seedContent(db, { ...options.contentOptions, templatesDir: options.templatesDir ?? defaultTemplatesDir(), log })
     : null;
-  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, passwordMode };
+  // Seed v4 needs the people and teams above (and, for the attachments, the channels of the content step).
+  const repo = options.repo
+    ? await seedRepo(db, { ...options.repoOptions, attachments: options.content ? (options.repoOptions?.attachments ?? options.contentOptions?.attachment) : false, log })
+    : null;
+  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, repo, passwordMode };
 }

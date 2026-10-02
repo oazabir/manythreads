@@ -5,7 +5,9 @@
 //
 // Environment (all optional; fixtures/stack.ts `startStack(env)` passes them):
 //   MANYTHREADS_STACK_SEED       what the database holds: `world` (default: seed v2, workspace, teams, seven personas), `content`
-//                                (seed v3 on top: channels, messages, a thread, a DM, a 5,000-message channel, Lena's grant), `personas`
+//                                (seed v3 on top: channels, messages, a thread, a DM, a 5,000-message channel, Lena's grant), `repo` (seed v4
+//                                on top of that: each team repo's pages, CSV, diagram, app, memory and bot placeholder, and a PDF, PNG, MP4
+//                                and Office file in #dev), `personas`
 //                                (only the people, like the shared api server) or `none` (empty: the first-admin link is printed)
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
@@ -93,7 +95,7 @@ await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
 const seedMode = process.env['MANYTHREADS_STACK_SEED'] ?? 'world';
-if (!['none', 'world', 'content', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+if (!['none', 'world', 'content', 'repo', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
 // Attachments (storage-local) go to a directory of this stack, removed on exit, never into the working tree.
 const storageDir = process.env['MANYTHREADS_STORAGE_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-blobs-'));
 process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
@@ -119,7 +121,9 @@ const server = await startServer({
   logger: { level: 'info', stream: { write: (line: string) => void (logs.length < 2000 && logs.push(line)) } },
 });
 // The server's plugin migrations have run: now the conversations (seed v3 needs the channel tables).
+// `repo` is seed v3 plus seed v4: the team repositories (pages with history, a CSV, a diagram, an app, memory, bots) and the attachments of #dev.
 if (seedMode === 'content') await seedWorld(db, { content: true });
+else if (seedMode === 'repo') await seedWorld(db, { content: true, repo: true });
 apiPort = server.port;
 console.log(`MANYTHREADS_STACK ${JSON.stringify({ origin, ownerUrl: db.ownerUrl, database: db.name, testAuthToken: token, bootstrapToken: parseBootstrapToken(logs) ?? null })}`);
 

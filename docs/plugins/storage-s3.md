@@ -66,7 +66,13 @@ its own and empties it afterwards. CI starts the same MinIO image next to Postgr
 a GitHub service container cannot pass the `server /data` arguments). The image is the last community MinIO release, pinned (`ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z`), since MinIO
 no longer publishes images to Docker Hub or quay.io.
 
+## The seed's attachments
+
+`pnpm seed` (seed v3 and v4, `packages/test-utils/src/seed-storage.ts`) writes its attachments (the Deploy plan PDF, a PNG, an MP4 and an Office file in `#dev`) **through the storage provider**,
+not into a directory: `MANYTHREADS_STORAGE=s3` (read like the server reads it) puts the bytes in the bucket named by the same `MANYTHREADS_S3_*` variables, with the provider's own random key
+on the `files` row. A row whose bytes are still in the store is left alone; a row whose bytes are gone (new bucket or volume) gets them put again under a new key. Tested against
+MinIO in `packages/test-utils/test/seed-repo.test.ts` (`MANYTHREADS_TEST_S3=1`) and with a non-local fake provider that runs always.
+
 ## Not here
 
-Presigned downloads, server-side encryption options, multi-region and storage classes, a migration tool between stores (copy the objects yourself), bucket creation, the seed's
-attachment (the demo seed writes its blob to a local directory and so only works with `storage-local`), the Helm chart's values for these variables (set them through `server.extraEnv`).
+Presigned downloads, server-side encryption options, multi-region and storage classes, a migration tool between stores (copy the objects yourself), bucket creation.

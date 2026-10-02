@@ -94,7 +94,17 @@ parent_sha, author_id, co_authors uuid[], message, committed_at, paths text[], s
 narrow definer functions (`app.repo_register`, `app.repo_seed`, `app.repo_index_apply`) that accept the system or a team member who may post; they check the caller with `app.lookup_can_team`,
 because inside them `app.is_system()` is TRUE.
 
+## Seed v4 (demo and e2e content)
+
+`pnpm seed` (`seedWorld(db, { content: true, repo: true })`, `packages/test-utils/src/seed-repo.ts`; `MANYTHREADS_STACK_SEED=repo` for an e2e stack) fills the repository of each template team through
+`repo.write`, in the transaction of the person who would have written it (author, writer rules and `repo.repo.committed` are the production ones). Per team: `pages/runbook.md` in two commits by two people,
+`pages/reports/signups.csv`, `pages/weekly-digest.md`, `pages/changelog.md`, a Google link card, `pages/diagrams/dispatch.mmd` (Mermaid), the embedded app `apps/release-checklist/index.html` (one file, the
+`__manythreads.js` bridge, no network code), `memory/facts/*.md` (by the lead), `memory/journal/2026-03-06.md` (by the system), a bot placeholder `bots/<slug>/{BOT.md,memory.md,lessons.md}` (by the lead) and
+`TEAM.md` from the template. Text only; the PNG, MP4 and Office file go to `channels/dev/` as attachments ([storage-s3.md](./storage-s3.md)). Idempotent: a step whose commit message is already in the team's
+history is skipped, so a person's later edit is never undone. Needs `git` in the process that seeds (the server image has it) and the same `MANYTHREADS_REPO_DIR` as the server.
+
 ## Tests
+
 
 `test/git.test.ts` (real git in temp dirs: CAS, hooks and environment ignored, timeouts, caps, pool, paths), `test/repo-api.test.ts` and `test/repo-service.test.ts` (layout, authorship, 20 concurrent writes,
 two replicas, conflicts, binary, bot guard through the real broker, catch-up after a rolled-back write, restore), `test/rls`, `test/events`, `test/provider.test.ts`; `e2e/api/repo/{concurrency,bot-path-guard}.spec.ts`.

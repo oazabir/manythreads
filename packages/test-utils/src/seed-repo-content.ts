@@ -244,6 +244,13 @@ Check signups and churn on Friday in #analytics and add the week to the report. 
 
 export const REPO_TEAM_SLUGS = VOICES.map((v) => v.slug);
 
+/** The person who owns `bots/` and `TEAM.md` of the team's repo: its lead, or a workspace admin for a team without one. */
+export function repoLead(slug: string): SeedAuthor {
+  const v = VOICES.find((x) => x.slug === slug);
+  if (!v) throw new Error(`seed: no repo content for team "${slug}"`);
+  return v.lead;
+}
+
 const SIGNUPS_CSV = `week,signups,churn
 2026-W36,410,1.2%
 2026-W37,455,1.1%
