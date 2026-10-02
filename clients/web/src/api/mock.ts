@@ -8,6 +8,7 @@ import {
   GetSessionResponse,
   ListSessionsResponse,
   ListTemplatesResponse,
+  NavChannelDirectory,
   OidcProvider,
   TeamTemplate,
   acceptInvitationRoute,
@@ -40,6 +41,7 @@ import {
   listTeamsRoute,
   listTemplatesRoute,
   listWorkspaceMembersRoute,
+  navChannelDirectoryRoute,
   removeTeamMemberRoute,
   renameTeamRoute,
   requestEmailVerificationRoute,
@@ -653,6 +655,18 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     const t = teamOf(params.slug);
     manage(t);
     return { removed: t.tags.get(params.tag!)?.delete(params.personId!) ?? false };
+  });
+  // The sidebar's channel groups. A guest gets only the channel granted to them (Lena: #releases), whatever the team.
+  on(navChannelDirectoryRoute, ({ params }) => {
+    const p = me();
+    const spec = SPECS.find((s) => s.id === (teams.find((t) => t.slug === params.slug)?.template ?? params.slug));
+    const names = p.role === 'guest' ? ['#releases'] : (teamOf(params.slug) && spec ? spec.channels : []);
+    return NavChannelDirectory.parse({
+      groups: names.length === 0 ? [] : [{
+        id: uuid('7', 1), name: 'Channels',
+        channels: names.map((name, i) => ({ id: uuid('7', 10 + i), name, isPrivate: false, unread: p.role !== 'guest' && name === '#dev' ? 4 : 0 })),
+      }],
+    });
   });
   on(createTeamInvitationRoute, ({ params, body }) => {
     const t = teamOf(params.slug);

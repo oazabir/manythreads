@@ -3,7 +3,6 @@ import { RequireSession, SessionProvider } from './app/session';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsFrame } from './components/frames';
 import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/states';
-import { AppFrame } from './pages/AppFrame';
 import { DevTokens } from './pages/DevTokens';
 import { Account } from './screens/Account';
 import { AdminOnly } from './screens/AdminOnly';
@@ -13,6 +12,8 @@ import { ResetPassword, VerifyEmail } from './screens/ResetPassword';
 import { Roster, TeamChannels, TeamRedirect, TeamTemplate } from './screens/Roster';
 import { SignIn } from './screens/SignIn';
 import { SignInMethods } from './screens/SignInMethods';
+import { Shell } from './shell/Shell';
+import { ChannelView, DirectMessageView, HomeView, RequireTeam, SectionView, TeamHome, ThreadsView } from './shell/views';
 import { Teams } from './screens/Teams';
 import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 
@@ -37,7 +38,16 @@ function AppRoutes() {
         <Route path="/dev/tokens" element={<DevTokens />} />
 
         <Route element={<RequireSession />}>
-          <Route path="/" element={<AppFrame />} />
+          <Route element={<Shell />}>
+            <Route path="/" element={<HomeView />} />
+            <Route path="/t/:team" element={<TeamHome />} />
+            <Route path="/t/:team/threads" element={<RequireTeam><ThreadsView /></RequireTeam>} />
+            <Route path="/t/:team/files" element={<RequireTeam><SectionView section="files" /></RequireTeam>} />
+            <Route path="/t/:team/boards" element={<RequireTeam><SectionView section="boards" /></RequireTeam>} />
+            <Route path="/t/:team/approvals" element={<RequireTeam><SectionView section="approvals" /></RequireTeam>} />
+            <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
+            <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
+          </Route>
           <Route path="/account" element={<Account />} />
           <Route element={<SettingsFrame />}>
             <Route path="/teams" element={<Teams />} />

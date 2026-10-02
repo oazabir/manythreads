@@ -36,6 +36,7 @@ import {
   ListTeamsResponse,
   ListTemplatesResponse,
   ListWorkspaceMembersResponse,
+  NavChannelDirectory,
   OidcProviderResponse,
   RemoveTeamMemberResponse,
   RenameTeamRequest,
@@ -94,6 +95,7 @@ import {
   listTeamsRoute,
   listTemplatesRoute,
   listWorkspaceMembersRoute,
+  navChannelDirectoryRoute,
   removeTeamMemberRoute,
   renameTeamRoute,
   requestEmailVerificationRoute,
@@ -231,3 +233,7 @@ export const fetchTeamInvitations = (slug: string) =>
   call(listTeamInvitationsRoute, { response: ListTeamInvitationsResponse }, undefined, { slug });
 
 export type { AuthenticatedSession };
+
+// ---- sidebar ---------------------------------------------------------------------------------------------
+/** The team's channel groups as the sidebar lists them. The route exists once the channels plugin is loaded; callers feature-detect. */
+export const fetchNavChannels = (slug: string) => call(navChannelDirectoryRoute, { response: NavChannelDirectory }, undefined, { slug });
