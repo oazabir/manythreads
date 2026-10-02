@@ -43,7 +43,7 @@ function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFil
       {pr ? (
         <p className="fnote" data-testid="read-only-note" role="note">
           <b>{READ_ONLY_COPY}.</b> You can read this file; a change to it is made by a pull request.{' '}
-          <button type="button" className="linkish" data-testid="change-by-pr" onClick={() => actions.start('pull-request', row)}>How to change it</button>
+          <button type="button" className="flinkish" data-testid="change-by-pr" onClick={() => actions.start('pull-request', row)}>How to change it</button>
         </p>
       ) : null}
       {row.managedBy ? <p className="fnote memory" role="note"><b>{MEMORY_COPY}.</b> Edits to facts are kept by the team's memory.</p> : null}

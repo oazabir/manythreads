@@ -22,6 +22,11 @@
   align-items: center;
 }
 
+/* the slot is empty on every screen but Files; an empty flex item must not take room from the title */
+.chead-actions:empty {
+  display: none;
+}
+
 .fhead-actions {
   display: flex;
   align-items: center;
@@ -399,7 +404,7 @@
   color: var(--alert-ink);
 }
 
-.linkish {
+.flinkish {
   padding: 0;
   border: 0;
   background: none;

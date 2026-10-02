@@ -97,7 +97,7 @@ function CommitDetail({ files, path, commit, markdown }: { files: TeamFiles; pat
           </div>
         ) : null}
         {mode === 'text' ? (
-          <button type="button" className="linkish" aria-pressed={context} onClick={() => setContext((c) => !c)}>{context ? 'Hide context' : 'Show context'}</button>
+          <button type="button" className="flinkish" aria-pressed={context} onClick={() => setContext((c) => !c)}>{context ? 'Hide context' : 'Show context'}</button>
         ) : null}
       </div>
     </div>
