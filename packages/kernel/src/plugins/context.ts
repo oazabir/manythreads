@@ -13,6 +13,7 @@ import type {
   MailService,
   PluginContext,
   PluginEvent,
+  PluginRealtime,
   PluginRuntime,
   PluginTx,
   ScopedKv,
@@ -21,6 +22,9 @@ import type {
 } from '@manythreads/sdk';
 import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
 import { getOneOrCreate } from '../db/get-or-create.ts';
+import { createEntityLinkService } from '../entity-links/index.ts';
+import { createReadStateService } from '../read-state/index.ts';
+import { publishRealtime } from '../transport/realtime.ts';
 import type { Tx } from '../db/with-actor.ts';
 import { enqueue } from '../jobs/index.ts';
 import { createTemplateService } from '../templates/service.ts';
@@ -79,6 +83,11 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   };
 
   const templates = deps.templates ?? createTemplateService();
+
+  const realtime: PluginRealtime = {
+    pushToPerson: (tx, personId, type, payload) =>
+      publishRealtime(guardPluginTx(tx), [{ workspaceId: tx.actor.workspaceId, personId, type, payload }]),
+  };
 
   const ownQueue = (queue: string): void => {
     if (!queue.startsWith(`${name}.`) || !/^[a-z][a-z0-9-]*\.[a-z][a-z0-9_.-]{0,62}$/.test(queue)) {
@@ -225,6 +234,9 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     },
     mail: deps.mail,
     runtime: deps.runtime,
+    readState: createReadStateService({ counters: registries.unreadCounters, plugin: name }),
+    links: createEntityLinkService({ resolvers: registries.entityResolvers, plugin: name }),
+    realtime,
     get identity(): IdentityServices {
       use('provider.identity');
       if (!deps.identity) {

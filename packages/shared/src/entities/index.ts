@@ -5,3 +5,7 @@ export * from './workspace.ts';
 export * from './person.ts';
 export * from './auth.ts';
 export * from './team.ts';
+export * from './read-state.ts';
+export * from './entity-link.ts';
+export * from './channel.ts';
+export * from './message-thread.ts';

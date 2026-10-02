@@ -1,5 +1,6 @@
 import type { ErrorCode, ExtensionPoint, PluginManifest, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
+import type { PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -218,6 +219,12 @@ export interface PluginContext {
   readonly jobs: PluginJobs;
   readonly mail: MailService;
   readonly runtime: PluginRuntime;
+  /** Unread counters per person per channel and thread (spec §3 cohesion service). */
+  readonly readState: PluginReadState;
+  /** Links among messages, threads, tasks, pages, bots and files, and the resolvers that summarise them. */
+  readonly links: PluginLinks;
+  /** Live push to a person's sockets. */
+  readonly realtime: PluginRealtime;
   /** Only for plugins whose manifest extends `provider.identity`; any other plugin throws on access. */
   readonly identity: IdentityServices;
   /** Envelope-encrypted secrets (client secrets of sign-in providers). Only for plugins that extend `provider.identity`. */

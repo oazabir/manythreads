@@ -13,6 +13,7 @@ export * from './password-credentials.ts';
 export * from './people.ts';
 export * from './person-emails.ts';
 export * from './plugins.ts';
+export * from './read-state.ts';
 export * from './role-members.ts';
 export * from './roles.ts';
 export * from './scoped-kv.ts';

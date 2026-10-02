@@ -78,6 +78,22 @@ const template = await ctx.templates.get('engineering');   // or await ctx.templ
 `ctx.audit.emit` is `ctx.events.emit` with defaults: it needs `event.emit` in `extends` and the type in `events.emits`, and the
 registry validates the payload. Conflict targets and `conflictWhere` (a partial unique index predicate) are trusted SQL, never user input.
 
+### Cohesion services: read state, entity links, live push
+
+Three kernel services make plugins cohere (spec §3). They are always on `ctx`; details in [../kernel/read-state.md](../kernel/read-state.md) and
+[../kernel/entity-links.md](../kernel/entity-links.md).
+
+```ts
+// The plugin that inserts a message, in the same transaction: everyone but the author gets one more unread.
+await ctx.readState.onPosted(tx, { targetType: 'channel', targetId: channelId, messageId, authorId, recipientPersonIds });
+// The plugin that owns the messages says how to count what is newer than a read position (markRead uses it).
+ctx.readState.registerCounter('channel', async (tx, { targetId }, after) => countMessagesAfter(tx, targetId, after));
+await ctx.readState.markRead(tx, personId, { targetType: 'channel', targetId: channelId }, upToMessageId);
+await ctx.links.create(tx, { teamId, src: { type: 'message', id }, dst: { type: 'task', id: taskId }, kind: 'created_from' });
+ctx.links.registerResolver('message', async (tx, id) => /* an RLS-filtered lookup */ ({ title, subtitle, href }) /* or null */);
+await ctx.realtime.pushToPerson(tx, personId, 'notifications.item.added', { id });   // delivered at commit, to every replica
+```
+
 ### Background jobs
 
 A plugin that extends `job.register` owns queues named `<plugin>.<name>`; the server starts one worker per registered queue (and one for

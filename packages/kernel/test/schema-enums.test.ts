@@ -3,10 +3,12 @@ import {
   AclSubjectType,
   ActorKind,
   AuthProviderKind,
+  EntityType,
   EmailVerificationPurpose,
   InvitationRole,
   JobState,
   PersonStatus,
+  ReadTargetType,
   ScopedKvScopeType,
   TeamRole,
   WorkspaceRole,
@@ -42,6 +44,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'team_members.role': TeamRole,
   'acl_entries.subject_type': AclSubjectType,
   'acl_entries.permission': AclPermission,
+  'read_state.target_type': ReadTargetType,
+  'entity_links.src_type': EntityType,
+  'entity_links.dst_type': EntityType,
 };
 
 /**

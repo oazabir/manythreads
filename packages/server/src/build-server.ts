@@ -4,11 +4,13 @@ import swagger from '@fastify/swagger';
 import {
   NIL_UUID,
   createRateLimiter,
+  createRealtime,
   createWsHub,
   withActor,
   type Actor,
   type PluginHost,
   type RateLimiter,
+  type Realtime,
 } from '@manythreads/kernel';
 import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@manythreads/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
@@ -65,6 +67,11 @@ export interface BuildServerOptions {
    * the header); a number is that many hops; a string or list is the proxy addresses / CIDRs to trust.
    */
   trustProxy?: boolean | number | string | string[];
+  /**
+   * Live pushes (`ctx.realtime`, read-state changes): sockets of signed-in people register here. The caller starts it
+   * (`realtime.start(pool)`) so pushes from every replica arrive; default: a registry nobody feeds.
+   */
+  realtime?: Realtime;
   /** Replace the in-memory limiter (tests). Each server builds its own by default: limits are per replica. */
   limiter?: RateLimiter;
   /** Migration files the kernel and loaded plugins ship; /readyz fails while fewer are applied. */
@@ -104,6 +111,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   const hub = createWsHub();
   app.decorate('rateLimiter', limiter);
   app.decorate('wsHub', hub);
+  const realtime = options.realtime ?? createRealtime();
+  app.decorate('realtime', realtime);
   app.decorateRequest('actor', null);
   app.decorateRequest('authSession', null);
   app.decorateRequest('staleSessionCookie', false);
@@ -202,9 +211,27 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
 
   // WebSocket: every frame is a validated { type, id, payload } envelope, in both directions.
   hub.on('ping', (msg) => WsEnvelope.parse({ type: 'pong', id: msg.id, payload: msg.payload }));
-  typed.get('/ws', { websocket: true, config: { public: true } }, (socket) => {
+  typed.get('/ws', { websocket: true, config: { public: true } }, (socket, req) => {
+    const peer = { send: (d: string) => socket.send(d) };
+    // A signed-in person's sockets receive live pushes (read state, notifications). The upgrade request carried the cookie.
+    let detach: (() => void) | undefined;
+    let closed = false;
+    if (req.actor && req.actor.kind === 'person') {
+      const actor = req.actor;
+      const known = req.authSession?.personId ?? null;
+      const person = known
+        ? Promise.resolve(known)
+        : withActor(actor, async (tx) => (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0]?.id ?? null, poolOpt).catch(() => null);
+      void person.then((personId) => {
+        if (personId && !closed) detach = realtime.attach(personId, peer);
+      });
+    }
+    socket.on('close', () => {
+      closed = true;
+      detach?.();
+    });
     socket.on('message', (data: Buffer) => {
-      void hub.receive({ send: (d) => socket.send(d) }, data.toString());
+      void hub.receive(peer, data.toString());
     });
   });
 

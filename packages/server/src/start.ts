@@ -12,6 +12,7 @@ import {
   createDbGrantSource,
   createKmsRewrapHandler,
   createEventAuditSink,
+  createRealtime,
   discoverPlugins,
   emit,
   ensureActor,
@@ -213,8 +214,13 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   }
   const expectedMigrations = (await readMigrationFiles(migrationSources)).length;
 
+  // Live pushes: this process's sockets by person, fed by NOTIFY from every replica (including this one).
+  const realtime = createRealtime();
+  await realtime.start(appPool);
+
   const app = await buildServer({
     host,
+    realtime,
     pool: appPool,
     systemPool,
     expectedMigrations,
@@ -316,6 +322,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     url: `http://127.0.0.1:${port}`,
     async close() {
       await Promise.all([...consumers.map((c) => c.stop()), ...workers.map((x) => x.stop())]);
+      await realtime.stop();
       await app.close();
       await Promise.all([appPool.end(), systemPool.end()]);
     },
