@@ -152,7 +152,7 @@ export function registerRepoRoutes(ctx: PluginContext, repo: RepoService): void 
         const blob = await repo.blob(tx, teamId, q.path, q.ref);
         const mime = repoMimeOf(q.path);
         const name = q.path.slice(q.path.lastIndexOf('/') + 1);
-        const inline = q.download !== '1' && (INLINE_TYPES.has(mime) || mime.startsWith('text/'));
+        const inline = q.download !== '1' && !RUNNABLE_TYPES.has(mime) && (INLINE_TYPES.has(mime) || mime.startsWith('text/'));
         return {
           status: 200,
           body: Buffer.from(blob.content),

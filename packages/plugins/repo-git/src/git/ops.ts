@@ -309,10 +309,19 @@ export function createGitLayer(options: GitLayerOptions = {}) {
   };
 
   /** Changes between two commits (either may be the sha or `ref`), optionally of one path: the file list and a unified patch (truncated at the output cap). */
-  async function diff(gitDir: string, a: string, b: string, path?: string): Promise<GitDiffResult> {
+  async function diff(gitDir: string, a: string | null, b: string, path?: string): Promise<GitDiffResult> {
+    if (path) assertGitPath(path);
+    if (a === null) {
+      // Against nothing: the root commit's own change (git does not know the empty tree as an argument to `diff` in a repository without it).
+      assertRef(b);
+      const base = ['diff-tree', '--root', '-r', '--no-commit-id', '--no-ext-diff', '--no-textconv', '--no-renames'];
+      const rest = ['--end-of-options', b, ...(path ? ['--', path] : [])];
+      const names = await run(gitDir, [...base, '--name-status', '-z', ...rest]);
+      const patch = await run(gitDir, [...base, '-p', '--unified=3', '--no-color', ...rest], { onOverflow: 'truncate' });
+      return { files: parseNameStatus(names.stdout), patch: patch.stdout.toString('utf8'), truncated: patch.truncated };
+    }
     assertRef(a);
     assertRef(b);
-    if (path) assertGitPath(path);
     const tail = ['--end-of-options', a, b, ...(path ? ['--', path] : [])];
     const common = ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames'];
     const names = await run(gitDir, [...common, '--name-status', '-z', ...tail]);

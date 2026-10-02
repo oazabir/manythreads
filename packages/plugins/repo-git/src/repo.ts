@@ -50,8 +50,6 @@ import { REPO_COLUMNS, REPO_COMMIT_COLUMNS, REPO_ENTRY_COLUMNS, toRepo, toRepoCo
 // another replica) waits at the lock until the first one's index rows are committed, then reads the head it left. The queue only orders the
 // writers of one process and stops them from starting git processes they would have to wait for anyway.
 
-/** The tree git knows without an object: what a file is compared with when it did not exist yet. */
-const EMPTY_TREE = '4b825dc642cb6eb9a416c4ca7ae7f5fe1c2d8fbc';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** The e-mail of every identity the writer puts in a commit: the actor id, so a commit maps back to the actor. */
 export const ACTOR_EMAIL_DOMAIN = 'actors.manythreads.invalid';
@@ -621,7 +619,7 @@ export function createRepoService(deps: RepoServiceDeps) {
       } else {
         from = (await git.commitInfo(gitDir, to)).parents[0] ?? null;
       }
-      const result = await git.diff(gitDir, from ?? EMPTY_TREE, to, opts.path);
+      const result = await git.diff(gitDir, from, to, opts.path);
       return { from, to, ...result };
     });
   }
