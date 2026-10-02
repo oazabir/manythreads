@@ -153,7 +153,7 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
         }}
       >
         <div className="root">
-          <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={false} inThread actions={rootActions} />
+          <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={rootActions} />
           {variant === 'panel' ? followRow : null}
         </div>
         {tl.cursor ? (
@@ -177,19 +177,21 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
         {typing ? <p className="typing" aria-live="polite">{typing}</p> : null}
       </div>
       {info.status === 'ok' && !canReply ? <p className="read-only">You can read this thread but not reply.</p> : null}
-      <div className="rpf" hidden={!canReply}>
-        <Composer
-          draftKey={`thread:${rootId}`}
-          placeholder="Reply…"
-          label="Reply in thread"
-          channelId={channelId}
-          threadRootId={rootId}
-          people={people}
-          channelNames={names}
-          onSend={send}
-          autoFocus={variant === 'panel'}
-        />
-      </div>
+      {canReply ? (
+        <div className="rpf">
+          <Composer
+            draftKey={`thread:${rootId}`}
+            placeholder="Reply…"
+            label="Reply in thread"
+            channelId={channelId}
+            threadRootId={rootId}
+            people={people}
+            channelNames={names}
+            onSend={send}
+            autoFocus={variant === 'panel'}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

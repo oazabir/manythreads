@@ -12,6 +12,7 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { isApiError } from '../api/client';
+import { onPersonChange } from '../app/caches';
 import {
   addReaction,
   deleteMessage,
@@ -97,6 +98,17 @@ export class ChannelStore {
   snapshot = (): Snapshot => this.snap;
   readState = (targetKey: string): ReadStateEntry | undefined => this.readStates.get(targetKey);
   typingIn = (key: string): TypingEntry[] => this.typing.get(key) ?? NO_TYPING;
+
+  /** Forget everything held (the signed-in person changed). */
+  reset(): void {
+    this.timelines.clear();
+    this.readStates.clear();
+    this.typing.clear();
+    this.counted.clear();
+    this.snap = { unread: {}, threadsUnread: 0 };
+    this.self = null;
+    this.emit();
+  }
 
   /** The reader's actor id (from the roster): it decides whose reaction is "mine" and which messages are own. */
   setSelf(actorId: string | null): void {
@@ -496,3 +508,4 @@ function errorOf(e: unknown): { status: number; message: string } {
 
 /** The app's store. */
 export const channelStore = new ChannelStore();
+onPersonChange(() => channelStore.reset());

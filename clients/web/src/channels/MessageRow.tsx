@@ -51,6 +51,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const own = selfActor !== null && m.authorId === selfActor;
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
   const [tapped, setTapped] = useState(false);
+  // the toolbar exists only while the row is under the pointer or has focus: 5,000 rows do not each carry three buttons
+  const [hot, setHot] = useState(false);
   const [menu, setMenu] = useState<null | 'react' | 'more'>(null);
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -80,12 +82,19 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''}`}
       data-testid="message"
       data-message-id={m.id}
+      tabIndex={0}
+      onMouseEnter={() => setHot(true)}
+      onMouseLeave={() => setHot(false)}
+      onFocus={() => setHot(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setHot(false);
+      }}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('a,button,textarea,.acts')) return;
         setTapped((t) => !t);
       }}
     >
-      {deleted ? null : (
+      {deleted || !(hot || tapped || menu !== null) ? null : (
         <div className="acts" ref={box} role="toolbar" aria-label="Message actions">
           {!inThread && canPost ? (
             <button type="button" className="act" aria-label="Reply in thread" title="Reply in thread" onClick={() => actions.openThread?.(m.id)}><ReplyIcon /></button>

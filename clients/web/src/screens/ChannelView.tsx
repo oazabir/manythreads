@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import type { FileSummary } from '@manythreads/shared';
-import { fetchChannel, joinChannel } from '../api/endpoints';
+import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
-import { Avatar } from '../components/ui';
 import { Composer } from '../channels/Composer';
 import { estimateItem, buildListItems, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
 import { PendingRow, MessageRow, type RowActions } from '../channels/MessageRow';
@@ -14,7 +13,7 @@ import { isApiError } from '../api/client';
 import { VirtualList, type VirtualListApi } from '../channels/VirtualList';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
-import { findChannel, refreshDirectory, useChannelFeed } from '../shell/channelFeed';
+import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon } from '../shell/icons';
 import { useRealtimeStatus } from '../realtime';
 
@@ -211,9 +210,6 @@ function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: s
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || undefined}>
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}
-      {info.status === 'ok' && !info.data.isMember && info.data.canPost && info.data.channel.kind === 'channel' && !info.data.channel.private ? (
-        <JoinBar channelId={channelId} name={name} onJoined={() => { info.reload(); void refreshDirectory(teamSlug); }} />
-      ) : null}
       <div className="chview-list">
         {tl.status === 'loading' ? (
           <div className="loading-rows" aria-hidden="true">
@@ -263,27 +259,6 @@ function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: s
           {info.data.channel.archivedAt ? 'This channel is archived. You can read it but not post.' : 'You can read this channel but not post in it.'}
         </p>
       ) : null}
-    </div>
-  );
-}
-
-function JoinBar({ channelId, name, onJoined }: { channelId: string; name: string; onJoined: () => void }) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <div className="join-bar">
-      <Avatar name={name} />
-      <span>{`You are not in #${name} yet.`}</span>
-      <button
-        type="button"
-        className="btn s"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          joinChannel(channelId).then(onJoined, () => setBusy(false));
-        }}
-      >
-        Join channel
-      </button>
     </div>
   );
 }

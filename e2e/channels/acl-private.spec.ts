@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { apiAs, createChannel, messages, openAs, postMessage } from './support.ts';
 
+// the desktop layout (hover actions, side panel); the phone layout has its own spec (mobile-web)
+test.skip(({ isMobile }) => isMobile, 'desktop layout');
+
 /** e2e/channels/acl-private: a private channel is for its members only: not in the sidebar, "You cannot see this channel." by URL, live once added. */
 test('a private channel is invisible to a non-member until they are added', async ({ browser }) => {
   const omar = await apiAs('omar');

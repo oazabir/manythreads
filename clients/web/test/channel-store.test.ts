@@ -177,6 +177,16 @@ describe('channel store', () => {
     expect(store.snapshot().unread[CH]).toBe(0);
   });
 
+  it('forgets everything when the signed-in person changes', async () => {
+    serve(() => ({ status: 200, body: { items: [msg(1)], nextCursor: null } }));
+    await store.loadChannel(CH);
+    store.seedUnread([{ id: CH, unread: 4 }]);
+    store.reset();
+    expect(store.get(channelKey(CH)).items).toEqual([]);
+    expect(store.snapshot()).toEqual({ unread: {}, threadsUnread: 0 });
+    expect(store.selfActor).toBeNull();
+  });
+
   it('marking read is monotonic on the client too: an older position sends nothing', async () => {
     const seen = serve(() => ({ status: 200, body: { targetType: 'channel', targetId: CH, lastReadId: msg(5).id, unreadCount: 0, followed: false } }));
     await store.markRead('channel', CH, msg(5).id);

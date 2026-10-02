@@ -1,8 +1,7 @@
 import type { ChannelMessage } from '@manythreads/shared';
 
 const CLOCK = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
-const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-const DAY_YEAR = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const DAY_PARTS = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 const WEEKDAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short' });
 const SHORT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 
@@ -20,7 +19,10 @@ export function dayLabel(iso: string, now: Date = new Date()): string {
   const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86_400_000);
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
-  return (d.getFullYear() === now.getFullYear() ? DAY : DAY_YEAR).format(d);
+  // assembled from parts so the punctuation does not depend on the browser's locale data: "Monday 7 September"
+  const part = (type: Intl.DateTimeFormatPartTypes): string => DAY_PARTS.formatToParts(d).find((p) => p.type === type)?.value ?? '';
+  const label = `${part('weekday')} ${part('day')} ${part('month')}`;
+  return d.getFullYear() === now.getFullYear() ? label : `${label} ${d.getFullYear()}`;
 }
 
 /** "now", "2m", "1h", "Fri", "3 Sep": how long ago, for the Threads inbox. */

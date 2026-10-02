@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { apiAs, createChannel, messages, openAs, postMessage } from './support.ts';
 
+// the desktop layout (hover actions, side panel); the phone layout has its own spec (mobile-web)
+test.skip(({ isMobile }) => isMobile, 'desktop layout');
+
 /** PLAN criterion 1 (first half) and e2e/channels/post-and-read: Nadia posts, Rafi has the channel open and sees it live, in order; a reaction syncs. */
 test('Nadia posts and Rafi, with the channel open, sees it within a second; a reaction syncs both ways', async ({ browser }) => {
   const omar = await apiAs('omar');

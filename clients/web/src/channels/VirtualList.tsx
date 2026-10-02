@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
-import { anchorAt, buildOffsets, scrollTopFor, windowFor, type Anchor } from './virtual';
+import { anchorAt, buildOffsets, scrollTopFor, shiftAfter, windowFor, type Anchor } from './virtual';
 
 export type VirtualListApi = {
   scrollToBottom(): void;
@@ -40,18 +40,20 @@ const AT_BOTTOM = 24;
 export function VirtualList<T>({ items, getKey, estimate, render, anchorable, className, onNearTop, onBottomChange, header, footer, apiRef, label }: Props<T>) {
   const scroller = useRef<HTMLDivElement>(null);
   const topSpacer = useRef<HTMLDivElement>(null);
+  const headerBox = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
   const stuck = useRef(true);
   const atBottom = useRef(true);
   const lastPaintTop = useRef(Number.MAX_SAFE_INTEGER);
   const anchor = useRef<Anchor | null>(null);
   const lastKeys = useRef<readonly string[]>([]);
-  const [version, bump] = useState(0);
+  const [, bump] = useState(0);
   const estimated = useRef(new Map<string, number>());
   const [viewport, setViewport] = useState({ top: Number.MAX_SAFE_INTEGER, h: 800 });
 
   const keys = useMemo(() => items.map(getKey), [items, getKey]);
-  // `version` moves after a measurement: the heights live in a ref, the offsets are rebuilt from them
+  // Built in full when the rows change; a measurement then only shifts the rows after the one that changed (`shiftAfter`), so a
+  // frame of scrolling does not walk all 5,000 rows. `version` re-renders after a measurement.
   const offsets = useMemo(
     () =>
       buildOffsets(keys, heights.current, (i) => {
@@ -59,8 +61,7 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
         estimated.current.set(keys[i] as string, guess);
         return guess;
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [keys, items, estimate, version],
+    [keys, items, estimate],
   );
   const listTop = useRef(0);
   const offsetsRef = useRef(offsets);
@@ -125,6 +126,14 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
           changed = true;
           continue;
         }
+        if (target === headerBox.current) {
+          // the header above the rows changed height: the rows moved with it, and the reader's place must not
+          const top = topSpacer.current?.offsetTop ?? 0;
+          if (!stuck.current && top !== listTop.current) shift += top - listTop.current;
+          listTop.current = top;
+          changed = true;
+          continue;
+        }
         const key = target.dataset['key'];
         if (!key) continue;
         const h = Math.round(entry.borderBoxSize[0]?.blockSize ?? target.offsetHeight);
@@ -132,6 +141,11 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
         if (heights.current.get(key) === h) continue;
         heights.current.set(key, h);
         changed = true;
+        if (old !== undefined && old !== h) {
+          const at = Number(target.dataset['index']);
+          const row = keysRef.current[at] === key ? at : keysRef.current.indexOf(key);
+          if (row >= 0) shiftAfter(offsetsRef.current, row, h - old);
+        }
         // a row that starts above the viewport is not the height the list assumed: keep what the reader looks at where it was
         if (old !== undefined && !stuck.current && target.getBoundingClientRect().top < viewTop) shift += h - old;
       }
@@ -143,6 +157,8 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
     });
     observer.current = ro;
     ro.observe(el);
+    if (headerBox.current) ro.observe(headerBox.current);
+    listTop.current = topSpacer.current?.offsetTop ?? 0;
     for (const row of el.querySelectorAll('[data-key]')) ro.observe(row);
     return () => {
       ro.disconnect();
@@ -161,10 +177,11 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    listTop.current = topSpacer.current?.offsetTop ?? 0;
     // rows were added or removed above what the reader is looking at: scroll so that row stays where it was on screen
     const changed = lastKeys.current !== keys;
     lastKeys.current = keys;
+    // a render only because the window moved: nothing to restore, and no layout to force by reading the scroll position
+    if (!changed && !stuck.current) return;
     const want = changed && !stuck.current && anchor.current ? scrollTopFor(anchor.current, keys, offsetsRef.current, listTop.current) : null;
     if (want !== null && Math.abs(want - el.scrollTop) > 0.5) {
       el.scrollTop = want;
@@ -209,14 +226,14 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
     const item = items[i] as T;
     const key = keys[i] as string;
     rows.push(
-      <div key={key} data-key={key} className="vrow" ref={watchRow}>
+      <div key={key} data-key={key} data-index={i} className="vrow" ref={watchRow}>
         {render(item, i)}
       </div>,
     );
   }
   return (
     <div ref={scroller} className={`vlist ${className ?? ''}`} onScroll={onScroll} role="log" aria-label={label} aria-live="off" tabIndex={0}>
-      {header}
+      <div ref={headerBox}>{header}</div>
       <div ref={topSpacer} style={{ height: offsets[start] ?? 0 }} aria-hidden="true" />
       {rows}
       <div style={{ height: Math.max(0, total - ((offsets[end] as number | undefined) ?? total)) }} aria-hidden="true" />

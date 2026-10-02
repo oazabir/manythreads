@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorAt, buildOffsets, indexAt, scrollTopFor, windowFor } from '../src/channels/virtual';
+import { anchorAt, buildOffsets, indexAt, scrollTopFor, shiftAfter, windowFor } from '../src/channels/virtual';
 
 const keys = (n: number): string[] => Array.from({ length: n }, (_, i) => `k${i}`);
 
@@ -7,6 +7,18 @@ describe('windowing arithmetic', () => {
   it('offsets use the measured height, else the estimate', () => {
     const o = buildOffsets(['a', 'b', 'c'], new Map([['b', 100]]), () => 50);
     expect(o).toEqual([0, 50, 150, 200]);
+  });
+
+  it('a measured row shifts the rows after it, the same as rebuilding from the heights', () => {
+    const ks = keys(6);
+    const heights = new Map<string, number>();
+    const o = buildOffsets(ks, heights, () => 50);
+    heights.set('k2', 80);
+    shiftAfter(o, 2, 30);
+    expect(o).toEqual(buildOffsets(ks, heights, () => 50));
+    heights.set('k5', 20);
+    shiftAfter(o, 5, -30);
+    expect(o).toEqual(buildOffsets(ks, heights, () => 50));
   });
 
   it('finds the row at a position, clamped at both ends', () => {

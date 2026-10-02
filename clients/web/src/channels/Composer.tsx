@@ -114,7 +114,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     const el = area.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 188)}px`;
+    // not on screen (a hidden composer measures 0): leave it at its own one-line height
+    el.style.height = el.scrollHeight > 0 ? `${Math.min(el.scrollHeight, 188)}px` : '';
   }, [text]);
   useLayoutEffect(() => {
     const el = area.current;

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { apiAs, createChannel } from '../channels/support.ts';
 import { authState } from '../support/env.ts';
 
 /**
@@ -8,6 +9,14 @@ import { authState } from '../support/env.ts';
 
 const sidebarRows = async (page: import('@playwright/test').Page): Promise<string[]> =>
   page.locator('[data-landmark="sidebar"] > .it, [data-landmark="sidebar"] > .sec').allInnerTexts().then((rows) => rows.map((r) => r.split('\n')[0]!.trim()));
+
+// channels are real now: the URL names a channel the directory lists (a made-up name is "You cannot see this channel.")
+let dev = '';
+test.beforeAll(async () => {
+  const omar = await apiAs('omar');
+  dev = (await createChannel(omar, 'dev')).name;
+  await omar.ctx.dispose();
+});
 
 test.describe('Nadia, a member', () => {
   test.use({ storageState: authState('nadia') });
@@ -31,9 +40,9 @@ test.describe('Nadia, a member', () => {
   test('Bots opens the team roster; sections and channels have their own URLs', async ({ page, isMobile }) => {
     await page.goto('/t/engineering/files');
     await expect(page.locator('[data-landmark="content"]')).toContainText('No files yet');
-    await page.goto('/t/engineering/c/dev');
-    await expect(page.locator('[data-landmark="header"]')).toContainText('# dev');
-    await expect(page.locator('[data-landmark="content"]')).toContainText('This is the start of #dev.');
+    await page.goto(`/t/engineering/c/${dev}`);
+    await expect(page.locator('[data-landmark="header"]')).toContainText(`# ${dev}`);
+    await expect(page.locator('[data-landmark="content"]')).toContainText(`This is the start of #${dev}.`);
     await page.goto('/t/engineering/dm/abc');
     await expect(page.locator('[data-landmark="header"]')).toContainText('Direct message');
     await page.goto('/t/engineering/threads');
@@ -48,19 +57,19 @@ test.describe('Nadia, a member', () => {
   });
 
   test('?panel= restores the panel; Esc and the close button close it', async ({ page }) => {
-    await page.goto('/t/engineering/c/dev?panel=thread:abc');
+    await page.goto(`/t/engineering/c/${dev}?panel=thread:abc`);
     const panel = page.locator('[data-landmark="right-panel"]');
     await expect(panel).toBeVisible();
     await expect(panel.locator('[data-panel-entry]')).toHaveAttribute('data-panel-entry', 'thread:abc');
     // the channel stays visible beside it on desktop
-    await expect(page.locator('[data-landmark="content"]')).toContainText('This is the start of #dev.');
+    await expect(page.locator('[data-landmark="content"]')).toContainText(`This is the start of #${dev}.`);
     await page.reload();
     await expect(panel).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(page).not.toHaveURL(/panel=/);
 
-    await page.goto('/t/engineering/c/dev?panel=file:docs/readme.md');
+    await page.goto(`/t/engineering/c/${dev}?panel=file:docs/readme.md`);
     await expect(panel).toBeVisible();
     await page.getByRole('button', { name: 'Close panel' }).click();
     await expect(panel).toBeHidden();
@@ -123,7 +132,7 @@ test.describe('phone layout', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'closed');
 
-    await page.goto('/t/engineering/c/dev?panel=thread:abc');
+    await page.goto(`/t/engineering/c/${dev}?panel=thread:abc`);
     const box = await page.locator('[data-landmark="right-panel"]').boundingBox();
     const vp = page.viewportSize()!;
     expect(box).toMatchObject({ x: 0, y: 0, width: vp.width, height: vp.height });

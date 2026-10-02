@@ -15,6 +15,11 @@ export function buildOffsets(keys: readonly string[], heights: ReadonlyMap<strin
   return offsets;
 }
 
+/** Row `index` is `delta` pixels taller than the offsets say: every row after it moves by that much (in place, nothing is rebuilt). */
+export function shiftAfter(offsets: number[], index: number, delta: number): void {
+  for (let j = index + 1; j < offsets.length; j += 1) offsets[j] = (offsets[j] as number) + delta;
+}
+
 /** The row that contains vertical position `y` (clamped to the first and last row). */
 export function indexAt(offsets: readonly number[], y: number): number {
   const n = offsets.length - 1;

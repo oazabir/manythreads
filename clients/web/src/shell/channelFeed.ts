@@ -3,6 +3,7 @@ import { isApiError } from '../api/client';
 import { fetchNavChannels } from '../api/endpoints';
 import type { NavChannel, NavChannelGroup } from '@manythreads/shared';
 import { channelStore } from '../channels/store';
+import { onPersonChange } from '../app/caches';
 
 /*
  * Channel groups for the sidebar and the channel view (one copy, shared). The route belongs to the channels plugin, so the shell
@@ -42,11 +43,10 @@ export function refreshDirectories(): void {
   for (const slug of feeds.keys()) void refreshDirectory(slug);
 }
 
-/** Forget what is held (sign-out). */
-export function resetDirectories(): void {
+onPersonChange(() => {
   feeds.clear();
   emit();
-}
+});
 
 export function useChannelFeed(teamSlug: string | null): ChannelFeed {
   const feed = useSyncExternalStore(

@@ -4,7 +4,8 @@
 // `MANYTHREADS_STACK {"origin":...,"ownerUrl":...}`, when it is ready, and drops its database on SIGTERM.
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { connect } from 'node:net';
+import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
@@ -29,7 +30,7 @@ const TYPES: Record<string, string> = {
 };
 
 let apiPort = 0;
-const isApi = (url: string): boolean => /^\/(api|healthz|readyz)(\/|\?|$)/.test(url);
+const isApi = (url: string): boolean => /^\/(api|healthz|readyz|ws)(\/|\?|$)/.test(url);
 
 function proxy(req: IncomingMessage, res: ServerResponse): void {
   const upstream = httpRequest(
@@ -60,7 +61,23 @@ function serveStatic(req: IncomingMessage, res: ServerResponse): void {
   createReadStream(file).pipe(res);
 }
 
+/** The live socket (`/ws`): the upgrade is passed to the API as it came, then bytes flow both ways. */
+function proxyUpgrade(req: IncomingMessage, socket: Socket, head: Buffer): void {
+  const upstream = connect(apiPort, '127.0.0.1', () => {
+    const lines = [`${req.method ?? 'GET'} ${req.url ?? '/'} HTTP/1.1`];
+    for (let i = 0; i < req.rawHeaders.length; i += 2) lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
+    upstream.write(`${lines.join('\r\n')}\r\n\r\n`);
+    if (head.length > 0) upstream.write(head);
+    socket.pipe(upstream);
+    upstream.pipe(socket);
+  });
+  upstream.on('error', () => socket.destroy());
+  socket.on('error', () => upstream.destroy());
+  socket.on('close', () => upstream.destroy());
+}
+
 const front = createServer((req, res) => (isApi(req.url ?? '/') ? proxy(req, res) : serveStatic(req, res)));
+front.on('upgrade', (req, socket, head) => (isApi(req.url ?? '/') ? proxyUpgrade(req, socket as Socket, head) : socket.destroy()));
 await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 

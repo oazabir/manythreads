@@ -33,14 +33,23 @@ export function buildListItems(
   return out;
 }
 
+/** Message guesses by message object (a message is replaced, never edited in place), so a list rebuild does not split every body again. */
+const guessed = new WeakMap<ChannelMessage, number>();
+
 export function estimateItem(item: ListItem): number {
   switch (item.kind) {
     case 'day':
       return 36;
     case 'unread':
       return 30;
-    case 'message':
-      return estimateMessageHeight(item.message);
+    case 'message': {
+      let h = guessed.get(item.message);
+      if (h === undefined) {
+        h = estimateMessageHeight(item.message);
+        guessed.set(item.message, h);
+      }
+      return h;
+    }
     case 'pending':
       return estimateMessageHeight({ body: item.pending.body, reactions: [], replyCount: 0, attachments: item.pending.attachments }) + 18;
   }

@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { apiAs, bulkMessages, createChannel, messages, openAs, postMessage } from './support.ts';
 
+// the desktop layout (hover actions, side panel); the phone layout has its own spec (mobile-web)
+test.skip(({ isMobile }) => isMobile, 'desktop layout');
+
 const sidebarRow = (page: import('@playwright/test').Page, name: string) => page.locator('[data-landmark="sidebar"] a.it', { hasText: name });
 
 /** PLAN criterion 1 and e2e/channels/read-state: the badge counts what arrived, reading clears it, one "New" divider marks where it began. */

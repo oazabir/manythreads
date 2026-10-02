@@ -33,6 +33,7 @@
 .vrow {
   display: flow-root;
   padding-bottom: 6px;
+  contain: layout style;
 }
 
 .start {
@@ -99,6 +100,11 @@
 .msg:focus-within,
 .msg.tapped {
   background: var(--msg-hover);
+}
+
+.msg:focus-visible {
+  outline: 2px solid var(--human-border);
+  outline-offset: -2px;
 }
 
 .msg.hl {
@@ -353,27 +359,6 @@
   border-radius: 6px;
   background: var(--surface);
   box-shadow: 0 1px 2px rgb(27 36 48 / 6%);
-  opacity: 0;
-  pointer-events: none;
-}
-
-.msg:hover .acts,
-.msg:focus-within .acts {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-@media (hover: none) {
-  .msg.tapped .acts {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .msg:hover:not(.tapped) .acts,
-  .msg:focus-within:not(.tapped) .acts {
-    opacity: 0;
-    pointer-events: none;
-  }
 }
 
 .act {
@@ -524,7 +509,6 @@
 }
 
 .net-banner,
-.join-bar,
 .read-only {
   display: flex;
   align-items: center;
@@ -535,15 +519,6 @@
   background: var(--warn-wash);
   color: var(--warn-ink);
   font-size: 12.5px;
-}
-
-.join-bar {
-  background: var(--human-wash);
-  color: var(--ink);
-}
-
-.join-bar .btn {
-  margin-left: auto;
 }
 
 .read-only {
@@ -831,6 +806,8 @@
 }
 
 .thread-title {
+  flex: 0 1 auto;
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   font-size: 15.5px;
@@ -850,6 +827,10 @@
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+.thread-head .btn {
+  white-space: nowrap;
 }
 
 .thread-head a.btn {
@@ -1028,7 +1009,6 @@
   }
 
   .net-banner,
-  .join-bar,
   .read-only {
     padding: 8px 14px;
   }

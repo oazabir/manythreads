@@ -2,6 +2,17 @@ import { memo, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { parseMarkdown, type Block, type Inline } from './markdown';
 
+/** Parsed messages by their text: scrolling back over a row does not parse it again. Bounded, oldest out first. */
+const parsed = new Map<string, Block[]>();
+function read(source: string): Block[] {
+  const hit = parsed.get(source);
+  if (hit) return hit;
+  const tree = parseMarkdown(source);
+  parsed.set(source, tree);
+  if (parsed.size > 3_000) parsed.delete(parsed.keys().next().value as string);
+  return tree;
+}
+
 /** Draws what `markdown.ts` read. Only React elements: message text never becomes HTML. External links open safely. */
 function inline(nodes: Inline[], teamSlug: string | null, key = ''): ReactNode[] {
   return nodes.map((n, i) => {
@@ -63,5 +74,5 @@ function blocks(list: Block[], teamSlug: string | null): ReactNode[] {
 }
 
 export const Markdown = memo(function Markdown({ source, teamSlug = null }: { source: string; teamSlug?: string | null }) {
-  return <div className="md">{blocks(parseMarkdown(source), teamSlug)}</div>;
+  return <div className="md">{blocks(read(source), teamSlug)}</div>;
 });

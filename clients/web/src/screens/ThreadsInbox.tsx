@@ -42,7 +42,21 @@ export function ThreadsInbox() {
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
   const listRef = useRef<HTMLUListElement>(null);
 
-  const items = useMemo<ThreadInboxItem[]>(() => (q.status === 'ok' ? q.data.items.filter((i) => !(tab === 'unread' && done.has(i.rootMessageId))) : []), [q, tab, done]);
+  // The thread being read stays on the Unread list while it is open, even though reading it just emptied its count there.
+  const shown = useRef<ThreadInboxItem[]>([]);
+  const items = useMemo<ThreadInboxItem[]>(() => {
+    if (q.status !== 'ok') return shown.current;
+    const fresh = q.data.items.filter((i) => !(tab === 'unread' && done.has(i.rootMessageId)));
+    if (tab === 'unread' && selected && !done.has(selected) && !fresh.some((i) => i.rootMessageId === selected)) {
+      const was = shown.current.findIndex((i) => i.rootMessageId === selected);
+      const row = shown.current[was];
+      if (row) return [...fresh.slice(0, was), { ...row, unreadCount: 0 }, ...fresh.slice(was)];
+    }
+    return fresh;
+  }, [q, tab, done, selected]);
+  useEffect(() => {
+    shown.current = items;
+  }, [items]);
   const absent = q.status === 'error' && isApiError(q.error) && q.error.status === 404;
 
   const open = useCallback(
@@ -62,10 +76,10 @@ export function ThreadsInbox() {
     setParams(next);
   };
 
-  // On a wide screen the first thread is open, as in the prototype.
+  // On a wide screen the first thread is open, as in the prototype (not on Unread: opening reads it, so the person chooses).
   useEffect(() => {
-    if (!narrow && !selected && items[0]) open(items[0].rootMessageId, true);
-  }, [narrow, selected, items, open]);
+    if (!narrow && !selected && tab !== 'unread' && items[0]) open(items[0].rootMessageId, true);
+  }, [narrow, selected, tab, items, open]);
 
   const markDone = useCallback(
     (rootId: string): void => {
@@ -162,12 +176,12 @@ export function ThreadsInbox() {
           ) : null}
           {selected ? (
             <ThreadBody key={selected} rootId={selected} variant="main" />
-          ) : (
+          ) : items.length > 0 ? (
             <div className="inr-empty">
               <p className="view-empty-title">Pick a thread</p>
               <p className="view-empty-body">Its messages show here. Press j and k to move, e to mark it read.</p>
             </div>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>

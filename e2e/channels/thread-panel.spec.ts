@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { apiAs, createChannel, messages, openAs, postMessage } from './support.ts';
 
+// the desktop layout (hover actions, side panel); the phone layout has its own spec (mobile-web)
+test.skip(({ isMobile }) => isMobile, 'desktop layout');
+
 /** PLAN criterion 2 and e2e/channels/thread-panel: a thread opens in the right panel with the channel visible; two pushes, Back, reload. */
 test('open a thread, reply, push a second panel, Back, reload on the deep link', async ({ browser }) => {
   const omar = await apiAs('omar');
