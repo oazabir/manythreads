@@ -41,6 +41,8 @@ Spec v1.4.1 §2 already states these; the guide's queue wording is superseded.
 
 **D4 · k3s with CloudNativePG.** Postgres is a CNPG `Cluster`: 1 instance, 3 for HA; `pg_trgm`, `pgvector` (`uuidv7()` is built in); scheduled backups to object storage. One Helm chart, no CRDs of our own (the controller reads the DB). Default install is five workloads: **CNPG Postgres, LiteLLM, Hindsight, manythreads server (+ web static), Hermes runtime pods.** Docker compose is a supported self-host option (five containers, phase 10) as well as the dev and CI harness.
 
+**D5 · Rate limits on sensitive endpoints.** Every endpoint that grants, recovers or changes a credential or a session — sign-in, password reset, email verification, first-admin bootstrap, invitation accept, OIDC start/callback, change-password, session revoke — carries an **explicit low per-client-address limit** on top of the default route limit, and the credential routes add the in-memory lockout on repeated failures. Over the limit is `429 rate_limited` with `retry-after`; counters are in process memory per replica, like every rate limit (D3), never in the database. A new phase that adds a sensitive route must give it a limit **in the same task that adds the route**; phase 10 audits the whole set, documents the numbers in the Helm notes beside the per-replica caveat, and bursts them in `e2e/api/security/abuse.spec.ts`.
+
 Everything else follows the spec: Hermes only, no bot modes, `BOT.md`, one LLM gateway, one MCP gateway, Hindsight bank per team chosen by the gateway with the git mirror, two-stage gate, one `needsApproval`, first-party person connections.
 
 ## 4. Personas
@@ -1002,6 +1004,7 @@ Refactor with tests green; write `docs/retro/phase-10.md`.
 | P10-11 | Tauri 2 shell for macOS, Windows, Linux (deep links, native notifications, unsigned CI builds); HA chaos check (kill the CNPG primary mid-suite; no write lost; UNLOGGED data may reset) | `clients/desktop`, `tools/chaos` | §2, D4 | Sonnet; Haiku |
 | P10-12 | `seed --phase N`, event contracts, plugin author docs, SDK publication prep | `e2e/fixtures`, `docs` | §18 | Sonnet |
 | P10-13 | **Compose self-host**: five containers (Postgres, LiteLLM, Hindsight, manythreads, Hermes) as a supported install (spec §2), documented in `docs/deploy/compose.md` and tested in CI from a clean checkout | `deploy/compose`, `docs/deploy` | §2, D4 | Sonnet; Haiku |
+| P10-14 | **Abuse review of sensitive endpoints (D5)**: audit every route that grants, recovers or changes a credential or session (sign-in, reset, email verification, bootstrap, invitation accept, OIDC start/callback, change-password, session revoke) for an explicit low per-client-address limit plus the credential lockout; add the limit to any that lack one; publish each limit and window in the Helm notes beside the per-replica caveat; burst each route to prove 429 + `retry-after` | `plugins/identity-*`, `plugins/teams`, `server`, `deploy/helm` | D5, §15 | Sonnet |
 
 ### 2 · UI references
 
@@ -1036,6 +1039,7 @@ Errors: no alias test passed (Continue disabled with reason); k8s check failed w
 6. Nadia's answer withholding Drive shows Drive as withheld in the audit row with no message text; the auditor export verifies, a tampered file fails.
 7. Killing the primary of 3 CNPG instances recovers within 60 s with earlier writes present; a restored backup passes the RLS harness with equal counts.
 8. `docker compose up` from a clean checkout brings five healthy containers and Brain answers a seeded question (compose self-host, CI). With the air-gapped preset and deny-all egress Brain still answers. The Tauri build opens sign-in and fires a mention notification. Every pen-test item passes or has an accepted exception.
+9. Every sensitive endpoint (D5) refuses a burst inside its window with `429 rate_limited` and `retry-after` — sign-in, reset, email verification, bootstrap, invitation accept, OIDC start/callback, change-password — five wrong passwords lock that address for 15 minutes, and each limit and window is documented in the Helm notes as per replica.
 
 ### 4 · Automated end-to-end tests
 
@@ -1046,6 +1050,7 @@ Errors: no alias test passed (Continue disabled with reason); k8s check failed w
 | `e2e/admin/llm.spec.ts`, `subscriptions.spec.ts` | alias, fallback, budget; flag off then on → spend, budget block; label, routine refused |
 | `e2e/admin/guardrails.spec.ts`, `audit.spec.ts` | fake key through each outcome; Nadia asks, Omar exports → decisions audited; withheld listed; no content |
 | `e2e/admin/non-admin.spec.ts`, `e2e/api/security/pen.spec.ts` | Nadia, Priya, Lena try `/admin/*`; pen checklist → 404; all pass |
+| `e2e/api/security/abuse.spec.ts` | burst each sensitive route (sign-in, reset, email verification, bootstrap, invitation accept, OIDC start) → 429 `rate_limited` with `retry-after` before the window ends; 5 bad passwords → the address locked for 15 minutes |
 | `e2e/deploy/k3s-install.spec.ts`, `netpol.spec.ts`, `backup-restore.spec.ts` (CI, k3d) | install; curl Hindsight from pod and server; backup, destroy, restore → five workloads, no CRDs; pod refused; counts equal |
 | `e2e/deploy/compose-install.spec.ts` (CI) | clean checkout, `docker compose up`, ask Brain → five healthy containers; answer |
 | `e2e/deploy/ha-failover.spec.ts`, `air-gapped.spec.ts` (nightly), `e2e/desktop/tauri-smoke.spec.ts` | kill primary; deny-all egress; launch shell → under 60 s; answer returned; sign-in and notification |
