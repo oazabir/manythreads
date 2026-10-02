@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { REPO_BRANCH } from '@manythreads/shared';
@@ -162,6 +163,7 @@ export function createGitLayer(options: GitLayerOptions = {}) {
   /** The commit a ref names, or null when it names nothing. */
   async function resolve(gitDir: string, ref: string): Promise<string | null> {
     assertRef(ref);
+    if (!existsSync(gitDir)) return null;
     const res = await run(gitDir, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`], { okExit: [0, 1] });
     const sha = res.stdout.toString('utf8').trim();
     return res.exitCode === 0 && SHA.test(sha) ? sha : null;

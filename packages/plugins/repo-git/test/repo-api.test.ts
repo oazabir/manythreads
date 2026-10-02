@@ -175,7 +175,7 @@ describe('the bot path guard goes through the kernel broker (criterion 5)', () =
     expect(c?.author.email).toBe(`${bot.actorId}@actors.manythreads.invalid`);
     // every denial is an audit event
     const events = await w.system(async (tx) =>
-      (await tx.query<{ payload: { path: string; capability: string } }>("SELECT payload FROM app.events WHERE type = 'kernel.capability.denied' AND actor_id = $1", [bot.actorId])).rows.map((r) => r.payload),
+      (await tx.query<{ payload: { path: string; capability: string } }>("SELECT payload FROM app.events WHERE type = 'kernel.capability.denied' AND payload->>'actorId' = $1", [bot.actorId])).rows.map((r) => r.payload),
     );
     expect(events.map((e) => e.path).sort()).toEqual([...denied].sort());
     expect(new Set(events.map((e) => e.capability))).toEqual(new Set(['files.write']));

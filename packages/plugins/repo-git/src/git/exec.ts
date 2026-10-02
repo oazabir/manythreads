@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 // The only place that starts a `git` process. Rules (PLAN P4-03): argv only (never a shell string), an environment built from
@@ -148,7 +149,7 @@ export function createGitRunner(options: GitRunnerOptions = {}): GitRunner {
       ];
       let child;
       try {
-        child = spawn(bin, argv, { cwd: opts.cwd ?? opts.gitDir ?? tmpdir(), env: buildEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'], shell: false, detached: true });
+        child = spawn(bin, argv, { cwd: opts.cwd ?? (opts.gitDir && existsSync(opts.gitDir) ? opts.gitDir : tmpdir()), env: buildEnv(opts.env), stdio: ['pipe', 'pipe', 'pipe'], shell: false, detached: true });
       } catch (err) {
         reject(err instanceof GitError ? err : new GitError('unavailable', `git could not be started: ${err instanceof Error ? err.message : String(err)}`));
         return;
