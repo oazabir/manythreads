@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { RepoRepoCommittedEvent } from '@manythreads/shared';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { RepoError } from '../src/errors.ts';
 import { createGitLayer } from '../src/git/index.ts';
 import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from './world.ts';
@@ -11,6 +11,9 @@ import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from './world.ts'
 const { sameera, rafi, tariq } = personas;
 const sup = TEAM_IDS['Customer support'];
 const git = createGitLayer();
+
+// Dozens of git processes per test: under a full parallel run the default 5 s is too tight.
+vi.setConfig({ testTimeout: 60_000 });
 
 let w: RepoWorld;
 beforeAll(async () => {
