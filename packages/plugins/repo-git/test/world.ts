@@ -39,7 +39,7 @@ export interface RepoWorld {
   gitDir(teamId: string): string;
   /** A bot on the roster of the team with the grants given (default: `files.write`). */
   makeBot(teamId: string, grants?: string[]): Promise<Bot>;
-  commit(who: Who | null, slug: string, changes: unknown[], message: string): Promise<ApiResult<any>>;
+  commit(who: Who | null, slug: string, changes: unknown[], message: string): Promise<ApiResult<{ sha: string; parentSha: string | null }>>;
   close(): Promise<void>;
 }
 
