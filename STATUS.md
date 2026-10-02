@@ -1,11 +1,11 @@
 # STATUS
 
-Current phase: **2 · Identity, workspace and teams** — gate green locally; release pending CI
+Current phase: **3 · Channels, threads and direct messages** (in progress)
 
 | Phase | State | Tag |
 |---|---|---|
 | 1 Foundations | done — gate green locally and in CI; retro `docs/retro/phase-1.md` | phase-1 / v0.1.0 |
-| 2 Identity, workspace, teams | gate green locally (retro docs/retro/phase-2.md) | pending |
+| 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
 | 3–13 | not started | |
 
 ## Phase 1 summary
