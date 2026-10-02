@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ErrorEnvelope } from '@majlis/shared';
+import { ErrorEnvelope } from '@manythreads/shared';
 import { devActor, TEST } from '../support/api.ts';
 
 test('100 calls on a 60/min route: exactly 60 pass, 40 are 429 rate_limited', async ({ request }) => {

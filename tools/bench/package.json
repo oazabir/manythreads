@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/tools-bench",
+  "name": "@manythreads/tools-bench",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "pg": "^8",
-    "@majlis/kernel": "workspace:*",
-    "@majlis/shared": "workspace:*",
-    "@majlis/test-utils": "workspace:*",
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/shared": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
     "react": "^19",
     "react-dom": "^19"
   },

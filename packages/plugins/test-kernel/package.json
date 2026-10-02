@@ -1,20 +1,20 @@
 {
-  "name": "@majlis/plugin-test-kernel",
+  "name": "@manythreads/plugin-test-kernel",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
-  "majlis": {
+  "manythreads": {
     "entry": "./src/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@majlis/sdk": "workspace:*",
-    "@majlis/shared": "workspace:*",
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
     "zod": "^4"
   }
 }

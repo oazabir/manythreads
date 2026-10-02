@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# majlis/postgres:19 = postgres:19beta4 + pgvector.
+# manythreads/postgres:19 = postgres:19beta4 + pgvector.
 # Behind a TLS-intercepting proxy, pass its CA:
-#   docker build --secret id=cacert,src=/path/ca-bundle.crt -t majlis/postgres:19 deploy/postgres
+#   docker build --secret id=cacert,src=/path/ca-bundle.crt -t manythreads/postgres:19 deploy/postgres
 FROM postgres:19beta4
 
 ARG PGVECTOR_REF=v0.8.7

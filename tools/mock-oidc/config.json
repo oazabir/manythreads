@@ -1,0 +1,27 @@
+{
+  "interactiveLogin": true,
+  "httpServer": "NettyWrapper",
+  "tokenCallbacks": [
+    {
+      "issuerId": "google",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        { "requestParam": "grant_type", "match": "*", "claims": { "email_verified": true, "hd": "kahf.co" } }
+      ]
+    },
+    {
+      "issuerId": "microsoft",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        { "requestParam": "grant_type", "match": "*", "claims": { "tid": "9f1c7a64-2b2a-4c0e-8f3c-5a6f1e0c2d11" } }
+      ]
+    },
+    {
+      "issuerId": "any",
+      "tokenExpiry": 3600,
+      "requestMappings": [
+        { "requestParam": "grant_type", "match": "*", "claims": { "email_verified": true } }
+      ]
+    }
+  ]
+}

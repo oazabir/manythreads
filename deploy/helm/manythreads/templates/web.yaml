@@ -1,0 +1,47 @@
+{{- if .Values.web.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-web
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+    spec:
+      containers:
+        - name: web
+          image: {{ .Values.web.image }}:{{ .Values.imageTag }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - { name: MANYTHREADS_SERVER_HOST, value: manythreads-server }
+            - { name: MANYTHREADS_SERVER_PORT, value: {{ .Values.server.port | quote }} }
+          ports: [{ name: http, containerPort: 80 }]
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 5
+          {{- with .Values.web.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-web
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: web
+  ports:
+    - { name: http, port: 80, targetPort: http }
+{{- end }}

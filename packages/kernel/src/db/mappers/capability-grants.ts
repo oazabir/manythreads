@@ -1,4 +1,4 @@
-import { CapabilityGrant } from '@majlis/shared';
+import { CapabilityGrant } from '@manythreads/shared';
 
 export interface CapabilityGrantRow {
   id: string;

@@ -11,7 +11,7 @@ import type {
   SettingsPageDefinition,
   SurfaceDefinition,
   TriggerDefinition,
-} from '@majlis/sdk';
+} from '@manythreads/sdk';
 
 export interface RegistryEntry<T> {
   plugin: string;

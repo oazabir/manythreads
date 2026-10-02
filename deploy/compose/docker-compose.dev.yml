@@ -1,17 +1,17 @@
 services:
   postgres:
     build: ../postgres
-    image: majlis/postgres:19
+    image: manythreads/postgres:19
     environment:
-      POSTGRES_USER: majlis_owner
-      POSTGRES_PASSWORD: majlis
-      POSTGRES_DB: majlis
+      POSTGRES_USER: manythreads_owner
+      POSTGRES_PASSWORD: manythreads
+      POSTGRES_DB: manythreads
     ports:
       - "55432:5432"
     volumes:
-      - majlis_pgdata:/var/lib/postgresql
+      - manythreads_pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U majlis_owner -d majlis"]
+      test: ["CMD-SHELL", "pg_isready -U manythreads_owner -d manythreads"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -21,7 +21,10 @@ services:
     image: ghcr.io/navikt/mock-oauth2-server:2.1.10
     environment:
       SERVER_PORT: "8080"
-      JSON_CONFIG: '{"interactiveLogin": true}'
+      JSON_CONFIG_PATH: /config/config.json
+    volumes:
+      # Issuers google, microsoft and any with their default claims; see tools/mock-oidc/README.md.
+      - ../../tools/mock-oidc/config.json:/config/config.json:ro
     ports:
       - "8080:8080"
 
@@ -32,5 +35,31 @@ services:
       - "8025:8025"
       - "1025:1025"
 
+  # Optional (profile `app`): the server image against the dev Postgres, with the same environment the Helm chart sets
+  # (KMS key, public URL, proxy trust, mail through mailpit). `docker compose -f deploy/compose/docker-compose.dev.yml
+  # --profile app up -d --build server`; `pnpm db:up` does not start it. Set MANYTHREADS_KMS_KEY first (see dev.env.example).
+  # A self-host compose file (all five workloads) comes in phase 10.
+  server:
+    profiles: ["app"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/server.Dockerfile
+    image: manythreads/server:dev
+    depends_on:
+      postgres: { condition: service_healthy }
+      mailpit: { condition: service_started }
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://manythreads_owner:manythreads@postgres:5432/manythreads
+      MANYTHREADS_APP_DATABASE_URL: postgres://manythreads_app:manythreads_app@postgres:5432/manythreads
+      MANYTHREADS_SYSTEM_DATABASE_URL: postgres://manythreads_system:manythreads_system@postgres:5432/manythreads
+      MANYTHREADS_KMS_KEY: ${MANYTHREADS_KMS_KEY:-}  # required by the production image: openssl rand -base64 32
+      MANYTHREADS_PUBLIC_URL: ${MANYTHREADS_PUBLIC_URL:-http://localhost:3000}
+      MANYTHREADS_TRUST_PROXY: ${MANYTHREADS_TRUST_PROXY:-0}
+      MANYTHREADS_SMTP_URL: smtp://mailpit:1025
+      MANYTHREADS_MAIL_FROM: ${MANYTHREADS_MAIL_FROM:-manythreads <no-reply@localhost>}
+    ports:
+      - "3000:3000"
+
 volumes:
-  majlis_pgdata:
+  manythreads_pgdata:

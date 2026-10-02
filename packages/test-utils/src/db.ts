@@ -1,27 +1,34 @@
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_APP_PASSWORD,
   DEFAULT_SYSTEM_PASSWORD,
   kernelMigrationSource,
   runMigrations,
   type MigrationSource,
-} from '@majlis/kernel';
+} from '@manythreads/kernel';
 import pg from 'pg';
 
-export const DEV_TEST_DATABASE_URL = 'postgresql://majlis_owner:majlis@localhost:55432/majlis';
+/** Migrations of the test-only plugin test-kernel (holds `stub_resources`); pass it in `sources` next to the kernel's. */
+export const testKernelMigrationSource: MigrationSource = {
+  namespace: 'test-kernel',
+  dir: fileURLToPath(new URL('../../plugins/test-kernel/migrations/', import.meta.url)),
+};
+
+export const DEV_TEST_DATABASE_URL = 'postgresql://manythreads_owner:manythreads@localhost:55432/manythreads';
 
 /** Owner connection string of the cluster's admin database; tests create and drop temp databases through it. */
 export function testAdminUrl(): string {
-  return process.env['MAJLIS_TEST_DATABASE_URL'] ?? DEV_TEST_DATABASE_URL;
+  return process.env['MANYTHREADS_TEST_DATABASE_URL'] ?? DEV_TEST_DATABASE_URL;
 }
 
 export interface TestDatabase {
   name: string;
-  /** Owner (majlis_owner) connection string to the temp database. */
+  /** Owner (manythreads_owner) connection string to the temp database. */
   ownerUrl: string;
-  /** majlis_app connection string to the temp database. */
+  /** manythreads_app connection string to the temp database. */
   appUrl: string;
-  /** majlis_system connection string to the temp database (the only login for which app.is_system() is true). */
+  /** manythreads_system connection string to the temp database (the only login for which app.is_system() is true). */
   systemUrl: string;
   /** Files applied by the initial migrate (0 when `migrate: false`). */
   applied: number;
@@ -74,13 +81,13 @@ export function migrateTestDatabase(
   return withClusterLock(() => runMigrations({ connectionString: db.ownerUrl, sources, appPassword, systemPassword }));
 }
 
-/** Creates a fresh `majlis_test_*` database and (by default) migrates it. Drop it with dropTestDatabase. */
+/** Creates a fresh `manythreads_test_*` database and (by default) migrates it. Drop it with dropTestDatabase. */
 export async function createTestDatabase(options: CreateTestDatabaseOptions = {}): Promise<TestDatabase> {
   const adminUrl = testAdminUrl();
-  const name = `majlis_test_${randomBytes(6).toString('hex')}`;
+  const name = `manythreads_test_${randomBytes(6).toString('hex')}`;
   const ownerUrl = withDatabase(adminUrl, name);
-  const appUrl = withDatabase(adminUrl, name, { name: 'majlis_app', password: DEFAULT_APP_PASSWORD });
-  const systemUrl = withDatabase(adminUrl, name, { name: 'majlis_system', password: DEFAULT_SYSTEM_PASSWORD });
+  const appUrl = withDatabase(adminUrl, name, { name: 'manythreads_app', password: DEFAULT_APP_PASSWORD });
+  const systemUrl = withDatabase(adminUrl, name, { name: 'manythreads_system', password: DEFAULT_SYSTEM_PASSWORD });
   const admin = new pg.Client({ connectionString: adminUrl });
   await admin.connect();
   try {
@@ -97,7 +104,7 @@ export async function createTestDatabase(options: CreateTestDatabaseOptions = {}
 
 /** Drops the temp database, terminating any connection still open to it. */
 export async function dropTestDatabase(db: TestDatabase): Promise<void> {
-  if (!/^majlis_test_[0-9a-f]+$/.test(db.name)) throw new Error(`Refusing to drop ${db.name}`);
+  if (!/^manythreads_test_[0-9a-f]+$/.test(db.name)) throw new Error(`Refusing to drop ${db.name}`);
   const admin = new pg.Client({ connectionString: testAdminUrl() });
   await admin.connect();
   try {
@@ -107,25 +114,77 @@ export async function dropTestDatabase(db: TestDatabase): Promise<void> {
   }
 }
 
+/** Valid kinds in a `COMMENT ON TABLE x IS 'rls: <kind>'` (PLAN.md P2-00; global tables are exempt from the comment). */
+export const RLS_KINDS = ['team', 'person', 'workspace', 'system', 'global'] as const;
+export type RlsKind = (typeof RLS_KINDS)[number];
+
+const RLS_COMMENT = /^rls:\s*(team|person|workspace|system|global)\b/;
+
+/** The kind named by a table comment, or undefined when it has none (or an unknown one). */
+export function parseRlsComment(comment: string | null | undefined): RlsKind | undefined {
+  const kind = comment ? RLS_COMMENT.exec(comment)?.[1] : undefined;
+  return kind as RlsKind | undefined;
+}
+
+export interface RlsProblem {
+  name: string;
+  problems: string[];
+}
+
+interface Queryable {
+  query(text: string): Promise<{ rows: Array<Record<string, unknown>> }>;
+}
+
 /**
- * Names of tables in schema `app` that break the RLS rule (PLAN.md D3, P1-04): not on the `global_tables`
- * allowlist and missing ENABLE, FORCE or at least one policy. Run it as the owner.
+ * Tables in schema `app` that break the RLS rule (PLAN.md D3, P1-04, P2-00), with the reasons: not on the
+ * `global_tables` allowlist and missing ENABLE, FORCE, a policy, or a valid `rls: <kind>` table comment; or tagged
+ * `rls: global` without being on the allowlist. Run it as the owner.
  */
-export async function findRlsViolations(client: {
-  query(text: string): Promise<{ rows: { name: string }[] }>;
-}): Promise<string[]> {
+export async function explainRlsViolations(client: Queryable): Promise<RlsProblem[]> {
   const result = await client.query(`
-    SELECT c.relname AS name
+    SELECT c.relname AS name,
+           c.relrowsecurity AS enabled,
+           c.relforcerowsecurity AS forced,
+           EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid) AS has_policy,
+           obj_description(c.oid, 'pg_class') AS comment
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'app'
       AND c.relkind IN ('r', 'p')
       AND NOT c.relispartition
       AND c.relname NOT IN (SELECT name FROM app.global_tables)
-      AND (NOT c.relrowsecurity
-           OR NOT c.relforcerowsecurity
-           OR NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid))
     ORDER BY c.relname
   `);
-  return result.rows.map((r) => r.name);
+  const out: RlsProblem[] = [];
+  for (const row of result.rows) {
+    const problems: string[] = [];
+    if (!row['enabled']) problems.push('row level security is not enabled');
+    if (!row['forced']) problems.push('row level security is not forced');
+    if (!row['has_policy']) problems.push('no policy');
+    const kind = parseRlsComment(row['comment'] as string | null);
+    if (!kind) problems.push("missing table comment 'rls: team|person|workspace|system|global'");
+    else if (kind === 'global') problems.push("tagged 'rls: global' but not in app.global_tables");
+    if (problems.length > 0) out.push({ name: String(row['name']), problems });
+  }
+  return out;
+}
+
+/** Names of the tables explainRlsViolations reports. */
+export async function findRlsViolations(client: Queryable): Promise<string[]> {
+  return (await explainRlsViolations(client)).map((p) => p.name);
+}
+
+/** One query as the database owner (bypasses RLS): for specs that arrange or inspect state the API cannot reach. */
+export async function ownerSql<T extends Record<string, unknown> = Record<string, unknown>>(
+  ownerUrl: string,
+  text: string,
+  params: readonly unknown[] = [],
+): Promise<T[]> {
+  const client = new pg.Client({ connectionString: ownerUrl });
+  await client.connect();
+  try {
+    return (await client.query<T>(text, [...params])).rows;
+  } finally {
+    await client.end();
+  }
 }

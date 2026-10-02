@@ -3,7 +3,7 @@
  * device) cannot run in this sandbox (no device or emulator) and is deferred to the phase 11 gate. This renders a
  * hand-windowed 5,000-message React list in Chromium (390x844, CDP CPU throttle x4 as a mid-range Android
  * approximation), scrolls top to bottom and reports requestAnimationFrame frame times.
- * Run: pnpm --filter @majlis/tools-bench bench:list
+ * Run: pnpm --filter @manythreads/tools-bench bench:list
  */
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,7 @@ import { build } from 'vite';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '../list');
-const out = join(tmpdir(), 'majlis-bench-list');
+const out = join(tmpdir(), 'manythreads-bench-list');
 const THROTTLE = Number(process.env['BENCH_CPU_THROTTLE'] ?? 4);
 const SCROLL_MS = Number(process.env['BENCH_SCROLL_MS'] ?? 10_000);
 const RUNS = Number(process.env['BENCH_RUNS'] ?? 3);

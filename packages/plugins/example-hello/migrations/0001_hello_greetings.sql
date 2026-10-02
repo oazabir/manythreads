@@ -13,4 +13,4 @@ CREATE POLICY hello_greetings_team ON app.hello_greetings
   USING (app.is_team_member(team_id) OR app.is_system())
   WITH CHECK (app.is_team_member(team_id) OR app.is_system());
 
-GRANT SELECT, INSERT ON app.hello_greetings TO majlis_app;
+GRANT SELECT, INSERT ON app.hello_greetings TO manythreads_app;

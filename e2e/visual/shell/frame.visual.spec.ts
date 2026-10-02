@@ -6,7 +6,7 @@ import {
 
 
 /*
- * `/` vs [proto §02 plate 1 · Channel, with a thread open in the right panel], class P-loose,
+ * `/?mock=1` vs [proto §02 plate 1 · Channel, with a thread open in the right panel], class P-loose,
  * "frame landmarks only" (PLAN Phase 1 §5). The plate has no data-landmark attributes, so its
  * regions are derived from layout inside `.frame .app`:
  *   team-switch = .side .team   search = .side .srch   sidebar = .side .nav
@@ -36,7 +36,8 @@ test('empty frame has the plate landmarks in order', async ({ page }, testInfo) 
   // Sanity: the plate's own regions respect the order we then require of the live frame.
   expect(checkOrder(expected, ORDER)).toEqual([]);
 
-  const live = await renderLive(page, '/');
+  // `/` needs a session now; mock mode (?mock=1) serves Omar from fixtures, so this spec has no server dependency.
+  const live = await renderLive(page, '/?mock=1');
   const actual = await landmarks(page);
 
   const diff = comparePngs(plate, live);

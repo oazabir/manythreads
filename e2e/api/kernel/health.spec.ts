@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import { HealthResponse, ReadyResponse } from '@majlis/shared';
+import { HealthResponse, ReadyResponse } from '@manythreads/shared';
 
 const repo = (p: string): string => fileURLToPath(new URL(`../../../${p}`, import.meta.url));
 const sqlFiles = (dir: string): number => readdirSync(dir).filter((f) => f.endsWith('.sql')).length;

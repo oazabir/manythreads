@@ -1,4 +1,4 @@
-import { PluginManifest, type PluginManifestInput } from '@majlis/shared';
+import { PluginManifest, type PluginManifestInput } from '@manythreads/shared';
 import type { PluginContext, PluginDefinition, PluginTx } from './types.ts';
 
 export * from './types.ts';

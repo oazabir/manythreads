@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { ActorId, parseEvent, WorkspaceId } from '@majlis/shared';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@majlis/test-utils';
+import { ActorId, parseEvent, WorkspaceId } from '@manythreads/shared';
+import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, createSystemPool, withActor, withSystem } from '../../src/db/index.ts';

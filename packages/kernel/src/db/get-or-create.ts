@@ -20,17 +20,17 @@ let doSelectSupported: boolean | undefined;
  */
 export async function supportsDoSelect(tx: Tx): Promise<boolean> {
   if (doSelectSupported !== undefined) return doSelectSupported;
-  await tx.query('SAVEPOINT majlis_probe_do_select');
+  await tx.query('SAVEPOINT manythreads_probe_do_select');
   try {
-    await tx.query('CREATE TEMP TABLE majlis_probe_do_select (k text PRIMARY KEY) ON COMMIT DROP');
-    await tx.query('INSERT INTO majlis_probe_do_select (k) VALUES ($1)', ['a']);
-    await tx.query('INSERT INTO majlis_probe_do_select (k) VALUES ($1) ON CONFLICT (k) DO SELECT RETURNING k', ['a']);
+    await tx.query('CREATE TEMP TABLE manythreads_probe_do_select (k text PRIMARY KEY) ON COMMIT DROP');
+    await tx.query('INSERT INTO manythreads_probe_do_select (k) VALUES ($1)', ['a']);
+    await tx.query('INSERT INTO manythreads_probe_do_select (k) VALUES ($1) ON CONFLICT (k) DO SELECT RETURNING k', ['a']);
     doSelectSupported = true;
   } catch {
     doSelectSupported = false;
   } finally {
-    await tx.query('ROLLBACK TO SAVEPOINT majlis_probe_do_select');
-    await tx.query('RELEASE SAVEPOINT majlis_probe_do_select');
+    await tx.query('ROLLBACK TO SAVEPOINT manythreads_probe_do_select');
+    await tx.query('RELEASE SAVEPOINT manythreads_probe_do_select');
   }
   return doSelectSupported;
 }

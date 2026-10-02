@@ -1,11 +1,11 @@
 # Phase 1 week-1 benchmarks (P1-11)
 
-Run with `pnpm --filter @majlis/tools-bench bench:server` and `bench:list`. Sources: `tools/bench/src/server.ts`, `tools/bench/src/list.ts`, `tools/bench/list/`.
+Run with `pnpm --filter @manythreads/tools-bench bench:server` and `bench:list`. Sources: `tools/bench/src/server.ts`, `tools/bench/src/list.ts`, `tools/bench/list/`.
 
 ## Environment
 
 - Sandbox: 4 vCPU Intel Xeon @ 2.10 GHz, 15 GB RAM, Postgres in docker on the same host (shared with the benchmark client).
-- PostgreSQL 19beta4 (Debian, `majlis/postgres:19`), default config: shared_buffers 160 MB, work_mem 4 MB, max_parallel_workers_per_gather 2.
+- PostgreSQL 19beta4 (Debian, `manythreads/postgres:19`), default config: shared_buffers 160 MB, work_mem 4 MB, max_parallel_workers_per_gather 2.
 - Node 22, pg 8, Chromium 1194 (Playwright 1.56.1), React 19.
 
 ## 1. Server: 1,000,000 messages under FORCE RLS
@@ -15,7 +15,7 @@ Setup: fresh migrated database (`createTestDatabase`), bench-only schema `bench`
 50 people, each a member of 20 channels (1,000 membership rows). `ENABLE` + `FORCE ROW LEVEL SECURITY`; the policy is
 `channel_id IN (SELECT channel_id FROM bench_members WHERE person_id = app.person_id())`. Indexes: pkey, `(channel_id, id DESC)`,
 GIN `gin_trgm_ops (body_plain)`. Table 282 MB, indexes 175 MB. Load 16-18 s (generate_series, 100k batches), btree 1 s, GIN 13 s.
-Queries ran as `majlis_app` through kernel `withActor` (BEGIN + set_config + query + COMMIT per call, included in the timings).
+Queries ran as `manythreads_app` through kernel `withActor` (BEGIN + set_config + query + COMMIT per call, included in the timings).
 The actor is a real `app.actors` person row, so `app.person_id()` is exercised.
 
 | Measure | p50 | p95 |
@@ -41,7 +41,7 @@ no-op handler), 20,000 events = 80,000 deliveries: emit-only 700-770 events/s; e
   because the RLS membership qual and the row estimate push it off the bitmap path. Before phase 3 ships search: scope search to one channel or team,
   or use a materialised accessible-channel list, and re-check the plan with the real policy. This is a tuning item, not a blocker, at 1M rows.
 - Outbox throughput is bounded by `emit` itself (one transaction with 4 fan-out inserts + NOTIFY each): consumers keep up with the emit rate,
-  so about 700 events/s per this 4-core box with the DB sharing the CPUs. Ample for the Majlis workload; no change required.
+  so about 700 events/s per this 4-core box with the DB sharing the CPUs. Ample for the manythreads workload; no change required.
 - Partitioning `messages` by month is not indicated by these numbers at 1M rows (the A.3 note "partition if the phase 1 benchmark says so"): do not partition.
 
 ## 2. Phone list: Chromium proxy (NOT the on-device benchmark)

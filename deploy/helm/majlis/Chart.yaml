@@ -1,6 +1,0 @@
-apiVersion: v2
-name: majlis
-description: Majlis team collaboration platform (D4- CNPG Postgres, server, web; no CRDs of our own)
-type: application
-version: 0.1.0
-appVersion: "0.0.0"

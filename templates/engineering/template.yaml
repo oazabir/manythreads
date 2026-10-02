@@ -1,0 +1,48 @@
+# Source: SPEC-FINAL §13 (Engineering row), §5.3; prototype #onboarding Step 5 · Teams.
+id: engineering
+name: Engineering
+description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that code, review, test and deploy.
+version: 1
+channels:
+  - name: "#general"
+    purpose: "Team-wide announcements and conversation."
+  - name: "#dev"
+    purpose: "Day-to-day engineering discussion and code questions."
+  - name: "#releases"
+    purpose: "Release plans, notes and deploy status."
+  - name: "#incidents"
+    purpose: "Live incident coordination and follow-ups."
+  - name: "#alerts"
+    purpose: "Monitoring and CI alerts triaged by bots."
+  - name: "#standup"
+    purpose: "Daily standup posts and blockers."
+board:
+  name: Engineering board
+  columns: [Open, In progress, Verify, Waiting on a person, Done]
+bots:
+  - slug: brain
+    name: Brain
+    role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: orchestrator
+    name: Orchestrator
+    role: "Breaks a goal into tasks and hands them to the right bot."
+  - slug: coder
+    name: Coder
+    role: "Owns a task's branch and writes the change."
+  - slug: reviewer
+    name: Reviewer
+    role: "Reviews pull requests and flags risk."
+  - slug: tester
+    name: Tester
+    role: "Writes and runs tests, verifies a change before it moves to Done."
+  - slug: deploy
+    name: Deploy
+    role: "Ships releases; production deploys wait for a person."
+  - slug: standup-relay
+    name: Standup relay
+    role: "Collects updates and posts the daily standup."
+    automation: true
+  - slug: alert-triage
+    name: Alert triage
+    role: "Groups and classifies alerts, pages the on-call person."
+roleTags: [role:on-call, role:release-manager, role:reviewer]

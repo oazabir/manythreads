@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/server",
+  "name": "@manythreads/server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,22 +9,26 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts"
+    "start": "tsx src/main.ts",
+    "admin": "tsx src/cli/admin.ts"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
+    "@fastify/swagger": "^9",
+    "@fastify/websocket": "^11",
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
     "fastify": "^5",
     "fastify-type-provider-zod": "^7",
-    "@fastify/websocket": "^11",
-    "@fastify/swagger": "^9",
+    "jose": "^6.2.12",
     "openapi-types": "^12.1.3",
-    "zod": "^4",
-    "@majlis/kernel": "workspace:*",
-    "@majlis/sdk": "workspace:*",
-    "@majlis/shared": "workspace:*",
-    "pg": "^8"
+    "openid-client": "^6.8.8",
+    "pg": "^8",
+    "zod": "^4"
   },
   "devDependencies": {
-    "@majlis/test-utils": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
     "@types/pg": "^8"
   }
 }

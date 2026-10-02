@@ -1,4 +1,4 @@
-import { EntityLink } from '@majlis/shared';
+import { EntityLink } from '@manythreads/shared';
 
 export interface EntityLinkRow {
   id: string;

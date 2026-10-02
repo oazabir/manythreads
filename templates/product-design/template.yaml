@@ -1,0 +1,35 @@
+# Source: SPEC-FINAL §13 (Product design row), §5.3; prototype #onboarding Step 5 · Teams.
+id: product-design
+name: Product design
+description: Shape what gets built. Collect feedback, write specs and critique designs.
+version: 1
+channels:
+  - name: "#design"
+    purpose: "Design work in progress and questions."
+  - name: "#feedback"
+    purpose: "Customer and team feedback, synthesised by bots."
+  - name: "#specs"
+    purpose: "Specs under review and decisions."
+  - name: "#critique"
+    purpose: "Design critique sessions and notes."
+board:
+  name: Design board
+  columns: [Open, In progress, Verify, Waiting on a person, Done]
+bots:
+  - slug: brain
+    name: Brain
+    role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: spec-writer
+    name: Spec writer
+    role: "Turns a goal and a discussion into a written spec."
+  - slug: feedback-synthesiser
+    name: Feedback synthesiser
+    role: "Groups incoming feedback into themes with sources."
+  - slug: design-critique
+    name: Design critique
+    role: "Reviews a design against the team's principles and gives specific notes."
+  - slug: figma-watcher
+    name: Figma watcher
+    role: "Posts design file changes to the channel."
+    automation: true
+roleTags: [role:design-lead, role:product-owner]

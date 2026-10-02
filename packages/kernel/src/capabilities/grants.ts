@@ -1,5 +1,5 @@
-import type { ActorId, TeamId } from '@majlis/shared';
-import { CapabilityGrant } from '@majlis/shared';
+import type { ActorId, TeamId } from '@manythreads/shared';
+import { CapabilityGrant } from '@manythreads/shared';
 import { toCapabilityGrant, type CapabilityGrantRow } from '../db/mappers/capability-grants.ts';
 import { withSystem, type Tx } from '../db/with-actor.ts';
 import type { CapabilityRegistry } from './registry.ts';

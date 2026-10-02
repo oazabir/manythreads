@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/web",
+  "name": "@manythreads/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,17 +7,20 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run --root ../.. --project unit clients/web"
   },
   "dependencies": {
+    "@manythreads/shared": "workspace:*",
     "react": "^19",
     "react-dom": "^19",
-    "@majlis/shared": "workspace:*"
+    "react-router": "^8.4.0",
+    "zod": "^4"
   },
   "devDependencies": {
-    "vite": "^7",
-    "@vitejs/plugin-react": "^5",
     "@types/react": "^19",
-    "@types/react-dom": "^19"
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "vite": "^7"
   }
 }

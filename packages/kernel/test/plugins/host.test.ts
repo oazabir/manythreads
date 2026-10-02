@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { definePlugin, type PluginDefinition } from '@majlis/sdk';
-import { ActorId, TeamId, WorkspaceId } from '@majlis/shared';
-import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase } from '@majlis/test-utils';
+import { definePlugin, type PluginDefinition } from '@manythreads/sdk';
+import { ActorId, TeamId, WorkspaceId } from '@manythreads/shared';
+import { createTestDatabase, dropTestDatabase, findRlsViolations, type TestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, createSystemPool, loadPlugins, withActor, withSystem, type PluginSource } from '../../src/index.ts';
@@ -128,7 +128,7 @@ describe('plugin host: ordering and validation (no database)', () => {
     ).rejects.toThrow(/GET \/api\/ping.*"p"|"p".*GET \/api\/ping/);
   });
 
-  it('discovers plugins by the package.json majlis field', async () => {
+  it('discovers plugins by the package.json manythreads field', async () => {
     const host = await loadPlugins({ scanDir: pluginsDir });
     expect(host.plugins.map((p) => p.manifest.name)).toContain('example-hello');
   });
@@ -158,7 +158,10 @@ describe('plugin host: example-hello against Postgres', () => {
     const host = await loadPlugins(options);
 
     const applied = await owner.query<{ id: string }>("SELECT id FROM app.schema_migrations WHERE id LIKE 'example-hello/%'");
-    expect(applied.rows.map((r) => r.id)).toEqual(['example-hello/0001_hello_greetings.sql']);
+    expect(applied.rows.map((r) => r.id)).toEqual([
+      'example-hello/0001_hello_greetings.sql',
+      'example-hello/0002_rls_comment.sql',
+    ]);
     const plugins = await owner.query<{ name: string; version: string }>('SELECT name, version FROM app.plugins');
     expect(plugins.rows).toEqual([{ name: 'example-hello', version: '0.1.0' }]);
     expect(await findRlsViolations(owner)).toEqual([]);

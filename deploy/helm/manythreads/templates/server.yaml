@@ -1,0 +1,81 @@
+{{- if .Values.server.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-server
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: {{ .Values.server.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      containers:
+        - name: server
+          image: {{ .Values.server.image }}:{{ .Values.imageTag }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports: [{ name: http, containerPort: {{ .Values.server.port }} }]
+          env:
+            - { name: PORT, value: {{ .Values.server.port | quote }} }
+            - name: OWNER_PW
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+            - name: MANYTHREADS_APP_PASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-app, key: password } }
+            - name: MANYTHREADS_SYSTEM_PASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-system, key: password } }
+            - name: DATABASE_URL
+              value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MANYTHREADS_APP_DATABASE_URL
+              value: postgres://{{ .Values.postgres.appRole }}:$(MANYTHREADS_APP_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MANYTHREADS_SYSTEM_DATABASE_URL
+              value: postgres://{{ .Values.postgres.systemRole }}:$(MANYTHREADS_SYSTEM_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MANYTHREADS_KMS_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-key } }
+            - { name: MANYTHREADS_PUBLIC_URL, value: {{ .Values.publicUrl | default (printf "https://%s" .Values.domain) | quote }} }
+            - { name: MANYTHREADS_TRUST_PROXY, value: {{ .Values.server.trustProxy | quote }} }
+            - { name: MANYTHREADS_MAIL_FROM, value: {{ .Values.mail.from | quote }} }
+            {{- $smtp := .Values.mail.smtpUrl }}
+            {{- if and (not $smtp) .Values.mailpit.enabled }}{{ $smtp = "smtp://manythreads-mailpit:1025" }}{{ end }}
+            {{- if $smtp }}
+            - { name: MANYTHREADS_SMTP_URL, value: {{ $smtp | quote }} }
+            {{- end }}
+            {{- if .Values.testAuth.enabled }}
+            # TEST ENVIRONMENT ONLY (see values.yaml testAuth)
+            - name: MANYTHREADS_TEST_AUTH_TOKEN
+              valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: test-auth-token } }
+            - { name: MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION, value: "1" }
+            {{- end }}
+            {{- range $k, $v := .Values.server.env }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          {{- with .Values.server.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-server
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: server
+  ports:
+    - { name: http, port: {{ .Values.server.port }}, targetPort: http }
+{{- end }}

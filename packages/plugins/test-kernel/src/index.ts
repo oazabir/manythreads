@@ -1,13 +1,15 @@
-import { definePlugin } from '@majlis/sdk';
+import { definePlugin } from '@manythreads/sdk';
 import { z } from 'zod';
 
 const EchoBody = z.strictObject({ message: z.string().min(1).max(200), count: z.number().int().min(0).max(1000).optional() });
 const PingBody = z.strictObject({ workspaceId: z.uuid(), note: z.string().min(1).max(200) });
 const NoteQuery = z.object({ note: z.string().min(1) });
+const StubCreateBody = z.strictObject({ teamId: z.uuid(), name: z.string().min(1).max(100) });
+const StubParams = z.object({ id: z.string() });
 
 /**
  * Test-only plugin exercising the host: strict body validation, a rate-limited route, emitting an event and
- * recording its delivery. Loaded only when MAJLIS_TEST_PLUGINS=1. Mounted at /api/test/*. echo and limited are public;
+ * recording its delivery. Loaded only when MANYTHREADS_TEST_PLUGINS=1. Mounted at /api/test/*. echo and limited are public;
  * ping and deliveries need a (dev header) actor because they write and read under RLS.
  */
 export default definePlugin({
@@ -66,6 +68,45 @@ export default definePlugin({
           note,
         ]);
         return { body: { deliveries: res.rows.map((r) => r['event']) } };
+      },
+    });
+
+    // Team-scoped stub resource (0002_stub_resources): proves team-level denial through app.can().
+    ctx.http.route({
+      method: 'POST',
+      path: '/api/test/stub-resources',
+      schema: { body: StubCreateBody },
+      handler: async (req, tx) => {
+        const body = StubCreateBody.parse(req.body);
+        try {
+          const res = await tx.query<{ id: string }>(
+            'INSERT INTO app.stub_resources (workspace_id, team_id, name) VALUES ($1, $2, $3) RETURNING id',
+            [tx.actor.workspaceId, body.teamId, body.name],
+          );
+          return { status: 201, body: { id: res.rows[0]?.id, teamId: body.teamId, name: body.name } };
+        } catch (err) {
+          // Row level security refused the insert: the caller may not post in that team.
+          if ((err as { code?: string }).code === '42501') {
+            return { status: 403, body: { error: { code: 'forbidden', message: 'You cannot add to this team' } } };
+          }
+          throw err;
+        }
+      },
+    });
+
+    ctx.http.route({
+      method: 'GET',
+      path: '/api/test/stub-resources/:id',
+      handler: async (req, tx) => {
+        const { id } = StubParams.parse(req.params);
+        const uuid = z.uuid().safeParse(id);
+        // An unknown id denies exactly like a forbidden one: app.can() is false for both.
+        const allowed = uuid.success
+          ? (await tx.query<{ ok: boolean }>("SELECT app.can('stub_resource', $1, 'read') AS ok", [id])).rows[0]?.ok === true
+          : false;
+        if (!allowed) return { status: 403, body: { error: { code: 'forbidden', message: 'You cannot read this resource' } } };
+        const res = await tx.query('SELECT id, team_id AS "teamId", name FROM app.stub_resources WHERE id = $1', [id]);
+        return { body: res.rows[0] ?? null };
       },
     });
 

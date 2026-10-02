@@ -25,21 +25,28 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The image build downloads from apt and GitHub; a stalled network call must fail fast and retry, not hold the job for 30 minutes.
       - name: Build Postgres 19 image
-        run: docker build -t majlis/postgres:19 deploy/postgres
+        timeout-minutes: 20
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 360 docker build -t manythreads/postgres:19 deploy/postgres; then exit 0; fi
+            echo "docker build attempt $attempt failed or timed out"
+          done
+          exit 1
 
       - name: Start Postgres
         run: |
-          docker run -d --name majlis-pg -p 55432:5432 \
-            -e POSTGRES_USER=majlis_owner \
-            -e POSTGRES_PASSWORD=majlis \
-            -e POSTGRES_DB=majlis \
-            majlis/postgres:19
+          docker run -d --name manythreads-pg -p 55432:5432 \
+            -e POSTGRES_USER=manythreads_owner \
+            -e POSTGRES_PASSWORD=manythreads \
+            -e POSTGRES_DB=manythreads \
+            manythreads/postgres:19
           for i in $(seq 1 60); do
-            if docker exec majlis-pg pg_isready -U majlis_owner -d majlis; then exit 0; fi
+            if docker exec manythreads-pg pg_isready -U manythreads_owner -d manythreads; then exit 0; fi
             sleep 2
           done
-          docker logs majlis-pg | tail -n 40
+          docker logs manythreads-pg | tail -n 40
           exit 1
 
       - run: pnpm install --frozen-lockfile

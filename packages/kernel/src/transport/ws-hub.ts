@@ -1,4 +1,4 @@
-import { WsEnvelope, WsErrorEnvelope, type ErrorCode } from '@majlis/shared';
+import { WsEnvelope, WsErrorEnvelope, type ErrorCode } from '@manythreads/shared';
 
 /** The part of a socket the hub needs. */
 export interface WsPeer {

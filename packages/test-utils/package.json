@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/test-utils",
+  "name": "@manythreads/test-utils",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,10 +10,11 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@majlis/kernel": "workspace:*",
-    "@majlis/shared": "workspace:*",
-    "pg": "^8",
-    "@majlis/server": "workspace:*"
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/server": "workspace:*",
+    "@manythreads/shared": "workspace:*",
+    "jose": "^6.2.12",
+    "pg": "^8"
   },
   "devDependencies": {
     "@types/pg": "^8"

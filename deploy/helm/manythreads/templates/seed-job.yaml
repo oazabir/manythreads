@@ -1,0 +1,43 @@
+{{- if and .Values.server.enabled .Values.seed.demo }}
+{{- /*
+  Demo seed: after every install and upgrade, once the server has migrated, `pnpm seed --demo` creates workspace Kahf
+  Software, the seven personas and three teams if they are not there (idempotent, random unknown passwords, nothing is
+  printed). Runs the server image; --wait covers a slow first migration.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: manythreads-seed
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: seed
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: {{ .Values.server.image }}:{{ .Values.imageTag }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["pnpm", "seed", "--demo", "--wait", "600"]
+          env:
+            - name: OWNER_PW
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+            - name: MANYTHREADS_SYSTEM_PASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-system, key: password } }
+            - name: DATABASE_URL
+              value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+            - name: MANYTHREADS_SYSTEM_DATABASE_URL
+              value: postgres://{{ .Values.postgres.systemRole }}:$(MANYTHREADS_SYSTEM_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
+{{- end }}

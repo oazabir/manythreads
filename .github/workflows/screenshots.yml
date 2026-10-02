@@ -1,0 +1,159 @@
+name: screenshots
+# Pictures of the live site after a phase release. `release` (tag + deploy on a "Phase N ·" merge to main) finishing
+# successfully triggers this; it can also be run by hand. It signs in as Omar, Nadia and Lena through the real password form,
+# with a random one-off password it sets first through the server's admin CLI (`pnpm --filter @manythreads/server admin
+# set-password`, run in the server pod over SSH, password on stdin only, masked, never in a command line or log), saves the
+# screens (1440x900 and 390x844) as a workflow artifact and commits them to the `screenshots` branch under phase-<N>/. The
+# passwords are rotated to fresh unknown values when the job ends. No test-auth bypass is involved (`testAuth.enabled` stays
+# false). It never pushes to main or to a claude/* branch.
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Phase number for the folder name (default - latest phase-N tag)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://manythreads.kahf.to
+
+jobs:
+  shots:
+    # release also runs on every push to main; only a successful run that deployed a phase is photographed (checked below)
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Resolve phase
+        id: phase
+        env:
+          INPUT: ${{ inputs.phase }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          P="$INPUT"
+          if [ "$EVENT" = "workflow_run" ]; then
+            # the deployed commit's title is "Phase N · ..." (release.yml); any other main push deployed no phase
+            P=$(git log -1 --format=%s | sed -nE 's/^Phase ([0-9]{1,2}) ·.*/\1/p')
+          elif [ -z "$P" ]; then
+            P=$(git tag --list 'phase-*' --sort=-v:refname | head -1 | sed -nE 's/^phase-([0-9]{1,2})$/\1/p')
+          fi
+          if [[ "$P" =~ ^[0-9]{1,2}$ ]]; then
+            echo "phase=$P" >> "$GITHUB_OUTPUT"
+          else
+            echo "No phase release to photograph for this run."
+          fi
+
+      - if: steps.phase.outputs.phase != ''
+        uses: pnpm/action-setup@v4
+      - if: steps.phase.outputs.phase != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - if: steps.phase.outputs.phase != ''
+        run: pnpm install --frozen-lockfile
+      - if: steps.phase.outputs.phase != ''
+        name: Install Playwright Chromium
+        run: pnpm -C e2e exec playwright install --with-deps chromium
+
+      - name: Set a one-off password for the screenshot personas
+        if: steps.phase.outputs.phase != ''
+        env:
+          SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+        run: |
+          sudo apt-get install -y -qq sshpass
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          # 48 random hex characters, masked before it is used anywhere; it reaches the cluster on stdin only (remote_set_password)
+          PW=$(openssl rand -hex 24)
+          echo "::add-mask::$PW"
+          echo "MANYTHREADS_LIVE_PASSWORD=$PW" >> "$GITHUB_ENV"
+          for who in omar nadia lena; do
+            remote_set_password "$who@kahf.example" "$PW"
+          done
+
+      - name: Take the screenshots
+        if: steps.phase.outputs.phase != ''
+        env:
+          MANYTHREADS_LIVE_URL: ${{ env.SITE_URL }}
+          MANYTHREADS_SHOTS_DIR: ${{ github.workspace }}/shots
+        # MANYTHREADS_LIVE_PASSWORD comes from the step above ($GITHUB_ENV, masked)
+        run: pnpm -C e2e exec playwright test -c screens/live.config.ts
+
+      - name: Upload screenshots
+        if: steps.phase.outputs.phase != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-phase-${{ steps.phase.outputs.phase }}
+          path: shots
+          if-no-files-found: error
+
+      - name: Commit to the screenshots branch
+        if: steps.phase.outputs.phase != ''
+        env:
+          PHASE: ${{ steps.phase.outputs.phase }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          SHA=$(git rev-parse --short=12 HEAD)
+          WT="$RUNNER_TEMP/screenshots-branch"
+          rm -rf "$WT"
+          for attempt in 1 2 3; do
+            if git ls-remote --exit-code --heads origin screenshots >/dev/null 2>&1; then
+              git fetch -q origin screenshots
+              git worktree add -q --detach "$WT" origin/screenshots
+            else
+              # first run: an orphan branch that holds only pictures
+              git worktree add -q --detach "$WT"
+              git -C "$WT" checkout -q --orphan screenshots
+              git -C "$WT" rm -rq --cached . || true
+              find "$WT" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            fi
+            rm -rf "$WT/phase-$PHASE"
+            mkdir -p "$WT/phase-$PHASE"
+            cp -r shots/. "$WT/phase-$PHASE/"
+            git -C "$WT" add "phase-$PHASE"
+            if git -C "$WT" diff --cached --quiet; then
+              echo "screenshots for phase $PHASE are unchanged"
+              exit 0
+            fi
+            git -C "$WT" commit -q -m "screenshots: phase $PHASE at $SHA"
+            # the one ref this workflow may write
+            if git -C "$WT" push -q origin HEAD:refs/heads/screenshots; then
+              echo "pushed phase-$PHASE to the screenshots branch"
+              exit 0
+            fi
+            echo "push raced with another run (attempt $attempt); retrying"
+            git worktree remove --force "$WT"
+            sleep 3
+          done
+          echo "::error::could not push to the screenshots branch"
+          exit 1
+
+      - name: Rotate the screenshot passwords away
+        # whatever happened above: the one-off password stops working and nobody knows the new one
+        if: always() && steps.phase.outputs.phase != ''
+        env:
+          SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          NEW=$(openssl rand -hex 24)
+          echo "::add-mask::$NEW"
+          for who in omar nadia lena; do
+            remote_set_password "$who@kahf.example" "$NEW" || echo "::warning::could not rotate the password of $who"
+          done

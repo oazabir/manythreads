@@ -56,7 +56,7 @@ export interface WorkerOptions {
   maxAttempts?: number;
   backoffBaseMs?: number;
   backoffCapMs?: number;
-  /** Must log in as majlis_system (default: the shared system pool). */
+  /** Must log in as manythreads_system (default: the shared system pool). */
   pool?: pg.Pool;
 }
 
@@ -219,7 +219,7 @@ export function startWorker(options: WorkerOptions): Worker {
   }, reaperMs);
 
   const loop = (async () => {
-    stopListening = await listen(pool, 'majlis_jobs', (payload) => {
+    stopListening = await listen(pool, 'manythreads_jobs', (payload) => {
       if (payload === queue) signal.wake?.();
     });
     while (running) {

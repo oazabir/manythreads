@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
 import {
@@ -8,8 +9,8 @@ import {
   type Actor,
   type PluginHost,
   type RateLimiter,
-} from '@majlis/kernel';
-import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@majlis/shared';
+} from '@manythreads/kernel';
+import { type ActorId, type WorkspaceId, HealthResponse, ErrorEnvelope, ReadyResponse, healthRoute, readyRoute, WsEnvelope } from '@manythreads/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -17,23 +18,53 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
+import { HttpError, type HttpRequest } from '@manythreads/sdk';
 import type pg from 'pg';
 import { z } from 'zod';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
 import { envelope, errorHandler, notFoundHandler } from './errors.ts';
+import {
+  authenticateCookie,
+  clearSessionCookies,
+  csrfAllows,
+  finishSessionCookies,
+  mountTestAuth,
+  setSessionCookies,
+  type SessionService,
+} from './session/index.ts';
 import './types.ts';
 
 export interface BuildServerOptions {
   /** Loaded plugins: their http routes are mounted and their names listed in /healthz. */
   host?: PluginHost;
-  /** majlis_app pool used by health checks and plugin routes (default: the shared app pool). */
+  /** manythreads_app pool used by health checks and plugin routes (default: the shared app pool). */
   pool?: pg.Pool;
-  /** majlis_system pool, used only for a system actor (default: the shared system pool). Never for requests. */
+  /**
+   * manythreads_system pool, used for a system actor and by the session lookup (a cookie resolves to a person before
+   * any person transaction exists). Request handlers never run on it unless a route asks for the system actor.
+   */
   systemPool?: pg.Pool;
-  /** Honour the x-majlis-dev-actor header. Default: NODE_ENV=test or MAJLIS_DEV_AUTH=1. Phase 2 removes it. */
+  /** Cookie sessions. Without it only the test-only dev header can authenticate (unit tests of the host). */
+  sessions?: SessionService;
+  /**
+   * TEST ONLY: mounts `POST /api/test/session` guarded by `x-test-auth: <this value>` (needs `sessions` and
+   * `systemPool`). Leave unset anywhere real people sign in.
+   */
+  testAuthToken?: string | null;
+  /**
+   * Honour the x-manythreads-dev-actor header. It can only ever be on when NODE_ENV=test: this option cannot turn it
+   * on elsewhere, only off. Real requests authenticate with a session cookie.
+   */
   devAuth?: boolean;
   /** Fastify logger setting (default false). */
   logger?: boolean | object;
+  /**
+   * Believe `x-forwarded-for` (the server sits behind a reverse proxy or ingress that appends to it). Off by default:
+   * with it on and no proxy, anybody could claim any client address and sidestep the sign-in lockout. `true` means ONE
+   * proxy hop (the client address is the entry the nearest proxy appended, never what the client wrote at the front of
+   * the header); a number is that many hops; a string or list is the proxy addresses / CIDRs to trust.
+   */
+  trustProxy?: boolean | number | string | string[];
   /** Replace the in-memory limiter (tests). Each server builds its own by default: limits are per replica. */
   limiter?: RateLimiter;
   /** Migration files the kernel and loaded plugins ship; /readyz fails while fewer are applied. */
@@ -45,6 +76,17 @@ export interface BuildServerOptions {
 /** The nil person: no workspace, no memberships. */
 const ANONYMOUS: Actor = { kind: 'person', id: NIL_UUID as ActorId, workspaceId: NIL_UUID as WorkspaceId };
 
+/**
+ * Fastify's own `true` takes the LEFTMOST x-forwarded-for entry (client-written), and its numeric form does not count
+ * hops the way proxy-addr does, so hop counts become an explicit function: trust the first N addresses starting at the
+ * socket peer, and the client is the first address that is not trusted (what the Nth proxy appended).
+ */
+function trustProxySetting(value: BuildServerOptions['trustProxy']): boolean | string | string[] | ((address: string, hop: number) => boolean) {
+  if (value === undefined || value === false || value === 0) return false;
+  const hops = value === true ? 1 : value;
+  return typeof hops === 'number' ? (_address: string, hop: number): boolean => hop < hops : hops;
+}
+
 const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.actor.id}` : `ip:${req.ip}`);
 
 /**
@@ -52,7 +94,7 @@ const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.act
  * OpenAPI generated from the same schemas, health endpoints, plugin routes and the WebSocket hub.
  */
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({ logger: options.logger ?? false, trustProxy: trustProxySetting(options.trustProxy) });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(errorHandler);
@@ -63,19 +105,27 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   app.decorate('rateLimiter', limiter);
   app.decorate('wsHub', hub);
   app.decorateRequest('actor', null);
+  app.decorateRequest('authSession', null);
+  app.decorateRequest('staleSessionCookie', false);
 
-  const devAuth = options.devAuth ?? devAuthEnabled();
+  const devAuth = options.devAuth !== false && devAuthEnabled();
+  const sessions = options.sessions;
   const poolOpt = options.pool ? { pool: options.pool } : {};
 
   await app.register(swagger, {
-    openapi: { info: { title: 'Majlis', version: '0.0.0' } },
+    openapi: { info: { title: 'manythreads', version: '0.0.0' } },
     transform: jsonSchemaTransform,
   });
   await app.register(websocket);
+  await app.register(cookie);
 
   app.addHook('onRequest', async (req, reply) => {
     if (req.is404) return;
     if (devAuth) req.actor = parseDevActor(req.headers[DEV_ACTOR_HEADER]);
+    if (!req.actor && sessions) await authenticateCookie(req, reply, sessions);
+    if (!csrfAllows(req)) {
+      return reply.status(403).send(envelope('forbidden', 'CSRF token missing or invalid'));
+    }
     const config = req.routeOptions.config;
     if (config.public !== true && !req.actor) {
       return reply.status(401).send(envelope('unauthenticated', 'Sign in required'));
@@ -93,6 +143,13 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
     return undefined;
   });
+
+  if (sessions) {
+    app.addHook('onSend', (req, reply, payload, done) => {
+      finishSessionCookies(req, reply, sessions);
+      done(null, payload);
+    });
+  }
 
   const typed = app.withTypeProvider<ZodTypeProvider>();
 
@@ -151,7 +208,10 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     });
   });
 
-  mountPluginRoutes(app, options.host, poolOpt, options.systemPool);
+  if (options.testAuthToken && sessions && options.systemPool) {
+    mountTestAuth(app, { token: options.testAuthToken, sessions, pool: options.systemPool });
+  }
+  mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
   await options.routes?.(app);
   return app;
 }
@@ -161,6 +221,7 @@ function mountPluginRoutes(
   host: PluginHost | undefined,
   poolOpt: { pool?: pg.Pool },
   systemPool: pg.Pool | undefined,
+  sessions: SessionService | undefined,
 ): void {
   if (!host) return;
   for (const { plugin, value: def } of host.registries.httpRoutes.list()) {
@@ -172,29 +233,46 @@ function mountPluginRoutes(
       method: def.method,
       url: def.fullPath,
       schema: schema as never,
-      config: { ...(def.rateLimit ? { rateLimit: def.rateLimit } : {}), ...(def.public ? { public: true } : {}) },
+      config: {
+        ...(def.rateLimit ? { rateLimit: def.rateLimit } : {}),
+        ...(def.public ? { public: true } : {}),
+        ...(def.csrfExempt ? { csrfExempt: true } : {}),
+      },
       handler: async (req, reply) => {
         // A public route without a caller runs as the anonymous actor: RLS applies, it sees and writes nothing.
         const actor = req.actor ?? ANONYMOUS;
         const pool = actor.kind === 'system' ? systemPool : poolOpt.pool;
-        const res = await withActor(
-          actor,
-          (tx) =>
-            Promise.resolve(
-              def.handler(
-                {
-                  params: req.params as Record<string, string>,
-                  query: req.query as Record<string, string | undefined>,
-                  body: req.body,
-                },
-                tx,
-              ),
-            ),
-          pool ? { pool } : {},
-        ).catch((err: unknown) => {
-          if (err instanceof Error && !(err instanceof z.ZodError)) req.log.error({ err, plugin }, 'plugin route failed');
-          throw err;
-        });
+        const request: HttpRequest = {
+          params: req.params as Record<string, string>,
+          query: req.query as Record<string, string | undefined>,
+          body: req.body,
+          headers: Object.fromEntries(
+            Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v]),
+          ),
+          ip: req.ip,
+          caller: req.actor
+            ? {
+                actorId: req.actor.id,
+                kind: req.actor.kind === 'bot' ? 'bot' : 'person',
+                workspaceId: req.actor.workspaceId,
+                personId: req.authSession?.personId ?? null,
+                sessionId: req.authSession?.sessionId ?? null,
+              }
+            : null,
+        };
+        const res = await withActor(actor, (tx) => Promise.resolve(def.handler(request, tx)), pool ? { pool } : {}).catch(
+          (err: unknown) => {
+            if (err instanceof Error && !(err instanceof z.ZodError) && !(err instanceof HttpError)) {
+              req.log.error({ err, plugin }, 'plugin route failed');
+            }
+            throw err;
+          },
+        );
+        if (res.headers) for (const [k, v] of Object.entries(res.headers)) void reply.header(k, v);
+        if (sessions) {
+          if (res.setSession) setSessionCookies(reply, res.setSession, sessions.config);
+          else if (res.clearSession) clearSessionCookies(reply, sessions.config);
+        }
         return reply.status(res.status ?? 200).send(res.body ?? null);
       },
     });

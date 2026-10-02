@@ -1,5 +1,5 @@
 {
-  "name": "@majlis/e2e",
+  "name": "@manythreads/e2e",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,8 +8,8 @@
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
-    "@majlis/shared": "workspace:*",
-    "@majlis/test-utils": "workspace:*",
-    "@majlis/server": "workspace:*"
+    "@manythreads/shared": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
+    "@manythreads/server": "workspace:*"
   }
 }

@@ -5,30 +5,30 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Roles are cluster-wide. majlis_owner owns the objects and runs migrations (a superuser in dev, where it
--- already exists); majlis_app runs the server and can never bypass RLS. The runner sets majlis_app's password.
+-- Roles are cluster-wide. manythreads_owner owns the objects and runs migrations (a superuser in dev, where it
+-- already exists); manythreads_app runs the server and can never bypass RLS. The runner sets manythreads_app's password.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'majlis_owner') THEN
-    CREATE ROLE majlis_owner LOGIN CREATEROLE;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'manythreads_owner') THEN
+    CREATE ROLE manythreads_owner LOGIN CREATEROLE;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'majlis_app') THEN
-    CREATE ROLE majlis_app LOGIN NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'manythreads_app') THEN
+    CREATE ROLE manythreads_app LOGIN NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
   END IF;
 END
 $$;
 
-ALTER ROLE majlis_app NOBYPASSRLS NOSUPERUSER;
+ALTER ROLE manythreads_app NOBYPASSRLS NOSUPERUSER;
 
 DO $$
 BEGIN
-  EXECUTE format('GRANT CONNECT ON DATABASE %I TO majlis_app', current_database());
-  EXECUTE format('ALTER ROLE majlis_app IN DATABASE %I SET search_path = app, public', current_database());
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO manythreads_app', current_database());
+  EXECUTE format('ALTER ROLE manythreads_app IN DATABASE %I SET search_path = app, public', current_database());
 END
 $$;
 
 CREATE SCHEMA IF NOT EXISTS app;
-GRANT USAGE ON SCHEMA app TO majlis_app;
+GRANT USAGE ON SCHEMA app TO manythreads_app;
 
 -- G · global tables ----------------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS app.schema_migrations (
@@ -284,15 +284,15 @@ CREATE POLICY capability_grants_update ON app.capability_grants FOR UPDATE
   USING (app.is_system()) WITH CHECK (app.is_system());
 CREATE POLICY capability_grants_delete ON app.capability_grants FOR DELETE USING (app.is_system());
 
--- Privileges for majlis_app (least privilege; plugin migrations grant their own tables) ------------------------
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO majlis_app;
-GRANT SELECT ON app.schema_migrations, app.global_tables TO majlis_app;
-GRANT SELECT, INSERT ON app.actors TO majlis_app;
-GRANT SELECT, INSERT ON app.events TO majlis_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.outbox, app.jobs, app.job_leases TO majlis_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON app.scoped_kv, app.capability_grants TO majlis_app;
-GRANT SELECT, INSERT, DELETE ON app.entity_links TO majlis_app;
-GRANT SELECT, INSERT, UPDATE ON app.plugins TO majlis_app;
+-- Privileges for manythreads_app (least privilege; plugin migrations grant their own tables) ------------------------
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA app TO manythreads_app;
+GRANT SELECT ON app.schema_migrations, app.global_tables TO manythreads_app;
+GRANT SELECT, INSERT ON app.actors TO manythreads_app;
+GRANT SELECT, INSERT ON app.events TO manythreads_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.outbox, app.jobs, app.job_leases TO manythreads_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON app.scoped_kv, app.capability_grants TO manythreads_app;
+GRANT SELECT, INSERT, DELETE ON app.entity_links TO manythreads_app;
+GRANT SELECT, INSERT, UPDATE ON app.plugins TO manythreads_app;
 
 -- Acceptance criterion 8: the event log is append-only for the application role.
-REVOKE UPDATE, DELETE, TRUNCATE ON app.events FROM majlis_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON app.events FROM manythreads_app;

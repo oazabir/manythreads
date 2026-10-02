@@ -1,11 +1,11 @@
-import type { ScopedKv } from '@majlis/sdk';
+import type { ScopedKv } from '@manythreads/sdk';
 import type pg from 'pg';
 import { systemActor, withActor, type Actor } from '../db/index.ts';
 
 export interface DbKvOptions {
   /** The plugin this storage belongs to: the `plugin` column, so plugins never see each other's keys. */
   plugin: string;
-  /** Defaults to the shared majlis_app pool. */
+  /** Defaults to the shared manythreads_app pool. */
   pool?: pg.Pool;
   /** Who performs the access (RLS applies). Default: the system actor, since a plugin has no request at hand. */
   actor?: () => Actor;

@@ -29,13 +29,13 @@ jobs:
           echo "== deployments/services"; kubectl get deploy,svc,pvc -n manythreads
           echo "== cnpg"; kubectl get cluster -n manythreads 2>&1 | head
           echo "== last 30 events"; kubectl get events -n manythreads --sort-by=.lastTimestamp | tail -n 30
-          echo "== helm history"; helm history majlis -n manythreads 2>&1 | tail -n 15
+          echo "== helm history"; helm history manythreads -n manythreads 2>&1 | tail -n 15
           echo "== ingress"; kubectl get ingress -n manythreads -o wide
           kubectl get ingress -n manythreads -o yaml | grep -v -E 'uid:|resourceVersion|creationTimestamp' | head -n 80
           echo "== tls secrets / issuers"; kubectl get secret -A 2>/dev/null | grep -i -E 'tls|cert' | head; kubectl get ingressclass; kubectl get cm -n kube-system traefik -o yaml 2>/dev/null | head -n 5
           echo "== traefik args"; kubectl get deploy -n kube-system traefik -o jsonpath='{.spec.template.spec.containers[0].args}' 2>&1 | tr ',' '\n' | grep -i -E 'acme|cert|websecure|redirect' 
           echo "== disk"; df -h / /var/lib/rancher 2>/dev/null; du -sh /var/lib/rancher/k3s/storage/* 2>/dev/null | tail -n 10
           echo "== node"; kubectl top node 2>&1 | head -n 3; free -h | head -n 2
-          echo "== images"; k3s ctr -n k8s.io images ls -q | grep -E 'majlis|cnpg|cloudnative' | head
+          echo "== images"; k3s ctr -n k8s.io images ls -q | grep -E 'manythreads|cnpg|cloudnative' | head
           echo "== helm bin"; command -v helm || echo "helm missing"
           REMOTE

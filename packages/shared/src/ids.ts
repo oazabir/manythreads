@@ -50,3 +50,32 @@ export type EntityLinkId = z.infer<typeof EntityLinkId>;
 
 export const CapabilityGrantId = z.uuid().brand<'CapabilityGrantId'>();
 export type CapabilityGrantId = z.infer<typeof CapabilityGrantId>;
+
+// Phase 2: identity, sessions, teams and ACL.
+
+export const SecretId = z.uuid().brand<'SecretId'>();
+export type SecretId = z.infer<typeof SecretId>;
+
+export const AuthProviderId = z.uuid().brand<'AuthProviderId'>();
+export type AuthProviderId = z.infer<typeof AuthProviderId>;
+
+export const IdentityId = z.uuid().brand<'IdentityId'>();
+export type IdentityId = z.infer<typeof IdentityId>;
+
+export const PersonEmailId = z.uuid().brand<'PersonEmailId'>();
+export type PersonEmailId = z.infer<typeof PersonEmailId>;
+
+export const SessionId = z.uuid().brand<'SessionId'>();
+export type SessionId = z.infer<typeof SessionId>;
+
+export const InvitationId = z.uuid().brand<'InvitationId'>();
+export type InvitationId = z.infer<typeof InvitationId>;
+
+export const EmailVerificationId = z.uuid().brand<'EmailVerificationId'>();
+export type EmailVerificationId = z.infer<typeof EmailVerificationId>;
+
+export const RoleId = z.uuid().brand<'RoleId'>();
+export type RoleId = z.infer<typeof RoleId>;
+
+export const AclEntryId = z.uuid().brand<'AclEntryId'>();
+export type AclEntryId = z.infer<typeof AclEntryId>;

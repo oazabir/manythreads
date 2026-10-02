@@ -1,4 +1,4 @@
-import { definePlugin, type PluginTx } from '@majlis/sdk';
+import { definePlugin, type PluginTx } from '@manythreads/sdk';
 
 async function greet(tx: PluginTx, teamId: string, message: string): Promise<void> {
   await tx.query('INSERT INTO app.hello_greetings (team_id, message) VALUES ($1, $2)', [teamId, message]);

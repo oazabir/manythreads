@@ -5,8 +5,8 @@ Copy `packages/plugins/example-hello` to start a plugin.
 
 ## What a plugin is
 
-A package with a `majlis.entry` field in `package.json` whose entry default-exports `definePlugin({ manifest, register })`.
-Plugins import only `@majlis/sdk` and `@majlis/shared`, never kernel internals.
+A package with a `manythreads.entry` field in `package.json` whose entry default-exports `definePlugin({ manifest, register })`.
+Plugins import only `@manythreads/sdk` and `@manythreads/shared`, never kernel internals.
 
 ## Add a table with RLS: one SQL file, one manifest line
 
@@ -21,7 +21,7 @@ ALTER TABLE app.hello_greetings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.hello_greetings FORCE ROW LEVEL SECURITY;
 CREATE POLICY hello_greetings_team ON app.hello_greetings
   USING (app.is_team_member(team_id) OR app.is_system());
-GRANT SELECT, INSERT ON app.hello_greetings TO majlis_app;
+GRANT SELECT, INSERT ON app.hello_greetings TO manythreads_app;
 ```
 
 ## Manifest

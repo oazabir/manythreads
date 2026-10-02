@@ -1,4 +1,4 @@
-# Majlis — implementation plan
+# manythreads — implementation plan
 
 Phase-wise build plan for Claude as orchestrating coding agent. Contract: `SPEC-FINAL.md` v1.4.1. Operating model, repo layout, spec-to-code map, referee rules: `IMPLEMENTATION-GUIDE.md`. Look and copy: `mockups-all.html`. Replaces every earlier `PLAN.md`.
 
@@ -39,7 +39,7 @@ Build the spec in thirteen phases. Phases 1–11 build the product, web first. P
 
 Spec v1.4.1 §2 already states these; the guide's queue wording is superseded.
 
-**D4 · k3s with CloudNativePG.** Postgres is a CNPG `Cluster`: 1 instance, 3 for HA; `pg_trgm`, `pgvector` (`uuidv7()` is built in); scheduled backups to object storage. One Helm chart, no CRDs of our own (the controller reads the DB). Default install is five workloads: **CNPG Postgres, LiteLLM, Hindsight, Majlis server (+ web static), Hermes runtime pods.** Docker compose is a supported self-host option (five containers, phase 10) as well as the dev and CI harness.
+**D4 · k3s with CloudNativePG.** Postgres is a CNPG `Cluster`: 1 instance, 3 for HA; `pg_trgm`, `pgvector` (`uuidv7()` is built in); scheduled backups to object storage. One Helm chart, no CRDs of our own (the controller reads the DB). Default install is five workloads: **CNPG Postgres, LiteLLM, Hindsight, manythreads server (+ web static), Hermes runtime pods.** Docker compose is a supported self-host option (five containers, phase 10) as well as the dev and CI harness.
 
 Everything else follows the spec: Hermes only, no bot modes, `BOT.md`, one LLM gateway, one MCP gateway, Hindsight bank per team chosen by the gateway with the git mirror, two-stage gate, one `needsApproval`, first-party person connections.
 
@@ -65,7 +65,7 @@ Persona sign-in states live in `e2e/.auth/<persona>.json`, created through real 
 
 **Seed.** `e2e/fixtures/seed.ts` builds workspace **Kahf Software** (seven people; teams Engineering, Customer support, Marketing) and grows each phase: 3 channels and messages; 4 repo content; 5 bots (Brain per team, Coder, Support responder, Content drafter) and bank facts; 6 board, rhythms, `production` environment; 8 mock connections, `product-manuals`. Fixed uuids so screenshots are stable.
 
-**Determinism.** A fake OpenAI-compatible LLM (`tools/fake-llm`) behind LiteLLM answers from `e2e/fixtures/llm-script.json`, keyed by hash of the last user message plus bot slug; real Hermes runs against it; nightly runs use real models. Playwright `page.clock` and `MAJLIS_CLOCK=fixed` fix time. A mock OIDC provider plays Google and Microsoft.
+**Determinism.** A fake OpenAI-compatible LLM (`tools/fake-llm`) behind LiteLLM answers from `e2e/fixtures/llm-script.json`, keyed by hash of the last user message plus bot slug; real Hermes runs against it; nightly runs use real models. Playwright `page.clock` and `MANYTHREADS_CLOCK=fixed` fix time. A mock OIDC provider plays Google and Microsoft.
 
 **Layout.** `e2e/api/<area>/*.spec.ts` (API), `e2e/<area>/*.spec.ts` (browser), `e2e/visual/<area>/*.visual.spec.ts`, `e2e/personas/<persona>/*.spec.ts` (phase 12), `e2e/__baselines__/`. Projects: `desktop` 1440×900, `mobile-web` 390×844, Chromium, headless in CI.
 
@@ -123,7 +123,7 @@ Nothing to reflect on yet. Record the baseline in `docs/retro/phase-1.md`: tool 
 |---|---|---|---|---|
 | P1-01 | Monorepo scaffold (pnpm, tsconfig, ESLint with raw-hex rule, `*Dto` ban and no bare pool query outside `db/`, Vitest); root `CLAUDE.md` from guide §2.1 updated for D1–D4 | root | guide §2 | Sonnet |
 | P1-02 | `packages/shared` skeleton (ids, error envelope, event registry, tokens, example `Message`) and the strict `BOT.md` frontmatter schema (every §7.1 key, §7.2 section) with JSON Schema export; `pnpm test:schema-compat` (JSON Schema snapshots) and the event upcast mechanism of Appendix B.4 | `packages/shared/src/entities`, `events`, `bot-md` | §3, §7.1 | Sonnet |
-| P1-03 | Migration runner (numbered files, advisory lock, checksums, rejects edited or down files, runs at server start) and `0001_kernel.sql` with Zod and mappers: extensions, roles `majlis_owner`/`majlis_app`, schema `app`, Appendix A.1 tables | `server/src/db` | §2, §3 | Sonnet |
+| P1-03 | Migration runner (numbered files, advisory lock, checksums, rejects edited or down files, runs at server start) and `0001_kernel.sql` with Zod and mappers: extensions, roles `manythreads_owner`/`manythreads_app`, schema `app`, Appendix A.1 tables | `server/src/db` | §2, §3 | Sonnet |
 | P1-04 | `withActor(actor, fn)` (`SET LOCAL app.actor_id/workspace_id/run_id`; the only DB entry); RLS harness `pnpm test:rls` (every table off `global_tables` has RLS enabled and forced, a policy, zero cross-team rows) | `kernel/db`, `test-utils` | §15 | Sonnet |
 | P1-05 | Kernel identity (`Actor`: person, bot, system); event log (`emit` validates against the registry, writes `events` and `outbox` in one transaction) | `kernel/identity`, `events` | §2, §3 | Sonnet |
 | P1-06 | Outbox publisher (SKIP LOCKED, `LISTEN/NOTIFY`, at-least-once, idempotency key, dead letter) and job queue (claim, UNLOGGED lease, backoff, dedupe, cron, reaper) | `kernel/outbox`, `jobs` | §2 | Sonnet |
@@ -133,7 +133,7 @@ Nothing to reflect on yet. Record the baseline in `docs/retro/phase-1.md`: tool 
 | P1-10 | Plate comparison harness (section 5) with `pnpm vt` and `vt:update` | `tools/plates` | guide §8 | Sonnet; Haiku |
 | P1-11 | Week-1 benchmarks: RN 5,000-message list on a mid-range Android (guide §5.1); server with 1M messages under RLS (newest-50, trigram search, outbox throughput) | `tools/bench` | §19 | Sonnet; Haiku |
 | P1-12 | Postgres 19 probe test: `uuidv7()`, `DO SELECT`, `pg_trgm`, `vector`, UNLOGGED after crash; if `DO SELECT` fails, the fallback is `DO UPDATE SET key = EXCLUDED.key RETURNING *` behind one helper | `server/test` | D3 | Sonnet; Haiku |
-| P1-13 | `@majlis/test-utils` (persona presets, `readAs`, `captureEvent`); web skeleton (Vite, `tokens.css`, `/dev/tokens`, `app-frame`); CI, dev compose (Postgres 19, mock OIDC, mailpit), plugin author docs | `test-utils`, `clients/web`, `.github`, `deploy/compose` | guide §6, §8 | Sonnet; Haiku |
+| P1-13 | `@manythreads/test-utils` (persona presets, `readAs`, `captureEvent`); web skeleton (Vite, `tokens.css`, `/dev/tokens`, `app-frame`); CI, dev compose (Postgres 19, mock OIDC, mailpit), plugin author docs | `test-utils`, `clients/web`, `.github`, `deploy/compose` | guide §6, §8 | Sonnet; Haiku |
 
 ### 2 · UI references
 
@@ -159,7 +159,7 @@ Empty app frame
 5. A bad body gives 400 with the error envelope and field path; over the limit gives 429, counted in memory.
 6. The probe finds `uuidv7`, `DO SELECT`, `pg_trgm`, `vector`; a raw hex colour fails lint; benchmarks are recorded with a 60 fps verdict.
 7. Documented limits, tested: rate-limit counters are per replica (two replicas each allow the full limit); after an UNLOGGED crash restart `job_leases` is empty, leases are re-acquired by the reaper and every job runs to completion exactly once in effect (idempotent).
-8. Every event written is append-only in `events` (`REVOKE UPDATE, DELETE ON events FROM majlis_app`; an `UPDATE` or `DELETE` as `majlis_app` fails); this is the audit log until the console in phase 10.
+8. Every event written is append-only in `events` (`REVOKE UPDATE, DELETE ON events FROM manythreads_app`; an `UPDATE` or `DELETE` as `manythreads_app` fails); this is the audit log until the console in phase 10.
 
 ### 4 · Automated end-to-end tests
 
@@ -218,7 +218,7 @@ Workspace → Sign-in methods: `[proto §01 plate 1 · Step 1 · Sign-in methods
 ```
 Sign-in                                     Bootstrap (step 0)
 +--------------------------------+          +--------------------------------+
-|        [M] Majlis              |          | Set up your workspace          |
+|        [M] manythreads              |          | Set up your workspace          |
 | [ G  Continue with Google ]    |          | Workspace [ Kahf Software ]    |
 | [ MS Continue with Microsoft ] |          | Name      [ Omar Al Zabir ]    |
 | ---------- or ----------       |          | Email     [ omar@kahf.co ]     |
@@ -420,7 +420,7 @@ Refactor with tests green; write `docs/retro/phase-4.md`.
 | P4-07 | `pages.write` (`create`/`replace`/`append`, broker-guarded, emits `page.written`) | `plugins/pages` | §6.4 | Sonnet |
 | P4-08 | History: commits per path, diff (text and rendered Markdown), restore as a new commit | `files`, `repo-git` | §5.1 | Sonnet |
 | P4-09 | `provider.viewer` registry; viewers: Markdown (Tiptap, slash commands, raw toggle), CSV (editable), PDF, images, video, audio, code, Mermaid (sandboxed worker), Office read-only (PDF from the optional worker; download card if it is absent), `google:` link card | `sdk`, `clients/web/viewers` | §3, §5.2 | Sonnet |
-| P4-10 | Embedded apps: `index.html` without `index.md` renders in `sandbox="allow-scripts"`, no same-origin, strict CSP, Majlis bridge only | `viewers/app`, server CSP | §5.2 | Sonnet |
+| P4-10 | Embedded apps: `index.html` without `index.md` renders in `sandbox="allow-scripts"`, no same-origin, strict CSP, manythreads bridge only | `viewers/app`, server CSP | §5.2 | Sonnet |
 | P4-11 | Files screen: tree, breadcrumb, list, preview panel, upload, new, rename, move, delete-confirm, History panel, restore confirm; `memory/` shown with a "managed by team memory" note | `clients/web/screens/files` | §5.2 | Sonnet |
 | P4-12 | **Optional:** LibreOffice worker converting Office files to PDF server-side for preview (separate container, off by default) | `plugins/files/office-worker` | §5.2 | Sonnet; Haiku |
 | P4-13 | `storage-s3` behind the blob interface (MinIO in tests); writer concurrency suite; seed v4 (PDF, CSV, image, Mermaid, app); event contracts | `plugins/storage-s3`, `e2e/fixtures` | §2, §5.2 | Sonnet; Haiku runs |
@@ -818,7 +818,7 @@ Refactor with tests green; write `docs/retro/phase-8.md`.
 | ID | Task | Where | Spec | Agent |
 |---|---|---|---|---|
 | P8-01 | Schema: `connections` (scope team/person/workspace, owner, expiry, environment tag), `connection_grants` (tool allowlist, `needsApproval`), `connection_secrets` (envelope-encrypted, no read-back); `ToolSource` interface; CI lint failing any destructive tool in a grant | `0060_connections.sql`, `gateway-mcp`, `plugins/connections` | §11 | Sonnet |
-| P8-02 | **Person connections** held by Majlis: Google (Drive, Gmail, Calendar as incremental scope on the sign-in app), Microsoft Graph, Notion; `person:*` resolves only here, only for `conversation` and `mention` runs, recorded as person-scoped; mail grant opt-in per person | `connections/person`, `identity-oidc` | §11, §12, §20 | Sonnet |
+| P8-02 | **Person connections** held by manythreads: Google (Drive, Gmail, Calendar as incremental scope on the sign-in app), Microsoft Graph, Notion; `person:*` resolves only here, only for `conversation` and `mention` runs, recorded as person-scoped; mail grant opt-in per person | `connections/person`, `identity-oidc` | §11, §12, §20 | Sonnet |
 | P8-03 | Team connections: Activepieces started by the controller skeleton from P6-00 on first non-first-party use (per-team project, limited-scope OAuth, pieces as MCP); GitHub App (hourly tokens) and GitHub MCP; GitLab service user and MCP; team repo push to GitHub or GitLab | `connections/*`, controller | §11, §5.1 | Sonnet; Haiku |
 | P8-04 | SSH broker (step-ca or Teleport, cert per task ≤ 1 h) and Kubernetes broker (`TokenRequest` per task ≤ 1 h) | `gateway-mcp/brokers` | §11 | Sonnet; Haiku (kind) |
 | P8-05 | Eval harness on pull request: GitHub check for any PR touching a `BOT.md`; merge reloads the bot | `bots/evals`, `connections/github` | §5.1, §8 | Sonnet |
@@ -912,7 +912,7 @@ Refactor with tests green; write `docs/retro/phase-9.md`.
 | P9-02 | Component registry in `shared`: name plus Zod props schema, read by client and server; unregistered names and invalid props rejected, never rendered | `shared/src/surfaces/registry.ts` | §14, §3 | Sonnet |
 | P9-03 | OpenUI renderer (MIT): streams OpenUI Lang, validates each node, renders progressively, shows a rejection card and keeps the rest | `clients/web/surfaces/renderer` | §14 | Sonnet |
 | P9-04 | `surface.render/update/event` at the MCP gateway; update patches by node id; events return as validated payloads; a surface cannot call a tool its bot lacks | `plugins/surfaces`, `gateway-mcp` | §14 | Sonnet |
-| P9-05 | Primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart, List, Badge, Button, Callout, Code, Divider) and Majlis components (EntityCard, PersonChip, ChannelLink, ApprovalCard, DiffView) | `surfaces/primitives`, `majlis` | §14 | Sonnet |
+| P9-05 | Primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart, List, Badge, Button, Callout, Code, Divider) and manythreads components (EntityCard, PersonChip, ChannelLink, ApprovalCard, DiffView) | `surfaces/primitives`, `manythreads` | §14 | Sonnet |
 | P9-06 | Data binding: a node declares a registered read tool; the call runs **as the viewer** through the gateway; refresh by interval or event | `surfaces`, `gateway-mcp` | §14, principle 7 | Sonnet |
 | P9-07 | `Answer` re-implemented as a registered component on the same `AnswerPayload`; renders identically in a channel thread and a conversation | `answer`, `surfaces` | §12, §14 | Sonnet |
 | P9-08 | App components: `FormFlow` (schema-validated, one payload to the bot), `ReportBuilder` (sections, tables, charts bound to data, live), `ImageGenerator` (`image` alias, variants, save to Files storage as an attachment) | `surfaces/apps` | §14, §10.1 | Sonnet |
@@ -974,7 +974,7 @@ A bot hands over a live report, a validated form and a generated image; every no
 
 # Phase 10 · Onboarding, admin and deployment
 
-Goal: a stranger installs Majlis on k3s, signs in, and within thirty minutes sees a cited answer from their own team's material; admins govern models, guardrails and audit. Size L. Spec §16, §10, §10.3, §15, §2, §18 (admin, audit rows); proto §01, §11; `DEPLOY-k3s.md`.
+Goal: a stranger installs manythreads on k3s, signs in, and within thirty minutes sees a cited answer from their own team's material; admins govern models, guardrails and audit. Size L. Spec §16, §10, §10.3, §15, §2, §18 (admin, audit rows); proto §01, §11; `DEPLOY-k3s.md`.
 
 ### 0 · Reflect and refactor
 
@@ -995,13 +995,13 @@ Refactor with tests green; write `docs/retro/phase-10.md`.
 | P10-04 | `guardrails-dlp` complete (secrets, keys, personal data, custom regex; allow, redact, require_approval, block; at `pre_egress`, LLM pre-call, MCP gateway) and `guardrails-egress` (per-team allowlist; provider domains on no team list; per-team proxy config) | `plugins/guardrails-*` | §15 | Sonnet |
 | P10-05 | `audit`: console and export over the append-only phase 1 event log plus `audit_events`, monthly partitions, who asked, what was reached, **what was withheld**, when; console with filters (content-blind); signed content-blind auditor export; admin console overview | `plugins/audit`; `0081_audit.sql` | §15, §18 | Sonnet |
 | P10-06 | `provider.kms` with OpenBao and cloud KMS beside the Postgres default; pen-test checklist `pnpm test:pen -- --release` (auth, sessions, CSRF, cross-team IDOR, path traversal, SSRF, prompt injection at a gate, XSS in surfaces, secret read-back) | `kernel/kms`, `tools/pen` | §15, §18 | Sonnet; Haiku |
-| P10-07 | Complete the Helm chart (skeleton from P6-00): five workloads, Ingress, Secrets, PVCs, values; **no CRDs of our own**; CNPG `Cluster` (1 or 3 instances, `pg_trgm`, `vector`, databases `majlis` and `hindsight`, scheduled backups and WAL archive to object storage, restore recipe); Helm notes document the limits: rate limits are per replica, and UNLOGGED lease tables are empty after failover so leases are re-acquired and jobs must be idempotent | `deploy/helm` | D4 | Sonnet; Haiku |
+| P10-07 | Complete the Helm chart (skeleton from P6-00): five workloads, Ingress, Secrets, PVCs, values; **no CRDs of our own**; CNPG `Cluster` (1 or 3 instances, `pg_trgm`, `vector`, databases `manythreads` and `hindsight`, scheduled backups and WAL archive to object storage, restore recipe); Helm notes document the limits: rate limits are per replica, and UNLOGGED lease tables are empty after failover so leases are re-acquired and jobs must be idempotent | `deploy/helm` | D4 | Sonnet; Haiku |
 | P10-08 | Complete the controller (skeleton from P6-00; NetworkPolicy checks start here): per-team Hermes pods, runner placement labels, network policies (Hindsight only from the gateway; Hermes only to gateways and its team proxy), egress proxies, Activepieces on first use; one namespace by default, per-team namespace optional, gVisor where present | `packages/controller` | §2, §7.4 | Sonnet; Haiku |
 | P10-09 | Docs and drills: `docs/deploy/k3s.md` (every command tested on fresh k3s in CI), `backup.md` with a restore drill and RPO/RTO, `air-gapped.md` (image mirror, local `embed` and `local` aliases, deny-all egress run) | `docs/deploy`, `tools/` | D4, §2 | Sonnet; Haiku |
 | P10-10 | Observability: metrics, structured logs, OpenTelemetry across server, gateways, Hermes; dashboards; alerts (outbox lag, job age, approval age, budget burn, replica lag) | `server`, `deploy/helm/monitoring` | §10.1 | Sonnet |
 | P10-11 | Tauri 2 shell for macOS, Windows, Linux (deep links, native notifications, unsigned CI builds); HA chaos check (kill the CNPG primary mid-suite; no write lost; UNLOGGED data may reset) | `clients/desktop`, `tools/chaos` | §2, D4 | Sonnet; Haiku |
 | P10-12 | `seed --phase N`, event contracts, plugin author docs, SDK publication prep | `e2e/fixtures`, `docs` | §18 | Sonnet |
-| P10-13 | **Compose self-host**: five containers (Postgres, LiteLLM, Hindsight, Majlis, Hermes) as a supported install (spec §2), documented in `docs/deploy/compose.md` and tested in CI from a clean checkout | `deploy/compose`, `docs/deploy` | §2, D4 | Sonnet; Haiku |
+| P10-13 | **Compose self-host**: five containers (Postgres, LiteLLM, Hindsight, manythreads, Hermes) as a supported install (spec §2), documented in `docs/deploy/compose.md` and tested in CI from a clean checkout | `deploy/compose`, `docs/deploy` | §2, D4 | Sonnet; Haiku |
 
 ### 2 · UI references
 
@@ -1028,7 +1028,7 @@ Errors: no alias test passed (Continue disabled with reason); k8s check failed w
 
 ### 3 · Acceptance criteria
 
-1. On fresh k3s with the CNPG operator, default `helm install` starts exactly five workloads and installs no Majlis CRD.
+1. On fresh k3s with the CNPG operator, default `helm install` starts exactly five workloads and installs no manythreads CRD.
 2. A new admin completes steps 0–2 and a team in under 30 minutes (timed run); each team's first goal is a question to Brain whose answer cites the team's own material; with no passing alias test, Continue is disabled with the reason.
 3. With the subscription flag off no CLI option works; on, the label shows, the bot is bound to one person and a routine bound to it is refused.
 4. DLP `redact` replaces a key pattern, `block` stops it, `require_approval` creates an approval; each is audited.
@@ -1097,7 +1097,7 @@ Wireframes (390×844, class W):
 ```
 Sign-in               Channels                Thread
 +----------------+    +------------------+    +------------------+
-|   [M] Majlis   |    | Kahf v    bell  |    | <  Thread     …  |
+|   [M] manythreads   |    | Kahf v    bell  |    | <  Thread     …  |
 | [Continue with |    | v Engineering    |    | Nadia 10:02      |
 |   Google     ] |    |  # general    2  |    | Merged the fix.  |
 | [Continue with |    |  # dev        *  |    | Rafi  10:05      |
@@ -1187,7 +1187,7 @@ Refactor with tests green; write `docs/retro/phase-12.md`.
 **Block C · How the suite is proven to work**
 
 1. **Completeness spec** (`completeness.spec.ts`, runs last): it compares the declared step list and every journey's status with the manifest and files: every declared step has a PNG, no extra PNG, each non-empty and not blank (over 200 distinct colours), every journey passed. Hashes are informational only and never fail the run. **Any missing screenshot fails the run**, naming the step.
-2. **Canary:** a dev-only flag `MAJLIS_CANARY=hide-composer` hides the composer; the canary CI job runs the suite and **must fail** on exactly the composer steps. A second canary deletes one PNG and expects the completeness spec to fail. If either passes, CI fails.
+2. **Canary:** a dev-only flag `MANYTHREADS_CANARY=hide-composer` hides the composer; the canary CI job runs the suite and **must fail** on exactly the composer steps. A second canary deletes one PNG and expects the completeness spec to fail. If either passes, CI fails.
 3. **Determinism job:** run twice; manifests list the same steps; each screenshot pair differs by at most 0.5% of pixels.
 4. **Run log:** `docs/journeys/run-log.json`, **committed** by the release workflow only (git sha, date, Node, Playwright and browser versions, per-journey status and duration, per-step sha256 for information, totals). PRs regenerate the screenshots in CI and do not commit them.
 5. **CI:** headless on every PR touching `clients/` or `e2e/`; full suite nightly and on release; traces uploaded on failure.
@@ -1277,7 +1277,7 @@ Refactor with tests green; write `docs/retro/phase-13.md`.
 | P13-04 | Fixed checklist `tools/review/CHECKLIST.md` (below), versioned; reviewers get it verbatim | `tools/review` | Orch |
 | P13-05 | **Sonnet reviewers, at most 12 screenshots each, at most 3 in parallel**; each gets the checklist, token list, contact sheet and its batch, and "report only what you can point to in the image"; returns rows in the `ISSUES.md` format and one count line | orchestrated | Sonnet |
 | P13-06 | Merge and de-duplicate by a Sonnet subagent: one component seen on many screens is one issue listing every screenshot; severity by the rubric | `ISSUES.md` | Sonnet |
-| P13-07 | Review-quality proof: **canary pass** with 12 injected defects (flag `MAJLIS_REVIEW_CANARY`, one per category below); reviewers must find at least 10 of 12 before any review is trusted | `tools/review/canary` | Sonnet; Haiku |
+| P13-07 | Review-quality proof: **canary pass** with 12 injected defects (flag `MANYTHREADS_REVIEW_CANARY`, one per category below); reviewers must find at least 10 of 12 before any review is trusted | `tools/review/canary` | Sonnet; Haiku |
 | P13-08 | Fix loop in severity order (Sonnet writes, fresh Sonnet reviews the diff); a shared component is fixed once; regenerate affected journeys, visual specs and pre-checks; re-review changed shots plus a 10% random sample of unchanged ones | product code, CI | Sonnet; Haiku |
 | P13-09 | Repeat P13-05 to P13-08 with fresh reviewers until a full pass yields **no issue of medium or above**; low issues are listed, not blocking | `ISSUES.md` | orchestrated |
 | P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI; update baselines in one reviewed PR; refresh `USER_JOURNEYS.md` and re-simulate journeys whose screens changed | CI, `docs/journeys` | Haiku; Sonnet |
@@ -1370,7 +1370,7 @@ Starting point for phases 1–6 plus outbox, jobs and analytics. Phases refine i
 - Every table: `id uuid PRIMARY KEY DEFAULT uuidv7()`, `created_at timestamptz DEFAULT now()`, unless a composite key is shown. Text is `text`. Enums are `text` + `CHECK`. In the tables `u` = uuid, `t` = text, `tz` = timestamptz, `i` = int, `b` = bool; **J** marks `jsonb`, used only for open data.
 - Every foreign key has an index. Composite indexes: equality column first, range or sort last. Hot filters are partial indexes. List queries use `INCLUDE`.
 - Team- and person-scoped tables carry `workspace_id` and `team_id`, `person_id` or `channel_id`, so a policy needs no join where possible.
-- Roles: `majlis_owner` owns tables and runs migrations; `majlis_app` runs the server, `NOBYPASSRLS`. Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`. `withActor` sets `app.actor_id`, `app.workspace_id`, `app.run_id` with `SET LOCAL`. Helpers in schema `app` (`STABLE`, `SECURITY DEFINER`, pinned `search_path`): `app.actor()`, `app.is_workspace_admin()`, `app.is_team_member(team_id)`, `app.team_role(team_id)`, `app.can(resource_type, resource_id, permission)`.
+- Roles: `manythreads_owner` owns tables and runs migrations; `manythreads_app` runs the server, `NOBYPASSRLS`. Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`. `withActor` sets `app.actor_id`, `app.workspace_id`, `app.run_id` with `SET LOCAL`. Helpers in schema `app` (`STABLE`, `SECURITY DEFINER`, pinned `search_path`): `app.actor()`, `app.is_workspace_admin()`, `app.is_team_member(team_id)`, `app.team_role(team_id)`, `app.can(resource_type, resource_id, permission)`.
 - RLS codes: **T** visible if `app.is_team_member(team_id)`, writes by team role · **C** visible if `app.can('channel', channel_id, 'read')` (member, team member of a public channel, or ACL grant such as a guest's), writes need `post` · **P** own rows only · **W** workspace admin only · **WR** members read, admin writes · **S** system actor only · **G** global, on the harness allowlist `global_tables`, with a migration comment.
 - Persistence: **L** logged; **U** UNLOGGED (empty after a crash or failover, rebuilt); **Part** partitioned.
 
@@ -1380,7 +1380,7 @@ Starting point for phases 1–6 plus outbox, jobs and analytics. Phases refine i
 |---|---|---|---|---|---|
 | `schema_migrations` | applied files | `id t PK`, `checksum t`, `applied_at tz` | PK | G | L |
 | `actors` | person, bot or system identity | `kind t` (`person`,`bot`,`system`), `workspace_id u`, `ref_id u` | UNIQUE `(workspace_id, kind, ref_id)` | S; `app.actor()` | L |
-| `events` | append-only event log (and the audit log until phase 10; `REVOKE UPDATE, DELETE ON events FROM majlis_app`) | `occurred_at tz`, `workspace_id u`, `team_id u?`, `actor_id u`, `type t`, `schema_version i`, `payload` **J** | BRIN `(occurred_at)`; `(workspace_id, type, id DESC)`; partial `(team_id, id DESC)` | T (team rows); workspace rows by membership | L |
+| `events` | append-only event log (and the audit log until phase 10; `REVOKE UPDATE, DELETE ON events FROM manythreads_app`) | `occurred_at tz`, `workspace_id u`, `team_id u?`, `actor_id u`, `type t`, `schema_version i`, `payload` **J** | BRIN `(occurred_at)`; `(workspace_id, type, id DESC)`; partial `(team_id, id DESC)` | T (team rows); workspace rows by membership | L |
 | `outbox` | deliveries per subscriber | `event_id u`, `subscriber t`, `available_at tz`, `attempts i`, `done_at tz?` | partial `(subscriber, available_at) WHERE done_at IS NULL`; `(event_id)` | S | L |
 | `jobs` | durable queue | `queue t`, `payload` **J**, `run_at tz`, `state t` (`ready`,`running`,`done`,`failed`,`dead`), `attempts i`, `dedupe_key t?` | partial `(queue, run_at) WHERE state='ready'`; partial UNIQUE `(queue, dedupe_key) WHERE state IN ('ready','running')` | S | L |
 | `job_leases` | who holds a job | `job_id u PK`, `worker_id t`, `expires_at tz` | PK; `(expires_at)` | S | **U** |
@@ -1502,7 +1502,7 @@ INSERT INTO job_leases (job_id, worker_id, expires_at)
 SELECT id, $2, now() + interval '60 seconds' FROM upd RETURNING job_id;
 ```
 
-Wake-ups: after commit the writer runs `NOTIFY majlis_outbox, '<subscriber>'` and `NOTIFY majlis_jobs, '<queue>'`; workers `LISTEN` and poll every 5 s as a net. A reaper returns `running` jobs with a missing or expired lease to `ready`. Every job must be idempotent, because the UNLOGGED lease table is empty after a crash.
+Wake-ups: after commit the writer runs `NOTIFY manythreads_outbox, '<subscriber>'` and `NOTIFY manythreads_jobs, '<queue>'`; workers `LISTEN` and poll every 5 s as a net. A reaper returns `running` jobs with a missing or expired lease to `ready`. Every job must be idempotent, because the UNLOGGED lease table is empty after a crash.
 
 ## A.9 · Get-or-create in one statement
 
@@ -1529,7 +1529,7 @@ Decision D1: one place for every shape. The server validates with it, web and mo
 
 ```
 packages/shared/
-  package.json          "@majlis/shared"; exports map; "sideEffects": false; peer: zod
+  package.json          "@manythreads/shared"; exports map; "sideEffects": false; peer: zod
   src/
     index.ts            re-exports only
     version.ts          SHARED_SCHEMA_VERSION
@@ -1618,7 +1618,7 @@ A body that fails the schema returns 400 with `ErrorEnvelope` and the field path
 **Client usage** (web or mobile, identical; no DTO, no copied type).
 
 ```ts
-import { PostMessageRequest, PostMessageResponse, postMessageRoute, type Message } from "@majlis/shared";
+import { PostMessageRequest, PostMessageResponse, postMessageRoute, type Message } from "@manythreads/shared";
 export const send = (channelId: ChannelId, body: string): Promise<Message> =>
   api.call(postMessageRoute, { request: PostMessageRequest, response: PostMessageResponse },
            PostMessageRequest.parse({ channelId, body, threadRootId: null }));   // fail early on the client
@@ -1629,7 +1629,7 @@ Tests that prove the chain: a `Message` round trip in `shared`; an API test that
 
 ## B.4 · Versioning schemas
 
-1. `@majlis/shared` has one semver. Server and clients in the repo build from one commit, so the rules matter for stored data, event history, `BOT.md` files and installed mobile apps.
+1. `@manythreads/shared` has one semver. Server and clients in the repo build from one commit, so the rules matter for stored data, event history, `BOT.md` files and installed mobile apps.
 2. **Additive inside a version only:** a new optional field, or a new enum value on a response. Removing or renaming a field, making it required, narrowing a type or dropping an enum value is breaking.
 3. A breaking change adds a new schema file beside the old one (`channel.message.posted.v2.ts`); the registry lists both. Emitters write the newest; consumers read the stored `schemaVersion` and **upcast** to the newest, so old events stay readable forever.
 4. A breaking API change gets a new route version (`/api/v2/…`) kept for at least one mobile release cycle; the server declares a minimum client version and older apps show "Update the app".

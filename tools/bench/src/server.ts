@@ -1,10 +1,10 @@
 /**
  * P1-11 server benchmark: 1M messages under FORCE RLS (newest-50, trigram search) and outbox throughput.
- * Run: pnpm --filter @majlis/tools-bench bench:server   (needs the dev Postgres: pnpm db:up)
+ * Run: pnpm --filter @manythreads/tools-bench bench:server   (needs the dev Postgres: pnpm db:up)
  * Env: BENCH_ROWS (default 1000000), BENCH_EVENTS (default 20000).
  */
 import { randomUUID } from 'node:crypto';
-import { ActorId, WorkspaceId } from '@majlis/shared';
+import { ActorId, WorkspaceId } from '@manythreads/shared';
 import {
   createAppPool,
   createSystemPool,
@@ -15,8 +15,8 @@ import {
   withActor,
   withSystem,
   type Actor,
-} from '@majlis/kernel';
-import { createTestDatabase, dropTestDatabase } from '@majlis/test-utils';
+} from '@manythreads/kernel';
+import { createTestDatabase, dropTestDatabase } from '@manythreads/test-utils';
 import pg from 'pg';
 
 const ROWS = Number(process.env['BENCH_ROWS'] ?? 1_000_000);
@@ -85,8 +85,8 @@ async function main(): Promise<void> {
       CREATE POLICY m_read ON bench.bench_members FOR SELECT USING (person_id = app.person_id());
       CREATE POLICY msg_read ON bench.bench_messages FOR SELECT USING (
         channel_id IN (SELECT bm.channel_id FROM bench.bench_members bm WHERE bm.person_id = app.person_id()));
-      GRANT USAGE ON SCHEMA bench TO majlis_app;
-      GRANT SELECT ON bench.bench_messages, bench.bench_members TO majlis_app;
+      GRANT USAGE ON SCHEMA bench TO manythreads_app;
+      GRANT SELECT ON bench.bench_messages, bench.bench_members TO manythreads_app;
       CREATE TABLE bench.channels AS SELECT uuidv7() AS id, g AS n FROM generate_series(1, ${CHANNELS}) g;
       CREATE TABLE bench.people AS SELECT uuidv7() AS id, g AS n FROM generate_series(1, ${MEMBERS}) g;`);
 

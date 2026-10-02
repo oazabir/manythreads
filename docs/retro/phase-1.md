@@ -15,7 +15,7 @@ Branch `claude/inspiring-turing-dzp82p`. Verified 2026-10-01 against PLAN.md Pha
 | Playwright (`@playwright/test`) | 1.56.1 (Chromium 1194) |
 | ESLint | 9.39.5 |
 | pg (node-postgres) | 8.23.1 |
-| PostgreSQL | 19beta4 (Debian 19~beta4-1.pgdg13+1), image `majlis/postgres:19` |
+| PostgreSQL | 19beta4 (Debian 19~beta4-1.pgdg13+1), image `manythreads/postgres:19` |
 | pgvector / pg_trgm | 0.8.7 / 1.6 |
 | k3s | v1.36 single node (STATUS.md) |
 | CloudNativePG | operator from the `cnpg/cloudnative-pg` chart, installed by the deploy action, chart version not pinned (latest at deploy time) |
@@ -42,12 +42,12 @@ See [bench-phase-1.md](./bench-phase-1.md). Server, 1M messages under FORCE RLS:
 
 ## 2. The three conventions later phases keep
 1. **One mapper per table** (`packages/kernel/src/db/mappers/<table>.ts`): a row becomes the shared Zod type, nothing else. A schema task is the triple Zod schema + SQL migration with RLS + mapper.
-2. **One DB entry**: `withActor(actor, fn)` sets `app.actor_id/workspace_id/run_id` with `SET LOCAL`. System work uses `withSystem`, which connects through the separate `majlis_system` login role; system privilege comes from `current_user`, never from a settable GUC (`spoof.test.ts`). No bare `pool.query` outside `kernel/src/db/` (lint rule, tested in `lint-rules.test.ts`).
+2. **One DB entry**: `withActor(actor, fn)` sets `app.actor_id/workspace_id/run_id` with `SET LOCAL`. System work uses `withSystem`, which connects through the separate `manythreads_system` login role; system privilege comes from `current_user`, never from a settable GUC (`spoof.test.ts`). No bare `pool.query` outside `kernel/src/db/` (lint rule, tested in `lint-rules.test.ts`).
 3. **One event registry** (`packages/shared/src/events/registry.ts`): `emit` validates against it and writes `events` + `outbox` in one transaction; types are `domain.noun.verb`; versions upcast through the registry.
 
-## 3. Kernel public SDK surface (`@majlis/sdk`, the only kernel API plugins may use)
+## 3. Kernel public SDK surface (`@manythreads/sdk`, the only kernel API plugins may use)
 Functions: `definePlugin({ manifest, register })` (validates the manifest at import), `assertSafePluginSql`, `guardPluginTx` (stopgap guard, not a sandbox), error class `ForbiddenPluginSqlError`.
-Types: `PluginContext` (`events.subscribe/emit`, `hooks.prePersist/preEgress`, `providers.register`, `commands`, `triggers`, `components`, `surfaces.nav/screen/card/panel`, `settings.page`, `composer.action`, `capabilities.register`, `http.route`, `storage`), `PluginDefinition`, `PluginTx`, `PluginEvent`, `EventHandler`, `EmitEvent`, `Hook`, `HookInput`, `ProviderKind` (+ `PROVIDER_KINDS`), `ProviderImpl`, `CommandDefinition`, `TriggerDefinition`, `ComponentDefinition`, `SurfaceDefinition`, `SettingsPageDefinition`, `ComposerActionDefinition`, `HttpRequest`, `HttpResponse`, `HttpRouteDefinition`, `CapabilityHandler`, `ScopeType`, `StorageScope`, `ScopedKv`, `ExtensionPoint`, `PluginManifest`. Plugins also import `@majlis/shared` (schemas).
+Types: `PluginContext` (`events.subscribe/emit`, `hooks.prePersist/preEgress`, `providers.register`, `commands`, `triggers`, `components`, `surfaces.nav/screen/card/panel`, `settings.page`, `composer.action`, `capabilities.register`, `http.route`, `storage`), `PluginDefinition`, `PluginTx`, `PluginEvent`, `EventHandler`, `EmitEvent`, `Hook`, `HookInput`, `ProviderKind` (+ `PROVIDER_KINDS`), `ProviderImpl`, `CommandDefinition`, `TriggerDefinition`, `ComponentDefinition`, `SurfaceDefinition`, `SettingsPageDefinition`, `ComposerActionDefinition`, `HttpRequest`, `HttpResponse`, `HttpRouteDefinition`, `CapabilityHandler`, `ScopeType`, `StorageScope`, `ScopedKv`, `ExtensionPoint`, `PluginManifest`. Plugins also import `@manythreads/shared` (schemas).
 
 ## 4. Prototype CSS not yet a token (from the `tokens.css` header comment)
 Selected sidebar item bg `#E3E7EB`; list-row hairline `#EDEFF2`; table header bg `#FAFBFC`; muted pill/offline dot `#C3C8CE`; file icon bg `#6E7681`; human wash `#EEF3F8`; ok wash/border/ink `#EFF5F1`/`#BBD4C4`/`#2E5F41`; human border `#B9CBDD`; agent border/ink `#DCD2EC`/`#4E3B6E`; warn wash/border/ink `#FBF7EE`/`#E3D3AC`/`#8E5A2E`; frame shadow `rgba(27,36,48,.06)`; radii 5/6/10/12 px; frame grid `248px | 1fr | 380px`. Promote a value to a token when the first screen needs it.
@@ -64,7 +64,7 @@ Selected sidebar item bg `#E3E7EB`; list-row hairline `#EDEFF2`; table header bg
 | 5 | `server/test/server.test.ts` (400 `validation_failed` with path, 429 with retry-after), `e2e/api/kernel/validation.spec.ts`, `rate-limit.spec.ts`. |
 | 6 | `kernel/test/pg19-probe.test.ts` (uuidv7, DO SELECT and its fallback, pg_trgm, vector, UNLOGGED); raw hex: **added** `server/test/lint-rules.test.ts` (runs the repo ESLint config on fixtures: hex in a string and in a template fails, allowed in `tokens.ts`; Dto name and bare `pool.query` fail), plus `pnpm lint` itself in CI; benchmarks and 60 fps verdict in `bench-phase-1.md`. |
 | 7 | `server/test/server.test.ts` ("two servers each allow the full limit"), `transport/rate-limiter.test.ts` (two limiters share nothing); `jobs.test.ts` ("UNLOGGED crash: truncating job_leases ... every job completes once in effect", `job_leases` is `relpersistence u`). |
-| 8 | `kernel/test/rls/append-only.test.ts` (UPDATE/DELETE/TRUNCATE denied for `majlis_app` and `majlis_system`). |
+| 8 | `kernel/test/rls/append-only.test.ts` (UPDATE/DELETE/TRUNCATE denied for `manythreads_app` and `manythreads_system`). |
 
 ### Section 4 e2e rows
 | Spec | Status |
@@ -88,9 +88,9 @@ Selected sidebar item bg `#E3E7EB`; list-row hairline `#EDEFF2`; table header bg
 | `docs/retro/phase-1.md`, reviewer PASS per task, tag `phase-1` | this file; reviewer PASSes and the tag are not verifiable from the repo and are left to the gate owner |
 
 ## 6. Deviations from the plan
-- **System role design.** Plan said `withSystem` and an actor kind; the review found GUC-based privilege spoofable, so the system actor is a real Postgres login role `majlis_system` (a third pool). `majlis_app` cannot `SET ROLE` to it.
+- **System role design.** Plan said `withSystem` and an actor kind; the review found GUC-based privilege spoofable, so the system actor is a real Postgres login role `manythreads_system` (a third pool). `manythreads_app` cannot `SET ROLE` to it.
 - **Plugin routes mount at absolute paths** declared in the route definition (not under a per-plugin prefix); duplicate method+path across plugins fails at load.
-- **CNPG owner is a superuser** (`majlis_owner` SUPERUSER, as in dev compose) because kernel migrations create extensions and alter roles; extensions are created via `postInitApplicationSQL`.
+- **CNPG owner is a superuser** (`manythreads_owner` SUPERUSER, as in dev compose) because kernel migrations create extensions and alter roles; extensions are created via `postInitApplicationSQL`.
 - **Postgres 19 is a beta** (`postgres:19beta4` plus pgvector 0.8.7 built from source; 0.8.1 does not compile on PG19). CNPG accepted it, so `postgres.mode: statefulset` stays unused.
 - **RN benchmark deferred** to the phase 11 gate; a Chromium CPU-throttled proxy was recorded instead and is labelled as such.
 - A plugin SQL guard (`assertSafePluginSql`) was added to the SDK as an explicit stopgap, not in the plan.
@@ -105,6 +105,6 @@ Selected sidebar item bg `#E3E7EB`; list-row hairline `#EDEFF2`; table header bg
 - CI does not run `pnpm vt` separately (the same specs run inside `pnpm e2e`).
 
 ## 8. Seed phase 2
-1. **Does any package import another's internals?** No. Grep for `@majlis/<pkg>/src`, deep relative paths crossing packages, and `@majlis/kernel` imports inside `packages/plugins` found nothing; packages export a single entry (`"."`). Plugins import only `@majlis/sdk` and `@majlis/shared`. (Note: the server and test-utils depend on `@majlis/kernel`'s public index, and pnpm reports a cyclic workspace dependency kernel <-> test-utils <-> server for dev dependencies; it is benign now, worth untangling.)
+1. **Does any package import another's internals?** No. Grep for `@manythreads/<pkg>/src`, deep relative paths crossing packages, and `@manythreads/kernel` imports inside `packages/plugins` found nothing; packages export a single entry (`"."`). Plugins import only `@manythreads/sdk` and `@manythreads/shared`. (Note: the server and test-utils depend on `@manythreads/kernel`'s public index, and pnpm reports a cyclic workspace dependency kernel <-> test-utils <-> server for dev dependencies; it is benign now, worth untangling.)
 2. **Can a plugin author add a table with RLS using one SQL file and one manifest line?** Yes. `packages/plugins/example-hello` has `migrations/0001_hello_greetings.sql` and `migrations: 'migrations'` in its manifest; `host.test.ts` proves the table is created, namespaced in `schema_migrations`, and passes `findRlsViolations`. A plugin table without RLS fails `pnpm test:rls`. Documented in `docs/plugins/example-hello.md`.
 3. **Is any error shape defined twice?** No. HTTP `ErrorEnvelope`/`ErrorCode`/`ErrorIssue` live once in `packages/shared/src/common/error.ts` (server `envelope()` only builds it); the WebSocket `WsErrorEnvelope` is a different shape defined once in `packages/shared/src/transport/envelope.ts` and reuses `ErrorCode`. Both are separate by design (HTTP body vs WS frame).

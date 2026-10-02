@@ -1,4 +1,4 @@
-import { upcast, type LatestEvent } from '@majlis/shared';
+import { upcast, type LatestEvent } from '@manythreads/shared';
 import type pg from 'pg';
 import { getSystemPool, withSystem, type Tx } from '../db/index.ts';
 import { eventToRaw } from '../events/index.ts';
@@ -98,7 +98,7 @@ export async function processedOnce(tx: Tx, subscriber: string, eventId: string)
   return res.rowCount === 1;
 }
 
-/** Publisher/consumer for one subscriber: LISTEN majlis_outbox plus a poll, claim, handle, mark done / back off / dead-letter. */
+/** Publisher/consumer for one subscriber: LISTEN manythreads_outbox plus a poll, claim, handle, mark done / back off / dead-letter. */
 export function startConsumer(options: ConsumerOptions): Consumer {
   const {
     subscriber,
@@ -170,7 +170,7 @@ export function startConsumer(options: ConsumerOptions): Consumer {
   };
 
   const loop = (async () => {
-    stopListening = await listen(pool, 'majlis_outbox', (payload) => {
+    stopListening = await listen(pool, 'manythreads_outbox', (payload) => {
       if (payload === subscriber) signal.wake?.();
     });
     while (running) {

@@ -1,0 +1,55 @@
+{{- if .Values.mailpit.enabled }}
+{{- /* Test-environment mail catcher. ClusterIP only; the ingress never routes to it. */ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-mailpit
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mailpit
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: mailpit
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: mailpit
+    spec:
+      containers:
+        - name: mailpit
+          image: {{ .Values.mailpit.image }}
+          ports:
+            - { name: smtp, containerPort: 1025 }
+            - { name: http, containerPort: 8025 }
+          env:
+            - { name: MP_MAX_MESSAGES, value: "500" }
+          readinessProbe:
+            tcpSocket: { port: smtp }
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          {{- with .Values.mailpit.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-mailpit
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: mailpit
+  ports:
+    - { name: smtp, port: 1025, targetPort: smtp }
+    - { name: http, port: 8025, targetPort: http }
+{{- end }}

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { ErrorEnvelope } from '@majlis/shared';
+import { ErrorEnvelope } from '@manythreads/shared';
 import { TEST } from '../support/api.ts';
 
 test('a bad body gives 400 validation_failed with the field path, a good one 200', async ({ request }) => {
