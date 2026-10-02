@@ -41,6 +41,8 @@ test('"rolback" finds "rollback", and what is not readable is never found', asyn
   const pub = await makeChannel(request);
   const priv = await makeChannel(request, true);
   expect((await request.post(`/api/channels/${priv}/members`, { headers: as(omar), data: { personId: rafi.personId } })).status()).toBe(200);
+  // Omar created the channel and so is its first member: he leaves, to be what the test says, an admin who is not in it.
+  expect((await request.delete(`/api/channels/${priv}/members/${omar.personId}`, { headers: as(omar) })).status()).toBe(200);
   const open = await post(request, nadia, pub, `we must rollback the ${word} deploy tonight`);
   const secret = await post(request, rafi, priv, `private rollback plan for ${word}`);
 

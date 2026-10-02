@@ -1,4 +1,6 @@
+import { createAppPool, withActor } from '@manythreads/kernel';
 import { SearchResponse } from '@manythreads/shared';
+import { personaActor } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, ensureChannels, personas, type ApiResult, type FilesWorld } from '../../files/test/world.ts';
 
@@ -270,5 +272,126 @@ describe('the request', () => {
       expect(res.status, q).toBe(200);
     }
     expect((await w.call(rafi, 'GET', '/api/channels')).status).not.toBe(500);
+  });
+});
+
+// A caller who reads more than 6,000 messages gets the sliced plans (newest slices through the trigram index, then the whole history); below that
+// the function compares every readable row. The tests above run on the small plan; these put Rafi and Nadia on the large one with filler.
+describe('a caller who reads many messages (slices through the trigram index)', () => {
+  beforeAll(async () => {
+    await w.system(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.messages (id, workspace_id, channel_id, author_id, body, body_plain, created_at)
+         SELECT uuidv7(-(g * interval '60 minutes')), $1, $2, $3, 'filler ' || g || ' about nothing in particular', 'filler ' || g || ' about nothing in particular',
+                now() - (g * interval '60 minutes')
+           FROM generate_series(1, 6500) g`,
+        [nadia.workspaceId, dev, nadia.actorId],
+      );
+      await tx.query('ANALYZE app.messages');
+    });
+  }, 120_000);
+
+  it('is on the large plan: more than 6,000 messages are readable', async () => {
+    const n = await w.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.messages WHERE channel_id = $1', [dev])).rows[0]!.n);
+    expect(n).toBeGreaterThan(6000);
+  });
+
+  it('typos, ranking and the privacy rule are the same on the large plan', async () => {
+    const w1 = word();
+    const typo = await post(nadia, dev, `${w1.slice(0, 4)}${w1.slice(5)} the misspelt one`);
+    const exact = await post(nadia, dev, `${w1} exact`);
+    const hits = (await find(rafi, w1)).messages;
+    expect(hits.map((m) => m.id)).toEqual([exact, typo]);
+    expect(hits[0]!.score).toBeGreaterThan(hits[1]!.score);
+    expect(ids(await find(sameera, w1))).toEqual([]);
+    expect(ids(await find(lena, w1))).toEqual([]);
+    ok(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: `srch-large-private-${n++}`, private: true }), 201);
+  });
+
+  it('a private channel stays invisible to a caller on the large plan', async () => {
+    const w1 = word();
+    const created = ok<{ channel: { id: string } }>(await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: `srch-large-priv-${n++}`, private: true }), 201);
+    ok(await w.call(omar, 'POST', `/api/channels/${created.channel.id}/members`, { personId: rafi.personId }));
+    ok(await w.call(omar, 'DELETE', `/api/channels/${created.channel.id}/members/${omar.personId}`));
+    const secret = await post(rafi, created.channel.id, `${w1} confidential`);
+    for (const who of [nadia, priya, omar]) expect(ids(await find(who, w1)), who.key).not.toContain(secret);
+    expect(ids(await find(rafi, w1))).toEqual([secret]);
+  });
+
+  it('answers from the newest slice when it holds enough hits, and from older history when it does not', async () => {
+    const common = word();
+    const old = await postAged(dev, nadia, `${common} old and exact`, '100 days');
+    const recent: string[] = [];
+    for (let i = 0; i < 25; i++) recent.push(await postAged(dev, nadia, `${common} recent number ${i}`, `${i + 1} minutes`));
+    const hits = await find(rafi, common);
+    expect(hits.messages).toHaveLength(20);
+    expect(ids(hits)).not.toContain(old);
+    expect(hits.messages.every((m) => recent.includes(m.id))).toBe(true);
+
+    // 5 hits today, 30 in the 2 to 15 days before: the 16-day slice answers with the best 20 of the 35.
+    const mid = word();
+    const today: string[] = [];
+    for (let i = 0; i < 5; i++) today.push(await postAged(dev, nadia, `${mid} today ${i}`, `${i + 1} hours`));
+    const spread: string[] = [];
+    for (let i = 0; i < 30; i++) spread.push(await postAged(dev, nadia, `${mid} spread ${i}`, `${2 + (i % 13)} days ${i} minutes`));
+    const midHits = (await find(rafi, mid)).messages.map((m) => m.id);
+    expect(midHits).toHaveLength(20);
+    for (const id of today) expect(midHits).toContain(id);
+
+    // Fewer than 20 in 16 days: the whole history, older hits included and newest first among equals.
+    const few = word();
+    const a = await postAged(dev, nadia, `${few} two hours ago`, '2 hours');
+    const b = await postAged(dev, nadia, `${few} a month ago`, '30 days');
+    const c = await postAged(dev, nadia, `${few} a year ago`, '400 days');
+    expect(ids(await find(rafi, few))).toEqual([a, b, c]);
+  });
+
+  it('finds old messages: 200 days and 900 days back', async () => {
+    const w1 = word();
+    const w2 = word();
+    const old = await postAged(dev, nadia, `${w1} from last spring`, '200 days');
+    const ancient = await postAged(dev, nadia, `${w2} from long ago`, '900 days');
+    expect(ids(await find(rafi, w1))).toEqual([old]);
+    expect(ids(await find(rafi, w2))).toEqual([ancient]);
+    expect(ids(await find(rafi, `${w1.slice(0, 5)}${w1.slice(6)}`))).toEqual([old]);
+  });
+
+  it('a phrase of three words or more is held to the stricter threshold but still found', async () => {
+    const w1 = word();
+    const w2 = word();
+    const w3 = word();
+    const id = await post(nadia, dev, `please ${w1} ${w2} ${w3} before friday`);
+    expect(ids(await find(rafi, `${w1} ${w2} ${w3}`))).toEqual([id]);
+    expect(ids(await find(rafi, `${w1} ${w2}`))).toContain(id);
+  });
+});
+
+describe('the capabilities messages.search and files.search', () => {
+  it('are declared by the manifest and answer as the transaction\'s actor', async () => {
+    const { default: plugin } = await import('../src/index.ts');
+    expect(plugin.manifest.capabilities.map((c) => c.name).sort()).toEqual(['files.search', 'messages.search']);
+    expect(plugin.manifest.capabilities.every((c) => c.destructive === false)).toBe(true);
+    const handlers = new Map<string, (input: Record<string, unknown>, tx: never) => Promise<unknown>>();
+    await plugin.register({
+      http: { route: () => undefined },
+      capabilities: { register: (name: string, h: (input: Record<string, unknown>, tx: never) => Promise<unknown>) => void handlers.set(name, h) },
+    } as never);
+    const pool = createAppPool(w.server.db.appUrl, 2);
+    try {
+      const w1 = word();
+      const id = await post(nadia, dev, `${w1} capability test`);
+      ok(await w.upload(nadia, dev, '%PDF-1.4', { name: `${w1}-capability.pdf`, type: 'application/pdf' }), 201);
+      const run = (name: string, who: typeof nadia, input: Record<string, unknown>): Promise<{ hits: { id: string }[] }> =>
+        withActor(personaActor(who), async (tx) => (await handlers.get(name)!(input, tx as never)) as { hits: { id: string }[] }, { pool });
+      expect((await run('messages.search', rafi, { query: w1 })).hits.map((h) => h.id)).toEqual([id]);
+      expect((await run('messages.search', rafi, { query: w1.slice(0, 5) + w1.slice(6) })).hits.map((h) => h.id)).toEqual([id]);
+      expect((await run('files.search', rafi, { query: w1 })).hits).toHaveLength(1);
+      expect((await run('messages.search', sameera, { query: w1 })).hits).toEqual([]);
+      expect((await run('files.search', sameera, { query: w1 })).hits).toEqual([]);
+      await expect(run('messages.search', rafi, { query: 'x' })).rejects.toThrow();
+      await expect(run('messages.search', rafi, { query: w1, limit: 500 })).rejects.toThrow();
+    } finally {
+      await pool.end();
+    }
   });
 });

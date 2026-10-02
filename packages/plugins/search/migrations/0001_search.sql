@@ -26,14 +26,24 @@ EXCEPTION WHEN insufficient_privilege THEN
 END
 $$;
 
--- 3. Messages: why the search is windowed. A common word matches tens of thousands of messages; ranking all of them costs a heap fetch and a
---    trigram comparison each (1.6 s at 1,000,000 messages, docs/retro/phase-3.md). So the newest slice of history is searched first (one day, then
---    4, 16, 64, 256 days, then everything) and the first slice holding `limit` hits is ranked and returned: a common word is answered from the
---    last day, a rare one from the whole index (which is cheap because it has few entries). Within a slice, hits are ordered by similarity, then newest.
---    Each slice is a BitmapAnd of the trigram index, the (channel_id, id) index (`channel_id = ANY(visible set)` is repeated here as a plain qual so
---    a guest with one channel reads one channel's rows, not every candidate) and the primary key range (uuid v7 ids carry the time). Plain index scans
---    are switched off for the function because the planner mistakes `%>` for a cheap filter and walks the key range row by row (1.3 s).
---    The policies still apply on top: the repeated predicate only helps the planner, it never grants anything.
+-- 3. Messages: why the search is not a single query. A common word matches tens of thousands of messages, and ranking all of them costs a heap
+--    fetch and a trigram comparison each (1.6 s at 1,000,000 messages, docs/retro/phase-3.md). So the function picks the cheapest of three plans
+--    by what the caller can read and what the term matches:
+--      a. A caller who can read little (a guest with one channel: at most 6,000 rows, counted through the (channel_id, id) index) has every
+--         row compared one by one: bounded by the number of rows, whatever the term.
+--      b. Otherwise the newest slice of history is searched first (one day, then 16 days) and the first slice holding `limit` hits is ranked and
+--         returned: a common word is answered from the last day. Each slice is a BitmapAnd of the trigram index, the (channel_id, id) index
+--         (`channel_id = ANY(visible set)` is repeated here as a plain qual so the planner can see the caller's channels) and the primary key
+--         range (uuid v7 ids carry the time). A phrase pays for the trigram index scan once per slice (about 100 ms at 1,000,000 rows), so
+--         three words or more get the one-day slice only.
+--      c. Fewer hits than that means the term is rare among what the caller reads: the whole history through the trigram index, which is cheap
+--         because few rows match. `gin_fuzzy_search_limit` caps the pathological case of a term that is common only in channels the caller
+--         cannot read (the index returns tens of thousands of rows to discard): the answer is then a sample, never a leak.
+--    Hits are ordered by similarity, then newest, within the slice that answered. The policies still apply on top of every plan: the repeated
+--    `channel_id = ANY(visible set)` predicate only helps the planner see the caller's channels, it never grants anything. Plain index scans are
+--    switched off for the function because the planner mistakes `%>` for a cheap filter and walks a key range row by row (1.3 s).
+--    Three words or more are held to a stricter threshold (0.6, the pg_trgm default) than one or two (0.5, which forgives one wrong or missing
+--    letter in a word of six or more): a phrase has many trigrams, and a loose threshold makes the index return a tenth of the table.
 CREATE TYPE app.search_message_hit AS (
   id uuid, channel_id uuid, author_id uuid, thread_root_id uuid, snippet text, score real, created_at timestamptz
 );
@@ -41,15 +51,22 @@ CREATE TYPE app.search_message_hit AS (
 CREATE FUNCTION app.search_messages(p_query text, p_team_id uuid, p_limit integer) RETURNS SETOF app.search_message_hit
   LANGUAGE plpgsql STABLE
   SET pg_trgm.word_similarity_threshold = '0.5'
+  SET gin_fuzzy_search_limit = 0
   SET enable_indexscan = off
 AS $$
 DECLARE
   v_limit   integer := least(greatest(coalesce(p_limit, 20), 1), 50);
   v_vis     uuid[]  := app.visible_channel_ids('read');
-  v_windows interval[] := ARRAY['1 day', '4 days', '16 days', '64 days', '256 days']::interval[];
+  v_thr     real    := CASE WHEN cardinality(regexp_split_to_array(btrim(p_query), '\s+')) >= 3 THEN 0.6 ELSE 0.5 END;
+  v_windows interval[] := CASE WHEN cardinality(regexp_split_to_array(btrim(p_query), '\s+')) >= 3
+                               THEN ARRAY['1 day']::interval[] ELSE ARRAY['1 day', '16 days']::interval[] END;
   v_window  interval;
+  v_small   integer;
   v_rows    app.search_message_hit[];
   v_sql     text;
+  v_cols    text := $c$ROW(r.id, r.channel_id, r.author_id, r.thread_root_id, r.snippet, r.score, r.created_at)::app.search_message_hit$c$;
+  v_select  text := $c$m.id, m.channel_id, m.author_id, m.thread_root_id, left(m.body_plain, 240) AS snippet,
+                       word_similarity($3, m.body_plain) AS score, m.created_at$c$;
 BEGIN
   IF p_team_id IS NOT NULL THEN
     v_vis := ARRAY(SELECT c.id FROM app.channels c WHERE c.team_id = p_team_id AND c.id = ANY (v_vis));
@@ -57,16 +74,27 @@ BEGIN
   IF cardinality(v_vis) = 0 THEN
     RETURN;
   END IF;
-  -- EXECUTE (planned with the real values every time): the planner needs to see a one-element array to prefer the channel index.
-  v_sql := $q$
-    SELECT array_agg(ROW(r.id, r.channel_id, r.author_id, r.thread_root_id, r.snippet, r.score, r.created_at)::app.search_message_hit
-                     ORDER BY r.score DESC, r.id DESC)
-      FROM (SELECT m.id, m.channel_id, m.author_id, m.thread_root_id, left(m.body_plain, 240) AS snippet,
-                   word_similarity($3, m.body_plain) AS score, m.created_at
-              FROM app.messages m
-             WHERE m.channel_id = ANY ($1) AND m.id >= $2 AND m.body_plain %> $3
-             ORDER BY 6 DESC, m.id DESC LIMIT $4) r
-  $q$;
+  PERFORM set_config('pg_trgm.word_similarity_threshold', v_thr::text, true);   -- restored when the function returns
+
+  -- a. a caller who reads little: compare every row, not through the index (`word_similarity(...) >= threshold` is what `%>` means)
+  SELECT count(*) INTO v_small FROM (SELECT 1 FROM app.messages m WHERE m.channel_id = ANY (v_vis) LIMIT 6001) c;
+  IF v_small <= 6000 THEN
+    EXECUTE format($q$
+      SELECT array_agg(%s ORDER BY r.score DESC, r.id DESC)
+        FROM (SELECT %s FROM app.messages m
+               WHERE m.channel_id = ANY ($1) AND word_similarity($3, m.body_plain) >= $5
+               ORDER BY 6 DESC, m.id DESC LIMIT $4) r$q$, v_cols, v_select)
+      INTO v_rows USING v_vis, NULL::uuid, p_query, v_limit, v_thr;
+    RETURN QUERY SELECT * FROM unnest(coalesce(v_rows, ARRAY[]::app.search_message_hit[]));
+    RETURN;
+  END IF;
+
+  -- b. newest slices through the trigram index; c. everything (EXECUTE: planned with the real values every time, the planner needs the real array)
+  v_sql := format($q$
+    SELECT array_agg(%s ORDER BY r.score DESC, r.id DESC)
+      FROM (SELECT %s FROM app.messages m
+             WHERE m.channel_id = ANY ($1) AND m.id >= $2 AND m.body_plain %%> $3
+             ORDER BY 6 DESC, m.id DESC LIMIT $4) r$q$, v_cols, v_select);
   FOREACH v_window IN ARRAY v_windows LOOP
     EXECUTE v_sql INTO v_rows USING v_vis, uuidv7(-v_window), p_query, v_limit;
     IF coalesce(cardinality(v_rows), 0) >= v_limit THEN
@@ -74,7 +102,7 @@ BEGIN
       RETURN;
     END IF;
   END LOOP;
-  -- Fewer than `limit` hits in the last 256 days: the whole history (few candidates, or the window loop would have stopped).
+  PERFORM set_config('gin_fuzzy_search_limit', '30000', true);
   EXECUTE v_sql INTO v_rows USING v_vis, '00000000-0000-0000-0000-000000000000'::uuid, p_query, v_limit;
   RETURN QUERY SELECT * FROM unnest(coalesce(v_rows, ARRAY[]::app.search_message_hit[]));
 END

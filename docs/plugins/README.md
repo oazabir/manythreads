@@ -78,6 +78,11 @@ const template = await ctx.templates.get('engineering');   // or await ctx.templ
 `ctx.audit.emit` is `ctx.events.emit` with defaults: it needs `event.emit` in `extends` and the type in `events.emits`, and the
 registry validates the payload. Conflict targets and `conflictWhere` (a partial unique index predicate) are trusted SQL, never user input.
 
+### Using another plugin's provider
+
+`ctx.providers.get('storage')` returns what some plugin registered with `ctx.providers.register('storage', impl)` (the first, in load order), or `undefined`. Look it up when a request arrives,
+not in `register`: the provider's plugin may load after yours. It needs no `extends` entry (using a provider is not providing one). The files plugin uses it for attachment bytes.
+
 ### Cohesion services: read state, entity links, live push
 
 Three kernel services make plugins cohere (spec §3). They are always on `ctx`; details in [../kernel/read-state.md](../kernel/read-state.md) and
@@ -135,6 +140,9 @@ ctx.http.route({
   that person. `req.caller` (actor id, person id, session id) and `req.headers` / `req.ip` are on the request.
 - Tests send `x-manythreads-dev-actor: {"kind":"person","id":"<uuid>","workspaceId":"<uuid>"}`, honoured **only** when
   `NODE_ENV=test`, or use real sessions; see [../testing.md](../testing.md).
+- **Uploads and downloads.** `rawBody: true` hands the handler the unparsed request as a byte stream (`req.stream`, any content type, no `schema.body`); a response `body` that is a Node
+  `Readable` is piped as is (no `schema.response`). Stop reading to refuse: the host still answers, so stream the body into the provider (`BlobStorage.put`) with a `maxBytes` and answer 413 when
+  it rejects. See [files.md](./files.md).
 - Throw `HttpError(status, code, message)` (from `@manythreads/sdk`) to answer with the error envelope; the transaction rolls
   back. Return `{ status, body, headers }` instead to keep the writes. `setSession` / `clearSession` on the response set or
   clear the session cookies (sign-in plugins only).
@@ -215,6 +223,12 @@ Rules of the idiom:
   `packages/kernel/test/rls/harness.test.ts` with a reason. Benchmark: `pnpm --filter @manythreads/tools-bench bench:rls` (300,000 rows, each unscoped count must stay under 2 s).
 
 Plugins never get a pool: handlers receive a `PluginTx` bound to the acting person or bot, so RLS decides what rows exist.
+
+
+**Trigram search behind a policy needs `LEAKPROOF`.** A policy is a security barrier: the planner may hand a user predicate to an index only if its function is `LEAKPROOF`; otherwise it runs
+the policy first, row by row, and picks a sequential scan even with a GIN index on the column. pg_trgm's `%`, `<%` and `%>` are not marked, so the search plugin's migration marks them (superuser
+only; see [search.md](./search.md)). Put the indexed column on the left of the operator (`col %> query`) or the index cannot answer it. Repeat the visible-set predicate as a plain qual
+(`channel_id = ANY (...)`) in a search function so the planner sees the caller's channels; the policy still applies on top.
 
 ## Capabilities
 

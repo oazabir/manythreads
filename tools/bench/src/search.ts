@@ -11,7 +11,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { PluginTx } from '@manythreads/sdk';
-import { createAppPool, withActor, type Actor } from '@manythreads/kernel';
+import { DEFAULT_APP_PASSWORD, createAppPool, withActor, type Actor } from '@manythreads/kernel';
 import { search } from '@manythreads/plugin-search';
 import {
   KAHF_WORKSPACE_ID,
@@ -27,7 +27,9 @@ import {
   searchMigrationSource,
   seedWorld,
   teamsMigrationSource,
+  testAdminUrl,
   testKernelMigrationSource,
+  withDatabase,
   type Persona,
 } from '@manythreads/test-utils';
 import pg from 'pg';
@@ -72,10 +74,21 @@ const PEOPLE: { who: Persona; label: string }[] = [
   { who: LENA, label: 'Lena (guest, one channel)' },
 ];
 
+const REUSE = process.env['BENCH_REUSE'];
+
 async function main(): Promise<void> {
-  const db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, searchMigrationSource],
-  });
+  // BENCH_REUSE=<database name>: measure a database kept by BENCH_SETUP_ONLY=1 (no migration, seed or load; the search functions in it are used as they are).
+  const db = REUSE
+    ? {
+        name: REUSE,
+        ownerUrl: withDatabase(testAdminUrl(), REUSE),
+        appUrl: withDatabase(testAdminUrl(), REUSE, { name: 'manythreads_app', password: DEFAULT_APP_PASSWORD }),
+        systemUrl: '',
+        applied: 0,
+      }
+    : await createTestDatabase({
+        sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, searchMigrationSource],
+      });
   const owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
   const version = (await owner.query<{ v: string }>('SELECT version() v')).rows[0]?.v;
@@ -89,79 +102,80 @@ async function main(): Promise<void> {
   let failed = false;
   let keep = false;
   try {
-    await seedWorld(db);
-    log('seed world (workspace, personas, three teams)');
+    if (!REUSE) {
+      await seedWorld(db);
+      log('seed world (workspace, personas, three teams)');
 
-    // Channels: 100 Engineering (10 of them private with Nadia as a member, 10 private without her), 60 Customer support, 40 Marketing.
-    // Nadia reads the 90 public + 10 private-with-her Engineering channels; Sameera the 60 of Customer support; Lena one granted channel.
-    await owner.query(
-      `INSERT INTO app.channels (workspace_id, team_id, name, kind, private)
-       SELECT $1, t.team, t.prefix || g, 'channel', (t.priv AND g <= 20)
-         FROM (VALUES ($2::uuid, 'eng-', 100, true), ($3::uuid, 'sup-', 60, false), ($4::uuid, 'mkt-', 40, false)) AS t(team, prefix, n, priv),
-              LATERAL generate_series(1, t.n) g`,
-      [KAHF_WORKSPACE_ID, TEAM_IDS.Engineering, TEAM_IDS['Customer support'], TEAM_IDS.Marketing],
-    );
-    await owner.query(
-      `INSERT INTO app.channel_members (channel_id, person_id)
-       SELECT c.id, $1 FROM app.channels c WHERE c.team_id = $2 AND c.private AND c.name IN (SELECT 'eng-' || g FROM generate_series(1, 10) g)`,
-      [NADIA.personId, TEAM_IDS.Engineering],
-    );
-    await owner.query(
-      `INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission)
-       SELECT $1, 'channel', c.id, 'person', $2, 'read' FROM app.channels c WHERE c.name = 'eng-100'`,
-      [KAHF_WORKSPACE_ID, LENA.personId],
-    );
-    const channelCount = (await owner.query<{ n: number }>('SELECT count(*)::int n FROM app.channels')).rows[0]?.n;
-    log(`${channelCount} channels`);
-
-    // Messages as the owner with triggers off (session_replication_role = replica): the bench measures search, not the insert path.
-    // The uuid v7 id carries the same time as created_at (one message every 30 s for the last ROWS x 30 s), as it does for real messages.
-    await owner.query('SET session_replication_role = replica');
-    const words = WORDS.map((w) => `'${w}'`).join(',');
-    const batch = 100_000;
-    for (let off = 0; off < ROWS; off += batch) {
-      const n = Math.min(batch, ROWS - off);
+      // Channels: 100 Engineering (10 of them private with Nadia as a member, 10 private without her), 60 Customer support, 40 Marketing.
+      // Nadia reads the 90 public + 10 private-with-her Engineering channels; Sameera the 60 of Customer support; Lena one granted channel.
       await owner.query(
-        `WITH ch AS (SELECT array_agg(id ORDER BY name) a FROM app.channels WHERE kind = 'channel')
-         INSERT INTO app.messages (id, workspace_id, channel_id, author_id, body, body_plain, created_at)
-         SELECT uuidv7(-((${ROWS} - g) * interval '30 seconds')), $1::uuid, ch.a[1 + (g % ${channelCount})], $4::uuid, t.txt, t.txt,
-                now() - ((${ROWS} - g) * interval '30 seconds')
-           FROM ch, generate_series($3::int + 1, $3::int + $2::int) AS g,
-                LATERAL (SELECT string_agg((ARRAY[${words}])[1 + floor(random() * ${WORDS.length})::int + 0 * k], ' ') AS txt
-                           FROM generate_series(1, 6 + (g % 14)) k(k)) t`,
-        [KAHF_WORKSPACE_ID, n, off, NADIA.actorId],
+        `INSERT INTO app.channels (workspace_id, team_id, name, kind, private)
+         SELECT $1, t.team, t.prefix || g, 'channel', (t.priv AND g <= 20)
+           FROM (VALUES ($2::uuid, 'eng-', 100, true), ($3::uuid, 'sup-', 60, false), ($4::uuid, 'mkt-', 40, false)) AS t(team, prefix, n, priv),
+                LATERAL generate_series(1, t.n) g`,
+        [KAHF_WORKSPACE_ID, TEAM_IDS.Engineering, TEAM_IDS['Customer support'], TEAM_IDS.Marketing],
       );
-      process.stdout.write(`\r  loaded ${off + n}/${ROWS}`);
-    }
-    process.stdout.write('\n');
-    // A rare word in about 1 message in 2,000.
-    await owner.query(
-      `UPDATE app.messages SET body = body || ' zebrafish', body_plain = body_plain || ' zebrafish' WHERE (hashtext(id::text) & 2047) = 0`,
-    );
-    // One in twenty messages is a thread root (50,000 for 1M): the thread row a reply would have made.
-    await owner.query(
-      `INSERT INTO app.threads (root_message_id, channel_id, title, reply_count, last_reply_at)
-       SELECT m.id, m.channel_id, left(m.body_plain, 120), 1 + (hashtext(m.id::text) & 7), m.created_at
-         FROM app.messages m WHERE (hashtext(m.id::text) % 20) = 0`,
-    );
-    await owner.query(
-      `INSERT INTO app.files (workspace_id, channel_id, team_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
-       SELECT $1, c.id, c.team_id, 'channels/' || c.name || '/', (ARRAY[${words}])[1 + (g % ${WORDS.length})] || '-' || g || '.pdf',
-              md5(g::text), 1000 + g, 'application/pdf', repeat('a', 64), $2
-         FROM generate_series(1, 20000) g, LATERAL (SELECT id, team_id, name FROM app.channels WHERE kind = 'channel' ORDER BY name OFFSET (g % ${channelCount}) LIMIT 1) c`,
-      [KAHF_WORKSPACE_ID, NADIA.actorId],
-    );
-    await owner.query('SET session_replication_role = DEFAULT');
-    log(`loaded ${ROWS} messages, threads and files`);
-    await owner.query('VACUUM (ANALYZE) app.messages');
-    await owner.query('VACUUM (ANALYZE) app.threads');
-    await owner.query('VACUUM (ANALYZE) app.files');
-    await owner.query('ANALYZE app.channels');
-    const size = (
-      await owner.query<{ t: string; i: string }>(`SELECT pg_size_pretty(pg_table_size('app.messages')) t, pg_size_pretty(pg_indexes_size('app.messages')) i`)
-    ).rows[0];
-    console.log(`messages table ${size?.t}, indexes ${size?.i}`);
+      await owner.query(
+        `INSERT INTO app.channel_members (channel_id, person_id)
+         SELECT c.id, $1 FROM app.channels c WHERE c.team_id = $2 AND c.private AND c.name IN (SELECT 'eng-' || g FROM generate_series(1, 10) g)`,
+        [NADIA.personId, TEAM_IDS.Engineering],
+      );
+      await owner.query(
+        `INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission)
+         SELECT $1, 'channel', c.id, 'person', $2, 'read' FROM app.channels c WHERE c.name = 'eng-100'`,
+        [KAHF_WORKSPACE_ID, LENA.personId],
+      );
+      const channelCount = (await owner.query<{ n: number }>('SELECT count(*)::int n FROM app.channels')).rows[0]?.n;
+      log(`${channelCount} channels`);
 
+      // Messages as the owner with triggers off (session_replication_role = replica): the bench measures search, not the insert path.
+      // The uuid v7 id carries the same time as created_at (one message every 30 s for the last ROWS x 30 s), as it does for real messages.
+      await owner.query('SET session_replication_role = replica');
+      const words = WORDS.map((w) => `'${w}'`).join(',');
+      const batch = 100_000;
+      for (let off = 0; off < ROWS; off += batch) {
+        const n = Math.min(batch, ROWS - off);
+        await owner.query(
+          `WITH ch AS (SELECT array_agg(id ORDER BY name) a FROM app.channels WHERE kind = 'channel')
+           INSERT INTO app.messages (id, workspace_id, channel_id, author_id, body, body_plain, created_at)
+           SELECT uuidv7(-((${ROWS} - g) * interval '30 seconds')), $1::uuid, ch.a[1 + (g % ${channelCount})], $4::uuid, t.txt, t.txt,
+                  now() - ((${ROWS} - g) * interval '30 seconds')
+             FROM ch, generate_series($3::int + 1, $3::int + $2::int) AS g,
+                  LATERAL (SELECT string_agg((ARRAY[${words}])[1 + floor(random() * ${WORDS.length})::int + 0 * k], ' ') AS txt
+                             FROM generate_series(1, 6 + (g % 14)) k(k)) t`,
+          [KAHF_WORKSPACE_ID, n, off, NADIA.actorId],
+        );
+        process.stdout.write(`\r  loaded ${off + n}/${ROWS}`);
+      }
+      process.stdout.write('\n');
+      // A rare word in about 1 message in 2,000.
+      await owner.query(
+        `UPDATE app.messages SET body = body || ' zebrafish', body_plain = body_plain || ' zebrafish' WHERE (hashtext(id::text) & 2047) = 0`,
+      );
+      // One in twenty messages is a thread root (50,000 for 1M): the thread row a reply would have made.
+      await owner.query(
+        `INSERT INTO app.threads (root_message_id, channel_id, title, reply_count, last_reply_at)
+         SELECT m.id, m.channel_id, left(m.body_plain, 120), 1 + (hashtext(m.id::text) & 7), m.created_at
+           FROM app.messages m WHERE (hashtext(m.id::text) % 20) = 0`,
+      );
+      await owner.query(
+        `INSERT INTO app.files (workspace_id, channel_id, team_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
+         SELECT $1, c.id, c.team_id, 'channels/' || c.name || '/', (ARRAY[${words}])[1 + (g % ${WORDS.length})] || '-' || g || '.pdf',
+                md5(g::text), 1000 + g, 'application/pdf', repeat('a', 64), $2
+           FROM generate_series(1, 20000) g, LATERAL (SELECT id, team_id, name FROM app.channels WHERE kind = 'channel' ORDER BY name OFFSET (g % ${channelCount}) LIMIT 1) c`,
+        [KAHF_WORKSPACE_ID, NADIA.actorId],
+      );
+      await owner.query('SET session_replication_role = DEFAULT');
+      log(`loaded ${ROWS} messages, threads and files`);
+      await owner.query('VACUUM (ANALYZE) app.messages');
+      await owner.query('VACUUM (ANALYZE) app.threads');
+      await owner.query('VACUUM (ANALYZE) app.files');
+      await owner.query('ANALYZE app.channels');
+      const size = (
+        await owner.query<{ t: string; i: string }>(`SELECT pg_size_pretty(pg_table_size('app.messages')) t, pg_size_pretty(pg_indexes_size('app.messages')) i`)
+      ).rows[0];
+      console.log(`messages table ${size?.t}, indexes ${size?.i}`);
+    }
     if (process.env['BENCH_SETUP_ONLY'] === '1') {
       keep = true;
       console.log(`database kept for manual work: ${db.name} (owner ${db.ownerUrl}, app ${db.appUrl})`);
@@ -191,33 +205,42 @@ async function main(): Promise<void> {
         console.log(`--- plan for ${label} (function body is not expanded; see auto_explain or run the SELECT inline)\n${plan}`);
       }
       const all: number[] = [];
+      const messagesOnly: number[] = [];
       lines.push(`\n${label}`);
-      lines.push('| query | hits | median | p95 | max |');
-      lines.push('|---|---|---|---|---|');
+      lines.push('| query | hits | all kinds: median | p95 | messages only: median | p95 |');
+      lines.push('|---|---|---|---|---|---|');
       for (const c of CASES) {
         await run(actor, c.q, 'all');
         await run(actor, c.q, 'all');
         const ms: number[] = [];
+        const msOnly: number[] = [];
         let hits = 0;
         for (let i = 0; i < RUNS; i++) {
           const r = await run(actor, c.q, 'all');
           ms.push(r.ms);
           hits = r.hits;
+          msOnly.push((await run(actor, c.q, 'messages')).ms);
         }
         all.push(...ms);
-        lines.push(`| ${c.label} | ${hits} | ${pct(ms, 50).toFixed(0)} ms | ${pct(ms, 95).toFixed(0)} ms | ${Math.max(...ms).toFixed(0)} ms |`);
+        messagesOnly.push(...msOnly);
+        lines.push(
+          `| ${c.label} | ${hits} | ${pct(ms, 50).toFixed(0)} ms | ${pct(ms, 95).toFixed(0)} ms | ${pct(msOnly, 50).toFixed(0)} ms | ${pct(msOnly, 95).toFixed(0)} ms |`,
+        );
       }
       const p95 = pct(all, 95);
-      const over = p95 > BUDGET_MS;
+      const p95m = pct(messagesOnly, 95);
+      const over = p95 > BUDGET_MS || p95m > BUDGET_MS;
       if (over) failed = true;
-      lines.push(`**${label}: p95 ${p95.toFixed(0)} ms over ${all.length} searches (all three kinds)${over ? ' OVER BUDGET' : ''}**`);
+      lines.push(
+        `**${label}: p95 ${p95m.toFixed(0)} ms over ${messagesOnly.length} message searches, p95 ${p95.toFixed(0)} ms over ${all.length} searches of all three kinds${over ? ' OVER BUDGET' : ''}**`,
+      );
     }
     console.log(lines.join('\n'));
     log(failed ? `FAIL: a persona's p95 is over ${BUDGET_MS} ms` : `ok: every persona's p95 under ${BUDGET_MS} ms`);
   } finally {
     await appPool.end();
     await owner.end();
-    if (!keep) await dropTestDatabase(db);
+    if (!keep && !REUSE) await dropTestDatabase(db);
   }
   if (failed) process.exit(1);
 }
