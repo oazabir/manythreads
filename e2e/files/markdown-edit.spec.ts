@@ -33,9 +33,20 @@ test('WYSIWYG edit, a table from the slash menu, the Raw toggle, one save is one
     await expect(md.getByRole('button', { name: 'Save' })).toBeDisabled();
 
     // type at the end of the page
-    const editor = md.locator('.md-prose');
-    await editor.click();
-    await page.keyboard.press('Control+End');
+    // click the last list item and go to its end (a bare click on the editor lands wherever the page is under the pointer, and
+    // Control+End is not reliable in ProseMirror on every runner)
+    const last = md.locator('.md-prose li').last();
+    await last.click();
+    // put the caret at the very end of that item (End only reaches the end of a wrapped visual line)
+    await last.evaluate((li) => {
+      const range = document.createRange();
+      range.selectNodeContents(li);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
+    await page.keyboard.press('End');
     // the page ends in a list: a second Enter leaves it
     await page.keyboard.press('Enter');
     await page.keyboard.press('Enter');
