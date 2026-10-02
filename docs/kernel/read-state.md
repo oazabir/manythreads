@@ -49,7 +49,7 @@ changes: [{ personId, lastReadId, unreadCount, followed }] }`. A post emits one 
 The same change is pushed to each affected person's sockets as a WebSocket envelope `{ type: 'reading.state.changed', id, payload: { targetType,
 targetId, lastReadId, unreadCount, followed, reason } }`. A rolled-back change emits and pushes nothing.
 
-Push mechanics (`ctx.realtime.pushToPerson(tx, personId, type, payload)` is the general form, notifications will use it): `pg_notify` on
+Push mechanics (`ctx.realtime.pushToPerson(tx, personId, type, payload)` is the single-person form; `pushToPeople(tx, personIds, type, payload)` and `pushMany(tx, [{ personId, type, payload }])` send a whole audience in ONE statement and are what channels, DMs and notifications use): `pg_notify` on
 `manythreads_realtime` inside the transaction, so it goes out at commit and reaches every server replica; each replica writes to the sockets of
 that person that are connected to it (`createRealtime`, started in `startServer`). `/ws` registers a socket for the signed-in person (session cookie on the upgrade request).
 Payloads must stay under 7,000 bytes.

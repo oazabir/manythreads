@@ -11,3 +11,5 @@ export * from './channel.ts';
 export * from './message-thread.ts';
 export * from './file.ts';
 export * from './notification.ts';
+export * from './repo.ts';
+export * from './repo-paths.ts';

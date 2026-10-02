@@ -68,6 +68,24 @@ export async function openPage(
   return { page, close: () => context.close() };
 }
 
+/** Families and weights the app and the plates use (variable weight files, see clients/web/src/styles/fonts.css). */
+const FONT_FACES = ['400 14px "Inter Tight"', '500 14px "Inter Tight"', '600 14px "Inter Tight"', '700 14px "Inter Tight"', '400 12px "JetBrains Mono"', '500 12px "JetBrains Mono"'];
+
+/**
+ * Every face is loaded, not only the ones already requested: `document.fonts.ready` answers at once when layout has not yet asked
+ * for a face (a slow machine, a plate whose stylesheet arrived last), and a screenshot then carries the fallback font.
+ * Two animation frames follow so the text is laid out with the loaded faces.
+ */
+export async function fontsLoaded(page: Page): Promise<void> {
+  await page.evaluate(async (faces) => {
+    await Promise.all(faces.map((f) => document.fonts.load(f)));
+    await document.fonts.ready;
+    await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  }, FONT_FACES);
+  const missing = await page.evaluate((faces) => faces.filter((f) => !document.fonts.check(f)), FONT_FACES);
+  expect(missing, 'fonts that are not loaded').toEqual([]);
+}
+
 export const frameOf = (page: Page): Locator => page.locator('[data-testid="app-frame"]');
 
 /** The frame is on screen, fonts are loaded and nothing is still loading. */
@@ -75,7 +93,8 @@ export async function settle(page: Page): Promise<Locator> {
   const frame = frameOf(page);
   await frame.waitFor();
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
-  await page.evaluate(() => document.fonts?.ready);
+  await fontsLoaded(page);
+  await page.waitForLoadState('networkidle');
   return frame;
 }
 
@@ -155,7 +174,7 @@ export async function renderPlatePane(browser: Browser, spec: PlateSpec, content
     await useLocalFonts(context);
     const page = await context.newPage();
     await page.goto(`${MOCKUPS_URL}#${spec.section}`);
-    await page.evaluate(() => document.fonts?.ready);
+    await fontsLoaded(page);
     const frame = page.locator(`#${spec.section} .plate`).nth(spec.n - 1).locator(spec.frameSelector ?? '.frame').first();
     await frame.scrollIntoViewIfNeeded();
     // The plate sits at a fractional page offset (text above it); a clip there paints every line a fraction of a pixel off the live
@@ -207,22 +226,47 @@ export async function renderPlatePane(browser: Browser, spec: PlateSpec, content
   }
 }
 
-/** Scrolls the channel's message list so the first day label sits where the plate's stream starts (22 px under the header). */
+/**
+ * Scrolls the channel's message list so the first day label sits where the plate's stream starts (22 px under the header), and
+ * returns once it has stayed there for several frames: the virtual list measures its rows after they mount (and attachment cards
+ * and fonts change their heights), so one scroll followed by a fixed wait lands a pixel or more off on a slow machine.
+ */
 export async function scrollToFirstDay(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const list = document.querySelector<HTMLElement>('.chview .vlist');
-    const day = list?.querySelector<HTMLElement>('.daysep');
-    if (!list || !day) return;
-    list.scrollTop += day.getBoundingClientRect().top - list.getBoundingClientRect().top - 22;
-  });
-  await page.waitForTimeout(150);
+  await fontsLoaded(page);
+  await page.waitForFunction(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const list = document.querySelector<HTMLElement>('.chview .vlist');
+        const day = list?.querySelector<HTMLElement>('.daysep');
+        if (!list || !day) return resolve(true);
+        let steady = 0;
+        let lastHeight = -1;
+        const step = () => {
+          const d = list.querySelector<HTMLElement>('.daysep');
+          if (!d) return resolve(true);
+          const off = d.getBoundingClientRect().top - list.getBoundingClientRect().top - 22;
+          const before = list.scrollTop;
+          if (Math.abs(off) > 0.25) list.scrollTop += off;
+          // a list that cannot scroll any further (a short one) is as close as it gets
+          const moved = list.scrollTop !== before;
+          if (moved || list.scrollHeight !== lastHeight) steady = 0;
+          else steady += 1;
+          lastHeight = list.scrollHeight;
+          if (steady >= 5) resolve(true);
+          else requestAnimationFrame(step);
+        };
+        step();
+      }),
+    undefined,
+    { timeout: 15_000, polling: 'raf' },
+  );
 }
 
 /** The live region's content box, its landmarks relative to it, and its `data-copy` texts. */
 export async function renderLiveRegion(page: Page, regionSelector: string, height: number, extraMasks: string[] = []) {
   const region = page.locator(regionSelector).first();
   await region.waitFor();
-  await page.evaluate(() => document.fonts?.ready);
+  await fontsLoaded(page);
   const box = await pageBox(region);
   const clip = { x: box.x, y: box.y, width: box.w, height: Math.min(height, box.h) };
   // Unmasked: the masks (`[data-vt-mask]`) are painted black on both this image and the plate's by comparePngs.

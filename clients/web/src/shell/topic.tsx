@@ -11,3 +11,7 @@ export function useHeaderTopic(text: string | null | undefined): void {
     return () => set(null);
   }, [set, text]);
 }
+
+/** The element in the centre header where a screen puts its own buttons (Files: New page, New folder, Upload); null before the header has mounted. */
+export const HeaderActionsContext = createContext<HTMLElement | null>(null);
+export const useHeaderActionsSlot = (): HTMLElement | null => useContext(HeaderActionsContext);

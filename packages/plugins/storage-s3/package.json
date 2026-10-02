@@ -1,0 +1,24 @@
+{
+  "name": "@manythreads/plugin-storage-s3",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "manythreads": {
+    "entry": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1145.0",
+    "@aws-sdk/lib-storage": "^3.1145.0",
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@manythreads/test-utils": "workspace:*"
+  }
+}

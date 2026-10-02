@@ -87,6 +87,7 @@ export async function runMigrations(options: MigrateOptions): Promise<number> {
   const sources = options.sources ?? [kernelMigrationSource];
   const files = await readMigrationFiles(sources);
   const client = new pg.Client({ connectionString: options.connectionString });
+  client.on('error', () => undefined); // a terminated connection surfaces through the rejected query
   await client.connect();
   try {
     await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_LOCK_KEY]);

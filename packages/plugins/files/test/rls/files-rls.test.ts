@@ -15,6 +15,7 @@ import {
   TEAM_IDS,
   type Persona,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -95,7 +96,7 @@ afterAll(async () => {
 
 describe('the files table passes the RLS harness', () => {
   it('RLS is enabled and forced, with policies and an rls comment; no policy calls a per-row helper in the read plan', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);
@@ -224,11 +225,87 @@ describe('writing', () => {
   });
 });
 
+describe('files of deleted messages (files 0002)', () => {
+  const message = (channelId: string, author: Persona, files: string[]): Promise<string> =>
+    sys(async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, meta) VALUES ($1, $2, $3, 'x', 'x', $4::jsonb) RETURNING id`,
+        [omar.workspaceId, channelId, author.actorId, JSON.stringify({ attachments: files })],
+      );
+      return r.rows[0]!.id;
+    });
+  const remove = (author: Persona, id: string): Promise<unknown> =>
+    as(author, (tx) => tx.query(`UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1`, [id]));
+  const stamped = async (id: string): Promise<boolean> =>
+    (await sys((tx) => tx.query('SELECT orphaned_at FROM app.files WHERE id = $1', [id]))).rows[0]?.['orphaned_at'] != null;
+
+  it('stamps the file when its only message is deleted: every persona stops seeing it, the system role still does', async () => {
+    const f = await insertFile(ch['eng-general']!, null, nadia, 'hidden-after-delete.txt');
+    const m = await message(ch['eng-general']!, nadia, [f]);
+    for (const p of [omar, nadia, rafi, priya]) expect(await seen(p), p.key).toContain('hidden-after-delete.txt');
+    await remove(nadia, m);
+    expect(await stamped(f)).toBe(true);
+    for (const p of ALL) expect(await seen(p), p.key).not.toContain('hidden-after-delete.txt');
+    expect(await sys(async (tx) => (await tx.query("SELECT 1 FROM app.files WHERE name = 'hidden-after-delete.txt'")).rows.length)).toBe(1);
+    // Hidden also for the uploader's own delete and for a team lead's: the row cannot be reached to delete it.
+    expect(await as(nadia, async (tx) => (await tx.query('DELETE FROM app.files WHERE id = $1', [f])).rowCount)).toBe(0);
+    expect(await as(omar, async (tx) => (await tx.query('DELETE FROM app.files WHERE id = $1', [f])).rowCount)).toBe(0);
+  });
+
+  it('keeps the file while a live message lists it, a file nobody attached, and files of other messages', async () => {
+    const shared = await insertFile(ch['eng-general']!, null, nadia, 'two-messages.txt');
+    const loose = await insertFile(ch['eng-general']!, null, nadia, 'never-attached.txt');
+    const m1 = await message(ch['eng-general']!, nadia, [shared]);
+    const m2 = await message(ch['eng-general']!, nadia, [shared]);
+    await remove(nadia, m1);
+    expect(await stamped(shared)).toBe(false);
+    expect(await seen(rafi)).toContain('two-messages.txt');
+    await remove(nadia, m2);
+    expect(await stamped(shared)).toBe(true);
+    expect(await stamped(loose)).toBe(false);
+    expect(await seen(rafi)).toContain('never-attached.txt');
+  });
+
+  it('survives malformed attachment lists (no array, not uuids) without failing the delete', async () => {
+    const f = await insertFile(ch['eng-general']!, null, nadia, 'malformed-neighbour.txt');
+    const odd = await sys(async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, meta) VALUES ($1, $2, $3, 'x', 'x', '{"attachments": ["nope", 7, null]}'::jsonb) RETURNING id`,
+        [omar.workspaceId, ch['eng-general'], nadia.actorId],
+      );
+      return r.rows[0]!.id;
+    });
+    const scalar = await sys(async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, meta) VALUES ($1, $2, $3, 'x', 'x', '{"attachments": "oops"}'::jsonb) RETURNING id`,
+        [omar.workspaceId, ch['eng-general'], nadia.actorId],
+      );
+      return r.rows[0]!.id;
+    });
+    await remove(nadia, odd);
+    await remove(nadia, scalar);
+    expect(await stamped(f)).toBe(false);
+  });
+
+  it('no caller stamps, clears or calls the marker: no UPDATE privilege, the function is not executable by the app role', async () => {
+    const f = await insertFile(ch['eng-general']!, null, nadia, 'stamp-me-not.txt');
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.files SET orphaned_at = now() WHERE id = $1', [f])))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('SELECT app.files_mark_orphaned(ARRAY[$1::uuid])', [f])))).toBe('42501');
+    expect(await stamped(f)).toBe(false);
+    // The system role can clear the mark (an operator undoing a mistaken delete within the grace period), and nothing else about the row.
+    const m = await message(ch['eng-general']!, nadia, [f]);
+    await remove(nadia, m);
+    expect(await stamped(f)).toBe(true);
+    await sys((tx) => tx.query('UPDATE app.files SET orphaned_at = NULL WHERE id = $1', [f]));
+    expect(await seen(rafi)).toContain('stamp-me-not.txt');
+  });
+});
+
 describe('cascade', () => {
   it('deleting a channel (nothing in the product does; the owner role in maintenance) removes its files rows', async () => {
     const c = await channel('doomed', TEAM_IDS.Engineering);
     await insertFile(c, null, nadia, 'doomed.txt');
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       await admin.query('DELETE FROM app.channels WHERE id = $1', [c]);

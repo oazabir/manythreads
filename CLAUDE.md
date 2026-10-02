@@ -63,6 +63,16 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   Migrations: plain SQL, numbered, forward-only, never edit an applied file. Get-or-create via
   `INSERT … ON CONFLICT … DO SELECT RETURNING` through the one helper.
 - Rate limits in process memory (sliding window), per replica. Never in the DB.
+- **Visibility sets (RLS performance):** policies never call per-row functions for reads; hoist a uuid[] once per
+  statement: `team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])`, channels via
+  `app.visible_channel_ids('read'|'post')`. The RLS harness fails on per-row policy calls (`findPerRowPolicyCalls`).
+- Plugin SDK services (use them, don't re-implement): `ctx.db.getOneOrCreate`, `ctx.audit.emit`, `ctx.templates`,
+  `ctx.readState`, `ctx.links`, `ctx.realtime.pushToPerson`, `ctx.jobs.register/enqueue` (extension `job.register`),
+  `ctx.providers.get('storage')`, `ctx.providers.get<RepoProvider>('repo')` (team repo: write/restore/blob/tree/list — the only git writer),
+  `ctx.access.readableTeamIds/readableChannelIds`, `ctx.realtime.pushToPeople/pushMany` (one statement per fan-out),
+  `ctx.capabilities.authorize`, `ctx.jobs.register({ cron })`. Plugins can't import each other: reuse another plugin's behaviour via its HTTP route
+  shape or an SDK service, never by copying.
+- Server-side text processing must be linear-time (no nested regex quantifiers); add hostile-input timing tests.
 - Plugins import only `@manythreads/sdk` and `@manythreads/shared`, never kernel internals. Plugin HTTP routes mount at
   their declared absolute path (e.g. `/api/channels/:id/messages`); duplicates fail at load.
 - Test-only HTTP actor: header-based dev actor only with `NODE_ENV=test`, never `system`. Sessions (cookie + CSRF header) are the real
@@ -71,6 +81,11 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   the admin CLI `pnpm --filter @manythreads/server admin set-password <email>` (stdin) and sign in through the real form.
 - Capability names `namespace.verb` with a destructive tag. The broker denies bot actors writes to
   `bots/`, `TEAM.md`, `skills/`, `routines/`; `person:*` only for `conversation`/`mention` triggers.
+- Team repo is text only (no attachments in git); guarded paths come from `isGuardedRepoPath` (@manythreads/shared) — never re-list them.
+  `channels/` is reserved in the repo for the attachment folders of the Files tree. Git runs argv-only with `GIT_LITERAL_PATHSPECS=1`.
+- Embedded apps: `sandbox="allow-scripts"` (never `allow-same-origin`), CSP set by the route handler itself; server hooks key on
+  `req.routeOptions.url`, never the raw URL (percent-encoding bypass, see MISTAKES).
+- CSS: screen stylesheets prefix their classes (e.g. `f*` for Files); never redefine a shared class (`.linkish`, `.btn`) in a screen file.
 - Fonts are self-hosted (`clients/web/public/fonts`); never load Google Fonts at runtime (breaks visual baselines).
 - Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter Tight, JetBrains Mono.
 - Screens carry `data-testid="app-frame"`; dynamic regions `data-vt-mask`; landmarks `data-landmark`.
@@ -86,8 +101,10 @@ client plugins; voice/video; E2E encryption; plugin marketplace with payments; b
 pnpm install            pnpm lint     pnpm typecheck     pnpm build
 pnpm test               # vitest, all packages (needs DB: pnpm db:up)
 pnpm test:rls  pnpm test:events  pnpm test:schema-compat  (later: test:memory-cross-team, test:runtime-rules)
+pnpm s3:up              # MinIO for storage-s3 tests (MANYTHREADS_TEST_S3=1)
 pnpm db:up / db:down    # dev Postgres 19 via deploy/compose (port 55432, user manythreads_owner)
 pnpm e2e                # playwright (runs from e2e/; never `playwright` from root);  pnpm e2e --project=api
+                        # specs that write data use their own stack (startStack / useIsolatedStack); ports auto-picked
 pnpm vt / vt:update     # plate visual comparison (tools/plates)
 pnpm --filter @manythreads/tools-bench bench:server   # benchmarks
 ```
@@ -97,6 +114,8 @@ Keep command output small: pipe through `tail -n 40` or grep for failures. Never
 - Read this file and `MISTAKES.md` first. Read only the spec/plan sections your task cites.
 - Do not spawn subagents. Bash, not zsh.
 - Code changes must leave `pnpm lint` and `pnpm typecheck` green for touched packages.
+- The shared dev Postgres has 100 connections: with other agents running use vitest `--maxWorkers=3` and run only your specs;
+  full gates run when no agent is active.
 - Return a short summary: what changed, paths, test results, open issues. No file dumps.
 
 ## Sidebar contract (every client, every team)

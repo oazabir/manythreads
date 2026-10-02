@@ -1,6 +1,6 @@
 import type { ErrorCode, ExtensionPoint, PluginManifest, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
-import type { PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
+import type { PluginAccess, PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -39,6 +39,8 @@ export const PROVIDER_KINDS = [
   'llm',
   'knowledge',
   'viewer',
+  /** The team repo's one writer (repo-git): `RepoProvider` in ./repo.ts. */
+  'repo',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {
@@ -174,6 +176,21 @@ export interface HttpRouteDefinition {
   handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 
+/** What the broker needs beyond the actor: repo-relative paths for `files.*` mutations, the trigger of the run, request constraints. */
+export interface CapabilityAuthorizeContext {
+  path?: string;
+  paths?: readonly string[];
+  trigger?: string;
+  constraints?: Record<string, unknown>;
+}
+
+/** The broker's answer. `needsApproval` comes from the bot's grant: the call waits in the Approvals inbox. */
+export interface CapabilityDecision {
+  allowed: boolean;
+  reason: string;
+  needsApproval: boolean;
+}
+
 export type CapabilityHandler = (input: Record<string, unknown>, tx: PluginTx) => unknown | Promise<unknown>;
 
 export type ScopeType = 'workspace' | 'team' | 'person';
@@ -221,8 +238,17 @@ export interface PluginContext {
   };
   readonly settings: { page(definition: SettingsPageDefinition): void };
   readonly composer: { action(definition: ComposerActionDefinition): void };
-  /** Bind an implementation to a capability this plugin declared in its manifest. */
-  readonly capabilities: { register(name: string, handler: CapabilityHandler): void };
+  /** Bind an implementation to a capability this plugin declared in its manifest, and ask the broker whether the caller may use one. */
+  readonly capabilities: {
+    register(name: string, handler: CapabilityHandler): void;
+    /**
+     * Asks the kernel's capability broker (spec section 3, guide section 7) whether the transaction's actor may use `capability`: the path guard
+     * (`bots/`, `TEAM.md`, `skills/`, `routines/` are never bot-writable), the destructive tag, `person:*` scopes and the bot's allowlist. A
+     * person is allowed (the owning plugin checks its ACL); a denial is logged as `kernel.capability.denied`. Fails closed: it rejects when the
+     * host has no broker wired in.
+     */
+    authorize(tx: PluginTx, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+  };
   /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;
@@ -242,6 +268,8 @@ export interface PluginContext {
   readonly links: PluginLinks;
   /** Live push to a person's sockets. */
   readonly realtime: PluginRealtime;
+  /** The caller's readable team and channel sets (typed wrappers over the visibility functions policies use). */
+  readonly access: PluginAccess;
   /** Only for plugins whose manifest extends `provider.identity`; any other plugin throws on access. */
   readonly identity: IdentityServices;
   /** Envelope-encrypted secrets (client secrets of sign-in providers). Only for plugins that extend `provider.identity`. */
@@ -296,6 +324,8 @@ export interface JobInfo {
   /** 1 on the first run. */
   attempt: number;
   workerId: string;
+  /** The server's logger: one line per call, no secrets. Put run metrics here (counts, bytes, milliseconds). */
+  log: PluginLogger;
 }
 
 /**
@@ -310,6 +340,12 @@ export interface JobOptions {
   concurrency?: number;
   /** Attempts before the job is dead-lettered (default 5). */
   maxAttempts?: number;
+  /**
+   * A 5-field cron expression in UTC (`17 3 * * *`): the server stores the schedule under the queue's name when it starts and enqueues the
+   * latest due slot with an empty payload (missed slots coalesce into one run; several replicas enqueue once). Only for queues whose
+   * handler needs no payload to start; a handler can still enqueue follow-ups with `ctx.jobs.enqueue`.
+   */
+  cron?: string;
 }
 
 export interface EnqueueJobOptions {
@@ -435,6 +471,22 @@ export interface BlobHead {
   size: number;
 }
 
+/** One stored blob as `list` reports it. */
+export interface BlobListItem {
+  blobKey: string;
+  size: number;
+  /** When the bytes were last written (S3 `LastModified`, file mtime): the blob GC leaves anything newer than its grace period alone. */
+  modifiedAt: Date;
+}
+
+/** A page of `BlobStorage.list`. */
+export interface BlobListPage {
+  /** Ascending by `blobKey`, at most `limit`. Blobs being uploaded are not listed until they are complete. */
+  items: BlobListItem[];
+  /** Pass as `after` for the next page; null on the last one. */
+  next: string | null;
+}
+
 /** Thrown by `put` when the stream is longer than `maxBytes`; nothing is stored. */
 export class BlobTooLargeError extends Error {
   readonly maxBytes: number;
@@ -478,4 +530,19 @@ export interface BlobStorage extends ProviderImpl {
   delete(blobKey: string): Promise<boolean>;
   /** Size of the stored bytes, or null when nothing is stored. */
   head(blobKey: string): Promise<BlobHead | null>;
+  /**
+   * Every stored blob, ascending by key, `limit` (1 to 1000) at a time: `after` is the exclusive key to continue from (the previous
+   * page's `next`). Only the blob GC (`files.blob-gc`) calls it, to find blobs no `files` row references; it must list exactly the keys
+   * this provider issued and nothing else in a shared bucket or directory.
+   */
+  list(options: { after?: string; limit: number }): Promise<BlobListPage>;
+  /**
+   * The instance marker (M4 of the Phase 4 review): a random id stored in this store (a hidden object beside the blobs, never listed by `list`).
+   * The blob GC keeps the same id in its database and deletes only when the two match, so a bucket, prefix or directory shared by two deployments
+   * (or a database restored from another deployment) can never have one deployment delete the other's blobs. `get` answers null when there is none.
+   * A provider without both marker methods is never garbage-collected.
+   */
+  getInstanceMarker?(): Promise<string | null>;
+  /** Writes the marker only if the store has none (create-if-absent); true when it was written, false when one already exists. */
+  putInstanceMarker?(id: string): Promise<boolean>;
 }

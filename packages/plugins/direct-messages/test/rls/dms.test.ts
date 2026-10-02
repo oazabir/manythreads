@@ -13,6 +13,7 @@ import {
   testKernelMigrationSource,
   type Persona,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -43,7 +44,7 @@ afterAll(async () => {
 
 describe('app.dms_get_or_create', () => {
   it('passes the RLS harness (the plugin adds no table; the DM rows are the channels plugin\'s)', async () => {
-    const admin = new pg.Client({ connectionString: db.ownerUrl });
+    const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);

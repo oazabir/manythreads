@@ -54,6 +54,50 @@ server:
       accessMode: ReadWriteOnce
       keep: true
       mountPath: /data/blobs
+  # Where attachment bytes live (MANYTHREADS_STORAGE): `local` (storage-local, the volume above; the default) or `s3` (storage-s3: AWS S3,
+  # MinIO, R2, Ceph; docs/plugins/storage-s3.md). Exactly one provider loads. Switching stores does not move blobs: copy the objects first.
+  # With `s3` the server and the seed Job get MANYTHREADS_S3_*; the credentials come from a Secret, never from the Deployment's text:
+  #   - `existingSecret`: a Secret you made, with the keys `accessKeyKey` and `secretKeyKey` (default access-key / secret-key), or
+  #   - `accessKey` and `secretKey` here (pass them with --set-file or a values file kept out of git): the chart then makes the Secret
+  #     `manythreads-s3` (kept on uninstall), or
+  #   - neither: the AWS credential chain of the pod (a role bound to the service account) applies.
+  # The bucket must exist and be private (the chart never creates it). `blobs.persistence.enabled` can be false with s3.
+  storage:
+    type: local
+    s3:
+      bucket: ""
+      endpoint: ""            # empty = AWS; MinIO and most self-hosted stores: http(s)://host:9000
+      region: us-east-1
+      forcePathStyle: false   # true for MinIO and most self-hosted stores
+      prefix: blobs/
+      existingSecret: ""
+      accessKeyKey: access-key
+      secretKeyKey: secret-key
+      accessKey: ""
+      secretKey: ""
+  # Garbage collection of attachment bytes no row references (job files.blob-gc, daily 03:17 UTC; docs/plugins/files.md). `mode`: on | dry-run | off
+  # (anything but the word `on` means dry-run: a typo never deletes). It ships as dry-run: read the job's log line, then set "on" once you are sure the
+  # bucket/prefix (or the blobs volume) belongs to this deployment's database ALONE; the GC also refuses to delete when the instance marker kept in the
+  # store differs from the database's. `allowEmpty` lifts the "database holds no files row" guard: set it once only on a deployment that really
+  # deleted its last file. `adoptMarker` adopts the store's marker for a database restored from a backup (set it once, then unset it).
+  blobGc:
+    mode: "dry-run"
+    adoptMarker: false
+    graceHours: 24
+    orphanDays: 30
+    allowEmpty: false
+  # Team repositories (repo-git, MANYTHREADS_REPO_DIR): one bare git repository per team, `<team id>.git`, written by the server only.
+  # Same shape and same rules as blobs above (ReadWriteOnce: one server replica; `keep` leaves the claim, and so every page and bot
+  # definition, behind on `helm uninstall`). The server image carries the `git` binary. Losing this volume loses history: back it up
+  # with the database (docs/plugins/repo-git.md, Backups).
+  repos:
+    persistence:
+      enabled: true
+      size: 2Gi
+      storageClass: local-path
+      accessMode: ReadWriteOnce
+      keep: true
+      mountPath: /data/repos
 
 # Mail. The server sends sign-in, reset and invitation mail over SMTP (MANYTHREADS_SMTP_URL).
 mail:
@@ -87,10 +131,15 @@ kms:
   previousKeys: ""
 
 # Seed: a post-install/upgrade Job runs `pnpm seed --demo` from the server image: workspace Kahf Software, the seven
-# personas, three teams. Idempotent (a second run changes nothing) and the passwords are random and unknown (hashes only),
-# so the public site has no credentials; people get in through single sign-on, an invitation, or a password an operator sets with the admin CLI.
-# The Job mounts the server's blob volume (server.blobs) and runs on the server's node, so the demo attachment lands in the
-# directory the server reads; with server.blobs.persistence.enabled=false it runs with --no-attachment instead.
+# personas, three teams, their conversations (seed v3) and the content of their repositories (seed v4: pages with history, a CSV, a
+# Mermaid diagram, an embedded app, memory, bot placeholders, plus a PDF, PNG, MP4 and Office file in #dev). Idempotent (a second run changes
+# nothing) and the passwords are random and unknown (hashes only), so the public site has no credentials; people get in through single
+# sign-on, an invitation, or a password an operator sets with the admin CLI.
+# The Job writes where the server reads: it mounts the repository volume (server.repos, MANYTHREADS_REPO_DIR; the git binary is in the
+# server image) and, with the local store, the blob volume (server.blobs), and runs on the server's node (both claims are ReadWriteOnce).
+# With server.storage.type=s3 it gets the same MANYTHREADS_S3_* as the server and uploads the attachments to the bucket instead.
+# Without a repository volume it runs with --no-repo (a repository the Job made would live in its own disk); without a blob volume (local
+# store) it runs with --no-attachment.
 seed:
   demo: true
 

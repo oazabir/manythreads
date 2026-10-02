@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createMemoryMailer, type MemoryMailer } from '@manythreads/kernel';
 import { startServer, type RunningServer, type StartServerOptions } from '@manythreads/server';
 import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase } from './db.ts';
@@ -13,7 +16,7 @@ export interface TestServer extends RunningServer {
 }
 
 export type StartTestServerOptions = Partial<
-  Pick<StartServerOptions, 'testPlugins' | 'devAuth' | 'logger' | 'port' | 'now' | 'session' | 'testAuthToken' | 'publicUrl' | 'jobWorkers' | 'jobPollMs'>
+  Pick<StartServerOptions, 'testPlugins' | 'devAuth' | 'logger' | 'port' | 'now' | 'session' | 'testAuthToken' | 'publicUrl' | 'jobWorkers' | 'jobPollMs' | 'storage'>
 >;
 
 /** Pulls the token out of the `first-admin setup: open <url>/bootstrap/<token> ...` log line. */
@@ -33,6 +36,10 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
   const db = await createTestDatabase({ migrate: false });
   const logs: string[] = [];
   const mailer = createMemoryMailer();
+  // Team repositories (repo-git) go to a directory of this server, removed on close: team ids are fixed in the seed, so a directory shared
+  // between databases would hand one test the repository of another.
+  const repoDir = mkdtempSync(join(tmpdir(), 'manythreads-test-repos-'));
+  process.env['MANYTHREADS_REPO_DIR'] = repoDir;
   try {
     const server = await startServer({
       port: options.port ?? 0,
@@ -41,6 +48,8 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
       systemUrl: db.systemUrl,
       migrationLock: withClusterLock,
       testPlugins: options.testPlugins ?? true,
+      // The environment must not pick the store either: local unless a test asks for s3.
+      storage: options.storage ?? 'local',
       devAuth: options.devAuth ?? true,
       mailer,
       // The environment must not leak into tests: the test endpoint exists only when a test asks for it.
@@ -65,10 +74,12 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
       async close() {
         await server.close();
         await dropTestDatabase(db);
+        rmSync(repoDir, { recursive: true, force: true });
       },
     };
   } catch (err) {
     await dropTestDatabase(db);
+    rmSync(repoDir, { recursive: true, force: true });
     throw err;
   }
 }

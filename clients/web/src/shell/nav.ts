@@ -6,7 +6,7 @@ import { NavContribution, sortNav } from '@manythreads/shared';
  * adds its own entry the same way. Entries whose plugin is not loaded yet show their empty state.
  */
 export const CORE_NAV: NavContribution[] = [
-  { id: 'files', order: 10, label: 'Files', kind: 'item', path: '/files', icon: 'files', emptyState: 'No files yet' },
+  { id: 'files', order: 10, label: 'Files', kind: 'item', path: '/files', icon: 'files' },
   { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards', emptyState: 'No boards yet' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', emptyState: 'Nothing waiting', badge: { source: 'approvals.waiting', tone: 'quiet' } },

@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { fetchRoster } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
@@ -9,7 +10,7 @@ import { registerPanelType } from './registry';
 import type { PanelEntry } from './stack';
 
 /*
- * The panel types of the app. `thread` is the channels thread view; the files plugin replaces `file` (`registerPanelType` with the same type wins), so the panel itself never changes.
+ * The panel types of the app. `thread` is the channels thread view; `file` shows a repo file or an attachment in its viewer and `history` its commits (screens/files); a plugin can still replace any type with `registerPanelType`.
  */
 
 function Placeholder({ title, detail, children }: { title: string; detail?: string; children: string }) {
@@ -20,10 +21,6 @@ function Placeholder({ title, detail, children }: { title: string; detail?: stri
       {detail ? <p className="panel-empty-id">{detail}</p> : null}
     </div>
   );
-}
-
-function FilePanel({ entry }: { entry: PanelEntry }) {
-  return <Placeholder title="File" detail={entry.id}>Open a file from Files or a message to read it here.</Placeholder>;
 }
 
 /** A person on the current team, from the roster. */
@@ -56,5 +53,10 @@ function MemberPanel({ entry }: { entry: PanelEntry }) {
 
 registerPanelType({ type: 'thread', label: 'Thread', Component: ThreadPanel });
 registerPanelType({ type: 'search', label: 'Search', Component: SearchPanel });
-registerPanelType({ type: 'file', label: 'File', Component: FilePanel });
+// the file and history panels pull in the viewers' host and the diff: they load when the first file is opened, not with the app
+const FilePreview = lazy(() => import('../../screens/files/FilePreview').then((m) => ({ default: m.FilePreview })));
+const HistoryPanel = lazy(() => import('../../screens/files/HistoryPanel').then((m) => ({ default: m.HistoryPanel })));
+const Loading = <div className="vw-loading" role="status" aria-busy="true">Loading…</div>;
+registerPanelType({ type: 'file', label: 'File', Component: ({ entry }) => <Suspense fallback={Loading}><FilePreview entry={entry} /></Suspense> });
+registerPanelType({ type: 'history', label: 'History', Component: ({ entry }) => <Suspense fallback={Loading}><HistoryPanel entry={entry} /></Suspense> });
 registerPanelType({ type: 'member', label: 'Member', Component: MemberPanel });

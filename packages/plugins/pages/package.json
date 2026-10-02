@@ -1,0 +1,27 @@
+{
+  "name": "@manythreads/plugin-pages",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "manythreads": {
+    "entry": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
+    "@types/node": "^22",
+    "@types/pg": "^8",
+    "pg": "^8"
+  }
+}

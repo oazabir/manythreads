@@ -45,6 +45,10 @@ import {
   ListChannelFilesQuery,
   ListChannelFilesResponse,
   UploadFileResponse,
+  DeleteFileResponse,
+  GetFileResponse,
+  deleteFileRoute,
+  getFileRoute,
   followThreadRoute,
   listChannelFilesRoute,
   getThreadRoute,
@@ -363,6 +367,11 @@ export const sendTyping = (channelId: string, threadRootId: string | null) =>
 /** Does this server store attachments? The files plugin answers its list route; a server without it answers 404 (the clip button then stays hidden). */
 export const probeFiles = (channelId: string) =>
   call(listChannelFilesRoute, { request: ListChannelFilesQuery, response: ListChannelFilesResponse }, { limit: 1 } as ListChannelFilesQuery, { channelId });
+
+/** The uploader, or a lead of the channel's team, removes an attachment (the row and its bytes). */
+export const deleteAttachment = (fileId: string) => call(deleteFileRoute, { response: DeleteFileResponse }, undefined, { fileId });
+
+export const fetchFileMeta = (fileId: string) => call(getFileRoute, { response: GetFileResponse }, undefined, { fileId });
 
 export const fileContentUrl = (fileId: string): string => `/api/files/${encodeURIComponent(fileId)}/content`;
 

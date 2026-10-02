@@ -24,7 +24,7 @@ import { withSystem } from '../db/with-actor.ts';
 import { createSecretService } from '../kms/service.ts';
 import { createTemplateService } from '../templates/service.ts';
 import { createDbKv } from '../storage/kv.ts';
-import { createMemoryKv, createPluginContext } from './context.ts';
+import { createMemoryKv, createPluginContext, type ContextDeps } from './context.ts';
 import { PluginError } from './errors.ts';
 import { ExtensionRegistries } from './registries.ts';
 
@@ -79,6 +79,8 @@ export interface LoadPluginsOptions {
   templates?: PluginTemplates;
   /** `ctx.secrets` (default: envelope encryption with the process KMS, see kms/service.ts). */
   secrets?: SecretService;
+  /** The capability broker behind `ctx.capabilities.authorize`. The server builds it over the same `capabilities` registry. */
+  broker?: ContextDeps['broker'];
 }
 
 export interface PluginHost {
@@ -294,6 +296,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
       runtime,
       identity,
       secrets: options.secrets ?? secrets,
+      ...(options.broker ? { broker: options.broker } : {}),
       templates,
       ...(options.emit ? { emit: options.emit } : {}),
     });

@@ -82,7 +82,7 @@ jobs:
           PW=$(openssl rand -hex 24)
           echo "::add-mask::$PW"
           echo "MANYTHREADS_LIVE_PASSWORD=$PW" >> "$GITHUB_ENV"
-          for who in omar nadia rafi lena; do
+          for who in omar nadia rafi lena priya; do
             remote_set_password "$who@kahf.example" "$PW"
           done
 
@@ -154,6 +154,6 @@ jobs:
           source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
           NEW=$(openssl rand -hex 24)
           echo "::add-mask::$NEW"
-          for who in omar nadia rafi lena; do
+          for who in omar nadia rafi lena priya; do
             remote_set_password "$who@kahf.example" "$NEW" || echo "::warning::could not rotate the password of $who"
           done

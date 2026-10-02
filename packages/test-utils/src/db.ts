@@ -45,6 +45,29 @@ export const directMessagesMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/direct-messages/migrations/', import.meta.url)),
 };
 
+/** Migrations of the repo-git plugin (`repos`, `repo_entries`, `repo_commits`); pass it in `sources` after `teamsMigrationSource`. */
+export const repoGitMigrationSource: MigrationSource = {
+  namespace: 'repo-git',
+  dir: fileURLToPath(new URL('../../plugins/repo-git/migrations/', import.meta.url)),
+};
+
+/**
+ * A raw pg pool for tests. `dropTestDatabase` uses `DROP DATABASE ... WITH (FORCE)`, which terminates any connection still
+ * open to that database (57P01); a pool with no 'error' listener would then crash the run with an uncaught exception.
+ */
+export function testPool(config: pg.PoolConfig): pg.Pool {
+  const pool = new pg.Pool(config);
+  pool.on('error', () => undefined);
+  return pool;
+}
+
+/** A raw pg client for tests; errors of an idle connection are ignored (they still surface through rejected queries). */
+export function testClient(config: pg.ClientConfig | string): pg.Client {
+  const client = new pg.Client(config);
+  client.on('error', () => undefined);
+  return client;
+}
+
 export const DEV_TEST_DATABASE_URL = 'postgresql://manythreads_owner:manythreads@localhost:55432/manythreads';
 
 /** Owner connection string of the cluster's admin database; tests create and drop temp databases through it. */
@@ -87,7 +110,7 @@ const CLUSTER_LOCK_KEY = 7_450_002;
 
 /** Runs `fn` while holding a lock shared by every test process on the cluster (advisory locks are per database). */
 export async function withClusterLock<T>(fn: () => Promise<T>): Promise<T> {
-  const admin = new pg.Client({ connectionString: testAdminUrl() });
+  const admin = testClient({ connectionString: testAdminUrl() });
   await admin.connect();
   try {
     await admin.query('SELECT pg_advisory_lock($1)', [CLUSTER_LOCK_KEY]);
@@ -118,7 +141,7 @@ export async function createTestDatabase(options: CreateTestDatabaseOptions = {}
   const ownerUrl = withDatabase(adminUrl, name);
   const appUrl = withDatabase(adminUrl, name, { name: 'manythreads_app', password: DEFAULT_APP_PASSWORD });
   const systemUrl = withDatabase(adminUrl, name, { name: 'manythreads_system', password: DEFAULT_SYSTEM_PASSWORD });
-  const admin = new pg.Client({ connectionString: adminUrl });
+  const admin = testClient({ connectionString: adminUrl });
   await admin.connect();
   try {
     await admin.query(`CREATE DATABASE "${name}"`);
@@ -135,7 +158,7 @@ export async function createTestDatabase(options: CreateTestDatabaseOptions = {}
 /** Drops the temp database, terminating any connection still open to it. */
 export async function dropTestDatabase(db: TestDatabase): Promise<void> {
   if (!/^manythreads_test_[0-9a-f]+$/.test(db.name)) throw new Error(`Refusing to drop ${db.name}`);
-  const admin = new pg.Client({ connectionString: testAdminUrl() });
+  const admin = testClient({ connectionString: testAdminUrl() });
   await admin.connect();
   try {
     await admin.query(`DROP DATABASE IF EXISTS "${db.name}" WITH (FORCE)`);
@@ -283,7 +306,7 @@ export async function ownerSql<T extends Record<string, unknown> = Record<string
   text: string,
   params: readonly unknown[] = [],
 ): Promise<T[]> {
-  const client = new pg.Client({ connectionString: ownerUrl });
+  const client = testClient({ connectionString: ownerUrl });
   await client.connect();
   try {
     return (await client.query<T>(text, [...params])).rows;

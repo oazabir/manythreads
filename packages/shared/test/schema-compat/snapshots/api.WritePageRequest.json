@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "create",
+        "replace",
+        "append"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "content": {
+      "type": "string",
+      "maxLength": 2000000
+    },
+    "baseBlobSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    }
+  },
+  "required": [
+    "mode",
+    "path",
+    "content"
+  ],
+  "additionalProperties": false
+}

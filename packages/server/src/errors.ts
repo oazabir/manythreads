@@ -1,3 +1,4 @@
+import { redactUrl } from './log-redact.ts';
 import type { ErrorCode, ErrorEnvelope } from '@manythreads/shared';
 import { hasZodFastifySchemaValidationErrors, isResponseSerializationError } from 'fastify-type-provider-zod';
 import type { FastifyError, FastifyReply, FastifyRequest } from 'fastify';
@@ -67,7 +68,7 @@ export function errorHandler(err: FastifyError | Error, req: FastifyRequest, rep
     return;
   }
   if (isResponseSerializationError(err)) {
-    req.log.error({ err, method: err.method, url: err.url }, 'response failed its schema: server bug');
+    req.log.error({ err, method: err.method, url: redactUrl(err.url) }, 'response failed its schema: server bug');
     void reply.status(500).send(envelope('internal', 'Internal server error'));
     return;
   }

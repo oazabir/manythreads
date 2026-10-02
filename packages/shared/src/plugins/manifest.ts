@@ -19,6 +19,7 @@ export const EXTENSION_POINTS = [
   'provider.llm',
   'provider.knowledge',
   'provider.viewer',
+  'provider.repo',
   'command.register',
   'trigger.register',
   'component.register',

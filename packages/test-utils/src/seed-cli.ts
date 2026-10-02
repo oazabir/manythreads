@@ -8,21 +8,27 @@ const USAGE = `Usage: pnpm seed [options]
 
 Seeds workspace "Kahf Software" (teams Engineering, Customer support, Marketing; seven personas) into the database named by
 DATABASE_URL, with its conversations: channels from the team templates, about 40 messages each, a 12-reply thread, a private
-channel, a direct message, a 5,000-message channel, Lena's grant on #releases, reactions, mentions and one attachment (written to
-MANYTHREADS_STORAGE_DIR, default ./data/blobs). Safe to run again: nothing is duplicated and existing passwords are kept.
+channel, a direct message, a 5,000-message channel, Lena's grant on #releases, reactions, mentions and the attachment of the Deploy plan
+(seed v3), then the content of each team's repository (seed v4: pages with history, a CSV, a Mermaid diagram, an embedded app, memory, a bot
+placeholder; written to MANYTHREADS_REPO_DIR, default ./data/repos, through the repo writer, so git must be installed) and a PNG, an MP4 and
+an Office file next to the PDF in #dev. Attachments go through the storage provider named by MANYTHREADS_STORAGE (local, in
+MANYTHREADS_STORAGE_DIR, default ./data/blobs; or s3, with the MANYTHREADS_S3_* variables of the server). Safe to run again: nothing is
+duplicated and existing passwords are kept.
 Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
 
   --demo           random persona passwords, stored only as hashes and printed nowhere (public deployments)
   --no-content     only the workspace, teams and people (no channels or messages)
-  --no-attachment  leave out the one attachment (when this process does not share the server's blob directory, e.g. a Kubernetes Job)
+  --no-repo        leave out seed v4 (the repositories and the three extra attachments)
+  --no-attachment  leave out the attachments (when this process cannot reach the server's store, e.g. a Job without the blob volume)
   --migrate        apply the kernel migrations first (a fresh dev database); the server does this itself at start
   --wait <secs>    wait up to this long for the server's migrations to finish (default 0: fail at once)
   -h, --help       this text
 `;
 
-function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: number; content: boolean; attachment: boolean } | null {
+function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: number; content: boolean; attachment: boolean; repo: boolean } | null {
   let demo = false;
   let content = true;
+  let repo = true;
   let attachment = true;
   let migrate = false;
   let wait = 0;
@@ -31,6 +37,7 @@ function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: num
     if (a === '--demo') demo = true;
     else if (a === '--migrate') migrate = true;
     else if (a === '--no-content') content = false;
+    else if (a === '--no-repo') repo = false;
     else if (a === '--no-attachment') attachment = false;
     else if (a === '--wait') wait = Number(argv[(i += 1)]);
     else if (a?.startsWith('--wait=')) wait = Number(a.slice(7));
@@ -38,7 +45,7 @@ function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: num
     else throw new Error(`unknown argument "${a}"\n\n${USAGE}`);
   }
   if (!Number.isFinite(wait) || wait < 0) throw new Error('--wait takes a number of seconds');
-  return { demo, migrate, wait, content, attachment };
+  return { demo, migrate, wait, content, attachment, repo };
 }
 
 const env = process.env;
@@ -56,7 +63,7 @@ function systemUrl(): string {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** True when the identity and team tables exist (the kernel migrations the seed writes to), and with `content` the plugin tables too. */
-async function migrated(url: string, content: boolean): Promise<boolean> {
+async function migrated(url: string, content: boolean, repo: boolean): Promise<boolean> {
   const pool = createSystemPool(url, 1);
   try {
     return await withSystem(
@@ -66,8 +73,10 @@ async function migrated(url: string, content: boolean): Promise<boolean> {
               AND to_regclass('app.team_members') IS NOT NULL AND to_regclass('app.role_members') IS NOT NULL
               AND (NOT $1::boolean OR (to_regclass('app.channels') IS NOT NULL AND to_regclass('app.messages') IS NOT NULL
                    AND to_regclass('app.threads') IS NOT NULL AND to_regclass('app.files') IS NOT NULL
-                   AND to_regclass('app.notifications') IS NOT NULL)) AS ok`,
-          [content],
+                   AND to_regclass('app.notifications') IS NOT NULL))
+              AND (NOT $2::boolean OR (to_regclass('app.repos') IS NOT NULL AND to_regclass('app.repo_commits') IS NOT NULL
+                   AND to_regclass('app.repo_entries') IS NOT NULL)) AS ok`,
+          [content, repo],
         );
         return res.rows[0]?.ok === true;
       },
@@ -92,17 +101,17 @@ if (args.migrate) {
   console.log(`seed: kernel migrations applied (${applied} new)`);
 }
 const deadline = Date.now() + args.wait * 1000;
-while (!(await migrated(url, args.content))) {
+while (!(await migrated(url, args.content, args.repo))) {
   if (Date.now() >= deadline) {
     console.error(
-      `seed: the database at ${new URL(url).host} is not migrated (or the system role cannot connect). Start the server once (its plugin migrations create the channel tables the content needs), pass --migrate (kernel tables only: add --no-content), or --wait <secs>.`,
+      `seed: the database at ${new URL(url).host} is not migrated (or the system role cannot connect). Start the server once (its plugin migrations create the channel and repo tables the content needs), pass --migrate (kernel tables only: add --no-content), or --wait <secs>.`,
     );
     process.exit(1);
   }
   await sleep(2000);
 }
 
-const result = await seedWorld({ systemUrl: url }, { demo: args.demo, content: args.content, contentOptions: { attachment: args.attachment }, log: (line) => console.log(`seed: ${line}`) });
+const result = await seedWorld({ systemUrl: url }, { demo: args.demo, content: args.content, repo: args.content && args.repo, contentOptions: { attachment: args.attachment }, log: (line) => console.log(`seed: ${line}`) });
 // Nothing below prints a credential: in demo mode the passwords never leave seedWorld.
 console.log(
   result.skipped

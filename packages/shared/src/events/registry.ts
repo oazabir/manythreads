@@ -12,6 +12,8 @@ import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
 import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
 import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
 import { FilesFileDeletedEvent } from './files.file.deleted.ts';
+import { RepoRepoCommittedEvent } from './repo.repo.committed.ts';
+import { PagesPageWrittenEvent } from './pages.page.written.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
@@ -59,6 +61,8 @@ export const eventRegistry = {
   'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
   'files.file.uploaded': { 1: FilesFileUploadedEvent },
   'files.file.deleted': { 1: FilesFileDeletedEvent },
+  'repo.repo.committed': { 1: RepoRepoCommittedEvent },
+  'pages.page.written': { 1: PagesPageWrittenEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
@@ -135,6 +139,8 @@ export type AnyEvent =
   | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>
+  | z.infer<typeof RepoRepoCommittedEvent>
+  | z.infer<typeof PagesPageWrittenEvent>
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>

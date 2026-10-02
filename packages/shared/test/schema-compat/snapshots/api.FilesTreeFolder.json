@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "repo",
+        "attachment"
+      ]
+    },
+    "readOnly": {
+      "type": "boolean"
+    },
+    "readOnlyReason": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "change_by_pull_request",
+            "attachment",
+            "no_write_access"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "managedBy": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "team_memory"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "channelId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "path",
+    "source",
+    "readOnly",
+    "readOnlyReason",
+    "managedBy",
+    "channelId"
+  ]
+}

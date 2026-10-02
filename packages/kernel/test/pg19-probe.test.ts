@@ -1,6 +1,6 @@
 import { createSystemPool, getOneOrCreate, resetDoSelectProbe, supportsDoSelect, withSystem } from '../src/index.ts';
 import type { Tx } from '../src/index.ts';
-import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manythreads/test-utils';
+import { createTestDatabase, dropTestDatabase, type TestDatabase, testClient } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -10,7 +10,7 @@ let appPool: pg.Pool;
 
 beforeAll(async () => {
   db = await createTestDatabase();
-  owner = new pg.Client({ connectionString: db.ownerUrl });
+  owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();
   appPool = createSystemPool(db.systemUrl, 4);
 }, 60_000);

@@ -27,7 +27,7 @@ const person: Actor = { kind: 'person', id: ActorId.parse(randomUUID()), workspa
 
 function setup(granted: string[] = [], approval: string[] = []) {
   const registry = new CapabilityRegistry();
-  for (const name of ['files.read', 'files.write', 'files.delete', 'files.move', 'tasks.claim', 'gmail.read']) {
+  for (const name of ['files.read', 'files.write', 'files.delete', 'files.move', 'pages.write', 'tasks.claim', 'gmail.read']) {
     registry.register({ name, destructive: false, plugin: 'test' });
   }
   registry.register({ name: 'files.purge', destructive: true, plugin: 'test' });
@@ -43,7 +43,7 @@ function setup(granted: string[] = [], approval: string[] = []) {
 }
 
 describe('broker: path guard (bot actors)', () => {
-  const all = ['files.write', 'files.delete', 'files.move'];
+  const all = ['files.write', 'files.delete', 'files.move', 'pages.write'];
   const guarded = [
     'bots/x/BOT.md',
     'bots/x',

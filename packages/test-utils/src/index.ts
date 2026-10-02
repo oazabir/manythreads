@@ -7,4 +7,6 @@ export * from './client.ts';
 export * from './fake-oidc.ts';
 export * from './seed.ts';
 export * from './seed-content.ts';
+export { seedRepo, SEED_REPO_IDS, SEED_REPO_ATTACHMENTS, type SeedRepoOptions, type SeedRepoResult } from './seed-repo.ts';
+export { openSeedStorage, putSeedAttachment, type SeedStorageOptions, type SeedStorageKind } from './seed-storage.ts';
 export type { SeedAuthor, SeedLine } from './seed-data.ts';

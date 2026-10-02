@@ -80,6 +80,12 @@ export function registerMessageRoutes(deps: Deps): void {
       if (new Set(attachmentIds).size !== attachmentIds.length) throw invalid('attachments: a file can be attached once');
       let cards: FileSummary[] = [];
       if (attachmentIds.length > 0) {
+        // Row-lock the files first (files migration 0004): a concurrent delete of the last other message that lists one waits for this post, or
+        // has already hidden it, in which case the validation below refuses. Without the files plugin there is nothing to lock.
+        await tx.query('SELECT app.files_lock_for_attach($1::uuid[])', [attachmentIds]).catch((err: unknown) => {
+          if ((err as { code?: string }).code === '42883') throw invalid('attachments: file storage is not enabled');
+          throw err;
+        });
         const found = await tx
           .query<{ id: string; name: string; size: string; mime: string }>(
             'SELECT f.id, f.name, f.size, f.mime FROM app.files f WHERE f.id = ANY ($1::uuid[]) AND f.channel_id = $2 AND f.uploader_id = app.actor()',

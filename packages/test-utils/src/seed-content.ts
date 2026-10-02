@@ -1,7 +1,3 @@
-import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSystemPool, loadTemplates, withSystem, type Tx } from '@manythreads/kernel';
 import { toPlainText } from '@manythreads/shared';
@@ -29,6 +25,7 @@ import {
   type SeedLine,
 } from './seed-data.ts';
 import type { TestDatabase } from './db.ts';
+import { openSeedStorage, putSeedAttachment, type SeedStorageOptions } from './seed-storage.ts';
 import { KAHF_WORKSPACE_ID, LENA, personas, TEAM_IDS, type Persona, type TeamName } from './personas.ts';
 
 /** Fixed ids of the seed v3 content (so a screenshot, a spec or a deep link can name them). */
@@ -68,14 +65,13 @@ export const SEED_FIXED_START = new Date(HISTORY_START_MS);
 
 const MIN = 60_000;
 
-export interface SeedContentOptions {
+export interface SeedContentOptions extends SeedStorageOptions {
   /** Where team templates live (default: `MANYTHREADS_TEMPLATES_DIR`, else `templates/` at the repository root). */
   templatesDir?: string;
-  /** Where `storage-local` keeps blobs (default: `MANYTHREADS_STORAGE_DIR`, else `./data/blobs`). The attachment is written there. */
-  storageDir?: string;
   /**
-   * Write the attachment (default true). Turn it off when the seed does not run where the server keeps its blobs (a Kubernetes Job's own
-   * filesystem is not the server pod's): without the bytes the card would be a broken download, so no row and no card are made.
+   * Write the attachment (default true). It goes through the `storage` provider (storage-local's directory, or the S3 bucket, see
+   * `storage` and `storageDir`), so it works with either store. Turn it off when this process cannot reach the server's store (a Job
+   * without the blob volume): without the bytes the card would be a broken download, so no row and no card are made.
    */
   attachment?: boolean;
   /**
@@ -226,7 +222,6 @@ export async function seedContent(db: Pick<TestDatabase, 'systemUrl'>, options: 
     guestGrants: 0,
   };
   const templates = await loadTemplates(options.templatesDir ?? defaultTemplatesDir());
-  const storageDir = resolve(options.storageDir ?? process.env['MANYTHREADS_STORAGE_DIR'] ?? './data/blobs');
   const fixedClock = process.env['MANYTHREADS_CLOCK'] === 'fixed';
 
   const pool = createSystemPool(db.systemUrl, 2);
@@ -320,23 +315,8 @@ export async function seedContent(db: Pick<TestDatabase, 'systemUrl'>, options: 
           await tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [dmId, person(m)]);
         }
 
-        // 3. The attachment: its bytes go where storage-local looks (<dir>/<key[0..2]>/<key>), its row to `files`.
+        // 3. The attachment is made once the times are known (step 4): bytes through the storage provider, then the `files` row.
         let fileMeta: { size: number; sha: string } | null = null;
-        const blobKey = createHash('sha256').update('seed-v3:deploy-plan.pdf').digest('hex').slice(0, 32);
-        if (have['files'] && options.attachment !== false) {
-          try {
-            const bytes = deployPlanPdf();
-            const path = join(storageDir, blobKey.slice(0, 2), blobKey);
-            if (!existsSync(path)) {
-              await mkdir(dirname(path), { recursive: true });
-              await writeFile(path, bytes, { mode: 0o600 });
-            }
-            fileMeta = { size: bytes.length, sha: createHash('sha256').update(bytes).digest('hex') };
-          } catch (err) {
-            log(`the attachment was left out (cannot write ${storageDir}: ${err instanceof Error ? err.message : String(err)})`);
-          }
-        }
-
         // 4. Times. Ids carry HISTORY_START_MS + offset always; created_at carries `start` + offset.
         interface Planned {
           id: string;
@@ -377,6 +357,27 @@ export async function seedContent(db: Pick<TestDatabase, 'systemUrl'>, options: 
           options.baseDate?.getTime() ??
           (fixedClock ? HISTORY_START_MS : Math.floor((Date.now() - 30 * MIN) / MIN) * MIN - lastMin * MIN);
         const at = (offsetMin: number): string => new Date(start + offsetMin * MIN).toISOString();
+
+        if (have['files'] && options.attachment !== false) {
+          try {
+            const storage = await openSeedStorage(options);
+            const put = await putSeedAttachment(tx, storage, {
+              id: SEED_IDS.file,
+              workspaceId: ws,
+              channelId: root.channelId,
+              folderPath: 'channels/dev/',
+              name: DEPLOY_PLAN_FILE_NAME,
+              mime: 'application/pdf',
+              bytes: deployPlanPdf(),
+              uploaderActorId: actor('nadia'),
+              createdAt: at(root.offsetMin - 1),
+            });
+            fileMeta = { size: put.size, sha: put.sha256 };
+            result.attachments = 1;
+          } catch (err) {
+            log(`the attachment was left out (the storage provider failed: ${err instanceof Error ? err.message : String(err)})`);
+          }
+        }
 
         // 5. Messages: roots first (one statement), then replies (their roots exist by then), then the DM.
         const insertMessages = async (rows: Planned[]): Promise<number> => {
@@ -504,15 +505,7 @@ export async function seedContent(db: Pick<TestDatabase, 'systemUrl'>, options: 
           result.notifications = nrows.length;
         }
 
-        // 7. The attachment row and the guest grant.
-        if (fileMeta) {
-          await tx.query(
-            `INSERT INTO app.files (id, workspace_id, channel_id, folder_path, name, blob_key, size, mime, sha256, uploader_id, created_at)
-             VALUES ($1, $2, $3, 'channels/dev/', $4, $5, $6, 'application/pdf', $7, $8, $9) ON CONFLICT DO NOTHING`,
-            [SEED_IDS.file, ws, root.channelId, DEPLOY_PLAN_FILE_NAME, blobKey, fileMeta.size, fileMeta.sha, actor('nadia'), at(root.offsetMin - 1)],
-          );
-          result.attachments = 1;
-        }
+        // 7. The guest grant.
         if (have['acl_entries']) {
           const g = await tx.query(
             `INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission)

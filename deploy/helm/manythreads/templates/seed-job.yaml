@@ -1,12 +1,18 @@
 {{- if and .Values.server.enabled .Values.seed.demo }}
 {{- /*
   Demo seed: after every install and upgrade, once the server has migrated, `pnpm seed --demo` creates workspace Kahf
-  Software, the seven personas, three teams and their conversations (channels, about 40 messages each, a thread, a DM, a
-  5,000-message channel) if they are not there (idempotent, random unknown passwords, nothing is printed). Runs the server
-  image; --wait covers a slow first migration. The demo attachment is written into the server's blob volume: the Job mounts
-  the same claim (ReadWriteOnce is per node, so it must run on the node of the server pod: required pod affinity) and
-  sets the same MANYTHREADS_STORAGE_DIR. Without a persistent volume there is no shared disk, so it passes --no-attachment.
+  Software, the seven personas, three teams and their conversations (seed v3: channels, about 40 messages each, a thread, a DM, a
+  5,000-message channel) and, as seed v4, the content of each team's repository plus the attachments of #dev, if they are not there
+  (idempotent, random unknown passwords, nothing is printed). Runs the server image (it carries git for the repo writer); --wait
+  covers a slow first migration.
+  It must write where the server reads:
+    - repositories: the Job mounts the same `manythreads-repos` claim at the same MANYTHREADS_REPO_DIR (ReadWriteOnce is per node, so it
+      runs on the node of the server pod: required pod affinity). Without that volume it passes --no-repo.
+    - attachments: with the local store the same `manythreads-blobs` claim at the same MANYTHREADS_STORAGE_DIR (without it
+      --no-attachment); with s3 the same MANYTHREADS_S3_* as the server (credentials from the same Secret), no volume.
 */ -}}
+{{- $localBlobs := and (eq .Values.server.storage.type "local") .Values.server.blobs.persistence.enabled }}
+{{- $repos := .Values.server.repos.persistence.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -29,7 +35,7 @@ spec:
         app.kubernetes.io/component: seed
     spec:
       restartPolicy: Never
-      {{- if .Values.server.blobs.persistence.enabled }}
+      {{- if or $localBlobs $repos }}
       securityContext:
         fsGroup: 1000
       affinity:
@@ -44,13 +50,20 @@ spec:
         - name: seed
           image: {{ .Values.server.image }}:{{ .Values.imageTag }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          command: ["pnpm", "seed", "--demo", "--wait", "600"{{ if not .Values.server.blobs.persistence.enabled }}, "--no-attachment"{{ end }}]
-          {{- if .Values.server.blobs.persistence.enabled }}
+          command: ["pnpm", "seed", "--demo", "--wait", "600"{{ if not $repos }}, "--no-repo"{{ end }}{{ if and (eq .Values.server.storage.type "local") (not .Values.server.blobs.persistence.enabled) }}, "--no-attachment"{{ end }}]
+          {{- if or $localBlobs $repos }}
           volumeMounts:
+            {{- if $localBlobs }}
             - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+            {{- end }}
+            {{- if $repos }}
+            - { name: repos, mountPath: {{ .Values.server.repos.persistence.mountPath | quote }} }
+            {{- end }}
           {{- end }}
           env:
+            {{- include "manythreads.storageEnv" . | nindent 12 }}
             - { name: MANYTHREADS_STORAGE_DIR, value: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+            - { name: MANYTHREADS_REPO_DIR, value: {{ .Values.server.repos.persistence.mountPath | quote }} }
             - name: OWNER_PW
               valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
             - name: MANYTHREADS_SYSTEM_PASSWORD
@@ -59,9 +72,15 @@ spec:
               value: postgres://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
             - name: MANYTHREADS_SYSTEM_DATABASE_URL
               value: postgres://{{ .Values.postgres.systemRole }}:$(MANYTHREADS_SYSTEM_PASSWORD)@{{ include "manythreads.pgHost" . }}:5432/{{ .Values.postgres.database }}
-      {{- if .Values.server.blobs.persistence.enabled }}
+      {{- if or $localBlobs $repos }}
       volumes:
+        {{- if $localBlobs }}
         - name: blobs
           persistentVolumeClaim: { claimName: manythreads-blobs }
+        {{- end }}
+        {{- if $repos }}
+        - name: repos
+          persistentVolumeClaim: { claimName: manythreads-repos }
+        {{- end }}
       {{- end }}
 {{- end }}

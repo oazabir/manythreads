@@ -1,0 +1,27 @@
+{{- if and .Values.server.enabled .Values.server.repos.persistence.enabled }}
+{{- /*
+  Team repositories for repo-git (MANYTHREADS_REPO_DIR): one claim on the cluster's local-path class, mounted into the server
+  Deployment only (the seed Job writes rows, never repositories: a team's repo is created by the server on first use or by its
+  backfill job). `keep` (default) leaves it behind on helm uninstall so history survives. Immutable once bound: change
+  size/class by hand (expanding is `kubectl patch` on the claim if the class allows it).
+*/ -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: manythreads-repos
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: repos
+  {{- if .Values.server.repos.persistence.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: [{{ .Values.server.repos.persistence.accessMode }}]
+  {{- with .Values.server.repos.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.server.repos.persistence.size }}
+{{- end }}

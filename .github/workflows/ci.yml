@@ -49,10 +49,28 @@ jobs:
           docker logs manythreads-pg | tail -n 40
           exit 1
 
+      # MinIO for the storage-s3 contract suite (MinIO publishes no images any more: a mirror of the last community release). A plain
+      # `docker run` like Postgres above, because a service container cannot pass the `server /data` arguments. The suite creates its bucket.
+      - name: Start MinIO
+        run: |
+          docker run -d --name manythreads-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=manythreads \
+            -e MINIO_ROOT_PASSWORD=manythreads-secret \
+            ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z server /data
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:9000/minio/health/live; then exit 0; fi
+            sleep 2
+          done
+          docker logs manythreads-minio | tail -n 40
+          exit 1
+
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+        env:
+          MANYTHREADS_TEST_S3: "1"
+          MANYTHREADS_TEST_S3_ENDPOINT: http://localhost:9000
       - run: pnpm test:rls
       - run: pnpm test:events
       - run: pnpm test:schema-compat

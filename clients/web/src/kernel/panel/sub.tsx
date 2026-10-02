@@ -10,3 +10,14 @@ export function usePanelSub(text: string | null | undefined): void {
     return () => set(null);
   }, [set, text]);
 }
+
+/** The panel's title when the entry knows better than its type's label (a file's name, as in the prototype's preview header). */
+export const PanelTitleContext = createContext<(text: string | null) => void>(() => undefined);
+
+export function usePanelTitle(text: string | null | undefined): void {
+  const set = useContext(PanelTitleContext);
+  useEffect(() => {
+    set(text && text !== '' ? text : null);
+    return () => set(null);
+  }, [set, text]);
+}

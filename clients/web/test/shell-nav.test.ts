@@ -22,9 +22,9 @@ describe('sidebar contract', () => {
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);
   });
 
-  it('entries not built yet carry product copy for their empty state', () => {
+  it('entries not built yet carry product copy for their empty state (Files is built: it carries none)', () => {
     const copy = Object.fromEntries(CORE_NAV.map((i) => [i.id, i.emptyState]));
-    expect(copy['files']).toBe('No files yet');
+    expect(copy['files']).toBeUndefined();
     expect(copy['boards']).toBe('No boards yet');
     expect(copy['approvals']).toBe('Nothing waiting');
     expect(copy['bots']).toBe('No bots yet');

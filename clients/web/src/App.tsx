@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router';
 import { RequireSession, SessionProvider } from './app/session';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -19,6 +20,11 @@ import { ThreadsInbox } from './screens/ThreadsInbox';
 import { Teams } from './screens/Teams';
 import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 
+// developer page: its viewers load on demand, not with the app
+// the Files screen carries the viewers' host: it loads when Files is opened
+const FilesScreen = lazy(() => import('./screens/files/FilesScreen').then((m) => ({ default: m.FilesScreen })));
+const DevViewers = lazy(() => import('./pages/DevViewers').then((m) => ({ default: m.DevViewers })));
+
 function ExpiredRoute() {
   const [params] = useSearchParams();
   const kind = params.get('kind');
@@ -38,13 +44,14 @@ function AppRoutes() {
         <Route path="/expired" element={<ExpiredRoute />} />
         <Route path="/403" element={<ForbiddenPage />} />
         <Route path="/dev/tokens" element={<DevTokens />} />
+        <Route path="/dev/viewers" element={<Suspense fallback={null}><DevViewers /></Suspense>} />
 
         <Route element={<RequireSession />}>
           <Route element={<Shell />}>
             <Route path="/" element={<HomeView />} />
             <Route path="/t/:team" element={<TeamHome />} />
             <Route path="/t/:team/threads" element={<RequireTeam><ThreadsInbox /></RequireTeam>} />
-            <Route path="/t/:team/files" element={<RequireTeam><SectionView section="files" /></RequireTeam>} />
+            <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/boards" element={<RequireTeam><SectionView section="boards" /></RequireTeam>} />
             <Route path="/t/:team/approvals" element={<RequireTeam><SectionView section="approvals" /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />

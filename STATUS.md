@@ -1,12 +1,15 @@
 # STATUS
 
-Current phase: **3 · Channels, threads and direct messages** (gate verified locally; exit = merge PR "Phase 3 · Channels, threads and direct messages")
+Current phase: **4 · Files and the team repo** — all tasks done except optional P4-12 (deferred); security review fixed; local gate green (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e + vt). Exit: merge PR "Phase 4 · Files and the team repo", release + live screenshots. Retro: docs/retro/phase-4.md.
+
+Owner instruction (2026-10-02): **stop the loop after phase 4 finishes** (merge + release + live screenshots), do not start phase 5.
 
 | Phase | State | Tag |
 |---|---|---|
 | 1 Foundations | done — gate green locally and in CI; retro `docs/retro/phase-1.md` | phase-1 / v0.1.0 |
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
-| 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | pending release.yml |
+| 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
+| 4 Files and the team repo | gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247 + fixes, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | pending release.yml |
 | 4–13 | not started | |
 
 ## Phase 1 summary
@@ -47,3 +50,10 @@ Screens: `docs/retro/screens/phase-1/`.
 - Owner approved self-merge of phase PRs to main. Owner requested ops-run / ops-db free-form workflows; the
   permission classifier blocks committing them — needs an owner permission rule.
 - Owner rule: product name is manythreads; repo-wide rename pending (after the P2 schema agent commits).
+
+## Phase 4 Wave A follow-ups (for Wave B)
+- P4-09/10 done (2810c42). FilePanel reads/saves via repo-git blob + commit routes (baseBlobSha); repo blobs have no `url`
+  (SVG in repo won't render) — tree/content API should serve a URL. `channels/` paths wait for the tree API (P4-06).
+- Sandboxed app subresources lack SameSite cookies (opaque origin): real app content route needs a signed per-open token.
+- Markdown >200 KB opens Raw only (marked quadratic on hostile emphasis).
+- `pnpm vt` / full e2e flake under parallel agents (Postgres connection slots) — run gates with agents idle.

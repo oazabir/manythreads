@@ -2,15 +2,17 @@
  * The referee rule (guide §7): bots never write `bots/`, `TEAM.md`, `skills/`, `routines/`. Changes arrive only
  * as an approved proposal. Paths are repo-relative and case-sensitive.
  */
-
-const GUARDED_DIRS: ReadonlySet<string> = new Set(['bots', 'skills', 'routines']);
-const GUARDED_FILES: ReadonlySet<string> = new Set(['team.md']);
+import { isGuardedRepoPath } from '@manythreads/shared';
 
 /** `files.*` verbs that only read. Everything else under `files.` is treated as a write (fail closed). */
 const READ_ONLY_FILE_VERBS: ReadonlySet<string> = new Set(['read', 'list', 'search', 'get', 'stat', 'diff', 'history']);
 
-/** True for `files.write`, `files.delete`, `files.move`, ... and any unknown `files.*` verb. */
+/** Capabilities outside `files.*` that write a repo path (`pages.write` is a file write that is only ever offered under `pages/`): guarded like `files.write`. */
+const PATH_WRITE_CAPABILITIES: ReadonlySet<string> = new Set(['pages.write']);
+
+/** True for `files.write`, `files.delete`, `files.move`, ... any unknown `files.*` verb, and `pages.write`. */
 export function isFilesMutation(capability: string): boolean {
+  if (PATH_WRITE_CAPABILITIES.has(capability)) return true;
   if (!capability.startsWith('files.')) return false;
   return !READ_ONLY_FILE_VERBS.has(capability.slice('files.'.length));
 }
@@ -36,14 +38,6 @@ export function normalizeRepoPath(raw: string): NormalizedPath {
   return { ok: true, path: out.join('/') };
 }
 
-// Compared case-insensitively and NFKC-folded, trailing dots/spaces trimmed: the repo may live on a
-// case-insensitive filesystem (macOS/Windows), where `team.md` or `Bots/` is the same file. Fail closed.
-const fold = (segment: string): string => segment.normalize('NFKC').toLowerCase().replace(/[. ]+$/, '');
-const isGuarded = (normalized: string): boolean => {
-  const parts = normalized.split('/').map(fold);
-  return GUARDED_DIRS.has(parts[0] ?? '') || GUARDED_FILES.has(parts.join('/'));
-};
-
 export interface PathVerdict {
   allowed: boolean;
   reason: string;
@@ -65,7 +59,7 @@ export function checkBotWritePath(raw: string): PathVerdict {
   for (const form of forms) {
     const normalized = normalizeRepoPath(form);
     if (!normalized.ok) return { allowed: false, reason: `traversal denied: ${normalized.reason}` };
-    if (isGuarded(normalized.path)) {
+    if (isGuardedRepoPath(normalized.path)) {
       return {
         allowed: false,
         reason: `path "${normalized.path}" is not bot-writable (bots/, TEAM.md, skills/ and routines/ change only through an approved proposal)`,

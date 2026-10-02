@@ -1,12 +1,15 @@
 import { guardPluginTx } from '@manythreads/sdk';
 import type {
   AuditEvent,
+  CapabilityAuthorizeContext,
+  CapabilityDecision,
   CapabilityHandler,
   EmitEvent,
   EnqueueJobOptions,
   GetOneOrCreateInput,
   JobHandler,
   JobOptions,
+  PluginAccess,
   PluginDb,
   PluginTemplates,
   IdentityServices,
@@ -26,8 +29,9 @@ import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
 import { getOneOrCreate } from '../db/get-or-create.ts';
 import { createEntityLinkService } from '../entity-links/index.ts';
 import { createReadStateService } from '../read-state/index.ts';
+import { parseCron } from '../jobs/cron.ts';
 import { publishRealtime } from '../transport/realtime.ts';
-import type { Tx } from '../db/with-actor.ts';
+import type { Actor, Tx } from '../db/with-actor.ts';
 import { enqueue } from '../jobs/index.ts';
 import { createTemplateService } from '../templates/service.ts';
 import { PluginError } from './errors.ts';
@@ -45,6 +49,8 @@ export interface ContextDeps {
   templates?: PluginTemplates;
   /** Secret storage for plugins that extend `provider.identity` (default: the kernel's KMS-backed one). */
   secrets?: SecretService;
+  /** The capability broker behind `ctx.capabilities.authorize`; without one the call rejects (fail closed). */
+  broker?: { authorize(actor: Actor, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision> };
 }
 
 /** The `ctx` handed to `register`. Using an extension point the manifest did not declare throws. */
@@ -89,6 +95,23 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   const realtime: PluginRealtime = {
     pushToPerson: (tx, personId, type, payload) =>
       publishRealtime(guardPluginTx(tx), [{ workspaceId: tx.actor.workspaceId, personId, type, payload }]),
+    // One publish call (one statement) for the whole audience, whatever its size.
+    pushToPeople: (tx, personIds, type, payload) =>
+      publishRealtime(
+        guardPluginTx(tx),
+        [...new Set(personIds)].map((personId) => ({ workspaceId: tx.actor.workspaceId, personId, type, payload })),
+      ),
+    pushMany: (tx, pushes) =>
+      publishRealtime(guardPluginTx(tx), pushes.map((p) => ({ workspaceId: tx.actor.workspaceId, ...p }))),
+  };
+
+  const idsOf = async (tx: PluginTx, text: string, perm: string): Promise<string[]> => {
+    const res = await guardPluginTx(tx).query<{ ids: string[] | null }>(text, [perm]);
+    return res.rows[0]?.ids ?? [];
+  };
+  const access: PluginAccess = {
+    readableTeamIds: (tx, perm) => idsOf(tx, 'SELECT app.readable_team_ids($1::text) AS ids', perm),
+    readableChannelIds: (tx, perm) => idsOf(tx, 'SELECT app.visible_channel_ids($1::text) AS ids', perm),
   };
 
   const ownQueue = (queue: string): void => {
@@ -183,6 +206,10 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       },
     },
     capabilities: {
+      async authorize(tx: PluginTx, capability: string, context: CapabilityAuthorizeContext = {}) {
+        if (!deps.broker) throw new PluginError(`Plugin "${name}": no capability broker is wired into the host`, { plugin: name });
+        return deps.broker.authorize(tx.actor as unknown as Actor, capability, context);
+      },
       register(capability: string, handler: CapabilityHandler) {
         if (!manifest.capabilities.some((c) => c.name === capability)) {
           throw new PluginError(
@@ -228,6 +255,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           if (clash) {
             throw new PluginError(`Plugin "${name}" job queue "${queue}" is already registered by plugin "${clash.plugin}"`, { plugin: name });
           }
+          if (options.cron !== undefined) parseCron(options.cron); // a bad expression fails the plugin at load, not at 3 a.m.
           registries.jobs.add(name, { queue, handler, options });
         },
         async enqueue(tx: PluginTx, queue: string, payload: Record<string, unknown>, options: EnqueueJobOptions = {}) {
@@ -242,6 +270,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     readState: createReadStateService({ counters: registries.unreadCounters, plugin: name }),
     links: createEntityLinkService({ resolvers: registries.entityResolvers, plugin: name }),
     realtime,
+    access,
     get identity(): IdentityServices {
       use('provider.identity');
       if (!deps.identity) {

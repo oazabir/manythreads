@@ -2,8 +2,8 @@
 
 Attachments of channels: the `files` table, the upload and download routes, and the link from a message to its files (SPEC section 5.2 and principle 8, PLAN P3-08).
 Code: `packages/plugins/files`. Schemas: `packages/shared/src/{entities/file,api/files,events/files.file.*}`. The bytes live in the storage provider registered as
-`storage` (`storage-local` by default, see [storage-local.md](./storage-local.md)); this plugin owns everything about people, channels and names. Phase 4 adds the
-team repo and a tree over both stores; attachments never go to git.
+`storage` (`storage-local` by default, [storage-s3](./storage-s3.md) with `MANYTHREADS_STORAGE=s3`; see [storage-local.md](./storage-local.md) for the interface); this plugin owns everything about people, channels and names. Phase 4 adds the
+team repo and a tree over both stores (below); attachments never go to git.
 
 ## Who reads a file
 
@@ -30,7 +30,7 @@ set, one array probe per statement) and **T** for team files; comment `rls: team
 - Checks: name is one path segment (no `/`, `\`, control characters, `.` or `..`), folder path ends in `/` and has no `..`, `sha256` is 64 hex digits.
 - A `BEFORE INSERT` definer trigger sets `team_id` from the channel and refuses another workspace: a caller names the channel, never the team. `UPDATE` is refused for everyone
   but the system role (a stored file's name, bytes and owner never change). Deleting a channel cascades to its rows (nothing in the product deletes channels; the blobs of such rows
-  stay until a cleanup job exists, see "Not here").
+  are collected by the blob GC, see below).
 
 ## Routes
 
@@ -81,8 +81,84 @@ bytes have arrived. A response `body` that is a Node `Readable` is piped as is (
    a deleted file, or one in a channel they cannot see, is left out. Download is always `GET /api/files/:id/content`: the card holds no URL with authority.
 
 `ChannelMessage.attachments` is optional in the schema (an older client or fixture still parses) and always sent by the server. A message still needs a body of at least one
-character; a composer that sends only files can use the file names as the text. Deleting a message does not delete its files (they stay in the channel's Files). The channels plugin
+character; a composer that sends only files can use the file names as the text. Deleting a message **hides** the files only that message listed, then deletes them after 30 days (next section). The channels plugin
 reads `app.files` only when a message has attachments, so it still runs without this plugin.
+
+## Files of deleted messages (migration 0002)
+
+**Decision: a file whose only references are deleted messages is hidden at once and deleted after 30 days.** Not "keep" (a deleted message's attachment readable by the whole channel
+for ever contradicts why it was deleted) and not "delete with the message" (a lead deleting the wrong message would lose the bytes with no way back; the 30 days are the way back).
+
+- **Hidden at once, for everyone but the system role.** A definer trigger on `app.messages` (the files plugin depends on channels) stamps `files.orphaned_at` when a message is deleted
+  and no live message of the channel still lists the file (`meta.attachments` probe, GIN index `messages_attachments`). The `files_select` policy shows a row only while `orphaned_at IS NULL`,
+  so the download route, the channel's file list, message cards, file search, links and the uploader's own delete all stop seeing it (403, as for any hidden file). A file that another live
+  message still lists stays visible until the last of them is deleted. A file never attached to a message is the channel's file and is not touched.
+- **Deleted after `MANYTHREADS_FILES_ORPHAN_DAYS` (default 30)** by the blob GC below: first the row, then, in the same sweep, the bytes (nothing references them any more).
+- **Undo within the window** (an operator, as the system role): `UPDATE app.files SET orphaned_at = NULL WHERE id = ...`. Nobody else can stamp or clear the mark: the app role has no
+  `UPDATE` privilege and cannot call `app.files_mark_orphaned`; `files_no_update` still refuses every change except that one stamp.
+- Messages deleted before the migration were backfilled at migration time (their 30 days start then). A deleted message's `meta` keeps its attachment ids (the mapper hides them from readers), which is what the trigger and the GC read.
+
+## Blob garbage collection (`files.blob-gc`)
+
+A blob is garbage when **no `files` row has its key**. Rows go away through the delete route (which removes the bytes itself), through the 30-day purge above, through a channel or
+team cascade, and by an upload that stored its bytes and then failed to commit its row. The job `files.blob-gc` (a `ctx.jobs.register` queue with `cron: '17 3 * * *'`: **daily at 03:17 UTC**, stored by the server at start,
+one run however many replicas) cleans all of them up:
+
+1. A sweep's first run deletes `files` rows whose `orphaned_at` is older than the orphan period (30 days).
+2. It pages through `storage.list` (1,000 per page, ascending by key), asks `SELECT blob_key FROM app.files WHERE blob_key = ANY(page)` (index `files_blob_key`), and deletes every
+   blob that no row references **and is older than the grace period** (24 h): the bytes of an upload exist in the store before its row does, so a young blob may be an upload in flight.
+3. A run looks at up to 200,000 blobs, then enqueues a follow-up job with a cursor (the last key) and stops, so no transaction runs for hours.
+
+| Setting | Default | |
+|---|---|---|
+| `MANYTHREADS_BLOB_GC` | `dry-run` | `dry-run` (everything except the deletions: counts and bytes are reported as "would delete"), `on`, `off`. Only the word `on` deletes: unset, empty or anything else means `dry-run`, so a deployment opts in and a typo never deletes. A job payload `{ "dryRun": true }` also forces a dry run once. Helm: `server.blobGc.mode`, shipped as `dry-run`. |
+| `MANYTHREADS_BLOB_GC_GRACE_HOURS` | `24` | Minimum 1. |
+| `MANYTHREADS_FILES_ORPHAN_DAYS` | `30` | Minimum 1. |
+| `MANYTHREADS_BLOB_GC_ALLOW_EMPTY` | unset | `1` lifts the empty-database guard below. |
+| `MANYTHREADS_BLOB_GC_ADOPT_MARKER` | unset | `1` adopts the store's instance marker for a database that has none (see "Instance marker"). |
+
+**Guard.** If the database holds no `files` row at all but the store holds old unreferenced blobs, the run deletes nothing and logs a warning: the server is probably pointed at the wrong
+database (every blob would look like garbage). A deployment that really deleted its last file sets `MANYTHREADS_BLOB_GC_ALLOW_EMPTY=1` once.
+
+**Instance marker (a bucket, prefix or directory belongs to ONE database).** "No row names this blob" is only garbage when the store is this database's alone: two deployments that share a
+bucket and prefix, or a staging database restored from production, would each delete the other's blobs after the grace period. So before the first deletion of a run the GC compares two ids:
+one in the table `app.blob_gc_instance` and one in the store (S3: the object `<prefix>.instance`; local: `<dir>/.instance`; neither is ever listed as a blob). On a fresh pair the first deleting
+run writes both (the store's write is create-only). It deletes only while they are equal; it refuses (`refused` in the metrics line, a warning) when the store's marker is another id, when the
+database has none but the store has one (use `MANYTHREADS_BLOB_GC_ADOPT_MARKER=1` once to adopt it, for a database restored from a backup that predates the marker), or when the provider
+cannot keep a marker. Give every deployment its own bucket or prefix (`MANYTHREADS_S3_PREFIX`); a database copied for another deployment keeps the copied id, so point the copy at its own store
+and clear the id (`DELETE FROM app.blob_gc_instance` as the system role) before turning the GC on. A listing entry without a modified time counts as "now", so it is never old enough to delete.
+The shipped default is `dry-run`: read the metrics line first, then set `on`.
+
+**Metrics** are one line per run in the server log (`job.log`, level info; warn when something failed or the guard refused): `files.blob-gc {"provider":"local","graceHours":24,"dryRun":false,"purgedFiles":3,"scanned":12044,
+"referenced":12031,"withinGrace":4,"orphans":9,"deleted":9,"bytes":1843022,"failed":0,"refused":null,"next":null,"ms":812}`. A failed deletion is counted and retried by the next sweep. To try it on
+production data first: set `MANYTHREADS_BLOB_GC=dry-run`, read the line, then `on`. To run it now: `SELECT app.enqueue_job('files.blob-gc', '{}', NULL, NULL)` as the system role.
+
+The GC knows only the `files` table. A plugin that stores blob keys elsewhere (none does: pages and the repo are git, attachments never go to git) must add its table to the reference
+check before it ships, or its blobs would be collected. `.tmp/*.part` files of crashed uploads (storage-local) are not blobs and are not listed; delete `.part` files older than a few
+minutes by hand or with a cron job.
+
+## The Files tree (`src/tree.ts`, PLAN P4-06)
+
+`GET /api/teams/:slug/files/tree?path=&limit=` (`GetFilesTreeResponse`: `{ path, folder, entries, truncated }`) is **one listing over two stores** with **one row shape** (`FilesTreeEntry`): `kind` (file | folder), `path`, `name`, `size`,
+`mime`, `updatedAt`, `updatedBy`, `source` (`repo` | `attachment`), `readOnly`, `readOnlyReason`, `managedBy`, and the ids that apply (`fileId`, `channelId`, `blobSha`), plus `contentUrl`, a URL that serves the bytes
+(`/api/files/:id/content` or `/api/teams/:slug/repo/content?path=`), so an `<img src>` works for both. Folders first, then names (byte order); `limit` (default 500, at most 2,000) cuts the list and says `truncated`.
+`folder` says what is true of the folder being listed (the breadcrumb's last step).
+
+| Path | Rows come from | Access |
+|---|---|---|
+| `` (root) | the repo's root through the `repo` provider (`list`), plus a `channels` folder | team membership (the team row through RLS) |
+| a repo folder (`pages`, `memory/facts`, ...) | the provider (the `repo_entries` index with the last commit of each file) | team membership; a missing folder, or a file asked as a folder, is 404 |
+| `channels` | one folder per channel of the team the caller can read, with its newest upload | the channels RLS shows (`app.channels`); `can_post` from `app.visible_channel_ids('post')` decides `readOnly` of the folder |
+| `channels/<name>` | the channel's `files` rows, `path = channels/<current name>/<file name>` (the tree follows `channel_id`, not the stored `folder_path`) | the channel's ACL **on every read**: a private channel, a guest without a grant and a name that does not exist are all **403**, indistinguishable |
+| `channels/<name>/x` | none: attachment folders are flat | 404 |
+
+- **Criterion 6**: Lena (guest, in no team) is 403 on `#dev` attachments and on the team's tree (the team is not hers to read); Nadia is 403 on Marketing's tree; a team member sees `channels/` without the private channels she is not in.
+- **Read-only** (`readOnly` + `readOnlyReason`): `change_by_pull_request` for `bots/`, `skills/`, `routines/` and `TEAM.md` for a member who is not a lead or admin (a direct write is 403; criterion 9: Priya), `attachment` for every attachment row and the
+  `channels` folder (an upload never changes in place), `no_write_access` for a reader who cannot post (also the channel folders). `managedBy: 'team_memory'` marks `memory/` and everything below it (the journal is written by
+  the team's memory; facts stay editable, so it is a note, not `readOnly`).
+- Files of a team that belong to no channel (`files.channel_id IS NULL`) have no upload route yet and are not listed.
+- The repo part is optional: without a `repo` provider the root lists `channels` alone and any repo folder is 503. `channels/` in the repo is refused by the writer, so the two never collide. A channel renamed after an upload keeps
+  the old `folder_path`; two files of one name under the old and the new folder would show as the same path (distinct `fileId`s): rare, not handled.
 
 ## Entity link
 
@@ -99,17 +175,18 @@ person, in the transaction of the change; a refused request emits nothing.
 | Field | Value |
 |---|---|
 | name / version / kind | `files` / `0.1.0` / `server` |
+| extends | `event.emit`, `job.register` (the blob GC queue) |
 | dependsOn | `channels` (tables and `visible_channel_ids`; loaded and migrated after it) |
 | events | emits `files.file.uploaded`, `files.file.deleted` |
-| provider used | `ctx.providers.get('storage')`, looked up per request |
+| job | `files.blob-gc`, cron `17 3 * * *` |
+| provider used | `ctx.providers.get('storage')`, looked up per request (and per GC run) |
 
 ## Not here
 
-Folder tree, viewers, rename and move, team files and the repo (phase 4). Virus scanning and thumbnails. A cleanup job for blobs whose row went away with a channel, and for `.tmp/*.part`
-files of crashed uploads (see storage-local). Range requests for video seeking. Quotas per person or team.
+Rename and move, team files without a channel (the `files.team_id`-only rows have no upload route yet). Virus scanning and thumbnails. A cleanup of `.tmp/*.part` files of crashed uploads (see storage-local). Range requests for video seeking. Quotas per person or team.
 
 ## Tests
 
 `test/files-api.test.ts` (upload and download, 413 mid-stream and by `content-length`, ACL for Sameera, Lena (grant, read-only, revoke), a private channel, a DM, archived, traversal and
 control characters in names, delete, attachments on messages), `test/rls/files-rls.test.ts` (`pnpm test:rls`: visibility per persona equals the channel set, writes, triggers, checks),
-`test/events/files-events.test.ts` (`pnpm test:events`), `e2e/api/files/attach-acl.spec.ts` (`pnpm e2e --project=api`, including a real 51 MB upload).
+`test/gc.test.ts` (hidden deleted-message files, the GC: grace, dry run, cascades, purge after 30 days, paging, the empty-database guard, the job through the worker and its log line), `test/events/files-events.test.ts` (`pnpm test:events`), `test/files-tree.test.ts` (the merged tree, rows, read-only reasons, ACL per folder), `e2e/api/files/attach-acl.spec.ts` (`pnpm e2e --project=api`, including a real 51 MB upload), `e2e/api/files/tree.spec.ts`.

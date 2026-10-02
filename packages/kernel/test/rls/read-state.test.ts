@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { UnreadCounterMissingError } from '@manythreads/sdk';
-import { LENA, NADIA, OMAR, PRIYA, RAFI, SAMEERA, KAHF_WORKSPACE_ID, type Persona } from '@manythreads/test-utils';
+import { LENA, NADIA, OMAR, PRIYA, RAFI, SAMEERA, KAHF_WORKSPACE_ID, type Persona, testClient } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withActor, type Tx } from '../../src/index.ts';
@@ -22,7 +22,7 @@ const countAfter = async (t: Tx, channelId: string, after: string): Promise<numb
 
 beforeAll(async () => {
   w = await createWorld();
-  owner = new pg.Client({ connectionString: w.db.ownerUrl });
+  owner = testClient({ connectionString: w.db.ownerUrl });
   await owner.connect();
   await owner.query(`CREATE TABLE app.rs_test_messages (id uuid PRIMARY KEY DEFAULT uuidv7(), channel_id uuid NOT NULL, author_id uuid NOT NULL)`);
   await owner.query('GRANT SELECT, INSERT ON app.rs_test_messages TO manythreads_app, manythreads_system');

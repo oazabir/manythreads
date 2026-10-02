@@ -1,0 +1,5 @@
+flowchart LR
+  A[Message] --> B{Bot mentioned?}
+  B -- yes --> C[Run]
+  B -- no --> D[Store]
+  C --> D

@@ -14,6 +14,7 @@ import {
   teamsMigrationSource,
   testKernelMigrationSource,
   type TestDatabase,
+  testClient,
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -28,7 +29,7 @@ const person: Actor = { kind: 'person', id: ActorId.parse(randomUUID()), workspa
 
 beforeAll(async () => {
   db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, searchMigrationSource] });
-  owner = new pg.Client({ connectionString: db.ownerUrl });
+  owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();
   appPool = createAppPool(db.appUrl, 4);
   sysPool = createSystemPool(db.systemUrl, 4);

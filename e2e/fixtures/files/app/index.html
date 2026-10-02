@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Release checklist</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 0; padding: 12px; color: #1b2430; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  label { display: block; margin: 4px 0; }
+  pre { background: #f3f4f6; padding: 8px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+<script src="__manythreads.js"></script>
+</head>
+<body>
+<h1 id="title">Release checklist</h1>
+<label><input type="checkbox" id="c1"> Tag the release</label>
+<label><input type="checkbox" id="c2"> Update the changelog</label>
+<label><input type="checkbox" id="c3"> Announce in #releases</label>
+<pre id="probe" data-testid="probe">probing</pre>
+<script>
+(async function () {
+  var out = {};
+  // 1. the session cookie: an opaque origin cannot even read document.cookie
+  try { out.cookie = document.cookie === '' ? 'empty' : 'readable:' + document.cookie; }
+  catch (e) { out.cookie = 'blocked:' + e.name; }
+  // 2. the API with credentials: connect-src 'none' stops the request
+  try {
+    var r = await fetch('/api/session', { credentials: 'include' });
+    out.fetch = 'status:' + r.status;
+  } catch (e) { out.fetch = 'blocked:' + e.name; }
+  // 3. storage
+  try { localStorage.setItem('x', '1'); out.storage = 'writable'; }
+  catch (e) { out.storage = 'blocked:' + e.name; }
+  // 4. the parent's DOM
+  try { out.parent = String(window.parent.document.title); }
+  catch (e) { out.parent = 'blocked:' + e.name; }
+  // 5. the bridge
+  try { out.bridge = await window.manythreads.getContext(); }
+  catch (e) { out.bridge = 'error:' + e.message; }
+  document.getElementById('probe').textContent = JSON.stringify(out);
+  document.documentElement.setAttribute('data-probed', '1');
+})();
+</script>
+</body>
+</html>

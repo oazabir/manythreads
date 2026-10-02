@@ -14,7 +14,7 @@ const BASE = (process.env['MANYTHREADS_LIVE_URL'] ?? 'https://manythreads.kahf.t
 const PASSWORD = process.env['MANYTHREADS_LIVE_PASSWORD'] ?? '';
 const OUT = process.env['MANYTHREADS_SHOTS_DIR'] ?? join(import.meta.dirname, 'out');
 
-const EMAIL = { omar: 'omar@kahf.example', nadia: 'nadia@kahf.example', rafi: 'rafi@kahf.example', lena: 'lena@kahf.example' } as const;
+const EMAIL = { omar: 'omar@kahf.example', nadia: 'nadia@kahf.example', rafi: 'rafi@kahf.example', lena: 'lena@kahf.example', priya: 'priya@kahf.example' } as const;
 type Persona = keyof typeof EMAIL;
 
 const DESKTOP = { width: 1440, height: 900 };
@@ -137,6 +137,25 @@ const openDrawer: Prepare = async (page) => {
   await expect(page.getByTestId('app-frame')).toHaveAttribute('data-drawer', 'open');
 };
 
+/** The Files screen has listed the folder. */
+const filesReady: Prepare = async (page) => {
+  await expect(page.getByTestId('files-screen')).toBeVisible();
+  await expect(page.getByTestId('file-row').first()).toBeVisible();
+};
+
+/** The runbook page open in the centre, its History in the right panel. */
+const runbookHistory: Prepare = async (page) => {
+  await expect(page.getByTestId('file-view')).toBeVisible();
+  await page.getByTestId('file-view').getByTestId('open-history').click();
+  await expect(page.getByTestId('history').getByTestId('commit-row').first()).toBeVisible();
+};
+
+/** A file open in the centre has rendered its viewer. */
+const fileOpen: Prepare = async (page) => {
+  await expect(page.getByTestId('file-view')).toBeVisible();
+  await expect(page.getByTestId('file-view').locator('[data-testid^="viewer-"]').first()).toBeVisible();
+};
+
 interface Screen {
   name: string;
   persona: Persona | null;
@@ -158,6 +177,12 @@ const SCREENS: Screen[] = [
   { name: 'search-rolback', persona: 'nadia', path: '/t/engineering/c/dev', prepare: searchRolback },
   { name: 'dm', persona: 'rafi', path: UNREAD_INBOX, prepare: openNadiaDm },
   { name: 'guest-releases', persona: 'lena', path: '/t/engineering/c/releases', prepare: channelReady },
+  // phase 4: files and the team repo
+  { name: 'files', persona: 'nadia', path: '/t/engineering/files', prepare: filesReady },
+  { name: 'files-channel-dev', persona: 'nadia', path: '/t/engineering/files?path=channels/dev', prepare: filesReady },
+  { name: 'runbook-history', persona: 'nadia', path: '/t/engineering/files?open=pages/runbook.md', prepare: runbookHistory },
+  { name: 'csv', persona: 'nadia', path: '/t/engineering/files?open=pages/reports/signups.csv', prepare: fileOpen },
+  { name: 'bots-readonly', persona: 'priya', path: '/t/engineering/files?open=TEAM.md', prepare: fileOpen },
 ];
 
 const MOBILE_SCREENS: Screen[] = [
@@ -166,6 +191,7 @@ const MOBILE_SCREENS: Screen[] = [
   { name: 'guest-releases', persona: 'lena', path: '/t/engineering/c/releases', prepare: channelReady },
   { name: 'channel-dev', persona: 'nadia', path: '/t/engineering/c/dev', prepare: channelReady },
   { name: 'channel-dev-drawer', persona: 'nadia', path: '/t/engineering/c/dev', prepare: openDrawer },
+  { name: 'files', persona: 'nadia', path: '/t/engineering/files', prepare: filesReady },
 ];
 
 for (const s of SCREENS) {

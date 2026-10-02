@@ -1,0 +1,150 @@
+# repo-git
+
+The team repo: one bare git repository per team, one writer in front of it, an index in Postgres (SPEC section 5.1, principle 8; PLAN P4-01 to P4-05).
+Code: `packages/plugins/repo-git`. Schemas: `packages/shared/src/{entities/repo,entities/repo-paths,api/repo,events/repo.repo.committed}`. Git is the truth;
+the tables are an index that is rebuilt from git when it falls behind. Attachments never go to git ([files.md](./files.md)).
+
+## Where it lives
+
+`${MANYTHREADS_REPO_DIR}/<team id>.git` (default `./data/repos`). In the cluster that is the PVC `manythreads-repos` mounted at `/data/repos` (Helm `server.repos.persistence`,
+ReadWriteOnce like the blob volume: one server replica); the server image carries the `git` binary. Dev, tests and e2e use a temporary directory per server.
+Backups: the repositories are history, back the directory up together with the database (a plain `tar` of a quiet directory is a valid backup: git writes objects first and moves
+the branch last). Loose objects pile up with writes; a periodic `git gc` over the directory is safe while the server runs and is a later maintenance job.
+
+## The layout of a new team's repo (SPEC section 5.1, criterion 1)
+
+The first commit (author `manythreads`, subject "Create the team repository") writes `TEAM.md` and the folders of the layout. Git keeps no empty folder, so each is a `.gitkeep`
+until it has content; the Files tree hides `.gitkeep`.
+
+```
+TEAM.md                       the pending TEAM.md of team creation (team_pending_files, stamped applied_at), else the template's copy, else a minimal manifest
+bots/ skills/ routines/ knowledge/ pages/        .gitkeep
+memory/journal/  memory/facts/                   .gitkeep
+```
+
+It is created by the job `repo-git.init` (one per team, deduplicated), enqueued when `workspace.team.created` or `team.template.applied` is consumed, by the migration for every
+team that exists when it is applied, and, as the common safety net, by the first request that needs the repo (a team seeded straight into the database has no event). Everything
+is idempotent: the repos row is a get-or-create, the first commit happens only when `main` does not exist, and all of it runs under the team lock.
+
+## One writer per team
+
+`repo.write` is the only way a team repo changes. For other plugins it is `ctx.providers.get<RepoProvider>('repo')` (extension point `provider.repo`, types in `@manythreads/sdk`):
+
+```ts
+write(tx, teamId, actor: { id, kind, name? }, changes: RepoWriteChange[], message: string, coAuthors?: { actorId, name }[]): Promise<RepoWriteResult>
+// RepoWriteChange = { path, op: 'put', content, baseBlobSha? } | { path, op: 'append', content } | { path, op: 'delete', baseBlobSha? }
+// RepoWriteResult = { sha, parentSha, noop, authorId, paths: [{ path, op, blobSha, size }] }
+restore(tx, teamId, actor, path, sha, coAuthors?)   // a new commit that puts path back as it was at sha
+blob(tx, teamId, path, ref, maxBytes?)  tree(tx, teamId, path, ref)
+```
+
+1. **Who.** `actor` must be the actor of `tx`; the author line is `<name> <actor id>@actors.manythreads.invalid`, so a commit maps back to an actor. Co-authors become `Co-authored-by`
+   trailers (never the author, never twice; names cannot forge a trailer).
+2. **Order.** A queue per team in the process, then `pg_advisory_xact_lock(hash('repo-git:' || team))` in the caller's transaction. The lock lasts until that transaction ends, so a
+   writer on another replica (or the next one in this process) waits until the previous writer's index rows are committed, then reads the head it left.
+3. **Commit.** Through a temporary index: `hash-object -w`, `update-index --index-info`, `write-tree`, `commit-tree`, then `update-ref <new> <old>`: a compare-and-swap, so a lost race
+   changes nothing. A write that leaves the tree as it was is a no-op: no commit, no event (200, `noop: true`).
+4. **Conflicts.** A change with `baseBlobSha` is checked against the blob in the tree now. If any change conflicts the whole write is refused, **nothing is written**, and the answer is
+   **409 `conflict`** with each path's current blob and text (`reason`: `changed`, `exists` for `baseBlobSha: null`, `missing`, `folder`, `parent_is_file`). Files and folders of one name conflict
+   instead of corrupting the tree. `append` reads the current file inside the lock, so two appends never lose one.
+5. **Index and event.** In the same transaction: `repos.head_sha`, `repo_entries` (path, blob, size, last commit, `text_plain` for UTF-8 text up to 1 MB), `repo_commits` (author, co-authors,
+   message, paths) through the definer function `app.repo_index_apply`, and the event `repo.repo.committed` (ids, subject, changed paths; never content).
+6. **Catch-up.** If the transaction rolls back after git committed (or the index is new, or the directory was lost and recreated), git is ahead of `repos.head_sha`; the next write
+   indexes the missing commits (authors are read back from the author line) and rebuilds `repo_entries` before it commits. No event is emitted for a commit indexed this way.
+
+## Writer rules (PLAN P4-05)
+
+| Who | May write |
+|---|---|
+| a team member (lead, member) | any path except the four guarded ones |
+| a team lead or workspace admin | also `bots/`, `TEAM.md`, `skills/`, `routines/` (the UI proposal that commits; the pull request flow arrives in phase 7) |
+| any other member | the four guarded paths get **403** "Change by pull request: ..." |
+| a bot | only through the kernel broker: `ctx.capabilities.authorize(tx, 'files.write' \| 'files.delete', { path })`. The broker's path guard denies `bots/`, `TEAM.md`, `skills/`, `routines/` (case-folded, percent-decoded, traversal-proof) and logs each denial as `kernel.capability.denied`; the bot also needs a `files.write` grant. `files.delete` is declared destructive: never grantable. This plugin has no copy of the guard: the paths live once in `isGuardedRepoPath` (`@manythreads/shared`), which the broker uses |
+| a guest, a person outside the team, an anonymous caller | never (403, 403, 401); an archived team takes no write (409) |
+
+Content: **text only**. A NUL byte anywhere, bytes that are not valid UTF-8, or more than 1 MB (1,048,576 bytes is allowed), are **422 `attachment_not_in_repo`**; nothing is committed, and a good file in
+the same request is not written either. Upload such bytes as a channel attachment. (Through HTTP the JSON body limit is the practical ceiling for text.)
+
+Paths (strict, NFC-normalised, never "fixed"): relative; no `..`, `.` or empty segment; no backslash or control character; no segment `.git` (any case) or `.gitmodules`; no segment that
+ends in a dot or a space; at most 1,024 bytes (255 per segment). Refused with 400 `validation_failed`. A file and a folder of one name in one request are refused too.
+
+## Limits and upkeep (Phase 4 security review)
+
+- **Quota per team.** `MANYTHREADS_REPO_MAX_BYTES` (default 512 MiB, the repository's size on disk: loose objects, packs, so history counts) and `MANYTHREADS_REPO_MAX_FILES` (default 20,000).
+  A commit that adds bytes past either is **413 `repo_quota_exceeded`** and writes nothing; a commit that only deletes or shrinks is always allowed.
+- **Files tree.** One folder listing returns at most 5,000 names (folders first, then by name).
+- **Rate limits** (per actor, sliding window, in process memory of each replica): tree, blob and content 600 per minute, history and diff 120, commit 120, restore 60, app files 1,200.
+- **The git runner** runs `MANYTHREADS_GIT_WORKERS` processes at once (default 8), lets at most that number minus two work for one repository, and refuses with **503** (`Retry-After: 2`)
+  when `MANYTHREADS_GIT_MAX_QUEUE` calls (default 64) are already waiting. Every call runs with `GIT_LITERAL_PATHSPECS=1`: a path is a name, never a pattern.
+- **Repacking.** The queue `repo-git.gc` runs weekly (Sunday 04:41 UTC) and calls `git gc --auto` (threshold about 1,000 loose objects) for each team repository, in the foreground.
+- **Co-authors** come from the validated `coAuthors` argument of `write` and the index (`repo_commits.co_authors`), never from the message: `Co-authored-by:` (and `Signed-off-by:` and similar) lines
+  typed into a message are quoted with `> `, and History skips any trailer whose id is not a full actor id.
+
+## The git layer (`src/git`)
+
+The `git` CLI, nothing else, through one runner: argv arrays (never a shell string), an environment built from scratch (no inherited `GIT_*`, `HOME=/nonexistent`, no system or global config),
+`-c core.hooksPath=/dev/null -c protocol.allow=never`, a timeout and an output cap on every call (`output_too_large`, or a truncated diff on request), each process in its own group so a
+timeout kills its helpers, and at most `MANYTHREADS_GIT_WORKERS` (default 8) processes at once. `MANYTHREADS_GIT_BIN` names the executable. Operations: `initBare` (no templates, so no
+hooks), `tree`, `blob` (size checked before it is read), `log` (path filter, cursor), `diff`, `show`, `commit`, `restoreChange`, plus listing helpers. Refs are `main`, `HEAD` or a commit sha;
+nothing else reaches git.
+
+## HTTP
+
+| Route | |
+|---|---|
+| `GET /api/teams/:slug/repo/tree?path=&ref=` | folders first, then files, with size and sha. Anyone who can read the team; another team's tree is 403; an admin gets 404 for a missing slug |
+| `GET /api/teams/:slug/repo/blob?path=&ref=` | `{ content, encoding: 'utf8' \| 'base64', blobSha, size, commitSha }`; 413 over 1 MB. `ref` may be a commit sha: that is how a client reads the two versions of a rendered diff |
+| `GET /api/teams/:slug/repo/content?path=&ref=&download=` | **the bytes** for a URL (`<img src>`, a link): `content-type` from the extension (`repoMimeOf` in shared; unknown means `text/plain`), text types with `charset=utf-8`; **SVG** is `image/svg+xml` under `content-security-policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` (it renders as an image and runs nothing); `text/html`, XML, JavaScript and CSS are `application/octet-stream` + `attachment`; `nosniff`, `cross-origin-resource-policy: same-origin`, `cache-control: private, no-cache` (access is decided again on every read); `download=1` forces `attachment`. Same access as the blob route |
+| `POST /api/teams/:slug/repo/commit` | `{ changes: RepoChange[], message }`, strict; `content` is text or `encoding: 'base64'`. 201 `CommitRepoResponse`, 200 for a no-op, 409 `RepoConflictResponse`, 422, 403, 400. 120 per minute |
+| `GET /api/teams/:slug/repo/history?path=&limit=&cursor=` | `GetRepoHistoryResponse`: commits that touched a file, a folder or (empty path) the repo, **newest first** (`git log`, so renames of folders and deleted files work): `sha, parentSha, authorId` (from the author line `<actor id>@actors.manythreads.invalid`; null for the system's first commit), `authorName, coAuthorIds, subject, message, committedAt`, and `change: added \| modified \| deleted` when the path names one file (one `git log --name-status` for the whole page; null for a folder). `limit` 1 to 100 (default 30), `cursor` is `nextCursor` (the last sha of the page). Readable by anyone who can read the team |
+| `GET /api/teams/:slug/repo/diff?path=&from=&to=` | one file between two commits as **unified hunks** (`GetRepoDiffResponse`: `status`, `additions`, `deletions`, `hunks[{ oldStart, oldLines, newStart, newLines, header, lines[{ type: context \| add \| del, text, oldLine, newLine }] }]`, `binary`, `truncated` at the 8 MB output cap). `to` defaults to `main`; `from` defaults to the parent of `to` (a root commit diffs against nothing). The parser (`src/diff.ts`) is one linear pass with a hostile-input timing test. A **rendered Markdown diff** is made by the client from the two versions (`blob?ref=<sha>`) |
+| `POST /api/teams/:slug/repo/restore` | `{ path, sha, message? }` (strict): puts `path` back as it was at `sha` (the file is **deleted** if it did not exist then) as a **new commit by the caller**: 201 `RestoreRepoFileResponse` (a commit response plus `restoredFromSha`), 200 `noop: true` when it already is as it was; old commits stay. It is a write like any other, so the writer rules apply: a member cannot restore `bots/` or `TEAM.md` (403, change by pull request), a bot goes through the broker, an unknown commit is 404, a folder is 400. 60 per minute |
+| `GET /api/teams/:slug/repo/app/<folder>/<file>` | **embedded apps** (`src/app-routes.ts`): the file at that repo path with the mime type of its extension (HTML, JS and CSS run: that is the point), a folder or `<folder>/` answers its `index.html`, and `__manythreads.js` in any folder is the bridge client. The server adds the strict CSP, `sandbox allow-scripts` and `nosniff` to every answer under the path (`embeddedAppHeaders`), 401 and 404 included. Needs the session cookie **or a per-open token** (below) |
+| `POST /api/teams/:slug/repo/app-token` | `{ path: "apps/release-checklist" }` (strict) answers `{ token, expiresAt, path, url }`: signed-in **person** who can read the team (a guest, another team's member and a bot get 403; an admin gets 404 for a missing slug); 120 per minute; `cache-control: no-store`. Served by the host (`packages/server/src/app-token-route.ts`), not by this plugin |
+
+`channels/` is **reserved** (400 on write, any case): the Files tree shows channel attachments there ([files.md](./files.md)), so a repo file of that name would hide or be hidden. The provider has `list(tx, teamId, folder)`: the
+files and folders directly below a folder from the index (one grouped query over `repo_entries` joined to `repo_commits`: size, blob, the commit time and author of the last change, a folder's newest below it; `.gitkeep` is
+never a row; a folder that does not exist is 404). `write` takes `options.capability` (`files.write` default, `pages.write` for [pages](./pages.md)).
+
+Refusals are returned as the error envelope without rolling the request back, so a repository the request had to create (its first commit is already in git) keeps its index rows.
+
+### Embedded apps and the per-open token
+
+A frame with `sandbox="allow-scripts"` and no `allow-same-origin` has an opaque origin, and a browser does not send the SameSite session cookie with its sub-resource requests (`__manythreads.js`, `js/app.js`).
+So the viewer (`clients/web/src/viewers/app/AppViewer.tsx`) asks `POST .../app-token` first and puts the returned `url` in the iframe: `/api/teams/<slug>/repo/app/~mta.<token>/<folder>/index.html`. The token is a
+**path segment**, not a query parameter, so the app's relative URLs keep it. If the server cannot issue one the viewer falls back to the plain address (works for the page itself with the cookie).
+
+- **Format** `v1.<claim>.<signature>`; the claim is `{ a: actor id, w: workspace id, t: team slug, p: app folder, e: expiry }`, the signature HMAC-SHA256 under a key derived (HKDF) from `MANYTHREADS_KMS_KEY`
+  (so replicas and restarts agree; without a master key, a development server, the key is random per process).
+- **Lifetime** 5 minutes (`APP_TOKEN_TTL_SECONDS`), per open: reopening the app asks again. A token already in use is not extended.
+- **Scope** one team and one folder: the request's slug must be the claim's, and the path must be the folder or below it, with no `..`, `.` or empty segment (`apps/demo` does not open `apps/demo2`, `apps/demo/../x` or `bots/`).
+  A first segment starting `~mta.` is always treated as a token and refused when it is not a valid one, even when the request also carries a cookie: a stale link is never half working. (So a repo folder literally named `~mta.x` cannot be an app.)
+- **What it grants** the request becomes that person's for this `GET` or `HEAD` under the app route only (the check is in the server's `onRequest` hook, `authenticateAppToken`). Reads still go through row level
+  security as the person: leave the team, and the token stops working at once. It does not outlive a sign-out by more than its lifetime. A `POST` under the route, or the same string anywhere else, is not authorised.
+- **Refusals** expired, tampered, signed with another key, for another team or folder: one answer, **403** "This app link has expired or is not valid. Reopen the app." (the reason is only in the server log).
+- Never log or store a token. Tests: `packages/server/test/app-token.test.ts` (signature, expiry, scope, tampering), `app-token-hook.test.ts` (the hook, no database), `packages/plugins/repo-git/test/app-route.test.ts`
+  (the real route and routes end to end), `e2e/api/seed/seed-v4.spec.ts` (the seeded app, no cookie).
+
+## Tables (`migrations/0001_repo.sql`, PLAN A.4)
+
+`repos(team_id PK, path, head_sha, remote, ...)`, `repo_entries((team_id, path) PK, kind, blob_sha, size, last_commit_sha, text_plain)` with GIN trigram on `path` and on `text_plain`, `repo_commits((team_id, sha) PK,
+parent_sha, author_id, co_authors uuid[], message, committed_at, paths text[], seq)` with `(team_id, committed_at DESC, seq DESC)`, BRIN on `committed_at` and GIN on `paths`. RLS **T**: readable by whoever
+`app.readable_team_ids('read')` holds the team for (one array probe per statement; the trigram indexes serve a member's query under the policy), written by the system role only. The writing side is three
+narrow definer functions (`app.repo_register`, `app.repo_seed`, `app.repo_index_apply`) that accept the system or a team member who may post; they check the caller with `app.lookup_can_team`,
+because inside them `app.is_system()` is TRUE.
+
+## Seed v4 (demo and e2e content)
+
+`pnpm seed` (`seedWorld(db, { content: true, repo: true })`, `packages/test-utils/src/seed-repo.ts`; `MANYTHREADS_STACK_SEED=repo` for an e2e stack) fills the repository of each template team through
+`repo.write`, in the transaction of the person who would have written it (author, writer rules and `repo.repo.committed` are the production ones). Per team: `pages/runbook.md` in two commits by two people,
+`pages/reports/signups.csv`, `pages/weekly-digest.md`, `pages/changelog.md`, a Google link card, `pages/diagrams/dispatch.mmd` (Mermaid), the embedded app `apps/release-checklist/index.html` (one file, the
+`__manythreads.js` bridge, no network code), `memory/facts/*.md` (by the lead), `memory/journal/2026-03-06.md` (by the system), a bot placeholder `bots/<slug>/{BOT.md,memory.md,lessons.md}` (by the lead) and
+`TEAM.md` from the template. Text only; the PNG, MP4 and Office file go to `channels/dev/` as attachments ([storage-s3.md](./storage-s3.md)). Idempotent: a step whose commit message is already in the team's
+history is skipped, so a person's later edit is never undone. Needs `git` in the process that seeds (the server image has it) and the same `MANYTHREADS_REPO_DIR` as the server.
+
+## Tests
+
+
+`test/git.test.ts` (real git in temp dirs: CAS, hooks and environment ignored, timeouts, caps, pool, paths), `test/repo-api.test.ts` and `test/repo-service.test.ts` (layout, authorship, 20 concurrent writes,
+two replicas, conflicts, binary, bot guard through the real broker, catch-up after a rolled-back write, restore), `test/rls`, `test/events`, `test/provider.test.ts`, `test/repo-history.test.ts` (history, diff, restore, content, `channels/` reserved), `test/diff.test.ts` (patch parser, hostile input);
+`e2e/api/repo/{concurrency,bot-path-guard,pages-write}.spec.ts`.
