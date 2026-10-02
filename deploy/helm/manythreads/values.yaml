@@ -54,6 +54,18 @@ server:
       accessMode: ReadWriteOnce
       keep: true
       mountPath: /data/blobs
+  # Team repositories (repo-git, MANYTHREADS_REPO_DIR): one bare git repository per team, `<team id>.git`, written by the server only.
+  # Same shape and same rules as blobs above (ReadWriteOnce: one server replica; `keep` leaves the claim, and so every page and bot
+  # definition, behind on `helm uninstall`). The server image carries the `git` binary. Losing this volume loses history: back it up
+  # with the database (docs/plugins/repo-git.md, Backups).
+  repos:
+    persistence:
+      enabled: true
+      size: 2Gi
+      storageClass: local-path
+      accessMode: ReadWriteOnce
+      keep: true
+      mountPath: /data/repos
 
 # Mail. The server sends sign-in, reset and invitation mail over SMTP (MANYTHREADS_SMTP_URL).
 mail:

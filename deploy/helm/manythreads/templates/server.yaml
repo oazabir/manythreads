@@ -56,6 +56,7 @@ spec:
             - { name: MANYTHREADS_SMTP_URL, value: {{ $smtp | quote }} }
             {{- end }}
             - { name: MANYTHREADS_STORAGE_DIR, value: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+            - { name: MANYTHREADS_REPO_DIR, value: {{ .Values.server.repos.persistence.mountPath | quote }} }
             - name: MANYTHREADS_KMS_PREVIOUS_KEYS
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-previous-keys, optional: true } }
             {{- if .Values.testAuth.enabled }}
@@ -76,6 +77,7 @@ spec:
             periodSeconds: 10
           volumeMounts:
             - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+            - { name: repos, mountPath: {{ .Values.server.repos.persistence.mountPath | quote }} }
           {{- with .Values.server.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
@@ -84,6 +86,12 @@ spec:
         - name: blobs
           {{- if .Values.server.blobs.persistence.enabled }}
           persistentVolumeClaim: { claimName: manythreads-blobs }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: repos
+          {{- if .Values.server.repos.persistence.enabled }}
+          persistentVolumeClaim: { claimName: manythreads-repos }
           {{- else }}
           emptyDir: {}
           {{- end }}
