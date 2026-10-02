@@ -1,5 +1,5 @@
 /*
- * A small, safe markdown reader for messages (PLAN P3-13). It turns text into a tree of plain data; `Markdown.tsx` draws the
+ * A small, safe markdown reader for messages (PLAN P3-13). It turns text into a tree of plain data; `MessageMarkdown.tsx` draws the
  * tree with React elements, so nothing here or there ever produces HTML from message text: `<script>` stays the visible
  * characters `<script>`. Supported: paragraphs (a single newline is a line break, as in chat), fenced and inline code,
  * **bold**, *italic*, ~~strike~~, links, bare http(s) addresses, bullet and numbered lists, quotes, headings, @mentions and #channels.

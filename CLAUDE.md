@@ -130,6 +130,8 @@ Bots (50). The Bots header opens the team roster; a bot's name opens its convers
   them, so they stay out of the repo until the owner adds a permission rule.
 
 ## Environment notes
+- Windows dev loop (local edit + lint + typecheck, rsync to the devbox, build/test/deploy/verify there — no WSL):
+  `WINDOWS_DEV.md`; scripts in `tools/devbox/` (`Check.ps1`, `Sync-Up.ps1`, `Remote.ps1`, `Ship.ps1`).
 - Local docker daemon: start with `(dockerd >/tmp/dockerd.log 2>&1 &)` if `docker info` fails.
 - Deploy target: k3s at manythreads.kahf.to via GitHub Actions only (SSH not reachable from the sandbox).
   Phase exit: merge PR to main, with title "Phase N · <name>" — `release.yml` runs on that merge:

@@ -5,7 +5,7 @@ import { Avatar } from '../components/ui';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
 import { clock, fileKind, fileSize } from './format';
-import { Markdown } from './Markdown';
+import { Markdown } from './MessageMarkdown';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import type { People } from './hooks';
 

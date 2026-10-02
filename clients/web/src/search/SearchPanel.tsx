@@ -7,7 +7,7 @@ import { usePeople } from '../channels/hooks';
 import type { PanelEntry } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { useOpenMessage, type MessageTarget } from '../shell/messageLink';
-import { Highlight } from './Highlight';
+import { Highlight } from './SearchHighlight';
 import { parseSearchEntry, searchEntry } from './searchEntry';
 
 type HitChannel = SearchMessageHit['channel'];
