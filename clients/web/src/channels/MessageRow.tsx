@@ -14,7 +14,7 @@ export const QUICK_EMOJI = ['👍', '✅', '🎉', '❤️', '👀', '🚀', '�
 export function AttachmentCard({ file }: { file: FileSummary }) {
   const kind = fileKind(file.name, file.mime);
   return (
-    <a className="att" href={fileContentUrl(file.id)} download={file.name} data-testid="attachment">
+    <a className="att" href={fileContentUrl(file.id)} download={file.name} data-testid="attachment" data-landmark="attachment">
       <span className={`ic ${kind.tone}`}>{kind.label}</span>
       <span className="att-text">
         {file.name}

@@ -71,6 +71,47 @@ test('open a thread, reply, push a second panel, Back, reload on the deep link',
   }
 });
 
+/** PLAN criterion 2, word for word: three pushes, then Back twice shows the first entry, and the URL says so (the stack is the history). */
+test('three threads pushed in a row, Back twice: the first one is shown again and the URL follows each step', async ({ browser }) => {
+  const omar = await apiAs('omar');
+  const nadiaApi = await apiAs('nadia');
+  const { id, name } = await createChannel(omar, 'push3');
+  const roots = [
+    await postMessage(nadiaApi, id, 'First topic: the release notes.'),
+    await postMessage(nadiaApi, id, 'Second topic: the rollback runbook.'),
+    await postMessage(nadiaApi, id, 'Third topic: the rota for Friday.'),
+  ];
+  const rafi = await openAs(browser, 'rafi', `/t/engineering/c/${name}`);
+  const { page } = rafi;
+  const panel = page.locator('[data-landmark="right-panel"]');
+  const content = page.locator('[data-landmark="content"]');
+  const urlIs = (rootId: string): RegExp => new RegExp(`panel=thread(%3A|:)${rootId}`);
+  try {
+    await expect(messages(page)).toHaveCount(3);
+    for (const [i, root] of roots.entries()) {
+      await messages(content).nth(i).hover();
+      await messages(content).nth(i).getByRole('button', { name: 'Reply in thread' }).click();
+      await expect(panel.getByTestId('thread-view')).toHaveAttribute('data-root-id', root.id);
+      await expect(page).toHaveURL(urlIs(root.id));
+    }
+    // the stack holds three entries; the channel stayed visible throughout
+    await expect(messages(content)).toHaveCount(3);
+    await panel.getByRole('button', { name: 'Back' }).click();
+    await expect(panel.getByTestId('thread-view')).toHaveAttribute('data-root-id', roots[1]!.id);
+    await expect(page).toHaveURL(urlIs(roots[1]!.id));
+    await panel.getByRole('button', { name: 'Back' }).click();
+    await expect(panel.getByTestId('thread-view')).toHaveAttribute('data-root-id', roots[0]!.id);
+    await expect(panel.getByTestId('thread-view')).toContainText('First topic: the release notes.');
+    await expect(page).toHaveURL(urlIs(roots[0]!.id));
+    // the first entry has nothing below it: no Back button left
+    await expect(panel.getByRole('button', { name: 'Back' })).toHaveCount(0);
+  } finally {
+    await rafi.context.close();
+    await omar.ctx.dispose();
+    await nadiaApi.ctx.dispose();
+  }
+});
+
 test('a thread link that is not there says so instead of failing', async ({ browser }) => {
   const omar = await apiAs('omar');
   const { name } = await createChannel(omar, 'nothread');

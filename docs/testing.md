@@ -55,8 +55,22 @@ route (`visual/support/vt.ts`, `openPage`). Classes (PLAN section 5): **W** is `
 its own baseline in `e2e/__baselines__/`, at most 0.2% differing, `[data-vt-mask]` painted over); **P / P-loose** is `comparePlate`:
 the content box of the plate's pane (stepper rail and settings nav are not part of the screen) against the live region, both cut
 to the same size; it prints `[vt] <class> <spec>: x% differing` and attaches plate, live and diff (`MANYTHREADS_VT_DUMP=<dir>`
-also writes the two PNGs). Plates declare `regions` (landmarks) and `copy` (`data-copy` texts, exact under P). Change a baseline
-only with `pnpm vt:update`, in a PR that says why.
+also writes the two PNGs and the diff). Plates declare `regions` (landmarks; a selector matching several elements is the box around
+all of them) and `copy` (`data-copy` texts, exact under P). Change a baseline only with `pnpm vt:update`, in a PR that says why.
+
+**Masks are painted black on both images.** The live side is every `[data-vt-mask]` element of the region plus `liveMasks`
+selectors (avatars, which the wireframe baselines keep unmasked); the plate side is `spec.masks` (times, avatars, the prototype's bot
+lanes). The ratio counts only unmasked pixels. A plate that fills a whole frame (the channel and Threads plates of section `app`) is
+compared at the plate's own size: `extraWidth` covers its 1 px frame borders and the live window is cut to the plate's 700 px height
+(`page.setViewportSize`, so the composer sits where the plate's does). The plate's frame is moved onto the pixel grid before the clip
+(a fractional offset shifts every line by a fraction of a pixel, which rounds to a whole pixel of difference on some rows) and a live
+region that fits the window is captured without `fullPage` (a full-page capture resizes the viewport, which a virtualised list
+answers by jumping to its end).
+
+`e2e/visual/support/story.ts` builds the story of plates 1 and 2 through the real routes on a stack seeded with
+`MANYTHREADS_STACK_SEED=content` (a `release-eng` channel in a `Product` group, a goal thread, two attachments, the other rows of the
+inbox): the prototype's bots do not exist before phase 5, so the same words are spoken by the seed's people and their live rows are
+masked. `scrollToFirstDay` puts the first day label where the plate's stream starts.
 
 ## 3. The dev-header actor (NODE_ENV=test only)
 

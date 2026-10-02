@@ -293,8 +293,9 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
 
   return (
     <div
-      className={`composer ${drag ? 'dragging' : ''}`}
+      className={`composer ${drag ? 'dragging' : ''} ${text === '' && uploads.length === 0 ? 'resting' : ''}`}
       data-testid="composer"
+      data-landmark={threadRootId ? 'reply-composer' : 'composer'}
       onDragOver={(e) => {
         if (filesOn && e.dataTransfer.types.includes('Files')) {
           e.preventDefault();

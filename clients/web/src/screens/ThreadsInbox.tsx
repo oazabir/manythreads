@@ -4,12 +4,14 @@ import type { ThreadInboxItem } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchThreadInbox } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
+import { useSession } from '../app/session';
 import { ThreadBody } from '../channels/ThreadPanel';
 import { ago } from '../channels/format';
 import { useUnread } from '../channels/hooks';
 import { channelStore, threadKey } from '../channels/store';
 import { useShell } from '../shell/context';
 import { useNarrow } from '../shell/useNarrow';
+import { Bell } from '../notifications/Bell';
 import { BackIcon } from '../shell/icons';
 import { WelcomeCard } from '../welcome/WelcomeCard';
 
@@ -33,6 +35,7 @@ const typingIn = (el: EventTarget | null): boolean => el instanceof HTMLElement 
 /** The Threads inbox (SPEC 6.1): Followed · Unread · Mine on the left, the selected thread on the right. j and k move, e marks it read. */
 export function ThreadsInbox() {
   const { team } = useShell();
+  const session = useSession();
   const slug = team?.slug ?? '';
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -126,14 +129,17 @@ export function ThreadsInbox() {
   }, [items, selected, open, markDone, tab]);
 
   const showMain = !narrow || selected !== null;
+  // with no thread open the right band still carries the bell, which the shell's own band would have held
+  const emptyBand = !narrow && !selected ? <div className="chead thread-head" /> : null;
   const showList = !narrow || selected === null;
   return (
     <div className="threads-home">
     <WelcomeCard slug={slug} />
     <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="threads-inbox">
       {showList ? (
-        <div className="inl">
-          <div className="inh">
+        <div className="inl" data-landmark="thread-list">
+          <header className="inh" data-landmark={narrow ? undefined : 'header'}>
+            {narrow ? null : <h1 className="inh-title"><span className="sr-only">{`${session.workspace.name}: `}</span>Threads</h1>}
             <div className="tabs2" role="tablist" aria-label="Threads">
               {TABS.map((t) => (
                 <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
@@ -142,7 +148,7 @@ export function ThreadsInbox() {
                 </button>
               ))}
             </div>
-          </div>
+          </header>
           {q.status === 'loading' ? (
             <p className="loading" aria-busy="true">Loading…</p>
           ) : absent || (q.status === 'ok' && items.length === 0) ? (
@@ -166,11 +172,11 @@ export function ThreadsInbox() {
                       <span className="trow-main">
                         <span className="ch">{it.channel.kind === 'dm' ? 'Direct message' : `# ${it.channel.name.replace(/^#/, '')}`}</span>
                         <span className="ttl">{it.title}</span>
-                        <span className="last">{it.replyCount === 1 ? '1 reply' : `${it.replyCount} replies`}</span>
+                        <span className="last">{it.lastReply ? `${it.lastReply.authorName}: ${it.lastReply.preview}` : it.replyCount === 1 ? '1 reply' : `${it.replyCount} replies`}</span>
                       </span>
                       <span className="meta">
                         <span data-vt-mask>{ago(it.lastReplyAt)}</span>
-                        {unread ? <span className="cnt" data-vt-mask>{it.unreadCount}</span> : null}
+                        {unread ? <span className="cnt" data-vt-mask>{it.unreadCount}</span> : <span className="rc">{it.replyCount === 1 ? '1 reply' : `${it.replyCount} replies`}</span>}
                       </span>
                     </button>
                   </li>
@@ -181,13 +187,15 @@ export function ThreadsInbox() {
         </div>
       ) : null}
       {showMain ? (
-        <div className="inr">
+        <div className="inr" data-landmark="thread-view">
           {narrow ? (
             <button type="button" className="btn s back-to-list" onClick={() => open(null)}>
               <BackIcon />
               <span>Threads</span>
             </button>
           ) : null}
+          {narrow ? null : <div className="inr-bell"><Bell /></div>}
+          {emptyBand}
           {selected ? (
             <ThreadBody key={selected} rootId={selected} variant="main" />
           ) : items.length > 0 ? (

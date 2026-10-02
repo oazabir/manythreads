@@ -16,6 +16,7 @@ import { MenuIcon, SearchIcon } from './icons';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { Sidebar } from './Sidebar';
+import { HeaderTopicContext } from './topic';
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
@@ -33,9 +34,11 @@ export function Shell() {
   // a guest has no team to name: any slug shows the channels they were granted, so the shell uses a fixed one at `/`
   const slug = urlSlug ?? (guest ? GUEST_SLUG : null);
   const dmId = useMatch('/t/:team/dm/:id')?.params.id ?? null;
+  const onThreads = useMatch('/t/:team/threads') !== null || loc.pathname === '/';
   const q = useQuery('shell-teams', () => fetchTeams());
   const counts = useNavCounts();
   const narrow = useNarrow();
+  const [topic, setTopic] = useState<string | null>(null);
 
   useRealtime();
   const teamsData = q.status === 'ok' ? q.data.teams : undefined;
@@ -61,6 +64,9 @@ export function Shell() {
   const rail = useRef<HTMLElement>(null);
   useDismiss(drawerOpen, () => setOpenedAt(null), rail);
 
+  // On a wide screen the Threads inbox draws its own two header bands (list: title and tabs; thread: its name and actions, as in the prototype), so the
+  // shell's band is left out there; the bell then sits in the thread's band.
+  const inboxOwnsHeader = onThreads && !narrow && !guest && team !== null;
   const title = dmId ? (dm ? dmParticipants(dm) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
   const searchLabel = guest ? 'Search' : team ? `Search ${team.name}` : 'Search';
   const railSearch = useRef<HTMLDivElement>(null);
@@ -72,6 +78,7 @@ export function Shell() {
   return (
     <ShellContext.Provider value={value}>
       <PeopleContext.Provider value={people}>
+      <HeaderTopicContext.Provider value={setTopic}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
           <div className="ws">
@@ -91,6 +98,7 @@ export function Shell() {
         </aside>
         {drawerOpen ? <button type="button" className="scrim" aria-label="Close menu" onClick={() => setOpenedAt(null)} /> : null}
         <main className="center">
+          {inboxOwnsHeader ? null : (
           <header className="region header chead" data-landmark="header">
             <button type="button" className="icon-btn menu-btn" aria-label="Open menu" aria-controls="shell-rail" aria-expanded={drawerOpen} onClick={() => setOpenedAt(loc.pathname + loc.search)}>
               <MenuIcon />
@@ -99,6 +107,7 @@ export function Shell() {
               <span className="sr-only">{`${session.workspace.name}: `}</span>
               {title}
             </h1>
+            {topic ? <span className="topic" data-testid="channel-topic">{topic}</span> : null}
             <div className="right chead-tools">
               {dmId && dm ? <SearchBox className="head-search" placeholder="Search this conversation" label="Search this conversation" channelId={dmId} /> : null}
               <button type="button" className="icon-btn find-btn" aria-label="Find" onClick={openSearch}>
@@ -107,12 +116,14 @@ export function Shell() {
               <Bell />
             </div>
           </header>
+          )}
           <section className="region content" data-landmark="content" aria-busy={teamsLoading || undefined}>
             <Outlet />
           </section>
         </main>
         <RightPanel />
       </div>
+      </HeaderTopicContext.Provider>
       </PeopleContext.Provider>
     </ShellContext.Provider>
   );

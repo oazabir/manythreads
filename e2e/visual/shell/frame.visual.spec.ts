@@ -36,8 +36,8 @@ test('empty frame has the plate landmarks in order', async ({ page }, testInfo) 
   // Sanity: the plate's own regions respect the order we then require of the live frame.
   expect(checkOrder(expected, ORDER)).toEqual([]);
 
-  // `/` needs a session now; mock mode (?mock=1) serves Omar from fixtures, so this spec has no server dependency.
-  const live = await renderLive(page, '/?mock=1');
+  // A route with the shell's own header (the Threads home draws its own bands); mock mode (?mock=1) serves Omar from fixtures, so this spec has no server dependency.
+  const live = await renderLive(page, '/t/engineering/files?mock=1');
   const actual = await landmarks(page);
 
   const diff = comparePngs(plate, live);

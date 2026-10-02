@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useMatch } from 'react-router';
 import type { FileSummary } from '@manythreads/shared';
-import { fetchChannel, followThread, unfollowThread } from '../api/endpoints';
+import { fetchChannel, fetchLinks, followThread, unfollowThread } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { channelPath } from '../shell/nav';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
+import { usePanelSub } from '../kernel/panel/sub';
+import { FilesIcon, ThreadsIcon } from '../shell/icons';
 import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
 import { MessageRow, PendingRow, type RowActions } from './MessageRow';
@@ -15,6 +17,26 @@ import { channelStore, threadKey } from './store';
 /** The right-panel entry `thread:<root message id>`. */
 export function ThreadPanel({ entry }: { entry: PanelEntry }) {
   return <ThreadBody key={entry.id} rootId={entry.id} variant="panel" />;
+}
+
+/** "Linked": what the thread's root is linked to (files attached to it, other threads), one query against the kernel's link table. */
+function Linked({ rootId }: { rootId: string }) {
+  const q = useQuery(`links:${rootId}`, () => fetchLinks('message', rootId));
+  if (q.status !== 'ok' || q.data.links.length === 0) return null;
+  return (
+    <div className="linked" data-testid="thread-linked">
+      <b>Linked</b>
+      {q.data.links.map(({ other }) => {
+        const body = (
+          <>
+            {other.type === 'file' ? <FilesIcon /> : <ThreadsIcon />}
+            {other.title}
+          </>
+        );
+        return other.href ? <Link key={`${other.type}:${other.id}`} className="lk" to={other.href}>{body}</Link> : <span key={`${other.type}:${other.id}`} className="lk">{body}</span>;
+      })}
+    </div>
+  );
 }
 
 /**
@@ -47,6 +69,7 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
   const info = useQuery(`thread-channel:${channelId ?? ''}`, () => (channelId ? fetchChannel(channelId) : Promise.resolve(null)));
   const canReply = info.status === 'ok' && info.data !== null && info.data.canPost && info.data.channel.archivedAt === null;
   const newestReply = tl.items.at(-1)?.id ?? null;
+  usePanelSub(variant === 'panel' && channelName ? `# ${channelName}` : null);
 
   // Mark the replies read while the thread is open and on screen.
   const threadState = tl.thread;
@@ -141,8 +164,6 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
             {channelName && teamForLink ? <Link className="btn s" to={`${channelPath(teamForLink, channelName)}?message=${rootId}`}>Open channel</Link> : null}
           </div>
         </div>
-      ) : channelName ? (
-        <p className="thread-sub" data-testid="thread-channel"># {channelName}</p>
       ) : null}
       <div
         className="rpb"
@@ -155,6 +176,7 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
         <div className="root">
           <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={rootActions} />
           {variant === 'panel' ? followRow : null}
+          {variant === 'panel' ? <Linked rootId={rootId} /> : null}
         </div>
         {tl.cursor ? (
           <button type="button" className="btn s load-earlier" disabled={tl.loadingOlder} onClick={() => void channelStore.loadOlder(threadKey(rootId), channelId, rootId)}>
@@ -181,7 +203,7 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
         <div className="rpf">
           <Composer
             draftKey={`thread:${rootId}`}
-            placeholder="Reply…"
+            placeholder={variant === 'main' ? 'Reply in thread…' : 'Reply…'}
             label="Reply in thread"
             channelId={channelId}
             threadRootId={rootId}

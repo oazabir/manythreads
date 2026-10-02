@@ -22,7 +22,9 @@ for (const key of ['nadia', 'priya', 'lena'] as const satisfies readonly Persona
     try {
       await page.goto('/');
       await expect(page.locator('[data-landmark="sidebar"]')).toBeVisible();
-      await expectWireframe(page, `sidebar-${key}`, [['team-switch', 'search', 'sidebar'], ['header', 'content']]);
+      // a member's home is the Threads inbox, which draws its own two header bands; a guest's is the one channel granted
+      const body = key === 'lena' ? ['header', 'content'] : ['thread-list', 'thread-view'];
+      await expectWireframe(page, `sidebar-${key}`, [['team-switch', 'search', 'sidebar'], body]);
     } finally {
       await close();
     }

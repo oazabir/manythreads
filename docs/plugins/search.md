@@ -44,10 +44,12 @@ that the planner picks the GIN index for all three tables as a member.
 `app.search_messages` picks by what the caller reads and what the term matches (the migration's comment has the reasoning; numbers in [retro/phase-3.md](../retro/phase-3.md)):
 
 1. A caller who can read at most 6,000 messages (a guest with one channel; counted through the `(channel_id, id)` index) has each row compared: bounded by the rows, whatever the term.
-2. Otherwise the newest slice is searched first through a `BitmapAnd` of the trigram index, the channel index and the primary key range (uuid v7 ids carry the time): one day, then 16 days (a
-   phrase of three words pays for the trigram scan once per slice, so it gets the day only). The first slice with `limit` hits is ranked and returned.
+2. Otherwise, for one or two words, the newest slice is searched first through a `BitmapAnd` of the trigram index, the channel index and the primary key range (uuid v7 ids carry the time): one
+   day, then 16 days. The first slice with `limit` hits is ranked and returned.
 3. Fewer hits than that means the term is rare among what the caller reads: the whole history through the trigram index. `gin_fuzzy_search_limit` (30,000) caps the pathological case of a
-   term that is common only in channels the caller cannot read; the answer is then a sample, never a leak.
+   term that is common only in channels the caller cannot read; the answer is then a sample, never a leak. **A phrase of three words or more skips the slices** (`0003_phrase_plan.sql`): each
+   slice costs a full trigram scan (about 100 ms at 1,000,000 messages) and a phrase at the 0.6 threshold is selective, so it goes straight to the whole history, ranked by similarity then
+   newest, with `gin_fuzzy_search_limit` at 3,000 (a phrase of words most messages share is answered from a sample of the index rows). That took the benchmark's phrase from 292 ms to 182 ms median.
 
 So **ranking is by similarity within the slice that answered**: a common word is answered from the last day, and an older but better spelled hit is not shown when the last day already holds
 twenty. Plain index scans are switched off for the function because the planner mistakes `%>` for a cheap filter and walks a key range row by row (1.3 s); `uuidv7()` is evaluated once into a
@@ -65,7 +67,7 @@ transaction of the asking actor, so the same policies decide what comes back; th
 | name / version / kind | `search` / `0.1.0` / `server` |
 | dependsOn | `channels`, `files` (the functions read their tables) |
 | capabilities | `messages.search`, `files.search` |
-| migrations | `migrations` (`0001_search.sql`: the pg_trgm LEAKPROOF marks, type `app.search_message_hit`, functions `app.search_messages`, `app.search_threads`, `app.search_files`) |
+| migrations | `migrations` (`0001_search.sql`: the pg_trgm LEAKPROOF marks, type `app.search_message_hit`, functions `app.search_messages`, `app.search_threads`, `app.search_files`; `0002_leakproof_bounds.sql`: the length CHECKs that make LEAKPROOF true; `0003_phrase_plan.sql`: phrases scan the index once) |
 
 ## Benchmark
 

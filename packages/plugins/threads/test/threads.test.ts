@@ -81,6 +81,8 @@ describe('the Threads inbox: membership of each tab (criterion 4)', () => {
     const item = (await inbox(nadia, 'mine')).items[0]!;
     expect(item).toMatchObject({ mine: true, followed: true, title: 'Deploy plan for Friday', replyCount: 2 });
     expect(item.channel).toMatchObject({ id: dev, name: 'dev', kind: 'channel' });
+    // the row shows who spoke last and what they said (the newest live reply, named for what the caller may read)
+    expect(item.lastReply).toEqual({ authorName: rafi.name, preview: 'Second reply' });
     await post(nadia, dev, 'nobody answers me', null);
     expect(await roots(nadia, 'mine')).toEqual([root]);
   });

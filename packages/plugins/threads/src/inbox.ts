@@ -15,6 +15,8 @@ type InboxRow = ChannelRefRow & {
   followed: boolean;
   mine: boolean;
   unread_count: number | null;
+  last_reply_id: string | null;
+  last_reply_plain: string | null;
 };
 
 const encodeCursor = (ts: string, id: string): string => Buffer.from(`${ts}|${id}`).toString('base64url');
@@ -57,10 +59,15 @@ export async function listInbox(
   const after = input.cursor ? decodeCursor(input.cursor) : null;
   const res = await tx.query<InboxRow>(
     `SELECT t.root_message_id, t.title, t.reply_count, t.last_reply_at, t.last_reply_at::text AS cursor_ts, m.author_id,
-            (f.person_id IS NOT NULL) AS followed, (m.author_id = $2::uuid) AS mine, rs.unread_count, ${CHANNEL_REF_COLUMNS}
+            (f.person_id IS NOT NULL) AS followed, (m.author_id = $2::uuid) AS mine, rs.unread_count,
+            lr.id AS last_reply_id, left(lr.body_plain, 160) AS last_reply_plain, ${CHANNEL_REF_COLUMNS}
        FROM app.threads t
        JOIN app.messages m ON m.id = t.root_message_id
        JOIN app.channels c ON c.id = t.channel_id
+       LEFT JOIN LATERAL (
+         SELECT r.id, r.body_plain FROM app.messages r
+          WHERE r.thread_root_id = t.root_message_id AND r.deleted_at IS NULL ORDER BY r.id DESC LIMIT 1
+       ) lr ON true
        LEFT JOIN app.thread_follows f ON f.person_id = $1 AND f.thread_root_id = t.root_message_id
        LEFT JOIN app.read_state rs ON rs.person_id = $1 AND rs.target_type = 'thread' AND rs.target_id = t.root_message_id
       WHERE ${TAB_PREDICATE[input.tab]} AND t.reply_count > 0
@@ -73,6 +80,18 @@ export async function listInbox(
   const more = res.rows.length > input.limit;
   const page = more ? res.rows.slice(0, input.limit) : res.rows;
   const last = page[page.length - 1];
+  // who wrote each newest reply: the channels plugin's definer function names only authors of messages the caller can read
+  const lastIds = page.flatMap((r) => (r.last_reply_id ? [r.last_reply_id] : []));
+  const names = new Map<string, string>();
+  if (lastIds.length > 0) {
+    const authors = await tx.query<{ message_id: string; display_name: string }>(
+      `SELECT m.id AS message_id, a.display_name
+         FROM app.messages m JOIN app.message_authors($1::uuid[]) a ON a.actor_id = m.author_id
+        WHERE m.id = ANY ($1::uuid[])`,
+      [lastIds],
+    );
+    for (const a of authors.rows) names.set(a.message_id, a.display_name);
+  }
   return ListThreadsResponse.parse({
     items: page.map((r) => ({
       rootMessageId: r.root_message_id,
@@ -84,6 +103,7 @@ export async function listInbox(
       followed: r.followed,
       unreadCount: r.unread_count ?? 0,
       mine: r.mine,
+      lastReply: r.last_reply_id && names.has(r.last_reply_id) ? { authorName: names.get(r.last_reply_id)!, preview: (r.last_reply_plain ?? '').replace(/\s+/g, ' ').trim() } : null,
     })),
     nextCursor: more && last ? encodeCursor(last.cursor_ts, last.root_message_id) : null,
   });

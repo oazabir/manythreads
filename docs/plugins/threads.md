@@ -34,7 +34,7 @@ Who follows when:
 |---|---|
 | `GET /api/threads/:rootId?before=&limit=` | `{ channel, root, thread, replies }`: the root as a `ChannelMessage`, the channel it is in, `thread` (title, `replyCount`, `lastReplyAt` or null, `followed`, `unreadCount`, `lastReadId`) and the live replies newest first, paged by `before` like the channel list (`replies.nextCursor` is the next `before`). A message with no reply yet opens as an empty thread. 403 for a message the caller cannot see or that does not exist (the same answer), 404 for a message that is itself a reply. Reading does not mark anything read: the client calls `POST /api/read-state/mark`. |
 | `POST /api/threads/:rootId/follow`, `POST .../unfollow` | `{ followed, changed }`; idempotent (`changed: false` the second time). 403 for a message the caller cannot see, 404 for a reply, 409 when the root is deleted (follow). |
-| `GET /api/teams/:slug/threads?tab=followed\|unread\|mine&limit=&cursor=` | The Threads inbox, `Page<ThreadInboxItem>`: root id, channel, title, root author, `replyCount`, `lastReplyAt`, `followed`, `unreadCount`, `mine`. Newest reply first, keyset cursor (opaque; a bad one is 400). `limit` 1 to 100 (default 30). |
+| `GET /api/teams/:slug/threads?tab=followed\|unread\|mine&limit=&cursor=` | The Threads inbox, `Page<ThreadInboxItem>`: root id, channel, title, root author, `replyCount`, `lastReplyAt`, `followed`, `unreadCount`, `mine`, `lastReply` (`{ authorName, preview }` of the newest live reply, named through `app.message_authors` so only what the caller can read; null when none is left). Newest reply first, keyset cursor (opaque; a bad one is 400). `limit` 1 to 100 (default 30). |
 
 ### The inbox tabs (criterion 4)
 

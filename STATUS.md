@@ -1,12 +1,13 @@
 # STATUS
 
-Current phase: **3 · Channels, threads and direct messages** (in progress)
+Current phase: **3 · Channels, threads and direct messages** (gate verified locally; exit = merge PR "Phase 3 · Channels, threads and direct messages")
 
 | Phase | State | Tag |
 |---|---|---|
 | 1 Foundations | done — gate green locally and in CI; retro `docs/retro/phase-1.md` | phase-1 / v0.1.0 |
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
-| 3–13 | not started | |
+| 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | pending release.yml |
+| 4–13 | not started | |
 
 ## Phase 1 summary
 All tasks P1-01…P1-13 merged with reviewer PASS (P1-04b security hardening added: system actor = real

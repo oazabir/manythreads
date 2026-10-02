@@ -1,4 +1,7 @@
 import {
+  ListLinksRequest,
+  ListLinksResponse,
+  listLinksRoute,
   GetNotificationPrefsResponse,
   GetNotificationSummaryResponse,
   ListDmsQuery,
@@ -337,6 +340,11 @@ export const fetchReadStates = (targets: string) => call(getReadStateRoute, { re
 export const fetchUnreadSummary = () => call(getUnreadSummaryRoute, { response: GetUnreadSummaryResponse });
 export const markRead = (targetType: 'channel' | 'thread', targetId: string, upTo: string) =>
   call(markReadRoute, { request: MarkReadRequest, response: MarkReadResponse }, { targetType, targetId, upTo } as MarkReadRequest);
+
+// ---- entity links ----------------------------------------------------------------------------------------
+/** What an entity is linked to, resolved and filtered for the caller (kernel entity-link service). */
+export const fetchLinks = (type: ListLinksRequest['type'], id: string) =>
+  call(listLinksRoute, { request: ListLinksRequest, response: ListLinksResponse }, { type, id, direction: 'both', limit: 20 } as ListLinksRequest);
 
 // ---- threads ---------------------------------------------------------------------------------------------
 /** A thread: its root, the caller's state and a page of replies (newest first). The route belongs to the threads plugin; callers feature-detect. */

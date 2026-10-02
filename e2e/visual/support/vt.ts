@@ -79,6 +79,12 @@ export async function settle(page: Page): Promise<Locator> {
   return frame;
 }
 
+/** The landmarks of the live screen appear in this reading order (presence and order, no pixels). */
+export async function expectLandmarkOrder(page: Page, order: string[]): Promise<void> {
+  await settle(page);
+  expect(checkOrder(await landmarks(page), order), `landmark order and presence of ${order.join(', ')}`).toEqual([]);
+}
+
 /** Class W: the landmarks appear in this reading order, and the frame matches its own committed baseline. */
 export async function expectWireframe(page: Page, name: string, order: string[] | string[][]): Promise<void> {
   const frame = await settle(page);
@@ -96,16 +102,27 @@ export interface PlateSpec {
   section: SectionId;
   /** 1-based plate number inside the section. */
   n: number;
+  /** What holds the pane inside the plate (default `.frame`; the phone plate has a row of device frames instead). */
+  frameSelector?: string;
   /** The plate's pane (inside `.frame`) whose content box is compared, for example `.obr`. */
   paneSelector: string;
   /** Padding of that pane (top, right, bottom, left), which the content box excludes. */
   padding: [number, number, number, number];
   /** Fixed chrome (a rail) to the left of the pane, in px; used to pick the plate's viewport width. */
   railWidth: number;
+  /** The plate's viewport width when it is not the live region's width plus the pane's chrome (a single message of a full screen). */
+  viewportWidth?: number;
+  /** More px of width the plate's viewport needs (the frame's own 1 px borders when the pane fills the frame). Default 0. */
+  extraWidth?: number;
   /** Plate regions by landmark name (selectors inside the frame), measured relative to the pane content box. */
   regions: Record<string, string>;
   /** Plate texts by `data-copy` name (selectors inside the frame); each must equal the live `[data-copy]` text exactly. */
   copy?: Record<string, { selector: string; index?: number; /** Descendants left out of the text (plate-only affordances). */ omit?: string }>;
+  /**
+   * Plate regions painted black on BOTH images (times, avatars, anything the live screen holds as data of its own). The live
+   * counterpart is every `[data-vt-mask]` element of the live region (support/vt.ts `liveMaskRects`).
+   */
+  masks?: string[];
 }
 
 
@@ -121,6 +138,8 @@ export interface PlateRender {
   box: Box;
   landmarks: Landmark[];
   copy: Record<string, string>;
+  /** Boxes of `spec.masks`, relative to `box`. */
+  maskRects: Box[];
 }
 
 /**
@@ -130,23 +149,39 @@ export interface PlateRender {
 export async function renderPlatePane(browser: Browser, spec: PlateSpec, contentWidth: number, height: number): Promise<PlateRender> {
   const [pt, pr, , pl] = spec.padding;
   // the plate's wrapper leaves 24px each side of the frame
-  const viewportWidth = Math.ceil(contentWidth + pl + pr + spec.railWidth + 48);
+  const viewportWidth = spec.viewportWidth ?? Math.ceil(contentWidth + pl + pr + spec.railWidth + 48 + (spec.extraWidth ?? 0));
   const context = await browser.newContext({ viewport: { width: viewportWidth, height: 900 }, reducedMotion: 'reduce' });
   try {
     await useLocalFonts(context);
     const page = await context.newPage();
     await page.goto(`${MOCKUPS_URL}#${spec.section}`);
     await page.evaluate(() => document.fonts?.ready);
-    const frame = page.locator(`#${spec.section} .plate`).nth(spec.n - 1).locator('.frame').first();
+    const frame = page.locator(`#${spec.section} .plate`).nth(spec.n - 1).locator(spec.frameSelector ?? '.frame').first();
     await frame.scrollIntoViewIfNeeded();
+    // The plate sits at a fractional page offset (text above it); a clip there paints every line a fraction of a pixel off the live
+    // screen's, which rounds to a whole pixel of difference on some rows. Move the frame onto the pixel grid.
+    await frame.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const fx = r.left + window.scrollX;
+      const fy = r.top + window.scrollY;
+      el.style.position = 'relative';
+      el.style.left = `${Math.round(fx) - fx}px`;
+      el.style.top = `${Math.round(fy) - fy}px`;
+    });
     const pane = frame.locator(spec.paneSelector).first();
     const p = await pageBox(pane);
     const box: Box = { x: p.x + pl, y: p.y + pt, w: p.w - pl - pr, h: Math.min(height, p.h - pt) };
     const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: box.w, height: box.h }, fullPage: true, animations: 'disabled' });
     const marks: Landmark[] = [];
     for (const [name, selector] of Object.entries(spec.regions)) {
-      const r = await pageBox(frame.locator(selector).first());
-      marks.push({ name, x: r.x - box.x, y: r.y - box.y, w: r.w, h: r.h });
+      // a selector that matches several elements names the box around all of them (a column made of a stream and its composer)
+      const boxes = await Promise.all((await frame.locator(selector).all()).map(pageBox));
+      if (boxes.length === 0) throw new Error(`plate region ${name}: nothing matches ${selector}`);
+      const x0 = Math.min(...boxes.map((b) => b.x));
+      const y0 = Math.min(...boxes.map((b) => b.y));
+      const x1 = Math.max(...boxes.map((b) => b.x + b.w));
+      const y1 = Math.max(...boxes.map((b) => b.y + b.h));
+      marks.push({ name, x: x0 - box.x, y: y0 - box.y, w: x1 - x0, h: y1 - y0 });
     }
     const copy: Record<string, string> = {};
     for (const [name, c] of Object.entries(spec.copy ?? {})) {
@@ -159,27 +194,50 @@ export async function renderPlatePane(browser: Browser, spec: PlateSpec, content
           return (node.textContent ?? '').replace(/\s+/g, ' ').trim();
         }, c.omit);
     }
-    return { png, box, landmarks: marks, copy };
+    const maskRects: Box[] = [];
+    for (const selector of spec.masks ?? []) {
+      for (const el of await frame.locator(selector).all()) {
+        const r = await pageBox(el);
+        if (r.w > 0 && r.h > 0) maskRects.push({ x: r.x - box.x, y: r.y - box.y, w: r.w, h: r.h });
+      }
+    }
+    return { png, box, landmarks: marks, copy, maskRects };
   } finally {
     await context.close();
   }
 }
 
+/** Scrolls the channel's message list so the first day label sits where the plate's stream starts (22 px under the header). */
+export async function scrollToFirstDay(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>('.chview .vlist');
+    const day = list?.querySelector<HTMLElement>('.daysep');
+    if (!list || !day) return;
+    list.scrollTop += day.getBoundingClientRect().top - list.getBoundingClientRect().top - 22;
+  });
+  await page.waitForTimeout(150);
+}
+
 /** The live region's content box, its landmarks relative to it, and its `data-copy` texts. */
-export async function renderLiveRegion(page: Page, regionSelector: string, height: number) {
+export async function renderLiveRegion(page: Page, regionSelector: string, height: number, extraMasks: string[] = []) {
   const region = page.locator(regionSelector).first();
   await region.waitFor();
   await page.evaluate(() => document.fonts?.ready);
   const box = await pageBox(region);
   const clip = { x: box.x, y: box.y, width: box.w, height: Math.min(height, box.h) };
-  const png = await page.screenshot({
-    clip,
-    fullPage: true,
-    animations: 'disabled',
-    caret: 'hide',
-    mask: [page.locator('[data-vt-mask]')],
-    maskColor: 'black',
-  });
+  // Unmasked: the masks (`[data-vt-mask]`) are painted black on both this image and the plate's by comparePngs.
+  // A full-page capture resizes the viewport for a moment, which a virtualised list answers by jumping to its end: only take one when
+  // the region does not fit on screen.
+  const viewport = page.viewportSize();
+  const fits = viewport !== null && box.y + clip.height <= viewport.height && box.x + clip.width <= viewport.width;
+  const png = await page.screenshot({ clip, fullPage: !fits, animations: 'disabled', caret: 'hide' });
+  const maskRects: Box[] = await region.evaluate((root, extra) => {
+    const r0 = root.getBoundingClientRect();
+    return Array.from(root.querySelectorAll(['[data-vt-mask]', ...extra].join(',')))
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => ({ x: r.x - r0.x, y: r.y - r0.y, w: r.width, h: r.height }));
+  }, extraMasks);
   const marks: Landmark[] = await region.evaluate((root) => {
     const r0 = root.getBoundingClientRect();
     return Array.from(root.querySelectorAll('[data-landmark]')).map((el) => {
@@ -194,7 +252,7 @@ export async function renderLiveRegion(page: Page, regionSelector: string, heigh
     }
     return out;
   });
-  return { png, box, landmarks: marks, copy };
+  return { png, box, landmarks: marks, copy, maskRects };
 }
 
 export interface PlateCompareOptions {
@@ -210,13 +268,15 @@ export interface PlateCompareOptions {
   copy?: string[];
   /** Plate pixels never differ in these live-only parts: live selectors painted over on both sides. */
   height?: number;
+  /** Live elements masked besides `[data-vt-mask]` (avatars, which stay unmasked in the wireframe baselines). */
+  liveMasks?: string[];
 }
 
 /** Compares a live page with a plate under class P or P-loose; attaches the diff and prints the measured ratio. */
 export async function comparePlate(page: Page, browser: Browser, testInfo: TestInfo, o: PlateCompareOptions): Promise<{ diffRatio: number }> {
   const height = o.height ?? 640;
   await settle(page);
-  const live = await renderLiveRegion(page, o.liveRegion, height);
+  const live = await renderLiveRegion(page, o.liveRegion, height, o.liveMasks);
   const plate = await renderPlatePane(browser, o.spec, live.box.w, height);
 
   const dump = process.env['MANYTHREADS_VT_DUMP'];
@@ -226,7 +286,11 @@ export async function comparePlate(page: Page, browser: Browser, testInfo: TestI
     for (const [n, b] of [['plate', plate.png], ['live', live.png]] as const) writeFileSync(`${dump}/${base}-${n}.png`, b);
   }
   const limit = o.cls === 'P' ? CLASS_P.maxDiffRatio : CLASS_P_LOOSE.maxDiffRatio;
-  const diff = comparePngs(plate.png, live.png);
+  const diff = comparePngs(plate.png, live.png, { masks: [...plate.maskRects, ...live.maskRects] });
+  if (dump) {
+    const base = (testInfo.file.split('/visual/')[1] ?? 'spec').replace(/[^a-z0-9]+/gi, '-');
+    writeFileSync(`${dump}/${base}-diff.png`, diff.diffPng);
+  }
   await testInfo.attach('plate.png', { body: plate.png, contentType: 'image/png' });
   await testInfo.attach('live.png', { body: live.png, contentType: 'image/png' });
   await testInfo.attach('diff.png', { body: diff.diffPng, contentType: 'image/png' });

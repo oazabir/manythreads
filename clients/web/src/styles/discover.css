@@ -28,6 +28,7 @@
 
 .bell {
   position: relative;
+  display: flex;
 }
 
 .bell-btn {

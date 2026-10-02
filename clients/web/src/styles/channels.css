@@ -46,12 +46,14 @@
   color: var(--ink);
   font-size: 14.5px;
   font-weight: 600;
+  line-height: 22px;
 }
 
 .start-body {
   margin: 2px 0 0;
   color: var(--mute);
   font-size: 13px;
+  line-height: 20px;
 }
 
 .start:not(.top) .start-body {
@@ -229,8 +231,9 @@
 }
 
 .atts {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
+  vertical-align: top;
 }
 
 .att {
@@ -571,6 +574,11 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+/* at rest (nothing typed, nothing attached, no focus) the box is one line, as in the prototype; the toolbar opens with the caret */
+.composer.resting:not(:focus-within) .ctools {
+  display: none;
+}
+
 .ctool {
   min-width: 26px;
   height: 24px;
@@ -599,7 +607,7 @@
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  padding: 6px 8px;
+  padding: 4px 8px;
 }
 
 .cinput textarea {
@@ -747,19 +755,15 @@
   background: var(--surface);
 }
 
-.thread-sub {
-  margin: 0;
-  padding: 8px 16px 0;
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 11.5px;
-}
-
 .thread .rpb {
   flex: 1;
   min-height: 0;
-  padding: 10px 16px 14px;
+  padding: 14px 16px;
   overflow-y: auto;
+}
+
+.thread .msg {
+  margin-bottom: 6px;
 }
 
 .thread.main .rpb {
@@ -791,6 +795,41 @@
   font-size: 12px;
 }
 
+.thread .linked {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.thread .linked b {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.thread .linked .lk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.thread .linked a.lk:hover {
+  color: var(--human);
+}
+
+.thread .linked svg {
+  width: 12px;
+  height: 12px;
+}
+
 .thread-empty {
   margin: 0;
   color: var(--faint);
@@ -817,6 +856,7 @@
 }
 
 .thread-head .topic {
+  flex: none;
   color: var(--faint);
   font-size: 12px;
   white-space: nowrap;
@@ -870,7 +910,14 @@
   border-bottom: 1px solid var(--rule);
 }
 
+.inh-title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
 .tabs2 {
+  margin-left: auto;
   display: flex;
   gap: 2px;
   padding: 2px;
@@ -950,8 +997,11 @@
 
 .trow .last {
   display: block;
+  overflow: hidden;
   color: var(--mute);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .trow .meta {
@@ -961,6 +1011,13 @@
   color: var(--faint);
   font-family: var(--mono);
   font-size: 10.5px;
+}
+
+.trow .rc {
+  margin-top: 2px;
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 11px;
 }
 
 .trow .cnt {
@@ -979,11 +1036,24 @@
 }
 
 .inr {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* the bell keeps one place while threads open and close (the shell's header band is not drawn on this screen) */
+.inr-bell {
+  position: absolute;
+  top: 11px;
+  right: 20px;
+  z-index: 3;
+}
+
+.inr .thread-head {
+  padding-right: 60px;
 }
 
 .back-to-list {

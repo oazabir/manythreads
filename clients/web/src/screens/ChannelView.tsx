@@ -15,6 +15,7 @@ import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon } from '../shell/icons';
+import { useHeaderTopic } from '../shell/topic';
 import { useRealtimeStatus } from '../realtime';
 
 export function NoChannelAccess() {
@@ -53,6 +54,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const panel = usePanel();
   const [params] = useSearchParams();
   const info = useQuery(`channel:${channelId}`, () => fetchChannel(channelId));
+  useHeaderTopic(!dm && info.status === 'ok' ? info.data.channel.purpose : null);
   const tl = useTimeline(channelKey(channelId));
   const channelNames = useNames(teamSlug);
   const status = useRealtimeStatus();

@@ -82,6 +82,8 @@ export const ThreadInboxItem = z.object({
   unreadCount: z.number().int().nonnegative(),
   /** The caller wrote the root message. */
   mine: z.boolean(),
+  /** The newest live reply, as the row shows it ("Tester: 213 passing ..."); null when none is left to show. */
+  lastReply: z.object({ authorName: z.string(), preview: z.string().max(160) }).nullable(),
 });
 export type ThreadInboxItem = z.infer<typeof ThreadInboxItem>;
 export const ListThreadsResponse = Page(ThreadInboxItem);

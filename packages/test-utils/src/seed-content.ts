@@ -543,6 +543,14 @@ export async function seedContent(db: Pick<TestDatabase, 'systemUrl'>, options: 
             );
           }
         }
+        // The guest has read the channel she was granted (a person with no row sees a "New" divider above its first message).
+        const grantedLast = lastTop(idOf('engineering/releases'));
+        if (grantedLast) {
+          await tx.query(
+            `INSERT INTO app.read_state (person_id, target_type, target_id, last_read_id, unread_count) VALUES ($1, 'channel', $2, $3, 0) ON CONFLICT DO NOTHING`,
+            [LENA.personId, idOf('engineering/releases'), grantedLast],
+          );
+        }
         const dmLast = dmPlanned[dmPlanned.length - 1]!;
         const dmBefore = dmPlanned[dmPlanned.length - 2]!;
         await tx.query(`INSERT INTO app.read_state (person_id, target_type, target_id, last_read_id, unread_count) VALUES ($1, 'channel', $2, $3, 0) ON CONFLICT DO NOTHING`, [person('rafi'), dmId, dmLast.id]);

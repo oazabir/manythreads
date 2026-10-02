@@ -83,6 +83,29 @@
           },
           "mine": {
             "type": "boolean"
+          },
+          "lastReply": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "authorName": {
+                    "type": "string"
+                  },
+                  "preview": {
+                    "type": "string",
+                    "maxLength": 160
+                  }
+                },
+                "required": [
+                  "authorName",
+                  "preview"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -94,7 +117,8 @@
           "lastReplyAt",
           "followed",
           "unreadCount",
-          "mine"
+          "mine",
+          "lastReply"
         ]
       }
     },
