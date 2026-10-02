@@ -63,6 +63,14 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   Migrations: plain SQL, numbered, forward-only, never edit an applied file. Get-or-create via
   `INSERT … ON CONFLICT … DO SELECT RETURNING` through the one helper.
 - Rate limits in process memory (sliding window), per replica. Never in the DB.
+- **Visibility sets (RLS performance):** policies never call per-row functions for reads; hoist a uuid[] once per
+  statement: `team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])`, channels via
+  `app.visible_channel_ids('read'|'post')`. The RLS harness fails on per-row policy calls (`findPerRowPolicyCalls`).
+- Plugin SDK services (use them, don't re-implement): `ctx.db.getOneOrCreate`, `ctx.audit.emit`, `ctx.templates`,
+  `ctx.readState`, `ctx.links`, `ctx.realtime.pushToPerson`, `ctx.jobs.register/enqueue` (extension `job.register`),
+  `ctx.providers.get('storage')`. Plugins can't import each other: reuse another plugin's behaviour via its HTTP route
+  shape or an SDK service, never by copying.
+- Server-side text processing must be linear-time (no nested regex quantifiers); add hostile-input timing tests.
 - Plugins import only `@manythreads/sdk` and `@manythreads/shared`, never kernel internals. Plugin HTTP routes mount at
   their declared absolute path (e.g. `/api/channels/:id/messages`); duplicates fail at load.
 - Test-only HTTP actor: header-based dev actor only with `NODE_ENV=test`, never `system`. Sessions (cookie + CSRF header) are the real
@@ -88,6 +96,7 @@ pnpm test               # vitest, all packages (needs DB: pnpm db:up)
 pnpm test:rls  pnpm test:events  pnpm test:schema-compat  (later: test:memory-cross-team, test:runtime-rules)
 pnpm db:up / db:down    # dev Postgres 19 via deploy/compose (port 55432, user manythreads_owner)
 pnpm e2e                # playwright (runs from e2e/; never `playwright` from root);  pnpm e2e --project=api
+                        # specs that write data use their own stack (startStack / useIsolatedStack); ports auto-picked
 pnpm vt / vt:update     # plate visual comparison (tools/plates)
 pnpm --filter @manythreads/tools-bench bench:server   # benchmarks
 ```
