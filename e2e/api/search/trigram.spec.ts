@@ -77,7 +77,8 @@ test('results are grouped: messages, thread titles and file names; best match fi
   const word = unique();
   const channelId = await makeChannel(request);
   const root = await post(request, nadia, channelId, `${word} deploy plan`);
-  await post(request, rafi, channelId, 'looks good', root);
+  // The root's author replies to it: nobody else follows the thread, so nobody's shared unread counts change (the api specs share one server).
+  await post(request, nadia, channelId, 'looks good', root);
   const older = await post(request, nadia, channelId, `${word.slice(0, 5)}${word.slice(6)} typo version`);
   const newer = await post(request, nadia, channelId, `${word} newest exact`);
   const file = await request.post(`/api/channels/${channelId}/files`, {
