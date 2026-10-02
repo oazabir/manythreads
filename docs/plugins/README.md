@@ -97,7 +97,27 @@ await ctx.readState.markRead(tx, personId, { targetType: 'channel', targetId: ch
 await ctx.links.create(tx, { teamId, src: { type: 'message', id }, dst: { type: 'task', id: taskId }, kind: 'created_from' });
 ctx.links.registerResolver('message', async (tx, id) => /* an RLS-filtered lookup */ ({ title, subtitle, href }) /* or null */);
 await ctx.realtime.pushToPerson(tx, personId, 'notifications.item.added', { id });   // delivered at commit, to every replica
+// A whole audience is ONE statement, whatever its size (2,000 readers of a public channel = 1 round trip, not 2,000):
+await ctx.realtime.pushToPeople(tx, audienceIds, 'message.posted', payload);              // same payload for everyone; duplicates dropped
+await ctx.realtime.pushMany(tx, cards.map((c) => ({ personId: c.personId, type: 'notification.created', payload: c.push })));   // a payload per person
 ```
+
+Never loop over `pushToPerson` for an audience: each call is a statement and an await. `pushToPeople`/`pushMany` build the `pg_notify` list in memory and send it once
+(the 7 KB payload cap still applies per person).
+
+### Access sets: `ctx.access`
+
+`ctx.access.readableTeamIds(tx, perm)` and `ctx.access.readableChannelIds(tx, perm)` return the `uuid[]` the database's hoisted visibility functions compute for the
+transaction's actor (`app.readable_team_ids`, `app.visible_channel_ids`; see "Visibility sets" below), typed as `string[]`. Use them when a plugin needs the sets in code,
+for example to merge two stores side by side (team paths of the repo by team, `channels/<name>/` of attachments by channel) instead of hand-writing the `SELECT` and its result type:
+
+```ts
+const [teams, channels] = [await ctx.access.readableTeamIds(tx, 'read'), await ctx.access.readableChannelIds(tx, 'read')];
+await tx.query('SELECT ... FROM app.files WHERE channel_id = ANY ($1::uuid[]) OR (channel_id IS NULL AND team_id = ANY ($2::uuid[]))', [channels, teams]);
+```
+
+`perm` is `read`, `post` or `manage` for teams; channels know `read` and `post` (a `manage` question is `app.channel_can(channel, 'manage')`, one row). A system transaction
+gets empty sets (system work does not go through visibility), a guest an empty team set. In a policy or a SQL function keep calling the SQL function inside `(SELECT ...)`.
 
 ### Background jobs
 
@@ -108,9 +128,14 @@ the kernel's `kms.rewrap`), `MANYTHREADS_JOB_WORKERS=0` turns them off in a proc
 ctx.jobs.register('digest.send', async (payload, tx, job) => {
   // tx: ONE transaction as the SYSTEM actor (no RLS), scoped to payload.workspaceId when it is a string.
   // Throw to roll it back; the worker retries with backoff (default 5 attempts), then dead-letters. Be idempotent.
-}, { concurrency: 2, maxAttempts: 5 });
+}, { concurrency: 2, maxAttempts: 5, cron: '17 3 * * *' });
 await ctx.jobs.enqueue(tx, 'digest.send', { workspaceId: tx.actor.workspaceId, teamId }, { dedupeKey: `digest:${teamId}` });
 ```
+
+`job.log.info(line)` / `job.log.warn(line)` write to the server's log: put run metrics there (one JSON line per run is easy to grep and ship).
+
+`cron` (5 fields, UTC) schedules the queue: when the server starts it stores the schedule under the queue's name and a ticker in each process enqueues the latest due slot with an
+empty payload (replicas race safely, missed slots coalesce into one run). A queue with a `cron` must be startable from an empty payload; a long job can enqueue its own follow-ups (the blob GC hands a long sweep to the next job with a cursor).
 
 `enqueue` happens in the caller's transaction (the job exists when it commits); a `dedupeKey` returns the waiting or running job instead of adding
 a second. The handler sees whatever was enqueued: validate the payload and re-check access, because nothing else does.

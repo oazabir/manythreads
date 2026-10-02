@@ -360,7 +360,15 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
       scheduler?.stop();
       await Promise.all([...consumers.map((c) => c.stop()), ...workers.map((x) => x.stop())]);
       await realtime.stop();
-      await app.close();
+      // `app.close()` waits for open connections, and Fastify closes the idle ones once, at the start. A keep-alive connection whose last response
+      // finishes a moment later (a streamed download the client has just read) would then wait out the 72 s keep-alive timeout. Sweep the idle
+      // ones until the server is down; a request still in flight is never cut.
+      const sweep = setInterval(() => app.server.closeIdleConnections(), 100);
+      try {
+        await app.close();
+      } finally {
+        clearInterval(sweep);
+      }
       await Promise.all([appPool.end(), systemPool.end()]);
     },
   };
