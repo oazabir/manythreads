@@ -247,6 +247,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     sessions,
     trustProxy: options.trustProxy ?? trustProxyFromEnv(process.env['MANYTHREADS_TRUST_PROXY']),
     testAuthToken,
+    appTokens: { now: clock },
     ...(options.devAuth !== undefined ? { devAuth: options.devAuth } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });

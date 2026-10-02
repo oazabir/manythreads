@@ -88,6 +88,7 @@ describe('embedded app content route', () => {
     const h = embeddedAppHeaders();
     expect(h['content-security-policy']).toContain("connect-src 'none'");
     expect(h['content-security-policy']).toContain("default-src 'none'");
+    expect(h['content-security-policy']).toMatch(/; sandbox allow-scripts$/);
     expect(h['x-content-type-options']).toBe('nosniff');
   });
 });

@@ -32,7 +32,7 @@ import { textOf } from './rules.ts';
 // HTTP for the team repo: tree, blob and commit (PLAN P4-01..P4-05). The Files tree, history and restore routes of P4-06 and P4-08 build on the service.
 
 /** The team the caller may see; a team they cannot see is 403 (an admin sees every team, so for them a missing slug is 404). */
-async function teamIdBySlug(tx: PluginTx, slug: string): Promise<string> {
+export async function teamIdBySlug(tx: PluginTx, slug: string): Promise<string> {
   const res = await tx.query<{ id: string }>('SELECT id FROM app.teams WHERE slug = $1', [slug]);
   const id = res.rows[0]?.id;
   if (id) return id;

@@ -3,6 +3,7 @@ import { definePlugin, type RepoProvider } from '@manythreads/sdk';
 import { TeamTemplateAppliedEvent, WorkspaceTeamCreatedEvent } from '@manythreads/shared';
 import { createGitLayer } from './git/index.ts';
 import { createRepoService } from './repo.ts';
+import { registerRepoAppRoute } from './app-routes.ts';
 import { registerRepoRoutes } from './routes.ts';
 
 export { createRepoService, ACTOR_EMAIL_DOMAIN, type RepoService, type RepoActor, type RepoWriteChange, type RepoWriteResult, type CommitIdentity } from './repo.ts';
@@ -43,6 +44,7 @@ export default definePlugin({
       emit: (tx, event) => ctx.audit.emit(tx, event),
     });
     registerRepoRoutes(ctx, repo);
+    registerRepoAppRoute(ctx, repo);
     // What other plugins (pages, bots, memory) call: `ctx.providers.get<RepoProvider>('repo')`.
     const provider: RepoProvider = {
       id: 'repo-git',

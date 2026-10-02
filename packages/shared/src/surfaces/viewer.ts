@@ -202,7 +202,9 @@ export const APP_BRIDGE_CLIENT_JS =
 
 /** Headers for every response of the app content route. `nosniff` keeps a text file from being run as a script by sniffing. */
 export const embeddedAppHeaders = (): Record<string, string> => ({
-  'content-security-policy': EMBEDDED_APP_CSP,
+  // `sandbox allow-scripts` as a header too: the same lock as the iframe attribute, so a file opened directly (not in our frame) is an opaque
+  // origin as well and cannot reach the cookies or the DOM of the page it is served from.
+  'content-security-policy': `${EMBEDDED_APP_CSP}; sandbox ${EMBEDDED_APP_SANDBOX}`,
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'cache-control': 'private, no-cache',

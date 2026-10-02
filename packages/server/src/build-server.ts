@@ -36,6 +36,8 @@ import { HttpError, type HttpRequest } from '@manythreads/sdk';
 import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
+import { createAppTokens, type AppTokensOptions } from './app-token.ts';
+import { authenticateAppToken, mountAppTokenRoute } from './app-token-route.ts';
 import { DEV_ACTOR_HEADER, devAuthEnabled, parseDevActor } from './dev-actor.ts';
 import { envelope, errorHandler, notFoundHandler } from './errors.ts';
 import {
@@ -52,6 +54,11 @@ import './types.ts';
 export interface BuildServerOptions {
   /** Loaded plugins: their http routes are mounted and their names listed in /healthz. */
   host?: PluginHost;
+  /**
+   * Per-open tokens of embedded apps (a sandboxed frame has no cookie): secret (default derived from `MANYTHREADS_KMS_KEY`, else random per
+   * process), lifetime (default 5 minutes) and clock. See app-token.ts.
+   */
+  appTokens?: AppTokensOptions;
   /** manythreads_app pool used by health checks and plugin routes (default: the shared app pool). */
   pool?: pg.Pool;
   /**
@@ -135,6 +142,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   app.decorateRequest('authSession', null);
   app.decorateRequest('staleSessionCookie', false);
 
+  const appTokens = createAppTokens(options.appTokens);
   const devAuth = options.devAuth !== false && devAuthEnabled();
   const sessions = options.sessions;
   const poolOpt = options.pool ? { pool: options.pool } : {};
@@ -151,6 +159,9 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     if (req.is404) return;
     if (devAuth) req.actor = parseDevActor(req.headers[DEV_ACTOR_HEADER]);
     if (!req.actor && sessions) await authenticateCookie(req, reply, sessions);
+    // Embedded apps: a sandboxed frame sends no cookie, so a signed token in the path of the content route stands in for it (GET and HEAD only).
+    const refused = authenticateAppToken(req, reply, appTokens);
+    if (refused) return refused;
     if (!csrfAllows(req)) {
       return reply.status(403).send(envelope('forbidden', 'CSRF token missing or invalid'));
     }
@@ -330,6 +341,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
   if (options.testAuthToken && sessions && options.systemPool) {
     mountTestAuth(app, { token: options.testAuthToken, sessions, pool: options.systemPool });
   }
+  mountAppTokenRoute(app, { tokens: appTokens, ...(options.pool ? { pool: options.pool } : {}) });
   await mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
   await options.routes?.(app);
   return app;

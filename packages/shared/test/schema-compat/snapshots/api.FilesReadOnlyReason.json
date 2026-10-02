@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "change_by_pull_request",
+    "attachment",
+    "no_write_access"
+  ]
+}

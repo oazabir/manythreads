@@ -1,4 +1,4 @@
-import { EMBEDDED_APP_CSP } from '@manythreads/shared';
+import { EMBEDDED_APP_CSP, embeddedAppHeaders } from '@manythreads/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildServer } from '../src/index.ts';
@@ -23,7 +23,10 @@ describe('embedded app content route headers (PLAN P4-10)', () => {
     const app = await server();
     const res = await app.inject({ method: 'GET', url: '/api/teams/engineering/repo/app/apps/release-checklist/index.html' });
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-security-policy']).toBe(EMBEDDED_APP_CSP);
+    expect(res.headers['content-security-policy']).toBe(embeddedAppHeaders()['content-security-policy']);
+    expect(res.headers['content-security-policy']).toContain(EMBEDDED_APP_CSP);
+    // opened directly (not in our frame) the file is an opaque origin too
+    expect(res.headers['content-security-policy']).toMatch(/; sandbox allow-scripts$/);
     expect(res.headers['content-security-policy']).toContain("connect-src 'none'");
     expect(res.headers['content-security-policy']).toContain("frame-ancestors 'self'");
     expect(res.headers['x-content-type-options']).toBe('nosniff');
@@ -33,7 +36,7 @@ describe('embedded app content route headers (PLAN P4-10)', () => {
   it('a refusal or a missing file under the route carries it too', async () => {
     const app = await server();
     const res = await app.inject({ method: 'GET', url: '/api/teams/engineering/repo/app/nope/missing.js?x=1' });
-    expect(res.headers['content-security-policy']).toBe(EMBEDDED_APP_CSP);
+    expect(res.headers['content-security-policy']).toBe(embeddedAppHeaders()['content-security-policy']);
   });
 
   it('other routes are left alone', async () => {
