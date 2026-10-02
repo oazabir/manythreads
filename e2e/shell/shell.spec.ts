@@ -26,7 +26,8 @@ test.describe('Nadia, a member', () => {
     if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
     const sidebar = page.locator('[data-landmark="sidebar"]');
     await expect(sidebar).toBeVisible();
-    expect(await sidebarRows(page)).toEqual(['Files', 'Boards', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
+    // the rows arrive once the team list has loaded
+    await expect.poll(() => sidebarRows(page)).toEqual(['Files', 'Boards', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
     await expect(sidebar).toContainText('No files yet');
     await expect(sidebar).toContainText('No boards yet');
     await expect(sidebar).toContainText('Nothing waiting');

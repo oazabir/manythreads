@@ -107,3 +107,10 @@ export const ArrowDownIcon = () => (
     <path d="M8 3v9M4 8.5l4 4 4-4" />
   </Svg>
 );
+
+export const BellIcon = () => (
+  <Svg size={16}>
+    <path d="M3.6 11.2V7.4a4.4 4.4 0 0 1 8.8 0v3.8l1 1.4H2.6Z" />
+    <path d="M6.6 13.8a1.6 1.6 0 0 0 2.8 0" />
+  </Svg>
+);

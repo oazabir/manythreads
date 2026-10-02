@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { ThreadInboxItem } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchThreadInbox } from '../api/endpoints';
@@ -11,6 +11,7 @@ import { channelStore, threadKey } from '../channels/store';
 import { useShell } from '../shell/context';
 import { useNarrow } from '../shell/useNarrow';
 import { BackIcon } from '../shell/icons';
+import { WelcomeCard } from '../welcome/WelcomeCard';
 
 type Tab = 'followed' | 'unread' | 'mine';
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -34,6 +35,8 @@ export function ThreadsInbox() {
   const { team } = useShell();
   const slug = team?.slug ?? '';
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const path = useLocation().pathname;
   const narrow = useNarrow();
   const tab = tabOf(params.get('tab'));
   const selected = params.get('thread');
@@ -77,9 +80,18 @@ export function ThreadsInbox() {
   };
 
   // On a wide screen the first thread is open, as in the prototype (not on Unread: opening reads it, so the person chooses).
+  // The list arrives after a moment: by then the person may have gone elsewhere or opened a panel, so the live location decides, never the
+  // location this render saw (a late replace would otherwise pull them back to Threads, or drop the panel they just opened).
+  const first = items[0]?.rootMessageId ?? null;
   useEffect(() => {
-    if (!narrow && !selected && tab !== 'unread' && items[0]) open(items[0].rootMessageId, true);
-  }, [narrow, selected, tab, items, open]);
+    if (narrow || selected || tab === 'unread' || !first) return;
+    if (window.location.pathname !== path) return;
+    const live = new URLSearchParams(window.location.search);
+    if (live.get('thread')) return;
+    live.set('thread', first);
+    const state = (window.history.state as { usr?: unknown } | null)?.usr ?? null;
+    navigate({ pathname: path, search: `?${live.toString()}` }, { replace: true, state });
+  }, [narrow, selected, tab, first, path, navigate]);
 
   const markDone = useCallback(
     (rootId: string): void => {
@@ -116,6 +128,8 @@ export function ThreadsInbox() {
   const showMain = !narrow || selected !== null;
   const showList = !narrow || selected === null;
   return (
+    <div className="threads-home">
+    <WelcomeCard slug={slug} />
     <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="threads-inbox">
       {showList ? (
         <div className="inl">
@@ -184,6 +198,7 @@ export function ThreadsInbox() {
           ) : null}
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

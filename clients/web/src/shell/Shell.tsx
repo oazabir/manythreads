@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
+import { dmParticipants, useDms } from '../dms/store';
+import { Bell } from '../notifications/Bell';
+import { SearchBox } from '../search/SearchBox';
 import { fetchTeams } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { useSession } from '../app/session';
@@ -10,6 +13,7 @@ import { AccountMenu } from './AccountMenu';
 import { ShellContext, type ShellValue } from './context';
 import { useNavCounts } from './counts';
 import { MenuIcon, SearchIcon } from './icons';
+import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { Sidebar } from './Sidebar';
 import { TeamSwitch } from './TeamSwitch';
@@ -25,7 +29,10 @@ export function Shell() {
   const session = useSession();
   const guest = session.role === 'guest';
   const loc = useLocation();
-  const slug = useMatch('/t/:team/*')?.params.team ?? null;
+  const urlSlug = useMatch('/t/:team/*')?.params.team ?? null;
+  // a guest has no team to name: any slug shows the channels they were granted, so the shell uses a fixed one at `/`
+  const slug = urlSlug ?? (guest ? GUEST_SLUG : null);
+  const dmId = useMatch('/t/:team/dm/:id')?.params.id ?? null;
   const q = useQuery('shell-teams', () => fetchTeams());
   const counts = useNavCounts();
   const narrow = useNarrow();
@@ -44,7 +51,9 @@ export function Shell() {
   useEffect(() => {
     if (team) rememberTeam(team.slug);
   }, [team]);
-  const people = useLoadPeople(team?.slug ?? (guest ? slug : null));
+  const people = useLoadPeople(guest ? null : (team?.slug ?? null));
+  const dms = useDms(!guest);
+  const dm = dmId ? dms.items.find((d) => d.channel.id === dmId) : undefined;
 
   // The drawer is open for one location only: moving anywhere closes it, with no effect needed.
   const [openedAt, setOpenedAt] = useState<string | null>(null);
@@ -52,7 +61,14 @@ export function Shell() {
   const rail = useRef<HTMLElement>(null);
   useDismiss(drawerOpen, () => setOpenedAt(null), rail);
 
-  const title = slug === null && team ? 'Threads' : viewTitle(loc.pathname);
+  const title = dmId ? (dm ? dmParticipants(dm) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
+  const searchLabel = guest ? 'Search' : team ? `Search ${team.name}` : 'Search';
+  const railSearch = useRef<HTMLDivElement>(null);
+  const openSearch = (): void => {
+    setOpenedAt(loc.pathname + loc.search);
+    // the box sits in the drawer: focus it once the drawer has opened
+    window.setTimeout(() => railSearch.current?.querySelector('input')?.focus(), 60);
+  };
   return (
     <ShellContext.Provider value={value}>
       <PeopleContext.Provider value={people}>
@@ -65,12 +81,8 @@ export function Shell() {
           <div className="region team-switch" data-landmark="team-switch">
             <TeamSwitch />
           </div>
-          <div className="region search" data-landmark="search">
-            <label className="search-box">
-              <SearchIcon />
-              <span className="sr-only">Search</span>
-              <input type="search" readOnly placeholder={team && !guest ? `Search ${team.name}` : 'Search'} aria-label="Search" />
-            </label>
+          <div className="region search" data-landmark="search" ref={railSearch}>
+            <SearchBox placeholder={searchLabel} label="Search" />
           </div>
           <nav className="region sidebar" data-landmark="sidebar" aria-label="Sidebar">
             <Sidebar />
@@ -87,6 +99,13 @@ export function Shell() {
               <span className="sr-only">{`${session.workspace.name}: `}</span>
               {title}
             </h1>
+            <div className="right chead-tools">
+              {dmId && dm ? <SearchBox className="head-search" placeholder="Search this conversation" label="Search this conversation" channelId={dmId} /> : null}
+              <button type="button" className="icon-btn find-btn" aria-label="Find" onClick={openSearch}>
+                <SearchIcon />
+              </button>
+              <Bell />
+            </div>
           </header>
           <section className="region content" data-landmark="content" aria-busy={teamsLoading || undefined}>
             <Outlet />

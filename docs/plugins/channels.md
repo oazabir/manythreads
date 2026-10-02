@@ -68,6 +68,15 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 
 Refusals: 400 (validation), 401 (no actor), 403 (cannot see, or may not do that), 404 (message or reply target not in a channel you can see), 409 (archived, deleted, name taken, not on the team).
 
+## Author names (`ChannelMessage.author`)
+
+`people` and `actors` show a caller only their own row and a guest has no roster, so a client could not name the author of a message (it showed "Someone"). Every `ChannelMessage` the
+channels and threads plugins serve (channel lists, one message, a thread root and its replies, the `message.posted` push) therefore carries `author: { actorId, displayName, kind }`, resolved
+by `app.message_authors(message_ids uuid[])` (migration `0005`, a definer function). It joins the ids to `app.visible_channel_ids('read')` **of the caller** first and looks an actor up only
+for a message that survives, so an id of a message in a channel the caller cannot read, an actor id or a made-up id answers nothing (at most 500 ids per call). A person is named by
+their display name; a bot and the system by a fixed label until the bots plugin gives bots names. The field is optional in the schema (older fixtures still parse); `test/authors.test.ts`
+covers guests, a private channel, another team and the no-leak cases.
+
 ## Mentions and links (P3-07)
 
 On every post and edit, in the same transaction, `src/mentions.ts` parses the body with the shared `parseMarkup` (the composer's parser: code spans and fences, link destinations, URLs, e-mail addresses and

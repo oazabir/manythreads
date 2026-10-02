@@ -75,7 +75,7 @@ a third) and Lena (guest, one channel), checking p95 under 300 ms per persona (e
 
 ## Not here
 
-Highlighting of the matched words (the snippet is the start of the text), pagination of results (a `limit` of 50 at most), page text and repo files (phase 4 adds `repo_entries` to the same
+Highlighting on the server (the snippet is the start of the text; the web client marks the words close to the query with the same trigram measure, `clients/web/src/search/highlight.ts`), pagination of results (a `limit` of 50 at most), page text and repo files (phase 4 adds `repo_entries` to the same
 functions), semantic search, a search for people and channels (the quick switcher), stemming and stop words (trigrams need neither).
 
 ## Tests

@@ -1,4 +1,4 @@
-import { ChannelMessage, ThreadChannelRef, type FileSummary, type ReactionSummary } from '@manythreads/shared';
+import { ChannelMessage, ThreadChannelRef, type FileSummary, type MessageAuthor, type ReactionSummary } from '@manythreads/shared';
 
 // The plugin's mapper for the rows it reads (messages with their thread counters, and the channel they sit in). Plugins may not import
 // the kernel's mappers nor another plugin's code, so the shape of a `ChannelMessage` is built here from the shared schema.
@@ -27,8 +27,9 @@ export type MessageRow = {
   last_reply_at: Date | null;
 };
 
-export const toChannelMessage = (r: MessageRow, reactions: readonly ReactionSummary[], attachments: readonly FileSummary[] = []): ChannelMessage =>
+export const toChannelMessage = (r: MessageRow, reactions: readonly ReactionSummary[], attachments: readonly FileSummary[] = [], author?: MessageAuthor): ChannelMessage =>
   ChannelMessage.parse({
+    ...(author ? { author } : {}),
     id: r.id,
     workspaceId: r.workspace_id,
     channelId: r.channel_id,

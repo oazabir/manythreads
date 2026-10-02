@@ -1,4 +1,26 @@
 import {
+  GetNotificationPrefsResponse,
+  GetNotificationSummaryResponse,
+  ListDmsQuery,
+  ListDmsResponse,
+  ListNotificationsQuery,
+  ListNotificationsResponse,
+  MarkNotificationsReadRequest,
+  MarkNotificationsReadResponse,
+  OpenDmRequest,
+  OpenDmResponse,
+  SearchQuery,
+  SearchResponse,
+  UpdateNotificationPrefsRequest,
+  UpdateNotificationPrefsResponse,
+  getNotificationPrefsRoute,
+  getNotificationSummaryRoute,
+  listDmsRoute,
+  listNotificationsRoute,
+  markNotificationsReadRoute,
+  openDmRoute,
+  searchRoute,
+  updateNotificationPrefsRoute,
   AcceptInvitationRequest,
   AcceptInvitationResponse,
   AddTeamMemberRequest,
@@ -380,3 +402,26 @@ export function uploadChannelFile(
     xhr.send(file);
   });
 }
+
+// ---- search, notifications, direct messages ---------------------------------------------------------------
+/** Messages, threads and files the caller can read (the server filters by what they can see; a guest only inside a grant). */
+export const searchEverything = (q: string, opts: { scope?: SearchQuery['scope']; teamId?: string; limit?: number } = {}) =>
+  call(searchRoute, { request: SearchQuery, response: SearchResponse }, { q, scope: opts.scope ?? 'all', limit: opts.limit ?? 20, ...(opts.teamId ? { teamId: opts.teamId } : {}) } as SearchQuery);
+
+export const fetchNotifications = (query: { cursor?: string; limit?: number; unread?: boolean } = {}) =>
+  call(
+    listNotificationsRoute,
+    { request: ListNotificationsQuery, response: ListNotificationsResponse },
+    { limit: query.limit ?? 30, unread: query.unread ? 'true' : 'false', ...(query.cursor ? { cursor: query.cursor } : {}) } as ListNotificationsQuery,
+  );
+export const fetchNotificationSummary = () => call(getNotificationSummaryRoute, { response: GetNotificationSummaryResponse });
+export const markNotificationsRead = (body: MarkNotificationsReadRequest) =>
+  call(markNotificationsReadRoute, { request: MarkNotificationsReadRequest, response: MarkNotificationsReadResponse }, body);
+export const fetchNotificationPrefs = () => call(getNotificationPrefsRoute, { response: GetNotificationPrefsResponse });
+export const saveNotificationPrefs = (body: UpdateNotificationPrefsRequest) =>
+  call(updateNotificationPrefsRoute, { request: UpdateNotificationPrefsRequest, response: UpdateNotificationPrefsResponse }, body);
+
+export const fetchDms = () => call(listDmsRoute, { request: ListDmsQuery, response: ListDmsResponse }, { limit: 200 } as ListDmsQuery);
+/** Open (or create) the conversation with these people; opening the same set twice gives the same channel. */
+export const openDm = (personIds: readonly string[]) =>
+  call(openDmRoute, { request: OpenDmRequest, response: OpenDmResponse }, { personIds } as OpenDmRequest);

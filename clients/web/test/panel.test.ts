@@ -186,6 +186,31 @@ describe('panel push, back, close', () => {
   });
 });
 
+describe('panel replace', () => {
+  it('swaps the top entry in place: no new history step, the entries underneath stay', () => {
+    const h = memoryHistory();
+    const p = createPanelController(h);
+    p.push(thread('a'));
+    p.push({ type: 'search', id: 'one' });
+    const steps = h.entries.length;
+    p.replace({ type: 'search', id: 'two' });
+    expect(h.entries).toHaveLength(steps);
+    expect(p.stack()).toEqual([thread('a'), { type: 'search', id: 'two' }]);
+    expect(h.url()).toContain('panel=search%3Atwo');
+    p.back();
+    expect(p.top()).toEqual(thread('a'));
+  });
+  it('on a closed panel it opens the entry; replacing with the entry already on top does nothing', () => {
+    const h = memoryHistory();
+    const p = createPanelController(h);
+    p.replace({ type: 'search', id: 'x' });
+    expect(p.stack()).toEqual([{ type: 'search', id: 'x' }]);
+    const steps = h.entries.length;
+    p.replace({ type: 'search', id: 'x' });
+    expect(h.entries).toHaveLength(steps);
+  });
+});
+
 describe('panel type registry', () => {
   const Component = () => null;
   it('registers types and looks them up; a later registration replaces the earlier', () => {

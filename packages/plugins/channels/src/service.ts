@@ -3,6 +3,7 @@ import {
   ChannelMessage,
   type ChannelCreatedPush,
   type FileSummary,
+  type MessageAuthor,
   type MessageDeletedPush,
   type MessagePostedPush,
   type ReactionChangedPush,
@@ -86,6 +87,21 @@ export async function reactionsFor(tx: PluginTx, messageIds: readonly string[]):
 }
 
 /**
+ * The names of the authors of these messages, by author actor id, for the messages the caller can read (`app.message_authors` joins the
+ * ids to the caller's readable channels before it looks anybody up, so no name outside a visible message is ever returned).
+ */
+export async function authorsFor(tx: PluginTx, messageIds: readonly string[]): Promise<Map<string, MessageAuthor>> {
+  const out = new Map<string, MessageAuthor>();
+  if (messageIds.length === 0) return out;
+  const res = await tx.query<{ actor_id: string; display_name: string; kind: MessageAuthor['kind'] }>(
+    'SELECT actor_id, display_name, kind FROM app.message_authors($1::uuid[])',
+    [messageIds],
+  );
+  for (const r of res.rows) out.set(r.actor_id, { actorId: r.actor_id, displayName: r.display_name, kind: r.kind } as MessageAuthor);
+  return out;
+}
+
+/**
  * The files attached to messages (`meta.attachments`) as cards, in the order the sender listed them, for what the caller may read: a file in
  * a channel they cannot see, or one that was deleted, is left out. Touches `app.files` (the files plugin) only when a message has attachments.
  */
@@ -123,7 +139,8 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   if (!row) return undefined;
   const reactions = await reactionsFor(tx, [row.id]);
   const attachments = await attachmentsFor(tx, [row]);
-  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? []);
+  const authors = await authorsFor(tx, [row.id]);
+  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id));
 }
 
 /** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. */

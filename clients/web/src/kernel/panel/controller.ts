@@ -7,6 +7,8 @@ export type PanelController = {
   canGoBack(): boolean;
   /** Open an entry on top of what is open. Pushing the entry already on top does nothing. */
   push(entry: PanelEntry): void;
+  /** Swap the entry on top for another (a new search over the old one) without adding a history step. On a closed panel it pushes. */
+  replace(entry: PanelEntry): void;
   /** Show the entry underneath. On the last entry it closes the panel. */
   back(): void;
   close(): void;
@@ -32,6 +34,13 @@ export function createPanelController(history: PanelHistory): PanelController {
       const top = stack.at(-1);
       if (top && sameEntry(top, entry)) return;
       history.push(writePanel(history.read(), [...stack, entry], true));
+    },
+    replace(entry) {
+      const { stack, viaPush } = state();
+      const top = stack.at(-1);
+      if (!top) return history.push(writePanel(history.read(), [entry], true));
+      if (sameEntry(top, entry)) return;
+      history.replace(writePanel(history.read(), [...stack.slice(0, -1), entry], viaPush));
     },
     back() {
       const { stack, viaPush } = state();

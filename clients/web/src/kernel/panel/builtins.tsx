@@ -4,6 +4,7 @@ import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useShell } from '../../shell/context';
 import { ThreadPanel } from '../../channels/ThreadPanel';
+import { SearchPanel } from '../../search/SearchPanel';
 import { registerPanelType } from './registry';
 import type { PanelEntry } from './stack';
 
@@ -54,5 +55,6 @@ function MemberPanel({ entry }: { entry: PanelEntry }) {
 }
 
 registerPanelType({ type: 'thread', label: 'Thread', Component: ThreadPanel });
+registerPanelType({ type: 'search', label: 'Search', Component: SearchPanel });
 registerPanelType({ type: 'file', label: 'File', Component: FilePanel });
 registerPanelType({ type: 'member', label: 'Member', Component: MemberPanel });

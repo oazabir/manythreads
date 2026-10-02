@@ -1,4 +1,9 @@
 import { Link, Navigate, useParams } from 'react-router';
+import { dmLabel, useDms } from '../dms/store';
+import { ChannelBody, NoChannelAccess } from '../screens/ChannelView';
+import { useChannelFeed } from './channelFeed';
+import { GUEST_SLUG } from './messageLink';
+import { channelPath } from './nav';
 import { isAdmin, useSession } from '../app/session';
 import { ForbiddenBody } from '../components/states';
 import { useShell } from './context';
@@ -25,8 +30,12 @@ export function recalledTeam(): string | null {
 export function HomeView() {
   const session = useSession();
   const { team, teamsLoading, guest } = useShell();
-  if (teamsLoading) return <div className="view-empty" aria-busy="true" />;
+  const feed = useChannelFeed(guest ? GUEST_SLUG : null);
+  if (teamsLoading || (guest && feed.status === 'loading')) return <div className="view-empty" aria-busy="true" />;
   if (team) return <ThreadsInbox />;
+  // a guest has no Threads: the first channel they were granted is their home
+  const first = guest ? feed.groups.flatMap((g) => g.channels)[0] : undefined;
+  if (first) return <Navigate to={channelPath(GUEST_SLUG, first.name)} replace />;
   return (
     <div className="view-empty">
       <p className="view-empty-title">{guest ? 'Nothing has been shared with you yet' : 'You are not on a team yet'}</p>
@@ -51,14 +60,18 @@ export function RequireTeam({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** `/t/:team/dm/:id`: a conversation, drawn with the channel view and the composer. */
 export function DirectMessageView() {
-  return (
-    <div className="view-empty">
-      <p className="view-empty-title">This is the start of your conversation.</p>
-    </div>
-  );
+  const { id = '' } = useParams();
+  const { team, teamSlug } = useShell();
+  const session = useSession();
+  const feed = useDms();
+  const slug = team?.slug ?? teamSlug ?? '';
+  if (feed.status === 'loading') return <div className="view-empty" aria-busy="true" />;
+  const dm = feed.items.find((d) => d.channel.id === id);
+  if (!dm) return <NoChannelAccess />;
+  return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: dmLabel(dm, session.person.id) }} />;
 }
-
 const SECTIONS = {
   files: { title: 'No files yet', body: 'Files shared in channels and kept by the team show up here.' },
   boards: { title: 'No boards yet', body: 'Boards the team creates show up here.' },

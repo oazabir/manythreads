@@ -13,6 +13,7 @@ import {
   listThreadsRoute,
   unfollowThreadRoute,
   type FileSummary,
+  type MessageAuthor,
   type ReactionSummary,
 } from '@manythreads/shared';
 import { listInbox } from './inbox.ts';
@@ -59,6 +60,18 @@ async function reactionsFor(tx: PluginTx, messageIds: readonly string[]): Promis
     list.push({ emoji: r.emoji, count: r.count, mine: r.mine } as ReactionSummary);
     out.set(r.message_id, list);
   }
+  return out;
+}
+
+/** The authors' names of the messages, for what the caller can read (the channels plugin's definer function `app.message_authors`). */
+async function authorsFor(tx: PluginTx, messageIds: readonly string[]): Promise<Map<string, MessageAuthor>> {
+  const out = new Map<string, MessageAuthor>();
+  if (messageIds.length === 0) return out;
+  const res = await tx.query<{ actor_id: string; display_name: string; kind: MessageAuthor['kind'] }>(
+    'SELECT actor_id, display_name, kind FROM app.message_authors($1::uuid[])',
+    [messageIds],
+  );
+  for (const r of res.rows) out.set(r.actor_id, { actorId: r.actor_id, displayName: r.display_name, kind: r.kind } as MessageAuthor);
   return out;
 }
 
@@ -110,6 +123,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
       const page = more ? res.rows.slice(0, q.limit) : res.rows;
       const reactions = await reactionsFor(tx, [rootId, ...page.map((r) => r.id)]);
       const attachments = await attachmentsFor(tx, [root, ...page]);
+      const authors = await authorsFor(tx, [rootId, ...page.map((r) => r.id)]);
       const oldest = page[page.length - 1];
 
       const person = (await tx.query<{ id: string | null }>('SELECT app.person_id() AS id')).rows[0]?.id ?? null;
@@ -123,7 +137,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
       return json(
         GetThreadResponse.parse({
           channel: toChannelRef(root),
-          root: toChannelMessage(root, reactions.get(rootId) ?? [], attachments.get(rootId) ?? []),
+          root: toChannelMessage(root, reactions.get(rootId) ?? [], attachments.get(rootId) ?? [], authors.get(root.author_id)),
           thread: ThreadState.parse({
             rootMessageId: rootId,
             channelId: root.channel_id,
@@ -134,7 +148,7 @@ export function registerThreadRoutes(ctx: PluginContext): void {
             ...entry,
           }),
           replies: {
-            items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [])),
+            items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id))),
             nextCursor: more && oldest ? oldest.id : null,
           },
         }),

@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { isMockMode } from '../api/setup';
 import { channelStore } from '../channels/store';
+import { refreshDmsIfUsed } from '../dms/store';
+import { notificationStore } from '../notifications/store';
 import { refreshDirectories } from '../shell/channelFeed';
 import { RealtimeClient, browserDeps, type RealtimeStatus } from './socket';
 
@@ -20,7 +22,11 @@ export function useRealtime(): void {
     if (isMockMode()) return;
     const rt = realtimeClient();
     channelStore.attach(rt);
-    const offHook = channelStore.onResync(refreshDirectories);
+    notificationStore.attach(rt);
+    const offHook = channelStore.onResync(() => {
+      refreshDirectories();
+      refreshDmsIfUsed();
+    });
     const wake = (): void => {
       if (document.visibilityState === 'visible') rt.nudge();
     };
@@ -28,6 +34,7 @@ export function useRealtime(): void {
     window.addEventListener('online', wake);
     rt.start();
     void channelStore.refreshSummary();
+    void notificationStore.refreshSummary();
     return () => {
       document.removeEventListener('visibilitychange', wake);
       window.removeEventListener('online', wake);

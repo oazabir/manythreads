@@ -2,8 +2,8 @@
 
 The inbox behind the bell (SPEC section 3, PLAN P3-09; wireframe "Notifications popover" in PLAN phase 3 section 2). Code: `packages/plugins/notifications`. Schemas:
 `packages/shared/src/entities/notification.ts`, `api/notifications`, `events/notifications.notification.created.ts`. The plugin `dependsOn` channels (it reads channels, messages and
-thread follows, and its inbox policy probes the channel visibility set). The browser permission flow ("Allow browser alerts?") is a client concern, built later: this plugin stores the
-`browser` flag per kind and hands it to the client with every live push.
+thread follows, and its inbox policy probes the channel visibility set). The browser permission flow ("Allow browser alerts?") is a client concern (`clients/web/src/notifications/`: the bell, the popover, and the row that asks the browser and saves the
+`browser` flag through `PUT /prefs`; it is absent where there is no Notification API): this plugin stores the `browser` flag per kind and hands it to the client with every live push.
 
 ## What makes a notification
 

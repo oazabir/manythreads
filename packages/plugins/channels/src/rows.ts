@@ -5,6 +5,7 @@ import {
   ChannelMessage,
   Mention,
   Message,
+  type MessageAuthor,
   Reaction,
   Thread,
   ThreadFollow,
@@ -113,9 +114,11 @@ export const toChannelMessage = (
   r: MessageWithThreadRow,
   reactions: readonly ReactionSummary[],
   attachments: readonly FileSummary[] = [],
+  author?: MessageAuthor,
 ): ChannelMessage =>
   ChannelMessage.parse({
     ...messageFields(r),
+    ...(author ? { author } : {}),
     reactions,
     attachments: r.deleted_at ? [] : attachments,   // a deleted message shows no cards
     replyCount: r.reply_count ?? 0,

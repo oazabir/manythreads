@@ -44,7 +44,11 @@ function useNames(slug: string): string[] {
   return useMemo(() => (feed.groups.length === 0 ? NO_NAMES : feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, '')))), [feed.groups]);
 }
 
-function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: string; teamSlug: string }) {
+/** A conversation shown as a channel does: `dm` replaces the `#name` copy with who is in it. */
+export type DmCopy = { label: string };
+
+export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: string; name: string; teamSlug: string; dm?: DmCopy }) {
+  const { guest } = useShell();
   const people = usePeople();
   const panel = usePanel();
   const [params] = useSearchParams();
@@ -198,7 +202,7 @@ function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: s
     <div className={`start ${tl.cursor === null ? 'top' : ''}`} data-testid="channel-start">
       {tl.cursor === null && tl.status === 'ready' ? (
         <>
-          <p className="start-title">{`This is the start of #${name}.`}</p>
+          <p className="start-title">{dm ? `This is the start of your conversation with ${dm.label}.` : `This is the start of #${name}.`}</p>
           {channel?.purpose ? <p className="start-body">{channel.purpose}</p> : null}
         </>
       ) : (
@@ -223,7 +227,7 @@ function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: s
           </div>
         ) : (
           <VirtualList
-            label={`Messages in #${name}`}
+            label={dm ? `Messages with ${dm.label}` : `Messages in #${name}`}
             items={items}
             getKey={getKey}
             estimate={estimateItem}
@@ -246,8 +250,8 @@ function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: s
       {info.status === 'ok' && canPost ? (
         <Composer
           draftKey={`channel:${channelId}`}
-          placeholder={`Message #${name}`}
-          label={`Message #${name}`}
+          placeholder={dm ? `Message ${dm.label}` : `Message #${name}`}
+          label={dm ? `Message ${dm.label}` : `Message #${name}`}
           channelId={channelId}
           threadRootId={null}
           people={people}
@@ -256,7 +260,7 @@ function ChannelBody({ channelId, name, teamSlug }: { channelId: string; name: s
         />
       ) : info.status === 'ok' ? (
         <p className="read-only" data-testid="read-only">
-          {info.data.channel.archivedAt ? 'This channel is archived. You can read it but not post.' : 'You can read this channel but not post in it.'}
+          {info.data.channel.archivedAt ? 'This channel is archived. You can read it but not post.' : guest ? 'You can read this channel.' : 'You can read this channel but not post in it.'}
         </p>
       ) : null}
     </div>

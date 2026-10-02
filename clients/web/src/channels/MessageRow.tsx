@@ -46,8 +46,8 @@ type Props = {
 
 /** One message: avatar, name, time, markdown, attachments, reactions, the reply count, and (on hover) the actions. */
 export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, inThread = false, highlight = false, actions }: Props) {
-  const author = people.byActor(m.authorId);
-  const name = author?.name ?? 'Someone';
+  // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
+  const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
   const [tapped, setTapped] = useState(false);
@@ -126,7 +126,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           ) : null}
         </div>
       )}
-      <Avatar name={name} />
+      <Avatar name={name} kind={m.author?.kind === 'bot' ? 'agent' : 'person'} />
       <div className="msg-main">
         <div className="who">
           <b>{name}</b>

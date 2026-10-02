@@ -36,6 +36,7 @@ import {
 } from './rows.ts';
 import {
   attachmentsFor,
+  authorsFor,
   audience,
   can,
   findChannelMessage,
@@ -107,7 +108,7 @@ export function registerMessageRoutes(deps: Deps): void {
         threadRootId: row.thread_root_id,
       });
       const readers = await audience(tx, channelId);
-      await pushMessage(deps, tx, readers, 'message.posted', toChannelMessage({ ...row, reply_count: null, last_reply_at: null }, [], cards));
+      await pushMessage(deps, tx, readers, 'message.posted', toChannelMessage({ ...row, reply_count: null, last_reply_at: null }, [], cards, (await authorsFor(tx, [row.id])).get(row.author_id)));
       // Unread: a channel message counts for every reader, a reply for the followers of its thread (the replier and the root's author
       // follow it by themselves, see the messages triggers).
       await ctx.readState.onPosted(tx, {
@@ -145,10 +146,11 @@ export function registerMessageRoutes(deps: Deps): void {
       const page = more ? res.rows.slice(0, q.limit) : res.rows;
       const reactions = await reactionsFor(tx, page.map((r) => r.id));
       const attachments = await attachmentsFor(tx, page);
+      const authors = await authorsFor(tx, page.map((r) => r.id));
       const oldest = page[page.length - 1];
       return json(
         ListMessagesResponse.parse({
-          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [])),
+          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id))),
           nextCursor: more && oldest ? oldest.id : null,
         }),
       );

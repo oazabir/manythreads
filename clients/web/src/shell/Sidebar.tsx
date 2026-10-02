@@ -5,7 +5,9 @@ import { isAdmin, useSession } from '../app/session';
 import { useUnread } from '../channels/hooks';
 import { useShell } from './context';
 import { useChannelFeed } from './channelFeed';
+import { DirectMessages } from './DirectMessages';
 import { CaretIcon, LockIcon, NAV_ICONS } from './icons';
+import { GUEST_SLUG } from './messageLink';
 import { CORE_NAV, channelPath, navCount, navHref, visibleNav } from './nav';
 
 function Pill({ n, tone }: { n: number; tone: 'unread' | 'quiet' }) {
@@ -91,7 +93,7 @@ function ChannelGroups({ slug, guest }: { slug: string; guest: boolean }) {
 export function Sidebar() {
   const session = useSession();
   const { team, teamSlug, teamsLoading, guest } = useShell();
-  const slug = team?.slug ?? (guest ? teamSlug : null);
+  const slug = team?.slug ?? (guest ? (teamSlug ?? GUEST_SLUG) : null);
   const items = visibleNav(CORE_NAV, { guest });
 
   if (!slug) {
@@ -108,6 +110,8 @@ export function Sidebar() {
       {items.map((item) =>
         item.kind === 'group-list' ? (
           <ChannelGroups key={item.id} slug={slug} guest={guest} />
+        ) : item.id === 'direct-messages' ? (
+          <DirectMessages key={item.id} item={item} slug={slug} />
         ) : item.kind === 'header' ? (
           <NavHeader key={item.id} item={item} slug={slug} />
         ) : (
