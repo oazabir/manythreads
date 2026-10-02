@@ -76,13 +76,21 @@ timeout kills its helpers, and at most `MANYTHREADS_GIT_WORKERS` (default 8) pro
 hooks), `tree`, `blob` (size checked before it is read), `log` (path filter, cursor), `diff`, `show`, `commit`, `restoreChange`, plus listing helpers. Refs are `main`, `HEAD` or a commit sha;
 nothing else reaches git.
 
-## HTTP (minimal; the Files tree, history and restore routes come with P4-06 and P4-08)
+## HTTP
 
 | Route | |
 |---|---|
 | `GET /api/teams/:slug/repo/tree?path=&ref=` | folders first, then files, with size and sha. Anyone who can read the team; another team's tree is 403; an admin gets 404 for a missing slug |
-| `GET /api/teams/:slug/repo/blob?path=&ref=` | `{ content, encoding: 'utf8' \| 'base64', blobSha, size, commitSha }`; 413 over 1 MB |
+| `GET /api/teams/:slug/repo/blob?path=&ref=` | `{ content, encoding: 'utf8' \| 'base64', blobSha, size, commitSha }`; 413 over 1 MB. `ref` may be a commit sha: that is how a client reads the two versions of a rendered diff |
+| `GET /api/teams/:slug/repo/content?path=&ref=&download=` | **the bytes** for a URL (`<img src>`, a link): `content-type` from the extension (`repoMimeOf` in shared; unknown means `text/plain`), text types with `charset=utf-8`; **SVG** is `image/svg+xml` under `content-security-policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` (it renders as an image and runs nothing); `text/html`, XML, JavaScript and CSS are `application/octet-stream` + `attachment`; `nosniff`, `cross-origin-resource-policy: same-origin`, `cache-control: private, no-cache` (access is decided again on every read); `download=1` forces `attachment`. Same access as the blob route |
 | `POST /api/teams/:slug/repo/commit` | `{ changes: RepoChange[], message }`, strict; `content` is text or `encoding: 'base64'`. 201 `CommitRepoResponse`, 200 for a no-op, 409 `RepoConflictResponse`, 422, 403, 400. 120 per minute |
+| `GET /api/teams/:slug/repo/history?path=&limit=&cursor=` | `GetRepoHistoryResponse`: commits that touched a file, a folder or (empty path) the repo, **newest first** (`git log`, so renames of folders and deleted files work): `sha, parentSha, authorId` (from the author line `<actor id>@actors.manythreads.invalid`; null for the system's first commit), `authorName, coAuthorIds, subject, message, committedAt`, and `change: added \| modified \| deleted` when the path names one file (one `git log --name-status` for the whole page; null for a folder). `limit` 1 to 100 (default 30), `cursor` is `nextCursor` (the last sha of the page). Readable by anyone who can read the team |
+| `GET /api/teams/:slug/repo/diff?path=&from=&to=` | one file between two commits as **unified hunks** (`GetRepoDiffResponse`: `status`, `additions`, `deletions`, `hunks[{ oldStart, oldLines, newStart, newLines, header, lines[{ type: context \| add \| del, text, oldLine, newLine }] }]`, `binary`, `truncated` at the 8 MB output cap). `to` defaults to `main`; `from` defaults to the parent of `to` (a root commit diffs against nothing). The parser (`src/diff.ts`) is one linear pass with a hostile-input timing test. A **rendered Markdown diff** is made by the client from the two versions (`blob?ref=<sha>`) |
+| `POST /api/teams/:slug/repo/restore` | `{ path, sha, message? }` (strict): puts `path` back as it was at `sha` (the file is **deleted** if it did not exist then) as a **new commit by the caller**: 201 `RestoreRepoFileResponse` (a commit response plus `restoredFromSha`), 200 `noop: true` when it already is as it was; old commits stay. It is a write like any other, so the writer rules apply: a member cannot restore `bots/` or `TEAM.md` (403, change by pull request), a bot goes through the broker, an unknown commit is 404, a folder is 400. 60 per minute |
+
+`channels/` is **reserved** (400 on write, any case): the Files tree shows channel attachments there ([files.md](./files.md)), so a repo file of that name would hide or be hidden. The provider has `list(tx, teamId, folder)`: the
+files and folders directly below a folder from the index (one grouped query over `repo_entries` joined to `repo_commits`: size, blob, the commit time and author of the last change, a folder's newest below it; `.gitkeep` is
+never a row; a folder that does not exist is 404). `write` takes `options.capability` (`files.write` default, `pages.write` for [pages](./pages.md)).
 
 Refusals are returned as the error envelope without rolling the request back, so a repository the request had to create (its first commit is already in git) keeps its index rows.
 
@@ -107,4 +115,5 @@ history is skipped, so a person's later edit is never undone. Needs `git` in the
 
 
 `test/git.test.ts` (real git in temp dirs: CAS, hooks and environment ignored, timeouts, caps, pool, paths), `test/repo-api.test.ts` and `test/repo-service.test.ts` (layout, authorship, 20 concurrent writes,
-two replicas, conflicts, binary, bot guard through the real broker, catch-up after a rolled-back write, restore), `test/rls`, `test/events`, `test/provider.test.ts`; `e2e/api/repo/{concurrency,bot-path-guard}.spec.ts`.
+two replicas, conflicts, binary, bot guard through the real broker, catch-up after a rolled-back write, restore), `test/rls`, `test/events`, `test/provider.test.ts`, `test/repo-history.test.ts` (history, diff, restore, content, `channels/` reserved), `test/diff.test.ts` (patch parser, hostile input);
+`e2e/api/repo/{concurrency,bot-path-guard,pages-write}.spec.ts`.

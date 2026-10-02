@@ -87,7 +87,7 @@ when the host has no broker. Declare the capability in your manifest (`files.wri
 ### Using another plugin's provider
 
 `ctx.providers.get('storage')` returns what some plugin registered with `ctx.providers.register('storage', impl)` (the first, in load order), or `undefined`. Look it up when a request arrives,
-not in `register`: the provider's plugin may load after yours. It needs no `extends` entry (using a provider is not providing one). The files plugin uses it for attachment bytes; `ctx.providers.get<RepoProvider>('repo')` is the team repo's one writer ([repo-git.md](./repo-git.md)).
+not in `register`: the provider's plugin may load after yours. It needs no `extends` entry (using a provider is not providing one). The files plugin uses it for attachment bytes; `ctx.providers.get<RepoProvider>('repo')` is the team repo's one writer ([repo-git.md](./repo-git.md)); a plugin that offers a repo write under its own capability passes `{ capability: 'pages.write' }` (see [pages.md](./pages.md)).
 
 ### Cohesion services: read state, entity links, live push
 

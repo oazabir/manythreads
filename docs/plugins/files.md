@@ -3,7 +3,7 @@
 Attachments of channels: the `files` table, the upload and download routes, and the link from a message to its files (SPEC section 5.2 and principle 8, PLAN P3-08).
 Code: `packages/plugins/files`. Schemas: `packages/shared/src/{entities/file,api/files,events/files.file.*}`. The bytes live in the storage provider registered as
 `storage` (`storage-local` by default, [storage-s3](./storage-s3.md) with `MANYTHREADS_STORAGE=s3`; see [storage-local.md](./storage-local.md) for the interface); this plugin owns everything about people, channels and names. Phase 4 adds the
-team repo and a tree over both stores; attachments never go to git.
+team repo and a tree over both stores (below); attachments never go to git.
 
 ## Who reads a file
 
@@ -127,6 +127,29 @@ The GC knows only the `files` table. A plugin that stores blob keys elsewhere (n
 check before it ships, or its blobs would be collected. `.tmp/*.part` files of crashed uploads (storage-local) are not blobs and are not listed; delete `.part` files older than a few
 minutes by hand or with a cron job.
 
+## The Files tree (`src/tree.ts`, PLAN P4-06)
+
+`GET /api/teams/:slug/files/tree?path=&limit=` (`GetFilesTreeResponse`: `{ path, folder, entries, truncated }`) is **one listing over two stores** with **one row shape** (`FilesTreeEntry`): `kind` (file | folder), `path`, `name`, `size`,
+`mime`, `updatedAt`, `updatedBy`, `source` (`repo` | `attachment`), `readOnly`, `readOnlyReason`, `managedBy`, and the ids that apply (`fileId`, `channelId`, `blobSha`), plus `contentUrl`, a URL that serves the bytes
+(`/api/files/:id/content` or `/api/teams/:slug/repo/content?path=`), so an `<img src>` works for both. Folders first, then names (byte order); `limit` (default 500, at most 2,000) cuts the list and says `truncated`.
+`folder` says what is true of the folder being listed (the breadcrumb's last step).
+
+| Path | Rows come from | Access |
+|---|---|---|
+| `` (root) | the repo's root through the `repo` provider (`list`), plus a `channels` folder | team membership (the team row through RLS) |
+| a repo folder (`pages`, `memory/facts`, ...) | the provider (the `repo_entries` index with the last commit of each file) | team membership; a missing folder, or a file asked as a folder, is 404 |
+| `channels` | one folder per channel of the team the caller can read, with its newest upload | the channels RLS shows (`app.channels`); `can_post` from `app.visible_channel_ids('post')` decides `readOnly` of the folder |
+| `channels/<name>` | the channel's `files` rows, `path = channels/<current name>/<file name>` (the tree follows `channel_id`, not the stored `folder_path`) | the channel's ACL **on every read**: a private channel, a guest without a grant and a name that does not exist are all **403**, indistinguishable |
+| `channels/<name>/x` | none: attachment folders are flat | 404 |
+
+- **Criterion 6**: Lena (guest, in no team) is 403 on `#dev` attachments and on the team's tree (the team is not hers to read); Nadia is 403 on Marketing's tree; a team member sees `channels/` without the private channels she is not in.
+- **Read-only** (`readOnly` + `readOnlyReason`): `change_by_pull_request` for `bots/`, `skills/`, `routines/` and `TEAM.md` for a member who is not a lead or admin (a direct write is 403; criterion 9: Priya), `attachment` for every attachment row and the
+  `channels` folder (an upload never changes in place), `no_write_access` for a reader who cannot post (also the channel folders). `managedBy: 'team_memory'` marks `memory/` and everything below it (the journal is written by
+  the team's memory; facts stay editable, so it is a note, not `readOnly`).
+- Files of a team that belong to no channel (`files.channel_id IS NULL`) have no upload route yet and are not listed.
+- The repo part is optional: without a `repo` provider the root lists `channels` alone and any repo folder is 503. `channels/` in the repo is refused by the writer, so the two never collide. A channel renamed after an upload keeps
+  the old `folder_path`; two files of one name under the old and the new folder would show as the same path (distinct `fileId`s): rare, not handled.
+
 ## Entity link
 
 `ctx.links.registerResolver('file', ...)`: title is the name, subtitle `#channel · 2.1 MB`, href `/t/<team>/c/<name>?panel=file:<id>` (null for a DM). It runs as the caller, so a file in a
@@ -150,10 +173,10 @@ person, in the transaction of the change; a refused request emits nothing.
 
 ## Not here
 
-Folder tree, viewers, rename and move, team files and the repo (phase 4). Virus scanning and thumbnails. A cleanup of `.tmp/*.part` files of crashed uploads (see storage-local). Range requests for video seeking. Quotas per person or team.
+Rename and move, team files without a channel (the `files.team_id`-only rows have no upload route yet). Virus scanning and thumbnails. A cleanup of `.tmp/*.part` files of crashed uploads (see storage-local). Range requests for video seeking. Quotas per person or team.
 
 ## Tests
 
 `test/files-api.test.ts` (upload and download, 413 mid-stream and by `content-length`, ACL for Sameera, Lena (grant, read-only, revoke), a private channel, a DM, archived, traversal and
 control characters in names, delete, attachments on messages), `test/rls/files-rls.test.ts` (`pnpm test:rls`: visibility per persona equals the channel set, writes, triggers, checks),
-`test/gc.test.ts` (hidden deleted-message files, the GC: grace, dry run, cascades, purge after 30 days, paging, the empty-database guard, the job through the worker and its log line), `test/events/files-events.test.ts` (`pnpm test:events`), `e2e/api/files/attach-acl.spec.ts` (`pnpm e2e --project=api`, including a real 51 MB upload).
+`test/gc.test.ts` (hidden deleted-message files, the GC: grace, dry run, cascades, purge after 30 days, paging, the empty-database guard, the job through the worker and its log line), `test/events/files-events.test.ts` (`pnpm test:events`), `test/files-tree.test.ts` (the merged tree, rows, read-only reasons, ACL per folder), `e2e/api/files/attach-acl.spec.ts` (`pnpm e2e --project=api`, including a real 51 MB upload), `e2e/api/files/tree.spec.ts`.
