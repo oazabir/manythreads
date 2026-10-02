@@ -52,10 +52,12 @@ base64), restart, then run it. It only enqueues the `kms.rewrap` job (one at a t
 `MANYTHREADS_KMS_PREVIOUS_KEYS` yet, so for now it is set on the Deployment by hand during a rotation.
 
 **Demo seed.** A post-install/post-upgrade Job (`seed.demo`, default true) runs `pnpm seed --demo` from the server image once the
-server is ready: workspace Kahf Software, seven personas, three teams with their template definitions. It is idempotent (a second run
+server is ready: workspace Kahf Software, seven personas, three teams with their template definitions, and their conversations (seed v3:
+the template channels, about 40 messages in each, the "Deploy plan" thread, a private channel, a DM, a 5,000-message `#load-test`, Lena's
+read grant on `#releases`, reactions and mentions; `--no-attachment` because the Job's disk is not the server's blob directory). It is idempotent (a second run
 changes nothing and never replaces a password) and every persona gets a random password that is stored only as an argon2id hash and
 printed nowhere, so the public site has no known credentials. The first-admin bootstrap link is not offered once the workspace exists.
-Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--migrate] [--wait <secs>]`.
+Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-attachment] [--migrate] [--wait <secs>]`.
 
 ## Screenshots of the live site
 `.github/workflows/screenshots.yml` runs when `release` completes successfully for a `Phase N ·` merge (and by hand: Actions, screenshots,

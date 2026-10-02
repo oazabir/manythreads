@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
 import {
   GetNotificationPrefsResponse,
   GetNotificationSummaryResponse,
@@ -8,6 +7,10 @@ import {
   type Notification,
 } from '@manythreads/shared';
 import { personas, type Persona } from '@manythreads/test-utils';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+useIsolatedStack();
 
 /**
  * The notifications inbox over HTTP (PLAN P3-09, spec e2e/channels/mentions-notifications.spec.ts at API level): Tariq mentions Priya, a

@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { type APIRequestContext } from '@playwright/test';
 import { personas, type Persona } from '@manythreads/test-utils';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+useIsolatedStack();
 
 /**
  * Attachments through the HTTP API (PLAN criterion 7, spec e2e/files/attach.spec.ts, API part): a file is uploaded as a raw byte stream, the

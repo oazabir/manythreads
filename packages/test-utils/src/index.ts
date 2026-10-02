@@ -6,3 +6,5 @@ export * from './server.ts';
 export * from './client.ts';
 export * from './fake-oidc.ts';
 export * from './seed.ts';
+export * from './seed-content.ts';
+export type { SeedAuthor, SeedLine } from './seed-data.ts';

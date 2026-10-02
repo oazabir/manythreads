@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
 import { ListThreadsResponse, GetThreadResponse } from '@manythreads/shared';
 import { personas, type Persona } from '@manythreads/test-utils';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+useIsolatedStack();
 
 /**
  * The Threads inbox over HTTP (PLAN criterion 4, spec e2e/threads/inbox.spec.ts, API level): follow, reply by another, then the three

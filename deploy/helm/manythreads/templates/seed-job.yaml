@@ -1,8 +1,9 @@
 {{- if and .Values.server.enabled .Values.seed.demo }}
 {{- /*
   Demo seed: after every install and upgrade, once the server has migrated, `pnpm seed --demo` creates workspace Kahf
-  Software, the seven personas and three teams if they are not there (idempotent, random unknown passwords, nothing is
-  printed). Runs the server image; --wait covers a slow first migration.
+  Software, the seven personas, three teams and their conversations (channels, about 40 messages each, a thread, a DM, a
+  5,000-message channel) if they are not there (idempotent, random unknown passwords, nothing is printed). Runs the server
+  image; --wait covers a slow first migration. --no-attachment: this pod's filesystem is not the server's blob directory.
 */ -}}
 apiVersion: batch/v1
 kind: Job
@@ -30,7 +31,7 @@ spec:
         - name: seed
           image: {{ .Values.server.image }}:{{ .Values.imageTag }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          command: ["pnpm", "seed", "--demo", "--wait", "600"]
+          command: ["pnpm", "seed", "--demo", "--wait", "600", "--no-attachment"]
           env:
             - name: OWNER_PW
               valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }

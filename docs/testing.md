@@ -82,20 +82,56 @@ pod (`kubectl exec -i deploy/manythreads-server -- ...`, see `remote_set_passwor
 checkout against `pnpm db:up`. Locally against a stack: `MANYTHREADS_LIVE_URL=<origin> MANYTHREADS_LIVE_PASSWORD=<pw> pnpm -C e2e exec
 playwright test -c screens/live.config.ts`.
 
-## Seed v2 and `pnpm seed`
+## Seed v3 and `pnpm seed`
 
-`seedWorld(db, { demo })` (`packages/test-utils/src/seed.ts`, re-exported by `e2e/fixtures/seed.ts`) builds workspace **Kahf Software**:
+`seedWorld(db, { demo, content })` (`packages/test-utils/src/seed.ts`, re-exported by `e2e/fixtures/seed.ts`) builds workspace **Kahf Software**:
 teams Engineering, Customer support and Marketing (each with the template it was created from), the seven personas of PLAN.md section 4
 with workspace roles, team seats, role tags and argon2id passwords, and a **verified `person_emails` row** per persona so OIDC can link
 identities (Tariq also has `tariq@kahf.co`, his Google Workspace and Microsoft login; everyone else uses `<name>@kahf.example`). Ids are
 fixed (`personas.ts`). It is idempotent, never replaces a password, and does nothing in a database that holds another workspace.
 `createPersonas(db, { passwords: 'random', verifiedEmails: true })` is the building block.
 
+With `content: true` (what `pnpm seed` does by default; `--no-content` turns it off) it also writes **seed v3** (`seed-content.ts`, the
+words in `seed-data.ts`), straight into the tables as the system role, with fixed ids (`SEED_IDS`) and stable times, so a second run adds
+not one row. It needs the plugin tables, so it runs after the server's migrations (the stack and the Helm Job arrange that; with the
+tables missing `SeedResult.content.skipped` says so and nothing is written):
+
+| What | Content |
+|---|---|
+| Channels | the template channels of the three teams (Engineering: #general #dev #releases #incidents #alerts #standup; Customer support: #support #escalations #enquiries #kb-updates; Marketing: #campaigns #content #social #analytics #brand), about 40 messages each from the people of that team; #dev talks about the cache TTL, the rollback and the rota, #support about customers, #content about the launch post |
+| Thread | **"Deploy plan"** in #dev (root by Nadia, with `deploy-plan-v2.14.pdf` attached), 12 replies from Nadia, Rafi and Omar; Rafi has the last reply unread |
+| Private channel | `#eng-leads`: Omar and Nadia only |
+| DM | Nadia and Rafi; Rafi's last line is "Check the rota?" and it is unread for Nadia |
+| Big channel | `#load-test` in Engineering: 5,000 messages generated in SQL (one statement) |
+| Guest | Lena's `read` grant on `#releases` (a few dozen release announcements) |
+| Extras | reactions, `@rafi` mentions (Rafi's bell: one mention, one thread reply, unread), read state so nobody sees a "New" divider above old messages |
+
+Timestamps: ids always carry the same times (history starts Monday 2026-03-02 09:00 UTC, ten working days, `#load-test` after it).
+`created_at` is the same with `MANYTHREADS_CLOCK=fixed` (or `contentOptions: { baseDate }`); otherwise the newest message is half an
+hour old, so a demo site reads like a live team. The attachment is written to `MANYTHREADS_STORAGE_DIR` (default `./data/blobs`) where
+`storage-local` looks; `--no-attachment` leaves it (and its card) out for a process that does not share the server's disk.
+
 ```
-pnpm seed                     # DATABASE_URL (default: dev compose Postgres), everyone has PERSONA_PASSWORD
+pnpm seed                     # DATABASE_URL (default: dev compose Postgres), everyone has PERSONA_PASSWORD, with content
 pnpm seed --demo              # random passwords, hashed and printed nowhere (public deployments)
-pnpm seed --migrate --wait 60 # apply kernel migrations first / wait for the server's migrations
+pnpm seed --no-content        # workspace, teams and people only
+pnpm seed --migrate --no-content --wait 60   # apply kernel migrations first / wait for the server's migrations
 ```
+
+## Isolated stacks for api specs, and ports
+
+The Playwright `api` project shares one server (`api/support/start-server.ts`, personas only). Specs on it must not change what a persona
+can see (no channels, posts, follows, grants, uploads, providers): a spec that writes calls `useIsolatedStack()` from
+`e2e/api/support/isolated.ts` and gets, for that spec file, a server and database of its own (`fixtures/stack.ts`), dropped when the file
+ends. It re-exports `test` and `expect` (`request` and `baseURL` then point at the file's server); `await iso.start()` returns the
+`Stack` (`origin`, owner `sql()`). `useIsolatedStack({ MANYTHREADS_STACK_SEED: 'content' })` seeds seed v3 instead of the bare people.
+`fixtures/stack-server.ts` takes `MANYTHREADS_STACK_SEED` (`world` default, `content`, `personas`, `none`), `MANYTHREADS_STACK_API_ONLY`,
+`MANYTHREADS_STACK_DEV_AUTH` and `MANYTHREADS_STACK_TEST_PLUGINS` (the isolated api stacks set the last three).
+
+Ports are free ports picked when the Playwright config loads (`support/ports.ts`; the choice travels to the workers in
+`MANYTHREADS_E2E_PORTS`), so two runs at once do not meet on a fixed number. Pin them with `MANYTHREADS_API_PORT` (+1, +2) and
+`MANYTHREADS_WEB_PORT` (+1, +2). For two runs side by side also set `MANYTHREADS_E2E_AUTH_DIR`, `MANYTHREADS_E2E_OUTPUT_DIR` and
+`PLAYWRIGHT_HTML_REPORT` to directories of their own.
 
 ## Browser specs with their own origin (OIDC, break-glass)
 

@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
 import { personas, type Persona } from '@manythreads/test-utils';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+useIsolatedStack();
 
 /**
  * Cursor pagination of a 5,000-message channel (PLAN criterion 9, spec e2e/api/messages/pagination.spec.ts): newest first,

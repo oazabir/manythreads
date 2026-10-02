@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { type APIRequestContext } from '@playwright/test';
 import { personas, type Persona } from '@manythreads/test-utils';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+useIsolatedStack();
 
 /**
  * Row level security of channels and messages through the HTTP API (PLAN criteria 3, 8 and 10; spec

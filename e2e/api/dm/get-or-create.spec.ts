@@ -1,6 +1,9 @@
-import { expect, test } from '@playwright/test';
 import { OpenDmResponse, ListDmsResponse } from '@manythreads/shared';
 import { personas, type Persona } from '@manythreads/test-utils';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Writes data (channels, messages, ...): its own server and database for this file (api/support/isolated.ts).
+useIsolatedStack();
 
 /**
  * Opening the same direct message twice, even concurrently, makes one row (PLAN criterion 5, spec e2e/dm/get-or-create.spec.ts, API
