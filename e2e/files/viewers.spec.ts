@@ -11,7 +11,8 @@ test.skip(({ isMobile }) => isMobile, 'desktop layout; the phone layout of the v
 function watch(page: Page): string[] {
   const problems: string[] = [];
   page.on('console', (m) => {
-    if (m.type() === 'error') problems.push(`console: ${m.text()}`);
+    // the embedded app probes its own sandbox on load: its refused fetch is the CSP doing its job, not a defect of the page
+    if (m.type() === 'error' && !m.location().url.includes('/repo/app/')) problems.push(`console: ${m.text()}`);
   });
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
   return problems;

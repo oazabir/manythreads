@@ -53,6 +53,7 @@ test('the app is sandboxed, cannot read the session or call /api, and the bridge
 
 test('the content route answers with the strict CSP, and only the allowlisted bridge method works', async ({ page }) => {
   await page.goto('/dev/viewers');
+  await expect(page.getByTestId('dev-viewer-app').locator('iframe')).toBeAttached();
   const res = await page.request.get(APP);
   expect(res.status()).toBe(200);
   const csp = res.headers()['content-security-policy'] ?? '';

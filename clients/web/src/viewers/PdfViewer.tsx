@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
+// The legacy build runs on the WebViews the Capacitor and Tauri shells use (the modern one needs very recent engine features).
+import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // The worker is a file of this build (an asset of our origin), never a CDN.
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import type { ViewerProps } from '../kernel/viewers';
 import { ViewerMessage } from './common';
 import { baseName } from './mime';
