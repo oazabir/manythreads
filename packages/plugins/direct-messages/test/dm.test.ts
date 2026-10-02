@@ -1,4 +1,4 @@
-import { DirectMessageSummary, ListDmsResponse, OpenDmResponse } from '@manythreads/shared';
+import { type ChannelId, DirectMessageSummary, ListDmsResponse, OpenDmResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, ensureChannels, personas, type ApiResult, type Persona, type World } from '../../channels/test/world.ts';
 
@@ -97,7 +97,7 @@ describe('POST /api/dms: get-or-create (criterion 5)', () => {
 });
 
 describe('direct messages are private', () => {
-  let dm = '';
+  let dm = '' as ChannelId;
   beforeAll(async () => {
     dm = (await opened(nadia, rafi)).dm.channel.id;
     expect((await send(nadia, dm, 'Check the rota?')).status).toBe(201);
