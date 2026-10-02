@@ -47,9 +47,11 @@ CREATE TABLE app.repo_commits (
   message      text NOT NULL,
   committed_at timestamptz NOT NULL,
   paths        text[] NOT NULL DEFAULT '{}',
+  -- git dates have one-second resolution; the order the index learned of commits breaks ties (newest first)
+  seq          bigint GENERATED ALWAYS AS IDENTITY,
   PRIMARY KEY (team_id, sha)
 );
-CREATE INDEX repo_commits_team_time ON app.repo_commits (team_id, committed_at DESC);
+CREATE INDEX repo_commits_team_time ON app.repo_commits (team_id, committed_at DESC, seq DESC);
 CREATE INDEX repo_commits_committed_brin ON app.repo_commits USING brin (committed_at);
 CREATE INDEX repo_commits_paths ON app.repo_commits USING gin (paths);
 CREATE INDEX repo_commits_author ON app.repo_commits (author_id) WHERE author_id IS NOT NULL;

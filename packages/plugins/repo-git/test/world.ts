@@ -51,7 +51,7 @@ export async function createRepoWorld(): Promise<RepoWorld> {
   const repoDir = process.env['MANYTHREADS_REPO_DIR'] ?? '';
   await seedWorld(server.db);
   const systemPool: pg.Pool = createSystemPool(server.db.systemUrl, 2);
-  const appPool: pg.Pool = createAppPool(server.db.appUrl, 30);
+  const appPool: pg.Pool = createAppPool(server.db.appUrl, 8);
   const call: RepoWorld['call'] = async (who, method, path, body) => {
     const headers: Record<string, string> = { ...headerFor(who) };
     if (body !== undefined) headers['content-type'] = 'application/json';

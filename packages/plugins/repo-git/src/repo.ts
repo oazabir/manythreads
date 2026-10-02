@@ -142,6 +142,8 @@ export function createRepoService(deps: RepoServiceDeps) {
       authorId: string | null;
       coAuthorIds: string[];
       stampPending: boolean;
+      /** `changes` is the whole tree (a first commit over an index that remembers a lost repository): the file index is replaced. */
+      replaceAll?: boolean;
     },
   ): Promise<RepoWriteResult['paths']> {
     const info = await git.commitInfo(gitDir, args.sha);
@@ -166,13 +168,14 @@ export function createRepoService(deps: RepoServiceDeps) {
         paths: args.changes.map((c) => c.path),
       },
     ];
-    await tx.query('SELECT app.repo_index_apply($1, $2, $3, $4::jsonb, $5::jsonb, $6::text[], false, $7)', [
+    await tx.query('SELECT app.repo_index_apply($1, $2, $3, $4::jsonb, $5::jsonb, $6::text[], $7, $8)', [
       t.id,
       args.expectedHead,
       args.sha,
       JSON.stringify(commits),
       JSON.stringify(upserts),
       deletes,
+      args.replaceAll === true,
       args.stampPending,
     ]);
     await deps.emit(tx, {
@@ -192,7 +195,7 @@ export function createRepoService(deps: RepoServiceDeps) {
   }
 
   /** The first commit: TEAM.md (the pending one, the template's, or a minimal manifest) and the section 5.1 layout. */
-  async function bootstrap(tx: PluginTx, t: TeamInfo, gitDir: string): Promise<string> {
+  async function bootstrap(tx: PluginTx, t: TeamInfo, gitDir: string, dbHead: string | null): Promise<string> {
     const seedRow = (await tx.query<{ seed: Record<string, unknown> | null }>('SELECT app.repo_seed($1) AS seed', [t.id])).rows[0]?.seed;
     if (!seedRow) throw repoNotFound('Team not found');
     const files = initialFiles({
@@ -209,7 +212,7 @@ export function createRepoService(deps: RepoServiceDeps) {
       author: SYSTEM_IDENTITY,
     });
     if (made.noop) throw new RepoError(500, 'internal', 'the first commit was empty');
-    await record(tx, t, gitDir, { expectedHead: null, sha: made.sha, changes, authorId: null, coAuthorIds: [], stampPending: true });
+    await record(tx, t, gitDir, { expectedHead: dbHead, sha: made.sha, changes, authorId: null, coAuthorIds: [], stampPending: true, replaceAll: dbHead !== null });
     return made.sha;
   }
 
@@ -270,7 +273,7 @@ export function createRepoService(deps: RepoServiceDeps) {
       await git.initBare(gitDir);
     }
     const head = await git.resolve(gitDir, REPO_BRANCH);
-    if (!head) return { gitDir, head: await bootstrap(tx, t, gitDir) };
+    if (!head) return { gitDir, head: await bootstrap(tx, t, gitDir, row?.head_sha ?? null) };
     if ((row?.head_sha ?? null) !== head) await reindex(tx, t, gitDir, row?.head_sha ?? null, head);
     return { gitDir, head };
   }
@@ -374,7 +377,8 @@ export function createRepoService(deps: RepoServiceDeps) {
       }
     }
     const { identity, authorId } = await authorOf(tx, actor);
-    const co = [...new Map(coAuthors.filter((c) => UUID.test(c.actorId) && c.actorId !== authorId).map((c) => [c.actorId, c])).values()];
+    const co: CommitIdentity[] = [];
+    for (const c of coAuthors) if (UUID.test(c.actorId) && c.actorId !== authorId && !co.some((x) => x.actorId === c.actorId)) co.push(c);
 
     return queue.run(t.id, async () => {
       try {
@@ -558,7 +562,7 @@ export function createRepoService(deps: RepoServiceDeps) {
       },
       async commits(tx: PluginTx, teamId: string, limit = 50) {
         const res = await tx.query<RepoCommitRow & Record<string, unknown>>(
-          `SELECT ${REPO_COMMIT_COLUMNS} FROM app.repo_commits c WHERE c.team_id = $1 ORDER BY c.committed_at DESC, c.sha LIMIT $2`,
+          `SELECT ${REPO_COMMIT_COLUMNS} FROM app.repo_commits c WHERE c.team_id = $1 ORDER BY c.committed_at DESC, c.seq DESC LIMIT $2`,
           [teamId, limit],
         );
         return res.rows.map(toRepoCommit);
