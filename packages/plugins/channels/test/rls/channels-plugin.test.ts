@@ -491,3 +491,40 @@ describe('following a thread: thread_follows is the membership, read_state.follo
   });
 });
 
+
+describe('security review fixes (migration 0004)', () => {
+  it('a private team channel needs the team: removing someone from it ends their access, their pushes, and re-adding brings it back', async () => {
+    const eng = TEAM_IDS.Engineering;
+    expect(await visible(rafi)).toContain(ch['eng-leads']);
+    const row = await sys(async (tx) => (await tx.query<{ role: string; workspace_id: string }>(
+      'DELETE FROM app.team_members WHERE team_id = $1 AND actor_id = $2 RETURNING role, workspace_id', [eng, rafi.actorId])).rows[0]!);
+    try {
+      expect(await visible(rafi)).not.toContain(ch['eng-leads']);
+      expect(await visible(rafi, 'post')).not.toContain(ch['eng-leads']);
+      expect(await q(rafi, 'SELECT id FROM app.messages WHERE id = $1', [msg['leads']])).toEqual([]);
+      expect((await q(rafi, 'SELECT person_id FROM app.channel_members WHERE channel_id = $1', [ch['eng-leads']])).map((r) => r['person_id'])).toEqual([rafi.personId]);   // only their own row (the policy's first branch)
+      const audience = await sys(async (tx) => (await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_audience($1)', [ch['eng-leads']])).rows.map((r) => r.person_id));
+      expect(audience).not.toContain(rafi.personId);
+      expect(audience).toContain(omar.personId);
+      expect(await visible(rafi)).toContain(ch['dm-nr']);   // a DM has no team: untouched
+    } finally {
+      await sys((tx) => tx.query('INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, $4)', [eng, rafi.actorId, row.workspace_id, row.role]));
+    }
+    expect(await visible(rafi)).toContain(ch['eng-leads']);
+  });
+
+  it('the title of a thread follows its root: deleting or editing the root removes the old text', async () => {
+    const root = await sys(async (tx) => (await tx.query<{ id: string }>(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'the launch code is 1234', 'the launch code is 1234') RETURNING id`,
+      [omar.workspaceId, ch['eng-general'], nadia.actorId])).rows[0]!.id);
+    await as(rafi, (tx) => tx.query(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id) VALUES ($1, $2, $3, 'ok', 'ok', $4)`,
+      [rafi.workspaceId, ch['eng-general'], rafi.actorId, root]));
+    const title = (): Promise<string> => q<{ title: string }>(rafi, 'SELECT title FROM app.threads WHERE root_message_id = $1', [root]).then((r) => r[0]!.title);
+    expect(await title()).toBe('the launch code is 1234');
+    await as(nadia, (tx) => tx.query("UPDATE app.messages SET body = 'the launch is scheduled', body_plain = 'the launch is scheduled', edited_at = now() WHERE id = $1", [root]));
+    expect(await title()).toBe('the launch is scheduled');
+    await as(nadia, (tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [root]));
+    expect(await title()).toBe('[deleted]');
+  });
+});

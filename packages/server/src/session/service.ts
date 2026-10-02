@@ -30,6 +30,11 @@ export interface SessionService extends SessionIssuer {
   now(): Date;
   /** Cookie token -> live session, or why not. Touches `last_seen_at` and rotates old tokens as a side effect. */
   resolve(token: string): Promise<ResolveResult>;
+  /**
+   * Which of these sessions are still live right now (not revoked, not expired, not idle, person still active). Read only: it touches
+   * nothing, so an open WebSocket can be re-checked without keeping its session alive or rotating its token.
+   */
+  live(sessionIds: readonly string[]): Promise<Set<string>>;
 }
 
 export interface SessionServiceOptions {
@@ -188,6 +193,19 @@ export function createSessionService(options: SessionServiceOptions): SessionSer
       );
       await endSessions(t, res.rows.map((r) => r.id));
       return res.rows.filter((r) => isLive(r, now)).length;
+    },
+
+    async live(sessionIds) {
+      if (sessionIds.length === 0) return new Set();
+      const now = clock();
+      const res = await run((tx) =>
+        tx.query<{ id: string }>(
+          `SELECT s.id FROM app.sessions s JOIN app.people p ON p.id = s.person_id AND p.workspace_id = s.workspace_id
+            WHERE s.id = ANY($1::uuid[]) AND s.revoked_at IS NULL AND p.status = 'active' AND s.expires_at > $2 AND s.last_seen_at > $3`,
+          [sessionIds, now, new Date(now.getTime() - config.idleMs)],
+        ),
+      );
+      return new Set(res.rows.map((r) => r.id));
     },
 
     resolve(token: string): Promise<ResolveResult> {

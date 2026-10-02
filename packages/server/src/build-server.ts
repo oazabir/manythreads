@@ -74,6 +74,11 @@ export interface BuildServerOptions {
    * (`realtime.start(pool)`) so pushes from every replica arrive; default: a registry nobody feeds.
    */
   realtime?: Realtime;
+  /**
+   * How often the sockets of cookie sessions are re-checked (default 15 s): a socket whose session was signed out, revoked, expired, went
+   * idle, or whose person was suspended is closed (1008) within one interval. 0 turns the check off.
+   */
+  wsRevalidateMs?: number;
   /** Replace the in-memory limiter (tests). Each server builds its own by default: limits are per replica. */
   limiter?: RateLimiter;
   /** Migration files the kernel and loaded plugins ship; /readyz fails while fewer are applied. */
@@ -127,7 +132,8 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     openapi: { info: { title: 'manythreads', version: '0.0.0' } },
     transform: jsonSchemaTransform,
   });
-  await app.register(websocket);
+  // Frames are small envelopes (ping): `ws` would otherwise take 100 MiB per frame, from anybody (the route is public: it only answers pings).
+  await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
   await app.register(cookie);
 
   app.addHook('onRequest', async (req, reply) => {
@@ -211,6 +217,51 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     () => app.swagger(),
   );
 
+  // Sockets that rode in on a cookie session, by session id. One timer re-checks all of them with ONE read-only query per interval,
+  // so a sign-out, 'sign out everywhere', an admin revoke or a suspension ends the live stream instead of leaving it open.
+  const sessionSockets = new Map<string, Set<() => void>>();
+  const revalidateMs = options.wsRevalidateMs ?? 15_000;
+  let revalidateTimer: ReturnType<typeof setInterval> | undefined;
+  let revalidating = false;
+  const revalidateSockets = async (): Promise<void> => {
+    if (revalidating || !sessions || sessionSockets.size === 0) return;
+    revalidating = true;
+    try {
+      const ids = [...sessionSockets.keys()];
+      const live = await sessions.live(ids);
+      for (const id of ids) {
+        if (live.has(id)) continue;
+        for (const end of [...(sessionSockets.get(id) ?? [])]) end();
+      }
+    } catch {
+      // The database was unreachable for this round: keep the sockets, check again at the next one (a failed check is not a revoke).
+    } finally {
+      revalidating = false;
+    }
+  };
+  const trackSocket = (sessionId: string, end: () => void): (() => void) => {
+    let set = sessionSockets.get(sessionId);
+    if (!set) sessionSockets.set(sessionId, (set = new Set()));
+    set.add(end);
+    if (!revalidateTimer && revalidateMs > 0) {
+      revalidateTimer = setInterval(() => void revalidateSockets(), revalidateMs);
+      revalidateTimer.unref();
+    }
+    return () => {
+      const current = sessionSockets.get(sessionId);
+      current?.delete(end);
+      if (current && current.size === 0) sessionSockets.delete(sessionId);
+      if (sessionSockets.size === 0 && revalidateTimer) {
+        clearInterval(revalidateTimer);
+        revalidateTimer = undefined;
+      }
+    };
+  };
+  app.addHook('onClose', () => {
+    if (revalidateTimer) clearInterval(revalidateTimer);
+    revalidateTimer = undefined;
+  });
+
   // WebSocket: every frame is a validated { type, id, payload } envelope, in both directions.
   hub.on('ping', (msg) => WsEnvelope.parse({ type: 'pong', id: msg.id, payload: msg.payload }));
   typed.get('/ws', { websocket: true, config: { public: true } }, (socket, req) => {
@@ -224,7 +275,20 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     }
     // A signed-in person's sockets receive live pushes (read state, notifications). The upgrade request carried the cookie.
     let detach: (() => void) | undefined;
+    let untrack: (() => void) | undefined;
     let closed = false;
+    // Ending a socket for a dead session stops its pushes at once (it does not wait for the peer to finish the close handshake).
+    const endForSession = (): void => {
+      closed = true;
+      detach?.();
+      untrack?.();
+      try {
+        socket.close(1008, 'session ended');
+      } catch {
+        /* already closing */
+      }
+    };
+    if (req.authSession && sessions) untrack = trackSocket(req.authSession.sessionId, endForSession);
     if (req.actor && req.actor.kind === 'person') {
       const actor = req.actor;
       const known = req.authSession?.personId ?? null;
@@ -238,6 +302,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     socket.on('close', () => {
       closed = true;
       detach?.();
+      untrack?.();
     });
     socket.on('message', (data: Buffer) => {
       void hub.receive(peer, data.toString());

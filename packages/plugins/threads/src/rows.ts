@@ -38,10 +38,10 @@ export const toChannelMessage = (r: MessageRow, reactions: readonly ReactionSumm
     threadRootId: r.thread_root_id,
     editedAt: iso(r.edited_at),
     deletedAt: iso(r.deleted_at),
-    meta: r.meta,
+    meta: r.deleted_at ? {} : r.meta,
     createdAt: r.created_at.toISOString(),
     reactions,
-    attachments,
+    attachments: r.deleted_at ? [] : attachments,
     replyCount: r.reply_count ?? 0,
     lastReplyAt: iso(r.last_reply_at),
   });

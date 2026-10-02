@@ -34,6 +34,46 @@ export function maxUploadBytes(env: Record<string, string | undefined> = process
   return Number.isSafeInteger(v) && v > 0 ? v : DEFAULT_MAX_UPLOAD_BYTES;
 }
 
+/**
+ * An upload holds a database connection (the request's transaction) for as long as the body takes to arrive, so a client that sends one byte
+ * a minute could pin the whole pool. Three bounds keep that small: at most `maxConcurrentUploads` bodies in flight in this process and
+ * `MAX_UPLOADS_PER_ACTOR` per person (429 beyond), a stall (no bytes for `uploadIdleMs`) and a total time (`uploadMaxMs`) after which the
+ * request is cut and the connection is released. Read per request so an operator or a test can change them.
+ */
+export const MAX_UPLOADS_PER_ACTOR = 2;
+const intEnv = (name: string, fallback: number, env: Record<string, string | undefined> = process.env): number => {
+  const v = Number(env[name]);
+  return Number.isSafeInteger(v) && v > 0 ? v : fallback;
+};
+export const maxConcurrentUploads = (): number => intEnv('MANYTHREADS_MAX_CONCURRENT_UPLOADS', 4);
+export const uploadIdleMs = (): number => intEnv('MANYTHREADS_UPLOAD_IDLE_MS', 20_000);
+export const uploadMaxMs = (): number => intEnv('MANYTHREADS_UPLOAD_MAX_MS', 600_000);
+
+const uploadsByActor = new Map<string, number>();
+let uploadsInFlight = 0;
+/** Takes an upload slot for `actorId`, or null when this person or this process has too many bodies in flight. Call the result when done. */
+function takeUploadSlot(actorId: string): (() => void) | null {
+  const mine = uploadsByActor.get(actorId) ?? 0;
+  if (uploadsInFlight >= maxConcurrentUploads() || mine >= MAX_UPLOADS_PER_ACTOR) return null;
+  uploadsInFlight += 1;
+  uploadsByActor.set(actorId, mine + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    uploadsInFlight -= 1;
+    const left = (uploadsByActor.get(actorId) ?? 1) - 1;
+    if (left <= 0) uploadsByActor.delete(actorId);
+    else uploadsByActor.set(actorId, left);
+  };
+}
+
+class UploadStalledError extends Error {
+  constructor() {
+    super('The upload stalled or took too long');
+  }
+}
+
 type ChannelInfo = { id: string; name: string; kind: string; team_id: string | null; archived_at: Date | null; can_post: boolean };
 
 /** The channel as the caller sees it (row level security), with their post permission; 403 for a missing or hidden one. */
@@ -66,15 +106,32 @@ type ReadableLike = AsyncIterable<Uint8Array> & {
  * The request body for the blob store: remembers the first bytes (for the type sniff) and, unlike iterating a Node stream directly, does
  * not destroy the socket when the reader stops early, so a refusal (413) can still be sent. `drain` then discards what is left.
  */
-function tapped(source: AsyncIterable<Uint8Array>): { stream: AsyncIterable<Uint8Array>; head: () => Uint8Array; drain: () => void } {
-  const src = source as ReadableLike;
+function tapped(
+  source: AsyncIterable<Uint8Array>,
+  limits: { idleMs: number; maxMs: number } = { idleMs: uploadIdleMs(), maxMs: uploadMaxMs() },
+): { stream: AsyncIterable<Uint8Array>; head: () => Uint8Array; drain: () => void } {
+  const src = source as ReadableLike & { destroy?: () => unknown };
+  const deadline = Date.now() + limits.maxMs;
   const it = src.iterator ? src.iterator({ destroyOnReturn: false }) : source[Symbol.asyncIterator]();
   const HEAD = 32;
   let head = new Uint8Array(0);
   const stream: AsyncIterable<Uint8Array> = {
     [Symbol.asyncIterator]: () => ({
       async next() {
-        const r = await it.next();
+        const wait = Math.min(limits.idleMs, deadline - Date.now());
+        let timer: NodeJS.Timeout | undefined;
+        const stalled = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new UploadStalledError()), Math.max(wait, 0));
+        });
+        let r: IteratorResult<Uint8Array>;
+        try {
+          r = await Promise.race([it.next(), stalled]);
+        } catch (err) {
+          if (err instanceof UploadStalledError) src.destroy?.();   // a peer that stopped sending gets its socket cut, not drained
+          throw err;
+        } finally {
+          clearTimeout(timer);
+        }
         if (!r.done && head.length < HEAD) {
           const chunk = r.value;
           const merged = new Uint8Array(Math.min(HEAD, head.length + chunk.length));
@@ -120,6 +177,11 @@ export function registerFileRoutes(ctx: PluginContext): void {
       }
       const storage = storageOf(ctx);
       const name = sanitizeFileName(decodeHeaderName(req.headers['x-file-name']) ?? query.name);
+      const release = takeUploadSlot(tx.actor.id);
+      if (!release) {
+        (source as ReadableLike).resume?.();
+        throw new HttpError(429, 'rate_limited', 'Too many uploads at once: wait for one to finish');
+      }
       const body = tapped(source);
       let stored;
       try {
@@ -128,6 +190,8 @@ export function registerFileRoutes(ctx: PluginContext): void {
         body.drain();
         if (err instanceof BlobTooLargeError) throw tooLarge(`That file is larger than the ${limit} byte limit`);
         throw invalid('The upload was interrupted');
+      } finally {
+        release();
       }
       const mime = decideMime(req.headers['content-type'], body.head());
       try {

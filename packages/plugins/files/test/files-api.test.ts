@@ -20,6 +20,8 @@ afterAll(async () => {
 });
 afterEach(() => {
   delete process.env['MANYTHREADS_MAX_UPLOAD_BYTES'];
+  delete process.env['MANYTHREADS_UPLOAD_IDLE_MS'];
+  delete process.env['MANYTHREADS_MAX_CONCURRENT_UPLOADS'];
 });
 
 const ok = <T>(res: ApiResult, status = 200): T => {
@@ -142,6 +144,61 @@ describe('the size cap', () => {
     expect(DEFAULT_MAX_UPLOAD_BYTES).toBe(50 * 1024 * 1024);
     expect(maxUploadBytes({})).toBe(DEFAULT_MAX_UPLOAD_BYTES);
     expect(maxUploadBytes({ MANYTHREADS_MAX_UPLOAD_BYTES: 'nope' })).toBe(DEFAULT_MAX_UPLOAD_BYTES);
+  });
+});
+
+describe('slow uploads cannot pin the database pool (an upload holds a connection while its body arrives)', () => {
+  const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+  async function* stalls(afterMs: number): AsyncGenerator<Uint8Array> {
+    yield new Uint8Array(100).fill(65);
+    await wait(afterMs);
+    yield new Uint8Array(100).fill(65);
+  }
+  async function* gated(gate: Promise<void>): AsyncGenerator<Uint8Array> {
+    yield new Uint8Array(100).fill(65);
+    await gate;
+  }
+
+  it('a body that stops arriving is cut after the idle time: no row, no blob, no partial file, and the slot is free again', async () => {
+    process.env['MANYTHREADS_UPLOAD_IDLE_MS'] = '300';
+    const before = blobs().length;
+    const started = Date.now();
+    const outcome = await w.upload(nadia, dev, stalls(3000), { name: 'stalled.bin' }).then((r) => r.status, () => 'socket closed');
+    expect(Date.now() - started).toBeLessThan(2500);
+    expect(outcome === 'socket closed' || (typeof outcome === 'number' && outcome >= 400)).toBe(true);
+    for (let i = 0; i < 50 && parts().length > 0; i++) await wait(20);   // the socket is cut first, the server then removes the partial file
+    expect(blobs()).toHaveLength(before);
+    expect(parts()).toEqual([]);
+    expect(await w.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.files WHERE name = 'stalled.bin'")).rows[0]!.n)).toBe(0);
+    expect((await w.upload(nadia, dev, 'fine', { name: 'after-stall.txt', type: 'text/plain' })).status).toBe(201);
+  });
+
+  it('one person has at most two bodies in flight (429 for the third), and others are not affected', async () => {
+    process.env['MANYTHREADS_UPLOAD_IDLE_MS'] = '20000';
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const first = w.upload(nadia, dev, gated(gate), { name: 'slow-1.bin' });
+    const second = w.upload(nadia, dev, gated(gate), { name: 'slow-2.bin' });
+    await wait(600);
+    const third = await w.upload(nadia, dev, 'third', { name: 'slow-3.txt', type: 'text/plain' });
+    expect(third.status).toBe(429);
+    expect(ErrorEnvelope.parse(third.body).error.code).toBe('rate_limited');
+    expect((await w.upload(rafi, dev, 'rafi is fine', { name: 'rafi.txt', type: 'text/plain' })).status).toBe(201);
+    open();
+    expect((await first).status).toBe(201);
+    expect((await second).status).toBe(201);
+    expect((await w.upload(nadia, dev, 'now it fits', { name: 'slow-4.txt', type: 'text/plain' })).status).toBe(201);
+  });
+
+  it('the process takes at most MANYTHREADS_MAX_CONCURRENT_UPLOADS bodies at once', async () => {
+    process.env['MANYTHREADS_MAX_CONCURRENT_UPLOADS'] = '1';
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const first = w.upload(nadia, dev, gated(gate), { name: 'only-1.bin' });
+    await wait(600);
+    expect((await w.upload(rafi, dev, 'no room', { name: 'no-room.txt', type: 'text/plain' })).status).toBe(429);
+    open();
+    expect((await first).status).toBe(201);
   });
 });
 

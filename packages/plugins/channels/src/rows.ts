@@ -103,7 +103,7 @@ const messageFields = (r: MessageRow) => ({
   threadRootId: r.thread_root_id,
   editedAt: iso(r.edited_at),
   deletedAt: iso(r.deleted_at),
-  meta: r.meta,
+  meta: r.deleted_at ? {} : r.meta,   // attachment ids go with the text
   createdAt: r.created_at.toISOString(),
 });
 export const toMessage = (r: MessageRow): Message => Message.parse(messageFields(r));
@@ -117,7 +117,7 @@ export const toChannelMessage = (
   ChannelMessage.parse({
     ...messageFields(r),
     reactions,
-    attachments,
+    attachments: r.deleted_at ? [] : attachments,   // a deleted message shows no cards
     replyCount: r.reply_count ?? 0,
     lastReplyAt: iso(r.last_reply_at),
   });

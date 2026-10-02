@@ -159,3 +159,30 @@ describe('the trigram indexes are usable under row level security', () => {
     expect(plan).toContain(index);
   });
 });
+
+describe('LEAKPROOF is only safe on bounded text, and a deleted root leaves thread search', () => {
+  it('the three searched columns are bounded by constraints (pg_trgm fails on absurdly long text, which a leakproof function must never do)', async () => {
+    // The reason for search 0002 (measured, not repeated here: it takes 250 MB): pg_trgm raises out_of_memory on a text of that size, so a
+    // LEAKPROOF qual is only honest while no row can hold one.
+    const long = (n: number): Promise<unknown> => sys((tx) => tx.query(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'x', repeat('a', $4::int))`,
+      [omar.workspaceId, ch['eng-general'], nadia.actorId, n]));
+    await expect(long(100_001)).rejects.toMatchObject({ code: '23514' });
+    await expect(long(100_000)).resolves.toBeDefined();
+    await expect(sys((tx) => tx.query("INSERT INTO app.threads (root_message_id, channel_id, title) SELECT id, channel_id, repeat('a', 201) FROM app.messages LIMIT 1"))).rejects.toMatchObject({ code: '23514' });
+    await expect(sys((tx) => tx.query("INSERT INTO app.files (workspace_id, channel_id, folder_path, name, blob_key, size, mime, sha256, uploader_id) SELECT workspace_id, $1, 'channels/x/', repeat('a', 256), 'k', 1, 'text/plain', repeat('0', 64), $2 FROM app.channels WHERE id = $1", [ch['eng-general'], nadia.actorId]))).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('a thread whose root was deleted is not found by the text it had', async () => {
+    const root = await sys(async (tx) => (await tx.query<{ id: string }>(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'zanzibar migration schedule', 'zanzibar migration schedule') RETURNING id`,
+      [omar.workspaceId, ch['eng-general'], nadia.actorId])).rows[0]!.id);
+    await as(rafi, (tx) => tx.query(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id) VALUES ($1, $2, $3, 'noted', 'noted', $4)`,
+      [rafi.workspaceId, ch['eng-general'], rafi.actorId, root]));
+    const found = (): Promise<number> => as(rafi, async (tx) => (await tx.query('SELECT 1 FROM app.search_threads($1, NULL, 10)', ['zanzibar'])).rows.length);
+    expect(await found()).toBe(1);
+    await as(nadia, (tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [root]));
+    expect(await found()).toBe(0);
+  });
+});

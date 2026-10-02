@@ -53,8 +53,10 @@ written, and the request body is discarded (`resume()`) instead of destroying th
 
 Plugin routes get no raw body by default. A route declares `rawBody: true` (SDK `HttpRouteDefinition`): the host mounts it in its own encapsulated Fastify context with a catch-all
 content-type parser that hands the request through unparsed (`req.stream`, the socket itself), without the built-in JSON and text parsers consuming it first, and without changing
-what any other route does with an unknown content type. The transaction of the route stays open while the bytes arrive (one pooled connection per running upload), which the
-rate limit keeps modest. A response `body` that is a Node `Readable` is piped as is (downloads); the route gives no `schema.response`.
+what any other route does with an unknown content type. The transaction of the route stays open while the bytes arrive (one pooled connection per running upload), so a slow
+sender could pin the pool: the route takes an upload slot first (at most `MANYTHREADS_MAX_CONCURRENT_UPLOADS`, default 4, bodies in flight per process and 2 per person, 429
+beyond), cuts a body that sends nothing for `MANYTHREADS_UPLOAD_IDLE_MS` (20 s) or takes longer than `MANYTHREADS_UPLOAD_MAX_MS` (10 min), and frees the slot as soon as the
+bytes have arrived. A response `body` that is a Node `Readable` is piped as is (downloads); the route gives no `schema.response`.
 
 ### Names and types
 
