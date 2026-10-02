@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useSession } from '../../app/session';
 import { ForbiddenBody, NotFoundBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
@@ -7,7 +6,8 @@ import { ViewerMessage } from '../../viewers/common';
 import { RowMenu, useRowActions } from './actions';
 import { whenLabel } from './FileList';
 import { MEMORY_COPY, READ_ONLY_COPY, type FileRow } from './model';
-import { bumpFiles, useTeamFiles, type TeamFiles } from './store';
+import { useTeamFiles, type TeamFiles } from './store';
+import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
 
 /**
@@ -27,14 +27,8 @@ export function FileView({ path, onClose, onMoved, onGone }: { path: string; onC
 function FileViewBody({ files, row, onClose, onMoved, onGone }: { files: TeamFiles; row: FileRow; onClose: () => void; onMoved: (to: string) => void; onGone: () => void }) {
   const panel = usePanel();
   const session = useSession();
-  const content = useMemo(() => files.backend.open(row), [files, row.path, row.fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { content, save } = useContent(files, row);
   const actions = useRowActions(files, { onDone: (r) => (r.action === 'delete' ? onGone() : onMoved(r.to)) });
-  const save = content.save
-    ? async (text: string): Promise<void> => {
-        await content.save?.(text);
-        bumpFiles();
-      }
-    : undefined;
   const git = row.store === 'git';
   const pr = row.readOnlyReason === 'change_by_pull_request';
   return (

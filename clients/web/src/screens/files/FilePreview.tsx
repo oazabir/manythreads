@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { fileKind, fileSize } from '../../channels/format';
 import { ForbiddenBody, NotFoundBody } from '../../components/states';
@@ -11,7 +11,8 @@ import { RowMenu, useRowActions } from './actions';
 import { whenLabel } from './FileList';
 import { READ_ONLY_COPY, MEMORY_COPY, isPage, parentOf, type FileRow } from './model';
 import { filesHref } from './paths';
-import { bumpFiles, useTeamFiles, type TeamFiles } from './store';
+import { useTeamFiles, type TeamFiles } from './store';
+import { useContent } from './useContent';
 import { useFileRow } from './useFileRow';
 
 /** The line under the title: where a page lives and who last changed it, or what an attachment is. */
@@ -63,7 +64,7 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
   const git = row.store === 'git';
   const page = git && isPage(row.path);
   const [editing, setEditing] = useState(false);
-  const content = useMemo(() => files.backend.open(row), [files, row.path, row.fileId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { content, save } = useContent(files, row);
   const folder = parentOf(row.path);
   const actions = useRowActions(files, {
     onDone: (r) => {
@@ -71,12 +72,6 @@ function PreviewBody({ files, row }: { files: TeamFiles; row: FileRow }) {
       else panel.replace({ type: 'file', id: r.to });
     },
   });
-  const save = content.save
-    ? async (text: string): Promise<void> => {
-        await content.save?.(text);
-        bumpFiles();
-      }
-    : undefined;
   const reading = page && !editing;
   const pr = row.readOnlyReason === 'change_by_pull_request';
   const canEdit = git && !row.readOnly && Boolean(save);

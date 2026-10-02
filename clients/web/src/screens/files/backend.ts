@@ -44,7 +44,12 @@ export type Perms = {
 };
 
 /** The content of one file: what the viewers read and how a save becomes a commit. */
-export type FileContent = { source: ContentSource; save: ((text: string) => Promise<void>) | null };
+export type FileContent = {
+  source: ContentSource;
+  save: ((text: string) => Promise<void>) | null;
+  /** The blob the content was read from or last saved as; lets the screen tell its own save from a change made elsewhere (a restore). */
+  sha?: () => string | null | undefined;
+};
 
 /** Everything the Files screen asks of a store. One implementation talks to the server; another serves `?mock=1`. */
 export interface FilesBackend {
@@ -185,7 +190,7 @@ export function serverBackend(slug: string, perms: Perms): FilesBackend {
     open(r) {
       if (r.store === 'attachments') return { source: httpSource(r.contentUrl ?? ''), save: null };
       const file = repoFile(slug, r.path);
-      return { source: r.contentUrl ? { ...file.source, url: r.contentUrl } : file.source, save: r.readOnly ? null : file.save };
+      return { source: r.contentUrl ? { ...file.source, url: r.contentUrl } : file.source, save: r.readOnly ? null : file.save, sha: file.sha };
     },
     async history(path) {
       const res = await call(getRepoHistoryRoute, { request: GetRepoHistoryQuery, response: GetRepoHistoryResponse }, GetRepoHistoryQuery.parse({ path, limit: 100 }), { slug });

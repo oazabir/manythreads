@@ -10,7 +10,7 @@ import { call, isApiError } from '../api/client';
 import { ContentError, type ContentSource } from './source';
 
 /** A file of the team repo as the viewers see it: its content, and a save that is one commit by the signed-in person. */
-export type RepoFile = { source: ContentSource; save: (text: string) => Promise<void> };
+export type RepoFile = { source: ContentSource; save: (text: string) => Promise<void>; /** The blob this file object last read or wrote (undefined before the first read). */ sha: () => string | null | undefined };
 
 const base64ToBytes = (b64: string): Uint8Array => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
@@ -64,5 +64,5 @@ export function repoFile(slug: string, path: string): RepoFile {
       throw err;
     }
   };
-  return { source, save };
+  return { source, save, sha: () => blobSha };
 }
