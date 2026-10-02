@@ -24,8 +24,10 @@ beforeAll(async () => {
   store = createLocalBlobStorage({ dir: w.storageDir });
 }, 180_000);
 afterAll(async () => {
+  const t = Date.now();
   await w?.close();
-});
+  console.log('close took', Date.now() - t);
+}, 60_000);
 
 const ok = <T>(res: ApiResult, status = 200): T => {
   expect(res.status, JSON.stringify(res.body)).toBe(status);

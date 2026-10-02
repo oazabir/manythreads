@@ -62,8 +62,11 @@ const post = (path: string, body: unknown) =>
 
 describe('job worker host', () => {
   it('starts a worker for the kernel queue and for each plugin queue', () => {
-    expect([...s.jobQueues].sort()).toEqual(['files.blob-gc', 'kms.rewrap', 'test-kernel.record']);
-    expect(s.host.registries.jobs.list().map((e) => [e.plugin, e.value.queue]).sort()).toEqual([['files', 'files.blob-gc'], ['test-kernel', 'test-kernel.record']]);
+    const registered = s.host.registries.jobs.list().map((e) => e.value.queue);
+    expect([...s.jobQueues].sort()).toEqual(['kms.rewrap', ...registered].sort());
+    // Plugins of other tasks add queues of their own: assert the ones this test relies on, not the whole list.
+    expect(registered).toEqual(expect.arrayContaining(['test-kernel.record', 'files.blob-gc']));
+    expect(s.host.registries.jobs.list().find((e) => e.value.queue === 'test-kernel.record')?.plugin).toBe('test-kernel');
   });
 
   it('runs a plugin job as the system actor in the payload workspace, then marks it done', async () => {
