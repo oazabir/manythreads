@@ -75,3 +75,35 @@ export const LockIcon = () => (
 );
 
 export const NAV_ICONS = { files: FilesIcon, boards: BoardsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
+
+export const ReplyIcon = () => (
+  <Svg size={14}>
+    <path d="M6.5 3.5 2.5 7.5l4 4M2.5 7.5h6.2a4.3 4.3 0 0 1 4.3 4.3v.7" />
+  </Svg>
+);
+export const SmileIcon = () => (
+  <Svg size={14}>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M5.8 9.6a2.9 2.9 0 0 0 4.4 0M6 6.4v.2M10 6.4v.2" />
+  </Svg>
+);
+export const MoreIcon = () => (
+  <Svg size={14}>
+    <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.2" />
+  </Svg>
+);
+export const ClipIcon = () => (
+  <Svg size={15}>
+    <path d="m12.8 7.3-4.9 4.9a3 3 0 0 1-4.2-4.2l5.2-5.2a2 2 0 0 1 2.8 2.8L6.5 10.8a1 1 0 0 1-1.4-1.4l4.6-4.6" />
+  </Svg>
+);
+export const SendIcon = () => (
+  <Svg size={15}>
+    <path d="M2.5 8 13.5 2.5 9 13.5 7.4 9z M7.4 9l6.1-6.5" />
+  </Svg>
+);
+export const ArrowDownIcon = () => (
+  <Svg size={14}>
+    <path d="M8 3v9M4 8.5l4 4 4-4" />
+  </Svg>
+);

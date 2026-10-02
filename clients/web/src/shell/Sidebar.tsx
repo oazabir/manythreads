@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import type { NavContribution } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
+import { useUnread } from '../channels/hooks';
 import { useShell } from './context';
 import { useChannelFeed } from './channelFeed';
 import { CaretIcon, LockIcon, NAV_ICONS } from './icons';
@@ -48,6 +49,7 @@ function NavHeader({ item, slug }: { item: NavContribution; slug: string }) {
 
 function ChannelGroups({ slug, guest }: { slug: string; guest: boolean }) {
   const feed = useChannelFeed(slug);
+  const { unread } = useUnread();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const toggle = (id: string): void =>
     setCollapsed((c) => {
@@ -67,13 +69,16 @@ function ChannelGroups({ slug, guest }: { slug: string; guest: boolean }) {
               {g.name}
             </button>
             {open
-              ? g.channels.map((c) => (
-                  <NavLink key={c.id} to={channelPath(slug, c.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${c.unread > 0 ? 'unread' : ''}`}>
-                    <span className="h">{c.isPrivate ? <LockIcon /> : '#'}</span>
-                    <span className="it-label">{c.name.replace(/^#/, '')}</span>
-                    {c.unread > 0 ? <Pill n={c.unread} tone="unread" /> : null}
-                  </NavLink>
-                ))
+              ? g.channels.map((c) => {
+                  const n = unread[c.id] ?? c.unread;
+                  return (
+                    <NavLink key={c.id} to={channelPath(slug, c.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${n > 0 ? 'unread' : ''}`}>
+                      <span className="h">{c.isPrivate ? <LockIcon /> : '#'}</span>
+                      <span className="it-label">{c.name.replace(/^#/, '')}</span>
+                      {n > 0 ? <Pill n={n} tone="unread" /> : null}
+                    </NavLink>
+                  );
+                })
               : null}
           </div>
         );

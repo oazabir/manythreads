@@ -2,6 +2,7 @@ import { Link, Navigate, useParams } from 'react-router';
 import { isAdmin, useSession } from '../app/session';
 import { ForbiddenBody } from '../components/states';
 import { useShell } from './context';
+import { ThreadsInbox } from '../screens/ThreadsInbox';
 
 const LAST_TEAM_KEY = 'manythreads.lastTeam';
 
@@ -25,7 +26,7 @@ export function HomeView() {
   const session = useSession();
   const { team, teamsLoading, guest } = useShell();
   if (teamsLoading) return <div className="view-empty" aria-busy="true" />;
-  if (team) return <ThreadsView />;
+  if (team) return <ThreadsInbox />;
   return (
     <div className="view-empty">
       <p className="view-empty-title">{guest ? 'Nothing has been shared with you yet' : 'You are not on a team yet'}</p>
@@ -50,28 +51,10 @@ export function RequireTeam({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function ChannelView() {
-  const { channel = '' } = useParams();
-  return (
-    <div className="view-empty">
-      <p className="view-empty-title">{`This is the start of #${channel}.`}</p>
-    </div>
-  );
-}
-
 export function DirectMessageView() {
   return (
     <div className="view-empty">
       <p className="view-empty-title">This is the start of your conversation.</p>
-    </div>
-  );
-}
-
-export function ThreadsView() {
-  return (
-    <div className="view-empty">
-      <p className="view-empty-title">No threads yet</p>
-      <p className="view-empty-body">Threads you follow or start show up here.</p>
     </div>
   );
 }

@@ -3,7 +3,9 @@ import { Outlet, useLocation, useMatch } from 'react-router';
 import { fetchTeams } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { useSession } from '../app/session';
+import { PeopleContext, useLoadPeople } from '../channels/hooks';
 import { RightPanel } from '../kernel/panel';
+import { useRealtime } from '../realtime';
 import { AccountMenu } from './AccountMenu';
 import { ShellContext, type ShellValue } from './context';
 import { useNavCounts } from './counts';
@@ -28,6 +30,7 @@ export function Shell() {
   const counts = useNavCounts();
   const narrow = useNarrow();
 
+  useRealtime();
   const teamsData = q.status === 'ok' ? q.data.teams : undefined;
   const teams = useMemo(() => teamsData ?? [], [teamsData]);
   const teamsLoading = q.status === 'loading';
@@ -41,6 +44,7 @@ export function Shell() {
   useEffect(() => {
     if (team) rememberTeam(team.slug);
   }, [team]);
+  const people = useLoadPeople(team?.slug ?? (guest ? slug : null));
 
   // The drawer is open for one location only: moving anywhere closes it, with no effect needed.
   const [openedAt, setOpenedAt] = useState<string | null>(null);
@@ -51,6 +55,7 @@ export function Shell() {
   const title = slug === null && team ? 'Threads' : viewTitle(loc.pathname);
   return (
     <ShellContext.Provider value={value}>
+      <PeopleContext.Provider value={people}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
           <div className="ws">
@@ -89,6 +94,7 @@ export function Shell() {
         </main>
         <RightPanel />
       </div>
+      </PeopleContext.Provider>
     </ShellContext.Provider>
   );
 }

@@ -1,11 +1,13 @@
+import { useMemo } from 'react';
+import { useUnread } from '../channels/hooks';
+
 /**
  * Counters the sidebar badges read, by source name (`threads.unread`, `approvals.waiting`). The read-state service feeds
- * this once messages exist; until then no source has a count and the badges stay out of the way.
+ * `threads.unread` (threads with replies the person has not read); a source with no count shows nothing.
  */
 export type NavCounts = Readonly<Record<string, number>>;
 
-const NONE: NavCounts = {};
-
 export function useNavCounts(): NavCounts {
-  return NONE;
+  const { threadsUnread } = useUnread();
+  return useMemo(() => ({ 'threads.unread': threadsUnread }), [threadsUnread]);
 }

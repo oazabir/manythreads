@@ -3,12 +3,12 @@ import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useShell } from '../../shell/context';
+import { ThreadPanel } from '../../channels/ThreadPanel';
 import { registerPanelType } from './registry';
 import type { PanelEntry } from './stack';
 
 /*
- * The panel types that exist before their plugins do. The channels plugin replaces `thread` with the real thread view and
- * the files plugin replaces `file` (`registerPanelType` with the same type wins), so the panel itself never changes.
+ * The panel types of the app. `thread` is the channels thread view; the files plugin replaces `file` (`registerPanelType` with the same type wins), so the panel itself never changes.
  */
 
 function Placeholder({ title, detail, children }: { title: string; detail?: string; children: string }) {
@@ -19,10 +19,6 @@ function Placeholder({ title, detail, children }: { title: string; detail?: stri
       {detail ? <p className="panel-empty-id">{detail}</p> : null}
     </div>
   );
-}
-
-function ThreadPanel({ entry }: { entry: PanelEntry }) {
-  return <Placeholder title="Thread" detail={entry.id}>Replies to this message show here.</Placeholder>;
 }
 
 function FilePanel({ entry }: { entry: PanelEntry }) {
