@@ -30,7 +30,9 @@ test('the app is sandboxed, cannot read the session or call /api, and the bridge
     const frame = page.frames().find((f) => f.url().endsWith(APP));
     expect(frame, 'the app frame').toBeDefined();
     if (!frame) return;
-    await frame.waitForSelector('html[data-probed="1"]', { timeout: 15_000 });
+    // 30 s, not 15: on a loaded CI runner the frame's own load (HTML + __manythreads.js behind a dev server
+    // serving 248 parallel tests) can eat most of 15 s even though the probe then completes at once.
+    await frame.waitForSelector('html[data-probed="1"]', { timeout: 30_000 });
     const probe = JSON.parse((await frame.locator('#probe').textContent()) ?? '{}') as Record<string, unknown>;
 
     // criterion 8: document.cookie is not readable (opaque origin: SecurityError), and nothing it holds is the session
@@ -65,7 +67,7 @@ test('the content route answers with the strict CSP, and only the allowlisted br
   const frame = page.frames().find((f) => f.url().endsWith(APP));
   expect(frame).toBeDefined();
   if (!frame) return;
-  await frame.waitForSelector('html[data-probed="1"]', { timeout: 15_000 });
+  await frame.waitForSelector('html[data-probed="1"]', { timeout: 30_000 });
   // an unknown method is answered with an error, not with data
   const answer = await frame.evaluate(
     () =>
