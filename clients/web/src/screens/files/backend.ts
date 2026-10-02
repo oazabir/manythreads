@@ -183,7 +183,7 @@ export function serverBackend(slug: string, perms: Perms): FilesBackend {
           where: channel ? `# ${channel}` : null, readOnly: true, readOnlyReason: 'attachment', managedBy: null, fileId: m.id, channelId: m.channelId, blobSha: null, contentUrl: fileContentUrl(m.id),
         };
       } catch (err) {
-        if (isApiError(err) && (err.status === 404 || err.status === 403)) return null;
+        if (isApiError(err) && err.status === 404) return null;
         throw err;
       }
     },

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { fileKind, fileSize } from '../../channels/format';
-import { ForbiddenBody, NotFoundBody } from '../../components/states';
+import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { usePanelSub, usePanelTitle } from '../../kernel/panel/sub';
 import { FileViewer } from '../../viewers/FileViewer';
@@ -52,7 +52,7 @@ export function FilePreview({ entry }: { entry: { type: string; id: string } }) 
 
   if (!files || state.status === 'loading') return <div className="vw-loading" role="status" aria-busy="true">Loading…</div>;
   if (state.status === 'forbidden') return <div className="panel-empty"><ForbiddenBody /></div>;
-  if (state.status === 'missing') return <div className="panel-empty" role="alert"><NotFoundBody /></div>;
+  if (state.status === 'missing') return <div className="panel-empty" role="alert"><ViewerMessage title="This file no longer exists">It may have been moved, renamed or deleted.</ViewerMessage></div>;
   if (state.status === 'error' || !row) return <ViewerMessage title="This file could not be loaded" tone="alert">{state.status === 'error' ? state.message : null}</ViewerMessage>;
   return <PreviewBody key={row.fileId ?? row.path} files={files} row={row} />;
 }

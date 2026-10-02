@@ -1,5 +1,5 @@
 import { useSession } from '../../app/session';
-import { ForbiddenBody, NotFoundBody } from '../../components/states';
+import { ForbiddenBody } from '../../components/states';
 import { usePanel } from '../../kernel/panel';
 import { FileViewer } from '../../viewers/FileViewer';
 import { ViewerMessage } from '../../viewers/common';
@@ -19,7 +19,7 @@ export function FileView({ path, onClose, onMoved, onGone }: { path: string; onC
   const state = useFileRow(files, path);
   if (!files || state.status === 'loading') return <div className="fview" data-landmark="file-view"><p className="loading" aria-busy="true">Loading…</p></div>;
   if (state.status === 'forbidden') return <div className="fview" data-landmark="file-view"><div className="fempty" role="alert"><ForbiddenBody /></div></div>;
-  if (state.status === 'missing') return <div className="fview" data-landmark="file-view"><div className="fempty" role="alert"><NotFoundBody /><button type="button" className="btn s" onClick={onClose}>Back to the folder</button></div></div>;
+  if (state.status === 'missing') return <div className="fview" data-landmark="file-view"><div className="fempty" role="alert"><ViewerMessage title="This file no longer exists">It may have been moved, renamed or deleted.</ViewerMessage><button type="button" className="btn s" onClick={onClose}>Back to the folder</button></div></div>;
   if (state.status === 'error') return <div className="fview" data-landmark="file-view"><ViewerMessage title="This file could not be loaded" tone="alert">{state.message}</ViewerMessage></div>;
   return <FileViewBody files={files} row={state.row} onClose={onClose} onMoved={onMoved} onGone={onGone} />;
 }
