@@ -147,6 +147,31 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  packages/plugins/direct-messages:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
   packages/plugins/entity-links:
     dependencies:
       '@manythreads/sdk':
@@ -180,6 +205,31 @@ importers:
       '@manythreads/shared':
         specifier: workspace:*
         version: link:../../shared
+
+  packages/plugins/files:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
 
   packages/plugins/identity-oidc:
     dependencies:
@@ -265,6 +315,31 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  packages/plugins/search:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
   packages/plugins/storage-local:
     dependencies:
       '@manythreads/sdk':
@@ -310,6 +385,31 @@ importers:
       zod:
         specifier: ^4
         version: 4.6.5
+
+  packages/plugins/threads:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
 
   packages/sdk:
     dependencies:
@@ -402,6 +502,12 @@ importers:
       '@manythreads/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@manythreads/plugin-search':
+        specifier: workspace:*
+        version: link:../../packages/plugins/search
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
       '@manythreads/shared':
         specifier: workspace:*
         version: link:../../packages/shared

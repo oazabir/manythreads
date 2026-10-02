@@ -27,6 +27,12 @@ export const channelsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/channels/migrations/', import.meta.url)),
 };
 
+/** Migrations of the direct-messages plugin (`app.dms_get_or_create`); pass it in `sources` after `channelsMigrationSource`. */
+export const directMessagesMigrationSource: MigrationSource = {
+  namespace: 'direct-messages',
+  dir: fileURLToPath(new URL('../../plugins/direct-messages/migrations/', import.meta.url)),
+};
+
 export const DEV_TEST_DATABASE_URL = 'postgresql://manythreads_owner:manythreads@localhost:55432/manythreads';
 
 /** Owner connection string of the cluster's admin database; tests create and drop temp databases through it. */

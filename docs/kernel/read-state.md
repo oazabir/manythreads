@@ -36,7 +36,7 @@ registerCounter(targetType, (tx, { targetType, targetId }, afterMessageId) => Pr
   transaction. The author (actor id or person id) is never a recipient; unknown or inactive people are ignored. One statement serves the whole list.
 - **Reading.** `markRead` is monotonic: a position older than the stored one changes nothing and returns the current state. Otherwise
   `unread_count` becomes the number of newer messages: `options.remaining` if given, else the counter registered for the target type
-  (the channels plugin registers one for `channel`, the threads plugin one for `thread`; it counts as the person, so RLS decides what counts).
+  (the channels plugin registers both, `channel` and `thread`; it counts as the person, so RLS decides what counts).
   Without either, `markRead` throws `UnreadCounterMissingError` (the HTTP route answers 501). The row is locked (`FOR UPDATE`) while the count is taken, so
   a post that races a mark-read is counted exactly once: the posting transaction's bump waits for the lock and lands after the absolute set.
 - **Who calls.** `markRead` and `setFollowed` write the person's own row: run them as that person (or the system actor).

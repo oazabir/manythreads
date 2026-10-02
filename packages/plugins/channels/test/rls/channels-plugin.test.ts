@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ALL = [omar, nadia, rafi, sameera, tariq, priya, lena] as const;
-const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'channel_template_syncs'];
+const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'channel_template_syncs', 'presence', 'typing'];
 
 let db: TestDatabase;
 let appPool: pg.Pool;
@@ -351,3 +351,143 @@ describe('writing: the policies and guards', () => {
     expect(plan).not.toMatch(/app\.can/);
   });
 });
+
+describe('presence and typing (UNLOGGED, migration 0003)', () => {
+  const upsertPresence = (p: Persona, who: Persona = p): Promise<unknown> =>
+    as(p, (tx) => tx.query(
+      `INSERT INTO app.presence (person_id, workspace_id, status) VALUES ($1, $2, 'online')
+       ON CONFLICT (person_id) DO UPDATE SET seen_at = now()`, [who.personId, omar.workspaceId]));
+  const setTyping = (p: Persona, channelId: string, who: Persona = p): Promise<unknown> =>
+    as(p, (tx) => tx.query(
+      `INSERT INTO app.typing (channel_id, person_id, expires_at) VALUES ($1, $2, now() + interval '5 seconds')
+       ON CONFLICT (channel_id, person_id) DO UPDATE SET expires_at = EXCLUDED.expires_at`, [channelId, who.personId]));
+
+  it('both tables are UNLOGGED and carry the rls comment kind the harness expects', async () => {
+    const rows = await sys(async (tx) => (await tx.query<{ relname: string; relpersistence: string; comment: string }>(
+      `SELECT c.relname, c.relpersistence, obj_description(c.oid, 'pg_class') AS comment FROM pg_class c
+        WHERE c.relnamespace = 'app'::regnamespace AND c.relname IN ('presence', 'typing') ORDER BY c.relname`)).rows);
+    expect(rows.map((r) => [r.relname, r.relpersistence])).toEqual([['presence', 'u'], ['typing', 'u']]);
+    expect(rows[0]?.comment).toMatch(/^rls: workspace/);
+    expect(rows[1]?.comment).toMatch(/^rls: team/);
+  });
+
+  it('presence: a person writes only their own row; members read everyone of the workspace, a guest only themself', async () => {
+    await upsertPresence(nadia);
+    await upsertPresence(rafi);
+    await upsertPresence(lena);
+    expect(await code(upsertPresence(nadia, rafi))).toBe('42501');                       // not someone else's row
+    expect(await code(as(nadia, (tx) => tx.query("INSERT INTO app.presence (person_id, workspace_id) VALUES ($1, '00000000-0000-7000-8000-00000000ffff')", [nadia.personId])))).toBeDefined();
+    expect((await q(sameera, 'SELECT person_id FROM app.presence')).map((r) => r['person_id']).sort()).toEqual([nadia.personId, rafi.personId, lena.personId].sort());
+    expect((await q(lena, 'SELECT person_id FROM app.presence')).map((r) => r['person_id'])).toEqual([lena.personId]);
+    expect((await as(nadia, (tx) => tx.query("UPDATE app.presence SET status = 'away' WHERE person_id = $1", [rafi.personId]))).rowCount).toBe(0);
+    expect((await as(nadia, (tx) => tx.query('DELETE FROM app.presence WHERE person_id = $1', [rafi.personId]))).rowCount).toBe(0);
+    expect((await as(rafi, (tx) => tx.query("UPDATE app.presence SET status = 'away' WHERE person_id = $1", [rafi.personId]))).rowCount).toBe(1);
+    expect(await code(as(rafi, (tx) => tx.query("UPDATE app.presence SET status = 'busy' WHERE person_id = $1", [rafi.personId])))).toBe('23514');
+  });
+
+  it('typing: own row, in a channel the person can post in; readable only with the channel', async () => {
+    await setTyping(nadia, ch['eng-general']!);
+    expect(await code(setTyping(nadia, ch['eng-general']!, rafi))).toBe('42501');         // not for someone else
+    expect(await code(setTyping(sameera, ch['eng-general']!))).toBe('42501');             // a channel she cannot see
+    expect(await code(setTyping(lena, ch['eng-releases']!))).toBe('42501');               // read grant only: no post
+    expect(await code(setTyping(nadia, ch['eng-old']!))).toBe('42501');                   // archived: not in the post set
+    await setTyping(rafi, ch['eng-leads']!);
+    expect(await code(setTyping(nadia, ch['eng-leads']!))).toBe('42501');                 // private, not a member
+    expect((await q(priya, 'SELECT person_id FROM app.typing')).map((r) => r['person_id'])).toEqual([nadia.personId]);   // not the private channel's
+    expect((await q(rafi, 'SELECT person_id FROM app.typing ORDER BY person_id')).length).toBe(2);
+    expect(await q(sameera, 'SELECT person_id FROM app.typing')).toEqual([]);
+    expect(await q(omar, "SELECT person_id FROM app.typing WHERE channel_id = $1", [ch['eng-leads']])).toHaveLength(1);   // omar is a member of eng-leads
+    expect((await q(lena, 'SELECT person_id FROM app.typing')).length).toBe(0);           // her grant is #eng-releases only
+  });
+
+  it('typing: one can delete their own row and sweep expired rows of a channel they read, never a live row of somebody else', async () => {
+    expect((await as(priya, (tx) => tx.query('DELETE FROM app.typing WHERE person_id = $1', [nadia.personId]))).rowCount).toBe(0);
+    await sys((tx) => tx.query("UPDATE app.typing SET expires_at = now() - interval '1 second' WHERE person_id = $1", [nadia.personId]));
+    expect((await as(priya, (tx) => tx.query('DELETE FROM app.typing WHERE person_id = $1', [nadia.personId]))).rowCount).toBe(1);   // expired: a sweep
+    expect((await as(sameera, (tx) => tx.query('DELETE FROM app.typing WHERE person_id = $1', [rafi.personId]))).rowCount).toBe(0);
+    expect((await as(rafi, (tx) => tx.query('DELETE FROM app.typing WHERE person_id = $1', [rafi.personId]))).rowCount).toBe(1);
+  });
+});
+
+describe('mentions: who writes and deletes them, and who they can name (migration 0003)', () => {
+  const mention = (p: Persona, messageId: string, mentioned: Persona): Promise<unknown> =>
+    as(p, (tx) => tx.query("INSERT INTO app.message_mentions (message_id, mentioned_id, kind, channel_id) VALUES ($1, $2, 'person', $1)", [messageId, mentioned.actorId]));
+
+  it('only the author of the message writes or deletes its mentions', async () => {
+    expect(await code(mention(rafi, msg['general']!, priya))).toBe('42501');               // not the author
+    await mention(nadia, msg['general']!, rafi);
+    expect((await q(rafi, 'SELECT mentioned_id FROM app.message_mentions WHERE message_id = $1', [msg['general']])).length).toBe(1);
+    expect(await q(sameera, 'SELECT mentioned_id FROM app.message_mentions')).toEqual([]);
+    expect((await as(rafi, (tx) => tx.query('DELETE FROM app.message_mentions WHERE message_id = $1', [msg['general']]))).rowCount).toBe(0);
+    expect((await as(priya, (tx) => tx.query('DELETE FROM app.message_mentions WHERE message_id = $1', [msg['general']]))).rowCount).toBe(0);
+    expect((await as(nadia, (tx) => tx.query('DELETE FROM app.message_mentions WHERE message_id = $1', [msg['general']]))).rowCount).toBe(1);
+  });
+
+  it('app.channel_mention_candidates answers for people who can read the channel, as the audience, and never to a guest or an outsider', async () => {
+    const cands = (p: Persona, channelId: string, prefixes: string[]): Promise<string[]> =>
+      as(p, async (tx) => (await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_mention_candidates($1, $2::text[])', [channelId, prefixes])).rows.map((r) => r.person_id).sort());
+    expect(await cands(nadia, ch['eng-general']!, ['ra%'])).toEqual([rafi.personId]);
+    expect(await cands(nadia, ch['eng-general']!, ['sam%'])).toEqual([]);                    // Sameera is not on Engineering
+    expect(await cands(nadia, ch['eng-general']!, ['%'])).toEqual([omar.personId, nadia.personId, rafi.personId, priya.personId].sort());   // the audience, no guest
+    expect(await cands(nadia, ch['eng-leads']!, ['%'])).toEqual([]);                           // a channel she cannot read
+    expect(await cands(rafi, ch['eng-leads']!, ['%'])).toEqual([omar.personId, rafi.personId].sort());
+    expect(await cands(lena, ch['eng-releases']!, ['%'])).toEqual([]);                         // a guest resolves nobody
+    expect(await cands(sameera, ch['eng-general']!, ['%'])).toEqual([]);
+    expect(await cands(nadia, ch['eng-general']!, [])).toEqual([]);
+  });
+});
+
+describe('following a thread: thread_follows is the membership, read_state.followed its mirror (migration 0003)', () => {
+  const reply = (p: Persona, root: string, channelId: string): Promise<string> =>
+    as(p, async (tx) => (await tx.query<{ id: string }>(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id) VALUES ($1, $2, $3, 'r', 'r', $4) RETURNING id`,
+      [omar.workspaceId, channelId, p.actorId, root])).rows[0]!.id);
+  const mirror = (root: string): Promise<string[]> =>
+    sys(async (tx) => (await tx.query<{ person_id: string }>(
+      "SELECT person_id FROM app.read_state WHERE target_type = 'thread' AND target_id = $1 AND followed ORDER BY person_id", [root])).rows.map((r) => r.person_id));
+  const members = (root: string): Promise<string[]> =>
+    sys(async (tx) => (await tx.query<{ person_id: string }>('SELECT person_id FROM app.thread_follows WHERE thread_root_id = $1 ORDER BY person_id', [root])).rows.map((r) => r.person_id));
+  const sortedIds = (...p: Persona[]): string[] => p.map((x) => x.personId as string).sort();
+  const freshRoot = (author: Persona, channelId: string): Promise<string> =>
+    sys(async (tx) => (await tx.query<{ id: string }>(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'root', 'root') RETURNING id`,
+      [omar.workspaceId, channelId, author.actorId])).rows[0]!.id);
+  let root = '';
+  let root2 = '';
+  beforeAll(async () => {
+    root = await freshRoot(nadia, ch['eng-general']!);
+    root2 = await freshRoot(nadia, ch['eng-general']!);
+  });
+
+  it('the first reply makes the replier and the root author follow, and the mirror says so, even for the author who did not write it', async () => {
+    await reply(rafi, root, ch['eng-general']!);
+    expect(await members(root)).toEqual(sortedIds(nadia, rafi));
+    expect(await mirror(root)).toEqual(sortedIds(nadia, rafi));
+  });
+
+  it('giving a follow up is not undone by someone else\'s reply (only the first reply follows the root author); a reply of your own follows again', async () => {
+    await as(nadia, (tx) => tx.query('DELETE FROM app.thread_follows WHERE person_id = $1 AND thread_root_id = $2', [nadia.personId, root]));
+    expect(await members(root)).toEqual(sortedIds(rafi));
+    expect(await mirror(root)).toEqual(sortedIds(rafi));
+    await reply(rafi, root, ch['eng-general']!);
+    expect(await members(root)).toEqual(sortedIds(rafi));
+    await reply(nadia, root, ch['eng-general']!);
+    expect(await members(root)).toEqual(sortedIds(nadia, rafi));
+    expect(await mirror(root)).toEqual(sortedIds(nadia, rafi));
+  });
+
+  it('a follow made by the person themself is mirrored too, and the mirror keeps the unread count it finds', async () => {
+    const r = root2;
+    await sys((tx) => tx.query(
+      "INSERT INTO app.read_state (person_id, target_type, target_id, unread_count) VALUES ($1, 'thread', $2, 3)", [priya.personId, r]));
+    await as(priya, (tx) => tx.query('INSERT INTO app.thread_follows (person_id, thread_root_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [priya.personId, r]));
+    const row = (await sys(async (tx) => (await tx.query<{ followed: boolean; unread_count: number }>(
+      "SELECT followed, unread_count FROM app.read_state WHERE person_id = $1 AND target_type = 'thread' AND target_id = $2", [priya.personId, r])).rows))[0];
+    expect(row).toEqual({ followed: true, unread_count: 3 });
+    await as(priya, (tx) => tx.query('DELETE FROM app.thread_follows WHERE person_id = $1 AND thread_root_id = $2', [priya.personId, r]));
+    expect((await sys(async (tx) => (await tx.query<{ followed: boolean; unread_count: number }>(
+      "SELECT followed, unread_count FROM app.read_state WHERE person_id = $1 AND target_type = 'thread' AND target_id = $2", [priya.personId, r])).rows))[0])
+      .toEqual({ followed: false, unread_count: 3 });
+  });
+});
+

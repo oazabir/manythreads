@@ -39,3 +39,4 @@ export * from './channel.channel.updated.ts';
 export * from './channel.channel.archived.ts';
 export * from './channel.member.added.ts';
 export * from './channel.member.removed.ts';
+export * from './channel.mention.created.ts';

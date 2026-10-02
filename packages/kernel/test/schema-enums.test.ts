@@ -2,6 +2,7 @@ import {
   AclPermission,
   ChannelKind,
   MentionKind,
+  PresenceStatus,
   AclSubjectType,
   ActorKind,
   AuthProviderKind,
@@ -52,6 +53,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'entity_links.dst_type': EntityType,
   'channels.kind': ChannelKind,
   'message_mentions.kind': MentionKind,
+  'presence.status': PresenceStatus,
 };
 
 /**

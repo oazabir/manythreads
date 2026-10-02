@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { MessageDeletedPush, MessagePostedPush, ReactionChangedPush, ChannelCreatedPush } from '@manythreads/shared';
+import { MessageDeletedPush, MessagePostedPush, ReactionChangedPush, ChannelCreatedPush, TypingStartedPush } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, ensureChannels, personas, type Persona, type World } from './world.ts';
 
@@ -155,5 +155,28 @@ describe('live pushes reach exactly the people who can see the channel', () => {
     await w.call(omar, 'POST', '/api/teams/engineering/channels', { name: 'live-new' });
     const channel = await rSock.waitFor((f) => f.type === 'channel.created');
     expect(ChannelCreatedPush.parse(channel?.payload).channel.name).toBe('live-new');
+  });
+});
+
+describe('typing is pushed to the channel audience, except the typist', () => {
+  it('Rafi and Priya see Nadia typing in #dev; Nadia, Sameera and Lena do not; a repeat within the window is not pushed again', async () => {
+    const [nSock, rSock, pSock, sSock, lSock] = await Promise.all([open(nadia), open(rafi), open(priya), open(sameera), open(lena)]);
+    const typing = (): Promise<{ status: number }> => w.call(nadia, 'POST', `/api/channels/${dev}/typing`, {});
+    expect((await typing()).status).toBe(200);
+    const frame = await rSock.waitFor((f) => f.type === 'typing.started');
+    expect(TypingStartedPush.parse(frame?.payload)).toMatchObject({ channelId: dev, personId: nadia.personId, threadRootId: null });
+    expect(await pSock.waitFor((f) => f.type === 'typing.started')).toBeDefined();
+    expect((await typing()).status).toBe(200);                      // 5 s left on the first one: not worth a second push
+    await new Promise((r) => setTimeout(r, 400));
+    expect(rSock.frames.filter((f) => f.type === 'typing.started')).toHaveLength(1);
+    for (const quiet of [nSock, sSock, lSock]) expect(quiet.frames.filter((f) => f.type === 'typing.started')).toEqual([]);
+  });
+
+  it('a person typing in a thread says which one', async () => {
+    const root = (await post(nadia, dev, 'thread to type in')).body.id;
+    const rSock = await open(rafi);
+    expect((await w.call(priya, 'POST', `/api/channels/${dev}/typing`, { threadRootId: root })).status).toBe(200);
+    const frame = await rSock.waitFor((f) => f.type === 'typing.started');
+    expect(TypingStartedPush.parse(frame?.payload)).toMatchObject({ personId: priya.personId, threadRootId: root });
   });
 });

@@ -18,6 +18,7 @@ const EMITTED = [
   'channel.message.edited',
   'channel.message.deleted',
   'channel.reaction.changed',
+  'channel.mention.created',
 ] as const satisfies readonly EventType[];
 
 let w: World;
@@ -25,6 +26,7 @@ let before: string | null = null;
 let teamId = '';
 let created = '';
 let msg = '';
+let mentioner = '';
 beforeAll(async () => {
   w = await createWorld();
   await ensureChannels(w);
@@ -48,6 +50,7 @@ beforeAll(async () => {
   await call(rafi, 'POST', `/api/channels/${dev}/messages/${msg}/reactions`, { emoji: '👍' });
   await call(rafi, 'DELETE', `/api/channels/${dev}/messages/${msg}/reactions/${encodeURIComponent('👍')}`);
   await call(nadia, 'DELETE', `/api/channels/${dev}/messages/${msg}`);
+  mentioner = (await call<{ id: string }>(nadia, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'ping @rafi and @rafi, again @rafi', threadRootId: null })).id;
 }, 180_000);
 afterAll(async () => {
   await w?.close();
@@ -72,11 +75,11 @@ describe('channel events', () => {
 
   it('every stored event parses against its registered schema', async () => {
     const rows = await stored();
-    expect(rows.length).toBe(12);   // nine types; archive twice, a member added twice, a reaction added and taken back
+    expect(rows.length).toBe(14);   // ten types; archive twice, a member added twice, a reaction added and taken back, two posts, one mention
     for (const row of rows) expect(parseEvent(eventToRaw(row)).type).toBe(row.type);
   });
 
-  it('all nine types were emitted, as the acting person, in the team of the channel', async () => {
+  it('all ten types were emitted, as the acting person, in the team of the channel', async () => {
     const rows = await stored();
     expect([...new Set(rows.map((r) => r.type))].sort()).toEqual([...EMITTED].sort());
     const actors: Record<string, string> = {
@@ -86,6 +89,7 @@ describe('channel events', () => {
       'channel.message.posted': nadia.actorId,
       'channel.message.edited': nadia.actorId,
       'channel.message.deleted': nadia.actorId,
+      'channel.mention.created': nadia.actorId,
     };
     for (const row of rows) {
       expect(row.workspace_id).toBe(omar.workspaceId);
@@ -107,6 +111,9 @@ describe('channel events', () => {
     expect(of('channel.message.edited')[0]).toMatchObject({ messageId: msg, editorId: nadia.actorId });
     expect(of('channel.message.deleted')[0]).toMatchObject({ messageId: msg, deletedBy: nadia.actorId });
     expect(of('channel.reaction.changed').map((p) => [p['emoji'], p['added']])).toEqual([['👍', true], ['👍', false]]);
+    // One event per person named, however often the body names them; ids only.
+    expect(of('channel.mention.created')).toHaveLength(1);
+    expect(of('channel.mention.created')[0]).toMatchObject({ messageId: mentioner, authorId: nadia.actorId, kind: 'person', mentionedId: rafi.actorId, personId: rafi.personId, threadRootId: null });
     expect(JSON.stringify(rows.map((r) => r.payload))).not.toMatch(/hello/);
   });
 

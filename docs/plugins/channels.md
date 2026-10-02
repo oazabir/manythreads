@@ -1,9 +1,9 @@
 # channels
 
-Channel groups, channels, membership, messages, reactions, threads (counted, not yet an API of their own) and the live pushes
-(SPEC section 6.1 and 5.3, PLAN P3-01, P3-02, P3-05). Code: `packages/plugins/channels`. Schemas: `packages/shared/src/{entities/channel,
-entities/message*,api/channels,events/channel.*}`. Direct messages, the Threads inbox, mentions, attachments, notifications and search
-build on these tables in later tasks.
+Channel groups, channels, membership, messages, reactions, mentions and entity links parsed from a message, presence and typing, threads (counted here; read,
+followed and listed by the [threads plugin](./threads.md)) and the live pushes (SPEC section 6.1 and 5.3, PLAN P3-01, P3-02, P3-05, P3-07).
+Code: `packages/plugins/channels`. Schemas: `packages/shared/src/{entities/channel, entities/message*,api/channels,events/channel.*}`. Direct messages
+([direct-messages.md](./direct-messages.md)) are channels of kind `dm`; attachments, notifications and search build on these tables in other tasks.
 
 ## Who sees what
 
@@ -31,7 +31,7 @@ A suspended person sees nothing. The system role bypasses everything through `ap
 - Hidden and missing look the same: every refusal on an unseen channel is **403**, never 404.
 - `app.lookup_can_team()` answers NULL (not false) for a non-member: every definer-side check wraps it in `coalesce(..., false)` (MISTAKES P3-05).
 
-## Tables (migrations `0001_channels.sql`, `0002_messages.sql`)
+## Tables (migrations `0001_channels.sql`, `0002_messages.sql`, `0003_mentions_presence_typing.sql`)
 
 | Table | Notes |
 |---|---|
@@ -40,8 +40,10 @@ A suspended person sees nothing. The system role bypasses everything through `ap
 | `channel_members` | PK `(channel_id, person_id)`, `muted`. Read-only for the app role. |
 | `messages` | `(channel_id, id DESC) INCLUDE (author_id, thread_root_id)`, partial `(thread_root_id, id)`, GIN trigram `body_plain`, `(author_id)`. Body 1 to 40,000 characters. Edit changes only `body`/`body_plain`/`edited_at` (author, not once deleted); delete sets `deleted_at` once and empties `body_plain` (author or team lead); nothing else changes (trigger). |
 | `message_reactions`, `message_mentions` | `channel_id` is copied from the message by a trigger so the policy can probe the visibility set and a caller cannot claim another channel. |
-| `threads` | one row per root message, created and counted **in the same statement** as the reply by a trigger (`reply_count` of live replies, `last_reply_at`, `title` = first 120 characters of the root). The first reply makes the replier and the root's author follow the thread. |
-| `thread_follows` | P: own rows only, for a message the person can read. |
+| `threads` | one row per root message, created and counted **in the same statement** as the reply by a trigger (`reply_count` of live replies, `last_reply_at`, `title` = first 120 characters of the root). The first reply makes the replier and the root's author follow the thread; later replies make only their own replier follow (so a root author who unfollowed stays out). |
+| `thread_follows` | P: own rows only, for a message the person can read. The membership of a thread; `read_state.followed` is its mirror, kept by a trigger (see [threads.md](./threads.md#following-one-source-of-truth)). |
+| `presence` | `(person_id PK, workspace_id, status 'online'/'away', seen_at)`. **UNLOGGED**. WR: members read everyone of the workspace, a guest only themself; a person writes only their own row. |
+| `typing` | `(channel_id, person_id) PK, expires_at`. **UNLOGGED**. C: readable with the channel; a person writes only their own row, in a channel they can post in; anyone who reads the channel may delete rows that have expired. |
 | `channel_template_syncs` | S: teams whose template channels were created (see below). |
 
 Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and passes `findRlsViolations` and `findPerRowPolicyCalls` (`pnpm test:rls`).
@@ -61,8 +63,35 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 | `POST /api/channels/:channelId/messages` | `PostMessageRequest` (`channelId` must match the path; `threadRootId` is `null` or the first message of a thread). 201 `Message`. `body_plain` is derived on the server by `markdownToPlain` (`src/plain.ts`): code keeps its text, links and images their label, `[[entity]]` its name, headings, quotes, bullets and emphasis lose their marks. 300 per minute per caller. |
 | `GET/PATCH/DELETE /api/channels/:channelId/messages/:messageId` | Read one; edit your own (`editedAt`; 409 once deleted); delete your own or, as a team lead, anyone's (idempotent: `deleted: false` the second time). A deleted message is served as a tombstone: `deletedAt` set, `body` `[deleted]`, `bodyPlain` empty. |
 | `POST .../messages/:messageId/reactions` `{ emoji }`, `DELETE .../reactions/:emoji` | Add or take back your reaction (needs the post permission to add). Both answer the message's reaction summary. |
+| `POST /api/presence` `{ status? }`, `GET /api/presence` | The heartbeat (`online`, the default, or `away`; clients send one every 30 s) and who has beaten in the last 90 s (a guest sees only themself). Presence is read by polling; nothing is pushed. 120 per minute. |
+| `POST /api/channels/:channelId/typing` `{ threadRootId? }`, `GET .../typing` | "I am typing here" (needs the post permission; 409 in an archived channel): the row lives 5 s and the response says until when. The listing answers who is typing now, not the caller. Sending a message deletes the sender's row. 120 per minute. |
 
 Refusals: 400 (validation), 401 (no actor), 403 (cannot see, or may not do that), 404 (message or reply target not in a channel you can see), 409 (archived, deleted, name taken, not on the team).
+
+## Mentions and links (P3-07)
+
+On every post and edit, in the same transaction, `src/mentions.ts` parses the body with the shared `parseMarkup` (the composer's parser: code spans and fences, link destinations, URLs, e-mail addresses and
+`\@` escapes are never mentions) and records what it names. At most 50 distinct handles, channels and entities per message count.
+
+- **`@handle` to a person.** The rule is `personHandles`/`matchHandle` in `packages/shared/src/markup/handles.ts`, shared with the composer. A person answers to their email local part (`nadia.k`), their
+  display name as a slug (`nadia-khan`) and, if exactly one candidate has it, their first name (`nadia`). The candidates are the people who can read the channel and have signed in (`app.channel_mention_candidates`,
+  a definer function because `actors` shows a caller only their own row): `@nadia` means the Nadia of this conversation. An exact handle shared by two people, and a first name shared by two, name
+  nobody (no guess); so does an unknown handle, a person who cannot read the channel (nothing is learned about them) and the author. A guest resolves nobody (guests see no member list). `@bot` handles
+  arrive with bots (`parseMarkup`'s `botHandles`).
+- **`message_mentions` rows**: `kind 'person'` with the person's **actor** id as `mentioned_id`, `kind 'channel'` for `#name` (a channel of the same team the author can see; a DM has none). An edit
+  inserts what is new and deletes what the new text dropped.
+- **Event `channel.mention.created`** (schema v1; ids only): one per person the first time a body names them, as the author, with the team (null in a DM). An edit that keeps a mention does not announce it
+  again. The notifications plugin consumes it.
+- **Entity links** (`ctx.links.create`, kind `mentions`, message to entity) for `[[thread:<uuid>]]`, `[[file:<uuid>]]` and `[[task:<uuid>]]`: only in a team channel the author belongs to
+  (the link table is team-members-only) and only to an entity the author can see (the type's registered resolver answers for the author; none registered, hidden or missing gives no link, never an
+  error). An edit removes links the new text no longer holds. `[[page:path]]` and a `[[task:...]]` that is not a uuid wait for those types to have uuid ids (phase 4 and 6).
+
+## Presence and typing (A.3)
+
+Two UNLOGGED tables, so they cost no WAL and are gone after a crash, which nobody minds. Both **expire by themselves**: readers filter by `seen_at > now() - 90 s` and `expires_at > now()`, so no
+reaper is needed; every typing request also deletes the expired rows of its channel (the table stays as small as the people typing). Typing is pushed to `app.channel_audience` except the typist as
+`typing.started` `{ channelId, personId, threadRootId, expiresAt }` (schema `TypingStartedPush`); a repeat while more than 2.5 s of the previous signal remain is not pushed again, so a client that
+repeats every 3 s sends about one push per 5 s. Clients drop the indicator at `expiresAt` or when the person's message arrives.
 
 ## Events
 
@@ -78,6 +107,7 @@ Schema version 1, in `packages/shared/src/events`, written as the acting person 
 | `channel.channel.updated` | `changes` (only the changed fields) |
 | `channel.channel.archived` | `archived` (true to archive, false to restore) |
 | `channel.member.added`, `channel.member.removed` | `personId, self` (the audit trail of who sees a private channel) |
+| `channel.mention.created` | `messageId, threadRootId, authorId, kind, mentionedId` (actor id), `personId` (see Mentions) |
 
 The plugin consumes `team.template.applied`.
 
@@ -100,7 +130,8 @@ Envelope `{ type, id, payload }`; schemas in `packages/shared/src/api/channels/r
 | `message.posted`, `message.edited` | `{ channelId, messageId, threadRootId, message? }`: the full `ChannelMessage` rides along when it fits in about 5.5 KB (a push may be at most 7 KB), otherwise fetch `messageId` |
 | `message.deleted` | `{ channelId, messageId, threadRootId }` |
 | `reaction.changed` | `{ channelId, messageId, actorId, emoji, added, count }` |
-| `channel.created` | `{ channel }` |
+| `channel.created` | `{ channel }` (also sent by direct-messages when a DM is made) |
+| `typing.started` | `{ channelId, personId, threadRootId, expiresAt }`, to the audience except the typist |
 
 ## Unread and links (the kernel services)
 
@@ -115,12 +146,12 @@ caller, so a private message resolves for nobody else.
 |---|---|
 | name / version / kind | `channels` / `0.1.0` / `server` |
 | extends | `event.emit`, `event.subscribe` |
-| events | emits the nine types above, consumes `team.template.applied` |
+| events | emits the ten types above, consumes `team.template.applied` |
 | migrations | `migrations` |
 
 ## Tests
 
 `test/channels-api.test.ts` (directory, creation, membership, authz, threads, reactions, 5,000-message pagination, unread, links), `test/realtime.test.ts` (sockets: delivery to permitted people only),
-`test/plain.test.ts`, `test/rls/channels-plugin.test.ts` (`pnpm test:rls`: per persona visibility, policies, guards, definer functions, the audience equals the visible sets),
+`test/mentions.test.ts` (parsing, resolution, edits, links), `test/ephemeral.test.ts` (presence, typing, expiry), `test/plain.test.ts`, `test/rls/channels-plugin.test.ts` (`pnpm test:rls`: per persona visibility, policies, guards, definer functions, the audience equals the visible sets),
 `test/events/channels-events.test.ts` (`pnpm test:events`), `e2e/api/messages/{rls,pagination}.spec.ts` (`pnpm e2e --project=api`; the specs use two test-only routes of `test-kernel`:
 `/api/test/bulk-messages` and `/api/test/channel-grants`, both run as the caller).

@@ -24,6 +24,7 @@ import {
   unreactRoute,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, json, notFound, route } from './http.ts';
+import { syncMessageRefs } from './mentions.ts';
 import { markdownToPlain } from './plain.ts';
 import {
   MESSAGE_COLUMNS,
@@ -96,6 +97,9 @@ export function registerMessageRoutes(deps: Deps): void {
         authorId: row.author_id,
         recipientPersonIds: row.thread_root_id ? await threadFollowers(tx, row.thread_root_id) : readers,
       });
+      // Sending ends the author's "typing" signal, and what the body names (people, channels, entities) is recorded.
+      await tx.query('DELETE FROM app.typing WHERE channel_id = $1 AND person_id = app.person_id()', [channelId]);
+      await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
       return json(PostMessageResponse.parse(toMessage(row)), 201);
     }),
   });
@@ -170,7 +174,9 @@ export function registerMessageRoutes(deps: Deps): void {
         threadRootId: current.threadRootId,
       });
       const edited = (await findChannelMessage(tx, channelId, messageId))!;
-      await pushMessage(deps, tx, await audience(tx, channelId), 'message.edited', edited);
+      const readers = await audience(tx, channelId);
+      await pushMessage(deps, tx, readers, 'message.edited', edited);
+      await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId }, 'edit');
       return json(EditMessageResponse.parse(edited));
     }),
   });
