@@ -13,8 +13,8 @@ live site; each shots file rebuilds the gallery over the whole folder in `afterA
 for real on live (a lead committing to the demo repo to fire the loader, a minted-then-revoked pairing token):
 secrets never land in the pictures (tokens redacted, revoked in the same run).
 
-**Open on main:** CI green — `ci` run 37143552731 on **`52013bf`** (STATUS header) passed every step incl.
-End-to-end (verify 11m49s). Before it: 37142818365 on `feb935c`, 37142052270 on `8316c1f`, 37141297569 on `dd4353e`, 37140658508 on `5e3774f` (flaky read-state test fix); that fix was needed
+**Open on main:** CI green — `ci` run 37144311363 on **`f24ca75`** (STATUS header) passed every step incl.
+End-to-end (verify 10m6s). Before it: 37143552731 on `52013bf`, 37142818365 on `feb935c`, 37142052270 on `8316c1f`, 37141297569 on `dd4353e`, 37140658508 on `5e3774f` (flaky read-state test fix); that fix was needed
 because the run before it went red on a docs-only push (`read-state.test.ts:137` used a random uuid as the
 mark-read position — fixed, lesson in `MISTAKES.md`). Earlier greens: 37138533733 on `237fa30` (screenshot cycle),
 37118752282 on `e7d72cf`. The `50f2fd1` red stays closed: the min-password-8 change left `'too-short'`
