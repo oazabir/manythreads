@@ -4,6 +4,15 @@ Current phase: **5 · Bots, gateways, conversations and Brain** — in progress:
 
 Owner instruction (2026-10-02, later the same day): phase 4's stop instruction is fulfilled — **continue building per PLAN.md, updating STATUS.md as work lands.** Also: avoid the entries in `MISTAKES.md` and append anything new there.
 
+Owner standing instruction (2026-10-03): after every task that is deployed and verified on the devbox, take
+screenshots of the feature, save them in `temp/screenshots/` (gitignored), and open Chrome on the gallery
+`temp/screenshots/index.html` to show all of them. Tooling: `e2e/screens/task.config.ts` plus one
+`e2e/screens/task.<task>.shots.ts` per task (`*.shots.ts`, never `*.spec.ts`, so the normal `pnpm e2e` never picks
+them up) — run `MANYTHREADS_LIVE_PASSWORD=... pnpm -C e2e exec playwright test -c screens/task.config.ts` against the
+live site; each shots file rebuilds the gallery over the whole folder in `afterAll`. The shots may drive the feature
+for real on live (a lead committing to the demo repo to fire the loader, a minted-then-revoked pairing token):
+secrets never land in the pictures (tokens redacted, revoked in the same run).
+
 **Open on main:** CI green — `ci` run 37118010707 on **`b16096e`** (P5-04 + a password e2e fix) passed every step incl. End-to-end. The push before it (`50f2fd1`) failed only on `e2e/identity/account.spec.ts`: the min-password-8 change left `'too-short'` (9 characters) *valid*, so the old disabled-button assertion broke — every vitest suite had been updated but this one e2e literal still probed the old 12 boundary (fix `b16096e` fills `'short'`; devbox `pnpm e2e identity/account.spec.ts` 3 passed; lesson in `MISTAKES.md`). The two older reds stay closed: the embedded-app e2e race was fixed with a find-then-`framenavigated` wait (30 s budget); the phase-3 visual pixel diff (`channel-thread.visual.spec.ts` "P,6%", 6.85% vs 6%) was **test-calibration, not a product regression** — unmasked live `.replies` counters, a one-shot scroll + fixed 150 ms wait landing ≥1 px off (the doubled-text diff signature; dominant), and no forced font loading. Fixed in phase-4 `c8e0c26` (`.replies` in `liveMasks`, `fontsLoaded()`, steady-state scroll + `networkidle`); the ratio is deterministic at **4.53% in both phase-4 and phase-5 CI** (1.5 pt under the limit).
 
 | Phase | State | Tag |
@@ -113,3 +122,17 @@ Screens: `docs/retro/screens/phase-1/`.
   (install + lint + typecheck + tests: 135 files, 2,101 passed, 53 skipped). Two failures on the way there are in
   `MISTAKES.md`: `app.threads` is keyed by `root_message_id` (a bad FK took down every server-starting test), and
   the devbox had no Playwright browser/deps for e2e.
+- **P5-04 deployed to live (2026-10-03):** `tools/devbox/Ship.ps1` run plain (second run, exit 0 — the first died
+  on the `*>&1 | Tee-Object` trap now in `MISTAKES.md`): remote gates green (2,126 passed / 53 skipped), image
+  `manythreads/server:acba305dd147-eb9cc3f8`, helm rev 6, 36 migrations, `bots` plugin active, `/` 200,
+  `/healthz`+`/readyz` ok. Pairing route: 401 anonymous (was 404 before the deploy), 404 signed-in with no bot row
+  (the loader only sees commits made after the deploy).
+- **Screenshot cycle, first run for P5-04:** `e2e/screens/task.config.ts` + `e2e/screens/task.p5-04.shots.ts`, run
+  on the devbox (this machine had no Playwright browser yet — a local `playwright install chromium` stalls after the
+  download, so shots run remote and `Sync-Down.ps1` brings `temp/screenshots/` home): 4 passed in 12 s. The
+  `pairing round trip` test fired the live loader for real — probe mint 404 → marker commit into
+  `bots/coder/BOT.md` (201, `c472255c…`) → the loader upserted the row → mint 201 → revoke `{revoked:1}`; the story
+  renders with the token redacted as `temp/screenshots/p5-04-pairing-api.png`, beside the BOT.md file view, its
+  History with the loader commit, and the roster. Gallery `temp/screenshots/index.html`, opened in Chrome per the
+  standing instruction. Live side effects: one invisible `<!-- refreshed … -->` marker line plus one commit in the
+  demo repo's history; no live tokens remain.
