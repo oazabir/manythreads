@@ -119,9 +119,9 @@ test('p5-01 door delivery on live', async ({ browser }) => {
   const doorRes = await anon.request.post(`${BASE}${DOOR_URL}`, {
     data: { token: minted.token, channel: devId, thread_ts: rootId, text: REPLY_TEXT },
   });
-  await anon.close();
   expect(doorRes.status(), 'deliver through the public door on live').toBe(200);
   const door = (await doorRes.json()) as { ts: string };
+  await anon.close();
   blocks.push({ method: 'POST', url: DOOR_URL, status: 200, body: JSON.stringify({ ok: true, ts: door.ts }) });
 
   // The reply reads back through the normal messages API, then on screen.
