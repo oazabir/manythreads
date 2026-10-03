@@ -26,7 +26,7 @@ mark-read position — fixed, lesson in `MISTAKES.md`). Earlier greens: 37138533
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
 | 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
 | 4 Files and the team repo | done — merged PR #6, released and deployed; gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | phase-4 / v0.4.0 (live shots on the `screenshots` branch) |
-| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped; CI green at `b16096e`, run 37118010707); next P5-01/P5-02 spikes (recon done, Hermes installed on the devbox) | |
+| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped; CI green at `b16096e`, run 37118010707); **P5-01 + P5-02 spikes done** (slack-compat door + Hermes adapter proven, per-run URL decision); next P5-05 BOT.md editor | |
 | 6–13 | not started | |
 
 ## Phase 1 summary
@@ -101,8 +101,9 @@ Screens: `docs/retro/screens/phase-1/`.
   spike endpoint's bearer auth is `bot_pairing_tokens`, so the schema landed first. **Hermes is now installed on the
   devbox** from the official installer only (`curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`;
   docs https://github.com/nousresearch/hermes-agent — never vendored into this repo). The installer's interactive
-  `setup`/gateway step was skipped (no terminal in a scripted shell) and its `git clone` is flaky (a retry works);
-  P5-01/P5-02 are unblocked and pending execution.
+  `setup`/gateway step was skipped (no terminal in a scripted shell) and its `git clone` is flaky (a retry works).
+  Both spikes ran against Hermes v0.21.5+6232 (`/root/.local/bin/hermes` — not on the non-interactive PATH;
+  source `~/.hermes/hermes-agent`; deps via `uv run --project ~/.hermes/hermes-agent`).
 - **P5-04 done — loader + pairing:** `bots.register` wires a `repo.repo.committed` subscription: strict parse
   (line-scanned `---` fence → `yaml` → `BotFrontmatter`) in the outbox consumer's system transaction. Valid → upsert
   (a hand-`disabled` row stays disabled), bot actor via `getOneOrCreate`, `handover.mayTag` compiled into the bot's
@@ -120,14 +121,24 @@ Screens: `docs/retro/screens/phase-1/`.
 - **Min password length 8 (owner decision):** the minimum went 12 → 8 everywhere — kernel/shared constants, UI copy,
   `.github/actions/lib/remote.sh`, tests, persona fixtures, 4 regenerated schema-compat snapshots. Windows
   `Check.ps1` and devbox `remote-gates.sh` both green (2,101 passed / 53 skipped); committed `9954842` (was `0fc2bdb` before the rebase onto `78ba8c2`).
-- **P5-01/P5-02 spikes next — recon done:** Hermes v0.21.5 is on the devbox (`/root/.local/bin/hermes` — not on the
-  non-interactive PATH; source `~/.hermes/hermes-agent`). Its bundled Slack platform is slack-bolt **Socket Mode** and
-  cannot be repointed at us, so the spike's shape is: inbound through Hermes's **webhook platform** (HMAC-signed POST →
-  prompt → deliver), reply through a **platform plugin** (`~/.hermes/plugins/`, `ctx.register_platform`) POSTing into
-  slack-compat's `chat.postMessage`; on our side the public route resolves the pairing token
-  (`app.bots_pairing_resolve` has no caller check) and `ctx.jobs.enqueue` works from the anonymous tx via the
-  `app.enqueue_job` definer, so a SYSTEM job lands the message. Initiative page `kp-5f30f9d7e3c7484ea0c047c34ee37c1a`;
-  reports go to `docs/spikes/slack-compat.md` and `docs/spikes/per-run-scoping.md`.
+- **P5-02 done — per-run tool scoping decision:** `docs/spikes/per-run-scoping.md` (committed
+  `86ef2d4`). Hermes v0.21.5 has no per-run tool-scope primitive (static `mcp_servers` per
+  config file; only per-invocation `-t/--resume/-p/-q` selection), while our side already carries
+  the run (`app.run_id` + `run_source_log` policy from P5-00/P5-03) — so P5-09 mints **one MCP
+  endpoint URL + bearer token per run** and `runtime-hermes` launches one Hermes invocation per
+  run against it. The live two-concurrent-runs experiment moves to P5-09 (needs the gateway +
+  conversations). Committed `86ef2d4`.
+- **P5-01 done — slack-compat spike + Hermes adapter proof:** public
+  `POST /api/slack-compat/chat.postMessage` (`{token, channel, thread_ts, text}` → 60/min
+  limit, pairing-token resolve, `slack-compat.deliver` SYSTEM job lands the message idempotently;
+  spike-only direct `app.messages` write, flagged for P5-10) in `packages/plugins/slack-compat/`
+  with docs `docs/plugins/slack-compat.md` and report `docs/spikes/slack-compat.md`. Hermes side:
+  bundled Slack is Socket-Mode-only (verified, cannot be repointed); new outbound adapter
+  `~/.hermes/plugins/manythreads/` (reference copy `docs/spikes/slack-compat-adapter/` + proof
+  scripts) holding the pairing token only. Proven: vitest 2 passed; `hermes plugins doctor` OK;
+  `prove_adapter.py` (real `platform_registry`, exact wire shape) passed; `prove_live.mts` live
+  loop passed (real adapter → scratch server → reply in #dev thread readable via API). Model
+  authorship deferred to P5-10 (devbox holds no model credential). Next: P5-05 BOT.md editor.
 - **Gate:** Windows `Check.ps1` (lint + typecheck) green over 26 workspaces; devbox `remote-gates.sh` green
   (install + lint + typecheck + tests: 135 files, 2,101 passed, 53 skipped). Two failures on the way there are in
   `MISTAKES.md`: `app.threads` is keyed by `root_message_id` (a bad FK took down every server-starting test), and
