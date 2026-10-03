@@ -51,7 +51,7 @@ the server refuses to start in production with the token set. The screenshots wo
 admin CLI (below). The `test-auth-token` Secret key is generated either way and unused while the flag is off.
 
 **Admin CLI.** `kubectl exec -i -n manythreads deploy/manythreads-server -- pnpm --filter @manythreads/server admin set-password <email>`
-reads the new password from stdin (never the command line), refuses fewer than 12 characters, stores an argon2id hash, signs the person
+reads the new password from stdin (never the command line), refuses fewer than 8 characters, stores an argon2id hash, signs the person
 out everywhere and records the audit event `identity.password.admin_set`. It is also the way to give a seeded persona a known password on
 a demo site, or to recover an admin who lost theirs. Pipe the password in: `printf '%s\n' "$PW" | kubectl exec -i ...`.
 `admin kms-rewrap` (no arguments) is the last step of a master-key rotation: put the new `MANYTHREADS_KMS_KEY` in place, keep the old one in `MANYTHREADS_KMS_PREVIOUS_KEYS` (comma-separated

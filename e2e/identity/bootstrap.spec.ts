@@ -17,10 +17,10 @@ test('first admin creates the workspace; reusing the link shows the expired page
   await page.getByLabel('Name', { exact: true }).fill('Omar Al Zabir');
   await page.getByLabel('Email').fill('omar@kahf.example');
 
-  // an 11-character password is refused with the rule shown (criterion 2)
-  await page.getByLabel('Password', { exact: true }).fill('only-11-chr');
+  // a 7-character password is refused with the rule shown (criterion 2)
+  await page.getByLabel('Password', { exact: true }).fill('7-chars');
   await page.getByRole('button', { name: 'Create workspace' }).click();
-  await expect(page.getByRole('alert')).toContainText('Password must be at least 12 characters.');
+  await expect(page.getByRole('alert')).toContainText('Password must be at least 8 characters.');
 
   await page.getByLabel('Password', { exact: true }).fill('correct-horse-battery');
   await page.getByRole('button', { name: 'Create workspace' }).click();

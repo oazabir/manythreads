@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ApiRoute } from '../client/route.ts';
 import { AuthenticatedSession } from './session.ts';
 
-/** Sign-in never applies the length rule (a wrong 11-character guess is just wrong), only sane bounds. */
+/** Sign-in never applies the length rule (a wrong 7-character guess is just wrong), only sane bounds. */
 export const SignInWithPasswordRequest = z
   .strictObject({
     email: z.string().trim().min(1, 'Enter your email.').max(320),

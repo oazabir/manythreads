@@ -52,13 +52,13 @@ describe('POST /api/auth/password/change', () => {
     expect((await sql<{ n: number }>("SELECT count(*)::int AS n FROM app.events WHERE type = 'identity.password.changed'"))[0]?.n).toBe(events);
   });
 
-  it('refuses an 11-character new password with the rule, a missing field, an unknown field and an unchanged password', async () => {
+  it('refuses a 7-character new password with the rule, a missing field, an unknown field and an unchanged password', async () => {
     const c = createApiClient(s.url);
     await c.signIn(SAMEERA.email, PERSONA_PASSWORD);
-    const short = await c.post('/api/auth/password/change', { currentPassword: PERSONA_PASSWORD, newPassword: '12345678901' });
+    const short = await c.post('/api/auth/password/change', { currentPassword: PERSONA_PASSWORD, newPassword: '1234567' });
     expect(short.status).toBe(400);
     const err = await errorOf(short);
-    expect(err.message).toContain('at least 12 characters');
+    expect(err.message).toContain('at least 8 characters');
     expect(err.path).toEqual(['newPassword']);
     expect((await c.post('/api/auth/password/change', { newPassword: NEW_PASSWORD })).status).toBe(400);
     expect((await c.post('/api/auth/password/change', { currentPassword: PERSONA_PASSWORD, newPassword: NEW_PASSWORD, email: 'x@y.z' })).status).toBe(400);

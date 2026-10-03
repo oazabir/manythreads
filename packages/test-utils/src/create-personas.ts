@@ -11,7 +11,7 @@ import {
   type WorkspaceRole,
 } from './personas.ts';
 
-/** Every persona's password (12+ characters, SPEC §4). */
+/** Every persona's password (8+ characters, SPEC §4). */
 export const PERSONA_PASSWORD = 'correct-horse-battery';
 
 export const KAHF_WORKSPACE = { id: KAHF_WORKSPACE_ID, slug: 'kahf-software', name: 'Kahf Software' } as const;

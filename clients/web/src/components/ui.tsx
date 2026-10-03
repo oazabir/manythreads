@@ -53,7 +53,7 @@ export function Field({ label, hint, suffix, className, ...input }: FieldProps) 
   );
 }
 
-/** Live rule hint for a new password: "12+ characters", ok once met, alert when started but short. */
+/** Live rule hint for a new password: "8+ characters", ok once met, alert when started but short. */
 export function passwordRule(value: string): { ok: boolean; started: boolean; text: string } {
   const n = value.length;
   const ok = n >= PASSWORD_MIN;

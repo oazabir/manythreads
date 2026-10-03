@@ -89,7 +89,7 @@ printf '%s\n' "$PW" | pnpm --filter @manythreads/server admin set-password nadia
 ```
 
 `set-password <email>` (`packages/server/src/cli/admin.ts`) reads the new password from **stdin only** (a TTY is refused; one trailing
-newline is stripped), requires at least 12 characters, stores an argon2id hash, revokes every session of that person and every unused
+newline is stripped), requires at least 8 characters, stores an argon2id hash, revokes every session of that person and every unused
 reset link, and writes an `identity.password.admin_set` audit event (person and number of sessions revoked, never the password). It
 connects as `manythreads_system` from `MANYTHREADS_SYSTEM_DATABASE_URL` (or derives it from `DATABASE_URL`), so it runs in the server
 pod (`kubectl exec -i deploy/manythreads-server -- ...`, see `remote_set_password` in `.github/actions/lib/remote.sh`) and in a dev

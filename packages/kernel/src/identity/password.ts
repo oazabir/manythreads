@@ -1,7 +1,7 @@
 import { hash, verify } from '@node-rs/argon2';
 
-/** Minimum password length (SPEC §4, policy min 12). */
-export const MIN_PASSWORD_LENGTH = 12;
+/** Minimum password length (SPEC §4, policy min 8). */
+export const MIN_PASSWORD_LENGTH = 8;
 
 /** argon2id hash in PHC format (`$argon2id$...`); @node-rs/argon2 defaults to Argon2id with a random salt. */
 export function hashPassword(password: string): Promise<string> {

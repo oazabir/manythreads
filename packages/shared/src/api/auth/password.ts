@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-/** Password policy (SPEC §4): at least 12 characters. The message is shown to the person as written. */
-export const PASSWORD_MIN_LENGTH = 12;
+/** Password policy (SPEC §4): at least 8 characters. The message is shown to the person as written. */
+export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 256;
 
 /** A password someone is setting (bootstrap, reset, accept invite, change). Sign-in itself never applies the rule. */

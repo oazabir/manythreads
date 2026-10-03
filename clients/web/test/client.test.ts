@@ -79,13 +79,13 @@ describe('api client: CSRF', () => {
 });
 
 describe('api client: errors', () => {
-  const envelope = { error: { code: 'validation_failed', message: 'Password must be at least 12 characters', path: ['password'] } };
+  const envelope = { error: { code: 'validation_failed', message: 'Password must be at least 8 characters', path: ['password'] } };
 
   it('maps an ErrorEnvelope to a typed ApiError', async () => {
     const { api } = setup(() => ({ status: 400, body: envelope }));
     const err = await api.call(postRoute, { response: Item }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
-    expect(err).toMatchObject({ code: 'validation_failed', message: 'Password must be at least 12 characters', path: ['password'], status: 400 });
+    expect(err).toMatchObject({ code: 'validation_failed', message: 'Password must be at least 8 characters', path: ['password'], status: 400 });
   });
 
   it('maps a non-envelope failure to a generic ApiError', async () => {

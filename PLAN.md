@@ -250,7 +250,7 @@ Settings frame: left nav (Workspace: General, Sign-in, Members, Roles; Team: Ros
 ### 3 · Acceptance criteria
 
 1. Empty DB: a bootstrap URL prints once, creates the first admin, and returns 410 on reuse.
-2. An 11-character password is refused with the rule shown; an unknown email with self-signup off creates nothing and does not reveal whether it exists.
+2. An under-length password (below the SPEC §4 minimum) is refused with the rule shown; an unknown email with self-signup off creates nothing and does not reveal whether it exists.
 3. Google with domain `kahf.co` refuses `other.com`; Microsoft refuses another tenant; failed any-OIDC discovery leaves the provider disabled with the reason shown. With OIDC the only method for members, admins keep the password form.
 4. An idle session returns 401 and the client returns to sign-in keeping the return path.
 5. Applying Engineering makes the team with Omar `lead`; the team record stores the template id and the stored definition lists #general #dev #releases #incidents #alerts #standup, a board and bots including Brain (applied in phases 3 and 5); applying twice duplicates nothing.

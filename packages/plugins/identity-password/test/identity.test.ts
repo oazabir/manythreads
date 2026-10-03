@@ -69,14 +69,14 @@ describe('first-admin bootstrap', () => {
     expect(await count(s, 'workspaces')).toBe(0);
   });
 
-  it('refuses an 11-character password with the rule, and the link stays valid', async () => {
+  it('refuses a 7-character password with the rule, and the link stays valid', async () => {
     const token = s.bootstrapToken() as string;
     const c = createApiClient(s.url);
-    const res = await c.post(`/api/bootstrap/${token}`, { ...form, password: '12345678901' });
+    const res = await c.post(`/api/bootstrap/${token}`, { ...form, password: '1234567' });
     expect(res.status).toBe(400);
     const err = await errorOf(res);
     expect(err.code).toBe('validation_failed');
-    expect(err.message).toContain('at least 12 characters');
+    expect(err.message).toContain('at least 8 characters');
     expect(err.path).toEqual(['password']);
     expect(await count(s, 'workspaces')).toBe(0);
     expect((await c.get(`/api/bootstrap/${token}`)).status).toBe(200);
@@ -495,16 +495,16 @@ describe('password reset and email verification', () => {
     expect(mail?.html).toContain('<a href="https://manythreads.example/reset-password/');
   });
 
-  it('resets with a valid token once; an 11-character password is refused without spending the token', async () => {
+  it('resets with a valid token once; a 7-character password is refused without spending the token', async () => {
     const c = createApiClient(s.url);
     const other = createApiClient(s.url);
     await other.signIn(NADIA.email, PERSONA_PASSWORD);
     await c.post('/api/auth/password/reset-request', { email: NADIA.email });
     const token = tokenFrom(NADIA.email);
 
-    const short = await c.post('/api/auth/password/reset', { token, password: '12345678901' });
+    const short = await c.post('/api/auth/password/reset', { token, password: '1234567' });
     expect(short.status).toBe(400);
-    expect((await errorOf(short)).message).toContain('at least 12 characters');
+    expect((await errorOf(short)).message).toContain('at least 8 characters');
 
     const ok = await c.post('/api/auth/password/reset', { token, password: 'a-brand-new-passphrase' });
     expect(ok.status).toBe(200);

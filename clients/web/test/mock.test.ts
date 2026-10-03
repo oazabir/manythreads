@@ -101,10 +101,10 @@ describe('mock transport serves fixtures that parse with the shared schemas', ()
   });
 
   it('refuses a short password on the client before any request, with the shared message', async () => {
-    await expect(api.bootstrapWorkspace('tok', { workspaceName: 'W', name: 'N', email: 'a@b.co', password: 'short-11-ch' })).rejects.toMatchObject({
+    await expect(api.bootstrapWorkspace('tok', { workspaceName: 'W', name: 'N', email: 'a@b.co', password: 'short-7' })).rejects.toMatchObject({
       code: 'validation_failed',
       path: ['password'],
-      message: 'Password must be at least 12 characters.',
+      message: 'Password must be at least 8 characters.',
     });
   });
   it('change password: a wrong current password is a 400 (never 401), success ends the other sessions, the new one signs in', async () => {
@@ -113,10 +113,10 @@ describe('mock transport serves fixtures that parse with the shared schemas', ()
       status: 400,
       message: 'Your current password is incorrect.',
     });
-    await expect(api.changePassword({ currentPassword: MOCK_PASSWORD, newPassword: '12345678901' })).rejects.toMatchObject({
+    await expect(api.changePassword({ currentPassword: MOCK_PASSWORD, newPassword: '1234567' })).rejects.toMatchObject({
       code: 'validation_failed',
       path: ['newPassword'],
-      message: 'Password must be at least 12 characters.',
+      message: 'Password must be at least 8 characters.',
     });
     expect((await api.fetchSessions()).sessions).toHaveLength(3);
     expect(await api.changePassword({ currentPassword: MOCK_PASSWORD, newPassword: 'a-brand-new-passphrase' })).toEqual({ ok: true, revokedSessions: 2 });

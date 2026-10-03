@@ -76,7 +76,7 @@ The kernel provides six services: identity, the append-only event log, the plugi
 |---|---|---|
 | Google Workspace preset | Client ID, secret, allowed domains | OIDC; domain allowlist is the workspace boundary |
 | Microsoft 365 / Teams preset | Tenant ID, client ID, secret, allowed domains | Entra ID; covers Teams sign-in; SAML on enterprise track |
-| Username and password | Policy (min 12), email verification, self-signup default off | Always available to admins as break-glass |
+| Username and password | Policy (min 8), email verification, self-signup default off | Always available to admins as break-glass |
 | Any OIDC provider | Issuer URL, client ID, secret | GitHub, Apple, Okta, Keycloak |
 
 SCIM and group-to-team mapping are on the enterprise track.

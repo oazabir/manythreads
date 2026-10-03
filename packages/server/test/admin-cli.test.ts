@@ -48,11 +48,11 @@ describe('admin set-password', () => {
     expect(await readPassword(Readable.from(['pa', 'ss']))).toBe('pass');
   });
 
-  it('rejects a password under 12 characters and changes nothing', async () => {
+  it('rejects a password under 8 characters and changes nothing', async () => {
     const before = await hashOf(OMAR.personId);
-    const r = await run(['set-password', OMAR.email], 'only-11-chr\n');
+    const r = await run(['set-password', OMAR.email], '7-chars\n');
     expect(r.code).toBe(2);
-    expect(r.err).toContain('at least 12 characters');
+    expect(r.err).toContain('at least 8 characters');
     expect(await hashOf(OMAR.personId)).toBe(before);
   });
 

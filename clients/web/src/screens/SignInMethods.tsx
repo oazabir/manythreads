@@ -183,7 +183,7 @@ function PasswordBox() {
           <Toggle label="Members can sign in with a password" checked={on} disabled={busy || q.status !== 'ok'} onChange={(v) => void set(v)} />
         </span>
       </h2>
-      <div className="fld"><span className="fld-label">Password policy</span><div className="inp-static">min 12 characters</div></div>
+      <div className="fld"><span className="fld-label">Password policy</span><div className="inp-static">min 8 characters</div></div>
       <div className="fld-hint">Admins keep username and password as a break-glass login even when single sign-on is the only method for members.</div>
       {error ? <Alert>{error}</Alert> : null}
     </section>
