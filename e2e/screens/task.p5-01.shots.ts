@@ -112,10 +112,14 @@ test('p5-01 door delivery on live', async ({ browser }) => {
   const rootId = ((await rootRes.json()) as { id: string }).id;
   blocks.push({ method: 'POST', url: `/api/channels/<dev>/messages`, status: 201, body: JSON.stringify({ threadRootId: null }) });
 
-  // The spike path itself: no session, the pairing token in the body is the credential.
-  const doorRes = await page.request.post(`${BASE}${DOOR_URL}`, {
+  // The spike path itself: no session, no cookies — a fresh anonymous context, the
+  // shape Hermes calls with. (page.request would carry the sign-in session cookie,
+  // and the host answers cookie-without-CSRF with 403 by design.)
+  const anon = await browser.newContext({ baseURL: BASE, ignoreHTTPSErrors: true });
+  const doorRes = await anon.request.post(`${BASE}${DOOR_URL}`, {
     data: { token: minted.token, channel: devId, thread_ts: rootId, text: REPLY_TEXT },
   });
+  await anon.close();
   expect(doorRes.status(), 'deliver through the public door on live').toBe(200);
   const door = (await doorRes.json()) as { ts: string };
   blocks.push({ method: 'POST', url: DOOR_URL, status: 200, body: JSON.stringify({ ok: true, ts: door.ts }) });
