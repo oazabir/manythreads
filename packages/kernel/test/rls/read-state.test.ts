@@ -134,7 +134,10 @@ describe('markRead', () => {
     const m1 = await post(ch, RAFI, []);
     const entry = await w.as(PRIYA, (t) => svc.markRead(tx(t), PRIYA.personId, { targetType: 'channel', targetId: ch }, m1, { remaining: 7 }));
     expect(entry).toMatchObject({ lastReadId: m1, unreadCount: 7 });
-    await expect(w.as(PRIYA, (t) => svc.markRead(tx(t), PRIYA.personId, { targetType: 'channel', targetId: ch }, randomUUID(), { remaining: -1 }))).rejects.toThrow(RangeError);
+    // `m1` again, not a random id: the position must advance (last_read_id <= upTo) to reach the `remaining`
+    // validation — a random uuid sorts below m1 about one run in sixteen, and the monotonic early-return would
+    // answer the current row instead of throwing.
+    await expect(w.as(PRIYA, (t) => svc.markRead(tx(t), PRIYA.personId, { targetType: 'channel', targetId: ch }, m1, { remaining: -1 }))).rejects.toThrow(RangeError);
   });
 
   it('needs a counter or `remaining`: UnreadCounterMissingError for a type nobody registered', async () => {
