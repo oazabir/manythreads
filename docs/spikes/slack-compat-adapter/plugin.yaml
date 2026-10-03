@@ -1,0 +1,28 @@
+name: manythreads-platform
+label: manythreads
+kind: platform
+version: 0.1.0
+description: >
+  manythreads outbound adapter (SPIKE P5-01, docs/spikes/slack-compat.md).
+  Delivers a Hermes reply into a manythreads channel thread by POSTing the
+  slack-compat door `POST {server}/api/slack-compat/chat.postMessage` with
+  `{token, channel, thread_ts, text}`. The pairing token in the body IS the
+  credential (resolved server-side via `app.bots_pairing_resolve`); the
+  adapter holds no provider key, Hindsight address or repo credential.
+  Outbound-only: inbound prompting arrives via the generic `webhook`
+  platform in the full P5-10 loop.
+author: manythreads
+requires_env:
+  - name: MANYTHREADS_SERVER_URL
+    description: "manythreads server base URL (e.g. http://127.0.0.1:3000)"
+    prompt: "manythreads server URL"
+    password: false
+  - name: MANYTHREADS_PAIRING_TOKEN
+    description: "Pairing token minted for the bot (shown once at mint)"
+    prompt: "Bot pairing token"
+    password: true
+optional_env:
+  - name: MANYTHREADS_HOME_CHANNEL
+    description: "Default channel id for cron / notification delivery"
+    prompt: "Home channel id (or empty)"
+    password: false
