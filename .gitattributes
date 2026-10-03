@@ -1,0 +1,6 @@
+# Byte-identical checkouts on every OS: the dev loop rsyncs the working tree to
+# Linux (see WINDOWS_DEV.md) and byte-sensitive tests read fixtures straight
+# from the tree, so CRLF worktree files break the devbox gate. `text=auto`
+# lets git detect binaries (never touched); `eol=lf` forces LF for text, in
+# blobs and checkouts, with no per-OS conversion ever.
+* text=auto eol=lf
