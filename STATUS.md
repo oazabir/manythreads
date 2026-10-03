@@ -1,10 +1,10 @@
 # STATUS
 
-Current phase: **5 · Bots, gateways, conversations and Brain** — in progress: P5-00 reflect verified, **P5-03 schema landed and green on the devbox** (see "Phase 5 so far"). Phase 4 is finished: merged PR #6, `release.yml` success 2026-10-02 14:10Z (tagged `phase-4` / `v0.4.0`, deployed), screenshots run success 14:13Z (live shots on the `screenshots` branch under `phase-4/{desktop,mobile}/`). Retro: `docs/retro/phase-4.md`.
+Current phase: **5 · Bots, gateways, conversations and Brain** — in progress: P5-00 reflect verified, **P5-03 schema and P5-04 loader + pairing landed** (both green on the devbox; see "Phase 5 so far"). Phase 4 is finished: merged PR #6, `release.yml` success 2026-10-02 14:10Z (tagged `phase-4` / `v0.4.0`, deployed), screenshots run success 14:13Z (live shots on the `screenshots` branch under `phase-4/{desktop,mobile}/`). Retro: `docs/retro/phase-4.md`.
 
 Owner instruction (2026-10-02, later the same day): phase 4's stop instruction is fulfilled — **continue building per PLAN.md, updating STATUS.md as work lands.** Also: avoid the entries in `MISTAKES.md` and append anything new there.
 
-**Open on main:** CI green — `Phase 5` run 37072610745 on `d042b2d` is the first green main CI including e2e. The two earlier reds are closed: the embedded-app e2e race (the probe's JSON was written but `html[data-probed="1"]` did not appear within 15 s) was fixed with a find-then-`framenavigated` wait; the phase-3 visual pixel diff (`channel-thread.visual.spec.ts` "P,6%", 6.85% vs 6%) was **test-calibration, not a product regression** — unmasked live `.replies` counters, a one-shot scroll + fixed 150 ms wait landing ≥1 px off (the doubled-text diff signature; dominant), and no forced font loading. Fixed in phase-4 `c8e0c26` (`.replies` in `liveMasks`, `fontsLoaded()`, steady-state scroll + `networkidle`); the ratio is now deterministic at **4.53% in both phase-4 and phase-5 CI** (1.5 pt under the limit).
+**Open on main:** CI green — `ci` run 37118010707 on **`b16096e`** (P5-04 + a password e2e fix) passed every step incl. End-to-end. The push before it (`50f2fd1`) failed only on `e2e/identity/account.spec.ts`: the min-password-8 change left `'too-short'` (9 characters) *valid*, so the old disabled-button assertion broke — every vitest suite had been updated but this one e2e literal still probed the old 12 boundary (fix `b16096e` fills `'short'`; devbox `pnpm e2e identity/account.spec.ts` 3 passed; lesson in `MISTAKES.md`). The two older reds stay closed: the embedded-app e2e race was fixed with a find-then-`framenavigated` wait (30 s budget); the phase-3 visual pixel diff (`channel-thread.visual.spec.ts` "P,6%", 6.85% vs 6%) was **test-calibration, not a product regression** — unmasked live `.replies` counters, a one-shot scroll + fixed 150 ms wait landing ≥1 px off (the doubled-text diff signature; dominant), and no forced font loading. Fixed in phase-4 `c8e0c26` (`.replies` in `liveMasks`, `fontsLoaded()`, steady-state scroll + `networkidle`); the ratio is deterministic at **4.53% in both phase-4 and phase-5 CI** (1.5 pt under the limit).
 
 | Phase | State | Tag |
 |---|---|---|
@@ -12,7 +12,7 @@ Owner instruction (2026-10-02, later the same day): phase 4's stop instruction i
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
 | 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
 | 4 Files and the team repo | done — merged PR #6, released and deployed; gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | phase-4 / v0.4.0 (live shots on the `screenshots` branch) |
-| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped); next P5-01/P5-02 spikes (Hermes installed on the devbox) | |
+| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped; CI green at `b16096e`, run 37118010707); next P5-01/P5-02 spikes (recon done, Hermes installed on the devbox) | |
 | 6–13 | not started | |
 
 ## Phase 1 summary
@@ -100,7 +100,15 @@ Screens: `docs/retro/screens/phase-1/`.
   `docs/plugins/bots.md` documents loader, pairing and events.
 - **Min password length 8 (owner decision):** the minimum went 12 → 8 everywhere — kernel/shared constants, UI copy,
   `.github/actions/lib/remote.sh`, tests, persona fixtures, 4 regenerated schema-compat snapshots. Windows
-  `Check.ps1` and devbox `remote-gates.sh` both green (2,101 passed / 53 skipped); committed `0fc2bdb`.
+  `Check.ps1` and devbox `remote-gates.sh` both green (2,101 passed / 53 skipped); committed `9954842` (was `0fc2bdb` before the rebase onto `78ba8c2`).
+- **P5-01/P5-02 spikes next — recon done:** Hermes v0.21.5 is on the devbox (`/root/.local/bin/hermes` — not on the
+  non-interactive PATH; source `~/.hermes/hermes-agent`). Its bundled Slack platform is slack-bolt **Socket Mode** and
+  cannot be repointed at us, so the spike's shape is: inbound through Hermes's **webhook platform** (HMAC-signed POST →
+  prompt → deliver), reply through a **platform plugin** (`~/.hermes/plugins/`, `ctx.register_platform`) POSTing into
+  slack-compat's `chat.postMessage`; on our side the public route resolves the pairing token
+  (`app.bots_pairing_resolve` has no caller check) and `ctx.jobs.enqueue` works from the anonymous tx via the
+  `app.enqueue_job` definer, so a SYSTEM job lands the message. Initiative page `kp-5f30f9d7e3c7484ea0c047c34ee37c1a`;
+  reports go to `docs/spikes/slack-compat.md` and `docs/spikes/per-run-scoping.md`.
 - **Gate:** Windows `Check.ps1` (lint + typecheck) green over 26 workspaces; devbox `remote-gates.sh` green
   (install + lint + typecheck + tests: 135 files, 2,101 passed, 53 skipped). Two failures on the way there are in
   `MISTAKES.md`: `app.threads` is keyed by `root_message_id` (a bad FK took down every server-starting test), and
