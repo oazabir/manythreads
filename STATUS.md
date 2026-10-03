@@ -59,6 +59,11 @@ Screens: `docs/retro/screens/phase-1/`.
 - Lead/admin can self-add to a private channel of their team (by design, audited) — confirm with spec wording.
 
 ## Environment / blockers
+- Owner rule (2026-10-03): GitHub Actions minutes are limited — Actions are for building and deploying to k3s only
+  (`ci`, `release`, `deploy`, manual `ops-*`); everything else runs from the devbox over SSH. `screenshots.yml` is
+  manual-dispatch only (its post-`release` auto-trigger is removed): phase-exit live shots run on the devbox and the
+  pictures reach the `screenshots` branch from here; per-task shots already work that way (`temp/screenshots/` via
+  `task.*.shots.ts` + `Sync-Down.ps1`).
 - SSH to the server is blocked from the sandbox; deploys run from GitHub Actions (secret ROOT_PASSWORD).
   Deploy rule (owner): pushing a version tag `v*` deploys latest `main`. Each phase exit: PR → main,
   tag `phase-N` + `v0.N.0`. Ops workflows: ops-rollout/restart/rollback/logs/status (dispatch from main).
