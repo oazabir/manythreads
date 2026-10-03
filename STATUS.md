@@ -4,7 +4,7 @@ Current phase: **5 · Bots, gateways, conversations and Brain** — in progress:
 
 Owner instruction (2026-10-02, later the same day): phase 4's stop instruction is fulfilled — **continue building per PLAN.md, updating STATUS.md as work lands.** Also: avoid the entries in `MISTAKES.md` and append anything new there.
 
-**Open on main:** CI is red on the last two phase merges — `Phase 3` run 36997072944 failed on one visual pixel diff; `Phase 4` run 37017976239 failed on `e2e/files/embedded-app.spec.ts` (the fixture app's probe had written its JSON but `html[data-probed="1"]` was still not there within 15 s — 1 failed / 248 passed; 12/12 green on the devbox, so it is the runner's budget, not the logic). The wait is now 30 s (committed with this batch); a push re-runs CI on main. The phase-3 visual pixel diff is untouched — run the full `pnpm vt` before the next phase merge.
+**Open on main:** CI green — `Phase 5` run 37072610745 on `d042b2d` is the first green main CI including e2e. The two earlier reds are closed: the embedded-app e2e race (the probe's JSON was written but `html[data-probed="1"]` did not appear within 15 s) was fixed with a find-then-`framenavigated` wait; the phase-3 visual pixel diff (`channel-thread.visual.spec.ts` "P,6%", 6.85% vs 6%) was **test-calibration, not a product regression** — unmasked live `.replies` counters, a one-shot scroll + fixed 150 ms wait landing ≥1 px off (the doubled-text diff signature; dominant), and no forced font loading. Fixed in phase-4 `c8e0c26` (`.replies` in `liveMasks`, `fontsLoaded()`, steady-state scroll + `networkidle`); the ratio is now deterministic at **4.53% in both phase-4 and phase-5 CI** (1.5 pt under the limit).
 
 | Phase | State | Tag |
 |---|---|---|
@@ -12,7 +12,7 @@ Owner instruction (2026-10-02, later the same day): phase 4's stop instruction i
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
 | 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
 | 4 Files and the team repo | done — merged PR #6, released and deployed; gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | phase-4 / v0.4.0 (live shots on the `screenshots` branch) |
-| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done** (schema + RLS + mappers + tests; devbox gate green: lint, typecheck, 2,101 tests / 53 skipped); next P5-01/P5-02 spikes, then P5-04 loader | |
+| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped); next P5-01/P5-02 spikes (Hermes installed on the devbox) | |
 | 6–13 | not started | |
 
 ## Phase 1 summary
@@ -79,8 +79,28 @@ Screens: `docs/retro/screens/phase-1/`.
   `run_source_log` readable with the run's team, appended only by the run itself (`run_id = app.run_id()`).
   Read plans hoisted (`findPerRowPolicyCalls` asserted).
 - **Order note:** PLAN puts the P5-01/P5-02 spikes first, but both need the Hermes source (not in this repo) and the
-  spike endpoint's bearer auth is `bot_pairing_tokens`, so the schema landed first. Spikes are next as soon as the
-  Hermes source is available — they gate the rest of the phase.
+  spike endpoint's bearer auth is `bot_pairing_tokens`, so the schema landed first. **Hermes is now installed on the
+  devbox** from the official installer only (`curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash`;
+  docs https://github.com/nousresearch/hermes-agent — never vendored into this repo). The installer's interactive
+  `setup`/gateway step was skipped (no terminal in a scripted shell) and its `git clone` is flaky (a retry works);
+  P5-01/P5-02 are unblocked and pending execution.
+- **P5-04 done — loader + pairing:** `bots.register` wires a `repo.repo.committed` subscription: strict parse
+  (line-scanned `---` fence → `yaml` → `BotFrontmatter`) in the outbox consumer's system transaction. Valid → upsert
+  (a hand-`disabled` row stays disabled), bot actor via `getOneOrCreate`, `handover.mayTag` compiled into the bot's
+  `tasks.handoff` grant (upserted while present, deleted when the key leaves), `bots.bot.loaded`. Invalid → the row
+  stays live as `status='invalid'` with its last-good definition and `bots.bot.invalid` carries `fieldPath` +
+  `message` (**decision: no error column — the team-readable event is the alert P5-05's red banner reads**); a file
+  that never loaded once → event only. Delete → row + grants gone (tokens/runs cascade), actor row kept,
+  `bots.bot.removed`. Pairing: `0002_pairing.sql` `mint`/`revoke`/`resolve` SECURITY DEFINER functions (manage guard
+  `coalesce(lookup_can_team…)` + `session_user`, never `is_*`) and two manage-gated routes (`POST`/`DELETE
+  /api/teams/:slug/bots/:botSlug/pairing-tokens`, token shown once, sha256 stored only). **Deviation: resolve has no
+  HTTP route** — plugins share behavior through the `app` schema, so the P5-09 gateway calls
+  `app.bots_pairing_resolve(sha256(token))` in-process (`resolvePairingToken` exported for that and for tests).
+  Three events in the shared registry; tests: `bot-md` 7, `loader` 6, `pairing` 5; 7 schema-compat snapshots;
+  `docs/plugins/bots.md` documents loader, pairing and events.
+- **Min password length 8 (owner decision):** the minimum went 12 → 8 everywhere — kernel/shared constants, UI copy,
+  `.github/actions/lib/remote.sh`, tests, persona fixtures, 4 regenerated schema-compat snapshots. Windows
+  `Check.ps1` and devbox `remote-gates.sh` both green (2,101 passed / 53 skipped); committed `0fc2bdb`.
 - **Gate:** Windows `Check.ps1` (lint + typecheck) green over 26 workspaces; devbox `remote-gates.sh` green
   (install + lint + typecheck + tests: 135 files, 2,101 passed, 53 skipped). Two failures on the way there are in
   `MISTAKES.md`: `app.threads` is keyed by `root_message_id` (a bad FK took down every server-starting test), and

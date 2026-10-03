@@ -14,6 +14,9 @@ import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
 import { FilesFileDeletedEvent } from './files.file.deleted.ts';
 import { RepoRepoCommittedEvent } from './repo.repo.committed.ts';
 import { PagesPageWrittenEvent } from './pages.page.written.ts';
+import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
+import { BotsBotInvalidEvent } from './bots.bot.invalid.ts';
+import { BotsBotRemovedEvent } from './bots.bot.removed.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
@@ -63,6 +66,9 @@ export const eventRegistry = {
   'files.file.deleted': { 1: FilesFileDeletedEvent },
   'repo.repo.committed': { 1: RepoRepoCommittedEvent },
   'pages.page.written': { 1: PagesPageWrittenEvent },
+  'bots.bot.loaded': { 1: BotsBotLoadedEvent },
+  'bots.bot.invalid': { 1: BotsBotInvalidEvent },
+  'bots.bot.removed': { 1: BotsBotRemovedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
@@ -141,6 +147,9 @@ export type AnyEvent =
   | z.infer<typeof FilesFileDeletedEvent>
   | z.infer<typeof RepoRepoCommittedEvent>
   | z.infer<typeof PagesPageWrittenEvent>
+  | z.infer<typeof BotsBotLoadedEvent>
+  | z.infer<typeof BotsBotInvalidEvent>
+  | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
@@ -190,7 +199,10 @@ export type LatestEvent =
   | z.infer<typeof FilesFileDeletedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
-  | z.infer<typeof KernelTestPingedEventV2>;
+  | z.infer<typeof KernelTestPingedEventV2>
+  | z.infer<typeof BotsBotLoadedEvent>
+  | z.infer<typeof BotsBotInvalidEvent>
+  | z.infer<typeof BotsBotRemovedEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

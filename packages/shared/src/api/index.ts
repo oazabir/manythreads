@@ -13,3 +13,4 @@ export * from './dm/index.ts';
 export * from './notifications/index.ts';
 export * from './repo/index.ts';
 export * from './pages/index.ts';
+export * from './bots/index.ts';

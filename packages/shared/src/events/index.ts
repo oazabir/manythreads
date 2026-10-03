@@ -45,3 +45,6 @@ export * from './channel.mention.created.ts';
 export * from './notifications.notification.created.ts';
 export * from './repo.repo.committed.ts';
 export * from './pages.page.written.ts';
+export * from './bots.bot.loaded.ts';
+export * from './bots.bot.invalid.ts';
+export * from './bots.bot.removed.ts';
