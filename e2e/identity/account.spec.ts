@@ -52,9 +52,9 @@ test('changing the password needs the current one, ends the other sessions and k
   const form = here.getByRole('form', { name: 'Change password' });
   const update = form.getByRole('button', { name: 'Update password' });
 
-  // too short: nothing to send
+  // too short (under 8): nothing to send
   await form.getByLabel('Current password').fill(PERSONA_PASSWORD);
-  await form.getByLabel('New password').fill('too-short');
+  await form.getByLabel('New password').fill('short');
   await expect(update).toBeDisabled();
 
   // a wrong current password is a sentence on the form, and the session survives it
