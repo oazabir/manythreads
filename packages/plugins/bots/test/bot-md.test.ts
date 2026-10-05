@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseBotMd } from '../src/bot-md.ts';
+import { parseBotMd } from '@manythreads/shared';
 
 // BOT.md parsing (PLAN P5-04): strict, and every failure carries the field path the red banner shows.
 

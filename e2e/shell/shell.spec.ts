@@ -50,7 +50,8 @@ test.describe('Nadia, a member', () => {
     await page.goto('/t/engineering/threads');
     if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
     await page.locator('[data-landmark="sidebar"]').getByRole('link', { name: /Bots/ }).click();
-    await expect(page).toHaveURL(/\/settings\/team\/engineering\/roster$/);
+    await expect(page).toHaveURL(/\/t\/engineering\/bots$/);
+    await expect(page.locator('[data-landmark="header"]')).toContainText('Bots');
   });
 
   test('a team she is not on is a 403 inside the shell', async ({ page }) => {

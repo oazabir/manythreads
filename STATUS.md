@@ -13,6 +13,13 @@ live site; each shots file rebuilds the gallery over the whole folder in `afterA
 for real on live (a lead committing to the demo repo to fire the loader, a minted-then-revoked pairing token):
 secrets never land in the pictures (tokens redacted, revoked in the same run).
 
+Owner request (2026-10-04): a bot's `BOT.md` is edited by the **team's lead or a workspace admin**; only a workspace
+admin **adds or removes** a bot. A non-lead member reads the roster and every tab but not edit. Implemented as a real
+rule, not a hidden button: the repo writer requires an admin for a `bots/` path that is new or deleted and a lead for an
+existing one (`app.can(team, 'manage')` + `app.is_workspace_admin()`), and the bot editor's `canEdit` is lead-or-admin.
+The Files tree still offers `bots/` read-only to everyone but an admin (a bot is edited on its Bots page). `TEAM.md`,
+`skills/` and `routines/` stay lead-or-admin (SPEC §3, restated for `bots/`).
+
 **Open on main:** CI green — `ci` run 37144311363 on **`f24ca75`** (STATUS header) passed every step incl.
 End-to-end (verify 10m6s). Before it: 37143552731 on `52013bf`, 37142818365 on `feb935c`, 37142052270 on `8316c1f`, 37141297569 on `dd4353e`, 37140658508 on `5e3774f` (flaky read-state test fix); that fix was needed
 because the run before it went red on a docs-only push (`read-state.test.ts:137` used a random uuid as the
@@ -26,7 +33,7 @@ mark-read position — fixed, lesson in `MISTAKES.md`). Earlier greens: 37138533
 | 2 Identity, workspace, teams | done — CI green, merged PR #4 (retro docs/retro/phase-2.md) | phase-2 / v0.2.0 |
 | 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
 | 4 Files and the team repo | done — merged PR #6, released and deployed; gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | phase-4 / v0.4.0 (live shots on the `screenshots` branch) |
-| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped; CI green at `b16096e`, run 37118010707); **P5-01 + P5-02 spikes done** (slack-compat door + Hermes adapter proven, per-run URL decision); next P5-05 BOT.md editor | |
+| 5 Bots, gateways, conversations, Brain | in progress — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped; CI green at `b16096e`, run 37118010707); **P5-01 + P5-02 spikes done** (slack-compat door + Hermes adapter proven, per-run URL decision); **P5-05 done** (BOT.md editor: roster + 14-tab page + red banner; 6 new e2e specs green on the devbox; gate green: 2,143 passed / 53 skipped); next P5-06 | |
 | 6–13 | not started | |
 
 ## Phase 1 summary
@@ -139,6 +146,23 @@ Screens: `docs/retro/screens/phase-1/`.
   `prove_adapter.py` (real `platform_registry`, exact wire shape) passed; `prove_live.mts` live
   loop passed (real adapter → scratch server → reply in #dev thread readable via API). Model
   authorship deferred to P5-10 (devbox holds no model credential). Next: P5-05 BOT.md editor.
+- **P5-01 deployed to live (2026-10-03):** `Ship.ps1` plain: remote gates green (the run before
+  caught a CRLF worktree — `* text=auto eol=lf` in `.gitattributes` now, see MISTAKES), image
+  `manythreads/server:acba305dd147-b6e7cfbd`, helm rev 7, 36 migrations, `slack-compat` in the
+  live plugin list, `/` 200, `/healthz`+`/readyz` ok.
+- **Screenshot cycle for P5-01:** `e2e/screens/task.p5-01.shots.ts` (mint → root → door → revoke,
+  token redacted + revoked in-run; new reusable `tools/devbox/task-shots.sh` does the one-off live
+  password, the run and the rotation with secrets on stdin only): 1 passed. Two failures on the way
+  are in MISTAKES: the first door call went through `page.request` (carries the sign-in session
+  cookie → host 403 cookie-without-CSRF by design — the door needs a fresh anonymous context, the
+  true Hermes shape), then `doorRes.json()` after `anon.close()` (response disposed). Gallery
+  `temp/screenshots/index.html` (p5-01-door-api, p5-01-thread: the bot reply in the #dev thread
+  panel), opened in Chrome. Live side effects: a few labeled `[spike P5-01]` roots + replies in
+  #dev; the final revoke turned off all 7 tokens minted across the runs — no live tokens remain.
+- **Push pending (owner):** commits `86ef2d4` (P5-02), `c557354` (P5-01), `43d5d8c` (STATUS/MISTAKES),
+  `27bb4a7` (.gitattributes), `5ee5982` + `565bdf6` + later shots commits are ahead of `origin/main` —
+  `git push` from Windows hangs on the Git Credential Manager GUI prompt (no stored github
+  credential), so the owner runs it (or pushes from the devbox).
 - **Gate:** Windows `Check.ps1` (lint + typecheck) green over 26 workspaces; devbox `remote-gates.sh` green
   (install + lint + typecheck + tests: 135 files, 2,101 passed, 53 skipped). Two failures on the way there are in
   `MISTAKES.md`: `app.threads` is keyed by `root_message_id` (a bad FK took down every server-starting test), and
@@ -153,7 +177,26 @@ Screens: `docs/retro/screens/phase-1/`.
   download, so shots run remote and `Sync-Down.ps1` brings `temp/screenshots/` home): 4 passed in 12 s. The
   `pairing round trip` test fired the live loader for real — probe mint 404 → marker commit into
   `bots/coder/BOT.md` (201, `c472255c…`) → the loader upserted the row → mint 201 → revoke `{revoked:1}`; the story
-  renders with the token redacted as `temp/screenshots/p5-04-pairing-api.png`, beside the BOT.md file view, its
-  History with the loader commit, and the roster. Gallery `temp/screenshots/index.html`, opened in Chrome per the
-  standing instruction. Live side effects: one invisible `<!-- refreshed … -->` marker line plus one commit in the
-  demo repo's history; no live tokens remain.
+  renders with the token redacted as `temp/screenshots/p5-04-pairing-api.png`, beside the BOT.md file view, its  History with the loader commit, and the roster. Gallery `temp/screenshots/index.html`, opened in Chrome per the standing instruction. Live side effects: one invisible `<!-- refreshed … -->` marker line plus one commit in the demo repo's history; no live tokens remain.
+
+- **P5-05 done — the BOT.md editor (roster + bot page):** the roster and one bot's page read the rows the loader wrote, the
+  definition is the repo file. `shared` gained `api/bots/bots.ts` (`BotSummary` = `Bot` + `name`/`role`/`mayTag`/`invalid`, `ListBotsResponse`,
+  `GetBotResponse` = row + definition path + newest 20 runs, `botMdPath`, `BOT_SLUG_RE`) and `entities/bot.ts` gained `name`/`role`;
+  `plugins/bots` migration `0003_bot_display.sql` (`name`, `role`, `may_tag`; `name` backfilled from the slug), the loader upserts them,
+  and `src/roster.ts` registers `GET /api/teams/:slug/bots` and `GET /api/teams/:slug/bots/:botSlug` (**no error column**: the newest
+  team-readable `bots.bot.invalid` event is the row's `invalid` reason and the page's red banner). Web: `screens/bots/*` (roster, the
+  fourteen tabs of SPEC §7.2 incl. Contract, `b*`-prefixed `styles/bots.css`), routes `/t/:team/bots[/:botSlug]`, sidebar Bots entry now
+  `/t/<team>/bots`, Save = one `repo/commit` as the person (a **workspace admin** writes `bots/` directly; a team lead and a member get
+  the read-only note and the file — the writer refuses both 403), a save based on a stale `baseBlobSha` is refused 409 rather than overwritten. Bugs found and fixed while testing (MISTAKES):
+  the draft was a `useMemo` not state, so edits were dropped and Save committed a reformat of the old file; `dirty` now compares the
+  canonical render, not the file bytes.
+- **P5-05 verification:** Windows `Check.ps1` green (lint + typecheck, 26 workspaces); devbox `remote-gates.sh` green (141 files,
+  2,143 passed / 53 skipped; one kernel/rls `read-state` test failed in the first run and passed on re-run — flaky, not related); devbox
+  e2e `bots/roster.spec.ts` + `bots/botmd-editor.spec.ts` 6 passed, `shell/shell.spec.ts` + `shell/sidebar-contract.spec.ts` 15 passed
+  (the shell spec moved to `/t/engineering/bots`); schema-compat 389 passed (5 new api snapshots + `entity.Bot` updated).
+- **P5-05 deployed to live (2026-10-04):** `Ship.ps1` run backgrounded (exit 0): local gates green, remote gates green (2,143 passed /
+  53 skipped), image `manythreads/server:acba305dd147-8f22d7ea`, helm rev 8, 37 migrations, `bots` plugin active, `/` 200,
+  `/healthz`+`/readyz` ok. **Screenshot cycle:** `tools/devbox/task-shots.sh omar@kahf.example task.p5-05.shots.ts` (one-off live
+  password, rotated after) — 5 passed, `Sync-Down.ps1` brought `temp/screenshots/p5-05-{roster,roster-invalid,bot-identity,bot-capabilities,bot-audit,invalid-banner}.png`
+  home and the gallery `temp/screenshots/index.html` rebuilt; opened in the Preview tab (8 images, all loading). Live side effects:
+  two commits in the demo repo's history (break `bots/coder/BOT.md`, then restore the exact original bytes) — the file is back as it was.

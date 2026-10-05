@@ -17,11 +17,13 @@ export interface RepoStep {
 interface TeamVoice {
   team: TeamName;
   slug: string;
-  /** People: the two who edit the runbook, the one who keeps the reports, the team lead (or an admin) who owns `bots/`. */
+  /** People: the two who edit the runbook, the one who keeps the reports, and the team lead who owns `TEAM.md` and `memory/facts/`. */
   a: SeedAuthor;
   b: SeedAuthor;
   reports: SeedAuthor;
   lead: SeedAuthor;
+  /** Who adds the bot placeholder: a workspace admin, since adding a bot under `bots/` is an admin's alone. */
+  botOwner: SeedAuthor;
   runbook: { title: string; v1: string; v2: string };
   bot: { slug: string; name: string; role: string; trigger: string };
   fact: { topic: string; title: string; body: string };
@@ -38,6 +40,7 @@ const VOICES: TeamVoice[] = [
     b: 'nadia',
     reports: 'priya',
     lead: 'omar',
+    botOwner: 'omar',
     runbook: {
       title: 'Production deploy runbook',
       v1: `# Production deploy runbook
@@ -113,6 +116,7 @@ If the error rate doubles or p95 latency rises by more than 20%:
     b: 'sameera',
     reports: 'sameera',
     lead: 'omar',
+    botOwner: 'omar',
     runbook: {
       title: 'Escalation runbook',
       v1: `# Escalation runbook
@@ -179,6 +183,8 @@ Tell the customer what happens next and when you will write again. Add the answe
     b: 'priya',
     reports: 'tariq',
     lead: 'tariq',
+    // Tariq leads Marketing and is only a workspace member: a lead edits a bot that exists, an admin adds one.
+    botOwner: 'omar',
     runbook: {
       title: 'Campaign launch runbook',
       v1: `# Campaign launch runbook
@@ -244,7 +250,7 @@ Check signups and churn on Friday in #analytics and add the week to the report. 
 
 export const REPO_TEAM_SLUGS = VOICES.map((v) => v.slug);
 
-/** The person who owns `bots/` and `TEAM.md` of the team's repo: its lead, or a workspace admin for a team without one. */
+/** The person who owns `TEAM.md` of the team's repo: its lead, or a workspace admin for a team without one. */
 export function repoLead(slug: string): SeedAuthor {
   const v = VOICES.find((x) => x.slug === slug);
   if (!v) throw new Error(`seed: no repo content for team "${slug}"`);
@@ -434,7 +440,7 @@ export function repoSteps(slug: string): RepoStep[] {
     },
     { actor: v.b, message: 'Add the release checklist app', files: [{ path: 'apps/release-checklist/index.html', content: appHtml(v.team) }] },
     {
-      actor: v.lead,
+      actor: v.botOwner,
       message: `Add the ${v.bot.name} bot placeholder`,
       files: [
         { path: `bots/${v.bot.slug}/BOT.md`, content: botMd(v) },

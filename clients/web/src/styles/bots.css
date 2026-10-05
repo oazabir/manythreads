@@ -1,0 +1,480 @@
+/* The Bots screens (PLAN P5-05): the roster and one bot page. Every class here is prefixed `b` (b-row, b-tab, b-block) so nothing in this
+ * file can collide with a shared class — `.linkish`, `.btn`, `.mrow` and the rest belong to app.css and screens.css and are never
+ * redefined per screen (PLAN P4 review, MISTAKES). Colours come from tokens.css only; a raw hex here fails lint. */
+
+.bots-screen,
+.bot-screen {
+  padding: 18px 20px 28px;
+  overflow: auto;
+}
+
+/* ---- roster ---- */
+.b-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.bot-screen .b-head {
+  align-items: center;
+}
+
+.b-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.b-head-who {
+  min-width: 0;
+  flex: 1;
+}
+
+.b-sub {
+  margin: 3px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.b-head-act {
+  display: flex;
+  gap: 8px;
+}
+
+.b-list {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.b-row {
+  display: grid;
+  grid-template-columns: 34px minmax(160px, 1.6fr) 96px 200px 150px 110px 110px;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+
+.b-row:last-child {
+  border-bottom: 0;
+}
+
+.b-who {
+  min-width: 0;
+}
+
+.b-name a {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.b-name a:hover {
+  text-decoration: underline;
+}
+
+.b-row .d {
+  margin-top: 1px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.b-where,
+.b-vis {
+  color: var(--mute);
+  font-size: 11.5px;
+}
+
+.b-act {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.b-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.b-state.bad {
+  color: var(--alert-ink);
+}
+
+.b-state.off {
+  color: var(--faint);
+}
+
+.b-state .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.b-state .dot.bad {
+  background: var(--alert);
+}
+
+.b-state .dot.off {
+  background: var(--dot-off);
+}
+
+.b-empty {
+  padding: 40px 20px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.b-empty-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.b-empty-body {
+  max-width: 560px;
+  margin: 0 auto 14px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+/* ---- bot page: banner, tabs, pane ---- */
+.b-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 11px 14px;
+  border: 1px solid var(--alert-border);
+  border-radius: 7px;
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: 13px;
+}
+
+.b-banner .bang {
+  flex: none;
+  font-weight: 700;
+}
+
+.b-banner .d {
+  margin-top: 2px;
+  color: var(--alert-ink);
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.b-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.b-tab {
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.b-tab:hover {
+  color: var(--ink);
+}
+
+.b-tab.on {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.b-pane {
+  max-width: 980px;
+}
+
+.b-block {
+  margin-bottom: 18px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.b-block-body {
+  padding: 12px 15px;
+}
+
+.b-block-body > * + * {
+  margin-top: 10px;
+}
+
+.b-rowline {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.4fr);
+  gap: 14px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13.5px;
+}
+
+.b-rowline:last-child {
+  border-bottom: 0;
+}
+
+.b-lab .d {
+  margin-top: 1px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.b-val {
+  min-width: 0;
+}
+
+.b-val > * + * {
+  margin-top: 8px;
+}
+
+.b-notset {
+  margin: 0;
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.b-hint {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.b-warnline {
+  margin: 6px 0 0;
+  color: var(--warn-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---- fields ---- */
+.b-fld {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.b-fld:last-child {
+  border-bottom: 0;
+}
+
+.b-fld label,
+.b-chips-lab {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.b-fld input,
+.b-fld select,
+.b-chips-add input,
+.b-add-row input,
+.b-add-row select {
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.b-fld input[readonly] {
+  background: var(--shell);
+  color: var(--mute);
+}
+
+.b-chips {
+  padding: 8px 0;
+}
+
+.b-chips-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0;
+}
+
+.b-chips-none {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.b-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.b-chip.on {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.b-chip.no {
+  border-style: dashed;
+  color: var(--faint);
+}
+
+.b-chip-x {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.b-chips-add,
+.b-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.b-add-row input,
+.b-add-row select {
+  width: auto;
+  min-width: 180px;
+}
+
+/* ---- behaviour body ---- */
+.b-body {
+  width: 100%;
+  min-height: 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.b-body[readonly] {
+  background: var(--shell);
+}
+
+/* ---- triggers ---- */
+.b-trg {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.b-trg:last-of-type {
+  border-bottom: 0;
+}
+
+.b-trg-type {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--agent-ink);
+}
+
+.b-trg-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+/* ---- audit ---- */
+.b-runrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+}
+
+.b-runrow:last-child {
+  border-bottom: 0;
+}
+
+.b-run-trigger {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.b-runrow .d {
+  margin-top: 1px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+/* ---- footer ---- */
+.b-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.b-foot .b-hint {
+  margin-left: auto;
+}
+
+/* ---- phone ---- */
+@media (width <= 720px) {
+  .b-row {
+    grid-template-columns: 34px 1fr auto;
+  }
+
+  .b-where,
+  .b-vis,
+  .b-row > .kind {
+    display: none;
+  }
+
+  .b-rowline,
+  .b-trg {
+    grid-template-columns: 1fr;
+  }
+
+  .bots-screen,
+  .bot-screen {
+    padding: 12px 12px 20px;
+  }
+}

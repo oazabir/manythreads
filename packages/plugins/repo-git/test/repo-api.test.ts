@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createGitLayer } from '../src/git/index.ts';
 import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from './world.ts';
 
-const { omar, nadia, priya, sameera, lena } = personas;
+const { omar, nadia, priya, sameera, tariq, lena } = personas;
 const git = createGitLayer();
 
 // Dozens of git processes per test: under a full parallel run the default 5 s is too tight.
@@ -144,6 +144,21 @@ describe('who may write (criteria 3 and 9)', () => {
     expect(out.authorId).toBe(omar.actorId);
     const [c] = await history(eng);
     expect(c?.author).toEqual({ name: 'Omar', email: `${omar.actorId}@actors.manythreads.invalid` });
+  });
+
+  it('a team lead who is not a workspace admin edits a bot that exists, but cannot add or remove one', async () => {
+    // Tariq leads Marketing and is only a member of the workspace: an existing bot is his to edit (SPEC section 3 as this workspace set it),
+    // while adding a bot, removing one, and TEAM.md stay a lead's — the first two are a workspace admin's alone.
+    expect((await w.commit(omar, 'marketing', [put('bots/x/BOT.md', '---\nname: X\n---\n')], 'an admin adds a bot')).status).toBe(201);
+    const edited = await w.commit(tariq, 'marketing', [put('bots/x/BOT.md', '---\nname: X\n---\n\nA lead edits an existing bot.\n')], 'a lead edits a bot');
+    expect(edited.status, JSON.stringify(edited.body)).toBe(201);
+    const added = await w.commit(tariq, 'marketing', [put('bots/y/BOT.md', '---\nname: Y\n---\n')], 'a lead adds a bot');
+    expect(added.status, JSON.stringify(added.body)).toBe(403);
+    expect(JSON.stringify(added.body)).toMatch(/pull request/i);
+    const removed = await w.commit(tariq, 'marketing', [{ op: 'delete', path: 'bots/x/BOT.md' }], 'a lead removes a bot');
+    expect(removed.status, JSON.stringify(removed.body)).toBe(403);
+    const allowed = await w.commit(tariq, 'marketing', [put('TEAM.md', '---\nname: Marketing\n---\n\nA lead may still write this.\n')], 'a lead writes TEAM.md');
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(201);
   });
 
   it('outsiders, guests and anonymous callers are refused', async () => {

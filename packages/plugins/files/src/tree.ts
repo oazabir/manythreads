@@ -9,6 +9,7 @@ import {
   GetFilesTreeQuery,
   GetFilesTreeResponse,
   getFilesTreeRoute,
+  isBotDefinitionPath,
   isGuardedRepoPath,
   repoMimeOf,
   type FilesReadOnlyReason,
@@ -21,7 +22,7 @@ import { FILE_COLUMNS, type FileRow } from './rows.ts';
 // the repo by team membership (row level security on the team), `channels/<name>/` by the channel's ACL (the channels the caller can read).
 // A channel the caller cannot read looks like one that does not exist (403 for both).
 
-type TeamRow = { id: string; slug: string; can_post: boolean; can_manage: boolean };
+type TeamRow = { id: string; slug: string; can_post: boolean; can_manage: boolean; can_admin: boolean };
 
 type ChannelRow = { id: string; name: string; can_post: boolean; last_file_at: Date | null; last_uploader: string | null };
 
@@ -36,7 +37,7 @@ const isMemoryPath = (path: string): boolean => path === FILES_MEMORY_DIR || pat
 /** The team as the caller sees it. A team they cannot see is 403 (an admin sees every team, so for them a missing slug is 404). */
 async function requireTeam(tx: PluginTx, slug: string): Promise<TeamRow> {
   const res = await tx.query<TeamRow>(
-    "SELECT t.id, t.slug, app.can('team', t.id, 'post') AS can_post, app.can('team', t.id, 'manage') AS can_manage FROM app.teams t WHERE t.slug = $1",
+    "SELECT t.id, t.slug, app.can('team', t.id, 'post') AS can_post, app.can('team', t.id, 'manage') AS can_manage, app.is_workspace_admin() AS can_admin FROM app.teams t WHERE t.slug = $1",
     [slug],
   );
   const team = res.rows[0];
@@ -63,8 +64,14 @@ export function registerTreeRoute(ctx: PluginContext): void {
       const q = GetFilesTreeQuery.parse(req.query);
       const team = await requireTeam(tx, slug);
       const segments = q.path === '' ? [] : q.path.split('/');
-      const repoReason = (path: string): Reason =>
-        isGuardedRepoPath(path) && !team.can_manage ? 'change_by_pull_request' : team.can_post ? null : 'no_write_access';
+      // `bots/` (SPEC section 3 as this workspace set it): a bot's definition is edited on its own Bots page, by a team lead or an admin, so
+      // the Files tree offers it read-only to everyone but an admin (the writer allows a lead to edit an existing bot and refuses the rest).
+      // `TEAM.md`, `skills/` and `routines/` stay lead-or-admin here.
+      const repoReason = (path: string): Reason => {
+        if (isBotDefinitionPath(path)) return !team.can_admin ? 'change_by_pull_request' : team.can_post ? null : 'no_write_access';
+        if (isGuardedRepoPath(path) && !team.can_manage) return 'change_by_pull_request';
+        return team.can_post ? null : 'no_write_access';
+      };
 
       const repoRow = (e: RepoFolderEntry): Entry =>
         FilesTreeEntry.parse({

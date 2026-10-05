@@ -53,8 +53,8 @@ beforeAll(async () => {
   await sys(async (tx) => {
     const insert = (team: string, slug: string, visibility: string) =>
       tx.query(
-        `INSERT INTO app.bots (workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status, placement)
-         VALUES ($1, $2, $3, 'agent', 'hermes', $4, $5, 'active', '{"runner": "default"}')`,
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement)
+         VALUES ($1, $2, $3, $3, 'Answers the RLS tests', 'agent', 'hermes', $4, $5, 'active', '{"runner": "default"}')`,
         [omar.workspaceId, team, slug, visibility, sha(slug.length)],
       );
     await insert(ENG, 'release-bot', 'team');
@@ -125,7 +125,7 @@ describe('bots, bot_pairing_tokens, bot_runs and run_source_log (P5-03)', () => 
     const row = await as(nadia, async (tx) =>
       (
         await tx.query<BotRow>(
-          'SELECT id, workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status, placement, created_at, updated_at FROM app.bots WHERE slug = $1',
+          'SELECT id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, created_at, updated_at FROM app.bots WHERE slug = $1',
           ['release-bot'],
         )
       ).rows[0],

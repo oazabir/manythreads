@@ -30,8 +30,9 @@ export function useTeamFiles(): TeamFiles | null {
   const session = useSession();
   const slug = team?.slug ?? teamSlug ?? '';
   const role = session.teams.find((t) => t.slug === slug)?.role;
-  const admin = session.role === 'owner' || session.role === 'admin';
-  const leadsTeam = role === 'lead' || admin;
+  // `isAdmin` is `bots/`' own rule in Files (only an admin edits it here; a lead edits a bot on its Bots page); `leadsTeam` the rest.
+  const isAdmin = session.role === 'owner' || session.role === 'admin';
+  const leadsTeam = role === 'lead' || isAdmin;
   const personId = session.person.id;
   const personName = session.person.name;
   const people = usePeople();
@@ -43,7 +44,7 @@ export function useTeamFiles(): TeamFiles | null {
       const p = people.byActor(id);
       return p ? { id, name: p.name, kind: 'person' } : { id, name: 'A bot', kind: 'bot' };
     };
-    const perms: Perms = { leadsTeam, personId, personName, who };
+    const perms: Perms = { leadsTeam, isAdmin, personId, personName, who };
     return { slug, teamName: team?.name ?? slug, perms, backend: createBackend(slug, perms) };
-  }, [slug, team?.name, leadsTeam, personId, personName, people]);
+  }, [slug, team?.name, leadsTeam, isAdmin, personId, personName, people]);
 }

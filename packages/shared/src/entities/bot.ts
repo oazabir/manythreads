@@ -49,6 +49,10 @@ export const Bot = z.object({
   teamId: TeamId,
   /** The slug of `bots/<slug>/BOT.md`, unique in the team. */
   slug: Slug,
+  /** The definition's `name`, copied onto the row by the loader so the roster needs no repo read (PLAN P5-05). */
+  name: z.string().min(1),
+  /** The definition's `role` line; empty when the author wrote none, which the roster shows as nothing. */
+  role: z.string(),
   kind: BotKind,
   runtime: BotRuntime,
   visibility: BotVisibility,

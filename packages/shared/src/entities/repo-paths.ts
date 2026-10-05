@@ -21,6 +21,18 @@ export function isGuardedRepoPath(normalized: string): boolean {
   return GUARDED_DIR_SET.has(parts[0] ?? '') || GUARDED_FILE_SET.has(parts.join('/'));
 }
 
+/**
+ * The bot definitions folder. Its own rule (SPEC section 3 as this workspace set it): a team lead edits a bot that already exists, and only a
+ * workspace admin adds or removes one, where `TEAM.md`, `skills/` and `routines/` are a lead's or an admin's throughout. The repo writer
+ * enforces it; this flag only names the folder.
+ */
+export const BOT_DEFINITIONS_DIR = 'bots';
+
+/** True for `bots/...`: a bot's definition directory. See `isGuardedRepoPath` for `normalized`. */
+export function isBotDefinitionPath(normalized: string): boolean {
+  return fold(normalized.split('/')[0] ?? '') === BOT_DEFINITIONS_DIR;
+}
+
 export type RepoPathResult = { ok: true; path: string } | { ok: false; reason: string };
 
 const encoder = new TextEncoder();

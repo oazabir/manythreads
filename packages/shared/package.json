@@ -12,6 +12,7 @@
   },
   "sideEffects": false,
   "dependencies": {
+    "yaml": "^2.9.1",
     "zod": "^4"
   }
 }

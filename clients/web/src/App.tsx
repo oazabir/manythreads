@@ -15,6 +15,8 @@ import { SignIn } from './screens/SignIn';
 import { SignInMethods } from './screens/SignInMethods';
 import { Shell } from './shell/Shell';
 import { DirectMessageView, HomeView, RequireTeam, SectionView, TeamHome } from './shell/views';
+import { BotPage } from './screens/bots/BotPage';
+import { BotRoster } from './screens/bots/BotRoster';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
 import { Teams } from './screens/Teams';
@@ -54,6 +56,8 @@ function AppRoutes() {
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/boards" element={<RequireTeam><SectionView section="boards" /></RequireTeam>} />
             <Route path="/t/:team/approvals" element={<RequireTeam><SectionView section="approvals" /></RequireTeam>} />
+            <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
+            <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
           </Route>

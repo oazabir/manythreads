@@ -21,6 +21,7 @@ import {
   REPO_MAX_FILE_BYTES,
   ActorId,
   REPO_PLACEHOLDER,
+  isBotDefinitionPath,
   isGuardedRepoPath,
   parseRepoPath,
   type RepoConflict,
@@ -366,9 +367,27 @@ export function createRepoService(deps: RepoServiceDeps) {
       }
       return;
     }
+    // `bots/` is its own rule (SPEC section 3 as this workspace set it): a member does not change a bot at all, a team lead edits a bot
+    // that already exists, and adding or removing one is a workspace admin's — so a lead may rewrite a definition but a path that is not yet
+    // in the tree (a new bot) and every delete are the admins'. Enforced here rather than by hiding a button, so the bot editor and the
+    // Files screen cannot offer a write the writer would refuse.
+    const botPaths = prepared.filter((c) => isBotDefinitionPath(c.path));
+    if (botPaths.length > 0) {
+      if (row.manage !== true) throw repoForbidden('Change by pull request: bots/ is changed directly only by team leads and workspace admins');
+      const admin = await tx.query<{ admin: boolean }>('SELECT app.is_workspace_admin() AS admin');
+      if (admin.rows[0]?.admin !== true) {
+        const paths = [...new Set(botPaths.map((c) => c.path))];
+        const existing = new Set(
+          (await tx.query<{ path: string }>('SELECT path FROM app.repo_entries WHERE team_id = $1 AND path = ANY($2::text[])', [t.id, paths])).rows.map((r) => r.path),
+        );
+        if (botPaths.some((c) => c.op === 'delete' || !existing.has(c.path))) {
+          throw repoForbidden("Change by pull request: a team lead edits a bot that already exists; adding or removing one is a workspace admin's");
+        }
+      }
+    }
     if (row.manage !== true && prepared.some((c) => isGuardedRepoPath(c.path))) {
       throw repoForbidden(
-        'Change by pull request: bots/, TEAM.md, skills/ and routines/ are changed directly only by team leads and workspace admins',
+        'Change by pull request: TEAM.md, skills/ and routines/ are changed directly only by team leads and workspace admins',
       );
     }
   }

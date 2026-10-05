@@ -12,7 +12,7 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', emptyState: 'Nothing waiting', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
   { id: 'direct-messages', order: 45, label: 'Direct messages', kind: 'header', emptyState: 'No conversations yet' },
-  { id: 'bots', order: 50, label: 'Bots', kind: 'header', path: '~/roster', emptyState: 'No bots yet' },
+  { id: 'bots', order: 50, label: 'Bots', kind: 'header', path: '/bots', emptyState: 'No bots yet' },
 ].map((c) => NavContribution.parse(c));
 
 /** What the sidebar shows this person: sorted by order; a guest keeps only the entries that allow guests. */
@@ -36,7 +36,7 @@ export function navCount(item: NavContribution, counts: Readonly<Record<string, 
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['threads', 'files', 'boards', 'approvals'] as const;
+const SECTIONS = ['threads', 'files', 'boards', 'approvals', 'bots'] as const;
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {
@@ -45,7 +45,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', approvals: 'Approvals' };
+const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', approvals: 'Approvals', bots: 'Bots' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

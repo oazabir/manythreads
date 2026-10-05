@@ -1,4 +1,4 @@
-import { Bot, BotRun, RunSourceLogEntry } from '@manythreads/shared';
+import { Bot, BotRun, BotSummary, RunSourceLogEntry } from '@manythreads/shared';
 
 // The plugin's mapper for `bots`, `bot_runs` and `run_source_log`: the only place a row of one of those tables
 // becomes a shared entity (the kernel's mappers are not importable from a plugin). Dates are converted here, once;
@@ -11,6 +11,9 @@ export type BotRow = {
   workspace_id: string;
   team_id: string;
   slug: string;
+  name: string;
+  role: string;
+  may_tag: string[];
   kind: string;
   runtime: string;
   visibility: string;
@@ -20,13 +23,15 @@ export type BotRow = {
   created_at: Date;
   updated_at: Date;
 };
-export const BOT_COLUMNS = 'id, workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status, placement, created_at, updated_at';
+export const BOT_COLUMNS = 'id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, created_at, updated_at';
 export const toBot = (r: BotRow): Bot =>
   Bot.parse({
     id: r.id,
     workspaceId: r.workspace_id,
     teamId: r.team_id,
     slug: r.slug,
+    name: r.name,
+    role: r.role,
     kind: r.kind,
     runtime: r.runtime,
     visibility: r.visibility,
@@ -35,6 +40,19 @@ export const toBot = (r: BotRow): Bot =>
     placement: r.placement ?? null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
+  });
+
+/**
+ * The roster's row: the bot plus the display fields the loader copied onto it and the reason its last load failed, when one did. The
+ * `invalid` reason comes from the newest `bots.bot.invalid` event for the row — never from a column (PLAN P5-04 keeps none on purpose).
+ */
+export const toBotSummary = (r: BotRow, invalid: BotSummary['invalid']): BotSummary =>
+  BotSummary.parse({
+    ...toBot(r),
+    name: r.name,
+    role: r.role,
+    mayTag: r.may_tag,
+    invalid,
   });
 
 export type BotRunRow = {

@@ -120,10 +120,16 @@ Keep command output small: pipe through `tail -n 40` or grep for failures. Never
 
 ## Sidebar contract (every client, every team)
 Files (10) · Boards (20) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) ·
-Bots (50). The Bots header opens the team roster; a bot's name opens its conversation view.
+Bots (50). The Bots header opens the team's bot roster at `/t/<team>/bots`; a row opens the bot's page
+(`/t/:team/bots/:botSlug`, the fourteen SPEC §7.2 tabs). The roster and page read the bots plugin's
+`GET …/bots[/:botSlug]`; the definition is `bots/<slug>/BOT.md` in the team repo (read via `repo/blob`, saved via
+`repo/commit` with `baseBlobSha`) — the team's lead and a workspace admin write an existing bot directly (a non-lead member is offered the file instead of Save); only an admin adds or removes a bot. The repo writer refuses the rest with 403.
 
 ## Owner decisions (durable)
 - Approved: the orchestrator merges its own phase PRs into `main` without asking.
+- `bots/` (BOT.md): a team lead edits a bot that already exists; only a workspace admin adds or removes one (SPEC §3
+  set by owner request). In the Files screen `bots/` stays admin-only for everyone — a bot is edited on its Bots page.
+  `TEAM.md`, `skills/` and `routines/` stay lead-or-admin.
 - Mobile = web app inside Capacitor (not React Native). The RN benchmark gate is replaced by a Capacitor
   WebView check in phase 11.
 - Owner asked for free-form ops workflows (any command / any SQL); the permission classifier blocks committing

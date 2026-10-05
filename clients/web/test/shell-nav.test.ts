@@ -48,7 +48,7 @@ describe('sidebar links and counts', () => {
   it('resolves paths against the team; ~/ is the team settings page', () => {
     const byId = Object.fromEntries(CORE_NAV.map((i) => [i.id, i]));
     expect(navHref(byId['files']!, 'engineering')).toBe('/t/engineering/files');
-    expect(navHref(byId['bots']!, 'engineering')).toBe('/settings/team/engineering/roster');
+    expect(navHref(byId['bots']!, 'engineering')).toBe('/t/engineering/bots');
     expect(navHref(byId['direct-messages']!, 'engineering')).toBeNull();
     expect(channelPath('engineering', '#dev')).toBe('/t/engineering/c/dev');
     expect(channelPath('engineering', 'dev')).toBe('/t/engineering/c/dev');

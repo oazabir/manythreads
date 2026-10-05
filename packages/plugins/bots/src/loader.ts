@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginEvent, PluginTx, RepoProvider } from '@manythreads/sdk';
-import { RepoRepoCommittedEvent } from '@manythreads/shared';
-import { parseBotMd } from './bot-md.ts';
+import { BOT_SLUG_RE, RepoRepoCommittedEvent, parseBotMd } from '@manythreads/shared';
 
 // The loader (PLAN P5-04): a `repo.repo.committed` subscription that rebuilds a team's bot from `bots/<slug>/BOT.md`, in the outbox
 // consumer's system transaction, once per commit. Valid → one row, its bot actor and its compiled `mayTag` grant, then bots.bot.loaded.
@@ -12,7 +11,7 @@ import { parseBotMd } from './bot-md.ts';
 /** `bots/<slug>/BOT.md` exactly — one folder deep, the shape the viewer's `bots/*` folder glob names (never `bots/a/b/BOT.md`). */
 const BOT_MD = /^bots\/([^/]+)\/BOT\.md$/;
 /** The folder name, the row's own CHECK (a folder that fails it is an invalid definition, not a silent skip). */
-const SLUG = /^[a-z0-9][a-z0-9._-]*$/;
+const SLUG = BOT_SLUG_RE;
 
 interface Commit {
   workspaceId: string;
@@ -71,9 +70,13 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   const fm = parsed.frontmatter;
 
   const row = await tx.query<{ id: string }>(
-    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status, placement)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8)
+    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11)
      ON CONFLICT (team_id, slug) DO UPDATE SET
+       -- the display fields follow the definition (PLAN P5-05): the roster draws the row, never the file
+       name           = EXCLUDED.name,
+       role           = EXCLUDED.role,
+       may_tag        = EXCLUDED.may_tag,
        kind           = EXCLUDED.kind,
        runtime        = EXCLUDED.runtime,
        visibility     = EXCLUDED.visibility,
@@ -83,7 +86,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
        placement      = EXCLUDED.placement,
        updated_at     = now()
      RETURNING id`,
-    [commit.workspaceId, commit.teamId, slug, fm.kind, fm.runtime, fm.visibility ?? 'team', definitionSha, fm.placement ?? null],
+    [commit.workspaceId, commit.teamId, slug, fm.name, fm.role, fm.kind, fm.runtime, fm.visibility ?? 'team', definitionSha, fm.placement ?? null, fm.handover?.mayTag ?? []],
   );
   const botId = row.rows[0]!.id;
 

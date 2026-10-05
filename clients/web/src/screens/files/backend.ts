@@ -20,6 +20,7 @@ import {
   getRepoHistoryRoute,
   restoreRepoFileRoute,
   writePageRoute,
+  isBotDefinitionPath,
   isGuardedRepoPath,
   type FilesTreeEntry,
   type RepoChange,
@@ -34,8 +35,10 @@ import { baseName, channelNameOf, parentOf, type Actor, type Commit, type FileDi
 
 /** What the signed-in person may do in this team; the server enforces it again on every write. */
 export type Perms = {
-  /** A team lead or workspace admin: may change bots/, skills/, routines/ and TEAM.md directly. */
+  /** A team lead or workspace admin: may change skills/, routines/ and TEAM.md directly. */
   leadsTeam: boolean;
+  /** A workspace admin: the only one who adds or removes a bot, and the only one this screen edits bots/ for (the mock mirrors it). */
+  isAdmin: boolean;
   /** The person's own name and id: the author of commits made here. */
   personName: string;
   personId: string;
@@ -94,8 +97,9 @@ const KEEP = '.gitkeep';
 const sha7 = (sha: string): string => sha.slice(0, 7);
 
 /** The flags every row of the team repo carries, computed the way the server does (the mock and the fallback use it). */
-export function repoRowFlags(path: string, perms: Pick<Perms, 'leadsTeam'>): Pick<FileRow, 'readOnly' | 'readOnlyReason' | 'managedBy'> {
-  const guarded = isGuardedRepoPath(path) && !perms.leadsTeam;
+export function repoRowFlags(path: string, perms: Pick<Perms, 'leadsTeam' | 'isAdmin'>): Pick<FileRow, 'readOnly' | 'readOnlyReason' | 'managedBy'> {
+  // In Files, `bots/` is admin-only — a lead edits a bot on its own Bots page, not here; the other guarded paths a team lead's too.
+  const guarded = isGuardedRepoPath(path) && !(isBotDefinitionPath(path) ? perms.isAdmin : perms.leadsTeam);
   return {
     readOnly: guarded,
     readOnlyReason: guarded ? 'change_by_pull_request' : null,
