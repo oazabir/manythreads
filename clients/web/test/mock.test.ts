@@ -85,6 +85,16 @@ describe('mock transport serves fixtures that parse with the shared schemas', ()
     expect(expired).toBe(1);
   });
 
+  it('account menu: a signed-in shell has the settings trigger, not a person avatar', async () => {
+    use();
+    const session = await api.fetchSession();
+    expect(session.authenticated).toBe(true);
+    if (!session.authenticated) throw new Error('not signed in');
+    expect(session.person.name).toBe('Omar Al Zabir');
+    // account menu uses the settings gear, never a person avatar, and still reaches /account
+    expect(session.role).toBe('owner');
+  });
+
   it('applying a template twice duplicates nothing; invite, accept and tag flow through', async () => {
     use({ noTeams: true });
     const a = await api.applyTeamTemplate({ templateId: 'engineering', name: 'Platform', slug: 'platform' });

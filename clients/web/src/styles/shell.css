@@ -324,6 +324,13 @@ a.sec:hover {
   color: var(--faint);
 }
 
+.foot-settings {
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  color: var(--faint);
+}
+
 .menu {
   position: absolute;
   top: calc(100% - 2px);

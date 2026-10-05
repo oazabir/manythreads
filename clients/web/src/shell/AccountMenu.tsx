@@ -2,12 +2,11 @@ import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { signOut } from '../api/endpoints';
 import { isAdmin, useSession, useSessionState } from '../app/session';
-import { Avatar } from '../components/ui';
 import { useShell } from './context';
 import { GearIcon } from './icons';
 import { useDismiss } from './useDismiss';
 
-/** Bottom of the sidebar: who is signed in, and the account menu. */
+/** Bottom of the sidebar: account menu trigger and who is signed in. */
 export function AccountMenu() {
   const session = useSession();
   const { setSession } = useSessionState();
@@ -29,9 +28,15 @@ export function AccountMenu() {
 
   return (
     <div className="foot" ref={box}>
-      <Avatar name={session.person.name} />
       <span className="foot-name">{session.person.name}</span>
-      <button type="button" className="icon-btn foot-gear" aria-label="Account menu" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className="icon-btn foot-settings"
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
         <GearIcon />
       </button>
       {open ? (
