@@ -5,7 +5,7 @@
 
 manythreads is a self-hosted team collaboration platform (channels, threads, bots, Brain).
 Build plan: `PLAN.md` (13 phases, binding decisions D1–D4 in its §3).
-Contract: `docs/spec/SPEC-FINAL.md` v1.4.1. Operating model: `docs/spec/IMPLEMENTATION-GUIDE.md`.
+Contract: `docs/spec/SPEC-FINAL.md` v1.5.0. Operating model: `docs/spec/IMPLEMENTATION-GUIDE.md`.
 Look and copy: `docs/spec/mockups-all.html` (huge — never read it whole; grep the section id:
 onboarding app teams bots botgeneric setup workshop email surfaces connections cabinet brain).
 Progress: `STATUS.md`. Known mistakes to avoid: `MISTAKES.md` — read it before starting work.
@@ -80,9 +80,11 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
   screenshots (`screenshots.yml`, runs after each release, commits to branch `screenshots`) set a per-run password via
   the admin CLI `pnpm --filter @manythreads/server admin set-password <email>` (stdin) and sign in through the real form.
 - Capability names `namespace.verb` with a destructive tag. The broker denies bot actors writes to
-  `bots/`, `TEAM.md`, `skills/`, `routines/`; `person:*` only for `conversation`/`mention` triggers.
+  `bots/`, `TEAM.md`, `skills/`, `routines/` (and `files.*` writes to `memory/`, `inbox/`: bots write memory only via
+  `memory.write`); `person:*` only for `conversation`/`mention` triggers.
 - Team repo is text only (no attachments in git); guarded paths come from `isGuardedRepoPath` (@manythreads/shared) — never re-list them.
-  `channels/` is reserved in the repo for the attachment folders of the Files tree. Git runs argv-only with `GIT_LITERAL_PATHSPECS=1`.
+  `channels/` is reserved in the repo for the attachment folders of the Files tree, and so is `inbox/` (each team's memory
+  inbox, spec §12.2). `memory/` is an OKF v0.2 bundle (spec §12.1, plan D6): every file has a `type`; the writer refuses the rest. Git runs argv-only with `GIT_LITERAL_PATHSPECS=1`.
 - Embedded apps: `sandbox="allow-scripts"` (never `allow-same-origin`), CSP set by the route handler itself; server hooks key on
   `req.routeOptions.url`, never the raw URL (percent-encoding bypass, see MISTAKES).
 - CSS: screen stylesheets prefix their classes (e.g. `f*` for Files); never redefine a shared class (`.linkish`, `.btn`) in a screen file.

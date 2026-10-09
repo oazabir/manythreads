@@ -105,7 +105,7 @@ manythreads/
       connections/  surfaces/  workshop/  inbox-watch/
       identity-oidc/  identity-password/
       runtime-hermes/  runtime-rules/
-      memory-hindsight/  memory-git-mirror/
+      memory-hindsight/  memory-git-mirror/  memory-inbox/  memory-share/
       storage-local/  storage-s3/  repo-git/
       slack-compat/  webhooks/
       guardrails-dlp/  guardrails-egress/  audit/  retention/
@@ -158,10 +158,15 @@ Write this file verbatim at the repository root before any other work starts:
   run-time loading of third-party JS client plugins.
 - Server plugins are in-process Node modules. Never add module federation server-side.
 - The team git repo holds text configuration and durable text pages only: TEAM.md,
-  bots/, skills/, routines/, knowledge/*.yaml, memory/journal/, memory/facts/, pages/.
+  bots/, skills/, routines/ (incl. routines/shares/), knowledge/*.yaml, memory/ (an OKF
+  v0.2 bundle, spec §12.1), pages/.
   Attachments live in Files storage (object storage or local disk), tracked in a
-  `files` table carrying folder path and channel ACL. Never commit a binary
-  attachment to the team repo.
+  `files` table carrying folder path and channel ACL — including everything dropped
+  into a team's `inbox/` (spec §12.2). Never commit a binary attachment to the team
+  repo, and never create an `inbox/` or `channels/` folder in it.
+- memory/ is written by people in the UI and by bots only through `memory.write` (the
+  `memory` plugin validates OKF and stamps provenance). A bot's `files.*` write to
+  memory/ is denied by the broker, like the four guarded paths.
 - bots/, TEAM.md, skills/, routines/ are never writable through a bot's file
   capability. Enforce this in the capability broker, not in a prompt. Changes to
   these paths arrive only as an approved proposal (self-setup, Workshop, or a PR).
@@ -235,7 +240,9 @@ Nothing else starts by default.
 | runtime-hermes | `plugins/runtime-hermes` | §7.1, §10 | §04, §05 | M1 |
 | runtime-rules | `plugins/runtime-rules` | §7.1, §8 | §04 | M1 |
 | memory-hindsight | `plugins/memory-hindsight` | §12 | §03, §12 | M1 |
-| memory-git-mirror | `plugins/memory-git-mirror` | §12 | §03 | M1 |
+| memory-git-mirror | `plugins/memory-git-mirror` | §12.1 (OKF bundle) | §03 | M1 |
+| memory-inbox | `plugins/memory-inbox` | §12.2 | — (wireframes) | M2 |
+| memory-share | `plugins/memory-share` | §12.3 | — (wireframes) | M2 |
 | storage-local | `plugins/storage-local` | §5.2 | §02 | M1 |
 | storage-s3 | `plugins/storage-s3` | §5.2 | §02 | M2 |
 | repo-git | `plugins/repo-git` | §5.1 | §11 | M1 |
@@ -296,7 +303,7 @@ Each slice is the smallest thing that can be demoed on its own.
 9. `bots` + `runtime-hermes`: register a `BOT.md`, pairing token, one Hermes profile.
 10. `gateway-mcp`: native tool set (`tasks.*`, `messages.*`, `memory.*`, `files.*`, `pages.write` — plain file write + commit, no Yjs yet — `knowledge.search`), capability broker enforces the allowlist. No knowledge base exists until the `knowledge` plugin ships in M2, so in M1 `knowledge.search` returns an empty result with reason `"no bases configured"` — do not fake or stub a base to make it return content.
 11. `conversations`: conversation view, per-bot conversations channel not in the sidebar, thread-as-conversation.
-12. `memory-hindsight` + `memory-git-mirror`: one bank per team, `memory/journal/`, `memory/facts/`, cross-team recall test green.
+12. `memory-hindsight` + `memory-git-mirror`: one bank per team; `memory/` is an OKF v0.2 bundle (`index.md`, `log.md`, typed concepts, `journal/`, `facts/`) validated by the repo writer; a concept commit re-retains, a delete or `deprecated` forgets; cross-team recall test green. (The inbox and sharing, spec §12.2–§12.3, are M2.)
 13. Brain template bot + `answer` plugin + Answer surface component (citations, lineage, sources reached, outside scope, hand-to-a-bot chips). `person:*` on mail is opt-in per person by default (spec §20).
 14. `approvals`: inbox, `needsApproval` on a grant, gate two-stage before any model call.
 15. `guardrails-dlp` + `guardrails-egress`: `pre_egress` hook, `standard`/`strict-egress`/`air-gapped`/`customer-facing` presets.
@@ -420,6 +427,12 @@ describe("channels: messages.post", () => {
 | Destructive tools never listed | `plugins/connections` at grant/registration | CI lints every tool allowlist; a destructive-tagged tool in a grant fails the build |
 | Cross-team recall test | `plugins/memory-hindsight` | Team A bot queries, gets nothing from team B's bank — per-PR CI (§12) |
 | Hindsight reachable only from the gateway | `deploy/compose` + `deploy/helm` network policy | A direct Hindsight call from a Hermes container is refused |
+| Team memory is valid OKF | repo writer (`repo-git`), for every commit under `memory/` | A `memory/` file with no `type`, or unparseable frontmatter, is refused `okf_invalid` (422) |
+| Bots write memory only via `memory.write`; provenance is platform-stamped | broker path guard (`memory/`, `inbox/` denied to `files.*`) + `plugins/memory` stamping `generated`, `verified`, `sources` | A bot's `files.write` to `memory/facts/x.md` is denied; a `memory.write` that sets its own `verified` has it dropped |
+| Outside material is held, not read | `memory-inbox` hold check before extraction | A mail from an unknown sender is `held`: no model call, no concept, until a lead releases it |
+| Digest selection is deterministic and bounded | `memory-share`, from `memory_concepts` | A `draft`, `share: never`, `origin: share` or below-`minTrust` concept never appears in a digest |
+| Delivery needs an accepted link | definer function `app.deliver_inbox_item` | A delivery to a team that has not accepted is refused; a forged destination is ignored |
+| Trust does not travel | `memory-share` import path | A received concept has no `verified`; a digest dropped by hand is held and loses `verified` too |
 
 ---
 
@@ -437,7 +450,7 @@ Commands:
 pnpm test                       # unit tests, all packages
 pnpm test:rls                   # row-level security isolation tests
 pnpm test:events                # event-contract tests
-pnpm test:memory-cross-team     # cross-team Hindsight recall isolation (§12)
+pnpm test:memory-cross-team     # cross-team Hindsight recall isolation (§12); from M2 also share delivery isolation (§12.3)
 pnpm test:runtime-rules         # counting-benchmark variant, no model, per-PR
 pnpm test:runtime-rules:nightly # counting-benchmark, model-backed, nightly only
 pnpm test:evals -- --bot=<slug> # eval harness for a changed BOT.md
