@@ -10,6 +10,9 @@ import {
 } from './support/ports.ts';
 import { E2E_POOL_ENV } from './support/pools.ts';
 
+/** Specs that gate on frame time (the `perf` project). */
+const PERF_SPECS = '**/perf-*.spec.ts';
+
 const external = process.env.MANYTHREADS_URL;
 const baseURL = external ?? `http://localhost:${WEB_PORT}`;
 
@@ -80,14 +83,23 @@ export default defineConfig({
     },
     {
       name: 'desktop',
-      testIgnore: '**/api/**',
+      testIgnore: ['**/api/**', PERF_SPECS],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile-web',
       // Visual specs (plate comparison) run on desktop only.
-      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**'],
+      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', PERF_SPECS],
       use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+    },
+    {
+      // A frame-time budget measures the machine as much as the page: p95 under 20 ms held on a quiet box and read 33 ms (two missed
+      // frames) beside four other browsers and their servers. Specs that gate on frame time run alone, after every other project.
+      // `--project=perf` alone: add `--no-deps` to skip the projects it waits for.
+      name: 'perf',
+      testMatch: PERF_SPECS,
+      dependencies: ['api', 'desktop', 'mobile-web'],
+      use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
   ],
 });
