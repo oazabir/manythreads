@@ -8,7 +8,7 @@
     "lint": "eslint . && stylelint \"**/*.css\"",
     "typecheck": "pnpm -r --parallel typecheck",
     "build": "pnpm -r build",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project rls --project events --project schema-compat",
     "test:rls": "vitest run --project rls",
     "test:events": "vitest run --project events",
     "test:schema-compat": "vitest run --project schema-compat",

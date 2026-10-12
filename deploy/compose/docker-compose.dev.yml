@@ -101,13 +101,17 @@ services:
     profiles: ["memory"]
     image: ghcr.io/vectorize-io/hindsight:${MANYTHREADS_HINDSIGHT_TAG:-0.10.3}
     environment:
-      HINDSIGHT_API_DATABASE_URL: postgresql://manythreads_owner:manythreads@postgres:5432/hindsight
+      # Its own login role, which owns only the `hindsight` database and cannot connect to `manythreads` (deploy/postgres/init/20-hindsight-db.sql).
+      # DEV DEFAULTS, in this file and dev.env.example only: the password here, the api key below and the LiteLLM key are development values; a
+      # deployment sets its own (nothing in server code defaults to any of them).
+      HINDSIGHT_API_DATABASE_URL: postgresql://hindsight:hindsight@postgres:5432/hindsight
       HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
       HINDSIGHT_API_TENANT_API_KEY: ${MANYTHREADS_HINDSIGHT_API_KEY:-hs-manythreads-dev}
       # Fact extraction is an LLM call; it goes to the LiteLLM proxy (profile `llm`, alias `fast`) like every other model call.
       HINDSIGHT_API_LLM_PROVIDER: ${MANYTHREADS_HINDSIGHT_LLM_PROVIDER:-openai}
       HINDSIGHT_API_LLM_BASE_URL: ${MANYTHREADS_HINDSIGHT_LLM_BASE_URL:-http://litellm:4000/v1}
-      HINDSIGHT_API_LLM_API_KEY: ${MANYTHREADS_HINDSIGHT_LLM_API_KEY:-sk-manythreads-dev-master}
+      # A LiteLLM virtual key limited to the alias `fast`, minted by `pnpm memory:up` (deploy/compose/memory-up.sh) — NOT the proxy's master key.
+      HINDSIGHT_API_LLM_API_KEY: ${MANYTHREADS_HINDSIGHT_LLM_API_KEY:-sk-hindsight-dev}
       HINDSIGHT_API_LLM_MODEL: ${MANYTHREADS_HINDSIGHT_LLM_MODEL:-fast}
       # `chunks` stores each chunk as it is and calls no LLM: the opt-in integration test (test/hindsight.integration.test.ts) runs the engine that
       # way, with the LLM check skipped. A real deployment leaves both at their defaults.

@@ -10,7 +10,7 @@ export { refuseBankFields, RecallArgs, RetainArgs } from './schemas.ts';
 export { registerMemoryTools } from './tools.ts';
 
 /**
- * memory-hindsight: team memory on Hindsight (SPEC 12.1, PLAN P5-12). One bank per team, `team:<slug>`, and the bank is derived — from the
+ * memory-hindsight: team memory on Hindsight (SPEC 12.1, PLAN P5-12). One bank per team, `team:<workspace slug>:<team slug>`, and the bank is derived — from the
  * run's team (found by the pairing token that opened the run) or, for the platform, from a team id in a system transaction — never from an
  * argument. It registers the `memory` provider (retain / recall / forget, `MemoryProvider` in the SDK) and the two tools a bot's run has,
  * `memory.recall` and `memory.retain`. The engine runs in the `hindsight` compose service (profile `memory`) on a network only the server

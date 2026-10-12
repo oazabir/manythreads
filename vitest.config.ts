@@ -48,7 +48,7 @@ export default defineConfig({
       },
       {
         // `pnpm test:memory-cross-team` (PLAN P5-15, SPEC 12.1): team A's bot gets nothing from team B's memory bank. Its own project so it can run
-        // by name on every PR; `pnpm test` runs it too (every project).
+        // by name on every PR; `pnpm test` lists the other projects and leaves it out, so it runs once per PR (ci.yml).
         test: {
           name: 'memory-cross-team',
           include: ['packages/plugins/memory-hindsight/test/cross-team/**/*.test.ts'],

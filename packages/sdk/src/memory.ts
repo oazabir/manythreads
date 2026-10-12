@@ -68,7 +68,7 @@ export interface MemoryRetainResult {
 
 /** A bank already chosen — by the provider, not by you. */
 export interface MemoryBank {
-  /** The bank's name (`team:<slug>`), for logs and the source log. */
+  /** The bank's name (`team:<workspace slug>:<team slug>`), for logs and the source log. */
   readonly id: string;
   recall(request: MemoryRecallRequest): Promise<MemoryRecallResult>;
   retain(items: readonly MemoryRetainItem[], options?: MemoryRetainOptions): Promise<MemoryRetainResult>;
@@ -87,8 +87,8 @@ export type MemoryErrorCode =
   | 'system_required'
   /** The team does not exist. */
   | 'unknown_team'
-  /** The run read something person-scoped, so its memory may not go to the team's bank (SPEC section 12.1). */
-  | 'person_scoped'
+  /** The run read something that is not provably team-visible, or was started in a private context, so it may not add to the team's bank (SPEC section 12.1). */
+  | 'retain_refused'
   | 'invalid_request'
   /** The engine did not answer, or answered with an error. */
   | 'unavailable';

@@ -126,4 +126,12 @@ describe('the Hindsight client', () => {
     expect(err.message).not.toMatch(/abcdefghijklmnop|sk-live1234567890|zzzzzzzzzz/);
     expect(scrub('Bearer short')).toBe('Bearer short');
   });
+
+  it('scrubs the literal API key it was configured with, whatever shape it has', async () => {
+    const { transport } = transportOf(() => ({ status: 500, body: { detail: 'bad credential hs-dev-key echoed' } }));
+    const client = createHindsightClient({ baseUrl: null, apiKey: 'hs-dev-key', transport });
+    const err = (await client.recall('team:a', { query: 'x' }).then(() => null, (e: unknown) => e as Error))!;
+    expect(err.message).not.toContain('hs-dev-key');
+    expect(err.message).toContain('[redacted]');
+  });
 });

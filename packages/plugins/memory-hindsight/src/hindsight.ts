@@ -42,17 +42,22 @@ export interface HindsightClientOptions {
 
 export class HindsightError extends Error {
   readonly status: number;
-  constructor(path: string, result: HindsightResult) {
+  constructor(path: string, result: HindsightResult, secrets: readonly (string | null)[] = []) {
     const detail = typeof result.body === 'string' ? result.body : JSON.stringify(result.body);
-    super(`Hindsight ${path} answered ${result.status}: ${scrub(detail ?? '').slice(0, 300)}`);
+    super(`Hindsight ${path} answered ${result.status}: ${scrub(detail ?? '', secrets).slice(0, 300)}`);
     this.name = 'HindsightError';
     this.status = result.status;
   }
 }
 
-/** The engine echoes request fields in its errors; anything credential-shaped is taken out before a message reaches a log or a model. */
-export function scrub(detail: string): string {
-  return detail
+/**
+ * The engine echoes request fields in its errors; anything credential-shaped is taken out before a message reaches a log or a model — and so is
+ * the literal API key this client was configured with, whatever shape it has (`secrets`).
+ */
+export function scrub(detail: string, secrets: readonly (string | null)[] = []): string {
+  let text = detail;
+  for (const secret of secrets) if (secret && secret.length >= 4) text = text.split(secret).join('[redacted]');
+  return text
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]{8,}/g, 'Bearer [redacted]')
     .replace(/\bsk-[A-Za-z0-9_-]{4,}/g, 'sk-[redacted]')
     .replace(/[A-Za-z0-9_+/=-]{40,}/g, '[redacted]');
@@ -143,16 +148,16 @@ export function createHindsightClient(options: HindsightClientOptions): Hindsigh
   const known = new Set<string>();
 
   const send = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown, requestOptions?: { timeoutMs?: number }): Promise<HindsightResult> => {
-    if (!transport) throw new HindsightError(path, { status: 0, body: 'no Hindsight URL is configured' });
+    if (!transport) throw new HindsightError(path, { status: 0, body: 'no Hindsight URL is configured' }, [options.apiKey]);
     try {
       return await transport.request(method, path, body, requestOptions);
     } catch (err) {
       // A refused connection or an abort: the engine did not answer. Status 0 = no answer at all.
-      throw new HindsightError(path, { status: 0, body: err instanceof Error ? err.message : String(err) });
+      throw new HindsightError(path, { status: 0, body: err instanceof Error ? err.message : String(err) }, [options.apiKey]);
     }
   };
   const ok = (path: string, result: HindsightResult): HindsightResult => {
-    if (result.status < 200 || result.status >= 300) throw new HindsightError(path, result);
+    if (result.status < 200 || result.status >= 300) throw new HindsightError(path, result, [options.apiKey]);
     return result;
   };
 
@@ -205,7 +210,7 @@ export function createHindsightClient(options: HindsightClientOptions): Hindsigh
       };
       const res = ok(path, await withBank(bank, () => send('POST', path, body)));
       const results = (res.body as { results?: unknown } | null)?.results;
-      if (!Array.isArray(results)) throw new HindsightError(path, { status: res.status, body: 'the recall answer has no results array' });
+      if (!Array.isArray(results)) throw new HindsightError(path, { status: res.status, body: 'the recall answer has no results array' }, [options.apiKey]);
       return results.map(toFact).filter((f): f is HindsightFact => f !== null);
     },
 

@@ -49,7 +49,7 @@ suite('the memory client against the real Hindsight engine', () => {
   const B = `team:${SLUG_B}`;
 
   afterAll(async () => {
-    for (const bank of [A, B]) await raw('DELETE', enc(bank));
+    for (const bank of [A, B, `team:itestws:${SLUG_A}`, `team:itestws:${SLUG_B}`]) await raw('DELETE', enc(bank));
   });
 
   beforeAll(async () => {
@@ -117,7 +117,7 @@ suite('the memory client against the real Hindsight engine', () => {
     const txFor = (slug: string): PluginTx => ({
       actor: { kind: 'bot', id: 'actor', workspaceId: 'ws' },
       async query() {
-        return { rows: [{ run_id: `run-${slug}`, team_id: `id-${slug}`, team_slug: slug, bot_id: 'bot', person_scoped: false }] } as never;
+        return { rows: [{ run_id: `run-${slug}`, team_id: `id-${slug}`, team_slug: slug, workspace_slug: 'itestws', bot_id: 'bot', retain_refusal: null }] } as never;
       },
     });
     const provider = createMemoryProvider({ client: () => client });
@@ -127,8 +127,8 @@ suite('the memory client against the real Hindsight engine', () => {
     await bankB.retain([{ content: 'Quokka budget review happens in November' }]);
     const fromA = await bankA.recall({ query: 'Okapi rollout Quokka budget' });
     const fromB = await bankB.recall({ query: 'Okapi rollout Quokka budget' });
-    expect(fromA.bank).toBe(A);
-    expect(fromB.bank).toBe(B);
+    expect(fromA.bank).toBe(`team:itestws:${SLUG_A}`);
+    expect(fromB.bank).toBe(`team:itestws:${SLUG_B}`);
     expect(JSON.stringify(fromA.hits)).not.toMatch(/Quokka/);
     expect(JSON.stringify(fromB.hits)).not.toMatch(/Okapi/);
     expect(fromA.hits[0]!.text).toMatch(/Okapi/);

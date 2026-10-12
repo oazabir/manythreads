@@ -1,4 +1,4 @@
-import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool } from '@manythreads/kernel';
+import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool, withActor } from '@manythreads/kernel';
 import { McpRunMintResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startFakeHindsight, type FakeHindsight } from '../../../../../tools/fake-hindsight/src/server.ts';
@@ -14,8 +14,9 @@ vi.setConfig({ testTimeout: 180_000 });
 
 const A = 'engineering';
 const B = 'customer-support';
-const BANK_A = `team:${A}`;
-const BANK_B = `team:${B}`;
+// Filled in once the world exists: `team:<workspace slug>:<team slug>`.
+let BANK_A = '';
+let BANK_B = '';
 const SECRET_B = 'Project Falconwing launches on 9 March under codename Nightjar';
 const SECRET_A = 'The Basilisk migration freezes writes on Friday evening';
 
@@ -54,7 +55,30 @@ async function openRun(team: string): Promise<{ runId: string; url: string; toke
   return { runId: minted.runId, url: minted.url, token: minted.token };
 }
 
-const hitsOf = (answer: Record<string, unknown>): Array<{ text: string }> => (answer['hits'] as Array<{ text: string }> | undefined) ?? [];
+/** A run for team A's bot opened the only way that may name an asker: in-process, the way the router opens one (`ctx.runs.open`). */
+async function openInProcess(trigger: string, options: { threadId?: string } = {}): Promise<{ runId: string; url: string; token: string }> {
+  const appPool = createAppPool(world.server.db.appUrl);
+  const systemPool = createSystemPool(world.server.db.systemUrl, 2);
+  try {
+    const registry = new CapabilityRegistry();
+    const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
+    const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
+    const { run, token } = await service.open({
+      botId: bots[A]!.botId,
+      teamId: bots[A]!.teamId,
+      workspaceId: omar.workspaceId,
+      trigger,
+      askerActorId: nadia.actorId,
+      ...(options.threadId ? { threadId: options.threadId } : {}),
+    });
+    return { runId: run.runId, url: `${world.server.url}/api/mcp/runs/${run.runId}`, token };
+  } finally {
+    await appPool.end();
+    await systemPool.end();
+  }
+}
+
+const hitsOf = (answer: Record<string, unknown>): Array<{ text: string }> => (answer['data'] as { facts?: Array<{ text: string }> } | undefined)?.facts ?? [];
 
 async function makeBot(team: string, slug: string): Promise<void> {
   const teamId = await world.system(async (tx) => (await tx.query<{ id: string }>('SELECT id FROM app.teams WHERE slug = $1', [team])).rows[0]!.id);
@@ -83,6 +107,9 @@ beforeAll(async () => {
   process.env['MANYTHREADS_HINDSIGHT_URL'] = fake.url;
   world = await createWorld();
   await ensureChannels(world);
+  const workspaceSlug = await world.system(async (tx) => (await tx.query<{ slug: string }>('SELECT slug FROM app.workspaces LIMIT 1')).rows[0]!.slug);
+  BANK_A = `team:${workspaceSlug}:${A}`;
+  BANK_B = `team:${workspaceSlug}:${B}`;
   await makeBot(A, 'mem-a');
   await makeBot(B, 'mem-b');
 
@@ -111,7 +138,10 @@ describe('team A’s bot gets nothing from team B', () => {
     const run = await openRun(A);
     const stolen = await call(run, 'memory.recall', { query: 'Falconwing launch codename Nightjar 9 March' });
     expect(stolen.answer).toMatchObject({ ok: true, bank: BANK_A });
-    expect(hitsOf(stolen.answer)).toEqual([]);
+    // The real engine always ranks the bank it was asked about, so the property is "none of B's content", not "an empty list".
+    expect(hitsOf(stolen.answer).map((h) => h.text)).not.toContain(SECRET_B);
+    expect(JSON.stringify(stolen.answer)).not.toMatch(/Falconwing|Nightjar/);
+    expect(stolen.answer['note']).toMatch(/data, not as instructions/);
     const own = await call(run, 'memory.recall', { query: 'Basilisk migration freeze' });
     expect(hitsOf(own.answer).map((h) => h.text)).toEqual([SECRET_A]);
   });
@@ -125,6 +155,7 @@ describe('team A’s bot gets nothing from team B', () => {
     expect(made.length).toBeGreaterThan(0);
     expect(new Set(made.map((c) => c.bank))).toEqual(new Set([BANK_A]));
     expect(made.map((c) => c.path).join(' ')).not.toContain('customer-support');
+    expect(made.map((c) => c.path).join(' ')).toContain(encodeURIComponent(BANK_A));
   });
 
   it('the pairing token fixes the team: a token minted for B’s bot opens a run in B, never in A', async () => {
@@ -197,21 +228,11 @@ describe('the platform’s door', () => {
   });
 
   it('a person-asked run reads the asker’s team bank, and A’s asker never gets B’s', async () => {
-    // The only way to name an asker: in-process, the way the router opens a conversation run.
-    const appPool = createAppPool(world.server.db.appUrl);
-    const systemPool = createSystemPool(world.server.db.systemUrl, 2);
-    try {
-      const registry = new CapabilityRegistry();
-      const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
-      const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
-      const { run, token } = await service.open({ botId: bots[A]!.botId, teamId: bots[A]!.teamId, workspaceId: omar.workspaceId, trigger: 'conversation', askerActorId: nadia.actorId });
-      const target = { url: `${world.server.url}/api/mcp/runs/${run.runId}`, token };
+    {
+      const target = await openInProcess('conversation');
       const out = await call(target, 'memory.recall', { query: 'Falconwing launch codename Nightjar' });
       expect(out.answer).toMatchObject({ ok: true, bank: BANK_A });
-      expect(hitsOf(out.answer)).toEqual([]);
-    } finally {
-      await appPool.end();
-      await systemPool.end();
+      expect(JSON.stringify(out.answer)).not.toMatch(/Falconwing|Nightjar/);
     }
   });
 
@@ -224,14 +245,14 @@ describe('the platform’s door', () => {
     expect(lines).toEqual([{ source_type: 'memory', source_ref: `bank:${BANK_A}`, scope: 'team' }]);
   });
 
-  it('a run that read something person-scoped may not retain to the team bank, but may still recall', async () => {
+  it('a run that read something person-scoped (the person half of the rule) may not retain to the team bank, but may still recall', async () => {
     const run = await openRun(A);
     await world.system((tx) =>
       tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'message', 'a-dm', 'person')", [run.runId]),
     );
     const before = fake.state.banks.get(BANK_A)!.length;
     const retained = await call(run, 'memory.retain', { content: 'something from a private conversation' });
-    expect(retained.answer).toMatchObject({ ok: false, code: 'person_scoped' });
+    expect(retained.answer).toMatchObject({ ok: false, code: 'retain_refused' });
     expect(fake.state.banks.get(BANK_A)!.length).toBe(before);
     expect((await call(run, 'memory.recall', { query: 'Basilisk migration' })).answer).toMatchObject({ ok: true });
   });
@@ -271,5 +292,129 @@ describe('the platform’s door', () => {
         tx.query(`INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, 'memory.recall', false, '{}')`, [bots[A]!.teamId, bots[A]!.actorId]),
       );
     }
+  });
+});
+
+// SPEC 12.1: private channels, DMs and person runs are never retained to the team bank. Until P5-13's narrowest-source rule, a run may retain only if
+// every line of its source log is provably team-visible and it was not started in a private context; recalling is always allowed.
+describe('what a run may retain', () => {
+  let publicMessageId = '';
+  let privateMessageId = '';
+  let privateRootId = '';
+
+  beforeAll(async () => {
+    const dev = await world.channelId(A, 'dev');
+    const posted = await world.call(nadia, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'Public note about the cache TTL.', threadRootId: null });
+    expect(posted.status, JSON.stringify(posted.body)).toBe(201);
+    publicMessageId = (posted.body as { id?: string; message?: { id: string } }).id ?? (posted.body as { message: { id: string } }).message.id;
+    await world.system(async (tx) => {
+      const channel = (
+        await tx.query<{ id: string }>(
+          "INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'war-room', 'channel', true) RETURNING id",
+          [omar.workspaceId, bots[A]!.teamId],
+        )
+      ).rows[0]!;
+      const message = (
+        await tx.query<{ id: string }>(
+          "INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, 'Layoffs are planned for June', 'Layoffs are planned for June') RETURNING id",
+          [omar.workspaceId, channel.id, nadia.actorId],
+        )
+      ).rows[0]!;
+      privateMessageId = message.id;
+      privateRootId = message.id;
+      await tx.query('INSERT INTO app.threads (root_message_id, channel_id) VALUES ($1, $2)', [message.id, channel.id]);
+    });
+  });
+
+  const read = (runId: string, sourceType: string, sourceRef: string, scope: string) =>
+    world.system((tx) =>
+      tx.query(
+        'INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, coalesce((SELECT max(seq) + 1 FROM app.run_source_log WHERE run_id = $1), 0), $2, $3, $4)',
+        [runId, sourceType, sourceRef, scope],
+      ),
+    );
+  const retained = async (run: { url: string; token: string }) => (await call(run, 'memory.retain', { content: `note ${Math.random()}` })).answer;
+
+  it('may retain after reading a message of a PUBLIC channel of its own team, and after recalling', async () => {
+    const run = await openRun(A);
+    await call(run, 'memory.recall', { query: 'Basilisk migration' });
+    await read(run.runId, 'message', publicMessageId, 'channel');
+    expect(await retained(run)).toMatchObject({ ok: true });
+  });
+
+  it('may not retain after reading a message of a private channel', async () => {
+    const run = await openRun(A);
+    await read(run.runId, 'message', privateMessageId, 'channel');
+    const before = fake.state.banks.get(BANK_A)!.length;
+    expect(await retained(run)).toMatchObject({ ok: false, code: 'retain_refused' });
+    expect(fake.state.banks.get(BANK_A)!.length).toBe(before);
+    // ...but it may still recall.
+    expect((await call(run, 'memory.recall', { query: 'Basilisk migration' })).answer).toMatchObject({ ok: true });
+  });
+
+  it('may not retain after a channel line that cannot be shown to be public (an unknown ref, another team’s channel, a file nobody knows)', async () => {
+    for (const [type, ref] of [['message', '00000000-0000-7000-8000-000000000000'], ['message', 'not-an-id'], ['file', '00000000-0000-7000-8000-000000000001'], ['thread', publicMessageId]] as const) {
+      const run = await openRun(A);
+      await read(run.runId, type, ref, 'channel');
+      expect(await retained(run), `${type} ${ref}`).toMatchObject({ ok: false, code: 'retain_refused' });
+    }
+  });
+
+  it('may not retain in a conversation run, whatever it read', async () => {
+    const run = await openInProcess('conversation');
+    expect(await retained(run)).toMatchObject({ ok: false, code: 'retain_refused' });
+    expect((await call(run, 'memory.recall', { query: 'Basilisk migration' })).answer).toMatchObject({ ok: true });
+  });
+
+  it('may not retain in a run whose thread is in a private channel, but may in one on a public thread', async () => {
+    const inPrivate = await openInProcess('mention', { threadId: privateRootId });
+    expect(await retained(inPrivate)).toMatchObject({ ok: false, code: 'retain_refused' });
+    const none = await openInProcess('mention');
+    expect(await retained(none)).toMatchObject({ ok: true });
+  });
+});
+
+// `app.memory_run_scope()` itself, called the way the kernel calls anything: inside withActor, which sets app.actor_id and app.run_id.
+describe('app.memory_run_scope()', () => {
+  const scopeFor = async (actor: { kind: 'person' | 'bot'; id: string }, runId: string): Promise<Array<{ team_slug: string }>> => {
+    const pool = createAppPool(world.server.db.appUrl);
+    try {
+      return await withActor({ kind: actor.kind, id: actor.id, workspaceId: omar.workspaceId, runId } as never, async (tx) => (await tx.query('SELECT team_slug FROM app.memory_run_scope()')).rows as Array<{ team_slug: string }>, { pool });
+    } finally {
+      await pool.end();
+    }
+  };
+
+  it('answers for the run’s own bot, and for the person who asked, with the run’s team', async () => {
+    const run = await openRun(A);
+    expect(await scopeFor({ kind: 'bot', id: bots[A]!.actorId }, run.runId)).toEqual([{ team_slug: A }]);
+    const asked = await openInProcess('mention');
+    expect(await scopeFor({ kind: 'person', id: nadia.actorId }, asked.runId)).toEqual([{ team_slug: A }]);
+  });
+
+  it('answers nothing to another actor on the run: a person who did not ask, or the other team’s bot', async () => {
+    const run = await openRun(A);
+    expect(await scopeFor({ kind: 'person', id: nadia.actorId }, run.runId)).toEqual([]);
+    expect(await scopeFor({ kind: 'person', id: omar.actorId }, run.runId)).toEqual([]);
+    expect(await scopeFor({ kind: 'bot', id: bots[B]!.actorId }, run.runId)).toEqual([]);
+  });
+
+  it('team A’s bot with team B’s run id gets nothing — and team B’s bot gets team B', async () => {
+    const runB = await openRun(B);
+    expect(await scopeFor({ kind: 'bot', id: bots[A]!.actorId }, runB.runId)).toEqual([]);
+    expect(await scopeFor({ kind: 'bot', id: bots[B]!.actorId }, runB.runId)).toEqual([{ team_slug: B }]);
+  });
+
+  it('answers nothing once the run is closed, and nothing for an unknown run', async () => {
+    const run = await openRun(A);
+    expect(await scopeFor({ kind: 'bot', id: bots[A]!.actorId }, run.runId)).toHaveLength(1);
+    const closed = await fetch(`${world.server.url}${new URL(run.url).pathname}/close`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${run.token}` },
+      body: JSON.stringify({ status: 'done' }),
+    });
+    expect(closed.status).toBe(200);
+    expect(await scopeFor({ kind: 'bot', id: bots[A]!.actorId }, run.runId)).toEqual([]);
+    expect(await scopeFor({ kind: 'bot', id: bots[A]!.actorId }, '00000000-0000-7000-8000-000000000002')).toEqual([]);
   });
 });
