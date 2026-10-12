@@ -102,7 +102,8 @@ client plugins; voice/video; E2E encryption; plugin marketplace with payments; b
 ```
 pnpm install            pnpm lint     pnpm typecheck     pnpm build
 pnpm test               # vitest, all packages (needs DB: pnpm db:up)
-pnpm test:rls  pnpm test:events  pnpm test:schema-compat  (later: test:memory-cross-team, test:runtime-rules)
+pnpm test:rls  pnpm test:events  pnpm test:schema-compat  pnpm test:memory-cross-team  (later: test:runtime-rules)
+pnpm memory:up / memory:down   # Hindsight (compose profile `memory`, port 8888); docs/plugins/memory-hindsight.md
 pnpm s3:up              # MinIO for storage-s3 tests (MANYTHREADS_TEST_S3=1)
 pnpm db:up / db:down    # dev Postgres 19 via deploy/compose (port 55432, user manythreads_owner)
 pnpm e2e                # playwright (runs from e2e/; never `playwright` from root);  pnpm e2e --project=api
