@@ -27,7 +27,11 @@ const until = async <T>(fn: () => Promise<T | null | undefined | false>, what: s
   for (;;) {
     const value = await fn();
     if (value) return value;
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) {
+      // what the server said meanwhile: a drain that throws is otherwise invisible from here
+      const said = w.server.logs.filter((l) => /memory|"level":(40|50)/.test(l)).slice(-12).map((l) => l.slice(0, 400));
+      throw new Error(`timed out waiting for ${what}\n${said.join('\n')}`);
+    }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 };
