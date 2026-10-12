@@ -169,6 +169,33 @@ describe('the gateway client against a real proxy', () => {
     expect(body.usage.completion_tokens).toBe(7);
   });
 
+  it('answers a completion with what the test scripted: text, a raw status, and the request it was handed', async () => {
+    const seen: Array<{ model: string; roles: string[]; authorized: boolean }> = [];
+    fake = await startFakeLlm({
+      masterKey: 'sk-fake',
+      completion: ({ model, messages, authorized }) => {
+        seen.push({ model, roles: messages.map((m) => m.role), authorized });
+        return messages.some((m) => m.content.includes('boom')) ? { status: 500, body: { error: { message: 'boom' } } } : 'YES';
+      },
+    });
+    const url = fake.url;
+    const ask = (path: string, content: string) =>
+      fetch(`${url}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer sk-fake' },
+        body: JSON.stringify({ model: 'local', messages: [{ role: 'system', content: 'be a gate' }, { role: 'user', content }] }),
+      });
+    const ok = await ask('/chat/completions', 'hello');
+    expect(((await ok.json()) as { choices: [{ message: { content: string } }] }).choices[0].message.content).toBe('YES');
+    expect((await ask('/v1/chat/completions', 'hello')).status).toBe(200);
+    expect((await ask('/chat/completions', 'boom')).status).toBe(500);
+    expect(seen).toEqual([
+      { model: 'local', roles: ['system', 'user'], authorized: true },
+      { model: 'local', roles: ['system', 'user'], authorized: true },
+      { model: 'local', roles: ['system', 'user'], authorized: true },
+    ]);
+  });
+
   it('refuses an unknown management path before revealing whether it exists, and 404s it to a keyed caller', async () => {
     fake = await startFakeLlm({ masterKey: 'sk-fake' });
 

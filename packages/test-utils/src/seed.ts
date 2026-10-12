@@ -4,6 +4,7 @@ import { createPersonas, KAHF_WORKSPACE, type CreatedPersonas } from './create-p
 import type { TestDatabase } from './db.ts';
 import { KAHF_WORKSPACE_ID, TEAM_IDS, type TeamName } from './personas.ts';
 import { seedContent, type SeedContentOptions, type SeedContentResult } from './seed-content.ts';
+import { seedGuard, type SeedGuardResult } from './seed-guard.ts';
 import { seedRepo, type SeedRepoOptions, type SeedRepoResult } from './seed-repo.ts';
 
 /** Team template each seeded team was created from (folder names under `templates/`). */
@@ -40,6 +41,12 @@ export interface SeedOptions {
   repo?: boolean;
   /** Where the repositories and attachments go (default: `MANYTHREADS_REPO_DIR`, `MANYTHREADS_STORAGE`, `MANYTHREADS_STORAGE_DIR`, `MANYTHREADS_S3_*`). */
   repoOptions?: Omit<SeedRepoOptions, 'log'>;
+  /**
+   * Seed v5 (seed-guard.ts): the guard state of the workspace — the `standard` preset and the `local` alias bound to a model on this machine — so
+   * the gate's classifier and the air-gapped preset work in a seeded world. Default false; the CLI takes `--guard`, the e2e stack
+   * `MANYTHREADS_STACK_SEED=guard`. Needs the gateway-llm tables: without them `SeedResult.guard.skipped` says so.
+   */
+  guard?: boolean;
   /** One line per step; the CLI prints them. */
   log?: (line: string) => void;
 }
@@ -55,6 +62,8 @@ export interface SeedResult {
   content: SeedContentResult | null;
   /** What seed v4 wrote (null when `repo` was not asked for or the database was skipped). */
   repo: SeedRepoResult | null;
+  /** What seed v5 wrote (null when `guard` was not asked for or the database was skipped). */
+  guard: SeedGuardResult | null;
   passwordMode: 'fixed' | 'random';
 }
 
@@ -68,7 +77,7 @@ const defaultTemplatesDir = (): string =>
  * argon2id passwords, and a verified `person_emails` row for each persona's address (Tariq also has `tariq@kahf.co`, his
  * Google Workspace login) so OIDC can link identities. All ids are fixed (personas.ts), so screenshots are stable.
  *
- * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist, and with `repo: true` seed v4 (seed-repo.ts).
+ * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist, and with `repo: true` seed v4 (seed-repo.ts) and with `guard: true` seed v5 (seed-guard.ts).
  *
  * Idempotent: a second run inserts nothing new and never replaces an existing password, so a demo site keeps the random
  * passwords of its first seeding. When the database already holds a different workspace the seed does nothing.
@@ -91,7 +100,7 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
   if (foreign.length > 0) {
     const reason = 'this database already has another workspace (first-admin bootstrap was used); seed left it alone';
     log(`skipped: ${reason}`);
-    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, repo: null, passwordMode };
+    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, repo: null, guard: null, passwordMode };
   }
   const created = existing.length === 0;
 
@@ -131,5 +140,6 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
   const repo = options.repo
     ? await seedRepo(db, { ...options.repoOptions, attachments: options.content ? (options.repoOptions?.attachments ?? options.contentOptions?.attachment) : false, log })
     : null;
-  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, repo, passwordMode };
+  const guard = options.guard ? await seedGuard(db, { log }) : null;
+  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, repo, guard, passwordMode };
 }

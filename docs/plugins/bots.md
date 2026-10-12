@@ -34,7 +34,8 @@ Every commit that touches `bots/<slug>/BOT.md` is read in the outbox consumer's 
 * **invalid frontmatter** (unknown key, missing key, bad YAML, a folder that is not a lowercase slug) → the previous
   row, if any, stays live with `status = 'invalid'` (last-good definition keeps running; the loader never overwrites
   `definition_sha` on a failure) and `bots.bot.invalid` carries the reason: `fieldPath` is what the schema named
-  (`capabilities.native[3]`, `capabilties` for an unknown key) plus `message`. The event is the alert; the row also
+  (`capabilities.native[3]`, `capabilties` for an unknown key, `guard.gate.1` for a gate-list entry the linear-time subset refuses — a nested repetition like `(a+)+`, a backreference, lookaround,
+  a flag other than `i`, a pattern or a list over its size limits; see [runtime-hermes](./runtime-hermes.md), "The gate") plus `message`. The event is the alert; the row also
   keeps the last failure in `invalid_reason` (migration 0006), which P5-05's red banner reads and the next good load
   clears — a repaired file shows no banner. A `disabled` bot stays `disabled` through invalid and valid loads alike
   (only `active` becomes `invalid`). No row ever existed →

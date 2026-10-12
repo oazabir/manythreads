@@ -10,9 +10,14 @@ decision.
 | `source` | Set by | Wired |
 |---|---|---|
 | `grant` | the per-grant flag: `approvals.needsApproval` in `BOT.md`, compiled into `capability_grants.needs_approval` | P5-20: the MCP gateway and the Hermes runtime's own scope |
-| `dlp` | the DLP `require_approval` outcome (SPEC §15) — a bot whose Guard rules carry `dlp:require_approval` | P5-20: the model call is held in `runtime-hermes` |
+| `dlp` | the DLP `require_approval` outcome (SPEC §15) — a bot whose Guard rules carry `dlp:require_approval` — **and the gate** (SPEC §7.3, P5-11; tool `llm.gate`): a guard decided that a model call waits for a person, which is what "held by the guard" means on the card | P5-20: the model call is held in `runtime-hermes`; P5-11: the gate files its hold here too |
 | `environment` | an Environment with `protected: true` on every tool tagged with it | phase 6 — the handler already takes it |
 | `dispatch` | `dispatch: strict` in `TEAM.md`, on `tasks.handoff` | phase 6 — the handler already takes it |
+
+**Why the gate is `dlp` and not a fifth source.** SPEC §7.3 names four sources and the table's `CHECK` (and every client's label) is those four. The gate is the bot's own Guard
+section deciding, before a model call, that it waits for a person — the same family as the DLP hold, with the same hand-back (`resume.kind = 'handoff'`), the same card ("held by the
+guard") and the same approvers. It is told apart by its tool, `llm.gate` against `llm.call`, and by `args_preview.stage`. If a later phase needs the sources to be filtered by
+mechanism, a fifth value is a migration of one `CHECK` and one enum map; nothing here depends on there being four.
 
 `approvalSourceFor({ environmentProtected, dispatchStrict, dlpRequiresApproval, grantNeedsApproval })` (`@manythreads/shared`)
 is the question every caller asks; a call that is several things at once is **one** approval, named by the first source in that

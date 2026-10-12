@@ -16,6 +16,7 @@ import {
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import guardrailsDlp from '../../guardrails-dlp/src/index.ts';
 import guardrailsEgress from '../../guardrails-egress/src/index.ts';
 import gatewayLlm from '../src/index.ts';
@@ -355,6 +356,137 @@ describe('preflight: the guardrails are the pre_egress chain', () => {
     const botId = await sys((tx) => makeBot(tx, 'preflight-one-event'));
     await check(call(botId, { text: `use sk-${'a'.repeat(24)} now` }));
     expect(emitted.map((e) => e.type)).toEqual(['llm.guard.decided']);
+  });
+});
+
+describe('complete: a completion the platform makes for itself (the gate\'s classifier)', () => {
+  let fake: FakeLlm;
+  let answer: string | { status: number; body: unknown } = 'NO';
+  const completions = () => fake.state.calls.filter((c) => c.path === '/chat/completions');
+  const ask = (botId: string, text: string, sessionId: string | null = null) =>
+    sys((tx) =>
+      gateway.complete(tx as unknown as PluginTx, {
+        workspaceId: omar.workspaceId,
+        botId,
+        teamId: ENG,
+        sessionId,
+        alias: 'local',
+        system: 'Reply YES or NO.',
+        text,
+        maxTokens: 8,
+        purpose: 'gate',
+      }),
+    );
+  const bind = () =>
+    sys(async (tx) => {
+      const provider = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.llm_providers (workspace_id, name, kind, api_base) VALUES ($1, 'complete-local', 'ollama', 'http://localhost:11434')
+             ON CONFLICT (workspace_id, lower(name)) DO UPDATE SET enabled = true RETURNING id`,
+          [omar.workspaceId],
+        )
+      ).rows[0]!;
+      await tx.query(
+        `INSERT INTO app.llm_aliases (workspace_id, alias, provider_id, model) VALUES ($1, 'local', $2, 'ollama/complete-test')
+           ON CONFLICT (workspace_id, alias) DO UPDATE SET provider_id = EXCLUDED.provider_id`,
+        [omar.workspaceId, provider.id],
+      );
+    });
+
+  beforeAll(async () => {
+    fake = await startFakeLlm({ completion: () => answer });
+    process.env['MANYTHREADS_LITELLM_URL'] = fake.url;
+    await bind();
+  });
+  afterAll(async () => {
+    delete process.env['MANYTHREADS_LITELLM_URL'];
+    await fake.close();
+  });
+  beforeEach(() => {
+    answer = 'NO';
+    fake.state.calls.length = 0;
+  });
+
+  it('asks the proxy for the alias with the fixed system turn and the text, and puts the call on the ledger as the bot\'s', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-ok'));
+    const runId = '0197a000-0000-7000-8000-00000000c0de';
+    const result = await ask(botId, 'is this about licences?', runId);
+    expect(result).toMatchObject({ ok: true, text: 'NO', sent: 'is this about licences?' });
+    expect(completions()).toHaveLength(1);
+    expect(completions()[0]!.body).toMatchObject({
+      model: 'local',
+      messages: [
+        { role: 'system', content: 'Reply YES or NO.' },
+        { role: 'user', content: 'is this about licences?' },
+      ],
+      max_tokens: 8,
+      temperature: 0,
+      metadata: { workspace_id: omar.workspaceId, bot_id: botId, purpose: 'gate' },
+    });
+    const ledger = await sys(async (tx) =>
+      (await tx.query<Record<string, unknown>>(`SELECT alias, prompt_tokens, completion_tokens, cost_usd::float AS cost, run_id, session_id FROM app.llm_spend WHERE bot_id = $1`, [botId])).rows,
+    );
+    expect(ledger).toEqual([{ alias: 'local', prompt_tokens: 12, completion_tokens: 7, cost: 0, run_id: runId, session_id: runId }]);
+  });
+
+  it('sends the redacted text under standard, and refuses outright under customer-facing (nothing is sent either way unredacted)', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-dlp'));
+    const key = `sk-${'q'.repeat(24)}`;
+    const redacted = await ask(botId, `the key is ${key}`);
+    expect(redacted).toMatchObject({ ok: true, sent: 'the key is [redacted:api-key]' });
+    expect(JSON.stringify(completions()[0]!.body)).not.toContain(key);
+
+    await sys((tx) => tx.query(`INSERT INTO app.llm_settings (workspace_id, preset) VALUES ($1, 'customer-facing')`, [omar.workspaceId]));
+    try {
+      fake.state.calls.length = 0;
+      const refused = await ask(botId, `the key is ${key}`);
+      expect(refused).toMatchObject({ ok: false, reason: 'refused', decision: { allowed: false, reason: 'dlp', outcome: 'block' } });
+      expect(completions()).toHaveLength(0);
+    } finally {
+      await sys((tx) => tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]));
+    }
+  });
+
+  it('is refused by the bot\'s budget like any other call, with the reason the caller can read', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-budget'));
+    await sys((tx) => tx.query(`INSERT INTO app.llm_limits (workspace_id, scope, bot_id, limit_usd) VALUES ($1, 'bot', $2, 0)`, [omar.workspaceId, botId]));
+    const result = await ask(botId, 'hello');
+    expect(result).toMatchObject({ ok: false, reason: 'refused', decision: { reason: 'budget' } });
+    expect(completions()).toHaveLength(0);
+  });
+
+  it('says `unbound` when the alias is bound to nothing, and does not call the proxy', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-unbound'));
+    await sys((tx) => tx.query(`DELETE FROM app.llm_aliases WHERE workspace_id = $1 AND alias = 'local'`, [omar.workspaceId]));
+    try {
+      const result = await ask(botId, 'hello');
+      expect(result).toMatchObject({ ok: false, reason: 'unbound' });
+      expect(completions()).toHaveLength(0);
+    } finally {
+      await bind();
+    }
+  });
+
+  it('says `unavailable` when the proxy fails or is not configured, with a detail that quotes no secret', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-down'));
+    answer = { status: 500, body: { error: { message: 'boom api_key=sk-hunter2hunter2hunter2' } } };
+    const failed = await ask(botId, 'hello');
+    expect(failed).toMatchObject({ ok: false, reason: 'unavailable' });
+    expect(JSON.stringify(failed)).not.toContain('hunter2');
+
+    answer = { status: 200, body: { choices: [] } };
+    expect(await ask(botId, 'hello')).toMatchObject({ ok: false, reason: 'unavailable' });
+
+    const saved = process.env['MANYTHREADS_LITELLM_URL'];
+    delete process.env['MANYTHREADS_LITELLM_URL'];
+    try {
+      expect(await ask(botId, 'hello')).toMatchObject({ ok: false, reason: 'unavailable', detail: 'No LLM gateway URL is configured.' });
+    } finally {
+      process.env['MANYTHREADS_LITELLM_URL'] = saved;
+    }
+    // nothing that failed is on the ledger
+    const lines = await sys(async (tx) => (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.llm_spend WHERE bot_id = $1`, [botId])).rows[0]!.n);
+    expect(lines).toBe(0);
   });
 });
 

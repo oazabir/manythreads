@@ -111,9 +111,11 @@ budget counts the whole session, so the session id is its window. Rate limits ar
 `provider.llm.preflight(tx, request)` is the gate, and a runtime calls it before each model call. It answers a decision —
 never an exception — so a run can log it and stop cleanly:
 
-1. the preset's egress rule, over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only; `strict-egress` needs the target host on the
-   workspace's allowlist; a local endpoint is never egress and needs no entry),
-2. the pre-call DLP hook (below),
+1. the guardrails: the `pre_egress` chain ([guardrails-dlp](./guardrails-dlp.md), [guardrails-egress](./guardrails-egress.md)) — first the preset's egress
+   rule over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only; `strict-egress` needs the target host on the
+   workspace's allowlist; a local endpoint is never egress and needs no entry), then the DLP check (below). The gateway describes the call (alias, every link of
+   the chain with the host it reaches, the preset, the allowlist, the text) and obeys the answer; with no guardrail loaded the call is refused (`dependsOn`
+   makes that unreachable in a server),
 3. every applicable limit, narrowest scope first: session → bot → team → workspace, and at each scope the budget before
    the rate limit. The narrowest exhausted scope is the one the refusal names.
 
@@ -142,11 +144,9 @@ P5-08 and this hook read one definition:
 | `air-gapped` | the `local` alias only | `redact` |
 | `customer-facing` | any configured provider | `block` |
 
-The hook (`src/dlp.ts`) is plain string work with a bounded quantifier per detector: a private-key block (header **through footer**, a truncated one up to a bound, a text of footerless headers scanned once), an API key
-(`sk-…` up to 512 characters, so `sk-proj-…` is whole — but a match with no digit that is not one unbroken run of 20+ letters is a hyphenated word, not a key, and is left alone — `AKIA…`, `ghp_…`, `xox…`), a `Bearer` token, a URL with credentials in it, and a card number (13–19 digits with
-separators, confirmed by Luhn so a long id is not a card). `redact` answers the text with each span replaced by
-`[redacted:<rule>]` and the call continues; `block` refuses it and the text is unchanged. Rules are names, never the
-matched text: the event, the decision and the audit line carry `api-key`, not the key.
+The hook is `guardrails-dlp`'s (P5-21 moved it out of this plugin; the detectors, `redact` and `block` are described in [guardrails-dlp.md](./guardrails-dlp.md)). The preset
+data stays here and in `@manythreads/shared`; the gateway passes the preset's name with the call, so the guardrails and the page of P5-08 read one definition. The gateway still
+writes `llm.guard.decided` itself (it alone knows the alias and the bot) and tells the guardrails not to write theirs (`recorded: true`).
 
 `require_approval` (SPEC §15) is a **bot's** choice, not a preset's: a request carries `dlpMode` — `hold` when the bot's `guard.rules` carries
 `dlp:require_approval`, `approved` for the call a person has since approved, the preset's own rule otherwise. In `hold` mode a finding answers
@@ -154,6 +154,14 @@ matched text: the event, the decision and the audit line carry `api-key`, not th
 files the approval through the approvals plugin ([approvals](./approvals.md)) and stops the run. In `approved` mode the finding passes as written,
 but a preset that refuses outright (`customer-facing`) still refuses, and the egress and budget checks still apply. `llm.guard.decided` is emitted
 for the hold like any non-`allow` outcome.
+
+## A completion the platform makes for itself (P5-11)
+
+`provider.llm.complete(tx, request)` is the call the gate's classifier makes on the `local` alias ([runtime-hermes](./runtime-hermes.md)): the same pre-call check as any call (the guardrails
+see the **text** and only the text — the fixed system turn is ours —, the bot's budgets and rate limits count it), then `POST /chat/completions` on the proxy with the **master key** (not the bot's
+virtual key, whose allowed aliases are the bot's business), then a line on the ledger (`llm_spend`, alias `local`, tokens as the proxy reported them, cost 0: a model on this machine). It never
+throws for an unavailable model; it answers `{ ok: false, reason }` — `refused` (with the decision: a budget, a rate limit, the preset, a detection), `unbound` (the alias is bound to nothing) or
+`unavailable` (no proxy URL, an error, a timeout, an answer with no text; the detail is scrubbed of anything credential-shaped) — and the caller decides what that means.
 
 ## Without a proxy
 

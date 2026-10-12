@@ -8,5 +8,6 @@ export * from './fake-oidc.ts';
 export * from './seed.ts';
 export * from './seed-content.ts';
 export { seedRepo, SEED_REPO_IDS, SEED_REPO_ATTACHMENTS, type SeedRepoOptions, type SeedRepoResult } from './seed-repo.ts';
+export { seedGuard, seedGateBotMd, SEED_GUARD, type SeedGuardResult } from './seed-guard.ts';
 export { openSeedStorage, putSeedAttachment, type SeedStorageOptions, type SeedStorageKind } from './seed-storage.ts';
 export type { SeedAuthor, SeedLine } from './seed-data.ts';

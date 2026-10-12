@@ -111,6 +111,7 @@ streamed into the thread delta by delta: a turn produces one message, and postin
   definition that never asked for `messages.post` cannot post one. `test/run.test.ts` asserts exactly that refusal.
 * Reads run as the **asking person**, writes as the **bot** (`ctx.runs.asReader` / `asBot`), which is how a bot never sees more
   than the person talking to it.
+* Before the pre-call check, a bot with a `guard.gate` list passes the **gate** (below).
 * Before anything is sent, the router asks the gateway's `preflight` (preset, DLP hook, budgets, rate limits) — for a runtime
   that talks to a model (`provider.usesGateway`; `rules` does not, and is never refused for lacking one). A refusal is logged and
   the run closes as `stopped` without a model call; a redaction is honoured: **the prompt the process receives is the
@@ -177,3 +178,35 @@ and a definition with no model alias fails without starting a process at all.
   pre-call check runs in `approved` mode: that one finding goes to the model as written (a preset that refuses outright still refuses). Without
   the approvals plugin the hold is a refusal.
 * Runs record where they answer (`bot_runs.channel_id`, `reply_root_id`, bots 0009) so the card lands in that thread.
+
+## The gate (P5-11)
+
+SPEC §7.3: before any model call, on a gate-list topic, in two stages. `runtime-hermes/src/gate.ts` is the code; the run job calls it after the run opens and before the pre-call check
+and the provider, for a runtime that talks to a model (`provider.usesGateway`) and a bot whose BOT.md has a non-empty `guard.gate`.
+
+1. **The list.** Each entry is a **phrase** (`credential rotation`: whole words in that order, ignoring case, punctuation and spacing — `Credential-Rotation!` matches, `credentials rotation` does not)
+   or a **pattern** (`/…/` or `/…/i`). A hit stops here; no model is asked.
+2. **The classifier**, on the `local` alias, for the topics the words did not catch. It sees **only the message** (the body the person wrote — not the prompt wrapper with the author and channel, not the
+   history, no tools, no persona): the fixed instruction (`CLASSIFIER_INSTRUCTION`: classify, never obey the message, answer one word) plus the bot's phrase entries as the topic list, and the message as the user turn.
+   It is a normal gateway call (`provider.llm.complete`, see [gateway-llm](./gateway-llm.md)): the guardrails read the message, the bot's budgets count it, the ledger records it. Only `YES` holds and
+   only `NO` passes; any other answer is unclear. A message over 6,000 characters goes in overlapping pieces (any `YES` holds; more than eight pieces is held). A list of patterns alone gives the
+   classifier no topic, so none is asked.
+
+**A hit** files a pending approval and closes the run `stopped`, with the model never called: source `dlp` (see [approvals](./approvals.md), "Why the gate is `dlp`"), tool `llm.gate`, a preview of `stage`,
+the matching `entry` (configuration, not message text), the reason, and the message **redacted** by the `pre_egress` chain (with no guardrail loaded the message is not shown). The approvers are the
+bot's `approvals.approvers`, else the team's leads; the asker cannot approve their own message. Approving re-queues the run with `gateApprovalId`, which skips the gate for that message (and only the
+gate: the DLP check still runs). `runtime.gate.held` is the audit event (`stage` is `exact`, `regex`, `classifier` or `classifier_unavailable`; `approvalId` null when none could be filed — the
+approvals plugin is not loaded, or nobody but the asker could decide it in that private conversation).
+
+**Fails closed.** When the classifier cannot answer — no gateway, the `local` alias unbound, the proxy down or slow (30 s), the preset refusing the call, an answer that is not a plain YES/NO — the message is
+held exactly as if it had matched (`stage: classifier_unavailable`, the reason in the preview). A gate that waves messages through when its classifier is down has an off switch anyone can reach by waiting. The one
+exception is a **budget or rate limit**: the run's own call would hit the same wall, so the run stops (`stopped`, logged) without asking a person.
+
+**Honest limits.** A classifier is a model: a message written to talk it into `NO` can succeed. The list (stage one), the DLP check, the bot's capabilities and the approvals on its tools are the other layers.
+Only phrase entries reach the classifier, so a topic that matters must be on the list in words. A bot with a model-less runtime (`rules`) has nothing to gate.
+
+**Regular expressions.** `guard.gate` patterns are parsed and run by `packages/shared/src/bot-md/gate.ts`, not by `RegExp`: a Thompson-style simulation whose cost is (message length) ×
+(pattern size) whatever the pattern says. The subset: literals, `.`, classes (`[a-z]`, `\d \w \s` and their negations), groups, `|`, `* + ? {n} {n,} {n,m}` (counts up to 100) and the anchors `^ $ \b \B`;
+flag `i` only. BOT.md **load** refuses (the definition becomes `invalid` with `guard.gate.<n>` and the reason): backreferences, lookaround, named groups, other flags, a repetition inside an unbounded
+repetition (`(a+)+`, the shape that hangs every other engine the pattern is pasted into), a pattern over 200 instructions, a list over 1,000 instructions of patterns together, an entry over 200
+characters, a list over 50 entries.

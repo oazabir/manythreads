@@ -47,7 +47,8 @@ that is not in `extends`, or an event not in `events.emits` / `events.consumes`,
 | `extends` entry | `ctx` API |
 |---|---|
 | `event.subscribe` / `event.emit` | `ctx.events.subscribe(type, handler)`, `await ctx.events.emit(tx, event)` |
-| `hook.pre_persist`, `hook.pre_egress` | `ctx.hooks.prePersist(fn)`, `ctx.hooks.preEgress(fn)` |
+| `hook.pre_persist` | `ctx.hooks.prePersist(fn)` |
+| `hook.pre_egress` | `ctx.hooks.preEgress(fn)` adds a guard to the chain; `await ctx.hooks.runPreEgress(tx, input)` runs it for something that is about to leave and answers `allow`, `redact`, `require_approval` or `block` ([guardrails-dlp.md](./guardrails-dlp.md)) |
 | `provider.<kind>` | `ctx.providers.register(kind, impl)` |
 | `command.register`, `trigger.register`, `component.register` | `ctx.commands`, `ctx.triggers`, `ctx.components` |
 | `surface.nav/screen/card/panel`, `settings.page`, `composer.action` | declarative client surfaces (`ctx.surfaces`, `ctx.settings`, `ctx.composer`); no client JS is loaded at run time |

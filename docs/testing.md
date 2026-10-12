@@ -130,7 +130,16 @@ pnpm seed                     # DATABASE_URL (default: dev compose Postgres), ev
 pnpm seed --demo              # random passwords, hashed and printed nowhere (public deployments)
 pnpm seed --no-content        # workspace, teams and people only
 pnpm seed --migrate --no-content --wait 60   # apply kernel migrations first / wait for the server's migrations
+pnpm seed --guard             # add seed v5 (below)
 ```
+
+### Seed v5: the guard state (`--guard`, `seedWorld(db, { guard: true })`, `MANYTHREADS_STACK_SEED=guard`)
+
+`packages/test-utils/src/seed-guard.ts`. Opt-in (a live site has no model on its own box, so the CLI does not bind one unasked). It writes, **only where nothing is**, the workspace's `standard` preset with an
+empty allowlist (`llm_settings`) and the `local` alias bound to a provider on this machine (`Local (Ollama)`, `ollama/llama3.2`): what lets the gate's classifier ([runtime-hermes](./plugins/runtime-hermes.md)) and
+the `air-gapped` preset work in a seeded world. An admin's own preset, provider or `local` binding is never replaced, a second run writes nothing, and without the gateway-llm tables `SeedResult.guard.skipped` says
+so. `SEED_GUARD` names the strings a spec feeds the guardrails (a made-up API key, the published test card number, a bearer token, a gate-list message by its words, one by its meaning, a clean one) and `seedGateBotMd(name)`
+is a BOT.md whose `guard.gate` is the spec's example list; bots stay files in a team repo, so a spec commits that file instead of the seed inventing a bot.
 
 ## Isolated stacks for api specs, and ports
 
