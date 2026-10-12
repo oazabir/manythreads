@@ -27,6 +27,20 @@ describe('parseBotMd', () => {
     if (!parsed.ok) expect(parsed.failure.fieldPath).toBe('capabilities.native[3]');
   });
 
+  it('a gate-list entry the linear-time subset refuses makes the definition invalid, naming the entry and the reason (PLAN P5-11)', () => {
+    const base = 'name: T\nrole: R\nkind: agent\nruntime: hermes\nguard:\n  gate:\n';
+    expect(parseBotMd(ok(`${base}    - credential rotation\n    - '/drop\\s+table/i'`)).ok).toBe(true);
+    const nested = parseBotMd(ok(`${base}    - credential rotation\n    - '/(a+)+$/'`));
+    expect(nested.ok).toBe(false);
+    if (!nested.ok) {
+      expect(nested.failure.fieldPath).toBe('guard.gate[1]');
+      expect(nested.failure.message).toMatch(/guard\.gate\[1\]: a repetition inside a repetition/);
+    }
+    const lookahead = parseBotMd(ok(`${base}    - '/(?=x)y/'`));
+    expect(lookahead.ok).toBe(false);
+    if (!lookahead.ok) expect(lookahead.failure.message).toMatch(/lookaround/);
+  });
+
   it('a missing key fails with its path', () => {
     const parsed = parseBotMd(ok('name: Tester\nkind: agent\nruntime: hermes'));
     expect(parsed.ok).toBe(false);
