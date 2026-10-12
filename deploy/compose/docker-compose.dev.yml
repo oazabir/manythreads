@@ -99,7 +99,7 @@ services:
   # show every team's bank to whoever opened it.
   hindsight:
     profiles: ["memory"]
-    image: ghcr.io/vectorize-io/hindsight:${MANYTHREADS_HINDSIGHT_TAG:-latest}
+    image: ghcr.io/vectorize-io/hindsight:${MANYTHREADS_HINDSIGHT_TAG:-0.10.3}
     environment:
       HINDSIGHT_API_DATABASE_URL: postgresql://manythreads_owner:manythreads@postgres:5432/hindsight
       HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
@@ -109,6 +109,10 @@ services:
       HINDSIGHT_API_LLM_BASE_URL: ${MANYTHREADS_HINDSIGHT_LLM_BASE_URL:-http://litellm:4000/v1}
       HINDSIGHT_API_LLM_API_KEY: ${MANYTHREADS_HINDSIGHT_LLM_API_KEY:-sk-manythreads-dev-master}
       HINDSIGHT_API_LLM_MODEL: ${MANYTHREADS_HINDSIGHT_LLM_MODEL:-fast}
+      # `chunks` stores each chunk as it is and calls no LLM: the opt-in integration test (test/hindsight.integration.test.ts) runs the engine that
+      # way, with the LLM check skipped. A real deployment leaves both at their defaults.
+      HINDSIGHT_API_RETAIN_EXTRACTION_MODE: ${MANYTHREADS_HINDSIGHT_EXTRACTION_MODE:-concise}
+      HINDSIGHT_API_SKIP_LLM_VERIFICATION: ${MANYTHREADS_HINDSIGHT_SKIP_LLM_VERIFICATION:-false}
     networks: [memory]
     ports:
       # loopback only, dev convenience (see above)
