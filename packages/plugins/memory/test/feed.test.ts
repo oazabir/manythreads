@@ -449,7 +449,7 @@ describe('GET /api/teams/:slug/memory/retain-log', () => {
     expect(parsed.items.length).toBeGreaterThan(10);
     const ids = parsed.items.map((i) => i.id);
     expect(ids).toEqual([...ids].sort().reverse());
-    expect(new Set(parsed.items.map((i) => i.bank))).toEqual(new Set([BANK]));
+    expect(new Set(parsed.items.map((i) => i.bank).filter((b) => b !== '(no engine)'))).toEqual(new Set([BANK])); // the engine-off day's line has no bank
     expect(JSON.stringify(all.body)).not.toMatch(/Basilisk|Zanzibar|Peregrine|Merlin|hunter2/);
 
     const withheld = ListMemoryRetainLogResponse.parse((await w.call(omar, 'GET', '/api/teams/engineering/memory/retain-log?outcome=withheld')).body);
