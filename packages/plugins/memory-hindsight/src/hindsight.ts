@@ -10,6 +10,16 @@
 //   POST   /v1/default/banks/{bank}/memories/recall  recall  { query, types?, budget?, max_tokens?, tags? }  -> { results: [...] }
 //   DELETE /v1/default/banks/{bank}/documents/{id}   forget one document
 // The bank id travels percent-encoded in the path (`team:engineering` is `team%3Aengineering`).
+//
+// Observed against ghcr.io/vectorize-io/hindsight:0.10.3 (chunks extraction mode; the opt-in test/hindsight.integration.test.ts re-checks them):
+//  * every route except GET /health needs `Authorization: Bearer <key>` when the tenant extension is on (401 "Invalid API key", no key = same);
+//  * recall (and retain) on a bank that was never created is a **404** "Bank '<id>' not found", so a bank is created first (PUT answers 200 with the
+//    bank, and 200 again for a repeat) — and re-created once if the engine lost it (its database was wiped) while this process remembered it;
+//  * a recall ALWAYS ranks the bank it was asked about, so it returns that bank's nearest facts even when nothing matches (score near 0): "nothing
+//    from another team" means that no fact of the other bank is in the answer, not that the answer is empty;
+//  * `document_id` upserts (the old facts of that document go, the new ones come), and DELETE of a document answers 200 with a count, 404
+//    "Document not found" for an unknown one, in an existing bank or not; `tags` on recall keep only facts carrying all of them;
+//  * `async: true` answers at once with an `operation_id`; a body without `items` is a 422; a bank id with a slash is a routing 404.
 
 export interface HindsightResult {
   status: number;
@@ -146,6 +156,16 @@ export function createHindsightClient(options: HindsightClientOptions): Hindsigh
     return result;
   };
 
+  /** Runs a call that needs the bank: creates it first, and once more (then gives up) when the engine answers that it has no such bank. */
+  const withBank = async (bank: string, call: () => Promise<HindsightResult>): Promise<HindsightResult> => {
+    await client.ensureBank(bank);
+    const first = await call();
+    if (first.status !== 404 || !/bank .*not found/i.test(JSON.stringify(first.body))) return first;
+    known.delete(bank);
+    await client.ensureBank(bank);
+    return call();
+  };
+
   const client: HindsightClient = {
     enabled: Boolean(options.baseUrl) || options.transport !== undefined,
 
@@ -159,7 +179,6 @@ export function createHindsightClient(options: HindsightClientOptions): Hindsigh
     },
 
     async retain(bank, items, retainOptions) {
-      await client.ensureBank(bank);
       const path = `${bankPath(bank)}/memories`;
       const body = {
         items: items.map((i) => ({
@@ -172,20 +191,19 @@ export function createHindsightClient(options: HindsightClientOptions): Hindsigh
         })),
         async: retainOptions?.async === true,
       };
-      const res = ok(path, await send('POST', path, body, { timeoutMs: retainTimeoutMs }));
+      const res = ok(path, await withBank(bank, () => send('POST', path, body, { timeoutMs: retainTimeoutMs })));
       const answer = (res.body ?? {}) as { items_count?: unknown; async?: unknown };
       return { items: typeof answer.items_count === 'number' ? answer.items_count : items.length, async: answer.async === true };
     },
 
     async recall(bank, request) {
-      await client.ensureBank(bank);
       const path = `${bankPath(bank)}/memories/recall`;
       const body = {
         query: request.query,
         max_tokens: request.maxTokens ?? 4096,
         ...(request.tags !== undefined && request.tags.length > 0 ? { tags: request.tags } : {}),
       };
-      const res = ok(path, await send('POST', path, body));
+      const res = ok(path, await withBank(bank, () => send('POST', path, body)));
       const results = (res.body as { results?: unknown } | null)?.results;
       if (!Array.isArray(results)) throw new HindsightError(path, { status: res.status, body: 'the recall answer has no results array' });
       return results.map(toFact).filter((f): f is HindsightFact => f !== null);

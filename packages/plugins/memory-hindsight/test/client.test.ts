@@ -95,6 +95,24 @@ describe('the Hindsight client', () => {
     await expect(none.recall('team:a', { query: 'x' })).rejects.toThrow(/no Hindsight URL/);
   });
 
+  it('re-creates a bank the engine lost, once, and then gives up', async () => {
+    let lost = true;
+    const { transport, sent } = transportOf((s) => {
+      if (s.method === 'PUT') return { status: 200, body: {} };
+      if (lost) {
+        lost = false;
+        return { status: 404, body: { detail: "Bank 'team:a' not found" } };
+      }
+      return { status: 200, body: { results: [{ id: 'x', text: 'back' }] } };
+    });
+    const client = createHindsightClient({ baseUrl: null, apiKey: null, transport });
+    expect((await client.recall('team:a', { query: 'x' })).map((f) => f.text)).toEqual(['back']);
+    expect(sent.map((s) => s.method)).toEqual(['PUT', 'POST', 'PUT', 'POST']);
+    const gone = transportOf((s) => (s.method === 'PUT' ? { status: 200, body: {} } : { status: 404, body: { detail: "Bank 'team:a' not found" } }));
+    await expect(createHindsightClient({ baseUrl: null, apiKey: null, transport: gone.transport }).recall('team:a', { query: 'x' })).rejects.toMatchObject({ status: 404 });
+    expect(gone.sent.filter((s) => s.method === 'POST')).toHaveLength(2);
+  });
+
   it('deleting a document that is not there is false, not an error', async () => {
     const { transport, sent } = transportOf((s) => ({ status: s.path.includes('gone') ? 404 : 200, body: {} }));
     const client = createHindsightClient({ baseUrl: null, apiKey: null, transport });
