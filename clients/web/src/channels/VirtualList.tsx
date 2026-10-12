@@ -43,6 +43,8 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
   const headerBox = useRef<HTMLDivElement>(null);
   const heights = useRef(new Map<string, number>());
   const stuck = useRef(true);
+  // Where the list itself last put the view at the bottom (see onScroll).
+  const pinnedTop = useRef(-1);
   const atBottom = useRef(true);
   const lastPaintTop = useRef(Number.MAX_SAFE_INTEGER);
   const anchor = useRef<Anchor | null>(null);
@@ -98,7 +100,11 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
   const onScroll = useCallback((): void => {
     const el = scroller.current;
     if (!el) return;
-    const now = el.scrollHeight - el.scrollTop - el.clientHeight < AT_BOTTOM;
+    // A scroll event is dispatched after the frame's layout, not when the position changed: a pin made by this list, followed in the same
+    // frame by something above or below it growing (the composer's chips), is measured against the NEW geometry and looks like the reader
+    // leaving the bottom. Our own pin is not that; the resize observer pins again for the new height. Never gate this on timing.
+    const ownPin = stuck.current && Math.abs(el.scrollTop - pinnedTop.current) < 1;
+    const now = ownPin || el.scrollHeight - el.scrollTop - el.clientHeight < AT_BOTTOM;
     stuck.current = now;
     anchor.current = takeAnchor(el.scrollTop);
     if (now !== atBottom.current) {
@@ -151,7 +157,10 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
       }
       if (!changed) return;
       if (shift !== 0) box.scrollTop += shift;
-      if (stuck.current) box.scrollTop = box.scrollHeight;
+      if (stuck.current) {
+        box.scrollTop = box.scrollHeight;
+        pinnedTop.current = box.scrollTop;
+      }
       bump((v) => v + 1);
       sync(true);
     });
@@ -189,6 +198,7 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
       setViewport({ top: el.scrollTop, h: el.clientHeight });
     } else if (stuck.current) {
       if (el.scrollTop !== el.scrollHeight - el.clientHeight) el.scrollTop = el.scrollHeight;
+      pinnedTop.current = el.scrollTop;
       if (viewport.top === Number.MAX_SAFE_INTEGER || Math.abs(el.scrollTop - lastPaintTop.current) > REPAINT_AFTER) {
         lastPaintTop.current = el.scrollTop;
         setViewport({ top: el.scrollTop, h: el.clientHeight });
@@ -205,6 +215,7 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
       if (!el) return;
       stuck.current = true;
       el.scrollTop = el.scrollHeight;
+      pinnedTop.current = el.scrollTop;
       sync(true);
     },
     scrollToKey(key) {
