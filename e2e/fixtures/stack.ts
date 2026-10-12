@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { expect, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
+import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
 import { ownerSql } from '@manythreads/test-utils';
 import { E2E_POOL_ENV } from '../support/pools.ts';
 
@@ -24,7 +24,27 @@ export interface Stack {
 const serverFile = fileURLToPath(new URL('./stack-server.ts', import.meta.url));
 const e2eDir = fileURLToPath(new URL('..', import.meta.url));
 
+/** How long a stack may take to print its ready line (migrations of every plugin + the seed, on a machine running four of them at once). */
+const START_BUDGET_MS = 120_000;
+/** The budget of a hook that starts a stack: the start itself and the arrangement a spec does after it (sign-ins, a few posts). */
+const HOOK_BUDGET_MS = START_BUDGET_MS + 60_000;
+
+/**
+ * A `beforeAll` runs under the TEST timeout (30 s), not under the stack's own 120 s start budget: on a loaded machine (the full suite, four
+ * workers each starting a stack) the start passed 30 s and the hook died with "beforeAll hook timeout of 30000ms exceeded" in whichever file
+ * was unlucky, while the same file started in 10 s alone. The budget is raised here, once, for every spec that starts a stack; a hook or
+ * fixture that already has more keeps it, and outside a hook or test (a script) there is nothing to raise.
+ */
+function allowForStart(): void {
+  try {
+    if (test.info().timeout !== 0 && test.info().timeout < HOOK_BUDGET_MS) test.setTimeout(HOOK_BUDGET_MS);
+  } catch {
+    // not running inside Playwright
+  }
+}
+
 export async function startStack(env: Record<string, string> = {}): Promise<Stack> {
+  allowForStart();
   const child: ChildProcess = spawn('pnpm', ['exec', 'tsx', serverFile], {
     cwd: e2eDir,
     env: { ...process.env, NODE_ENV: 'test', ...E2E_POOL_ENV, ...env },
@@ -35,7 +55,7 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
   process.once('exit', killOnExit);
   let output = '';
   const ready = await new Promise<{ origin: string; ownerUrl: string; testAuthToken: string; bootstrapToken: string | null }>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`stack did not start in time:\n${output.slice(-1500)}`)), 120_000);
+    const timer = setTimeout(() => reject(new Error(`stack did not start in time:\n${output.slice(-1500)}`)), START_BUDGET_MS);
     const onData = (chunk: Buffer): void => {
       output += chunk.toString('utf8');
       if (process.env['MANYTHREADS_E2E_LOG'] === '1') process.stderr.write(chunk);
