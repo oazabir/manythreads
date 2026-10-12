@@ -76,7 +76,8 @@ A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) 
 - **make the one call a person approved** (`asApproved(run, capability, fn)`, P5-20): `asBot` whose actor carries
   `approvedCapability`, so the broker does not answer `needsApproval` again for exactly that capability in that transaction. Every
   other check — the grant, the path guard, the destructive tag — still applies; the property lives on the in-memory actor, not in a
-  setting SQL can change. Only the approvals plugin calls it, and only after claiming an approved row.
+  setting SQL can change. It is a door of its own: a plugin needs the manifest extension `approval.resume` besides `tool.invoke`, and only the
+  approvals plugin declares it, so `tool.invoke` alone cannot waive an approval. The approvals plugin calls it only after claiming an approved row.
 
 Why it is one door and not four: a tool call has to be `bot capabilities ∩ asker visibility`, and that sentence only
 holds if the capability check and the row visibility can come from different actors inside one call. It is trusted-code

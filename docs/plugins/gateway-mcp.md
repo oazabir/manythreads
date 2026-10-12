@@ -82,7 +82,7 @@ naming a path the bot may never write → `{ ok: false, code: 'forbidden' }` wit
 `needsApproval` → the handler **is not run**: the call becomes a pending approval in the Approvals inbox through
 [approvals](./approvals.md)'s one handler (source `grant`; the arguments are stored for the re-run, the approver sees a clipped preview) and the model gets
 `{ ok: false, code: 'approval_pending', approvalId, message }` — *tell the person it is waiting, do not call it again*; asking again for the same call
-is the same approval. Without the approvals plugin the answer stays `{ ok: false, code: 'approval_required' }` (fail closed);
+is the same approval (per asker). A *read* flagged `needsApproval` is not parked — it answers `{ ok: false, code: 'forbidden' }` (a re-run after approval would run it as the bot, not as the person it was asked for). Without the approvals plugin the answer stays `{ ok: false, code: 'approval_required' }` (fail closed);
 a granted name nothing implements → `{ ok: false, code: 'unknown_tool' }`.
 
 ## What the run read
