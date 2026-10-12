@@ -308,10 +308,14 @@ describe('what a bot wrote: app.memory_authored_verdict(bot actor, at)', () => {
     expect(await verdict('2020-03-01T10:30:00.000Z')).toEqual({ run_open: false, retain_refusal: null, runs: 0 });
   });
 
-  it('a run that never closed covers two hours from its start, and holds nothing back after that', async () => {
-    await run([['drive', 'x', 'person']], { startedAt: '2020-04-01T09:00:00.000Z', status: 'running', endedAt: null });
-    expect(await verdict('2020-04-01T10:30:00.000Z')).toMatchObject({ run_open: false, retain_refusal: 'person_source', runs: 1 }); // too old to count as "still going"
-    expect(await verdict('2020-04-01T11:30:00.000Z')).toEqual({ run_open: false, retain_refusal: null, runs: 0 });
+  it('a run that has not ended covers every instant since its start, however long (a 3 h run that read a person source), up to a day back', async () => {
+    await run([['drive', 'x', 'person']], { startedAt: '2020-04-01T09:00:00.000Z', status: 'running' });
+    // inside the first two hours, and at hour three and after: the run is still open and its refusal applies
+    expect(await verdict('2020-04-01T10:30:00.000Z')).toEqual({ run_open: true, retain_refusal: 'person_source', runs: 1 });
+    expect(await verdict('2020-04-01T12:30:00.000Z')).toEqual({ run_open: true, retain_refusal: 'person_source', runs: 1 });
+    expect(await verdict('2020-04-01T08:00:00.000Z')).toMatchObject({ runs: 0 }); // before it started
+    // more than a day after its start the lookup no longer reaches it (a lost worker holds text back for a day at most)
+    expect(await verdict('2020-04-02T09:30:00.000Z')).toMatchObject({ runs: 0, retain_refusal: null });
   });
 
   it('says a run is still going while a fresh one is open, and takes its refusal', async () => {

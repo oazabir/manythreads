@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createSystemPool, withSystem, type Tx } from '@manythreads/kernel';
 import { NEVER_APPROVAL_GATED } from '@manythreads/sdk';
 import {
@@ -55,6 +56,42 @@ describe('approvals_never_gated', () => {
 
   it('takes any other tool', async () => {
     expect(await code(insert('pages.write', { kind: 'tool', capability: 'pages.write', args: {}, trigger: 'mention' }))).toBeUndefined();
+  });
+
+  it('the migration ends a legacy non-final row before the constraint, through the system role (a plain UPDATE would be a silent no-op under row level security)', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      await admin.query('ALTER TABLE app.approvals DROP CONSTRAINT approvals_never_gated');
+      const seed = (status: string, outcome: string, decided: boolean) =>
+        sys(
+          async (tx) =>
+            (
+              await tx.query<{ id: string }>(
+                `INSERT INTO app.approvals (workspace_id, team_id, source, status, outcome, tool, summary, args_preview, resume, approver_scope, requester_id, decided_at)
+                 VALUES ($1, $2, 'grant', $3, $4, 'memory.retain', 'legacy', '{}', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $5, $6)
+                 RETURNING id`,
+                [omar.workspaceId, ENG, status, outcome, nadia.actorId, decided ? new Date().toISOString() : null],
+              )
+            ).rows[0]!.id,
+        );
+      const pending = await seed('pending', 'none', false);
+      const queued = await seed('approved', 'queued', true);
+      const ran = await seed('approved', 'ran', true);
+      const file = readFileSync(new URL('../../migrations/0002_never_gated.sql', import.meta.url), 'utf8');
+      const block = file.slice(file.indexOf('-- legacy-begin') + '-- legacy-begin'.length, file.indexOf('-- legacy-end'));
+      expect(block).toContain('SET ROLE manythreads_system');
+      await admin.query(block);
+      const state = async (id: string) =>
+        (await sys(async (tx) => (await tx.query<{ status: string; outcome: string }>('SELECT status, outcome FROM app.approvals WHERE id = $1', [id])).rows[0]))!;
+      expect(await state(pending)).toEqual({ status: 'expired', outcome: 'none' });
+      expect(await state(queued)).toEqual({ status: 'approved', outcome: 'failed' });
+      expect(await state(ran)).toEqual({ status: 'approved', outcome: 'ran' }); // final: left as it is
+      // the constraint goes back as the migration adds it, for the tests after this one
+      await admin.query("ALTER TABLE app.approvals ADD CONSTRAINT approvals_never_gated CHECK (tool NOT IN ('memory.retain')) NOT VALID");
+    } finally {
+      await admin.end();
+    }
   });
 
   it('names exactly the SDK’s list', async () => {

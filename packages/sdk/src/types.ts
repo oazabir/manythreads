@@ -293,6 +293,12 @@ export interface PluginRuns {
   invoke(tx: PluginTx, capability: string, input: Record<string, unknown>): Promise<unknown>;
   /** Records what the run read (`run_source_log`); must be called inside `asBot`/`asReader`. Answers the seq. */
   logSource(tx: PluginTx, source: { sourceType: string; sourceRef: string; scope: 'team' | 'channel' | 'person' }): Promise<number>;
+  /**
+   * Gives `run` the source log of `fromRunId` (a run of the same bot and team): every distinct line the stopped run had logged, in one set-based
+   * statement, with no cap — a rule that reads a run's history must never see a truncated one. For the re-run of an approved call (a new run with an
+   * empty log, SPEC §12.1: no wider than the narrowest source read). Rejects when the two runs are not the same bot's. Answers how many lines were copied.
+   */
+  inheritSources(run: BotRunHandle, fromRunId: string): Promise<number>;
 }
 
 /**

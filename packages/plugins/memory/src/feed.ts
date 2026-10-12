@@ -3,6 +3,7 @@ import { feedTuning } from './config.ts';
 import { BACKOFF_CAP_MS, DRAIN_BATCH, FEED_QUEUE, MAX_ATTEMPTS, RETAIN_CHUNK } from './constants.ts';
 import { decide, type Decision } from './decide.ts';
 import { appendLine, latestLine, type LastLine } from './rows.ts';
+import { workspaceKey } from './keys.ts';
 import { resolve, type Provenance } from './sources.ts';
 import type { SlidingWindow } from './window.ts';
 
@@ -123,7 +124,14 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
   for (const row of due) {
     const res = await resolve(tx, row.source_kind, row.source_id);
     const last = await latestLine(tx, row.source_kind, row.source_id);
-    const decision = decide({ kind: row.source_kind, sourceId: row.source_id, res, last, deferredForMs: row.deferred_ms ?? 0 });
+    const decision = decide({
+      kind: row.source_kind,
+      sourceId: row.source_id,
+      res,
+      last,
+      deferredForMs: row.deferred_ms ?? 0,
+      key: await workspaceKey(tx, row.workspace_id),
+    });
     const at = 'at' in res ? res.at : null;
     const teamId = at?.teamId ?? last?.team_id ?? null;
     if (teamId === null) {
@@ -239,7 +247,10 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     const bank = await bankOf(p.teamId);
     if (bank === null) continue;
     for (const e of p.excluded) {
+      // Not for a message the bank holds a document for: that document is taken out by the message's own row (it may be failing right now),
+      // and a `withheld` line written beside it would say "nothing is held" about something that is.
       const known = await latestLine(tx, 'message', e.messageId);
+      if (known !== null && known.outcome === 'retained') continue;
       if (known !== null && known.outcome === 'withheld' && known.reason === e.reason) continue;
       await appendLine(tx, {
         workspaceId: p.workspaceId,

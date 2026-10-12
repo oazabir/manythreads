@@ -234,12 +234,17 @@ interface RunRow extends Record<string, unknown> {
   started_at: Date;
   ended_at: Date | null;
   channel_id: string | null;
+  thread_id: string | null;
   asker_id: string | null;
   bot_slug: string;
   bot_name: string;
   team_slug: string;
   channel_name: string | null;
   channel_kind: string | null;
+  channel_private: boolean | null;
+  channel_team_id: string | null;
+  /** The run's thread is in a public channel of its team; null when it has no thread. */
+  thread_public: boolean | null;
   bot_actor_id: string | null;
   asker_name: string | null;
 }
@@ -255,9 +260,11 @@ export async function resolveRun(tx: PluginTx, runId: string): Promise<Resolutio
   if (!isUuid(runId)) return forget('gone');
   const r = (
     await tx.query<RunRow>(
-      `SELECT r.id, r.workspace_id, r.team_id, r.trigger_type, r.status, r.started_at, r.ended_at, r.channel_id, r.asker_id,
+      `SELECT r.id, r.workspace_id, r.team_id, r.trigger_type, r.status, r.started_at, r.ended_at, r.channel_id, r.thread_id, r.asker_id,
               b.slug AS bot_slug, coalesce(nullif(b.name, ''), b.slug) AS bot_name, t.slug AS team_slug,
-              c.name AS channel_name, c.kind AS channel_kind,
+              c.name AS channel_name, c.kind AS channel_kind, c.private AS channel_private, c.team_id AS channel_team_id,
+              (SELECT (c2.kind = 'channel' AND NOT c2.private AND c2.team_id = r.team_id)
+                 FROM app.threads th JOIN app.channels c2 ON c2.id = th.channel_id WHERE th.root_message_id = r.thread_id) AS thread_public,
               (SELECT a.id FROM app.actors a WHERE a.kind = 'bot' AND a.ref_id = r.bot_id AND a.workspace_id = r.workspace_id) AS bot_actor_id,
               (SELECT p.display_name FROM app.actors a JOIN app.people p ON p.id = a.ref_id WHERE a.id = r.asker_id AND a.kind = 'person') AS asker_name
          FROM app.bot_runs r
@@ -278,6 +285,12 @@ export async function resolveRun(tx: PluginTx, runId: string): Promise<Resolutio
     scopes: [],
     link: `/t/${r.team_slug}/bots/${r.bot_slug}`,
   };
+  // A run of a private conversation (a person talking to the bot, a private channel or thread) leaves no line, like the private messages it is made
+  // of: one line per conversation turn would be a log of who talks to which bot. Decided from the run itself, BEFORE anything it read: a DM run
+  // that read a person source is still a DM run, and must not leave a line saying so either. (A run that withholds because of what it READ in a
+  // public context still is a line.)
+  const publicChannel = r.channel_id === null || (r.channel_kind === 'channel' && r.channel_private === false && r.channel_team_id === r.team_id);
+  if (r.trigger_type === 'conversation' || !publicChannel || (r.thread_id !== null && r.thread_public !== true)) return skip('private_context');
   if (r.status === 'running' || r.ended_at === null) return { action: 'defer', at, reason: 'run_open' };
 
   const verdict = (await tx.query<VerdictRow>('SELECT retain_refusal, narrowest_scope, source_lines, source_scopes FROM app.run_retain_verdict($1::uuid)', [runId])).rows[0];
@@ -285,9 +298,6 @@ export async function resolveRun(tx: PluginTx, runId: string): Promise<Resolutio
   // The narrowest-source rule: a run's result goes into the team bank only if everything it read is team-visible. Otherwise nothing is
   // retained and the log says which refusal applied (`person_source`, `private_source`, `conversation`, `private_channel`, `private_thread`).
   if (verdict === undefined) return forget('gone');
-  // A run of a private conversation (a person talking to the bot, a private channel or thread) leaves no line, like the private messages it is made
-  // of: one line per conversation turn would be a log of who talks to which bot. What a run withholds because of what it READ still is a line.
-  if (verdict.retain_refusal === 'conversation' || verdict.retain_refusal === 'private_channel' || verdict.retain_refusal === 'private_thread') return skip('private_context');
   if (verdict.retain_refusal !== null) return { action: 'withhold', at, reason: verdict.retain_refusal };
 
   const sources = (
@@ -425,6 +435,7 @@ interface PageRow extends Record<string, unknown> {
   path: string;
   text_plain: string | null;
   committed_at: Date;
+  indexed_at: Date;
   author_id: string | null;
   author_kind: string | null;
   author_name: string | null;
@@ -437,7 +448,7 @@ export async function resolvePage(tx: PluginTx, sourceId: string): Promise<Resol
   if (!isUuid(teamId) || !path.startsWith('pages/')) return forget('gone');
   const p = (
     await tx.query<PageRow>(
-      `SELECT e.team_id, t.workspace_id, t.slug AS team_slug, e.path, e.text_plain, c.committed_at, c.author_id,
+      `SELECT e.team_id, t.workspace_id, t.slug AS team_slug, e.path, e.text_plain, c.committed_at, c.indexed_at, c.author_id,
               a.kind AS author_kind,
               CASE a.kind
                 WHEN 'person' THEN (SELECT pe.display_name FROM app.people pe WHERE pe.id = a.ref_id)
@@ -464,9 +475,20 @@ export async function resolvePage(tx: PluginTx, sourceId: string): Promise<Resol
   };
   // A page a bot wrote during a run is judged by that run, like a message it posted.
   if (p.author_kind === 'bot' && p.author_id !== null) {
-    const v = await authoredVerdict(tx, p.author_id, p.committed_at);
-    if (v.run_open) return { action: 'defer', at, reason: 'run_open' };
-    if (v.retain_refusal !== null) return { action: 'withhold', at, reason: `authoring run: ${v.retain_refusal}` };
+    // Two instants: the git author date (to the second, from whichever clock made the commit) and when the index recorded it (the database's
+    // clock, the one the runs' times are on). A commit the index caught up with later has an `indexed_at` long after the run; its author date
+    // is the one that matches then. Either instant inside a run that read something narrower is enough to refuse.
+    const instants = [p.committed_at];
+    if (Math.abs(p.indexed_at.getTime() - p.committed_at.getTime()) > 2_000) instants.push(p.indexed_at);
+    let open = false;
+    let refusal: string | null = null;
+    for (const when of instants) {
+      const v = await authoredVerdict(tx, p.author_id, when);
+      open ||= v.run_open;
+      refusal ??= v.retain_refusal;
+    }
+    if (open) return { action: 'defer', at, reason: 'run_open' };
+    if (refusal !== null) return { action: 'withhold', at, reason: `authoring run: ${refusal}` };
   }
   const text = renderPage({ path: p.path, text: p.text_plain, authorName: p.author_name, at: iso(p.committed_at) });
   return {

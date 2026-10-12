@@ -25,7 +25,7 @@ export interface Decision {
 
 const NOTHING: Decision = { forget: null, retain: null, withhold: null, defer: null };
 
-export function decide(input: { kind: string; sourceId: string; res: Resolution; last: LastLine | null; deferredForMs: number }): Decision {
+export function decide(input: { kind: string; sourceId: string; res: Resolution; last: LastLine | null; deferredForMs: number; key: Buffer | string }): Decision {
   const { kind, sourceId, res, last } = input;
   const held = last !== null && last.outcome === 'retained' && last.document_id !== null ? last : null;
 
@@ -51,7 +51,7 @@ export function decide(input: { kind: string; sourceId: string; res: Resolution;
     }
 
     case 'retain': {
-      const hash = contentHash(res.item.content);
+      const hash = contentHash(res.item.content, input.key);
       if (held && held.content_hash === hash) return NOTHING;
       const documentId = documentIdFor(kind, sourceId, hash);
       return {

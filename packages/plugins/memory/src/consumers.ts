@@ -11,7 +11,6 @@ import {
 } from '@manythreads/shared';
 import { feedTuning } from './config.ts';
 import { FEED_QUEUE, NOT_CONFIGURED_EVERY_MS } from './constants.ts';
-import { latestLine } from './rows.ts';
 import { pageSourceId } from './sources.ts';
 
 // The event subscriptions. They run inside the outbox consumer's transaction, next to every other plugin's, so they do two cheap things and
@@ -34,9 +33,6 @@ export const CONSUMED_EVENTS = [
   'bots.run.closed',
 ] as const;
 
-/** At most this many pages of one commit are looked at. */
-const MAX_PAGES_PER_COMMIT = 200;
-
 /**
  * Queues a drain for after the debounce. Changes that land in the same time bucket share one job (its dedupe key is the bucket), and a job that
  * is already running holds a bucket that has passed, so a change that arrives mid-drain always gets a drain of its own: a single fixed key would
@@ -52,14 +48,14 @@ export async function queueDrain(ctx: PluginContext, tx: PluginTx): Promise<void
 
 export function registerConsumers(ctx: PluginContext): void {
   const mark = async (tx: PluginTx, workspaceId: string, teamId: string, wanted: readonly Source[]): Promise<void> => {
-    let sources: readonly Source[] = wanted;
-    if (sources.length === 0) return;
+    if (wanted.length === 0) return;
+    let kinds: string[] = wanted.map((s) => s[0]);
+    let ids = wanted.map((s) => s[1].slice(0, 1100));
     const provider = ctx.providers.get<MemoryProvider>('memory');
     const enabled = provider !== undefined && provider.enabled;
     if (!enabled) {
       // One line per team per day says the feed is off (and why nothing of this team is in the bank). The change itself is queued only when the
       // bank holds a document for the source: a delete or an edit made while the engine is off must still take that document out when it is back.
-      const [kind, id] = sources[0] as Source;
       // Events of one batch are handled at the same time: the lock makes the second of two see the first's line (the day's one line per team).
       await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`memory.not_configured:${teamId}`]);
       await tx.query(
@@ -68,26 +64,29 @@ export function registerConsumers(ctx: PluginContext): void {
           WHERE NOT EXISTS (
             SELECT 1 FROM app.memory_retain_log
              WHERE team_id = $2::uuid AND outcome = 'not_configured' AND created_at > now() - $5::float8 * interval '1 millisecond')`,
-        [workspaceId, teamId, kind, id.slice(0, 1100), NOT_CONFIGURED_EVERY_MS],
+        [workspaceId, teamId, kinds[0], ids[0], NOT_CONFIGURED_EVERY_MS],
       );
-      const held: Source[] = [];
-      for (const source of sources) {
-        const last = await latestLine(tx, source[0], source[1]);
-        if (last !== null && last.outcome === 'retained') held.push(source);
-      }
-      if (held.length === 0) return;
-      sources = held;
+      // set-based: which of them the bank holds a document for (the newest retained / forgotten line says retained)
+      const held = await tx.query<{ kind: string; id: string }>(
+        `SELECT s.kind, s.id FROM unnest($1::text[], $2::text[]) AS s(kind, id)
+          WHERE (SELECT l.outcome FROM app.memory_retain_log l
+                  WHERE l.source_kind = s.kind AND l.source_id = s.id AND l.outcome IN ('retained', 'forgotten')
+                  ORDER BY l.id DESC LIMIT 1) = 'retained'`,
+        [kinds, ids],
+      );
+      if (held.rows.length === 0) return;
+      kinds = held.rows.map((r) => r.kind);
+      ids = held.rows.map((r) => r.id);
     }
     const { debounceMs } = feedTuning();
-    for (const [kind, id] of sources) {
-      await tx.query(
-        `INSERT INTO app.memory_feed_pending (source_kind, source_id, workspace_id, not_before)
-         VALUES ($1, $2, $3::uuid, now() + $4::float8 * interval '1 millisecond')
-         ON CONFLICT (source_kind, source_id)
-           DO UPDATE SET requested_at = now(), not_before = EXCLUDED.not_before, attempts = 0, last_error = ''`,
-        [kind, id.slice(0, 1100), workspaceId, debounceMs],
-      );
-    }
+    // set-based and without a cap: every path of a commit is marked, however many (a drain reads at most 200 at a time and comes back)
+    await tx.query(
+      `INSERT INTO app.memory_feed_pending (source_kind, source_id, workspace_id, not_before)
+       SELECT DISTINCT s.kind, s.id, $3::uuid, now() + $4::float8 * interval '1 millisecond' FROM unnest($1::text[], $2::text[]) AS s(kind, id)
+       ON CONFLICT (source_kind, source_id)
+         DO UPDATE SET requested_at = now(), not_before = EXCLUDED.not_before, attempts = 0, last_error = ''`,
+      [kinds, ids, workspaceId, debounceMs],
+    );
     await queueDrain(ctx, tx);
   };
 
@@ -148,7 +147,7 @@ export function registerConsumers(ctx: PluginContext): void {
   ctx.events.subscribe('repo.repo.committed', async (raw, tx) => {
     const parsed = RepoRepoCommittedEvent.safeParse(raw);
     if (!parsed.success) return;
-    const pages = parsed.data.paths.filter((p) => p.path.startsWith('pages/')).slice(0, MAX_PAGES_PER_COMMIT);
+    const pages = parsed.data.paths.filter((p) => p.path.startsWith('pages/'));
     await mark(tx, parsed.data.workspaceId, parsed.data.teamId, pages.map((p): Source => ['page', pageSourceId(parsed.data.teamId, p.path)]));
   });
 

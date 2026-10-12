@@ -8,6 +8,7 @@ import type { Provenance, Resolution } from '../src/sources.ts';
 // The reconcile table: what the bank should do for a source, from (what the source is now) x (what the log says it holds).
 
 const ID = '01a12f92-3e2a-78fd-88fd-5762c95a772b';
+const KEY = Buffer.alloc(32, 3);
 const at: Provenance = { teamId: 't', workspaceId: 'w', channelId: 'c', runId: null, actorId: 'a', scopes: [], link: '/l' };
 const item = (content: string) => ({ content, context: 'ctx', timestamp: '2026-10-12T09:00:00.000Z', tags: ['feed'], metadata: {} });
 const retain = (content: string): Resolution => ({ action: 'retain', at, item: item(content) });
@@ -25,15 +26,15 @@ const line = (over: Partial<LastLine>): LastLine => ({
   ...over,
 });
 const held = (content: string): LastLine => {
-  const hash = contentHash(content);
+  const hash = contentHash(content, KEY);
   return line({ document_id: documentIdFor('message', ID, hash), content_hash: hash });
 };
-const run = (res: Resolution, last: LastLine | null, deferredForMs = 0) => decide({ kind: 'message', sourceId: ID, res, last, deferredForMs });
+const run = (res: Resolution, last: LastLine | null, deferredForMs = 0) => decide({ kind: 'message', sourceId: ID, res, last, deferredForMs, key: KEY });
 
 describe('retain', () => {
   it('a source the bank holds nothing for is retained, under a document id of its kind, id and text', () => {
     const d = run(retain('hello'), null);
-    expect(d.retain).toMatchObject({ documentId: documentIdFor('message', ID, contentHash('hello')), hash: contentHash('hello') });
+    expect(d.retain).toMatchObject({ documentId: documentIdFor('message', ID, contentHash('hello', KEY)), hash: contentHash('hello', KEY) });
     expect(d.forget).toBeNull();
     expect(d.withhold).toBeNull();
   });
@@ -44,13 +45,13 @@ describe('retain', () => {
 
   it('an edit retains the new version and forgets the old one by the id the log remembers', () => {
     const d = run(retain('hello, edited'), held('hello'));
-    expect(d.retain?.documentId).toBe(documentIdFor('message', ID, contentHash('hello, edited')));
-    expect(d.forget).toEqual({ documentId: documentIdFor('message', ID, contentHash('hello')), reason: 'replaced' });
+    expect(d.retain?.documentId).toBe(documentIdFor('message', ID, contentHash('hello, edited', KEY)));
+    expect(d.forget).toEqual({ documentId: documentIdFor('message', ID, contentHash('hello', KEY)), reason: 'replaced' });
   });
 
   it('after a forget or a withhold the next retain does not try to forget anything', () => {
     for (const outcome of ['forgotten', 'withheld', 'not_configured', 'failed']) {
-      const d = run(retain('hello'), line({ outcome, document_id: 'feed:message:x:y', content_hash: contentHash('hello') }));
+      const d = run(retain('hello'), line({ outcome, document_id: 'feed:message:x:y', content_hash: contentHash('hello', KEY) }));
       expect(d.retain).not.toBeNull();
       expect(d.forget, outcome).toBeNull();
     }
@@ -59,7 +60,7 @@ describe('retain', () => {
 
 describe('forget', () => {
   it('forgets what the bank holds, with the reason', () => {
-    expect(run({ action: 'forget', reason: 'deleted' }, held('hello')).forget).toEqual({ documentId: documentIdFor('message', ID, contentHash('hello')), reason: 'deleted' });
+    expect(run({ action: 'forget', reason: 'deleted' }, held('hello')).forget).toEqual({ documentId: documentIdFor('message', ID, contentHash('hello', KEY)), reason: 'deleted' });
     expect(run({ action: 'forget', reason: 'not_team_visible' }, held('hello')).forget?.reason).toBe('not_team_visible');
   });
 

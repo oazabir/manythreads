@@ -34,8 +34,9 @@ export function toMemoryRetainLogEntry(r: RetainLogRow): MemoryRetainLogEntry {
     store: r.store,
     bank: r.bank,
     sourceKind: r.source_kind,
-    sourceId: r.source_id,
-    documentId: r.document_id,
+    // A bot's own `memory.retain` line is named by its run, not by the document id the platform derived for the text (a digest of it).
+    sourceId: r.source_kind === 'run_tool' ? (r.run_id ?? r.id) : r.source_id,
+    documentId: r.source_kind === 'run_tool' ? null : r.document_id,
     outcome: r.outcome,
     reason: r.reason,
     runId: r.run_id,
@@ -60,23 +61,35 @@ export interface LastLine extends Record<string, unknown> {
   created_at: Date;
 }
 
-/** The outcomes that say what the bank holds for a source; `not_configured` and `failed` are notes about attempts and never change it. */
-export const STATE_OUTCOMES = ['retained', 'forgotten', 'withheld'] as const;
-
 /**
- * The newest line of one source that says what the bank holds for it (a `retained` line: the document; `forgotten` / `withheld`: nothing). A
- * `not_configured` line (written while no engine was there) or a `failed` one (the engine would not take, or would not let go of, a document)
- * does not shadow it: a document that is still in the bank is still "held", so a later delete or edit still takes it out.
+ * What the log says of a source, for the one question "what is in the bank for it?":
+ *
+ *   * the newest of the `retained` / `forgotten` lines is the state: a document is in the bank exactly when it is `retained`. A `withheld` line is
+ *     information about a refusal and never makes a document "not held" — otherwise a withheld line written while a forget was failing would
+ *     hide the document, and nothing would ever take it out. (The decisions that withhold forget first, so a `forgotten` line always precedes
+ *     the `withheld` one when the document was held.)
+ *   * a `not_configured` or `failed` line is a note about an attempt and counts for nothing.
+ *   * when the state is `forgotten` (or there is none), a `withheld` line newer than it is returned instead, so the same refusal is written once.
  */
 export async function latestLine(tx: PluginTx, kind: string, sourceId: string): Promise<LastLine | null> {
-  const res = await tx.query<LastLine>(
-    `SELECT id, team_id, workspace_id, bank, document_id, content_hash, outcome, reason, channel_id, created_at
-       FROM app.memory_retain_log
-      WHERE source_kind = $1 AND source_id = $2 AND outcome IN ('retained', 'forgotten', 'withheld')
-      ORDER BY id DESC LIMIT 1`,
-    [kind, sourceId],
-  );
-  return res.rows[0] ?? null;
+  const columns = 'id, team_id, workspace_id, bank, document_id, content_hash, outcome, reason, channel_id, created_at';
+  const state = (
+    await tx.query<LastLine>(
+      `SELECT ${columns} FROM app.memory_retain_log
+        WHERE source_kind = $1 AND source_id = $2 AND outcome IN ('retained', 'forgotten') ORDER BY id DESC LIMIT 1`,
+      [kind, sourceId],
+    )
+  ).rows[0];
+  if (state?.outcome === 'retained') return state;
+  const withheld = (
+    await tx.query<LastLine>(
+      `SELECT ${columns} FROM app.memory_retain_log
+        WHERE source_kind = $1 AND source_id = $2 AND outcome = 'withheld' AND ($3::uuid IS NULL OR id > $3::uuid)
+        ORDER BY id DESC LIMIT 1`,
+      [kind, sourceId, state?.id ?? null],
+    )
+  ).rows[0];
+  return withheld ?? state ?? null;
 }
 
 export interface AppendLine {

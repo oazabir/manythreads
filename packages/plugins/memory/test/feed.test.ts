@@ -452,6 +452,27 @@ describe('GET /api/teams/:slug/memory/retain-log', () => {
     expect(new Set(parsed.items.map((i) => i.bank).filter((b) => b !== '(no engine)'))).toEqual(new Set([BANK])); // the engine-off day's line has no bank
     expect(JSON.stringify(all.body)).not.toMatch(/Basilisk|Zanzibar|Peregrine|Merlin|hunter2/);
 
+    // no digest of retained text leaves the server: not the first characters of a plain sha-256 of anything the bank holds (a `forgotten` line
+    // is a deleted text), and a bot's own retain is named by its run, not by the document id derived from the text
+    const planted = await w.system(async (tx) => {
+      const run = (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs ORDER BY id DESC LIMIT 1')).rows[0]!.id;
+      await tx.query(
+        `INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, document_id, outcome, run_id)
+         VALUES ($1, $2, $3, 'run_tool', 'run:digest-probe:0123456789abcdef01234567', 'run:digest-probe:0123456789abcdef01234567', 'retained', $4)`,
+        [omar.workspaceId, ENG, BANK, run],
+      );
+      return run;
+    });
+    const again = await w.call(omar, 'GET', '/api/teams/engineering/memory/retain-log?limit=200');
+    const text = JSON.stringify(again.body);
+    expect(text).not.toContain('0123456789abcdef01234567');
+    expect(ListMemoryRetainLogResponse.parse(again.body).items.find((i) => i.sourceKind === 'run_tool')).toMatchObject({ sourceId: planted, documentId: null });
+    const { createHash } = await import('node:crypto');
+    for (const f of facts()) {
+      const raw = createHash('sha256').update(f.text, 'utf8').digest('hex');
+      expect(text, `a plain digest of a retained text (${f.documentId})`).not.toContain(raw.slice(0, 16));
+    }
+
     const withheld = ListMemoryRetainLogResponse.parse((await w.call(omar, 'GET', '/api/teams/engineering/memory/retain-log?outcome=withheld')).body);
     expect(withheld.items.length).toBeGreaterThanOrEqual(2);
     expect(withheld.items.every((i) => i.outcome === 'withheld')).toBe(true);

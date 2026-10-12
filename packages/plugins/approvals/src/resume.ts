@@ -57,7 +57,7 @@ interface ClaimedRow extends Record<string, unknown> {
   /** The channel the run answered in is private (a private channel, a DM, a bot conversation). */
   channel_private: boolean;
   thread_root_id: string | null;
-  /** The run that asked: what it had read is what the re-run has read (see `inheritSources`). */
+  /** The run that asked: what it had read is what the re-run has read (`ctx.runs.inheritSources`, below). */
   run_id: string | null;
   resume: unknown;
 }
@@ -175,14 +175,15 @@ export function registerResumeJob(ctx: PluginContext): void {
 
       // The re-run is a NEW run with an empty source log, but what it writes was decided by a run that had read things: a private message, a
       // person's Drive. Without those lines the memory rule (the narrowest source a run read, SPEC 12.1) would see a run that read nothing and
-      // retain text derived from them. So the re-run starts having read what the stopped run had read.
-      if (row.run_id !== null) {
-        const lines = await tx.query<{ source_type: string; source_ref: string; scope: 'team' | 'channel' | 'person' }>(
-          'SELECT source_type, source_ref, scope FROM app.run_source_log WHERE run_id = $1::uuid ORDER BY seq LIMIT 500',
-          [row.run_id],
-        );
-        for (const line of lines.rows) {
-          await ctx.runs.asBot(run, (inner) => ctx.runs.logSource(inner, { sourceType: line.source_type, sourceRef: line.source_ref, scope: line.scope }));
+      // retain text derived from them. So the re-run starts having read what the stopped run had read — all of it, in one statement with no cap:
+      // a truncated copy would let a person line past the cut read as a clean run. If the copy cannot be made the call is not made.
+      if (row.run_id) {
+        try {
+          await ctx.runs.inheritSources(run, row.run_id);
+        } catch (err) {
+          job.log.warn(`approvals: the re-run of approval ${approvalId} could not inherit its run's source log: ${err instanceof Error ? err.message : String(err)}`);
+          await ctx.runs.close(run.runId, 'failed').catch(() => undefined);
+          return fail('The call was not made: what the stopped run had read could not be carried over.');
         }
       }
 

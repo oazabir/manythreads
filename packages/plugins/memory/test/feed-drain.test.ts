@@ -20,7 +20,8 @@ import {
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { drainFeed, type DrainStats, type FeedRuntime } from '../src/feed.ts';
-import { contentHash, documentIdFor } from '../src/render.ts';
+import { workspaceKey } from '../src/keys.ts';
+import { contentHash as keyedHash, documentIdFor } from '../src/render.ts';
 import { SlidingWindow } from '../src/window.ts';
 
 // The drain against a real database and a stand-in engine (no server, no clocks, no workers: each call is one drain, as the job would make it).
@@ -33,6 +34,9 @@ const MKT = TEAM_IDS.Marketing;
 
 let db: TestDatabase;
 let sysPool: pg.Pool;
+/** The workspace's digest key, as the feed itself reads it (`memory_workspace_keys`). */
+let KEY: Buffer;
+const contentHash = (text: string): string => keyedHash(text, KEY);
 const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: omar.workspaceId });
 
 // A memory provider that records what it was asked and can be made to fail.
@@ -228,6 +232,7 @@ beforeAll(async () => {
   });
   await createPersonas(db);
   sysPool = createSystemPool(db.systemUrl, 2);
+  KEY = await sys((tx) => workspaceKey(tx, omar.workspaceId));
   await sys(async (tx) => {
     const bot = await tx.query<{ id: string }>(
       `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
@@ -641,6 +646,9 @@ describe('a run (the narrowest-source rule)', () => {
       await run([], { trigger: 'conversation' }),
       await run([], { channelId: privChannel }),
       await run([], { channelId: dmChannel }),
+      // decided from the run itself, before anything it read: a DM run that also read a person source is still a DM run and leaves no line
+      await run([['drive', 'x', 'person']], { channelId: dmChannel }),
+      await run([['drive', 'x', 'person']], { trigger: 'conversation' }),
     ];
     for (const id of ids) await mark('run', id);
     await drain();
@@ -736,6 +744,52 @@ describe('what a bot wrote during a run', () => {
     await setBody(reply, 'Is that public yet? Asking for the board.');
     await drain();
     expect(await linesOf('message', root)).toHaveLength(1);
+  });
+
+  it('what a bot that no longer exists wrote is refused (its runs went with it), not read as written outside a run', async () => {
+    const gone = await sys(async (tx) => {
+      const bot = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
+           VALUES ($1, $2, 'removed-later', 'Removed later', '', 'agent', 'rules', 'team', repeat('d', 64), 'active') RETURNING id`,
+          [omar.workspaceId, ENG],
+        )
+      ).rows[0]!.id;
+      const actor = (await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, bot])).rows[0]!.id;
+      return { bot, actor };
+    });
+    // written outside any run while the bot existed: an ordinary team message
+    const before = await message(pubChannel, 'Posted by a bot that was later removed.', { author: gone.actor, at: '2014-03-01T10:00:00.000Z' });
+    await sys((tx) => tx.query('DELETE FROM app.bots WHERE id = $1', [gone.bot]));
+    await mark('message', before);
+    await drain();
+    expect(stub.calls).toEqual([]);
+    expect(await linesOf('message', before)).toMatchObject([{ outcome: 'withheld', reason: 'authoring run: bot_removed' }]);
+  });
+
+  it('a withheld line never hides a document that is still in the bank: a thread that excludes a retained root while its forget fails leaves the root held', async () => {
+    // a bot's message outside any run: retained as an ordinary message
+    const root = await message(pubChannel, 'The Kingfisher numbers are final.', { author: writerActor, at: '2013-03-01T10:02:00.000Z' });
+    await mark('message', root);
+    await drain();
+    const doc = (await linesOf('message', root))[0]!.document_id!;
+    // a run of that bot that read a person source is now on record around that instant, and a person replied
+    await run([['drive', 'x', 'person']], { bot: writer, startedAt: '2013-03-01T10:00:00.000Z', endedAt: '2013-03-01T10:05:00.000Z' });
+    await message(pubChannel, 'Where do those come from?', { author: rafi.actorId, threadRoot: root, at: '2013-03-01T10:30:00.000Z' });
+    stub.reset();
+    await mark('thread', root);
+    await mark('message', root);
+    stub.failForget = new MemoryError('unavailable', 'engine says no');
+    await drain();
+    // the root's own forget failed; the thread document excludes it, and that exclusion is NOT a line that says "nothing is held"
+    expect((await linesOf('message', root)).map((l) => l.outcome)).toEqual(['retained']);
+    expect(await pendingOf('message', root)).toMatchObject({ attempts: 1 });
+    // the engine recovers: the document is taken out, because it is still held
+    stub.failForget = null;
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = $1', [root]));
+    await drain();
+    expect(stub.forgets()[0]!.ids).toEqual([doc]);
+    expect((await linesOf('message', root)).map((l) => l.outcome)).toEqual(['retained', 'forgotten']);
   });
 
   it('a bot reply in a thread whose run read a person source is left out of the thread document; the people’s messages stay', async () => {

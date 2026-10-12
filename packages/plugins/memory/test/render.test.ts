@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DOC_CHARS,
@@ -50,23 +51,32 @@ describe('tidy', () => {
 });
 
 describe('hash and document id', () => {
-  it('the same text has the same hash; a different text a different one; a document id carries kind, source and version', () => {
-    const a = contentHash('hello');
+  const KEY = Buffer.alloc(32, 7);
+
+  it('the same text under the same key has the same digest; another text or another key a different one; a document id carries kind, source and version', () => {
+    const a = contentHash('hello', KEY);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(contentHash('hello')).toBe(a);
-    expect(contentHash('hello!')).not.toBe(a);
+    expect(contentHash('hello', KEY)).toBe(a);
+    expect(contentHash('hello!', KEY)).not.toBe(a);
+    expect(contentHash('hello', Buffer.alloc(32, 8))).not.toBe(a);
     const id = documentIdFor('message', ID, a);
     expect(id).toBe(`feed:message:${ID}:${a.slice(0, 16)}`);
-    expect(documentIdFor('message', ID, contentHash('hello!'))).not.toBe(id);
+    expect(documentIdFor('message', ID, contentHash('hello!', KEY))).not.toBe(id);
     expect(documentIdFor('thread', ID, a)).not.toBe(id);
+  });
+
+  it('is keyed: the digest is not the plain sha-256 of the text, so a guess cannot be tested against a log line or a document id', () => {
+    const plain = createHash('sha256').update('hello', 'utf8').digest('hex');
+    expect(contentHash('hello', KEY)).not.toBe(plain);
+    expect(documentIdFor('message', ID, contentHash('hello', KEY))).not.toContain(plain.slice(0, 16));
   });
 
   it('a path-like source id is hashed, so the id stays short and cannot collide with a uuid shape', () => {
     const long = `${ID}/pages/${'deep/'.repeat(100)}page.md`;
-    const id = documentIdFor('page', long, contentHash('x'));
+    const id = documentIdFor('page', long, contentHash('x', KEY));
     expect(id.length).toBeLessThan(80);
     expect(id).toMatch(/^feed:page:[0-9a-f]{24}:[0-9a-f]{16}$/);
-    expect(documentIdFor('page', `${ID}/pages/a.md`, contentHash('x'))).not.toBe(documentIdFor('page', `${ID}/pages/b.md`, contentHash('x')));
+    expect(documentIdFor('page', `${ID}/pages/a.md`, contentHash('x', KEY))).not.toBe(documentIdFor('page', `${ID}/pages/b.md`, contentHash('x', KEY)));
   });
 });
 

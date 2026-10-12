@@ -42,6 +42,7 @@ import {
   approvalsMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
+  filesMigrationSource,
   gatewayLlmMigrationSource,
   memoryMigrationSource,
   teamsMigrationSource,
@@ -117,7 +118,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

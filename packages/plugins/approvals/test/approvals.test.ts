@@ -368,6 +368,30 @@ describe('deciding', () => {
     expect(refusal).toBe('person_source');
   });
 
+  it('a long source log is inherited whole: a person line after more than 500 others still refuses what the re-run writes', async () => {
+    const original = await openRun(scoped, nadia);
+    await w.system(async (tx) => {
+      // 700 distinct message lines (a model that searched a dozen times), then a person-scoped one at the end, and a duplicate that collapses
+      await tx.query(
+        `INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope)
+         SELECT $1, g, 'message', uuidv7()::text, 'channel' FROM generate_series(0, 699) g`,
+        [original.runId],
+      );
+      await tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 700, 'drive', 'finance/last.xlsx', 'person')", [original.runId]);
+    });
+    const id = (await request(original, 'pages/inherits-long.md')).approvalId;
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    await until(async () => ((await rowOf(id))?.outcome === 'ran' ? true : null), 30_000, 'the approved call to run');
+    const rerun = await w.system(
+      async (tx) =>
+        (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs WHERE bot_id = $1 AND id <> $2 ORDER BY id DESC LIMIT 1', [scoped.botId, original.runId])).rows[0]!.id,
+    );
+    const counts = await w.system(async (tx) => (await tx.query<{ n: number; person: number }>("SELECT count(*)::int AS n, count(*) FILTER (WHERE scope = 'person')::int AS person FROM app.run_source_log WHERE run_id = $1", [rerun])).rows[0]!);
+    expect(counts).toEqual({ n: 701, person: 1 });
+    const verdict = await w.system(async (tx) => (await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.run_retain_verdict($1)', [rerun])).rows[0]!.retain_refusal);
+    expect(verdict).toBe('person_source');
+  });
+
   it('denying settles it without running anything', async () => {
     const id = (await request(await openRun(scoped, nadia), 'pages/denied.md')).approvalId;
     const res = await decide(rafi, id, 'deny', 'not now');

@@ -230,6 +230,30 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       return registered.handler(input, tx);
     },
 
+    async inheritSources(run: BotRunHandle, fromRunId: string): Promise<number> {
+      return withSystem(async (tx) => {
+        const same = await tx.query(
+          `SELECT 1 FROM app.bot_runs a JOIN app.bot_runs b ON b.bot_id = a.bot_id AND b.team_id = a.team_id AND b.workspace_id = a.workspace_id
+            WHERE a.id = $1::uuid AND b.id = $2::uuid`,
+          [fromRunId, run.runId],
+        );
+        if ((same.rowCount ?? 0) === 0) throw new Error('a run can only inherit the source log of another run of the same bot');
+        // One statement, every distinct line, appended after whatever the run has already logged (an advisory lock per run, as the append door takes).
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1::uuid::text))', [run.runId]);
+        const copied = await tx.query(
+          `INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope)
+           SELECT $2::uuid,
+                  (coalesce((SELECT max(x.seq) + 1 FROM app.run_source_log x WHERE x.run_id = $2::uuid), 0)
+                   + row_number() OVER (ORDER BY s.first_seq) - 1)::integer,
+                  s.source_type, s.source_ref, s.scope
+             FROM (SELECT source_type, source_ref, scope, min(seq) AS first_seq
+                     FROM app.run_source_log WHERE run_id = $1::uuid GROUP BY source_type, source_ref, scope) s`,
+          [fromRunId, run.runId],
+        );
+        return copied.rowCount ?? 0;
+      }, system);
+    },
+
     async logSource(tx: PluginTx, source: { sourceType: string; sourceRef: string; scope: 'team' | 'channel' | 'person' }): Promise<number> {
       // One statement through the table's append door (`app.run_source_log_append`, bots 0004): the next position is
       // read as the system role inside it, because a bot actor cannot see the lines it just wrote — the plain

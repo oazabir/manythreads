@@ -67,6 +67,17 @@ CREATE INDEX memory_feed_pending_due ON app.memory_feed_pending (not_before, req
 CREATE INDEX memory_feed_pending_workspace ON app.memory_feed_pending (workspace_id);
 COMMENT ON TABLE app.memory_feed_pending IS 'rls: system — S: the feed''s work list (sources that changed and have not been reconciled with the bank yet); no privilege for manythreads_app.';
 
+-- One random key per workspace, for the keyed digest that names a document and recognises an unchanged text (`feed:<kind>:<source>:<digest>`,
+-- `memory_retain_log.content_hash`). An unkeyed hash of a message is a dictionary oracle: the log and the documents' ids are read by leads, and a
+-- `forgotten` line is a deleted (perhaps secret) text — with a key nobody who can read the log can test a guess against it. Same text, same
+-- workspace, same digest: idempotency holds. System only; never returned by any route.
+CREATE TABLE app.memory_workspace_keys (
+  workspace_id uuid PRIMARY KEY REFERENCES app.workspaces (id) ON DELETE CASCADE,
+  key          bytea NOT NULL CHECK (octet_length(key) = 32),
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE app.memory_workspace_keys IS 'rls: system — S: the per-workspace key of the memory feed''s keyed digests; no privilege for manythreads_app, never returned by a route.';
+
 -- Row level security ----------------------------------------------------------------------------------------------------
 -- The set of teams is hoisted: one evaluation per statement, never one per row.
 ALTER TABLE app.memory_retain_log ENABLE ROW LEVEL SECURITY;
@@ -83,19 +94,56 @@ REVOKE UPDATE, DELETE, TRUNCATE ON app.memory_retain_log FROM manythreads_system
 ALTER TABLE app.memory_feed_pending ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app.memory_feed_pending FORCE ROW LEVEL SECURITY;
 CREATE POLICY memory_feed_pending_system ON app.memory_feed_pending FOR ALL USING ((SELECT app.is_system())) WITH CHECK ((SELECT app.is_system()));
+
+ALTER TABLE app.memory_workspace_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app.memory_workspace_keys FORCE ROW LEVEL SECURITY;
+CREATE POLICY memory_workspace_keys_system ON app.memory_workspace_keys FOR ALL USING ((SELECT app.is_system())) WITH CHECK ((SELECT app.is_system()));
 -- no GRANT to manythreads_app: the work list is the platform's
 
 -- The narrowest-source rule ----------------------------------------------------------------------------------------------
--- Answers one row for the run (none for an unknown run): why it may not add to its team's bank (null = it may), the narrowest scope it read
--- (`person` < `channel` < `team`), how many source lines it has and which scope labels they carried.
---
--- A line is team-visible when:
---   * `message`: it resolves to a message of a PUBLIC channel of the run's own team — whatever scope label the line carries (a label is a claim,
+-- `app.memory_run_lines(run)`: the run's source lines, each with whether it is team-visible. A line is team-visible when:
+--   * `message`: it resolves to a message of a PUBLIC channel of the run's own team — whatever scope label it carries (a label is a claim,
 --     not a proof: a private or DM message logged as `team` is still private);
 --   * `file`: it is labelled `team` (the gateway labels a file with no channel that way: a team file), or resolves to a file of a public channel
 --     of the run's team;
 --   * anything else (a memory bank, a page, ...): it is labelled `team`. A `channel`-labelled line of an unknown type cannot be shown to be
 --     public, so it counts as narrower.
+-- The lookup is a join on the id, the ref turned into a uuid behind a shape guard in a subquery of its own (`OFFSET 0` keeps the planner from
+-- inlining the expression into the join), so the join clause is the plain uuid equality `m.id = s.ref_uuid` and the primary key is used. What
+-- the first cuts did instead was a plan that read the messages of the channel (or every message) for each line: the column cast to text
+-- (`m.id::text = ref`), and, with the regex and the cast inside the join clause, a join through `channels` and a scan of its messages — measured
+-- with EXPLAIN over 30,000 messages, hence test/rls/plan.test.ts, which does it again on every run and refuses a sequential scan. A SQL function
+-- without sublinks, so the planner inlines it into its callers.
+CREATE FUNCTION app.memory_run_lines(p_run uuid)
+  RETURNS TABLE (seq integer, source_type text, source_ref text, scope text, team_visible boolean)
+  LANGUAGE sql STABLE
+AS $$
+  SELECT s.seq, s.source_type, s.source_ref, s.scope,
+         CASE s.source_type
+           WHEN 'message' THEN cm.id IS NOT NULL
+           WHEN 'file' THEN s.scope = 'team' OR cf.id IS NOT NULL
+           ELSE s.scope = 'team'
+         END
+    FROM (
+      SELECT l.run_id, l.seq, l.source_type, l.source_ref, l.scope,
+             CASE WHEN l.source_ref ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN l.source_ref::uuid END AS ref_uuid
+        FROM app.run_source_log l
+       WHERE l.run_id = p_run
+      OFFSET 0
+    ) s
+    JOIN app.bot_runs r ON r.id = s.run_id
+    LEFT JOIN app.messages m ON s.source_type = 'message' AND m.id = s.ref_uuid
+    LEFT JOIN app.channels cm ON cm.id = m.channel_id AND cm.kind = 'channel' AND NOT cm.private AND cm.team_id = r.team_id
+    LEFT JOIN app.files f ON s.source_type = 'file' AND s.scope <> 'team' AND f.id = s.ref_uuid
+    LEFT JOIN app.channels cf ON cf.id = f.channel_id AND cf.kind = 'channel' AND NOT cf.private AND cf.team_id = r.team_id
+$$;
+
+ALTER FUNCTION app.memory_run_lines(uuid) OWNER TO manythreads_system;
+REVOKE ALL ON FUNCTION app.memory_run_lines(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.memory_run_lines(uuid) TO manythreads_system;
+
+-- `app.run_retain_verdict(run)`: answers one row for the run (none for an unknown run): why it may not add to its team's bank (null = it may),
+-- the narrowest scope it read (`person` < `channel` < `team`), how many source lines it has and which scope labels they carried.
 -- The refusals, in this order (the first that applies is the reason):
 --   person_source   a line with scope `person`;
 --   private_source  a line that is not team-visible (a private channel, a DM, a bot conversation, another team's channel, an unresolvable ref);
@@ -126,23 +174,9 @@ BEGIN
   SELECT count(*)::integer,
          coalesce(array_agg(DISTINCT s.scope ORDER BY s.scope), '{}'::text[]),
          (count(*) FILTER (WHERE s.scope = 'person'))::integer,
-         (count(*) FILTER (WHERE s.narrow))::integer
+         (count(*) FILTER (WHERE s.scope <> 'person' AND NOT s.team_visible))::integer
     INTO v_lines, v_scopes, v_person, v_private
-    FROM (
-      SELECT l.scope,
-             (l.scope <> 'person' AND NOT (
-               CASE l.source_type
-                 WHEN 'message' THEN EXISTS (
-                   SELECT 1 FROM app.messages m JOIN app.channels c ON c.id = m.channel_id
-                    WHERE m.id::text = l.source_ref AND c.kind = 'channel' AND NOT c.private AND c.team_id = r.team_id)
-                 WHEN 'file' THEN l.scope = 'team' OR EXISTS (
-                   SELECT 1 FROM app.files f JOIN app.channels c ON c.id = f.channel_id
-                    WHERE f.id::text = l.source_ref AND c.kind = 'channel' AND NOT c.private AND c.team_id = r.team_id)
-                 ELSE l.scope = 'team'
-               END)) AS narrow
-        FROM app.run_source_log l
-       WHERE l.run_id = p_run
-    ) s;
+    FROM app.memory_run_lines(p_run) s;
 
   v_refusal := CASE
     WHEN v_person > 0 THEN 'person_source'
@@ -179,10 +213,11 @@ COMMENT ON FUNCTION app.run_retain_verdict(uuid) IS
 -- What a bot wrote without being asked to retain it ------------------------------------------------------------------------
 -- A message or a page a bot posted during a run is team-visible where it was posted, but the run that wrote it may have read something narrower;
 -- the bank must not carry it then (it would outlive and out-reach the run's own scope). The bot's runs that were open at `p_at` (±2 s: git dates
--- have one-second resolution) decide: `retain_refusal` is the first refusal among them, `run_open` says a run is still going (its source log can
--- still grow, so the caller waits), `runs` how many there were (0: nothing was running, the bot wrote it outside a run). A run that never closed
--- covers two hours from its start and no more, so one lost worker cannot hold a bot's later messages back for ever; no run is looked for that
--- started more than a day before `p_at` (the index below makes the lookup a range scan of one bot's runs of that day, not of all of them).
+-- have one-second resolution, and the page time is checked at both its git and its indexing instants) decide: `retain_refusal` is the first
+-- refusal among them, `run_open` says a run is still going (its source log can still grow, so the caller waits), `runs` how many there were (0:
+-- nothing was running, the bot wrote it outside a run). A run that has not ended (`status = 'running'`, no `ended_at`) covers every instant from
+-- its start until it ends, however long it takes (a run's `timeoutSeconds` has no maximum); no run is looked for that started more than a day
+-- before `p_at`, so a lost worker holds a bot's later text back for at most a day (and the feed gives a deferred source up after that day).
 -- A bot whose row is gone (`bots.bot.removed` deletes its runs with it) has no runs to speak for what it wrote: that is refused, as `bot_removed`,
 -- never read as "it wrote it outside a run".
 CREATE INDEX memory_bot_runs_started ON app.bot_runs (bot_id, started_at);
@@ -197,15 +232,15 @@ AS $$
       FROM app.actors a
      WHERE a.id = p_bot_actor AND a.kind = 'bot'
   ), judged AS (
-    SELECT r.id, r.started_at, r.ended_at, v.retain_refusal
+    SELECT r.id, (r.ended_at IS NULL AND r.status = 'running') AS is_open, v.retain_refusal
       FROM bot
       JOIN app.bot_runs r ON r.bot_id = bot.ref_id AND r.workspace_id = bot.workspace_id
       CROSS JOIN LATERAL app.run_retain_verdict(r.id) v
      WHERE r.started_at <= p_at + interval '2 seconds'
        AND r.started_at > p_at - interval '24 hours'
-       AND p_at - interval '2 seconds' <= coalesce(r.ended_at, r.started_at + interval '2 hours')
+       AND (CASE WHEN r.ended_at IS NOT NULL THEN p_at - interval '2 seconds' <= r.ended_at ELSE r.status = 'running' END)
   )
-  SELECT coalesce(bool_or(j.ended_at IS NULL AND j.started_at + interval '2 hours' > now()), false),
+  SELECT coalesce(bool_or(j.is_open), false),
          coalesce(
            (array_agg(j.retain_refusal ORDER BY j.id) FILTER (WHERE j.retain_refusal IS NOT NULL))[1],
            CASE WHEN EXISTS (SELECT 1 FROM bot WHERE NOT bot.present) THEN 'bot_removed' END),

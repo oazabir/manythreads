@@ -282,6 +282,24 @@ export function createRepoService(deps: RepoServiceDeps) {
       JSON.stringify(upserts),
       [],
     ]);
+    // Git was ahead of an index that already existed (a transaction rolled back after its commit, a push outside the writer): the commits that
+    // were missing never emitted `repo.repo.committed`, so subscribers (the memory feed, the bots loader) never heard of their paths. One event
+    // for the caught-up range says what changed: the paths those commits touched, `put` where the file is in the tree now, `delete` where it is not.
+    // Not for an index that is new (`dbHead` null): that is the whole history, not a change.
+    if (dbHead !== null && lastTouched.size > 0) {
+      const present = new Set(files.map((f) => f.path));
+      const last = commits[commits.length - 1] as { author_id: string | null; message: string };
+      await deps.emit(tx, {
+        type: 'repo.repo.committed',
+        teamId: t.id,
+        sha: head,
+        parentSha: dbHead,
+        authorId: last.author_id,
+        coAuthorIds: [],
+        subject: `Index caught up with ${shas.length} commit${shas.length === 1 ? '' : 's'} made outside the index`,
+        paths: [...lastTouched.keys()].map((path) => ({ path, op: present.has(path) ? ('put' as const) : ('delete' as const) })),
+      });
+    }
   }
 
   /** Creates what is missing (the bare repo, the `repos` row, the first commit) and catches the index up. Caller holds the team lock. */

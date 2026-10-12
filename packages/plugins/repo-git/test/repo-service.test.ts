@@ -159,6 +159,13 @@ describe('one writer per team across replicas', () => {
     const healed = commits.find((c) => c.sha === orphan);
     expect(healed).toMatchObject({ authorId: sameera.actorId, paths: ['pages/orphan.md'], message: 'Orphan' });
     expect((await w.as(sameera, (tx) => svc.index.repo(tx, sup)))?.headSha).toBe(next.sha);
+
+    // the catch-up says so: one event for the range, so a subscriber that reads paths (the memory feed) hears of the orphan page
+    const caught = await w.system(
+      async (tx) => (await tx.query<{ payload: { sha: string; paths: Array<{ path: string; op: string }> } }>("SELECT payload FROM app.events WHERE type = 'repo.repo.committed' AND team_id = $1 AND payload ->> 'sha' = $2", [sup, orphan])).rows,
+    );
+    expect(caught).toHaveLength(1);
+    expect(caught[0]!.payload.paths).toEqual([{ path: 'pages/orphan.md', op: 'put' }]);
   });
 
   it('a commit made outside the writer is indexed with its author read back from the identity', async () => {

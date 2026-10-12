@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 // Pure text work for the feed: what a source becomes as a memory document, the hash that recognises it again, and the id the engine files it
 // under. No database, no clock, no engine. Everything here is linear in the input (slices, joins and one hash; no regular expression with a
@@ -50,8 +50,12 @@ export function tidy(text: string): string {
   return out.join('\n').trim();
 }
 
-/** sha-256 of the text, lowercase hex: what the retain log keeps instead of the text. */
-export const contentHash = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
+/**
+ * HMAC-SHA-256 of the text under the workspace's key (`src/keys.ts`), lowercase hex: what the retain log keeps instead of the text and what the
+ * document id carries. Keyed because an unkeyed digest of a message is a dictionary oracle for whoever reads the log or a document id — and a
+ * `forgotten` line is a deleted, perhaps secret, text. The same text in the same workspace always has the same digest (idempotency).
+ */
+export const contentHash = (text: string, key: Buffer | string): string => createHmac('sha256', key).update(text, 'utf8').digest('hex');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID.test(value);
