@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { ThreadInboxItem } from '@manythreads/shared';
 import { isApiError } from '../api/client';
@@ -106,7 +106,9 @@ export function ThreadsInbox() {
     [],
   );
 
-  useEffect(() => {
+  // A layout effect: the listener is swapped in the same commit that paints the new selection. A passive effect ran later, and a key pressed in
+  // between (j, j, k, e one after the other, on a loaded machine) acted on the thread selected two renders ago.
+  useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
       const i = items.findIndex((x) => x.rootMessageId === selected);

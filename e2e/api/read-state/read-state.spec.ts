@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type APIRequestContext } from '@playwright/test';
+import { type APIRequestContext } from '@playwright/test';
 import { GetReadStateResponse, GetUnreadSummaryResponse } from '@manythreads/shared';
 import { PERSONA_EMAILS, TEST_AUTH_TOKEN } from '../support/api.ts';
+import { expect, test, useIsolatedStack } from '../support/isolated.ts';
+
+// Asserts that a person has nothing unread: on the shared server another spec's post in a channel Nadia belongs to makes that false (the file
+// failed once in a full run), so the file has a server of its own (api/support/isolated.ts).
+useIsolatedStack();
 
 // P3-03 over HTTP, as signed-in people. Marking read needs the counter the channels plugin registers (covered by the plugin's own
 // tests); here: the read side, the contract of the routes, and that every route is for signed-in people only.
