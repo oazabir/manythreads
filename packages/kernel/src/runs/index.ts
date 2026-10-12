@@ -6,6 +6,7 @@ import type pg from 'pg';
 import type { AuthorizeContext, CapabilityBroker } from '../capabilities/broker.ts';
 import type { CapabilityRegistry } from '../capabilities/registry.ts';
 import { withActor, withSystem } from '../db/with-actor.ts';
+import { emit } from '../events/index.ts';
 import type { Actor } from '../db/with-actor.ts';
 import type { BotRunHandle, OpenRunInput } from '@manythreads/sdk';
 
@@ -164,12 +165,27 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
 
     async close(runId: string, status: 'done' | 'failed' | 'stopped'): Promise<boolean> {
       return withSystem(async (tx) => {
-        const ended = await tx.query(`UPDATE app.bot_runs SET status = $2, ended_at = now() WHERE id = $1 AND status = 'running'`, [
-          runId,
-          status,
-        ]);
+        const ended = await tx.query<{ workspace_id: string; team_id: string; bot_id: string; trigger_type: string }>(
+          `UPDATE app.bot_runs SET status = $2, ended_at = now() WHERE id = $1 AND status = 'running'
+           RETURNING workspace_id, team_id, bot_id, trigger_type`,
+          [runId, status],
+        );
         await tx.query(`UPDATE app.mcp_run_tokens SET revoked_at = now() WHERE run_id = $1 AND revoked_at IS NULL`, [runId]);
-        return (ended.rowCount ?? 0) > 0;
+        const row = ended.rows[0];
+        // One event per run, from the transition out of `running` (a repeated close finds no row and writes nothing). Ids and the trigger only.
+        if (row) {
+          await emit(tx, {
+            type: 'bots.run.closed',
+            schemaVersion: 1,
+            workspaceId: row.workspace_id,
+            teamId: row.team_id,
+            botId: row.bot_id,
+            runId,
+            trigger: row.trigger_type,
+            status,
+          });
+        }
+        return row !== undefined;
       }, system);
     },
 

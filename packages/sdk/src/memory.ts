@@ -64,6 +64,8 @@ export interface MemoryRetainResult {
   items: number;
   /** True when the engine will finish in the background. */
   async: boolean;
+  /** The document each item was filed under, in the order the items were given: the ids a later `forget` and the retain log use. */
+  documentIds: string[];
 }
 
 /** A bank already chosen — by the provider, not by you. */

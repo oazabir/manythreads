@@ -98,6 +98,19 @@ export const neverApprovalGatedReason = (tool: string): string =>
   `“${tool}” cannot wait for an approval: it is refused for a run that read anything private, and an approved call runs later without that history. Ask a lead to remove needsApproval from it.`;
 
 /**
+ * Thrown by an `ApprovalProvider.request` for a tool in `NEVER_APPROVAL_GATED`: the provider itself refuses, so a caller that did not go through
+ * `requestToolApproval` (or a second implementation of the helper) cannot file one either. The message is `neverApprovalGatedReason`, for the caller to pass on.
+ */
+export class NeverApprovalGatedError extends Error {
+  readonly tool: string;
+  constructor(tool: string) {
+    super(neverApprovalGatedReason(tool));
+    this.name = 'NeverApprovalGatedError';
+    this.tool = tool;
+  }
+}
+
+/**
  * The `grant` source's one call (the MCP gateway, the Hermes runtime's own scope): file an approval for a tool call the run made, in the run's own
  * transaction as its bot, with the preview, summary, resume and dedupe key built the one way. Answers null when the approvals plugin is not loaded —
  * the caller then fails closed — and `{ refused }` when the run is in a private conversation and nobody else in it could decide (see `NoEligibleApproverError`), because running a call the grant says a person must approve is the one thing the flag exists to stop.
@@ -131,7 +144,7 @@ export async function requestToolApproval(
       }),
     );
   } catch (err) {
-    if (err instanceof NoEligibleApproverError) return { refused: err.message };
+    if (err instanceof NoEligibleApproverError || err instanceof NeverApprovalGatedError) return { refused: err.message };
     throw err;
   }
 }

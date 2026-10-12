@@ -56,6 +56,7 @@ const { approvalId, created } = await ctx.runs.asBot(run, (tx) =>
 * **A long call.** The preview is clipped (20 keys, 10 items, 3 levels, 300 characters) and `args_truncated` says so; the card then says the preview is cut short and the Approve button stays
   disabled until the approver has opened the full call (`GET …/args`).
 * The row's `tool` equals `resume.capability` for a tool call (a CHECK), so the inbox cannot show one thing and run another.
+* **A tool that may never wait is refused at every door** (`NEVER_APPROVAL_GATED` in the SDK, today `memory.retain`: an approved call re-runs in a new run with none of the first run's source log, so a rule that reads that history would be decided blind). `requestToolApproval` answers `{ refused }`; **`request` itself throws `NeverApprovalGatedError`** for the tool it names *or* the capability its resume would re-run, before anything is written (whatever the source); the resume job refuses one that exists; and migration `0002_never_gated.sql` adds `CHECK (tool NOT IN ('memory.retain')) NOT VALID` to `approvals`, so a plugin that calls `app.approvals_request` directly gets 23514. A test keeps the constraint's list equal to the SDK's.
 * `request` writes the row, emits `approvals.approval.requested` and pushes `approval.changed` to the team's people.
 * `pendingForRun(tx, runId)`: how many approvals a run is waiting on. `runtime-hermes` ends a run that has any as `stopped`, not `done`.
 * `claim(tx, approvalId, { botId, source })`: for a `handoff` (below); system transaction only; answers the payload **once**.
@@ -122,7 +123,7 @@ approval, which means being on the team (or a workspace admin).
 not once per row), NULL when the caller may decide, else `requester | not_approver | not_pending | not_found`; `approvals_block_reason(id)` is the same for one.
 The lists call the set function once, so the screen and the rule cannot differ, and the decide door runs the same function before it writes.
 
-## Tables (migration 0001; PLAN A.5)
+## Tables (migration 0001; PLAN A.5; 0002 adds the never-gated CHECK)
 
 `approvals` (`source`, `status` `pending|approved|denied|expired`, `outcome` `none|queued|running|ran|failed`, `tool`, `summary`, `args_preview`, `resume`,
 `resume_kind`, `approver_scope`, `requester_id`, `requester_name`, `bot_id`, `run_id`, `channel_id`, `thread_root_id`, `args_truncated`, `expires_at`, `dedupe_key`) and

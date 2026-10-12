@@ -121,7 +121,7 @@ Read plans are hoisted: `bots`, `bot_runs` and `run_source_log` are checked by
 ## Events
 
 Emitted: `bots.bot.loaded`, `bots.bot.invalid`, `bots.bot.removed` (the loader above; payload in
-`packages/shared/src/events/bots.bot.*.ts`). The run lifecycle events follow with `bot_runs`.
+`packages/shared/src/events/bots.bot.*.ts`). `bots.run.closed` (v1: workspace, team, bot, run, trigger, status `done`/`failed`/`stopped`) is written by the run service (`ctx.runs.close`, kernel) in the transaction that moves a run out of `running` — once per run, nothing for a repeated close — and is what the `memory` plugin feeds a run summary from ([memory.md](./memory.md)).
 
 ## Tests
 

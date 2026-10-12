@@ -127,17 +127,18 @@ function makeBank(client: HindsightClient, id: string, stamp: Stamp, options: { 
         throw new MemoryError('invalid_request', 'Document ids starting with “run:” or “platform:” are reserved for the platform.');
       }
       if (options.retainRefusal) throw new MemoryError('retain_refused', options.retainRefusal);
+      // A run's item with no document id gets one derived from the run and the content: a repeat of the same call is an upsert, and a
+      // model cannot name a document (so it cannot replace one that is not its own).
+      const documentIds = input.map((item) => item.documentId ?? derivedDocumentId(stamp, item));
       return guard(async () => {
         const out = await client.retain(
           id,
-          input.map((item) => ({
+          input.map((item, index) => ({
             content: item.content,
             ...(item.context !== undefined ? { context: item.context } : {}),
             ...(item.timestamp !== undefined ? { timestamp: item.timestamp } : {}),
             ...(item.tags !== undefined ? { tags: item.tags } : {}),
-            // A run's item with no document id gets one derived from the run and the content: a repeat of the same call is an upsert, and a
-            // model cannot name a document (so it cannot replace one that is not its own).
-            documentId: item.documentId ?? derivedDocumentId(stamp, item),
+            documentId: documentIds[index] as string,
             metadata: {
               ...item.metadata,
               source: stamp.source,
@@ -149,7 +150,7 @@ function makeBank(client: HindsightClient, id: string, stamp: Stamp, options: { 
           })),
           { async: retainOptions?.async === true },
         );
-        return { bank: id, items: out.items, async: out.async };
+        return { bank: id, items: out.items, async: out.async, documentIds };
       });
     },
 

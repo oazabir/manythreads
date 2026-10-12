@@ -48,6 +48,7 @@ export * from './pages.page.written.ts';
 export * from './bots.bot.loaded.ts';
 export * from './bots.bot.invalid.ts';
 export * from './bots.bot.removed.ts';
+export * from './bots.run.closed.ts';
 export * from './llm.config.applied.ts';
 export * from './llm.key.changed.ts';
 export * from './llm.budget.exceeded.ts';

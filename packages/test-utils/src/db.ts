@@ -57,6 +57,21 @@ export const approvalsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/approvals/migrations/', import.meta.url)),
 };
 
+/**
+ * Migrations of the memory plugin (`memory_retain_log`, `memory_feed_pending`, `app.run_retain_verdict`); pass it in `sources` after the files and
+ * approvals sources (it reads bots, channels, files, approvals and repo-git) and before `memoryHindsightMigrationSource`.
+ */
+export const memoryMigrationSource: MigrationSource = {
+  namespace: 'memory',
+  dir: fileURLToPath(new URL('../../plugins/memory/migrations/', import.meta.url)),
+};
+
+/** Migrations of the memory-hindsight plugin (`app.memory_run_scope`, `app.memory_retain_log_run`); pass it in `sources` after `memoryMigrationSource`. */
+export const memoryHindsightMigrationSource: MigrationSource = {
+  namespace: 'memory-hindsight',
+  dir: fileURLToPath(new URL('../../plugins/memory-hindsight/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',

@@ -1,4 +1,4 @@
-import { NoEligibleApproverError, type ApprovalProvider, type ApprovalRequestInput, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { NEVER_APPROVAL_GATED, NeverApprovalGatedError, NoEligibleApproverError, type ApprovalProvider, type ApprovalRequestInput, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { ApprovalResume, ApprovalsApprovalRequestedEvent, ApprovalsApprovalResumedEvent } from '@manythreads/shared';
 import { pushChanged } from './notify.ts';
 
@@ -13,7 +13,13 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
     id: 'approvals',
 
     async request(tx: PluginTx, input: ApprovalRequestInput) {
+      // The provider itself refuses what may never wait (SDK `NEVER_APPROVAL_GATED`, today `memory.retain`): an approved call is re-run in a NEW run
+      // that has none of the first run's context, so a rule that reads the run's history would be decided blind. The SDK helper and the resume job
+      // refuse too; this is the door that cannot be walked around, whoever calls it and with whatever source. Checked before anything is written.
       const resume = ApprovalResume.parse(input.resume);
+      for (const tool of [input.tool, resume.kind === 'tool' ? resume.capability : null]) {
+        if (tool !== null && NEVER_APPROVAL_GATED.includes(tool)) throw new NeverApprovalGatedError(tool);
+      }
       type Filed = { o_id: string; o_created: boolean; o_workspace_id: string; o_team_id: string; o_bot_id: string; o_run_id: string; o_requester_id: string; o_private: boolean };
       let res: { rows: Filed[] };
       try {

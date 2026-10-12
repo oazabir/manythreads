@@ -27,8 +27,10 @@ export default definePlugin({
       { name: 'memory.recall', destructive: false },
       { name: 'memory.retain', destructive: false },
     ],
-    // app.memory_run_scope() reads app.bot_runs and app.run_source_log: the bots namespace migrates first.
-    dependsOn: ['bots'],
+    // app.memory_run_scope() reads app.bot_runs and app.run_source_log (bots migrates first) and asks `app.run_retain_verdict` — the narrowest-source rule —
+    // and logs into `memory_retain_log`, both of the `memory` plugin (P5-13), which therefore migrates first. The engine is this plugin's; the
+    // retention rule and the log are the platform's, so another `provider.memory` plugin gets them too.
+    dependsOn: ['bots', 'memory'],
     migrations: 'migrations',
   },
   register(ctx) {

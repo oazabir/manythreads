@@ -1,4 +1,4 @@
-import { MemoryError, type MemoryProvider, type PluginContext } from '@manythreads/sdk';
+import { MemoryError, type MemoryProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { RecallArgs, RetainArgs, refuseBankFields } from './schemas.ts';
 
 // The two tools a bot's run has (`memory.recall`, `memory.retain`; SPEC 12.1). Registered as capabilities, so the broker's allowlist decides
@@ -16,6 +16,14 @@ const refuse = (code: string, message: string): ToolAnswer => ({ ok: false, code
 function answerFor(err: unknown): ToolAnswer {
   if (err instanceof MemoryError) return refuse(err.code, err.message);
   return refuse('unavailable', 'Memory failed to answer.');
+}
+
+/**
+ * One line in `memory_retain_log` for the calling run's own `memory.retain` (memory 0001's table, memory-hindsight 0002's door): the door finds the
+ * team, the run and the scopes of its source log itself, and writes nothing for a transaction that is not a live run's bot or asker.
+ */
+async function logRun(tx: PluginTx, outcome: 'retained' | 'withheld', bank: string, documentIds: readonly string[]): Promise<void> {
+  await tx.query('SELECT app.memory_retain_log_run($1, $2, $3::text[]) AS n', [outcome, bank, [...documentIds]]);
 }
 
 export function registerMemoryTools(ctx: PluginContext, provider: MemoryProvider): void {
@@ -39,9 +47,17 @@ export function registerMemoryTools(ctx: PluginContext, provider: MemoryProvider
       const parsed = RetainArgs.safeParse(input);
       if (!parsed.success) return refuse('invalid_arguments', parsed.error.issues.map((i) => `${i.path.map(String).join('.') || '(arguments)'}: ${i.message}`).join('; '));
       const bank = await provider.forRun(tx);
-      const result = await bank.retain([
-        { content: parsed.data.content, ...(parsed.data.context ? { context: parsed.data.context } : {}), ...(parsed.data.tags ? { tags: parsed.data.tags } : {}) },
-      ]);
+      let result;
+      try {
+        result = await bank.retain([
+          { content: parsed.data.content, ...(parsed.data.context ? { context: parsed.data.context } : {}), ...(parsed.data.tags ? { tags: parsed.data.tags } : {}) },
+        ]);
+      } catch (err) {
+        // The narrowest-source rule said no: the retain log keeps the refusal and its reason (SPEC 15, "what was withheld").
+        if (err instanceof MemoryError && err.code === 'retain_refused') await logRun(tx, 'withheld', bank.id, []);
+        throw err;
+      }
+      await logRun(tx, 'retained', result.bank, result.documentIds);
       return { ok: true, bank: result.bank, retained: result.items };
     } catch (err) {
       return answerFor(err);
