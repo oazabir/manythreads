@@ -378,7 +378,7 @@ export function GuardTab({ draft, canEdit }: TabProps) {
           values={g.rules ?? []}
           readOnly={!canEdit}
           onChange={(rules) => setGuard({ rules: rules.length > 0 ? rules : undefined })}
-          hint="Free text the runtimes apply on top of the preset."
+          hint={<span>Free text the runtimes apply on top of the preset. <Mono>dlp:require_approval</Mono> holds a call that trips the guard in the Approvals inbox instead of redacting it.</span>}
         />
       </Block>
     </>
