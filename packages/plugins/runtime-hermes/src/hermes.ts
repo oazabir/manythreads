@@ -241,7 +241,12 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
       }, budget * 1000);
       ceiling.unref?.();
 
-      const events = consume(child, kill, () => stderr, exited);
+      // The stdout lines are collected from the moment the process exists, not from the moment the job first asks for an event: a process
+      // that has already exited and been reaped has already ended and destroyed its stdout, and a reader attached after that never sees
+      // an end (the stream is gone, and no 'close' is coming), so the run would hold its job worker forever. (A loaded box finds this
+      // window easily: the process group tests of hermes.test.ts hung exactly there.)
+      const lines = child.stdout ? createInterface({ input: child.stdout })[Symbol.asyncIterator]() : null;
+      const events = consume(lines, kill, () => stderr, exited);
       const close = async (): Promise<void> => {
         clearTimeout(ceiling);
         // The profile (token, key) goes only once nothing of the run is left in it: after the group is gone, or after the
@@ -274,7 +279,7 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
  * silent about how it ended.
  */
 async function* consume(
-  child: ChildProcess,
+  lines: AsyncIterator<string> | null,
   kill: () => Promise<void>,
   stderrTail: () => string,
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
@@ -282,9 +287,9 @@ async function* consume(
   const deltas: string[] = [];
   let result: HermesEvent & { type: 'result' } | null = null;
 
-  if (child.stdout) {
-    const lines = createInterface({ input: child.stdout });
-    for await (const line of lines) {
+  if (lines) {
+    for (let next = await lines.next(); next.done !== true; next = await lines.next()) {
+      const line = next.value;
       const event = parseHermesLine(line);
       if (!event) continue;
       if (event.type === 'text') {
