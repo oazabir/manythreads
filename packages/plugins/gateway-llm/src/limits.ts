@@ -1,4 +1,4 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import type { EgressDecision, EgressMode, EgressTarget as EgressHopTarget, PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   LLM_DEFAULT_SETTINGS,
   LlmAliasName,
@@ -11,7 +11,6 @@ import {
   type LlmLimitScope,
   type LlmRefusalReason,
 } from '@manythreads/shared';
-import { inspect, type DlpMode, type DlpResult } from './dlp.ts';
 
 // The enforcement half of the gateway (PLAN P5-07: budgets workspace → team → bot → session and rate limits "enforced
 // before the call"; `llm_spend`; the presets; the pre-call DLP hook). The split follows the config half: `decide` is a
@@ -120,91 +119,43 @@ const SCOPE_NOUN: Record<LlmLimitScope, string> = {
 const dollars = (value: number): string => `$${value.toFixed(4)}`;
 
 /**
- * The whole pre-call decision, pure: the preset's egress rule, then the DLP hook, then every applicable limit
- * narrowest-first. A refusal names one scope — the narrowest exhausted one — and a `block` from the hook is a refusal
- * of its own. The only impure part is the injected `rate` counter (process memory, not the database).
+ * The whole pre-call decision, pure: the guardrails' answer (the `pre_egress` chain: the preset's egress rule, then the DLP check — both
+ * live in the guardrails plugins since P5-21), then every applicable limit narrowest-first. A refusal names one scope — the narrowest
+ * exhausted one — and a `block` from the chain is a refusal of its own. The only impure part is the injected `rate` counter (process
+ * memory, not the database).
  */
 export function decide(input: {
   alias: LlmAliasName;
   sessionId: string | null;
-  settings: LlmWorkspaceSettings;
-  /** Where the alias would reach, or null when the alias is not bound at all. */
-  egress: EgressTarget | null;
-  /** The alias's fallback chain (transitive, bound aliases only), each with where it would reach. Absent means no fallbacks. */
-  fallbacks?: readonly { alias: string; egress: EgressTarget | null }[];
-  dlp: DlpResult;
+  preset: LlmGuardPreset;
+  /** What the `pre_egress` chain answered for this call. */
+  guard: EgressDecision;
   /** The limits that apply to this call, any order; `decide` sorts them narrowest-first. */
   limits: readonly LlmScopeSnapshot[];
   rate: RateHit;
 }): LlmCallDecision {
-  const { settings, alias, sessionId, egress, dlp } = input;
-  const fallbacks = input.fallbacks ?? [];
+  const { preset, sessionId, guard } = input;
   const base = {
-    outcome: dlp.outcome,
-    preset: settings.preset,
-    text: dlp.text,
-    rules: dlp.rules,
+    outcome: guard.outcome,
+    preset,
+    text: guard.text,
+    rules: guard.rules,
     retryAfterMs: null as number | null,
     limit: null as LlmScopeSnapshot['limit'] | null,
     spentUsd: null as number | null,
   };
 
-  // 1. The preset's egress rule, before anything reads a prompt (SPEC §10.1: air-gapped runs the local alias only). The rule
-  // holds for the whole fallback chain: the proxy retries a failed call on the alias's fallbacks, so a chain that ends in a
-  // hosted model reaches the internet even when its first link is local.
-  for (const link of [{ alias: alias as string, egress }, ...fallbacks]) {
-    if (settings.preset === 'air-gapped' && link.alias !== 'local') {
-      return {
-        ...base,
-        allowed: false,
-        reason: 'preset',
-        outcome: 'block',
-        message:
-          link.alias === alias
-            ? `The air-gapped preset allows only the local alias, and this call asks for ${alias}.`
-            : `The air-gapped preset allows only the local alias, and ${alias} falls back to ${link.alias}.`,
-      };
-    }
-    if (settings.preset === 'strict-egress' && !(link.egress?.local ?? false)) {
-      const host = link.egress?.host ?? null;
-      const allowed = host !== null && settings.egressAllowlist.some((entry) => entry.toLowerCase() === host.toLowerCase());
-      if (!allowed) {
-        const via = link.alias === alias ? alias : `${link.alias} (a fallback of ${alias})`;
-        return {
-          ...base,
-          allowed: false,
-          reason: 'preset',
-          outcome: 'block',
-          message: host
-            ? `The strict-egress preset does not allow ${host}; an admin must add it to the workspace's allowlist.`
-            : `The strict-egress preset cannot tell where the ${via} alias goes; an admin must give its provider a base URL.`,
-        };
-      }
-    }
+  // 1. The guardrails. A `block` (the preset's egress rule, a detection the preset refuses, a guard that failed) stops here; so does a hold
+  // for a person: the call does not leave, and nothing after it matters until it is approved (the limits are checked again when the approved
+  // call comes back through here).
+  if (guard.outcome === 'block') {
+    return { ...base, allowed: false, reason: guard.reason === 'dlp' ? 'dlp' : 'preset', message: guard.message ?? 'A guardrail refused this call.' };
+  }
+  if (guard.outcome === 'require_approval') {
+    return { ...base, allowed: false, reason: 'dlp', message: guard.message ?? 'A person has to approve this call first.' };
   }
 
-  // 2. The hook. A detection the preset refuses stops here; a redaction rewrites the text the caller sends.
-  if (dlp.outcome === 'block') {
-    return {
-      ...base,
-      allowed: false,
-      reason: 'dlp',
-      message: `The ${settings.preset} preset refuses a call that carries ${dlp.rules.join(', ')}.`,
-    };
-  }
-
-  // The hook held the call for a person: it does not leave, and nothing after this matters until it is approved (the limits are checked
-  // again when the approved call comes back through here).
-  if (dlp.outcome === 'require_approval') {
-    return {
-      ...base,
-      allowed: false,
-      reason: 'dlp',
-      message: `A person has to approve this call first: it carries ${dlp.rules.join(', ')}.`,
-    };
-  }
-
-  // 3. Every applicable limit, narrowest scope first, budget then rate at each scope.
+  // 2. Every applicable limit, narrowest scope first, budget then rate at each scope.
   const ordered = [...input.limits].sort((a, b) => SCOPE_ORDER.indexOf(a.limit.scope) - SCOPE_ORDER.indexOf(b.limit.scope));
   for (const snapshot of ordered) {
     const { limitUsd, requestsPerMinute, scope } = snapshot.limit;
@@ -510,8 +461,8 @@ export interface LlmCallRequest {
   alias: LlmAliasName;
   /** The text that would leave (the newest user message, or the tools' preamble the runtime names). */
   text: string;
-  /** What a DLP finding does (see `DlpMode` in dlp.ts); the preset's own rule when absent. */
-  dlpMode?: DlpMode;
+  /** What a DLP finding does (`EgressMode` in the SDK: guardrails-dlp reads it); the preset's own rule when absent. */
+  dlpMode?: EgressMode;
 }
 
 /**
@@ -529,9 +480,33 @@ export async function preflight(
   const settings = await loadSettings(tx, request.workspaceId);
   const egress = await loadEgress(tx, request.workspaceId, request.alias);
   const fallbacks = await loadFallbackChain(tx, request.workspaceId, request.alias);
-  const dlp = inspect(request.text, settings.preset, request.dlpMode);
   const limits = await loadLimits(tx, request.workspaceId, request, now);
-  const decision = decide({ alias: request.alias, sessionId: request.sessionId, settings, egress, fallbacks, dlp, limits, rate });
+
+  // The guardrails are the `pre_egress` chain (guardrails-egress judges where the call goes, then guardrails-dlp reads what it carries). The
+  // gateway describes the call — the alias and every link of its fallback chain with the host each reaches — and obeys the answer. It writes
+  // its own decision event below (it knows the alias and the bot), so the guardrails do not write theirs.
+  const targets: EgressHopTarget[] = [
+    { name: request.alias, host: egress?.host ?? null, local: egress?.local ?? false },
+    ...fallbacks.map((link) => ({ name: link.alias, host: link.egress?.host ?? null, local: link.egress?.local ?? false })),
+  ];
+  const chain = await ctx.hooks.runPreEgress(tx, {
+    destination: 'llm',
+    workspaceId: request.workspaceId,
+    text: request.text,
+    preset: settings.preset,
+    allowlist: settings.egressAllowlist,
+    targets,
+    ...(request.dlpMode ? { mode: request.dlpMode } : {}),
+    botId: request.botId,
+    recorded: true,
+  });
+  // Nothing guards the destination (neither plugin is loaded): the call is refused, not waved through. The manifest's `dependsOn` makes this
+  // unreachable in a running server; a context assembled by hand (a test) must register the guardrails too.
+  const guard: EgressDecision =
+    chain.hooks === 0
+      ? { ...chain, outcome: 'block', reason: 'preset', message: 'No guardrail is loaded, so the call was refused.' }
+      : chain;
+  const decision = decide({ alias: request.alias, sessionId: request.sessionId, preset: settings.preset, guard, limits, rate });
 
   if (!decision.allowed && (decision.reason === 'budget' || decision.reason === 'rate')) {
     await ctx.audit.emit(tx, {

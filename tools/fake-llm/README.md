@@ -45,7 +45,7 @@ needs to be proven with no provider behind it, and for the test suite.
 | `POST /key/update`, `GET /key/info` | `200`; `404` for an unknown key |
 | `POST /key/delete` | `200`, or `404` when nothing was deleted |
 | `GET /health/readiness`, `/health/liveliness` | `200`, no key required — a probe has no credential to send |
-| `POST /chat/completions` | A canned completion with `usage` (12 prompt / 7 completion tokens). **No auth check** — it exists to prove a call path, not to be a provider |
+| `POST /chat/completions` (also `/v1/chat/completions`) | A canned completion with `usage` (12 prompt / 7 completion tokens), or whatever the `completion` option answers (a string, or `{ status, body }`; it is handed the model, the messages and whether the master key was right). **No auth check** — it exists to prove a call path, not to be a provider |
 | `GET /state` | The deployments, keys, fallback chains and a call count, for a test to read back |
 
 `startFakeLlm({ beforeRespond })` runs a hook after a request is recorded and before it is answered, so a test can change the

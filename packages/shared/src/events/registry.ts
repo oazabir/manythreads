@@ -24,6 +24,9 @@ import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
 import { LlmGuardDecidedEvent } from './llm.guard.decided.ts';
+import { GuardrailsDlpDecidedEvent } from './guardrails.dlp.decided.ts';
+import { GuardrailsEgressDecidedEvent } from './guardrails.egress.decided.ts';
+import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
@@ -83,6 +86,9 @@ export const eventRegistry = {
   'llm.key.changed': { 1: LlmKeyChangedEvent },
   'llm.budget.exceeded': { 1: LlmBudgetExceededEvent },
   'llm.guard.decided': { 1: LlmGuardDecidedEvent },
+  'guardrails.dlp.decided': { 1: GuardrailsDlpDecidedEvent },
+  'guardrails.egress.decided': { 1: GuardrailsEgressDecidedEvent },
+  'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },

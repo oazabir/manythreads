@@ -12,10 +12,10 @@ export { createLiteLlmClient, LiteLlmError } from './litellm.ts';
 export type { LiteLlmConfigDocument, LiteLlmTransport, LlmGateway } from './litellm.ts';
 export { APPLY_CONFIG_QUEUE, RECONCILE_QUEUE, SYNC_KEY_QUEUE, gatewayFromEnv } from './gateway.ts';
 export type { LlmProviderServices } from './provider.ts';
+export { complete } from './complete.ts';
+export type { LlmCompleteRequest, LlmCompleteResult } from './complete.ts';
 export { createSlidingWindow, decide, loadEgress, loadFallbackChain, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';
 export type { EgressTarget, LlmCallDecision, LlmCallRequest, LlmScopeSnapshot, LlmSpendRecord, RateHit } from './limits.ts';
-export { inspect, scan } from './dlp.ts';
-export type { DlpFinding, DlpMode, DlpResult } from './dlp.ts';
 
 /**
  * gateway-llm: the workspace's door to the models (SPEC §10.1, PLAN P5-06). One LiteLLM proxy runs in the
@@ -31,11 +31,13 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     migrations: 'migrations',
-    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.llm'],
+    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.llm', 'hook.pre_egress'],
     events: {
       emits: ['llm.config.applied', 'llm.key.changed', 'llm.budget.exceeded', 'llm.guard.decided'],
       consumes: ['bots.bot.loaded', 'bots.bot.removed'],
     },
+    // The guardrails (P5-21) are what the pre-call check runs: where a call may go (egress, first) and what it may carry (dlp).
+    dependsOn: ['guardrails-egress', 'guardrails-dlp'],
   },
   register(ctx) {
     registerConfigJob(ctx);

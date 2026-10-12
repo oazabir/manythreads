@@ -3,6 +3,7 @@ import type {
   ComponentDefinition,
   ComposerActionDefinition,
   CommandDefinition,
+  EgressHook,
   EventHandler,
   Hook,
   HttpRouteDefinition,
@@ -52,7 +53,7 @@ export interface MountedRoute extends HttpRouteDefinition {
 export class ExtensionRegistries {
   readonly eventSubscriptions = new ExtensionRegistry<{ type: string; handler: EventHandler }>();
   readonly prePersist = new ExtensionRegistry<Hook>();
-  readonly preEgress = new ExtensionRegistry<Hook>();
+  readonly preEgress = new ExtensionRegistry<EgressHook>();
   readonly providers: Record<ProviderKind, ExtensionRegistry<ProviderImpl>> = {
     identity: new ExtensionRegistry(),
     memory: new ExtensionRegistry(),

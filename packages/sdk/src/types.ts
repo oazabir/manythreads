@@ -1,6 +1,7 @@
 import type { ErrorCode, ExtensionPoint, PluginManifest, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
 import type { PluginAccess, PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
+import type { EgressDecision, EgressHook, EgressInput } from './egress.ts';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -24,7 +25,7 @@ export type EventHandler = (event: PluginEvent, tx: PluginTx) => void | Promise<
 export type EmitEvent = (tx: PluginTx, event: PluginEvent) => Promise<unknown>;
 
 export interface HookInput {
-  /** Event type for pre_persist; destination (`channel`, `email`, ...) for pre_egress. */
+  /** The event type being persisted. (`pre_egress` hooks take an `EgressInput`, see ./egress.ts.) */
   subject: string;
   payload: Record<string, unknown>;
 }
@@ -306,7 +307,14 @@ export interface PluginContext {
   };
   readonly hooks: {
     prePersist(hook: Hook): void;
-    preEgress(hook: Hook): void;
+    /** Add a guard to the `pre_egress` chain (guardrails-dlp, guardrails-egress). Needs `hook.pre_egress` in `extends`. */
+    preEgress(hook: EgressHook): void;
+    /**
+     * Run the chain for something that is about to leave: every registered hook sees it in load order, the strongest outcome wins, a
+     * `block` stops the chain, and a hook that throws blocks (fail closed). Needs `hook.pre_egress` in `extends`; the caller obeys the
+     * answer (and checks `decision.hooks > 0` when nothing may leave unguarded).
+     */
+    runPreEgress(tx: PluginTx, input: EgressInput): Promise<EgressDecision>;
   };
   readonly providers: {
     register(kind: ProviderKind, impl: ProviderImpl): void;

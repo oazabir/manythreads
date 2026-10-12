@@ -1,4 +1,5 @@
 import type { PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
+import { complete, type LlmCompleteRequest, type LlmCompleteResult } from './complete.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
 // The `provider.llm` contract (SPEC §10.2, PLAN P5-06 and P5-07). A bot's runtime does not reach LiteLLM itself; it is
@@ -18,6 +19,11 @@ export interface LlmProviderServices extends ProviderImpl {
   preflight(tx: PluginTx, request: LlmCallRequest): Promise<LlmCallDecision>;
   /** Append what a call cost to `llm_spend`; answers the ledger line's id. */
   recordSpend(tx: PluginTx, record: LlmSpendRecord): Promise<string>;
+  /**
+   * A completion the platform makes for itself (the gate's classifier, PLAN P5-11): the pre-call check, the proxy with the master key, the
+   * ledger line. Never throws for an unavailable model; the answer says why there is none, and the caller decides what that means.
+   */
+  complete(tx: PluginTx, request: LlmCompleteRequest): Promise<LlmCompleteResult>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): void {
@@ -34,6 +40,7 @@ export function registerLlmProvider(ctx: PluginContext): void {
     },
     preflight: (tx, request) => preflight(ctx, tx, window.hit, request),
     recordSpend: (tx, record) => recordSpend(tx, record),
+    complete: (tx, request) => complete(ctx, tx, window.hit, request),
   };
   ctx.providers.register('llm', impl);
 }

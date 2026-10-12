@@ -16,6 +16,8 @@ import {
 } from '@manythreads/test-utils';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import guardrailsDlp from '../../guardrails-dlp/src/index.ts';
+import guardrailsEgress from '../../guardrails-egress/src/index.ts';
 import gatewayLlm from '../src/index.ts';
 import { spendSummary, type LlmCallDecision, type LlmCallRequest } from '../src/limits.ts';
 import type { LlmProviderServices } from '../src/provider.ts';
@@ -33,6 +35,7 @@ let sysPool: pg.Pool;
 let ctx: ReturnType<typeof createPluginContext>;
 let emitted: PluginEvent[];
 let gateway: LlmProviderServices;
+let baseDeps: Parameters<typeof createPluginContext>[1];
 
 const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: omar.workspaceId });
 
@@ -69,14 +72,18 @@ beforeAll(async () => {
 
   emitted = [];
   const registries = new ExtensionRegistries();
-  ctx = createPluginContext(gatewayLlm.manifest, {
+  baseDeps = {
     registries,
     storage: createMemoryKv(),
     mail: { send: () => Promise.resolve() },
     runtime: { publicUrl: 'http://localhost:3000', now: () => new Date() },
     secrets: createSecretService(),
-    emit: async (_tx, event) => void emitted.push(event),
-  });
+    emit: async (_tx: unknown, event: PluginEvent) => void emitted.push(event),
+  };
+  // The pre-call check is the `pre_egress` chain, so the guardrails register first, in the order the server loads them (gateway-llm
+  // depends on both): where a call may go, then what it may carry.
+  for (const guardrail of [guardrailsEgress, guardrailsDlp]) await guardrail.register(createPluginContext(guardrail.manifest, baseDeps));
+  ctx = createPluginContext(gatewayLlm.manifest, baseDeps);
   await gatewayLlm.register(ctx);
   gateway = ctx.providers.get<LlmProviderServices>('llm')!;
 }, 180_000);
@@ -330,6 +337,24 @@ describe('preflight: presets and the pre-call hook', () => {
       reason: 'dlp',
     });
     await sys((tx) => tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]));
+  });
+});
+
+describe('preflight: the guardrails are the pre_egress chain', () => {
+  it('refuses a call when no guardrail is loaded: unguarded is not allowed', async () => {
+    const bare = createPluginContext(gatewayLlm.manifest, { ...baseDeps, registries: new ExtensionRegistries() });
+    await gatewayLlm.register(bare);
+    const door = bare.providers.get<LlmProviderServices>('llm')!;
+    const botId = await sys((tx) => makeBot(tx, 'preflight-unguarded'));
+    const refused = await sys((tx) => door.preflight(tx as unknown as PluginTx, call(botId)));
+    expect(refused).toMatchObject({ allowed: false, reason: 'preset', outcome: 'block' });
+    expect(refused.message).toContain('No guardrail is loaded');
+  });
+
+  it('writes the gateway\'s own decision event once; the guardrails stay quiet because the gateway records it', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'preflight-one-event'));
+    await check(call(botId, { text: `use sk-${'a'.repeat(24)} now` }));
+    expect(emitted.map((e) => e.type)).toEqual(['llm.guard.decided']);
   });
 });
 

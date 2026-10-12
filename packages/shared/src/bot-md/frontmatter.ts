@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { compileGate } from './gate.ts';
 
 // BOT.md frontmatter (SPEC §7.1). Everything a bot author writes is strict (PLAN.md B.2 rule 4).
 
@@ -116,7 +117,20 @@ export type BotMemory = z.infer<typeof BotMemory>;
 export const BotGuard = z.strictObject({
   preset: Slug.optional(),
   rules: z.array(z.string().min(1)).optional(),
-  gate: z.array(z.string().min(1)).optional(),
+  /**
+   * What a message may not be about before a model has read it (SPEC §7.3): phrases (`credential rotation`) and patterns (`/\bdrop\s+table\b/i`),
+   * checked before any model call, then a local classifier. The entries are checked here, at load: a pattern outside the linear-time subset
+   * (`gate.ts`), a nested repetition like `(a+)+`, or a list past its size limits makes the whole definition invalid, with the entry named.
+   */
+  gate: z
+    .array(z.string().min(1))
+    .superRefine((entries, ctx) => {
+      const compiled = compileGate(entries);
+      if (!compiled.ok) {
+        ctx.addIssue({ code: 'custom', message: compiled.reason, ...(compiled.index === null ? {} : { path: [compiled.index] }) });
+      }
+    })
+    .optional(),
 });
 export type BotGuard = z.infer<typeof BotGuard>;
 

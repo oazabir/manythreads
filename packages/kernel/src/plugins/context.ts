@@ -35,6 +35,7 @@ import { publishRealtime } from '../transport/realtime.ts';
 import type { Actor, Tx } from '../db/with-actor.ts';
 import { enqueue } from '../jobs/index.ts';
 import { createTemplateService } from '../templates/service.ts';
+import { runEgressChain } from './egress.ts';
 import { PluginError } from './errors.ts';
 import type { ExtensionRegistries } from './registries.ts';
 
@@ -161,6 +162,10 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       preEgress(hook) {
         use('hook.pre_egress');
         registries.preEgress.add(name, (input, tx) => hook(input, guardPluginTx(tx)));
+      },
+      async runPreEgress(tx, input) {
+        use('hook.pre_egress');
+        return runEgressChain(registries.preEgress.list(), input, guardPluginTx(tx));
       },
     },
     providers: {

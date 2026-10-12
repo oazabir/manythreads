@@ -23,6 +23,7 @@ import {
   type BotTrigger,
 } from '@manythreads/shared';
 import { z } from 'zod';
+import { hasGate, runGate, type ClassifierDoor, type GateVerdict } from './gate.ts';
 
 // Trigger routing (PLAN P5-10: "route `conversation`, `mention`, `channel_message` triggers"). One subscription on
 // `channel.message.posted` decides, for every active bot of the message's team, whether one of its BOT.md triggers fired;
@@ -106,6 +107,15 @@ const RunPayload = z.strictObject({
   prompt: z.string().min(1).max(40_000),
   /** Set when this run is a DLP-held model call a person has since approved (`registerApprovalResume`): its finding is let through as written. */
   approvalId: z.uuid().optional(),
+  /**
+   * The message as the person wrote it, which the gate (P5-11) checks; `prompt` also names the author and the channel, and a gate-list entry must
+   * not match those. Absent on a run queued before the gate existed: the gate then reads the prompt, which can only match more.
+   */
+  text: z.string().max(40_000).optional(),
+  /** Set when this run is a gate-held message a person has since approved: the gate does not look at it again. */
+  gateApprovalId: z.uuid().optional(),
+  /** Marks the payload stored with a gate hold, so that approving it resumes the run past the gate (not past the DLP check). */
+  gateHold: z.literal(true).optional(),
 });
 export type RunPayload = z.infer<typeof RunPayload>;
 
@@ -185,6 +195,7 @@ export function registerRouter(ctx: PluginContext): void {
         replyRootId: message.thread_root_id ?? message.id,
         runThreadId: message.thread_root_id,
         prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body }),
+        text: message.body.slice(0, 40_000),
       };
       await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
     }
@@ -196,6 +207,8 @@ interface LlmDoor {
   id: string;
   [member: string]: unknown;
   botKey(tx: PluginTx, botId: string): Promise<string | null>;
+  /** The completion the gate's classifier makes (P5-11). */
+  complete: ClassifierDoor['complete'];
   preflight(
     tx: PluginTx,
     request: {
@@ -287,6 +300,61 @@ async function holdForApproval(
 }
 
 /**
+ * What an approver may read of a message the gate held: the message through the `pre_egress` chain under the `standard` rule, so a secret in it is
+ * shown as `[redacted:api-key]`. With no guardrail loaded the text is not shown at all: a preview that cannot be made safe is left out.
+ */
+async function previewText(ctx: PluginContext, tx: PluginTx, workspaceId: string, text: string): Promise<string> {
+  const chain = await ctx.hooks.runPreEgress(tx, { destination: 'approval', workspaceId, text, preset: 'standard' });
+  return chain.hooks > 0 && chain.outcome !== 'block' ? chain.text : '[the message is not shown: it could not be checked for secrets]';
+}
+
+/**
+ * A message the gate stopped becomes a pending approval (source `dlp` — "held by the guard" — tool `llm.gate`; the closest of the four sources
+ * SPEC §7.3 names: the gate is the bot's own Guard section deciding that a model call waits for a person, as the DLP hold is). The approver sees
+ * the stage, the gate entry that matched (when one did) and the redacted message; the payload that resumes the run travels only in the row's
+ * `resume`. Approving puts the run back with the gate switched off for exactly that message. Without the approvals plugin the hold is a
+ * refusal: the message never reaches a model.
+ */
+async function holdForGate(
+  ctx: PluginContext,
+  tx: PluginTx,
+  held: { run: { runId: string }; payload: RunPayload; hold: Extract<GateVerdict, { kind: 'hold' }>; excerpt: string; approvers: readonly string[] },
+): Promise<string | null> {
+  const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+  if (!approvals) return null; // fail closed: nobody can release it; the caller stops the run either way
+  const resumable: Record<string, unknown> = { ...held.payload, gateHold: true };
+  delete resumable['approvalId'];
+  delete resumable['gateApprovalId'];
+  const why =
+    held.hold.stage === 'classifier_unavailable'
+      ? 'the gate could not check this message'
+      : held.hold.entry !== null
+        ? `matched “${clip(held.hold.entry, 60)}”`
+        : 'the local classifier flagged a gate topic';
+  try {
+    const filed = await approvals.request(tx, {
+      runId: held.run.runId,
+      source: 'dlp',
+      tool: 'llm.gate',
+      summary: clip(`Message held by the gate · ${why}`, 280),
+      argsPreview: {
+        stage: held.hold.stage,
+        ...(held.hold.entry !== null ? { entry: clip(held.hold.entry, 200) } : {}),
+        reason: clip(held.hold.detail, 300),
+        message: clip(held.excerpt, 1500),
+      },
+      resume: { kind: 'handoff', payload: resumable },
+      approvers: held.approvers,
+    });
+    return filed.approvalId;
+  } catch (err) {
+    // a private conversation where nobody else could decide it: not filed, so the message stays held and the run stops with the reason logged
+    if (err instanceof NoEligibleApproverError) return null;
+    throw err;
+  }
+}
+
+/**
  * Takes a held model call back once a person approves it: the `approvals.approval.decided` event (an outbox consumer, so a system transaction)
  * claims the stored payload — once; a replayed event gets nothing — and puts the run on its queue again with the approval's id, which makes
  * the next pre-call check let that one finding through as written.
@@ -299,7 +367,9 @@ export function registerApprovalResume(ctx: PluginContext): void {
     if (!approvals) return;
     const payload = await approvals.claim(tx, event.approvalId, { botId: event.botId, source: 'dlp' });
     if (!payload) return;
-    const parsed = RunPayload.safeParse({ ...payload, approvalId: event.approvalId });
+    // A gate hold resumes past the gate only; a DLP hold resumes past the DLP check only. The two are different questions a person answered.
+    const { gateHold, ...rest } = payload;
+    const parsed = RunPayload.safeParse(gateHold === true ? { ...rest, gateApprovalId: event.approvalId } : { ...rest, approvalId: event.approvalId });
     if (!parsed.success) return;
     await ctx.jobs.enqueue(tx, RUN_QUEUE, parsed.data, { dedupeKey: `runtime-hermes:approval:${event.approvalId}` });
   });
@@ -372,6 +442,53 @@ export function registerRunJob(ctx: PluginContext): void {
     let toolCalls = 0;
     let handle: BotRuntimeHandle | undefined;
     try {
+      // The gate (SPEC §7.3, P5-11): before anything is sent to a model, a bot with a `guard.gate` list checks the message against it — the list
+      // first, then the local classifier. A hit holds the message for a person and stops the run (`stopped`); the model is never called. A run
+      // a person already released (past the gate or past the DLP check, which comes after it) is not asked again. A runtime with no model has
+      // nothing to gate.
+      const gateEntries = parsed.frontmatter.guard?.gate;
+      if (provider.usesGateway && hasGate(gateEntries) && payload.approvalId === undefined && payload.gateApprovalId === undefined) {
+        const text = payload.text ?? payload.prompt;
+        const verdict = await runGate(tx, {
+          entries: gateEntries,
+          text,
+          run: { workspaceId: bot.workspace_id, botId: bot.id, teamId: bot.team_id, runId: run.runId },
+          llm: ctx.providers.get<LlmDoor>('llm'),
+        });
+        if (verdict.kind === 'refused') {
+          job.log.warn(`runtime-hermes: run ${run.runId} refused at the gate: ${verdict.detail}`);
+          await ctx.runs.close(run.runId, 'stopped');
+          return;
+        }
+        if (verdict.kind === 'hold') {
+          const approvalId = await holdForGate(ctx, tx, {
+            run,
+            payload,
+            hold: verdict,
+            excerpt: await previewText(ctx, tx, bot.workspace_id, text),
+            approvers,
+          });
+          await ctx.audit.emit(tx, {
+            type: 'runtime.gate.held',
+            workspaceId: bot.workspace_id,
+            teamId: bot.team_id,
+            botId: bot.id,
+            runId: run.runId,
+            stage: verdict.stage,
+            entry: verdict.entry,
+            approvalId,
+            at: ctx.runtime.now().toISOString(),
+          });
+          job.log.info(
+            approvalId !== null
+              ? `runtime-hermes: run ${run.runId} stopped at the gate (${verdict.stage}): waiting for an approval`
+              : `runtime-hermes: run ${run.runId} refused at the gate (${verdict.stage}): held, and nobody could be asked`,
+          );
+          await ctx.runs.close(run.runId, 'stopped');
+          return;
+        }
+      }
+
       // A runtime that talks to a model is handed the gateway, the bot's own virtual key, and the pre-call check (preset, DLP
       // hook, budgets, rate limits) that P5-07 puts in front of every call: a refusal stops the run before anything is sent,
       // and a redaction rewrites the prompt that is. A runtime with no model (`rules`) gets none of it and is never refused for

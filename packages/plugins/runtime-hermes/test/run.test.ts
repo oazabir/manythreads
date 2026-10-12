@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ListMessagesResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
+import { CLASSIFIER_INSTRUCTION } from '../src/gate.ts';
 
 // The run job end to end (PLAN P5-10): a person's mention goes through the outbox subscription, the router decides, the job
 // opens a run and starts **one process per run**, the process's reply is posted through `messages.post` as the bot, and the
@@ -485,5 +487,188 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
     expect(posted.body).toBe('Nadia in #dev:\n\n@rules-ask go');
     await until(async () => ((await approvalsOf(bot.botId))[0]?.outcome === 'ran' ? true : null), 15_000, 'the approval to record that it ran');
     expect(await messagesBy(rootId, bot.actorId)).toHaveLength(1); // once
+  });
+  // The gate (PLAN P5-11): the bot's `guard.gate` list, then a classifier on the `local` alias, before any model call. The classifier here is the
+  // fake LLM proxy answering what a test scripts, reached through the real gateway-llm plugin (pre-call check, ledger and all).
+  describe('the gate (PLAN P5-11)', () => {
+    let fake: FakeLlm;
+    let classifierSays: (system: string, user: string) => string | { status: number; body: unknown } = () => 'NO';
+    const classifierCalls = () => fake.state.calls.filter((call) => call.path === '/chat/completions');
+    const sent = (call: { body: unknown }): { model: string; messages: { role: string; content: string }[] } =>
+      call.body as { model: string; messages: { role: string; content: string }[] };
+    const gateBot = (name: string, gate: string[]) =>
+      botMd({
+        name,
+        model: 'smart',
+        capabilities: 'messages.post',
+        extra: ['guard:', `  gate: [${gate.map((g) => `'${g}'`).join(', ')}]`, 'approvals:', '  approvers: ["role:on-call"]'],
+      });
+    const gateEvents = (botId: string) =>
+      w.system(
+        async (tx) =>
+          (await tx.query<{ payload: Record<string, unknown> }>(`SELECT payload FROM app.events WHERE type = 'runtime.gate.held' AND payload->>'botId' = $1 ORDER BY id`, [botId])).rows.map(
+            (r) => r.payload,
+          ),
+      );
+    const bindLocal = (): Promise<void> =>
+      w.system(async (tx) => {
+        const provider = (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.llm_providers (workspace_id, name, kind, api_base) VALUES ($1, 'gate-local', 'ollama', 'http://localhost:11434')
+               ON CONFLICT (workspace_id, lower(name)) DO UPDATE SET enabled = true RETURNING id`,
+            [personas.omar.workspaceId],
+          )
+        ).rows[0]!;
+        await tx.query(
+          `INSERT INTO app.llm_aliases (workspace_id, alias, provider_id, model) VALUES ($1, 'local', $2, 'ollama/gate-test')
+             ON CONFLICT (workspace_id, alias) DO UPDATE SET provider_id = EXCLUDED.provider_id`,
+          [personas.omar.workspaceId, provider.id],
+        );
+      });
+    const unbindLocal = (): Promise<void> =>
+      w.system(async (tx) => {
+        await tx.query(`DELETE FROM app.llm_aliases WHERE workspace_id = $1 AND alias = 'local'`, [personas.omar.workspaceId]);
+      });
+
+    beforeAll(async () => {
+      fake = await startFakeLlm({
+        completion: ({ messages }) => classifierSays(messages.find((m) => m.role === 'system')?.content ?? '', messages.find((m) => m.role === 'user')?.content ?? ''),
+      });
+      process.env['MANYTHREADS_LITELLM_URL'] = fake.url;
+      await bindLocal();
+    });
+    afterAll(async () => {
+      process.env['MANYTHREADS_LITELLM_URL'] = 'http://litellm.invalid:4000';
+      await fake?.close();
+    });
+
+    it('a phrase on the list holds the message before any model: no process, no classifier, a pending approval with the matching entry and the redacted text', async () => {
+      const bot = await loadBot('gate-phrase', gateBot('GatePhrase', ['credential rotation', '/drop\\s+table/i']));
+      const before = spoolLines().length;
+      const calls = classifierCalls().length;
+      const secret = `sk-proj-${'Zx3dEf6hIj'.repeat(8)}`;
+      const rootId = await post(`@gate-phrase please start the Credential-Rotation, the old key is ${secret}`);
+
+      expect((await finished(bot.botId)).status).toBe('stopped');
+      expect(spoolLines()).toHaveLength(before); // Hermes never started: the model was not called
+      expect(classifierCalls()).toHaveLength(calls); // stage one answered; the classifier was not asked
+      expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+
+      const [approval] = await approvalsOf(bot.botId);
+      expect(approval).toMatchObject({ source: 'dlp', tool: 'llm.gate', status: 'pending', requester_id: nadia.actorId, thread_root_id: rootId });
+      expect(approval!.approver_scope).toEqual({ roles: ['role:on-call'], people: [], leads: false });
+      expect(approval!.args_preview).toMatchObject({ stage: 'exact', entry: 'credential rotation' });
+      expect(String(approval!.args_preview['message'])).toContain('[redacted:api-key]');
+      expect(JSON.stringify(approval!.args_preview)).not.toContain('sk-proj-');
+
+      // the audit event names the stage and the entry, and carries no message text
+      const [event] = await gateEvents(bot.botId);
+      expect(event).toMatchObject({ stage: 'exact', entry: 'credential rotation', approvalId: approval!.id, botId: bot.botId });
+      expect(JSON.stringify(event)).not.toContain('sk-proj-');
+
+      // the asker cannot release it; the on-call person can, and the message then goes to the model once, past the gate
+      expect((await decide(nadia, approval!.id, 'approve')).status).toBe(403);
+      expect((await decide(rafi, approval!.id, 'approve')).status).toBe(200);
+      const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the released run to answer');
+      expect(reply.body).toContain('Credential-Rotation');
+      expect(spoolLines()).toHaveLength(before + 1);
+      expect(classifierCalls()).toHaveLength(calls); // the released run is not asked again
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      expect(spoolLines()).toHaveLength(before + 1);
+      expect((await gateEvents(bot.botId)).length).toBe(1);
+    });
+
+    it('a pattern on the list holds it too (stage regex), and a denied hold sends nothing', async () => {
+      const bot = await loadBot('gate-regex', gateBot('GateRegex', ['/drop\\s+table\\b/i']));
+      const before = spoolLines().length;
+      const rootId = await post('@gate-regex please DROP   TABLE customers');
+      expect((await finished(bot.botId)).status).toBe('stopped');
+      const [approval] = await approvalsOf(bot.botId);
+      expect(approval!.args_preview).toMatchObject({ stage: 'regex', entry: '/drop\\s+table\\b/i' });
+      // a pattern-only list has no topic to give a classifier, so none was asked
+      expect((await decide(rafi, approval!.id, 'deny')).status).toBe(200);
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      expect(spoolLines()).toHaveLength(before);
+      expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+      expect((await approvalsOf(bot.botId))[0]).toMatchObject({ status: 'denied' });
+    });
+
+    it('the classifier sees only the message: one system instruction with the topics, the message as the user turn, nothing else; YES holds it', async () => {
+      const bot = await loadBot('gate-ai', gateBot('GateAi', ['credential rotation', 'licence change']));
+      const before = spoolLines().length;
+      const calls = classifierCalls().length;
+      classifierSays = () => 'YES.';
+      const body = '@gate-ai could we roll the keys on the deploy account this week?';
+      await post(body);
+
+      expect((await finished(bot.botId)).status).toBe('stopped');
+      expect(spoolLines()).toHaveLength(before);
+      const made = classifierCalls().slice(calls);
+      expect(made).toHaveLength(1);
+      const request = sent(made[0]!);
+      expect(request.model).toBe('local');
+      expect(request.messages.map((m) => m.role)).toEqual(['system', 'user']); // no history, no tools, nothing else
+      expect(request.messages[0]!.content).toBe(`${CLASSIFIER_INSTRUCTION}\n\nForbidden topics:\n- credential rotation\n- licence change`);
+      expect(request.messages[1]!.content).toBe(body); // the message as written: not the author, the channel or the prompt wrapper
+      const [approval] = await approvalsOf(bot.botId);
+      expect(approval!.args_preview).toMatchObject({ stage: 'classifier' });
+      expect(approval!.args_preview['entry']).toBeUndefined();
+      // the platform's own call is on the ledger, attributed to the bot
+      const ledger = await w.system(async (tx) => (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.llm_spend WHERE bot_id = $1 AND alias = 'local'`, [bot.botId])).rows[0]!.n);
+      expect(ledger).toBe(1);
+    });
+
+    it('a NO from the classifier lets the run go on to the model', async () => {
+      const bot = await loadBot('gate-pass', gateBot('GatePass', ['credential rotation']));
+      const before = spoolLines().length;
+      const calls = classifierCalls().length;
+      classifierSays = () => 'No';
+      const rootId = await post('@gate-pass what changed in the deploy?');
+      const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the run to answer');
+      expect(reply.body).toContain('what changed in the deploy?');
+      expect(classifierCalls().length).toBe(calls + 1);
+      expect(spoolLines()).toHaveLength(before + 1);
+      expect(await approvalsOf(bot.botId)).toEqual([]);
+      expect(await gateEvents(bot.botId)).toEqual([]);
+    });
+
+    it('fails closed: a classifier that errors, an answer that is not a plain YES or NO, and a `local` alias nobody bound all hold the message', async () => {
+      const bot = await loadBot('gate-closed', gateBot('GateClosed', ['credential rotation']));
+      const before = spoolLines().length;
+      const stages: unknown[] = [];
+
+      classifierSays = () => ({ status: 500, body: { error: { message: 'model is loading' } } });
+      await post('@gate-closed how is the weather?');
+      await until(async () => ((await approvalsOf(bot.botId)).length === 1 ? true : null), 30_000, 'the first hold');
+
+      classifierSays = () => 'I am not sure. It might be.';
+      await post('@gate-closed and tomorrow?');
+      await until(async () => ((await approvalsOf(bot.botId)).length === 2 ? true : null), 30_000, 'the second hold');
+
+      await unbindLocal();
+      try {
+        classifierSays = () => 'NO';
+        await post('@gate-closed and the day after?');
+        await until(async () => ((await approvalsOf(bot.botId)).length === 3 ? true : null), 30_000, 'the third hold');
+      } finally {
+        await bindLocal();
+      }
+
+      for (const approval of await approvalsOf(bot.botId)) {
+        expect(approval).toMatchObject({ source: 'dlp', tool: 'llm.gate', status: 'pending' });
+        stages.push(approval.args_preview['stage']);
+      }
+      expect(stages).toEqual(['classifier_unavailable', 'classifier_unavailable', 'classifier_unavailable']);
+      expect(spoolLines()).toHaveLength(before); // no model was called for any of them
+      expect((await gateEvents(bot.botId)).map((e) => e['stage'])).toEqual(['classifier_unavailable', 'classifier_unavailable', 'classifier_unavailable']);
+    });
+
+    it('a bot with no gate list is never asked about: no classifier call, the run goes straight on', async () => {
+      const bot = await loadBot('gate-none', botMd({ name: 'GateNone', model: 'smart', capabilities: 'messages.post' }));
+      const calls = classifierCalls().length;
+      const rootId = await post('@gate-none credential rotation, please');
+      await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the run to answer');
+      expect(classifierCalls().length).toBe(calls);
+    });
   });
 });

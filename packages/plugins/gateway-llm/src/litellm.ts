@@ -39,7 +39,7 @@ export interface LiteLlmResult {
 
 /** The transport a test substitutes; the default speaks JSON over `fetch`. */
 export interface LiteLlmTransport {
-  request(method: 'GET' | 'POST', path: string, body?: unknown): Promise<LiteLlmResult>;
+  request(method: 'GET' | 'POST', path: string, body?: unknown, options?: { timeoutMs?: number }): Promise<LiteLlmResult>;
 }
 
 export interface LlmGateway {
@@ -57,6 +57,22 @@ export interface LlmGateway {
   updateKey(input: { key: string; aliases: readonly string[]; metadata: Record<string, string> }): Promise<void>;
   /** Deletes a key. A key the proxy never had (404) is not an error: revoking twice is a no-op. */
   revokeKey(key: string): Promise<void>;
+  /**
+   * One chat completion on `model` (an alias), made by the platform itself with the master key rather than with a bot's virtual key: a call
+   * the platform makes about a bot's message (the gate's classifier) must not depend on which aliases the bot's own key allows. Throws
+   * `LiteLlmError` for any non-2xx answer or an answer with no text.
+   */
+  complete(input: LiteLlmCompletion): Promise<{ text: string; promptTokens: number; completionTokens: number; model: string | null }>;
+}
+
+export interface LiteLlmCompletion {
+  model: string;
+  system: string;
+  user: string;
+  maxTokens: number;
+  /** Attribution the proxy records with the call (workspace, bot, purpose). */
+  metadata: Record<string, string>;
+  timeoutMs?: number;
 }
 
 export interface LiteLlmClientOptions {
@@ -74,9 +90,9 @@ export const deploymentId = (modelName: string): string => `mt-${modelName}`;
 /** The default transport: plain `fetch` with a timeout and the master key. Any 2xx is success; the body is best-effort. */
 function fetchTransport(baseUrl: string, masterKey: string | null, timeoutMs: number): LiteLlmTransport {
   return {
-    async request(method, path, body) {
+    async request(method, path, body, options) {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? timeoutMs);
       try {
         const res = await fetch(`${baseUrl}${path}`, {
           method,
@@ -143,9 +159,9 @@ export function createLiteLlmClient(options: LiteLlmClientOptions): LlmGateway {
   const enabled = Boolean(options.baseUrl);
   const transport = options.transport ?? (options.baseUrl ? fetchTransport(options.baseUrl, options.masterKey, options.timeoutMs ?? 10_000) : undefined);
 
-  const send = async (method: 'GET' | 'POST', path: string, body?: unknown): Promise<LiteLlmResult> => {
+  const send = async (method: 'GET' | 'POST', path: string, body?: unknown, requestOptions?: { timeoutMs?: number }): Promise<LiteLlmResult> => {
     if (!transport) throw new LiteLlmError(path, { status: 0, body: 'no LiteLLM URL is configured' });
-    return transport.request(method, path, body);
+    return transport.request(method, path, body, requestOptions);
   };
   const post = (path: string, body: unknown): Promise<LiteLlmResult> => send('POST', path, body);
   const ok = (path: string, result: LiteLlmResult): LiteLlmResult => {
@@ -238,6 +254,39 @@ export function createLiteLlmClient(options: LiteLlmClientOptions): LlmGateway {
       const result = await post('/key/delete', { keys: [key] });
       if (result.status === 404) return;
       ok('/key/delete', result);
+    },
+
+    async complete(input) {
+      const path = '/chat/completions';
+      const result = ok(
+        path,
+        await send(
+          'POST',
+          path,
+          {
+            model: input.model,
+            messages: [
+              { role: 'system', content: input.system },
+              { role: 'user', content: input.user },
+            ],
+            max_tokens: input.maxTokens,
+            temperature: 0,
+            stream: false,
+            metadata: input.metadata,
+          },
+          input.timeoutMs === undefined ? undefined : { timeoutMs: input.timeoutMs },
+        ),
+      );
+      const body = (result.body ?? {}) as { choices?: Array<{ message?: { content?: unknown } }>; usage?: Record<string, unknown>; model?: unknown };
+      const text = body.choices?.[0]?.message?.content;
+      if (typeof text !== 'string') throw new LiteLlmError(path, { status: result.status, body: 'the completion has no text' });
+      const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
+      return {
+        text,
+        promptTokens: count(body.usage?.['prompt_tokens']),
+        completionTokens: count(body.usage?.['completion_tokens']),
+        model: typeof body.model === 'string' ? body.model : null,
+      };
     },
   };
 }

@@ -70,6 +70,12 @@ export interface FakeLlmOptions {
   beforeRespond?: (call: FakeLlmCall) => Promise<void> | void;
   /** Behave as a proxy whose config file names `router_settings.fallbacks`: `/config/update` for it answers 400. */
   fallbacksLocked?: boolean;
+  /**
+   * What a chat completion answers (default: a canned sentence). A string is the assistant's text; `{ status, body }` is a raw answer
+   * (a 500 to prove a caller's error path). A test makes the classifier of the gate (PLAN P5-11) say yes or no with this, and reads what it
+   * was sent from `state.calls`.
+   */
+  completion?: (request: { model: string; messages: Array<{ role: string; content: string }>; authorized: boolean }) => string | { status: number; body: unknown } | Promise<string | { status: number; body: unknown }>;
 }
 
 const json = (res: ServerResponse, status: number, body: unknown): void => {
@@ -226,12 +232,20 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
       }
 
       // Not the management API: a canned completion, so a smoke test can prove a call path end to end and read its usage.
-      if (path === '/chat/completions') {
+      if (path === '/chat/completions' || path === '/v1/chat/completions') {
         const model = str(asObject(body)['model']) || 'unknown';
+        let content = 'This is the fake proxy.';
+        if (options.completion) {
+          const rawMessages = asObject(body)['messages'];
+          const messages = (Array.isArray(rawMessages) ? rawMessages : []).map((m) => ({ role: str(asObject(m)['role']), content: str(asObject(m)['content']) }));
+          const answer = await options.completion({ model, messages, authorized });
+          if (typeof answer !== 'string') return json(res, answer.status, answer.body);
+          content = answer;
+        }
         return json(res, 200, {
           id: 'chatcmpl-fake',
           model,
-          choices: [{ index: 0, message: { role: 'assistant', content: 'This is the fake proxy.' }, finish_reason: 'stop' }],
+          choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
           usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19 },
         });
       }

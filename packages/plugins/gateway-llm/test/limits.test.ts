@@ -1,16 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { LlmWorkspaceSettings } from '@manythreads/shared';
-import { inspect } from '../src/dlp.ts';
+import type { EgressDecision } from '@manythreads/sdk';
 import { createSlidingWindow, decide, rateKey, windowStart, type LlmScopeSnapshot, type RateHit } from '../src/limits.ts';
 
-// P5-07, the decision half: the preset's egress rule, the hook's answer, and the budgets and rate limits of every scope,
-// all as one pure function. No database and no proxy here.
+// P5-07, the decision half: the guardrails' answer and the budgets and rate limits of every scope, all as one pure function. No database
+// and no proxy here. (What the guardrails decide is tested where it lives: guardrails-dlp and guardrails-egress; `preflight.test.ts` runs the
+// whole chain against the real plugins.)
 
-const settings = (over: Partial<LlmWorkspaceSettings> = {}): LlmWorkspaceSettings => ({
-  preset: 'standard',
-  egressAllowlist: [],
-  caching: true,
-  updatedAt: new Date(0).toISOString(),
+/** What the `pre_egress` chain answered. */
+const guard = (over: Partial<EgressDecision> = {}): EgressDecision => ({
+  outcome: 'allow',
+  text: 'a plain question',
+  rules: [],
+  reason: null,
+  message: null,
+  hooks: 2,
   ...over,
 });
 
@@ -34,9 +37,8 @@ const call = (over: Partial<Parameters<typeof decide>[0]> = {}) =>
   decide({
     alias: 'smart',
     sessionId: null,
-    settings: settings(),
-    egress: { host: 'api.anthropic.com', local: false },
-    dlp: inspect('a plain question', 'standard'),
+    preset: 'standard',
+    guard: guard(),
     limits: [],
     rate: allowAll,
     ...over,
@@ -60,8 +62,7 @@ describe('decide', () => {
   });
 
   it('redacts under standard and lets the call continue', () => {
-    const text = 'use sk-abcdefghijklmnopqrstuvwx please';
-    const decision = call({ dlp: inspect(text, 'standard') });
+    const decision = call({ guard: guard({ outcome: 'redact', text: 'use [redacted:api-key] please', rules: ['api-key'] }) });
     expect(decision.allowed).toBe(true);
     expect(decision.outcome).toBe('redact');
     expect(decision.text).toBe('use [redacted:api-key] please');
@@ -69,7 +70,10 @@ describe('decide', () => {
   });
 
   it('refuses a call the hook blocked', () => {
-    const decision = call({ settings: settings({ preset: 'customer-facing' }), dlp: inspect('card 4111111111111111', 'customer-facing') });
+    const decision = call({
+      preset: 'customer-facing',
+      guard: guard({ outcome: 'block', reason: 'dlp', rules: ['card-number'], message: 'The customer-facing preset refuses a call that carries card-number.' }),
+    });
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toBe('dlp');
     expect(decision.outcome).toBe('block');
@@ -124,46 +128,22 @@ describe('decide', () => {
     expect(rateKey({ limit, spentUsd: 0 }, null)).toBe('session:bot-1:none');
   });
 
-  it('air-gapped runs the local alias only', () => {
-    expect(call({ settings: settings({ preset: 'air-gapped' }), alias: 'local' }).allowed).toBe(true);
-    const refused = call({ settings: settings({ preset: 'air-gapped' }), alias: 'smart' });
-    expect(refused.allowed).toBe(false);
-    expect(refused.reason).toBe('preset');
-    expect(refused.message).toContain('local alias');
+  it('a refusal from the guardrails is a preset refusal unless it names the content check, and a hold is not an error', () => {
+    const egress = call({ guard: guard({ outcome: 'block', reason: 'preset', message: 'The air-gapped preset allows only the local alias.' }) });
+    expect(egress).toMatchObject({ allowed: false, reason: 'preset', outcome: 'block', message: 'The air-gapped preset allows only the local alias.' });
+    // a guard that threw is the chain failing closed: reported as a preset refusal, with its own message
+    const failed = call({ guard: guard({ outcome: 'block', reason: 'error', message: 'The guardrails-dlp guardrail failed, so the llm call was refused.' }) });
+    expect(failed).toMatchObject({ allowed: false, reason: 'preset' });
+    const held = call({ guard: guard({ outcome: 'require_approval', reason: 'dlp', text: 'key [redacted:api-key]', rules: ['api-key'], message: 'A person has to approve this call first.' }) });
+    expect(held).toMatchObject({ allowed: false, reason: 'dlp', outcome: 'require_approval', text: 'key [redacted:api-key]' });
   });
 
-  it('judges the whole fallback chain: a local first link does not excuse a hosted fallback', () => {
-    const air = settings({ preset: 'air-gapped' });
-    const local = { host: 'localhost', local: true };
-    expect(call({ settings: air, alias: 'local', egress: local, fallbacks: [] }).allowed).toBe(true);
-    const viaFallback = call({ settings: air, alias: 'local', egress: local, fallbacks: [{ alias: 'smart', egress: { host: 'api.openai.com', local: false } }] });
-    expect(viaFallback.allowed).toBe(false);
-    expect(viaFallback.reason).toBe('preset');
-    expect(viaFallback.message).toContain('falls back to smart');
-
-    const strict = settings({ preset: 'strict-egress', egressAllowlist: ['api.anthropic.com'] });
-    const hosted = { host: 'api.anthropic.com', local: false };
-    expect(call({ settings: strict, egress: hosted, fallbacks: [{ alias: 'fast', egress: hosted }] }).allowed).toBe(true);
-    const leak = call({ settings: strict, egress: hosted, fallbacks: [{ alias: 'fast', egress: { host: 'api.openai.com', local: false } }] });
-    expect(leak.allowed).toBe(false);
-    expect(leak.message).toContain('api.openai.com');
-    // a fallback whose host cannot be told is refused like a first link would be
-    expect(call({ settings: strict, egress: hosted, fallbacks: [{ alias: 'code', egress: { host: null, local: false } }] }).message).toContain('code (a fallback of smart)');
-  });
-
-  it('strict-egress allows an allowlisted host, a local host, and nothing else', () => {
-    const strict = settings({ preset: 'strict-egress', egressAllowlist: ['api.anthropic.com'] });
-    expect(call({ settings: strict }).allowed).toBe(true);
-    // A local endpoint is not egress, so no allowlist entry is needed for it.
-    expect(call({ settings: strict, egress: { host: 'localhost', local: true }, alias: 'local' }).allowed).toBe(true);
-    const elsewhere = call({ settings: strict, egress: { host: 'api.openai.com', local: false } });
-    expect(elsewhere.allowed).toBe(false);
-    expect(elsewhere.reason).toBe('preset');
-    expect(elsewhere.message).toContain('api.openai.com');
-    // An alias nobody bound has no host to judge: strict egress refuses rather than guesses.
-    const unknown = call({ settings: strict, egress: null });
-    expect(unknown.allowed).toBe(false);
-    expect(unknown.message).toContain('cannot tell');
+  it('a refusal by the guardrails comes before any budget: a spent budget is not reported for a call that was never going to leave', () => {
+    const decision = call({
+      guard: guard({ outcome: 'block', reason: 'dlp', message: 'no' }),
+      limits: [snapshot({ limitUsd: 1 }, 5)],
+    });
+    expect(decision.reason).toBe('dlp');
   });
 });
 
