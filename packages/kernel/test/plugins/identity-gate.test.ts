@@ -18,6 +18,14 @@ describe('ctx.identity', () => {
     expect(() => createPluginContext(manifest, base).identity).toThrow(/no identity services/);
   });
 
+  it('ctx.secrets is available to a provider.llm plugin too, and closed to everyone else', () => {
+    const secrets = { put: () => Promise.resolve('id'), get: () => Promise.resolve('s'), delete: () => Promise.resolve(true) };
+    const llm = definePlugin({ manifest: { name: 'gateway', version: '0.1.0', kind: 'server', extends: ['provider.llm'] }, register: () => undefined });
+    expect(createPluginContext(llm.manifest, { ...base, secrets }).secrets).toBe(secrets);
+    const plain = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
+    expect(() => createPluginContext(plain.manifest, { ...base, secrets }).secrets).toThrow(/ctx\.secrets/);
+  });
+
   it('mail and runtime are available to every plugin', () => {
     const { manifest } = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
     const ctx = createPluginContext(manifest, base);

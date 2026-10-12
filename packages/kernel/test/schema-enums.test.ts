@@ -14,6 +14,11 @@ import {
   AuthProviderKind,
   EntityType,
   EmailVerificationPurpose,
+  LlmAliasName,
+  LlmBudgetWindow,
+  LlmGuardPreset,
+  LlmLimitScope,
+  LlmProviderKind,
   InvitationRole,
   JobState,
   PersonStatus,
@@ -28,6 +33,7 @@ import {
   dropTestDatabase,
   botsMigrationSource,
   channelsMigrationSource,
+  gatewayLlmMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
   type TestDatabase,
@@ -70,6 +76,12 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'bot_runs.trigger_type': BotRunTrigger,
   'bot_runs.status': BotRunStatus,
   'run_source_log.scope': RunSourceScope,
+  'llm_providers.kind': LlmProviderKind,
+  'llm_aliases.alias': LlmAliasName,
+  'llm_limits.scope': LlmLimitScope,
+  'llm_limits.budget_window': LlmBudgetWindow,
+  'llm_settings.preset': LlmGuardPreset,
+  'llm_spend.alias': LlmAliasName,
 };
 
 /**
@@ -87,7 +99,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, gatewayLlmMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

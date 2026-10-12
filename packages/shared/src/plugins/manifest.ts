@@ -26,6 +26,11 @@ export const EXTENSION_POINTS = [
   // Not in SPEC-FINAL section 3: a plugin that runs background work declares it, like a sign-in plugin declares provider.identity,
   // because job handlers run as the system actor (P3-00; docs/plugins/README.md "Background jobs").
   'job.register',
+  // Also not in section 3: the MCP gateway's door (P5-09). A plugin that declares it may open a bot run, enter one
+  // transaction as the run's bot (or as the person who asked) and call the capability handler another plugin
+  // registered — the only way a tool call carries `app.run_id`, which `run_source_log` insists on. Trusted-code
+  // territory like `provider.identity`; see docs/plugins/security.md.
+  'tool.invoke',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);

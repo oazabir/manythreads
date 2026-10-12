@@ -14,14 +14,22 @@ export interface GrantSource {
   find(actorId: ActorId, capability: string): Promise<GrantLookup | undefined>;
 }
 
-/** Reads `app.capability_grants` as the system actor. */
+/**
+ * Reads `app.capability_grants` as the system actor. A grant may name a whole namespace (`messages.*`, which BOT.md
+ * allows and the loader compiles as written): the exact grant wins, the namespace one answers for every verb under it.
+ * A destructive verb never gets this far — the broker refuses it before the allowlist is consulted — so `files.*` grants
+ * `files.write` without ever granting `files.delete`.
+ */
 export function createDbGrantSource(options: { pool?: import('pg').Pool } = {}): GrantSource {
   return {
     find: (actorId, capability) =>
       withSystem(
         async (tx) => {
           const res = await tx.query<CapabilityGrantRow & Record<string, unknown>>(
-            'SELECT * FROM app.capability_grants WHERE actor_id = $1 AND capability = $2',
+            `SELECT * FROM app.capability_grants
+              WHERE actor_id = $1 AND (capability = $2 OR capability = split_part($2, '.', 1) || '.*')
+              ORDER BY (capability = $2) DESC
+              LIMIT 1`,
             [actorId, capability],
           );
           const row = res.rows[0];

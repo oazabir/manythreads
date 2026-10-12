@@ -149,12 +149,22 @@ The plugin registers the counters `channel` (top-level messages newer than a pos
 (title: first 80 characters of its plain text, subtitle `#channel`, href `/t/<team>/c/<name>?message=<id>`) and `thread` (`#channel · N replies`, `?panel=thread:<root>`); both run as the
 caller, so a private message resolves for nobody else.
 
+## `messages.post` (P5-10)
+
+One capability, so a bot can post: `messages.post` takes `{ channelId, body, threadRootId? }` and answers the new message's ids.
+It is not a second write path — the route and the capability both call `postChannelMessage` in `service.ts`, so a bot's reply gets
+permission, thread rules, attachments, the event, the live push, the unread counters and mention resolution exactly as a person's
+message does. The author is the transaction's actor (the run's bot) and the permission is `app.channel_can(channel, 'post')`: a bot
+is a member of its team (the loader writes that row), so it may post in its team's public channels and nowhere else — never a
+private channel, never a DM. `messages.search` stays the search plugin's; this plugin owns the write side only.
+
 ## Manifest
 
 | Field | Value |
 |---|---|
 | name / version / kind | `channels` / `0.1.0` / `server` |
 | extends | `event.emit`, `event.subscribe` |
+| capabilities | `messages.post` (not destructive) |
 | events | emits the ten types above, consumes `team.template.applied` |
 | migrations | `migrations` |
 

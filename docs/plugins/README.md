@@ -89,6 +89,10 @@ when the host has no broker. Declare the capability in your manifest (`files.wri
 `ctx.providers.get('storage')` returns what some plugin registered with `ctx.providers.register('storage', impl)` (the first, in load order), or `undefined`. Look it up when a request arrives,
 not in `register`: the provider's plugin may load after yours. It needs no `extends` entry (using a provider is not providing one). The files plugin uses it for attachment bytes; `ctx.providers.get<RepoProvider>('repo')` is the team repo's one writer ([repo-git.md](./repo-git.md)); a plugin that offers a repo write under its own capability passes `{ capability: 'pages.write' }` (see [pages.md](./pages.md)).
 
+When more than one plugin registers the same kind, pass an **id** to pick the one you mean: `ctx.providers.get('bot_runtime', 'hermes')` is the Hermes runtime and `'rules'` the
+no-model one ([runtime-hermes.md](./runtime-hermes.md), [runtime-rules.md](./runtime-rules.md)). With an id there is no fallback — no match is `undefined`, never the first entry, so a bot cannot
+run on the wrong runtime because of load order.
+
 ### Cohesion services: read state, entity links, live push
 
 Three kernel services make plugins cohere (spec §3). They are always on `ctx`; details in [../kernel/read-state.md](../kernel/read-state.md) and

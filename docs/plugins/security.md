@@ -48,6 +48,36 @@ A route returns `setSession` (the `issue` result) or `clearSession`; the server 
 only its sha256 is stored (`app.session_tokens`, with the UNLOGGED `app.session_cache` in front for the hot lookup). Never log,
 return in a body, or store a session token or a CSRF token.
 
+## Model providers: `provider.llm`, and `ctx.secrets`
+
+`ctx.secrets` is the same envelope-encrypted store sign-in uses, and it has two doors because two trust domains need it: a
+plugin that extends `provider.identity` (sign-in client secrets) and one that extends `provider.llm` (model provider API keys,
+PLAN P5-06). Everything else throws on `ctx.secrets`. `put` runs in the caller's transaction (a workspace admin's or the
+system actor's; the database refuses anyone else) and `get` is system-only, so a plugin that stores a key hands it back
+through `provider.llm` at call time, never through a route. A route never returns a secret; it answers only whether one is
+stored.
+
+## The MCP gateway's door: `tool.invoke`
+
+A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) may, in the platform's name:
+
+- **open a run** — write a `bot_runs` row and mint a credential for it as the system actor, and close it again. The bot
+  and its team are read from the database, and an asker must be a person actor of the same workspace who is on the run's
+  team, so a caller cannot start a run for another team's bot or name an asker who is not there;
+- **enter one transaction as the run's bot** (`asBot`) or **as the person who asked** (`asReader`), with `app.run_id` set.
+  These are real role-scoped transactions on the app pool: row level security, the recorded actor and `app.run_id()` all
+  see a bot (or a person) they can be held to, and a write made this way is attributed exactly like any other;
+- **ask the broker about the run's bot** (`authorize`, and the non-auditing `may` for listings) — so a grant is checked
+  against the bot the run belongs to, not against whoever the transaction happens to be;
+- **call a capability handler another plugin registered** (`invoke`) in that transaction, and **list** which capabilities
+  have implementations at all.
+
+Why it is one door and not four: a tool call has to be `bot capabilities ∩ asker visibility`, and that sentence only
+holds if the capability check and the row visibility can come from different actors inside one call. It is trusted-code
+territory, like `provider.identity` and `job.register`: a plugin holding it can act as any run's bot, so a reviewer reads
+its routes the way they read a migration. The gateway itself never takes the bot, the team or the asker from the request —
+it resolves them from the run token the database handed out.
+
 ## Background jobs: `job.register`
 
 A plugin that extends `job.register` gets queues named `<plugin>.<name>` and a worker in the server. Its handler receives one transaction **as the

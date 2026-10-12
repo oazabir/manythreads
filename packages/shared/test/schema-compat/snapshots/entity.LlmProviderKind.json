@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "openai",
+    "anthropic",
+    "azure",
+    "bedrock",
+    "google",
+    "ollama",
+    "openai_compatible"
+  ]
+}

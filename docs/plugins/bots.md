@@ -17,18 +17,27 @@ Every commit that touches `bots/<slug>/BOT.md` is read in the outbox consumer's 
 
 * **valid frontmatter** → one `bots` row: `INSERT ... ON CONFLICT (team_id, slug) DO UPDATE`, `definition_sha` the
   sha256 of the bytes, status `active` — except a row a lead turned **`disabled` by hand stays disabled** when its
-  file changes (`CASE WHEN b.status = 'disabled'`). The bot's actor row is found-or-made
-  (`ctx.db.getOneOrCreate`, unique on `workspace_id, kind, ref_id`), `handover.mayTag` is compiled into the bot's
-  `tasks.handoff` grant (upserted while the key is in the file, **deleted when it leaves** — the loader owns this
-  grant), then `bots.bot.loaded` is emitted with `definitionSha` and `mayTag`, never the content.
+  file changes (`CASE WHEN b.status = 'disabled'`). The row also carries the definition's own projections: `placement`,
+  `triggers` (the list the router matches on, migration 0005) and `native` (the compiled `capabilities.native`, kept so the
+  allowlist can be resynced without re-reading the file it replaced). The bot's actor row is found-or-made
+  (`ctx.db.getOneOrCreate`, unique on `workspace_id, kind, ref_id`); the loader then (P5-10)
+  * makes the actor a **member of the bot's team** (`team_members`, `role: member` — the table the kernel comments as "the
+    roster of people *and* bots"), which is what gives a bot its team's public channels and nothing private;
+  * compiles `capabilities.native` into `capability_grants` **as written** — `messages.*` stays a namespace grant, which the
+    broker's lookup answers for every verb under it, while a destructive verb is still refused before the allowlist is
+    consulted — and `approvals.needsApproval` sets `needs_approval` on the grants it names. Entries the previous load
+    compiled and this one dropped are deleted;
+  * compiles `handover.mayTag` into the bot's `tasks.handoff` grant (upserted while the key is in the file, **deleted when it
+    leaves** — the loader owns this grant, and it wins over a `tasks.handoff` in `native`);
+  then `bots.bot.loaded` is emitted with `definitionSha` and `mayTag`, never the content.
 * **invalid frontmatter** (unknown key, missing key, bad YAML, a folder that is not a lowercase slug) → the previous
   row, if any, stays live with `status = 'invalid'` (last-good definition keeps running; the loader never overwrites
   `definition_sha` on a failure) and `bots.bot.invalid` carries the reason: `fieldPath` is what the schema named
   (`capabilities.native[3]`, `capabilties` for an unknown key) plus `message`. There is **no error column on the
   row** — the event is the alert, and P5-05's red banner reads these team-readable events. No row ever existed →
   event only (the `kind`/`runtime` columns are NOT NULL, a broken definition never lands half a row).
-* **file deleted** → the row is deleted (pairing tokens and runs cascade), its capability grants deleted with it, the
-  actor row kept (messages reference it), then `bots.bot.removed`.
+* **file deleted** → the row is deleted (pairing tokens and runs cascade), its capability grants and the team membership
+  row are deleted with it, the actor row kept (messages reference it), then `bots.bot.removed`.
 
 Parsing lives in `src/bot-md.ts`: a line-scanned `---` fence (a BOM is stripped, nothing else is lenient), `yaml`,
 then the strict `BotFrontmatter` of `packages/shared/src/bot-md/frontmatter.ts`. A failure anywhere in the handler
@@ -62,7 +71,7 @@ in `packages/shared/src/events/registry.ts`.
 
 | Table | What it holds | Key columns | Indexes |
 |---|---|---|---|
-| `bots` | one loaded bot, rebuilt from its `BOT.md` | `team_id`, `slug`, `kind` (`agent` \| `automation`), `runtime` (`hermes` \| `rules`), `visibility` (`team` \| `workspace`), `definition_sha` (sha256 of the file it came from), `status` (`active` \| `disabled` \| `invalid`), `placement` (jsonb) | UNIQUE `(team_id, slug)`; `(team_id)` |
+| `bots` | one loaded bot, rebuilt from its `BOT.md` | `team_id`, `slug`, `kind` (`agent` \| `automation`), `runtime` (`hermes` \| `rules`), `visibility` (`team` \| `workspace`), `definition_sha` (sha256 of the file it came from), `status` (`active` \| `disabled` \| `invalid`), `placement` (jsonb), `triggers` and `native` (jsonb; the loader's own projections, migration 0005) | UNIQUE `(team_id, slug)`; `(team_id)` |
 | `bot_pairing_tokens` | a pairing credential: **sha256 only**, never the token | `bot_id`, `token_hash`, `revoked_at?` | partial UNIQUE `(token_hash) WHERE revoked_at IS NULL`; `(bot_id)` |
 | `bot_runs` | one run | `bot_id`, `team_id`, `trigger_type` (the BOT.md trigger that fired it), `asker_id?`, `thread_id?`, `status` (`running` \| `done` \| `failed` \| `stopped`), `started_at`, `ended_at?` | `(bot_id, id DESC)`; partial `(bot_id) WHERE ended_at IS NULL`; `(team_id, id DESC)`; `(thread_id)` |
 | `run_source_log` | what a run read: the evidence behind "Sources reached" | `run_id`, `seq`, `source_type` (open set: `message`, `page`, `file`, `memory`, ...), `source_ref`, `scope` (`team` \| `channel` \| `person`) | PK `(run_id, seq)` |
@@ -110,10 +119,11 @@ fence, unparseable YAML, a tolerated BOM.
 
 `test/loader.test.ts` (needs the DB): the seeded `bots/coder/BOT.md` lands with its actor and the right
 `definition_sha` (hash of the file, not of the git blob); a valid file appears in the roster **within 5 s** with its
-actor and compiled `mayTag` grant; an unknown key alerts with `fieldPath` and makes no row; a bad capability fails at
+actor, its compiled `mayTag` grant, its `triggers`/`native` projections, a `capability_grants` row per native entry and its
+**team membership** (P5-10); an unknown key alerts with `fieldPath` and makes no row; a bad capability fails at
 `capabilities.native[3]` while **the previous definition stays live** (`status = 'invalid'`, old sha, grant intact),
-then fixing the file re-activates it with the new sha and allowlist; deleting the file drops row + grants + a live
-pairing token (cascade) and keeps the actor row; a non-slug folder alerts instead of skipping.
+then fixing the file re-activates it with the new sha and allowlist; deleting the file drops row + grants + the membership
+row + a live pairing token (cascade) and keeps the actor row; a non-slug folder alerts instead of skipping.
 
 `test/pairing.test.ts` (needs the DB): mint by a lead returns the token once and stores only its sha256, and it
 resolves to the bot's ids + actor; forged/unknown tokens resolve to null; member, outsider and guest are 403, nobody

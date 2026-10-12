@@ -7,6 +7,7 @@ import type {
   MailService,
   PluginDefinition,
   PluginEvent,
+  PluginRuns,
   PluginRuntime,
   PluginTemplates,
   PluginTx,
@@ -24,6 +25,7 @@ import { withSystem } from '../db/with-actor.ts';
 import { createSecretService } from '../kms/service.ts';
 import { createTemplateService } from '../templates/service.ts';
 import { createDbKv } from '../storage/kv.ts';
+import { createRunService } from '../runs/index.ts';
 import { createMemoryKv, createPluginContext, type ContextDeps } from './context.ts';
 import { PluginError } from './errors.ts';
 import { ExtensionRegistries } from './registries.ts';
@@ -81,6 +83,8 @@ export interface LoadPluginsOptions {
   secrets?: SecretService;
   /** The capability broker behind `ctx.capabilities.authorize`. The server builds it over the same `capabilities` registry. */
   broker?: ContextDeps['broker'];
+  /** `ctx.runs` (default: the kernel's run service over `database`'s pools; absent without them). */
+  runs?: PluginRuns;
 }
 
 export interface PluginHost {
@@ -286,6 +290,20 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
   const mailer = options.mailer ?? createMemoryMailer();
   const mail: MailService = { send: (message) => mailer.send(renderMail(message)) };
   const secrets = createSecretService();
+  // The run/tool door of the MCP gateway (PLAN P5-09). It needs the app pool (bot and asker transactions), the
+  // system pool (mint, resolve, close) and the broker; a host without those leaves `ctx.runs` unavailable rather
+  // than half-working, and the gateway then fails loudly on first use.
+  const runs: PluginRuns | undefined =
+    options.runs ??
+    (database?.pool && database.systemPool && options.broker
+      ? createRunService({
+          pool: database.pool,
+          systemPool: database.systemPool,
+          registry: capabilities,
+          broker: options.broker as Parameters<typeof createRunService>[0]['broker'],
+          handlers: registries.capabilityHandlers,
+        })
+      : undefined);
   const templates = options.templates ?? createTemplateService();
   const runtime: PluginRuntime = options.runtime ?? { publicUrl: 'http://localhost:3000', now: () => new Date() };
   for (const p of ordered) {
@@ -297,6 +315,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
       identity,
       secrets: options.secrets ?? secrets,
       ...(options.broker ? { broker: options.broker } : {}),
+      ...(runs ? { runs } : {}),
       templates,
       ...(options.emit ? { emit: options.emit } : {}),
     });

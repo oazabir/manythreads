@@ -17,6 +17,8 @@
     "db:down": "docker compose -f deploy/compose/docker-compose.dev.yml down",
     "s3:up": "docker compose -f deploy/compose/docker-compose.dev.yml --profile s3 up -d --wait minio",
     "s3:down": "docker compose -f deploy/compose/docker-compose.dev.yml --profile s3 stop minio",
+    "llm:up": "docker compose -f deploy/compose/docker-compose.dev.yml --profile llm up -d --wait litellm",
+    "llm:down": "docker compose -f deploy/compose/docker-compose.dev.yml --profile llm stop litellm",
     "e2e": "pnpm -C e2e exec playwright test -c playwright.config.ts",
     "vt": "tsx tools/plates/src/cli.ts",
     "vt:update": "tsx tools/plates/src/cli.ts --update"

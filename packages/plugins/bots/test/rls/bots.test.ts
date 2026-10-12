@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { createAppPool, createSystemPool, withActor, withSystem, type Tx } from '@manythreads/kernel';
-import { Bot, BotRun, RunId, RunSourceLogEntry } from '@manythreads/shared';
+import { ActorId, Bot, BotRun, RunId, RunSourceLogEntry } from '@manythreads/shared';
 import {
   botsMigrationSource,
   channelsMigrationSource,
@@ -261,6 +262,22 @@ describe('bots, bot_pairing_tokens, bot_runs and run_source_log (P5-03)', () => 
       ),
     ).toBe('42501');
     expect(await code(as(nadia, (tx) => tx.query("UPDATE app.run_source_log SET source_ref = 'x'")))).toBe('42501');
+
+    // The P5-09 door: an actor that cannot see the run's lines under the SELECT policy (a bot is not on the run's
+    // team) still appends to its own run's log — the position is read as the system role inside the definer function
+    // and the line lands in the caller's transaction.
+    const botActor = { kind: 'bot' as const, id: ActorId.parse(randomUUID()), workspaceId: omar.workspaceId, runId: engRunId as RunId };
+    expect(
+      await withActor(
+        botActor,
+        async (tx) =>
+          (await tx.query<{ seq: number }>('SELECT app.run_source_log_append($1, $2, $3) AS seq', ['file', 'files/spec.pdf', 'team']))
+            .rows[0]?.seq,
+        { pool: appPool },
+      ),
+    ).toBe(3);
+    // and with no run on the transaction the door refuses rather than attaching the line to some other run
+    expect(await code(as(nadia, (tx) => tx.query("SELECT app.run_source_log_append('message', 'm-9', 'channel')")))).toBe('P0001');
   });
 
   it('a row of each table maps into its shared entity', async () => {

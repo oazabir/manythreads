@@ -121,6 +121,28 @@ describe('the BOT.md loader', () => {
     );
     expect(grant?.constraints.mayTag).toEqual(['reviewer']);
 
+    // P5-10: the definition's own projections are on the row — the triggers the router matches, and the allowlist it compiled
+    // (`messages.post` is granted as written, needsApproval false because the file names no approval for it).
+    expect(row['triggers']).toEqual([{ type: 'mention' }]);
+    expect(row['native']).toEqual(['messages.post']);
+    const native = await w.system(async (tx) =>
+      (await tx.query<{ capability: string; needs_approval: boolean }>(
+        `SELECT capability, needs_approval FROM app.capability_grants WHERE actor_id = $1 ORDER BY capability`,
+        [actor!.id],
+      )).rows,
+    );
+    // exactly two grants: the definition's own allowlist, and `tasks.handoff` from handover.mayTag
+    expect(native).toEqual([
+      { capability: 'messages.post', needs_approval: false },
+      { capability: 'tasks.handoff', needs_approval: false },
+    ]);
+
+    // P5-10: the bot is a member of its team, which is what gives it the team's public channels (and nothing private).
+    const membership = await w.system(async (tx) =>
+      (await tx.query<{ team_id: string; role: string }>('SELECT team_id, role FROM app.team_members WHERE actor_id = $1', [actor!.id])).rows[0],
+    );
+    expect(membership).toEqual({ team_id: ENG, role: 'member' });
+
     const loaded = (await eventsOf<BotsBotLoadedEvent>('bots.bot.loaded')).find((event) => event.slug === 'p504-tester');
     expect(loaded).toMatchObject({ botId: row['id'], path, definitionSha: row['definition_sha'], mayTag: ['reviewer'] });
   });
@@ -182,14 +204,16 @@ describe('the BOT.md loader', () => {
 
     await until(async () => (await botRow('p504-tester')) === undefined, 10_000);
     const counts = await w.system(async (tx) =>
-      (await tx.query<{ grants: number; tokens: number }>(
+      (await tx.query<{ grants: number; tokens: number; members: number }>(
         `SELECT
            (SELECT count(*)::int FROM app.capability_grants WHERE actor_id = (SELECT id FROM app.actors WHERE ref_id = $1)) AS grants,
-           (SELECT count(*)::int FROM app.bot_pairing_tokens WHERE bot_id = $1) AS tokens`,
+           (SELECT count(*)::int FROM app.bot_pairing_tokens WHERE bot_id = $1) AS tokens,
+           -- the loader's own team membership row (P5-10) goes with the bot
+           (SELECT count(*)::int FROM app.team_members WHERE actor_id = (SELECT id FROM app.actors WHERE ref_id = $1)) AS members`,
         [botId],
       )).rows[0],
     );
-    expect(counts).toMatchObject({ grants: 0, tokens: 0 });
+    expect(counts).toMatchObject({ grants: 0, tokens: 0, members: 0 });
 
     const [removed] = await eventsOf<BotsBotRemovedEvent>('bots.bot.removed');
     expect(removed).toMatchObject({ botId, slug: 'p504-tester' });

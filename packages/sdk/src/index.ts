@@ -4,6 +4,7 @@ import type { PluginContext, PluginDefinition, PluginTx } from './types.ts';
 export * from './types.ts';
 export * from './cohesion.ts';
 export * from './repo.ts';
+export * from './runtime.ts';
 
 /**
  * Declare a plugin. The manifest is validated immediately (a bad field throws a ZodError naming it), so a

@@ -10,6 +10,9 @@ services:
       - "55432:5432"
     volumes:
       - manythreads_pgdata:/var/lib/postgresql
+      # Creates the `litellm` database the LLM gateway's proxy stores its virtual keys in (PLAN P5-06, profile `llm`).
+      # Runs only on the first init of the volume; an existing volume needs the database created by hand (see the file).
+      - ../postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U manythreads_owner -d manythreads"]
       interval: 3s
@@ -59,6 +62,28 @@ services:
       timeout: 3s
       retries: 20
 
+  # LLM gateway (profile `llm`, PLAN P5-06): the LiteLLM proxy the `gateway-llm` plugin configures from the database.
+  # `pnpm llm:up` (or `docker compose -f deploy/compose/docker-compose.dev.yml --profile llm up -d litellm`) starts it; the
+  # models and fallback chains are pushed by the plugin, so litellm.yaml only starts the proxy. Keys live in the `litellm`
+  # database of the dev Postgres (deploy/postgres/init/10-litellm-db.sql). Point the server at it with
+  # MANYTHREADS_LITELLM_URL=http://localhost:4000 and MANYTHREADS_LITELLM_MASTER_KEY=<LITELLM_MASTER_KEY> (dev.env.example).
+  litellm:
+    profiles: ["llm"]
+    image: ghcr.io/berriai/litellm:main-stable
+    command: ["--config", "/config/litellm.yaml", "--port", "4000", "--num_workers", "1"]
+    environment:
+      LITELLM_MASTER_KEY: ${MANYTHREADS_LITELLM_MASTER_KEY:-sk-manythreads-dev-master}
+      LITELLM_SALT_KEY: ${MANYTHREADS_LITELLM_SALT_KEY:-sk-manythreads-dev-salt}
+      STORE_MODEL_IN_DB: "True"
+      DATABASE_URL: postgresql://manythreads_owner:manythreads@postgres:5432/litellm
+    volumes:
+      - ./litellm.yaml:/config/litellm.yaml:ro
+    ports:
+      # loopback only: a fixed development master key must not be reachable from the network the dev machine is on
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      postgres: { condition: service_healthy }
+
   # Optional (profile `app`): the server image against the dev Postgres, with the same environment the Helm chart sets
   # (KMS key, public URL, proxy trust, mail through mailpit). `docker compose -f deploy/compose/docker-compose.dev.yml
   # --profile app up -d --build server`; `pnpm db:up` does not start it. Set MANYTHREADS_KMS_KEY first (see dev.env.example).
@@ -82,6 +107,10 @@ services:
       MANYTHREADS_TRUST_PROXY: ${MANYTHREADS_TRUST_PROXY:-0}
       MANYTHREADS_SMTP_URL: smtp://mailpit:1025
       MANYTHREADS_MAIL_FROM: ${MANYTHREADS_MAIL_FROM:-manythreads <no-reply@localhost>}
+      # Empty unless the `llm` profile is up (then http://litellm:4000): with no URL the gateway mints and stores keys
+      # but pushes no config, rather than retrying against a proxy that was never started.
+      MANYTHREADS_LITELLM_URL: ${MANYTHREADS_LITELLM_URL:-}
+      MANYTHREADS_LITELLM_MASTER_KEY: ${MANYTHREADS_LITELLM_MASTER_KEY:-}
     ports:
       - "3000:3000"
 

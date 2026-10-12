@@ -11,7 +11,12 @@ export interface BotMdFailure {
   message: string;
 }
 
-export type BotMd = { ok: true; frontmatter: BotFrontmatterData } | { ok: false; failure: BotMdFailure };
+/**
+ * A parsed BOT.md: the frontmatter and the body after it. The body is carried through because it *is* the definition's
+ * behaviour — SPEC §7.1 makes it the runtime's `SOUL.md` — and the runtime (P5-10) reads it from here rather than
+ * re-splitting the file it already parsed.
+ */
+export type BotMd = { ok: true; frontmatter: BotFrontmatterData; body: string } | { ok: false; failure: BotMdFailure };
 
 /** The frontmatter as written, the prose after it, or why there is none of either. */
 export type BotMdSplit =
@@ -67,7 +72,7 @@ export function parseBotMd(content: string): BotMd {
     return { ok: false, failure: { fieldPath: null, message: `frontmatter: ${err instanceof Error ? err.message : String(err)}` } };
   }
   const parsed = BotFrontmatter.safeParse(doc);
-  if (parsed.success) return { ok: true, frontmatter: parsed.data };
+  if (parsed.success) return { ok: true, frontmatter: parsed.data, body: split.body };
   // Eight issues at most, one line each, capped: the banner is a line, not a transcript.
   const shown = parsed.error.issues.slice(0, 8);
   const lines = shown.map((issue) => {

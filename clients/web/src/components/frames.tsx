@@ -76,6 +76,7 @@ export function SettingsFrame() {
         { to: '/settings/workspace/sign-in', label: 'Sign-in' },
         { to: '/settings/workspace/members', label: 'Members' },
         { to: '/settings/workspace/roles', label: 'Roles' },
+        { to: '/settings/workspace/llm', label: 'LLM' },
       ],
     });
   }

@@ -190,6 +190,39 @@ import {
   updateWorkspaceMemberRoute,
   updateWorkspaceRoute,
   verifyEmailRoute,
+  CreateLlmProviderRequest,
+  DeleteLlmAliasResponse,
+  DeleteLlmLimitResponse,
+  DeleteLlmProviderResponse,
+  ListLlmAliasesResponse,
+  ListLlmLimitsResponse,
+  ListLlmProvidersResponse,
+  LlmAliasPathParams,
+  LlmAliasResponse,
+  LlmLimitPathParams,
+  LlmLimitResponse,
+  LlmProviderPathParams,
+  LlmProviderResponse,
+  LlmSettingsResponse,
+  LlmSpendQuery,
+  LlmSpendResponse,
+  SetLlmAliasRequest,
+  SetLlmLimitRequest,
+  SetLlmSettingsRequest,
+  UpdateLlmProviderRequest,
+  createLlmProviderRoute,
+  deleteLlmAliasRoute,
+  deleteLlmLimitRoute,
+  deleteLlmProviderRoute,
+  getLlmSettingsRoute,
+  listLlmAliasesRoute,
+  listLlmLimitsRoute,
+  listLlmProvidersRoute,
+  listLlmSpendRoute,
+  setLlmAliasRoute,
+  setLlmLimitRoute,
+  setLlmSettingsRoute,
+  updateLlmProviderRoute,
   type AuthenticatedSession,
 } from '@manythreads/shared';
 import { CSRF_COOKIE, CSRF_HEADER, ApiError, buildPath, call, readCookie } from './client';
@@ -442,3 +475,40 @@ export const fetchDms = () => call(listDmsRoute, { request: ListDmsQuery, respon
 /** Open (or create) the conversation with these people; opening the same set twice gives the same channel. */
 export const openDm = (personIds: readonly string[]) =>
   call(openDmRoute, { request: OpenDmRequest, response: OpenDmResponse }, { personIds } as OpenDmRequest);
+
+// ---- Workspace → LLM (PLAN P5-06 and P5-07, SPEC §10.1) ---------------------------------------------------
+/*
+ * The admin page's data. Every route is admin-only, so a member who reaches this code gets 404 (the workspace-settings
+ * convention) rather than a 403 — the AdminOnly route guard means they never do. A provider's key goes in once and is
+ * never read back: `hasSecret` is all the page can show.
+ */
+
+export const fetchLlmProviders = () => call(listLlmProvidersRoute, { response: ListLlmProvidersResponse });
+export const createLlmProvider = (body: CreateLlmProviderRequest) =>
+  call(createLlmProviderRoute, { request: CreateLlmProviderRequest, response: LlmProviderResponse }, body);
+export const updateLlmProvider = (providerId: string, body: UpdateLlmProviderRequest) =>
+  call(updateLlmProviderRoute, { request: UpdateLlmProviderRequest, response: LlmProviderResponse }, body, { providerId });
+export const deleteLlmProvider = (providerId: string) =>
+  call(deleteLlmProviderRoute, { response: DeleteLlmProviderResponse }, undefined, { providerId });
+
+export const fetchLlmAliases = () => call(listLlmAliasesRoute, { response: ListLlmAliasesResponse });
+/** Bind an alias to a model; a second call for the same alias changes the binding rather than adding one. */
+export const setLlmAlias = (alias: string, body: SetLlmAliasRequest) =>
+  call(setLlmAliasRoute, { request: SetLlmAliasRequest, response: LlmAliasResponse }, body, { alias });
+export const deleteLlmAlias = (alias: string) => call(deleteLlmAliasRoute, { response: DeleteLlmAliasResponse }, undefined, { alias });
+
+export const fetchLlmLimits = () => call(listLlmLimitsRoute, { response: ListLlmLimitsResponse });
+/** Set the limit of one target: the row is upserted on (scope, target), so this changes an existing limit rather than adding one. */
+export const setLlmLimit = (body: SetLlmLimitRequest) =>
+  call(setLlmLimitRoute, { request: SetLlmLimitRequest, response: LlmLimitResponse }, body);
+export const deleteLlmLimit = (limitId: string) => call(deleteLlmLimitRoute, { response: DeleteLlmLimitResponse }, undefined, { limitId });
+
+export const fetchLlmSettings = () => call(getLlmSettingsRoute, { response: LlmSettingsResponse });
+export const saveLlmSettings = (body: SetLlmSettingsRequest) =>
+  call(setLlmSettingsRoute, { request: SetLlmSettingsRequest, response: LlmSettingsResponse }, body);
+
+/** What the workspace spent, rolled up; the default range is the current month (the window a monthly budget uses). */
+export const fetchLlmSpend = (query: LlmSpendQuery = {}) =>
+  call(listLlmSpendRoute, { request: LlmSpendQuery, response: LlmSpendResponse }, query as LlmSpendQuery);
+
+export type { LlmSpendQuery, LlmProviderPathParams, LlmAliasPathParams, LlmLimitPathParams };

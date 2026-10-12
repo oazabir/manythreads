@@ -94,6 +94,25 @@ describe('broker: path guard (bot actors)', () => {
     expect((await broker.authorize(bot('conversation'), 'files.write')).allowed).toBe(false);
   });
 
+  it('offers a granted mutation at grant level (`check`), while `authorize` still requires the path', async () => {
+    const { broker, denials } = setup(['pages.write']);
+    // The listing question — may this run ever call the tool? — is answered at grant level: a listing has no input
+    // yet, so the path guard cannot run, and running it here would hide every mutation from every listing.
+    expect(await broker.check(bot('conversation'), 'pages.write')).toEqual({ allowed: true, reason: 'granted', needsApproval: false });
+    expect(await broker.check(bot('conversation'), 'files.write')).toEqual({
+      allowed: false,
+      reason: `no grant for "files.write" in the actor's allowlist`,
+      needsApproval: false,
+    });
+    // A denial from a listing is not audited: offering a tool is not a request to use it.
+    expect(denials).toHaveLength(0);
+
+    // The call still cannot run without its path, and the path itself is judged as ever.
+    expect((await broker.authorize(bot('conversation'), 'pages.write')).allowed).toBe(false);
+    expect((await broker.authorize(bot('conversation'), 'pages.write', { path: 'bots/x/BOT.md' })).allowed).toBe(false);
+    expect((await broker.authorize(bot('conversation'), 'pages.write', { path: 'pages/x.md' })).allowed).toBe(true);
+  });
+
   it.each(['pages/x.md', 'pages/../pages/x.md', './pages/x.md', 'docs/bots/x.md', 'docs/TEAM.md'])(
     'allows a granted write to %s (only the guarded roots)',
     async (path) => {

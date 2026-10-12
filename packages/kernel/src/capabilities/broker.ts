@@ -55,7 +55,19 @@ export class CapabilityBroker {
     return decision;
   }
 
-  private async decide(actor: Actor, capability: string, context: AuthorizeContext): Promise<Decision> {
+  /**
+   * The decision for *offering* a capability, without the audit line — the MCP gateway's `tools/list`. Two
+   * differences from `authorize`, both deliberate: a listing cannot know the path a call will name (`files.write`,
+   * `pages.write`), so a mutation is offered at grant level and its path is judged on the call; and a denial is not
+   * logged, because offering a tool is not a request to use it and a denial per ungranted tool per listing would
+   * drown the audit log in what was never asked for. Anything that actually runs a capability must go through
+   * `authorize`, which requires the path.
+   */
+  check(actor: Actor, capability: string, context: AuthorizeContext = {}): Promise<Decision> {
+    return this.decide(actor, capability, context, false);
+  }
+
+  private async decide(actor: Actor, capability: string, context: AuthorizeContext, requirePath = true): Promise<Decision> {
     const deny = (reason: string): Decision => ({ allowed: false, reason, needsApproval: false });
     const trigger = context.trigger ?? actor.trigger;
     const isPersonScope =
@@ -76,7 +88,7 @@ export class CapabilityBroker {
     }
 
     // From here on: bot actor.
-    if (isFilesMutation(capability)) {
+    if (isFilesMutation(capability) && requirePath) {
       const paths = [...(context.path !== undefined ? [context.path] : []), ...(context.paths ?? [])];
       if (paths.length === 0) return deny(`"${capability}" needs a path to be authorized`);
       for (const path of paths) {

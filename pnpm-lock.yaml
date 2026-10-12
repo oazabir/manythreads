@@ -295,6 +295,56 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  packages/plugins/gateway-llm:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
+  packages/plugins/gateway-mcp:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
   packages/plugins/identity-oidc:
     dependencies:
       '@manythreads/sdk':
@@ -459,6 +509,53 @@ importers:
       pg:
         specifier: ^8
         version: 8.23.1
+
+  packages/plugins/runtime-hermes:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
+  packages/plugins/runtime-rules:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
 
   packages/plugins/search:
     dependencies:
@@ -741,6 +838,12 @@ importers:
       vite:
         specifier: ^7
         version: 7.3.6(@types/node@22.20.4)(tsx@4.23.15)(yaml@2.9.1)
+
+  tools/fake-llm:
+    devDependencies:
+      tsx:
+        specifier: ^4
+        version: 4.23.15
 
   tools/plates:
     dependencies:

@@ -17,6 +17,10 @@ import { PagesPageWrittenEvent } from './pages.page.written.ts';
 import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
 import { BotsBotInvalidEvent } from './bots.bot.invalid.ts';
 import { BotsBotRemovedEvent } from './bots.bot.removed.ts';
+import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
+import { LlmKeyChangedEvent } from './llm.key.changed.ts';
+import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
+import { LlmGuardDecidedEvent } from './llm.guard.decided.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
@@ -69,6 +73,10 @@ export const eventRegistry = {
   'bots.bot.loaded': { 1: BotsBotLoadedEvent },
   'bots.bot.invalid': { 1: BotsBotInvalidEvent },
   'bots.bot.removed': { 1: BotsBotRemovedEvent },
+  'llm.config.applied': { 1: LlmConfigAppliedEvent },
+  'llm.key.changed': { 1: LlmKeyChangedEvent },
+  'llm.budget.exceeded': { 1: LlmBudgetExceededEvent },
+  'llm.guard.decided': { 1: LlmGuardDecidedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
@@ -150,6 +158,8 @@ export type AnyEvent =
   | z.infer<typeof BotsBotLoadedEvent>
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
+  | z.infer<typeof LlmConfigAppliedEvent>
+  | z.infer<typeof LlmKeyChangedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
@@ -202,7 +212,9 @@ export type LatestEvent =
   | z.infer<typeof KernelTestPingedEventV2>
   | z.infer<typeof BotsBotLoadedEvent>
   | z.infer<typeof BotsBotInvalidEvent>
-  | z.infer<typeof BotsBotRemovedEvent>;
+  | z.infer<typeof BotsBotRemovedEvent>
+  | z.infer<typeof LlmConfigAppliedEvent>
+  | z.infer<typeof LlmKeyChangedEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

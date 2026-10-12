@@ -18,6 +18,7 @@ import type {
   PluginEvent,
   PluginRealtime,
   PluginRuntime,
+  PluginRuns,
   PluginTx,
   ProviderImpl,
   ProviderKind,
@@ -51,6 +52,8 @@ export interface ContextDeps {
   secrets?: SecretService;
   /** The capability broker behind `ctx.capabilities.authorize`; without one the call rejects (fail closed). */
   broker?: { authorize(actor: Actor, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision> };
+  /** `ctx.runs`, the MCP gateway's run/tool door (PLAN P5-09); absent when the host has no database pools. */
+  runs?: PluginRuns;
 }
 
 /** The `ctx` handed to `register`. Using an extension point the manifest did not declare throws. */
@@ -63,6 +66,16 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     if (!declared.has(point)) {
       throw new PluginError(
         `Plugin "${name}" used extension point "${point}" but its manifest does not list it in "extends"`,
+        { plugin: name },
+      );
+    }
+  };
+
+  /** For a door more than one trust domain may use: passes when the manifest lists any of `points`. */
+  const useOneOf = (points: readonly ExtensionPoint[], label: string): void => {
+    if (!points.some((point) => declared.has(point))) {
+      throw new PluginError(
+        `Plugin "${name}" used ${label} but its manifest lists none of "${points.join('", "')}" in "extends"`,
         { plugin: name },
       );
     }
@@ -153,8 +166,11 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
         use(`provider.${kind}`);
         registries.providers[kind].add(name, impl);
       },
-      get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind): T | undefined {
-        return registries.providers[kind].values()[0] as T | undefined;
+      get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind, id?: string): T | undefined {
+        const all = registries.providers[kind].values() as T[];
+        // Without an id: the first one, in load order. With one: an exact `id` match, and never a fallback — a bot whose
+        // `runtime` names a provider that is not loaded must fail loudly rather than run on whichever registered first.
+        return id === undefined ? all[0] : all.find((provider) => provider.id === id);
       },
     },
     commands: {
@@ -220,6 +236,14 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
         registries.capabilityHandlers.set(capability, { plugin: name, handler: (input, tx) => handler(input, guardPluginTx(tx)) });
       },
     },
+    get runs(): PluginRuns {
+      // The door that can open a bot run and enter a transaction as its bot (PLAN P5-09); see docs/plugins/security.md.
+      use('tool.invoke');
+      if (!deps.runs) {
+        throw new PluginError(`Plugin "${name}": ctx.runs is only available when the plugin host has database pools`, { plugin: name });
+      }
+      return deps.runs;
+    },
     http: {
       route(definition) {
         const fullPath = mount(definition.path);
@@ -279,7 +303,9 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       return deps.identity;
     },
     get secrets(): SecretService {
-      use('provider.identity');
+      // The secret service also encrypts a model provider's API key (gateway-llm, PLAN P5-06), so a plugin that
+      // extends `provider.llm` may use it too; `docs/plugins/security.md` explains both doors.
+      useOneOf(['provider.identity', 'provider.llm'], 'ctx.secrets');
       if (!deps.secrets) {
         throw new PluginError(`Plugin "${name}": no secret service is wired into the host`, { plugin: name });
       }

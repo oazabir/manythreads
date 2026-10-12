@@ -39,6 +39,18 @@ export const botsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/bots/migrations/', import.meta.url)),
 };
 
+/** Migrations of the gateway-llm plugin (`llm_providers`, `llm_aliases`, `llm_keys`); pass it in `sources` after the kernel's. */
+export const gatewayLlmMigrationSource: MigrationSource = {
+  namespace: 'gateway-llm',
+  dir: fileURLToPath(new URL('../../plugins/gateway-llm/migrations/', import.meta.url)),
+};
+
+/** Migrations of the gateway-mcp plugin (`mcp_run_tokens`, the credential of a run endpoint); pass it in `sources` after `botsMigrationSource`. */
+export const gatewayMcpMigrationSource: MigrationSource = {
+  namespace: 'gateway-mcp',
+  dir: fileURLToPath(new URL('../../plugins/gateway-mcp/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',

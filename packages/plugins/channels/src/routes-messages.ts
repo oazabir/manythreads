@@ -10,7 +10,6 @@ import {
   MessagePathParams,
   PostMessageRequest,
   PostMessageResponse,
-  type FileSummary,
   ReactRequest,
   ReactResponse,
   ReactionChangedPush,
@@ -31,7 +30,6 @@ import {
   MESSAGE_COLUMNS,
   toChannelMessage,
   toMessage,
-  type MessageRow,
   type MessageWithThreadRow,
 } from './rows.ts';
 import {
@@ -44,9 +42,9 @@ import {
   pushMessageDeleted,
   pushReaction,
   reactionsFor,
+  postChannelMessage,
   requireChannel,
   requirePost,
-  threadFollowers,
   type Deps,
 } from './service.ts';
 
@@ -62,72 +60,15 @@ export function registerMessageRoutes(deps: Deps): void {
       const { channelId } = ChannelPathParams.parse(req.params);
       const body = PostMessageRequest.parse(req.body);
       if (body.channelId !== channelId) throw invalid('channelId: must match the channel in the path');
-      const channel = await requireChannel(tx, channelId);
-      await requirePost(tx, channel);
-      if (body.threadRootId) {
-        const root = (
-          await tx.query<{ thread_root_id: string | null; deleted_at: Date | null }>(
-            'SELECT thread_root_id, deleted_at FROM app.messages WHERE id = $1 AND channel_id = $2',
-            [body.threadRootId, channelId],
-          )
-        ).rows[0];
-        if (!root) throw notFound('No such message to reply to in this channel');
-        if (root.thread_root_id) throw conflict('Reply to the first message of the thread, not to a reply');
-        if (root.deleted_at) throw conflict('That message was deleted');
-      }
-      // Attachments are files the sender already uploaded to this channel (the files plugin); the ids go into meta, the cards are resolved on read.
-      const attachmentIds = body.attachments ?? [];
-      if (new Set(attachmentIds).size !== attachmentIds.length) throw invalid('attachments: a file can be attached once');
-      let cards: FileSummary[] = [];
-      if (attachmentIds.length > 0) {
-        // Row-lock the files first (files migration 0004): a concurrent delete of the last other message that lists one waits for this post, or
-        // has already hidden it, in which case the validation below refuses. Without the files plugin there is nothing to lock.
-        await tx.query('SELECT app.files_lock_for_attach($1::uuid[])', [attachmentIds]).catch((err: unknown) => {
-          if ((err as { code?: string }).code === '42883') throw invalid('attachments: file storage is not enabled');
-          throw err;
-        });
-        const found = await tx
-          .query<{ id: string; name: string; size: string; mime: string }>(
-            'SELECT f.id, f.name, f.size, f.mime FROM app.files f WHERE f.id = ANY ($1::uuid[]) AND f.channel_id = $2 AND f.uploader_id = app.actor()',
-            [attachmentIds, channelId],
-          )
-          .catch((err: unknown) => {
-            if ((err as { code?: string }).code === '42P01') throw invalid('attachments: file storage is not enabled');
-            throw err;
-          });
-        if (found.rows.length !== attachmentIds.length) throw invalid('attachments: every file must be one you uploaded to this channel');
-        const byId = new Map(found.rows.map((r) => [r.id, { id: r.id, name: r.name, size: Number(r.size), mime: r.mime } as FileSummary]));
-        cards = attachmentIds.map((id) => byId.get(id)!);
-      }
-      const res = await tx.query<MessageRow>(
-        `INSERT INTO app.messages AS m (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
-         VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::jsonb) RETURNING ${MESSAGE_COLUMNS}`,
-        [channelId, body.body, toPlainText(body.body), body.threadRootId, JSON.stringify(attachmentIds.length > 0 ? { attachments: attachmentIds } : {})],
-      );
-      const row = res.rows[0]!;
-      await emit(tx, {
-        type: 'channel.message.posted',
+      // The write itself is `postChannelMessage` (service.ts) — the same call the `messages.post` capability makes, so a bot's reply
+      // in a thread is posted by exactly the code a person's message is.
+      const posted = await postChannelMessage(deps, tx, {
         channelId,
-        teamId: channel.team_id,
-        messageId: row.id,
-        authorId: row.author_id,
-        threadRootId: row.thread_root_id,
+        body: body.body,
+        threadRootId: body.threadRootId ?? null,
+        attachmentIds: body.attachments ?? [],
       });
-      const readers = await audience(tx, channelId);
-      await pushMessage(deps, tx, readers, 'message.posted', toChannelMessage({ ...row, reply_count: null, last_reply_at: null }, [], cards, (await authorsFor(tx, [row.id])).get(row.author_id)));
-      // Unread: a channel message counts for every reader, a reply for the followers of its thread (the replier and the root's author
-      // follow it by themselves, see the messages triggers).
-      await ctx.readState.onPosted(tx, {
-        targetType: row.thread_root_id ? 'thread' : 'channel',
-        targetId: row.thread_root_id ?? channelId,
-        messageId: row.id,
-        authorId: row.author_id,
-        recipientPersonIds: row.thread_root_id ? await threadFollowers(tx, row.thread_root_id) : readers,
-      });
-      // Sending ends the author's "typing" signal, and what the body names (people, channels, entities) is recorded.
-      await tx.query('DELETE FROM app.typing WHERE channel_id = $1 AND person_id = app.person_id()', [channelId]);
-      await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
-      return json(PostMessageResponse.parse(toMessage(row)), 201);
+      return json(PostMessageResponse.parse(toMessage(posted.row)), 201);
     }),
   });
 

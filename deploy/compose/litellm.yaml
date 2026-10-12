@@ -1,0 +1,18 @@
+# LiteLLM proxy config for the dev compose stack (PLAN P5-06). The models and the fallback chains are NOT written here: the
+# gateway-llm plugin owns them and pushes them from the database (POST /model/new, /model/update, /model/delete and
+# /config/update), so this file only starts the proxy. The master key and the salt come from the environment
+# (LITELLM_MASTER_KEY, LITELLM_SALT_KEY; see dev.env.example).
+
+model_list: []
+
+general_settings:
+  # Virtual keys are stored in the proxy's own database (the `litellm` database of the dev Postgres).
+  database_url: os.environ/DATABASE_URL
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  drop_params: true
+
+router_settings:
+  # The plugin replaces this with the workspace's chains; an empty default keeps a fresh proxy startable.
+  fallbacks: []

@@ -206,6 +206,85 @@ export interface ScopedKv {
 }
 
 /**
+ * One bot run, as the MCP gateway works with it (SPEC §6.2, PLAN P5-09, decision in `docs/spikes/per-run-scoping.md`):
+ * a row in `bot_runs` plus the bot actor the broker checks, and the person who asked when there is one.
+ */
+export interface BotRunHandle {
+  runId: string;
+  botId: string;
+  /** The bot's `actors` row id: what the broker looks the allowlist up against. */
+  botActorId: string;
+  teamId: string;
+  workspaceId: string;
+  /** The BOT.md trigger that fired the run; `person:*` is offered only to conversation and mention runs. */
+  trigger: string;
+  /** The asking person's actor id; null for scheduled, inbound and channel runs. */
+  askerActorId: string | null;
+  /** When the run's endpoint stops working (ISO 8601). */
+  expiresAt: string;
+}
+
+/** What `ctx.runs.open` needs: the bot (resolved from its pairing token by the caller) and why the run happens. */
+export interface OpenRunInput {
+  botId: string;
+  teamId: string;
+  workspaceId: string;
+  trigger: string;
+  askerActorId?: string | null;
+  threadId?: string | null;
+  /** How long the run's endpoint stays usable (seconds); the service's default applies when omitted. */
+  ttlSeconds?: number;
+}
+
+/** One capability a run could call, as `tools/list` offers it. */
+export interface ToolDescriptor {
+  name: string;
+  destructive: boolean;
+}
+
+/**
+ * The run/tool door of the MCP gateway (`extends: ['tool.invoke']`). It is the only way a tool call carries
+ * `app.run_id` — `run_source_log` accepts a line only from the run it belongs to — and the only way one plugin
+ * calls a capability handler another plugin registered. Everything here runs as the platform, not as the caller:
+ * read docs/plugins/security.md before using it.
+ */
+export interface PluginRuns {
+  /**
+   * Opens a run: one `bot_runs` row and one credential for its endpoint (the token is returned once; the database
+   * keeps its sha256). The asker, when given, must be a person of the same workspace who is on the run's team.
+   */
+  open(input: OpenRunInput): Promise<{ run: BotRunHandle; token: string }>;
+  /** The run behind a presented token's sha256, or null when it is unknown, revoked, expired or already ended. */
+  resolve(tokenHash: Buffer): Promise<BotRunHandle | null>;
+  /** Ends a run and revokes its token. False when it had already ended. */
+  close(runId: string, status: 'done' | 'failed' | 'stopped'): Promise<boolean>;
+  /**
+   * Runs `fn` in one transaction as the run's bot, with `app.run_id` set: what a write tool uses, and the only
+   * transaction `logSource` may write from. The broker is not involved — authorize first.
+   */
+  asBot<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T>;
+  /**
+   * The transaction a read tool uses: as the asking person when the run has one (their visibility decides the rows),
+   * else as the bot. Capability checks still run against the bot's allowlist through `authorize`.
+   */
+  asReader<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T>;
+  /** The capability broker, asked about the run's bot rather than the transaction's actor. A denial is audited. */
+  authorize(run: BotRunHandle, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+  /**
+   * The same question without the audit line, for listing what a run may call (`tools/list`). Asking whether a tool
+   * is offered is not a request to use it; the call itself must go through `authorize`. A mutation is offered at
+   * grant level here — its path is a per-call fact and is judged when the call is authorized.
+   */
+  may(run: BotRunHandle, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+  /** Every capability that has an implementation loaded, in registration order. */
+  catalog(): readonly ToolDescriptor[];
+  /** Calls a registered capability handler in `tx`; throws when nothing implements `capability`. */
+  invoke(tx: PluginTx, capability: string, input: Record<string, unknown>): Promise<unknown>;
+  /** Records what the run read (`run_source_log`); must be called inside `asBot`/`asReader`. Answers the seq. */
+  logSource(tx: PluginTx, source: { sourceType: string; sourceRef: string; scope: 'team' | 'channel' | 'person' }): Promise<number>;
+}
+
+/**
  * What `register(ctx)` receives. Every method that maps to an extension point throws if the manifest's
  * `extends` does not list it; `events.*` also checks the manifest's `events.emits` / `events.consumes`.
  */
@@ -224,8 +303,10 @@ export interface PluginContext {
     /**
      * The implementation another plugin registered for `kind` (the first one, in load order), or undefined. Look it up when a request
      * arrives, not in `register`: the provider's plugin may load after yours. Needs no `extends` entry (using a provider is not providing one).
+     * With an `id`, the provider whose `id` is that one (a `bot_runtime` provider per `bots.runtime` value, for example); no match is
+     * undefined, never the first entry — a bot must not run on the wrong runtime because one plugin loaded first.
      */
-    get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind): T | undefined;
+    get<T extends ProviderImpl = ProviderImpl>(kind: ProviderKind, id?: string): T | undefined;
   };
   readonly commands: { register(definition: CommandDefinition): void };
   readonly triggers: { register(definition: TriggerDefinition): void };
@@ -238,7 +319,7 @@ export interface PluginContext {
   };
   readonly settings: { page(definition: SettingsPageDefinition): void };
   readonly composer: { action(definition: ComposerActionDefinition): void };
-  /** Bind an implementation to a capability this plugin declared in its manifest, and ask the broker whether the caller may use one. */
+  /** Bound to a declared capability, and ask the broker whether the caller may use one. */
   readonly capabilities: {
     register(name: string, handler: CapabilityHandler): void;
     /**
@@ -249,6 +330,11 @@ export interface PluginContext {
      */
     authorize(tx: PluginTx, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
   };
+  /**
+   * The MCP gateway's run and tool door (PLAN P5-09). Only for plugins whose manifest extends `tool.invoke`;
+   * every other plugin throws on access. docs/plugins/security.md explains what the door grants.
+   */
+  readonly runs: PluginRuns;
   /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;
@@ -272,7 +358,10 @@ export interface PluginContext {
   readonly access: PluginAccess;
   /** Only for plugins whose manifest extends `provider.identity`; any other plugin throws on access. */
   readonly identity: IdentityServices;
-  /** Envelope-encrypted secrets (client secrets of sign-in providers). Only for plugins that extend `provider.identity`. */
+  /**
+   * Envelope-encrypted secrets (client secrets of sign-in providers, model provider API keys). Only for plugins that
+   * extend `provider.identity` (sign-in) or `provider.llm` (model providers); see docs/plugins/security.md.
+   */
   readonly secrets: SecretService;
 }
 

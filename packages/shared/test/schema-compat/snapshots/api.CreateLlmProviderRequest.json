@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "openai",
+        "anthropic",
+        "azure",
+        "bedrock",
+        "google",
+        "ollama",
+        "openai_compatible"
+      ]
+    },
+    "apiKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "apiBase": {
+      "type": "string",
+      "maxLength": 300,
+      "format": "uri"
+    },
+    "apiVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "kind"
+  ],
+  "additionalProperties": false
+}

@@ -14,6 +14,7 @@ import { Roster, TeamChannels, TeamRedirect, TeamTemplate } from './screens/Rost
 import { SignIn } from './screens/SignIn';
 import { SignInMethods } from './screens/SignInMethods';
 import { Shell } from './shell/Shell';
+import { LlmSettings } from './screens/admin/llm/LlmSettings';
 import { DirectMessageView, HomeView, RequireTeam, SectionView, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
 import { BotRoster } from './screens/bots/BotRoster';
@@ -72,6 +73,7 @@ function AppRoutes() {
               <Route path="sign-in" element={<SignInMethods />} />
               <Route path="members" element={<Members />} />
               <Route path="roles" element={<Roles />} />
+              <Route path="llm" element={<LlmSettings />} />
             </Route>
             <Route path="/settings/team/:slug">
               <Route index element={<Navigate to="roster" replace />} />
