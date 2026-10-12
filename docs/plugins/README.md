@@ -181,6 +181,9 @@ ctx.http.route({
 - Throw `HttpError(status, code, message)` (from `@manythreads/sdk`) to answer with the error envelope; the transaction rolls
   back. Return `{ status, body, headers }` instead to keep the writes. `setSession` / `clearSession` on the response set or
   clear the session cookies (sign-in plugins only).
+- `@manythreads/sdk` also exports the shared route kit (`packages/sdk/src/http.ts`): `route(handler)` (maps database refusals to 403/409/400),
+  `forbidden`/`notFound`/`conflict`/`invalid`, `json`, and the team lookups `requireTeam(tx, slug)` and `requireManage(tx, team)`. New plugins use
+  it instead of a local copy (bots and slack-compat do; the older plugins keep theirs).
 
 ### Events
 

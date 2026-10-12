@@ -3,12 +3,14 @@ import { Toggle } from '../../components/ui';
 
 /*
  * The editing primitives of the bot page (PLAN P5-05). Every control here writes one part of the parsed frontmatter through the
- * draft, which validates the whole document on each change — a tab cannot produce a definition the loader would refuse. When the
+ * draft, which keeps what was typed and validates the whole document on each change — Save stays off while the loader would refuse it. When the
  * person may not change `bots/` (a member who is not a lead), the same controls render read-only, so the page still describes the bot.
  */
 
-export function TextField({ label, value, onChange, hint, readOnly, placeholder, testId }: {
+export function TextField({ label, value, onChange, hint, readOnly, placeholder, testId, error }: {
   label: string;
+  /** What the schema says is wrong with this value right now; shown under the field while the draft is kept as typed. */
+  error?: string;
   value: string;
   onChange: (v: string) => void;
   hint?: ReactNode;
@@ -20,7 +22,8 @@ export function TextField({ label, value, onChange, hint, readOnly, placeholder,
   return (
     <div className="b-fld">
       <label htmlFor={id}>{label}</label>
-      <input id={id} data-testid={testId} value={value} readOnly={readOnly} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <input id={id} data-testid={testId} value={value} readOnly={readOnly} placeholder={placeholder} aria-invalid={error ? true : undefined} onChange={(e) => onChange(e.target.value)} />
+      {error ? <div className="b-warnline" role="alert" data-testid={testId ? `${testId}-error` : undefined}>{error}</div> : null}
       {hint ? <div className="b-hint">{hint}</div> : null}
     </div>
   );

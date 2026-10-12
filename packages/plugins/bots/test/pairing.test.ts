@@ -111,4 +111,43 @@ describe('pairing tokens', () => {
     const paired = await w.as(omar, (tx) => resolvePairingToken(tx, fresh.token));
     expect(paired).toMatchObject({ botId: bot.botId, actorId: bot.actorId, slug: 'pairbot' });
   });
+
+  it('only an active bot resolves: a disabled or invalid bot\'s live token resolves to nothing until it is active again', async () => {
+    const minted = MintPairingTokenResponse.parse((await w.call(omar, 'POST', MINT(), {})).body);
+    const setStatus = (status: string) =>
+      w.system((tx) => tx.query('UPDATE app.bots SET status = $2 WHERE id = $1', [bot.botId, status]));
+    try {
+      expect(await w.as(omar, (tx) => resolvePairingToken(tx, minted.token))).toMatchObject({ botId: bot.botId });
+      for (const status of ['disabled', 'invalid']) {
+        await setStatus(status);
+        expect(await w.as(omar, (tx) => resolvePairingToken(tx, minted.token)), status).toBeNull();
+        expect(await w.system((tx) => resolvePairingToken(tx, minted.token)), status).toBeNull();
+      }
+    } finally {
+      await setStatus('active');
+    }
+    expect(await w.as(omar, (tx) => resolvePairingToken(tx, minted.token))).toMatchObject({ botId: bot.botId });
+  });
+
+  it('minting is refused for a bot that is not active: 409 in words from the route, 55000 from the definer function', async () => {
+    const setStatus = (status: string) => w.system((tx) => tx.query('UPDATE app.bots SET status = $2 WHERE id = $1', [bot.botId, status]));
+    try {
+      await setStatus('disabled');
+      const res = await w.call(omar, 'POST', MINT(), {});
+      expect(res.status).toBe(409);
+      expect(JSON.stringify(res.body)).toMatch(/disabled/);
+      await setStatus('invalid');
+      const invalid = await w.call(omar, 'POST', MINT(), {});
+      expect(invalid.status).toBe(409);
+      expect(JSON.stringify(invalid.body)).toMatch(/invalid/);
+      const direct = await w.system((tx) => tx.query('SELECT * FROM app.bots_pairing_mint($1, $2)', [bot.botId, hashPairingToken(newPairingToken())])).then(
+        () => undefined,
+        (e: { code?: string }) => e.code,
+      );
+      expect(direct).toBe('55000');
+    } finally {
+      await setStatus('active');
+    }
+    expect((await w.call(omar, 'POST', MINT(), {})).status).toBe(201);
+  });
 });

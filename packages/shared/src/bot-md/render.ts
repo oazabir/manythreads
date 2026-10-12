@@ -61,13 +61,19 @@ export function splitBotMd(content: string): BotMdSplit {
   return { ok: true, frontmatter: lines.slice(1, end).join('\n'), body: lines.slice(end + 1).join('\n') };
 }
 
+/** The largest BOT.md the loader reads (UTF-16 code units, checked before anything is split or parsed): a soul file is prose, not a data dump. */
+export const BOT_MD_MAX_CHARS = 256 * 1024;
+
 /** Parse one BOT.md strictly; the returned failure is what the loader puts in `bots.bot.invalid` and the bot page shows. */
 export function parseBotMd(content: string): BotMd {
+  if (content.length > BOT_MD_MAX_CHARS) {
+    return { ok: false, failure: { fieldPath: null, message: `BOT.md is larger than ${BOT_MD_MAX_CHARS / 1024} KB` } };
+  }
   const split = splitBotMd(content);
   if (!split.ok) return { ok: false, failure: split.failure };
   let doc: unknown;
   try {
-    doc = parseYaml(split.frontmatter);
+    doc = parseYaml(split.frontmatter, { maxAliasCount: 20 });
   } catch (err) {
     return { ok: false, failure: { fieldPath: null, message: `frontmatter: ${err instanceof Error ? err.message : String(err)}` } };
   }

@@ -17,6 +17,8 @@ interface ChannelRow {
   team_id: string;
   workspace_id: string;
   archived_at: Date | null;
+  kind: string;
+  private: boolean;
   [key: string]: unknown;
 }
 
@@ -34,26 +36,31 @@ export function registerDeliverJob(ctx: PluginContext): void {
     async (payload, tx) => {
       const input = DeliverPayload.parse(payload);
 
-      const already = await tx.query<{ id: string }>('SELECT id FROM app.messages WHERE meta->>\'deliveryId\' = $1', [input.deliveryId]);
+      const already = await tx.query<{ id: string }>('SELECT id FROM app.messages WHERE channel_id = $1 AND meta->>\'deliveryId\' = $2', [
+        input.channelId,
+        input.deliveryId,
+      ]);
       if (already.rows[0]) return;
 
       const channel = (
-        await tx.query<ChannelRow>('SELECT id, team_id, workspace_id, archived_at FROM app.channels WHERE id = $1', [input.channelId])
+        await tx.query<ChannelRow>('SELECT id, team_id, workspace_id, archived_at, kind, private FROM app.channels WHERE id = $1', [input.channelId])
       ).rows[0];
       if (!channel) throw new Error('slack-compat: no such channel');
       if (channel.team_id !== input.teamId || channel.workspace_id !== input.workspaceId) {
         throw new Error('slack-compat: the channel is not the bot\u2019s team\u2019s');
       }
       if (channel.archived_at) throw new Error('slack-compat: the channel is archived');
+      // the spike has no membership check, so it posts only where every team member may already post: a public team channel
+      if (channel.kind !== 'channel' || channel.private) throw new Error('slack-compat: the spike posts to public team channels only');
 
       const botTeam = (
         await tx.query<{ team_id: string }>(
           `SELECT b.team_id FROM app.bots b JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = b.id
-            WHERE a.id = $1 AND b.workspace_id = $2`,
+            WHERE a.id = $1 AND b.workspace_id = $2 AND b.status = 'active'`,
           [input.botActorId, input.workspaceId],
         )
       ).rows[0];
-      if (!botTeam || botTeam.team_id !== input.teamId) throw new Error('slack-compat: the bot actor is gone');
+      if (!botTeam || botTeam.team_id !== input.teamId) throw new Error('slack-compat: the bot actor is gone or the bot is not active');
 
       if (input.threadRootId) {
         const root = (

@@ -20,10 +20,12 @@ export type BotRow = {
   definition_sha: string;
   status: string;
   placement: unknown;
+  invalid_reason: unknown;
   created_at: Date;
   updated_at: Date;
 };
-export const BOT_COLUMNS = 'id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, created_at, updated_at';
+export const BOT_COLUMNS =
+  'id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, created_at, updated_at';
 export const toBot = (r: BotRow): Bot =>
   Bot.parse({
     id: r.id,
@@ -42,17 +44,14 @@ export const toBot = (r: BotRow): Bot =>
     updatedAt: r.updated_at.toISOString(),
   });
 
-/**
- * The roster's row: the bot plus the display fields the loader copied onto it and the reason its last load failed, when one did. The
- * `invalid` reason comes from the newest `bots.bot.invalid` event for the row — never from a column (PLAN P5-04 keeps none on purpose).
- */
-export const toBotSummary = (r: BotRow, invalid: BotSummary['invalid']): BotSummary =>
+/** The roster's row: the bot plus the display fields the loader copied onto it and the reason its last load failed (`invalid_reason`, null once repaired). */
+export const toBotSummary = (r: BotRow): BotSummary =>
   BotSummary.parse({
     ...toBot(r),
     name: r.name,
     role: r.role,
     mayTag: r.may_tag,
-    invalid,
+    invalid: r.invalid_reason ?? null,
   });
 
 export type BotRunRow = {

@@ -6,7 +6,7 @@ import {
   mintPairingTokenRoute,
   revokePairingTokensRoute,
 } from '@manythreads/shared';
-import { json, notFound, requireManage, requireTeam, route } from './http.ts';
+import { conflict, json, notFound, requireManage, requireTeam, route } from './http.ts';
 import { mintPairingToken, revokePairingTokens } from './pairing.ts';
 
 // The pairing routes (PLAN P5-04): a lead of the team mints the token a bot's runtime presents, and turns every live token of that bot
@@ -14,11 +14,11 @@ import { mintPairingToken, revokePairingTokens } from './pairing.ts';
 // `app.bots_pairing_resolve` in its own transaction (docs/plugins/bots.md).
 
 /** The bot of the team, or 404: an unknown slug and one from another team answer the same, so a probe learns nothing. */
-async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<string> {
-  const res = await tx.query<{ id: string }>('SELECT id FROM app.bots WHERE team_id = $1 AND slug = $2', [teamId, botSlug]);
-  const id = res.rows[0]?.id;
-  if (!id) throw notFound(`No bot "${botSlug}"`);
-  return id;
+async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<{ id: string; status: string }> {
+  const res = await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bots WHERE team_id = $1 AND slug = $2', [teamId, botSlug]);
+  const bot = res.rows[0];
+  if (!bot) throw notFound(`No bot "${botSlug}"`);
+  return bot;
 }
 
 export function registerPairingRoutes(ctx: PluginContext): void {
@@ -29,8 +29,16 @@ export function registerPairingRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = BotPairingPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      const botId = await requireBot(tx, team.id, botSlug);
-      const minted = await mintPairingToken(tx, botId);
+      const bot = await requireBot(tx, team.id, botSlug);
+      // the definer function refuses too (55000); this is the clear answer. A token for a bot that cannot resolve would do nothing.
+      if (bot.status !== 'active') {
+        throw conflict(
+          bot.status === 'disabled'
+            ? 'This bot is disabled. Turn it on before pairing it.'
+            : 'This bot\'s BOT.md is invalid. Fix the definition before pairing it.',
+        );
+      }
+      const minted = await mintPairingToken(tx, bot.id);
       return json(MintPairingTokenResponse.parse({ token: minted.token, createdAt: minted.createdAt.toISOString() }), 201);
     }),
   });
@@ -42,8 +50,8 @@ export function registerPairingRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = BotPairingPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      const botId = await requireBot(tx, team.id, botSlug);
-      return json(RevokePairingTokensResponse.parse({ revoked: await revokePairingTokens(tx, botId) }));
+      const bot = await requireBot(tx, team.id, botSlug);
+      return json(RevokePairingTokensResponse.parse({ revoked: await revokePairingTokens(tx, bot.id) }));
     }),
   });
 }

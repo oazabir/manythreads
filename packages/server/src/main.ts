@@ -9,6 +9,7 @@ import { startServer } from './start.ts';
  *   MANYTHREADS_APP_PASSWORD       password for manythreads_app (set by the migration runner; default is dev-only)
  *   MANYTHREADS_SYSTEM_DATABASE_URL / MANYTHREADS_SYSTEM_PASSWORD   same for the kernel's manythreads_system login
  *   MANYTHREADS_TEST_PLUGINS=1     also load test-kernel and example-hello
+ *   MANYTHREADS_SPIKE_SLACK_COMPAT=1  load the slack-compat spike plugin (off by default; replaced by P5-10)
  *   MANYTHREADS_PUBLIC_URL         public base URL (links in mails, the first-admin bootstrap line); default http://localhost:PORT
  *   MANYTHREADS_TRUST_PROXY=1      believe x-forwarded-for from ONE proxy hop (the ingress, which must append to it); N = N hops,
  *                                  or a list of proxy CIDRs. The sign-in lockout and rate limits key on the client address
@@ -35,6 +36,7 @@ const server = await startServer({
   systemUrl,
   appPassword,
   testPlugins: env['MANYTHREADS_TEST_PLUGINS'] === '1',
+  spikePlugins: env['MANYTHREADS_SPIKE_SLACK_COMPAT'] === '1',
   jobWorkers: env['MANYTHREADS_JOB_WORKERS'] !== '0',
   logger: true,
 });

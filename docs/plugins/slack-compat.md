@@ -27,3 +27,10 @@ code does; nothing here is product API.
   runtime work must reuse the channels behaviour, never copy this insert.
 - `chat.postMessage` is Slack-shaped (`thread_ts`, `ts`) only so the Hermes adapter stays a thin
   POST; it is not a general Slack API.
+
+## Loading
+
+Not loaded by default. A real deployment loads it only with `MANYTHREADS_SPIKE_SLACK_COMPAT=1`; the test servers
+(`testPlugins`) load it so its specs run (`SPIKE_PLUGIN_DIRS` in `packages/server/src/start.ts`). The job refuses a
+bot that is not `active` and any channel that is not a public team channel (the spike has no membership check); the
+idempotency lookup is scoped to the channel. P5-10 replaces this door and the plugin goes away with it.

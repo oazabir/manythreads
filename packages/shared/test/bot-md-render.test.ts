@@ -81,3 +81,32 @@ describe('renderBotMd', () => {
     if (split.ok) expect(split.body).toBe('\nSoul text.\n');
   });
 });
+describe('hostile BOT.md input (parse is linear-time and bounded)', () => {
+  const headers = '---\nschema: 1\nname: X\nrole: Y\nkind: agent\nruntime: hermes\n';
+
+  it('a 1 MB file is refused at once, before it is split or parsed', () => {
+    const started = performance.now();
+    const res = parseBotMd(`${headers}---\n${'a'.repeat(1024 * 1024)}`);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.failure.message).toMatch(/larger than 256 KB/);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  it('a file just under the cap is still read', () => {
+    const res = parseBotMd(`${headers}---\n${'a'.repeat(200 * 1024)}`);
+    expect(res.ok).toBe(true);
+  });
+
+  it('more aliases of one anchor than the cap is an invalid definition, though the library default (100) would accept it', () => {
+    // `skills` is an allowed key of strings: one anchor and N aliases of it
+    const skills = (n: number): string => `skills: [&s git-hygiene${Array(n).fill(', *s').join('')}]\n`;
+    const started = performance.now();
+    const over = parseBotMd(`${headers}${skills(60)}---\nbody\n`); // 60 > 20 (ours) but < 100 (yaml's default)
+    expect(over.ok).toBe(false);
+    if (!over.ok) expect(over.failure.message).toMatch(/alias/i);
+    expect(performance.now() - started).toBeLessThan(1000);
+    // within the cap the same shape gets past YAML: whatever the schema says about it, it is not about aliases
+    const within = parseBotMd(`${headers}${skills(10)}---\nbody\n`);
+    if (!within.ok) expect(within.failure.message).not.toMatch(/alias/i);
+  });
+});

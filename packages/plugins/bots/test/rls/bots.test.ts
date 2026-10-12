@@ -221,6 +221,48 @@ describe('bots, bot_pairing_tokens, bot_runs and run_source_log (P5-03)', () => 
     expect(await code(as(nadia, (tx) => tx.query("UPDATE app.bot_runs SET status = 'failed'")))).toBe('42501');
   });
 
+  it('a run ties its bot to its team (composite FK) and a caller can only start one that is running', async () => {
+    const ids = await sys(async (tx) => ({
+      eng: (await tx.query<{ id: string }>("SELECT id FROM app.bots WHERE slug = 'release-bot'")).rows[0]!.id,
+      mkt: (await tx.query<{ id: string }>("SELECT id FROM app.bots WHERE slug = 'campaign-bot'")).rows[0]!.id,
+    }));
+    // Marketing's bot filed under Engineering, a team the caller can read: the policy passes, the foreign key refuses (23503)
+    expect(
+      await code(
+        as(nadia, (tx) =>
+          tx.query(
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status)
+             VALUES ($1, $2, $3, 'conversation', $4, 'running')`,
+            [nadia.workspaceId, ids.mkt, ENG, nadia.actorId],
+          ),
+        ),
+      ),
+    ).toBe('23503');
+    // a forged finished run (status done, ended_at set) is refused by the policy
+    expect(
+      await code(
+        as(nadia, (tx) =>
+          tx.query(
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, ended_at)
+             VALUES ($1, $2, $3, 'conversation', $4, 'done', now())`,
+            [nadia.workspaceId, ids.eng, ENG, nadia.actorId],
+          ),
+        ),
+      ),
+    ).toBe('42501');
+    expect(
+      await code(
+        as(nadia, (tx) =>
+          tx.query(
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status)
+             VALUES ($1, $2, $3, 'conversation', $4, 'done')`,
+            [nadia.workspaceId, ids.eng, ENG, nadia.actorId],
+          ),
+        ),
+      ),
+    ).toBe('42501');
+  });
+
   it('run sources read with the run: the team sees them, others do not', async () => {
     const refs = async (p: Persona): Promise<string[]> =>
       as(p, async (tx) =>

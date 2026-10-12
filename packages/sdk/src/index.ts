@@ -5,6 +5,7 @@ export * from './types.ts';
 export * from './cohesion.ts';
 export * from './repo.ts';
 export * from './runtime.ts';
+export * from './http.ts';
 
 /**
  * Declare a plugin. The manifest is validated immediately (a bad field throws a ZodError naming it), so a

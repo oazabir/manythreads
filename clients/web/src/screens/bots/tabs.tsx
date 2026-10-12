@@ -7,9 +7,9 @@ import { Block, Mono, NotSet, Row } from './parts';
 import type { DefinitionDraft } from './store';
 
 /*
- * The thirteen tabs of one bot page (SPEC §7.2, PLAN P5-05, `[proto §05]`). Every tab is a view of the same file — BOT.md — and twelve
- * of them edit one section of it through the draft, which validates the whole document on every change: a tab cannot produce a
- * definition the loader would refuse. Audit reads the runs the server holds.
+ * The fourteen tabs of one bot page (SPEC §7.2, PLAN P5-05, `[proto §05]`). Every tab is a view of the same file — BOT.md — and
+ * most of them edit one section of it through the draft, which keeps what was typed and validates the whole document on every change:
+ * Save stays off while the loader would refuse the definition. Audit reads the runs the server holds.
  *
  * Two rules hold everywhere:
  *  - `bots/`, `TEAM.md`, `skills/` and `routines/` are never bot-writable, so the Capabilities tab says so and never offers a
@@ -44,8 +44,8 @@ export function IdentityTab({ draft, canEdit }: TabProps) {
   const set = sectionOf(draft);
   return (
     <Block title="Identity" count="name, role, kind, runtime, visibility">
-      <TextField label="Name" value={f.name} readOnly={!canEdit} testId="bot-name" onChange={(name) => set('name', name)} hint="Shown on the roster and wherever the bot is mentioned." />
-      <TextField label="Role" value={f.role} readOnly={!canEdit} testId="bot-role" onChange={(role) => set('role', role)} hint="One line: what this bot is for. The platform never reads meaning into it." />
+      <TextField label="Name" value={f.name} readOnly={!canEdit} testId="bot-name" error={draft.issueAt('name')?.message} onChange={(name) => set('name', name)} hint="Shown on the roster and wherever the bot is mentioned." />
+      <TextField label="Role" value={f.role} readOnly={!canEdit} testId="bot-role" error={draft.issueAt('role')?.message} onChange={(role) => set('role', role)} hint="One line: what this bot is for. The platform never reads meaning into it." />
       <SelectField
         label="Kind"
         value={f.kind}

@@ -11,8 +11,9 @@ import { BotSlug } from './pairing.ts';
 
 /**
  * A bot as the roster and the bot page read it: the row plus the two fields a roster cannot do without (`name`, `role`, copied out of
- * the definition by the loader), the compiled `mayTag`, and — when the last load failed — the reason, read from the newest
- * `bots.bot.invalid` event. The row keeps no error column by design (PLAN P5-04): the team-readable event is the alert.
+ * the definition by the loader), the compiled `mayTag`, and — when the last load failed — the reason, read from the row's
+ * `invalid_reason` (bots migration 0006). The loader sets it on a failed load and clears it on the next good one, so a repaired file
+ * carries none; `bots.bot.invalid` stays the team-readable alert and history, never the page's state.
  */
 export const BotSummary = Bot.extend({
   name: z.string().min(1),

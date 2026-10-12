@@ -76,6 +76,13 @@ export const pluginsDir = fileURLToPath(new URL('../../plugins/', import.meta.ur
 /** Packages under packages/plugins that only exist for tests and examples; loaded when MANYTHREADS_TEST_PLUGINS=1. */
 export const TEST_ONLY_PLUGIN_DIRS: ReadonlySet<string> = new Set(['test-kernel', 'example-hello']);
 
+/**
+ * Spike plugins (docs/spikes): never loaded in a real deployment unless the entry point opts in (`spikePlugins`, which `main.ts` sets from
+ * `MANYTHREADS_SPIKE_SLACK_COMPAT=1`). The test servers (`testPlugins`) load them too, so their specs keep running. slack-compat is
+ * replaced by the P5-10 runtime door.
+ */
+export const SPIKE_PLUGIN_DIRS: ReadonlySet<string> = new Set(['slack-compat']);
+
 /** The two plugins that register the one `storage` provider; `MANYTHREADS_STORAGE` decides which of them loads. */
 export const STORAGE_PLUGIN_DIRS: Readonly<Record<'local' | 's3', string>> = { local: 'storage-local', s3: 'storage-s3' };
 
@@ -112,6 +119,8 @@ export interface StartServerOptions {
   jobPollMs?: number;
   /** Load the test-only plugins (test-kernel, example-hello). */
   testPlugins?: boolean;
+  /** Load the spike plugins (slack-compat). Off unless the entry point asks; `main.ts` reads `MANYTHREADS_SPIKE_SLACK_COMPAT`. */
+  spikePlugins?: boolean;
   /** Which storage plugin loads: `local` (storage-local) or `s3` (storage-s3). Default from `MANYTHREADS_STORAGE`, else `local`. */
   storage?: 'local' | 's3';
   /** The test-only dev header (only ever honoured when NODE_ENV=test; see dev-actor.ts). */
@@ -166,6 +175,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     if (!('dir' in s) || s.dir === undefined) return true;
     const dirName = s.dir.split('/').filter(Boolean).pop() ?? '';
     if (storageDirs.has(dirName)) return dirName === STORAGE_PLUGIN_DIRS[storage];
+    if (SPIKE_PLUGIN_DIRS.has(dirName)) return options.testPlugins === true || options.spikePlugins === true;
     return options.testPlugins === true || !TEST_ONLY_PLUGIN_DIRS.has(dirName);
   });
 

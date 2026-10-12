@@ -103,6 +103,18 @@ describe('the bot roster and bot page', () => {
     expect(zed.invalid).toMatchObject({ fieldPath: 'capabilties' });
   });
 
+  it('a repaired definition drops the red banner: the reason follows the last load, not the newest alert', async () => {
+    const fixed = validMd('Zed', 'Answers the roster tests, repaired', []);
+    expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p505-zed/BOT.md', content: fixed }], 'Fix Zed')).status).toBe(201);
+
+    const bot = await until(async () => {
+      const b = (await getBot(omar, 'p505-zed')).body.bot;
+      return b.status === 'active' ? b : null;
+    }, 10_000);
+    expect(bot.invalid).toBeNull();
+    expect(summaryOf((await listRoster(nadia)).body, 'p505-zed')).toMatchObject({ status: 'active', invalid: null, role: 'Answers the roster tests, repaired' });
+  });
+
   it('a person who cannot see the team is refused: another team 403, a guest 403', async () => {
     expect((await listRoster(sameera)).status).toBe(403);
     expect((await listRoster(lena)).status).toBe(403);

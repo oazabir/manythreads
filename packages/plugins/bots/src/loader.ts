@@ -5,9 +5,10 @@ import { BOT_SLUG_RE, RepoRepoCommittedEvent, parseBotMd } from '@manythreads/sh
 // The loader (PLAN P5-04, extended by P5-10): a `repo.repo.committed` subscription that rebuilds a team's bot from `bots/<slug>/BOT.md`, in the
 // outbox consumer's system transaction, once per commit. Valid → one row carrying the definition's projections (display fields, `placement`,
 // `triggers`, the compiled `capabilities.native`), the bot actor, the bot's team membership and its compiled allowlist of grants, then
-// bots.bot.loaded. Invalid → the previous row stays live as `status = 'invalid'` and bots.bot.invalid carries the reason (the event is the alert;
-// the row keeps no error column). The file deleted → the row goes, grants and membership with it, then bots.bot.removed. A failure throws, so the
-// outbox rolls everything back and retries the event: every step is an upsert or a delete, so a retry changes nothing twice.
+// bots.bot.loaded; a good load clears `invalid_reason`. Invalid → the previous row stays live as `status = 'invalid'` (a disabled bot stays
+// disabled) with the reason in `invalid_reason`, and bots.bot.invalid is the alert. The file deleted → the row goes, grants and membership with
+// it, then bots.bot.removed. A failure throws, so the outbox rolls everything back and retries the event: every step is an upsert or a delete,
+// so a retry changes nothing twice.
 
 /** `bots/<slug>/BOT.md` exactly — one folder deep, the shape the viewer's `bots/*` folder glob names (never `bots/a/b/BOT.md`). */
 const BOT_MD = /^bots\/([^/]+)\/BOT\.md$/;
@@ -32,7 +33,18 @@ interface InvalidInput {
 async function invalidate(ctx: PluginContext, tx: PluginTx, commit: Commit, input: InvalidInput): Promise<void> {
   const existing = await tx.query<{ id: string }>('SELECT id FROM app.bots WHERE team_id = $1 AND slug = $2', [commit.teamId, input.slug]);
   const botId = existing.rows[0]?.id ?? null;
-  if (botId) await tx.query(`UPDATE app.bots SET status = 'invalid', updated_at = now() WHERE id = $1`, [botId]);
+  // A bot a lead turned off stays off while its file is broken (and after it is repaired): only `active` becomes `invalid`. The reason is
+  // stored either way, so the page can say why the last load failed; the next good load clears it.
+  if (botId) {
+    await tx.query(
+      `UPDATE app.bots
+          SET status = CASE WHEN status = 'disabled' THEN 'disabled' ELSE 'invalid' END,
+              invalid_reason = $2::jsonb,
+              updated_at = now()
+        WHERE id = $1`,
+      [botId, JSON.stringify({ fieldPath: input.fieldPath, message: input.message, at: new Date().toISOString(), definitionSha: input.definitionSha })],
+    );
+  }
   await ctx.audit.emit(tx, {
     type: 'bots.bot.invalid',
     workspaceId: commit.workspaceId,
@@ -120,6 +132,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
        definition_sha = EXCLUDED.definition_sha,
        -- a bot a lead turned off by hand stays off when its BOT.md changes; every other row loads back to active
        status         = CASE WHEN b.status = 'disabled' THEN 'disabled' ELSE 'active' END,
+       invalid_reason = NULL,
        placement      = EXCLUDED.placement,
        triggers       = EXCLUDED.triggers,
        native         = EXCLUDED.native,

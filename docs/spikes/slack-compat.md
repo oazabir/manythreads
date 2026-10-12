@@ -67,6 +67,11 @@ lands in P5-10 (runtime-hermes).
    LIVE LOOP PROOF PASSED: Hermes adapter -> door -> thread, readable via the messages API
    ```
 
+## Status
+
+The plugin is a spike: it is not auto-loaded in production (`MANYTHREADS_SPIKE_SLACK_COMPAT=1` opts in; test servers load
+it), posts to public team channels only and only for an `active` bot. P5-10 replaces it with the real runtime door.
+
 ## For P5-09 / P5-10
 
 - Reuse the door's auth (pairing token → `app.bots_pairing_resolve`) for the

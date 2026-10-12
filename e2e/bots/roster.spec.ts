@@ -6,7 +6,7 @@ import { BOTS_STACK_ENV, BOT_MD, apiOn, commitDefinition, definitionOf, rosterRo
 
 /*
  * The bot roster and a bot page as a reader (PLAN P5-05, SPEC §7.5): the Bots entry in the sidebar, the roster the loader fills from
- * `bots/<slug>/BOT.md`, the thirteen tabs of one bot, and the red banner a definition that fails to load raises. Nadia is a member of
+ * `bots/<slug>/BOT.md`, the fourteen tabs of one bot, and the red banner a definition that fails to load raises. Nadia is a member of
  * Engineering who does not lead it, so the roster and the page are read-only to her and the change on offer is the file (a pull request);
  * promoted to a lead she edits an existing bot, while adding or removing one stays the admins'. Runs on its own stack because it commits.
  */

@@ -231,4 +231,32 @@ describe('the BOT.md loader', () => {
     expect(event.botId).toBeNull();
     expect(await botRow('NotASlug')).toBeUndefined();
   });
+
+  it('a bot a lead turned off stays off through invalid and valid loads, and its reason is recorded and cleared', async () => {
+    const slug = 'p504-paused';
+    expect((await commit(`bots/${slug}/BOT.md`, validMd('Paused', []), 'Add paused')).status).toBe(201);
+    await until(async () => ((await botRow(slug))?.['status'] === 'active' ? true : null), 10_000);
+    await w.system((tx) => tx.query(`UPDATE app.bots SET status = 'disabled' WHERE team_id = $1 AND slug = $2`, [ENG, slug]));
+
+    // broken while disabled: still disabled, the reason is on the row
+    const bad = validMd('Paused', []).replace('capabilities:', 'capabilties:');
+    expect((await commit(`bots/${slug}/BOT.md`, bad, 'Break paused')).status).toBe(201);
+    const broken = await until(async () => {
+      const row = await botRow(slug);
+      return row?.['invalid_reason'] ? row : null;
+    }, 10_000);
+    expect(broken['status']).toBe('disabled');
+    expect(broken['invalid_reason']).toMatchObject({ fieldPath: 'capabilties' });
+
+    // repaired: the new definition loads, the reason is cleared, and the bot is STILL disabled
+    const before = String(broken['definition_sha']);
+    expect((await commit(`bots/${slug}/BOT.md`, validMd('Paused again', []), 'Fix paused')).status).toBe(201);
+    const fixed = await until(async () => {
+      const row = await botRow(slug);
+      return row && row['definition_sha'] !== before ? row : null;
+    }, 10_000);
+    expect(fixed['status']).toBe('disabled');
+    expect(fixed['invalid_reason']).toBeNull();
+    expect(fixed['name']).toBe('Paused again');
+  });
 });

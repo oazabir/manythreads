@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BotFrontmatter, parseBotMd, renderBotMd, splitBotMd, type BotFrontmatter as BotFrontmatterData, type BotSection } from '@manythreads/shared';
+import { BOT_MD_MAX_CHARS, BotFrontmatter, parseBotMd, renderBotMd, splitBotMd, type BotFrontmatter as BotFrontmatterData, type BotSection } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
@@ -8,7 +8,7 @@ import { fetchBot, fetchBots, readDefinition, writeDefinition, type DefinitionFi
 
 /*
  * The Bots screens' state (PLAN P5-05): the roster for the current team, and — on a bot page — the definition being edited, held as
- * the parsed frontmatter and the body so each of the thirteen tabs edits one part of it and Save renders the whole file once.
+ * the parsed frontmatter and the body so each of the fourteen tabs edits one part of it and Save renders the whole file once.
  */
 
 /**
@@ -60,6 +60,8 @@ export const BOT_TABS: ReadonlyArray<{ id: string; label: string; section: BotSe
  * and the raw file, and fixing it happens in Files — an editor that silently rewrote a definition it could not read would lose the
  * author's words.
  */
+export type DraftIssue = { path: string; message: string };
+
 export type DefinitionDraft = {
   status: 'loading' | 'ready' | 'unreadable' | 'error';
   /** The frontmatter as loaded (unmodified), for the diff line and for a reset. */
@@ -69,6 +71,10 @@ export type DefinitionDraft = {
   /** The text as loaded, so the page can tell whether anything changed. */
   originalText: string;
   dirty: boolean;
+  /** What the schema refuses in the draft right now (empty when it would load). A draft with issues is kept as typed, and Save is off. */
+  issues: DraftIssue[];
+  /** The first issue at (or under) a dotted field path such as `name` or `triggers.0`, for the message beside that field. */
+  issueAt: (path: string) => DraftIssue | undefined;
   /** Why the file does not parse (`fieldPath`, `message`), when it does not. */
   unreadable: { fieldPath: string | null; message: string } | null;
   error: string | null;
@@ -102,10 +108,9 @@ export function useDefinition(slug: string, path: string, revision: number): Def
   const patch = useCallback((change: (fm: BotFrontmatterData) => BotFrontmatterData) => {
     setDraft((d) => {
       if (!d) return d;
-      const next = change(d.frontmatter);
-      // The schema is the authority: a change that would not load is not kept, so no tab can write a file the loader refuses.
-      const checked = BotFrontmatter.safeParse(next);
-      return checked.success ? { ...d, frontmatter: checked.data } : d;
+      // The edit is kept even when the schema would refuse it (a cleared Name, a half-typed value): dropping it silently left the person
+      // unable to retype. The schema stays the authority at Save, which is off while `issues` is not empty.
+      return { ...d, frontmatter: change(d.frontmatter) };
     });
   }, []);
   const setBody = useCallback((body: string) => setDraft((d) => (d ? { ...d, body } : d)), []);
@@ -113,6 +118,26 @@ export function useDefinition(slug: string, path: string, revision: number): Def
   const reset = useCallback(() => {
     setDraft((d) => (d && parsed?.ok && split?.ok ? { frontmatter: parsed.frontmatter, body: split.body, baseBlobSha: loaded?.blobSha ?? d.baseBlobSha } : d));
   }, [parsed, split, loaded]);
+
+  const issues = useMemo<DraftIssue[]>(() => {
+    if (!draft) return [];
+    const checked = BotFrontmatter.safeParse(draft.frontmatter);
+    const found: DraftIssue[] = checked.success
+      ? []
+      : checked.error.issues.map((issue) => {
+          const keys = issue.code === 'unrecognized_keys' ? (issue as unknown as { keys: readonly PropertyKey[] }).keys : [];
+          return { path: [...issue.path, ...keys.slice(0, 1)].map(String).join('.'), message: issue.message };
+        });
+    // the loader refuses a file above this size, so the page must not write one (the body is the usual cause)
+    if (renderBotMd(draft.frontmatter, draft.body).length > BOT_MD_MAX_CHARS) {
+      found.push({ path: '', message: `BOT.md is larger than ${BOT_MD_MAX_CHARS / 1024} KB; shorten the soul text` });
+    }
+    return found;
+  }, [draft]);
+  const issueAt = useCallback(
+    (path: string) => issues.find((i) => i.path === path || i.path.startsWith(`${path}.`)),
+    [issues],
+  );
 
   const render = (fm: BotFrontmatterData, body: string): string => renderBotMd(fm, body);
   const text = useCallback(() => (draft ? render(draft.frontmatter, draft.body) : (loaded?.content ?? '')), [draft, loaded]);
@@ -131,6 +156,8 @@ export function useDefinition(slug: string, path: string, revision: number): Def
     body: draft?.body ?? '',
     originalBody,
     originalText,
+    issues,
+    issueAt,
     dirty: draft !== null && originalRender !== null && render(draft.frontmatter, draft.body) !== originalRender,
     unreadable: parsed && !parsed.ok ? parsed.failure : null,
     error: q.status === 'error' ? (isApiError(q.error) ? q.error.message : 'Could not read the definition.') : null,

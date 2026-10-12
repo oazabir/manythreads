@@ -88,6 +88,11 @@ Screens: `docs/retro/screens/phase-1/`.
 - `pnpm vt` / full e2e flake under parallel agents (Postgres connection slots) — run gates with agents idle.
 
 ## Phase 5 so far
+- **Integration (local, branch `integrate-p5`):** the devbox tree (P5-06..P5-10) is committed as 5d69003; the Phase 5 review refactor (23ee12c: bots hardening, spike gate, editor drafts, shared HTTP helpers) is rebased onto it, and its hardening migration is renumbered from bots `0004` to `0006_bots_hardening.sql` (0004 = run_source_log_append, 0005 = definition).
+- **slack-compat door gated off in production (review fix):** the P5-01 spike plugin is no longer auto-loaded. `main.ts` reads
+  `MANYTHREADS_SPIKE_SLACK_COMPAT=1` and passes `spikePlugins` to `startServer`; test servers (`testPlugins`) still load it. The
+  helm chart does not set it, by decision: its public `chat.postMessage` is replaced by P5-10's runtime-hermes door.
+  `e2e/screens/task.p5-01.shots.ts` (live shots of the door) therefore needs the flag on the target server.
 - **P5-00 reflect, checked against the code (no refactor needed):** the one entity-link resolver is already the SDK's
   `ctx.links.resolve` (P3-04); `repo.repo.committed` already carries `paths` (`put`/`delete`), so a bot reload reads
   one event instead of diffing; `withActor` already carries a run (`Actor.runId` → `app.run_id`) — the new

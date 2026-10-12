@@ -9,13 +9,13 @@ import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, writeDefin
 import { TabPanel } from './tabs';
 
 /*
- * One bot's page (SPEC §7.2/§7.5, PLAN P5-05, `[proto §05]`): the same thirteen tabs for every bot in the workspace, reached from the
+ * One bot's page (SPEC §7.2/§7.5, PLAN P5-05, `[proto §05]`): the same fourteen tabs for every bot in the workspace, reached from the
  * roster's Configure button. The head carries the bot's identity; the tabs describe it and — for the team's lead or a workspace admin — edit
  * the definition, which is the file `bots/<slug>/BOT.md` of the team repo.
  *
  * Three things the page owes a reader:
  *  - a definition that failed to load shows the red banner with the field path, and the previous version stays live (the reason comes
- *    from the team-readable `bots.bot.invalid` event; the row keeps no error column, PLAN P5-04);
+ *    from the row's `invalid_reason`, cleared by the loader once the file loads again);
  *  - a member who is not a lead reads every tab and is offered the file (and therefore a pull request) instead of Save, which is the
  *    same rule the repo writer enforces with 403;
  *  - Save is one commit as the signed-in person, and a file someone else changed meanwhile is refused rather than overwritten.
@@ -83,7 +83,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
   const [busy, setBusy] = useState(false);
 
   const doSave = async (): Promise<void> => {
-    if (!draft.frontmatter || busy) return;
+    if (!draft.frontmatter || busy || draft.issues.length > 0) return;
     setBusy(true);
     onSave(null);
     try {
@@ -169,11 +169,17 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
         <footer className="b-foot" data-testid="bot-foot">
           {canEdit ? (
             <>
-              <button type="button" className="btn primary" data-testid="save-bot" disabled={!draft.dirty || busy} onClick={() => void doSave()}>
+              <button type="button" className="btn primary" data-testid="save-bot" disabled={!draft.dirty || busy || draft.issues.length > 0} onClick={() => void doSave()}>
                 {busy ? 'Saving…' : 'Save'}
               </button>
               <button type="button" className="btn" data-testid="reset-bot" disabled={!draft.dirty || busy} onClick={draft.reset}>Discard changes</button>
               <span className="b-hint" data-testid="dirty-state">{draft.dirty ? 'Unsaved changes' : 'No changes'}</span>
+              {draft.issues.length > 0 ? (
+                <span className="b-warnline" role="alert" data-testid="draft-issues">
+                  Cannot save yet: {draft.issues[0]!.path ? `${draft.issues[0]!.path}: ` : ''}{draft.issues[0]!.message}
+                  {draft.issues.length > 1 ? ` (+${draft.issues.length - 1} more)` : ''}
+                </span>
+              ) : null}
             </>
           ) : (
             <>

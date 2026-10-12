@@ -103,3 +103,36 @@ test('a definition someone else changed while the page was open is refused, not 
     await close();
   }
 });
+
+test('clearing Name shows the schema’s message beside it and turns Save off; retyping turns it back on', async ({ browser, playwright }) => {
+  const before = await commitsOf(stack);
+  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'coder');
+  try {
+    const name = page.getByTestId('bot-name');
+    const save = page.getByTestId('save-bot');
+    await expect(name).not.toHaveValue('');
+    const original = await name.inputValue();
+
+    // the cleared field stays cleared (the draft keeps what was typed) and says what is wrong
+    await name.fill('');
+    await expect(name).toHaveValue('');
+    await expect(page.getByTestId('bot-name-error')).toBeVisible();
+    await expect(save).toBeDisabled();
+    await expect(page.getByTestId('draft-issues')).toContainText('Cannot save yet');
+
+    // retyping a value clears the message and Save is on again
+    await name.fill(`${original} Two`);
+    await expect(page.getByTestId('bot-name-error')).toHaveCount(0);
+    await expect(page.getByTestId('draft-issues')).toHaveCount(0);
+    await expect(page.getByTestId('dirty-state')).toContainText('Unsaved changes');
+    await expect(save).toBeEnabled();
+
+    // putting the original back is no change at all
+    await name.fill(original);
+    await expect(save).toBeDisabled();
+  } finally {
+    await close();
+  }
+  // nothing was committed by any of that
+  expect((await commitsOf(stack)).length).toBe(before.length);
+});

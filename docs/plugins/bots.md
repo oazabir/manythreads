@@ -33,8 +33,10 @@ Every commit that touches `bots/<slug>/BOT.md` is read in the outbox consumer's 
 * **invalid frontmatter** (unknown key, missing key, bad YAML, a folder that is not a lowercase slug) → the previous
   row, if any, stays live with `status = 'invalid'` (last-good definition keeps running; the loader never overwrites
   `definition_sha` on a failure) and `bots.bot.invalid` carries the reason: `fieldPath` is what the schema named
-  (`capabilities.native[3]`, `capabilties` for an unknown key) plus `message`. There is **no error column on the
-  row** — the event is the alert, and P5-05's red banner reads these team-readable events. No row ever existed →
+  (`capabilities.native[3]`, `capabilties` for an unknown key) plus `message`. The event is the alert; the row also
+  keeps the last failure in `invalid_reason` (migration 0006), which P5-05's red banner reads and the next good load
+  clears — a repaired file shows no banner. A `disabled` bot stays `disabled` through invalid and valid loads alike
+  (only `active` becomes `invalid`). No row ever existed →
   event only (the `kind`/`runtime` columns are NOT NULL, a broken definition never lands half a row).
 * **file deleted** → the row is deleted (pairing tokens and runs cascade), its capability grants and the team membership
   row are deleted with it, the actor row kept (messages reference it), then `bots.bot.removed`.
@@ -61,7 +63,7 @@ Both routes check `manage`, and the SECURITY DEFINER functions of `0002_pairing.
 rules run of P5-10 — hashes it and calls `app.bots_pairing_resolve(sha256(token))` in its own transaction
 (`resolvePairingToken` in `src/pairing.ts` is the same call, exported for tests and for the plugin's own future
 use). It answers `bot_id, team_id, workspace_id, actor_id, slug` — the token **is** the credential, so there is no
-caller check, and unknown, revoked and malformed tokens all answer no rows, one answer for all three. Mint and
+caller check, and unknown, revoked, malformed tokens **and the token of a bot that is not `active`** all answer no rows, one answer for all of them. Mint and
 resolve are open only to `manythreads_app, manythreads_system` (`REVOKE ... FROM PUBLIC` first).
 
 Events (`app.events`, team-readable): `bots.bot.loaded`, `bots.bot.invalid`, `bots.bot.removed` — all v1, registered
@@ -71,10 +73,13 @@ in `packages/shared/src/events/registry.ts`.
 
 | Table | What it holds | Key columns | Indexes |
 |---|---|---|---|
-| `bots` | one loaded bot, rebuilt from its `BOT.md` | `team_id`, `slug`, `kind` (`agent` \| `automation`), `runtime` (`hermes` \| `rules`), `visibility` (`team` \| `workspace`), `definition_sha` (sha256 of the file it came from), `status` (`active` \| `disabled` \| `invalid`), `placement` (jsonb), `triggers` and `native` (jsonb; the loader's own projections, migration 0005) | UNIQUE `(team_id, slug)`; `(team_id)` |
+| `bots` | one loaded bot, rebuilt from its `BOT.md` | `team_id`, `slug`, `kind` (`agent` \| `automation`), `runtime` (`hermes` \| `rules`), `visibility` (`team` \| `workspace`), `definition_sha` (sha256 of the file it came from), `status` (`active` \| `disabled` \| `invalid`), `placement` (jsonb), `triggers` and `native` (jsonb; the loader's own projections, migration 0005), `invalid_reason` (jsonb, null while the file loads) | UNIQUE `(team_id, slug)`; UNIQUE `(id, team_id)`; `(team_id)` |
 | `bot_pairing_tokens` | a pairing credential: **sha256 only**, never the token | `bot_id`, `token_hash`, `revoked_at?` | partial UNIQUE `(token_hash) WHERE revoked_at IS NULL`; `(bot_id)` |
 | `bot_runs` | one run | `bot_id`, `team_id`, `trigger_type` (the BOT.md trigger that fired it), `asker_id?`, `thread_id?`, `status` (`running` \| `done` \| `failed` \| `stopped`), `started_at`, `ended_at?` | `(bot_id, id DESC)`; partial `(bot_id) WHERE ended_at IS NULL`; `(team_id, id DESC)`; `(thread_id)` |
 | `run_source_log` | what a run read: the evidence behind "Sources reached" | `run_id`, `seq`, `source_type` (open set: `message`, `page`, `file`, `memory`, ...), `source_ref`, `scope` (`team` \| `channel` \| `person`) | PK `(run_id, seq)` |
+
+`bot_runs` has a composite foreign key `(bot_id, team_id) → bots (id, team_id)`, so a run cannot name a bot of another team, and
+its INSERT policy admits only a run that starts `running` with no `ended_at` (migration 0006).
 
 `definition_sha`, the slug shape and `seq >= 0` are enforced by CHECK as well as by the Zod schema, so a row is valid
 whatever wrote it. The four `text` columns with a value set are the shared enums of `entities/bot.ts`

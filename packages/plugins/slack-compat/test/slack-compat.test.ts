@@ -104,4 +104,20 @@ describe('slack-compat spike', () => {
     );
     expect(after).toBe(before);
   });
+
+  it('a disabled bot\'s token is 401 and lands nothing; active again, it delivers', async () => {
+    const minted = await w.call(omar, 'POST', '/api/teams/engineering/bots/spikebot/pairing-tokens', {});
+    const fresh = MintPairingTokenResponse.parse(minted.body).token;
+    const count = () => w.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.messages')).rows[0]!.n);
+    const setStatus = (status: string) => w.system((tx) => tx.query('UPDATE app.bots SET status = $2 WHERE id = $1', [bot.botId, status]));
+    const before = await count();
+    await setStatus('disabled');
+    try {
+      expect((await post({ token: fresh, channel: channelId, text: 'nope' })).status).toBe(401);
+    } finally {
+      await setStatus('active');
+    }
+    expect(await count()).toBe(before);
+    expect((await post({ token: fresh, channel: channelId, text: 'back again' })).status).toBe(200);
+  });
 });
