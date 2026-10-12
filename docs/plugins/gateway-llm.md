@@ -148,8 +148,12 @@ separators, confirmed by Luhn so a long id is not a card). `redact` answers the 
 `[redacted:<rule>]` and the call continues; `block` refuses it and the text is unchanged. Rules are names, never the
 matched text: the event, the decision and the audit line carry `api-key`, not the key.
 
-`require_approval` is in SPEC §15's vocabulary but no preset uses it yet: it needs the approvals plugin of P5-20, which
-owns the pending-approval path. Until then the hook answers `allow`, `redact` or `block`.
+`require_approval` (SPEC §15) is a **bot's** choice, not a preset's: a request carries `dlpMode` — `hold` when the bot's `guard.rules` carries
+`dlp:require_approval`, `approved` for the call a person has since approved, the preset's own rule otherwise. In `hold` mode a finding answers
+`allowed: false`, `outcome: 'require_approval'`, `reason: 'dlp'` and `text` = the **redacted** text (what an approver may be shown); the runtime
+files the approval through the approvals plugin ([approvals](./approvals.md)) and stops the run. In `approved` mode the finding passes as written,
+but a preset that refuses outright (`customer-facing`) still refuses, and the egress and budget checks still apply. `llm.guard.decided` is emitted
+for the hold like any non-`allow` outcome.
 
 ## Without a proxy
 

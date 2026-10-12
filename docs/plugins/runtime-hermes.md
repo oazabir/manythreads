@@ -106,7 +106,8 @@ streamed into the thread delta by delta: a turn produces one message, and postin
 * The **scope a provider is handed is authorized too** (`BotRuntimeScope.invoke`): every call a runtime makes goes through the
   broker as the run's bot before it runs, with the same rules as the MCP door — the allowlist the loader compiled from
   `capabilities.native`, the `files.*`/`pages.write` path guard on the path the call's own arguments name, and a
-  `needsApproval` grant failing closed (the Approvals inbox is P5-20). The reply itself is posted through that door, so a
+  `needsApproval` grant becoming a pending approval ([approvals](./approvals.md): the run ends `stopped` at that call, and approving it
+  later makes that call once, as the bot; without the approvals plugin it fails closed). The reply itself is posted through that door, so a
   definition that never asked for `messages.post` cannot post one. `test/run.test.ts` asserts exactly that refusal.
 * Reads run as the **asking person**, writes as the **bot** (`ctx.runs.asReader` / `asBot`), which is how a bot never sees more
   than the person talking to it.
@@ -163,3 +164,16 @@ starts in the rendered profile, and the answer arrives in the thread as the bot 
 pins the argv, the `SOUL.md` it read, the run's MCP URL and the prompt it got on stdin. Three cases: the answer lands (`done`),
 a definition that never asked for `messages.post` has its reply **refused** (`failed`, nothing posted, though the process ran),
 and a definition with no model alias fails without starting a process at all.
+
+## A run that waits for a person (P5-20)
+
+* **A grant flagged `needsApproval`** — over the MCP endpoint (the gateway answers `approval_pending`) or through the provider's own scope
+  (`runtime-rules`): the call becomes an approval of source `grant`, the run is closed `stopped` (the router asks `pendingForRun` after the
+  stream ends), and the Approvals inbox and the thread carry the card.
+* **A DLP finding the bot asked to have held** — `guard.rules: ["dlp:require_approval"]` (`GUARD_RULE_DLP_APPROVAL`). The pre-call check runs in
+  `hold` mode: a finding stops the call (outcome `require_approval`) and the router files a `dlp` approval for the tool `llm.call` whose preview is
+  the rule names and the **redacted** message. The original prompt rides in the row's `resume` as a hand-back. When a person approves,
+  `registerApprovalResume` (a consumer of `approvals.approval.decided`) claims the payload and re-queues the run with `approvalId`, and the next
+  pre-call check runs in `approved` mode: that one finding goes to the model as written (a preset that refuses outright still refuses). Without
+  the approvals plugin the hold is a refusal.
+* Runs record where they answer (`bot_runs.channel_id`, `reply_root_id`, bots 0009) so the card lands in that thread.

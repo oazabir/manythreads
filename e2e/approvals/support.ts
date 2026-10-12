@@ -54,8 +54,8 @@ export async function arrangeApprovals(
     };
     const row = (
       await stack.sql<{ id: string }>(
-        `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, bot_id, channel_id, thread_root_id)
-         VALUES ($1, $2, 'grant', 'pages.write', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8, $9, $10) RETURNING id`,
+        `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, channel_id, thread_root_id)
+         VALUES ($1, $2, 'grant', 'pages.write', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $11, $8, $9, $10) RETURNING id`,
         [
           personas.omar.workspaceId,
           ENGINEERING,
@@ -67,6 +67,7 @@ export async function arrangeApprovals(
           bot.id,
           entry.channelId ?? null,
           entry.threadRootId ?? null,
+          personas[entry.requester].name,
         ],
       )
     )[0];

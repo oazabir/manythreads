@@ -72,11 +72,15 @@ A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) 
 - **ask the broker about the run's bot** (`authorize`, and the non-auditing `may` for listings) — so a grant is checked
   against the bot the run belongs to, not against whoever the transaction happens to be;
 - **call a capability handler another plugin registered** (`invoke`) in that transaction, and **list** which capabilities
-  have implementations at all.
+  have implementations at all;
+- **make the one call a person approved** (`asApproved(run, capability, fn)`, P5-20): `asBot` whose actor carries
+  `approvedCapability`, so the broker does not answer `needsApproval` again for exactly that capability in that transaction. Every
+  other check — the grant, the path guard, the destructive tag — still applies; the property lives on the in-memory actor, not in a
+  setting SQL can change. Only the approvals plugin calls it, and only after claiming an approved row.
 
 Why it is one door and not four: a tool call has to be `bot capabilities ∩ asker visibility`, and that sentence only
 holds if the capability check and the row visibility can come from different actors inside one call. It is trusted-code
-territory, like `provider.identity` and `job.register`: a plugin holding it can act as any run's bot, so a reviewer reads
+territory, like `provider.identity` and `job.register`: a plugin holding it can act as any run's bot (today: `gateway-mcp`, `runtime-hermes` and `approvals`), so a reviewer reads
 its routes the way they read a migration. The gateway itself never takes the bot, the team or the asker from the request —
 it resolves them from the run token the database handed out.
 

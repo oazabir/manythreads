@@ -79,8 +79,10 @@ duplicate name is a load-time error in the capability registry, so the handover 
 
 Three shapes of refusal, all answers a model can read and act on rather than transport errors: no grant, or a mutation
 naming a path the bot may never write → `{ ok: false, code: 'forbidden' }` with the broker's reason; a grant with
-`needsApproval` → `{ ok: false, code: 'approval_required' }` and the
-handler **is not run** (the approvals inbox is P5-20; running the call anyway is the one thing the flag exists to stop);
+`needsApproval` → the handler **is not run**: the call becomes a pending approval in the Approvals inbox through
+[approvals](./approvals.md)'s one handler (source `grant`; the arguments are stored for the re-run, the approver sees a clipped preview) and the model gets
+`{ ok: false, code: 'approval_pending', approvalId, message }` — *tell the person it is waiting, do not call it again*; asking again for the same call
+is the same approval. Without the approvals plugin the answer stays `{ ok: false, code: 'approval_required' }` (fail closed);
 a granted name nothing implements → `{ ok: false, code: 'unknown_tool' }`.
 
 ## What the run read
@@ -95,7 +97,6 @@ later. What the gateway does **not** log is the query itself or anything a stub 
 
 ## Not yet
 
-- The approvals path: `needsApproval` fails closed until P5-20.
 - Connections (`person:*` tools, `needsApproval` per connection) are P8.
 - The spend a runtime's calls cost is not written to `llm_spend` (no price source in this deployment); the tokens the model
   reported are logged by the runtime instead.

@@ -25,8 +25,9 @@ Every commit that touches `bots/<slug>/BOT.md` is read in the outbox consumer's 
     roster of people *and* bots"), which is what gives a bot its team's public channels and nothing private;
   * compiles `capabilities.native` into `capability_grants` **as written** — `messages.*` stays a namespace grant, which the
     broker's lookup answers for every verb under it, while a destructive verb is still refused before the allowlist is
-    consulted — and `approvals.needsApproval` sets `needs_approval` on the grants it names. Entries the previous load
-    compiled and this one dropped are deleted;
+    consulted — and `approvals.needsApproval` sets `needs_approval` on the grants it names (such a call waits in the
+    [approvals](./approvals.md) inbox). Entries the previous load compiled and this one dropped are deleted;
+  * projects `approvals.approvers` onto `bots.approvers` (bots 0009), which the approvals plugin reads for a call that has no definition at hand;
   * compiles `handover.mayTag` into the bot's `tasks.handoff` grant (upserted while the key is in the file, **deleted when it
     leaves** — the loader owns this grant, and it wins over a `tasks.handoff` in `native`);
   then `bots.bot.loaded` is emitted with `definitionSha` and `mayTag`, never the content.
