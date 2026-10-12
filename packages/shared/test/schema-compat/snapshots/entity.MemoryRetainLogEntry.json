@@ -47,12 +47,6 @@
         "null"
       ]
     },
-    "contentHash": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "outcome": {
       "type": "string",
       "enum": [
@@ -119,7 +113,6 @@
     "sourceKind",
     "sourceId",
     "documentId",
-    "contentHash",
     "outcome",
     "reason",
     "runId",
