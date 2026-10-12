@@ -10,7 +10,7 @@ import { pushChanged } from './notify.ts';
 //
 // The re-run is exactly as constrained as the original: a new run is opened for the bot (same trigger, same asker while they are still on
 // the team), the broker is asked about the call again (a grant removed since, a path the guard now refuses — the approval then ends `failed`),
-// and only the `needsApproval` flag is waived, because a person has just answered it. The call is claimed before it runs (`queued` → `ran`
+// and only the `needsApproval` flag is waived (`asApproved`: for exactly this capability, in this transaction), because a person has just answered it. The call is claimed before it runs (`queued` → `ran`
 // in one statement) and the job never throws, so a call is run at most once: a model-side effect is not something to replay blindly.
 
 /** The queue the decide route puts an approved tool call on. */
@@ -134,7 +134,7 @@ export function registerResumeJob(ctx: PluginContext): void {
         await ctx.runs.close(run.runId, 'failed');
         return await fail(clip(`The bot may no longer make this call: ${decision.reason}`));
       }
-      const result = await ctx.runs.asBot(run, (inner) => ctx.runs.invoke(inner, call.capability, call.args));
+      const result = await ctx.runs.asApproved(run, call.capability, (inner) => ctx.runs.invoke(inner, call.capability, call.args));
       const verdict = detailOf(result);
       await ctx.runs.close(run.runId, verdict.ok ? 'done' : 'failed');
       await settle(ctx, tx, row, verdict.ok ? 'ran' : 'failed', verdict.detail);

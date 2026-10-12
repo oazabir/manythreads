@@ -177,6 +177,10 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       return withActor(botActor(run), (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool });
     },
 
+    asApproved<T>(run: BotRunHandle, capability: string, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
+      return withActor({ ...botActor(run), approvedCapability: capability }, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool });
+    },
+
     asReader<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
       if (run.askerActorId === null) return this.asBot(run, fn);
       const actor: Actor = {

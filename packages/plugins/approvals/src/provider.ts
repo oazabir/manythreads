@@ -57,8 +57,9 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
     },
 
     async claim(tx: PluginTx, approvalId: string, expect) {
-      // One statement: the row is spent by the same UPDATE that reads it, so a replayed event finds nothing. Outside the system role the
-      // table's policy lets the UPDATE match no row, which is the "false" the contract promises.
+      // Only an event consumer's or a job's own (system) transaction takes a call back; the request role has no UPDATE on the table at all.
+      if (tx.actor.kind !== 'system') return null;
+      // One statement: the row is spent by the same UPDATE that reads it, so a replayed event finds nothing.
       const res = await tx.query<{ payload: Record<string, unknown>; workspace_id: string; team_id: string; source: string; tool: string; bot_id: string }>(
         `UPDATE app.approvals SET outcome = 'ran', outcome_detail = 'Taken back by the requester.'
           WHERE id = $1::uuid AND bot_id = $2::uuid AND source = $3 AND status = 'approved' AND outcome = 'queued' AND resume_kind = 'handoff'

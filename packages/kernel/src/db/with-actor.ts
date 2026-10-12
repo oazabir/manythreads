@@ -13,6 +13,12 @@ export interface Actor {
   runId?: RunId;
   /** What started the run (`conversation`, `mention`, `routine`, ...); read by the capability broker. */
   trigger?: string;
+  /**
+   * Set only by `ctx.runs.asApproved`: this transaction makes one call that a person approved (the approvals plugin, SPEC §7.3). The broker
+   * then does not ask for approval again for exactly that capability — every other check (the grant, the path guard, the destructive tag)
+   * still applies, and any other capability still waits. A property of the in-memory actor, never a setting the SQL could change.
+   */
+  approvedCapability?: string;
 }
 
 /** The only client request code sees: queries inside one actor transaction, nothing else. */

@@ -161,6 +161,17 @@ describe('broker: allowlist, person scope, approvals', () => {
     });
   });
 
+  it('does not ask again for the one call a person approved, and for nothing else', async () => {
+    const { broker } = setup(['tasks.claim', 'pages.write'], ['tasks.claim', 'pages.write']);
+    const approved: Actor = { ...bot('conversation'), approvedCapability: 'tasks.claim' };
+    expect(await broker.authorize(approved, 'tasks.claim')).toEqual({ allowed: true, reason: 'granted', needsApproval: false });
+    // any other flagged capability of the same transaction still waits
+    expect(await broker.authorize(approved, 'pages.write', { path: 'pages/x.md' })).toMatchObject({ allowed: true, needsApproval: true });
+    // and an approval waives the flag, not the rest: no grant is still no grant
+    const { broker: bare } = setup([], []);
+    expect((await bare.authorize(approved, 'tasks.claim')).allowed).toBe(false);
+  });
+
   it.each(['routine', 'heartbeat', 'task_assigned', 'inbox', 'webhook', 'channel_message', undefined])(
     'denies person:* for trigger %s',
     async (trigger) => {

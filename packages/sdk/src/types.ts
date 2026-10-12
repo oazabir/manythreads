@@ -269,6 +269,11 @@ export interface PluginRuns {
    */
   asBot<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T>;
   /**
+   * `asBot` for the one call a person approved (SPEC §7.3): the broker does not ask for approval again for `capability` inside `fn`, and for no
+   * other. Only the approvals plugin should call it, and only after it has claimed an approved row; every other check still applies.
+   */
+  asApproved<T>(run: BotRunHandle, capability: string, fn: (tx: PluginTx) => Promise<T>): Promise<T>;
+  /**
    * The transaction a read tool uses: as the asking person when the run has one (their visibility decides the rows),
    * else as the bot. Capability checks still run against the bot's allowlist through `authorize`.
    */
