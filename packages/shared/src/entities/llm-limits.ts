@@ -53,7 +53,7 @@ export interface LlmPresetDefinition {
   summary: string;
   /** `any`: every configured provider; `allowlist`: hosts the workspace listed; `local-only`: the `local` alias only. */
   egress: 'any' | 'allowlist' | 'local-only';
-  /** The hook's action on a detection. `require_approval` lands with the approvals plugin (P5-20), not here. */
+  /** The hook's action on a detection. `require_approval` is a bot's own choice (`guard.rules`: `dlp:require_approval`, P5-20), never a preset's. */
   onDetection: 'redact' | 'block';
 }
 

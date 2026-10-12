@@ -8,6 +8,7 @@ import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
+import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
 import { FilesIcon, ThreadsIcon } from '../shell/icons';
 import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -187,6 +188,7 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
         {tl.items.map((m) => (
           <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={replyActions} />
         ))}
+        <ThreadApprovals rootId={rootId} slug={slug ?? null} />
         {tl.pending.map((p) => (
           <PendingRow
             key={p.localId}

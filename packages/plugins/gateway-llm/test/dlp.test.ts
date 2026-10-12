@@ -100,6 +100,24 @@ describe('inspect', () => {
     expect(result.rules).toEqual(['api-key']);
   });
 
+  it('holds a finding for a person when the bot asked for it: require_approval, with the redacted text to show', () => {
+    const text = 'the token is sk-abcdefghijklmnopqrstuvwx';
+    const held = inspect(text, 'standard', 'hold');
+    expect(held.outcome).toBe('require_approval');
+    expect(held.rules).toEqual(['api-key']);
+    expect(held.text).toBe('the token is [redacted:api-key]'); // what an approver may be shown, never the secret
+    // nothing found, nothing to hold
+    expect(inspect('how do I rotate the deploy key?', 'standard', 'hold').outcome).toBe('allow');
+  });
+
+  it('lets a finding through as written once a person approved exactly that call, but never past a preset that refuses', () => {
+    const text = 'the token is sk-abcdefghijklmnopqrstuvwx';
+    const approved = inspect(text, 'standard', 'approved');
+    expect(approved).toMatchObject({ outcome: 'allow', text, rules: ['api-key'] });
+    expect(inspect(text, 'customer-facing', 'approved').outcome).toBe('block');
+    expect(inspect(text, 'customer-facing', 'hold').outcome).toBe('block'); // a preset that refuses outright refuses first
+  });
+
   it('is linear on hostile input', () => {
     const hostile = [
       '-'.repeat(100_000),

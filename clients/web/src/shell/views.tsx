@@ -74,7 +74,6 @@ export function DirectMessageView() {
 }
 const SECTIONS = {
   boards: { title: 'No boards yet', body: 'Boards the team creates show up here.' },
-  approvals: { title: 'Nothing waiting', body: 'Requests that need a person to decide show up here.' },
 } as const;
 
 export function SectionView({ section }: { section: keyof typeof SECTIONS }) {

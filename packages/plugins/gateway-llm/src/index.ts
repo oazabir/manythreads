@@ -15,7 +15,7 @@ export type { LlmProviderServices } from './provider.ts';
 export { createSlidingWindow, decide, loadEgress, loadFallbackChain, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';
 export type { EgressTarget, LlmCallDecision, LlmCallRequest, LlmScopeSnapshot, LlmSpendRecord, RateHit } from './limits.ts';
 export { inspect, scan } from './dlp.ts';
-export type { DlpFinding, DlpResult } from './dlp.ts';
+export type { DlpFinding, DlpMode, DlpResult } from './dlp.ts';
 
 /**
  * gateway-llm: the workspace's door to the models (SPEC §10.1, PLAN P5-06). One LiteLLM proxy runs in the

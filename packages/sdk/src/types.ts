@@ -41,6 +41,8 @@ export const PROVIDER_KINDS = [
   'viewer',
   /** The team repo's one writer (repo-git): `RepoProvider` in ./repo.ts. */
   'repo',
+  /** The one handler for `needsApproval` (approvals plugin): `ApprovalProvider` in ./approvals.ts. */
+  'approvals',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {
@@ -232,6 +234,9 @@ export interface OpenRunInput {
   trigger: string;
   askerActorId?: string | null;
   threadId?: string | null;
+  /** Where the run answers (the channel and the thread root, or the message that opens one): an approval raised by the run puts its card there. */
+  channelId?: string | null;
+  replyRootId?: string | null;
   /** How long the run's endpoint stays usable (seconds); the service's default applies when omitted. */
   ttlSeconds?: number;
 }

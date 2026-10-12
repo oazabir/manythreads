@@ -4,6 +4,7 @@ import type { PluginContext, PluginDefinition, PluginTx } from './types.ts';
 export * from './types.ts';
 export * from './cohesion.ts';
 export * from './repo.ts';
+export * from './approvals.ts';
 export * from './runtime.ts';
 export * from './http.ts';
 

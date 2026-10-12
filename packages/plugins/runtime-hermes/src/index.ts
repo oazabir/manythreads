@@ -2,12 +2,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { definePlugin } from '@manythreads/sdk';
 import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
-import { registerRouter, registerRunJob } from './router.ts';
+import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
 
 export { chatArgs, profileHome, renderConfig, renderProfile } from './profile.ts';
 export { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 export { childEnv, createHermesProvider, HERMES_RUNTIME_ID, sweepStaleProfiles, type HermesRuntimeOptions } from './hermes.ts';
-export { RUN_QUEUE, buildPrompt, matchTrigger, mentionedHandles, registerRouter, registerRunJob, type MessageView, type RunPayload, type RoutedTrigger } from './router.ts';
+export { RUN_QUEUE, buildPrompt, matchTrigger, mentionedHandles, registerApprovalResume, registerRouter, registerRunJob, type MessageView, type RunPayload, type RoutedTrigger } from './router.ts';
 
 /** A profile directory older than this is a dead run's (the platform's own ceiling on a run is an hour). */
 const STALE_PROFILE_MS = 2 * 60 * 60 * 1000;
@@ -30,7 +30,7 @@ export default definePlugin({
     // The run/tool door (mint a run per invocation, post the reply as the run's bot), the message subscription that routes
     // triggers, the job a run executes in, and the provider itself.
     extends: ['event.subscribe', 'job.register', 'provider.bot_runtime', 'tool.invoke'],
-    events: { emits: [], consumes: ['channel.message.posted'] },
+    events: { emits: [], consumes: ['channel.message.posted', 'approvals.approval.decided'] },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     dependsOn: ['bots', 'channels'],
   },
@@ -53,6 +53,7 @@ export default definePlugin({
       }),
     );
     registerRouter(ctx);
+    registerApprovalResume(ctx);
     registerRunJob(ctx);
   },
 });

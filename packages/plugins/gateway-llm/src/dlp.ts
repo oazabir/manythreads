@@ -85,7 +85,7 @@ export interface DlpFinding {
 export interface DlpResult {
   /** `allow` when nothing fired; otherwise the preset's action on a detection. */
   outcome: LlmGuardOutcome;
-  /** The text as it may be sent: unchanged for `allow` and `block`, redacted for `redact`. */
+  /** The text as it may be sent: unchanged for `allow` and `block`, redacted for `redact` and for `require_approval` (what an approver may be shown). */
   text: string;
   findings: DlpFinding[];
   /** The detector names that fired, in the order the detectors run, each once. */
@@ -133,16 +133,25 @@ export function scan(text: string): DlpFinding[] {
 }
 
 /**
+ * What a finding does to the call. `preset` (the default): the preset's own rule — `standard` and its siblings redact, `customer-facing`
+ * refuses. `hold`: the bot asked for a person to see it first (its `guard.rules` carries `dlp:require_approval`, SPEC §15): the outcome is
+ * `require_approval`, `text` is the redacted text (safe to show an approver) and the call does not leave. `approved`: a person has just
+ * approved exactly this call, so the finding is let through as written — except under a preset that refuses outright, which no approval
+ * overrides.
+ */
+export type DlpMode = 'preset' | 'hold' | 'approved';
+
+/**
  * Inspect `text` under `preset`. The preset decides what a finding means: `redact` answers the text with each span
  * replaced by `[redacted:<rule>]` and the call may continue; `block` leaves the text alone and the caller must refuse
- * the call. `require_approval` is in the vocabulary (SPEC §15) but the preset that would use it is not built yet — the
- * approvals plugin of P5-20 owns that path.
+ * the call. `mode` adds the third answer of SPEC §15, `require_approval` (see `DlpMode`).
  */
-export function inspect(text: string, preset: LlmGuardPreset): DlpResult {
+export function inspect(text: string, preset: LlmGuardPreset, mode: DlpMode = 'preset'): DlpResult {
   const findings = scan(text);
   if (findings.length === 0) return { outcome: 'allow', text, findings, rules: [] };
   const rules = DETECTORS.map((d) => d.name).filter((name) => findings.some((f) => f.rule === name));
   if (LLM_GUARD_PRESETS[preset].onDetection === 'block') return { outcome: 'block', text, findings, rules };
+  if (mode === 'approved') return { outcome: 'allow', text, findings, rules };
 
   let redacted = '';
   let cursor = 0;
@@ -151,5 +160,5 @@ export function inspect(text: string, preset: LlmGuardPreset): DlpResult {
     cursor = finding.end;
   }
   redacted += text.slice(cursor);
-  return { outcome: 'redact', text: redacted, findings, rules };
+  return { outcome: mode === 'hold' ? 'require_approval' : 'redact', text: redacted, findings, rules };
 }

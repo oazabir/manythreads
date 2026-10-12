@@ -66,6 +66,9 @@ test('priya (two teams): the second team has the same contract', async ({ browse
     const labels = await sidebar.locator(':scope > .it').evaluateAll((els) => els.filter((e) => !e.classList.contains('dm-new-btn')).map((e) => (e.querySelector('.it-label')?.textContent ?? '').trim()));
     expect(labels).toEqual(['Files', 'Boards', 'Threads', 'Approvals']);
     await expect(sidebar.locator(':scope > .sec')).toHaveText([/^Direct messages/, /^Bots/]);
+    // this seed has no bot: the Bots section says so, and lists no rows (the roster spec covers a team that has one)
+    await expect(sidebar.locator(':scope > .sec').nth(1)).toContainText('No bots yet');
+    await expect(sidebar.getByTestId('sidebar-bot')).toHaveCount(0);
   } finally {
     await context.close();
   }

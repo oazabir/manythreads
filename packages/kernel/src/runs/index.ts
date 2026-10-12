@@ -97,9 +97,18 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
         }
         const inserted = (
           await tx.query<{ id: string }>(
-            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, status)
-             VALUES ($1, $2, $3, $4, $5, $6, 'running') RETURNING id`,
-            [input.workspaceId, input.botId, input.teamId, input.trigger, input.askerActorId ?? null, input.threadId ?? null],
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running') RETURNING id`,
+            [
+              input.workspaceId,
+              input.botId,
+              input.teamId,
+              input.trigger,
+              input.askerActorId ?? null,
+              input.threadId ?? null,
+              input.channelId ?? null,
+              input.replyRootId ?? null,
+            ],
           )
         ).rows[0];
         if (!inserted) throw new Error('the run insert answered no row');

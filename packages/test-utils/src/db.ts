@@ -51,6 +51,12 @@ export const gatewayMcpMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/gateway-mcp/migrations/', import.meta.url)),
 };
 
+/** Migrations of the approvals plugin (`approvals`, `approval_decisions`); pass it in `sources` after `botsMigrationSource` (it references bots, bot_runs and channels). */
+export const approvalsMigrationSource: MigrationSource = {
+  namespace: 'approvals',
+  dir: fileURLToPath(new URL('../../plugins/approvals/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',

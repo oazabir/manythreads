@@ -62,6 +62,7 @@ export class ExtensionRegistries {
     knowledge: new ExtensionRegistry(),
     viewer: new ExtensionRegistry(),
     repo: new ExtensionRegistry(),
+    approvals: new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

@@ -33,6 +33,8 @@ function fakeContext(options: {
   tools: Array<{ name: string; destructive: boolean }>;
   decisions?: Record<string, Decision>;
   answer?: (name: string, input: Record<string, unknown>) => unknown;
+  /** The approvals plugin's handler, when the deployment has it. */
+  approvals?: { request: (tx: PluginTx, input: Record<string, unknown>) => Promise<{ approvalId: string; created: boolean }> };
 }) {
   const invoked: Array<{ name: string; input: Record<string, unknown>; as: 'bot' | 'reader' }> = [];
   const logged: Array<{ sourceType: string; sourceRef: string; scope: string }> = [];
@@ -64,7 +66,8 @@ function fakeContext(options: {
       return Promise.resolve(logged.length);
     },
   };
-  const ctx = { manifest: { version: '0.1.0' }, runs } as unknown as PluginContext;
+  const providers = { get: (kind: string) => (kind === 'approvals' ? options.approvals : undefined) };
+  const ctx = { manifest: { version: '0.1.0' }, runs, providers } as unknown as PluginContext;
   return { ctx, invoked, logged, authorized };
 }
 
@@ -125,6 +128,37 @@ describe('gateway-mcp protocol', () => {
     const { result } = (await body(res)) as { result: { content: Array<{ text: string }> } };
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'approval_required' });
     expect(invoked).toEqual([]);
+  });
+
+  it('with the approvals plugin loaded, a grant that needs approval becomes a pending approval and the model is told', async () => {
+    const asked: Array<Record<string, unknown>> = [];
+    const { ctx, invoked } = fakeContext({
+      tools: [WRITE_TOOL],
+      decisions: { 'pages.write': { allowed: true, reason: 'granted', needsApproval: true } },
+      approvals: {
+        request: (_tx, input) => {
+          asked.push(input);
+          return Promise.resolve({ approvalId: 'a0000000-0000-4000-8000-000000000001', created: true });
+        },
+      },
+    });
+    const args = { mode: 'create', path: 'pages/x.md', content: 'hi', apiToken: 'sk-secret' };
+    const call = () => handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'pages.write', arguments: args } });
+    const { result } = (await body(await call())) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'approval_pending', approvalId: 'a0000000-0000-4000-8000-000000000001' });
+    expect(invoked).toEqual([]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({
+      runId: RUN.runId,
+      source: 'grant',
+      tool: 'pages.write',
+      resume: { kind: 'tool', capability: 'pages.write', args },
+    });
+    // the approver is shown a preview with the secret hidden; the real arguments only travel in `resume`
+    expect(asked[0]!['argsPreview']).toMatchObject({ path: 'pages/x.md', apiToken: '[hidden]' });
+    // asking for the same thing again is the same dedupe key, so the inbox holds one approval
+    await call();
+    expect(asked[1]!['dedupeKey']).toBe(asked[0]!['dedupeKey']);
   });
 
   it('a stub answers what it knows and never invents content', async () => {

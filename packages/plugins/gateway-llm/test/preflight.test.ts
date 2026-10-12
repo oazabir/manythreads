@@ -290,6 +290,31 @@ describe('preflight: presets and the pre-call hook', () => {
     });
   });
 
+  it('a bot that asked for approval has the call held, not sent: allowed false, outcome require_approval, the guard event says so', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'preflight-hold'));
+    emitted.length = 0;
+    const held = await check(call(botId, { text: 'my key is sk-abcdefghijklmnopqrstuvwx', dlpMode: 'hold' }));
+    expect(held).toMatchObject({ allowed: false, reason: 'dlp', outcome: 'require_approval', rules: ['api-key'], text: 'my key is [redacted:api-key]' });
+    expect(held.message).toContain('approve');
+    expect(LlmGuardDecidedEvent.parse(emitted.find((e) => e['type'] === 'llm.guard.decided'))).toMatchObject({
+      outcome: 'require_approval',
+      rules: ['api-key'],
+      reason: 'dlp',
+    });
+    // a call with nothing to hold goes through as always
+    expect((await check(call(botId, { dlpMode: 'hold' }))).allowed).toBe(true);
+  });
+
+  it('the call a person approved passes as written, and the other checks still apply to it', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'preflight-approved'));
+    const text = 'my key is sk-abcdefghijklmnopqrstuvwx';
+    const passed = await check(call(botId, { text, dlpMode: 'approved' }));
+    expect(passed).toMatchObject({ allowed: true, outcome: 'allow', text });
+    await sys((tx) => tx.query(`INSERT INTO app.llm_settings (workspace_id, preset) VALUES ($1, 'air-gapped')`, [omar.workspaceId]));
+    expect((await check(call(botId, { text, dlpMode: 'approved' }))).allowed).toBe(false); // the preset's egress rule is not an approval's to waive
+    await sys((tx) => tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]));
+  });
+
   it('customer-facing refuses the call rather than redacting it', async () => {
     const botId = await sys((tx) => makeBot(tx, 'preflight-customer'));
     await sys((tx) => tx.query(`INSERT INTO app.llm_settings (workspace_id, preset) VALUES ($1, 'customer-facing')`, [omar.workspaceId]));

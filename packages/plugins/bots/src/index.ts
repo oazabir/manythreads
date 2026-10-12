@@ -17,7 +17,7 @@ export type { PairedBot } from './pairing.ts';
 export default definePlugin({
   manifest: {
     name: 'bots',
-    version: '0.3.1',
+    version: '0.4.0',
     kind: 'server',
     // `bot_runs` references app.threads, so this namespace must migrate after the channels plugin's
     dependsOn: ['channels'],

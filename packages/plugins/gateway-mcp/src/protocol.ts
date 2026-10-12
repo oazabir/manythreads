@@ -13,6 +13,7 @@ import {
   McpToolsListResult,
 } from '@manythreads/shared';
 import { z } from 'zod';
+import { askForApproval } from './approval.ts';
 import { authorizeContext, definitionOf, withRunTeam } from './catalog.ts';
 import { json } from './http.ts';
 
@@ -75,17 +76,15 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
   // handler will write, and a call that names none is refused rather than judged blind.
   const decision = await ctx.runs.authorize(run, params.name, authorizeContext(input));
   if (!decision.allowed) return toolResult({ ok: false, code: 'forbidden', message: decision.reason }, true);
-  if (decision.needsApproval) {
-    // Fail closed: the grant says a person must approve this call, and asking a person is the Approvals inbox,
-    // which this deployment does not have yet. Running it anyway would be the one thing the flag exists to stop.
-    return toolResult(
-      { ok: false, code: 'approval_required', message: 'This call needs a person’s approval before it runs.' },
-      true,
-    );
-  }
   const unknown = ctx.runs.catalog().some((t) => t.name === params.name);
   if (!unknown) {
     return toolResult({ ok: false, code: 'unknown_tool', message: `Nothing implements “${params.name}”.` }, true);
+  }
+
+  if (decision.needsApproval) {
+    // The grant says a person must approve this call: it becomes a pending approval (the approvals plugin's one handler) and the model is
+    // told. Without that plugin the call is refused outright — running it anyway is the one thing the flag exists to stop.
+    return toolResult(await askForApproval(ctx, run, params.name, input), true);
   }
 
   if (definition.kind === 'stub') {

@@ -207,7 +207,7 @@ describe('gateway-mcp endpoint', () => {
     expect(denials).toBe(1);
   });
 
-  it('a grant that needs approval stops before the page is written', async () => {
+  it('a grant that needs approval stops before the page is written, and waits in the Approvals inbox', async () => {
     const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 5,
@@ -215,11 +215,33 @@ describe('gateway-mcp endpoint', () => {
       params: { name: 'pages.write', arguments: { mode: 'create', path: 'pages/mcp-test.md', content: 'never written' } },
     });
     const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'approval_required' });
+    const answer = JSON.parse(result.content[0]!.text) as { ok: boolean; code: string; approvalId: string };
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
     const written = await world.system(
       async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.events WHERE type = 'pages.page.written'")).rows[0]!.n,
     );
     expect(written).toBe(0);
+    // one pending approval of this bot, filed through the approvals plugin's handler; the real arguments are in `resume`, the approver sees a preview
+    const row = await world.system(
+      async (tx) =>
+        (
+          await tx.query<{ source: string; status: string; tool: string; bot_id: string; requester_id: string; resume: { kind: string; capability: string; args: { path: string } } }>(
+            'SELECT source, status, tool, bot_id, requester_id, resume FROM app.approvals WHERE id = $1',
+            [answer.approvalId],
+          )
+        ).rows[0],
+    );
+    expect(row).toMatchObject({ source: 'grant', status: 'pending', tool: 'pages.write', bot_id: bot.botId, requester_id: bot.actorId });
+    expect(row?.resume).toMatchObject({ kind: 'tool', capability: 'pages.write', args: { path: 'pages/mcp-test.md' } });
+    // asking again for the same call is the same approval
+    const again = await callRunUrl(run, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/call',
+      params: { name: 'pages.write', arguments: { mode: 'create', path: 'pages/mcp-test.md', content: 'never written' } },
+    });
+    const second = JSON.parse((again.body as { result: { content: Array<{ text: string }> } }).result.content[0]!.text) as { approvalId: string };
+    expect(second.approvalId).toBe(answer.approvalId);
   });
 
   it('a path the bot may never write is refused by the guard, and the handler never runs', async () => {

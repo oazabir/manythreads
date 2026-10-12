@@ -1,5 +1,10 @@
 import {
   AclPermission,
+  ApprovalDecisionKind,
+  ApprovalOutcome,
+  ApprovalResumeKind,
+  ApprovalSource,
+  ApprovalStatus,
   BotKind,
   BotRuntime,
   BotRunStatus,
@@ -31,6 +36,7 @@ import {
 import {
   createTestDatabase,
   dropTestDatabase,
+  approvalsMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
   gatewayLlmMigrationSource,
@@ -82,6 +88,11 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'llm_limits.budget_window': LlmBudgetWindow,
   'llm_settings.preset': LlmGuardPreset,
   'llm_spend.alias': LlmAliasName,
+  'approvals.source': ApprovalSource,
+  'approvals.status': ApprovalStatus,
+  'approvals.outcome': ApprovalOutcome,
+  'approvals.resume_kind': ApprovalResumeKind,
+  'approval_decisions.decision': ApprovalDecisionKind,
 };
 
 /**
@@ -99,7 +110,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, gatewayLlmMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

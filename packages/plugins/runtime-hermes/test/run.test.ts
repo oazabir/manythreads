@@ -15,7 +15,7 @@ import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/w
 // The stand-in records everything it was handed in a spool file, because the profile directory is removed when the run ends
 // (that removal is asserted too). The unit suites pin the profile's bytes; this one pins that those bytes reach a process.
 
-const { omar, nadia } = personas;
+const { omar, nadia, rafi } = personas;
 vi.setConfig({ testTimeout: 180_000 });
 
 // The stand-in: `node <script> chat --query-file - ...`, one JSON line per event, the query on stdin.
@@ -43,7 +43,7 @@ const FAKE_HERMES = [
 ].join('\n');
 
 /** One definition, with the pieces a test takes away named as parameters. */
-const botMd = (parts: { name: string; model?: string; capabilities?: string }): string =>
+const botMd = (parts: { name: string; model?: string; capabilities?: string; extra?: string[] }): string =>
   [
     '---',
     'schema: 1',
@@ -55,6 +55,7 @@ const botMd = (parts: { name: string; model?: string; capabilities?: string }): 
     'triggers:',
     '  - type: mention',
     ...(parts.capabilities ? ['capabilities:', `  native: [${parts.capabilities}]`] : []),
+    ...(parts.extra ?? []),
     '---',
     '',
     `# ${parts.name}`,
@@ -340,5 +341,149 @@ describe('a hermes run, the details', () => {
     const posted = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 15_000, 'the rule to post');
     expect(posted.body).toBe('Nadia in #dev:\n\n@rules-counter go');
     expect(spoolLines()).toHaveLength(before); // no Hermes process for a rules bot
+  });
+});
+
+describe('a run that waits for a person (PLAN P5-20)', () => {
+  interface ApprovalRow {
+    id: string;
+    source: string;
+    tool: string;
+    status: string;
+    outcome: string;
+    requester_id: string;
+    channel_id: string | null;
+    thread_root_id: string | null;
+    args_preview: Record<string, unknown>;
+    approver_scope: { roles: string[]; leads: boolean };
+  }
+  const approvalsOf = (botId: string): Promise<ApprovalRow[]> =>
+    w.system(
+      async (tx) =>
+        (
+          await tx.query<ApprovalRow>(
+            `SELECT id, source, tool, status, outcome, requester_id, channel_id, thread_root_id, args_preview, approver_scope
+               FROM app.approvals WHERE bot_id = $1 ORDER BY id`,
+            [botId],
+          )
+        ).rows,
+    );
+  const finished = (botId: string) =>
+    until(async () => {
+      const row = await runOf(botId);
+      return row && row.status !== 'running' ? row : null;
+    }, 30_000, 'the run to end');
+  const decide = (who: typeof rafi, id: string, verb: 'approve' | 'deny') =>
+    w.call(who, 'POST', `/api/teams/engineering/approvals/${id}/${verb}`, { note: '' });
+
+  it('a finding the bot asked to have held stops the run before the call, files an approval with only the redacted text, and approving sends the original once', async () => {
+    const bot = await loadBot(
+      'hermes-hold',
+      botMd({
+        name: 'HermesHold',
+        model: 'smart',
+        capabilities: 'messages.post',
+        extra: ['guard:', '  rules: ["dlp:require_approval"]', 'approvals:', '  approvers: ["role:on-call"]'],
+      }),
+    );
+    const before = spoolLines().length;
+    const secret = `sk-proj-${'Ab3dEf6hIj'.repeat(8)}`;
+    const rootId = await post(`@hermes-hold please use ${secret} to deploy`);
+
+    // the run ended at the question: stopped, no process, no reply
+    const held = await finished(bot.botId);
+    expect(held.status).toBe('stopped');
+    expect(spoolLines()).toHaveLength(before);
+    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+
+    const [approval] = await approvalsOf(bot.botId);
+    expect(approval).toMatchObject({
+      source: 'dlp',
+      tool: 'llm.call',
+      status: 'pending',
+      requester_id: nadia.actorId,
+      channel_id: channelId,
+      thread_root_id: rootId,
+    });
+    expect(approval!.approver_scope).toEqual({ roles: ['role:on-call'], people: [], leads: false });
+    // what an approver is shown is the rule that fired and the redacted message — the secret is nowhere a person can read it
+    expect(approval!.args_preview['rules']).toEqual(['api-key']);
+    expect(String(approval!.args_preview['message'])).toContain('[redacted:api-key]');
+    expect(JSON.stringify(approval!.args_preview)).not.toContain('sk-proj-');
+
+    // the person who asked cannot release their own message; the on-call person can
+    expect((await decide(nadia, approval!.id, 'approve')).status).toBe(403);
+    expect((await decide(rafi, approval!.id, 'approve')).status).toBe(200);
+
+    // a new run goes to the model with the message as written, once; its reply lands in the same thread
+    const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the approved run to answer');
+    expect(reply.body).toContain(secret);
+    const second = await until(async () => {
+      const row = await runOf(bot.botId);
+      return row && row.id !== held.id && row.status !== 'running' ? row : null;
+    }, 30_000, 'the approved run to end');
+    expect(second.status).toBe('done');
+    expect(callsOf('hermes-hold', second.id)).toHaveLength(1);
+    expect(callsOf('hermes-hold', second.id)[0]!['prompt']).toContain(secret);
+    expect(spoolLines()).toHaveLength(before + 1);
+    expect((await approvalsOf(bot.botId))[0]).toMatchObject({ status: 'approved', outcome: 'ran' });
+    // taking it back is once: the held run never starts again
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(spoolLines()).toHaveLength(before + 1);
+  });
+
+  it('a denied hold ends it: nothing is sent', async () => {
+    const bot = await loadBot(
+      'hermes-hold-deny',
+      botMd({ name: 'HermesHoldDeny', model: 'smart', capabilities: 'messages.post', extra: ['guard:', '  rules: ["dlp:require_approval"]'] }),
+    );
+    const before = spoolLines().length;
+    const rootId = await post(`@hermes-hold-deny the password is hunter2 and the key is sk-proj-${'Qw3rTy6uIo'.repeat(8)}`);
+    expect((await finished(bot.botId)).status).toBe('stopped');
+    const [approval] = await approvalsOf(bot.botId);
+    expect(approval!.approver_scope).toEqual({ roles: [], people: [], leads: true });
+    expect((await decide(omar, approval!.id, 'deny')).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    expect(spoolLines()).toHaveLength(before);
+    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+    expect((await approvalsOf(bot.botId))[0]).toMatchObject({ status: 'denied', outcome: 'none' });
+  });
+
+  it('a grant flagged needsApproval stops the run at that call; approving makes the call once, as the bot, in the thread', async () => {
+    const md = [
+      '---',
+      'schema: 1',
+      'name: RulesAsk',
+      'role: Posts only when a person says so',
+      'kind: automation',
+      'runtime: rules',
+      'triggers:',
+      '  - type: mention',
+      'capabilities:',
+      '  native: [messages.post]',
+      'approvals:',
+      '  needsApproval: [messages.post]',
+      '  approvers: ["role:on-call"]',
+      '---',
+      '',
+      '# RulesAsk',
+      '',
+      'No prose is rendered for a rules bot.',
+      '',
+    ].join('\n');
+    const bot = await loadBot('rules-ask', md);
+    const rootId = await post('@rules-ask go');
+
+    expect((await finished(bot.botId)).status).toBe('stopped');
+    expect(await messagesBy(rootId, bot.actorId)).toEqual([]); // the call was not made
+    const [approval] = await approvalsOf(bot.botId);
+    expect(approval).toMatchObject({ source: 'grant', tool: 'messages.post', status: 'pending', requester_id: nadia.actorId, thread_root_id: rootId });
+
+    expect((await decide(nadia, approval!.id, 'approve')).status).toBe(403);
+    expect((await decide(rafi, approval!.id, 'approve')).status).toBe(200);
+    const posted = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the approved call to post');
+    expect(posted.body).toBe('Nadia in #dev:\n\n@rules-ask go');
+    await until(async () => ((await approvalsOf(bot.botId))[0]?.outcome === 'ran' ? true : null), 15_000, 'the approval to record that it ran');
+    expect(await messagesBy(rootId, bot.actorId)).toHaveLength(1); // once
   });
 });

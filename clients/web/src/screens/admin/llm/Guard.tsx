@@ -13,8 +13,8 @@ import { Alert, Notice, Toggle } from '../../../components/ui';
  * `strict-egress`; it is still editable under the others (so switching presets does not lose it) but the section says
  * plainly when it is doing nothing.
  *
- * `require_approval` is part of the vocabulary but no preset uses it yet: the approvals plugin (P5-20) owns that path,
- * and this page does not offer a behaviour the gateway cannot yet perform.
+ * `require_approval` is a bot's choice, not a preset's: a bot whose Guard rules carry `dlp:require_approval` has a call that
+ * trips the hook held in the Approvals inbox instead of redacted (P5-20). This page sets the workspace default only.
  */
 
 export function GuardSection({ settings, reload }: { settings: LlmWorkspaceSettings; reload: () => void }) {

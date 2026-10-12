@@ -36,7 +36,6 @@ export function Shell() {
   const dmId = useMatch('/t/:team/dm/:id')?.params.id ?? null;
   const onThreads = useMatch('/t/:team/threads') !== null || loc.pathname === '/';
   const q = useQuery('shell-teams', () => fetchTeams());
-  const counts = useNavCounts();
   const narrow = useNarrow();
   const [topic, setTopic] = useState<string | null>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
@@ -50,6 +49,8 @@ export function Shell() {
     () => teams.find((t) => t.slug === (slug ?? recalledTeam())) ?? (slug === null ? (teams[0] ?? null) : null),
     [teams, slug],
   );
+  // the pills of the sidebar contract: unread threads, and what waits in the team's Approvals inbox (a guest has neither)
+  const counts = useNavCounts(guest ? null : (team?.slug ?? null));
   const value = useMemo<ShellValue>(() => ({ teams, teamsLoading, team, teamSlug: slug, guest, counts }), [teams, teamsLoading, team, slug, guest, counts]);
 
   useEffect(() => {

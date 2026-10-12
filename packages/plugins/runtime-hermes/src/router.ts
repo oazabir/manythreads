@@ -1,6 +1,18 @@
 import { createHash } from 'node:crypto';
-import type { BotRuntimeHandle, BotRuntimeInput, BotRuntimeProvider, BotRuntimeScope, CapabilityAuthorizeContext, PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
-import { ChannelMessagePostedEvent, LlmAliasName, botMdPath, parseBotMd, parseMarkup, type BotTrigger } from '@manythreads/shared';
+import type { ApprovalProvider, BotRuntimeHandle, BotRuntimeInput, BotRuntimeProvider, BotRuntimeScope, CapabilityAuthorizeContext, PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
+import {
+  ApprovalsApprovalDecidedEvent,
+  BotRunTrigger,
+  ChannelMessagePostedEvent,
+  GUARD_RULE_DLP_APPROVAL,
+  LlmAliasName,
+  approvalSummary,
+  botMdPath,
+  parseBotMd,
+  parseMarkup,
+  previewArgs,
+  type BotTrigger,
+} from '@manythreads/shared';
 import { z } from 'zod';
 
 // Trigger routing (PLAN P5-10: "route `conversation`, `mention`, `channel_message` triggers"). One subscription on
@@ -83,6 +95,8 @@ const RunPayload = z.strictObject({
   /** The run's `thread_id`: the thread the message is in, when there is one (`bot_runs.thread_id` references `app.threads`). */
   runThreadId: z.uuid().nullable(),
   prompt: z.string().min(1).max(40_000),
+  /** Set when this run is a DLP-held model call a person has since approved (`registerApprovalResume`): its finding is let through as written. */
+  approvalId: z.uuid().optional(),
 });
 export type RunPayload = z.infer<typeof RunPayload>;
 
@@ -175,8 +189,16 @@ interface LlmDoor {
   botKey(tx: PluginTx, botId: string): Promise<string | null>;
   preflight(
     tx: PluginTx,
-    request: { workspaceId: string; botId: string | null; teamId: string | null; sessionId: string | null; alias: string; text: string },
-  ): Promise<{ allowed: boolean; message: string | null; text: string }>;
+    request: {
+      workspaceId: string;
+      botId: string | null;
+      teamId: string | null;
+      sessionId: string | null;
+      alias: string;
+      text: string;
+      dlpMode?: 'preset' | 'hold' | 'approved';
+    },
+  ): Promise<{ allowed: boolean; message: string | null; text: string; outcome: string; rules: string[] }>;
 }
 
 /** The repo door, structurally: what `repo-git` registers (docs/plugins/repo-git.md). */
@@ -211,6 +233,61 @@ function authorizeContext(input: Record<string, unknown>): CapabilityAuthorizeCo
     ...(typeof path === 'string' ? { path } : {}),
     ...(Array.isArray(paths) && paths.every((p): p is string => typeof p === 'string') ? { paths } : {}),
   };
+}
+
+/** Thrown by a run's own scope when a call it made was turned into a pending approval: the run ends `stopped`, it did not fail. */
+class ApprovalPending extends Error {
+  constructor(readonly capability: string) {
+    super(`"${capability}" is waiting for a person's approval`);
+    this.name = 'ApprovalPending';
+  }
+}
+
+const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/**
+ * The model call a DLP hold stopped becomes a pending approval (source `dlp`, tool `llm.call`). What an approver sees is the rule names and the
+ * **redacted** text; the original prompt travels only in the row's `resume`, and comes back to this plugin when the approval is approved
+ * (`registerApprovalResume`). Without the approvals plugin the hold is a refusal: the call never leaves.
+ */
+async function holdForApproval(
+  ctx: PluginContext,
+  tx: PluginTx,
+  held: { run: { runId: string }; payload: RunPayload; alias: string; rules: readonly string[]; excerpt: string; approvers: readonly string[] },
+): Promise<boolean> {
+  const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+  if (!approvals) return false; // fail closed: the call is held and nobody can release it; the caller stops the run either way
+  const resumable: Record<string, unknown> = { ...held.payload };
+  delete resumable['approvalId']; // a held call has no approval yet; the claim adds the one that approves it
+  await approvals.request(tx, {
+    runId: held.run.runId,
+    source: 'dlp',
+    tool: 'llm.call',
+    summary: clip(`Model call held · ${held.rules.join(', ')} found in the message`, 280),
+    argsPreview: { alias: held.alias, rules: [...held.rules], message: clip(held.excerpt, 400) },
+    resume: { kind: 'handoff', payload: resumable },
+    approvers: held.approvers,
+  });
+  return true;
+}
+
+/**
+ * Takes a held model call back once a person approves it: the `approvals.approval.decided` event (an outbox consumer, so a system transaction)
+ * claims the stored payload — once; a replayed event gets nothing — and puts the run on its queue again with the approval's id, which makes
+ * the next pre-call check let that one finding through as written.
+ */
+export function registerApprovalResume(ctx: PluginContext): void {
+  ctx.events.subscribe('approvals.approval.decided', async (raw: PluginEvent, tx: PluginTx) => {
+    const event = ApprovalsApprovalDecidedEvent.parse(raw);
+    if (event.decision !== 'approved' || event.source !== 'dlp' || event.botId === null) return;
+    const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+    if (!approvals) return;
+    const payload = await approvals.claim(tx, event.approvalId, { botId: event.botId, source: 'dlp' });
+    if (!payload) return;
+    const parsed = RunPayload.safeParse({ ...payload, approvalId: event.approvalId });
+    if (!parsed.success) return;
+    await ctx.jobs.enqueue(tx, RUN_QUEUE, parsed.data, { dedupeKey: `runtime-hermes:approval:${event.approvalId}` });
+  });
 }
 
 /** Run one bot: the job half of P5-10. Everything it needs is re-read from the database and the repo (a payload is whatever was enqueued). */
@@ -249,6 +326,8 @@ export function registerRunJob(ctx: PluginContext): void {
       return;
     }
     const alias = parsed.frontmatter.model?.aliases?.[0] ?? null;
+    const holdOnDetection = parsed.frontmatter.guard?.rules?.includes(GUARD_RULE_DLP_APPROVAL) ?? false;
+    const approvers = parsed.frontmatter.approvals?.approvers ?? [];
 
     // The token outlives the run's own budget (plus the kill grace): a run whose token expired mid-turn would lose its tools
     // for the rest of the turn. The kernel clamps this to its maximum.
@@ -291,6 +370,9 @@ export function registerRunJob(ctx: PluginContext): void {
         const llm = ctx.providers.get<LlmDoor>('llm');
         if (llm) {
           key = await llm.botKey(tx, bot.id);
+          // A bot whose Guard rules say `dlp:require_approval` has a finding held for a person instead of redacted (SPEC §15); the run that
+          // an approval put back is the one call let through as written.
+          const dlpMode = payload.approvalId !== undefined ? 'approved' : holdOnDetection ? 'hold' : undefined;
           const decision = await llm.preflight(tx, {
             workspaceId: bot.workspace_id,
             botId: bot.id,
@@ -298,7 +380,18 @@ export function registerRunJob(ctx: PluginContext): void {
             sessionId: run.runId,
             alias,
             text: payload.prompt,
+            ...(dlpMode ? { dlpMode } : {}),
           });
+          if (!decision.allowed && decision.outcome === 'require_approval') {
+            const filed = await holdForApproval(ctx, tx, { run, payload, alias, rules: decision.rules, excerpt: decision.text, approvers });
+            job.log.info(
+              filed
+                ? `runtime-hermes: run ${run.runId} stopped before the call: waiting for an approval`
+                : `runtime-hermes: run ${run.runId} refused before the call: held for approval, and the approvals plugin is not loaded`,
+            );
+            await ctx.runs.close(run.runId, 'stopped');
+            return;
+          }
           if (!decision.allowed) {
             job.log.warn(`runtime-hermes: run ${run.runId} refused before the call: ${decision.message ?? 'not allowed'}`);
             await ctx.runs.close(run.runId, 'stopped');
@@ -339,9 +432,26 @@ export function registerRunJob(ctx: PluginContext): void {
         async invoke(capability, args) {
           const decision = await ctx.runs.authorize(run, capability, authorizeContext(args));
           if (!decision.allowed) throw new Error(`the run may not call "${capability}": ${decision.reason}`);
-          // Fail closed, as the MCP gateway does: a grant that waits for a person is the Approvals inbox (P5-20), which
-          // this deployment does not have yet, and running the call anyway is the one thing the flag exists to stop.
-          if (decision.needsApproval) throw new Error(`"${capability}" needs a person's approval before it runs`);
+          // A grant that waits for a person becomes a pending approval (the approvals plugin's one handler) and the run stops: the call is not
+          // made now, and approving it later makes it once, as the bot. Without that plugin it fails closed — running it anyway is the one
+          // thing the flag exists to stop.
+          if (decision.needsApproval) {
+            const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+            if (!approvals) throw new Error(`"${capability}" needs a person's approval before it runs`);
+            await ctx.runs.asBot(run, (inner) =>
+              approvals.request(inner, {
+                runId: run.runId,
+                source: 'grant',
+                tool: capability,
+                summary: approvalSummary(capability, args),
+                argsPreview: previewArgs(args),
+                resume: { kind: 'tool', capability, args, trigger: BotRunTrigger.parse(payload.trigger) },
+                approvers,
+                dedupeKey: createHash('sha256').update(`${capability}\n${JSON.stringify(args)}`).digest('hex'),
+              }),
+            );
+            throw new ApprovalPending(capability);
+          }
           return ctx.runs.asBot(run, (inner) => ctx.runs.invoke(inner, capability, args));
         },
         logSource: (source) => ctx.runs.asBot(run, (inner) => ctx.runs.logSource(inner, source)),
@@ -372,8 +482,17 @@ export function registerRunJob(ctx: PluginContext): void {
           threadRootId: payload.replyRootId,
         });
       }
-      await ctx.runs.close(run.runId, ok ? 'done' : 'failed');
+      // A run that asked for an approval (a model's tool call over the MCP endpoint, say) ended at that question: `stopped`, not `done`.
+      const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+      const waiting = approvals ? await approvals.pendingForRun(tx, run.runId) : 0;
+      await ctx.runs.close(run.runId, waiting > 0 ? 'stopped' : ok ? 'done' : 'failed');
     } catch (err) {
+      if (err instanceof ApprovalPending) {
+        job.log.info(`runtime-hermes: run ${run.runId} stopped: "${err.capability}" is waiting for an approval`);
+        await handle?.stop().catch(() => undefined);
+        await ctx.runs.close(run.runId, 'stopped');
+        return;
+      }
       // A model call is not something to replay blindly: the run is closed as failed and the reason is logged, rather than
       // letting the job retry (which would re-ask the model and post a second answer).
       job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);

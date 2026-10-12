@@ -20,6 +20,8 @@ export const EXTENSION_POINTS = [
   'provider.knowledge',
   'provider.viewer',
   'provider.repo',
+  // The one handler for `needsApproval` (P5-20): other plugins ask it for an approval instead of writing the rows themselves.
+  'provider.approvals',
   'command.register',
   'trigger.register',
   'component.register',

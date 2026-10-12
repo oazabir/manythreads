@@ -24,7 +24,15 @@ test.afterAll(async () => {
 test('the Bots entry opens the team roster; every row says who the bot is and where it runs', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/');
   try {
-    await page.locator('[data-landmark="sidebar"]').getByRole('link', { name: /Bots/ }).click();
+    // the sidebar contract's Bots section lists the team's bots under its heading: the roster's bot is a row that opens its page, and the
+    // empty-state hint is gone because the team has one
+    const sidebar = page.locator('[data-landmark="sidebar"]');
+    const bots = sidebar.getByTestId('sidebar-bot');
+    await expect(bots).toHaveCount(1, { timeout: 15_000 });
+    await expect(bots.first()).toContainText('Coder');
+    await expect(bots.first()).toHaveAttribute('href', '/t/engineering/bots/coder');
+    await expect(sidebar.locator(':scope > .sec', { hasText: 'Bots' })).not.toContainText('No bots yet');
+    await sidebar.getByRole('link', { name: /Bots/ }).first().click();
     await expect(page).toHaveURL(/\/t\/engineering\/bots$/);
     await expect(page.getByTestId('bots-roster')).toBeVisible();
     // the loader made the row from the seed's own commit

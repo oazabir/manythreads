@@ -11,7 +11,7 @@ import {
   type LlmLimitScope,
   type LlmRefusalReason,
 } from '@manythreads/shared';
-import { inspect, type DlpResult } from './dlp.ts';
+import { inspect, type DlpMode, type DlpResult } from './dlp.ts';
 
 // The enforcement half of the gateway (PLAN P5-07: budgets workspace → team → bot → session and rate limits "enforced
 // before the call"; `llm_spend`; the presets; the pre-call DLP hook). The split follows the config half: `decide` is a
@@ -190,6 +190,17 @@ export function decide(input: {
       allowed: false,
       reason: 'dlp',
       message: `The ${settings.preset} preset refuses a call that carries ${dlp.rules.join(', ')}.`,
+    };
+  }
+
+  // The hook held the call for a person: it does not leave, and nothing after this matters until it is approved (the limits are checked
+  // again when the approved call comes back through here).
+  if (dlp.outcome === 'require_approval') {
+    return {
+      ...base,
+      allowed: false,
+      reason: 'dlp',
+      message: `A person has to approve this call first: it carries ${dlp.rules.join(', ')}.`,
     };
   }
 
@@ -499,6 +510,8 @@ export interface LlmCallRequest {
   alias: LlmAliasName;
   /** The text that would leave (the newest user message, or the tools' preamble the runtime names). */
   text: string;
+  /** What a DLP finding does (see `DlpMode` in dlp.ts); the preset's own rule when absent. */
+  dlpMode?: DlpMode;
 }
 
 /**
@@ -516,7 +529,7 @@ export async function preflight(
   const settings = await loadSettings(tx, request.workspaceId);
   const egress = await loadEgress(tx, request.workspaceId, request.alias);
   const fallbacks = await loadFallbackChain(tx, request.workspaceId, request.alias);
-  const dlp = inspect(request.text, settings.preset);
+  const dlp = inspect(request.text, settings.preset, request.dlpMode);
   const limits = await loadLimits(tx, request.workspaceId, request, now);
   const decision = decide({ alias: request.alias, sessionId: request.sessionId, settings, egress, fallbacks, dlp, limits, rate });
 

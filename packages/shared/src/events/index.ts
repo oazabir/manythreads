@@ -52,3 +52,6 @@ export * from './llm.config.applied.ts';
 export * from './llm.key.changed.ts';
 export * from './llm.budget.exceeded.ts';
 export * from './llm.guard.decided.ts';
+export * from './approvals.approval.requested.ts';
+export * from './approvals.approval.decided.ts';
+export * from './approvals.approval.resumed.ts';

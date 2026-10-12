@@ -17,6 +17,9 @@ import { PagesPageWrittenEvent } from './pages.page.written.ts';
 import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
 import { BotsBotInvalidEvent } from './bots.bot.invalid.ts';
 import { BotsBotRemovedEvent } from './bots.bot.removed.ts';
+import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
+import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
+import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
 import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
@@ -73,6 +76,9 @@ export const eventRegistry = {
   'bots.bot.loaded': { 1: BotsBotLoadedEvent },
   'bots.bot.invalid': { 1: BotsBotInvalidEvent },
   'bots.bot.removed': { 1: BotsBotRemovedEvent },
+  'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },
+  'approvals.approval.decided': { 1: ApprovalsApprovalDecidedEvent },
+  'approvals.approval.resumed': { 1: ApprovalsApprovalResumedEvent },
   'llm.config.applied': { 1: LlmConfigAppliedEvent },
   'llm.key.changed': { 1: LlmKeyChangedEvent },
   'llm.budget.exceeded': { 1: LlmBudgetExceededEvent },
@@ -159,6 +165,9 @@ export type AnyEvent =
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
+  | z.infer<typeof ApprovalsApprovalRequestedEvent>
+  | z.infer<typeof ApprovalsApprovalDecidedEvent>
+  | z.infer<typeof ApprovalsApprovalResumedEvent>
   | z.infer<typeof LlmKeyChangedEvent>
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
@@ -214,6 +223,9 @@ export type LatestEvent =
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
+  | z.infer<typeof ApprovalsApprovalRequestedEvent>
+  | z.infer<typeof ApprovalsApprovalDecidedEvent>
+  | z.infer<typeof ApprovalsApprovalResumedEvent>
   | z.infer<typeof LlmKeyChangedEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;

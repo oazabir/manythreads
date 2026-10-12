@@ -87,3 +87,8 @@ export type ChannelGroupId = z.infer<typeof ChannelGroupId>;
 
 export const NotificationId = z.uuid().brand<'NotificationId'>();
 export type NotificationId = z.infer<typeof NotificationId>;
+
+// Phase 5: approvals.
+
+export const ApprovalId = z.uuid().brand<'ApprovalId'>();
+export type ApprovalId = z.infer<typeof ApprovalId>;

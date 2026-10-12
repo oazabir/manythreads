@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation } from 'react-router';
 import type { NavContribution } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
 import { useUnread } from '../channels/hooks';
+import { BotsSection } from './BotsSection';
 import { useShell } from './context';
 import { useChannelFeed } from './channelFeed';
 import { DirectMessages } from './DirectMessages';
@@ -112,6 +113,8 @@ export function Sidebar() {
           <ChannelGroups key={item.id} slug={slug} guest={guest} />
         ) : item.id === 'direct-messages' ? (
           <DirectMessages key={item.id} item={item} slug={slug} />
+        ) : item.id === 'bots' ? (
+          <BotsSection key={item.id} item={item} slug={slug} />
         ) : item.kind === 'header' ? (
           <NavHeader key={item.id} item={item} slug={slug} />
         ) : (

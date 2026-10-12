@@ -15,3 +15,4 @@ export * from './repo/index.ts';
 export * from './pages/index.ts';
 export * from './bots/index.ts';
 export * from './llm/index.ts';
+export * from './approvals/index.ts';

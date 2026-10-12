@@ -1,0 +1,151 @@
+/* The Approvals screens (PLAN P5-20): the inbox and the card that also sits under a thread's replies. Every class here is prefixed `apr`
+ * so nothing in this file can collide with a shared class — the inbox itself reuses `.inbox`, `.inl`, `.trow` and `.inr` from channels.css
+ * and never redefines them. Colours come from tokens.css only; a raw hex here fails lint. */
+
+.apr-count {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.apr-detail {
+  padding: 22px 24px 28px;
+  overflow: auto;
+}
+
+.apr-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 640px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.apr-card-thread {
+  margin: 10px 0;
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+}
+
+.apr-card-thread[data-status="approved"] {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+}
+
+.apr-card-thread[data-status="denied"] {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+}
+
+.apr-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.apr-who {
+  font-weight: 600;
+}
+
+.apr-when {
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.apr-summary {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.apr-meta {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.apr-mono {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.apr-preview {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--table-head);
+  font-size: 12px;
+}
+
+.apr-kv {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.apr-kv dt {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.apr-kv dd {
+  margin: 0;
+  color: var(--txt);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.apr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.apr-note {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.apr-blocked,
+.apr-state {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.apr-state b {
+  color: var(--ink);
+}
+
+.apr-outcome {
+  color: var(--mute);
+}
+
+.apr-error {
+  margin: 0;
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+.apr-thread {
+  padding: 0 14px;
+}
