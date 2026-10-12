@@ -457,4 +457,4 @@ Screens: `docs/retro/screens/phase-1/`.
     p95 16.7 ms twice (base 16.8). Local `pnpm lint` + `pnpm typecheck` clean.
   - **Open / not here:** the gate (P5-11) and `guardrails-dlp/egress` (P5-21) are not built; environment/dispatch sources are phase 6; no expiry or escalation of a pending approval; a bot loaded before bots 0009 has
     `approvers = {}` until its BOT.md changes (MCP approvals then default to the leads; the Hermes path passes the definition's list); an approved `handoff` that never gets re-run stays `queued`;
-    `pages.ts`/`repo.ts` still refuse a `needsApproval` write outright when reached by a *person-less* route (only the MCP/runtime door files approvals).
+    `pages.ts`/`repo.ts` still refuse a `needsApproval` write outright when a bot reaches them by any door other than the MCP/runtime one (only those two file approvals).
