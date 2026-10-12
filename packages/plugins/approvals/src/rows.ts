@@ -35,18 +35,13 @@ export interface ApprovalRow extends Record<string, unknown> {
  */
 export const APPROVAL_SELECT = `
   SELECT a.id, a.workspace_id, a.team_id, a.source, a.status, a.outcome, a.outcome_detail, a.tool, a.summary, a.args_preview, a.approver_scope,
-         a.requester_id, coalesce(rp.display_name, rb.name, 'someone') AS requester_name,
+         a.requester_id, a.requester_name,
          a.bot_id, b.slug AS bot_slug, b.name AS bot_name, a.channel_id, a.thread_root_id, a.created_at,
          app.approvals_block_reason(a.id) AS block_reason,
-         d.decision, d.note AS decision_note, d.decided_at AS decision_at, d.decider_id, coalesce(dp.display_name, 'someone') AS decider_name
+         d.decision, d.note AS decision_note, d.decided_at AS decision_at, d.decider_id, d.decider_name
     FROM app.approvals a
     LEFT JOIN app.bots b ON b.id = a.bot_id
-    JOIN app.actors ra ON ra.id = a.requester_id
-    LEFT JOIN app.people rp ON rp.id = ra.ref_id AND ra.kind = 'person'
-    LEFT JOIN app.bots rb ON rb.id = ra.ref_id AND ra.kind = 'bot'
-    LEFT JOIN app.approval_decisions d ON d.approval_id = a.id
-    LEFT JOIN app.actors da ON da.id = d.decider_id
-    LEFT JOIN app.people dp ON dp.id = da.ref_id AND da.kind = 'person'`;
+    LEFT JOIN app.approval_decisions d ON d.approval_id = a.id`;
 
 /** The one place an `approvals` row becomes the shared `Approval`. */
 export function toApproval(r: ApprovalRow): Approval {

@@ -28,6 +28,8 @@ CREATE TABLE app.approvals (
   resume_kind    text GENERATED ALWAYS AS (resume ->> 'kind') STORED CHECK (resume_kind IN ('tool', 'handoff')),
   approver_scope jsonb NOT NULL,
   requester_id   uuid NOT NULL REFERENCES app.actors (id) ON DELETE CASCADE,
+  -- the name as it was when the request was filed: actors are readable only by themselves, so a list cannot join them
+  requester_name text NOT NULL DEFAULT '' CHECK (char_length(requester_name) <= 200),
   bot_id         uuid REFERENCES app.bots (id) ON DELETE CASCADE,
   run_id         uuid REFERENCES app.bot_runs (id) ON DELETE SET NULL,
   channel_id     uuid REFERENCES app.channels (id) ON DELETE SET NULL,
@@ -55,6 +57,7 @@ CREATE TABLE app.approval_decisions (
   workspace_id uuid NOT NULL REFERENCES app.workspaces (id) ON DELETE CASCADE,
   team_id      uuid NOT NULL REFERENCES app.teams (id) ON DELETE CASCADE,
   decider_id   uuid NOT NULL REFERENCES app.actors (id) ON DELETE CASCADE,
+  decider_name text NOT NULL DEFAULT '' CHECK (char_length(decider_name) <= 200),
   decision     text NOT NULL CHECK (decision IN ('approved', 'denied')),
   note         text NOT NULL DEFAULT '' CHECK (char_length(note) <= 500),
   decided_at   timestamptz NOT NULL DEFAULT now()
@@ -82,7 +85,7 @@ CREATE POLICY approval_decisions_system ON app.approval_decisions FOR ALL USING 
 
 -- Everything but `resume`: a request reads what an approver is shown, never the real arguments.
 GRANT SELECT (id, workspace_id, team_id, source, status, outcome, outcome_detail, tool, summary, args_preview, resume_kind, approver_scope,
-              requester_id, bot_id, run_id, channel_id, thread_root_id, dedupe_key, created_at, decided_at)
+              requester_id, requester_name, bot_id, run_id, channel_id, thread_root_id, dedupe_key, created_at, decided_at)
   ON app.approvals TO manythreads_app;
 GRANT SELECT ON app.approval_decisions TO manythreads_app;
 
@@ -104,6 +107,7 @@ DECLARE
   v_scope   jsonb;
   v_id      uuid;
   v_requester uuid;
+  v_requester_name text;
 BEGIN
   SELECT r.id, r.workspace_id, r.team_id, r.bot_id, r.asker_id, r.channel_id, r.reply_root_id, r.status
     INTO v_run FROM app.bot_runs r WHERE r.id = p_run_id;
@@ -118,6 +122,11 @@ BEGIN
   END IF;
 
   v_requester := coalesce(v_run.asker_id, v_bot_actor);
+  SELECT coalesce(p.display_name, b.name, 'someone') INTO v_requester_name
+    FROM app.actors k
+    LEFT JOIN app.people p ON p.id = k.ref_id AND k.kind = 'person'
+    LEFT JOIN app.bots b ON b.id = k.ref_id AND k.kind = 'bot'
+   WHERE k.id = v_requester;
   v_list := coalesce(p_approvers, (SELECT b.approvers FROM app.bots b WHERE b.id = v_run.bot_id), '{}');
   v_scope := jsonb_build_object(
     'roles', coalesce((SELECT jsonb_agg(DISTINCT p) FROM unnest(v_list) AS p WHERE p ~ '^role:[a-z][a-z0-9-]*$'), '[]'::jsonb),
@@ -128,9 +137,9 @@ BEGIN
   );
 
   INSERT INTO app.approvals AS a (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, bot_id,
-                                  run_id, channel_id, thread_root_id, dedupe_key)
+                                  run_id, channel_id, thread_root_id, dedupe_key, requester_name)
   VALUES (v_run.workspace_id, v_run.team_id, p_source, p_tool, p_summary, coalesce(p_args_preview, '{}'::jsonb), p_resume, v_scope,
-          v_requester, v_run.bot_id, v_run.id, v_run.channel_id, v_run.reply_root_id, p_dedupe_key)
+          v_requester, v_run.bot_id, v_run.id, v_run.channel_id, v_run.reply_root_id, p_dedupe_key, coalesce(v_requester_name, 'someone'))
   ON CONFLICT (bot_id, dedupe_key) WHERE status = 'pending' AND dedupe_key IS NOT NULL DO NOTHING
   RETURNING a.id INTO v_id;
   IF v_id IS NOT NULL THEN
@@ -213,8 +222,10 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'this approval is already settled' USING ERRCODE = '55000';
   END IF;
-  INSERT INTO app.approval_decisions (approval_id, workspace_id, team_id, decider_id, decision, note)
-  VALUES (p_approval_id, v_row.workspace_id, v_row.team_id, app.actor(), p_decision, left(coalesce(p_note, ''), 500))
+  INSERT INTO app.approval_decisions (approval_id, workspace_id, team_id, decider_id, decider_name, decision, note)
+  VALUES (p_approval_id, v_row.workspace_id, v_row.team_id, app.actor(),
+          coalesce((SELECT p.display_name FROM app.actors k JOIN app.people p ON p.id = k.ref_id WHERE k.id = app.actor() AND k.kind = 'person'), 'someone'),
+          p_decision, left(coalesce(p_note, ''), 500))
   RETURNING id INTO v_id;
   RETURN v_id;
 END
