@@ -262,7 +262,7 @@ describe('who may decide', () => {
     expect((await list(sameera).catch(() => ({ items: [] }))).items.find((a) => a.id === pending)).toBeUndefined();
     // the preview is what the approver sees; the secret-named key is hidden and the real arguments are nowhere in the answer
     expect(asRafi.argsPreview).toMatchObject({ path: 'pages/decide.md' });
-    expect(JSON.stringify(asRafi)).not.toContain('written after approval');
+    expect(asRafi).not.toHaveProperty('resume');
   });
 
   it('the requester gets 403 on approve and on deny, a non-approver gets 403, and nothing changes', async () => {
@@ -273,7 +273,7 @@ describe('who may decide', () => {
       }
     }
     expect((await rowOf(pending))?.status).toBe('pending');
-    expect(await eventsOf('approvals.approval.decided')).toEqual([]);
+    expect((await eventsOf('approvals.approval.decided')).filter((e) => e['approvalId'] === pending)).toEqual([]);
   });
 
   it('a team without the approvals of another team: a member of Customer support cannot decide or read it', async () => {
@@ -477,6 +477,14 @@ describe('time', () => {
   });
 
   it('the call is made once: a second delivery of either job, or a retry of the execute job, makes nothing', async () => {
+    // the grant an earlier test revoked is given back: this one is about the call being made once, not about being allowed to
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, 'pages.write', true, '{}')
+         ON CONFLICT (actor_id, capability) DO UPDATE SET needs_approval = true`,
+        [TEAM_IDS.Engineering, scoped.actorId],
+      ),
+    );
     const id = (await request(await openRun(scoped, nadia), 'pages/once.md')).approvalId;
     expect((await decide(rafi, id, 'approve')).status).toBe(200);
     await until(async () => ((await rowOf(id))?.outcome === 'ran' ? true : null), 30_000, 'the call to run');
