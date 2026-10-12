@@ -341,6 +341,9 @@ export function registerRunJob(ctx: PluginContext): void {
         trigger: payload.trigger,
         askerActorId: payload.askerActorId,
         threadId: payload.runThreadId,
+        // where the reply goes, so an approval this run raises leaves its card in that thread
+        channelId: payload.channelId,
+        replyRootId: payload.replyRootId,
         ttlSeconds,
       });
     } catch (err) {
