@@ -159,7 +159,7 @@ beforeAll(async () => {
   await sys(async (tx) => {
     const bot = await tx.query<{ id: string }>(
       `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-       VALUES ($1, $2, 'memo', 'Memo', '', 'agent', 'rules', 'team', repeat('m', 64), 'active') RETURNING id`,
+       VALUES ($1, $2, 'memo', 'Memo', '', 'agent', 'rules', 'team', repeat('a', 64), 'active') RETURNING id`,
       [omar.workspaceId, ENG],
     );
     botId = bot.rows[0]!.id;

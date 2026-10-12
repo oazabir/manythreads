@@ -218,7 +218,7 @@ beforeAll(async () => {
   await sys(async (tx) => {
     const bot = await tx.query<{ id: string }>(
       `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-       VALUES ($1, $2, 'memo', 'Memo', '', 'agent', 'rules', 'team', repeat('m', 64), 'active') RETURNING id`,
+       VALUES ($1, $2, 'memo', 'Memo', '', 'agent', 'rules', 'team', repeat('a', 64), 'active') RETURNING id`,
       [omar.workspaceId, ENG],
     );
     botId = bot.rows[0]!.id;
@@ -577,7 +577,7 @@ describe('what a bot wrote during a run', () => {
     await sys(async (tx) => {
       const bot = await tx.query<{ id: string }>(
         `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-         VALUES ($1, $2, 'writer', 'Writer', '', 'agent', 'rules', 'team', repeat('w', 64), 'active') RETURNING id`,
+         VALUES ($1, $2, 'writer', 'Writer', '', 'agent', 'rules', 'team', repeat('b', 64), 'active') RETURNING id`,
         [omar.workspaceId, ENG],
       );
       writer = bot.rows[0]!.id;

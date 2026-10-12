@@ -106,7 +106,7 @@ beforeAll(async () => {
     botId = (
       await tx.query<{ id: string }>(
         `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-         VALUES ($1, $2, 'scribe', 'Scribe', '', 'agent', 'rules', 'team', repeat('s', 64), 'active') RETURNING id`,
+         VALUES ($1, $2, 'scribe', 'Scribe', '', 'agent', 'rules', 'team', repeat('c', 64), 'active') RETURNING id`,
         [omar.workspaceId, ENG],
       )
     ).rows[0]!.id;
@@ -282,7 +282,7 @@ describe('what a bot wrote', () => {
       const bot = (
         await tx.query<{ id: string }>(
           `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-           VALUES ($1, $2, 'ghost', 'Ghost', '', 'agent', 'rules', 'team', repeat('g', 64), 'active') RETURNING id`,
+           VALUES ($1, $2, 'ghost', 'Ghost', '', 'agent', 'rules', 'team', repeat('e', 64), 'active') RETURNING id`,
           [omar.workspaceId, ENG],
         )
       ).rows[0]!.id;
