@@ -275,10 +275,11 @@ describe('hostile input at COMPILE time (a BOT.md is parsed on every commit; it 
   };
 
   it('nested empty repeats, the pattern that once took 38 seconds, are refused at once', () => {
-    for (const entry of ['/(((((){100}){100}){100}){100}){100}/', '/(((((((((((((((((((((((((((((){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}){100}/']) {
+    // five levels, and nineteen (the deepest a 200-character entry can nest and the loader still parse)
+    for (const entry of ['/(((((){100}){100}){100}){100}){100}/', `/${'('.repeat(19)}${'){100}'.repeat(19)}/`]) {
       const r = quick([entry]);
       expect(r.ok, entry).toBe(false);
-      expect(r.reason).toMatch(/repeat of nothing|nested deeper/);
+      expect(r.reason).toMatch(/repeat of nothing/);
       expect(r.ms).toBeLessThan(200);
     }
   });
