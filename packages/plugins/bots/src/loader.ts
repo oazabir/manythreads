@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginEvent, PluginTx, RepoProvider } from '@manythreads/sdk';
 import { BOT_SLUG_RE, RepoRepoCommittedEvent, parseBotMd } from '@manythreads/shared';
+import { modelAliasesOf } from './backfill.ts';
 
 // The loader (PLAN P5-04, extended by P5-10): a `repo.repo.committed` subscription that rebuilds a team's bot from `bots/<slug>/BOT.md`, in the
 // outbox consumer's system transaction, once per commit. Valid → one row carrying the definition's projections (display fields, `placement`,
@@ -154,7 +155,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       JSON.stringify(triggers),
       JSON.stringify(native),
       // The aliases the definition may ask for, then its own fallbacks: what the gateway limits the bot's key to.
-      [...new Set([...(fm.model?.aliases ?? []), ...(fm.model?.fallbacks ?? [])])],
+      modelAliasesOf(fm.model),
     ],
   );
   const botId = row.rows[0]!.id;

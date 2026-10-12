@@ -46,6 +46,16 @@ then the strict `BotFrontmatter` of `packages/shared/src/bot-md/frontmatter.ts`.
 throws, so the outbox rolls the whole event back and retries; every step is an upsert or a delete, so a retry changes
 nothing twice.
 
+### The model_aliases backfill
+
+`bots.model_aliases` (migration 0008) is the loader's projection of one *file*, so SQL cannot fill it for the bots that were loaded
+before the column existed. `bots.backfill-model-aliases` (`src/backfill.ts`, daily at 03:11 UTC, a `job.register` cron) re-reads
+`bots/<slug>/BOT.md` at `main` through the repo provider for every **active hermes bot with an empty projection**, and — only
+when that file is the one the row was loaded from (same sha256; a newer one is the loader's) and it names a model — writes the list and
+emits `bots.bot.loaded` again, which the gateway turns into the bot's LLM key. A bot whose file names no model stays empty and
+costs one blob read a day. There is no server-start hook for a non-identity plugin, so the first run is the next 03:11 UTC; recommitting
+a `BOT.md` does the same at once.
+
 ## Pairing (SPEC §7.6)
 
 A bot never holds a credential — its runtime holds a **pairing token**: 256 random bits, base64url, **shown once**;
@@ -121,6 +131,8 @@ into its shared entity. The Zod ↔ SQL enum agreement is `packages/kernel/test/
 
 `test/bot-md.test.ts`: the parser alone — unknown key by name, bad value at its index, missing key, no/unclosed
 fence, unparseable YAML, a tolerated BOM.
+
+`test/backfill.test.ts` (needs the DB): a pre-0008 row with an empty `model_aliases` is filled from its file at `main` (aliases, then fallbacks) and re-announced; a row whose file moved on, names no model, is missing, or is not an active hermes bot is left alone.
 
 `test/loader.test.ts` (needs the DB): the seeded `bots/coder/BOT.md` lands with its actor and the right
 `definition_sha` (hash of the file, not of the git blob); a valid file appears in the roster **within 5 s** with its

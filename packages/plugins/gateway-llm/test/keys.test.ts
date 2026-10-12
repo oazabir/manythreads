@@ -202,6 +202,27 @@ describe('pushLlmConfig', () => {
   });
 });
 
+describe('concurrent syncs of one bot', () => {
+  it('mint one key and one secret, not one each (the second waits on the per-bot lock and finds the first\'s row)', async () => {
+    await bind(['smart']);
+    const botId = await sys((tx) => makeBot(tx, 'race-probe', ['smart']));
+    const secretsBefore = await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.secrets')).rows[0]!.n);
+
+    // Two separate transactions at once, as two workers would run them.
+    const results = await Promise.all([
+      sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId)),
+      sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId)),
+    ]);
+    expect([...results].sort()).toEqual(['minted', 'unchanged']);
+
+    const keys = await sys(async (tx) => (await tx.query('SELECT 1 FROM app.llm_keys WHERE bot_id = $1 AND revoked_at IS NULL', [botId])).rows.length);
+    expect(keys).toBe(1);
+    const secretsAfter = await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.secrets')).rows[0]!.n);
+    expect(secretsAfter - secretsBefore).toBe(1); // no orphaned secret
+    expect(emitted.filter((e) => e['action'] === 'minted')).toHaveLength(1);
+  });
+});
+
 describe('which aliases a bot\'s key covers', () => {
   const keyRow = (botId: string) =>
     sys(async (tx) => (await tx.query<{ models: string[]; revoked_at: Date | null }>('SELECT models, revoked_at FROM app.llm_keys WHERE bot_id = $1', [botId])).rows[0]);

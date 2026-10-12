@@ -37,7 +37,7 @@ job, never a prompt template's.
 ## The profile
 
 `render` is pure, so a definition's profile can be asserted in a test instead of inspected in a container. A profile is a
-`HERMES_HOME` directory under `MANYTHREADS_RUNTIME_DIR` (one per run, mode 0700 with 0600 files, removed when the run ends — also when the spawn itself fails — and swept at startup when a dead server left it behind for more than two hours) holding two files:
+`HERMES_HOME` directory under `MANYTHREADS_RUNTIME_DIR` (one per run, mode 0700 with 0600 files, removed when the run ends — also when the spawn itself fails — and swept at startup when a dead server left it behind for more than two hours: only a directory named `<bot slug>-<run id>` that carries the `.manythreads-profile` marker this code writes first is ever swept, so a `MANYTHREADS_RUNTIME_DIR` that shares a directory with anything else loses nothing) holding two files:
 
 * **`SOUL.md`** — the `BOT.md` body, verbatim. The behaviour of a bot is its file's prose, versioned in the team repo.
 * **`config.yaml`** — the model and the tools, and nothing else:
@@ -62,10 +62,25 @@ shows. `--run-budget` comes from the definition's `limits.timeoutSeconds`; the p
 grace`, default 15 s) and stops the process with SIGTERM, then SIGKILL. There is no daemon to manage and no state shared
 between runs.
 
-**The child's environment is an allowlist**, not the server's: `PATH`, `HOME`, `LANG`/`LC_*`, `TZ`, the temp-dir variables and
-`HERMES_*`, plus `HERMES_HOME`. The KMS key, database URLs and passwords, the LiteLLM master key and the test auth token never
-reach an agent that can run `env` (`childEnv`, tested by looking for secret-looking parent variables in the child's
-environment). The child leads its own process group and a timeout signals the group, so what a shell tool started dies too.
+**The child's environment is an allowlist**, not the server's: `PATH`, `HOME`, `LANG`/`LC_*`, `TZ`, the temp-dir variables,
+`HERMES_*` and the CA-bundle variables (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
+`NODE_EXTRA_CA_CERTS` — a deployment behind a private CA cannot reach the model gateway without them), plus `HERMES_HOME`. The
+KMS key, database URLs and passwords, the LiteLLM master key and the test auth token never reach an agent that can run `env`
+(`childEnv`, tested by looking for secret-looking parent variables in the child's environment). A deployment that needs more
+(`HTTPS_PROXY`, `NO_PROXY`) opts in by name: `MANYTHREADS_HERMES_ENV_PASSTHROUGH=HTTPS_PROXY,NO_PROXY`. A name that starts with
+`MANYTHREADS_`, `DATABASE` or `PG` is refused even when listed — those are the platform's and the database's, not the agent's.
+
+**The child leads its own process group and a stop signals the group**, not just the leader. A leader that exits (normally or by
+SIGTERM) can leave what a shell tool started still running in the group, so whether there is anything left to signal is asked of
+the group (`kill(-pid, 0)`; ESRCH means empty), never of the leader's exit code: after a normal end the group still gets SIGTERM,
+and SIGKILL after the grace if it ignores it. The profile directory (it holds the run token and the bot's key) is removed only
+once the group is gone, or after the grace plus two seconds. On Windows there are no groups and the child is not `detached`; only
+the child itself is signalled.
+
+With `MANYTHREADS_HERMES_PREFIX='docker exec -i <container> hermes'` the group is the **docker client's**: signals reach `docker
+exec`, which does not forward them to the process inside the container, so a timeout stops the client and not the agent. Run the
+container with `--init` (so orphans are reaped) and make the container's entry point enforce its own budget (`timeout`, or
+Hermes' `--run-budget`, which the platform always passes), or run Hermes on the server's host/pod where the group kill applies.
 
 The stream is Hermes' own JSONL: `text` deltas, `tool_use` / `tool_result`, and a terminal `result` whose `exit_code` is the
 outcome. A process that dies without a `result` record is reported as a failed run carrying the tail of its stderr — a run is
@@ -129,6 +144,7 @@ Not yet done, deliberately:
 | `MANYTHREADS_HERMES_PREFIX` | *(empty)* | arguments before `chat`, space-separated (`docker exec -i <container> hermes`) |
 | `MANYTHREADS_RUNTIME_DIR` | `$TMPDIR/manythreads-runtime` | where a run's profile home is written |
 | `MANYTHREADS_HERMES_KILL_GRACE` | `15` | seconds between SIGTERM and SIGKILL |
+| `MANYTHREADS_HERMES_ENV_PASSTHROUGH` | *(empty)* | comma-separated extra variable names the child inherits (`HTTPS_PROXY,NO_PROXY`); `MANYTHREADS_*`, `DATABASE*` and `PG*` are never passed |
 | `MANYTHREADS_LITELLM_URL` | *(unset)* | the workspace's model gateway; without it a hermes run is refused before starting |
 
 ## Tests

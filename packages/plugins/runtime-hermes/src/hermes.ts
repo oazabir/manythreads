@@ -29,23 +29,56 @@ export const HERMES_RUNTIME_ID = 'hermes';
  * (the bot's virtual key and the run's token), never the platform's credentials, so an agent that runs a shell tool
  * (`env`, `/proc/self/environ`) finds none of them (MISTAKES: child process env inheritance).
  */
-const ENV_ALLOWLIST = new Set(['PATH', 'HOME', 'LANG', 'LANGUAGE', 'TZ', 'TMPDIR', 'TEMP', 'TMP', 'SYSTEMROOT', 'USER', 'LOGNAME', 'SHELL', 'TERM']);
+const ENV_ALLOWLIST = new Set([
+  'PATH', 'HOME', 'LANG', 'LANGUAGE', 'TZ', 'TMPDIR', 'TEMP', 'TMP', 'SYSTEMROOT', 'USER', 'LOGNAME', 'SHELL', 'TERM',
+  // Where a TLS client finds its trust roots: a deployment behind a private CA (or a proxy that re-signs) names them here, and
+  // an agent without them cannot reach the model gateway at all. Paths, not credentials.
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE', 'NODE_EXTRA_CA_CERTS',
+]);
 const ENV_PREFIXES = ['LC_', 'HERMES_'];
 
-/** The child's environment: the allowlisted part of `source`, nothing else. `HERMES_HOME` is added by the caller. */
+/**
+ * Names an operator may never pass through, whatever `MANYTHREADS_HERMES_ENV_PASSTHROUGH` says: the platform's own settings and
+ * credentials (`MANYTHREADS_*`) and the database's (`DATABASE*`, `PG*`). The opt-in exists for `HTTPS_PROXY`, `NO_PROXY` and
+ * the like; a list that names the KMS key is a mistake the code refuses rather than honours.
+ */
+const PASSTHROUGH_REFUSED = /^(?:MANYTHREADS_|DATABASE|PG)/i;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** The extra names `MANYTHREADS_HERMES_ENV_PASSTHROUGH` (comma-separated) lets through, with the refused ones dropped. */
+export function passthroughNames(list: string | undefined): string[] {
+  return (list ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => ENV_NAME.test(name) && !PASSTHROUGH_REFUSED.test(name));
+}
+
+/**
+ * The child's environment: the allowlisted part of `source`, plus the operator's opt-in names (`MANYTHREADS_HERMES_ENV_PASSTHROUGH`,
+ * read from `source` itself) minus anything `PASSTHROUGH_REFUSED`. `HERMES_HOME` is added by the caller.
+ */
 export function childEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const extra = new Set(passthroughNames(source['MANYTHREADS_HERMES_ENV_PASSTHROUGH']));
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(source)) {
     if (value === undefined) continue;
-    if (ENV_ALLOWLIST.has(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) env[name] = value;
+    if (ENV_ALLOWLIST.has(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix)) || extra.has(name)) env[name] = value;
   }
   return env;
 }
 
+/** Written into every profile this code creates; the sweep deletes only directories that carry it. */
+export const PROFILE_MARKER = '.manythreads-profile';
+
+/** `<bot slug>-<run uuid>` (or `-no-run`): the only names `profileHome` produces. The sweep never looks at anything else. */
+const PROFILE_DIR_NAME = /^[a-z0-9][a-z0-9._-]*-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|no-run)$/;
+
 /**
  * Remove profile directories a crashed or killed server left behind (a profile holds the run token and the bot's key and is
- * removed when its run ends; a process that died mid-run never got to). Called once at startup; only directories older than
- * `maxAgeMs` go, so a profile another replica sharing the directory is using right now is left alone. Answers how many went.
+ * removed when its run ends; a process that died mid-run never got to). Called once at startup; only directories that (1) are
+ * named the way `profileHome` names them, (2) carry `PROFILE_MARKER` and (3) are older than `maxAgeMs` go — so an operator who
+ * points `MANYTHREADS_RUNTIME_DIR` at a directory with other things in it loses none of them, and a profile another replica
+ * sharing the directory is using right now is left alone. Answers how many went.
  */
 export async function sweepStaleProfiles(dataRoot: string, maxAgeMs: number, now: number = Date.now()): Promise<number> {
   let names: string[];
@@ -56,14 +89,16 @@ export async function sweepStaleProfiles(dataRoot: string, maxAgeMs: number, now
   }
   let removed = 0;
   for (const name of names) {
+    if (!PROFILE_DIR_NAME.test(name)) continue;
     const path = resolve(dataRoot, name);
     try {
       const info = await stat(path);
       if (!info.isDirectory() || now - info.mtimeMs < maxAgeMs) continue;
+      if (!(await stat(resolve(path, PROFILE_MARKER))).isFile()) continue;
       await rm(path, { recursive: true, force: true });
       removed += 1;
     } catch {
-      // raced with the run that owns it, or unreadable: leave it for the next start
+      // raced with the run that owns it, no marker, or unreadable: leave it for the next start
     }
   }
   return removed;
@@ -100,6 +135,7 @@ function profilePaths(dataRoot: string, home: string, files: Record<string, stri
 
 export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeProvider {
   const spawn = options.spawn ?? nodeSpawn;
+  const useGroups = process.platform !== 'win32';
 
   return {
     id: HERMES_RUNTIME_ID,
@@ -118,13 +154,16 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
         await mkdir(resolve(options.dataRoot), { recursive: true, mode: 0o700 });
         await mkdir(dir, { recursive: true, mode: 0o700 });
         await chmod(dir, 0o700);
+        // First, so a crash between here and the end of the run leaves a directory the startup sweep is allowed to remove.
+        await writeFile(resolve(dir, PROFILE_MARKER), 'manythreads runtime profile: removed when its run ends\n', { encoding: 'utf8', mode: 0o600 });
         for (const [target, content] of written) await writeFile(target, content, { encoding: 'utf8', mode: 0o600 });
         child = spawn(options.bin, [...options.prefix, ...chatArgs(input)], {
           cwd: dir,
           env: { ...childEnv(options.env), HERMES_HOME: dir },
           stdio: ['pipe', 'pipe', 'pipe'],
           // Its own process group, so a stop reaches whatever the agent started (a shell tool's children) and not only Hermes.
-          detached: true,
+          // Not on Windows, where `detached` opens a console window and there are no groups to signal.
+          detached: useGroups,
         });
       } catch (err) {
         await removeProfile();
@@ -148,27 +187,49 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
         stderr = (stderr + chunk.toString('utf8')).slice(-2000);
       });
 
-      /** Signal the whole process group (the child leads one), falling back to the child alone when there is no group to hit. */
+      // The child leads its own process group (`detached`), and the group — not the leader — is what a stop is about: the leader
+      // can exit (normally, or by SIGTERM) while a shell tool's children go on running. So "is there anything left to signal"
+      // is asked of the group (`kill(-pid, 0)`: ESRCH means no member is left), never of `child.exitCode`.
+      let groupGone = !useGroups || typeof child.pid !== 'number';
+      /** Whether any member of the child's process group is still there. Once it is gone the pid may be reused: never signal again. */
+      const groupExists = (): boolean => {
+        if (groupGone || typeof child.pid !== 'number') return false;
+        try {
+          process.kill(-child.pid, 0);
+          return true;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === 'EPERM') return true; // exists, not ours to signal: treat as present
+          groupGone = true; // ESRCH
+          return false;
+        }
+      };
+      /** Signal the whole group while it exists; with no group to hit (a platform without them, a stand-in child) the child alone. */
       const signal = (name: NodeJS.Signals): void => {
-        if (child.exitCode !== null || child.signalCode !== null) return;
-        if (typeof child.pid === 'number') {
+        if (useGroups && typeof child.pid === 'number') {
+          if (!groupExists()) return;
           try {
             process.kill(-child.pid, name);
             return;
           } catch {
-            // no such group (already gone, or a platform without them): fall through to the child itself
+            // gone between the probe and the signal, or not ours: fall through to the child itself
           }
         }
-        child.kill(name);
+        if (child.exitCode === null && child.signalCode === null) child.kill(name);
       };
+      /** Wait until the group has no member left, up to `ms`: a profile directory is not removed from under a process still in it. */
+      const groupGoneWithin = async (ms: number): Promise<void> => {
+        const deadline = Date.now() + ms;
+        while (groupExists() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
+      };
+      let killTimer: NodeJS.Timeout | undefined;
       const kill = (() => {
         let stopped = false;
         return async (): Promise<void> => {
           if (stopped) return;
           stopped = true;
           signal('SIGTERM');
-          const timer = setTimeout(() => signal('SIGKILL'), options.killGraceSeconds * 1000);
-          timer.unref?.();
+          killTimer = setTimeout(() => signal('SIGKILL'), options.killGraceSeconds * 1000);
+          killTimer.unref?.();
         };
       })();
 
@@ -181,9 +242,13 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
       ceiling.unref?.();
 
       const events = consume(child, kill, () => stderr, exited);
-      const close = () => {
+      const close = async (): Promise<void> => {
         clearTimeout(ceiling);
-        return removeProfile();
+        // The profile (token, key) goes only once nothing of the run is left in it: after the group is gone, or after the
+        // SIGTERM grace plus the SIGKILL's turn, whichever comes first.
+        await groupGoneWithin(options.killGraceSeconds * 1000 + 2_000);
+        clearTimeout(killTimer);
+        await removeProfile();
       };
       return {
         stop: async () => {

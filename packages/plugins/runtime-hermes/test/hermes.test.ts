@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream';
 import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
 import { parseBotMd } from '@manythreads/shared';
 import { afterAll, describe, expect, it } from 'vitest';
-import { childEnv, createHermesProvider, sweepStaleProfiles, type HermesRuntimeOptions } from '../src/hermes.ts';
+import { childEnv, createHermesProvider, passthroughNames, PROFILE_MARKER, sweepStaleProfiles, type HermesRuntimeOptions } from '../src/hermes.ts';
 
 // Starting and stopping a run (PLAN P5-10: "start and stop in the Hermes container"). `MANYTHREADS_HERMES_BIN` is whatever
 // runs a turn — the CLI in development, a container's entry point in a deployment — and these tests use the provider's own
@@ -264,6 +264,36 @@ describe('the child process is a sandboxed guest of the server', () => {
     });
   });
 
+  it('lets the CA-bundle variables through: a deployment behind a private CA needs them to reach the gateway', () => {
+    const ca = {
+      SSL_CERT_FILE: '/etc/ssl/ca.pem',
+      SSL_CERT_DIR: '/etc/ssl/certs',
+      REQUESTS_CA_BUNDLE: '/etc/ssl/ca.pem',
+      CURL_CA_BUNDLE: '/etc/ssl/ca.pem',
+      NODE_EXTRA_CA_CERTS: '/etc/ssl/extra.pem',
+    };
+    expect(childEnv({ PATH: '/bin', ...ca, HTTPS_PROXY: 'http://proxy:3128' })).toEqual({ PATH: '/bin', ...ca }); // the proxy is opt-in, not default
+  });
+
+  it('MANYTHREADS_HERMES_ENV_PASSTHROUGH adds the names an operator lists, and never a MANYTHREADS_*, DATABASE* or PG* one', () => {
+    const source: NodeJS.ProcessEnv = {
+      PATH: '/bin',
+      MANYTHREADS_HERMES_ENV_PASSTHROUGH: 'HTTPS_PROXY, NO_PROXY,MANYTHREADS_KMS_KEY,DATABASE_URL,PGPASSWORD,pghost,database_password,MISSING,bad name,',
+      HTTPS_PROXY: 'http://proxy:3128',
+      NO_PROXY: 'localhost',
+      MANYTHREADS_KMS_KEY: 'kms-key-material',
+      DATABASE_URL: 'postgres://u:p@db/x',
+      PGPASSWORD: 'pg-password',
+      pghost: 'db',
+      database_password: 'secret',
+      UNLISTED: 'stays out',
+    };
+    expect(childEnv(source)).toEqual({ PATH: '/bin', HTTPS_PROXY: 'http://proxy:3128', NO_PROXY: 'localhost' });
+    expect(passthroughNames('A, B ,,MANYTHREADS_X,PG_X,DATABASE,C-D,E')).toEqual(['A', 'B', 'E']);
+    expect(passthroughNames(undefined)).toEqual([]);
+    expect(childEnv({ PATH: '/bin', HTTPS_PROXY: 'x' })).toEqual({ PATH: '/bin' }); // no list, no passthrough
+  });
+
   it('writes the profile owner-only', async () => {
     const h = harness();
     const runInput = input();
@@ -365,18 +395,156 @@ describe('the child process is a sandboxed guest of the server', () => {
   }, 15_000);
 });
 
+describe('a leader that exits does not leave its group behind', () => {
+  /** Alive means running: a zombie nobody has reaped yet (a container without an init) is as dead as it gets. */
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return false;
+    }
+    try {
+      return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8'));
+    } catch {
+      return true; // no /proc (macOS): kill(0) succeeding is all we can know
+    }
+  };
+
+  /**
+   * A stand-in Hermes that starts a straggler in its own process group and then exits by itself, normally: the straggler is
+   * what a shell tool's background job looks like. It writes the straggler's pid once the straggler is ready (and, when asked,
+   * is ignoring SIGTERM), then exits 0.
+   */
+  async function runWithStraggler(ignoreTerm: boolean): Promise<{ events: BotRuntimeEvent[]; stragglerPid: number; profile: string; samples: { alive: boolean; profile: boolean }[]; cleanup: () => void }> {
+    const scratch = mkdtempSync(join(tmpdir(), 'hermes-straggler-'));
+    const script = join(scratch, 'leader.mjs');
+    const pidFile = join(scratch, 'straggler.pid');
+    const readyFile = join(scratch, 'straggler.ready');
+    writeFileSync(
+      script,
+      [
+        "import { spawn } from 'node:child_process';",
+        "import { existsSync, writeFileSync } from 'node:fs';",
+        "const ignore = process.env.HERMES_TEST_IGNORE_TERM === '1';",
+        "const code = (ignore ? \"process.on('SIGTERM', () => undefined);\" : '') + \"require('node:fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => undefined, 1000);\";",
+        "const straggler = spawn(process.execPath, ['-e', code, process.env.HERMES_TEST_READY], { stdio: 'ignore' });",
+        'const wait = setInterval(() => {',
+        '  if (!existsSync(process.env.HERMES_TEST_READY)) return;',
+        '  clearInterval(wait);',
+        '  writeFileSync(process.env.HERMES_TEST_PIDFILE, String(straggler.pid));',
+        '  process.exit(0);',
+        '}, 10);',
+        '',
+      ].join('\n'),
+    );
+    const dataRoot = join(scratch, 'profiles');
+    const runInput = input();
+    const profile = join(dataRoot, `coder-${runInput.endpoint!.runId}`);
+    const provider = createHermesProvider({
+      bin: process.execPath,
+      prefix: [script],
+      dataRoot,
+      env: { PATH: process.env['PATH'], HERMES_TEST_PIDFILE: pidFile, HERMES_TEST_READY: readyFile, HERMES_TEST_IGNORE_TERM: ignoreTerm ? '1' : '0' },
+      killGraceSeconds: 1,
+    });
+    const handle = await provider.run(runInput, scope([]));
+    await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8') !== '', 'the straggler to start');
+    const stragglerPid = Number(readFileSync(pidFile, 'utf8'));
+    const samples: { alive: boolean; profile: boolean }[] = [];
+    const sampler = setInterval(() => samples.push({ alive: alive(stragglerPid), profile: existsSync(profile) }), 10);
+    try {
+      const events = await drain(handle.events);
+      return { events, stragglerPid, profile, samples, cleanup: () => rmSync(scratch, { recursive: true, force: true }) };
+    } finally {
+      clearInterval(sampler);
+    }
+  }
+
+  it('SIGTERMs the group after the leader has gone, so a straggler it left does not outlive the run', async () => {
+    const run = await runWithStraggler(false);
+    try {
+      expect(run.events.at(-1)).toMatchObject({ type: 'result', ok: false }); // no result record: the synthesised failure
+      await until(() => !alive(run.stragglerPid), 'the straggler to die with its group');
+      expect(existsSync(run.profile)).toBe(false);
+    } finally {
+      try {
+        process.kill(run.stragglerPid, 'SIGKILL');
+      } catch {
+        // already gone: the point of the test
+      }
+      run.cleanup();
+    }
+  }, 15_000);
+
+  it('SIGKILLs a straggler that ignores SIGTERM after the grace, and removes the profile only once it is gone', async () => {
+    const run = await runWithStraggler(true);
+    try {
+      expect(alive(run.stragglerPid) || existsSync(run.profile)).toBe(false); // by the time the stream ended, both are done
+      // At no sample was the profile gone while the process that could still read it was running.
+      expect(run.samples.some((sample) => sample.alive)).toBe(true);
+      expect(run.samples.filter((sample) => sample.alive && !sample.profile)).toEqual([]);
+    } finally {
+      try {
+        process.kill(run.stragglerPid, 'SIGKILL');
+      } catch {
+        // already gone: the point of the test
+      }
+      run.cleanup();
+    }
+  }, 20_000);
+});
+
 describe('profiles a dead server left behind', () => {
-  it('sweeps directories older than the limit and leaves a fresh one (and a missing root) alone', async () => {
+  const RUN = '77777777-7777-7777-7777-777777777777';
+  const makeDir = (dataRoot: string, name: string, ageHours: number, marker: boolean): string => {
+    const dir = join(dataRoot, name);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'config.yaml'), 'token');
+    if (marker) writeFileSync(join(dir, PROFILE_MARKER), 'x');
+    const when = new Date(Date.now() - ageHours * 3_600_000);
+    utimesSync(dir, when, when);
+    return dir;
+  };
+
+  it('sweeps profile directories older than the limit and leaves a fresh one (and a missing root) alone', async () => {
     const dataRoot = join(root, 'sweep');
-    mkdirSync(join(dataRoot, 'coder-old'), { recursive: true });
-    mkdirSync(join(dataRoot, 'coder-fresh'), { recursive: true });
-    writeFileSync(join(dataRoot, 'coder-old', 'config.yaml'), 'token');
-    const threeHoursAgo = new Date(Date.now() - 3 * 3_600_000);
-    utimesSync(join(dataRoot, 'coder-old'), threeHoursAgo, threeHoursAgo);
+    const old = makeDir(dataRoot, `coder-${RUN}`, 3, true);
+    const fresh = makeDir(dataRoot, 'coder-88888888-8888-8888-8888-888888888888', 0, true);
+    const noRun = makeDir(dataRoot, 'coder-no-run', 3, true);
+
+    expect(await sweepStaleProfiles(dataRoot, 2 * 3_600_000)).toBe(2);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(noRun)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(await sweepStaleProfiles(join(root, 'does-not-exist'), 1)).toBe(0);
+  });
+
+  it('never touches a directory that is not a profile: wrong name, or the right name without the marker', async () => {
+    const dataRoot = join(root, 'sweep-unrelated');
+    const unrelated = [
+      makeDir(dataRoot, 'backups', 48, true), // has the marker, wrong name
+      makeDir(dataRoot, 'postgres-data', 48, false),
+      makeDir(dataRoot, `coder-${RUN}-copy`, 48, true), // the name must end at the run id
+      makeDir(dataRoot, `${RUN}`, 48, true),
+      makeDir(dataRoot, `coder-99999999-9999-9999-9999-999999999999`, 48, false), // the right name, but not written by this code
+    ];
+    writeFileSync(join(dataRoot, `coder-${RUN}.log`), 'a file, not a directory');
+    const ours = makeDir(dataRoot, `reviewer-${RUN}`, 48, true);
 
     expect(await sweepStaleProfiles(dataRoot, 2 * 3_600_000)).toBe(1);
-    expect(existsSync(join(dataRoot, 'coder-old'))).toBe(false);
-    expect(existsSync(join(dataRoot, 'coder-fresh'))).toBe(true);
-    expect(await sweepStaleProfiles(join(root, 'does-not-exist'), 1)).toBe(0);
+    for (const dir of unrelated) expect(existsSync(dir)).toBe(true);
+    expect(existsSync(join(dataRoot, `coder-${RUN}.log`))).toBe(true);
+    expect(existsSync(ours)).toBe(false);
+  });
+
+  it('every profile a run writes carries the marker (so the sweep can find it) and loses it with the profile', async () => {
+    const h = harness();
+    const runInput = input();
+    const handle = await h.provider.run(runInput, scope([]));
+    const home = join(root, `run-1/coder-${runInput.endpoint!.runId}`);
+    expect(existsSync(join(home, PROFILE_MARKER))).toBe(true);
+    await handle.stop();
+    expect(existsSync(home)).toBe(false);
+    h.children[0]!.killed('SIGTERM');
   });
 });

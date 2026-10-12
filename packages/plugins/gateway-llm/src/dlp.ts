@@ -14,6 +14,8 @@ interface Detector {
   pattern: RegExp;
   /** A checksum the match must also pass (card numbers), so a 16-digit id is not treated as a card. */
   luhn?: boolean;
+  /** A further test the match must pass (answering false drops it), for shapes the pattern alone cannot tell from prose. */
+  accept?: (matched: string) => boolean;
   /**
    * Where the finding really ends, when the pattern only finds its start (a PEM block: the header is a pattern, the body and
    * footer are not). One locator per `scan`, so it may keep state to stay linear across many matches.
@@ -24,6 +26,13 @@ interface Detector {
 /** How much of a key block is redacted when its footer is missing or too far away to be the same block (a 4096-bit RSA key is ~3.3 KB). */
 const PEM_BODY_LIMIT = 16_384;
 const PEM_FOOTER = '-----END ';
+
+/**
+ * Whether an `sk-` match is a key rather than a hyphenated word (`sk-learn-pipeline-classifier`). Real keys carry digits
+ * (every OpenAI/Anthropic format does); the one digit-free shape worth catching is a single unbroken run of letters 20+ long.
+ * Hyphenated prose has neither. Runs on the matched span only (at most ~515 characters), so it adds nothing superlinear.
+ */
+const looksLikeSkKey = (matched: string): boolean => !matched.startsWith('sk-') || /\d/.test(matched) || /^sk-[A-Za-z]{20,}$/.test(matched);
 
 /**
  * The end of a PEM private-key block that starts at `start`: the footer's closing dashes, or a bounded stretch after the
@@ -59,6 +68,7 @@ const DETECTORS: readonly Detector[] = [
     // `sk-` keys run long (`sk-proj-…` and `sk-ant-…` are 100–200 characters): up to 512, and no trailing boundary, so the tail
     // of a longer key is never left behind after a cap that happened to fall mid-token.
     pattern: /\bsk-[A-Za-z0-9_-]{16,512}|\b(?:AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,80}|xox[baprs]-[A-Za-z0-9-]{10,80})\b/g,
+    accept: looksLikeSkKey,
   },
   { name: 'bearer-token', pattern: /\bBearer[ \t]{1,4}[A-Za-z0-9._~+/=-]{20,400}/g },
   { name: 'credential-url', pattern: /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s:@/]{1,64}:[^\s:@/]{1,64}@/gi },
@@ -108,6 +118,7 @@ export function scan(text: string): DlpFinding[] {
       const value = match[0];
       const start = match.index ?? 0;
       if (detector.luhn && !luhnOk(value.replace(/[ -]/g, ''))) continue;
+      if (detector.accept && !detector.accept(value)) continue;
       found.push({ rule: detector.name, start, end: locate ? locate(text, start, value) : start + value.length });
     }
   }

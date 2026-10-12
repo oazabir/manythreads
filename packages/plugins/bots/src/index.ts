@@ -1,8 +1,10 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerBackfillJob } from './backfill.ts';
 import { registerBotLoader } from './loader.ts';
 import { registerPairingRoutes } from './routes.ts';
 import { registerBotRoutes } from './roster.ts';
 
+export { BACKFILL_QUEUE, backfillModelAliases, modelAliasesOf } from './backfill.ts';
 export { hashPairingToken, mintPairingToken, newPairingToken, resolvePairingToken, revokePairingTokens } from './pairing.ts';
 export type { PairedBot } from './pairing.ts';
 
@@ -15,12 +17,12 @@ export type { PairedBot } from './pairing.ts';
 export default definePlugin({
   manifest: {
     name: 'bots',
-    version: '0.3.0',
+    version: '0.3.1',
     kind: 'server',
     // `bot_runs` references app.threads, so this namespace must migrate after the channels plugin's
     dependsOn: ['channels'],
     migrations: 'migrations',
-    extends: ['event.subscribe', 'event.emit'],
+    extends: ['event.subscribe', 'event.emit', 'job.register'],
     events: {
       emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed'],
       consumes: ['repo.repo.committed'],
@@ -28,6 +30,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerBotLoader(ctx);
+    registerBackfillJob(ctx);
     registerPairingRoutes(ctx);
     registerBotRoutes(ctx);
   },

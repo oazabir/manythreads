@@ -97,7 +97,7 @@ the other way: `POST /key/delete`, then the secret and the row go. Both are idem
 changes nothing twice.
 
 A daily reconcile (`gateway-llm.reconcile`, 03:23 UTC) syncs every active hermes bot's key (mint, update or revoke), revokes what is orphaned — a bot deleted while
-its job was dead-lettered leaves a key behind — and re-queues the config push. That is what makes the guarantee self-healing.
+its job was dead-lettered leaves a key behind — and re-queues the config push. That is what makes the guarantee self-healing. Syncs of one bot are serialised by `pg_advisory_xact_lock(hashtext('llm-key:' || bot_id))`, so two jobs that both saw "no key" cannot each mint one (an orphaned secret and a stray proxy key). A bot loaded before `bots` migration 0008 has an empty `model_aliases` and so no key: the bots plugin's own daily job fills it from `BOT.md` and re-announces `bots.bot.loaded`, which is what mints it (see [bots.md](./bots.md)).
 
 `provider.llm` is how a runtime gets the key: `ctx.providers.get<LlmProviderServices>('llm').botKey(tx, botId)`, in a system
 transaction. P5-09/P5-10 use it to point a bot's profile at the gateway with the bot's own key.
@@ -143,7 +143,7 @@ P5-08 and this hook read one definition:
 | `customer-facing` | any configured provider | `block` |
 
 The hook (`src/dlp.ts`) is plain string work with a bounded quantifier per detector: a private-key block (header **through footer**, a truncated one up to a bound, a text of footerless headers scanned once), an API key
-(`sk-…` up to 512 characters, so `sk-proj-…` is whole, `AKIA…`, `ghp_…`, `xox…`), a `Bearer` token, a URL with credentials in it, and a card number (13–19 digits with
+(`sk-…` up to 512 characters, so `sk-proj-…` is whole — but a match with no digit that is not one unbroken run of 20+ letters is a hyphenated word, not a key, and is left alone — `AKIA…`, `ghp_…`, `xox…`), a `Bearer` token, a URL with credentials in it, and a card number (13–19 digits with
 separators, confirmed by Luhn so a long id is not a card). `redact` answers the text with each span replaced by
 `[redacted:<rule>]` and the call continues; `block` refuses it and the text is unchanged. Rules are names, never the
 matched text: the event, the decision and the audit line carry `api-key`, not the key.

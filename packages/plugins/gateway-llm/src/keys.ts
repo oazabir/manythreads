@@ -59,6 +59,10 @@ export type KeySyncResult = 'minted' | 'updated' | 'unchanged' | 'skipped' | 're
  * failure rolls everything back and the job retries; the key is caller-chosen, so a retry is harmless.
  */
 export async function syncBotKey(ctx: PluginContext, tx: PluginTx, workspaceId: string, botId: string): Promise<KeySyncResult> {
+  // One sync per bot at a time: two jobs (an event replay and the config push, or the reconcile) that both saw "no key" would
+  // each mint one — a secret nobody references and a second key at the proxy. The second waits here for the first to commit and
+  // then reads its row, so it finds the key and changes nothing. Released with the transaction.
+  await tx.query(`SELECT pg_advisory_xact_lock(hashtext('llm-key:' || $1::text))`, [botId]);
   const models = await botKeyModels(tx, workspaceId, botId);
   const existing = (
     await tx.query<{ secret_id: string | null; revoked_at: Date | null; models: string[] }>(

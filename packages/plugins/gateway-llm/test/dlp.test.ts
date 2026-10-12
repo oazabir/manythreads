@@ -57,6 +57,17 @@ describe('whole secrets, not their labels', () => {
     expect(inspect('the task-runner-configuration-is-here is fine', 'standard').outcome).toBe('allow');
   });
 
+  it('does not mistake a hyphenated word starting sk- for a key, and still catches keys with digits or one long run', () => {
+    expect(rules('use the sk-learn-pipeline-classifier-wrapper here')).toEqual([]);
+    expect(rules('the sk-something-else-entirely-different-name is a slug')).toEqual([]);
+    expect(rules('key sk-proj-abc_DEF-ghi-jkl-mno-pqr')).toEqual([]); // 16+ but no digit and not one run: indistinguishable from a slug, left alone
+    expect(rules('key sk-ant-api03-AbCdEfGhIjKlMnOpQrSt')).toEqual(['api-key']); // a digit
+    expect(rules('key sk-abcdefghijklmnopqrstuvwx')).toEqual(['api-key']); // an unbroken run of 20+ letters
+    expect(rules('hyphenated sk-aaa-bbb-ccc-ddd-eee-fff then sk-0123456789abcdef')).toEqual(['api-key']); // each match judged on its own
+    const key = `sk-proj-${'Ab3dEf6hIj_k-'.repeat(14)}`;
+    expect(inspect(`${key} and sk-learn-pipeline-classifier`, 'standard').text).toBe('[redacted:api-key] and sk-learn-pipeline-classifier');
+  });
+
   it('stays linear on a text full of private-key headers with no footer', () => {
     const hostile = '-----BEGIN PRIVATE KEY-----'.repeat(12_000) + 'x'.repeat(50_000);
     const started = performance.now();
