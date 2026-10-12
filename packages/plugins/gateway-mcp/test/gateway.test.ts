@@ -221,7 +221,8 @@ describe('gateway-mcp endpoint', () => {
       async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.events WHERE type = 'pages.page.written'")).rows[0]!.n,
     );
     expect(written).toBe(0);
-    // one pending approval of this bot, filed through the approvals plugin's handler; the real arguments are in `resume`, the approver sees a preview
+    // one pending approval of this bot, filed through the approvals plugin's handler, requested by the person who asked the run; the real
+    // arguments are in `resume`, the approver sees a preview
     const row = await world.system(
       async (tx) =>
         (
@@ -231,7 +232,7 @@ describe('gateway-mcp endpoint', () => {
           )
         ).rows[0],
     );
-    expect(row).toMatchObject({ source: 'grant', status: 'pending', tool: 'pages.write', bot_id: bot.botId, requester_id: bot.actorId });
+    expect(row).toMatchObject({ source: 'grant', status: 'pending', tool: 'pages.write', bot_id: bot.botId, requester_id: nadia.actorId });
     expect(row?.resume).toMatchObject({ kind: 'tool', capability: 'pages.write', args: { path: 'pages/mcp-test.md' } });
     // asking again for the same call is the same approval
     const again = await callRunUrl(run, {
