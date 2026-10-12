@@ -359,7 +359,7 @@ describe('deciding', () => {
     expect((await decide(rafi, id, 'approve')).status).toBe(200);
     const done = await until(async () => {
       const row = await rowOf(id);
-      return row?.outcome === 'queued' ? null : row;
+      return row?.outcome === 'ran' || row?.outcome === 'failed' ? row : null;
     }, 30_000, 'the approved call to settle');
     expect(done).toMatchObject({ status: 'approved', outcome: 'failed' });
     expect(done?.outcome_detail).toContain('no longer');
@@ -375,30 +375,31 @@ describe('deciding', () => {
 });
 
 describe('a hand-back approval', () => {
+  // The source is `environment`, not `dlp`: runtime-hermes listens for approved `dlp` approvals and claims them itself, and this test must be the one claiming.
   it('is taken back once by the plugin that asked, for its own bot and source only', async () => {
     const run = await openRun(scoped, nadia);
     const filed = await runs.asBot(run, (tx) =>
       provider.request(tx, {
         runId: run.runId,
-        source: 'dlp',
+        source: 'environment',
         tool: 'llm.call',
         summary: 'Model call held · api-key found in the message',
         argsPreview: { rules: ['api-key'] },
         resume: { kind: 'handoff', payload: { note: 'the stopped job' } },
       }),
     );
-    const claim = (botId: string, source: 'dlp' | 'grant') => w.system((tx) => provider.claim(tx as unknown as PluginTx, filed.approvalId, { botId, source }));
+    const claim = (botId: string, source: 'dlp' | 'grant' | 'environment') => w.system((tx) => provider.claim(tx as unknown as PluginTx, filed.approvalId, { botId, source }));
     // not approved yet: nothing to take back
-    expect(await claim(scoped.botId, 'dlp')).toBeNull();
+    expect(await claim(scoped.botId, 'environment')).toBeNull();
     expect((await decide(rafi, filed.approvalId, 'approve')).status).toBe(200);
     // a hand-back is not run by the approvals plugin: it waits for the asker, and it is not another bot's to take
-    expect(await claim(leadsOnly.botId, 'dlp')).toBeNull();
+    expect(await claim(leadsOnly.botId, 'environment')).toBeNull();
     expect(await claim(scoped.botId, 'grant')).toBeNull();
-    expect(await claim(scoped.botId, 'dlp')).toEqual({ note: 'the stopped job' });
-    expect(await claim(scoped.botId, 'dlp')).toBeNull(); // spent
+    expect(await claim(scoped.botId, 'environment')).toEqual({ note: 'the stopped job' });
+    expect(await claim(scoped.botId, 'environment')).toBeNull(); // spent
     expect(await rowOf(filed.approvalId)).toMatchObject({ status: 'approved', outcome: 'ran' });
     // and a person's transaction cannot take it either
-    const again = await withActor(personaActor(rafi), (tx) => provider.claim(tx as unknown as PluginTx, filed.approvalId, { botId: scoped.botId, source: 'dlp' }), { pool: appPool });
+    const again = await withActor(personaActor(rafi), (tx) => provider.claim(tx as unknown as PluginTx, filed.approvalId, { botId: scoped.botId, source: 'environment' }), { pool: appPool });
     expect(again).toBeNull();
   });
 
