@@ -149,6 +149,7 @@ describe('a message in a public channel', () => {
     documentId = fact.documentId;
     expect(documentId).toMatch(new RegExp(`^feed:message:${messageId}:[0-9a-f]{16}$`));
     expect(fake.banksTouched()).toEqual([BANK]);
+    await idle(); // the log line commits with the work row's removal, a moment after the engine has the text
     expect(await logOf('message', messageId)).toMatchObject([{ outcome: 'retained', document_id: documentId, channel_id: devChannel }]);
   });
 
@@ -187,6 +188,7 @@ describe('a message in a public channel', () => {
     const res = await w.call(nadia, 'DELETE', `/api/channels/${devChannel}/messages/${messageId}`);
     expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
     await until(async () => (factWith('Thursday night') ? null : true), 'the message to be forgotten');
+    await idle();
     expect((await logOf('message', messageId)).at(-1)).toMatchObject({ outcome: 'forgotten', reason: 'deleted' });
   });
 });
@@ -221,6 +223,7 @@ describe('what is never retained', () => {
       await emit(tx, { type: 'channel.channel.updated', schemaVersion: 1, workspaceId: omar.workspaceId, channelId: byEvent, teamId: ENG, changes: {} });
     });
     await until(async () => (factWith('Osprey') ? null : true), 'the privatised channel to be forgotten');
+    await idle();
     expect((await logOf('message', a)).at(-1)).toMatchObject({ outcome: 'forgotten', reason: 'not_team_visible' });
     expect(factWith('Heron')).toBeDefined(); // the other channel was not touched
 
@@ -228,6 +231,7 @@ describe('what is never retained', () => {
     await w.system((tx) => tx.query('UPDATE app.channels SET private = true WHERE id = $1', [sweep]));
     await enqueue('memory.reconcile');
     await until(async () => (factWith('Heron') ? null : true), 'the sweep to forget the second channel');
+    await idle();
     expect((await logOf('message', b)).at(-1)).toMatchObject({ outcome: 'forgotten', reason: 'not_team_visible' });
   });
 });
@@ -254,6 +258,7 @@ describe('a run', () => {
     expect(fact.text).toContain('The bot Scribe of team engineering ran for a mention in #dev, asked by Nadia.');
     expect(fact.text).toContain('It read 2 sources: 1 memory, 1 message.');
     expect(fact.metadata).toMatchObject({ actor: nadia.actorId, link: '/t/engineering/bots/scribe', status: 'done' });
+    await idle();
     expect(await logOf('run', id)).toMatchObject([{ outcome: 'retained', run_id: id, source_scopes: ['channel', 'team'] }]);
   });
 
@@ -377,6 +382,7 @@ describe('the engine', () => {
     expect(dead).toBe(0);
     process.env['MANYTHREADS_HINDSIGHT_URL'] = fake.url;
     await until(async () => factWith('Condor'), 'the message once the engine is back');
+    await idle();
     expect((await logOf('message', id)).map((l) => l.outcome)).toEqual(['retained']);
   });
 });

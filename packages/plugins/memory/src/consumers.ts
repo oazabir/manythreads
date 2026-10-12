@@ -38,6 +38,19 @@ export const CONSUMED_EVENTS = [
 /** At most this many deleted pages of one commit are looked at. */
 const MAX_DELETED_PAGES = 200;
 
+/**
+ * Queues a drain for after the debounce. Changes that land in the same time bucket share one job (its dedupe key is the bucket), and a job that
+ * is already running holds a bucket that has passed, so a change that arrives mid-drain always gets a drain of its own: a single fixed key would
+ * hand it to the running job, which has already read its list.
+ */
+export async function queueDrain(ctx: PluginContext, tx: PluginTx): Promise<void> {
+  const { debounceMs } = feedTuning();
+  const bucketMs = Math.max(1_000, debounceMs);
+  const due = ctx.runtime.now().getTime() + debounceMs;
+  const bucket = Math.floor(due / bucketMs);
+  await ctx.jobs.enqueue(tx, FEED_QUEUE, {}, { runAt: new Date((bucket + 1) * bucketMs), dedupeKey: `feed:bucket:${bucket}` });
+}
+
 export function registerConsumers(ctx: PluginContext): void {
   const mark = async (tx: PluginTx, workspaceId: string, teamId: string, sources: readonly Source[]): Promise<void> => {
     if (sources.length === 0) return;
@@ -67,8 +80,7 @@ export function registerConsumers(ctx: PluginContext): void {
         [kind, id.slice(0, 1100), workspaceId, debounceMs],
       );
     }
-    // One drain after the debounce; while one is already waiting or running this joins it (the cron behind the queue catches the rest).
-    await ctx.jobs.enqueue(tx, FEED_QUEUE, {}, { runAt: new Date(ctx.runtime.now().getTime() + debounceMs), dedupeKey: 'feed:drain' });
+    await queueDrain(ctx, tx);
   };
 
   /** A message is fed only from a PUBLIC channel of a team; for anything else nothing is queued, so a private channel costs no work and leaves no line. */
@@ -165,6 +177,6 @@ export async function markRetainedOfChannels(ctx: PluginContext, tx: PluginTx, c
     [channelIds === null ? null : [...channelIds]],
   );
   const n = res.rows[0]?.n ?? 0;
-  if (n > 0) await ctx.jobs.enqueue(tx, FEED_QUEUE, {}, { dedupeKey: 'feed:drain' });
+  if (n > 0) await queueDrain(ctx, tx);
   return n;
 }
