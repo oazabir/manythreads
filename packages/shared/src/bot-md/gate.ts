@@ -26,6 +26,8 @@ export const GATE_PATTERN_MAX_PROGRAM = 200;
 export const GATE_LIST_MAX_PROGRAM = 1_000;
 /** `x{n,m}` repeats at most this many times. */
 export const GATE_REPEAT_MAX = 100;
+/** A multi-word phrase is searched as a run of the message's joined words only from this many joined characters; shorter ones match by words alone. */
+export const GATE_RUN_MIN_JOINED = 4;
 const MAX_DEPTH = 20;
 
 // -------------------------------------------------------------------------------------------------------------------------------------
@@ -699,7 +701,9 @@ export function compileGate(sources: readonly string[]): CompileGateResult {
       byFirstWord.set(first, bucket);
       const text = parsed.entry.words.join('');
       const unspaced = UNSPACED.test(text);
-      if (unspaced || parsed.entry.words.length > 1) runs.push({ index, text, unspaced });
+      // a multi-word phrase is also searched as a run only when its joined text is long enough to mean something (`a b` would match inside
+      // any word run); a shorter one is left to the word comparison
+      if (unspaced || (parsed.entry.words.length > 1 && text.length >= GATE_RUN_MIN_JOINED)) runs.push({ index, text, unspaced });
     } else {
       instructions += parsed.entry.program.insts.length;
       if (instructions > GATE_LIST_MAX_PROGRAM) {
@@ -715,9 +719,10 @@ export function compileGate(sources: readonly string[]): CompileGateResult {
  * The message's words joined into one run, searched for each multi-word phrase (aligned to word boundaries) and each phrase of an unspaced script (anywhere).
  * Catches what the word-by-word comparison cannot: a phrase whose words the message has run together (`droptable`), spaced apart (`d r o p t a b l e`), or
  * split by an invisible character inside a word and another where the space was. The price is stated: `droptable` is held although nobody typed a space.
- * `indexOf` per phrase; the boundary check only repeats after a match that was not aligned.
+ * One `indexOf` per phrase, repeated after a match that was not aligned: cost O(n × Σ|phrase|) for a message of n characters and the phrases'
+ * joined lengths, bounded by the 40k message cap and the list limits. Runs are in list order, so a run after the best entry so far cannot win and is skipped.
  */
-function matchRuns(gate: CompiledGate, words: readonly string[], take: (index: number, kind: GateMatch['kind']) => void): void {
+function matchRuns(gate: CompiledGate, words: readonly string[], best: () => number, take: (index: number, kind: GateMatch['kind']) => void): void {
   const joined = words.join('');
   const starts = new Uint8Array(joined.length + 1);
   const ends = new Uint8Array(joined.length + 1);
@@ -728,6 +733,7 @@ function matchRuns(gate: CompiledGate, words: readonly string[], take: (index: n
     ends[offset] = 1;
   }
   for (const run of gate.runs) {
+    if (run.index > best()) break; // in list order: nothing after this can beat the best entry found
     let from = 0;
     for (;;) {
       const at = joined.indexOf(run.text, from);
@@ -787,7 +793,7 @@ export function matchGate(gate: CompiledGate, text: string): GateMatch | null {
           if (all) take(candidate.index, 'exact');
         }
       }
-      if (gate.runs.length > 0) matchRuns(gate, words, take);
+      if (gate.runs.length > 0) matchRuns(gate, words, () => (best === null ? Infinity : (best as GateMatch).index), take);
     }
   }
 

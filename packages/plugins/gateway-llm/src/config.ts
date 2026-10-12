@@ -147,3 +147,13 @@ export function registerConfigJob(ctx: PluginContext): void {
     }
   });
 }
+
+/**
+ * The `local` flag after an update. It is the admin's word that an endpoint runs inside this deployment, given for one address: when the base URL
+ * changes and the request does not say `local` itself, the word no longer covers the new address and the flag is cleared.
+ */
+export function nextLocal(before: { local: boolean; api_base: string | null }, body: { local?: boolean; apiBase?: string | null }): boolean {
+  if (body.local !== undefined) return body.local;
+  if (body.apiBase !== undefined && body.apiBase !== before.api_base) return false;
+  return before.local;
+}

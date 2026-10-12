@@ -95,11 +95,19 @@ export default defineConfig({
     {
       // A frame-time budget measures the machine as much as the page: p95 under 20 ms held on a quiet box and read 33 ms (two missed
       // frames) beside four other browsers and their servers. Specs that gate on frame time run alone, after every other project.
-      // `--project=perf` alone: add `--no-deps` to skip the projects it waits for.
+      // Perf projects wait for api, desktop and mobile-web, so they are SKIPPED when any of those fails. `--project=desktop` no longer runs
+      // the perf specs: run them with `--project=perf --project=perf-mobile --no-deps`.
       name: 'perf',
       testMatch: PERF_SPECS,
       dependencies: ['api', 'desktop', 'mobile-web'],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
+    },
+    {
+      // The mobile-web run of the perf specs (mobile-web itself ignores them).
+      name: 'perf-mobile',
+      testMatch: PERF_SPECS,
+      dependencies: ['api', 'desktop', 'mobile-web'],
+      use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
     },
   ],
 });

@@ -1,6 +1,6 @@
 import { startTestServer, type TestServer } from '@manythreads/test-utils';
 import { afterEach, describe, expect, it } from 'vitest';
-import { STORAGE_PLUGIN_DIRS, storageFromEnv } from '../src/index.ts';
+import { POOL_MIN, STORAGE_PLUGIN_DIRS, poolMaxOf, storageFromEnv } from '../src/index.ts';
 
 // P4-13: MANYTHREADS_STORAGE picks the one storage plugin that loads.
 
@@ -13,6 +13,22 @@ describe('storageFromEnv', () => {
     expect(storageFromEnv('S3')).toBe('s3');
     for (const bad of ['minio', 'disk', 's3,local', 'true']) expect(() => storageFromEnv(bad), bad).toThrow(/must be "local" or "s3"/);
     expect(STORAGE_PLUGIN_DIRS).toEqual({ local: 'storage-local', s3: 'storage-s3' });
+  });
+});
+
+describe('poolMaxOf', () => {
+  it('uses the option, then the variable, then the default; ignores what is not a positive integer', () => {
+    expect(poolMaxOf(7, '9', 10)).toEqual({ max: 7 });
+    expect(poolMaxOf(undefined, '9', 10)).toEqual({ max: 9 });
+    expect(poolMaxOf(undefined, 'abc', 10)).toEqual({ max: 10 });
+    expect(poolMaxOf(undefined, '0', 10)).toEqual({ max: 10 });
+  });
+  it('raises a value below the minimum to it and says so', () => {
+    const r = poolMaxOf(undefined, '1', 10, POOL_MIN.system, 'MANYTHREADS_SYSTEM_POOL_MAX');
+    expect(r.max).toBe(3);
+    expect(r.warning).toMatch(/MANYTHREADS_SYSTEM_POOL_MAX.*minimum 3/);
+    expect(poolMaxOf(1, undefined, 10, POOL_MIN.app).max).toBe(2);
+    expect(poolMaxOf(2, undefined, 10, POOL_MIN.app).warning).toBeUndefined();
   });
 });
 

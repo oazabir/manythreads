@@ -166,10 +166,26 @@ export interface RunningServer {
 
 const OUTBOX_SUBSCRIBER = 'plugins';
 
-/** A pool size: the option, else the environment variable, else `fallback`; a value that is not a positive integer is ignored. */
-function poolMaxOf(option: number | undefined, env: string | undefined, fallback: number): number {
-  for (const v of [option, env === undefined ? undefined : Number(env)]) if (v !== undefined && Number.isInteger(v) && v >= 1) return v;
-  return fallback;
+/** LISTEN connections held for good: the shared outbox/job listener takes 2 from the system pool and 1 from the app pool. */
+export const POOL_MIN = { app: 2, system: 3 } as const;
+
+/**
+ * A pool size: the option, else the environment variable, else `fallback`; a value that is not a positive integer is ignored. A value below
+ * `min` is raised to it (the permanent LISTEN connections would leave nothing for queries) and `warning` says so.
+ */
+export function poolMaxOf(
+  option: number | undefined,
+  env: string | undefined,
+  fallback: number,
+  min = 1,
+  name = 'pool',
+): { max: number; warning?: string } {
+  for (const v of [option, env === undefined ? undefined : Number(env)]) {
+    if (v !== undefined && Number.isInteger(v) && v >= 1) {
+      return v < min ? { max: min, warning: `${name} size ${v} is below the minimum ${min} (LISTEN connections are held permanently); using ${min}` } : { max: v };
+    }
+  }
+  return { max: fallback };
 }
 
 /**
@@ -177,8 +193,10 @@ function poolMaxOf(option: number | undefined, env: string | undefined, fallback
  * plugin routes and starts listening. `close()` stops consumers, the server and the pool.
  */
 export async function startServer(options: StartServerOptions): Promise<RunningServer> {
-  const appPool = createAppPool(options.appUrl, poolMaxOf(options.poolMax?.app, process.env['MANYTHREADS_APP_POOL_MAX'], 10));
-  const systemPool = createSystemPool(options.systemUrl, poolMaxOf(options.poolMax?.system, process.env['MANYTHREADS_SYSTEM_POOL_MAX'], 10));
+  const appSize = poolMaxOf(options.poolMax?.app, process.env['MANYTHREADS_APP_POOL_MAX'], 10, POOL_MIN.app, 'MANYTHREADS_APP_POOL_MAX');
+  const systemSize = poolMaxOf(options.poolMax?.system, process.env['MANYTHREADS_SYSTEM_POOL_MAX'], 10, POOL_MIN.system, 'MANYTHREADS_SYSTEM_POOL_MAX');
+  const appPool = createAppPool(options.appUrl, appSize.max);
+  const systemPool = createSystemPool(options.systemUrl, systemSize.max);
 
   // One `storage` provider only: the plugin of the other store is not even loaded.
   const storage = options.storage ?? storageFromEnv(process.env['MANYTHREADS_STORAGE']);
@@ -275,6 +293,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   });
   app.decorate('broker', broker);
   mailWarn = (line) => app.log.warn(line);
+  for (const w of [appSize.warning, systemSize.warning]) if (w !== undefined) app.log.warn(w);
 
   // Start-up tasks of identity plugins (first-admin bootstrap line) run once, as the system actor, before listening.
   const log: PluginLogger = { info: (m) => app.log.info(m), warn: (m) => app.log.warn(m) };

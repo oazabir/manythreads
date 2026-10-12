@@ -101,6 +101,13 @@ describe('the LLM endpoints reach the routes the gateway mounts', () => {
       body: { local: true },
     },
     {
+      name: 'changes the base URL and says local again in the same request',
+      run: () => updateLlmProvider(PROVIDER, { apiBase: 'http://ollama.models.svc:11434', local: true }),
+      method: 'PATCH',
+      url: `/api/workspace/llm/providers/${PROVIDER}`,
+      body: { apiBase: 'http://ollama.models.svc:11434', local: true },
+    },
+    {
       name: 'changes one field of a provider',
       run: () => updateLlmProvider(PROVIDER, { enabled: false }),
       method: 'PATCH',

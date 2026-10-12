@@ -163,6 +163,10 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
           </div>
         )}
 
+        <p className="faint" data-testid="llm-local-warning">
+          Changing a provider's base URL clears "Runs inside this deployment" unless you tick it again in the same change.
+        </p>
+
         <form className="stack-form" onSubmit={add} noValidate data-testid="llm-add-provider">
           <h3 className="sh">Add a provider</h3>
           <div className="form-grid">
@@ -187,6 +191,7 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
             />{' '}
             Runs inside this deployment — never egress
           </label>
+          <p className="faint">Only for endpoints you host inside this deployment.</p>
           <p className="faint">Tick it for a model you host yourself (an in-cluster Service, a machine on your network). The gate's classifier and the air-gapped preset use only such a model.</p>
           <button type="submit" className="btn primary" disabled={busy || name.trim() === ''}>Add provider</button>
         </form>

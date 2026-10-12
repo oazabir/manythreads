@@ -411,6 +411,21 @@ describe('stage one is not beaten by typography (NFKC-style folding, invisible c
     expect(hit(entries, 'the adrop tablet')).toBeNull();
   });
 
+  it('a very short multi-word phrase is matched by words only, never as a run', () => {
+    const short = ['a b', 'no go'];
+    expect(hit(short, 'ab')).toBeNull(); // 2 joined characters: no run
+    expect(hit(short, 'say a b now')).not.toBeNull(); // the word comparison still finds it
+    expect(hit(short, 'nogo')).not.toBeNull(); // 4 joined characters: a run
+    expect(hit(short, 'n o g o')).not.toBeNull();
+  });
+
+  it('with several runs the earliest list entry wins, whichever is found first', () => {
+    const list = ['plain words here', 'drop table', 'licence change'];
+    expect(hit(list, 'licencechange then droptable')?.index).toBe(1);
+    expect(hit(list, 'droptable')?.index).toBe(1);
+    expect(hit(list, 'licencechange')?.index).toBe(2);
+  });
+
   it('what it does not claim: leetspeak and other substitutions are left to the classifier', () => {
     expect(hit(entries, 'cr3dential rotation')).toBeNull();
     expect(hit(entries, 'credential r0tation')).toBeNull();

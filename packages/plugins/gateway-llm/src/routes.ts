@@ -36,6 +36,7 @@ import {
   setLlmLimitRoute,
   setLlmSettingsRoute,
 } from '@manythreads/shared';
+import { nextLocal } from './config.ts';
 import { APPLY_CONFIG_QUEUE } from './gateway.ts';
 import { invalid, json, notFound, requireWorkspaceAdmin, route } from './http.ts';
 import { loadSettings, spendSummary, windowStart } from './limits.ts';
@@ -124,7 +125,7 @@ export function registerLlmRoutes(ctx: PluginContext): void {
           body.apiVersion === undefined ? before.api_version : body.apiVersion,
           secretId,
           body.enabled ?? before.enabled,
-          body.local ?? before.local,
+          nextLocal(before, body),
         ],
       );
       await pushConfig(ctx, tx);

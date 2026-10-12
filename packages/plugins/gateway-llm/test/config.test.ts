@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_ALIASES, buildConfigDocument, resolveModel } from '../src/config.ts';
+import { ALL_ALIASES, buildConfigDocument, nextLocal, resolveModel } from '../src/config.ts';
 import type { AliasRow, ProviderRow } from '../src/rows.ts';
 import { LiteLlmError, createLiteLlmClient, type LiteLlmConfigDocument, type LiteLlmResult, type LiteLlmTransport } from '../src/litellm.ts';
 
@@ -228,5 +228,22 @@ describe('LiteLlmError', () => {
     expect(new LiteLlmError('/model/delete', { status: 400, body: { error: { message: 'Model with id=mt-code not found in db' } } }).message).toContain(
       'not found in db',
     );
+  });
+});
+
+describe('nextLocal', () => {
+  const before = { local: true, api_base: 'http://ollama.models.svc:11434' };
+  it('clears local when the base URL changes and the request does not say', () => {
+    expect(nextLocal(before, { apiBase: 'https://api.example.com' })).toBe(false);
+    expect(nextLocal(before, { apiBase: null })).toBe(false);
+  });
+  it('keeps what the request says, and what an unrelated change leaves alone', () => {
+    expect(nextLocal(before, { apiBase: 'https://api.example.com', local: true })).toBe(true);
+    expect(nextLocal(before, { local: false })).toBe(false);
+    expect(nextLocal(before, {})).toBe(true);
+    expect(nextLocal(before, { apiBase: 'http://ollama.models.svc:11434' })).toBe(true); // the same address
+  });
+  it('never turns local on by itself', () => {
+    expect(nextLocal({ local: false, api_base: null }, { apiBase: 'http://localhost:11434' })).toBe(false);
   });
 });
