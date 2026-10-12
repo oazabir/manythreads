@@ -255,9 +255,30 @@ describe('preflight: presets and the pre-call hook', () => {
       reason: 'preset',
       alias: 'smart',
     });
+    // `local` bound to a model on this machine passes; bound to nothing it has no host to judge, and an air gap refuses what it cannot place
+    expect((await check(call(botId, { alias: 'local' as LlmAliasName }))).allowed).toBe(false);
+    await sys((tx) => tx.query(`INSERT INTO app.llm_aliases (workspace_id, alias, model) VALUES ($1, 'local', 'ollama/llama3')`, [omar.workspaceId]));
     const local = await check(call(botId, { alias: 'local' as LlmAliasName }));
     expect(local.allowed).toBe(true);
-    await sys((tx) => tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]));
+    await sys(async (tx) => {
+      await tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]);
+      await tx.query(`DELETE FROM app.llm_aliases WHERE workspace_id = $1`, [omar.workspaceId]);
+    });
+  });
+
+  it('air-gapped judges the host, not the name: `local` bound to a hosted model is refused', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'preflight-air-hosted'));
+    await sys(async (tx) => {
+      await tx.query(`INSERT INTO app.llm_settings (workspace_id, preset) VALUES ($1, 'air-gapped')`, [omar.workspaceId]);
+      await tx.query(`INSERT INTO app.llm_aliases (workspace_id, alias, model) VALUES ($1, 'local', 'openai/gpt-4o')`, [omar.workspaceId]);
+    });
+    const refused = await check(call(botId, { alias: 'local' as LlmAliasName }));
+    expect(refused).toMatchObject({ allowed: false, reason: 'preset', outcome: 'block' });
+    expect(refused.message).toContain('api.openai.com');
+    await sys(async (tx) => {
+      await tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]);
+      await tx.query(`DELETE FROM app.llm_aliases WHERE workspace_id = $1`, [omar.workspaceId]);
+    });
   });
 
   it('strict-egress needs the host on the allowlist', async () => {
@@ -363,9 +384,10 @@ describe('complete: a completion the platform makes for itself (the gate\'s clas
   let fake: FakeLlm;
   let answer: string | { status: number; body: unknown } = 'NO';
   const completions = () => fake.state.calls.filter((c) => c.path === '/chat/completions');
-  const ask = (botId: string, text: string, sessionId: string | null = null) =>
+  const ask = (botId: string, text: string, sessionId: string | null = null, extra: { localOnly?: boolean; followUp?: boolean } = {}) =>
     sys((tx) =>
       gateway.complete(tx as unknown as PluginTx, {
+        ...extra,
         workspaceId: omar.workspaceId,
         botId,
         teamId: ENG,
@@ -388,7 +410,7 @@ describe('complete: a completion the platform makes for itself (the gate\'s clas
       ).rows[0]!;
       await tx.query(
         `INSERT INTO app.llm_aliases (workspace_id, alias, provider_id, model) VALUES ($1, 'local', $2, 'ollama/complete-test')
-           ON CONFLICT (workspace_id, alias) DO UPDATE SET provider_id = EXCLUDED.provider_id`,
+           ON CONFLICT (workspace_id, alias) DO UPDATE SET provider_id = EXCLUDED.provider_id, model = EXCLUDED.model`,
         [omar.workspaceId, provider.id],
       );
     });
@@ -453,6 +475,48 @@ describe('complete: a completion the platform makes for itself (the gate\'s clas
     const result = await ask(botId, 'hello');
     expect(result).toMatchObject({ ok: false, reason: 'refused', decision: { reason: 'budget' } });
     expect(completions()).toHaveLength(0);
+  });
+
+  it('localOnly: the alias, and every link of its fallback chain, must be a model on this machine, or nothing is sent', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-local-only'));
+    // `local` bound to a hosted model: the classifier must not use it, a plain call may
+    await sys((tx) => tx.query(`UPDATE app.llm_aliases SET provider_id = NULL, model = 'openai/gpt-4o' WHERE workspace_id = $1 AND alias = 'local'`, [omar.workspaceId]));
+    try {
+      const refused = await ask(botId, 'secret plans', null, { localOnly: true });
+      expect(refused).toMatchObject({ ok: false, reason: 'unavailable' });
+      expect(JSON.stringify(refused)).toContain('api.openai.com');
+      expect(completions()).toHaveLength(0);
+      expect(await ask(botId, 'hello')).toMatchObject({ ok: true }); // without the flag it is an ordinary call
+    } finally {
+      await bind();
+      await sys((tx) => tx.query(`UPDATE app.llm_aliases SET fallbacks = '{}' WHERE workspace_id = $1 AND alias = 'local'`, [omar.workspaceId]));
+    }
+    // a local alias whose fallback is hosted is refused too: the proxy would retry there
+    fake.state.calls.length = 0;
+    await sys(async (tx) => {
+      await tx.query(`INSERT INTO app.llm_aliases (workspace_id, alias, model) VALUES ($1, 'fast', 'anthropic/claude-haiku-4')`, [omar.workspaceId]);
+      await tx.query(`UPDATE app.llm_aliases SET fallbacks = '{fast}' WHERE workspace_id = $1 AND alias = 'local'`, [omar.workspaceId]);
+    });
+    try {
+      expect(await ask(botId, 'hello', null, { localOnly: true })).toMatchObject({ ok: false, reason: 'unavailable' });
+      expect(completions()).toHaveLength(0);
+    } finally {
+      await sys(async (tx) => {
+        await tx.query(`UPDATE app.llm_aliases SET fallbacks = '{}' WHERE workspace_id = $1 AND alias = 'local'`, [omar.workspaceId]);
+        await tx.query(`DELETE FROM app.llm_aliases WHERE workspace_id = $1 AND alias = 'fast'`, [omar.workspaceId]);
+      });
+    }
+    // bound to a model on this machine, it runs
+    expect(await ask(botId, 'hello', null, { localOnly: true })).toMatchObject({ ok: true });
+  });
+
+  it('followUp: a later piece of one job counts against the budget but is not another hit on the rate limit', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'complete-followup'));
+    await sys((tx) => tx.query(`INSERT INTO app.llm_limits (workspace_id, scope, bot_id, requests_per_minute) VALUES ($1, 'bot', $2, 1)`, [omar.workspaceId, botId]));
+    expect(await ask(botId, 'piece one')).toMatchObject({ ok: true });
+    expect(await ask(botId, 'piece two', null, { followUp: true })).toMatchObject({ ok: true });
+    expect(await ask(botId, 'piece three', null, { followUp: true })).toMatchObject({ ok: true });
+    expect(await ask(botId, 'a second check')).toMatchObject({ ok: false, reason: 'refused', decision: { reason: 'rate' } });
   });
 
   it('says `unbound` when the alias is bound to nothing, and does not call the proxy', async () => {

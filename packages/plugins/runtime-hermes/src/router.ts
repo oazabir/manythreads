@@ -305,7 +305,34 @@ async function holdForApproval(
  */
 async function previewText(ctx: PluginContext, tx: PluginTx, workspaceId: string, text: string): Promise<string> {
   const chain = await ctx.hooks.runPreEgress(tx, { destination: 'approval', workspaceId, text, preset: 'standard' });
-  return chain.hooks > 0 && chain.outcome !== 'block' ? chain.text : '[the message is not shown: it could not be checked for secrets]';
+  // The redaction is guardrails-dlp's: "some hook ran" is not "the one that redacts ran" (another guard registered at this point says nothing about secrets).
+  return chain.ran.includes('guardrails-dlp') && chain.outcome !== 'block' ? chain.text : '[the message is not shown: it could not be checked for secrets]';
+}
+
+/**
+ * A short, visible reply in the thread when the gate stopped a run and no approval card will explain it (a budget or rate limit, the approvals plugin
+ * absent, nobody but the asker able to decide in a private conversation): without it the asker sees a bot that never answers. It says what happened and
+ * nothing about why — no gate entry, no limit figures, none of the message. Posted as the bot, through the same broker door as its reply, so a bot that was
+ * never granted `messages.post` stays silent (and the log says so).
+ */
+async function postNotice(
+  ctx: PluginContext,
+  run: Parameters<PluginContext['runs']['authorize']>[0],
+  payload: RunPayload,
+  body: string,
+  log: (line: string) => void,
+): Promise<void> {
+  try {
+    const args = { channelId: payload.channelId, body, threadRootId: payload.replyRootId };
+    const decision = await ctx.runs.authorize(run, 'messages.post', authorizeContext(args));
+    if (!decision.allowed) {
+      log(`runtime-hermes: run ${run.runId}: no notice posted (${decision.reason})`);
+      return;
+    }
+    await ctx.runs.asBot(run, (inner) => ctx.runs.invoke(inner, 'messages.post', args));
+  } catch (err) {
+    log(`runtime-hermes: run ${run.runId}: the notice could not be posted: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**
@@ -447,7 +474,7 @@ export function registerRunJob(ctx: PluginContext): void {
       // a person already released (past the gate or past the DLP check, which comes after it) is not asked again. A runtime with no model has
       // nothing to gate.
       const gateEntries = parsed.frontmatter.guard?.gate;
-      if (provider.usesGateway && hasGate(gateEntries) && payload.approvalId === undefined && payload.gateApprovalId === undefined) {
+      if (provider.gated === true && hasGate(gateEntries) && payload.approvalId === undefined && payload.gateApprovalId === undefined) {
         const text = payload.text ?? payload.prompt;
         const verdict = await runGate(tx, {
           entries: gateEntries,
@@ -457,6 +484,13 @@ export function registerRunJob(ctx: PluginContext): void {
         });
         if (verdict.kind === 'refused') {
           job.log.warn(`runtime-hermes: run ${run.runId} refused at the gate: ${verdict.detail}`);
+          await postNotice(
+            ctx,
+            run,
+            payload,
+            'Held: a budget or rate limit is reached, so this message was not checked and nothing was sent to a model. Try again later.',
+            (line) => job.log.warn(line),
+          );
           await ctx.runs.close(run.runId, 'stopped');
           return;
         }
@@ -484,6 +518,18 @@ export function registerRunJob(ctx: PluginContext): void {
               ? `runtime-hermes: run ${run.runId} stopped at the gate (${verdict.stage}): waiting for an approval`
               : `runtime-hermes: run ${run.runId} refused at the gate (${verdict.stage}): held, and nobody could be asked`,
           );
+          // With a card in the thread the asker knows; without one (nobody could be asked) they would see a bot that never answers.
+          if (approvalId === null) {
+            await postNotice(
+              ctx,
+              run,
+              payload,
+              verdict.stage === 'classifier_unavailable'
+                ? "Couldn't check this message, so it was held and nothing was sent to a model. Nobody here can approve it; ask a lead to look at this bot's gate and the local model."
+                : "Held by this bot's gate. Nobody here can approve it, so nothing was sent to a model.",
+              (line) => job.log.warn(line),
+            );
+          }
           await ctx.runs.close(run.runId, 'stopped');
           return;
         }

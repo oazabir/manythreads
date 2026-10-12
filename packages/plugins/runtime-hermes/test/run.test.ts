@@ -5,7 +5,7 @@ import { ListMessagesResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
-import { CLASSIFIER_INSTRUCTION } from '../src/gate.ts';
+import { CLASSIFIER_INSTRUCTION, wrapMessage } from '../src/gate.ts';
 
 // The run job end to end (PLAN P5-10): a person's mention goes through the outbox subscription, the router decides, the job
 // opens a run and starts **one process per run**, the process's reply is posted through `messages.post` as the bot, and the
@@ -609,7 +609,9 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       expect(request.model).toBe('local');
       expect(request.messages.map((m) => m.role)).toEqual(['system', 'user']); // no history, no tools, nothing else
       expect(request.messages[0]!.content).toBe(`${CLASSIFIER_INSTRUCTION}\n\nForbidden topics:\n- credential rotation\n- licence change`);
-      expect(request.messages[1]!.content).toBe(body); // the message as written: not the author, the channel or the prompt wrapper
+      // the message as written (not the author, the channel or the prompt wrapper), between delimiters, with the answer rule restated after it
+      expect(request.messages[1]!.content).toBe(wrapMessage(body));
+      expect(request.messages[1]!.content).toContain(body);
       const [approval] = await approvalsOf(bot.botId);
       expect(approval!.args_preview).toMatchObject({ stage: 'classifier' });
       expect(approval!.args_preview['entry']).toBeUndefined();
@@ -661,6 +663,76 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       expect(stages).toEqual(['classifier_unavailable', 'classifier_unavailable', 'classifier_unavailable']);
       expect(spoolLines()).toHaveLength(before); // no model was called for any of them
       expect((await gateEvents(bot.botId)).map((e) => e['stage'])).toEqual(['classifier_unavailable', 'classifier_unavailable', 'classifier_unavailable']);
+    });
+
+    it('a classifier that would leave the box is never used: `local` bound to a hosted model holds the message, and nothing is sent to it', async () => {
+      const bot = await loadBot('gate-remote', gateBot('GateRemote', ['credential rotation']));
+      const before = spoolLines().length;
+      const calls = classifierCalls().length;
+      await w.system(async (tx) => {
+        await tx.query(`UPDATE app.llm_aliases SET provider_id = NULL, model = 'openai/gpt-4o' WHERE workspace_id = $1 AND alias = 'local'`, [personas.omar.workspaceId]);
+      });
+      try {
+        classifierSays = () => 'NO'; // a remote model that would happily wave it through
+        await post('@gate-remote what is on the roadmap?');
+        expect((await finished(bot.botId)).status).toBe('stopped');
+      } finally {
+        await bindLocal();
+        await w.system(async (tx) => {
+          await tx.query(`UPDATE app.llm_aliases SET model = 'ollama/gate-test' WHERE workspace_id = $1 AND alias = 'local'`, [personas.omar.workspaceId]);
+        });
+      }
+      expect(classifierCalls()).toHaveLength(calls); // not one byte reached the proxy
+      expect(spoolLines()).toHaveLength(before);
+      const [approval] = await approvalsOf(bot.botId);
+      expect(approval!.args_preview).toMatchObject({ stage: 'classifier_unavailable' });
+      expect(String(approval!.args_preview['reason'])).toContain('not a model on this machine');
+    });
+
+    it('a budget the bot has spent stops the run without a card, and the thread says so instead of staying silent', async () => {
+      const bot = await loadBot('gate-budget', gateBot('GateBudget', ['credential rotation']));
+      const before = spoolLines().length;
+      await w.system(async (tx) => {
+        await tx.query(`INSERT INTO app.llm_limits (workspace_id, scope, bot_id, limit_usd) VALUES ($1, 'bot', $2, 0)`, [personas.omar.workspaceId, bot.botId]);
+      });
+      classifierSays = () => 'NO';
+      const rootId = await post('@gate-budget what is on the roadmap?');
+      expect((await finished(bot.botId)).status).toBe('stopped');
+      expect(await approvalsOf(bot.botId)).toEqual([]); // nobody to ask: the run's own call would hit the same wall
+      expect(spoolLines()).toHaveLength(before);
+      const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the notice in the thread');
+      expect(notice.body).toMatch(/budget or rate limit/);
+      expect(notice.body).not.toMatch(/\$|credential/); // no figures, no gate entry
+    });
+
+    it('a runtime that makes no model call is not gated: a rules bot with a gate list still runs', async () => {
+      const md = [
+        '---',
+        'schema: 1',
+        'name: RulesGated',
+        'role: Answers with its declared steps',
+        'kind: automation',
+        'runtime: rules',
+        'triggers:',
+        '  - type: mention',
+        'capabilities:',
+        '  native: [messages.post]',
+        'guard:',
+        "  gate: ['credential rotation']",
+        '---',
+        '',
+        '# RulesGated',
+        '',
+        'No prose is rendered for a rules bot.',
+        '',
+      ].join('\n');
+      const bot = await loadBot('rules-gated', md);
+      const calls = classifierCalls().length;
+      const rootId = await post('@rules-gated credential rotation');
+      const posted = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the rule to post');
+      expect(posted.body).toContain('credential rotation');
+      expect(classifierCalls()).toHaveLength(calls);
+      expect(await approvalsOf(bot.botId)).toEqual([]);
     });
 
     it('a bot with no gate list is never asked about: no classifier call, the run goes straight on', async () => {

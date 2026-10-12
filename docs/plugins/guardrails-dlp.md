@@ -25,6 +25,7 @@ Types are in `@manythreads/sdk` (`src/egress.ts`), the chain in `packages/kernel
 * a **`block` ends the chain** and keeps the original text; the verdict's `reason` is `preset` (the workspace's egress rule) or `dlp` (a detection);
 * a **hook that throws blocks** (`reason: 'error'`): a guard that failed is not a guard that allowed. The error's message is not passed on (it may quote the text);
 * the hooks get the guarded transaction (no session-changing SQL);
+* the answer carries `hooks`, how many ran, and `ran`, the plugins whose hooks ran: a caller that relies on one particular guard checks for it by name (the gate's preview needs `guardrails-dlp`; "some hook ran" is not enough).
 * the answer carries `hooks`, how many ran. Zero means nothing guards the destination, and a caller that must be guarded refuses (the LLM gateway does).
 
 ## What it finds

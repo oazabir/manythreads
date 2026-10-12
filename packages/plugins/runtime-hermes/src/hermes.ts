@@ -140,6 +140,7 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
   return {
     id: HERMES_RUNTIME_ID,
     usesGateway: true,
+    gated: true,
 
     render: (input: BotRuntimeInput) => renderProfile(input),
 

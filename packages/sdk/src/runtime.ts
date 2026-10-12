@@ -135,6 +135,12 @@ export interface BotRuntimeProvider extends ProviderImpl {
    * of that and is never refused for a missing model, because it makes no model call.
    */
   usesGateway?: boolean;
+  /**
+   * The runtime sends the asker's message to **a model**, by whatever route, and so must pass the bot's gate (SPEC §7.3, `guard.gate` in BOT.md) first.
+   * Separate from `usesGateway` on purpose: a subscription runtime (Claude Code, Codex; SPEC §10.3) reaches its model without the LLM gateway, and
+   * "no gateway" must not read as "no gate". Any provider that talks to a model sets this; only a runtime that makes no model call (`rules`) leaves it off.
+   */
+  gated?: boolean;
   /** The profile a run of `input` executes in. */
   render(input: BotRuntimeInput): BotRuntimeProfile;
   /** Start one run. The caller stops it (and ends the run) when `events` ends or the run is too long. */

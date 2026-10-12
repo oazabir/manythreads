@@ -29,12 +29,13 @@ async function chain(hooks: EgressHook[]): Promise<PluginContext> {
 describe('ctx.hooks.runPreEgress', () => {
   it('with no hook allows and says nothing guarded it (hooks: 0), so a caller that must be guarded can refuse', async () => {
     const ctx = await chain([]);
-    expect(await ctx.hooks.runPreEgress(tx, input())).toEqual({ outcome: 'allow', text: 'hello', rules: [], reason: null, message: null, hooks: 0 });
+    expect(await ctx.hooks.runPreEgress(tx, input())).toEqual({ outcome: 'allow', text: 'hello', rules: [], reason: null, message: null, hooks: 0, ran: [] });
   });
 
   it('a hook that has no objection returns nothing; the text is unchanged', async () => {
     const ctx = await chain([() => undefined, () => ({ outcome: 'allow' })]);
-    expect(await ctx.hooks.runPreEgress(tx, input())).toMatchObject({ outcome: 'allow', text: 'hello', hooks: 2 });
+    // the answer names the plugins whose hooks ran, so a caller can insist on one of them
+    expect(await ctx.hooks.runPreEgress(tx, input())).toMatchObject({ outcome: 'allow', text: 'hello', hooks: 2, ran: ['guard-0', 'guard-1'] });
   });
 
   it('threads redacted text from one hook to the next and collects each rule once', async () => {

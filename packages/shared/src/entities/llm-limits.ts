@@ -59,7 +59,7 @@ export interface LlmPresetDefinition {
 
 /**
  * The four presets as data, so the workspace page (P5-08) and the pre-call hook read one definition. The hook itself
- * lives in the gateway (`packages/plugins/gateway-llm/src/dlp.ts`); this record is what it obeys.
+ * lives in `guardrails-dlp` (`packages/plugins/guardrails-dlp/src/dlp.ts`, run by the gateway through the `pre_egress` chain); this record is what it obeys.
  */
 export const LLM_GUARD_PRESETS: Record<LlmGuardPreset, LlmPresetDefinition> = {
   standard: {

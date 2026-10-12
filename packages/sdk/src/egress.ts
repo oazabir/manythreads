@@ -80,6 +80,11 @@ export interface EgressDecision {
   message: string | null;
   /** How many hooks ran. Zero means nothing guards this destination; a caller that must be guarded refuses. */
   hooks: number;
+  /**
+   * The plugins whose hooks ran, in order. A caller that relies on one particular guard (the redaction of a preview needs `guardrails-dlp`) checks
+   * for it by name: "some hook ran" is not "the one I needed ran".
+   */
+  ran: string[];
 }
 
 const rank = (outcome: EgressOutcome): number => EGRESS_OUTCOMES.indexOf(outcome);
@@ -101,5 +106,6 @@ export function combineEgress(current: EgressDecision, verdict: EgressVerdict, o
     reason: holds ? (verdict.reason ?? 'preset') : current.reason,
     message: holds ? (verdict.message ?? current.message) : current.message,
     hooks: current.hooks + 1,
+    ran: current.ran,
   };
 }

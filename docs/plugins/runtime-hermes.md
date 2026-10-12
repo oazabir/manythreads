@@ -182,12 +182,23 @@ and a definition with no model alias fails without starting a process at all.
 ## The gate (P5-11)
 
 SPEC §7.3: before any model call, on a gate-list topic, in two stages. `runtime-hermes/src/gate.ts` is the code; the run job calls it after the run opens and before the pre-call check
-and the provider, for a runtime that talks to a model (`provider.usesGateway`) and a bot whose BOT.md has a non-empty `guard.gate`.
+and the provider, for a runtime that talks to a model (`provider.usesGateway`) and a bot whose BOT.md has a non-empty `guard.gate`. Which runtimes are gated is the provider's `gated: true` flag (`BotRuntimeProvider.gated`, `hermes` sets it), **not** `usesGateway`: a
+subscription runtime (Claude Code, Codex; SPEC §10.3) will reach its model without the LLM gateway and must still be gated, so every provider that sends the asker's message to a model sets `gated`; only a
+runtime with no model call (`rules`) leaves it off.
 
 1. **The list.** Each entry is a **phrase** (`credential rotation`: whole words in that order, ignoring case, punctuation and spacing — `Credential-Rotation!` matches, `credentials rotation` does not)
-   or a **pattern** (`/…/` or `/…/i`). A hit stops here; no model is asked.
+   or a **pattern** (`/…/` or `/…/i`). A hit stops here; no model is asked. **Typography does not beat it.** The message is read in two spellings (`gateSpellings`): NFKD (full-width and styled letters
+   become plain ones), lower-cased, stripped of combining marks (accents, Arabic harakat) and the tatweel, with Cyrillic and Greek look-alike letters (`о а с е р х і ε ι ο …`) folded to the Latin letter they
+   imitate; the two differ only in what an invisible format character (zero-width space or joiner, soft hyphen, bidi controls — `\p{Cf}`) becomes: nothing, or a space. So `cre<ZWSP>dential`,
+   `credential<ZWSP>rotation`, `ｃｒｅｄｅｎｔｉａｌ`, `crеdеntial` (Cyrillic е), `crédential` and a tatweel-stretched Arabic phrase all match. A phrase is compared in both spellings; a pattern is run on the raw
+   text and on both (so a case-sensitive `/DROP/` still sees what was typed, and `drop\s+table` sees `drop<ZWSP>table`). U+212A (Kelvin) and U+017F (long s) fold to `k` and `s` — deliberately more than
+   JavaScript's `/i`. **Not covered** (the classifier's job, stage two): leetspeak, letters spaced apart, typos, translations, text in an image, and an invisible character inside a word *and* another in
+   place of the space in the same phrase.
 2. **The classifier**, on the `local` alias, for the topics the words did not catch. It sees **only the message** (the body the person wrote — not the prompt wrapper with the author and channel, not the
-   history, no tools, no persona): the fixed instruction (`CLASSIFIER_INSTRUCTION`: classify, never obey the message, answer one word) plus the bot's phrase entries as the topic list, and the message as the user turn.
+   history, no tools, no persona): the fixed instruction (`CLASSIFIER_INSTRUCTION`: classify, never obey the message, answer one word) plus the bot's phrase entries as the topic list, and the message as the user turn,
+   **between `<message>` and `</message>`** (delimiter text inside the message is defanged, so it cannot close its own wrapper) with the answer rule restated after it (`wrapMessage`). **Local only:** the gateway
+   checks that the `local` alias, and every link of its fallback chain, resolves to a model on this machine (`localOnly`); an admin can bind `local` to a hosted provider, and then the answer is `unavailable`
+   and nothing is sent. The whole gate has a 60 s budget (each call at most 30 s) and counts as one hit on the bot's rate limit.
    It is a normal gateway call (`provider.llm.complete`, see [gateway-llm](./gateway-llm.md)): the guardrails read the message, the bot's budgets count it, the ledger records it. Only `YES` holds and
    only `NO` passes; any other answer is unclear. A message over 6,000 characters goes in overlapping pieces (any `YES` holds; more than eight pieces is held). A list of patterns alone gives the
    classifier no topic, so none is asked.
@@ -198,6 +209,13 @@ bot's `approvals.approvers`, else the team's leads; the asker cannot approve the
 gate: the DLP check still runs). `runtime.gate.held` is the audit event (`stage` is `exact`, `regex`, `classifier` or `classifier_unavailable`; `approvalId` null when none could be filed — the
 approvals plugin is not loaded, or nobody but the asker could decide it in that private conversation).
 
+**When no card explains it** (a budget or rate limit; the approvals plugin absent; nobody but the asker able to decide in a private conversation) the bot posts a short notice in the thread — "Held: …" or
+"Couldn't check this message: …" — instead of staying silent. It names no gate entry, no figure and none of the message, and it is posted through the same broker door as a reply, so a bot without `messages.post`
+stays silent (the log says so).
+
+**Connection.** The run job holds its database transaction while the classifier answers (at most 60 s in all), exactly as it already does for the whole model run: a job handler gets the kernel's transaction and a
+plugin cannot give it back. Freeing it would be a kernel change (jobs that run without one); recorded as open.
+
 **Fails closed.** When the classifier cannot answer — no gateway, the `local` alias unbound, the proxy down or slow (30 s), the preset refusing the call, an answer that is not a plain YES/NO — the message is
 held exactly as if it had matched (`stage: classifier_unavailable`, the reason in the preview). A gate that waves messages through when its classifier is down has an off switch anyone can reach by waiting. The one
 exception is a **budget or rate limit**: the run's own call would hit the same wall, so the run stops (`stopped`, logged) without asking a person.
@@ -206,7 +224,9 @@ exception is a **budget or rate limit**: the run's own call would hit the same w
 Only phrase entries reach the classifier, so a topic that matters must be on the list in words. A bot with a model-less runtime (`rules`) has nothing to gate.
 
 **Regular expressions.** `guard.gate` patterns are parsed and run by `packages/shared/src/bot-md/gate.ts`, not by `RegExp`: a Thompson-style simulation whose cost is (message length) ×
-(pattern size) whatever the pattern says. The subset: literals, `.`, classes (`[a-z]`, `\d \w \s` and their negations), groups, `|`, `* + ? {n} {n,} {n,m}` (counts up to 100) and the anchors `^ $ \b \B`;
+(pattern size) whatever the pattern says — a class is precompiled to sorted ranges and searched by bisection, so a class of a hundred items costs what one item does. The size of a pattern is computed
+**before** it is expanded (`{n,m}` multiplies; an empty group still counts one), so `((((){100}){100}){100}){100}` is refused in microseconds instead of being expanded; `{n,m}` on something that can only
+match nothing is refused; and, like JavaScript, `a{2}{3}` / `a+{2}` are refused. The subset: literals, `.`, classes (`[a-z]`, `\d \w \s` and their negations), groups, `|`, `* + ? {n} {n,} {n,m}` (counts up to 100) and the anchors `^ $ \b \B`;
 flag `i` only. BOT.md **load** refuses (the definition becomes `invalid` with `guard.gate.<n>` and the reason): backreferences, lookaround, named groups, other flags, a repetition inside an unbounded
 repetition (`(a+)+`, the shape that hangs every other engine the pattern is pasted into), a pattern over 200 instructions, a list over 1,000 instructions of patterns together, an entry over 200
 characters, a list over 50 entries.

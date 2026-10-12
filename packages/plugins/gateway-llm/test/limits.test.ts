@@ -14,6 +14,7 @@ const guard = (over: Partial<EgressDecision> = {}): EgressDecision => ({
   reason: null,
   message: null,
   hooks: 2,
+  ran: ['guardrails-egress', 'guardrails-dlp'],
   ...over,
 });
 

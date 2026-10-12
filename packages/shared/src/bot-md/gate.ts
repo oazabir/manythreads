@@ -44,7 +44,7 @@ type Node =
 type Inst =
   | { op: 'char'; c: number }
   | { op: 'any' }
-  | { op: 'set'; negate: boolean; items: SetItem[] }
+  | { op: 'set'; negate: boolean; ranges: Uint32Array }
   | { op: 'split'; a: number; b: number }
   | { op: 'jmp'; to: number }
   | { op: 'assert'; kind: 'bol' | 'eol' | 'wordb' | 'nwordb' }
@@ -66,26 +66,7 @@ const isFailure = (value: unknown): value is Failure => value instanceof Error &
 const code = (ch: string): number => ch.codePointAt(0) ?? 0;
 const DIGIT = (c: number): boolean => c >= 48 && c <= 57;
 const WORD = (c: number): boolean => DIGIT(c) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95;
-const SPACE = (c: number): boolean =>
-  c === 32 || (c >= 9 && c <= 13) || c === 0xa0 || c === 0x1680 || (c >= 0x2000 && c <= 0x200a) || c === 0x2028 || c === 0x2029 || c === 0x202f || c === 0x205f || c === 0x3000 || c === 0xfeff;
 const LINE_END = (c: number): boolean => c === 10 || c === 13 || c === 0x2028 || c === 0x2029;
-
-function matchesClass(cls: 'd' | 'D' | 'w' | 'W' | 's' | 'S', c: number): boolean {
-  switch (cls) {
-    case 'd':
-      return DIGIT(c);
-    case 'D':
-      return !DIGIT(c);
-    case 'w':
-      return WORD(c);
-    case 'W':
-      return !WORD(c);
-    case 's':
-      return SPACE(c);
-    case 'S':
-      return !SPACE(c);
-  }
-}
 
 const lower = (c: number): number => {
   const folded = String.fromCodePoint(c).toLowerCase();
@@ -98,10 +79,81 @@ const upper = (c: number): number => {
   return folded.length === String.fromCodePoint(cp).length ? cp : c;
 };
 
-function setMatches(items: readonly SetItem[], negate: boolean, c: number, ignoreCase: boolean): boolean {
-  const test = (x: number): boolean => items.some((item) => ('cls' in item ? matchesClass(item.cls, x) : x >= item.lo && x <= item.hi));
-  const hit = test(c) || (ignoreCase && (test(lower(c)) || test(upper(c))));
+/**
+ * A class as sorted, merged ranges `[lo0, hi0, lo1, hi1, …]`, with `\d \w \s` expanded and `\D \W \S` complemented. The simulation then asks "is this
+ * code point in the class" by binary search, so a class of a hundred items costs what a class of one does and the (characters × instructions) bound
+ * holds whatever the class looks like.
+ */
+const CLASS_RANGES: Record<'d' | 'w' | 's', readonly number[]> = {
+  d: [48, 57],
+  w: [48, 57, 65, 90, 95, 95, 97, 122],
+  s: [9, 13, 32, 32, 160, 160, 0x1680, 0x1680, 0x2000, 0x200a, 0x2028, 0x2029, 0x202f, 0x202f, 0x205f, 0x205f, 0x3000, 0x3000, 0xfeff, 0xfeff],
+};
+const MAX_CODE_POINT = 0x10ffff;
+
+function complementOf(pairs: readonly number[]): number[] {
+  const out: number[] = [];
+  let next = 0;
+  for (let k = 0; k < pairs.length; k += 2) {
+    if ((pairs[k] as number) > next) out.push(next, (pairs[k] as number) - 1);
+    next = (pairs[k + 1] as number) + 1;
+  }
+  if (next <= MAX_CODE_POINT) out.push(next, MAX_CODE_POINT);
+  return out;
+}
+
+function toRanges(items: readonly SetItem[]): Uint32Array {
+  const pairs: [number, number][] = [];
+  for (const item of items) {
+    if ('cls' in item) {
+      const base = CLASS_RANGES[item.cls.toLowerCase() as 'd' | 'w' | 's'];
+      const list = item.cls === item.cls.toLowerCase() ? base : complementOf(base);
+      for (let k = 0; k < list.length; k += 2) pairs.push([list[k] as number, list[k + 1] as number]);
+    } else {
+      pairs.push([item.lo, item.hi]);
+    }
+  }
+  pairs.sort((x, y) => x[0] - y[0]);
+  const merged: number[] = [];
+  for (const [lo, hi] of pairs) {
+    const last = merged.length - 1;
+    if (last >= 0 && lo <= (merged[last] as number) + 1) merged[last] = Math.max(merged[last] as number, hi);
+    else merged.push(lo, hi);
+  }
+  return Uint32Array.from(merged);
+}
+
+function inRanges(ranges: Uint32Array, c: number): boolean {
+  let lo = 0;
+  let hi = ranges.length / 2 - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (c < (ranges[mid * 2] as number)) hi = mid - 1;
+    else if (c > (ranges[mid * 2 + 1] as number)) lo = mid + 1;
+    else return true;
+  }
+  return false;
+}
+
+function setMatches(ranges: Uint32Array, negate: boolean, c: number, ignoreCase: boolean): boolean {
+  const hit = inRanges(ranges, c) || (ignoreCase && (inRanges(ranges, lower(c)) || inRanges(ranges, upper(c))));
   return hit !== negate;
+}
+
+/** Whether a node can only ever match the empty string (an empty group, an anchor, something repeated zero times). Repeating it costs and means nothing. */
+function matchesNothing(node: Node): boolean {
+  switch (node.t) {
+    case 'assert':
+      return true;
+    case 'seq':
+      return node.items.every(matchesNothing);
+    case 'alt':
+      return node.items.every(matchesNothing);
+    case 'rep':
+      return node.max === 0 || matchesNothing(node.node);
+    default:
+      return false;
+  }
 }
 
 function parsePattern(source: string): Node {
@@ -204,6 +256,25 @@ function parsePattern(source: string): Node {
     return { t: 'set', negate, items };
   };
 
+  /** `{n}`, `{n,}` or `{n,m}` starting at `at` (a `{`), or null when what follows is not that shape (then the brace is a literal). */
+  const braceAt = (at: number): { min: number; max: number; end: number } | null => {
+    let j = at + 1;
+    let n = '';
+    while (DIGIT(code(cps[j] ?? ''))) n += cps[j++];
+    let m: string | null = null;
+    if (cps[j] === ',') {
+      j += 1;
+      m = '';
+      while (DIGIT(code(cps[j] ?? ''))) m += cps[j++];
+    }
+    if (n === '' || cps[j] !== '}') return null;
+    const min = Number(n);
+    const max = m === null ? min : m === '' ? Infinity : Number(m);
+    if (min > GATE_REPEAT_MAX || (max !== Infinity && max > GATE_REPEAT_MAX)) return fail(`a repeat count above ${GATE_REPEAT_MAX} is not allowed`);
+    if (max < min) return fail('a {n,m} repeat runs backwards');
+    return { min, max, end: j + 1 };
+  };
+
   const quantifier = (): { min: number; max: number } | null => {
     const ch = peek();
     let result: { min: number; max: number } | null = null;
@@ -217,29 +288,17 @@ function parsePattern(source: string): Node {
       i += 1;
       result = { min: 0, max: 1 };
     } else if (ch === '{') {
-      // `{n}`, `{n,}`, `{n,m}`; anything else after a `{` is a literal brace
-      let j = i + 1;
-      let n = '';
-      while (DIGIT(code(cps[j] ?? ''))) n += cps[j++];
-      let m: string | null = null;
-      if (cps[j] === ',') {
-        j += 1;
-        m = '';
-        while (DIGIT(code(cps[j] ?? ''))) m += cps[j++];
-      }
-      if (n !== '' && cps[j] === '}') {
-        const min = Number(n);
-        const max = m === null ? min : m === '' ? Infinity : Number(m);
-        if (min > GATE_REPEAT_MAX || (max !== Infinity && max > GATE_REPEAT_MAX)) return fail(`a repeat count above ${GATE_REPEAT_MAX} is not allowed`);
-        if (max < min) return fail('a {n,m} repeat runs backwards');
-        i = j + 1;
-        result = { min, max };
+      const brace = braceAt(i);
+      if (brace) {
+        i = brace.end;
+        result = { min: brace.min, max: brace.max };
       }
     }
     if (result) {
       if (peek() === '?') i += 1; // lazy: the same answer when only "does it match anywhere" is asked
+      // JavaScript refuses `a{2}{3}`, `a+{2}` and `a**` ("nothing to repeat"); so does this
       const next = peek();
-      if (next === '*' || next === '+' || next === '?') return fail('two quantifiers in a row; a quantifier needs something to repeat');
+      if (next === '*' || next === '+' || next === '?' || (next === '{' && braceAt(i) !== null)) return fail('two quantifiers in a row; a quantifier needs something to repeat');
     }
     return result;
   };
@@ -293,6 +352,7 @@ function parsePattern(source: string): Node {
       const q = quantifier();
       if (q) {
         if (assertion) return fail('an anchor cannot be repeated');
+        if (matchesNothing(atom)) return fail('a repeat of nothing (an empty group, or something repeated zero times) is not allowed');
         atom = { t: 'rep', node: atom, min: q.min, max: q.max };
       }
       items.push(atom);
@@ -333,7 +393,43 @@ function checkNesting(node: Node): void {
   }
 }
 
+/**
+ * How many instructions a tree compiles to, at most, computed **before** anything is emitted and saturating at one past the limit. Every node
+ * counts at least one, even an empty group: a body that emits nothing would otherwise be "free" to repeat a hundred times inside a hundred
+ * repeats inside a hundred repeats, and the compiler would spin through 100^k empty copies before it ever reached the instruction cap.
+ */
+const SIZE_CAP = GATE_PATTERN_MAX_PROGRAM + 1;
+const saturate = (n: number): number => Math.min(n, SIZE_CAP);
+function sizeOf(node: Node): number {
+  switch (node.t) {
+    case 'char':
+    case 'any':
+    case 'set':
+    case 'assert':
+      return 1;
+    case 'seq': {
+      let total = 0;
+      for (const item of node.items) total = saturate(total + sizeOf(item));
+      return Math.max(1, total);
+    }
+    case 'alt': {
+      let total = (node.items.length - 1) * 2;
+      for (const item of node.items) total = saturate(total + sizeOf(item));
+      return Math.max(1, total);
+    }
+    case 'rep': {
+      const body = sizeOf(node.node);
+      let total = saturate(node.min * body);
+      total = node.max === Infinity ? saturate(total + body + 2) : saturate(total + (node.max - node.min) * (body + 1));
+      return Math.max(1, total);
+    }
+  }
+}
+
 function compile(tree: Node, ignoreCase: boolean): GateProgram {
+  if (sizeOf(tree) + 1 > GATE_PATTERN_MAX_PROGRAM) {
+    return fail(`the pattern is too large (more than ${GATE_PATTERN_MAX_PROGRAM} instructions once repeats are expanded); shorten it or split it into two entries`);
+  }
   const insts: Inst[] = [];
   const emit = (inst: Inst): number => {
     if (insts.length >= GATE_PATTERN_MAX_PROGRAM) return fail(`the pattern is too large (more than ${GATE_PATTERN_MAX_PROGRAM} instructions); shorten it or split it into two entries`);
@@ -351,7 +447,7 @@ function compile(tree: Node, ignoreCase: boolean): GateProgram {
         emit({ op: 'any' });
         return;
       case 'set':
-        emit({ op: 'set', negate: node.negate, items: node.items });
+        emit({ op: 'set', negate: node.negate, ranges: toRanges(node.items) });
         return;
       case 'assert':
         emit({ op: 'assert', kind: node.kind });
@@ -470,7 +566,7 @@ function runProgram(program: GateProgram, points: Uint32Array): boolean {
       let step = false;
       if (inst.op === 'char') step = inst.c === folded;
       else if (inst.op === 'any') step = !LINE_END(c);
-      else if (inst.op === 'set') step = setMatches(inst.items, inst.negate, c, ignoreCase);
+      else if (inst.op === 'set') step = setMatches(inst.ranges, inst.negate, c, ignoreCase);
       if (step) nxtLen = add(nxt, nxtLen, nxtMark, pc + 1, at + 1);
     }
     if (matched) return true;
@@ -492,7 +588,41 @@ export type GateEntry =
 export type GateEntryResult = { ok: true; entry: GateEntry } | { ok: false; reason: string };
 
 const WORDS = /[\p{L}\p{N}]+/gu;
-const wordsOf = (text: string): string[] => Array.from(text.toLowerCase().matchAll(WORDS), (m) => m[0]);
+
+/**
+ * Look-alike letters folded to the Latin letter they imitate, after lower-casing and NFKD. Scope, stated plainly: the Cyrillic and Greek letters that
+ * pass for Latin ones in ordinary type, plus dotless i and script g. It is applied to the gate list and to the message alike, so a phrase written in
+ * Cyrillic or Greek still matches itself (and, as a cost, can also match a Latin word that looks the same). It does not catch leetspeak (`cr3dential`),
+ * letters spaced apart (`c r e d e n t i a l`), typos, translations or text in an image; those are the classifier's (stage two) and a person's.
+ */
+const LOOKALIKES: Readonly<Record<string, string>> = {
+  // Cyrillic
+  а: 'a', в: 'b', е: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x', і: 'i', ј: 'j', ѕ: 's', ԁ: 'd', ԛ: 'q', ԝ: 'w', һ: 'h', ӏ: 'l', ѵ: 'v',
+  // Greek
+  α: 'a', β: 'b', γ: 'y', ε: 'e', η: 'n', ι: 'i', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ω: 'w', ϲ: 'c', ϳ: 'j',
+  // Latin look-alikes outside ASCII
+  ı: 'i', ɡ: 'g',
+};
+const LOOKALIKE = new RegExp(`[${Object.keys(LOOKALIKES).join('')}]`, 'gu');
+const FORMAT_CHARS = /\p{Cf}/gu;
+const MARKS = /[\p{Mn}\p{Me}\u0640]/gu;
+
+/**
+ * The two spellings of a text the gate reads (SPEC §7.3 stage one must not be beaten by typography). Both are NFKD (full-width and styled letters
+ * become plain ones, accents split off), lower-cased, stripped of combining marks (accents, Arabic harakat) and the Arabic tatweel, and folded through
+ * `LOOKALIKES`. They differ in what an invisible format character (zero-width space, joiner, soft hyphen, bidi marks — `\p{Cf}`) becomes: nothing
+ * (`joined`: `cre<ZWSP>dential` is `credential`) or a space (`spaced`: `drop<ZWSP>table` is two words). A phrase is compared in both spellings,
+ * so inserting such a character *inside* a word or *instead of* a space changes nothing. Linear in the text.
+ */
+export function gateSpellings(text: string): { joined: string; spaced: string } {
+  const base = text.normalize('NFKD').toLowerCase();
+  const fold = (s: string): string => s.replace(MARKS, '').replace(LOOKALIKE, (ch) => LOOKALIKES[ch] ?? ch);
+  const joined = fold(base.replace(FORMAT_CHARS, ''));
+  const spaced = fold(base.replace(FORMAT_CHARS, ' '));
+  return { joined, spaced };
+}
+
+const wordsOf = (folded: string): string[] => Array.from(folded.matchAll(WORDS), (m) => m[0]);
 
 /** Parse one gate-list entry; the reason of a refusal is written for the person editing BOT.md. */
 export function parseGateEntry(source: string): GateEntryResult {
@@ -517,7 +647,7 @@ export function parseGateEntry(source: string): GateEntryResult {
       throw err;
     }
   }
-  const words = wordsOf(text);
+  const words = wordsOf(gateSpellings(text).joined);
   if (words.length === 0) return { ok: false, reason: 'a phrase needs at least one word (letters or digits)' };
   return { ok: true, entry: { kind: 'phrase', source: text, words } };
 }
@@ -559,6 +689,11 @@ export function compileGate(sources: readonly string[]): CompileGateResult {
   return { ok: true, gate: { entries, byFirstWord, patterns } };
 }
 
+/** The pattern engine alone, on the text exactly as given (no folding): what the differential tests compare with `RegExp`. `matchGate` also tries the folded spellings. */
+export function matchPattern(program: GateProgram, text: string): boolean {
+  return runProgram(program, Uint32Array.from(Array.from(text), (ch) => ch.codePointAt(0) ?? 0));
+}
+
 export interface GateMatch {
   /** The entry as written in BOT.md. Configuration, not message text. */
   entry: string;
@@ -577,31 +712,39 @@ export function matchGate(gate: CompiledGate, text: string): GateMatch | null {
     if (best === null || index < best.index) best = { entry: (gate.entries[index] as GateEntry).source, kind, index };
   };
 
+  const spellings = gateSpellings(text);
+  // the spellings that differ; for ordinary text there is one, and the work is not repeated
+  const variants = spellings.joined === spellings.spaced ? [spellings.joined] : [spellings.joined, spellings.spaced];
+
   if (gate.byFirstWord.size > 0) {
-    const words = wordsOf(text);
-    for (let at = 0; at < words.length; at++) {
-      const candidates = gate.byFirstWord.get(words[at] as string);
-      if (!candidates) continue;
-      for (const candidate of candidates) {
-        if (best !== null && candidate.index > (best as GateMatch).index) continue;
-        if (at + candidate.words.length > words.length) continue;
-        let all = true;
-        for (let k = 1; k < candidate.words.length; k++) {
-          if (words[at + k] !== candidate.words[k]) {
-            all = false;
-            break;
+    for (const variant of variants) {
+      const words = wordsOf(variant);
+      for (let at = 0; at < words.length; at++) {
+        const candidates = gate.byFirstWord.get(words[at] as string);
+        if (!candidates) continue;
+        for (const candidate of candidates) {
+          if (best !== null && candidate.index > (best as GateMatch).index) continue;
+          if (at + candidate.words.length > words.length) continue;
+          let all = true;
+          for (let k = 1; k < candidate.words.length; k++) {
+            if (words[at + k] !== candidate.words[k]) {
+              all = false;
+              break;
+            }
           }
+          if (all) take(candidate.index, 'exact');
         }
-        if (all) take(candidate.index, 'exact');
       }
     }
   }
 
   if (gate.patterns.length > 0) {
-    const points = Uint32Array.from(Array.from(text), (ch) => ch.codePointAt(0) ?? 0);
+    // a pattern is written against what a person typed, so it sees the raw text too (`/DROP/` is case-sensitive), and both folded spellings
+    const texts = [text, ...variants.filter((v) => v !== text)];
+    const sets = texts.map((t) => Uint32Array.from(Array.from(t), (ch) => ch.codePointAt(0) ?? 0));
     for (const pattern of gate.patterns) {
       if (best !== null && pattern.index > (best as GateMatch).index) break; // patterns are in list order
-      if (runProgram(pattern.program, points)) {
+      if (sets.some((points) => runProgram(pattern.program, points))) {
         take(pattern.index, 'regex');
         break;
       }

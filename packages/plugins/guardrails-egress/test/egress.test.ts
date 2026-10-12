@@ -26,6 +26,17 @@ describe('judgeTargets', () => {
     expect(refused!.message).toBe('The air-gapped preset allows only the local alias, and this call asks for smart.');
   });
 
+  it('air-gapped judges the host, not the name: `local` bound to a hosted provider (or one whose host cannot be told) is refused', () => {
+    const refused = judgeTargets('air-gapped', [], [hosted('local', 'api.openai.com')]);
+    expect(refused).toMatchObject({ target: 'local', host: 'api.openai.com' });
+    expect(refused!.message).toBe('The air-gapped preset allows only a model on this machine, and the local alias goes to api.openai.com.');
+    expect(judgeTargets('air-gapped', [], [hosted('local', null)])!.message).toContain('a host that cannot be told');
+    // an allowlist does not open an air gap
+    expect(judgeTargets('air-gapped', ['api.openai.com'], [hosted('local', 'api.openai.com')])).not.toBeNull();
+    // and a local first link with a hosted `local` is not possible, but a local first link with a hosted fallback is still refused by name
+    expect(judgeTargets('air-gapped', [], [local, hosted('smart', 'api.openai.com')])!.message).toContain('falls back to smart');
+  });
+
   it('judges the whole fallback chain: a local first link does not excuse a hosted fallback', () => {
     const viaFallback = judgeTargets('air-gapped', [], [local, hosted('smart', 'api.openai.com')]);
     expect(viaFallback!.message).toContain('local falls back to smart');

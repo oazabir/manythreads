@@ -7,7 +7,7 @@ import { registerApprovalResume, registerRouter, registerRunJob } from './router
 export { chatArgs, profileHome, renderConfig, renderProfile } from './profile.ts';
 export { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 export { childEnv, createHermesProvider, HERMES_RUNTIME_ID, sweepStaleProfiles, type HermesRuntimeOptions } from './hermes.ts';
-export { CLASSIFIER_INSTRUCTION, checkList, chunksOf, classifierPrompt, hasGate, parseAnswer, runGate, type ClassifierDoor, type GateInput, type GateVerdict } from './gate.ts';
+export { CLASSIFIER_INSTRUCTION, GATE_BUDGET_MS, wrapMessage, checkList, chunksOf, classifierPrompt, hasGate, parseAnswer, runGate, type ClassifierDoor, type GateInput, type GateVerdict } from './gate.ts';
 export { RUN_QUEUE, buildPrompt, matchTrigger, mentionedHandles, registerApprovalResume, registerRouter, registerRunJob, type MessageView, type RunPayload, type RoutedTrigger } from './router.ts';
 
 /** A profile directory older than this is a dead run's (the platform's own ceiling on a run is an hour). */
@@ -34,7 +34,8 @@ export default definePlugin({
     // `runtime.gate.held`: the gate stopped a run before any model call (P5-11). `hook.pre_egress` is used to redact the message an approver is shown.
     events: { emits: ['runtime.gate.held'], consumes: ['channel.message.posted', 'approvals.approval.decided'] },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
-    dependsOn: ['bots', 'channels'],
+    // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
+    dependsOn: ['bots', 'channels', 'guardrails-dlp'],
   },
   register(ctx) {
     const dataRoot = (process.env['MANYTHREADS_RUNTIME_DIR'] ?? join(tmpdir(), 'manythreads-runtime')).trim();

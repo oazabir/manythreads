@@ -2,7 +2,7 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import type { LlmAliasName } from '@manythreads/shared';
 import { gatewayFromEnv } from './gateway.ts';
 import { scrubProxyDetail } from './litellm.ts';
-import { loadEgress, preflight, recordSpend, type LlmCallDecision, type RateHit } from './limits.ts';
+import { loadEgress, loadFallbackChain, preflight, recordSpend, type LlmCallDecision, type RateHit } from './limits.ts';
 
 // A completion the platform makes for itself (PLAN P5-11: the gate's classifier on the `local` alias), through the same door as every other
 // model call: the pre-call check first (the guardrails, the budgets and the rate limits, all of which count the caller's bot and run), then
@@ -24,6 +24,14 @@ export interface LlmCompleteRequest {
   /** What the call is for, recorded with the proxy's metadata (`gate`). */
   purpose: string;
   timeoutMs?: number;
+  /**
+   * The call may only run on a model on this machine (SPEC §7.3: the gate's classifier "never" uses a remote provider). Not just the alias's name: the
+   * alias's provider **and every link of its fallback chain** must resolve to a local host, or the answer is `unavailable` and nothing is sent. An admin
+   * can bind `local` to a hosted provider; this is what keeps a message from leaving the box through it.
+   */
+  localOnly?: boolean;
+  /** A later piece of one job: it counts against the budgets like any call but is not another hit on the rate limit (a long message is one check, not eight). */
+  followUp?: boolean;
 }
 
 export type LlmCompleteResult =
@@ -35,10 +43,23 @@ export type LlmCompleteResult =
   | { ok: false; reason: 'unbound' | 'unavailable'; detail: string };
 
 export async function complete(ctx: PluginContext, tx: PluginTx, rate: RateHit, request: LlmCompleteRequest): Promise<LlmCompleteResult> {
-  if ((await loadEgress(tx, request.workspaceId, request.alias)) === null) {
+  const target = await loadEgress(tx, request.workspaceId, request.alias);
+  if (target === null) {
     return { ok: false, reason: 'unbound', detail: `The ${request.alias} alias is not bound to a model.` };
   }
-  const decision = await preflight(ctx, tx, rate, {
+  if (request.localOnly) {
+    const links = [{ alias: request.alias as string, egress: target }, ...(await loadFallbackChain(tx, request.workspaceId, request.alias))];
+    const remote = links.find((link) => !(link.egress?.local ?? false));
+    if (remote) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        detail: `The ${remote.alias} alias is not a model on this machine${remote.egress?.host ? ` (it goes to ${remote.egress.host})` : ''}, and this call only runs on one.`,
+      };
+    }
+  }
+  const allowRate: RateHit = () => ({ allowed: true, retryAfterMs: 0 });
+  const decision = await preflight(ctx, tx, request.followUp ? allowRate : rate, {
     workspaceId: request.workspaceId,
     botId: request.botId,
     teamId: request.teamId,

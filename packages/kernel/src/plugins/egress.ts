@@ -12,7 +12,7 @@ export async function runEgressChain(
   input: EgressInput,
   tx: PluginTx,
 ): Promise<EgressDecision> {
-  let decision: EgressDecision = { outcome: 'allow', text: input.text, rules: [], reason: null, message: null, hooks: 0 };
+  let decision: EgressDecision = { outcome: 'allow', text: input.text, rules: [], reason: null, message: null, hooks: 0, ran: [] };
   for (const entry of hooks) {
     let verdict: Awaited<ReturnType<EgressHook>>;
     try {
@@ -25,13 +25,14 @@ export async function runEgressChain(
         reason: 'error',
         message: `The ${entry.plugin} guardrail failed, so the ${input.destination} call was refused.`,
         hooks: decision.hooks + 1,
+        ran: [...decision.ran, entry.plugin],
       };
     }
     if (!verdict) {
-      decision = { ...decision, hooks: decision.hooks + 1 };
+      decision = { ...decision, hooks: decision.hooks + 1, ran: [...decision.ran, entry.plugin] };
       continue;
     }
-    decision = combineEgress(decision, verdict, input.text);
+    decision = { ...combineEgress(decision, verdict, input.text), ran: [...decision.ran, entry.plugin] };
     if (decision.outcome === 'block') break;
   }
   return decision;

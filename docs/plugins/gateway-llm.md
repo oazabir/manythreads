@@ -112,7 +112,7 @@ budget counts the whole session, so the session id is its window. Rate limits ar
 never an exception — so a run can log it and stop cleanly:
 
 1. the guardrails: the `pre_egress` chain ([guardrails-dlp](./guardrails-dlp.md), [guardrails-egress](./guardrails-egress.md)) — first the preset's egress
-   rule over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only; `strict-egress` needs the target host on the
+   rule over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only **and only when it really is a model on this machine** (host, not name); `strict-egress` needs the target host on the
    workspace's allowlist; a local endpoint is never egress and needs no entry), then the DLP check (below). The gateway describes the call (alias, every link of
    the chain with the host it reaches, the preset, the allowlist, the text) and obeys the answer; with no guardrail loaded the call is refused (`dependsOn`
    makes that unreachable in a server),
@@ -159,7 +159,8 @@ for the hold like any non-`allow` outcome.
 
 `provider.llm.complete(tx, request)` is the call the gate's classifier makes on the `local` alias ([runtime-hermes](./runtime-hermes.md)): the same pre-call check as any call (the guardrails
 see the **text** and only the text — the fixed system turn is ours —, the bot's budgets and rate limits count it), then `POST /chat/completions` on the proxy with the **master key** (not the bot's
-virtual key, whose allowed aliases are the bot's business), then a line on the ledger (`llm_spend`, alias `local`, tokens as the proxy reported them, cost 0: a model on this machine). It never
+virtual key, whose allowed aliases are the bot's business), then a line on the ledger (`llm_spend`, alias `local`, tokens as the proxy reported them, cost 0: a model on this machine). `localOnly` (the gate sets it) requires the alias and **every link of its fallback chain** to resolve to a local host, else the answer is `unavailable` and nothing is sent: SPEC §7.3 says the classifier
+never uses a remote provider, and an admin can bind `local` to a hosted one. `followUp` marks a later piece of one job: it counts against budgets but is not another hit on the rate limit. It never
 throws for an unavailable model; it answers `{ ok: false, reason }` — `refused` (with the decision: a budget, a rate limit, the preset, a detection), `unbound` (the alias is bound to nothing) or
 `unavailable` (no proxy URL, an error, a timeout, an answer with no text; the detail is scrubbed of anything credential-shaped) — and the caller decides what that means.
 
