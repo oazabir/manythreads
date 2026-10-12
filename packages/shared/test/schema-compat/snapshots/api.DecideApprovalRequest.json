@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "note": {
+      "default": "",
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "additionalProperties": false
+}
