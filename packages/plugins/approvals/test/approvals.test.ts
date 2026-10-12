@@ -1,6 +1,6 @@
 import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool, withActor } from '@manythreads/kernel';
 import type { ApprovalProvider, BotRunHandle, PluginRuns, PluginTx } from '@manythreads/sdk';
-import { Approval, ListApprovalsResponse, ListThreadApprovalsResponse, GetApprovalsSummaryResponse } from '@manythreads/shared';
+import { Approval, GetApprovalArgsResponse, ListApprovalsResponse, ListThreadApprovalsResponse, GetApprovalsSummaryResponse, previewArgsDetailed } from '@manythreads/shared';
 import { personaActor, type Persona } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -90,20 +90,22 @@ async function openRun(bot: { botId: string }, asker: { actorId: string } | null
   return run;
 }
 
-const PAGE = (path: string, content = 'written after approval') => ({ team: TEAM_IDS.Engineering, mode: 'create', path, content });
+const PAGE = (path: string, content = 'written after approval', extra: Record<string, unknown> = {}) => ({ team: TEAM_IDS.Engineering, mode: 'create', path, content, ...extra });
 
 /** File a grant-source approval for a `pages.write` call, the way the MCP gateway does: in the run's own transaction, as its bot. */
-function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string } = {}) {
-  const args = PAGE(path);
+function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string; content?: string; args?: Record<string, unknown> } = {}) {
+  const args = extra.args ?? PAGE(path, extra.content);
+  const { preview, truncated } = previewArgsDetailed(args);
   return runs.asBot(run, (tx) =>
     provider.request(tx, {
       runId: run.runId,
       source: 'grant',
       tool: 'pages.write',
       summary: `pages.write · ${path}`,
-      argsPreview: { path, apiToken: '[hidden]' },
+      argsPreview: preview,
+      argsTruncated: truncated,
       resume: { kind: 'tool', capability: 'pages.write', args, trigger: 'mention' },
-      ...extra,
+      ...(extra.dedupeKey ? { dedupeKey: extra.dedupeKey } : {}),
     }),
   );
 }
@@ -191,6 +193,22 @@ describe('the one handler', () => {
     expect(again).toEqual({ approvalId: first.approvalId, created: false });
   });
 
+  it('asking for the same call is one approval per asker: a second person gets a request of their own, which the first cannot be approved through', async () => {
+    const byNadia = await request(await openRun(leadsOnly, nadia), 'pages/two-askers.md', { dedupeKey: 'identical-call' });
+    const byOmar = await request(await openRun(leadsOnly, omar), 'pages/two-askers.md', { dedupeKey: 'identical-call' });
+    expect(byOmar.created).toBe(true);
+    expect(byOmar.approvalId).not.toBe(byNadia.approvalId);
+    expect((await rowOf(byNadia.approvalId))?.requester_id).toBe(nadia.actorId);
+    expect((await rowOf(byOmar.approvalId))?.requester_id).toBe(omar.actorId);
+    // Omar leads the team and so decides Nadia's; he cannot decide his own, which the identical call would have been merged into
+    expect((await decide(omar, byOmar.approvalId, 'approve')).status).toBe(403);
+    expect((await decide(omar, byNadia.approvalId, 'deny')).status).toBe(200);
+    // once Nadia's is settled the same asker may file the same call again, and it is a new approval (no stale NULL id, no conflict)
+    const again = await request(await openRun(leadsOnly, nadia), 'pages/two-askers.md', { dedupeKey: 'identical-call' });
+    expect(again.created).toBe(true);
+    expect(again.approvalId).not.toBe(byNadia.approvalId);
+  });
+
   it('refuses anyone but the run\'s own bot or the system: a person, another bot, a run that is not the transaction\'s', async () => {
     const run = await openRun(scoped, nadia);
     const input = {
@@ -219,6 +237,7 @@ describe('the one handler', () => {
         (e: { code?: string }) => e.code,
       );
     expect(await read('SELECT resume FROM app.approvals WHERE id = $1')).toBe('42501');
+    expect(await read('SELECT dedupe_key FROM app.approvals WHERE id = $1')).toBe('42501');
     expect(await read("UPDATE app.approvals SET status = 'approved' WHERE id = $1")).toBe('42501');
     expect(await read('DELETE FROM app.approvals WHERE id = $1')).toBe('42501');
   });
@@ -388,5 +407,96 @@ describe('a hand-back approval', () => {
     expect(await w.system((tx) => provider.pendingForRun(tx as unknown as PluginTx, run.runId))).toBe(0);
     await request(run, 'pages/waits.md');
     expect(await w.system((tx) => provider.pendingForRun(tx as unknown as PluginTx, run.runId))).toBe(1);
+  });
+});
+
+describe('a long call', () => {
+  it('is clipped in the preview, flagged, and readable in full by the people who may decide it, with secrets still hidden', async () => {
+    const long = 'x'.repeat(1_200);
+    const filed = await request(await openRun(scoped, nadia), 'pages/long.md', { args: PAGE('pages/long.md', long, { apiToken: 'sk-live-real' }) });
+    const asRafi = (await list(rafi)).items.find((a) => a.id === filed.approvalId)!;
+    expect(asRafi.argsTruncated).toBe(true);
+    expect((asRafi.argsPreview['content'] as string).length).toBe(301);
+    expect(asRafi.argsPreview['apiToken']).toBe('[hidden]');
+    // the whole call, for the approver
+    const full = await w.call(rafi, 'GET', `/api/teams/engineering/approvals/${filed.approvalId}/args`);
+    expect(full.status, JSON.stringify(full.body)).toBe(200);
+    const args = GetApprovalArgsResponse.parse(full.body).args!;
+    expect(args['content']).toBe(long);
+    expect(args['apiToken']).toBe('[hidden]');
+    // not for the requester, a non-approver, a lead who is not named, or someone off the team
+    for (const who of [nadia, priya, omar, sameera]) {
+      expect([403, 404], `${who.key}`).toContain((await w.call(who, 'GET', `/api/teams/engineering/approvals/${filed.approvalId}/args`)).status);
+    }
+    // a short call is not flagged
+    const short = await request(await openRun(scoped, nadia), 'pages/short.md');
+    expect((await list(rafi)).items.find((a) => a.id === short.approvalId)?.argsTruncated).toBe(false);
+  });
+});
+
+describe('time', () => {
+  const enqueue = (queue: string, payload: object, attempts = 0): Promise<string> =>
+    w.system(async (tx) => {
+      const job = (await tx.query<{ id: string }>("SELECT (app.enqueue_job($1, $2::jsonb, now() + interval '1 hour', NULL)).id AS id", [queue, JSON.stringify(payload)])).rows[0]!.id;
+      await tx.query("UPDATE app.jobs SET attempts = $2, run_at = now() WHERE id = $1", [job, attempts]);
+      await tx.query("SELECT pg_notify('manythreads_jobs', $1)", [queue]);
+      return job;
+    });
+  const jobState = (id: string) => w.system(async (tx) => (await tx.query<{ state: string }>('SELECT state FROM app.jobs WHERE id = $1', [id])).rows[0]?.state);
+  const finished = async (id: string) => until(async () => ((await jobState(id)) === 'done' || (await jobState(id)) === 'dead' ? true : null), 30_000, 'the job to finish');
+
+  it('a pending approval lapses: it cannot be decided, the sweep calls it expired, and it is history', async () => {
+    const id = (await request(await openRun(scoped, nadia), 'pages/lapses.md')).approvalId;
+    await w.system((tx) => tx.query("UPDATE app.approvals SET expires_at = now() - interval '1 minute' WHERE id = $1", [id]));
+    // lapsed but not yet swept: the list says it cannot be decided, and deciding is refused
+    expect((await list(rafi)).items.find((a) => a.id === id)).toMatchObject({ status: 'pending', canDecide: false });
+    expect((await decide(rafi, id, 'approve')).status).toBe(409);
+    await finished(await enqueue('approvals.sweep', {}));
+    expect(await rowOf(id)).toMatchObject({ status: 'expired', outcome: 'none' });
+    const settled = (await list(rafi, 'decided')).items.find((a) => a.id === id)!;
+    expect(settled).toMatchObject({ status: 'expired', decision: null, canDecide: false });
+    expect((await decide(rafi, id, 'deny')).status).toBe(409);
+    expect(await w.call(omar, 'GET', '/api/teams/engineering/repo/blob?path=pages/lapses.md').then((r) => r.status)).toBe(404);
+  });
+
+  it('an approved call that never started, or started and never reported back, is called failed by the sweep and is never re-run', async () => {
+    const queued = (await request(await openRun(scoped, nadia), 'pages/never-started.md')).approvalId;
+    const running = (await request(await openRun(scoped, nadia), 'pages/never-reported.md')).approvalId;
+    await w.system(async (tx) => {
+      await tx.query("UPDATE app.approvals SET status = 'approved', decided_at = now() - interval '40 minutes', outcome = 'queued' WHERE id = $1", [queued]);
+      await tx.query("UPDATE app.approvals SET status = 'approved', decided_at = now() - interval '40 minutes', outcome = 'running', started_at = now() - interval '39 minutes' WHERE id = $1", [running]);
+    });
+    await finished(await enqueue('approvals.sweep', {}));
+    expect(await rowOf(queued)).toMatchObject({ status: 'approved', outcome: 'failed', outcome_detail: 'It was approved but never started.' });
+    expect((await rowOf(running))?.outcome).toBe('failed');
+    expect((await rowOf(running))?.outcome_detail).toContain('may or may not');
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    for (const path of ['pages/never-started.md', 'pages/never-reported.md']) {
+      expect((await w.call(omar, 'GET', `/api/teams/engineering/repo/blob?path=${path}`)).status).toBe(404);
+    }
+  });
+
+  it('the call is made once: a second delivery of either job, or a retry of the execute job, makes nothing', async () => {
+    const id = (await request(await openRun(scoped, nadia), 'pages/once.md')).approvalId;
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    await until(async () => ((await rowOf(id))?.outcome === 'ran' ? true : null), 30_000, 'the call to run');
+    const commitsOf = () => w.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.repo_commits WHERE 'pages/once.md' = ANY (paths)")).rows[0]!.n);
+    expect(await commitsOf()).toBe(1);
+    // the claim job delivered again: the row is no longer `queued`, so nothing is queued
+    await finished(await enqueue('approvals.resume', { approvalId: id }));
+    // the execute job delivered again, as a first attempt and as a retry, while the row says `running`: the retry refuses, and nothing is written
+    await w.system((tx) => tx.query("UPDATE app.approvals SET outcome = 'running' WHERE id = $1", [id]));
+    await finished(await enqueue('approvals.execute', { approvalId: id }, 1)); // attempts 1 -> this run is attempt 2
+    expect(await rowOf(id)).toMatchObject({ outcome: 'failed' });
+    expect((await rowOf(id))?.outcome_detail).toContain('interrupted');
+    expect(await commitsOf()).toBe(1);
+  });
+
+  it('a retry of an execute job whose first attempt never reported back does not make the call', async () => {
+    const id = (await request(await openRun(scoped, nadia), 'pages/crashed.md')).approvalId;
+    await w.system((tx) => tx.query("UPDATE app.approvals SET status = 'approved', decided_at = now(), outcome = 'running', started_at = now() WHERE id = $1", [id]));
+    await finished(await enqueue('approvals.execute', { approvalId: id }, 1));
+    expect(await rowOf(id)).toMatchObject({ status: 'approved', outcome: 'failed' });
+    expect((await w.call(omar, 'GET', '/api/teams/engineering/repo/blob?path=pages/crashed.md')).status).toBe(404);
   });
 });

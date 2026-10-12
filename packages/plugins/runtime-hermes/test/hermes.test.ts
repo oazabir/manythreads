@@ -142,8 +142,10 @@ const drain = async (events: AsyncIterable<BotRuntimeEvent>): Promise<BotRuntime
 };
 
 /** Poll until `fn` is true (the provider's timers are real ones). */
-const until = async (fn: () => boolean, what: string): Promise<void> => {
-  const deadline = Date.now() + 2_000;
+// A budget, not a pace: the wait ends the moment `fn` is true. Starting a second Node process under a loaded box (the whole suite runs in
+// parallel) can take several seconds, so a tight deadline here is a flaky test, not a stricter one.
+const until = async (fn: () => boolean, what: string, budgetMs = 30_000): Promise<void> => {
+  const deadline = Date.now() + budgetMs;
   for (;;) {
     if (fn()) return;
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
@@ -474,7 +476,7 @@ describe('a leader that exits does not leave its group behind', () => {
       }
       run.cleanup();
     }
-  }, 15_000);
+  }, 60_000);
 
   it('SIGKILLs a straggler that ignores SIGTERM after the grace, and removes the profile only once it is gone', async () => {
     const run = await runWithStraggler(true);
@@ -491,7 +493,7 @@ describe('a leader that exits does not leave its group behind', () => {
       }
       run.cleanup();
     }
-  }, 20_000);
+  }, 90_000);
 });
 
 describe('profiles a dead server left behind', () => {

@@ -84,7 +84,7 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
   if (decision.needsApproval) {
     // The grant says a person must approve this call: it becomes a pending approval (the approvals plugin's one handler) and the model is
     // told. Without that plugin the call is refused outright — running it anyway is the one thing the flag exists to stop.
-    return toolResult(await askForApproval(ctx, run, params.name, input), true);
+    return toolResult(await askForApproval(ctx, run, params.name, definition.kind, input), true);
   }
 
   if (definition.kind === 'stub') {

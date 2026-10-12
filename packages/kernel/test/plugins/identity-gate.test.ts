@@ -32,4 +32,27 @@ describe('ctx.identity', () => {
     expect(ctx.runtime.publicUrl).toBe('http://x');
     expect(typeof ctx.mail.send).toBe('function');
   });
+
+  it('ctx.runs.asApproved is a door of its own: tool.invoke alone does not open it, approval.resume does', async () => {
+    const calls: string[] = [];
+    const runs = {
+      asBot: (_run: unknown, fn: (tx: unknown) => Promise<unknown>) => fn({}),
+      asApproved: (_run: unknown, capability: string, fn: (tx: unknown) => Promise<unknown>) => {
+        calls.push(capability);
+        return fn({});
+      },
+    } as never;
+    const gateway = definePlugin({ manifest: { name: 'gateway', version: '0.1.0', kind: 'server', extends: ['tool.invoke'] }, register: () => undefined });
+    const ctx = createPluginContext(gateway.manifest, { ...base, runs });
+    // the rest of the run door works for it ...
+    await expect(ctx.runs.asBot({} as never, () => Promise.resolve('ok'))).resolves.toBe('ok');
+    // ... but making the one call a person approved (which waives needsApproval) is refused
+    await expect(ctx.runs.asApproved({} as never, 'pages.write', () => Promise.resolve('no'))).rejects.toThrow(/approval\.resume/);
+    expect(calls).toEqual([]);
+
+    const approvals = definePlugin({ manifest: { name: 'approvals', version: '0.1.0', kind: 'server', extends: ['tool.invoke', 'approval.resume'] }, register: () => undefined });
+    const door = createPluginContext(approvals.manifest, { ...base, runs });
+    await expect(door.runs.asApproved({} as never, 'pages.write', () => Promise.resolve('yes'))).resolves.toBe('yes');
+    expect(calls).toEqual(['pages.write']);
+  });
 });

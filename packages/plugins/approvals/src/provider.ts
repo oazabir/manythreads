@@ -15,13 +15,14 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
     async request(tx: PluginTx, input: ApprovalRequestInput) {
       const resume = ApprovalResume.parse(input.resume);
       const res = await tx.query<{ o_id: string; o_created: boolean; o_workspace_id: string; o_team_id: string; o_bot_id: string; o_run_id: string; o_requester_id: string }>(
-        'SELECT * FROM app.approvals_request($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb, $7::text[], $8)',
+        'SELECT * FROM app.approvals_request($1::uuid, $2, $3, $4, $5::jsonb, $6::boolean, $7::jsonb, $8::text[], $9)',
         [
           input.runId,
           input.source,
           clip(input.tool, 200),
           clip(input.summary, 300),
           JSON.stringify(input.argsPreview),
+          input.argsTruncated === true,
           JSON.stringify(resume),
           input.approvers === undefined ? null : [...input.approvers],
           input.dedupeKey === undefined ? null : clip(input.dedupeKey, 200),

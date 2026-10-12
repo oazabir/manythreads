@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Approval } from '../../entities/approval.ts';
+import { JsonObject } from '../../entities/kernel.ts';
 import { ApprovalId, MessageId, TeamId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
@@ -13,7 +14,7 @@ export const ListApprovalsPathParams = z.object({ slug: TeamSlug });
 export type ListApprovalsPathParams = z.infer<typeof ListApprovalsPathParams>;
 
 /** `pending` (default): what waits, oldest first. `decided`: what was settled, newest first. */
-export const ListApprovalsQuery = z.object({
+export const ListApprovalsQuery = z.strictObject({
   status: ApprovalListStatus.default('pending'),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -45,6 +46,11 @@ export const DecideApprovalResponse = z.object({ approval: Approval });
 export type DecideApprovalResponse = z.infer<typeof DecideApprovalResponse>;
 export const approveApprovalRoute = { method: 'POST', path: '/api/teams/:slug/approvals/:approvalId/approve' } as const;
 export const denyApprovalRoute = { method: 'POST', path: '/api/teams/:slug/approvals/:approvalId/deny' } as const;
+
+/** The whole stored call, for the people who may decide the approval (403 for anyone else); a hand-back has none (`args` null). */
+export const GetApprovalArgsResponse = z.object({ args: JsonObject.nullable() });
+export type GetApprovalArgsResponse = z.infer<typeof GetApprovalArgsResponse>;
+export const getApprovalArgsRoute = { method: 'GET', path: '/api/teams/:slug/approvals/:approvalId/args' } as const;
 
 /** The approvals raised in one thread (newest last), whatever their status: the card in the thread view. */
 export const ListThreadApprovalsPathParams = z.object({ rootId: MessageId });

@@ -10,6 +10,9 @@ import type { PersonaKey } from '../support/env.ts';
 
 export const APPROVALS_STACK_ENV = { MANYTHREADS_STACK_SEED: 'repo' } as const;
 
+/** A call the 300-character preview cannot hold. */
+const LONG = `Release notes. ${'The long page body. '.repeat(50)}END-OF-PAGE`;
+
 const ENGINEERING = '00000000-0000-7000-8000-0000000b0001';
 
 export interface ArrangedApproval {
@@ -23,7 +26,7 @@ export interface ArrangedApproval {
  */
 export async function arrangeApprovals(
   stack: Stack,
-  entries: ReadonlyArray<{ path: string; requester: PersonaKey; approvers?: string[]; threadRootId?: string; channelId?: string }>,
+  entries: ReadonlyArray<{ path: string; requester: PersonaKey; approvers?: string[]; threadRootId?: string; channelId?: string; longContent?: boolean }>,
 ): Promise<ArrangedApproval[]> {
   // the loader (an outbox consumer) makes the bot from the seed's own commit a moment after the stack is up
   let bot: { id: string; actor_id: string } | undefined;
@@ -49,18 +52,18 @@ export async function arrangeApprovals(
     const resume = {
       kind: 'tool',
       capability: 'pages.write',
-      args: { team: ENGINEERING, mode: 'create', path: entry.path, content: `Written after approval: ${entry.path}` },
+      args: { team: ENGINEERING, mode: 'create', path: entry.path, content: entry.longContent ? LONG : `Written after approval: ${entry.path}` },
       trigger: 'mention',
     };
     const row = (
       await stack.sql<{ id: string }>(
-        `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, channel_id, thread_root_id)
-         VALUES ($1, $2, 'grant', 'pages.write', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $11, $8, $9, $10) RETURNING id`,
+        `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, channel_id, thread_root_id, args_truncated)
+         VALUES ($1, $2, 'grant', 'pages.write', $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $11, $8, $9, $10, $12) RETURNING id`,
         [
           personas.omar.workspaceId,
           ENGINEERING,
           `pages.write · ${entry.path}`,
-          JSON.stringify({ path: entry.path, mode: 'create' }),
+          JSON.stringify(entry.longContent ? { path: entry.path, mode: 'create', content: `${LONG.slice(0, 300)}…` } : { path: entry.path, mode: 'create' }),
           JSON.stringify(resume),
           JSON.stringify(scope),
           personas[entry.requester].actorId,
@@ -68,6 +71,7 @@ export async function arrangeApprovals(
           entry.channelId ?? null,
           entry.threadRootId ?? null,
           personas[entry.requester].name,
+          entry.longContent === true,
         ],
       )
     )[0];

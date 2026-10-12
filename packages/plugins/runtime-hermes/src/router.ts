@@ -1,16 +1,24 @@
 import { createHash } from 'node:crypto';
-import type { ApprovalProvider, BotRuntimeHandle, BotRuntimeInput, BotRuntimeProvider, BotRuntimeScope, CapabilityAuthorizeContext, PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
+import {
+  requestToolApproval,
+  type ApprovalProvider,
+  type BotRuntimeHandle,
+  type BotRuntimeInput,
+  type BotRuntimeProvider,
+  type BotRuntimeScope,
+  type CapabilityAuthorizeContext,
+  type PluginContext,
+  type PluginEvent,
+  type PluginTx,
+} from '@manythreads/sdk';
 import {
   ApprovalsApprovalDecidedEvent,
-  BotRunTrigger,
   ChannelMessagePostedEvent,
   GUARD_RULE_DLP_APPROVAL,
   LlmAliasName,
-  approvalSummary,
   botMdPath,
   parseBotMd,
   parseMarkup,
-  previewArgs,
   type BotTrigger,
 } from '@manythreads/shared';
 import { z } from 'zod';
@@ -264,7 +272,7 @@ async function holdForApproval(
     source: 'dlp',
     tool: 'llm.call',
     summary: clip(`Model call held · ${held.rules.join(', ')} found in the message`, 280),
-    argsPreview: { alias: held.alias, rules: [...held.rules], message: clip(held.excerpt, 400) },
+    argsPreview: { alias: held.alias, rules: [...held.rules], message: clip(held.excerpt, 1500) },
     resume: { kind: 'handoff', payload: resumable },
     approvers: held.approvers,
   });
@@ -439,20 +447,8 @@ export function registerRunJob(ctx: PluginContext): void {
           // made now, and approving it later makes it once, as the bot. Without that plugin it fails closed — running it anyway is the one
           // thing the flag exists to stop.
           if (decision.needsApproval) {
-            const approvals = ctx.providers.get<ApprovalProvider>('approvals');
-            if (!approvals) throw new Error(`"${capability}" needs a person's approval before it runs`);
-            await ctx.runs.asBot(run, (inner) =>
-              approvals.request(inner, {
-                runId: run.runId,
-                source: 'grant',
-                tool: capability,
-                summary: approvalSummary(capability, args),
-                argsPreview: previewArgs(args),
-                resume: { kind: 'tool', capability, args, trigger: BotRunTrigger.parse(payload.trigger) },
-                approvers,
-                dedupeKey: createHash('sha256').update(`${capability}\n${JSON.stringify(args)}`).digest('hex'),
-              }),
-            );
+            const filed = await requestToolApproval(ctx, run, capability, args, { approvers });
+            if (!filed) throw new Error(`"${capability}" needs a person's approval before it runs`);
             throw new ApprovalPending(capability);
           }
           return ctx.runs.asBot(run, (inner) => ctx.runs.invoke(inner, capability, args));

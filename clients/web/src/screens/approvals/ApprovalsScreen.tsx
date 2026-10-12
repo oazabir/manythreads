@@ -11,6 +11,7 @@ import { useNarrow } from '../../shell/useNarrow';
 import { ApprovalCard } from './ApprovalCard';
 import { fetchApprovals } from './api';
 import { useApprovalsChanged, usePollWhileQueued } from './live';
+import { callInFlight } from './state';
 
 /*
  * The Approvals inbox (SPEC §7.3, `[proto §11 plate 5]`): everything that waits for a person, in one place — a tool call flagged
@@ -75,7 +76,7 @@ export function ApprovalsScreen() {
   }, [narrow, selected, first, setParams]);
 
   const settledItems = settled.status === 'ok' ? (settled.data?.items ?? []) : [];
-  usePollWhileQueued([...items, ...settledItems].some((a) => a.id === selected && a.outcome === 'queued'), () => {
+  usePollWhileQueued([...items, ...settledItems].some((a) => a.id === selected && callInFlight(a)), () => {
     q.reload();
     settled.reload();
   });

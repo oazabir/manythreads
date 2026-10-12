@@ -190,3 +190,25 @@ test('the card sits in the thread the run answered in: the asker reads the quest
   expect(((await res.json()) as { items: unknown[] }).items).toEqual([]);
   await outsider.ctx.dispose();
 });
+
+test('a call too long for its preview says so, and cannot be approved before the whole call has been opened', async ({ browser, playwright }) => {
+  const [long] = await arrangeApprovals(stack, [{ path: 'pages/e2e-long.md', requester: 'nadia', longContent: true }]);
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', `/t/engineering/approvals?approval=${long!.id}`);
+  try {
+    const c = card(page, long!.id);
+    await expect(c.getByTestId('approval-truncated')).toContainText('cut short');
+    await expect(c.getByTestId('approval-approve')).toBeDisabled();
+    await expect(c.getByTestId('approval-preview')).not.toContainText('END-OF-PAGE');
+    await c.getByTestId('approval-open-full').click();
+    await expect(c.getByTestId('approval-full')).toContainText('END-OF-PAGE');
+    await expect(c.getByTestId('approval-approve')).toBeEnabled();
+    // the requester cannot open the full call
+    const nadia = await apiOn(playwright, stack, 'nadia');
+    expect(await nadia.status('GET', `/api/teams/engineering/approvals/${long!.id}/args`)).toBe(403);
+    await nadia.ctx.dispose();
+    await c.getByTestId('approval-deny').click();
+    await expect(c.getByTestId('approval-state')).toContainText('Denied by Rafi');
+  } finally {
+    await context.close();
+  }
+});

@@ -4,6 +4,7 @@ import {
   DecideApprovalPathParams,
   DecideApprovalRequest,
   DecideApprovalResponse,
+  GetApprovalArgsResponse,
   GetApprovalsSummaryResponse,
   ListApprovalsPathParams,
   ListApprovalsQuery,
@@ -12,20 +13,28 @@ import {
   ListThreadApprovalsResponse,
   approveApprovalRoute,
   denyApprovalRoute,
+  fullArgs,
+  getApprovalArgsRoute,
   getApprovalsSummaryRoute,
   listApprovalsRoute,
   listThreadApprovalsRoute,
 } from '@manythreads/shared';
 import { conflict, forbidden, json, notFound, requireTeam, route } from './http.ts';
 import { factsOf, pushChanged } from './notify.ts';
-import { APPROVAL_SELECT, toApproval, type ApprovalRow } from './rows.ts';
+import { APPROVAL_SELECT, blockReasonsOf, toApproval, type ApprovalRow } from './rows.ts';
 import { RESUME_QUEUE } from './resume.ts';
 
 /** The approval of this team, as the caller sees it; 404 for one of another team (or one they cannot see), so an id reveals nothing. */
 async function approvalOf(tx: PluginTx, teamId: string, approvalId: string) {
   const row = (await tx.query<ApprovalRow>(`${APPROVAL_SELECT} WHERE a.id = $1::uuid AND a.team_id = $2::uuid`, [approvalId, teamId])).rows[0];
   if (!row) throw notFound('No such approval');
-  return toApproval(row);
+  return toApproval(row, (await blockReasonsOf(tx, [row.id])).get(row.id));
+}
+
+/** Rows to the shared shape, with the caller's may-I-decide answer for the whole list computed once. */
+async function approvalsOf(tx: PluginTx, rows: readonly ApprovalRow[]) {
+  const reasons = await blockReasonsOf(tx, rows.map((r) => r.id));
+  return rows.map((r) => toApproval(r, reasons.get(r.id)));
 }
 
 export function registerRoutes(ctx: PluginContext): void {
@@ -46,7 +55,7 @@ export function registerRoutes(ctx: PluginContext): void {
         )
       ).rows;
       const waiting = (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.approvals WHERE team_id = $1::uuid AND status = 'pending'", [team.id])).rows[0]?.n ?? 0;
-      return json({ items: rows.map(toApproval), waiting });
+      return json({ items: await approvalsOf(tx, rows), waiting });
     }),
   });
 
@@ -58,8 +67,9 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       const row = (
         await tx.query<{ waiting: number; mine: number }>(
-          `SELECT count(*)::int AS waiting, count(*) FILTER (WHERE app.approvals_block_reason(id) IS NULL)::int AS mine
-             FROM app.approvals WHERE team_id = $1::uuid AND status = 'pending'`,
+          `SELECT count(*)::int AS waiting, count(*) FILTER (WHERE r.o_reason IS NULL)::int AS mine
+             FROM app.approvals a
+             JOIN app.approvals_block_reasons(ARRAY(SELECT p.id FROM app.approvals p WHERE p.team_id = $1::uuid AND p.status = 'pending')) r ON r.o_id = a.id`,
           [team.id],
         )
       ).rows[0];
@@ -74,7 +84,21 @@ export function registerRoutes(ctx: PluginContext): void {
       const { rootId } = ListThreadApprovalsPathParams.parse(req.params);
       // RLS limits this to the teams the caller reads; a thread of another team answers an empty list
       const rows = (await tx.query<ApprovalRow>(`${APPROVAL_SELECT} WHERE a.thread_root_id = $1::uuid ORDER BY a.id ASC LIMIT 50`, [rootId])).rows;
-      return json({ items: rows.map(toApproval) });
+      return json({ items: await approvalsOf(tx, rows) });
+    }),
+  });
+
+  ctx.http.route({
+    ...getApprovalArgsRoute,
+    rateLimit: { limit: 120, windowMs: 60_000 },
+    schema: { response: GetApprovalArgsResponse },
+    handler: route(async (req, tx) => {
+      const { slug, approvalId } = DecideApprovalPathParams.parse(req.params);
+      const team = await requireTeam(tx, slug);
+      await approvalOf(tx, team.id, approvalId); // 404 for one of another team or one the caller cannot see
+      // Only the people who may decide it (the database answers 42501 to everyone else, the requester included).
+      const args = (await tx.query<{ args: Record<string, unknown> | null }>('SELECT app.approvals_full_args($1::uuid) AS args', [approvalId])).rows[0]?.args ?? null;
+      return json({ args: args === null ? null : fullArgs(args) });
     }),
   });
 

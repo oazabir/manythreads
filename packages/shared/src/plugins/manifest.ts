@@ -33,6 +33,9 @@ export const EXTENSION_POINTS = [
   // registered — the only way a tool call carries `app.run_id`, which `run_source_log` insists on. Trusted-code
   // territory like `provider.identity`; see docs/plugins/security.md.
   'tool.invoke',
+  // Also not in section 3: the right to make the one call a person approved (`ctx.runs.asApproved`, P5-20), which waives `needsApproval` for exactly
+  // that capability. Only the approvals plugin declares it; docs/plugins/security.md.
+  'approval.resume',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);

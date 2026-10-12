@@ -1,5 +1,6 @@
-import type { ApprovalResume, ApprovalSource } from '@manythreads/shared';
-import type { PluginTx, ProviderImpl } from './types.ts';
+import { createHash } from 'node:crypto';
+import { BotRunTrigger, approvalSummary, previewArgsDetailed, type ApprovalResume, type ApprovalSource } from '@manythreads/shared';
+import type { BotRunHandle, PluginContext, PluginTx, ProviderImpl } from './types.ts';
 
 // The one handler for `needsApproval` (SPEC §7.3; PLAN P5-20): `ctx.providers.get<ApprovalProvider>('approvals')`, registered by the approvals
 // plugin. A call that must wait for a person — whichever of the four sources says so (an Environment with `protected: true`, `dispatch: strict`,
@@ -18,6 +19,8 @@ export interface ApprovalRequestInput {
   summary: string;
   /** What an approver is shown of the call: build it with `previewArgs` (clipped, secrets hidden), never the raw arguments. */
   argsPreview: Record<string, unknown>;
+  /** The preview left something out: the card says so and the people who may decide can open the full call. */
+  argsTruncated?: boolean;
   /** What approving does: re-run the tool call (`tool`, done by the approvals plugin) or hand `payload` back to the caller (`handoff`, see `claim`). */
   resume: ApprovalResume;
   /** `role:<tag>` / `person:<id>` principals; omitted means the bot's own `approvals.approvers`, and empty means the team's leads. */
@@ -48,4 +51,52 @@ export interface ApprovalProvider extends ProviderImpl {
    * null. System transaction only (an event consumer's own); anything else gets null.
    */
   claim(tx: PluginTx, approvalId: string, expect: { botId: string; source: ApprovalSource }): Promise<Record<string, unknown> | null>;
+}
+
+/** Arguments in a stable text form (keys sorted), so the same call always has the same key. */
+function stable(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${stable(record[k])}`)
+    .join(',')}}`;
+}
+
+/** The one key for "this tool with these arguments": asking twice is one approval per asker (the database scopes it by bot and asker). */
+export const approvalDedupeKey = (tool: string, input: Record<string, unknown>): string =>
+  createHash('sha256').update(`${tool}\n${stable(input)}`).digest('hex');
+
+/**
+ * The `grant` source's one call (the MCP gateway, the Hermes runtime's own scope): file an approval for a tool call the run made, in the run's own
+ * transaction as its bot, with the preview, summary, resume and dedupe key built the one way. Answers null when the approvals plugin is not loaded —
+ * the caller then fails closed, because running a call the grant says a person must approve is the one thing the flag exists to stop.
+ *
+ * Only for tools that act (a write): a read would be re-run as the bot, not as the person whose visibility it was asked under, so a read never
+ * waits for approval — the caller refuses it instead.
+ */
+export async function requestToolApproval(
+  ctx: Pick<PluginContext, 'providers' | 'runs'>,
+  run: BotRunHandle,
+  tool: string,
+  input: Record<string, unknown>,
+  options: { approvers?: readonly string[] } = {},
+): Promise<ApprovalRequestResult | null> {
+  const approvals = ctx.providers.get<ApprovalProvider>('approvals');
+  if (!approvals) return null;
+  const { preview, truncated } = previewArgsDetailed(input);
+  return ctx.runs.asBot(run, (tx) =>
+    approvals.request(tx, {
+      runId: run.runId,
+      source: 'grant',
+      tool,
+      summary: approvalSummary(tool, input),
+      argsPreview: preview,
+      argsTruncated: truncated,
+      resume: { kind: 'tool', capability: tool, args: input, trigger: BotRunTrigger.parse(run.trigger) },
+      ...(options.approvers ? { approvers: options.approvers } : {}),
+      dedupeKey: approvalDedupeKey(tool, input),
+    }),
+  );
 }

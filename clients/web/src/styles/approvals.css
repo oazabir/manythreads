@@ -149,3 +149,14 @@
 .apr-thread {
   padding: 0 14px;
 }
+
+.apr-truncated {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.apr-truncated .apr-blocked {
+  color: var(--warn-ink);
+}

@@ -14,15 +14,16 @@ import { JsonObject } from './kernel.ts';
 export const ApprovalSource = z.enum(['environment', 'dispatch', 'dlp', 'grant']);
 export type ApprovalSource = z.infer<typeof ApprovalSource>;
 
-/** `pending` until a person decides; `approved` and `denied` are final. */
-export const ApprovalStatus = z.enum(['pending', 'approved', 'denied']);
+/** `pending` until a person decides (or it lapses: `expired`); `approved`, `denied` and `expired` are final. */
+export const ApprovalStatus = z.enum(['pending', 'approved', 'denied', 'expired']);
 export type ApprovalStatus = z.infer<typeof ApprovalStatus>;
 
 /**
  * What became of an approved call. `none`: nothing to do (still pending, or denied); `queued`: approved, the stopped action is
- * being re-run; `ran`: it ran; `failed`: it was approved but could not run (the grant is gone, the tool refused).
+ * waiting for its job; `running`: the job claimed it and is making the call (a crash here leaves this state, and the sweep turns it into
+ * `failed`: the call may or may not have happened); `ran`: it ran; `failed`: it was approved but could not run (the grant is gone, the tool refused).
  */
-export const ApprovalOutcome = z.enum(['none', 'queued', 'ran', 'failed']);
+export const ApprovalOutcome = z.enum(['none', 'queued', 'running', 'ran', 'failed']);
 export type ApprovalOutcome = z.infer<typeof ApprovalOutcome>;
 
 /** What the stored resume is, readable without the call's arguments (`approvals.resume_kind`, generated from the `resume` document). */
@@ -31,6 +32,12 @@ export type ApprovalResumeKind = z.infer<typeof ApprovalResumeKind>;
 
 export const ApprovalDecisionKind = z.enum(['approved', 'denied']);
 export type ApprovalDecisionKind = z.infer<typeof ApprovalDecisionKind>;
+
+/** How long a pending approval waits before it lapses (the column default of `approvals.expires_at`). */
+export const APPROVAL_TTL_DAYS = 7;
+
+/** How long an approved call may stay `queued` or `running` before the sweep calls it `failed` (and the card stops waiting for it). */
+export const APPROVAL_RUN_TIMEOUT_MINUTES = 15;
 
 /** The default order the four sources are tried in (see `approvalSourceFor`). */
 export const APPROVAL_SOURCES_BY_PRECEDENCE: readonly ApprovalSource[] = ['environment', 'dispatch', 'dlp', 'grant'];
@@ -123,12 +130,18 @@ export const Approval = z.object({
   outcome: ApprovalOutcome,
   /** Why an approved call did not run, in a sentence; empty otherwise. */
   outcomeDetail: z.string(),
+  /** After this a pending approval lapses (`expired`) and can no longer be decided. */
+  expiresAt: IsoDateTime,
+  /** When the call was claimed, once an approved call is running. */
+  startedAt: IsoDateTime.nullable(),
   /** The capability waiting (`email.send`), or `llm.call` for a model call a DLP hold stopped. */
   tool: z.string().min(1),
   /** One line for the list: what is being asked, in words. */
   summary: z.string().min(1),
   /** What the approver is shown of the call: clipped and redacted, never the raw arguments. */
   argsPreview: JsonObject,
+  /** The preview left something out (a long value, a long list, a deep object): the people who may decide can open the full call. */
+  argsTruncated: z.boolean(),
   botId: BotId.nullable(),
   botSlug: z.string().nullable(),
   botName: z.string().nullable(),
@@ -155,40 +168,67 @@ const SECRET_KEY = /secret|token|passw|api[_-]?key|authorization|credential|priv
 
 type PreviewValue = string | number | boolean | null | PreviewValue[] | { [key: string]: PreviewValue };
 
-function previewValue(value: unknown, depth: number): PreviewValue {
+/** Walks a value for the preview; `limits` off keeps everything but still hides secret-named keys (the approver's full view). */
+function walk(value: unknown, depth: number, clipped: { hit: boolean }, limits: boolean): PreviewValue {
   if (value === null || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') return value.length > PREVIEW_MAX_STRING ? `${value.slice(0, PREVIEW_MAX_STRING)}…` : value;
-  if (depth >= PREVIEW_MAX_DEPTH) return '[…]';
+  if (typeof value === 'string') {
+    if (limits && value.length > PREVIEW_MAX_STRING) {
+      clipped.hit = true;
+      return `${value.slice(0, PREVIEW_MAX_STRING)}…`;
+    }
+    return value;
+  }
+  if (limits && depth >= PREVIEW_MAX_DEPTH) {
+    clipped.hit = true;
+    return '[…]';
+  }
   if (Array.isArray(value)) {
-    const items = value.slice(0, PREVIEW_MAX_ITEMS).map((v) => previewValue(v, depth + 1));
-    if (value.length > PREVIEW_MAX_ITEMS) items.push(`… ${value.length - PREVIEW_MAX_ITEMS} more`);
+    const kept = limits ? value.slice(0, PREVIEW_MAX_ITEMS) : value;
+    const items = kept.map((v) => walk(v, depth + 1, clipped, limits));
+    if (kept.length < value.length) {
+      clipped.hit = true;
+      items.push(`… ${value.length - kept.length} more`);
+    }
     return items;
   }
-  if (typeof value === 'object') return previewRecord(value as Record<string, unknown>, depth + 1);
+  if (typeof value === 'object') return walkRecord(value as Record<string, unknown>, depth + 1, clipped, limits);
   return null; // undefined, a function, a symbol, a bigint: nothing an approver can read
 }
 
-function previewRecord(record: Record<string, unknown>, depth: number): { [key: string]: PreviewValue } {
+function walkRecord(record: Record<string, unknown>, depth: number, clipped: { hit: boolean }, limits: boolean): { [key: string]: PreviewValue } {
   const out: { [key: string]: PreviewValue } = {};
   let n = 0;
   for (const [key, value] of Object.entries(record)) {
-    if (n === PREVIEW_MAX_KEYS) {
+    if (limits && n === PREVIEW_MAX_KEYS) {
+      clipped.hit = true;
       out['…'] = `${Object.keys(record).length - PREVIEW_MAX_KEYS} more`;
       break;
     }
-    out[key] = SECRET_KEY.test(key) ? '[hidden]' : previewValue(value, depth);
+    out[key] = SECRET_KEY.test(key) ? '[hidden]' : walk(value, depth, clipped, limits);
     n += 1;
   }
   return out;
 }
 
 /**
- * What an approver is shown of a call's arguments: at most 20 keys, 10 list items, 3 levels of nesting and 300 characters a string, and the value of any
- * key that names a secret (`token`, `password`, `apiKey`, `authorization`, ...) replaced by `[hidden]`. Linear in the size of what it keeps.
+ * What an approver is shown of a call's arguments: at most 20 keys, 10 list items, 3 levels of nesting and 300 characters a string, and the
+ * value of any key that names a secret (`token`, `password`, `apiKey`, `authorization`, ...) replaced by `[hidden]`. `truncated` says that
+ * something other than a secret was left out, so the card can say so and offer the full call. Linear in the size of what it keeps.
  */
+export function previewArgsDetailed(args: Record<string, unknown>): { preview: JsonObject; truncated: boolean } {
+  const clipped = { hit: false };
+  const preview = walkRecord(args, 1, clipped, true);
+  return { preview, truncated: clipped.hit };
+}
+
 export function previewArgs(args: Record<string, unknown>): JsonObject {
-  return previewRecord(args, 1);
+  return previewArgsDetailed(args).preview;
+}
+
+/** The whole call for the people who may decide it: nothing clipped, but a key that names a secret is still `[hidden]`. */
+export function fullArgs(args: Record<string, unknown>): JsonObject {
+  return walkRecord(args, 1, { hit: false }, false);
 }
 
 /** Keys whose value says what a call is about, tried in this order when the inbox line needs a hint (`email.send · reply to m.okafor`). */

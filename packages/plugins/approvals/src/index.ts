@@ -18,8 +18,9 @@ export default definePlugin({
     name: 'approvals',
     version: '0.1.0',
     kind: 'server',
-    // `tool.invoke`: an approved tool call is re-run as the bot, in a run of its own (the same door the MCP gateway uses).
-    extends: ['event.emit', 'job.register', 'provider.approvals', 'tool.invoke'],
+    // `tool.invoke`: an approved tool call is re-run as the bot, in a run of its own (the same door the MCP gateway uses); `approval.resume`:
+    // the one call a person approved may be made without asking again (`ctx.runs.asApproved`) — no other plugin declares it.
+    extends: ['event.emit', 'job.register', 'provider.approvals', 'tool.invoke', 'approval.resume'],
     events: {
       emits: ['approvals.approval.requested', 'approvals.approval.decided', 'approvals.approval.resumed'],
       consumes: [],

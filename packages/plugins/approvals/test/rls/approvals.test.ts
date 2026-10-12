@@ -37,6 +37,7 @@ const code = (promise: Promise<unknown>): Promise<string | undefined> =>
 
 let engApproval = '';
 let runId = '';
+let botId = '';
 let engLeadsApproval = '';
 let mktApproval = '';
 
@@ -70,6 +71,7 @@ beforeAll(async () => {
        VALUES ($1, $2, 'asker', 'Asker', '', 'agent', 'rules', 'team', repeat('a', 64), 'active') RETURNING id`,
       [omar.workspaceId, ENG],
     );
+    botId = bot.rows[0]!.id;
     await tx.query("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2)", [omar.workspaceId, bot.rows[0]!.id]);
     const run = await tx.query<{ id: string }>(
       `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status) VALUES ($1, $2, $3, 'mention', $4, 'running') RETURNING id`,
@@ -125,6 +127,7 @@ describe('approvals and approval_decisions (P5-20)', () => {
 
   it('the request role reads every column but the one that holds the call\'s real arguments', async () => {
     expect(await code(as(rafi, (tx) => tx.query('SELECT resume FROM app.approvals LIMIT 1')))).toBe('42501');
+    expect(await code(as(rafi, (tx) => tx.query('SELECT dedupe_key FROM app.approvals LIMIT 1')))).toBe('42501');
     const cols = await as(rafi, (tx) => tx.query('SELECT id, args_preview, resume_kind, approver_scope FROM app.approvals LIMIT 1'));
     expect(cols.rows).toHaveLength(1);
     expect(await sys(async (tx) => (await tx.query<{ resume: { args: { secret: string } } }>('SELECT resume FROM app.approvals WHERE id = $1', [engApproval])).rows[0]?.resume.args.secret)).toBe('real');
@@ -149,16 +152,16 @@ describe('approvals and approval_decisions (P5-20)', () => {
 
   it('filing an approval needs the run\'s own bot or the system: a person, even the asker, is refused', async () => {
     const file = (p: Persona) =>
-      as(p, (tx) => tx.query("SELECT * FROM app.approvals_request($1, 'grant', 'pages.write', 's', '{}', '{\"kind\":\"handoff\",\"payload\":{}}', NULL, NULL)", [runId]));
+      as(p, (tx) => tx.query("SELECT * FROM app.approvals_request($1, 'grant', 'pages.write', 's', '{}', false, '{\"kind\":\"handoff\",\"payload\":{}}', NULL, NULL)", [runId]));
     expect(await code(file(nadia))).toBe('42501');
     expect(await code(file(omar))).toBe('42501');
     // the system role files it: the bot, the team and the asker are read from the run
     const filed = await sys(async (tx) => (await tx.query<{ o_team_id: string; o_requester_id: string; o_bot_id: string }>(
-      "SELECT * FROM app.approvals_request($1, 'dlp', 'llm.call', 's', '{}', '{\"kind\":\"handoff\",\"payload\":{}}', ARRAY['role:on-call'], 'k')",
+      "SELECT * FROM app.approvals_request($1, 'dlp', 'llm.call', 's', '{}', false, '{\"kind\":\"handoff\",\"payload\":{}}', ARRAY['role:on-call'], 'k')",
       [runId],
     )).rows[0]);
     expect(filed).toMatchObject({ o_team_id: ENG, o_requester_id: nadia.actorId });
-    expect(await code(sys((tx) => tx.query("SELECT * FROM app.approvals_request('00000000-0000-7000-8000-00000000ffff', 'grant', 't', 's', '{}', '{\"kind\":\"handoff\",\"payload\":{}}', NULL, NULL)")))).toBe('23503');
+    expect(await code(sys((tx) => tx.query("SELECT * FROM app.approvals_request('00000000-0000-7000-8000-00000000ffff', 'grant', 't', 's', '{}', false, '{\"kind\":\"handoff\",\"payload\":{}}', NULL, NULL)")))).toBe('23503');
   });
 
   it('the decide function says who may and who may not, with the reason', async () => {
@@ -169,8 +172,9 @@ describe('approvals and approval_decisions (P5-20)', () => {
     expect(await reason(nadia, engApproval)).toBe('requester');
     expect(await reason(omar, engApproval)).toBe('not_approver');
     expect(await reason(priya, engApproval)).toBe('not_approver');
-    expect(await reason(sameera, engApproval)).toBe('not_approver');
-    expect(await reason(lena, engApproval)).toBe('not_approver');
+    // an approval of a team the caller cannot read answers like a missing one: the function is no way to probe another team's ids
+    expect(await reason(sameera, engApproval)).toBe('not_found');
+    expect(await reason(lena, engApproval)).toBe('not_found');
     // no approver named: the team's leads and workspace admins
     expect(await reason(omar, engLeadsApproval)).toBeNull();
     expect(await reason(rafi, engLeadsApproval)).toBe('not_approver');
@@ -214,5 +218,116 @@ describe('approvals and approval_decisions (P5-20)', () => {
   it('the table\'s own checks: a settled approval has a time, an unapproved one has no outcome', async () => {
     expect(await code(sys((tx) => tx.query("UPDATE app.approvals SET status = 'pending', decided_at = now() WHERE id = $1", [mktApproval])))).toBe('23514');
     expect(await code(sys((tx) => tx.query("UPDATE app.approvals SET outcome = 'ran' WHERE id = $1", [mktApproval])))).toBe('23514');
+  });
+});
+
+describe('what an approval is made of stays in its conversation (P5-20 review)', () => {
+  let priv = '';
+  let dm = '';
+  let privApproval = '';
+  let privLeads = '';
+  let dmApproval = '';
+  let publicApproval = '';
+
+  beforeAll(async () => {
+    await sys(async (tx) => {
+      const channel = async (sql: string, params: unknown[]): Promise<string> => (await tx.query<{ id: string }>(sql, params)).rows[0]!.id;
+      priv = await channel(
+        "INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'secret', 'channel', true) RETURNING id",
+        [omar.workspaceId, ENG],
+      );
+      dm = await channel(
+        "INSERT INTO app.channels (workspace_id, name, kind, private, dm_key) VALUES ($1, '', 'dm', true, 'nadia:omar') RETURNING id",
+        [omar.workspaceId],
+      );
+      for (const [channelId, person] of [[priv, nadia], [priv, rafi], [dm, nadia], [dm, omar]] as const) {
+        await tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2)', [channelId, person.personId]);
+      }
+    });
+    const file = (summary: string, scope: object, channelId: string | null) =>
+      sys(
+        async (tx) =>
+          (
+            await tx.query<{ id: string }>(
+              `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, args_preview, resume, approver_scope, requester_id, channel_id)
+               VALUES ($1, $2, 'dlp', 'llm.call', $3, '{"message":"salary for [redacted:card-number]"}', '{"kind":"handoff","payload":{}}', $4, $5, $6) RETURNING id`,
+              [omar.workspaceId, ENG, summary, JSON.stringify(scope), nadia.actorId, channelId],
+            )
+          ).rows[0]!.id,
+      );
+    publicApproval = await file('chan: public', { roles: ['role:on-call'], people: [], leads: false }, null);
+    privApproval = await file('chan: private', { roles: ['role:on-call'], people: [], leads: false }, priv);
+    privLeads = await file('chan: private leads', { roles: [], people: [], leads: true }, priv);
+    dmApproval = await file('chan: dm', { roles: [], people: [], leads: true }, dm);
+  });
+
+  const mine = (p: Persona): Promise<string[]> =>
+    as(p, async (tx) => (await tx.query<{ summary: string }>("SELECT summary FROM app.approvals WHERE summary LIKE 'chan:%' ORDER BY summary")).rows.map((r) => r.summary));
+  const reason = (p: Persona, id: string): Promise<string | null> =>
+    as(p, async (tx) => (await tx.query<{ r: string | null }>('SELECT app.approvals_block_reason($1) AS r', [id])).rows[0]!.r);
+
+  it('an approval raised in a private channel or a DM is read by that conversation\'s people, not by the rest of the team', async () => {
+    // Nadia is in both; Rafi only in the private channel; Omar (a lead and admin) only in the DM; Priya in neither
+    expect(await mine(nadia)).toEqual(['chan: dm', 'chan: private', 'chan: private leads', 'chan: public']);
+    expect(await mine(rafi)).toEqual(['chan: private', 'chan: private leads', 'chan: public']);
+    expect(await mine(omar)).toEqual(['chan: dm', 'chan: public']);
+    expect(await mine(priya)).toEqual(['chan: public']);
+    expect(await mine(sameera)).toEqual([]);
+  });
+
+  it('the decision rule asks the same question: an approver who cannot read the channel cannot decide', async () => {
+    // named tag, and a member of the private channel
+    expect(await reason(rafi, privApproval)).toBeNull();
+    // a lead of the team, named by "no one named", but not in the private channel or the DM's other half: the approval is not theirs to see
+    expect(await reason(omar, privLeads)).toBe('not_found');
+    expect(await reason(priya, privApproval)).toBe('not_found');
+    // in the DM Omar is a participant and a lead: he may decide what Nadia's DM raised
+    expect(await reason(omar, dmApproval)).toBeNull();
+    expect(await reason(rafi, dmApproval)).toBe('not_found');
+    // the public one is unchanged
+    expect(await reason(rafi, publicApproval)).toBeNull();
+    expect(await reason(priya, publicApproval)).toBe('not_approver');
+  });
+
+  it('a thread query for a conversation the caller is not in answers nothing, whatever id it names', async () => {
+    await sys((tx) => tx.query("UPDATE app.approvals SET thread_root_id = '00000000-0000-7000-8000-00000000f00d' WHERE id = $1", [privApproval]));
+    const rows = (p: Persona) => as(p, async (tx) => (await tx.query("SELECT id FROM app.approvals WHERE thread_root_id = '00000000-0000-7000-8000-00000000f00d'")).rows.length);
+    expect(await rows(rafi)).toBe(1);
+    expect(await rows(priya)).toBe(0);
+    expect(await rows(omar)).toBe(0);
+  });
+
+  it('the full call is the deciders\' alone', async () => {
+    await sys((tx) => tx.query(`UPDATE app.approvals SET resume = '{"kind":"tool","capability":"llm.call","args":{"a":1},"trigger":"mention"}' WHERE id = $1`, [publicApproval]));
+    const full = (p: Persona) => as(p, async (tx) => (await tx.query<{ a: unknown }>('SELECT app.approvals_full_args($1) AS a', [publicApproval])).rows[0]!.a);
+    expect(await full(rafi)).toEqual({ a: 1 });
+    for (const who of [nadia, priya, omar, sameera]) expect(await code(full(who))).toBe('42501');
+  });
+
+  it('a tool approval names the capability it will make, and only that', async () => {
+    const insertTool = (tool: string) =>
+      sys((tx) =>
+        tx.query(
+          `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, resume, approver_scope, requester_id)
+           VALUES ($1, $2, 'grant', $3, 'mismatch', '{"kind":"tool","capability":"pages.write","args":{},"trigger":"mention"}', '{"roles":[],"people":[],"leads":true}', $4)`,
+          [omar.workspaceId, ENG, tool, nadia.actorId],
+        ),
+      );
+    expect(await code(insertTool('email.send'))).toBe('23514');
+    expect(await code(insertTool('pages.write'))).toBeUndefined();
+  });
+
+  it('the same pending call is one approval per asker (a second asker is not folded into the first)', async () => {
+    const dup = (requester: string) =>
+      sys((tx) =>
+        tx.query(
+          `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, resume, approver_scope, requester_id, bot_id, dedupe_key)
+           VALUES ($1, $2, 'dlp', 'llm.call', 'dup', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $3, $4, 'dup-k')`,
+          [omar.workspaceId, ENG, requester, botId],
+        ),
+      );
+    expect(await code(dup(nadia.actorId))).toBeUndefined();
+    expect(await code(dup(nadia.actorId))).toBe('23505'); // the same asker twice
+    expect(await code(dup(omar.actorId))).toBeUndefined(); // a different asker
   });
 });

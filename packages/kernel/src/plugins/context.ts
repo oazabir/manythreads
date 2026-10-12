@@ -81,6 +81,8 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     }
   };
 
+  let approvedDoor: PluginRuns | undefined;
+
   const mount = (path: string): string => {
     if (!path.startsWith('/')) throw new PluginError(`Plugin "${name}": http route path "${path}" must start with "/"`, { plugin: name });
     return path;
@@ -242,7 +244,15 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       if (!deps.runs) {
         throw new PluginError(`Plugin "${name}": ctx.runs is only available when the plugin host has database pools`, { plugin: name });
       }
-      return deps.runs;
+      // `asApproved` waives `needsApproval`: it is a door of its own, declared as `approval.resume` (only the approvals plugin does).
+      const runs = deps.runs;
+      return (approvedDoor ??= {
+        ...runs,
+        asApproved: async (run, capability, fn) => {
+          use('approval.resume');
+          return runs.asApproved(run, capability, fn);
+        },
+      });
     },
     http: {
       route(definition) {

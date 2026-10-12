@@ -161,6 +161,21 @@ describe('gateway-mcp protocol', () => {
     expect(asked[1]!['dedupeKey']).toBe(asked[0]!['dedupeKey']);
   });
 
+  it('a read that is flagged needsApproval is refused, not parked: a re-run would be the bot\'s, not the asker\'s', async () => {
+    const asked: unknown[] = [];
+    const { ctx, invoked } = fakeContext({
+      tools: [SEARCH_TOOL],
+      decisions: { 'messages.search': { allowed: true, reason: 'granted', needsApproval: true } },
+      approvals: { request: (_tx, input) => (asked.push(input), Promise.resolve({ approvalId: 'x', created: true })) },
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'deploy' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(asked).toEqual([]);
+    expect(invoked).toEqual([]);
+  });
+
   it('a stub answers what it knows and never invents content', async () => {
     const { ctx, invoked } = fakeContext({ tools: [KNOWLEDGE_TOOL], decisions: { 'knowledge.search': ALLOWED } });
     const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'knowledge.search', arguments: { query: 'cache' } } });

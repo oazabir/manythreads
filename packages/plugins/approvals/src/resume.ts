@@ -1,5 +1,5 @@
 import type { CapabilityAuthorizeContext, PluginContext, PluginTx } from '@manythreads/sdk';
-import { ApprovalResume, ApprovalsApprovalResumedEvent } from '@manythreads/shared';
+import { APPROVAL_RUN_TIMEOUT_MINUTES, ApprovalResume, ApprovalsApprovalResumedEvent } from '@manythreads/shared';
 import { z } from 'zod';
 import { pushChanged } from './notify.ts';
 
@@ -8,13 +8,29 @@ import { pushChanged } from './notify.ts';
 // arguments that were stored — and records what became of it on the approval, where the card in the thread shows it. It does not restart the
 // conversation; the person can ask the bot again, and the call it would make is now done.
 //
+// "Once" is the point, because the call may be an email or a deploy. It is kept by three things together, not by a transaction:
+//   1. two jobs. `approvals.resume` only *claims* the approval (`queued` → `running`, in its own committed transaction) and queues
+//      `approvals.execute`; the claim is therefore durable before anything happens, and a crash after it leaves a visible `running` row;
+//   2. both queues are `maxAttempts: 1` — a failed job is dead, never retried — and `approvals.execute` refuses to start when it is not the
+//      first attempt (the reaper puts a job whose worker died back on its queue, whatever the queue's own limit says);
+//   3. a sweep (`approvals.sweep`) turns an approved call still `queued` or `running` after a quarter of an hour into `failed`, with a sentence
+//      that says it may or may not have happened — never into a re-run.
+// The call itself runs in its own transaction (`asApproved`), which commits before the job's bookkeeping does: if the bookkeeping fails the
+// call is not repeated, and the row says `running` until the sweep calls it.
+//
 // The re-run is exactly as constrained as the original: a new run is opened for the bot (same trigger, same asker while they are still on
-// the team), the broker is asked about the call again (a grant removed since, a path the guard now refuses — the approval then ends `failed`),
-// and only the `needsApproval` flag is waived (`asApproved`: for exactly this capability, in this transaction), because a person has just answered it. The call is claimed before it runs (`queued` → `ran`
-// in one statement) and the job never throws, so a call is run at most once: a model-side effect is not something to replay blindly.
+// the team), the broker is asked about the call again (a grant removed since, a path the guard now refuses, ends the approval `failed` with the
+// reason), and only the `needsApproval` flag is waived (`asApproved`: for exactly this capability, in this transaction), because a person has
+// just answered it.
 
-/** The queue the decide route puts an approved tool call on. */
+/** The queue the decide route puts an approved tool call on: it claims the approval and queues `EXECUTE_QUEUE`. */
 export const RESUME_QUEUE = 'approvals.resume';
+
+/** The queue that makes the call. Only `approvals.resume` puts a job here, after the claim has committed. */
+export const EXECUTE_QUEUE = 'approvals.execute';
+
+/** Lapsed pending approvals and approved calls that never finished are swept every five minutes. */
+export const SWEEP_QUEUE = 'approvals.sweep';
 
 const Payload = z.strictObject({ approvalId: z.uuid() });
 
@@ -61,7 +77,9 @@ async function settle(
   outcome: 'ran' | 'failed',
   detail: string,
 ): Promise<void> {
-  await tx.query('UPDATE app.approvals SET outcome = $2, outcome_detail = $3 WHERE id = $1::uuid', [row.id, outcome, detail]);
+  // only a call that is still `running` is settled: a row the sweep already called failed is not rewritten behind its back
+  const done = await tx.query("UPDATE app.approvals SET outcome = $2, outcome_detail = $3 WHERE id = $1::uuid AND outcome = 'running' RETURNING id", [row.id, outcome, detail]);
+  if (done.rows.length === 0) return;
   await ctx.audit.emit(
     tx,
     ApprovalsApprovalResumedEvent.parse({
@@ -81,67 +99,133 @@ async function settle(
 }
 
 export function registerResumeJob(ctx: PluginContext): void {
-  ctx.jobs.register(RESUME_QUEUE, async (raw, tx, job) => {
-    const { approvalId } = Payload.parse(raw);
-    // Claim it: the same statement that reads the stored call marks it `ran`, so a second delivery finds nothing to do.
-    const row = (
-      await tx.query<ClaimedRow>(
-        `UPDATE app.approvals a SET outcome = 'ran', outcome_detail = 'Running after approval.'
-           FROM app.actors ra
-          WHERE a.id = $1::uuid AND a.status = 'approved' AND a.outcome = 'queued' AND a.resume_kind = 'tool' AND ra.id = a.requester_id
-        RETURNING a.id, a.workspace_id, a.team_id, a.source, a.tool, a.bot_id, a.requester_id, ra.kind AS requester_kind,
-                  a.channel_id, a.thread_root_id, a.resume`,
+  // Stage one: claim. Its transaction commits the claim and the follow-up job together, before anything is done.
+  ctx.jobs.register(
+    RESUME_QUEUE,
+    async (raw, tx, job) => {
+      const { approvalId } = Payload.parse(raw);
+      const claimed = await tx.query(
+        `UPDATE app.approvals SET outcome = 'running', started_at = now(), outcome_detail = 'Running after approval.'
+          WHERE id = $1::uuid AND status = 'approved' AND outcome = 'queued' AND resume_kind = 'tool' RETURNING id`,
         [approvalId],
-      )
-    ).rows[0];
-    if (!row) return;
+      );
+      if (claimed.rows.length === 0) return; // already claimed (a second delivery), or not a tool call
+      job.log.info(`approvals: approval ${approvalId} claimed`);
+      await ctx.jobs.enqueue(tx, EXECUTE_QUEUE, { approvalId }, { dedupeKey: `approvals-execute:${approvalId}` });
+    },
+    { maxAttempts: 1 },
+  );
 
-    const fail = (detail: string): Promise<void> => settle(ctx, tx, row, 'failed', detail);
-    const resume = ApprovalResume.safeParse(row.resume);
-    if (!resume.success || resume.data.kind !== 'tool' || row.bot_id === null) return fail('The stored call could not be read.');
-    const call = resume.data;
-    const botId = row.bot_id;
+  // Stage two: make the call. Never retried; never started twice.
+  ctx.jobs.register(
+    EXECUTE_QUEUE,
+    async (raw, tx, job) => {
+      const { approvalId } = Payload.parse(raw);
+      const row = (
+        await tx.query<ClaimedRow>(
+          `SELECT a.id, a.workspace_id, a.team_id, a.source, a.tool, a.bot_id, a.requester_id, ra.kind AS requester_kind,
+                  a.channel_id, a.thread_root_id, a.resume
+             FROM app.approvals a JOIN app.actors ra ON ra.id = a.requester_id
+            WHERE a.id = $1::uuid AND a.status = 'approved' AND a.outcome = 'running' AND a.resume_kind = 'tool'`,
+          [approvalId],
+        )
+      ).rows[0];
+      if (!row) return;
+      const fail = (detail: string): Promise<void> => settle(ctx, tx, row, 'failed', detail);
+      // A second attempt means the first did not report back: the call may have been made. It is never made again.
+      if (job.attempt > 1) return fail('The call was interrupted; it may or may not have been made. Check before asking again.');
 
-    let opened: Awaited<ReturnType<PluginContext['runs']['open']>> | null = null;
-    // The same asker while they are still on the team (a person-only scope such as `person:*` then still means what it meant); without them the
-    // call is the bot's alone, which is never wider.
-    for (const asker of row.requester_kind === 'person' ? [row.requester_id, null] : [null]) {
-      try {
-        opened = await ctx.runs.open({
-          botId,
-          teamId: row.team_id,
-          workspaceId: row.workspace_id,
-          trigger: call.trigger,
-          askerActorId: asker,
-          channelId: row.channel_id,
-          replyRootId: row.thread_root_id,
-          ttlSeconds: 120,
-        });
-        break;
-      } catch (err) {
-        if (asker === null) {
-          job.log.warn(`approvals: no run for approval ${approvalId}: ${err instanceof Error ? err.message : String(err)}`);
-          return fail('The bot is no longer on the team, so the call was not made.');
+      const resume = ApprovalResume.safeParse(row.resume);
+      if (!resume.success || resume.data.kind !== 'tool' || row.bot_id === null) return fail('The stored call could not be read.');
+      const call = resume.data;
+      const botId = row.bot_id;
+
+      let opened: Awaited<ReturnType<PluginContext['runs']['open']>> | null = null;
+      // The same asker while they are still on the team (a person-only scope such as `person:*` then still means what it meant); without them the
+      // call is the bot's alone, which is never wider.
+      for (const asker of row.requester_kind === 'person' ? [row.requester_id, null] : [null]) {
+        try {
+          opened = await ctx.runs.open({
+            botId,
+            teamId: row.team_id,
+            workspaceId: row.workspace_id,
+            trigger: call.trigger,
+            askerActorId: asker,
+            channelId: row.channel_id,
+            replyRootId: row.thread_root_id,
+            ttlSeconds: 120,
+          });
+          break;
+        } catch (err) {
+          if (asker === null) {
+            job.log.warn(`approvals: no run for approval ${approvalId}: ${err instanceof Error ? err.message : String(err)}`);
+            return fail('The bot is no longer on the team, so the call was not made.');
+          }
         }
       }
-    }
-    if (!opened) return fail('The call could not be started.');
-    const { run } = opened;
+      if (!opened) return fail('The call could not be started.');
+      const { run } = opened;
 
-    try {
-      const decision = await ctx.runs.authorize(run, call.capability, authorizeContext(call.args));
-      if (!decision.allowed) {
-        await ctx.runs.close(run.runId, 'failed');
-        return await fail(clip(`The bot may no longer make this call: ${decision.reason}`));
+      try {
+        const decision = await ctx.runs.authorize(run, call.capability, authorizeContext(call.args));
+        if (!decision.allowed) {
+          await ctx.runs.close(run.runId, 'failed');
+          return await fail(clip(`The bot may no longer make this call: ${decision.reason}`));
+        }
+        const result = await ctx.runs.asApproved(run, call.capability, (inner) => ctx.runs.invoke(inner, call.capability, call.args));
+        const verdict = detailOf(result);
+        await ctx.runs.close(run.runId, verdict.ok ? 'done' : 'failed');
+        await settle(ctx, tx, row, verdict.ok ? 'ran' : 'failed', verdict.detail);
+      } catch (err) {
+        job.log.warn(`approvals: approved call ${call.capability} (approval ${approvalId}) threw: ${err instanceof Error ? err.message : String(err)}`);
+        await ctx.runs.close(run.runId, 'failed').catch(() => undefined);
+        await fail(clip(`The call failed: ${err instanceof Error ? err.message : String(err)}`));
       }
-      const result = await ctx.runs.asApproved(run, call.capability, (inner) => ctx.runs.invoke(inner, call.capability, call.args));
-      const verdict = detailOf(result);
-      await ctx.runs.close(run.runId, verdict.ok ? 'done' : 'failed');
-      await settle(ctx, tx, row, verdict.ok ? 'ran' : 'failed', verdict.detail);
-    } catch (err) {
-      job.log.warn(`approvals: approved call ${call.capability} (approval ${approvalId}) threw: ${err instanceof Error ? err.message : String(err)}`);
-      await ctx.runs.close(run.runId, 'failed');
-      await fail(clip(`The call failed: ${err instanceof Error ? err.message : String(err)}`));
-    }
-  });
+    },
+    { maxAttempts: 1 },
+  );
+
+  // The sweep: a pending approval nobody decided in time lapses; an approved call that never finished is called failed (never re-run).
+  ctx.jobs.register(
+    SWEEP_QUEUE,
+    async (_raw, tx, job) => {
+      const expired = await tx.query<{ id: string; team_id: string }>(
+        `UPDATE app.approvals SET status = 'expired', decided_at = now()
+          WHERE status = 'pending' AND expires_at <= now() RETURNING id, team_id`,
+      );
+      const stuck = await tx.query<{ id: string; workspace_id: string; team_id: string; source: string; tool: string; bot_id: string | null; was: string }>(
+        `WITH stuck AS (
+             SELECT id, outcome AS was FROM app.approvals
+              WHERE status = 'approved' AND outcome IN ('queued', 'running')
+                AND coalesce(started_at, decided_at) < now() - make_interval(mins => $1) FOR UPDATE)
+           UPDATE app.approvals a SET outcome = 'failed',
+                  outcome_detail = CASE WHEN s.was = 'running'
+                    THEN 'It started but never reported back; it may or may not have been made. Check before asking again.'
+                    ELSE 'It was approved but never started.' END
+             FROM stuck s WHERE a.id = s.id
+           RETURNING a.id, a.workspace_id, a.team_id, a.source, a.tool, a.bot_id, s.was`,
+        [APPROVAL_RUN_TIMEOUT_MINUTES],
+      );
+      for (const row of stuck.rows) {
+        await ctx.audit.emit(
+          tx,
+          ApprovalsApprovalResumedEvent.parse({
+            type: 'approvals.approval.resumed',
+            schemaVersion: 1,
+            workspaceId: row.workspace_id,
+            teamId: row.team_id,
+            approvalId: row.id,
+            source: row.source,
+            tool: row.tool,
+            botId: row.bot_id,
+            outcome: 'failed',
+            detail: row.was === 'running' ? 'Never reported back.' : 'Never started.',
+          }),
+        );
+      }
+      for (const row of [...expired.rows, ...stuck.rows]) await pushChanged(ctx, tx, row.team_id, row.id);
+      if (expired.rows.length + stuck.rows.length > 0) job.log.info(`approvals: swept ${expired.rows.length} lapsed and ${stuck.rows.length} unfinished`);
+    },
+    { cron: '*/5 * * * *', maxAttempts: 1 },
+  );
 }

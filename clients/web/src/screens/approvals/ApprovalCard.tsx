@@ -2,8 +2,9 @@ import { useState } from 'react';
 import type { Approval, ApprovalSource } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { ago } from '../../channels/format';
-import { decideApproval } from './api';
+import { decideApproval, fetchApprovalArgs } from './api';
 import { announceApprovalsChanged } from './live';
+import { callOverdue } from './state';
 
 /*
  * One approval, wherever it is drawn: the right-hand side of the Approvals inbox and the card under a thread's replies (SPEC §7.3). It says
@@ -28,17 +29,19 @@ export function approversLabel(approvers: Approval['approvers']): string {
 /** What became of an approved call, in one sentence. */
 function outcomeLine(a: Approval): string {
   if (a.status === 'denied') return 'Denied. The call was not made.';
-  if (a.outcome === 'queued') return 'Approved. Running now…';
+  if (a.status === 'expired') return 'Nobody decided it in time, so it lapsed. The call was not made.';
+  if (callOverdue(a)) return 'Approved, but no result came back. It may or may not have run; check before asking again.';
+  if (a.outcome === 'queued' || a.outcome === 'running') return 'Approved. Running now…';
   if (a.outcome === 'ran') return a.source === 'dlp' ? 'Approved. The message went to the model as written.' : 'Approved. The call ran once, as the bot.';
   if (a.outcome === 'failed') return `Approved, but it did not run: ${a.outcomeDetail || 'the call failed'}`;
   return '';
 }
 
-function Preview({ preview }: { preview: Approval['argsPreview'] }) {
+function Preview({ preview, testId = 'approval-preview' }: { preview: Approval['argsPreview']; testId?: string }) {
   const entries = Object.entries(preview);
   if (entries.length === 0) return null;
   return (
-    <dl className="apr-preview" data-testid="approval-preview">
+    <dl className="apr-preview" data-testid={testId}>
       {entries.map(([key, value]) => (
         <div key={key} className="apr-kv">
           <dt>{key}</dt>
@@ -63,6 +66,22 @@ export function ApprovalCard({
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [full, setFull] = useState<Record<string, unknown> | null | undefined>(undefined);
+  const [opening, setOpening] = useState(false);
+
+  // A clipped preview is not enough to approve on: the people who may decide open the whole call first (nothing is hidden from them but secrets).
+  const openFull = async (): Promise<void> => {
+    if (opening) return;
+    setOpening(true);
+    setError(null);
+    try {
+      setFull((await fetchApprovalArgs(slug, approval.id)).args);
+    } catch (e) {
+      setError(isApiError(e) ? e.message : 'Could not open the full call.');
+    } finally {
+      setOpening(false);
+    }
+  };
 
   const decide = async (decision: 'approve' | 'deny'): Promise<void> => {
     if (busy) return;
@@ -91,7 +110,7 @@ export function ApprovalCard({
       aria-label={`Approval: ${approval.summary}`}
     >
       <header className="apr-head">
-        <span className={`chip ${approval.status === 'denied' ? 'alert' : approval.status === 'approved' ? 'ok' : 'warn'}`} data-testid="approval-source">
+        <span className={`chip ${approval.status === 'denied' || approval.status === 'expired' ? 'alert' : approval.status === 'approved' ? 'ok' : 'warn'}`} data-testid="approval-source">
           {pending ? SOURCE_LABEL[approval.source] : approval.status}
         </span>
         <b className="apr-who">{who}</b>
@@ -102,6 +121,17 @@ export function ApprovalCard({
         Asked by <b data-testid="approval-requester">{approval.requesterName}</b> · <span className="apr-mono">{approval.tool}</span>
       </p>
       <Preview preview={approval.argsPreview} />
+      {approval.argsTruncated ? (
+        <div className="apr-truncated" data-testid="approval-truncated">
+          <p className="apr-blocked">This preview is cut short.{approval.canDecide ? ' Open the full call before you decide.' : ''}</p>
+          {approval.canDecide && full === undefined ? (
+            <button type="button" className="btn s" disabled={opening} onClick={() => void openFull()} data-testid="approval-open-full">
+              {opening ? 'Opening…' : 'View full call'}
+            </button>
+          ) : null}
+          {full !== undefined && full !== null ? <Preview preview={full as Approval['argsPreview']} testId="approval-full" /> : null}
+        </div>
+      ) : null}
 
       {pending ? (
         approval.canDecide ? (
@@ -109,7 +139,7 @@ export function ApprovalCard({
             {variant === 'detail' ? (
               <input className="apr-note" type="text" placeholder="Add a note (optional)" aria-label="Note" maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} data-testid="approval-note" />
             ) : null}
-            <button type="button" className="btn primary" disabled={busy !== null} onClick={() => void decide('approve')} data-testid="approval-approve">
+            <button type="button" className="btn primary" disabled={busy !== null || (approval.argsTruncated && full === undefined)} title={approval.argsTruncated && full === undefined ? 'Open the full call first' : undefined} onClick={() => void decide('approve')} data-testid="approval-approve">
               {busy === 'approve' ? 'Approving…' : 'Approve'}
             </button>
             <button type="button" className="btn" disabled={busy !== null} onClick={() => void decide('deny')} data-testid="approval-deny">
@@ -125,7 +155,11 @@ export function ApprovalCard({
         )
       ) : (
         <p className="apr-state" data-testid="approval-state" data-status={approval.status}>
-          <b>{approval.status === 'approved' ? 'Approved' : 'Denied'} by {approval.decision?.deciderName ?? 'someone'}</b>
+          {approval.status === 'expired' ? (
+            <b>Expired</b>
+          ) : (
+            <b>{approval.status === 'approved' ? 'Approved' : 'Denied'} by {approval.decision?.deciderName ?? 'someone'}</b>
+          )}
           {approval.decision?.note ? <span className="apr-note-text"> — “{approval.decision.note}”</span> : null}
           <span className="apr-outcome" data-testid="approval-outcome"> {outcomeLine(approval)}</span>
         </p>

@@ -1,12 +1,14 @@
 import {
   DecideApprovalRequest,
   DecideApprovalResponse,
+  GetApprovalArgsResponse,
   GetApprovalsSummaryResponse,
   ListApprovalsQuery,
   ListApprovalsResponse,
   ListThreadApprovalsResponse,
   approveApprovalRoute,
   denyApprovalRoute,
+  getApprovalArgsRoute,
   getApprovalsSummaryRoute,
   listApprovalsRoute,
   listThreadApprovalsRoute,
@@ -32,3 +34,6 @@ export const decideApproval = (slug: string, approvalId: string, decision: 'appr
   );
 
 export const fetchThreadApprovals = (rootId: string) => call(listThreadApprovalsRoute, { response: ListThreadApprovalsResponse }, undefined, { rootId });
+
+/** The whole stored call, for the people who may decide the approval (the preview of a long call is clipped). */
+export const fetchApprovalArgs = (slug: string, approvalId: string) => call(getApprovalArgsRoute, { response: GetApprovalArgsResponse }, undefined, { slug, approvalId });
