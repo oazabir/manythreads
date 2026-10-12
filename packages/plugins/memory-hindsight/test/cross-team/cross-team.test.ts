@@ -56,7 +56,7 @@ async function openRun(team: string): Promise<{ runId: string; url: string; toke
 }
 
 /** A run for team A's bot opened the only way that may name an asker: in-process, the way the router opens one (`ctx.runs.open`). */
-async function openInProcess(trigger: string, options: { threadId?: string } = {}): Promise<{ runId: string; url: string; token: string }> {
+async function openInProcess(trigger: string, options: { threadId?: string; channelId?: string } = {}): Promise<{ runId: string; url: string; token: string }> {
   const appPool = createAppPool(world.server.db.appUrl);
   const systemPool = createSystemPool(world.server.db.systemUrl, 2);
   try {
@@ -70,6 +70,7 @@ async function openInProcess(trigger: string, options: { threadId?: string } = {
       trigger,
       askerActorId: nadia.actorId,
       ...(options.threadId ? { threadId: options.threadId } : {}),
+      ...(options.channelId ? { channelId: options.channelId } : {}),
     });
     return { runId: run.runId, url: `${world.server.url}/api/mcp/runs/${run.runId}`, token };
   } finally {
@@ -301,6 +302,7 @@ describe('what a run may retain', () => {
   let publicMessageId = '';
   let privateMessageId = '';
   let privateRootId = '';
+  let privateChannelId = '';
 
   beforeAll(async () => {
     const dev = await world.channelId(A, 'dev');
@@ -320,6 +322,7 @@ describe('what a run may retain', () => {
           [omar.workspaceId, channel.id, nadia.actorId],
         )
       ).rows[0]!;
+      privateChannelId = channel.id;
       privateMessageId = message.id;
       privateRootId = message.id;
       await tx.query('INSERT INTO app.threads (root_message_id, channel_id) VALUES ($1, $2)', [message.id, channel.id]);
@@ -364,6 +367,35 @@ describe('what a run may retain', () => {
     const run = await openInProcess('conversation');
     expect(await retained(run)).toMatchObject({ ok: false, code: 'retain_refused' });
     expect((await call(run, 'memory.recall', { query: 'Basilisk migration' })).answer).toMatchObject({ ok: true });
+  });
+
+  it('may not retain in a run that answers in a private channel (no thread, no source lines needed)', async () => {
+    const run = await openInProcess('mention', { channelId: privateChannelId });
+    expect(await retained(run)).toMatchObject({ ok: false, code: 'retain_refused' });
+    const publicRun = await openInProcess('mention', { channelId: await world.channelId(A, 'dev') });
+    expect(await retained(publicRun)).toMatchObject({ ok: true });
+  });
+
+  it('memory.retain cannot wait for an approval: a needsApproval grant files nothing, so a resumed run (which has no source log) cannot bypass the rule', async () => {
+    const setApproval = (needs: boolean) =>
+      world.system((tx) => tx.query("UPDATE app.capability_grants SET needs_approval = $2 WHERE actor_id = $1 AND capability = 'memory.retain'", [bots[A]!.actorId, needs]));
+    await setApproval(true);
+    try {
+      // The exact scenario: a mention run in a private channel reads a private message, then asks to retain it.
+      const run = await openInProcess('mention', { channelId: privateChannelId, threadId: privateRootId });
+      await read(run.runId, 'message', privateMessageId, 'channel');
+      const before = fake.state.banks.get(BANK_A)!.length;
+      const out = await call(run, 'memory.retain', { content: 'Layoffs are planned for June' });
+      expect(out.isError).toBe(true);
+      expect(out.answer).toMatchObject({ ok: false, code: 'forbidden' });
+      expect(String(out.answer['message'])).toMatch(/cannot wait for an approval/);
+      const filed = await world.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.approvals WHERE tool = 'memory.retain'")).rows[0]!.n);
+      expect(filed).toBe(0);
+      expect(fake.state.banks.get(BANK_A)!.length).toBe(before);
+      expect(JSON.stringify([...fake.state.banks.values()])).not.toMatch(/Layoffs/);
+    } finally {
+      await setApproval(false);
+    }
   });
 
   it('may not retain in a run whose thread is in a private channel, but may in one on a public thread', async () => {

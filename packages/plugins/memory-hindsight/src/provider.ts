@@ -43,13 +43,14 @@ interface RunScopeRow extends Record<string, unknown> {
   workspace_slug: string;
   bot_id: string;
   /** Null when the run may add to the team bank; else why not (see migration 0001). */
-  retain_refusal: 'person_source' | 'private_source' | 'conversation' | 'private_thread' | null;
+  retain_refusal: 'person_source' | 'private_source' | 'conversation' | 'private_thread' | 'private_channel' | null;
 }
 
 const REFUSAL_TEXT: Record<NonNullable<RunScopeRow['retain_refusal']>, string> = {
   person_source: 'This run read something that belongs to one person, so it may not add to the team’s memory.',
   private_source: 'This run read something from a private channel or a conversation (or something that cannot be shown to be public), so it may not add to the team’s memory.',
   conversation: 'This run is a private conversation with one person, so it may not add to the team’s memory.',
+  private_channel: 'This run answers in a private channel or conversation, so it may not add to the team’s memory.',
   private_thread: 'This run was started in a private channel or conversation, so it may not add to the team’s memory.',
 };
 

@@ -1,4 +1,4 @@
-import type { CapabilityAuthorizeContext, PluginContext, PluginTx } from '@manythreads/sdk';
+import { NEVER_APPROVAL_GATED, neverApprovalGatedReason, type CapabilityAuthorizeContext, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { APPROVAL_RUN_TIMEOUT_MINUTES, ApprovalResume, ApprovalsApprovalResumedEvent } from '@manythreads/shared';
 import { z } from 'zod';
 import { pushChanged } from './notify.ts';
@@ -142,6 +142,8 @@ export function registerResumeJob(ctx: PluginContext): void {
       if (!resume.success || resume.data.kind !== 'tool' || row.bot_id === null) return fail('The stored call could not be read.');
       const call = resume.data;
       const botId = row.bot_id;
+      // Defence in depth: an approval for one of these is never filed, but a row from before that rule (or written some other way) is never run either.
+      if (NEVER_APPROVAL_GATED.includes(call.capability)) return fail(neverApprovalGatedReason(call.capability));
 
       let opened: Awaited<ReturnType<PluginContext['runs']['open']>> | null = null;
       // The same asker while they are still on the team (a person-only scope such as `person:*` then still means what it meant); without them the

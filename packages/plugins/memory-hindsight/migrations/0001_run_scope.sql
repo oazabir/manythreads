@@ -20,7 +20,10 @@
 --                          bot conversation, another team's channel, or a ref that does not resolve all count as private);
 --      - `conversation`    the run was a `conversation` run (a person talking to the bot: the asker's own context, usually a bot DM);
 --      - `private_thread`  the run's thread is in a channel that is not a public channel of its team.
---    Lines with scope `team` (a memory bank, a team file) are team-visible by construction (the gateway assigns the scope from the hit).
+--      - `private_channel` the run answers in a channel (`bot_runs.channel_id`) that is not a public channel of its team — a DM, a bot conversation,
+--                          a private channel. A run opened by an approval resume carries the approval's channel, so it is caught here too; and
+--                          `memory.retain` is never approval-gated at all (SDK `NEVER_APPROVAL_GATED`), because a resumed run has no source log.
+-- Lines with scope `team` (a memory bank, a team file) are team-visible by construction (the gateway assigns the scope from the hit).
 --  * SECURITY DEFINER owned by manythreads_system, like `app.run_source_log_append`, because a bot cannot read its own run's source lines or other
 --    people's channels. Inside, `app.is_system()` is TRUE, so the caller is checked with `app.actor()` above and never with it.
 --    plpgsql so the tables of the channels and files plugins are resolved when it runs, not when it is created.
@@ -49,6 +52,9 @@ BEGIN
                 )
            ) THEN 'private_source'
            WHEN r.trigger_type = 'conversation' THEN 'conversation'
+           WHEN r.channel_id IS NOT NULL AND NOT EXISTS (
+             SELECT 1 FROM app.channels c WHERE c.id = r.channel_id AND c.kind = 'channel' AND NOT c.private AND c.team_id = r.team_id
+           ) THEN 'private_channel'
            WHEN r.thread_id IS NOT NULL AND NOT EXISTS (
              SELECT 1 FROM app.threads th JOIN app.channels c ON c.id = th.channel_id
               WHERE th.root_message_id = r.thread_id AND c.kind = 'channel' AND NOT c.private AND c.team_id = r.team_id

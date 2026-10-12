@@ -87,6 +87,17 @@ export const approvalDedupeKey = (tool: string, input: Record<string, unknown>):
   createHash('sha256').update(`${tool}\n${stable(input)}`).digest('hex');
 
 /**
+ * Capabilities that can never wait for an approval. An approved call is re-run later in a NEW run that has none of the first run's context (no
+ * source log, perhaps no thread): a capability whose safety depends on what the run read — `memory.retain` stores caller-supplied text in the team's
+ * memory and is refused for a run that read anything private — would be decided blind, and a person approving "remember this" is not checking where the
+ * text came from. So they are never filed (`requestToolApproval` refuses) and never resumed (the approvals plugin refuses too).
+ */
+export const NEVER_APPROVAL_GATED: readonly string[] = ['memory.retain'];
+
+export const neverApprovalGatedReason = (tool: string): string =>
+  `“${tool}” cannot wait for an approval: it is refused for a run that read anything private, and an approved call runs later without that history. Ask a lead to remove needsApproval from it.`;
+
+/**
  * The `grant` source's one call (the MCP gateway, the Hermes runtime's own scope): file an approval for a tool call the run made, in the run's own
  * transaction as its bot, with the preview, summary, resume and dedupe key built the one way. Answers null when the approvals plugin is not loaded —
  * the caller then fails closed — and `{ refused }` when the run is in a private conversation and nobody else in it could decide (see `NoEligibleApproverError`), because running a call the grant says a person must approve is the one thing the flag exists to stop.
@@ -101,6 +112,7 @@ export async function requestToolApproval(
   input: Record<string, unknown>,
   options: { approvers?: readonly string[] } = {},
 ): Promise<ApprovalRequestResult | ApprovalRefusal | null> {
+  if (NEVER_APPROVAL_GATED.includes(tool)) return { refused: neverApprovalGatedReason(tool) };
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
   if (!approvals) return null;
   const { preview, truncated } = previewArgsDetailed(input);
