@@ -22,6 +22,7 @@ export default defineConfig({
             '**/test/rls/**',
             '**/test/events/**',
             '**/test/schema-compat/**',
+            '**/test/cross-team/**',
           ],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
@@ -42,6 +43,17 @@ export default defineConfig({
           include: ['**/test/events/**/*.test.ts'],
           exclude: ['**/node_modules/**', '**/dist/**'],
           passWithNoTests: true,
+          hookTimeout: HOOK_TIMEOUT_MS,
+        },
+      },
+      {
+        // `pnpm test:memory-cross-team` (PLAN P5-15, SPEC 12.1): team A's bot gets nothing from team B's memory bank. Its own project so it can run
+        // by name on every PR; `pnpm test` runs it too (every project).
+        test: {
+          name: 'memory-cross-team',
+          include: ['packages/plugins/memory-hindsight/test/cross-team/**/*.test.ts'],
+          exclude: ['**/node_modules/**', '**/dist/**'],
+          passWithNoTests: false,
           hookTimeout: HOOK_TIMEOUT_MS,
         },
       },

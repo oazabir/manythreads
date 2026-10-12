@@ -13,6 +13,8 @@ services:
       # Creates the `litellm` database the LLM gateway's proxy stores its virtual keys in (PLAN P5-06, profile `llm`).
       # Runs only on the first init of the volume; an existing volume needs the database created by hand (see the file).
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
+    # `memory` too: Hindsight keeps its banks in the `hindsight` database of this server and nothing else on `default` needs to know that.
+    networks: [default, memory]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U manythreads_owner -d manythreads"]
       interval: 3s
@@ -81,6 +83,42 @@ services:
     ports:
       # loopback only: a fixed development master key must not be reachable from the network the dev machine is on
       - "127.0.0.1:4000:4000"
+    # `memory` too: Hindsight's fact extraction goes through the one LLM gateway (it never holds a provider key).
+    networks: [default, memory]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # Team memory (profile `memory`, PLAN P5-12): Hindsight, the retrieval engine behind `memory-hindsight` (SPEC 12.1). `pnpm memory:up` starts it
+  # (it creates the `hindsight` database on an old volume first); point the server at it with MANYTHREADS_HINDSIGHT_URL=http://localhost:8888 and
+  # MANYTHREADS_HINDSIGHT_API_KEY=<HINDSIGHT_API_TENANT_API_KEY> (dev.env.example).
+  #
+  # "Reachable only from the gateway" is the network, in this phase: the container is on `memory` and on nothing else, and only postgres, litellm and
+  # the manythreads server join `memory`. A container on `default` (the Hermes workers of phase 10) cannot resolve or route to `hindsight`, so it cannot
+  # call it, with or without the api key. The loopback port below exists so tests and the dev server running on the HOST can reach the engine; the
+  # self-host compose and the chart must not publish it (NetworkPolicy checks are phase 10). The control-plane UI (9999) is not published: it would
+  # show every team's bank to whoever opened it.
+  hindsight:
+    profiles: ["memory"]
+    image: ghcr.io/vectorize-io/hindsight:${MANYTHREADS_HINDSIGHT_TAG:-latest}
+    environment:
+      HINDSIGHT_API_DATABASE_URL: postgresql://manythreads_owner:manythreads@postgres:5432/hindsight
+      HINDSIGHT_API_TENANT_EXTENSION: hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension
+      HINDSIGHT_API_TENANT_API_KEY: ${MANYTHREADS_HINDSIGHT_API_KEY:-hs-manythreads-dev}
+      # Fact extraction is an LLM call; it goes to the LiteLLM proxy (profile `llm`, alias `fast`) like every other model call.
+      HINDSIGHT_API_LLM_PROVIDER: ${MANYTHREADS_HINDSIGHT_LLM_PROVIDER:-openai}
+      HINDSIGHT_API_LLM_BASE_URL: ${MANYTHREADS_HINDSIGHT_LLM_BASE_URL:-http://litellm:4000/v1}
+      HINDSIGHT_API_LLM_API_KEY: ${MANYTHREADS_HINDSIGHT_LLM_API_KEY:-sk-manythreads-dev-master}
+      HINDSIGHT_API_LLM_MODEL: ${MANYTHREADS_HINDSIGHT_LLM_MODEL:-fast}
+    networks: [memory]
+    ports:
+      # loopback only, dev convenience (see above)
+      - "127.0.0.1:8888:8888"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8888/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -111,8 +149,18 @@ services:
       # but pushes no config, rather than retrying against a proxy that was never started.
       MANYTHREADS_LITELLM_URL: ${MANYTHREADS_LITELLM_URL:-}
       MANYTHREADS_LITELLM_MASTER_KEY: ${MANYTHREADS_LITELLM_MASTER_KEY:-}
+      # Empty unless the `memory` profile is up (then http://hindsight:8888): the memory tools answer "not configured" without it.
+      MANYTHREADS_HINDSIGHT_URL: ${MANYTHREADS_HINDSIGHT_URL:-}
+      MANYTHREADS_HINDSIGHT_API_KEY: ${MANYTHREADS_HINDSIGHT_API_KEY:-}
+    # The server is the one gateway: it shares `memory` with the engine (and nothing else does).
+    networks: [default, memory]
     ports:
       - "3000:3000"
+
+networks:
+  default: {}
+  # Only the manythreads server (the memory gateway), Hindsight and what Hindsight itself needs (postgres, litellm) are on it.
+  memory: {}
 
 volumes:
   manythreads_pgdata:

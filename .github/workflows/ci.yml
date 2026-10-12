@@ -74,6 +74,7 @@ jobs:
       - run: pnpm test:rls
       - run: pnpm test:events
       - run: pnpm test:schema-compat
+      - run: pnpm test:memory-cross-team
 
       - name: Install Playwright Chromium
         run: pnpm -C e2e exec playwright install --with-deps chromium

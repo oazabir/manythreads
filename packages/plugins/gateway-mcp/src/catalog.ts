@@ -72,6 +72,29 @@ const PAGES_WRITE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// The memory tools take no bank, team or workspace argument, on purpose: the platform derives the bank from the run (memory-hindsight, SPEC 12.1).
+const MEMORY_RECALL_SCHEMA = {
+  type: 'object',
+  properties: {
+    query: { type: 'string', minLength: 2, maxLength: 500, description: 'What to remember: a question or a few words.' },
+    limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Most facts to answer with (default 10).' },
+    tags: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Only facts that carry all of these tags.' },
+  },
+  required: ['query'],
+  additionalProperties: false,
+} as const;
+
+const MEMORY_RETAIN_SCHEMA = {
+  type: 'object',
+  properties: {
+    content: { type: 'string', minLength: 1, maxLength: 20_000, description: 'What the team should remember, written so it makes sense on its own.' },
+    context: { type: 'string', maxLength: 200, description: 'A short label, such as “decision” or “customer call”.' },
+    tags: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Lowercase tags to find it by later.' },
+  },
+  required: ['content'],
+  additionalProperties: false,
+} as const;
+
 /** Reads `{ hits: [{ id, channel? }] }` (the search plugin's answer) into source lines. */
 const hitsFrom = (sourceType: 'message' | 'file') => (result: unknown): ToolSource[] => {
   const hits = (result as { hits?: unknown } | null)?.hits;
@@ -101,6 +124,25 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     inputSchema: SEARCH_SCHEMA,
     kind: 'read',
     sourcesFrom: hitsFrom('file'),
+  },
+  'memory.recall': {
+    name: 'memory.recall',
+    description:
+      'Recall what the team’s memory knows about a question. Answers the facts it found. The memory is your team’s alone; you do not choose it.',
+    inputSchema: MEMORY_RECALL_SCHEMA,
+    kind: 'read',
+    // The bank is the source: its scope is the team, which the retention rule (a run keeps no wider than the narrowest source it read) reads.
+    sourcesFrom: (result) => {
+      const answer = result as { ok?: unknown; bank?: unknown } | null;
+      return answer?.ok === true && typeof answer.bank === 'string' ? [{ sourceType: 'memory', sourceRef: `bank:${answer.bank}`, scope: 'team' }] : [];
+    },
+  },
+  'memory.retain': {
+    name: 'memory.retain',
+    description:
+      'Add something to the team’s memory so every bot on the team can recall it later. Only things the whole team may know; the tool refuses when this run read something private to one person.',
+    inputSchema: MEMORY_RETAIN_SCHEMA,
+    kind: 'write',
   },
   'messages.post': {
     name: 'messages.post',
