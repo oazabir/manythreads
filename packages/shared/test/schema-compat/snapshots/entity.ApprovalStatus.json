@@ -4,6 +4,7 @@
   "enum": [
     "pending",
     "approved",
-    "denied"
+    "denied",
+    "expired"
   ]
 }
