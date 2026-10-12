@@ -63,7 +63,9 @@ A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) 
 
 - **open a run** — write a `bot_runs` row and mint a credential for it as the system actor, and close it again. The bot
   and its team are read from the database, and an asker must be a person actor of the same workspace who is on the run's
-  team, so a caller cannot start a run for another team's bot or name an asker who is not there;
+  team, so a caller cannot start a run for another team's bot or name an asker who is not there. The **public** mint
+  (`POST /api/mcp/runs`, a pairing token) names no asker and no trigger at all — a pairing token proves a bot's runtime, not
+  a person's request — so only in-process callers (the router) can open a conversation or mention run;
 - **enter one transaction as the run's bot** (`asBot`) or **as the person who asked** (`asReader`), with `app.run_id` set.
   These are real role-scoped transactions on the app pool: row level security, the recorded actor and `app.run_id()` all
   see a bot (or a person) they can be held to, and a write made this way is attributed exactly like any other;

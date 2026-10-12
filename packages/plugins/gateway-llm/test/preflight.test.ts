@@ -269,6 +269,27 @@ describe('preflight: presets and the pre-call hook', () => {
     });
   });
 
+  it('judges the fallback chain from the database: a local alias that falls back to a hosted one is refused air-gapped', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'preflight-chain'));
+    await sys(async (tx) => {
+      await tx.query(`INSERT INTO app.llm_settings (workspace_id, preset) VALUES ($1, 'air-gapped')`, [omar.workspaceId]);
+      await tx.query(
+        `INSERT INTO app.llm_aliases (workspace_id, alias, model, fallbacks) VALUES ($1, 'local', 'ollama/llama3', '{fast}'), ($1, 'fast', 'anthropic/claude-haiku-4', '{}')`,
+        [omar.workspaceId],
+      );
+    });
+    const refused = await check(call(botId, { alias: 'local' as LlmAliasName }));
+    expect(refused.allowed).toBe(false);
+    expect(refused.reason).toBe('preset');
+    expect(refused.message).toContain('falls back to fast');
+    await sys((tx) => tx.query(`UPDATE app.llm_aliases SET fallbacks = '{}' WHERE workspace_id = $1 AND alias = 'local'`, [omar.workspaceId]));
+    expect((await check(call(botId, { alias: 'local' as LlmAliasName }))).allowed).toBe(true);
+    await sys(async (tx) => {
+      await tx.query(`DELETE FROM app.llm_settings WHERE workspace_id = $1`, [omar.workspaceId]);
+      await tx.query(`DELETE FROM app.llm_aliases WHERE workspace_id = $1`, [omar.workspaceId]);
+    });
+  });
+
   it('customer-facing refuses the call rather than redacting it', async () => {
     const botId = await sys((tx) => makeBot(tx, 'preflight-customer'));
     await sys((tx) => tx.query(`INSERT INTO app.llm_settings (workspace_id, preset) VALUES ($1, 'customer-facing')`, [omar.workspaceId]));

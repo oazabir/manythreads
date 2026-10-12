@@ -45,6 +45,13 @@ export default tseslint.config(
     },
   },
   {
+    // A promise nobody awaits is a write that may land after its caller returned, or never (MISTAKES: un-awaited `ctx.audit.emit`).
+    // Type-aware, so server code only (tests drive timing on purpose and are not linted with it).
+    files: ['packages/**/src/**/*.ts'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: { '@typescript-eslint/no-floating-promises': 'error' },
+  },
+  {
     files: ['clients/web/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks },

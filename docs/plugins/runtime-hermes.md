@@ -37,15 +37,15 @@ job, never a prompt template's.
 ## The profile
 
 `render` is pure, so a definition's profile can be asserted in a test instead of inspected in a container. A profile is a
-`HERMES_HOME` directory under `MANYTHREADS_RUNTIME_DIR` (one per run, removed when the run ends) holding two files:
+`HERMES_HOME` directory under `MANYTHREADS_RUNTIME_DIR` (one per run, mode 0700 with 0600 files, removed when the run ends — also when the spawn itself fails — and swept at startup when a dead server left it behind for more than two hours) holding two files:
 
 * **`SOUL.md`** — the `BOT.md` body, verbatim. The behaviour of a bot is its file's prose, versioned in the team repo.
 * **`config.yaml`** — the model and the tools, and nothing else:
   * `model.provider: manythreads` + `model.default: <aliases[0]>`, with a named custom provider pointing at the workspace's
     LiteLLM gateway (`MANYTHREADS_LITELLM_URL`) using the bot's **own virtual key** (`provider.llm`'s `botKey`). Aliases,
     fallbacks, budgets, rate limits and the pre-call DLP hook all live behind that one URL (SPEC §10.1–10.2).
-  * `mcp_servers.manythreads.url` — the **run's own MCP endpoint**, `.../api/mcp/runs/<token>` (`ctx.runs.open`), with the run
-    token in an `Authorization: Bearer` header.
+  * `mcp_servers.manythreads.url` — the **run's own MCP endpoint**, `.../api/mcp/runs/<runId>` (`ctx.runs.open`) — the URL names the
+    run and holds no credential — with the run token in an `Authorization: Bearer` header.
   * `agent.reasoning_effort` when the definition sets `model.effort`.
 
 Nothing else is ever written into a profile: **no provider credential, no repo credential, no memory address**. The run token is
@@ -61,6 +61,11 @@ with `HERMES_HOME` pointed at the generated profile and `chat --query-file - --o
 shows. `--run-budget` comes from the definition's `limits.timeoutSeconds`; the platform adds a hard ceiling (`budget + kill
 grace`, default 15 s) and stops the process with SIGTERM, then SIGKILL. There is no daemon to manage and no state shared
 between runs.
+
+**The child's environment is an allowlist**, not the server's: `PATH`, `HOME`, `LANG`/`LC_*`, `TZ`, the temp-dir variables and
+`HERMES_*`, plus `HERMES_HOME`. The KMS key, database URLs and passwords, the LiteLLM master key and the test auth token never
+reach an agent that can run `env` (`childEnv`, tested by looking for secret-looking parent variables in the child's
+environment). The child leads its own process group and a timeout signals the group, so what a shell tool started dies too.
 
 The stream is Hermes' own JSONL: `text` deltas, `tool_use` / `tool_result`, and a terminal `result` whose `exit_code` is the
 outcome. A process that dies without a `result` record is reported as a failed run carrying the tail of its stderr — a run is
@@ -90,8 +95,11 @@ streamed into the thread delta by delta: a turn produces one message, and postin
   definition that never asked for `messages.post` cannot post one. `test/run.test.ts` asserts exactly that refusal.
 * Reads run as the **asking person**, writes as the **bot** (`ctx.runs.asReader` / `asBot`), which is how a bot never sees more
   than the person talking to it.
-* Before anything is sent, the router asks the gateway's `preflight` (preset, DLP hook, budgets, rate limits). A refusal is
-  logged and the run closes as `stopped` without a model call.
+* Before anything is sent, the router asks the gateway's `preflight` (preset, DLP hook, budgets, rate limits) — for a runtime
+  that talks to a model (`provider.usesGateway`; `rules` does not, and is never refused for lacking one). A refusal is logged and
+  the run closes as `stopped` without a model call; a redaction is honoured: **the prompt the process receives is the
+  gateway's `decision.text`**, not the raw message. A failed run posts no reply (half an answer is not an answer), and the
+  run's token outlives its budget (`timeoutSeconds` + 120 s) so its tools do not vanish mid-turn.
 * A run whose `BOT.md` in the repo is newer than the loaded definition is **refused**: a run never executes a definition the
   roster never showed.
 

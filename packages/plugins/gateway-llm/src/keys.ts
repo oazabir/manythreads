@@ -23,37 +23,98 @@ export function newBotKey(): string {
 export const keyPrefix = (key: string): string => key.slice(0, PREFIX_LENGTH);
 
 /**
- * Mint the bot's key once: idempotent, so an event replay or a reconcile finds the live key and changes nothing. Answers
- * whether it minted (false when a live key was already there). The proxy call happens before the row's insert commits, so a
- * failure rolls back the secret too and the job retries; the key is caller-chosen, so a retry is harmless.
+ * The aliases a bot's key may call: what its BOT.md names (`bots.model_aliases`: `model.aliases`, then `model.fallbacks`)
+ * that the workspace has bound, plus the fallback chains of those (the proxy retries a failed call on them, so the key must
+ * reach them too). Never the workspace's whole set — a bot cannot be handed an alias its definition never asked for — and an
+ * empty answer means the bot can call nothing yet, which `syncBotKey` treats as "no key", because the proxy reads an empty
+ * list as "every model".
  */
-export async function mintBotKey(ctx: PluginContext, tx: PluginTx, workspaceId: string, botId: string): Promise<boolean> {
-  const existing = (await tx.query<{ secret_id: string | null; revoked_at: Date | null }>('SELECT secret_id, revoked_at FROM app.llm_keys WHERE bot_id = $1', [botId]))
-    .rows[0];
-  if (existing && existing.revoked_at === null) return false;
+export async function botKeyModels(tx: PluginTx, workspaceId: string, botId: string): Promise<string[]> {
+  const bot = (
+    await tx.query<{ model_aliases: string[] }>('SELECT model_aliases FROM app.bots WHERE id = $1 AND workspace_id = $2', [botId, workspaceId])
+  ).rows[0];
+  if (!bot || bot.model_aliases.length === 0) return [];
+  const bound = new Map(
+    (await tx.query<{ alias: string; fallbacks: string[] }>('SELECT alias, fallbacks FROM app.llm_aliases WHERE workspace_id = $1', [workspaceId])).rows.map(
+      (r) => [r.alias, r.fallbacks] as const,
+    ),
+  );
+  const models: string[] = [];
+  const visit = (alias: string): void => {
+    if (!bound.has(alias) || models.includes(alias)) return;
+    models.push(alias);
+    for (const next of bound.get(alias) ?? []) visit(next);
+  };
+  for (const alias of bot.model_aliases) visit(alias);
+  return models;
+}
+
+/** What `syncBotKey` did, so a caller (and a log line) can say it. */
+export type KeySyncResult = 'minted' | 'updated' | 'unchanged' | 'skipped' | 'revoked';
+
+/**
+ * Bring one bot's key in line with what its definition and the workspace's aliases allow: mint it when there is something it
+ * may call, change the proxy's list when that set moved, and take it away when the set emptied. Idempotent, so an event
+ * replay, a config push and the daily reconcile all call it. The proxy call happens before the row's write commits, so a
+ * failure rolls everything back and the job retries; the key is caller-chosen, so a retry is harmless.
+ */
+export async function syncBotKey(ctx: PluginContext, tx: PluginTx, workspaceId: string, botId: string): Promise<KeySyncResult> {
+  const models = await botKeyModels(tx, workspaceId, botId);
+  const existing = (
+    await tx.query<{ secret_id: string | null; revoked_at: Date | null; models: string[] }>(
+      'SELECT secret_id, revoked_at, models FROM app.llm_keys WHERE bot_id = $1',
+      [botId],
+    )
+  ).rows[0];
+  const live = existing !== undefined && existing.revoked_at === null && existing.secret_id !== null;
+  const gateway = gatewayFromEnv();
+  const metadata = { workspace_id: workspaceId, bot_id: botId, plugin: 'gateway-llm' };
+
+  if (existing && live) {
+    if (models.length === 0) {
+      // Nothing bound for this bot any more (alias unbound, BOT.md edited): a key with no aliases would be a key for all of them.
+      await revokeBotKey(ctx, tx, botId);
+      return 'revoked';
+    }
+    const same = existing.models.length === models.length && models.every((m, i) => existing.models[i] === m);
+    if (same) return 'unchanged';
+    if (gateway.enabled) await gateway.updateKey({ key: await ctx.secrets.get(tx, existing.secret_id as string), aliases: models, metadata });
+    await tx.query('UPDATE app.llm_keys SET models = $2 WHERE bot_id = $1', [botId, models]);
+    await ctx.audit.emit(tx, { type: 'llm.key.changed', workspaceId, botId, action: 'updated', keyPrefix: null });
+    return 'updated';
+  }
+  if (models.length === 0) return 'skipped';
 
   const key = newBotKey();
   const secretId = await ctx.secrets.put(tx, key);
   await tx.query(
-    `INSERT INTO app.llm_keys AS k (bot_id, workspace_id, secret_id, key_prefix, created_at, revoked_at)
-     VALUES ($1, $2, $3, $4, now(), NULL)
+    `INSERT INTO app.llm_keys AS k (bot_id, workspace_id, secret_id, key_prefix, models, created_at, revoked_at)
+     VALUES ($1, $2, $3, $4, $5, now(), NULL)
      ON CONFLICT (bot_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id, secret_id = EXCLUDED.secret_id,
-       key_prefix = EXCLUDED.key_prefix, created_at = now(), revoked_at = NULL`,
-    [botId, workspaceId, secretId, keyPrefix(key)],
+       key_prefix = EXCLUDED.key_prefix, models = EXCLUDED.models, created_at = now(), revoked_at = NULL`,
+    [botId, workspaceId, secretId, keyPrefix(key), models],
   );
   // A bare row from before (revoked_at set by an older release, or a race): its secret is now unreferenced, so drop it.
   if (existing?.secret_id && existing.secret_id !== secretId) await ctx.secrets.delete(tx, existing.secret_id);
 
-  // The aliases the bot may ask for: its runtime names aliases, never models, and the proxy refuses an unlisted one.
-  const aliases = (await tx.query<{ alias: string }>('SELECT alias FROM app.llm_aliases WHERE workspace_id = $1', [workspaceId])).rows.map(
-    (r) => r.alias,
-  );
-  const gateway = gatewayFromEnv();
-  if (gateway.enabled) {
-    await gateway.mintKey({ key, aliases, metadata: { workspace_id: workspaceId, bot_id: botId, plugin: 'gateway-llm' } });
-  }
-  ctx.audit.emit(tx, { type: 'llm.key.changed', workspaceId, botId, action: 'minted', keyPrefix: keyPrefix(key) });
-  return true;
+  if (gateway.enabled) await gateway.mintKey({ key, aliases: models, metadata });
+  await ctx.audit.emit(tx, { type: 'llm.key.changed', workspaceId, botId, action: 'minted', keyPrefix: keyPrefix(key) });
+  return 'minted';
+}
+
+/** Mint the bot's key if it has none and may call something; answers whether it minted (false: it already had one, or has nothing to call yet). */
+export async function mintBotKey(ctx: PluginContext, tx: PluginTx, workspaceId: string, botId: string): Promise<boolean> {
+  return (await syncBotKey(ctx, tx, workspaceId, botId)) === 'minted';
+}
+
+/** Every active bot of a workspace, synced: what a config push, a bound alias or the daily reconcile has to repeat for all of them. */
+export async function syncWorkspaceKeys(ctx: PluginContext, tx: PluginTx, workspaceId: string): Promise<Record<KeySyncResult, number>> {
+  const tally: Record<KeySyncResult, number> = { minted: 0, updated: 0, unchanged: 0, skipped: 0, revoked: 0 };
+  const bots = (
+    await tx.query<{ id: string }>(`SELECT id FROM app.bots WHERE workspace_id = $1 AND status = 'active' AND runtime = 'hermes'`, [workspaceId])
+  ).rows;
+  for (const bot of bots) tally[await syncBotKey(ctx, tx, workspaceId, bot.id)] += 1;
+  return tally;
 }
 
 /** Delete the bot's key: from the proxy, from the secret store and from `llm_keys`. Idempotent (no row is a no-op). */
@@ -69,7 +130,7 @@ export async function revokeBotKey(ctx: PluginContext, tx: PluginTx, botId: stri
   // (the sign-in provider route deletes its row first for the same reason).
   await tx.query('DELETE FROM app.llm_keys WHERE bot_id = $1', [botId]);
   if (row.secret_id) await ctx.secrets.delete(tx, row.secret_id);
-  ctx.audit.emit(tx, { type: 'llm.key.changed', workspaceId: row.workspace_id, botId, action: 'revoked', keyPrefix: null });
+  await ctx.audit.emit(tx, { type: 'llm.key.changed', workspaceId: row.workspace_id, botId, action: 'revoked', keyPrefix: null });
   return true;
 }
 
@@ -86,7 +147,8 @@ export function registerSyncKeyJob(ctx: PluginContext): void {
     ]);
     if (input.action === 'mint') {
       if (!exists.rows[0]) return;
-      if (await mintBotKey(ctx, tx, input.workspaceId, input.botId)) job.log.info(`gateway-llm: minted a key for bot ${input.botId}`);
+      const result = await syncBotKey(ctx, tx, input.workspaceId, input.botId);
+      if (result !== 'unchanged') job.log.info(`gateway-llm: key of bot ${input.botId}: ${result}`);
       return;
     }
     if (await revokeBotKey(ctx, tx, input.botId)) job.log.info(`gateway-llm: revoked the key of bot ${input.botId}`);
@@ -102,14 +164,14 @@ export function registerReconcileJob(ctx: PluginContext): void {
   ctx.jobs.register(
     RECONCILE_QUEUE,
     async (_payload, tx, job) => {
-      const missing = (
-        await tx.query<{ workspace_id: string; bot_id: string }>(
-          `SELECT b.workspace_id, b.id AS bot_id FROM app.bots b
-            WHERE b.status = 'active' AND b.runtime = 'hermes'
-              AND NOT EXISTS (SELECT 1 FROM app.llm_keys k WHERE k.bot_id = b.id AND k.revoked_at IS NULL)`,
-        )
-      ).rows;
-      for (const bot of missing) await mintBotKey(ctx, tx, bot.workspace_id, bot.bot_id);
+      // Every active hermes bot, synced: a missing key is minted, a key whose aliases moved is updated, one with nothing left to
+      // call is taken away. (Workspace by workspace, because the alias set is a workspace's.)
+      const tally: Record<KeySyncResult, number> = { minted: 0, updated: 0, unchanged: 0, skipped: 0, revoked: 0 };
+      const workspaceIds = (await tx.query<{ id: string }>('SELECT id FROM app.workspaces')).rows;
+      for (const workspace of workspaceIds) {
+        const part = await syncWorkspaceKeys(ctx, tx, workspace.id);
+        for (const name of Object.keys(tally) as KeySyncResult[]) tally[name] += part[name];
+      }
 
       const orphans = (
         await tx.query<{ bot_id: string }>(
@@ -118,9 +180,9 @@ export function registerReconcileJob(ctx: PluginContext): void {
       ).rows;
       for (const orphan of orphans) await revokeBotKey(ctx, tx, orphan.bot_id);
 
-      const workspaces = (await tx.query<{ id: string }>('SELECT id FROM app.workspaces')).rows;
+      const workspaces = workspaceIds;
       for (const workspace of workspaces) await ctx.jobs.enqueue(tx, APPLY_CONFIG_QUEUE, { workspaceId: workspace.id });
-      job.log.info(`gateway-llm: reconcile minted ${missing.length}, revoked ${orphans.length}, re-queued ${workspaces.length} config push(es)`);
+      job.log.info(`gateway-llm: reconcile minted ${tally.minted}, updated ${tally.updated}, revoked ${tally.revoked + orphans.length}, re-queued ${workspaces.length} config push(es)`);
     },
     { cron: '23 3 * * *' },
   );
@@ -130,7 +192,7 @@ export function registerReconcileJob(ctx: PluginContext): void {
 export function registerKeySubscriptions(ctx: PluginContext): void {
   ctx.events.subscribe('bots.bot.loaded', async (raw: PluginEvent, tx: PluginTx) => {
     const event = BotsBotLoadedEvent.parse(raw);
-    await ctx.jobs.enqueue(tx, SYNC_KEY_QUEUE, { workspaceId: event.workspaceId, botId: event.botId, action: 'mint' }, { dedupeKey: `mint:${event.botId}` });
+    await ctx.jobs.enqueue(tx, SYNC_KEY_QUEUE, { workspaceId: event.workspaceId, botId: event.botId, action: 'mint' }, { dedupeKey: `mint:${event.botId}:${event.definitionSha}` });
   });
   ctx.events.subscribe('bots.bot.removed', async (raw: PluginEvent, tx: PluginTx) => {
     const event = BotsBotRemovedEvent.parse(raw);

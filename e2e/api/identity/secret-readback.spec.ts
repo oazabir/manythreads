@@ -25,11 +25,14 @@ const PARAM_VALUES: Record<string, string> = {
 const fillPath = (template: string): string =>
   template.replace(/\{([^}]+)\}/g, (_m, name: string) => PARAM_VALUES[name] ?? '00000000-0000-7000-8000-000000000001');
 
+/** A numeric count named `...Tokens` (LLM spend: promptTokens, completionTokens) is a quantity, not a credential. A string value is still flagged. */
+const isTokenCount = (key: string, value: unknown): boolean => /tokens$/i.test(key) && typeof value === 'number';
+
 function offendingKeys(value: unknown, path = '$'): string[] {
   if (Array.isArray(value)) return value.flatMap((v, i) => offendingKeys(v, `${path}[${i}]`));
   if (value && typeof value === 'object') {
     return Object.entries(value).flatMap(([k, v]) => [
-      ...(FORBIDDEN_KEY.test(k) && !ALLOWED_KEYS.has(k) ? [`${path}.${k}`] : []),
+      ...(FORBIDDEN_KEY.test(k) && !ALLOWED_KEYS.has(k) && !isTokenCount(k, v) ? [`${path}.${k}`] : []),
       ...offendingKeys(v, `${path}.${k}`),
     ]);
   }
@@ -102,6 +105,13 @@ test('the scanner itself flags hash, secret, ciphertext, password and token keys
     '$.nested[1].clientSecret',
     '$.deep.a.ciphertext',
     '$.t.csrfToken',
+  ]);
+  // numeric token counts are quantities; the same names holding a string, and singular token keys, are still flagged
+  expect(offendingKeys({ summary: { promptTokens: 12, completionTokens: 7 } })).toEqual([]);
+  expect(offendingKeys({ summary: { promptTokens: 'abc', token: 5, sessionToken: 'q' } })).toEqual([
+    '$.summary.promptTokens',
+    '$.summary.token',
+    '$.summary.sessionToken',
   ]);
   expect(offendingKeys({ person: { id: 1, email: 'a@b' }, methods: [{ kind: 'password', label: 'Email' }] })).toEqual([]);
 });

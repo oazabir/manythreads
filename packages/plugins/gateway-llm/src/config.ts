@@ -2,6 +2,7 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { LlmProviderKind } from '@manythreads/shared';
 import { z } from 'zod';
 import { APPLY_CONFIG_QUEUE, gatewayFromEnv } from './gateway.ts';
+import { syncWorkspaceKeys } from './keys.ts';
 import type { LiteLlmConfigDocument } from './litellm.ts';
 import { ALIAS_COLUMNS, PROVIDER_COLUMNS, type AliasRow, type ProviderRow } from './rows.ts';
 
@@ -42,7 +43,7 @@ export function buildConfigDocument(input: {
 }): LiteLlmConfigDocument {
   const byId = new Map(input.providers.filter((p) => p.enabled).map((p) => [p.id, p]));
   const model_list: LiteLlmConfigDocument['model_list'] = [];
-  const fallbacks: LiteLlmConfigDocument['fallbacks'] = [];
+  const chains: Array<[string, readonly string[]]> = [];
   for (const alias of input.aliases) {
     const provider = alias.provider_id ? byId.get(alias.provider_id) : undefined;
     // A bare model (`anthropic/claude-...`) needs no provider row; one that names a provider needs it live.
@@ -57,9 +58,16 @@ export function buildConfigDocument(input: {
         ...(provider?.api_version ? { api_version: provider.api_version } : {}),
       },
     });
-    if (alias.fallbacks.length > 0) fallbacks.push({ [alias.alias]: [...alias.fallbacks] });
+    if (alias.fallbacks.length > 0) chains.push([alias.alias, alias.fallbacks]);
   }
   const bound = new Set(model_list.map((m) => m.model_name));
+  // A chain names only aliases the proxy has: a fallback to an unbound alias (or one whose provider is off or gone) would fail
+  // the call it was meant to rescue.
+  const fallbacks: LiteLlmConfigDocument['fallbacks'] = [];
+  for (const [alias, chain] of chains) {
+    const live = chain.filter((name) => bound.has(name));
+    if (live.length > 0) fallbacks.push({ [alias]: live });
+  }
   return { model_list, fallbacks, deleted: ALL_ALIASES.filter((alias) => !bound.has(alias)) };
 }
 
@@ -93,16 +101,49 @@ export async function pushLlmConfig(
   const gateway = gatewayFromEnv();
   const pushed = gateway.enabled;
   if (pushed) await gateway.applyConfig(document);
+  // Which aliases are bound decides which keys exist and what each may call: a bot that waited for its alias gets its key now,
+  // and one whose alias was unbound loses access in the same job.
+  await syncWorkspaceKeys(ctx, tx, workspaceId);
   const counts = { providers: document.model_list.length, aliases: aliases.length, fallbacks: document.fallbacks.length };
-  ctx.audit.emit(tx, { type: 'llm.config.applied', workspaceId, ...counts, appliedAt: ctx.runtime.now().toISOString() });
+  await ctx.audit.emit(tx, { type: 'llm.config.applied', workspaceId, ...counts, appliedAt: ctx.runtime.now().toISOString() });
   return { ...counts, pushed };
 }
 
-/** The apply-config job: one workspace's config, pushed after any provider or alias change. */
+/**
+ * A short fingerprint of everything the pushed document is built from (providers, their secrets by id, aliases and their
+ * chains). Deleted rows change it too. Cheap, and it never reads a secret.
+ */
+export async function configFingerprint(tx: PluginTx, workspaceId: string): Promise<string> {
+  const res = await tx.query<{ fp: string }>(
+    `SELECT md5(
+       coalesce((SELECT string_agg(concat_ws('|', id, name, kind, api_base, api_version, secret_id, enabled, updated_at), ';' ORDER BY id)
+                   FROM app.llm_providers WHERE workspace_id = $1), '')
+       || '#' ||
+       coalesce((SELECT string_agg(concat_ws('|', alias, provider_id, model, array_to_string(fallbacks, ','), updated_at), ';' ORDER BY alias)
+                   FROM app.llm_aliases WHERE workspace_id = $1), '')
+     ) AS fp`,
+    [workspaceId],
+  );
+  return res.rows[0]?.fp ?? '';
+}
+
+/**
+ * The apply-config job: one workspace's config, pushed after any provider or alias change. A change committed while this job
+ * runs is not lost: the routes' dedupe key means an enqueue during a run joins the run that is already going, and that run may
+ * have read its rows before the change. So the job fingerprints the rows before and after its push, and when they differ it
+ * queues one follow-up (under its own key, since this job still holds the routes' key). The daily reconcile covers the last
+ * sliver — a change landing between the second fingerprint and the job's commit.
+ */
 export function registerConfigJob(ctx: PluginContext): void {
   ctx.jobs.register(APPLY_CONFIG_QUEUE, async (payload, tx, job) => {
     const { workspaceId } = WorkspacePayload.parse(payload);
+    const before = await configFingerprint(tx, workspaceId);
     const result = await pushLlmConfig(ctx, tx, workspaceId);
     if (!result.pushed) job.log.warn('gateway-llm: no LiteLLM URL is configured; the config was recorded but not pushed');
+    const after = await configFingerprint(tx, workspaceId);
+    if (after !== before) {
+      job.log.info('gateway-llm: the config changed while it was being pushed; pushing again');
+      await ctx.jobs.enqueue(tx, APPLY_CONFIG_QUEUE, { workspaceId }, { dedupeKey: `config:${workspaceId}:follow:${after}` });
+    }
   });
 }

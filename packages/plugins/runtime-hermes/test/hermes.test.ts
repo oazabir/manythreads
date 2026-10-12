@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
 import { parseBotMd } from '@manythreads/shared';
 import { afterAll, describe, expect, it } from 'vitest';
-import { createHermesProvider, type HermesRuntimeOptions } from '../src/hermes.ts';
+import { childEnv, createHermesProvider, sweepStaleProfiles, type HermesRuntimeOptions } from '../src/hermes.ts';
 
 // Starting and stopping a run (PLAN P5-10: "start and stop in the Hermes container"). `MANYTHREADS_HERMES_BIN` is whatever
 // runs a turn — the CLI in development, a container's entry point in a deployment — and these tests use the provider's own
@@ -47,7 +47,7 @@ const input = (overrides: Partial<BotRuntimeInput> = {}): BotRuntimeInput => {
     asker: { actorId: '44444444-4444-4444-4444-444444444444', personId: null, displayName: 'Nadia' },
     prompt: 'Nadia in #dev:\n\n@coder what changed?',
     thread: { channelId: '55555555-5555-5555-5555-555555555555', threadRootId: null },
-    endpoint: { runId: '77777777-7777-7777-7777-777777777777', url: 'https://threads.example/api/mcp/runs/run-token', token: 'run-token' },
+    endpoint: { runId: '77777777-7777-7777-7777-777777777777', url: 'https://threads.example/api/mcp/runs/77777777-7777-7777-7777-777777777777', token: 'run-token' },
     gateway: { baseUrl: 'http://litellm:4000', key: 'sk-bot-key' },
     limits: { runBudgetSeconds: 300, maxTurns: null, sessionMinutes: null },
     ...overrides,
@@ -222,5 +222,161 @@ describe('the hermes provider: one process per run', () => {
     const last = events[events.length - 1];
     expect(last).toMatchObject({ type: 'result', ok: false });
     expect(last?.type === 'result' ? last.error : '').toMatch(/was stopped \(SIGKILL\)/);
+  });
+});
+
+describe('the child process is a sandboxed guest of the server', () => {
+  const SECRETS: NodeJS.ProcessEnv = {
+    PATH: '/usr/bin',
+    HOME: '/home/hermes',
+    LANG: 'en_US.UTF-8',
+    LC_ALL: 'C',
+    TZ: 'UTC',
+    HERMES_MODEL_TIMEOUT: '30',
+    MANYTHREADS_KMS_KEY: 'kms-key-material',
+    MANYTHREADS_LITELLM_MASTER_KEY: 'sk-master-key',
+    MANYTHREADS_TEST_AUTH_TOKEN: 'test-auth-token',
+    DATABASE_URL: 'postgres://manythreads_owner:owner-password@db/manythreads',
+    MANYTHREADS_SYSTEM_DATABASE_URL: 'postgres://manythreads_system:system-password@db/manythreads',
+    AWS_SECRET_ACCESS_KEY: 'aws-secret',
+    GITHUB_TOKEN: 'ghp_not_for_the_agent',
+  };
+
+  it('inherits an allowlist of the parent environment and none of its secrets', async () => {
+    const h = harness({ env: SECRETS });
+    const handle = await h.provider.run(input(), scope([]));
+    const env = h.optionsOf().env ?? {};
+
+    expect(Object.keys(env).sort()).toEqual(['HERMES_HOME', 'HERMES_MODEL_TIMEOUT', 'HOME', 'LANG', 'LC_ALL', 'PATH', 'TZ']);
+    const everything = JSON.stringify(env);
+    for (const secret of ['kms-key-material', 'sk-master-key', 'test-auth-token', 'owner-password', 'system-password', 'aws-secret', 'ghp_not_for_the_agent']) {
+      expect(everything).not.toContain(secret);
+    }
+    h.children[0]!.ends(0);
+    await drain(handle.events);
+  });
+
+  it('childEnv is a pure allowlist', () => {
+    expect(childEnv({ PATH: '/bin', FOO: 'bar', LC_TIME: 'C', HERMES_X: '1', MANYTHREADS_KMS_KEY: 'k', EMPTY: undefined })).toEqual({
+      PATH: '/bin',
+      LC_TIME: 'C',
+      HERMES_X: '1',
+    });
+  });
+
+  it('writes the profile owner-only', async () => {
+    const h = harness();
+    const runInput = input();
+    const handle = await h.provider.run(runInput, scope([]));
+    const home = join(root, `run-1/coder-${runInput.endpoint!.runId}`);
+    expect(statSync(home).mode & 0o777).toBe(0o700);
+    expect(statSync(join(home, 'config.yaml')).mode & 0o777).toBe(0o600);
+    expect(statSync(join(home, 'SOUL.md')).mode & 0o777).toBe(0o600);
+    h.children[0]!.ends(0);
+    await drain(handle.events);
+  });
+
+  it('removes the profile when the process cannot even be spawned', async () => {
+    const dataRoot = join(root, 'spawn-throws');
+    const provider = createHermesProvider({
+      bin: 'hermes',
+      prefix: [],
+      dataRoot,
+      env: {},
+      killGraceSeconds: 1,
+      spawn: (() => {
+        throw new Error('spawn E2BIG');
+      }) as unknown as HermesRuntimeOptions['spawn'],
+    });
+    const runInput = input();
+    await expect(provider.run(runInput, scope([]))).rejects.toThrow('spawn E2BIG');
+    expect(existsSync(join(dataRoot, `coder-${runInput.endpoint!.runId}`))).toBe(false);
+  });
+
+  it('a child that closes its stdin early does not crash the server (EPIPE is the exit handler\'s to report)', async () => {
+    const h = harness();
+    const handle = await h.provider.run(input(), scope([]));
+    const child = h.children[0]!;
+    expect(() => child.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).not.toThrow();
+    child.ends(1);
+    const events = await drain(handle.events);
+    expect(events.at(-1)).toMatchObject({ type: 'result', ok: false });
+  });
+
+  it('stop() removes the profile even when the stream is never read', async () => {
+    const h = harness();
+    const runInput = input();
+    const handle = await h.provider.run(runInput, scope([]));
+    const home = join(root, `run-1/coder-${runInput.endpoint!.runId}`);
+    expect(existsSync(home)).toBe(true);
+    await handle.stop();
+    expect(existsSync(home)).toBe(false);
+    h.children[0]!.killed('SIGTERM');
+  });
+
+  it('a timeout kills the whole process group, not only the process it started', async () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'hermes-group-'));
+    const script = join(scratch, 'leader.mjs');
+    const pidFile = join(scratch, 'grandchild.pid');
+    writeFileSync(
+      script,
+      [
+        "import { spawn } from 'node:child_process';",
+        "import { writeFileSync } from 'node:fs';",
+        "const grandchild = spawn('sleep', ['60'], { stdio: 'ignore' });",
+        'writeFileSync(process.env.HERMES_TEST_PIDFILE, String(grandchild.pid));',
+        'setInterval(() => undefined, 1000);',
+        '',
+      ].join('\n'),
+    );
+    const provider = createHermesProvider({
+      bin: process.execPath,
+      prefix: [script],
+      dataRoot: join(scratch, 'profiles'),
+      env: { PATH: process.env['PATH'], HERMES_TEST_PIDFILE: pidFile },
+      killGraceSeconds: 1,
+    });
+    let grandchildPid = 0;
+    try {
+      const handle = await provider.run(input({ limits: { runBudgetSeconds: 1, maxTurns: null, sessionMinutes: null } }), scope([]));
+      await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8') !== '', 'the grandchild to start');
+      grandchildPid = Number(readFileSync(pidFile, 'utf8'));
+      expect(() => process.kill(grandchildPid, 0)).not.toThrow(); // alive
+      const events = await drain(handle.events);
+      expect(events.at(-1)).toMatchObject({ type: 'result', ok: false });
+      await until(() => {
+        try {
+          process.kill(grandchildPid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      }, 'the grandchild to die with its group');
+    } finally {
+      if (grandchildPid > 0) {
+        try {
+          process.kill(grandchildPid, 'SIGKILL');
+        } catch {
+          // already gone: the point of the test
+        }
+      }
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }, 15_000);
+});
+
+describe('profiles a dead server left behind', () => {
+  it('sweeps directories older than the limit and leaves a fresh one (and a missing root) alone', async () => {
+    const dataRoot = join(root, 'sweep');
+    mkdirSync(join(dataRoot, 'coder-old'), { recursive: true });
+    mkdirSync(join(dataRoot, 'coder-fresh'), { recursive: true });
+    writeFileSync(join(dataRoot, 'coder-old', 'config.yaml'), 'token');
+    const threeHoursAgo = new Date(Date.now() - 3 * 3_600_000);
+    utimesSync(join(dataRoot, 'coder-old'), threeHoursAgo, threeHoursAgo);
+
+    expect(await sweepStaleProfiles(dataRoot, 2 * 3_600_000)).toBe(1);
+    expect(existsSync(join(dataRoot, 'coder-old'))).toBe(false);
+    expect(existsSync(join(dataRoot, 'coder-fresh'))).toBe(true);
+    expect(await sweepStaleProfiles(join(root, 'does-not-exist'), 1)).toBe(0);
   });
 });

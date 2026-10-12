@@ -119,8 +119,8 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   ).rows[0]?.native ?? [];
 
   const row = await tx.query<{ id: string }>(
-    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb)
+    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[])
      ON CONFLICT (team_id, slug) DO UPDATE SET
        -- the display fields follow the definition (PLAN P5-05): the roster draws the row, never the file
        name           = EXCLUDED.name,
@@ -136,6 +136,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
        placement      = EXCLUDED.placement,
        triggers       = EXCLUDED.triggers,
        native         = EXCLUDED.native,
+       model_aliases  = EXCLUDED.model_aliases,
        updated_at     = now()
      RETURNING id`,
     [
@@ -152,6 +153,8 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       fm.handover?.mayTag ?? [],
       JSON.stringify(triggers),
       JSON.stringify(native),
+      // The aliases the definition may ask for, then its own fallbacks: what the gateway limits the bot's key to.
+      [...new Set([...(fm.model?.aliases ?? []), ...(fm.model?.fallbacks ?? [])])],
     ],
   );
   const botId = row.rows[0]!.id;

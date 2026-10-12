@@ -4,14 +4,15 @@ import { registerKeySubscriptions, registerReconcileJob, registerSyncKeyJob } fr
 import { registerLlmProvider } from './provider.ts';
 import { registerLlmRoutes } from './routes.ts';
 
-export { ALL_ALIASES, buildConfigDocument, pushLlmConfig, registerConfigJob, resolveModel } from './config.ts';
+export { ALL_ALIASES, buildConfigDocument, configFingerprint, pushLlmConfig, registerConfigJob, resolveModel } from './config.ts';
 export type { AliasRow, KeyRow, ProviderRow } from './rows.ts';
-export { keyPrefix, mintBotKey, newBotKey, revokeBotKey } from './keys.ts';
+export { botKeyModels, keyPrefix, mintBotKey, newBotKey, revokeBotKey, syncBotKey, syncWorkspaceKeys } from './keys.ts';
+export type { KeySyncResult } from './keys.ts';
 export { createLiteLlmClient, LiteLlmError } from './litellm.ts';
 export type { LiteLlmConfigDocument, LiteLlmTransport, LlmGateway } from './litellm.ts';
 export { APPLY_CONFIG_QUEUE, RECONCILE_QUEUE, SYNC_KEY_QUEUE, gatewayFromEnv } from './gateway.ts';
 export type { LlmProviderServices } from './provider.ts';
-export { createSlidingWindow, decide, loadEgress, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';
+export { createSlidingWindow, decide, loadEgress, loadFallbackChain, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';
 export type { EgressTarget, LlmCallDecision, LlmCallRequest, LlmScopeSnapshot, LlmSpendRecord, RateHit } from './limits.ts';
 export { inspect, scan } from './dlp.ts';
 export type { DlpFinding, DlpResult } from './dlp.ts';

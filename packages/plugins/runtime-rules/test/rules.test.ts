@@ -26,7 +26,7 @@ const input = (native: string[] | null, body = 'Rules, not prose.'): BotRuntimeI
     asker: { actorId: '44444444-4444-4444-4444-444444444444', personId: null, displayName: 'Nadia' },
     prompt: 'Nadia in #dev:\n\n@counter go',
     thread: { channelId: '55555555-5555-5555-5555-555555555555', threadRootId: '66666666-6666-6666-6666-666666666666' },
-    endpoint: { runId: '77777777-7777-7777-7777-777777777777', url: 'https://threads.example/api/mcp/runs/t', token: 't' },
+    endpoint: { runId: '77777777-7777-7777-7777-777777777777', url: 'https://threads.example/api/mcp/runs/77777777-7777-7777-7777-777777777777', token: 't' },
     gateway: null,
     limits: { runBudgetSeconds: null, maxTurns: null, sessionMinutes: null },
   };
@@ -70,7 +70,7 @@ describe('runtime-rules', () => {
     expect(events.at(-1)).toEqual({ type: 'result', text: '', ok: true, tokens: null });
   });
 
-  it('hands each rule the run’s trigger data and no model anywhere', async () => {
+  it('hands each rule exactly the shape of a strict `messages.post` and no model anywhere', async () => {
     const seen: Record<string, unknown>[] = [];
     const { scope: s } = scope(async (_capability, args) => {
       seen.push(args);
@@ -80,13 +80,9 @@ describe('runtime-rules', () => {
     await drain(handle.events);
     expect(seen).toEqual([
       {
-        trigger: 'mention',
-        prompt: 'Nadia in #dev:\n\n@counter go',
         channelId: '55555555-5555-5555-5555-555555555555',
+        body: 'Nadia in #dev:\n\n@counter go',
         threadRootId: '66666666-6666-6666-6666-666666666666',
-        botId: '11111111-1111-1111-1111-111111111111',
-        teamId: '22222222-2222-2222-2222-222222222222',
-        askerActorId: '44444444-4444-4444-4444-444444444444',
       },
     ]);
     expect(ruleInput(input(['tasks.claim']))).not.toHaveProperty('model');

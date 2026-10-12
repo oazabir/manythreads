@@ -17,22 +17,28 @@ fallback is a **URL per run**: `runtime-hermes` launches one Hermes invocation p
 this gateway maps that URL back to the run — which is the only way a tool call can be attributed after the fact.
 
 ```
-POST /api/mcp/runs          { pairingToken, trigger, askerActorId?, threadId?, ttlSeconds? }
-   → 201 { runId, botId, url, token, expiresAt }
-POST /api/mcp/runs/:token   { "jsonrpc": "2.0", "id": 1, "method": "tools/call", ... }
-POST /api/mcp/runs/:token/close   { "status": "done" | "failed" | "stopped" }
+POST /api/mcp/runs                { pairingToken, threadId?, ttlSeconds? }
+   → 201 { runId, botId, url, token, expiresAt }          url = <publicUrl>/api/mcp/runs/<runId>
+POST /api/mcp/runs/:runId          Authorization: Bearer <token>   { "jsonrpc": "2.0", "id": 1, "method": "tools/call", ... }
+POST /api/mcp/runs/:runId/close    Authorization: Bearer <token>   { "status": "done" | "failed" | "stopped" }
 ```
 
-All three are public in the session sense — the pairing token, then the run token, is the credential. Unknown, revoked,
-expired and already-closed tokens answer the same **401**, so a probe cannot tell which it hit. The token is shown once;
+All three are public in the session sense — the pairing token, then the run token, is the credential. **The run token is an
+`Authorization: Bearer` header and never part of the URL** (a path lands in proxy and access logs; `server/src/log-redact.ts`
+also masks anything that is not a run id in that position, as a backstop). The URL names the run and must agree with the
+token's run. Unknown, revoked, expired and already-closed tokens, a missing or non-Bearer header, and a run id that is not the
+token's all answer the same **401**, so a probe cannot tell which it hit. The token is shown once;
 `app.mcp_run_tokens` keeps its sha256 and nothing else, has no GRANT for `manythreads_app`, and is read and written only
 by the kernel's run service (below).
 
-What the mint does *not* trust: the bot, its actor row, its team and its workspace are read from the database, and an
-`askerActorId` must be a `person` actor of the same workspace who is on the run's team — otherwise the mint is a **400**
-with the reason. A trigger is one of `BOT.md`'s (`conversation`, `mention`, `routine`, `task_assigned`, `inbox`,
-`channel_message`, `webhook`); it is stored on the run and given to the broker, which is how `person:*` stays available
-to conversation and mention runs only.
+What the mint does *not* trust: the bot, its actor row, its team and its workspace are read from the database. **The caller
+chooses neither an asker nor a trigger** (the request schema is strict, so sending either is a 400). A pairing token proves
+"I am this bot's runtime", not "this person asked the bot something" — if it could name an asker, anyone holding a bot's
+token could open a run as any teammate and read their private channels and DMs, or claim `conversation` to be offered
+`person:*` tools. So a publicly minted run has **no asker** (its reads run as the bot: team-public data only) and the fixed
+trigger `webhook`, which never carries `person:*`. A conversation or mention run — with the person who asked — is opened
+only in-process by the router (`runtime-hermes`, `ctx.runs.open`), which reads the asker from the message it is answering.
+The run service still checks that an in-process asker is a `person` actor of the same workspace on the run's team.
 
 ## What a call runs as
 
@@ -81,8 +87,8 @@ a granted name nothing implements → `{ ok: false, code: 'unknown_tool' }`.
 
 Every hit a read answers with becomes a line in `app.run_source_log` (`sourceType` `message` or `file`, the hit's id,
 `scope` `channel` when the hit has a channel and `team` when it does not). The line is appended through the bots
-plugin's door (`app.run_source_log_append`, migration 0004): the position is computed there, as the system role,
-because a bot actor cannot see its own run's lines under the table's SELECT policy — the append policy's
+plugin's door (`app.run_source_log_append`, migration 0004, serialised per run by an advisory lock in 0007): the position is computed there, as the system role,
+because a bot actor cannot see its own run's lines under the table's SELECT policy — parallel tool calls take consecutive positions, and the append policy's
 `run_id = app.run_id()` is what keeps one run out of another's log. That is what the Answer surface's "Sources
 reached" and the retention rule — a run retains memory no wider than the narrowest source it read (SPEC §12.1) — read
 later. What the gateway does **not** log is the query itself or anything a stub touched, because neither is a source.
@@ -97,6 +103,6 @@ later. What the gateway does **not** log is the query itself or anything a stub 
 ## Who calls it
 
 `runtime-hermes` (P5-10) is the caller: it mints a run per invocation (`ctx.runs.open`, the same service this plugin's routes
-use), writes the URL and token into the Hermes profile it generates, and posts the run's reply through `messages.post` in the
+use), writes the URL and (as a bearer header) the token into the Hermes profile it generates, and posts the run's reply through `messages.post` in the
 run's bot transaction. The loader compiles a `BOT.md`'s `capabilities.native` into `app.capability_grants` (bots migration
 0005), so the tools a bot is offered come from its own file.

@@ -10,6 +10,7 @@ import type { BotRuntimeEvent, BotRuntimeHandle, BotRuntimeInput, BotRuntimeProv
 // What a rules run is, exactly:
 //  * its **rules** are the definition's `capabilities.native`, in the order the author wrote them — the single ordered list a
 //    BOT.md already has, so nothing new is invented to describe behaviour (a rules bot has no body-driven persona to render);
+//  * a rule's arguments are the trigger's message and its place (`channelId`, `body`, `threadRootId`); see `ruleInput`;
 //  * every rule is called through the run's scope, so it is authorized by the broker exactly like a Hermes tool call and its
 //    effect carries the run's bot;
 //  * the run answers with **no text**: a rules bot does not chat, its effects are the answer. The run row and its audit
@@ -34,16 +35,18 @@ export function rulesOf(input: BotRuntimeInput): string[] {
   return [...(input.definition.frontmatter.capabilities?.native ?? [])];
 }
 
-/** The run's input for a rule: what the trigger carries. The task substrate adds per-rule arguments in P6. */
+/**
+ * The arguments a rule is called with: the trigger's own message and where it was posted, in the shape the native
+ * capabilities take. `messages.post` is `strictObject({ channelId, body, threadRootId })`, so a rule gets exactly those
+ * three — extra keys (the trigger name, the bot, the team, the asker) would be refused as unknown keys and the run would fail
+ * on its first rule. The bot, the team and the run come from the run's own transaction, never from arguments. Per-rule
+ * arguments (a task id, a counter) arrive with the task substrate (P6).
+ */
 export function ruleInput(input: BotRuntimeInput): Record<string, unknown> {
   return {
-    trigger: input.trigger,
-    prompt: input.prompt,
     channelId: input.thread?.channelId ?? null,
+    body: input.prompt,
     threadRootId: input.thread?.threadRootId ?? null,
-    botId: input.bot.id,
-    teamId: input.bot.teamId,
-    askerActorId: input.asker?.actorId ?? null,
   };
 }
 

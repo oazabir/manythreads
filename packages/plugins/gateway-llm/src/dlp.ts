@@ -14,6 +14,37 @@ interface Detector {
   pattern: RegExp;
   /** A checksum the match must also pass (card numbers), so a 16-digit id is not treated as a card. */
   luhn?: boolean;
+  /**
+   * Where the finding really ends, when the pattern only finds its start (a PEM block: the header is a pattern, the body and
+   * footer are not). One locator per `scan`, so it may keep state to stay linear across many matches.
+   */
+  locator?: () => (text: string, start: number, matched: string) => number;
+}
+
+/** How much of a key block is redacted when its footer is missing or too far away to be the same block (a 4096-bit RSA key is ~3.3 KB). */
+const PEM_BODY_LIMIT = 16_384;
+const PEM_FOOTER = '-----END ';
+
+/**
+ * The end of a PEM private-key block that starts at `start`: the footer's closing dashes, or a bounded stretch after the
+ * header when there is no footer (a truncated paste still leaks its body). The search for the footer is `indexOf`, and the
+ * last answer is reused for any later header it still precedes, so a text full of headers with no footer is scanned once —
+ * not once per header (the shape that makes a naive `BEGIN[\s\S]*?END` quadratic).
+ */
+function pemLocator(): (text: string, start: number, matched: string) => number {
+  let searchedFrom = -1;
+  let footerAt = -1;
+  return (text, start, matched) => {
+    const bodyStart = start + matched.length;
+    if (searchedFrom < 0 || bodyStart < searchedFrom || (footerAt !== -1 && footerAt < bodyStart)) {
+      footerAt = text.indexOf(PEM_FOOTER, bodyStart);
+      searchedFrom = bodyStart;
+    }
+    const limit = Math.min(text.length, start + PEM_BODY_LIMIT);
+    if (footerAt === -1 || footerAt >= limit) return limit;
+    const close = text.indexOf('-----', footerAt + PEM_FOOTER.length);
+    return close !== -1 && close - footerAt <= 100 ? Math.min(close + 5, text.length) : Math.min(footerAt + PEM_FOOTER.length, text.length);
+  };
 }
 
 /**
@@ -21,10 +52,13 @@ interface Detector {
  * scanner becomes quadratic on hostile input), and every pattern is global so a text with several findings is covered.
  */
 const DETECTORS: readonly Detector[] = [
-  { name: 'private-key', pattern: /-----BEGIN [A-Z0-9 ]{1,40}PRIVATE KEY-----/g },
+  // The header finds the block; the locator extends the finding over its body and footer, so the key itself is redacted and not just its label.
+  { name: 'private-key', pattern: /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----/g, locator: pemLocator },
   {
     name: 'api-key',
-    pattern: /\b(?:sk-[A-Za-z0-9_-]{16,120}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,80}|xox[baprs]-[A-Za-z0-9-]{10,80})\b/g,
+    // `sk-` keys run long (`sk-proj-…` and `sk-ant-…` are 100–200 characters): up to 512, and no trailing boundary, so the tail
+    // of a longer key is never left behind after a cap that happened to fall mid-token.
+    pattern: /\bsk-[A-Za-z0-9_-]{16,512}|\b(?:AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,80}|xox[baprs]-[A-Za-z0-9-]{10,80})\b/g,
   },
   { name: 'bearer-token', pattern: /\bBearer[ \t]{1,4}[A-Za-z0-9._~+/=-]{20,400}/g },
   { name: 'credential-url', pattern: /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s:@/]{1,64}:[^\s:@/]{1,64}@/gi },
@@ -69,11 +103,12 @@ export function scan(text: string): DlpFinding[] {
   const found: DlpFinding[] = [];
   for (const detector of DETECTORS) {
     detector.pattern.lastIndex = 0;
+    const locate = detector.locator?.();
     for (const match of text.matchAll(detector.pattern)) {
       const value = match[0];
       const start = match.index ?? 0;
       if (detector.luhn && !luhnOk(value.replace(/[ -]/g, ''))) continue;
-      found.push({ rule: detector.name, start, end: start + value.length });
+      found.push({ rule: detector.name, start, end: locate ? locate(text, start, value) : start + value.length });
     }
   }
   found.sort((a, b) => a.start - b.start || b.end - a.end);

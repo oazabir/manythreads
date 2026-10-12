@@ -71,7 +71,7 @@ export interface BotRuntimeInput {
   /** What the run was asked, as one prompt: the message that named the bot, or the question a person sent. */
   prompt: string;
   thread: BotRuntimeThread | null;
-  /** The per-run endpoint; null for a runtime with no tools (a `rules` run that calls none). */
+  /** The per-run endpoint (`url` carries no credential: the run's token goes in an `Authorization: Bearer` header); null for a runtime with no tools. */
   endpoint: BotRuntimeEndpoint | null;
   gateway: BotRuntimeGateway | null;
   limits: BotRuntimeLimits;
@@ -129,6 +129,12 @@ export interface BotRuntimeProfile {
 export interface BotRuntimeProvider extends ProviderImpl {
   /** The `bots.runtime` value this provider runs: `hermes` or `rules`. */
   id: string;
+  /**
+   * The runtime talks to a model through the LLM gateway. The router then hands it the gateway and the bot's virtual key and
+   * asks the gateway's pre-call check (preset, DLP hook, budgets) before the run; a provider without it (`rules`) gets none
+   * of that and is never refused for a missing model, because it makes no model call.
+   */
+  usesGateway?: boolean;
   /** The profile a run of `input` executes in. */
   render(input: BotRuntimeInput): BotRuntimeProfile;
   /** Start one run. The caller stops it (and ends the run) when `events` ends or the run is too long. */

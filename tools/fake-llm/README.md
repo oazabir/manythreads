@@ -34,17 +34,23 @@ needs to be proven with no provider behind it, and for the test suite.
 
 ## What it implements
 
-| Endpoint | Answers |
+| Endpoint | Answers (as the real proxy does, observed on LiteLLM 1.105) |
 |---|---|
-| `POST /model/new` | `201`, or `400 "already exists"` when the model is there — the client turns that into `/model/update` |
-| `POST /model/update` | `200`, or `400` when the model is not there |
-| `POST /model/delete` | `200`, or `404` when the model is gone |
-| `POST /config/update` | `200`; keeps the `router_settings.fallbacks` it was sent |
-| `POST /key/generate` | `201`, or `400 "already exists"` for a key already minted |
+| `POST /model/new` | `200` and a new deployment — even for a `model_name` that exists (a second deployment, not an error); with `model_info.id`, a repeat of that id is a `500` |
+| `POST /model/update` | `200` by `model_info.id`; `400` "model not found" for an unknown id |
+| `POST /model/delete` | `{ id }` → `200`; unknown id → `400` (not 404); no id → `422` |
+| `GET /model/info`, `/v2/model/info` | the deployments (id, name), never a provider key |
+| `POST /config/update` | `200`; keeps `router_settings.fallbacks` — or `400` when started with `fallbacksLocked` (the config file names it) |
+| `POST /key/generate` | `200`; a key that exists is replaced; `models: []` is stored (and means every model) |
+| `POST /key/update`, `GET /key/info` | `200`; `404` for an unknown key |
 | `POST /key/delete` | `200`, or `404` when nothing was deleted |
 | `GET /health/readiness`, `/health/liveliness` | `200`, no key required — a probe has no credential to send |
 | `POST /chat/completions` | A canned completion with `usage` (12 prompt / 7 completion tokens). **No auth check** — it exists to prove a call path, not to be a provider |
-| `GET /state` | The models, keys, fallback chains and a call count, for a test to read back |
+| `GET /state` | The deployments, keys, fallback chains and a call count, for a test to read back |
+
+`startFakeLlm({ beforeRespond })` runs a hook after a request is recorded and before it is answered, so a test can change the
+world while the client is mid-push. The behaviours above are re-checked against the real proxy by
+`packages/plugins/gateway-llm/test/litellm.integration.test.ts` (env-gated).
 
 Management paths require `Authorization: Bearer <master key>` when a key is configured. An unknown path under `/model/`
 answers **401 before 404**, deliberately: telling an unauthenticated caller whether a route exists would be an
@@ -53,15 +59,15 @@ information leak.
 ## In vitest
 
 `test/fake-llm.test.ts` starts it on an ephemeral port and drives the real client from
-`packages/plugins/gateway-llm/src/litellm.ts` over HTTP: a config push, a second push that must take the
-"already exists" path, key mint/revoke twice over, a refused master key, and the disabled client with no URL.
+`packages/plugins/gateway-llm/src/litellm.ts` over HTTP: a config push, repeated pushes that must update in
+place and never add a deployment, a stale listing, key mint/update/revoke, a refused master key, and the disabled client with no URL.
 The state is inspected after each call, so the assertions are on what the client actually sent.
 
 ```ts
 const fake = await startFakeLlm({ masterKey: 'sk-fake' });
 const gateway = createLiteLlmClient({ baseUrl: fake.url, masterKey: 'sk-fake' });
 await gateway.applyConfig(doc);
-expect([...fake.state.models.keys()]).toEqual(['fast', 'smart']);
+expect([...fake.state.models.keys()].sort()).toEqual(['mt-fast', 'mt-smart']);
 await fake.close();
 ```
 

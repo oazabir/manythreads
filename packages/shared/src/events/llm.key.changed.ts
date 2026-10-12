@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BotId, WorkspaceId } from '../ids.ts';
 
 /**
- * A bot's gateway virtual key was minted or revoked (PLAN P5-06: "virtual key per bot, minted and deleted with it"). The
+ * A bot's gateway virtual key was minted, had its allowed aliases changed (`updated`) or was revoked (PLAN P5-06: "virtual key per bot, minted and deleted with it"). The
  * key itself is never in the event; `keyPrefix` is the non-secret head shown in the workspace page.
  */
 export const LlmKeyChangedEvent = z.object({
@@ -10,7 +10,7 @@ export const LlmKeyChangedEvent = z.object({
   schemaVersion: z.literal(1),
   workspaceId: WorkspaceId,
   botId: BotId,
-  action: z.enum(['minted', 'revoked']),
+  action: z.enum(['minted', 'updated', 'revoked']),
   /** The visible head of the key (e.g. `sk-abc…`), or null after a revoke. */
   keyPrefix: z.string().nullable(),
 });

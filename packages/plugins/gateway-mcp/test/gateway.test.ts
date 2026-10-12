@@ -23,14 +23,48 @@ let run: McpRunMintResponse;
 
 const hash = (token: string): Buffer => createHash('sha256').update(token, 'utf8').digest();
 
-const callRun = (token: string, body: unknown): Promise<{ status: number; body: unknown }> =>
-  world.call(null, 'POST', `/api/mcp/runs/${token}`, body);
+/** One request to the run's endpoint: the path names the run, the bearer header is the credential (and nothing else is). */
+const request = async (path: string, token: string | null, body: unknown): Promise<{ status: number; body: unknown }> => {
+  const res = await fetch(`${world.server.url}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token === null ? {} : { authorization: `Bearer ${token}` }) },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  return { status: res.status, body: text ? JSON.parse(text) : null };
+};
 
-const callRunUrl = (url: string, body: unknown): Promise<{ status: number; body: unknown }> =>
-  world.call(null, 'POST', new URL(url).pathname, body);
+const callRun = (runId: string, token: string | null, body: unknown) => request(`/api/mcp/runs/${runId}`, token, body);
+const callRunUrl = (target: { url: string; token: string }, body: unknown) => request(new URL(target.url).pathname, target.token, body);
 
-const mintRun = (body: Record<string, unknown>): Promise<{ status: number; body: unknown }> =>
+/** The public mint: a pairing token and nothing else the caller may choose about the run. */
+const mintRun = (body: Record<string, unknown> = {}): Promise<{ status: number; body: unknown }> =>
   world.call(null, 'POST', '/api/mcp/runs', { pairingToken, ...body });
+
+/**
+ * A conversation run for a person, opened the only way that is allowed to name an asker: in-process, through the run service
+ * (what the router does with `ctx.runs.open`). Its endpoint is the real server's, because the token's hash is in the database.
+ */
+async function openRunFor(askerActorId: string): Promise<McpRunMintResponse> {
+  const appPool = createAppPool(world.server.db.appUrl);
+  const systemPool = createSystemPool(world.server.db.systemUrl, 2);
+  try {
+    const registry = new CapabilityRegistry();
+    const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
+    const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
+    const { run, token } = await service.open({ botId: bot.botId, teamId, workspaceId: omar.workspaceId, trigger: 'conversation', askerActorId });
+    return McpRunMintResponse.parse({
+      runId: run.runId,
+      botId: run.botId,
+      url: `${world.server.url}/api/mcp/runs/${run.runId}`,
+      token,
+      expiresAt: run.expiresAt,
+    });
+  } finally {
+    await appPool.end();
+    await systemPool.end();
+  }
+}
 
 beforeAll(async () => {
   world = await createWorld();
@@ -83,31 +117,41 @@ afterAll(async () => {
 });
 
 describe('gateway-mcp endpoint', () => {
-  it('a pairing token opens one run and answers its URL', async () => {
-    const res = await mintRun({ trigger: 'conversation', askerActorId: nadia.actorId });
+  it('a pairing token opens one run with no asker, and the URL carries no credential', async () => {
+    const res = await mintRun();
     expect(res.status, JSON.stringify(res.body)).toBe(201);
-    run = McpRunMintResponse.parse(res.body);
-    expect(run.botId).toBe(bot.botId);
-    expect(run.url).toBe(`http://localhost:3000/api/mcp/runs/${run.token}`);
+    const minted = McpRunMintResponse.parse(res.body);
+    expect(minted.botId).toBe(bot.botId);
+    expect(minted.url).toBe(`http://localhost:3000/api/mcp/runs/${minted.runId}`);
+    expect(minted.url).not.toContain(minted.token);
     const row = await world.system(
       async (tx) =>
         (
-          await tx.query<{ status: string; trigger_type: string; asker_id: string; bot_id: string }>(
+          await tx.query<{ status: string; trigger_type: string; asker_id: string | null; bot_id: string }>(
             'SELECT status, trigger_type, asker_id, bot_id FROM app.bot_runs WHERE id = $1',
-            [run.runId],
+            [minted.runId],
           )
         ).rows[0]!,
     );
-    expect(row).toMatchObject({ status: 'running', trigger_type: 'conversation', asker_id: nadia.actorId, bot_id: bot.botId });
+    expect(row).toMatchObject({ status: 'running', trigger_type: 'webhook', asker_id: null, bot_id: bot.botId });
+  });
+
+  it('a person-run is opened in-process, and it is the person who asked who is recorded', async () => {
+    run = await openRunFor(nadia.actorId);
+    const row = await world.system(
+      async (tx) =>
+        (await tx.query<{ trigger_type: string; asker_id: string }>('SELECT trigger_type, asker_id FROM app.bot_runs WHERE id = $1', [run.runId])).rows[0]!,
+    );
+    expect(row).toMatchObject({ trigger_type: 'conversation', asker_id: nadia.actorId });
   });
 
   it('the endpoint speaks MCP: initialize, then only the granted tools', async () => {
-    const init = await callRunUrl(run.url, { jsonrpc: '2.0', id: 1, method: 'initialize' });
+    const init = await callRunUrl(run, { jsonrpc: '2.0', id: 1, method: 'initialize' });
     expect(init.status, JSON.stringify(init.body)).toBe(200);
     expect((init.body as { result: { protocolVersion: string; serverInfo: { name: string } } }).result.protocolVersion).toBe('2024-11-05');
     expect((init.body as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe('manythreads');
 
-    const list = await callRunUrl(run.url, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    const list = await callRunUrl(run, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
     const tools = (list.body as { result: { tools: Array<{ name: string; description: string }> } }).result.tools;
     const names = tools.map((t) => t.name);
     expect(names).toContain('messages.search');
@@ -122,7 +166,7 @@ describe('gateway-mcp endpoint', () => {
   });
 
   it('a read answers hits and writes them into the run source log', async () => {
-    const res = await callRunUrl(run.url, {
+    const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 3,
       method: 'tools/call',
@@ -140,7 +184,7 @@ describe('gateway-mcp endpoint', () => {
   });
 
   it('a tool with no grant is refused and the denial is audited', async () => {
-    const res = await callRunUrl(run.url, {
+    const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 4,
       method: 'tools/call',
@@ -164,7 +208,7 @@ describe('gateway-mcp endpoint', () => {
   });
 
   it('a grant that needs approval stops before the page is written', async () => {
-    const res = await callRunUrl(run.url, {
+    const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 5,
       method: 'tools/call',
@@ -179,7 +223,7 @@ describe('gateway-mcp endpoint', () => {
   });
 
   it('a path the bot may never write is refused by the guard, and the handler never runs', async () => {
-    const res = await callRunUrl(run.url, {
+    const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 7,
       method: 'tools/call',
@@ -193,7 +237,7 @@ describe('gateway-mcp endpoint', () => {
   });
 
   it('knowledge.search answers an empty result and the reason, never invented content', async () => {
-    const res = await callRunUrl(run.url, {
+    const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 6,
       method: 'tools/call',
@@ -204,21 +248,48 @@ describe('gateway-mcp endpoint', () => {
   });
 
   it('a forged pairing token cannot open a run', async () => {
-    const res = await world.call(null, 'POST', '/api/mcp/runs', { pairingToken: 'forged', trigger: 'conversation' });
+    const res = await world.call(null, 'POST', '/api/mcp/runs', { pairingToken: 'forged' });
     expect(res.status).toBe(401);
   });
 
-  it('an asker who is not on the team is refused, with the reason', async () => {
-    const res = await mintRun({ trigger: 'conversation', askerActorId: sameera.actorId });
-    expect(res.status).toBe(400);
-    expect((res.body as { error: { code: string } }).error.code).toBe('validation_failed');
-    expect((res.body as { error: { message: string } }).error.message).toContain('not a person of that team');
+  it('a pairing-token holder cannot choose the asker or the trigger: the public mint refuses both', async () => {
+    const before = await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.bot_runs WHERE bot_id = $1', [bot.botId])).rows[0]!.n);
+    // A teammate's actor id (a real asker would let the run read as them), and a trigger that unlocks person:* scopes.
+    for (const forged of [
+      { trigger: 'conversation', askerActorId: nadia.actorId },
+      { askerActorId: nadia.actorId },
+      { trigger: 'mention' },
+    ]) {
+      const res = await mintRun(forged);
+      expect(res.status, JSON.stringify(forged)).toBe(400);
+    }
+    const after = await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.bot_runs WHERE bot_id = $1', [bot.botId])).rows[0]!.n);
+    expect(after).toBe(before); // nothing was opened on the way
+  });
+
+  it('the token lives in the Authorization header only: not in the path, not for another run, not absent', async () => {
+    const other = McpRunMintResponse.parse((await mintRun()).body);
+    const tools = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+    expect((await callRun(other.runId, other.token, tools)).status).toBe(200);
+    // the old shape: the token as the path segment
+    expect((await callRun(other.token, other.token, tools)).status).toBe(401);
+    expect((await callRun(other.token, null, tools)).status).toBe(401);
+    // no header, a malformed one, and one run's token against another run's URL
+    expect((await callRun(other.runId, null, tools)).status).toBe(401);
+    expect((await callRun(run.runId, other.token, tools)).status).toBe(401);
+    expect((await callRun(other.runId, run.token, tools)).status).toBe(401);
+    const res = await fetch(`${world.server.url}/api/mcp/runs/${other.runId}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Basic ${other.token}` },
+      body: JSON.stringify(tools),
+    });
+    expect(res.status).toBe(401);
   });
 
   it('a forged, expired or closed run token is one 401 for all three', async () => {
-    expect((await callRun('forged', { jsonrpc: '2.0', id: 7, method: 'tools/list' })).status).toBe(401);
+    expect((await callRun(run.runId, 'forged', { jsonrpc: '2.0', id: 7, method: 'tools/list' })).status).toBe(401);
 
-    const stale = await mintRun({ trigger: 'conversation', askerActorId: nadia.actorId });
+    const stale = await mintRun();
     const staleRun = McpRunMintResponse.parse(stale.body);
     // Move the whole row into the past: the CHECK (`expires_at > created_at`) refuses to end a live token in place.
     await world.system((tx) =>
@@ -226,12 +297,12 @@ describe('gateway-mcp endpoint', () => {
         hash(staleRun.token),
       ]),
     );
-    expect((await callRunUrl(staleRun.url, { jsonrpc: '2.0', id: 8, method: 'tools/list' })).status).toBe(401);
+    expect((await callRunUrl(staleRun, { jsonrpc: '2.0', id: 8, method: 'tools/list' })).status).toBe(401);
 
-    const closed = await world.call(null, 'POST', `${new URL(run.url).pathname}/close`, { status: 'done' });
+    const closed = await request(`${new URL(run.url).pathname}/close`, run.token, { status: 'done' });
     expect(closed.status, JSON.stringify(closed.body)).toBe(200);
     expect(closed.body).toEqual({ ok: true, closed: true });
-    expect((await callRunUrl(run.url, { jsonrpc: '2.0', id: 9, method: 'tools/list' })).status).toBe(401);
+    expect((await callRunUrl(run, { jsonrpc: '2.0', id: 9, method: 'tools/list' })).status).toBe(401);
     const ended = await world.system(
       async (tx) => (await tx.query<{ status: string; ended_at: Date | null }>('SELECT status, ended_at FROM app.bot_runs WHERE id = $1', [run.runId])).rows[0]!,
     );
@@ -280,6 +351,31 @@ describe('ctx.runs service', () => {
       expect(await service.close(opened.run.runId, 'stopped')).toBe(true);
       expect(await service.resolve(hash(opened.token))).toBeNull();
       expect(await service.close(opened.run.runId, 'done')).toBe(false);
+    } finally {
+      await appPool.end();
+      await systemPool.end();
+    }
+  });
+
+  it('parallel source-log appends of one run take consecutive positions (no max(seq)+1 race)', async () => {
+    const appPool = createAppPool(world.server.db.appUrl, 12);
+    const systemPool = createSystemPool(world.server.db.systemUrl, 2);
+    try {
+      const registry = new CapabilityRegistry();
+      const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
+      const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
+      const opened = await service.open({ botId: bot.botId, teamId, workspaceId: omar.workspaceId, trigger: 'conversation', askerActorId: nadia.actorId });
+      // Each append is a transaction of its own, as a model's parallel tool calls are: without the per-run lock they all read the
+      // same maximum and all but one die on the (run_id, seq) key.
+      const seqs = await Promise.all(
+        Array.from({ length: 10 }, (_, i) =>
+          service.asBot(opened.run, (tx) => service.logSource(tx, { sourceType: 'page', sourceRef: `pages/parallel-${i}.md`, scope: 'team' })),
+        ),
+      );
+      expect([...seqs].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      const stored = await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.run_source_log WHERE run_id = $1', [opened.run.runId])).rows[0]!.n);
+      expect(stored).toBe(10);
+      await service.close(opened.run.runId, 'done');
     } finally {
       await appPool.end();
       await systemPool.end();

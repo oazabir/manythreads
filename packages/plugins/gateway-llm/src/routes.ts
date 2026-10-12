@@ -139,7 +139,10 @@ export function registerLlmRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       const { providerId } = LlmProviderPathParams.parse(req.params);
       const before = await requireProvider(tx, providerId);
-      // The aliases keep their rows; the FK sets provider_id null, so a bare model string survives and a prefixed one is skipped.
+      // The provider's aliases go with it. Left bound to nothing (the FK would null their provider), they would be pushed to the
+      // proxy as models with no key, and every call to them would fail at the provider instead of being refused here. The admin
+      // binds them again to another provider; until then the alias is unbound and its bots' keys stop covering it.
+      await tx.query('DELETE FROM app.llm_aliases WHERE provider_id = $1', [providerId]);
       await tx.query('DELETE FROM app.llm_providers WHERE id = $1', [providerId]);
       if (before.secret_id) await ctx.secrets.delete(tx, before.secret_id);
       await pushConfig(ctx, tx);

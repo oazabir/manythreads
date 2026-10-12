@@ -130,12 +130,15 @@ export function decide(input: {
   settings: LlmWorkspaceSettings;
   /** Where the alias would reach, or null when the alias is not bound at all. */
   egress: EgressTarget | null;
+  /** The alias's fallback chain (transitive, bound aliases only), each with where it would reach. Absent means no fallbacks. */
+  fallbacks?: readonly { alias: string; egress: EgressTarget | null }[];
   dlp: DlpResult;
   /** The limits that apply to this call, any order; `decide` sorts them narrowest-first. */
   limits: readonly LlmScopeSnapshot[];
   rate: RateHit;
 }): LlmCallDecision {
   const { settings, alias, sessionId, egress, dlp } = input;
+  const fallbacks = input.fallbacks ?? [];
   const base = {
     outcome: dlp.outcome,
     preset: settings.preset,
@@ -146,29 +149,37 @@ export function decide(input: {
     spentUsd: null as number | null,
   };
 
-  // 1. The preset's egress rule, before anything reads a prompt (SPEC §10.1: air-gapped runs the local alias only).
-  if (settings.preset === 'air-gapped' && alias !== 'local') {
-    return {
-      ...base,
-      allowed: false,
-      reason: 'preset',
-      outcome: 'block',
-      message: `The air-gapped preset allows only the local alias, and this call asks for ${alias}.`,
-    };
-  }
-  if (settings.preset === 'strict-egress' && !(egress?.local ?? false)) {
-    const host = egress?.host ?? null;
-    const allowed = host !== null && settings.egressAllowlist.some((entry) => entry.toLowerCase() === host.toLowerCase());
-    if (!allowed) {
+  // 1. The preset's egress rule, before anything reads a prompt (SPEC §10.1: air-gapped runs the local alias only). The rule
+  // holds for the whole fallback chain: the proxy retries a failed call on the alias's fallbacks, so a chain that ends in a
+  // hosted model reaches the internet even when its first link is local.
+  for (const link of [{ alias: alias as string, egress }, ...fallbacks]) {
+    if (settings.preset === 'air-gapped' && link.alias !== 'local') {
       return {
         ...base,
         allowed: false,
         reason: 'preset',
         outcome: 'block',
-        message: host
-          ? `The strict-egress preset does not allow ${host}; an admin must add it to the workspace's allowlist.`
-          : `The strict-egress preset cannot tell where the ${alias} alias goes; an admin must give its provider a base URL.`,
+        message:
+          link.alias === alias
+            ? `The air-gapped preset allows only the local alias, and this call asks for ${alias}.`
+            : `The air-gapped preset allows only the local alias, and ${alias} falls back to ${link.alias}.`,
       };
+    }
+    if (settings.preset === 'strict-egress' && !(link.egress?.local ?? false)) {
+      const host = link.egress?.host ?? null;
+      const allowed = host !== null && settings.egressAllowlist.some((entry) => entry.toLowerCase() === host.toLowerCase());
+      if (!allowed) {
+        const via = link.alias === alias ? alias : `${link.alias} (a fallback of ${alias})`;
+        return {
+          ...base,
+          allowed: false,
+          reason: 'preset',
+          outcome: 'block',
+          message: host
+            ? `The strict-egress preset does not allow ${host}; an admin must add it to the workspace's allowlist.`
+            : `The strict-egress preset cannot tell where the ${via} alias goes; an admin must give its provider a base URL.`,
+        };
+      }
     }
   }
 
@@ -268,6 +279,35 @@ export async function loadEgress(tx: PluginTx, workspaceId: string, alias: LlmAl
     host = prefix ? (MODEL_PREFIX_HOSTS[prefix] ?? null) : null;
   }
   return { host, local: host !== null && LOCAL_HOSTS.has(host) };
+}
+
+/**
+ * The aliases a call for `alias` can end up on when the proxy retries it: its fallbacks, their fallbacks and so on (at most
+ * the eight aliases there are), each with where it would reach. Only bound aliases are listed — a fallback nobody bound
+ * cannot be called, so it cannot egress anything. The alias itself is not in the list.
+ */
+export async function loadFallbackChain(
+  tx: PluginTx,
+  workspaceId: string,
+  alias: string,
+): Promise<{ alias: string; egress: EgressTarget | null }[]> {
+  const seen = new Set<string>([alias]);
+  const queue: string[] = [alias];
+  const chain: { alias: string; egress: EgressTarget | null }[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    const row = (
+      await tx.query<{ fallbacks: string[] }>('SELECT fallbacks FROM app.llm_aliases WHERE workspace_id = $1 AND alias = $2', [workspaceId, current])
+    ).rows[0];
+    for (const next of row?.fallbacks ?? []) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+      const egress = await loadEgress(tx, workspaceId, next as LlmAliasName);
+      if (egress !== null) chain.push({ alias: next, egress });
+    }
+  }
+  return chain;
 }
 
 /**
@@ -475,12 +515,13 @@ export async function preflight(
   const now = ctx.runtime.now();
   const settings = await loadSettings(tx, request.workspaceId);
   const egress = await loadEgress(tx, request.workspaceId, request.alias);
+  const fallbacks = await loadFallbackChain(tx, request.workspaceId, request.alias);
   const dlp = inspect(request.text, settings.preset);
   const limits = await loadLimits(tx, request.workspaceId, request, now);
-  const decision = decide({ alias: request.alias, sessionId: request.sessionId, settings, egress, dlp, limits, rate });
+  const decision = decide({ alias: request.alias, sessionId: request.sessionId, settings, egress, fallbacks, dlp, limits, rate });
 
   if (!decision.allowed && (decision.reason === 'budget' || decision.reason === 'rate')) {
-    ctx.audit.emit(tx, {
+    await ctx.audit.emit(tx, {
       type: 'llm.budget.exceeded',
       workspaceId: request.workspaceId,
       scope: decision.limit?.scope ?? 'workspace',
@@ -497,7 +538,7 @@ export async function preflight(
       at: now.toISOString(),
     });
   } else if (decision.outcome !== 'allow' || !decision.allowed) {
-    ctx.audit.emit(tx, {
+    await ctx.audit.emit(tx, {
       type: 'llm.guard.decided',
       workspaceId: request.workspaceId,
       botId: request.botId,

@@ -11,7 +11,8 @@ it is free, fast and repeatable (`pnpm test:runtime-rules`, PLAN P6-10, where th
   `BOT.md` already has, so this runtime invents no syntax of its own (`rulesOf`). A rules bot has no body-driven persona to
   render, and its profile is the run's rules as `rules.json`, written for the same reason a Hermes profile is: so `render` is
   honest about being a profile and can be asserted in a test.
-* Every rule is called with the run's own trigger data (`ruleInput`: trigger, prompt, channel, thread root, bot, team, asker)
+* Every rule is called with the trigger's message and its place (`ruleInput`: `channelId`, `body` = the prompt, `threadRootId` —
+  exactly the strict shape of `messages.post`; the bot, team and run come from the run's own transaction, never from arguments)
   through the run's scope — the same door a Hermes tool call goes through — so a call is authorized by the broker and its
   effect carries the run's bot. Per-rule arguments arrive with the task substrate (P6), which is what will pass a task id.
 * The run answers with **no text**: a rules bot does not chat. Its effects are the answer, and the run row, its audit events and

@@ -39,7 +39,7 @@ const input = (overrides: Partial<BotRuntimeInput> = {}): BotRuntimeInput => {
     asker: { actorId: '44444444-4444-4444-4444-444444444444', personId: null, displayName: 'Nadia' },
     prompt: 'Nadia in #dev:\n\n@coder what changed?',
     thread: { channelId: '55555555-5555-5555-5555-555555555555', threadRootId: '66666666-6666-6666-6666-666666666666' },
-    endpoint: { runId: '77777777-7777-7777-7777-777777777777', url: 'https://threads.example/api/mcp/runs/run-token', token: 'run-token' },
+    endpoint: { runId: '77777777-7777-7777-7777-777777777777', url: 'https://threads.example/api/mcp/runs/77777777-7777-7777-7777-777777777777', token: 'run-token' },
     gateway: { baseUrl: 'http://litellm:4000', key: 'sk-bot-key' },
     limits: { runBudgetSeconds: 300, maxTurns: null, sessionMinutes: 45 },
     ...overrides,
@@ -68,11 +68,19 @@ describe('renderProfile', () => {
       },
       mcp_servers: {
         manythreads: {
-          url: 'https://threads.example/api/mcp/runs/run-token',
+          url: 'https://threads.example/api/mcp/runs/77777777-7777-7777-7777-777777777777',
           headers: { Authorization: 'Bearer run-token' },
         },
       },
     });
+  });
+
+  it('puts the run token in the Authorization header and never in the endpoint URL', () => {
+    const yaml = parseYaml(renderConfig(input())) as { mcp_servers: { manythreads: { url: string; headers: Record<string, string> } } };
+    const server = yaml.mcp_servers.manythreads;
+    expect(server.headers['Authorization']).toBe('Bearer run-token');
+    expect(server.url).not.toContain('run-token');
+    expect(server.url).toMatch(/\/api\/mcp\/runs\/77777777-7777-7777-7777-777777777777$/);
   });
 
   it('carries no credential but the bot key and the run token', () => {

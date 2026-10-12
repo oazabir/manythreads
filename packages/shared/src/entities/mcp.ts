@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, BotId, RunId } from '../ids.ts';
-import { BotRunTrigger } from './bot.ts';
+import { BotId, RunId } from '../ids.ts';
 
 // The MCP gateway (SPEC §11, PLAN P5-09). One endpoint per run: `runtime-hermes` launches one Hermes
 // invocation per conversation run against a URL it was handed, so a tool call can always be resolved back to
@@ -85,16 +84,14 @@ export const McpToolCallParams = z.strictObject({
 export type McpToolCallParams = z.infer<typeof McpToolCallParams>;
 
 /**
- * What the runtime posts to open a run: the bot's pairing token (the only credential it holds, SPEC §7.6), why
- * the run happens, and — for a `conversation` or `mention` run — the person who asked. `trigger` is the BOT.md
- * trigger (SPEC §7.2); a `person:*` capability is offered only to conversation and mention runs, which the
- * broker enforces from this field.
+ * What a runtime posts to open a run: the bot's pairing token (the only credential it holds, SPEC §7.6) and nothing that
+ * names a person. A pairing token proves the caller is this bot's runtime, not that anyone asked the bot anything, so the
+ * mint takes no asker and no trigger: the run it opens has no asker and the fixed trigger `webhook` (its reads see what the
+ * bot itself sees, and `person:*` is never offered). Conversation and mention runs are opened in-process by the router,
+ * which reads the asker from the message it answers. Strict: a client that sends `askerActorId` or `trigger` is refused.
  */
 export const McpRunMintRequest = z.strictObject({
   pairingToken: z.string().min(1).max(500),
-  trigger: BotRunTrigger,
-  /** The asking person's actor id; absent for scheduled, inbound and channel runs. */
-  askerActorId: ActorId.optional(),
   /** The thread the run answers in, when it already has one. */
   threadId: z.uuid().optional(),
   ttlSeconds: z.number().int().min(30).max(MCP_RUN_TTL_MAX_SECONDS).default(MCP_RUN_TTL_SECONDS),
@@ -103,7 +100,8 @@ export type McpRunMintRequest = z.infer<typeof McpRunMintRequest>;
 
 /**
  * The mint's answer: where the run's endpoint is and the one credential for it. `token` is shown once (the
- * database keeps its sha256), the runtime puts it in the URL and never logs the URL.
+ * database keeps its sha256); the runtime sends it as `Authorization: Bearer <token>`. `url` names the run and carries no
+ * credential, so it can be logged.
  */
 export const McpRunMintResponse = z.strictObject({
   runId: RunId,

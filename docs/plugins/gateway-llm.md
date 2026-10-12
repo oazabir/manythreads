@@ -38,8 +38,27 @@ fallbacks:
 ```
 
 A `model` that already contains `/` is used as written; otherwise the provider's kind supplies the prefix (`openai`,
-`anthropic`, `azure`, `bedrock`, `gemini`, `ollama`). A disabled provider's aliases are pushed as deletions, and because the
-alias set is closed the plugin always knows the whole universe, so a stale model cannot linger.
+`anthropic`, `azure`, `bedrock`, `gemini`, `ollama`). A disabled provider's aliases are not pushed, and because the
+alias set is closed the plugin always knows the whole universe, so a stale model cannot linger. Deleting a provider deletes its
+aliases with it (a model with no key would be pushed and fail at the provider); a fallback chain names only aliases the proxy
+has.
+
+### What the real proxy does (LiteLLM 1.105, `main-stable`)
+
+Checked against the container, and kept honest by the env-gated `test/litellm.integration.test.ts`:
+
+* `POST /model/new` of an existing `model_name` is a **200 that adds a second deployment** (the proxy then load-balances across
+  both) — it is not "already exists". The client therefore gives every deployment an id of its own (`mt-<alias>`), lists
+  `GET /model/info`, **updates by id** (`POST /model/update` with `model_info.id`) or creates, and deletes any other deployment
+  under an alias name (an unbound alias, a deleted provider's model, a duplicate an older push left) with `POST /model/delete
+  { id }`. Repeating a push changes nothing.
+* Delete of an unknown id is a **400** ("not found in db"), not 404; update of an unknown id is a 400; a repeated explicit id on
+  create is a 500 (the client turns it into an update).
+* `POST /config/update` refuses (400) any `router_settings` key the config *file* names, so `deploy/compose/litellm.yaml` has no
+  `router_settings`: the fallback chains are the database's.
+* A key's `models: []` means **every model**: the client refuses to send an empty list. `/key/generate` of an existing key is a 200;
+  `/key/update` and `/key/delete` of an unknown key are 404 (and `/key/info` answers from a cache for a moment after a delete).
+* Errors echo request fields, so `LiteLlmError` scrubs `sk-…`, key-ish fields, bearer tokens and long token-looking runs.
 
 ## Routes
 
@@ -56,7 +75,7 @@ Workspace-admin only, mounted under `/api/workspace/llm`:
 | GET/PUT | `/settings` |
 | GET | `/spend` |
 
-Every write commits the row and enqueues `gateway-llm.apply-config` in the same transaction; the job reads the rows back,
+Every write commits the row and enqueues `gateway-llm.apply-config` in the same transaction (deduped while one is ready or running; the job fingerprints its rows before and after the push and queues one follow-up when they changed meanwhile, so an edit made mid-push is not lost); the job reads the rows back,
 decrypts the keys (a system transaction — `ctx.secrets.get` refuses any other) and pushes the document. The response says
 whether a provider has a stored secret, never the secret.
 
@@ -65,16 +84,19 @@ The web page (`screens/admin/llm`) and the onboarding step that first fills this
 
 ## Keys: minted with the bot, deleted with it
 
-- `bots.bot.loaded` → enqueue `gateway-llm.sync-key` `{ action: 'mint' }`.
+- `bots.bot.loaded` → enqueue `gateway-llm.sync-key` `{ action: 'mint' }` (deduped per definition sha, so an edit made while an earlier sync runs is not swallowed).
 - `bots.bot.removed` → enqueue `gateway-llm.sync-key` `{ action: 'revoke' }`.
 
 The subscriber only enqueues: an event subscriber runs inside the outbox transaction, and a network call has no business
 there. The job mints a caller-chosen key (`sk-` + 24 random bytes, base64url), stores it through `ctx.secrets`, records
-`key_prefix`, and registers it with the proxy (`POST /key/generate`) limited to the workspace's bound aliases. Revoking goes
+`key_prefix`, and registers it with the proxy (`POST /key/generate`) limited to **the aliases the bot's own `BOT.md` names** (`model.aliases` and
+`model.fallbacks`, kept on `bots.model_aliases` by the loader) that the workspace has bound, plus their fallback chains — never
+the whole workspace set, and never an empty list (a bot with nothing bound has no key until one is: every config push re-syncs
+the workspace's keys, `/key/update` when the set moved, a revoke when it emptied; `llm_keys.models` remembers what the proxy was told). Revoking goes
 the other way: `POST /key/delete`, then the secret and the row go. Both are idempotent, so an event replay or a job retry
 changes nothing twice.
 
-A daily reconcile (`gateway-llm.reconcile`, 03:23 UTC) mints what is missing, revokes what is orphaned — a bot deleted while
+A daily reconcile (`gateway-llm.reconcile`, 03:23 UTC) syncs every active hermes bot's key (mint, update or revoke), revokes what is orphaned — a bot deleted while
 its job was dead-lettered leaves a key behind — and re-queues the config push. That is what makes the guarantee self-healing.
 
 `provider.llm` is how a runtime gets the key: `ctx.providers.get<LlmProviderServices>('llm').botKey(tx, botId)`, in a system
@@ -89,7 +111,7 @@ budget counts the whole session, so the session id is its window. Rate limits ar
 `provider.llm.preflight(tx, request)` is the gate, and a runtime calls it before each model call. It answers a decision —
 never an exception — so a run can log it and stop cleanly:
 
-1. the preset's egress rule (`air-gapped` allows the `local` alias only; `strict-egress` needs the target host on the
+1. the preset's egress rule, over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only; `strict-egress` needs the target host on the
    workspace's allowlist; a local endpoint is never egress and needs no entry),
 2. the pre-call DLP hook (below),
 3. every applicable limit, narrowest scope first: session → bot → team → workspace, and at each scope the budget before
@@ -120,8 +142,8 @@ P5-08 and this hook read one definition:
 | `air-gapped` | the `local` alias only | `redact` |
 | `customer-facing` | any configured provider | `block` |
 
-The hook (`src/dlp.ts`) is plain string work with a bounded quantifier per detector: a private-key header, an API key
-(`sk-…`, `AKIA…`, `ghp_…`, `xox…`), a `Bearer` token, a URL with credentials in it, and a card number (13–19 digits with
+The hook (`src/dlp.ts`) is plain string work with a bounded quantifier per detector: a private-key block (header **through footer**, a truncated one up to a bound, a text of footerless headers scanned once), an API key
+(`sk-…` up to 512 characters, so `sk-proj-…` is whole, `AKIA…`, `ghp_…`, `xox…`), a `Bearer` token, a URL with credentials in it, and a card number (13–19 digits with
 separators, confirmed by Luhn so a long id is not a card). `redact` answers the text with each span replaced by
 `[redacted:<rule>]` and the call continues; `block` refuses it and the text is unchanged. Rules are names, never the
 matched text: the event, the decision and the audit line carry `api-key`, not the key.

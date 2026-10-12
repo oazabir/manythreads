@@ -9,12 +9,23 @@ describe('log redaction (L4)', () => {
     expect(redactUrl('/api/teams/eng/repo/blob?path=pages/mta.md')).toBe('/api/teams/eng/repo/blob?path=pages/mta.md');
   });
 
+  it('keeps a run id in an MCP path and redacts anything else there (a token must never sit in a logged path)', () => {
+    const runId = '01968f3a-7d52-7a11-9c3e-4f1a2b3c4d5e';
+    expect(redactUrl(`/api/mcp/runs/${runId}`)).toBe(`/api/mcp/runs/${runId}`);
+    expect(redactUrl(`/api/mcp/runs/${runId}/close`)).toBe(`/api/mcp/runs/${runId}/close`);
+    expect(redactUrl('/api/mcp/runs/8Zq1_oldStyleTokenInThePath0123456789abcdef')).toBe('/api/mcp/runs/[redacted]');
+    expect(redactUrl('/api/mcp/runs/8Zq1_oldStyleTokenInThePath0123456789abcdef/close?x=1')).toBe('/api/mcp/runs/[redacted]/close?x=1');
+    expect(redactUrl('/api/mcp/runs')).toBe('/api/mcp/runs');
+  });
+
   it('is linear on hostile input', () => {
     const hostile = `/${'~mta.'.repeat(60_000)}`;
     const t0 = performance.now();
     redactUrl(hostile);
     redactUrl(`/~mta.${'a'.repeat(300_000)}`);
-    expect(performance.now() - t0).toBeLessThan(200);
+    redactUrl(`/api/mcp/runs/${'/api/mcp/runs/'.repeat(30_000)}`);
+    redactUrl(`/api/mcp/runs/${'a'.repeat(300_000)}`);
+    expect(performance.now() - t0).toBeLessThan(400);
   });
 
   it('wraps `true` and option objects, and leaves a ready-made logger alone', () => {

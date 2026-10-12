@@ -132,6 +132,25 @@ describe('decide', () => {
     expect(refused.message).toContain('local alias');
   });
 
+  it('judges the whole fallback chain: a local first link does not excuse a hosted fallback', () => {
+    const air = settings({ preset: 'air-gapped' });
+    const local = { host: 'localhost', local: true };
+    expect(call({ settings: air, alias: 'local', egress: local, fallbacks: [] }).allowed).toBe(true);
+    const viaFallback = call({ settings: air, alias: 'local', egress: local, fallbacks: [{ alias: 'smart', egress: { host: 'api.openai.com', local: false } }] });
+    expect(viaFallback.allowed).toBe(false);
+    expect(viaFallback.reason).toBe('preset');
+    expect(viaFallback.message).toContain('falls back to smart');
+
+    const strict = settings({ preset: 'strict-egress', egressAllowlist: ['api.anthropic.com'] });
+    const hosted = { host: 'api.anthropic.com', local: false };
+    expect(call({ settings: strict, egress: hosted, fallbacks: [{ alias: 'fast', egress: hosted }] }).allowed).toBe(true);
+    const leak = call({ settings: strict, egress: hosted, fallbacks: [{ alias: 'fast', egress: { host: 'api.openai.com', local: false } }] });
+    expect(leak.allowed).toBe(false);
+    expect(leak.message).toContain('api.openai.com');
+    // a fallback whose host cannot be told is refused like a first link would be
+    expect(call({ settings: strict, egress: hosted, fallbacks: [{ alias: 'code', egress: { host: null, local: false } }] }).message).toContain('code (a fallback of smart)');
+  });
+
   it('strict-egress allows an allowlisted host, a local host, and nothing else', () => {
     const strict = settings({ preset: 'strict-egress', egressAllowlist: ['api.anthropic.com'] });
     expect(call({ settings: strict }).allowed).toBe(true);

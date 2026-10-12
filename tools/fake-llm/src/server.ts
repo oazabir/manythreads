@@ -3,16 +3,22 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 /*
  * fake-llm — a LiteLLM proxy that is not LiteLLM (PLAN P5-08, `tools/fake-llm`).
  *
- * The gateway plugin drives a real LiteLLM proxy over HTTP with a master key, and until now that client was only ever
- * exercised against an injected transport: nothing proved the paths, the bodies or the status codes matched a server.
- * This is that server. It speaks the five management endpoints the client uses (`/model/new`, `/model/update`,
- * `/model/delete`, `/config/update`, `/key/generate`, `/key/delete`), enforces the master key, and keeps its state in
- * memory so a test can read back what the client actually sent.
+ * The gateway plugin drives a real LiteLLM proxy over HTTP with a master key, and a client tested only against an
+ * injected transport proves nothing about the wire. This is that server: it speaks the management endpoints the client uses
+ * (`/model/new`, `/model/update`, `/model/delete`, `/model/info`, `/config/update`, `/key/generate`, `/key/update`,
+ * `/key/info`, `/key/delete`), enforces the master key, and keeps its state in memory so a test can read back what the
+ * client actually sent.
  *
- * It deliberately reproduces the proxy's awkward habits rather than smoothing them over, because those habits are what
- * the client's retry logic exists for: creating a model that already exists is a 400, not a 409; deleting one that is
- * gone is a 404; minting a key twice is a 400. A fake that answered 200 to everything would pass while the real thing
- * failed.
+ * It reproduces the real proxy's habits, observed against ghcr.io/berriai/litellm:main-stable (the env-gated
+ * `litellm.integration.test.ts` in gateway-llm re-checks them), because they are what the client's logic exists for:
+ *  - creating a model whose `model_name` exists is a **200 that adds a second deployment** (not an error), and a repeat of an
+ *    explicit `model_info.id` is a 500;
+ *  - updating needs `model_info.id` (400 "model not found" otherwise); deleting takes `{ id }` and answers 400 for an unknown
+ *    one (422 without an id), never 404;
+ *  - a `/config/update` for `router_settings.fallbacks` is refused (400) when the config file names it (`fallbacksLocked`);
+ *  - `/key/generate` of an existing key is a 200 that replaces it; `/key/update` and `/key/delete` of an unknown key are 404;
+ *    a key whose `models` is `[]` is allowed every model.
+ * A fake that answered 200 to everything would pass while the real thing failed.
  *
  * The same object is the dev stand-in: `src/cli.ts` runs it on a port and `MANYTHREADS_LITELLM_URL` pointed at it gives
  * a workspace real config pushes and key minting without a model provider or an API key.
@@ -31,9 +37,15 @@ export interface FakeLlmCall {
   authorized: boolean;
 }
 
+export interface FakeLlmDeployment {
+  id: string;
+  model_name: string;
+  litellm_params: Record<string, unknown>;
+}
+
 export interface FakeLlmState {
-  /** The model list, keyed by `model_name` as the proxy keys it. */
-  models: Map<string, Record<string, unknown>>;
+  /** The deployments, keyed by `model_info.id` as the proxy keys them (several may share a `model_name`). */
+  models: Map<string, FakeLlmDeployment>;
   keys: Map<string, FakeLlmKey>;
   /** The fallback chains from the last `/config/update`. */
   fallbacks: Array<Record<string, string[]>>;
@@ -54,6 +66,10 @@ export interface FakeLlmOptions {
   /** 0 (the default) asks the OS for a free port, which is what a test wants. */
   port?: number;
   host?: string;
+  /** Called after a request is recorded and before it is answered: a test changes the world while the client is mid-push. */
+  beforeRespond?: (call: FakeLlmCall) => Promise<void> | void;
+  /** Behave as a proxy whose config file names `router_settings.fallbacks`: `/config/update` for it answers 400. */
+  fallbacksLocked?: boolean;
 }
 
 const json = (res: ServerResponse, status: number, body: unknown): void => {
@@ -98,7 +114,9 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
         return json(res, 200, path.includes('readiness') ? { status: 'healthy', db: 'connected' } : { status: 'healthy' });
       }
 
-      state.calls.push({ method: req.method ?? 'GET', path, body, authorized });
+      const recorded: FakeLlmCall = { method: req.method ?? 'GET', path, body, authorized };
+      state.calls.push(recorded);
+      await options.beforeRespond?.(recorded);
 
       // A test inspects the proxy through this, which is why it needs the key like any other management call.
       if (path === '/state' && req.method === 'GET') {
@@ -111,48 +129,91 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
         });
       }
 
-      const management = path.startsWith('/model/') || path === '/config/update' || path.startsWith('/key/');
+      const management = path.startsWith('/model/') || path.startsWith('/v2/model/') || path === '/config/update' || path.startsWith('/key/');
       if (management && !authorized) return error(res, 401, 'invalid key');
 
       if (path === '/model/new') {
-        const name = str(asObject(body)['model_name']);
+        const entry = asObject(body);
+        const name = str(entry['model_name']);
         if (name === '') return error(res, 400, 'model_name is required');
-        if (state.models.has(name)) return error(res, 400, `model ${name} already exists`);
-        state.models.set(name, asObject(body));
-        return json(res, 201, { model_id: `model-${++modelSeq}` });
+        const requested = str(asObject(entry['model_info'])['id']);
+        const id = requested !== '' ? requested : `model-${++modelSeq}`;
+        // A repeated explicit id collides on the proxy's primary key; a repeated *name* is simply another deployment.
+        if (state.models.has(id)) return json(res, 500, { error: { message: "{'error': 'Failed to add model to db. Check your server logs for more details.'}", type: 'auth_error', param: 'None', code: '500' } });
+        state.models.set(id, { id, model_name: name, litellm_params: asObject(entry['litellm_params']) });
+        return json(res, 200, { model_id: id, model_name: name });
       }
 
       if (path === '/model/update') {
-        const name = str(asObject(body)['model_name']);
-        if (!state.models.has(name)) return error(res, 400, `model ${name} not found`);
-        state.models.set(name, asObject(body));
-        return json(res, 200, { model_id: name });
+        const entry = asObject(body);
+        const id = str(asObject(entry['model_info'])['id']);
+        const current = state.models.get(id);
+        if (id === '' || !current) return error(res, 400, 'Authentication Error, model not found');
+        state.models.set(id, {
+          id,
+          model_name: str(entry['model_name']) || current.model_name,
+          litellm_params: { ...current.litellm_params, ...asObject(entry['litellm_params']) },
+        });
+        return json(res, 200, { model_id: id });
       }
 
       if (path === '/model/delete') {
-        const name = str(asObject(body)['model_name']);
-        if (!state.models.delete(name)) return error(res, 404, `model ${name} not found`);
-        return json(res, 200, { deleted: name });
+        const id = str(asObject(body)['id']);
+        if (id === '') return json(res, 422, { detail: [{ type: 'missing', loc: ['body', 'id'], msg: 'Field required' }] });
+        if (!state.models.delete(id)) return error(res, 400, `{'error': 'Model with id=${id} not found in db'}`);
+        return json(res, 200, { message: `Model: ${id} deleted successfully` });
+      }
+
+      if ((path === '/model/info' || path === '/v2/model/info') && req.method === 'GET') {
+        // The listing never carries a provider key, as the real one redacts them.
+        return json(res, 200, {
+          data: [...state.models.values()].map((m) => ({
+            model_name: m.model_name,
+            litellm_params: Object.fromEntries(Object.entries(m.litellm_params).filter(([k]) => k !== 'api_key')),
+            model_info: { id: m.id, db_model: true },
+          })),
+        });
       }
 
       if (path === '/config/update') {
         const router = asObject(asObject(body)['router_settings']);
         const fallbacks = router['fallbacks'];
-        if (Array.isArray(fallbacks)) state.fallbacks = fallbacks as Array<Record<string, string[]>>;
-        return json(res, 200, { ok: true });
+        if (Array.isArray(fallbacks)) {
+          if (options.fallbacksLocked) {
+            return error(res, 400, "{'error': \"router_settings key 'fallbacks' is set in the config file and cannot be changed here.\"}");
+          }
+          state.fallbacks = fallbacks as Array<Record<string, string[]>>;
+        }
+        return json(res, 200, { message: 'Config updated successfully' });
       }
 
       if (path === '/key/generate') {
         const key = str(asObject(body)['key']);
         if (key === '') return error(res, 400, 'key is required');
-        if (state.keys.has(key)) return error(res, 400, `key ${key} already exists`);
         const models = asObject(body)['models'];
         const metadata = asObject(asObject(body)['metadata']);
+        // The real proxy answers 200 to a key it already has (and replaces it).
         state.keys.set(key, {
           models: Array.isArray(models) ? models.map(String) : [],
           metadata: Object.fromEntries(Object.entries(metadata).map(([k, v]) => [k, String(v)])),
         });
-        return json(res, 201, { key, token: key });
+        return json(res, 200, { key, token: key });
+      }
+
+      if (path === '/key/update') {
+        const key = str(asObject(body)['key']);
+        const current = state.keys.get(key);
+        if (!current) return json(res, 404, { error: { message: 'Key not found.', type: 'not_found_error', param: 'key', code: '404' } });
+        const models = asObject(body)['models'];
+        state.keys.set(key, { ...current, models: Array.isArray(models) ? models.map(String) : current.models });
+        return json(res, 200, { key, models: state.keys.get(key)?.models });
+      }
+
+      if (path === '/key/info' && req.method === 'GET') {
+        const key = new URL(req.url ?? '/', 'http://fake').searchParams.get('key') ?? '';
+        const current = state.keys.get(key);
+        if (!current) return json(res, 404, { error: { message: 'Key not found.', type: 'not_found_error', param: 'key', code: '404' } });
+        return json(res, 200, { key, info: { models: current.models, metadata: current.metadata } });
       }
 
       if (path === '/key/delete') {
@@ -160,8 +221,8 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
         const list = Array.isArray(keys) ? keys.map(String) : [];
         let removed = 0;
         for (const k of list) if (state.keys.delete(k)) removed += 1;
-        if (removed === 0) return error(res, 404, 'no key deleted');
-        return json(res, 200, { deleted_keys: removed });
+        if (removed === 0) return json(res, 404, { error: { message: "{'error': 'No keys found'}", type: 'internal_server_error', param: null, code: '404' } });
+        return json(res, 200, { deleted_keys: list });
       }
 
       // Not the management API: a canned completion, so a smoke test can prove a call path end to end and read its usage.

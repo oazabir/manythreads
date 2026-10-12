@@ -9,6 +9,9 @@ const lint = async (code: string, filePath: string) => {
   return result!.messages.filter((m) => m.severity === 2);
 };
 
+// A file the TypeScript project already contains: the type-aware rules (no-floating-promises) refuse a path no tsconfig includes.
+const SERVER_SRC = 'packages/server/src/log-redact.ts';
+
 describe('lint: design tokens only', () => {
   it('a raw hex colour in a string literal fails', async () => {
     const errors = await lint(`export const c = '${HASH}ff00aa';\n`, 'clients/web/src/hex-fixture.ts');
@@ -25,9 +28,9 @@ describe('lint: design tokens only', () => {
   });
 
   it('names ending in Dto fail, and a bare pool.query outside db/ fails', async () => {
-    const dto = await lint('export type UserDto = { a: 1 };\n', 'packages/server/src/x.ts');
+    const dto = await lint('export type UserDto = { a: 1 };\n', SERVER_SRC);
     expect(dto.length).toBeGreaterThan(0);
-    const pool = await lint('declare const pool: { query(s: string): void };\npool.query("select 1");\n', 'packages/server/src/x.ts');
+    const pool = await lint('declare const pool: { query(s: string): void };\npool.query("select 1");\n', SERVER_SRC);
     expect(pool.map((e) => e.message).join()).toMatch(/No bare pool\.query/);
   });
 });

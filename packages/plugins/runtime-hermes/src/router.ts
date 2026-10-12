@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import type { BotRuntimeInput, BotRuntimeProvider, BotRuntimeScope, CapabilityAuthorizeContext, PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
-import { ChannelMessagePostedEvent, botMdPath, parseBotMd, parseMarkup, type BotTrigger } from '@manythreads/shared';
+import type { BotRuntimeHandle, BotRuntimeInput, BotRuntimeProvider, BotRuntimeScope, CapabilityAuthorizeContext, PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
+import { ChannelMessagePostedEvent, LlmAliasName, botMdPath, parseBotMd, parseMarkup, type BotTrigger } from '@manythreads/shared';
 import { z } from 'zod';
 
 // Trigger routing (PLAN P5-10: "route `conversation`, `mention`, `channel_message` triggers"). One subscription on
@@ -22,6 +22,10 @@ import { z } from 'zod';
 
 /** The job queue one run executes in. */
 export const RUN_QUEUE = 'runtime-hermes.run';
+
+/** A run's default wall clock when its definition names none (hermes.ts uses the same), and the slack its token outlives it by. */
+const DEFAULT_RUN_BUDGET_SECONDS = 600;
+const RUN_TOKEN_SLACK_SECONDS = 120;
 
 /** What the router decided: which trigger of one bot fires on one message. */
 export type RoutedTrigger = 'conversation' | 'mention' | 'channel_message';
@@ -172,7 +176,7 @@ interface LlmDoor {
   preflight(
     tx: PluginTx,
     request: { workspaceId: string; botId: string | null; teamId: string | null; sessionId: string | null; alias: string; text: string },
-  ): Promise<{ allowed: boolean; message: string | null }>;
+  ): Promise<{ allowed: boolean; message: string | null; text: string }>;
 }
 
 /** The repo door, structurally: what `repo-git` registers (docs/plugins/repo-git.md). */
@@ -246,38 +250,61 @@ export function registerRunJob(ctx: PluginContext): void {
     }
     const alias = parsed.frontmatter.model?.aliases?.[0] ?? null;
 
-    const { run, token } = await ctx.runs.open({
-      botId: bot.id,
-      teamId: bot.team_id,
-      workspaceId: bot.workspace_id,
-      trigger: payload.trigger,
-      askerActorId: payload.askerActorId,
-      threadId: payload.runThreadId,
-    });
+    // The token outlives the run's own budget (plus the kill grace): a run whose token expired mid-turn would lose its tools
+    // for the rest of the turn. The kernel clamps this to its maximum.
+    const ttlSeconds = (parsed.frontmatter.limits?.timeoutSeconds ?? DEFAULT_RUN_BUDGET_SECONDS) + RUN_TOKEN_SLACK_SECONDS;
+    let opened: Awaited<ReturnType<PluginContext['runs']['open']>>;
+    try {
+      opened = await ctx.runs.open({
+        botId: bot.id,
+        teamId: bot.team_id,
+        workspaceId: bot.workspace_id,
+        trigger: payload.trigger,
+        askerActorId: payload.askerActorId,
+        threadId: payload.runThreadId,
+        ttlSeconds,
+      });
+    } catch (err) {
+      // A run that cannot be opened (an asker no longer on the team, a bot that moved) will not open on a retry either: say so
+      // once and end the job rather than letting the queue replay it five times.
+      job.log.warn(`runtime-hermes: no run for bot ${bot.slug}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    const { run, token } = opened;
 
     let toolCalls = 0;
+    let handle: BotRuntimeHandle | undefined;
     try {
-      if (alias === null) throw new Error(`bot ${bot.slug}: a hermes run needs model.aliases[0] in its BOT.md`);
+      // A runtime that talks to a model is handed the gateway, the bot's own virtual key, and the pre-call check (preset, DLP
+      // hook, budgets, rate limits) that P5-07 puts in front of every call: a refusal stops the run before anything is sent,
+      // and a redaction rewrites the prompt that is. A runtime with no model (`rules`) gets none of it and is never refused for
+      // lacking one. What a Hermes run lacks (no alias, no gateway URL) is reported by the provider's own profile render.
       const gatewayBase = (process.env['MANYTHREADS_LITELLM_URL'] ?? '').trim().replace(/\/+$/, '');
-      if (gatewayBase === '') throw new Error('runtime-hermes: MANYTHREADS_LITELLM_URL is not set, so no model can be reached');
-
-      // The gateway's own door: the bot's virtual key, and the pre-call check (preset, DLP hook, budgets, rate limits) that
-      // P5-07 puts in front of every call. A refusal stops the run before anything is sent.
-      const llm = ctx.providers.get<LlmDoor>('llm');
-      const key = llm ? await llm.botKey(tx, bot.id) : null;
-      if (llm) {
-        const decision = await llm.preflight(tx, {
-          workspaceId: bot.workspace_id,
-          botId: bot.id,
-          teamId: bot.team_id,
-          sessionId: run.runId,
-          alias,
-          text: payload.prompt,
-        });
-        if (!decision.allowed) {
-          job.log.warn(`runtime-hermes: run ${run.runId} refused before the call: ${decision.message ?? 'not allowed'}`);
-          await ctx.runs.close(run.runId, 'stopped');
-          return;
+      let key: string | null = null;
+      let prompt = payload.prompt;
+      if (provider.usesGateway && alias !== null) {
+        // The gateway's alias set is closed (SPEC §10.2): a name outside it is bound to nothing the proxy has, and the guard
+        // events the pre-call check writes could not even describe it. Say so, instead of failing inside the gateway.
+        if (!LlmAliasName.safeParse(alias).success) {
+          throw new Error(`bot ${bot.slug}: "${alias}" is not a gateway alias (${LlmAliasName.options.join(', ')})`);
+        }
+        const llm = ctx.providers.get<LlmDoor>('llm');
+        if (llm) {
+          key = await llm.botKey(tx, bot.id);
+          const decision = await llm.preflight(tx, {
+            workspaceId: bot.workspace_id,
+            botId: bot.id,
+            teamId: bot.team_id,
+            sessionId: run.runId,
+            alias,
+            text: payload.prompt,
+          });
+          if (!decision.allowed) {
+            job.log.warn(`runtime-hermes: run ${run.runId} refused before the call: ${decision.message ?? 'not allowed'}`);
+            await ctx.runs.close(run.runId, 'stopped');
+            return;
+          }
+          prompt = decision.text; // the redacted text when the hook rewrote it; the prompt itself otherwise
         }
       }
 
@@ -294,10 +321,12 @@ export function registerRunJob(ctx: PluginContext): void {
         definition: { frontmatter: parsed.frontmatter, body: parsed.body },
         trigger: payload.trigger,
         asker: payload.askerActorId === null ? null : { actorId: payload.askerActorId, personId: null, displayName: null },
-        prompt: payload.prompt,
+        prompt,
         thread: { channelId: payload.channelId, threadRootId: payload.replyRootId },
-        endpoint: { runId: run.runId, url: `${ctx.runtime.publicUrl}/api/mcp/runs/${token}`, token },
-        gateway: { baseUrl: gatewayBase, key },
+        // The URL names the run and carries no credential (a URL is logged by proxies and access logs); the token travels as a
+        // bearer header, which the rendered profile sets.
+        endpoint: { runId: run.runId, url: `${ctx.runtime.publicUrl}/api/mcp/runs/${run.runId}`, token },
+        gateway: provider.usesGateway && gatewayBase !== '' ? { baseUrl: gatewayBase, key } : null,
         // SPEC §7.1's limits: a run's own wall clock. The definition schema has no turn count, so none is passed.
         limits: { runBudgetSeconds: parsed.frontmatter.limits?.timeoutSeconds ?? null, maxTurns: null, sessionMinutes: parsed.frontmatter.limits?.sessionMinutes ?? null },
       };
@@ -319,7 +348,7 @@ export function registerRunJob(ctx: PluginContext): void {
         log: (line) => job.log.info(line),
       };
 
-      const handle = await provider.run(input, scope);
+      handle = await provider.run(input, scope);
 
       let reply = '';
       let ok = false;
@@ -335,7 +364,8 @@ export function registerRunJob(ctx: PluginContext): void {
 
       // The reply is a message like any other: posted through the channels plugin's own `messages.post`, as the run's bot,
       // and authorized like every other call the run makes — a definition that never asked for `messages.post` cannot post.
-      if (reply.trim() !== '') {
+      // A failed run posts nothing: the text a dying process managed to print is a fragment, not an answer.
+      if (ok && reply.trim() !== '') {
         await scope.invoke('messages.post', {
           channelId: payload.channelId,
           body: reply,
@@ -347,6 +377,7 @@ export function registerRunJob(ctx: PluginContext): void {
       // A model call is not something to replay blindly: the run is closed as failed and the reason is logged, rather than
       // letting the job retry (which would re-ask the model and post a second answer).
       job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);
+      await handle?.stop().catch(() => undefined);
       await ctx.runs.close(run.runId, 'failed');
     }
   });

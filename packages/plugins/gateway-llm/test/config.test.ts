@@ -31,14 +31,19 @@ const alias = (over: Partial<AliasRow> = {}): AliasRow => ({
   ...over,
 });
 
-/** A transport that records every call and answers a queued reply per path (2xx by default). */
-function fakeTransport(queue: Record<string, LiteLlmResult[]> = {}) {
-  const calls: Array<{ path: string; body: unknown }> = [];
+/**
+ * A transport that records every call and answers a queued reply per path (2xx by default); `GET /model/info` answers the
+ * deployments in `listing` unless a reply is queued for it.
+ */
+function fakeTransport(queue: Record<string, LiteLlmResult[]> = {}, listing: Array<{ id: string; name: string }> = []) {
+  const calls: Array<{ method: string; path: string; body: unknown }> = [];
   const transport: LiteLlmTransport = {
-    async post(path, body) {
-      calls.push({ path, body });
+    async request(method, path, body) {
+      calls.push({ method, path, body });
       const forPath = queue[path];
-      return forPath?.length ? (forPath.shift() as LiteLlmResult) : { status: 200, body: { ok: true } };
+      if (forPath?.length) return forPath.shift() as LiteLlmResult;
+      if (path === '/model/info') return { status: 200, body: { data: listing.map((m) => ({ model_name: m.name, model_info: { id: m.id } })) } };
+      return { status: 200, body: { ok: true } };
     },
   };
   return { transport, calls, paths: () => calls.map((c) => c.path) };
@@ -105,49 +110,84 @@ describe('createLiteLlmClient', () => {
     fallbacks: [{ smart: ['fast'] }],
     deleted: ['code'],
   };
+  const client = (fake: ReturnType<typeof fakeTransport>, masterKey: string | null = null) =>
+    createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey, transport: fake.transport });
 
-  it('creates each model, deletes the unbound aliases and sets the fallbacks', async () => {
+  it('lists the proxy, creates a model under its own deployment id and sets the fallbacks', async () => {
     const fake = fakeTransport();
-    const client = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: 'sk-master', transport: fake.transport });
-    expect(await client.applyConfig(document)).toBe(1);
-    expect(fake.paths()).toEqual(['/model/new', '/model/delete', '/config/update']);
+    expect(await client(fake, 'sk-master').applyConfig(document)).toBe(1);
+    expect(fake.paths()).toEqual(['/model/info', '/model/new', '/config/update']);
+    expect(fake.calls[1]?.body).toEqual({
+      model_name: 'smart',
+      litellm_params: { model: 'openai/gpt-4o' },
+      model_info: { id: 'mt-smart' },
+    });
     expect(fake.calls[2]?.body).toEqual({ router_settings: { fallbacks: [{ smart: ['fast'] }] } });
   });
 
-  it('updates a model the proxy already has', async () => {
-    const fake = fakeTransport({ '/model/new': [{ status: 400, body: { detail: 'already exists' } }] });
-    const client = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: null, transport: fake.transport });
-    await client.applyConfig(document);
-    expect(fake.paths()).toEqual(['/model/new', '/model/update', '/model/delete', '/config/update']);
+  it('updates in place by id when the proxy already has the deployment — never a second one', async () => {
+    const fake = fakeTransport({}, [{ id: 'mt-smart', name: 'smart' }]);
+    await client(fake).applyConfig(document);
+    expect(fake.paths()).toEqual(['/model/info', '/model/update', '/config/update']);
   });
 
-  it('tolerates deleting a model the proxy does not have', async () => {
-    const fake = fakeTransport({ '/model/delete': [{ status: 404, body: 'not found' }] });
-    const client = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: null, transport: fake.transport });
-    await expect(client.applyConfig(document)).resolves.toBe(1);
+  it('deletes by id what the document no longer names: an unbound alias and a duplicate an older push left', async () => {
+    const fake = fakeTransport({}, [
+      { id: 'mt-smart', name: 'smart' },
+      { id: 'a1b2c3', name: 'smart' }, // a random-id duplicate from before deployments were named
+      { id: 'mt-code', name: 'code' },
+      { id: 'other-team-model', name: 'something-else' }, // not ours: left alone
+    ]);
+    await client(fake).applyConfig(document);
+    const deletes = fake.calls.filter((c) => c.path === '/model/delete').map((c) => c.body);
+    expect(deletes).toEqual([{ id: 'a1b2c3' }, { id: 'mt-code' }]);
+  });
+
+  it('turns a create that collides on its id (a stale listing) into an update', async () => {
+    const fake = fakeTransport({ '/model/new': [{ status: 500, body: { error: { message: 'Failed to add model to db' } } }] });
+    await client(fake).applyConfig(document);
+    expect(fake.paths()).toEqual(['/model/info', '/model/new', '/model/update', '/config/update']);
+  });
+
+  it('tolerates deleting a deployment the proxy no longer has (it answers 400 "not found in db")', async () => {
+    const fake = fakeTransport({ '/model/delete': [{ status: 400, body: { error: { message: "Model with id=mt-code not found in db" } } }] }, [
+      { id: 'mt-code', name: 'code' },
+    ]);
+    await expect(client(fake).applyConfig(document)).resolves.toBe(1);
+    const real500 = fakeTransport({ '/model/delete': [{ status: 500, body: 'boom' }] }, [{ id: 'mt-code', name: 'code' }]);
+    await expect(client(real500).applyConfig(document)).rejects.toBeInstanceOf(LiteLlmError);
   });
 
   it('mints a caller-chosen key and treats a duplicate retry as success', async () => {
     const fake = fakeTransport({ '/key/generate': [{ status: 400, body: { error: 'key already exists' } }] });
-    const client = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: null, transport: fake.transport });
-    await expect(client.mintKey({ key: 'sk-abc', aliases: ['smart'], metadata: { bot_id: 'b' } })).resolves.toBeUndefined();
+    await expect(client(fake).mintKey({ key: 'sk-abc', aliases: ['smart'], metadata: { bot_id: 'b' } })).resolves.toBeUndefined();
     expect(fake.calls[0]?.body).toEqual({ key: 'sk-abc', models: ['smart'], metadata: { bot_id: 'b' } });
+  });
+
+  it('updates a key, registers it again when the proxy lost it, and refuses an empty alias list outright', async () => {
+    const fake = fakeTransport({ '/key/update': [{ status: 404, body: 'Key not found.' }] });
+    await client(fake).updateKey({ key: 'sk-abc', aliases: ['smart', 'fast'], metadata: { bot_id: 'b' } });
+    expect(fake.paths()).toEqual(['/key/update', '/key/generate']);
+    expect(fake.calls[1]?.body).toEqual({ key: 'sk-abc', models: ['smart', 'fast'], metadata: { bot_id: 'b' } });
+
+    const none = fakeTransport();
+    await expect(client(none).mintKey({ key: 'sk-abc', aliases: [], metadata: {} })).rejects.toThrow(/no aliases/);
+    await expect(client(none).updateKey({ key: 'sk-abc', aliases: [], metadata: {} })).rejects.toThrow(/no aliases/);
+    expect(none.calls).toEqual([]); // nothing reached the wire
   });
 
   it('revokes a key, tolerating one the proxy never had, and surfaces any other failure', async () => {
     const gone = fakeTransport({ '/key/delete': [{ status: 404, body: 'not found' }] });
-    const ok = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: null, transport: gone.transport });
-    await expect(ok.revokeKey('sk-abc')).resolves.toBeUndefined();
+    await expect(client(gone).revokeKey('sk-abc')).resolves.toBeUndefined();
 
     const broken = fakeTransport({ '/key/delete': [{ status: 500, body: 'boom' }] });
-    const client = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: null, transport: broken.transport });
-    await expect(client.revokeKey('sk-abc')).rejects.toBeInstanceOf(LiteLlmError);
+    await expect(client(broken).revokeKey('sk-abc')).rejects.toBeInstanceOf(LiteLlmError);
   });
 
   it('is disabled with no URL: nothing is pushed', async () => {
-    const client = createLiteLlmClient({ baseUrl: null, masterKey: null });
-    expect(client.enabled).toBe(false);
-    await expect(client.applyConfig(document)).rejects.toBeInstanceOf(LiteLlmError);
+    const disabled = createLiteLlmClient({ baseUrl: null, masterKey: null });
+    expect(disabled.enabled).toBe(false);
+    await expect(disabled.applyConfig(document)).rejects.toBeInstanceOf(LiteLlmError);
   });
 
   it('sends the master key as a bearer token', async () => {
@@ -157,14 +197,35 @@ describe('createLiteLlmClient', () => {
     globalThis.fetch = (async (_url: string, init: RequestInit) => {
       const headers = init.headers as Record<string, string> | undefined;
       seen.push({ authorization: headers?.['authorization'] });
-      return { status: 200, text: async () => '{}' } as unknown as Response;
+      return { status: 200, text: async () => '{"data":[]}' } as unknown as Response;
     }) as typeof fetch;
     try {
-      const client = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: 'sk-master' });
-      await client.applyConfig(document);
+      const real = createLiteLlmClient({ baseUrl: 'http://litellm:4000', masterKey: 'sk-master' });
+      await real.applyConfig(document);
     } finally {
       globalThis.fetch = original;
     }
     expect(seen[0]?.authorization).toBe('Bearer sk-master');
+  });
+});
+
+describe('LiteLlmError', () => {
+  it('carries nothing key-shaped from the proxy\'s answer: virtual keys, key-ish fields, bearer tokens and encrypted blobs', () => {
+    const body = {
+      error: {
+        message: "{'error': 'bad key sk-proj-abcdefghijklmnopqrstuvwxyz', \"api_key\": \"super-secret-value\", 'token': 'abc123'}",
+        stored: 'q9bnpyfCsfS4AH2MHQznZ_-L2PKw8J0l9ynb0NXZmueBYrrfsrgxmDwlvWHUpBCE6AO4ipMKS8K3rAZr3TcXT0FYCPI=',
+        header: 'Authorization: Bearer abcdefghijklmnop',
+      },
+    };
+    const message = new LiteLlmError('/key/generate', { status: 500, body }).message;
+    for (const leaked of ['sk-proj-abc', 'super-secret-value', 'abc123', 'q9bnpyf', 'abcdefghijklmnop']) expect(message).not.toContain(leaked);
+    expect(message).toContain('LiteLLM /key/generate answered 500');
+  });
+
+  it('keeps a plain, useful message', () => {
+    expect(new LiteLlmError('/model/delete', { status: 400, body: { error: { message: 'Model with id=mt-code not found in db' } } }).message).toContain(
+      'not found in db',
+    );
   });
 });

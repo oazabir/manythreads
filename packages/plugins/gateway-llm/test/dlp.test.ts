@@ -27,6 +27,45 @@ describe('scan', () => {
   });
 });
 
+describe('whole secrets, not their labels', () => {
+  const body = 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj\n'.repeat(26);
+  const pem = `-----BEGIN PRIVATE KEY-----\n${body}-----END PRIVATE KEY-----`;
+
+  it('redacts a private-key block from header to footer, not just the header line', () => {
+    const result = inspect(`here:\n${pem}\nthanks`, 'standard');
+    expect(result.outcome).toBe('redact');
+    expect(result.rules).toEqual(['private-key']);
+    expect(result.text).toBe('here:\n[redacted:private-key]\nthanks');
+    expect(result.text).not.toContain('MIIEvQ');
+  });
+
+  it('redacts two blocks separately, and a block whose footer is missing up to a bound', () => {
+    const two = inspect(`${pem}\nand\n${pem.replace('PRIVATE KEY', 'RSA PRIVATE KEY')}`, 'standard');
+    expect(two.text).toBe('[redacted:private-key]\nand\n[redacted:private-key]');
+    const truncated = inspect(`-----BEGIN PRIVATE KEY-----\n${body}`, 'standard');
+    expect(truncated.text).toBe('[redacted:private-key]');
+    const huge = inspect(`-----BEGIN PRIVATE KEY-----\n${'A'.repeat(40_000)}\nafter`, 'standard');
+    expect(huge.text.startsWith('[redacted:private-key]')).toBe(true);
+    expect(huge.text.length).toBeLessThan(40_000 - 10_000); // bounded: the rest of a giant paste is not swallowed
+  });
+
+  it('redacts a long project key (sk-proj-, 160+ characters) in full', () => {
+    const key = `sk-proj-${'Ab3dEf6hIj_k-'.repeat(14)}`; // 8 + 182 characters
+    const result = inspect(`use ${key} and ship it`, 'standard');
+    expect(result.rules).toEqual(['api-key']);
+    expect(result.text).toBe('use [redacted:api-key] and ship it');
+    expect(inspect('the task-runner-configuration-is-here is fine', 'standard').outcome).toBe('allow');
+  });
+
+  it('stays linear on a text full of private-key headers with no footer', () => {
+    const hostile = '-----BEGIN PRIVATE KEY-----'.repeat(12_000) + 'x'.repeat(50_000);
+    const started = performance.now();
+    inspect(hostile, 'standard');
+    inspect(('-----BEGIN PRIVATE KEY-----\n' + 'a'.repeat(60) + '\n').repeat(8_000), 'standard');
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
+
 describe('inspect', () => {
   it('allows text with nothing to find, unchanged', () => {
     const result = inspect('how do I rotate the deploy key?', 'standard');

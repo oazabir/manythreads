@@ -13,6 +13,6 @@ general_settings:
 litellm_settings:
   drop_params: true
 
-router_settings:
-  # The plugin replaces this with the workspace's chains; an empty default keeps a fresh proxy startable.
-  fallbacks: []
+# No `router_settings` here, on purpose: LiteLLM refuses to change (400 "is set in the config file and cannot be changed here")
+# any setting the file names, so a `fallbacks: []` default would make every config push from the gateway-llm plugin fail. The
+# fallback chains are owned by the database (the plugin pushes them with POST /config/update); a fresh proxy has none.
