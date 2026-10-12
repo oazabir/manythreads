@@ -29,7 +29,7 @@ describe('judgeTargets', () => {
   it('air-gapped judges the host, not the name: `local` bound to a hosted provider (or one whose host cannot be told) is refused', () => {
     const refused = judgeTargets('air-gapped', [], [hosted('local', 'api.openai.com')]);
     expect(refused).toMatchObject({ target: 'local', host: 'api.openai.com' });
-    expect(refused!.message).toBe('The air-gapped preset allows only a model on this machine, and the local alias goes to api.openai.com.');
+    expect(refused!.message).toBe('The air-gapped preset allows only a model inside this deployment, and the local alias goes to api.openai.com; mark its provider "runs inside this deployment" if it is.');
     expect(judgeTargets('air-gapped', [], [hosted('local', null)])!.message).toContain('a host that cannot be told');
     // an allowlist does not open an air gap
     expect(judgeTargets('air-gapped', ['api.openai.com'], [hosted('local', 'api.openai.com')])).not.toBeNull();

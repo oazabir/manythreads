@@ -386,10 +386,49 @@ describe('stage one is not beaten by typography (NFKC-style folding, invisible c
     caught('تغيي\u200cر الترخيص', 3); // ZWNJ
   });
 
-  it('what it does not claim: spaced-out letters, leetspeak, and an invisible character inside a word AND another in place of the space are left to the classifier', () => {
-    expect(hit(entries, 'dr\u2060op\u200btable')).toBeNull();
-    expect(hit(entries, 'c r e d e n t i a l rotation')).toBeNull();
+  it('more invisible characters: Hangul fillers, the Braille blank, C0/C1 controls (but tab, line feed and carriage return stay separators)', () => {
+    caught('cred\u3164ential rotation', 0);
+    caught('cred\u115fential\u1160 rotation', 0);
+    caught('cred\uffa0ential rotation', 0);
+    caught('cre\u2800dential rotation', 0);
+    caught('cre\u0001dential rot\u0007ation', 0);
+    caught('cre\u0085dential rotation', 0);
+    caught('credential\u009brotation', 0); // a C1 control where the space was
+    caught('credential\trotation', 0); // a tab is a separator, not an invisible character
+    caught('credential\r\nrotation', 0);
+    expect(hit(entries, 'credential\u0000')).toBeNull(); // and removing characters invents no phrase out of one word
+  });
+
+  it('a phrase whose words the message has run together or spread apart, or split with two kinds of invisible character, is still the phrase', () => {
+    caught('droptable', 1); // the price: held although nobody typed a space
+    caught('d r o p t a b l e', 1);
+    caught('c r e d e n t i a l rotation', 0);
+    caught('dr\u2060op\u200btable', 1); // an invisible character inside the word AND another where the space was
+    caught('LICENCE\u200b\u200bCHANGE', 2);
+    // but only aligned to words: a phrase inside longer words is not the phrase
+    expect(hit(entries, 'sublicence change')).toBeNull();
+    expect(hit(entries, 'licence changes')).toBeNull();
+    expect(hit(entries, 'the adrop tablet')).toBeNull();
+  });
+
+  it('what it does not claim: leetspeak and other substitutions are left to the classifier', () => {
     expect(hit(entries, 'cr3dential rotation')).toBeNull();
+    expect(hit(entries, 'credential r0tation')).toBeNull();
+  });
+
+  it('words keep their spacing combining marks (Devanagari vowel signs), so a phrase is not cut inside a word', () => {
+    expect(hit(['\u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u0930\u094b\u091f\u0947\u0936\u0928'], '\u0915\u0943\u092a\u092f\u093e \u092a\u093e\u0938\u0935\u0930\u094d\u0921 \u0930\u094b\u091f\u0947\u0936\u0928 \u0936\u0941\u0930\u0942 \u0915\u0930\u0947\u0902')).not.toBeNull();
+    // a fragment is not the word it was cut from: with the vowel sign kept in the word, "\u091f\u0936\u0928" is not found inside "\u0930\u094b\u091f\u0947\u0936\u0928"
+    expect(hit(['\u091f\u0936\u0928'], '\u0930\u094b\u091f\u0947\u0936\u0928')).toBeNull();
+  });
+
+  it('scripts written without spaces (Han, Kana, Thai) are found inside a run of text', () => {
+    expect(hit(['\u8d44\u683c\u8f6e\u6362'], '\u8bf7\u7acb\u5373\u5f00\u59cb\u8d44\u683c\u8f6e\u6362\u4eca\u5929')).toMatchObject({ kind: 'exact' });
+    expect(hit(['\u30af\u30ec\u30c7\u30f3\u30b7\u30e3\u30eb'], '\u30af\u30ec\u30c7\u30f3\u30b7\u30e3\u30eb\u306e\u30ed\u30fc\u30c6\u30fc\u30b7\u30e7\u30f3')).not.toBeNull();
+    expect(hit(['\u0e40\u0e1b\u0e25\u0e35\u0e48\u0e22\u0e19\u0e23\u0e2b\u0e31\u0e2a\u0e1c\u0e48\u0e32\u0e19'], '\u0e0a\u0e48\u0e27\u0e22\u0e40\u0e1b\u0e25\u0e35\u0e48\u0e22\u0e19\u0e23\u0e2b\u0e31\u0e2a\u0e1c\u0e48\u0e32\u0e19\u0e43\u0e2b\u0e49\u0e2b\u0e19\u0e48\u0e2d\u0e22')).not.toBeNull();
+    // with a space or an invisible character typed into it, and not in a text that merely shares a character
+    expect(hit(['\u8d44\u683c\u8f6e\u6362'], '\u8d44\u683c \u8f6e\u6362')).not.toBeNull();
+    expect(hit(['\u8d44\u683c\u8f6e\u6362'], '\u8d44\u683c\u5ba1\u6838')).toBeNull();
   });
 
   it('plain text with nothing wrong is still left alone, and the spellings are cheap and linear', () => {

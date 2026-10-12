@@ -29,13 +29,19 @@ export const CLASSIFIER_INSTRUCTION = [
   'Reply with exactly one word: YES if the message touches a listed topic, otherwise NO.',
 ].join(' ');
 
+/** Every character that reads as an opening or closing angle bracket: ASCII, full-width, small, single and double guillemets, and the mathematical and CJK brackets. */
+const OPENERS = /[<\u00ab\u2039\u2329\u276c\u2770\u27e8\u3008\u300a\ufe64\uff1c]/g;
+const CLOSERS = /[>\u00bb\u203a\u232a\u276d\u2771\u27e9\u3009\u300b\ufe65\uff1e]/g;
+
 /**
- * The user turn: the message between delimiters, with any delimiter text inside it defanged (`<message` becomes `&lt;message`, so the message cannot
- * close its own wrapper and speak outside it), then the answer-format rule restated after it, where a message that ends in "ignore the above" does
- * not get the last word.
+ * The user turn: the message between delimiters, with **every** angle bracket inside it defanged (`<` and its look-alikes become `&lt;`, `>` and its
+ * look-alikes `&gt;`) so no spelling of `</message>` — `< /message>`, `＜/message＞`, `<\u200b/message>` — can close the wrapper and speak outside it;
+ * then the answer-format rule restated after it, where a message that ends in "ignore the above" does not get the last word. This keeps a message
+ * from escaping its wrapper. It does not make the classifier immune to being talked round (see the honest limits above): a crafted message can still
+ * steer a model that reads it, which is why stage one, the DLP check and the approvals on tools exist.
  */
 export function wrapMessage(piece: string): string {
-  return `<message>\n${piece.replace(/<(?=\/?message)/gi, '&lt;')}\n</message>\n\nReply with exactly one word: YES or NO.`;
+  return `<message>\n${piece.replace(OPENERS, '&lt;').replace(CLOSERS, '&gt;')}\n</message>\n\nReply with exactly one word: YES or NO.`;
 }
 
 /** The whole gate's wall-clock budget: the classifier is sequential, so a long message must not hold the job (and its connection) for minutes. */
@@ -72,23 +78,21 @@ export function parseAnswer(text: string): 'yes' | 'no' | 'unclear' {
   return first === 'YES' ? 'yes' : first === 'NO' ? 'no' : 'unclear';
 }
 
-/** The LLM gateway's `complete`, structurally (a plugin cannot import another plugin's types). */
+/** The LLM gateway's `classify`, structurally (a plugin cannot import another plugin's types). */
 export interface ClassifierDoor {
-  complete(
+  classify(
     tx: PluginTx,
     request: {
       workspaceId: string;
       botId: string | null;
       teamId: string | null;
-      sessionId: string | null;
-      alias: 'local';
+      runId: string;
       system: string;
       text: string;
       maxTokens: number;
-      purpose: string;
+      /** Which piece of one long message this is, from 0; later pieces are not further hits on the rate limit (the gateway derives that from this). */
+      piece: number;
       timeoutMs?: number;
-      localOnly?: boolean;
-      followUp?: boolean;
     },
   ): Promise<
     | { ok: true; text: string }
@@ -156,21 +160,16 @@ export async function runGate(tx: PluginTx, input: GateInput): Promise<GateVerdi
     if (remaining <= 0) {
       return { kind: 'hold', stage: 'classifier_unavailable', entry: null, detail: 'The classifier took too long to check the whole message.' };
     }
-    const result = await input.llm.complete(tx, {
+    const result = await input.llm.classify(tx, {
       workspaceId: input.run.workspaceId,
       botId: input.run.botId,
       teamId: input.run.teamId,
-      sessionId: input.run.runId,
-      alias: 'local',
+      runId: input.run.runId,
       system,
       text: wrapMessage(piece),
       maxTokens: 8,
-      purpose: 'gate',
       timeoutMs: Math.min(CLASSIFIER_TIMEOUT_MS, remaining),
-      // SPEC §7.3: the classifier "never" uses a remote provider. The gateway checks the alias and its whole fallback chain, not just the name.
-      localOnly: true,
-      // a long message is one check: only the first piece is a hit on the rate limit
-      followUp: index > 0,
+      piece: index,
     });
     if (!result.ok) {
       if (result.reason === 'refused') {

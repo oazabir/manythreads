@@ -52,6 +52,8 @@ export function ruleInput(input: BotRuntimeInput): Record<string, unknown> {
 
 export const rulesProvider: BotRuntimeProvider = {
   id: RULES_RUNTIME_ID,
+  // No model is called, so there is nothing to gate (and nothing for the LLM gateway to check): said out loud, because `gated` is required.
+  gated: false,
 
   render: (input: BotRuntimeInput) => ({
     home: `${input.bot.slug}-${input.endpoint?.runId ?? 'no-run'}`,

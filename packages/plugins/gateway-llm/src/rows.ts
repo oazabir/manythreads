@@ -15,10 +15,11 @@ export type ProviderRow = {
   api_version: string | null;
   secret_id: string | null;
   enabled: boolean;
+  local: boolean;
   created_at: Date;
   updated_at: Date;
 };
-export const PROVIDER_COLUMNS = 'id, workspace_id, name, kind, api_base, api_version, secret_id, enabled, created_at, updated_at';
+export const PROVIDER_COLUMNS = 'id, workspace_id, name, kind, api_base, api_version, secret_id, enabled, local, created_at, updated_at';
 
 export const toLlmProvider = (r: ProviderRow): LlmProvider =>
   LlmProvider.parse({
@@ -29,6 +30,7 @@ export const toLlmProvider = (r: ProviderRow): LlmProvider =>
     apiBase: r.api_base,
     apiVersion: r.api_version,
     enabled: r.enabled,
+    local: r.local,
     hasSecret: r.secret_id !== null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),

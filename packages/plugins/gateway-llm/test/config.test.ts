@@ -17,6 +17,7 @@ const provider = (over: Partial<ProviderRow> = {}): ProviderRow => ({
   api_version: null,
   secret_id: 's-1',
   enabled: true,
+  local: false,
   created_at: now,
   updated_at: now,
   ...over,

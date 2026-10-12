@@ -35,6 +35,12 @@ export const LlmProvider = z.object({
   apiVersion: z.string().nullable(),
   /** Whether the gateway offers this provider's models to the aliases. A disabled provider is skipped at push time. */
   enabled: z.boolean(),
+  /**
+   * The admin says this endpoint runs inside this deployment and never egresses (an in-cluster Service, a model on the same network). The one
+   * source of truth for "local": the `strict-egress` allowlist does not apply to it, the `air-gapped` preset accepts it, and the gate's classifier
+   * may use it. Not guessed from the host name (a loopback host is local without it).
+   */
+  local: z.boolean(),
   /** True when a key is stored for this provider (never the key itself). */
   hasSecret: z.boolean(),
   createdAt: IsoDateTime,

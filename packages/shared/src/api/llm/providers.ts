@@ -18,6 +18,8 @@ export const CreateLlmProviderRequest = z.strictObject({
   apiBase: z.string().url().max(300).optional(),
   apiVersion: z.string().trim().min(1).max(60).optional(),
   enabled: z.boolean().optional(),
+  /** "Runs inside this deployment — never egress": see `LlmProvider.local`. Default false. */
+  local: z.boolean().optional(),
 });
 export type CreateLlmProviderRequest = z.infer<typeof CreateLlmProviderRequest>;
 
@@ -29,6 +31,7 @@ export const UpdateLlmProviderRequest = z
     apiBase: z.string().url().max(300).nullable().optional(),
     apiVersion: z.string().trim().min(1).max(60).nullable().optional(),
     enabled: z.boolean().optional(),
+    local: z.boolean().optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: 'Change at least one field.' });
 export type UpdateLlmProviderRequest = z.infer<typeof UpdateLlmProviderRequest>;

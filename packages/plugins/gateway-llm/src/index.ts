@@ -12,8 +12,8 @@ export { createLiteLlmClient, LiteLlmError } from './litellm.ts';
 export type { LiteLlmConfigDocument, LiteLlmTransport, LlmGateway } from './litellm.ts';
 export { APPLY_CONFIG_QUEUE, RECONCILE_QUEUE, SYNC_KEY_QUEUE, gatewayFromEnv } from './gateway.ts';
 export type { LlmProviderServices } from './provider.ts';
-export { complete } from './complete.ts';
-export type { LlmCompleteRequest, LlmCompleteResult } from './complete.ts';
+export { classify } from './complete.ts';
+export type { LlmClassifyRequest, LlmClassifyResult } from './complete.ts';
 export { createSlidingWindow, decide, loadEgress, loadFallbackChain, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';
 export type { EgressTarget, LlmCallDecision, LlmCallRequest, LlmScopeSnapshot, LlmSpendRecord, RateHit } from './limits.ts';
 

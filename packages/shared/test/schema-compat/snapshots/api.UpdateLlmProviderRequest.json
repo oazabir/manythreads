@@ -36,6 +36,9 @@
     },
     "enabled": {
       "type": "boolean"
+    },
+    "local": {
+      "type": "boolean"
     }
   },
   "additionalProperties": false

@@ -207,8 +207,8 @@ interface LlmDoor {
   id: string;
   [member: string]: unknown;
   botKey(tx: PluginTx, botId: string): Promise<string | null>;
-  /** The completion the gate's classifier makes (P5-11). */
-  complete: ClassifierDoor['complete'];
+  /** The gate's classifier call (P5-11). */
+  classify: ClassifierDoor['classify'];
   preflight(
     tx: PluginTx,
     request: {
@@ -474,7 +474,7 @@ export function registerRunJob(ctx: PluginContext): void {
       // a person already released (past the gate or past the DLP check, which comes after it) is not asked again. A runtime with no model has
       // nothing to gate.
       const gateEntries = parsed.frontmatter.guard?.gate;
-      if (provider.gated === true && hasGate(gateEntries) && payload.approvalId === undefined && payload.gateApprovalId === undefined) {
+      if (provider.gated && hasGate(gateEntries) && payload.approvalId === undefined && payload.gateApprovalId === undefined) {
         const text = payload.text ?? payload.prompt;
         const verdict = await runGate(tx, {
           entries: gateEntries,

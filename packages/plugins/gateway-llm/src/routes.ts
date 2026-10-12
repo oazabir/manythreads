@@ -89,9 +89,9 @@ export function registerLlmRoutes(ctx: PluginContext): void {
       const body = CreateLlmProviderRequest.parse(req.body);
       const secretId = body.apiKey ? await ctx.secrets.put(tx, body.apiKey) : null;
       const created = await tx.query<ProviderRow>(
-        `INSERT INTO app.llm_providers (workspace_id, name, kind, api_base, api_version, secret_id, enabled)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${PROVIDER_COLUMNS}`,
-        [tx.actor.workspaceId, body.name, body.kind, body.apiBase ?? null, body.apiVersion ?? null, secretId, body.enabled ?? true],
+        `INSERT INTO app.llm_providers (workspace_id, name, kind, api_base, api_version, secret_id, enabled, local)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${PROVIDER_COLUMNS}`,
+        [tx.actor.workspaceId, body.name, body.kind, body.apiBase ?? null, body.apiVersion ?? null, secretId, body.enabled ?? true, body.local ?? false],
       );
       await pushConfig(ctx, tx);
       return json({ provider: toLlmProvider(created.rows[0] as ProviderRow) }, 201);
@@ -115,7 +115,7 @@ export function registerLlmRoutes(ctx: PluginContext): void {
         secretId = body.apiKey === '' ? null : await ctx.secrets.put(tx, body.apiKey);
       }
       const updated = await tx.query<ProviderRow>(
-        `UPDATE app.llm_providers SET name = $2, api_base = $3, api_version = $4, secret_id = $5, enabled = $6, updated_at = now()
+        `UPDATE app.llm_providers SET name = $2, api_base = $3, api_version = $4, secret_id = $5, enabled = $6, local = $7, updated_at = now()
           WHERE id = $1 RETURNING ${PROVIDER_COLUMNS}`,
         [
           providerId,
@@ -124,6 +124,7 @@ export function registerLlmRoutes(ctx: PluginContext): void {
           body.apiVersion === undefined ? before.api_version : body.apiVersion,
           secretId,
           body.enabled ?? before.enabled,
+          body.local ?? before.local,
         ],
       );
       await pushConfig(ctx, tx);

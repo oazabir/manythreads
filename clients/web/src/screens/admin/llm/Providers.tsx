@@ -11,6 +11,10 @@ import { Alert, Field, Notice, Time, Toggle } from '../../../components/ui';
  * whether one is stored (`hasSecret`). Clearing it is an empty field on an edit, which is the one way to remove a
  * credential without deleting the provider.
  *
+ * "Runs inside this deployment — never egress" is the admin's word that an endpoint (an in-cluster Service, a model on the same network) is
+ * local: the platform does not guess it from a host name. It is what lets the gate's classifier use a model (SPEC §7.3: never a remote provider),
+ * what the air-gapped preset accepts, and what the strict-egress allowlist does not apply to. A loopback endpoint is local without it.
+ *
  * A disabled provider stays configured but is skipped when the gateway rebuilds the model list, so turning one off is
  * how an admin takes a provider out of service without losing its endpoint.
  */
@@ -33,6 +37,7 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
   const [apiKey, setApiKey] = useState('');
   const [apiBase, setApiBase] = useState('');
   const [apiVersion, setApiVersion] = useState('');
+  const [isLocal, setIsLocal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -55,11 +60,13 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         ...(apiBase.trim() ? { apiBase: apiBase.trim() } : {}),
         ...(apiVersion.trim() ? { apiVersion: apiVersion.trim() } : {}),
+        ...(isLocal ? { local: true } : {}),
       });
       setName('');
       setApiKey('');
       setApiBase('');
       setApiVersion('');
+      setIsLocal(false);
       setNote('Provider added. The gateway is being brought in line.');
       reload();
     } catch (err) {
@@ -75,6 +82,18 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
     try {
       await updateLlmProvider(provider.id, { enabled });
       setNote(`${provider.name} is ${enabled ? 'on' : 'off'}.`);
+      reload();
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  async function setLocal(provider: LlmProvider, local: boolean) {
+    setError(null);
+    setNote(null);
+    try {
+      await updateLlmProvider(provider.id, { local });
+      setNote(`${provider.name} ${local ? 'runs inside this deployment' : 'is treated as outside this deployment'}.`);
       reload();
     } catch (err) {
       fail(err);
@@ -110,6 +129,7 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
                   <th scope="col">Kind</th>
                   <th scope="col">Endpoint</th>
                   <th scope="col">Key</th>
+                  <th scope="col" title="Runs inside this deployment — never egress">Local</th>
                   <th scope="col">On</th>
                   <th scope="col"><span className="faint">Actions</span></th>
                 </tr>
@@ -125,6 +145,9 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
                     </td>
                     <td data-label="Key">
                       {p.hasSecret ? <span className="kind h">stored</span> : <span className="kind ru">none</span>}
+                    </td>
+                    <td data-label="Local">
+                      <Toggle label={`${p.name} runs inside this deployment`} checked={p.local} onChange={(v) => void setLocal(p, v)} />
                     </td>
                     <td data-label="On">
                       <Toggle label={`${p.name} enabled`} checked={p.enabled} onChange={(v) => void toggle(p, v)} />
@@ -154,6 +177,17 @@ export function ProvidersSection({ providers, reload }: { providers: LlmProvider
             <Field label="Base URL" type="url" value={apiBase} onChange={(e) => setApiBase(e.target.value)} hint="Only for a self-hosted or proxied endpoint." />
             <Field label="API version" value={apiVersion} onChange={(e) => setApiVersion(e.target.value)} hint="Azure needs one; most kinds do not." />
           </div>
+          <label className="check" htmlFor="llm-provider-local">
+            <input
+              id="llm-provider-local"
+              type="checkbox"
+              data-testid="llm-provider-local"
+              checked={isLocal}
+              onChange={(e) => setIsLocal(e.target.checked)}
+            />{' '}
+            Runs inside this deployment — never egress
+          </label>
+          <p className="faint">Tick it for a model you host yourself (an in-cluster Service, a machine on your network). The gate's classifier and the air-gapped preset use only such a model.</p>
           <button type="submit" className="btn primary" disabled={busy || name.trim() === ''}>Add provider</button>
         </form>
       </div>

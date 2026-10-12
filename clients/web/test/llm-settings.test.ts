@@ -35,13 +35,13 @@ const AT = '2026-03-01T00:00:00.000Z';
 
 const REPLIES: Record<string, unknown> = {
   'GET /api/workspace/llm/providers': {
-    providers: [{ id: PROVIDER, workspaceId: WS, name: 'Anthropic', kind: 'anthropic', apiBase: null, apiVersion: null, enabled: true, hasSecret: true, createdAt: AT, updatedAt: AT }],
+    providers: [{ id: PROVIDER, workspaceId: WS, name: 'Anthropic', kind: 'anthropic', apiBase: null, apiVersion: null, enabled: true, local: false, hasSecret: true, createdAt: AT, updatedAt: AT }],
   },
   [`POST /api/workspace/llm/providers`]: {
-    provider: { id: PROVIDER, workspaceId: WS, name: 'Anthropic', kind: 'anthropic', apiBase: null, apiVersion: null, enabled: true, hasSecret: false, createdAt: AT, updatedAt: AT },
+    provider: { id: PROVIDER, workspaceId: WS, name: 'Anthropic', kind: 'anthropic', apiBase: null, apiVersion: null, enabled: true, local: false, hasSecret: false, createdAt: AT, updatedAt: AT },
   },
   [`PATCH /api/workspace/llm/providers/${PROVIDER}`]: {
-    provider: { id: PROVIDER, workspaceId: WS, name: 'Anthropic', kind: 'anthropic', apiBase: null, apiVersion: null, enabled: false, hasSecret: true, createdAt: AT, updatedAt: AT },
+    provider: { id: PROVIDER, workspaceId: WS, name: 'Anthropic', kind: 'anthropic', apiBase: null, apiVersion: null, enabled: false, local: false, hasSecret: true, createdAt: AT, updatedAt: AT },
   },
   [`DELETE /api/workspace/llm/providers/${PROVIDER}`]: { ok: true, deletedAt: AT },
   'GET /api/workspace/llm/aliases': { aliases: [{ alias: 'smart', providerId: null, model: 'anthropic/claude-sonnet-4', fallbacks: ['fast'], updatedAt: AT }] },
@@ -85,6 +85,20 @@ describe('the LLM endpoints reach the routes the gateway mounts', () => {
       method: 'POST',
       url: '/api/workspace/llm/providers',
       body: { name: 'Anthropic', kind: 'anthropic' },
+    },
+    {
+      name: 'creates a provider the admin says runs inside this deployment',
+      run: () => createLlmProvider({ name: 'Ollama (cluster)', kind: 'ollama', apiBase: 'http://ollama.models.svc:11434', local: true }),
+      method: 'POST',
+      url: '/api/workspace/llm/providers',
+      body: { name: 'Ollama (cluster)', kind: 'ollama', apiBase: 'http://ollama.models.svc:11434', local: true },
+    },
+    {
+      name: 'marks a provider as local',
+      run: () => updateLlmProvider(PROVIDER, { local: true }),
+      method: 'PATCH',
+      url: `/api/workspace/llm/providers/${PROVIDER}`,
+      body: { local: true },
     },
     {
       name: 'changes one field of a provider',

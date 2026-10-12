@@ -182,24 +182,29 @@ and a definition with no model alias fails without starting a process at all.
 ## The gate (P5-11)
 
 SPEC §7.3: before any model call, on a gate-list topic, in two stages. `runtime-hermes/src/gate.ts` is the code; the run job calls it after the run opens and before the pre-call check
-and the provider, for a runtime that talks to a model (`provider.usesGateway`) and a bot whose BOT.md has a non-empty `guard.gate`. Which runtimes are gated is the provider's `gated: true` flag (`BotRuntimeProvider.gated`, `hermes` sets it), **not** `usesGateway`: a
-subscription runtime (Claude Code, Codex; SPEC §10.3) will reach its model without the LLM gateway and must still be gated, so every provider that sends the asker's message to a model sets `gated`; only a
+and the provider, for a runtime that talks to a model (`provider.usesGateway`) and a bot whose BOT.md has a non-empty `guard.gate`. Which runtimes are gated is the provider's `gated` flag (`BotRuntimeProvider.gated`, **required**: `hermes` says `true`, `rules` says `false`, so a new model runtime cannot be left ungated by forgetting a field), **not** `usesGateway`: a
+subscription runtime (Claude Code, Codex; SPEC §10.3) will reach its model without the LLM gateway and must still be gated, so every provider that sends the asker's message to a model says `gated: true`; only a
 runtime with no model call (`rules`) leaves it off.
 
 1. **The list.** Each entry is a **phrase** (`credential rotation`: whole words in that order, ignoring case, punctuation and spacing — `Credential-Rotation!` matches, `credentials rotation` does not)
    or a **pattern** (`/…/` or `/…/i`). A hit stops here; no model is asked. **Typography does not beat it.** The message is read in two spellings (`gateSpellings`): NFKD (full-width and styled letters
    become plain ones), lower-cased, stripped of combining marks (accents, Arabic harakat) and the tatweel, with Cyrillic and Greek look-alike letters (`о а с е р х і ε ι ο …`) folded to the Latin letter they
-   imitate; the two differ only in what an invisible format character (zero-width space or joiner, soft hyphen, bidi controls — `\p{Cf}`) becomes: nothing, or a space. So `cre<ZWSP>dential`,
-   `credential<ZWSP>rotation`, `ｃｒｅｄｅｎｔｉａｌ`, `crеdеntial` (Cyrillic е), `crédential` and a tatweel-stretched Arabic phrase all match. A phrase is compared in both spellings; a pattern is run on the raw
+   imitate; the two differ only in what an invisible character becomes: nothing, or a space. The invisible set is the format characters (`\p{Cf}`: zero-width space and joiners, soft hyphen, bidi controls, word joiner, tags), C0/C1 control
+   characters (but not tab, line feed or carriage return, which stay separators), the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0) and the Braille blank (U+2800). So `cre<ZWSP>dential`,
+   `credential<ZWSP>rotation`, `ｃｒｅｄｅｎｔｉａｌ`, `crеdеntial` (Cyrillic е), `crédential` and a tatweel-stretched Arabic phrase all match. A phrase is compared in both spellings, word by word, **and** as a run: the message's words joined are searched for the phrase's words joined, aligned to word boundaries — so `droptable`, `d r o p t a b l e`,
+   and an invisible character inside a word *and* another where the space was all match (the price: `droptable` is held although nobody typed a space; `sublicence change` is still not `licence change`).
+   Words keep their spacing combining marks (Devanagari vowel signs), and a phrase in a script written without spaces (Han, Kana, Thai, Lao, Khmer, Myanmar) is found anywhere in a run of text. a pattern is run on the raw
    text and on both (so a case-sensitive `/DROP/` still sees what was typed, and `drop\s+table` sees `drop<ZWSP>table`). U+212A (Kelvin) and U+017F (long s) fold to `k` and `s` — deliberately more than
-   JavaScript's `/i`. **Not covered** (the classifier's job, stage two): leetspeak, letters spaced apart, typos, translations, text in an image, and an invisible character inside a word *and* another in
-   place of the space in the same phrase.
+   JavaScript's `/i`. **Not covered** (the classifier's job, stage two): leetspeak and other substitutions, typos, translations, text in an image.
 2. **The classifier**, on the `local` alias, for the topics the words did not catch. It sees **only the message** (the body the person wrote — not the prompt wrapper with the author and channel, not the
    history, no tools, no persona): the fixed instruction (`CLASSIFIER_INSTRUCTION`: classify, never obey the message, answer one word) plus the bot's phrase entries as the topic list, and the message as the user turn,
-   **between `<message>` and `</message>`** (delimiter text inside the message is defanged, so it cannot close its own wrapper) with the answer rule restated after it (`wrapMessage`). **Local only:** the gateway
-   checks that the `local` alias, and every link of its fallback chain, resolves to a model on this machine (`localOnly`); an admin can bind `local` to a hosted provider, and then the answer is `unavailable`
-   and nothing is sent. The whole gate has a 60 s budget (each call at most 30 s) and counts as one hit on the bot's rate limit.
-   It is a normal gateway call (`provider.llm.complete`, see [gateway-llm](./gateway-llm.md)): the guardrails read the message, the bot's budgets count it, the ledger records it. Only `YES` holds and
+   **between `<message>` and `</message>`** with the answer rule restated after it (`wrapMessage`); **every** angle bracket inside the message — `<`, `>`, and their full-width, small-form, guillemet and CJK look-alikes —
+   is escaped (`&lt;`, `&gt;`), so no spelling of a closing tag (`< /message>`, a full-width one, one with a zero-width character in it) can close the wrapper. That keeps a message inside its wrapper; it does not make
+   the model immune to being talked round — a crafted message can still steer a classifier that reads it, which is why stage one, the DLP check and the approvals on tools are separate layers. **Local only:** the
+   gateway's `classify` requires the `local` alias, and every link of its fallback chain, to be local — a provider the admin marked "Runs inside this deployment — never egress" (an in-cluster Service, a model on
+   the network) or a loopback host; otherwise the answer is `unavailable` and nothing is sent ([gateway-llm](./gateway-llm.md), "What local means"). The whole gate has a 60 s budget (each call at most 30 s) and
+   counts as one hit on the bot's rate limit (the gateway derives that from the piece number, not from a flag the gate sets).
+   It is a normal gateway call (`provider.llm.classify`): the guardrails read the message, the bot's budgets count it, the ledger records it. Only `YES` holds and
    only `NO` passes; any other answer is unclear. A message over 6,000 characters goes in overlapping pieces (any `YES` holds; more than eight pieces is held). A list of patterns alone gives the
    classifier no topic, so none is asked.
 

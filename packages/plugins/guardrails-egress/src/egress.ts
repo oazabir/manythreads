@@ -2,7 +2,7 @@ import { LlmGuardPreset } from '@manythreads/shared';
 import type { EgressTarget } from '@manythreads/sdk';
 
 // The egress rule of the presets (SPEC §10.1, §15; PLAN P5-21), moved out of the LLM gateway so every destination answers to the same
-// one: `air-gapped` reaches only the `local` alias **and only when that alias really is a model on this machine** (it judges the host, not the name), `strict-egress` only a host the workspace allowlisted (the machine itself is never
+// one: `air-gapped` reaches only the `local` alias **and only when that alias really is a model inside this deployment** (a provider the admin marked, or a loopback host) (it judges the host, not the name), `strict-egress` only a host the workspace allowlisted (the machine itself is never
 // egress), and `standard` and `customer-facing` do not restrict where a call goes. Pure: it judges targets the caller already resolved.
 
 export interface EgressRefusal {
@@ -31,12 +31,13 @@ export function judgeTargets(preset: LlmGuardPreset, allowlist: readonly string[
             : `The air-gapped preset allows only the local alias, and ${first?.name ?? 'this call'} falls back to ${link.name}.`,
       };
     }
-    // The name is not the guarantee: an admin can bind `local` to a hosted provider. Air-gapped judges where the call really goes.
+    // The name is not the guarantee: an admin can bind `local` to a hosted provider. Air-gapped judges where the call really goes (`link.local` is the
+    // caller's one answer to "does this stay inside the deployment": a provider the admin marked, or a loopback host).
     if (preset === 'air-gapped' && !link.local) {
       return {
         target: link.name,
         host: link.host,
-        message: `The air-gapped preset allows only a model on this machine, and the local alias goes to ${link.host ?? 'a host that cannot be told'}.`,
+        message: `The air-gapped preset allows only a model inside this deployment, and the local alias goes to ${link.host ?? 'a host that cannot be told'}; mark its provider "runs inside this deployment" if it is.`,
       };
     }
     if (preset === 'strict-egress' && !link.local) {

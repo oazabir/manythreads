@@ -518,8 +518,11 @@ function runProgram(program: GateProgram, points: Uint32Array): boolean {
   const isWordAt = (index: number): boolean => index >= 0 && index < points.length && WORD(points[index] as number);
 
   /** Follow jumps, splits and satisfied anchors from `pc` at `pos`; the threads that wait for a character join `list`. */
+  // one stack for the whole run, emptied by each `add` (it always drains it), instead of an array allocated per character
+  const stack: number[] = [];
   const add = (list: Int32Array, len: number, mark: Int32Array, pc: number, pos: number): number => {
-    const stack = [pc];
+    stack.length = 0;
+    stack.push(pc);
     while (stack.length > 0) {
       const p = stack.pop() as number;
       if (mark[p] === pos + 1) continue;
@@ -587,7 +590,10 @@ export type GateEntry =
 
 export type GateEntryResult = { ok: true; entry: GateEntry } | { ok: false; reason: string };
 
-const WORDS = /[\p{L}\p{N}]+/gu;
+/** Letters, digits and spacing combining marks (the vowel signs of Devanagari, Bengali, Tamil…, which would otherwise cut a word in two). */
+const WORDS = /[\p{L}\p{N}\p{Mc}]+/gu;
+/** Scripts written without spaces between words: a phrase in one of them is found inside a run of text, not as a whole word. */
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 
 /**
  * Look-alike letters folded to the Latin letter they imitate, after lower-casing and NFKD. Scope, stated plainly: the Cyrillic and Greek letters that
@@ -604,21 +610,26 @@ const LOOKALIKES: Readonly<Record<string, string>> = {
   ı: 'i', ɡ: 'g',
 };
 const LOOKALIKE = new RegExp(`[${Object.keys(LOOKALIKES).join('')}]`, 'gu');
-const FORMAT_CHARS = /\p{Cf}/gu;
+/**
+ * Characters that draw nothing: format characters (`\p{Cf}`: zero-width space and joiners, soft hyphen, bidi controls, word joiner, tags), C0/C1 control
+ * characters other than tab, line feed and carriage return, the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0) and the Braille blank (U+2800).
+ */
+const INVISIBLE = /[\p{Cf}\p{Cc}\u115f\u1160\u3164\uffa0\u2800]/gu;
+const keepsWhitespace = (ch: string): boolean => ch === '\t' || ch === '\n' || ch === '\r';
 const MARKS = /[\p{Mn}\p{Me}\u0640]/gu;
 
 /**
  * The two spellings of a text the gate reads (SPEC §7.3 stage one must not be beaten by typography). Both are NFKD (full-width and styled letters
  * become plain ones, accents split off), lower-cased, stripped of combining marks (accents, Arabic harakat) and the Arabic tatweel, and folded through
- * `LOOKALIKES`. They differ in what an invisible format character (zero-width space, joiner, soft hyphen, bidi marks — `\p{Cf}`) becomes: nothing
+ * `LOOKALIKES`. They differ in what an invisible character (zero-width space or joiner, soft hyphen, bidi marks, a control character, a Hangul filler, the Braille blank) becomes: nothing
  * (`joined`: `cre<ZWSP>dential` is `credential`) or a space (`spaced`: `drop<ZWSP>table` is two words). A phrase is compared in both spellings,
  * so inserting such a character *inside* a word or *instead of* a space changes nothing. Linear in the text.
  */
 export function gateSpellings(text: string): { joined: string; spaced: string } {
   const base = text.normalize('NFKD').toLowerCase();
   const fold = (s: string): string => s.replace(MARKS, '').replace(LOOKALIKE, (ch) => LOOKALIKES[ch] ?? ch);
-  const joined = fold(base.replace(FORMAT_CHARS, ''));
-  const spaced = fold(base.replace(FORMAT_CHARS, ' '));
+  const joined = fold(base.replace(INVISIBLE, (ch) => (keepsWhitespace(ch) ? ch : '')));
+  const spaced = fold(base.replace(INVISIBLE, (ch) => (keepsWhitespace(ch) ? ch : ' ')));
   return { joined, spaced };
 }
 
@@ -658,6 +669,13 @@ export interface CompiledGate {
   /** Phrases by their first word, with their index in the list. */
   readonly byFirstWord: ReadonlyMap<string, readonly { index: number; words: readonly string[] }[]>;
   readonly patterns: readonly { index: number; program: GateProgram }[];
+  /**
+   * Phrases also matched as one run of letters: `text` is the phrase's words joined. A phrase of two or more words is found when the message's words,
+   * joined, contain it **aligned to word boundaries** (so `droptable`, `d r o p t a b l e` and `drop<invisible>table` are all the phrase, while
+   * `sublicence change` is not `licence change`); a phrase in a script written without spaces (Han, Kana, Thai, Lao, Khmer, Myanmar) is found anywhere
+   * in the run, because there are no word boundaries to align to.
+   */
+  readonly runs: readonly { index: number; text: string; unspaced: boolean }[];
 }
 
 export type CompileGateResult = { ok: true; gate: CompiledGate } | { ok: false; index: number | null; reason: string };
@@ -668,6 +686,7 @@ export function compileGate(sources: readonly string[]): CompileGateResult {
   const entries: GateEntry[] = [];
   const byFirstWord = new Map<string, { index: number; words: readonly string[] }[]>();
   const patterns: { index: number; program: GateProgram }[] = [];
+  const runs: { index: number; text: string; unspaced: boolean }[] = [];
   let instructions = 0;
   for (const [index, source] of sources.entries()) {
     const parsed = parseGateEntry(source);
@@ -678,6 +697,9 @@ export function compileGate(sources: readonly string[]): CompileGateResult {
       const bucket = byFirstWord.get(first) ?? [];
       bucket.push({ index, words: parsed.entry.words });
       byFirstWord.set(first, bucket);
+      const text = parsed.entry.words.join('');
+      const unspaced = UNSPACED.test(text);
+      if (unspaced || parsed.entry.words.length > 1) runs.push({ index, text, unspaced });
     } else {
       instructions += parsed.entry.program.insts.length;
       if (instructions > GATE_LIST_MAX_PROGRAM) {
@@ -686,7 +708,37 @@ export function compileGate(sources: readonly string[]): CompileGateResult {
       patterns.push({ index, program: parsed.entry.program });
     }
   }
-  return { ok: true, gate: { entries, byFirstWord, patterns } };
+  return { ok: true, gate: { entries, byFirstWord, patterns, runs } };
+}
+
+/**
+ * The message's words joined into one run, searched for each multi-word phrase (aligned to word boundaries) and each phrase of an unspaced script (anywhere).
+ * Catches what the word-by-word comparison cannot: a phrase whose words the message has run together (`droptable`), spaced apart (`d r o p t a b l e`), or
+ * split by an invisible character inside a word and another where the space was. The price is stated: `droptable` is held although nobody typed a space.
+ * `indexOf` per phrase; the boundary check only repeats after a match that was not aligned.
+ */
+function matchRuns(gate: CompiledGate, words: readonly string[], take: (index: number, kind: GateMatch['kind']) => void): void {
+  const joined = words.join('');
+  const starts = new Uint8Array(joined.length + 1);
+  const ends = new Uint8Array(joined.length + 1);
+  let offset = 0;
+  for (const word of words) {
+    starts[offset] = 1;
+    offset += word.length;
+    ends[offset] = 1;
+  }
+  for (const run of gate.runs) {
+    let from = 0;
+    for (;;) {
+      const at = joined.indexOf(run.text, from);
+      if (at === -1) break;
+      if (run.unspaced || (starts[at] === 1 && ends[at + run.text.length] === 1)) {
+        take(run.index, 'exact');
+        break;
+      }
+      from = at + 1;
+    }
+  }
 }
 
 /** The pattern engine alone, on the text exactly as given (no folding): what the differential tests compare with `RegExp`. `matchGate` also tries the folded spellings. */
@@ -735,6 +787,7 @@ export function matchGate(gate: CompiledGate, text: string): GateMatch | null {
           if (all) take(candidate.index, 'exact');
         }
       }
+      if (gate.runs.length > 0) matchRuns(gate, words, take);
     }
   }
 

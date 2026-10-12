@@ -112,7 +112,7 @@ budget counts the whole session, so the session id is its window. Rate limits ar
 never an exception — so a run can log it and stop cleanly:
 
 1. the guardrails: the `pre_egress` chain ([guardrails-dlp](./guardrails-dlp.md), [guardrails-egress](./guardrails-egress.md)) — first the preset's egress
-   rule over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only **and only when it really is a model on this machine** (host, not name); `strict-egress` needs the target host on the
+   rule over the alias **and its whole fallback chain** (`air-gapped` allows the `local` alias only **and only when it really is local** — a provider the admin marked, or a loopback host; host, not name; `strict-egress` needs the target host on the
    workspace's allowlist; a local endpoint is never egress and needs no entry), then the DLP check (below). The gateway describes the call (alias, every link of
    the chain with the host it reaches, the preset, the allowlist, the text) and obeys the answer; with no guardrail loaded the call is refused (`dependsOn`
    makes that unreachable in a server),
@@ -155,14 +155,21 @@ files the approval through the approvals plugin ([approvals](./approvals.md)) an
 but a preset that refuses outright (`customer-facing`) still refuses, and the egress and budget checks still apply. `llm.guard.decided` is emitted
 for the hold like any non-`allow` outcome.
 
-## A completion the platform makes for itself (P5-11)
+## What "local" means (migration 0004) and the classifier call (P5-11)
 
-`provider.llm.complete(tx, request)` is the call the gate's classifier makes on the `local` alias ([runtime-hermes](./runtime-hermes.md)): the same pre-call check as any call (the guardrails
-see the **text** and only the text — the fixed system turn is ours —, the bot's budgets and rate limits count it), then `POST /chat/completions` on the proxy with the **master key** (not the bot's
-virtual key, whose allowed aliases are the bot's business), then a line on the ledger (`llm_spend`, alias `local`, tokens as the proxy reported them, cost 0: a model on this machine). `localOnly` (the gate sets it) requires the alias and **every link of its fallback chain** to resolve to a local host, else the answer is `unavailable` and nothing is sent: SPEC §7.3 says the classifier
-never uses a remote provider, and an admin can bind `local` to a hosted one. `followUp` marks a later piece of one job: it counts against budgets but is not another hit on the rate limit. It never
-throws for an unavailable model; it answers `{ ok: false, reason }` — `refused` (with the decision: a budget, a rate limit, the preset, a detection), `unbound` (the alias is bound to nothing) or
-`unavailable` (no proxy URL, an error, a timeout, an answer with no text; the detail is scrubbed of anything credential-shaped) — and the caller decides what that means.
+**"Local" is one thing**, answered by `loadEgress` (`EgressTarget.local`) and read by every rule that cares: the `strict-egress` allowlist does not apply to a local target, the `air-gapped` preset accepts only
+a local one, and the gate's classifier runs only on one. A target is local when **the admin said so** — `llm_providers.local` (migration `0004_provider_local.sql`, `NOT NULL DEFAULT false`; the checkbox
+"Runs inside this deployment — never egress" on Workspace → LLM → Model providers, `data-testid="llm-provider-local"`, and a Local switch per row) — **or** its host is loopback (`localhost`, `127.0.0.1`, `::1`,
+which is what a provider-less `ollama/…` model string and an `ollama` provider with no base URL resolve to). Nothing else is inferred: an in-cluster Service (`*.svc`, `*.cluster.local`) or a LAN address is the
+network's business, which the platform cannot see, so it is local only when marked; an unknown host is not local. The column is covered by the table's existing admin-only policies and grants.
+
+`provider.llm.classify(tx, request)` is the call the gate's classifier makes ([runtime-hermes](./runtime-hermes.md)). It is not a general "complete": what makes it safe with a person's message is inside it
+and no caller can switch it off. The alias is `local`; the alias **and every link of its fallback chain** must be local (above), else the answer is `unavailable` and nothing is sent (SPEC §7.3: the classifier
+never uses a remote provider; an admin can bind `local` to a hosted one); only `piece` 0 of a message is a hit on the rate limit (later pieces count against budgets). Then the same pre-call check as any call (the
+guardrails see the **text** and only the text — the fixed system turn is ours —, the bot's budgets and rate limits count it), `POST /chat/completions` on the proxy with the **master key** (not the bot's virtual key,
+whose allowed aliases are the bot's business), and a line on the ledger (`llm_spend`, alias `local`, tokens as the proxy reported them, cost 0). It never throws for an unavailable model; it answers
+`{ ok: false, reason }` — `refused` (with the decision: a budget, a rate limit, the preset, a detection), `unbound` (the alias is bound to nothing) or `unavailable` (not local, no proxy URL, an error, a
+timeout, an answer with no text; the detail is scrubbed of anything credential-shaped) — and the caller decides what that means.
 
 ## Without a proxy
 

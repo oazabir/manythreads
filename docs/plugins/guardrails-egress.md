@@ -6,8 +6,11 @@ The destination half of the `pre_egress` chain (SPEC §15, PLAN P5-21; the chain
 | preset | rule |
 |---|---|
 | `standard`, `customer-facing` | no restriction on where a call goes |
-| `air-gapped` | only the `local` alias, **and only when its host is on this machine**: the rule judges where the call goes, not what the alias is called (an admin can bind `local` to a hosted provider, and then it is refused; an allowlist does not open an air gap). A local endpoint is `localhost`, `127.0.0.1` or `::1`; a model on another machine of the LAN is not "local" to this rule |
-| `strict-egress` | only a host on the workspace's allowlist; a local endpoint (`localhost`, `127.0.0.1`, `::1`) is never egress and needs no entry; a target whose host the caller cannot tell is refused |
+| `air-gapped` | only the `local` alias, **and only when it really is local** — the rule judges where the call goes, not what the alias is called (an admin can bind `local` to a hosted provider, and then it is refused; an allowlist does not open an air gap) |
+| `strict-egress` | only a host on the workspace's allowlist; a **local** target is never egress and needs no entry; a target whose host the caller cannot tell is refused |
+
+**Local** is the caller's one answer (`EgressTarget.local`), never guessed here. The LLM gateway sets it from the provider the admin marked "Runs inside this deployment — never egress"
+(`llm_providers.local`, migration 0004) or from a loopback host; an in-cluster Service or a LAN address is local only when marked. See [gateway-llm](./gateway-llm.md), "What local means".
 
 The caller resolves the **targets** — `input.targets`, each `{ name, host, local }`: the call's own target first, then every link of its fallback chain — and the allowlist (`input.allowlist`). The rule holds for the
 whole chain: the proxy retries a failed call on the next link, so a chain that ends in a hosted model reaches the internet even when its first link is local. The LLM gateway resolves aliases to hosts from

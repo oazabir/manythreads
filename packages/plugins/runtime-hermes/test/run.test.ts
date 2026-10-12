@@ -686,7 +686,7 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       expect(spoolLines()).toHaveLength(before);
       const [approval] = await approvalsOf(bot.botId);
       expect(approval!.args_preview).toMatchObject({ stage: 'classifier_unavailable' });
-      expect(String(approval!.args_preview['reason'])).toContain('not a model on this machine');
+      expect(String(approval!.args_preview['reason'])).toContain('not a model inside this deployment');
     });
 
     it('a budget the bot has spent stops the run without a card, and the thread says so instead of staying silent', async () => {
