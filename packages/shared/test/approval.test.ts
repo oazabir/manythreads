@@ -79,6 +79,10 @@ describe('approvalSummary', () => {
     expect(approvalSummary('pages.write', { path: 'pages/x.md' })).toBe('pages.write · pages/x.md');
     expect(approvalSummary('tasks.handoff', { taskId: 't-1' })).toBe('tasks.handoff');
     expect(approvalSummary('x.y', { subject: 'a'.repeat(200) }).length).toBeLessThan(100);
+    // the line is made from the preview an approver is shown, so it can say no more than that does
+    const long = { title: 'b'.repeat(5000), token: 'sk-live-1234' };
+    expect(approvalSummary('x.y', long)).toBe(`x.y · ${(previewArgs(long)['title'] as string).slice(0, 79)}…`);
+    expect(approvalSummary('x.y', { token: 'sk-live-1234' })).toBe('x.y');
   });
 });
 
