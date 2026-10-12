@@ -125,6 +125,12 @@ export interface StartServerOptions {
   storage?: 'local' | 's3';
   /** The test-only dev header (only ever honoured when NODE_ENV=test; see dev-actor.ts). */
   devAuth?: boolean;
+  /**
+   * Largest number of connections the request pool (manythreads_app) and the system pool may hold open (default 10 each, or
+   * `MANYTHREADS_APP_POOL_MAX` / `MANYTHREADS_SYSTEM_POOL_MAX`). A process that shares one Postgres with many others (the e2e
+   * stacks) lowers them: Postgres refuses connection 98 of 100 and the server answers 500.
+   */
+  poolMax?: { app?: number; system?: number };
   logger?: boolean | object;
   /** Behind a reverse proxy that appends to x-forwarded-for (default from `MANYTHREADS_TRUST_PROXY`, see `trustProxyFromEnv`). */
   trustProxy?: boolean | number | string | string[];
@@ -160,13 +166,19 @@ export interface RunningServer {
 
 const OUTBOX_SUBSCRIBER = 'plugins';
 
+/** A pool size: the option, else the environment variable, else `fallback`; a value that is not a positive integer is ignored. */
+function poolMaxOf(option: number | undefined, env: string | undefined, fallback: number): number {
+  for (const v of [option, env === undefined ? undefined : Number(env)]) if (v !== undefined && Number.isInteger(v) && v >= 1) return v;
+  return fallback;
+}
+
 /**
  * Migrates the kernel and plugins, wires the capability broker audit sink and the plugin outbox consumer, mounts
  * plugin routes and starts listening. `close()` stops consumers, the server and the pool.
  */
 export async function startServer(options: StartServerOptions): Promise<RunningServer> {
-  const appPool = createAppPool(options.appUrl);
-  const systemPool = createSystemPool(options.systemUrl);
+  const appPool = createAppPool(options.appUrl, poolMaxOf(options.poolMax?.app, process.env['MANYTHREADS_APP_POOL_MAX'], 10));
+  const systemPool = createSystemPool(options.systemUrl, poolMaxOf(options.poolMax?.system, process.env['MANYTHREADS_SYSTEM_POOL_MAX'], 10));
 
   // One `storage` provider only: the plugin of the other store is not even loaded.
   const storage = options.storage ?? storageFromEnv(process.env['MANYTHREADS_STORAGE']);

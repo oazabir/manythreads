@@ -8,6 +8,7 @@ import {
   WEB_IDLE_PORT,
   WEB_PORT,
 } from './support/ports.ts';
+import { E2E_POOL_ENV } from './support/pools.ts';
 
 const external = process.env.MANYTHREADS_URL;
 const baseURL = external ?? `http://localhost:${WEB_PORT}`;
@@ -34,6 +35,7 @@ const testServer = (port: number, script: string, env: Record<string, string> = 
     MANYTHREADS_TEST_PLUGINS: '1',
     MANYTHREADS_API_PORT: String(port),
     NODE_ENV: 'test',
+    ...E2E_POOL_ENV,
     MANYTHREADS_TEST_AUTH_TOKEN: process.env.MANYTHREADS_TEST_AUTH_TOKEN ?? 'e2e-test-auth-token',
     ...env,
   },

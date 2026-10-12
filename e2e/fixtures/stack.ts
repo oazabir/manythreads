@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { expect, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
 import { ownerSql } from '@manythreads/test-utils';
+import { E2E_POOL_ENV } from '../support/pools.ts';
 
 /**
  * A private web + API origin for one spec file (fixtures/stack-server.ts): the built web client and a real server on a
@@ -26,7 +27,7 @@ const e2eDir = fileURLToPath(new URL('..', import.meta.url));
 export async function startStack(env: Record<string, string> = {}): Promise<Stack> {
   const child: ChildProcess = spawn('pnpm', ['exec', 'tsx', serverFile], {
     cwd: e2eDir,
-    env: { ...process.env, NODE_ENV: 'test', ...env },
+    env: { ...process.env, NODE_ENV: 'test', ...E2E_POOL_ENV, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   // A worker that dies (timeout, crash, Ctrl-C) must not leave its stack and database behind.
