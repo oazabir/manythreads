@@ -331,3 +331,37 @@ describe('what an approval is made of stays in its conversation (P5-20 review)',
     expect(await code(dup(omar.actorId))).toBeUndefined(); // a different asker
   });
 });
+
+describe('review round 3', () => {
+  it('a hidden approval and a missing one look the same, and every id gets an answer', async () => {
+    const missing = '00000000-0000-7000-8000-00000000f00e';
+    const rows = await as(sameera, async (tx) => (await tx.query<{ o_id: string; o_reason: string | null }>('SELECT o_id, o_reason FROM app.approvals_block_reasons(ARRAY[$1::uuid, $2::uuid])', [engApproval, missing])).rows);
+    expect(rows.map((r) => r.o_reason)).toEqual(['not_found', 'not_found']);
+    expect(rows.map((r) => r.o_id).sort()).toEqual([engApproval, missing].sort());
+  });
+
+  it('deleting a channel deletes the approvals raised in it: they never become the team\'s', async () => {
+    const channel = await sys(async (tx) =>
+      (await tx.query<{ id: string }>("INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'gone-soon', 'channel', true) RETURNING id", [omar.workspaceId, ENG])).rows[0]!.id,
+    );
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.approvals (workspace_id, team_id, source, tool, summary, resume, approver_scope, requester_id, channel_id)
+         VALUES ($1, $2, 'dlp', 'llm.call', 'cascade', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $3, $4)`,
+        [omar.workspaceId, ENG, nadia.actorId, channel],
+      ),
+    );
+    await sys((tx) => tx.query('DELETE FROM app.channels WHERE id = $1', [channel]));
+    expect(await sys(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.approvals WHERE summary = 'cascade'")).rows[0]?.n)).toBe(0);
+  });
+
+  it('the schema-wide CREATE the definer functions needed while they were handed over is taken back', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      expect((await admin.query<{ ok: boolean }>("SELECT has_schema_privilege('manythreads_system', 'app', 'CREATE') AS ok")).rows[0]?.ok).toBe(false);
+    } finally {
+      await admin.end();
+    }
+  });
+});

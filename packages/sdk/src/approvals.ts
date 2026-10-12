@@ -33,6 +33,24 @@ export interface ApprovalRequestResult {
   approvalId: string;
   /** False when `dedupeKey` matched a pending approval of the same bot: nothing new was written. */
   created: boolean;
+  /** Who can see and decide it: `team` (the team's Approvals inbox) or `conversation` (only the people who can read the private channel, DM or bot conversation the run answered in). */
+  visibleTo: 'team' | 'conversation';
+}
+
+/**
+ * Thrown by `request` when the run answered in a private conversation and nobody in it but the requester could decide the call: filing it would
+ * make an approval that is undecidable and invisible to everyone who could help. The message says why, for the caller to pass on.
+ */
+export class NoEligibleApproverError extends Error {
+  constructor(message = 'Nobody but you could decide this call in this conversation: no one else who can read it is allowed to approve it. Ask a lead to name an approver who is in this conversation.') {
+    super(message);
+    this.name = 'NoEligibleApproverError';
+  }
+}
+
+/** What `requestToolApproval` answers when the approval could not be filed for a reason the caller should say. */
+export interface ApprovalRefusal {
+  refused: string;
 }
 
 export interface ApprovalProvider extends ProviderImpl {
@@ -71,7 +89,7 @@ export const approvalDedupeKey = (tool: string, input: Record<string, unknown>):
 /**
  * The `grant` source's one call (the MCP gateway, the Hermes runtime's own scope): file an approval for a tool call the run made, in the run's own
  * transaction as its bot, with the preview, summary, resume and dedupe key built the one way. Answers null when the approvals plugin is not loaded —
- * the caller then fails closed, because running a call the grant says a person must approve is the one thing the flag exists to stop.
+ * the caller then fails closed — and `{ refused }` when the run is in a private conversation and nobody else in it could decide (see `NoEligibleApproverError`), because running a call the grant says a person must approve is the one thing the flag exists to stop.
  *
  * Only for tools that act (a write): a read would be re-run as the bot, not as the person whose visibility it was asked under, so a read never
  * waits for approval — the caller refuses it instead.
@@ -82,21 +100,26 @@ export async function requestToolApproval(
   tool: string,
   input: Record<string, unknown>,
   options: { approvers?: readonly string[] } = {},
-): Promise<ApprovalRequestResult | null> {
+): Promise<ApprovalRequestResult | ApprovalRefusal | null> {
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
   if (!approvals) return null;
   const { preview, truncated } = previewArgsDetailed(input);
-  return ctx.runs.asBot(run, (tx) =>
-    approvals.request(tx, {
-      runId: run.runId,
-      source: 'grant',
-      tool,
-      summary: approvalSummary(tool, input),
-      argsPreview: preview,
-      argsTruncated: truncated,
-      resume: { kind: 'tool', capability: tool, args: input, trigger: BotRunTrigger.parse(run.trigger) },
-      ...(options.approvers ? { approvers: options.approvers } : {}),
-      dedupeKey: approvalDedupeKey(tool, input),
-    }),
-  );
+  try {
+    return await ctx.runs.asBot(run, (tx) =>
+      approvals.request(tx, {
+        runId: run.runId,
+        source: 'grant',
+        tool,
+        summary: approvalSummary(tool, input),
+        argsPreview: preview,
+        argsTruncated: truncated,
+        resume: { kind: 'tool', capability: tool, args: input, trigger: BotRunTrigger.parse(run.trigger) },
+        ...(options.approvers ? { approvers: options.approvers } : {}),
+        dedupeKey: approvalDedupeKey(tool, input),
+      }),
+    );
+  } catch (err) {
+    if (err instanceof NoEligibleApproverError) return { refused: err.message };
+    throw err;
+  }
 }

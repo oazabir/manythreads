@@ -1,4 +1,4 @@
-import type { ApprovalProvider, ApprovalRequestInput, PluginContext, PluginTx } from '@manythreads/sdk';
+import { NoEligibleApproverError, type ApprovalProvider, type ApprovalRequestInput, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { ApprovalResume, ApprovalsApprovalRequestedEvent, ApprovalsApprovalResumedEvent } from '@manythreads/shared';
 import { pushChanged } from './notify.ts';
 
@@ -14,7 +14,10 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
 
     async request(tx: PluginTx, input: ApprovalRequestInput) {
       const resume = ApprovalResume.parse(input.resume);
-      const res = await tx.query<{ o_id: string; o_created: boolean; o_workspace_id: string; o_team_id: string; o_bot_id: string; o_run_id: string; o_requester_id: string }>(
+      type Filed = { o_id: string; o_created: boolean; o_workspace_id: string; o_team_id: string; o_bot_id: string; o_run_id: string; o_requester_id: string; o_private: boolean };
+      let res: { rows: Filed[] };
+      try {
+        res = await tx.query<Filed>(
         'SELECT * FROM app.approvals_request($1::uuid, $2, $3, $4, $5::jsonb, $6::boolean, $7::jsonb, $8::text[], $9)',
         [
           input.runId,
@@ -27,7 +30,12 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
           input.approvers === undefined ? null : [...input.approvers],
           input.dedupeKey === undefined ? null : clip(input.dedupeKey, 200),
         ],
-      );
+        );
+      } catch (err) {
+        // AP001: the run is in a private conversation and nobody in it but the requester could decide this
+        if ((err as { code?: string }).code === 'AP001') throw new NoEligibleApproverError();
+        throw err;
+      }
       const row = res.rows[0];
       if (!row) throw new Error('the approval request answered no row');
       if (row.o_created) {
@@ -47,9 +55,9 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
             requesterId: row.o_requester_id,
           }),
         );
-        await pushChanged(ctx, tx, row.o_team_id, row.o_id);
+        await pushChanged(ctx, tx, row.o_id);
       }
-      return { approvalId: row.o_id, created: row.o_created };
+      return { approvalId: row.o_id, created: row.o_created, visibleTo: row.o_private ? 'conversation' : 'team' };
     },
 
     async pendingForRun(tx: PluginTx, runId: string) {
@@ -84,7 +92,7 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
           detail: 'Taken back by the requester.',
         }),
       );
-      await pushChanged(ctx, tx, row.team_id, approvalId);
+      await pushChanged(ctx, tx, approvalId);
       return row.payload;
     },
   };

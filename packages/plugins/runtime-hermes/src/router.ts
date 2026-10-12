@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  NoEligibleApproverError,
   requestToolApproval,
   type ApprovalProvider,
   type BotRuntimeHandle,
@@ -267,7 +268,8 @@ async function holdForApproval(
   if (!approvals) return false; // fail closed: the call is held and nobody can release it; the caller stops the run either way
   const resumable: Record<string, unknown> = { ...held.payload };
   delete resumable['approvalId']; // a held call has no approval yet; the claim adds the one that approves it
-  await approvals.request(tx, {
+  try {
+    await approvals.request(tx, {
     runId: held.run.runId,
     source: 'dlp',
     tool: 'llm.call',
@@ -275,8 +277,13 @@ async function holdForApproval(
     argsPreview: { alias: held.alias, rules: [...held.rules], message: clip(held.excerpt, 1500) },
     resume: { kind: 'handoff', payload: resumable },
     approvers: held.approvers,
-  });
-  return true;
+    });
+    return true;
+  } catch (err) {
+    // a private conversation where nobody else could decide it: not filed, so the call stays held and the run stops with the reason logged
+    if (err instanceof NoEligibleApproverError) return false;
+    throw err;
+  }
 }
 
 /**
@@ -449,6 +456,7 @@ export function registerRunJob(ctx: PluginContext): void {
           if (decision.needsApproval) {
             const filed = await requestToolApproval(ctx, run, capability, args, { approvers });
             if (!filed) throw new Error(`"${capability}" needs a person's approval before it runs`);
+            if ('refused' in filed) throw new Error(filed.refused);
             throw new ApprovalPending(capability);
           }
           return ctx.runs.asBot(run, (inner) => ctx.runs.invoke(inner, capability, args));

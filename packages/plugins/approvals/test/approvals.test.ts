@@ -1,5 +1,5 @@
 import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool, withActor } from '@manythreads/kernel';
-import type { ApprovalProvider, BotRunHandle, PluginRuns, PluginTx } from '@manythreads/sdk';
+import { NoEligibleApproverError, requestToolApproval, type ApprovalProvider, type BotRunHandle, type PluginRuns, type PluginTx } from '@manythreads/sdk';
 import { Approval, GetApprovalArgsResponse, ListApprovalsResponse, ListThreadApprovalsResponse, GetApprovalsSummaryResponse, previewArgsDetailed } from '@manythreads/shared';
 import { personaActor, type Persona } from '@manythreads/test-utils';
 import type pg from 'pg';
@@ -77,15 +77,15 @@ async function loadBot(slug: string, md: string): Promise<{ botId: string; actor
 }
 
 /** A run of a bot asked by a person (or nobody), answering in #dev under `rootId`. */
-async function openRun(bot: { botId: string }, asker: { actorId: string } | null): Promise<BotRunHandle> {
+async function openRun(bot: { botId: string }, asker: { actorId: string } | null, where: { channelId?: string; replyRootId?: string } = {}): Promise<BotRunHandle> {
   const { run } = await runs.open({
     botId: bot.botId,
     teamId: TEAM_IDS.Engineering,
     workspaceId: omar.workspaceId,
     trigger: 'mention',
     askerActorId: asker?.actorId ?? null,
-    channelId,
-    replyRootId: rootId,
+    channelId: where.channelId ?? channelId,
+    replyRootId: where.replyRootId ?? rootId,
   });
   return run;
 }
@@ -506,5 +506,79 @@ describe('time', () => {
     await finished(await enqueue('approvals.execute', { approvalId: id }, 1));
     expect(await rowOf(id)).toMatchObject({ status: 'approved', outcome: 'failed' });
     expect((await w.call(omar, 'GET', '/api/teams/engineering/repo/blob?path=pages/crashed.md')).status).toBe(404);
+  });
+});
+
+describe('review round 3', () => {
+  let secret = '';
+  beforeAll(async () => {
+    // a private channel of Engineering that only Nadia is in (yet)
+    secret = await w.system(async (tx) => {
+      const id = (await tx.query<{ id: string }>("INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'war-room', 'channel', true) RETURNING id", [omar.workspaceId, TEAM_IDS.Engineering])).rows[0]!.id;
+      await tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2)', [id, nadia.personId]);
+      return id;
+    });
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, 'pages.write', true, '{}')
+         ON CONFLICT (actor_id, capability) DO UPDATE SET needs_approval = true`,
+        [TEAM_IDS.Engineering, scoped.actorId],
+      ),
+    );
+  });
+
+  it('a repeat after the first one lapsed (and was not swept yet) files a fresh approval', async () => {
+    const first = await request(await openRun(scoped, nadia), 'pages/repeat.md', { dedupeKey: 'repeat-after-lapse' });
+    await w.system((tx) => tx.query("UPDATE app.approvals SET expires_at = now() - interval '1 minute' WHERE id = $1", [first.approvalId]));
+    const again = await request(await openRun(scoped, nadia), 'pages/repeat.md', { dedupeKey: 'repeat-after-lapse' });
+    expect(again.created).toBe(true);
+    expect(again.approvalId).not.toBe(first.approvalId);
+    expect((await rowOf(first.approvalId))?.status).toBe('expired');
+    expect((await rowOf(again.approvalId))?.status).toBe('pending');
+  });
+
+  it('the same call asked from another conversation is an approval of its own', async () => {
+    const here = await request(await openRun(scoped, nadia), 'pages/two-places.md', { dedupeKey: 'two-places' });
+    const there = await request(await openRun(scoped, nadia, { replyRootId: '00000000-0000-7000-8000-00000000beef' }), 'pages/two-places.md', { dedupeKey: 'two-places' });
+    expect(there.created).toBe(true);
+    expect(there.approvalId).not.toBe(here.approvalId);
+    const sameAgain = await request(await openRun(scoped, nadia), 'pages/two-places.md', { dedupeKey: 'two-places' });
+    expect(sameAgain).toMatchObject({ approvalId: here.approvalId, created: false });
+  });
+
+  it('in a private conversation nobody else could decide, nothing is filed and the model is told why', async () => {
+    const run = await openRun(scoped, nadia, { channelId: secret });
+    // approvers are role:on-call (Rafi), who is not in the war room: nobody but Nadia, who asked, could decide
+    await expect(runs.asBot(run, (tx) => provider.request(tx, {
+      runId: run.runId, source: 'grant', tool: 'pages.write', summary: 's', argsPreview: {},
+      resume: { kind: 'tool', capability: 'pages.write', args: PAGE('pages/secret.md'), trigger: 'mention' },
+    }))).rejects.toBeInstanceOf(NoEligibleApproverError);
+    const answered = await requestToolApproval({ providers: { get: () => provider }, runs } as never, run, 'pages.write', PAGE('pages/secret.md'));
+    expect(answered).toMatchObject({ refused: expect.stringContaining('Nobody but you') });
+    expect(await w.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.approvals WHERE channel_id = $1', [secret])).rows[0]?.n)).toBe(0);
+  });
+
+  it('once a person who could decide is in it, it is filed for that conversation only: visible to its people, pushed to them, resumed without text', async () => {
+    await w.system((tx) => tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [secret, rafi.personId]));
+    const run = await openRun(scoped, nadia, { channelId: secret, replyRootId: rootId });
+    const filed = await request(run, 'pages/secret.md');
+    expect(filed).toMatchObject({ created: true, visibleTo: 'conversation' });
+    // who can see it: the war room's people, not Priya, not Omar (a lead and admin who is not in it)
+    expect((await list(rafi)).items.map((a) => a.id)).toContain(filed.approvalId);
+    expect((await list(priya)).items.map((a) => a.id)).not.toContain(filed.approvalId);
+    expect((await list(omar)).items.map((a) => a.id)).not.toContain(filed.approvalId);
+    // who a push would go to
+    const audience = await w.system(async (tx) => (await tx.query<{ o_people: string[] }>('SELECT o_people FROM app.approvals_audience($1)', [filed.approvalId])).rows[0]!.o_people);
+    expect([...audience].sort()).toEqual([nadia.personId, rafi.personId].sort());
+    // approving it runs the call; its resumed event is team-wide, so it carries no sentence
+    expect((await decide(rafi, filed.approvalId, 'approve')).status).toBe(200);
+    await until(async () => ((await rowOf(filed.approvalId))?.outcome === 'ran' ? true : null), 30_000, 'the call to run');
+    const resumed = (await eventsOf('approvals.approval.resumed')).find((e) => e['approvalId'] === filed.approvalId);
+    expect(resumed).toMatchObject({ outcome: 'ran', detail: '' });
+    // a public approval's event keeps its sentence
+    const open = await request(await openRun(scoped, nadia), 'pages/public-detail.md');
+    expect((await decide(rafi, open.approvalId, 'approve')).status).toBe(200);
+    await until(async () => ((await rowOf(open.approvalId))?.outcome === 'ran' ? true : null), 30_000, 'the call to run');
+    expect((await eventsOf('approvals.approval.resumed')).find((e) => e['approvalId'] === open.approvalId)?.['detail']).not.toBe('');
   });
 });

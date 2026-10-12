@@ -1,22 +1,16 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { ApprovalChangedPush, approvalChangedPushType } from '@manythreads/shared';
 
-/** The people of a team (bots are not people): who the Approvals badge and inbox live for. */
-export async function teamPeople(tx: PluginTx, teamId: string): Promise<string[]> {
-  const res = await tx.query<{ person_id: string }>(
-    `SELECT DISTINCT a.ref_id AS person_id FROM app.team_members tm
-       JOIN app.actors a ON a.id = tm.actor_id AND a.kind = 'person'
-      WHERE tm.team_id = $1`,
-    [teamId],
-  );
-  return res.rows.map((r) => r.person_id);
-}
-
-/** A hint to the team's open tabs that an approval was raised or settled; the list is the truth, the push only says when to refetch. */
-export async function pushChanged(ctx: PluginContext, tx: PluginTx, teamId: string, approvalId: string): Promise<void> {
-  const people = await teamPeople(tx, teamId);
-  if (people.length === 0) return;
-  await ctx.realtime.pushToPeople(tx, people, approvalChangedPushType, ApprovalChangedPush.parse({ teamId, approvalId }));
+/**
+ * A hint to the open tabs of the people who can see this approval that it was raised, settled or finished; the list is the truth, the push only
+ * says when to refetch. The audience is the people of the team who can read the conversation it came from (`app.approvals_audience`): a push
+ * about an approval raised in a private channel or a DM goes to that conversation's people, not to the team.
+ */
+export async function pushChanged(ctx: PluginContext, tx: PluginTx, approvalId: string): Promise<void> {
+  // the audience is computed by a definer function: a bot filing a private-channel approval cannot read the row or the channel's members itself
+  const row = (await tx.query<{ o_team_id: string; o_people: string[] }>('SELECT o_team_id, o_people FROM app.approvals_audience($1::uuid)', [approvalId])).rows[0];
+  if (!row || row.o_people.length === 0) return;
+  await ctx.realtime.pushToPeople(tx, row.o_people, approvalChangedPushType, ApprovalChangedPush.parse({ teamId: row.o_team_id, approvalId }));
 }
 
 /** The facts an event repeats about an approval; read through the app role's own column grants (never `resume`). */

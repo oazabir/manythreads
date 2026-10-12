@@ -25,11 +25,16 @@ export async function askForApproval(
   }
   const filed = await requestToolApproval(ctx, run, tool, input);
   if (!filed) return { ok: false, code: 'approval_required', message: 'This call needs a person’s approval before it runs.' };
+  // nobody but the asker could decide it in a private conversation: it was not filed, and the model says so
+  if ('refused' in filed) return { ok: false, code: 'forbidden', message: filed.refused };
+  const where =
+    filed.visibleTo === 'conversation'
+      ? 'it is now waiting for the people who can read this conversation and are allowed to decide it (it is not in the whole team’s Approvals inbox)'
+      : 'it is now waiting in the team’s Approvals inbox';
   return {
     ok: false,
     code: 'approval_pending',
     approvalId: filed.approvalId,
-    message:
-      'This call did not run: it needs a person’s approval, and it is now waiting in the team’s Approvals inbox. Tell the person it is waiting; do not call it again. Once approved it runs once, as you, with these arguments.',
+    message: `This call did not run: it needs a person’s approval, and ${where}. Tell the person it is waiting; do not call it again. Once approved it runs once, as you, with these arguments.`,
   };
 }

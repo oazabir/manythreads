@@ -92,10 +92,11 @@ async function settle(
       tool: row.tool,
       botId: row.bot_id,
       outcome,
-      detail,
+      // the event is team-wide; the sentence (what the tool said) is the conversation's, so a channel-scoped approval's event carries none
+      detail: row.channel_id === null ? detail : '',
     }),
   );
-  await pushChanged(ctx, tx, row.team_id, row.id);
+  await pushChanged(ctx, tx, row.id);
 }
 
 export function registerResumeJob(ctx: PluginContext): void {
@@ -166,21 +167,24 @@ export function registerResumeJob(ctx: PluginContext): void {
       if (!opened) return fail('The call could not be started.');
       const { run } = opened;
 
+      // The call is made (or refused) first; only then is anything recorded. What happens after the call has committed must never be able to
+      // turn "it ran" into "it failed": settle `ran`, and let closing the run fail on its own.
+      let verdict: { ok: boolean; detail: string };
       try {
         const decision = await ctx.runs.authorize(run, call.capability, authorizeContext(call.args));
         if (!decision.allowed) {
-          await ctx.runs.close(run.runId, 'failed');
-          return await fail(clip(`The bot may no longer make this call: ${decision.reason}`));
+          verdict = { ok: false, detail: clip(`The bot may no longer make this call: ${decision.reason}`) };
+        } else {
+          verdict = detailOf(await ctx.runs.asApproved(run, call.capability, (inner) => ctx.runs.invoke(inner, call.capability, call.args)));
         }
-        const result = await ctx.runs.asApproved(run, call.capability, (inner) => ctx.runs.invoke(inner, call.capability, call.args));
-        const verdict = detailOf(result);
-        await ctx.runs.close(run.runId, verdict.ok ? 'done' : 'failed');
-        await settle(ctx, tx, row, verdict.ok ? 'ran' : 'failed', verdict.detail);
       } catch (err) {
         job.log.warn(`approvals: approved call ${call.capability} (approval ${approvalId}) threw: ${err instanceof Error ? err.message : String(err)}`);
-        await ctx.runs.close(run.runId, 'failed').catch(() => undefined);
-        await fail(clip(`The call failed: ${err instanceof Error ? err.message : String(err)}`));
+        verdict = { ok: false, detail: clip(`The call failed: ${err instanceof Error ? err.message : String(err)}`) };
       }
+      await settle(ctx, tx, row, verdict.ok ? 'ran' : 'failed', verdict.detail);
+      await ctx.runs.close(run.runId, verdict.ok ? 'done' : 'failed').catch((err: unknown) => {
+        job.log.warn(`approvals: run ${run.runId} of approval ${approvalId} could not be closed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     },
     { maxAttempts: 1 },
   );
@@ -223,7 +227,7 @@ export function registerResumeJob(ctx: PluginContext): void {
           }),
         );
       }
-      for (const row of [...expired.rows, ...stuck.rows]) await pushChanged(ctx, tx, row.team_id, row.id);
+      for (const row of [...expired.rows, ...stuck.rows]) await pushChanged(ctx, tx, row.id);
       if (expired.rows.length + stuck.rows.length > 0) job.log.info(`approvals: swept ${expired.rows.length} lapsed and ${stuck.rows.length} unfinished`);
     },
     { cron: '*/5 * * * *', maxAttempts: 1 },

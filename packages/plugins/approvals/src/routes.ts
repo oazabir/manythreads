@@ -145,7 +145,7 @@ export function registerRoutes(ctx: PluginContext): void {
           const kind = (await tx.query<{ resume_kind: string }>('SELECT resume_kind FROM app.approvals WHERE id = $1::uuid', [approvalId])).rows[0]?.resume_kind;
           if (kind === 'tool') await ctx.jobs.enqueue(tx, RESUME_QUEUE, { approvalId }, { dedupeKey: `approvals:${approvalId}` });
         }
-        await pushChanged(ctx, tx, facts.team_id, approvalId);
+        await pushChanged(ctx, tx, approvalId);
         return json({ approval: await approvalOf(tx, team.id, approvalId) });
       }),
     });
