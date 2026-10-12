@@ -76,11 +76,7 @@ async function makeBot(team: string, slug: string): Promise<void> {
     const id = row.rows[0]!.id;
     const actor = await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, id]);
     await tx.query("INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')", [teamId, actor.rows[0]!.id, omar.workspaceId]);
-    for (const capability of ['memory.recall']) {
-      await world.system((t) =>
-        t.query('INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, $3, false, $4)', [teamId, actor.rows[0]!.id, capability, '{}']),
-      );
-    }
+    await tx.query("INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints) VALUES ($1, $2, 'memory.recall', false, '{}')", [teamId, actor.rows[0]!.id]);
     return id;
   });
   botIds[team] = bot;
