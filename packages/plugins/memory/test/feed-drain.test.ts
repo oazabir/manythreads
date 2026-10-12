@@ -42,11 +42,15 @@ interface Call {
   items?: readonly MemoryRetainItem[];
   async?: boolean | undefined;
   ids?: readonly string[];
+  /** The engine answered with an error to this call. */
+  rejected?: boolean;
 }
 class StubEngine {
   calls: Call[] = [];
   enabled = true;
   failRetain: Error | null = null;
+  /** Fails a retain call when this says so for the items of the call (a poison item). */
+  failWhen: ((items: readonly MemoryRetainItem[]) => Error | null) | null = null;
   failForget: Error | null = null;
   gone = new Set<string>();
   provider: MemoryProvider = {
@@ -62,6 +66,11 @@ class StubEngine {
         recall: () => Promise.reject(new Error('not used')),
         retain: async (items, options) => {
           if (stub.failRetain) throw stub.failRetain;
+          const poisoned = stub.failWhen?.(items) ?? null;
+          if (poisoned) {
+            stub.calls.push({ op: 'retain', bank: bank.id, items, async: options?.async, rejected: true });
+            throw poisoned;
+          }
           stub.calls.push({ op: 'retain', bank: bank.id, items, async: options?.async });
           return { bank: bank.id, items: items.length, async: options?.async === true, documentIds: items.map((i) => i.documentId ?? '') };
         },
@@ -78,6 +87,7 @@ class StubEngine {
     this.calls = [];
     this.enabled = true;
     this.failRetain = null;
+    this.failWhen = null;
     this.failForget = null;
     this.gone.clear();
   }
@@ -176,10 +186,13 @@ interface RunOptions {
 const run = (lines: ReadonlyArray<readonly [string, string, string]>, options: RunOptions = {}): Promise<string> =>
   sys(async (tx) => {
     const status = options.status ?? 'done';
+    // One clock for both instants (the statement's `now()`), so a run never ends before it starts; explicit instants are used as given.
     const id = (
       await tx.query<{ id: string }>(
         `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, channel_id, status, started_at, ended_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8::timestamptz, now() - interval '1 minute'), $9::timestamptz) RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, coalesce($8::timestamptz, now() - interval '1 minute'),
+                 CASE WHEN $7 = 'running' THEN NULL ELSE coalesce($9::timestamptz, now()) END)
+         RETURNING id`,
         [
           omar.workspaceId,
           options.bot ?? botId,
@@ -189,7 +202,7 @@ const run = (lines: ReadonlyArray<readonly [string, string, string]>, options: R
           options.channelId ?? null,
           status,
           options.startedAt ?? null,
-          options.endedAt === undefined ? (status === 'running' ? null : new Date().toISOString()) : options.endedAt,
+          options.endedAt ?? null,
         ],
       )
     ).rows[0]!.id;
@@ -470,15 +483,93 @@ describe('when the engine is not there, or not well', () => {
     expect(await pendingOf('message', id)).toMatchObject({ attempts: 1 });
   });
 
-  it('no engine configured drops the work and writes nothing', async () => {
-    const id = await message(pubChannel, 'Nobody to tell.');
-    await mark('message', id);
+  it('no engine configured: a change to a source the bank holds nothing for is dropped, one it holds a document for waits to be taken out', async () => {
+    const held = await message(pubChannel, 'Held before the engine was switched off.');
+    await mark('message', held);
+    await drain();
+    const doc = (await linesOf('message', held))[0]!.document_id!;
+    stub.reset();
+
+    const fresh = await message(pubChannel, 'Nobody to tell.');
+    await softDelete(held);
+    await mark('message', fresh);
+    await mark('message', held);
     stub.enabled = false;
     const stats = await drain();
-    expect(stats).toMatchObject({ considered: 1, dropped: 1, retained: 0 });
+    expect(stats).toMatchObject({ considered: 2, dropped: 1, deferred: 1, retained: 0 });
     expect(stub.calls).toEqual([]);
+    expect(await pendingOf('message', fresh)).toBeUndefined();
+    expect(await linesOf('message', fresh)).toEqual([]);
+    expect(await pendingOf('message', held)).toMatchObject({ in_future: true });
+
+    // the engine is back: the delete that was made while it was off is carried out
+    stub.enabled = true;
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = $1', [held]));
+    await drain();
+    expect(stub.forgets()[0]!.ids).toEqual([doc]);
+    expect((await linesOf('message', held)).at(-1)).toMatchObject({ outcome: 'forgotten', reason: 'deleted' });
+  });
+
+  it('a not_configured line does not hide a document that is still in the bank: the delete after it still takes the document out', async () => {
+    const id = await message(pubChannel, 'Retained, then a day of no engine, then deleted.');
+    await mark('message', id);
+    await drain();
+    const doc = (await linesOf('message', id))[0]!.document_id!;
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, outcome, reason)
+         VALUES ($1, $2, '(no engine)', 'message', $3, 'not_configured', 'no memory engine is configured in this deployment')`,
+        [omar.workspaceId, ENG, id],
+      ),
+    );
+    stub.reset();
+    await softDelete(id);
+    await mark('message', id);
+    await drain();
+    expect(stub.forgets()[0]!.ids).toEqual([doc]);
+  });
+
+  it('a forget that never succeeds is never given up on: the work row stays, the failure is logged once with the document, and a later success removes it', async () => {
+    const id = await message(pubChannel, 'Cannot be forgotten yet.');
+    await mark('message', id);
+    await drain();
+    const doc = (await linesOf('message', id))[0]!.document_id!;
+    stub.reset();
+    await softDelete(id);
+    await mark('message', id);
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET attempts = 7 WHERE source_id = $1', [id]));
+    stub.failForget = new MemoryError('unavailable', 'engine says no');
+    await drain();
+    // eighth attempt: logged as failed WITH the document, and the row is still there (half an hour on), not dropped
+    expect(await pendingOf('message', id)).toMatchObject({ attempts: 8, in_future: true });
+    const failed = (await linesOf('message', id)).filter((l) => l.outcome === 'failed');
+    expect(failed).toMatchObject([{ document_id: doc }]);
+    // a ninth attempt writes no second line, and the row stays
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = $1', [id]));
+    await drain();
+    expect((await linesOf('message', id)).filter((l) => l.outcome === 'failed')).toHaveLength(1);
+    expect(await pendingOf('message', id)).toMatchObject({ attempts: 9 });
+    // the engine recovers: the document goes, and the newest state line says so
+    stub.failForget = null;
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = $1', [id]));
+    await drain();
+    expect(stub.forgets()[0]!.ids).toEqual([doc]);
     expect(await pendingOf('message', id)).toBeUndefined();
-    expect(await linesOf('message', id)).toEqual([]);
+    expect((await linesOf('message', id)).filter((l) => l.outcome !== 'failed').map((l) => l.outcome)).toEqual(['retained', 'forgotten']);
+  });
+
+  it('an item the engine rejects (422) does not take the other items of its chunk with it: they are tried one at a time', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 6; i += 1) ids.push(await message(pubChannel, i === 3 ? 'POISON that the engine will not take.' : `Fine note ${i}.`));
+    for (const id of ids) await mark('message', id);
+    stub.failWhen = (items) => (items.some((it) => it.content.includes('POISON')) ? new MemoryError('unavailable', 'engine said 422', 422) : null);
+    const stats = await drain();
+    expect(stats).toMatchObject({ considered: 6, retained: 5, failed: 1 });
+    expect(stub.retains().filter((c) => !c.rejected).reduce((n, c) => n + c.items!.length, 0)).toBe(5);
+    expect(await pendingOf('message', ids[3]!)).toMatchObject({ attempts: 1 });
+    for (const id of ids.filter((_, i) => i !== 3)) expect((await linesOf('message', id)).map((l) => l.outcome)).toEqual(['retained']);
+    stub.failWhen = null;
+    await sys((tx) => tx.query('DELETE FROM app.memory_feed_pending WHERE source_id = $1', [ids[3]!]));
   });
 
   it('a team that no longer exists is dropped quietly', async () => {
@@ -531,8 +622,6 @@ describe('a run (the narrowest-source rule)', () => {
     { name: 'read a person-scoped source', lines: async () => [['drive', 'x', 'person']], reason: 'person_source', scopes: ['person'] },
     { name: 'read a private channel message', lines: async () => [['message', await message(privChannel, 'Private words.'), 'channel']], reason: 'private_source', scopes: ['channel'] },
     { name: 'read a DM', lines: async () => [['message', await message(dmChannel, 'DM words.'), 'channel']], reason: 'private_source', scopes: ['channel'] },
-    { name: 'is a conversation', lines: async () => [], options: { trigger: 'conversation' }, reason: 'conversation', scopes: [] },
-    { name: 'answers in a private channel', lines: async () => [], options: { channel: () => privChannel }, reason: 'private_channel', scopes: [] },
   ];
 
   it.each(withheldCases)('that $name is withheld: nothing is retained and the log says why', async ({ lines, options, reason, scopes }) => {
@@ -545,6 +634,21 @@ describe('a run (the narrowest-source rule)', () => {
     await mark('run', id);
     await drain();
     expect(await linesOf('run', id)).toHaveLength(1);
+  });
+
+  it('of a private conversation, a private channel or a private thread leaves no line at all, and nothing is retained', async () => {
+    const ids = [
+      await run([], { trigger: 'conversation' }),
+      await run([], { channelId: privChannel }),
+      await run([], { channelId: dmChannel }),
+    ];
+    for (const id of ids) await mark('run', id);
+    await drain();
+    expect(stub.calls).toEqual([]);
+    for (const id of ids) {
+      expect(await linesOf('run', id)).toEqual([]);
+      expect(await pendingOf('run', id)).toBeUndefined();
+    }
   });
 
   it('that is still open waits, and is judged when it closes; one that never closes is withheld after a day', async () => {
@@ -612,6 +716,26 @@ describe('what a bot wrote during a run', () => {
     await sys((tx) => tx.query("UPDATE app.bot_runs SET status = 'done', ended_at = now() WHERE id = $1", [open]));
     await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = $1', [during]));
     expect(await drain()).toMatchObject({ retained: 1 });
+  });
+
+  it('a withheld bot root does not leak through the thread: no head, no quote, and a line for the root', async () => {
+    // a run that read a person source; the bot's message (a root) was posted inside it; a person replied
+    await run([['drive', 'x', 'person']], { bot: writer, startedAt: '2017-03-01T10:00:00.000Z', endedAt: '2017-03-01T10:05:00.000Z' });
+    const root = await message(pubChannel, 'The Hummingbird acquisition closes at 12 million.', { author: writerActor, at: '2017-03-01T10:02:00.000Z' });
+    // the copy of the root's first characters the threads table keeps (it is what the thread title used to be taken from)
+    await sys((tx) => tx.query("INSERT INTO app.threads (root_message_id, channel_id, title) VALUES ($1, $2, 'The Hummingbird acquisition closes at 12 million.') ON CONFLICT (root_message_id) DO UPDATE SET title = EXCLUDED.title", [root, pubChannel]));
+    const reply = await message(pubChannel, 'Is that public yet?', { author: rafi.actorId, threadRoot: root, at: '2017-03-01T10:20:00.000Z' });
+    await mark('thread', root);
+    await drain();
+    const doc = stub.retains()[0]!.items![0]!;
+    expect(doc.content).toBe(`Thread in #dev\n[2017-03-01 10:20] Rafi: Is that public yet?`);
+    expect(JSON.stringify(stub.calls)).not.toMatch(/Hummingbird|12 million/);
+    // the excluded message is on the record, once
+    expect(await linesOf('message', root)).toMatchObject([{ outcome: 'withheld', reason: 'authoring run: person_source' }]);
+    await mark('thread', root);
+    await setBody(reply, 'Is that public yet? Asking for the board.');
+    await drain();
+    expect(await linesOf('message', root)).toHaveLength(1);
   });
 
   it('a bot reply in a thread whose run read a person source is left out of the thread document; the people’s messages stay', async () => {

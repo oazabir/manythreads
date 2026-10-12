@@ -236,8 +236,11 @@ const SUMMARY_HINT_KEYS = ['subject', 'title', 'path', 'name', 'to', 'query', 'b
 
 /** The one line the inbox shows for a tool call: the capability and, when the arguments name one, what it is about. */
 export function approvalSummary(tool: string, args: Record<string, unknown>): string {
+  // From the preview, never the raw arguments: the line is what the inbox, the thread card and the team's memory show, so it can say no more than
+  // the approver is shown (a key that names a secret is `[hidden]`; a long value is already clipped).
+  const shown = previewArgs(args);
   for (const key of SUMMARY_HINT_KEYS) {
-    const value = args[key];
+    const value = shown[key];
     if (typeof value === 'string' && value.trim() !== '') {
       const line = value.trim().replace(/\s+/g, ' ');
       return `${tool} · ${line.length > 80 ? `${line.slice(0, 79)}…` : line}`;

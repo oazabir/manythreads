@@ -14,7 +14,7 @@
 --    from the run's own source log and the data the lines point at, never from the scope label alone. The one decision `memory.retain` (via
 --    memory-hindsight's `app.memory_run_scope()`) and the feed's run summaries both read.
 --  * app.memory_authored_verdict(actor, at): the same rule for something a bot wrote without being asked to retain it (a message or a page it
---    posted during a run): the bot's runs that were open at that moment decide.
+--    posted during a run): the bot's runs that were open at that moment decide (and a bot that no longer exists is refused: its runs went with it).
 --
 -- Ordering: the manifest's `dependsOn` puts this after channels, bots, files, approvals and repo-git. The functions are plpgsql, so the
 -- tables they read are resolved when they run.
@@ -181,25 +181,40 @@ COMMENT ON FUNCTION app.run_retain_verdict(uuid) IS
 -- the bank must not carry it then (it would outlive and out-reach the run's own scope). The bot's runs that were open at `p_at` (±2 s: git dates
 -- have one-second resolution) decide: `retain_refusal` is the first refusal among them, `run_open` says a run is still going (its source log can
 -- still grow, so the caller waits), `runs` how many there were (0: nothing was running, the bot wrote it outside a run). A run that never closed
--- covers two hours from its start and no more, so one lost worker cannot hold a bot's later messages back for ever.
+-- covers two hours from its start and no more, so one lost worker cannot hold a bot's later messages back for ever; no run is looked for that
+-- started more than a day before `p_at` (the index below makes the lookup a range scan of one bot's runs of that day, not of all of them).
+-- A bot whose row is gone (`bots.bot.removed` deletes its runs with it) has no runs to speak for what it wrote: that is refused, as `bot_removed`,
+-- never read as "it wrote it outside a run".
+CREATE INDEX memory_bot_runs_started ON app.bot_runs (bot_id, started_at);
+
 CREATE FUNCTION app.memory_authored_verdict(p_bot_actor uuid, p_at timestamptz)
   RETURNS TABLE (run_open boolean, retain_refusal text, runs integer)
   LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = pg_catalog, app, pg_temp
 AS $$
-  SELECT coalesce(bool_or(r.ended_at IS NULL AND r.started_at + interval '2 hours' > now()), false),
-         (array_agg(v.retain_refusal ORDER BY r.id) FILTER (WHERE v.retain_refusal IS NOT NULL))[1],
-         count(r.id)::integer
-    FROM app.actors a
-    JOIN app.bot_runs r ON r.bot_id = a.ref_id AND r.workspace_id = a.workspace_id
-    CROSS JOIN LATERAL app.run_retain_verdict(r.id) v
-   WHERE a.id = p_bot_actor AND a.kind = 'bot'
-     AND r.started_at <= p_at + interval '2 seconds'
-     AND p_at - interval '2 seconds' <= coalesce(r.ended_at, r.started_at + interval '2 hours')
+  WITH bot AS (
+    SELECT a.id, a.ref_id, a.workspace_id, EXISTS (SELECT 1 FROM app.bots b WHERE b.id = a.ref_id) AS present
+      FROM app.actors a
+     WHERE a.id = p_bot_actor AND a.kind = 'bot'
+  ), judged AS (
+    SELECT r.id, r.started_at, r.ended_at, v.retain_refusal
+      FROM bot
+      JOIN app.bot_runs r ON r.bot_id = bot.ref_id AND r.workspace_id = bot.workspace_id
+      CROSS JOIN LATERAL app.run_retain_verdict(r.id) v
+     WHERE r.started_at <= p_at + interval '2 seconds'
+       AND r.started_at > p_at - interval '24 hours'
+       AND p_at - interval '2 seconds' <= coalesce(r.ended_at, r.started_at + interval '2 hours')
+  )
+  SELECT coalesce(bool_or(j.ended_at IS NULL AND j.started_at + interval '2 hours' > now()), false),
+         coalesce(
+           (array_agg(j.retain_refusal ORDER BY j.id) FILTER (WHERE j.retain_refusal IS NOT NULL))[1],
+           CASE WHEN EXISTS (SELECT 1 FROM bot WHERE NOT bot.present) THEN 'bot_removed' END),
+         count(j.id)::integer
+    FROM judged j
 $$;
 
 ALTER FUNCTION app.memory_authored_verdict(uuid, timestamptz) OWNER TO manythreads_system;
 REVOKE ALL ON FUNCTION app.memory_authored_verdict(uuid, timestamptz) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.memory_authored_verdict(uuid, timestamptz) TO manythreads_system;
 COMMENT ON FUNCTION app.memory_authored_verdict(uuid, timestamptz) IS
-  'The retain verdict for something a bot wrote at p_at: the first refusal among the bot''s runs that were open then, whether one still is, and how many there were. System role only.';
+  'The retain verdict for something a bot wrote at p_at: the first refusal among the bot''s runs that were open then (bot_removed when the bot is gone), whether one still is, and how many there were. System role only.';

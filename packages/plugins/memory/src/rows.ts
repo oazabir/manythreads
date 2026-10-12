@@ -12,7 +12,6 @@ export interface RetainLogRow extends Record<string, unknown> {
   source_id: string;
   channel_id: string | null;
   document_id: string | null;
-  content_hash: string | null;
   outcome: string;
   reason: string;
   run_id: string | null;
@@ -22,8 +21,9 @@ export interface RetainLogRow extends Record<string, unknown> {
   created_at: Date;
 }
 
+// `content_hash` is a column of the table (it recognises an unchanged re-delivery) and not a field of the API shape: it is never selected here.
 export const RETAIN_LOG_COLUMNS =
-  'id, workspace_id, team_id, store, bank, source_kind, source_id, channel_id, document_id, content_hash, outcome, reason, run_id, source_scopes, actor_id, link, created_at';
+  'id, workspace_id, team_id, store, bank, source_kind, source_id, channel_id, document_id, outcome, reason, run_id, source_scopes, actor_id, link, created_at';
 
 /** The one place a `memory_retain_log` row becomes the shared `MemoryRetainLogEntry`. */
 export function toMemoryRetainLogEntry(r: RetainLogRow): MemoryRetainLogEntry {
@@ -36,7 +36,6 @@ export function toMemoryRetainLogEntry(r: RetainLogRow): MemoryRetainLogEntry {
     sourceKind: r.source_kind,
     sourceId: r.source_id,
     documentId: r.document_id,
-    contentHash: r.content_hash,
     outcome: r.outcome,
     reason: r.reason,
     runId: r.run_id,
@@ -61,11 +60,20 @@ export interface LastLine extends Record<string, unknown> {
   created_at: Date;
 }
 
-/** The newest line of one source: what the bank holds for it (a `retained` line), or that it holds nothing. */
+/** The outcomes that say what the bank holds for a source; `not_configured` and `failed` are notes about attempts and never change it. */
+export const STATE_OUTCOMES = ['retained', 'forgotten', 'withheld'] as const;
+
+/**
+ * The newest line of one source that says what the bank holds for it (a `retained` line: the document; `forgotten` / `withheld`: nothing). A
+ * `not_configured` line (written while no engine was there) or a `failed` one (the engine would not take, or would not let go of, a document)
+ * does not shadow it: a document that is still in the bank is still "held", so a later delete or edit still takes it out.
+ */
 export async function latestLine(tx: PluginTx, kind: string, sourceId: string): Promise<LastLine | null> {
   const res = await tx.query<LastLine>(
     `SELECT id, team_id, workspace_id, bank, document_id, content_hash, outcome, reason, channel_id, created_at
-       FROM app.memory_retain_log WHERE source_kind = $1 AND source_id = $2 ORDER BY id DESC LIMIT 1`,
+       FROM app.memory_retain_log
+      WHERE source_kind = $1 AND source_id = $2 AND outcome IN ('retained', 'forgotten', 'withheld')
+      ORDER BY id DESC LIMIT 1`,
     [kind, sourceId],
   );
   return res.rows[0] ?? null;

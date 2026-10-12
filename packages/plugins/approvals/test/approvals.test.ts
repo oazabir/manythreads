@@ -342,6 +342,32 @@ describe('deciding', () => {
     expect(decided).toMatchObject({ status: 'approved', outcome: 'ran' });
   });
 
+  it('the re-run starts having read what the stopped run had read, so the memory rule still sees a person source behind what it writes', async () => {
+    const original = await openRun(scoped, nadia);
+    await w.system(async (tx) => {
+      await tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'drive', 'finance/q3.xlsx', 'person'), ($1, 1, 'message', '00000000-0000-7000-8000-0000000000aa', 'channel')", [original.runId]);
+    });
+    const id = (await request(original, 'pages/inherits.md')).approvalId;
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    await until(async () => ((await rowOf(id))?.outcome === 'ran' ? true : null), 30_000, 'the approved call to run');
+
+    const rerun = await w.system(
+      async (tx) =>
+        (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs WHERE bot_id = $1 AND id <> $2 ORDER BY id DESC LIMIT 1', [scoped.botId, original.runId])).rows[0]!.id,
+    );
+    const lines = await w.system(async (tx) => (await tx.query('SELECT source_type, source_ref, scope FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [rerun])).rows);
+    expect(lines).toEqual([
+      { source_type: 'drive', source_ref: 'finance/q3.xlsx', scope: 'person' },
+      { source_type: 'message', source_ref: '00000000-0000-7000-8000-0000000000aa', scope: 'channel' },
+    ]);
+    // the page the re-run wrote is judged by those lines: the bot's text at that moment is refused for the bank
+    const refusal = await w.system(async (tx) => {
+      const at = (await tx.query<{ committed_at: Date }>("SELECT committed_at FROM app.repo_commits WHERE team_id = $1 AND 'pages/inherits.md' = ANY (paths) ORDER BY seq DESC LIMIT 1", [TEAM_IDS.Engineering])).rows[0]!.committed_at;
+      return (await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.memory_authored_verdict($1, $2::timestamptz)', [scoped.actorId, at.toISOString()])).rows[0]!.retain_refusal;
+    });
+    expect(refusal).toBe('person_source');
+  });
+
   it('denying settles it without running anything', async () => {
     const id = (await request(await openRun(scoped, nadia), 'pages/denied.md')).approvalId;
     const res = await decide(rafi, id, 'deny', 'not now');

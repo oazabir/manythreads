@@ -101,10 +101,14 @@ interface RunOptions {
 const run = (lines: ReadonlyArray<readonly [string, string, string]>, options: RunOptions = {}): Promise<string> =>
   sys(async (tx) => {
     const status = options.status ?? 'running';
+    // Both instants come from the one statement's clock (`now()` is the transaction's), so a run never ends before it started whatever the
+    // clocks of the test process and the database say; an explicit `startedAt`/`endedAt` is used as given.
     const id = (
       await tx.query<{ id: string }>(
         `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, status, started_at, ended_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9::timestamptz, now()), $10::timestamptz) RETURNING id`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9::timestamptz, now()),
+                 CASE WHEN $8 = 'running' THEN NULL ELSE coalesce($10::timestamptz, greatest(now(), coalesce($9::timestamptz, now()))) END)
+         RETURNING id`,
         [
           omar.workspaceId,
           botId,
@@ -115,7 +119,7 @@ const run = (lines: ReadonlyArray<readonly [string, string, string]>, options: R
           options.channelId ?? null,
           status,
           options.startedAt ?? null,
-          options.endedAt === undefined ? (status === 'running' ? null : new Date().toISOString()) : options.endedAt,
+          options.endedAt ?? null,
         ],
       )
     ).rows[0]!.id;
@@ -319,6 +323,34 @@ describe('what a bot wrote: app.memory_authored_verdict(bot actor, at)', () => {
     await sys((tx) => tx.query("UPDATE app.bot_runs SET status = 'done', ended_at = now() WHERE id = $1", [id]));
   });
 
+  it('a bot that no longer exists is refused: its runs went with it, so what it wrote must not read as "outside a run"', async () => {
+    const gone = await sys(async (tx) => {
+      const bot = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
+           VALUES ($1, $2, 'short-lived', 'Short lived', '', 'agent', 'rules', 'team', repeat('c', 64), 'active') RETURNING id`,
+          [omar.workspaceId, ENG],
+        )
+      ).rows[0]!.id;
+      const actor = (await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, bot])).rows[0]!.id;
+      const runId = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, started_at, ended_at)
+           VALUES ($1, $2, $3, 'mention', $4, 'done', '2016-05-01T10:00:00Z', '2016-05-01T10:05:00Z') RETURNING id`,
+          [omar.workspaceId, bot, ENG, nadia.actorId],
+        )
+      ).rows[0]!.id;
+      await tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'drive', 'x', 'person')", [runId]);
+      return { bot, actor };
+    });
+    const at = '2016-05-01T10:02:00.000Z';
+    const ask = () =>
+      sys(async (tx) => (await tx.query<{ retain_refusal: string | null; runs: number }>('SELECT retain_refusal, runs FROM app.memory_authored_verdict($1, $2::timestamptz)', [gone.actor, at])).rows[0]!);
+    expect(await ask()).toEqual({ retain_refusal: 'person_source', runs: 1 });
+    await sys((tx) => tx.query('DELETE FROM app.bots WHERE id = $1', [gone.bot]));
+    expect(await ask()).toEqual({ retain_refusal: 'bot_removed', runs: 0 });
+  });
+
   it('is for a bot actor only: a person actor id has no runs', async () => {
     const res = await sys(async (tx) => (await tx.query<{ runs: number }>('SELECT runs FROM app.memory_authored_verdict($1, now())', [nadia.actorId])).rows[0]!);
     expect(res.runs).toBe(0);
@@ -412,6 +444,9 @@ describe('memory_retain_log and memory_feed_pending: who reads, who writes', () 
       return { refused, retained };
     }, { pool: appPool });
     expect(wrote).toEqual({ refused: 1, retained: 2 });
+    // asking again is not a second line: one refusal per run, however often the model retries
+    const again = await withActor({ kind: 'bot', id: botActorId, workspaceId: omar.workspaceId, runId: id } as never, async (tx) => (await tx.query<{ n: number }>("SELECT app.memory_retain_log_run('withheld', 'team:kahf:engineering', ARRAY[]::text[]) AS n")).rows[0]!.n, { pool: appPool });
+    expect(again).toBe(0);
     const rows = await sys(async (tx) =>
       (await tx.query<{ source_kind: string; outcome: string; reason: string; source_scopes: string[]; run_id: string }>(
         "SELECT source_kind, outcome, reason, source_scopes, run_id FROM app.memory_retain_log WHERE run_id = $1 ORDER BY id", [id])).rows);

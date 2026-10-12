@@ -23,6 +23,8 @@ export interface Provenance {
   actorId: string | null;
   scopes: string[];
   link: string;
+  /** Messages of a thread that were left out of its document because the run that wrote them read something narrower: one `withheld` line each. */
+  excluded?: Array<{ messageId: string; actorId: string; reason: string }>;
 }
 
 export type Resolution =
@@ -177,20 +179,31 @@ export async function resolveThread(tx: PluginTx, rootId: string): Promise<Resol
   if (rootVerdict?.run_open === true || replies.some((r) => r.run_open === true)) return { action: 'defer', at, reason: 'run_open' };
 
   const quoted: Array<{ authorName: string; at: string; body: string }> = [];
+  const excluded: NonNullable<Provenance['excluded']> = [];
   let withheld: string | null = null;
-  if (rootVerdict?.retain_refusal != null) withheld = rootVerdict.retain_refusal;
-  else quoted.push({ authorName: root.author_name ?? 'someone', at: iso(root.created_at), body: root.body_plain });
+  let rootQuoted = false;
+  if (rootVerdict?.retain_refusal != null) {
+    withheld = rootVerdict.retain_refusal;
+    excluded.push({ messageId: root.id, actorId: root.author_id, reason: `authoring run: ${rootVerdict.retain_refusal}` });
+  } else {
+    quoted.push({ authorName: root.author_name ?? 'someone', at: iso(root.created_at), body: root.body_plain });
+    rootQuoted = true;
+  }
   for (const r of replies.slice(0, MAX_THREAD_REPLIES)) {
     // What a bot wrote in a run that read something narrower than the team is left out of the document, like the message itself.
     if (r.retain_refusal !== null) {
       withheld ??= r.retain_refusal;
+      excluded.push({ messageId: r.id, actorId: r.author_id, reason: `authoring run: ${r.retain_refusal}` });
       continue;
     }
     quoted.push({ authorName: r.author_name ?? 'someone', at: iso(r.created_at), body: r.body_plain });
   }
+  at.excluded = excluded;
   if (quoted.length === 0) return { action: 'withhold', at, reason: `authoring run: ${withheld ?? 'private_source'}` };
 
-  const title = (await tx.query<{ title: string }>('SELECT title FROM app.threads WHERE root_message_id = $1::uuid', [rootId])).rows[0]?.title ?? '';
+  // The title is the root's own first line, taken only from a root that is quoted: `app.threads.title` is a copy of the root's first characters
+  // made when it was posted, so reading it would put a withheld root's words in the head of a document that does not quote it.
+  const title = rootQuoted ? (root.body_plain.split('\n', 1)[0] ?? '').slice(0, 120) : '';
   const text = renderThread({
     channelName: root.channel_name,
     title,
@@ -272,6 +285,9 @@ export async function resolveRun(tx: PluginTx, runId: string): Promise<Resolutio
   // The narrowest-source rule: a run's result goes into the team bank only if everything it read is team-visible. Otherwise nothing is
   // retained and the log says which refusal applied (`person_source`, `private_source`, `conversation`, `private_channel`, `private_thread`).
   if (verdict === undefined) return forget('gone');
+  // A run of a private conversation (a person talking to the bot, a private channel or thread) leaves no line, like the private messages it is made
+  // of: one line per conversation turn would be a log of who talks to which bot. What a run withholds because of what it READ still is a line.
+  if (verdict.retain_refusal === 'conversation' || verdict.retain_refusal === 'private_channel' || verdict.retain_refusal === 'private_thread') return skip('private_context');
   if (verdict.retain_refusal !== null) return { action: 'withhold', at, reason: verdict.retain_refusal };
 
   const sources = (

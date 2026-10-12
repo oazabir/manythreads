@@ -45,7 +45,6 @@ describe('MemoryRetainLogEntry', () => {
     sourceKind: 'message',
     sourceId: uuid(5),
     documentId: `feed:message:${uuid(5)}:0123456789abcdef`,
-    contentHash: 'a'.repeat(64),
     outcome: 'retained',
     reason: '',
     runId: null,
@@ -57,7 +56,7 @@ describe('MemoryRetainLogEntry', () => {
 
   it('accepts a retained line and a withheld run line', () => {
     expect(MemoryRetainLogEntry.parse(valid)).toEqual(valid);
-    const withheld = { ...valid, sourceKind: 'run', outcome: 'withheld', reason: 'person_source', documentId: null, contentHash: null, runId: uuid(4), sourceScopes: ['team', 'person'] };
+    const withheld = { ...valid, sourceKind: 'run', outcome: 'withheld', reason: 'person_source', documentId: null, runId: uuid(4), sourceScopes: ['team', 'person'] };
     expect(MemoryRetainLogEntry.parse(withheld)).toEqual(withheld);
   });
 

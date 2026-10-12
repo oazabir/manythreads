@@ -78,7 +78,7 @@ function unavailable(err: unknown): MemoryError {
   if (err instanceof MemoryError) return err;
   if (err instanceof HindsightError) {
     if (err.status === 0 && /no Hindsight URL/.test(err.message)) return new MemoryError('not_configured', 'No memory engine is configured in this deployment.');
-    return new MemoryError('unavailable', `The memory engine did not answer: ${err.message}`);
+    return new MemoryError('unavailable', `The memory engine did not answer: ${err.message}`, err.status > 0 ? err.status : null);
   }
   return new MemoryError('unavailable', err instanceof Error ? err.message : 'The memory engine failed.');
 }

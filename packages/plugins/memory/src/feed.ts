@@ -3,7 +3,7 @@ import { feedTuning } from './config.ts';
 import { BACKOFF_CAP_MS, DRAIN_BATCH, FEED_QUEUE, MAX_ATTEMPTS, RETAIN_CHUNK } from './constants.ts';
 import { decide, type Decision } from './decide.ts';
 import { appendLine, latestLine, type LastLine } from './rows.ts';
-import { resolve } from './sources.ts';
+import { resolve, type Provenance } from './sources.ts';
 import type { SlidingWindow } from './window.ts';
 
 // The drain: reads the feed's work list, asks each source what it is now, and makes the bank agree. One drain at a time across replicas (an
@@ -52,9 +52,14 @@ interface Planned {
   actorId: string | null;
   scopes: string[];
   link: string;
-  /** Set when the row cannot be settled this round: `retry` keeps it (with a delay), `failed` counts an attempt. */
-  hold: null | { kind: 'throttled'; delayMs: number } | { kind: 'failed'; error: string } | { kind: 'team_gone' };
+  /** Replies of a thread that were left out of its document (one `withheld` line each). */
+  excluded: NonNullable<Provenance['excluded']>;
+  /** Set when the row cannot be settled this round: `throttled` keeps it for later, `failed` counts an attempt (`phase`: which engine call). */
+  hold: null | { kind: 'throttled'; delayMs: number } | { kind: 'failed'; error: string; phase: 'forget' | 'retain' } | { kind: 'team_gone' };
 }
+
+/** The engine's answers that mean "this payload is wrong" (not "I am down" or "you may not"): worth trying the items singly. */
+const PAYLOAD_STATUSES = new Set([400, 413, 422]);
 
 const backoffMs = (attempts: number): number => Math.min(BACKOFF_CAP_MS, feedTuning().backoffBaseMs * 2 ** Math.max(0, attempts));
 
@@ -80,12 +85,36 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     await tx.query('DELETE FROM app.memory_feed_pending WHERE source_kind = $1 AND source_id = $2 AND requested_at = $3::timestamptz', [row.source_kind, row.source_id, row.requested_at]);
   };
 
+  // The next look: at the earliest time anything in the work list becomes due (a deferred run, a back-off, a throttled team, a full batch, a
+  // source waiting for the engine). Its own key per second, because a job that is running holds its key and would swallow a follow-up under the
+  // same one.
+  const scheduleNext = async (): Promise<void> => {
+    const next = (await tx.query<{ at: Date | null }>('SELECT min(not_before) AS at FROM app.memory_feed_pending')).rows[0]?.at ?? null;
+    if (next === null) return;
+    const runAt = new Date(Math.max(next.getTime(), rt.now()));
+    await ctx.jobs.enqueue(tx, FEED_QUEUE, {}, { runAt, dedupeKey: `feed:at:${Math.floor(runAt.getTime() / 1000)}` });
+  };
+
   const provider = ctx.providers.get<MemoryProvider>('memory');
   if (!provider || !provider.enabled) {
-    // Nothing waits for an engine that is not there (the handlers already wrote the day's `not_configured` line); a backfill is not part of this task.
-    for (const row of due) await settle(row);
-    stats.dropped = due.length;
-    log.warn(`memory: no memory engine is configured; ${due.length} changed source(s) were not retained`);
+    // Nothing waits for an engine that is not there — except taking out what is already in it: a source the log says the bank holds a document
+    // for keeps its work row (looked at again after twenty defer periods: ten minutes by default), so a delete or an edit made while the engine is off is still carried out when it
+    // is back. A source the bank holds nothing for has nothing to forget and no backfill is part of this task: its row goes.
+    for (const row of due) {
+      const last = await latestLine(tx, row.source_kind, row.source_id);
+      if (last !== null && last.outcome === 'retained') {
+        await tx.query(
+          `UPDATE app.memory_feed_pending SET not_before = now() + $3 * interval '1 millisecond' WHERE source_kind = $1 AND source_id = $2`,
+          [row.source_kind, row.source_id, feedTuning().deferMs * 20],
+        );
+        stats.deferred += 1;
+      } else {
+        await settle(row);
+        stats.dropped += 1;
+      }
+    }
+    log.warn(`memory: no memory engine is configured; ${stats.dropped} changed source(s) were not retained, ${stats.deferred} wait to be taken out of the bank`);
+    await scheduleNext();
     return stats;
   }
 
@@ -114,6 +143,7 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
       actorId: at?.actorId ?? null,
       scopes: at?.scopes ?? [],
       link: at?.link ?? '',
+      excluded: at?.excluded ?? [],
       hold: null,
     });
   }
@@ -175,7 +205,7 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
         stats.forgotten += 1;
       }
     } catch (err) {
-      for (const p of now) p.hold = { kind: 'failed', error: errorText(err) };
+      for (const p of now) p.hold = { kind: 'failed', error: errorText(err), phase: 'forget' };
     }
   }
 
@@ -203,6 +233,29 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     });
     stats.withheld += 1;
   }
+  // ... and one line for each reply that was left out of a thread's document, once per reason (what was withheld is on the record, per message).
+  for (const p of planned) {
+    if (p.hold !== null || p.excluded.length === 0) continue;
+    const bank = await bankOf(p.teamId);
+    if (bank === null) continue;
+    for (const e of p.excluded) {
+      const known = await latestLine(tx, 'message', e.messageId);
+      if (known !== null && known.outcome === 'withheld' && known.reason === e.reason) continue;
+      await appendLine(tx, {
+        workspaceId: p.workspaceId,
+        teamId: p.teamId,
+        bank: bank.id,
+        sourceKind: 'message',
+        sourceId: e.messageId,
+        channelId: p.channelId,
+        outcome: 'withheld',
+        reason: e.reason,
+        actorId: e.actorId,
+        link: p.link,
+      });
+      stats.withheld += 1;
+    }
+  }
 
   // C: put in what changed, in chunks, asynchronously (the engine distils facts in the background; the call returns when it has the text).
   for (const [teamId, list] of byTeam(planned.filter((p) => p.hold === null && p.decision.retain !== null))) {
@@ -214,11 +267,12 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     const allow = rt.retainWindow.remaining(teamId);
     const now = list.slice(0, allow);
     for (const p of list.slice(allow)) p.hold = { kind: 'throttled', delayMs: Math.max(feedTuning().deferMs, rt.retainWindow.retryAfterMs(teamId)) };
-    for (let i = 0; i < now.length; i += RETAIN_CHUNK) {
-      const chunk = now.slice(i, i + RETAIN_CHUNK);
+    // One engine call per chunk. A 400, 413 or 422 says something in the chunk is wrong, not which: then the items go one at a time, so one
+    // item the engine will not take cannot hold back the other twenty-four (a 5xx or no answer fails the chunk: the engine is down for all).
+    const retainChunk = async (items: Planned[]): Promise<void> => {
       try {
         await bank.retain(
-          chunk.map((p) => {
+          items.map((p) => {
             const r = p.decision.retain!;
             return {
               content: r.item.content,
@@ -231,8 +285,8 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
           }),
           { async: true },
         );
-        rt.retainWindow.spend(teamId, chunk.length);
-        for (const p of chunk) {
+        rt.retainWindow.spend(teamId, items.length);
+        for (const p of items) {
           const r = p.decision.retain!;
           await appendLine(tx, {
             workspaceId: p.workspaceId,
@@ -252,9 +306,14 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
           stats.retained += 1;
         }
       } catch (err) {
-        for (const p of chunk) p.hold = { kind: 'failed', error: errorText(err) };
+        if (items.length > 1 && err instanceof MemoryError && err.status !== null && PAYLOAD_STATUSES.has(err.status)) {
+          for (const one of items) await retainChunk([one]);
+          return;
+        }
+        for (const p of items) p.hold = { kind: 'failed', error: errorText(err), phase: 'retain' };
       }
-    }
+    };
+    for (let i = 0; i < now.length; i += RETAIN_CHUNK) await retainChunk(now.slice(i, i + RETAIN_CHUNK));
   }
 
   // D: settle the work rows. A source changed again while we worked has a newer `requested_at` and stays.
@@ -275,7 +334,32 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     }
     if (p.hold?.kind === 'failed') {
       const attempts = row.attempts + 1;
-      if (attempts >= MAX_ATTEMPTS) {
+      if (p.hold.phase === 'forget') {
+        // A document that cannot be taken out is never given up on: the row stays, one attempt a half hour, and the line (with the document id,
+        // once) says so. Dropping it would leave the text in the bank with nothing left that remembers to remove it.
+        if (attempts === MAX_ATTEMPTS) {
+          const bank = await bankOf(p.teamId);
+          await appendLine(tx, {
+            workspaceId: p.workspaceId,
+            teamId: p.teamId,
+            bank: bank?.id ?? '(unknown)',
+            sourceKind: row.source_kind,
+            sourceId: row.source_id,
+            channelId: p.last?.channel_id ?? p.channelId,
+            documentId: p.decision.forget?.documentId ?? null,
+            outcome: 'failed',
+            reason: `the document could not be taken out of the bank after ${attempts} attempts; still trying`,
+            runId: p.runId,
+            actorId: p.actorId,
+            link: p.link,
+          });
+        }
+        await tx.query(
+          `UPDATE app.memory_feed_pending SET attempts = $3, last_error = $4, not_before = now() + $5 * interval '1 millisecond'
+            WHERE source_kind = $1 AND source_id = $2`,
+          [row.source_kind, row.source_id, attempts, p.hold.error, BACKOFF_CAP_MS],
+        );
+      } else if (attempts >= MAX_ATTEMPTS) {
         const bank = await bankOf(p.teamId);
         await appendLine(tx, {
           workspaceId: p.workspaceId,
@@ -315,12 +399,6 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     await settle(row);
   }
 
-  // The next look: at the earliest time anything in the work list becomes due (a deferred run, a back-off, a throttled team, a full batch). Its
-  // own key per second, because a job that is running holds its key and would swallow a follow-up under the same one.
-  const next = (await tx.query<{ at: Date | null }>('SELECT min(not_before) AS at FROM app.memory_feed_pending')).rows[0]?.at ?? null;
-  if (next !== null) {
-    const runAt = new Date(Math.max(next.getTime(), rt.now()));
-    await ctx.jobs.enqueue(tx, FEED_QUEUE, {}, { runAt, dedupeKey: `feed:at:${Math.floor(runAt.getTime() / 1000)}` });
-  }
+  await scheduleNext();
   return stats;
 }

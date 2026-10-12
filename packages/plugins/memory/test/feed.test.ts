@@ -270,17 +270,25 @@ describe('a run', () => {
     expect(events).toBe(1);
   });
 
-  it.each([
-    ['read a person-scoped source', 'person_source', { lines: [['drive', 'x', 'person']] as Array<[string, string, string]> }],
-    ['is a conversation', 'conversation', { trigger: 'conversation', lines: [] as Array<[string, string, string]> }],
-  ])('that %s is withheld, and the log says why; nothing of it reaches the engine', async (_name, reason, options) => {
+  it('that read a person-scoped source is withheld, and the log says why; nothing of it reaches the engine', async () => {
     const before = JSON.stringify(fake.state.calls).length;
-    const id = await openRun((options as { trigger?: string }).trigger ?? 'mention', { lines: options.lines });
+    const id = await openRun('mention', { lines: [['drive', 'x', 'person']] });
     await runs.close(id, 'done');
     await until(async () => ((await logOf('run', id)).length > 0 ? true : null), 'the withheld line');
-    expect(await logOf('run', id)).toMatchObject([{ outcome: 'withheld', reason, run_id: id, document_id: null }]);
+    expect(await logOf('run', id)).toMatchObject([{ outcome: 'withheld', reason: 'person_source', run_id: id, document_id: null }]);
     expect(facts().some((f) => f.metadata['feed_id'] === id)).toBe(false);
     expect(JSON.stringify(fake.state.calls).slice(before)).not.toContain(id);
+  });
+
+  it('of a private conversation leaves nothing: no document, no line, no work left over', async () => {
+    const id = await openRun('conversation');
+    await runs.close(id, 'done');
+    // a public message behind the close: once it is in the bank the run's event has been handled
+    await post(nadia, devChannel, 'Control note behind the conversation run: Plover.');
+    await until(async () => factWith('Plover'), 'the control message');
+    await idle();
+    expect(await logOf('run', id)).toEqual([]);
+    expect(JSON.stringify(fake.state.calls)).not.toContain(id);
   });
 });
 
@@ -360,6 +368,36 @@ describe('an approval and a page', () => {
   });
 });
 
+describe('what people do to pages and channels outside the feed’s own routes', () => {
+  it('a page saved from the Files screen (a plain repo commit) is fed, replaced by the next save, and forgotten when deleted', async () => {
+    const path = 'pages/from-files-screen.md';
+    const created = await w.commit(omar, 'engineering', [{ op: 'put', path, content: '# Notes\n\nThe API key is sk-live-Tanager-1234.\n' }], 'Add notes from the Files screen');
+    expect(created.status, JSON.stringify(created.body)).toBeLessThan(300);
+    await until(async () => factWith('Tanager'), 'a page that no pages.write made');
+    // the person notices the pasted secret and saves again without it: the old document must go
+    const saved = await w.commit(omar, 'engineering', [{ op: 'put', path, content: '# Notes\n\nThe API key lives in the vault.\n' }], 'Remove the pasted key');
+    expect(saved.status, JSON.stringify(saved.body)).toBeLessThan(300);
+    await until(async () => factWith('lives in the vault'), 'the saved page');
+    await idle();
+    expect(factWith('Tanager')).toBeUndefined();
+    const gone = await w.commit(omar, 'engineering', [{ op: 'delete', path }], 'Remove the notes');
+    expect(gone.status, JSON.stringify(gone.body)).toBeLessThan(300);
+    await until(async () => (factWith('lives in the vault') ? null : true), 'the page to be forgotten');
+  });
+
+  it('a channel rename re-reads its documents: they say the new name', async () => {
+    const channel = await createChannel('old-name', false);
+    await post(omar, channel, 'Rename test note about the Skylark rollout.');
+    const before = await until(async () => factWith('Skylark'), 'the note');
+    expect(before.text).toContain('in #old-name');
+    const renamed = await w.call(omar, 'PATCH', `/api/channels/${channel}`, { name: 'new-name' });
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+    await until(async () => (factWith('Skylark')?.text.includes('in #new-name') ? true : null), 'the document to say the new name');
+    await idle();
+    expect(facts().filter((f) => f.text.includes('Skylark'))).toHaveLength(1);
+  });
+});
+
 describe('the engine', () => {
   it('a burst of messages is a few batched calls of at most 25 items, and all of it arrives', async () => {
     const before = retainCalls().length;
@@ -370,6 +408,22 @@ describe('the engine', () => {
     expect(calls.length).toBeLessThan(30);
     for (const c of calls) expect((c.body as { items: unknown[] }).items.length).toBeLessThanOrEqual(25);
     expect(calls.every((c) => (c.body as { async?: boolean }).async === true)).toBe(true);
+  });
+
+  it('being switched off does not lose a delete: the document leaves the bank when the engine is back', async () => {
+    const id = await post(nadia, devChannel, 'Written while the engine was on: the Bunting codename is Orchid.');
+    await until(async () => factWith('Bunting'), 'the message');
+    await idle();
+    delete process.env['MANYTHREADS_HINDSIGHT_URL'];
+    const res = await w.call(nadia, 'DELETE', `/api/channels/${devChannel}/messages/${id}`);
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+    // the engine is off: nothing can be forgotten yet, but the delete is not dropped — its work row waits
+    await until(async () => w.system(async (tx) => ((await tx.query('SELECT 1 FROM app.memory_feed_pending WHERE source_id = $1', [id])).rows.length > 0 ? true : null)), 'the delete to be remembered');
+    expect(factWith('Bunting')).toBeDefined();
+    process.env['MANYTHREADS_HINDSIGHT_URL'] = fake.url;
+    await until(async () => (factWith('Bunting') ? null : true), 'the document to be forgotten once the engine is back', 60_000);
+    await idle();
+    expect((await logOf('message', id)).map((l) => l.outcome).filter((o) => o !== 'not_configured')).toEqual(['retained', 'forgotten']);
   });
 
   it('being down delays the feed and never blocks an event; when it is back the message arrives', async () => {
@@ -399,9 +453,9 @@ describe('GET /api/teams/:slug/memory/retain-log', () => {
     expect(JSON.stringify(all.body)).not.toMatch(/Basilisk|Zanzibar|Peregrine|Merlin|hunter2/);
 
     const withheld = ListMemoryRetainLogResponse.parse((await w.call(omar, 'GET', '/api/teams/engineering/memory/retain-log?outcome=withheld')).body);
-    expect(withheld.items.length).toBeGreaterThanOrEqual(3);
+    expect(withheld.items.length).toBeGreaterThanOrEqual(2);
     expect(withheld.items.every((i) => i.outcome === 'withheld')).toBe(true);
-    expect(withheld.items.map((i) => i.reason)).toEqual(expect.arrayContaining(['person_source', 'conversation', 'authoring run: person_source']));
+    expect(withheld.items.map((i) => i.reason)).toEqual(expect.arrayContaining(['person_source', 'authoring run: person_source']));
 
     const page = ListMemoryRetainLogResponse.parse((await w.call(omar, 'GET', '/api/teams/engineering/memory/retain-log?limit=5')).body);
     expect(page.items).toHaveLength(5);

@@ -53,20 +53,31 @@ BEGIN
   END IF;
   SELECT * INTO v FROM app.run_retain_verdict(s.run_id);
 
-  IF p_outcome = 'withheld' THEN
-    INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, outcome, reason, run_id, source_scopes, actor_id)
-    VALUES (s.workspace_id, s.team_id, left(p_bank, 200), 'run_tool', 'refused:' || s.run_id::text, 'withheld',
-            coalesce(s.retain_refusal, v.retain_refusal, 'refused'), s.run_id, coalesce(v.source_scopes, '{}'), app.actor());
-    RETURN 1;
-  END IF;
+  -- A log line is a record, never a reason to fail the call it describes: whatever goes wrong here costs the line, not the retain (the block is a
+  -- savepoint, so the caller's transaction is not left aborted).
+  BEGIN
+    IF p_outcome = 'withheld' THEN
+      -- one refusal line per run, however often the model asks again
+      IF NOT EXISTS (SELECT 1 FROM app.memory_retain_log WHERE run_id = s.run_id AND source_kind = 'run_tool' AND outcome = 'withheld') THEN
+        INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, outcome, reason, run_id, source_scopes, actor_id)
+        VALUES (s.workspace_id, s.team_id, left(p_bank, 200), 'run_tool', 'refused:' || s.run_id::text, 'withheld',
+                coalesce(s.retain_refusal, v.retain_refusal, 'refused'), s.run_id, coalesce(v.source_scopes, '{}'), app.actor());
+        RETURN 1;
+      END IF;
+      RETURN 0;
+    END IF;
 
-  FOREACH d IN ARRAY coalesce(p_document_ids, '{}'::text[]) LOOP
-    INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, document_id, outcome, run_id, source_scopes, actor_id)
-    VALUES (s.workspace_id, s.team_id, left(p_bank, 200), 'run_tool', left(d, 1100), left(d, 200), 'retained', s.run_id,
-            coalesce(v.source_scopes, '{}'), app.actor());
-    n := n + 1;
-  END LOOP;
-  RETURN n;
+    FOREACH d IN ARRAY coalesce(p_document_ids, '{}'::text[]) LOOP
+      INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, document_id, outcome, run_id, source_scopes, actor_id)
+      VALUES (s.workspace_id, s.team_id, left(p_bank, 200), 'run_tool', left(d, 1100), left(d, 200), 'retained', s.run_id,
+              coalesce(v.source_scopes, '{}'), app.actor());
+      n := n + 1;
+    END LOOP;
+    RETURN n;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE WARNING 'memory_retain_log_run: the line was not written (%)', SQLERRM;
+    RETURN 0;
+  END;
 END
 $$;
 

@@ -5,7 +5,7 @@ import { RunSourceScope } from './bot.ts';
 
 // The memory retain log (PLAN.md A.5, P5-13; SPEC §12.1, §15): what the platform put into a team's memory bank, replaced there, took out of it, or
 // refused to put there, and why. Every enum here matches a CHECK of the memory plugin's migration 0001_retain_log.sql (and is listed in the
-// kernel's schema-enums map). The log holds ids, hashes and words — never the retained text.
+// kernel's schema-enums map). The log holds ids, hashes and words — never the retained text (the hash that recognises an unchanged re-delivery is a column of the table, not a field of this shape: it is not for a client).
 
 /** Where retained memory went. The team's bank today; `person_file` (`people/<asker>.md`) is written by `memory.write` (P5-26). */
 export const MemoryStore = z.enum(['team_bank', 'person_file']);
@@ -40,8 +40,6 @@ export const MemoryRetainLogEntry = z.object({
   sourceId: z.string(),
   /** The engine's document id for `retained` and `forgotten` lines; null otherwise. */
   documentId: z.string().nullable(),
-  /** sha-256 of the retained text (hex), so an unchanged re-delivery is recognised without storing the text. */
-  contentHash: z.string().nullable(),
   outcome: MemoryRetainOutcome,
   /** Why, in a word or two (`replaced`, `deleted`, `not_team_visible`, `person_source`, `private_source`, `conversation`, ...). Empty for a plain retain. */
   reason: z.string(),

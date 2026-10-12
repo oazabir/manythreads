@@ -7,11 +7,11 @@ import {
   ChannelMessageDeletedEvent,
   ChannelMessageEditedEvent,
   ChannelMessagePostedEvent,
-  PagesPageWrittenEvent,
   RepoRepoCommittedEvent,
 } from '@manythreads/shared';
 import { feedTuning } from './config.ts';
 import { FEED_QUEUE, NOT_CONFIGURED_EVERY_MS } from './constants.ts';
+import { latestLine } from './rows.ts';
 import { pageSourceId } from './sources.ts';
 
 // The event subscriptions. They run inside the outbox consumer's transaction, next to every other plugin's, so they do two cheap things and
@@ -30,13 +30,12 @@ export const CONSUMED_EVENTS = [
   'channel.channel.updated',
   'approvals.approval.decided',
   'approvals.approval.resumed',
-  'pages.page.written',
   'repo.repo.committed',
   'bots.run.closed',
 ] as const;
 
-/** At most this many deleted pages of one commit are looked at. */
-const MAX_DELETED_PAGES = 200;
+/** At most this many pages of one commit are looked at. */
+const MAX_PAGES_PER_COMMIT = 200;
 
 /**
  * Queues a drain for after the debounce. Changes that land in the same time bucket share one job (its dedupe key is the bucket), and a job that
@@ -52,11 +51,14 @@ export async function queueDrain(ctx: PluginContext, tx: PluginTx): Promise<void
 }
 
 export function registerConsumers(ctx: PluginContext): void {
-  const mark = async (tx: PluginTx, workspaceId: string, teamId: string, sources: readonly Source[]): Promise<void> => {
+  const mark = async (tx: PluginTx, workspaceId: string, teamId: string, wanted: readonly Source[]): Promise<void> => {
+    let sources: readonly Source[] = wanted;
     if (sources.length === 0) return;
     const provider = ctx.providers.get<MemoryProvider>('memory');
-    if (!provider || !provider.enabled) {
-      // One line per team per day says the feed is off (and why nothing of this team is in the bank); the change itself is not queued.
+    const enabled = provider !== undefined && provider.enabled;
+    if (!enabled) {
+      // One line per team per day says the feed is off (and why nothing of this team is in the bank). The change itself is queued only when the
+      // bank holds a document for the source: a delete or an edit made while the engine is off must still take that document out when it is back.
       const [kind, id] = sources[0] as Source;
       // Events of one batch are handled at the same time: the lock makes the second of two see the first's line (the day's one line per team).
       await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`memory.not_configured:${teamId}`]);
@@ -68,7 +70,13 @@ export function registerConsumers(ctx: PluginContext): void {
              WHERE team_id = $2::uuid AND outcome = 'not_configured' AND created_at > now() - $5::float8 * interval '1 millisecond')`,
         [workspaceId, teamId, kind, id.slice(0, 1100), NOT_CONFIGURED_EVERY_MS],
       );
-      return;
+      const held: Source[] = [];
+      for (const source of sources) {
+        const last = await latestLine(tx, source[0], source[1]);
+        if (last !== null && last.outcome === 'retained') held.push(source);
+      }
+      if (held.length === 0) return;
+      sources = held;
     }
     const { debounceMs } = feedTuning();
     for (const [kind, id] of sources) {
@@ -118,8 +126,13 @@ export function registerConsumers(ctx: PluginContext): void {
   ctx.events.subscribe('channel.channel.updated', async (raw, tx) => {
     const parsed = ChannelChannelUpdatedEvent.safeParse(raw);
     if (!parsed.success || parsed.data.teamId === null) return;
-    if (await inPublicChannel(tx, parsed.data.channelId)) return;
-    await markRetainedOfChannels(ctx, tx, [parsed.data.channelId]);
+    if (!(await inPublicChannel(tx, parsed.data.channelId))) {
+      await markRetainedOfChannels(ctx, tx, [parsed.data.channelId]);
+      return;
+    }
+    // A rename changes what the documents say (`in #name`) and the links to them: the channel's retained sources are read again (the drain
+    // replaces each whose text changed, within the per-team limit).
+    if (parsed.data.changes.name !== undefined) await markRetainedOfChannels(ctx, tx, [parsed.data.channelId], { includePublic: true });
   });
 
   const approval = async (raw: PluginEvent, tx: PluginTx): Promise<void> => {
@@ -130,18 +143,13 @@ export function registerConsumers(ctx: PluginContext): void {
   ctx.events.subscribe('approvals.approval.decided', approval);
   ctx.events.subscribe('approvals.approval.resumed', approval);
 
-  ctx.events.subscribe('pages.page.written', async (raw, tx) => {
-    const parsed = PagesPageWrittenEvent.safeParse(raw);
-    if (!parsed.success || !parsed.data.path.startsWith('pages/')) return;
-    await mark(tx, parsed.data.workspaceId, parsed.data.teamId, [['page', pageSourceId(parsed.data.teamId, parsed.data.path)]]);
-  });
-
-  // `pages.page.written` is not emitted for a delete; the commit event is, and a deleted page forgets its document.
+  // Every `pages/` path a commit touches, written or deleted, whoever wrote it: `pages.write` (a person or a bot), the Files screen's save
+  // (`POST repo/commit`, which emits no `pages.page.written`), a restore. A put replaces the page's document, a delete forgets it.
   ctx.events.subscribe('repo.repo.committed', async (raw, tx) => {
     const parsed = RepoRepoCommittedEvent.safeParse(raw);
     if (!parsed.success) return;
-    const deleted = parsed.data.paths.filter((p) => p.op === 'delete' && p.path.startsWith('pages/')).slice(0, MAX_DELETED_PAGES);
-    await mark(tx, parsed.data.workspaceId, parsed.data.teamId, deleted.map((p): Source => ['page', pageSourceId(parsed.data.teamId, p.path)]));
+    const pages = parsed.data.paths.filter((p) => p.path.startsWith('pages/')).slice(0, MAX_PAGES_PER_COMMIT);
+    await mark(tx, parsed.data.workspaceId, parsed.data.teamId, pages.map((p): Source => ['page', pageSourceId(parsed.data.teamId, p.path)]));
   });
 
   ctx.events.subscribe('bots.run.closed', async (raw, tx) => {
@@ -155,17 +163,25 @@ export function registerConsumers(ctx: PluginContext): void {
  * Marks every source of these channels whose newest log line says its document is in the bank, so the drain re-reads it (and, the channel no
  * longer being team-visible, forgets it). `channelIds` null: every channel that is not a public channel of a team and has a log line.
  */
-export async function markRetainedOfChannels(ctx: PluginContext, tx: PluginTx, channelIds: readonly string[] | null): Promise<number> {
+export async function markRetainedOfChannels(
+  ctx: PluginContext,
+  tx: PluginTx,
+  channelIds: readonly string[] | null,
+  options: { includePublic?: boolean } = {},
+): Promise<number> {
+  // "Newest line" is the newest of retained / forgotten / withheld, the same rule the drain reads (a `not_configured` or `failed` line never
+  // hides a document that is still in the bank).
   const res = await tx.query<{ n: number }>(
     `WITH channels AS (
        SELECT c.id FROM app.channels c
         WHERE ($1::uuid[] IS NULL OR c.id = ANY ($1::uuid[]))
-          AND (c.private OR c.kind <> 'channel' OR c.team_id IS NULL)
+          AND ($2::boolean OR c.private OR c.kind <> 'channel' OR c.team_id IS NULL)
           AND EXISTS (SELECT 1 FROM app.memory_retain_log x WHERE x.channel_id = c.id)
      ), newest AS (
        SELECT DISTINCT ON (l.source_kind, l.source_id) l.source_kind, l.source_id, l.workspace_id, l.outcome
          FROM app.memory_retain_log l
         WHERE l.channel_id IN (SELECT id FROM channels) AND l.source_kind <> 'run_tool'
+          AND l.outcome IN ('retained', 'forgotten', 'withheld')
         ORDER BY l.source_kind, l.source_id, l.id DESC
      ), marked AS (
        INSERT INTO app.memory_feed_pending (source_kind, source_id, workspace_id, not_before)
@@ -174,7 +190,7 @@ export async function markRetainedOfChannels(ctx: PluginContext, tx: PluginTx, c
        RETURNING 1
      )
      SELECT count(*)::int AS n FROM marked`,
-    [channelIds === null ? null : [...channelIds]],
+    [channelIds === null ? null : [...channelIds], options.includePublic === true],
   );
   const n = res.rows[0]?.n ?? 0;
   if (n > 0) await queueDrain(ctx, tx);

@@ -23,7 +23,13 @@ function answerFor(err: unknown): ToolAnswer {
  * team, the run and the scopes of its source log itself, and writes nothing for a transaction that is not a live run's bot or asker.
  */
 async function logRun(tx: PluginTx, outcome: 'retained' | 'withheld', bank: string, documentIds: readonly string[]): Promise<void> {
-  await tx.query('SELECT app.memory_retain_log_run($1, $2, $3::text[]) AS n', [outcome, bank, [...documentIds]]);
+  // A record, never a reason to fail the call it describes: the door catches its own errors (a savepoint inside the function); a failure of
+  // the statement itself — the plugin of the table not loaded, say — is swallowed here, because by now the engine has taken the text.
+  try {
+    await tx.query('SELECT app.memory_retain_log_run($1, $2, $3::text[]) AS n', [outcome, bank, [...documentIds]]);
+  } catch {
+    // nothing to do: see above
+  }
 }
 
 export function registerMemoryTools(ctx: PluginContext, provider: MemoryProvider): void {

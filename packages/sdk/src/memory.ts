@@ -97,10 +97,13 @@ export type MemoryErrorCode =
 
 export class MemoryError extends Error {
   readonly code: MemoryErrorCode;
-  constructor(code: MemoryErrorCode, message: string) {
+  /** The engine's HTTP status for an `unavailable` that came from an answer (400, 422, 503, ...); null when there was none (no connection, a refusal of ours). */
+  readonly status: number | null;
+  constructor(code: MemoryErrorCode, message: string, status: number | null = null) {
     super(message);
     this.name = 'MemoryError';
     this.code = code;
+    this.status = status;
   }
 }
 
