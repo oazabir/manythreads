@@ -82,7 +82,7 @@ const file = (channelId: string, name: string): Promise<string> =>
       (
         await tx.query<{ id: string }>(
           `INSERT INTO app.files (workspace_id, channel_id, folder_path, name, blob_key, size, mime, sha256, uploader_id)
-           VALUES ($1, $2, '/', $3, $4, 1, 'text/plain', repeat('a', 64), $5) RETURNING id`,
+           VALUES ($1, $2, '/files/', $3, $4, 1, 'text/plain', repeat('a', 64), $5) RETURNING id`,
           [omar.workspaceId, channelId, name, `blob-${name}`, nadia.actorId],
         )
       ).rows[0]!.id,
