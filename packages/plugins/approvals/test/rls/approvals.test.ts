@@ -351,7 +351,14 @@ describe('review round 3', () => {
         [omar.workspaceId, ENG, nadia.actorId, channel],
       ),
     );
-    await sys((tx) => tx.query('DELETE FROM app.channels WHERE id = $1', [channel]));
+    // as the owner: channels are deleted by nobody through the app, and the cascade is what is under test
+    const owner = testClient({ connectionString: db.ownerUrl });
+    await owner.connect();
+    try {
+      expect((await owner.query('DELETE FROM app.channels WHERE id = $1', [channel])).rowCount).toBe(1);
+    } finally {
+      await owner.end();
+    }
     expect(await sys(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.approvals WHERE summary = 'cascade'")).rows[0]?.n)).toBe(0);
   });
 

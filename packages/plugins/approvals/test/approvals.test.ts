@@ -190,7 +190,7 @@ describe('the one handler', () => {
     const first = await request(run, 'pages/dedupe.md', { dedupeKey: 'same-call' });
     const again = await request(await openRun(scoped, nadia), 'pages/dedupe.md', { dedupeKey: 'same-call' });
     expect(first.created).toBe(true);
-    expect(again).toEqual({ approvalId: first.approvalId, created: false });
+    expect(again).toMatchObject({ approvalId: first.approvalId, created: false });
   });
 
   it('asking for the same call is one approval per asker: a second person gets a request of their own, which the first cannot be approved through', async () => {

@@ -54,6 +54,8 @@ interface ClaimedRow extends Record<string, unknown> {
   requester_id: string;
   requester_kind: string;
   channel_id: string | null;
+  /** The channel the run answered in is private (a private channel, a DM, a bot conversation). */
+  channel_private: boolean;
   thread_root_id: string | null;
   resume: unknown;
 }
@@ -92,8 +94,8 @@ async function settle(
       tool: row.tool,
       botId: row.bot_id,
       outcome,
-      // the event is team-wide; the sentence (what the tool said) is the conversation's, so a channel-scoped approval's event carries none
-      detail: row.channel_id === null ? detail : '',
+      // the event is team-wide; the sentence (what the tool said) belongs to a private conversation's people, so such an approval's event carries none
+      detail: row.channel_private ? '' : detail,
     }),
   );
   await pushChanged(ctx, tx, row.id);
@@ -125,8 +127,8 @@ export function registerResumeJob(ctx: PluginContext): void {
       const row = (
         await tx.query<ClaimedRow>(
           `SELECT a.id, a.workspace_id, a.team_id, a.source, a.tool, a.bot_id, a.requester_id, ra.kind AS requester_kind,
-                  a.channel_id, a.thread_root_id, a.resume
-             FROM app.approvals a JOIN app.actors ra ON ra.id = a.requester_id
+                  a.channel_id, coalesce(c.private, false) AS channel_private, a.thread_root_id, a.resume
+             FROM app.approvals a JOIN app.actors ra ON ra.id = a.requester_id LEFT JOIN app.channels c ON c.id = a.channel_id
             WHERE a.id = $1::uuid AND a.status = 'approved' AND a.outcome = 'running' AND a.resume_kind = 'tool'`,
           [approvalId],
         )

@@ -16,6 +16,7 @@ const ROW = {
   requester_id: '00000000-0000-7000-8000-0000000d0002',
   requester_kind: 'person',
   channel_id: null,
+  channel_private: false,
   thread_root_id: null,
   resume: { kind: 'tool', capability: 'pages.write', args: { path: 'pages/x.md' }, trigger: 'mention' },
 };
