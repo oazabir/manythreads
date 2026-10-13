@@ -60,7 +60,9 @@ connection, or their own conversation run).
    asker could read an id the bot never saw is not something a citation can ask; the answer is counted as `not_reached`. (Today the tools
    that write the log are `messages.search`, `files.search` and `memory.recall`; a tool that opens pages or runs must write a `page` / `run`
    line before a bot can cite one, and until then those citations are `not_reached` — an open item.) The view reads the first **20,000**
-   lines of a run's log (a ref is compared up to 1,100 characters, longer than any citation can be). A run that logged more is marked
+   lines of a run's log (a ref is cut to 1,100 characters inside `app.answer_run_sources`, migration `0002`: longer than any citation can be, and
+   never held in full; a cited thread is reached by a reply through a primary-key probe of the message ids the log names, not by comparing
+   every reply with every line). A run that logged more is marked
    `logTruncated` in the view, and the tool's reply tells the model so: a source it read after the cap is reported as not reached, which is
    the one way a genuinely read citation can be dropped as `not_reached`.
 2. **The view.** Every reached citation and every line of the log is re-read **as the asker**. The function adds no policy of its own: it is
@@ -167,7 +169,10 @@ wide. All colours are tokens.
   team); **the reply's readers** (a public channel; one a guest has an ACL grant on; one a person of another team has; a grant to the team
   itself; a stale membership row; a person demoted to guest who keeps a roster row and holds an ACL grant; a private team channel; a
   conversation with an ACL grant on it; a run nobody asked); unknown source lines; hostile references; one answer per run
-  (deleted, the unique index, two calls at once); the transaction's identity is the bot's again afterwards, also after an error mid-switch.
+  (deleted, the unique index, two calls at once); the transaction's identity is the bot's again afterwards, also after an error mid-switch; **a long log** (20,001 lines: `logTruncated`
+  and a late source `not_reached`; exactly 20,000: not marked; 40 thread citations against 20,000 lines; no reference longer than 1,100 held); **a reply nobody can be
+  shown to** (a suspended asker, an asker demoted to guest: no readers, so `none`).
+- `test/post.test.ts` — what the tool tells the model: the "log is cut" sentence appears only when citations were removed from a run whose log was longer than the view reads.
 - `packages/plugins/channels/test/messages-provider.test.ts` — what the provider refuses: another run, another bot, another text, a person.
 - `test/answer.test.ts` — the whole path through the real server with a stand-in Hermes that calls the tool over the run's MCP endpoint: a
   conversation answer (search first; one message, no second reply, no trace of the citation the run never reached, private to her, the

@@ -55,7 +55,7 @@ interface Resolved {
   botSlug?: string;
 }
 interface View {
-  run: { reach?: string; runId: string; hasAsker: boolean; askerName: string | null; askerPersonId: string | null; private: boolean; alias: string | null; botSlug: string | null; channelId: string | null; replyRootId: string | null };
+  run: { reach?: string; runId: string; hasAsker: boolean; askerName: string | null; askerPersonId: string | null; private: boolean; alias: string | null; botSlug: string | null; channelId: string | null; replyRootId: string | null; logTruncated?: boolean };
   citations: Resolved[];
   sources: Array<Resolved & { kind: string; ref: string; logScope: string }>;
   bots: Array<{ id: string; slug: string; name: string }>;
@@ -545,6 +545,51 @@ describe('the people who will read the reply', () => {
   });
 });
 
+describe('a reply nobody can be shown to is for no one', () => {
+  // `channel_audience` counts only active, non-guest members of the workspace: a conversation channel whose one member is no longer one has
+  // no readers, and nothing is proven by an empty set (so the reach is `none`, never `asker`, and only what lives in the channel itself is shown)
+  const reachOfConversation = async (chat: string, root: string, asker: Persona): Promise<View> => {
+    const r = await reachedRun({ trigger: 'conversation', asker: asker.actorId, channel: chat, root }, [['message', devMsg, 'channel']]);
+    return viewOf(botActor, r, [{ kind: 'message', ref: devMsg }]);
+  };
+
+  it('a suspended asker leaves the conversation with no readers: none, and a team source is not shown', async () => {
+    const before = await reachOfConversation(rafiChat, rafiChatMsg, rafi);
+    expect(before.run.reach).toBe('asker');
+    expect(before.citations[0]).toMatchObject({ found: true, audience: true });
+    await asOwner(`UPDATE app.people SET status = 'suspended' WHERE id = '${rafi.personId}'`);
+    try {
+      const after = await reachOfConversation(rafiChat, rafiChatMsg, rafi);
+      expect(after.run.reach).toBe('none');
+      expect(after.run.private).toBe(false);
+    } finally {
+      await asOwner(`UPDATE app.people SET status = 'active' WHERE id = '${rafi.personId}'`);
+    }
+    // and it is the asker's own again afterwards
+    expect((await reachOfConversation(rafiChat, rafiChatMsg, rafi)).run.reach).toBe('asker');
+  });
+
+  it('a person demoted to guest, with the roster row and the channel membership left in place, is no reader of their own conversation', async () => {
+    const original = await sys(async (tx) => (await tx.query<{ role: string }>('SELECT role FROM app.workspace_members WHERE person_id = $1', [nadia.personId])).rows[0]!.role);
+    const before = await reachOfConversation(nadiaChat, nadiaRoot, nadia);
+    expect(before.run.reach).toBe('asker');
+    // `workspace_members_guard` refuses the demotion of a team member through every normal path: the owner lifts it for one statement
+    await asOwner(
+      `ALTER TABLE app.workspace_members DISABLE TRIGGER workspace_members_guard;
+       UPDATE app.workspace_members SET role = 'guest' WHERE person_id = '${nadia.personId}';
+       ALTER TABLE app.workspace_members ENABLE TRIGGER workspace_members_guard;`,
+    );
+    try {
+      const after = await reachOfConversation(nadiaChat, nadiaRoot, nadia);
+      expect(after.run.reach).toBe('none');
+      expect(after.run.private).toBe(false);
+    } finally {
+      await asOwner(`UPDATE app.workspace_members SET role = '${original.replaceAll("'", "''")}' WHERE person_id = '${nadia.personId}'`);
+    }
+    expect((await reachOfConversation(nadiaChat, nadiaRoot, nadia)).run.reach).toBe('asker');
+  });
+});
+
 describe('what the run reached', () => {
   it('is the run’s own source log, resolved as the asker, one entry per source; a source the asker may not read is not found', async () => {
     await log(nadiaConversation, [
@@ -582,6 +627,54 @@ describe('what the run reached', () => {
     expect(await lines({ ...personaActor(omar), runId: nadiaConversation } as Actor)).toEqual([]);
     expect(await lines({ kind: 'bot', id: otherBotActor, workspaceId: WS, runId: nadiaConversation } as unknown as Actor)).toEqual([]);
     expect(await lines(personaActor(nadia))).toEqual([]);
+  });
+});
+
+describe('a long log', () => {
+  const filler = (runId: string, from: number, to: number): Promise<void> =>
+    sys(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope)
+         SELECT $1::uuid, g, 'memory', 'bank:filler-' || g, 'team' FROM generate_series($2::int, $3::int) AS g`,
+        [runId, from, to],
+      );
+    });
+
+  it('is read to its first 20,000 lines: a run that logged more is marked, and what it read after them is not reached', async () => {
+    const r = await inNadiaChat([['message', devMsg, 'channel']]); // seq 0
+    await filler(r, 1, 20_000); // 20,001 lines in all: the function sees them all, and keeps the first 20,000
+    await sys(async (tx) => {
+      await tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 20001, 'message', $2, 'channel')", [r, devMsg2]);
+    });
+    const v = await viewOf(botActor, r, [{ kind: 'message', ref: devMsg }, { kind: 'message', ref: devMsg2 }]);
+    expect(v.run.logTruncated).toBe(true);
+    // the early line is read; the late one (the 20,002nd) is not in what the function reads, so a genuinely read source is reported as not reached
+    expect(v.citations[0]).toMatchObject({ found: true, reached: true });
+    expect(v.citations[1]).toEqual({ found: false, reached: false });
+  }, 120_000);
+
+  it('at exactly 20,000 lines nothing is cut and nothing is marked', async () => {
+    const r = await inNadiaChat([['message', devMsg, 'channel']]); // seq 0
+    await filler(r, 1, 19_999);
+    const v = await viewOf(botActor, r, [{ kind: 'message', ref: devMsg }]);
+    expect(v.run.logTruncated).toBe(false);
+    expect(v.citations[0]).toMatchObject({ found: true, reached: true });
+  }, 120_000);
+
+  it('finds a thread by a reply in a log of 20,000 lines without comparing every reply with every line', async () => {
+    const r = await inNadiaChat([['message', devReply, 'channel']]); // a reply of the thread `devMsg`
+    await filler(r, 1, 19_990);
+    const started = Date.now();
+    const v = await viewOf(botActor, r, Array.from({ length: 40 }, () => ({ kind: 'thread', ref: devMsg })));
+    expect(v.citations).toHaveLength(40);
+    expect(v.citations.every((c) => c.reached === true)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 120_000);
+
+  it('cuts every reference to what a citation can be inside the function: nothing longer is ever held', async () => {
+    const r = await inNadiaChat([['page', 'p'.repeat(100_000), 'team'], ['message', devMsg, 'channel']]);
+    const longest = await asBot(botActor, r, async (tx) => (await tx.query<{ n: number }>('SELECT coalesce(max(length(source_ref)), 0)::int AS n FROM app.answer_run_sources()')).rows[0]!.n);
+    expect(longest).toBe(1100);
   });
 });
 
