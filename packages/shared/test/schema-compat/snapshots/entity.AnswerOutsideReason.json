@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "not_visible",
+    "not_granted",
+    "not_shared"
+  ]
+}

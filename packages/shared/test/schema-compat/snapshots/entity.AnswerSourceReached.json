@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "ref": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "label": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 200
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "marker": {
+      "type": "string",
+      "enum": [
+        "full",
+        "scoped"
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "ref",
+    "label",
+    "marker"
+  ],
+  "additionalProperties": false
+}
