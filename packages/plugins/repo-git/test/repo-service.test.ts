@@ -168,8 +168,9 @@ describe('one writer per team across replicas', () => {
     expect(caught[0]!.payload.paths).toEqual([{ path: 'pages/orphan.md', op: 'put' }]);
   });
 
-  it('the catch-up event names only what the writer would have let through, in events of at most 500 paths', async () => {
-    const svc = w.replica();
+  it('the catch-up event names only what the writer would have let through, in events of at most 500 paths, and says where an operator sees it what it left out', async () => {
+    const warnings: string[] = [];
+    const svc = w.replica({ warn: (m) => warnings.push(m) });
     const dir = w.gitDir(sup);
     const old = (await git.resolve(dir, 'main'))!;
     const changes = [
@@ -188,6 +189,10 @@ describe('one writer per team across replicas', () => {
     expect(named).toHaveLength(1100);
     expect(named.some((p) => p === 'TEAM.md' || p.startsWith('bots/'))).toBe(false); // never applied by a subscriber that trusts the writer
     expect(new Set(named).size).toBe(1100);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/did not pass the writer/);
+    expect(warnings[0]).toContain('bots/pushed/BOT.md');
+    expect(warnings[0]).toContain('TEAM.md');
   });
 
   it('a commit made outside the writer is indexed with its author read back from the identity', async () => {

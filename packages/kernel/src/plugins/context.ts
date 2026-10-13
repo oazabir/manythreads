@@ -83,6 +83,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   };
 
   let approvedDoor: PluginRuns | undefined;
+  let closeOnlyDoor: PluginRuns | undefined;
 
   const mount = (path: string): string => {
     if (!path.startsWith('/')) throw new PluginError(`Plugin "${name}": http route path "${path}" must start with "/"`, { plugin: name });
@@ -244,6 +245,30 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       },
     },
     get runs(): PluginRuns {
+      // `run.close` alone is the janitor's door: `close` works, every other member of `ctx.runs` refuses (it needs `tool.invoke`).
+      if (!manifest.extends.includes('tool.invoke') && manifest.extends.includes('run.close')) {
+        if (!deps.runs) {
+          throw new PluginError(`Plugin "${name}": ctx.runs is only available when the plugin host has database pools`, { plugin: name });
+        }
+        const runs = deps.runs;
+        const refuse = (member: string) => (): never => {
+          throw new PluginError(`Plugin "${name}" extends "run.close" only: ctx.runs.${member} needs "tool.invoke"`, { plugin: name });
+        };
+        return (closeOnlyDoor ??= {
+          close: (runId, status) => runs.close(runId, status),
+          open: refuse('open'),
+          resolve: refuse('resolve'),
+          asBot: refuse('asBot'),
+          asApproved: refuse('asApproved'),
+          asReader: refuse('asReader'),
+          authorize: refuse('authorize'),
+          may: refuse('may'),
+          catalog: refuse('catalog'),
+          invoke: refuse('invoke'),
+          logSource: refuse('logSource'),
+          inheritSources: refuse('inheritSources'),
+        } as PluginRuns);
+      }
       // The door that can open a bot run and enter a transaction as its bot (PLAN P5-09); see docs/plugins/security.md.
       use('tool.invoke');
       if (!deps.runs) {

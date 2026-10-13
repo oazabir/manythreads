@@ -59,6 +59,14 @@ export const newRunToken = (): string => randomBytes(32).toString('base64url');
 /** The sha256 a run token is compared by; exported for the gateway's own tests and docs. */
 export const hashRunToken = sha256;
 
+/** Thrown when something is asked of a run that has ended: its tokens are revoked, and the handle a still-running worker holds must stop working too. */
+export class RunEndedError extends Error {
+  constructor(runId: string) {
+    super(`run ${runId} has ended`);
+    this.name = 'RunEndedError';
+  }
+}
+
 const botActor = (run: BotRunHandle): Actor => ({
   kind: 'bot',
   id: run.botActorId as ActorId,
@@ -70,6 +78,11 @@ const botActor = (run: BotRunHandle): Actor => ({
 export function createRunService(options: RunServiceOptions): PluginRuns {
   const { pool, systemPool, registry, broker, handlers } = options;
   const system = { pool: systemPool };
+
+  /** True while the run is `running`: one primary-key read as the system role. Every door below asks it first — a run that was closed (by the stale-run
+   * reaper, by an approval's re-run waiting for it, by its own client) takes no more actions from a worker that still holds its handle. */
+  const live = async (runId: string): Promise<boolean> =>
+    withSystem(async (tx) => (await tx.query("SELECT 1 FROM app.bot_runs WHERE id = $1::uuid AND status = 'running' AND ended_at IS NULL", [runId])).rows.length > 0, system);
 
   return {
     async open(input: OpenRunInput): Promise<{ run: BotRunHandle; token: string }> {
@@ -189,16 +202,19 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       }, system);
     },
 
-    asBot<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
+    async asBot<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
+      if (!(await live(run.runId))) throw new RunEndedError(run.runId);
       return withActor(botActor(run), (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool });
     },
 
-    asApproved<T>(run: BotRunHandle, capability: string, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
+    async asApproved<T>(run: BotRunHandle, capability: string, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
+      if (!(await live(run.runId))) throw new RunEndedError(run.runId);
       return withActor({ ...botActor(run), approvedCapability: capability }, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool });
     },
 
-    asReader<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
-      if (run.askerActorId === null) return this.asBot(run, fn);
+    async asReader<T>(run: BotRunHandle, fn: (tx: PluginTx) => Promise<T>): Promise<T> {
+      if (!(await live(run.runId))) throw new RunEndedError(run.runId);
+      if (run.askerActorId === null) return withActor(botActor(run), (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool });
       const actor: Actor = {
         kind: 'person',
         id: run.askerActorId as ActorId,
@@ -209,11 +225,14 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       return withActor(actor, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool });
     },
 
-    authorize(run: BotRunHandle, capability: string, context: AuthorizeContext = {}): Promise<CapabilityDecision> {
+    async authorize(run: BotRunHandle, capability: string, context: AuthorizeContext = {}): Promise<CapabilityDecision> {
+      // An ended run is denied, not an exception: the caller gets the answer it already handles (and the denial is not an audit line about a bot)
+      if (!(await live(run.runId))) return { allowed: false, reason: 'the run has ended', needsApproval: false };
       return broker.authorize(botActor(run), capability, { ...context, trigger: context.trigger ?? run.trigger });
     },
 
-    may(run: BotRunHandle, capability: string, context: AuthorizeContext = {}): Promise<CapabilityDecision> {
+    async may(run: BotRunHandle, capability: string, context: AuthorizeContext = {}): Promise<CapabilityDecision> {
+      if (!(await live(run.runId))) return { allowed: false, reason: 'the run has ended', needsApproval: false };
       return broker.check(botActor(run), capability, { ...context, trigger: context.trigger ?? run.trigger });
     },
 

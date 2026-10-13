@@ -20,7 +20,7 @@ import {
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { drainFeed, type DrainStats, type FeedRuntime } from '../src/feed.ts';
-import { workspaceKey } from '../src/keys.ts';
+import { ensureWorkspaceKey, readWorkspaceKey } from '../src/keys.ts';
 import { contentHash as keyedHash, documentIdFor } from '../src/render.ts';
 import { SlidingWindow } from '../src/window.ts';
 
@@ -232,7 +232,8 @@ beforeAll(async () => {
   });
   await createPersonas(db);
   sysPool = createSystemPool(db.systemUrl, 2);
-  KEY = await sys((tx) => workspaceKey(tx, omar.workspaceId));
+  await sys((tx) => ensureWorkspaceKey(tx, omar.workspaceId));
+  KEY = (await sys((tx) => readWorkspaceKey(tx, omar.workspaceId)))!;
   await sys(async (tx) => {
     const bot = await tx.query<{ id: string }>(
       `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
@@ -575,6 +576,22 @@ describe('when the engine is not there, or not well', () => {
     for (const id of ids.filter((_, i) => i !== 3)) expect((await linesOf('message', id)).map((l) => l.outcome)).toEqual(['retained']);
     stub.failWhen = null;
     await sys((tx) => tx.query('DELETE FROM app.memory_feed_pending WHERE source_id = $1', [ids[3]!]));
+  });
+
+  it('a source whose workspace has no key yet waits: the drain reads keys, it never makes one', async () => {
+    const saved = KEY;
+    await sys((tx) => tx.query('DELETE FROM app.memory_workspace_keys WHERE workspace_id = $1', [omar.workspaceId]));
+    const id = await message(pubChannel, 'Waits for its key.');
+    await mark('message', id);
+    const stats = await drain();
+    expect(stats).toMatchObject({ considered: 1, deferred: 1, retained: 0 });
+    expect(stub.calls).toEqual([]);
+    expect(await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.memory_workspace_keys')).rows[0]!.n)).toBe(0);
+    expect(await pendingOf('message', id)).toMatchObject({ in_future: true });
+    // the key is there (made by a handler, committed with the work row): the source goes on
+    await sys((tx) => tx.query('INSERT INTO app.memory_workspace_keys (workspace_id, key) VALUES ($1, $2)', [omar.workspaceId, saved]));
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = $1', [id]));
+    expect(await drain()).toMatchObject({ retained: 1 });
   });
 
   it('a team that no longer exists is dropped quietly', async () => {

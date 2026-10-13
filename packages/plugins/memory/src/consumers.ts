@@ -11,6 +11,7 @@ import {
 } from '@manythreads/shared';
 import { feedTuning } from './config.ts';
 import { FEED_QUEUE, NOT_CONFIGURED_EVERY_MS } from './constants.ts';
+import { ensureWorkspaceKey } from './keys.ts';
 import { HELD_STATE_OUTCOMES_SQL } from './rows.ts';
 import { pageSourceId } from './sources.ts';
 
@@ -79,6 +80,8 @@ export function registerConsumers(ctx: PluginContext): void {
       kinds = held.rows.map((r) => r.kind);
       ids = held.rows.map((r) => r.id);
     }
+    // The digest key exists before any drain needs it, committed with the work row (see keys.ts)
+    await ensureWorkspaceKey(tx, workspaceId);
     const { debounceMs } = feedTuning();
     // set-based and without a cap: every path of a commit is marked, however many (a drain reads at most 200 at a time and comes back)
     await tx.query(
@@ -193,6 +196,10 @@ export async function markRetainedOfChannels(
     [channelIds === null ? null : [...channelIds], options.includePublic === true],
   );
   const n = res.rows[0]?.n ?? 0;
-  if (n > 0) await queueDrain(ctx, tx);
+  if (n > 0) {
+    const workspaces = await tx.query<{ workspace_id: string }>('SELECT DISTINCT workspace_id FROM app.memory_feed_pending');
+    for (const w of workspaces.rows) await ensureWorkspaceKey(tx, w.workspace_id);
+    await queueDrain(ctx, tx);
+  }
   return n;
 }

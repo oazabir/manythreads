@@ -16,7 +16,7 @@ import {
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import bots from '../src/index.ts';
-import { BACKFILL_QUEUE, backfillModelAliases } from '../src/backfill.ts';
+import { BACKFILL_QUEUE, backfillModelAliases, backfillRunTimeouts } from '../src/backfill.ts';
 
 // Review of P5-10, finding 2: migration 0008 added `bots.model_aliases` (default '{}') with nothing to fill it for the bots that
 // were already loaded, so their LLM keys were never minted until somebody recommitted the BOT.md. The backfill re-reads the file
@@ -161,3 +161,46 @@ describe('the model_aliases backfill', () => {
     for (const id of [rules, disabled, invalid]) expect(await aliasesOf(id)).toEqual([]);
   });
 });
+
+describe('the run-timeout backfill (migration 0010)', () => {
+  const timeouts = (botId: string) =>
+    sys(async (tx) => (await tx.query<{ run_timeout_seconds: number | null; run_timeout_known: boolean }>('SELECT run_timeout_seconds, run_timeout_known FROM app.bots WHERE id = $1', [botId])).rows[0]!);
+  const limitedDefinition = (seconds: number): string => `---
+schema: 1
+name: Limited probe
+role: Names a run limit
+kind: agent
+runtime: hermes
+triggers:
+  - type: mention
+limits:
+  timeoutSeconds: ${seconds}
+capabilities:
+  native: [messages.post]
+---
+
+# Limited probe
+`;
+  const runTimeouts = (): Promise<number> => sys((tx) => backfillRunTimeouts(ctx, tx as unknown as PluginTx));
+
+  it('reads the limit a bot loaded before 0010 names, and marks a bot that names none as known too (not read again)', async () => {
+    const limited = await legacyBot('timeout-limited', limitedDefinition(5400), { runtime: 'rules' });
+    const none = await legacyBot('timeout-none', definition(''), { runtime: 'rules' });
+    expect(await timeouts(limited)).toEqual({ run_timeout_seconds: null, run_timeout_known: false });
+    expect(await runTimeouts()).toBeGreaterThanOrEqual(2);
+    expect(await timeouts(limited)).toEqual({ run_timeout_seconds: 5400, run_timeout_known: true });
+    expect(await timeouts(none)).toEqual({ run_timeout_seconds: null, run_timeout_known: true });
+    // nothing left to read: a second pass settles nothing
+    expect(await runTimeouts()).toBe(0);
+  });
+
+  it('leaves a bot whose file moved on, or cannot be read, unknown for the loader (or tomorrow)', async () => {
+    const moved = await legacyBot('timeout-moved', limitedDefinition(60), { runtime: 'rules', definitionSha: 'f'.repeat(64) });
+    const missing = await legacyBot('timeout-missing', limitedDefinition(60), { runtime: 'rules' });
+    files.delete('bots/timeout-missing/BOT.md');
+    await runTimeouts();
+    expect((await timeouts(moved)).run_timeout_known).toBe(false);
+    expect((await timeouts(missing)).run_timeout_known).toBe(false);
+  });
+});
+

@@ -3,7 +3,7 @@ import { feedTuning } from './config.ts';
 import { BACKOFF_CAP_MS, DRAIN_BATCH, FEED_QUEUE, MAX_ATTEMPTS, RETAIN_CHUNK } from './constants.ts';
 import { decide, type Decision } from './decide.ts';
 import { appendLine, latestLine, type LastLine } from './rows.ts';
-import { workspaceKey } from './keys.ts';
+import { readWorkspaceKey } from './keys.ts';
 import { resolve, type Provenance } from './sources.ts';
 import type { SlidingWindow } from './window.ts';
 
@@ -125,13 +125,25 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
   for (const row of due) {
     const res = await resolve(tx, row.source_kind, row.source_id);
     const last = await latestLine(tx, row.source_kind, row.source_id);
+    const key = await readWorkspaceKey(tx, row.workspace_id, keys);
+    if (key === null) {
+      // The handler that marked this source makes the key in its own transaction, which commits with the row; a row without one is not retained
+      // under a key made here (a rollback would orphan what the engine was given). Looked at again shortly.
+      await tx.query(
+        `UPDATE app.memory_feed_pending SET not_before = now() + $3 * interval '1 millisecond' WHERE source_kind = $1 AND source_id = $2`,
+        [row.source_kind, row.source_id, feedTuning().deferMs],
+      );
+      log.warn(`memory: no digest key for workspace ${row.workspace_id}; ${row.source_kind} ${row.source_id} waits`);
+      stats.deferred += 1;
+      continue;
+    }
     const decision = decide({
       kind: row.source_kind,
       sourceId: row.source_id,
       res,
       last,
       deferredForMs: row.deferred_ms ?? 0,
-      key: await workspaceKey(tx, row.workspace_id, keys),
+      key,
     });
     const at = 'at' in res ? res.at : null;
     const teamId = at?.teamId ?? last?.team_id ?? null;

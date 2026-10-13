@@ -1,4 +1,4 @@
-import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool, withActor } from '@manythreads/kernel';
+import { CapabilityBroker, CapabilityRegistry, createAppPool, createDbGrantSource, createRunService, createSystemPool, hashRunToken, withActor } from '@manythreads/kernel';
 import { NoEligibleApproverError, requestToolApproval, type ApprovalProvider, type BotRunHandle, type PluginRuns, type PluginTx } from '@manythreads/sdk';
 import { Approval, GetApprovalArgsResponse, ListApprovalsResponse, ListThreadApprovalsResponse, GetApprovalsSummaryResponse, previewArgsDetailed } from '@manythreads/shared';
 import { personaActor, type Persona } from '@manythreads/test-utils';
@@ -435,6 +435,44 @@ describe('deciding', () => {
     );
     const refs = await w.system(async (tx) => (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [rerun])).rows.map((r) => r.source_ref));
     expect(refs).toEqual(['finance/wait.xlsx', 'finance/late.xlsx']);
+  });
+
+  it('an external client’s run (nothing else will ever close it) is ended by the approval, not waited for: the call is made, with the log as it stood, and the run takes nothing more', async () => {
+    // minted the way POST /api/mcp/runs does: no channel, no thread, no asker, and no router job behind it
+    const { run: external, token } = await runs.open({ botId: scoped.botId, teamId: TEAM_IDS.Engineering, workspaceId: omar.workspaceId, trigger: 'webhook', askerActorId: null });
+    await w.system((tx) => tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'drive', 'finance/external.xlsx', 'person')", [external.runId]));
+    const id = (await request(external, 'pages/external-run.md', { keepRunning: true })).approvalId;
+    expect(await runs.resolve(hashRunToken(token))).not.toBeNull(); // the client could still call
+    const started = Date.now();
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    const done = await until(async () => {
+      const row = await rowOf(id);
+      return row?.outcome === 'ran' || row?.outcome === 'failed' ? row : null;
+    }, 30_000, 'the approved call to settle');
+    expect(done, JSON.stringify(done)).toMatchObject({ outcome: 'ran' });
+    expect(Date.now() - started).toBeLessThan(25_000); // not the five minutes a router run is given
+
+    // the origin run was ended by the approval: stopped, its token revoked, and nothing can be appended to its log any more
+    expect(await w.system(async (tx) => (await tx.query<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1', [external.runId])).rows[0]!.status)).toBe('stopped');
+    expect(await runs.resolve(hashRunToken(token))).toBeNull();
+    await expect(runs.asBot(external, (tx) => runs.logSource(tx, { sourceType: 'drive', sourceRef: 'late', scope: 'person' }))).rejects.toThrow(/has ended/);
+    const rerun = await w.system(
+      async (tx) =>
+        (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs WHERE bot_id = $1 AND id <> $2 ORDER BY id DESC LIMIT 1', [scoped.botId, external.runId])).rows[0]!.id,
+    );
+    const refs = await w.system(async (tx) => (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [rerun])).rows.map((r) => r.source_ref));
+    expect(refs).toEqual(['finance/external.xlsx']);
+  });
+
+  it('an ended run takes no more actions from a worker that still holds its handle: every door refuses it', async () => {
+    const run = await openRun(scoped, nadia);
+    expect(await runs.authorize(run, 'pages.write', { path: 'pages/x.md' })).toMatchObject({ allowed: true });
+    await runs.close(run.runId, 'failed');
+    await expect(runs.asBot(run, () => Promise.resolve('acted'))).rejects.toThrow(/has ended/);
+    await expect(runs.asReader(run, () => Promise.resolve('read'))).rejects.toThrow(/has ended/);
+    await expect(runs.asApproved(run, 'pages.write', () => Promise.resolve('approved'))).rejects.toThrow(/has ended/);
+    expect(await runs.authorize(run, 'pages.write', { path: 'pages/x.md' })).toEqual({ allowed: false, reason: 'the run has ended', needsApproval: false });
+    expect(await runs.may(run, 'pages.write', { path: 'pages/x.md' })).toMatchObject({ allowed: false });
   });
 
   it('an approval whose run is gone fails closed: the call is not made, and says why', async () => {

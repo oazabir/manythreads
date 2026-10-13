@@ -85,6 +85,42 @@ export async function backfillModelAliases(ctx: PluginContext, tx: PluginTx, log
   return filled;
 }
 
+/**
+ * Fill `run_timeout_seconds` for the bots loaded before migration 0010 (`run_timeout_known = false`): re-read the file at `main` and, only if it
+ * is the one the row was loaded from, write the limit it names (or nothing) and mark the row known. Rows whose file is unreadable, newer or
+ * invalid stay unknown and are read again tomorrow. At most 200 per pass. Answers how many rows it settled.
+ */
+export async function backfillRunTimeouts(ctx: PluginContext, tx: PluginTx, log?: { warn(message: string): void }): Promise<number> {
+  const rows = (
+    await tx.query<BackfillRow>(
+      `SELECT id, workspace_id, team_id, slug, definition_sha, may_tag FROM app.bots WHERE NOT run_timeout_known ORDER BY created_at, id LIMIT 200`,
+    )
+  ).rows;
+  if (rows.length === 0) return 0;
+  const repo = ctx.providers.get<RepoProvider>('repo');
+  if (!repo) throw new Error('the repo provider is not registered');
+  let settled = 0;
+  for (const row of rows) {
+    const path = `bots/${row.slug}/BOT.md`;
+    let content: Uint8Array;
+    try {
+      content = (await repo.blob(tx, row.team_id, path, 'main')).content;
+    } catch (err) {
+      log?.warn(`bots: run-timeout backfill of ${row.slug}: ${path} is unreadable at main (${err instanceof Error ? err.message : String(err)})`);
+      continue;
+    }
+    if (createHash('sha256').update(content).digest('hex') !== row.definition_sha) continue;
+    const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
+    if (!parsed.ok) continue;
+    const updated = await tx.query<{ id: string }>(
+      'UPDATE app.bots SET run_timeout_seconds = $2, run_timeout_known = true WHERE id = $1 AND NOT run_timeout_known RETURNING id',
+      [row.id, parsed.frontmatter.limits?.timeoutSeconds ?? null],
+    );
+    settled += updated.rows.length;
+  }
+  return settled;
+}
+
 /** Register the daily job. Before the gateway's own reconcile (03:23 UTC), so the key it mints exists when that one looks. */
 export function registerBackfillJob(ctx: PluginContext): void {
   ctx.jobs.register(
@@ -92,6 +128,8 @@ export function registerBackfillJob(ctx: PluginContext): void {
     async (_payload, tx, job) => {
       const filled = await backfillModelAliases(ctx, tx, job.log);
       if (filled > 0) job.log.info(`bots: backfilled model_aliases for ${filled} bot(s)`);
+      const settled = await backfillRunTimeouts(ctx, tx, job.log);
+      if (settled > 0) job.log.info(`bots: read the run limit of ${settled} bot(s) loaded before it was stored`);
     },
     { cron: '11 3 * * *' },
   );

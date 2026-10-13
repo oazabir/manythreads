@@ -94,6 +94,56 @@ describe('approvals_never_gated', () => {
     }
   });
 
+  it('0003 marks every existing approval as having had a run, including one whose run_id is already NULL', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      const seed = (runId: string | null) =>
+        sys(
+          async (tx) =>
+            (
+              await tx.query<{ id: string }>(
+                `INSERT INTO app.approvals (workspace_id, team_id, source, status, tool, summary, args_preview, resume, approver_scope, requester_id, run_id)
+                 VALUES ($1, $2, 'grant', 'pending', 'pages.write', 'legacy', '{}', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $3, $4)
+                 RETURNING id`,
+                [omar.workspaceId, ENG, nadia.actorId, runId],
+              )
+            ).rows[0]!.id,
+        );
+      const bot = await sys(async (tx) => {
+        const b = (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
+             VALUES ($1, $2, 'had-run', 'Had run', '', 'agent', 'rules', 'team', repeat('a', 64), 'active') RETURNING id`,
+            [omar.workspaceId, ENG],
+          )
+        ).rows[0]!.id;
+        const run = (
+          await tx.query<{ id: string }>(
+            "INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status) VALUES ($1, $2, $3, 'mention', $4, 'running') RETURNING id",
+            [omar.workspaceId, b, ENG, nadia.actorId],
+          )
+        ).rows[0]!.id;
+        return { bot: b, run };
+      });
+      const withRun = await seed(bot.run);
+      const orphan = await seed(null);
+      // as the table was before 0003: the column is false everywhere
+      await sys((tx) => tx.query('UPDATE app.approvals SET had_run = false WHERE id = ANY($1)', [[withRun, orphan]]));
+      expect(await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.approvals WHERE id = ANY($1) AND had_run', [[withRun, orphan]])).rows[0]!.n)).toBe(0);
+      const file = readFileSync(new URL('../../migrations/0003_had_run.sql', import.meta.url), 'utf8');
+      const block = file.slice(file.indexOf('-- legacy-begin') + '-- legacy-begin'.length, file.indexOf('-- legacy-end'));
+      expect(block).toContain('SET ROLE manythreads_system');
+      await admin.query(block);
+      expect(await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.approvals WHERE id = ANY($1) AND had_run', [[withRun, orphan]])).rows[0]!.n)).toBe(2);
+      // and the trigger sets it for a new insert, from the run
+      const fresh = await seed(null);
+      expect(await sys(async (tx) => (await tx.query<{ had_run: boolean }>('SELECT had_run FROM app.approvals WHERE id = $1', [fresh])).rows[0]!.had_run)).toBe(false);
+    } finally {
+      await admin.end();
+    }
+  });
+
   it('names exactly the SDK’s list', async () => {
     const admin = testClient({ connectionString: db.ownerUrl });
     await admin.connect();

@@ -55,4 +55,28 @@ describe('ctx.identity', () => {
     await expect(door.runs.asApproved({} as never, 'pages.write', () => Promise.resolve('yes'))).resolves.toBe('yes');
     expect(calls).toEqual(['pages.write']);
   });
+
+  it('run.close is a door of its own: close works, every other member of ctx.runs is refused, and a plugin with neither has no ctx.runs', async () => {
+    const closed: Array<[string, string]> = [];
+    const runs = {
+      close: (runId: string, status: string) => {
+        closed.push([runId, status]);
+        return Promise.resolve(true);
+      },
+      open: () => Promise.reject(new Error('the real open must not be reached')),
+      asBot: () => Promise.reject(new Error('the real asBot must not be reached')),
+    } as never;
+    const reaper = definePlugin({ manifest: { name: 'reaper', version: '0.1.0', kind: 'server', extends: ['run.close'] }, register: () => undefined });
+    const ctx = createPluginContext(reaper.manifest, { ...base, runs });
+    await expect(ctx.runs.close('run-1', 'failed')).resolves.toBe(true);
+    expect(closed).toEqual([['run-1', 'failed']]);
+    for (const member of ['open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'inheritSources'] as const) {
+      expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.close.*tool\.invoke/);
+    }
+    const plain = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
+    expect(() => createPluginContext(plain.manifest, { ...base, runs }).runs).toThrow(/tool\.invoke/);
+    // the full door still has everything (tool.invoke wins over run.close)
+    const both = definePlugin({ manifest: { name: 'both', version: '0.1.0', kind: 'server', extends: ['tool.invoke', 'run.close'] }, register: () => undefined });
+    await expect(createPluginContext(both.manifest, { ...base, runs }).runs.asBot({} as never, () => Promise.resolve('x'))).rejects.toThrow(/real asBot/);
+  });
 });

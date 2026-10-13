@@ -1,27 +1,27 @@
 import { randomBytes } from 'node:crypto';
 import type { PluginTx } from '@manythreads/sdk';
 
-// The per-workspace key of the feed's keyed digests (`memory_workspace_keys`, system only). Created on first use; a key never changes once it
-// exists (a changed key would make every retained document look edited).
+// The per-workspace key of the feed's keyed digests (`memory_workspace_keys`, system only). A key never changes once it exists (a changed key
+// would make every retained document look edited), and it must exist BEFORE anything is retained under it: a key created inside a drain whose
+// transaction then rolled back would leave documents in the engine named by a key no database has.
 //
-// Never cached across transactions: a key inserted by a drain whose transaction then rolls back would otherwise live on in this process while the
-// database (and every other replica) has none, and two replicas would name the same text differently. A drain passes one `cache` for its own
-// duration (one read of the row per workspace per drain, inside the transaction that either commits the key or does not).
+// So the drain never creates one. The event handlers do (`ensureWorkspaceKey`, in the transaction that marks a source: the key commits together
+// with the work row that will need it), and the drain only reads (`readWorkspaceKey`, one read per workspace per drain; never kept past it). A row
+// whose key is missing is put off, not retained.
 
-export async function workspaceKey(tx: PluginTx, workspaceId: string, cache: Map<string, Buffer> = new Map()): Promise<Buffer> {
+/** Makes the workspace's key if there is none (idempotent: a second call, or a racing one, changes nothing). */
+export async function ensureWorkspaceKey(tx: PluginTx, workspaceId: string): Promise<void> {
+  await tx.query(
+    'INSERT INTO app.memory_workspace_keys (workspace_id, key) VALUES ($1::uuid, $2) ON CONFLICT (workspace_id) DO NOTHING',
+    [workspaceId, randomBytes(32)],
+  );
+}
+
+/** The workspace's key, or null when none was made. `cache` is the caller's, for the length of one drain. */
+export async function readWorkspaceKey(tx: PluginTx, workspaceId: string, cache: Map<string, Buffer> = new Map()): Promise<Buffer | null> {
   const hit = cache.get(workspaceId);
   if (hit) return hit;
-  const read = async (): Promise<Buffer | null> =>
-    (await tx.query<{ key: Buffer }>('SELECT key FROM app.memory_workspace_keys WHERE workspace_id = $1::uuid', [workspaceId])).rows[0]?.key ?? null;
-  let key = await read();
-  if (key === null) {
-    await tx.query(
-      'INSERT INTO app.memory_workspace_keys (workspace_id, key) VALUES ($1::uuid, $2) ON CONFLICT (workspace_id) DO NOTHING',
-      [workspaceId, randomBytes(32)],
-    );
-    key = await read();
-  }
-  if (key === null) throw new Error('the memory workspace key could not be created');
-  cache.set(workspaceId, key);
+  const key = (await tx.query<{ key: Buffer }>('SELECT key FROM app.memory_workspace_keys WHERE workspace_id = $1::uuid', [workspaceId])).rows[0]?.key ?? null;
+  if (key !== null) cache.set(workspaceId, key);
   return key;
 }

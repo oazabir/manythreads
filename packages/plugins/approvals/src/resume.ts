@@ -35,7 +35,7 @@ export const SWEEP_QUEUE = 'approvals.sweep';
 /** `waits`: how many times this call has been put off because the run that asked for it was still going (the job re-queues itself, at most `MAX_WAITS`). */
 const Payload = z.strictObject({ approvalId: z.uuid(), waits: z.number().int().min(0).max(1000).optional() });
 
-/** The run that asked is normally stopped before anyone approves; if it is not yet, the call waits ten seconds at a time, for at most five minutes. */
+/** A run a router worker holds is normally stopped before anyone approves; if it is not yet, the call waits ten seconds at a time, for at most five minutes, then ends it. */
 const WAIT_MS = 10_000;
 const MAX_WAITS = 30;
 
@@ -157,15 +157,28 @@ export function registerResumeJob(ctx: PluginContext): void {
       // would pass for one that read nothing. Fail closed.
       if (row.had_run && row.run_id === null) return fail('The call was not made: the run that asked for it no longer exists, so what it had read cannot be carried over.');
 
-      // The source log of the run that asked can still grow while that run is going, and a copy of it would not be the whole. A run that asked for
-      // an approval ends `stopped` as soon as it notices; normally it has long before a person answers. If it has not, wait for it (a second job of
-      // this queue, not a retry: this one finishes, so its "never twice" rule is untouched).
+      // The source log of the run that asked can still grow while that run is going, and a copy of it would not be the whole. Once the run has
+      // ENDED its log is final (ending revokes its tokens, and every door of the run service refuses an ended run), so the answer to "still going"
+      // is never to fail the call, only to end the run first:
+      //   * a run no worker holds — an external client's MCP run (minted with a pairing token: no channel, no thread, no router job), which nothing
+      //     else will ever close — is ended now;
+      //   * a run a router worker holds (it answers in a channel) is given up to five minutes to notice its approval and stop itself (a second job
+      //     of this queue, not a retry: this one finishes, so its "never twice" rule is untouched), and is then ended all the same.
       if (row.run_id) {
-        const origin = (await tx.query<{ running: boolean }>("SELECT (status = 'running' AND ended_at IS NULL) AS running FROM app.bot_runs WHERE id = $1::uuid", [row.run_id])).rows[0];
+        const origin = (
+          await tx.query<{ running: boolean; held: boolean }>(
+            `SELECT (status = 'running' AND ended_at IS NULL) AS running, (channel_id IS NOT NULL OR reply_root_id IS NOT NULL) AS held
+               FROM app.bot_runs WHERE id = $1::uuid`,
+            [row.run_id],
+          )
+        ).rows[0];
         if (origin?.running === true) {
-          if (waits >= MAX_WAITS) return fail('The call was not made: the run that asked for it was still going after five minutes, so what it had read could not be carried over.');
-          await ctx.jobs.enqueue(tx, EXECUTE_QUEUE, { approvalId, waits: waits + 1 }, { runAt: new Date(ctx.runtime.now().getTime() + WAIT_MS), dedupeKey: `approvals-execute:${approvalId}:${waits + 1}` });
-          return;
+          if (origin.held && waits < MAX_WAITS) {
+            await ctx.jobs.enqueue(tx, EXECUTE_QUEUE, { approvalId, waits: waits + 1 }, { runAt: new Date(ctx.runtime.now().getTime() + WAIT_MS), dedupeKey: `approvals-execute:${approvalId}:${waits + 1}` });
+            return;
+          }
+          // `stopped`: the run ended waiting for a person, which is what it was doing. Its tokens are revoked here, so nothing is appended after.
+          await ctx.runs.close(row.run_id, 'stopped');
         }
       }
 

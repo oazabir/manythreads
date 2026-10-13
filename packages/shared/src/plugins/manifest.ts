@@ -36,6 +36,9 @@ export const EXTENSION_POINTS = [
   // Also not in section 3: the right to make the one call a person approved (`ctx.runs.asApproved`, P5-20), which waives `needsApproval` for exactly
   // that capability. Only the approvals plugin declares it; docs/plugins/security.md.
   'approval.resume',
+  // Also not in section 3: the right to END a bot run through the run service (`ctx.runs.close`) and nothing else of `ctx.runs` — no opening a run,
+  // no entering one as its bot. For janitors (the bots plugin's stale-run reaper); the full run door is `tool.invoke`. docs/plugins/security.md.
+  'run.close',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);

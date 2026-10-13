@@ -99,6 +99,8 @@ export interface RepoServiceDeps {
   authorize(tx: PluginTx, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
   /** `ctx.audit.emit`. */
   emit(tx: PluginTx, event: AuditEvent): Promise<void>;
+  /** An operator-visible line (default: `console.warn`). */
+  warn?(message: string): void;
 }
 
 interface TeamInfo {
@@ -296,6 +298,16 @@ export function createRepoService(deps: RepoServiceDeps) {
     // writer that touches it is what loads it. The event is split into events of at most CATCH_UP_PATHS_PER_EVENT paths, so one catch-up over a long
     // history is many small events, not one without a bound.
     if (dbHead !== null && lastTouched.size > 0) {
+      const guarded = [...lastTouched.keys()].filter((path) => isGuardedRepoPath(path));
+      if (guarded.length > 0) {
+        // Said where an operator sees it: the database rows built from these paths (the bot roster, grants) were not rebuilt by this catch-up and
+        // may be stale until the next commit through the writer touches them.
+        (deps.warn ?? ((m: string) => console.warn(m)))(
+          `repo-git: team ${t.id}: the index caught up with ${shas.length} commit(s) that did not pass the writer and touched guarded path(s) ` +
+            `${guarded.slice(0, 5).join(', ')}${guarded.length > 5 ? ` (+${guarded.length - 5} more)` : ''}; they were not announced, so what is built from them ` +
+            `(bots, grants) may be stale until a commit through the writer touches them`,
+        );
+      }
       const present = new Set(files.map((f) => f.path));
       const last = commits[commits.length - 1] as { author_id: string | null; message: string };
       const paths = [...lastTouched.keys()]

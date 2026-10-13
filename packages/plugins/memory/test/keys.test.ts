@@ -1,20 +1,22 @@
 import type { PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
-import { workspaceKey } from '../src/keys.ts';
+import { ensureWorkspaceKey, readWorkspaceKey } from '../src/keys.ts';
 
-// The workspace key is read inside the drain's own transaction and never kept past it: a key created by a drain that then rolled back must not
-// outlive it in the process while the database (and every other replica) has none.
+// The workspace key is made by the handler that marks a source (committed with the work row) and only READ by the drain: a key created inside a
+// drain whose transaction rolled back would leave documents named by a key no database has.
 
 const WS = '00000000-0000-7000-8000-00000000a001';
 
-/** A table of keys with a transaction on top: `commit` keeps what the transaction wrote, `rollback` drops it. */
+/** A table of keys with a transaction on top: `commit` keeps what the transaction wrote, a transaction nobody commits writes nothing. */
 function database() {
   const committed = new Map<string, Buffer>();
+  const queries: string[] = [];
   const begin = (): { tx: PluginTx; commit(): void } => {
     const pending = new Map<string, Buffer>();
     const tx = {
       actor: { kind: 'system', id: 'x', workspaceId: WS },
       query: (text: string, values: readonly unknown[] = []) => {
+        queries.push(text.slice(0, 20));
         if (/^SELECT key/.test(text)) {
           const key = pending.get(values[0] as string) ?? committed.get(values[0] as string);
           return Promise.resolve({ rows: key ? [{ key }] : [] });
@@ -28,30 +30,56 @@ function database() {
     } as unknown as PluginTx;
     return { tx, commit: () => pending.forEach((v, k) => committed.set(k, v)) };
   };
-  return { begin, committed };
+  return { begin, committed, queries };
 }
 
-describe('workspaceKey', () => {
-  it('creates a 32-byte key once and returns the same one to the rest of the drain', async () => {
+describe('the workspace key', () => {
+  it('is made by ensure, once (a second ensure changes nothing), and read back whole', async () => {
     const db = database();
     const t = db.begin();
-    const cache = new Map<string, Buffer>();
-    const a = await workspaceKey(t.tx, WS, cache);
-    const b = await workspaceKey(t.tx, WS, cache);
-    expect(a).toHaveLength(32);
-    expect(b).toBe(a);
+    await ensureWorkspaceKey(t.tx, WS);
+    const first = await readWorkspaceKey(t.tx, WS);
+    await ensureWorkspaceKey(t.tx, WS);
+    const second = await readWorkspaceKey(t.tx, WS);
+    expect(first).toHaveLength(32);
+    expect(second?.equals(first!)).toBe(true);
   });
 
-  it('a key created in a transaction that rolls back is not remembered: the next drain creates its own', async () => {
+  it('is never made by a read: a drain that finds none gets null and writes nothing', async () => {
     const db = database();
-    const first = db.begin();
-    const rolledBack = await workspaceKey(first.tx, WS); // never committed
-    const second = db.begin();
-    const next = await workspaceKey(second.tx, WS);
-    expect(next.equals(rolledBack)).toBe(false); // not served from a process cache
-    second.commit();
-    const third = db.begin();
-    expect((await workspaceKey(third.tx, WS)).equals(next)).toBe(true); // the committed one is the key from then on
-    expect(db.committed.get(WS)?.equals(next)).toBe(true);
+    const t = db.begin();
+    expect(await readWorkspaceKey(t.tx, WS)).toBeNull();
+    t.commit();
+    expect(db.committed.size).toBe(0);
+    expect(db.queries.every((q) => q.startsWith('SELECT key'))).toBe(true);
+  });
+
+  it('a key made in a transaction that rolls back is gone; the next one makes its own, and what committed stays the key', async () => {
+    const db = database();
+    const lost = db.begin();
+    await ensureWorkspaceKey(lost.tx, WS); // never committed
+    const next = db.begin();
+    expect(await readWorkspaceKey(next.tx, WS)).toBeNull(); // nothing of it is remembered anywhere
+    await ensureWorkspaceKey(next.tx, WS);
+    next.commit();
+    const kept = db.committed.get(WS)!;
+    const later = db.begin();
+    expect((await readWorkspaceKey(later.tx, WS))?.equals(kept)).toBe(true);
+    await ensureWorkspaceKey(later.tx, WS);
+    later.commit();
+    expect(db.committed.get(WS)?.equals(kept)).toBe(true); // never replaced
+  });
+
+  it('is read once per drain: the cache of one drain answers its later rows', async () => {
+    const db = database();
+    const t = db.begin();
+    await ensureWorkspaceKey(t.tx, WS);
+    t.commit();
+    const reader = db.begin();
+    const cache = new Map<string, Buffer>();
+    await readWorkspaceKey(reader.tx, WS, cache);
+    const before = db.queries.length;
+    await readWorkspaceKey(reader.tx, WS, cache);
+    expect(db.queries.length).toBe(before);
   });
 });
