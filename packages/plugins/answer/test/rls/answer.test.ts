@@ -557,13 +557,20 @@ describe('a reply nobody can be shown to is for no one', () => {
     const before = await reachOfConversation(rafiChat, rafiChatMsg, rafi);
     expect(before.run.reach).toBe('asker');
     expect(before.citations[0]).toMatchObject({ found: true, audience: true });
-    await asOwner(`UPDATE app.people SET status = 'suspended' WHERE id = '${rafi.personId}'`);
+    // `people_guard` lets only a workspace admin change a status through the app; the owner lifts it for the one statement
+    const setStatus = (status: string): Promise<void> =>
+      asOwner(
+        `ALTER TABLE app.people DISABLE TRIGGER people_guard;
+         UPDATE app.people SET status = '${status}' WHERE id = '${rafi.personId}';
+         ALTER TABLE app.people ENABLE TRIGGER people_guard;`,
+      );
+    await setStatus('suspended');
     try {
       const after = await reachOfConversation(rafiChat, rafiChatMsg, rafi);
       expect(after.run.reach).toBe('none');
       expect(after.run.private).toBe(false);
     } finally {
-      await asOwner(`UPDATE app.people SET status = 'active' WHERE id = '${rafi.personId}'`);
+      await setStatus('active');
     }
     // and it is the asker's own again afterwards
     expect((await reachOfConversation(rafiChat, rafiChatMsg, rafi)).run.reach).toBe('asker');
