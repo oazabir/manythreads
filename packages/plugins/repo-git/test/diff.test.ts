@@ -74,12 +74,12 @@ describe('parseUnifiedPatch', () => {
       return lines.join('\n');
     };
     expect(parseUnifiedPatch(patch(20_000)).hunks).toHaveLength(20_000);
-    // twice the patch costs about twice (a quadratic parser would cost four times), under a ceiling a busy machine does not reach
-    expectLinear(patch, (big) => parseUnifiedPatch(big), { n: 10_000, factor: 2, maxRatio: 3.5, ceilingMs: 2_000, label: 'a patch of hunk headers' });
+    // a patch four times as large costs about four times as much (a quadratic parser sixteen), under a ceiling a busy machine does not reach
+    expectLinear(patch, (big) => parseUnifiedPatch(big), { n: 5_000, ceilingMs: 2_000, label: 'a patch of hunk headers' });
     expectLinear(
       (n) => [`@@ -1 +1 @@ ${'@'.repeat(n)}`, `@@ -1,1 +1,1 @@\n${' '.repeat(n)}`],
       (inputs) => inputs.forEach((input) => parseUnifiedPatch(input)),
-      { n: 1_000_000, factor: 2, maxRatio: 3.5, label: 'one very long line' },
+      { n: 500_000, label: 'one very long line' },
     );
   });
 });
