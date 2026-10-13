@@ -98,9 +98,7 @@ let dmFile = '';
 let nadiaConversation = '';
 let omarConversation = '';
 let rafiConversation = '';
-let nadiaMention = '';
 let teamRun = '';
-let webhookRun = '';
 let finishedRun = '';
 let mentionRoot = '';
 // more places and messages
@@ -246,9 +244,7 @@ beforeAll(async () => {
   omarConversation = await run({ trigger: 'conversation', asker: omar.actorId, channel: omarChat, root: omarRoot });
   rafiConversation = await run({ trigger: 'conversation', asker: rafi.actorId, channel: rafiChat, root: rafiRoot, status: 'done' });
   mentionRoot = await message(dev, nadia.actorId, '@brain what is blocking the migration?');
-  nadiaMention = await run({ trigger: 'mention', asker: nadia.actorId, channel: dev, root: mentionRoot });
   teamRun = await run({ trigger: 'mention', asker: rafi.actorId, channel: dev, root: mentionRoot, status: 'done' });
-  webhookRun = await run({ trigger: 'webhook', asker: null, channel: dev, root: mentionRoot });
   finishedRun = await run({ trigger: 'conversation', asker: nadia.actorId, channel: nadiaChat, root: nadiaRoot, status: 'done' });
 
   // a second readable message in #dev, and a reply in the thread of the first (a search can hit a reply)
