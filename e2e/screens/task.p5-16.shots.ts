@@ -39,13 +39,10 @@ async function shoot(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: join(OUT, `${name}.png`), mask: [page.locator('[data-vt-mask]')], animations: 'disabled' });
 }
 
-/** The first team's roster: the app lands on a team route, the roster is `/t/<slug>/bots`. */
+/** The roster of the live team that has a bot (`coder` in Engineering, which has a `conversation` trigger). */
+const TEAM = process.env['MANYTHREADS_LIVE_TEAM'] ?? 'engineering';
 async function openRoster(page: Page): Promise<void> {
-  await page.goto('/');
-  await page.waitForURL(/\/t\/[^/]+/);
-  const team = /\/t\/([^/]+)/.exec(new URL(page.url()).pathname)?.[1];
-  expect(team, 'the app landed on a team route').toBeTruthy();
-  await page.goto(`/t/${team}/bots`);
+  await page.goto(`/t/${TEAM}/bots`);
   await expect(page.getByTestId('bot-talk').first()).toBeVisible();
 }
 
