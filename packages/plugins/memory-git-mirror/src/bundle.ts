@@ -78,7 +78,9 @@ export async function ensureBundle(ctx: PluginContext, tx: PluginTx, teamId: str
         missing.map((m) => ({ path: m.path, op: 'put' as const, content: m.content, baseBlobSha: null })),
         'Create the team memory bundle',
       );
+      // The writer committed everything it was given, and indexes it in this transaction.
       outcome = 'created';
+      break;
     } catch (err) {
       if ((isFileConflict(err) || isRefConflict(err)) && attempt < WRITE_ATTEMPTS) continue;
       throw err;

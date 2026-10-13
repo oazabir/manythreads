@@ -332,9 +332,10 @@ describe('which runs are pruned', () => {
     const young = await run({ startedAt: ago(10, -60_000), endedAt: ago(10) });
     const middling = await run({ startedAt: ago(45, -60_000), endedAt: ago(45) });
     const old = await run();
-    await logLine({ id: 'forged-a', outcome: 'retained', at: ago(200) });
-    await logLine({ id: 'forged-a', outcome: 'forgotten', at: ago(199), reason: 'replaced' });
-    await logLine({ id: 'forged-a', outcome: 'retained', at: ago(198) });
+    // inside the 365-day window: a trusted forged cutoff of "now" would prune the two superseded lines
+    await logLine({ id: 'forged-a', outcome: 'retained', at: ago(100) });
+    await logLine({ id: 'forged-a', outcome: 'forgotten', at: ago(99), reason: 'replaced' });
+    await logLine({ id: 'forged-a', outcome: 'retained', at: ago(98) });
     const { counts } = await sweep({ forge: (state) => ({ ...state, runLogCutoff: new Date().toISOString(), memoryLogCutoff: new Date().toISOString() }) });
     expect(counts).toMatchObject({ runs: 1, memoryLogLines: 0 });
     expect(await runExists(old)).toBe(false);
@@ -412,7 +413,7 @@ describe('the feed’s verdict about what a bot wrote does not depend on a run t
   });
 
   it('a run that read only the team’s own sources and wrote nothing leaves no memo', async () => {
-    await run({ lines: [['message', 'x', 'team']] });
+    await run({ lines: [['memory', 'bank:team:test', 'team']] });
     const { counts } = await sweep();
     expect(counts).toMatchObject({ runs: 1, runMemos: 0 });
     expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.memory_run_memo')).rows.length)).toBe(0);
@@ -428,7 +429,7 @@ describe('the feed’s verdict about what a bot wrote does not depend on a run t
     await logLine({ kind: 'run', id: held, outcome: 'retained', at: ago(99) });
     const filed = await run({ lines: [['drive', 'x', 'person']] });
     const approvalId = await approval(filed, 'denied');
-    const filedClean = await run({ lines: [['message', 'x', 'team']] });
+    const filedClean = await run({ lines: [['memory', 'bank:team:test', 'team']] });
     const cleanApproval = await approval(filedClean, 'approved');
     const { counts } = await sweep();
     expect(counts.runMemos).toBe(2);
@@ -455,7 +456,7 @@ describe('the feed’s verdict about what a bot wrote does not depend on a run t
       const endedAt = ago(100, 300_000);
       const inside = ago(100, 120_000);
       const outside = ago(100, 3_900_000);
-      const id = await run({ bot, startedAt, endedAt, lines: row.refusal === 'person' ? [['drive', 'x', 'person']] : [['message', 'x', 'team']] });
+      const id = await run({ bot, startedAt, endedAt, lines: row.refusal === 'person' ? [['drive', 'x', 'person']] : [['memory', 'bank:team:test', 'team']] });
       if (row.wrote === 'message') await message(bot.actor, inside);
       if (row.wrote === 'page') {
         await sys((tx) =>
@@ -514,9 +515,10 @@ describe('the memoize plan', () => {
       );
       return [...messages.rows, ...commits.rows].map((r) => r['QUERY PLAN']).join('\n');
     });
-    expect(plan).toContain('messages_author');
+    // an index either way: the author index, or the channel index when the planner starts from the channels (a toy database has few of both)
+    expect(plan).toMatch(/messages_author|messages_channel_id_desc/);
     expect(plan).toMatch(/repo_commits_/);
-    expect(plan).not.toMatch(/Seq Scan on messages/);
+    expect(plan).not.toMatch(/Seq Scan on (messages|repo_commits)/);
   });
 });
 
