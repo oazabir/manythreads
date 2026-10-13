@@ -14,6 +14,7 @@ import {
   repoGitMigrationSource,
   TEAM_IDS,
   teamsMigrationSource,
+  testClient,
   testKernelMigrationSource,
   type Persona,
   type TestDatabase,
@@ -158,6 +159,17 @@ const file = (channelId: string, name: string): Promise<string> =>
         )
       ).rows[0]!.id,
   );
+
+/** SQL as the database owner (what a migration or an operator can do): a way to arrange a state the guards of the app refuse to produce. */
+const asOwner = async (sql: string): Promise<void> => {
+  const owner = testClient({ connectionString: db.ownerUrl });
+  await owner.connect();
+  try {
+    await owner.query(sql);
+  } finally {
+    await owner.end();
+  }
+};
 
 const acl = (channelId: string, subject: 'person' | 'team', subjectId: string): Promise<void> =>
   sys(async (tx) => {
@@ -502,10 +514,13 @@ describe('the people who will read the reply', () => {
     expect(before.run.reach).toBe('team');
     expect(before.citations[0]).toMatchObject({ found: true, audience: true });
     const original = await sys(async (tx) => (await tx.query<{ role: string }>('SELECT role FROM app.workspace_members WHERE person_id = $1', [rafi.personId])).rows[0]!.role);
-    // demoted to guest by a plain UPDATE: the roster row of the team stays, the grant now reads the channel for a guest
-    await sys(async (tx) => {
-      await tx.query("UPDATE app.workspace_members SET role = 'guest' WHERE person_id = $1", [rafi.personId]);
-    });
+    // Demoted to guest with the roster row left in place. `workspace_members_guard` refuses that through every normal path, so the owner lifts
+    // it for this one statement: the reader test must not stand on a trigger (a roster row is not membership, `lookup_team_role` says so).
+    await asOwner(
+      `ALTER TABLE app.workspace_members DISABLE TRIGGER workspace_members_guard;
+       UPDATE app.workspace_members SET role = 'guest' WHERE person_id = '${rafi.personId}';
+       ALTER TABLE app.workspace_members ENABLE TRIGGER workspace_members_guard;`,
+    );
     try {
       const rosterRows = await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.team_members tm JOIN app.actors a ON a.id = tm.actor_id WHERE a.ref_id = $1', [rafi.personId])).rows[0]!.n);
       expect(rosterRows).toBeGreaterThan(0);
@@ -513,9 +528,7 @@ describe('the people who will read the reply', () => {
       expect(after.run.reach).toBe('none');
       expect(after.citations[0]).toMatchObject({ found: true, scope: 'team', audience: false });
     } finally {
-      await sys(async (tx) => {
-        await tx.query('UPDATE app.workspace_members SET role = $2 WHERE person_id = $1', [rafi.personId, original]);
-      });
+      await asOwner(`UPDATE app.workspace_members SET role = '${original.replaceAll("'", "''")}' WHERE person_id = '${rafi.personId}'`);
     }
   });
 
