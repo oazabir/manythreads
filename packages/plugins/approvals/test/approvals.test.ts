@@ -93,7 +93,7 @@ async function openRun(bot: { botId: string }, asker: { actorId: string } | null
 const PAGE = (path: string, content = 'written after approval', extra: Record<string, unknown> = {}) => ({ team: TEAM_IDS.Engineering, mode: 'create', path, content, ...extra });
 
 /** File a grant-source approval for a `pages.write` call, the way the MCP gateway does: in the run's own transaction, as its bot. */
-function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string; content?: string; args?: Record<string, unknown> } = {}) {
+function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string; content?: string; args?: Record<string, unknown>; keepRunning?: boolean } = {}) {
   const args = extra.args ?? PAGE(path, extra.content);
   const { preview, truncated } = previewArgsDetailed(args);
   const filed = runs.asBot(run, (tx) =>
@@ -110,7 +110,7 @@ function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string; c
   );
   // what the runtime does next: a run that asked for an approval ends `stopped` (the re-run reads its source log, which is only whole once it has)
   return filed.then(async (result) => {
-    await runs.close(run.runId, 'stopped');
+    if (extra.keepRunning !== true) await runs.close(run.runId, 'stopped');
     return result;
   });
 }
@@ -414,6 +414,27 @@ describe('deciding', () => {
     // a closed target is refused
     await runs.close(live.runId, 'done');
     await expect(runs.inheritSources(live, stopped.runId)).rejects.toThrow(/itself running/);
+  });
+
+  it('approving while the run that asked is still going waits for it to end, then makes the call with its whole source log', async () => {
+    const original = await openRun(scoped, nadia);
+    await w.system((tx) => tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'drive', 'finance/wait.xlsx', 'person')", [original.runId]));
+    const id = (await request(original, 'pages/waits.md', { keepRunning: true })).approvalId;
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    // still going: the call has not been made, and the approval has not failed
+    expect(await rowOf(id)).toMatchObject({ status: 'approved', outcome: 'running' });
+    expect((await w.call(omar, 'GET', '/api/teams/engineering/repo/blob?path=pages/waits.md')).status).toBe(404);
+    // a late line the run logs before it ends is part of what the re-run inherits
+    await w.system((tx) => tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 1, 'drive', 'finance/late.xlsx', 'person')", [original.runId]));
+    await runs.close(original.runId, 'stopped');
+    await until(async () => ((await rowOf(id))?.outcome === 'ran' ? true : null), 60_000, 'the call to be made once the run had ended');
+    const rerun = await w.system(
+      async (tx) =>
+        (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs WHERE bot_id = $1 AND id <> $2 ORDER BY id DESC LIMIT 1', [scoped.botId, original.runId])).rows[0]!.id,
+    );
+    const refs = await w.system(async (tx) => (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [rerun])).rows.map((r) => r.source_ref));
+    expect(refs).toEqual(['finance/wait.xlsx', 'finance/late.xlsx']);
   });
 
   it('an approval whose run is gone fails closed: the call is not made, and says why', async () => {
