@@ -55,10 +55,11 @@ const ProviderMeta = z.strictObject({ answer: AnswerPayload.optional(), runId: z
  * call, so a message made this way is indistinguishable from any other except for its `meta` — and it is not a capability, so no model can be
  * granted it and call it with a payload of its own (docs/plugins/answer.md).
  *
- * The provider does not take a caller's word for what the meta says. `meta.runId` is the transaction's own run (`app.run_id()`, set by the
- * kernel when the run's bot acts, never by SQL a plugin could write), and an `answer` is the answer of that run, by the bot that is posting it,
- * with the text that is the message: a plugin cannot post one run's Answer as another's, as another bot's, or with a text that differs from the
- * payload clients draw.
+ * The provider does not take a caller's word for what the meta says. `meta.runId` is the transaction's own run (`app.run_id()`, which the
+ * kernel sets when the run's bot acts), and an `answer` is the answer of that run, by the bot that is posting it, with the text that is the
+ * message: a call cannot post one run's Answer as another's, as another bot's, or with a text that differs from the payload clients draw. This
+ * is a check against the transaction, not a defence against plugin code that sets `app.run_id` itself: plugins are first-party code the
+ * platform trusts (CLAUDE.md), and a hostile one could do much more.
  */
 export function registerMessageProvider(deps: Deps): void {
   const provider: MessageProvider = {

@@ -22,10 +22,10 @@
 --
 --   * app.answer_run_sources()    SECURITY DEFINER, system-owned: the calling run's own source log (a bot cannot read its run's lines under
 --                                 `run_source_log_select`, bots 0004). The one run it answers for is `app.run_id()`.
---   * app.answer_reply_team_only() SECURITY DEFINER, system-owned: are the people who can read the run's reply channel all of the run's team
---                                 (or workspace admins, who read every team)? Decided from the channel's actual readers
---                                 (`app.channel_audience`, so an ACL grant to a guest or to a person of another team counts), never from a
---                                 label on the source.
+--   * app.answer_reply_reach()    SECURITY DEFINER, system-owned: who will read the run's reply — `asker` (the asker's own conversation and
+--                                 nobody else), `team` (the run's team, its workspace owners and admins, and nobody else) or `none`. Decided
+--                                 from the channel's actual readers (`app.channel_audience`, so an ACL grant to a guest, to a person of
+--                                 another team, or to a person demoted to guest counts), never from a label on the source or the channel.
 --   * app.answer_resolve(...)     one source seen as the current actor: found, how far it reaches, whether the reply's readers may see it,
 --                                 and the words to label it with. Pure reads under RLS.
 --   * app.answer_view(...)        the whole view of one answer: the run, every citation, every source reached, the bots a hand-off may name.
@@ -41,33 +41,49 @@ AS $$
      AND r.status = 'running' AND r.ended_at IS NULL
      AND (app.actor() = bot.id OR (r.asker_id IS NOT NULL AND app.actor() = r.asker_id))
    ORDER BY l.seq
-   LIMIT 2000
+   LIMIT 20001
 $$;
 
--- Are the people who can read the calling run's reply channel all people who can read the run's team's own sources? True only for a channel of
--- the run's team whose ACTUAL readers (`app.channel_audience`: the team, the workspace's owners and admins, whoever an ACL entry names, a member
--- of a private channel only while on its team) are each on that team or a workspace owner/admin — those read every public channel, page, file and
--- run of the team. A channel a guest or a person of another team can read (an ACL entry), a direct message and anything the bot cannot read are
--- false: a team source cited there would be shown to somebody who may not open it. Answers for `app.run_id()` only, to that run's bot, and a
--- channel with no readers at all is false (nothing is proven by an empty set).
-CREATE FUNCTION app.answer_reply_team_only() RETURNS boolean
+-- Who will read the calling run's reply. Answers for `app.run_id()` only, to that run's bot, from the channel's ACTUAL readers
+-- (`app.channel_audience`, taken once):
+--   * `asker`: the channel is the asker's bot conversation and the asker is its only reader — everything the asker may open may be shown;
+--   * `team`: the channel is one of the run's team and every reader is a workspace owner/admin (they read every team) or sits on that team as an
+--     active, NON-GUEST workspace member — the test `app.lookup_team_role` applies: a roster row alone is not membership, it survives a demotion
+--     to guest, and a guest who holds an ACL grant on the channel reads it without being the team. A team source may be shown;
+--   * `none`: anybody else may read it (a guest or a person of another team with an ACL grant, a direct message), the bot cannot read the channel,
+--     or the channel has no readers: nothing is proven by an empty set, so only what lives in the reply's own channel may be shown.
+CREATE FUNCTION app.answer_reply_reach() RETURNS text
   LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
 AS $$
-  SELECT coalesce((
-    SELECT c.kind = 'channel' AND c.team_id = r.team_id AND c.workspace_id = r.workspace_id
-           AND app.lookup_channel_can(c.id, 'read')
-           AND EXISTS (SELECT 1 FROM app.channel_audience(c.id) AS any_reader)
-           AND NOT EXISTS (
-             SELECT 1 FROM app.channel_audience(c.id) AS a
-              WHERE NOT EXISTS (SELECT 1 FROM app.workspace_members wm
-                                 WHERE wm.workspace_id = c.workspace_id AND wm.person_id = a.person_id AND wm.role IN ('owner', 'admin'))
-                AND NOT EXISTS (SELECT 1 FROM app.team_members tm JOIN app.actors pa ON pa.id = tm.actor_id AND pa.kind = 'person'
-                                 WHERE tm.team_id = c.team_id AND pa.ref_id = a.person_id))
+  WITH ch AS (
+    SELECT c.id, c.kind, c.team_id, c.workspace_id, r.team_id AS run_team, asker.ref_id AS asker_person
       FROM app.bot_runs r
-      JOIN app.channels c ON c.id = r.channel_id
+      JOIN app.channels c ON c.id = r.channel_id AND c.workspace_id = r.workspace_id
       JOIN app.actors bot ON bot.kind = 'bot' AND bot.ref_id = r.bot_id AND bot.workspace_id = r.workspace_id
+      LEFT JOIN app.actors asker ON asker.id = r.asker_id AND asker.kind = 'person'
      WHERE r.id = app.run_id() AND r.status = 'running' AND r.ended_at IS NULL AND app.actor() = bot.id
-  ), false)
+       AND app.lookup_channel_can(c.id, 'read')
+  ), a AS MATERIALIZED (
+    SELECT x.person_id FROM ch, app.channel_audience(ch.id) AS x
+  )
+  SELECT CASE
+    WHEN NOT EXISTS (SELECT 1 FROM ch) OR NOT EXISTS (SELECT 1 FROM a) THEN 'none'
+    WHEN (SELECT ch.kind FROM ch) = 'bot_conversation'
+         AND (SELECT ch.asker_person FROM ch) IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM a, ch WHERE a.person_id <> ch.asker_person) THEN 'asker'
+    WHEN (SELECT ch.kind FROM ch) = 'channel'
+         AND (SELECT ch.team_id FROM ch) = (SELECT ch.run_team FROM ch)
+         AND NOT EXISTS (
+           SELECT 1 FROM a, ch
+            WHERE NOT EXISTS (SELECT 1 FROM app.workspace_members wm
+                               WHERE wm.workspace_id = ch.workspace_id AND wm.person_id = a.person_id AND wm.role IN ('owner', 'admin'))
+              AND NOT EXISTS (SELECT 1 FROM app.team_members tm
+                                JOIN app.actors pa ON pa.id = tm.actor_id AND pa.kind = 'person'
+                                JOIN app.people p ON p.id = pa.ref_id AND p.status = 'active'
+                                JOIN app.workspace_members wm ON wm.workspace_id = p.workspace_id AND wm.person_id = p.id AND wm.role <> 'guest'
+                               WHERE tm.team_id = ch.team_id AND pa.ref_id = a.person_id)) THEN 'team'
+    ELSE 'none'
+  END
 $$;
 
 -- One source, seen by whoever the transaction is. `p_run_team` is the team of the run, `p_reply_channel` the channel the reply goes to and
@@ -200,9 +216,9 @@ DECLARE
   v_bot_slug  text;
   v_alias     text;
   v_priv      boolean := false;
-  v_team_only boolean;
   v_reach     text;
   v_log       text[];
+  v_trunc     boolean := false;
   v_id        uuid;
   v_team      uuid;
   v_reached   boolean;
@@ -240,8 +256,12 @@ BEGIN
   END IF;
 
   -- what only the bot's own identity can ask: the run's log, and who can read the reply channel
-  v_team_only := coalesce(app.answer_reply_team_only(), false);
-  SELECT coalesce(array_agg(l.source_type || ':' || l.source_ref), '{}'::text[]) INTO v_log FROM app.answer_run_sources() l;
+  v_reach := coalesce(app.answer_reply_reach(), 'none');
+  v_priv := v_reach = 'asker';
+  -- The log is read up to 20,000 lines (a ref longer than any citation can be is cut: it cannot equal one). A run with more is marked
+  -- `logTruncated`: what it read after the cap is not in the log this function sees, so it is reported as not reached (docs/plugins/answer.md).
+  SELECT coalesce(array_agg(x.ref) FILTER (WHERE x.n <= 20000), '{}'::text[]), coalesce(max(x.n), 0) > 20000 INTO v_log, v_trunc
+    FROM (SELECT l.source_type || ':' || left(l.source_ref, 1100) AS ref, row_number() OVER (ORDER BY l.seq) AS n FROM app.answer_run_sources() l) x;
 
   -- From here on the asker's own view: the same identity `ctx.runs.asReader` gives a read tool. A run nobody asked reads as its bot. The
   -- switched part is a block of its own: an error inside it rolls the block back, identity switch included, before it leaves.
@@ -254,12 +274,6 @@ BEGIN
        WHERE a.id = r.asker_id AND a.kind = 'person';
     END IF;
     SELECT b.name, b.slug, b.model_aliases[1] INTO v_bot_name, v_bot_slug, v_alias FROM app.bots b WHERE b.id = r.bot_id;
-    IF r.channel_id IS NOT NULL THEN
-      SELECT (c2.kind = 'bot_conversation') INTO v_priv FROM app.channels c2 WHERE c2.id = r.channel_id;
-      v_priv := coalesce(v_priv, false) AND r.asker_id IS NOT NULL;
-    END IF;
-    -- who will read the reply: the asker alone (their own conversation), the run's team (and workspace admins), or somebody else too
-    v_reach := CASE WHEN v_priv THEN 'asker' WHEN v_team_only THEN 'team' ELSE 'none' END;
 
     FOR c IN
       SELECT j.ord, j.value ->> 'kind' AS kind, j.value ->> 'ref' AS ref, nullif(j.value ->> 'team', '') AS team
@@ -336,7 +350,7 @@ BEGIN
       'runId', r.id, 'botId', r.bot_id, 'botName', v_bot_name, 'botSlug', v_bot_slug, 'alias', v_alias,
       'teamId', r.team_id, 'workspaceId', r.workspace_id, 'trigger', r.trigger_type,
       'hasAsker', r.asker_id IS NOT NULL, 'askerPersonId', v_person, 'askerName', v_name,
-      'channelId', r.channel_id, 'replyRootId', r.reply_root_id, 'private', v_priv, 'reach', v_reach),
+      'channelId', r.channel_id, 'replyRootId', r.reply_root_id, 'private', v_priv, 'reach', v_reach, 'logTruncated', v_trunc),
     'citations', v_cites,
     'sources', v_sources,
     'bots', v_bots);
@@ -346,23 +360,23 @@ $$;
 -- Only the transaction's own live run is ever answered for, and only for its bot (or its asker, for the sources): no caller can ask about
 -- another run or another person, so the grant is the application role's and the system role's, as for the other run doors.
 REVOKE ALL ON FUNCTION app.answer_run_sources() FROM PUBLIC;
-REVOKE ALL ON FUNCTION app.answer_reply_team_only() FROM PUBLIC;
+REVOKE ALL ON FUNCTION app.answer_reply_reach() FROM PUBLIC;
 REVOKE ALL ON FUNCTION app.answer_resolve(text, text, uuid, uuid, uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app.answer_view(jsonb, text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.answer_run_sources() TO manythreads_app, manythreads_system;
-GRANT EXECUTE ON FUNCTION app.answer_reply_team_only() TO manythreads_app, manythreads_system;
+GRANT EXECUTE ON FUNCTION app.answer_reply_reach() TO manythreads_app, manythreads_system;
 GRANT EXECUTE ON FUNCTION app.answer_resolve(text, text, uuid, uuid, uuid, text) TO manythreads_app, manythreads_system;
 GRANT EXECUTE ON FUNCTION app.answer_view(jsonb, text[]) TO manythreads_app, manythreads_system;
 
 GRANT CREATE ON SCHEMA app TO manythreads_system;
 ALTER FUNCTION app.answer_run_sources() OWNER TO manythreads_system;
-ALTER FUNCTION app.answer_reply_team_only() OWNER TO manythreads_system;
+ALTER FUNCTION app.answer_reply_reach() OWNER TO manythreads_system;
 REVOKE CREATE ON SCHEMA app FROM manythreads_system;
 
 COMMENT ON FUNCTION app.answer_run_sources() IS
   'The calling run''s own source log (answer plugin): system-owned because the run''s bot cannot read its lines; answers for app.run_id() only, to that run''s bot or asker.';
-COMMENT ON FUNCTION app.answer_reply_team_only() IS
-  'Whether everybody who can read the calling run''s reply channel is on the run''s team or a workspace owner/admin (answer plugin): decided from the channel''s actual readers, for app.run_id() only, to that run''s bot.';
+COMMENT ON FUNCTION app.answer_reply_reach() IS
+  'Who will read the calling run''s reply (answer plugin): asker | team | none, from the reply channel''s actual readers (app.channel_audience); for app.run_id() only, to that run''s bot.';
 COMMENT ON FUNCTION app.answer_resolve(text, text, uuid, uuid, uuid, text) IS
   'One cited source seen as the current actor (SECURITY INVOKER, so RLS applies): found, how far it reaches (team/channel/person), whether the reply''s readers (asker, team or others) may see it, a label.';
 COMMENT ON FUNCTION app.answer_view(jsonb, text[]) IS

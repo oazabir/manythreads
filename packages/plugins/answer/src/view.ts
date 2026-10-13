@@ -55,6 +55,8 @@ export const AnswerView = z.object({
     private: z.boolean(),
     /** Who will read the reply: `asker` alone, the run's `team` (and workspace admins), or `none` of those (somebody else may too). */
     reach: z.enum(['asker', 'team', 'none']).optional(),
+    /** The run's source log is longer than the 20,000 lines the view reads: what the run read after them is reported as not reached. */
+    logTruncated: z.boolean().optional(),
   }),
   citations: z.array(Resolved),
   sources: z.array(SourceRead),

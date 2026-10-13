@@ -435,7 +435,8 @@ describe('the lists', () => {
     // brain's own replies, counted by author: whatever else may answer in a thread of #dev, the person got one answer from the bot asked
     const answers = await repliesBy(nadia, devChannel, mention, brain.actorId);
     expect(answers).toHaveLength(1);
-    expect(mine.items[0]!.replyCount).toBeGreaterThanOrEqual(answers.length);
+    // and it is the only reply: nothing else is bound to answer in #dev (`quiet` is bound to a channel nothing posts to)
+    expect(mine.items[0]!.replyCount).toBe(answers.length);
     // a mention is a thread of a public channel, so it is not a conversation of the Mine list, and it is nobody else's
     expect((await list(nadia, 'brain')).items.map((i) => i.threadRootId)).not.toContain(mention);
     expect((await list(rafi, 'brain', '?scope=mentions')).items).toEqual([]);

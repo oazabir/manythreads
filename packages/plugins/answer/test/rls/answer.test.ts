@@ -380,13 +380,14 @@ describe('who may ask', () => {
     expect(asOmar.found).toBe(true);
   });
 
-  it('answer_reply_team_only is for the live run’s own bot as well: nobody else learns who reads a channel from it', async () => {
-    const ask = (actor: Actor) => withActor(actor, async (tx) => (await tx.query<{ v: boolean | null }>('SELECT app.answer_reply_team_only() AS v')).rows[0]!.v, { pool: appPool });
+  it('answer_reply_reach is for the live run’s own bot as well: nobody else learns who reads a channel from it', async () => {
+    const ask = (actor: Actor) => withActor(actor, async (tx) => (await tx.query<{ v: string | null }>('SELECT app.answer_reply_reach() AS v')).rows[0]!.v, { pool: appPool });
     const r = await inDev(nadia.actorId, []);
-    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS, runId: r } as unknown as Actor)).toBe(true);
-    expect(await ask({ kind: 'bot', id: otherBotActor, workspaceId: WS, runId: r } as unknown as Actor)).toBe(false);
-    expect(await ask({ ...personaActor(nadia), runId: r } as Actor)).toBe(false);
-    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS } as unknown as Actor)).toBe(false);
+    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS, runId: r } as unknown as Actor)).toBe('team');
+    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS, runId: nadiaConversation } as unknown as Actor)).toBe('asker');
+    expect(await ask({ kind: 'bot', id: otherBotActor, workspaceId: WS, runId: r } as unknown as Actor)).toBe('none');
+    expect(await ask({ ...personaActor(nadia), runId: r } as Actor)).toBe('none');
+    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS } as unknown as Actor)).toBe('none');
   });
 });
 
@@ -490,6 +491,44 @@ describe('the people who will read the reply', () => {
       expect(v.run.reach, name).toBe('team');
       expect(v.citations[0], name).toMatchObject({ found: true, audience: true });
     }
+  });
+
+  it('a person demoted to guest who keeps a roster row and holds an ACL grant is not the team: the reply is no longer the team’s to read', async () => {
+    const ch = await channel({ name: 'demoted-guest' });
+    await acl(ch, 'person', rafi.personId);
+    const asked = () => reachedRun({ trigger: 'mention', asker: nadia.actorId, channel: ch, root: mentionRoot }, [['message', devMsg, 'channel']]).then((r) => viewOf(botActor, r, [{ kind: 'message', ref: devMsg }]));
+    // while Rafi is a member the grant adds nobody who is not the team
+    const before = await asked();
+    expect(before.run.reach).toBe('team');
+    expect(before.citations[0]).toMatchObject({ found: true, audience: true });
+    const original = await sys(async (tx) => (await tx.query<{ role: string }>('SELECT role FROM app.workspace_members WHERE person_id = $1', [rafi.personId])).rows[0]!.role);
+    // demoted to guest by a plain UPDATE: the roster row of the team stays, the grant now reads the channel for a guest
+    await sys(async (tx) => {
+      await tx.query("UPDATE app.workspace_members SET role = 'guest' WHERE person_id = $1", [rafi.personId]);
+    });
+    try {
+      const rosterRows = await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.team_members tm JOIN app.actors a ON a.id = tm.actor_id WHERE a.ref_id = $1', [rafi.personId])).rows[0]!.n);
+      expect(rosterRows).toBeGreaterThan(0);
+      const after = await asked();
+      expect(after.run.reach).toBe('none');
+      expect(after.citations[0]).toMatchObject({ found: true, scope: 'team', audience: false });
+    } finally {
+      await sys(async (tx) => {
+        await tx.query('UPDATE app.workspace_members SET role = $2 WHERE person_id = $1', [rafi.personId, original]);
+      });
+    }
+  });
+
+  it('a conversation somebody else holds a grant on is no longer the asker’s alone', async () => {
+    const chat = await as(priya, async (tx) => (await tx.query<{ channel_id: string }>('SELECT channel_id FROM app.conversations_open($1::uuid)', [botId])).rows[0]!.channel_id);
+    const root = await message(chat, priya.actorId, 'Priya asks something private');
+    const alone = await reachedRun({ trigger: 'conversation', asker: priya.actorId, channel: chat, root }, [['message', devMsg, 'channel']]);
+    expect((await viewOf(botActor, alone, [{ kind: 'message', ref: devMsg }])).run).toMatchObject({ reach: 'asker', private: true });
+    await acl(chat, 'person', lena.personId);
+    const shared = await reachedRun({ trigger: 'conversation', asker: priya.actorId, channel: chat, root }, [['message', devMsg, 'channel']]);
+    const v = await viewOf(botActor, shared, [{ kind: 'message', ref: devMsg }]);
+    expect(v.run).toMatchObject({ reach: 'none', private: false });
+    expect(v.citations[0]).toMatchObject({ found: true, audience: false });
   });
 });
 
@@ -619,14 +658,21 @@ describe('one answer per run, and what a hand-off may name', () => {
     await expect(message(nadiaChat, botActor, 'Plain', nadiaRoot, { runId: r })).resolves.toBeTruthy();
   });
 
-  it('serialises two calls of one run: the second waits for the first, and then finds its message', async () => {
+  it('serialises two calls of one run: the second waits on the run’s lock until the first has posted, and then finds its message', async () => {
     const r = await inDev(nadia.actorId, []);
+    // no sleeps: the first call holds the run's lock and waits for a latch, the second is started only after the first has looked, the test
+    // sees the second is queued on an advisory lock (pg_locks, this database) and only then lets the first post and commit
+    let latch!: () => void;
+    const gate = new Promise<void>((resolve) => (latch = resolve));
+    let looked!: () => void;
+    const lookedAt = new Promise<void>((resolve) => (looked = resolve));
     let posted = '';
     const first = asBot(botActor, r, async (tx) => {
       const seen = await tx.query<{ v: Record<string, unknown> | null }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS v', [JSON.stringify([]), []]);
       expect(seen.rows[0]!.v).toMatchObject({ run: { runId: r } });
-      // the answer is posted a moment later, in the same transaction, as `answer.post` does
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      looked();
+      await gate;
+      // the answer is posted in the same transaction, as `answer.post` does
       posted = (
         await tx.query<{ id: string }>(
           `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
@@ -635,9 +681,29 @@ describe('one answer per run, and what a hand-off may name', () => {
         )
       ).rows[0]!.id;
     });
-    // the second call starts while the first still holds the run's lock
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // a failure of the first before it looked rejects here instead of hanging the test
+    await Promise.race([lookedAt, first]);
     const second = asBot(botActor, r, async (tx) => (await tx.query<{ v: unknown }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS v', [JSON.stringify([]), []])).rows[0]!.v);
+    try {
+      // an advisory lock of this database that somebody is waiting for: the second call, queued behind the first's lock on this run
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        const waiting = await sys(
+          async (tx) =>
+            (
+              await tx.query<{ n: number }>(
+                `SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+                    AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
+              )
+            ).rows[0]!.n,
+        );
+        if (waiting > 0) break;
+        if (Date.now() > deadline) throw new Error('the second call never queued on the run’s lock: the calls are not serialised');
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    } finally {
+      latch();
+    }
     const [, seenBySecond] = await Promise.all([first, second]);
     expect(posted).not.toBe('');
     expect(seenBySecond).toEqual({ already: posted });

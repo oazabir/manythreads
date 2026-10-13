@@ -59,7 +59,10 @@ connection, or their own conversation run).
    asked in) by definition. A citation that was not reached is `{ found: false, reached: false }`: it is **not looked up**, so whether the
    asker could read an id the bot never saw is not something a citation can ask; the answer is counted as `not_reached`. (Today the tools
    that write the log are `messages.search`, `files.search` and `memory.recall`; a tool that opens pages or runs must write a `page` / `run`
-   line before a bot can cite one, and until then those citations are `not_reached` — an open item.)
+   line before a bot can cite one, and until then those citations are `not_reached` — an open item.) The view reads the first **20,000**
+   lines of a run's log (a ref is compared up to 1,100 characters, longer than any citation can be). A run that logged more is marked
+   `logTruncated` in the view, and the tool's reply tells the model so: a source it read after the cap is reported as not reached, which is
+   the one way a genuinely read citation can be dropped as `not_reached`.
 2. **The view.** Every reached citation and every line of the log is re-read **as the asker**. The function adds no policy of its own: it is
    `SECURITY INVOKER`, runs as `manythreads_app` under the same forced RLS every request has, and for the length of the call switches the
    transaction's identity (`app.actor_id`, `app.actor_kind`) to the run's asker — the identity `ctx.runs.asReader` gives a read tool — then
@@ -67,15 +70,17 @@ connection, or their own conversation run).
    function reads the run from `app.run_id()` and answers only when the transaction's actor is that run's bot (or the live run is missing,
    finished, or the caller is someone else: `NULL`). A source that is hidden and one that does not exist are the same `{ found: false }`.
 3. **The audience.** Decided from who will actually read the reply, once per call (`reach`):
-   - `asker`: the reply is the asker's own conversation, so everything they may open stays;
+   - `asker`: the reply is in the asker's own bot conversation **and the asker is its only reader** (from `app.channel_audience`, not from
+     the channel's kind alone: an ACL grant on the conversation makes it `none`), so everything they may open stays;
    - `team`: the reply is in a channel of the run's team whose **actual readers** (`app.channel_audience`: the team, workspace owners and
-     admins, anybody an ACL entry names, a private channel's members only while on the team) are each on that team or a workspace owner/admin.
-     A source of the team's own (a public channel of the team, a team page or file, a run of the team's) is kept; the asker's private places
-     are not;
+     admins, anybody an ACL entry names, a private channel's members only while on the team) are each a workspace owner/admin or **an active,
+     non-guest workspace member on that team's roster** — the test `lookup_team_role` applies: a roster row alone is not membership (it
+     survives a demotion to guest, and a guest with an ACL grant reads the channel without being the team). A source of the team's own (a
+     public channel of the team, a team page or file, a run of the team's) is kept; the asker's private places are not;
    - `none`: anybody else may read it — a guest or a person of another team with an ACL grant on the channel, a private channel the bot cannot
      read, a direct message. Only what lives **in the reply's own channel** is kept.
    Anything the asker can read but the reply's readers cannot is dropped as `not_shared`. The decision is a function of the channel's
-   readers (`app.answer_reply_team_only`), never of a label on the source: the previous cut let a `team` scope label stand for "everybody in
+   readers (`app.answer_reply_reach`, one `channel_audience` read per call), never of a label on the source: the previous cut let a `team` scope label stand for "everybody in
    this channel is on the team" (MISTAKES). A source line of a kind the platform cannot resolve is judged by its own scope and only `team`
    (or `asker` reach) is shown; an unknown scope fails closed.
 4. **The payload.** `buildAnswer` (pure, `src/build.ts`) keeps the readable citations, drops the rest into `outsideScope`, takes every label,
@@ -149,6 +154,8 @@ wide. All colours are tokens.
   keep `citations` whose `scope` is `team`, replace the others by a masked lineage entry ("from <person>'s <source> · not shared": the
   citation's `kind` and `label` stay, the `snippet` goes), and write the access event. The chips become buttons through the `Answer` props
   (`onChip`); `handoff` already names the bot by `botId`. The payload carries everything needed; it is not read again from the database.
+  **A masked citation drops its `teamId` together with its label** (and `channelId`, `channelName`, `path`, `fileId`, `runId`, `botSlug`: every
+  field that says where the source lives): the team of a private channel is itself something the people it is shared with may not know.
 
 ## Tests
 
@@ -158,7 +165,8 @@ wide. All colours are tokens.
   another bot, a finished run or no run is answered `NULL`; the source log is the run's bot's and asker's alone; **what the run reached** (a
   readable, a hidden and a missing id look the same when not reached; the thread a run answers in, a reply a hit was, a page by path or by
   team); **the reply's readers** (a public channel; one a guest has an ACL grant on; one a person of another team has; a grant to the team
-  itself; a stale membership row; a private team channel; a run nobody asked); unknown source lines; hostile references; one answer per run
+  itself; a stale membership row; a person demoted to guest who keeps a roster row and holds an ACL grant; a private team channel; a
+  conversation with an ACL grant on it; a run nobody asked); unknown source lines; hostile references; one answer per run
   (deleted, the unique index, two calls at once); the transaction's identity is the bot's again afterwards, also after an error mid-switch.
 - `packages/plugins/channels/test/messages-provider.test.ts` — what the provider refuses: another run, another bot, another text, a person.
 - `test/answer.test.ts` — the whole path through the real server with a stand-in Hermes that calls the tool over the run's MCP endpoint: a

@@ -85,6 +85,8 @@ export async function postAnswer(ctx: PluginContext, tx: PluginTx, input: Record
     reachedCount: built.payload.sourcesReached.length,
   });
 
+  // a log longer than the view reads: what was read late is counted as not read, and the model is told that this is why
+  const truncated = view.run.logTruncated === true ? ' This run read more sources than the platform can check (the log is cut), so a source read late may be among those removed.' : '';
   return {
     ok: true,
     messageId: posted.id,
@@ -92,7 +94,7 @@ export async function postAnswer(ctx: PluginContext, tx: PluginTx, input: Record
     citationsRemoved: built.droppedCitations,
     message:
       built.droppedCitations > 0
-        ? `Posted as your reply. ${built.droppedCitations} citation(s) were removed: this run did not read them, or the person who asked (or the people who will read this reply) cannot open them. Do not post it again.`
+        ? `Posted as your reply. ${built.droppedCitations} citation(s) were removed: this run did not read them, or the person who asked (or the people who will read this reply) cannot open them.${truncated} Do not post it again.`
         : 'Posted as your reply. Do not post it again.',
   };
 }
