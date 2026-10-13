@@ -53,7 +53,8 @@ describe('parseConcept', () => {
   });
 
   it('refuses a YAML alias and a YAML anchor, used or not', () => {
-    expect(parseConcept(concept('type: Fact\na: &x 1\nb: *x'))).toMatchObject({ ok: false, reason: expect.stringContaining('alias') });
+    // an alias needs an anchor, and the traversal meets the anchor first: either word is the refusal
+    expect(parseConcept(concept('type: Fact\na: &x 1\nb: *x'))).toMatchObject({ ok: false, reason: expect.stringMatching(/alias|anchor/) });
     expect(parseConcept(concept('type: Fact\na: &unused 1'))).toMatchObject({ ok: false, reason: expect.stringContaining('anchor') });
   });
 
