@@ -443,6 +443,30 @@
                               "botId",
                               "botSlug"
                             ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "masked"
+                              },
+                              "n": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 40
+                              },
+                              "source": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "n",
+                              "source"
+                            ],
+                            "additionalProperties": false
                           }
                         ]
                       },
@@ -508,6 +532,10 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "masked": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "required": [
@@ -731,6 +759,25 @@
                       }
                     ]
                   }
+                },
+                "share": {
+                  "type": "object",
+                  "properties": {
+                    "masked": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "removed": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "masked",
+                    "removed"
+                  ]
                 }
               },
               "required": [
@@ -1353,6 +1400,30 @@
                                     "botId",
                                     "botSlug"
                                   ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "masked"
+                                    },
+                                    "n": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 40
+                                    },
+                                    "source": {
+                                      "type": "string",
+                                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "n",
+                                    "source"
+                                  ],
+                                  "additionalProperties": false
                                 }
                               ]
                             },
@@ -1418,6 +1489,10 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "masked": {
+                              "type": "boolean",
+                              "const": true
                             }
                           },
                           "required": [
@@ -1641,6 +1716,25 @@
                             }
                           ]
                         }
+                      },
+                      "share": {
+                        "type": "object",
+                        "properties": {
+                          "masked": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "removed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "masked",
+                          "removed"
+                        ]
                       }
                     },
                     "required": [
