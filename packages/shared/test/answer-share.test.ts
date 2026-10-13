@@ -331,6 +331,12 @@ describe('removeClaims', () => {
       { text: `${t} says something [ 2 ].`, carries: true },
       { text: `${t} says something ［2］.`, carries: true },
       { text: `${t} says something 【2】.`, carries: true },
+      { text: `${t} says something \\[2\\].`, carries: true },
+      { text: `${t} says something [2\\].`, carries: true },
+      { text: `${t} says something \\[2].`, carries: true },
+      { text: `${t} says **[2]** and *[2]* here.`, carries: true },
+      { text: `${t} says [[2]](https://example.com/x) here.`, carries: true },
+      { text: `${t} ranked\n#1 overall [2].`, carries: true },
       { text: `${t} says something. [2]`, carries: true },
       { text: `${t} says something.[2]`, carries: true },
       { text: `${t} says something. [1], [2]`, carries: true },
@@ -416,6 +422,9 @@ describe('hostile input stays linear', () => {
     ['line breaks after stops', (n) => '.\n'.repeat(n / 2)],
     ['a long run of spaces after a stop', (n) => `a.${' '.repeat(n)}[1]`],
     ['list items with wrapped lines', (n) => '- item\n  wrapped [1]\n'.repeat(n / 22)],
+    ['escaped markers', (n) => '\\[2\\] '.repeat(n / 6)],
+    ['descending backtick runs', (n) => Array.from({ length: Math.floor(Math.sqrt(n * 2)) }, (_, i) => '`'.repeat(i + 1) + ' x ').reverse().join('')],
+    ['lines starting with hashes and pipes', (n) => 'ranked\n#1 overall\n| a\n'.repeat(n / 22)],
   ];
   for (const [name, build] of cases) {
     it(name, () => {

@@ -62,7 +62,7 @@ DECLARE
 BEGIN
   FOR c IN SELECT * FROM app.conversations WHERE shared_root_id = NEW.id LOOP
     -- another live copy of an answer of the same conversation, in a channel the whole team reads, keeps it shared; none makes it private
-    SELECT s.copy_message_id, s.channel_id, cm.author_id INTO r
+    SELECT s.copy_message_id, s.channel_id, cm.author_id, cm.created_at INTO r
       FROM app.answer_shares s
       JOIN app.messages am ON am.id = s.message_id AND am.thread_root_id = c.thread_root_id
       JOIN app.messages cm ON cm.id = s.copy_message_id AND cm.deleted_at IS NULL AND cm.id <> NEW.id
@@ -71,12 +71,13 @@ BEGIN
      ORDER BY s.created_at DESC
      LIMIT 1;
     IF FOUND THEN
-      UPDATE app.conversations SET shared_to = r.channel_id, shared_root_id = r.copy_message_id, shared_by = r.author_id, shared_at = now()
-       WHERE thread_root_id = c.thread_root_id;
+      -- (guarded by the copy that was deleted: a share that pointed the row at another copy meanwhile is not undone here)
+      UPDATE app.conversations SET shared_to = r.channel_id, shared_root_id = r.copy_message_id, shared_by = r.author_id, shared_at = r.created_at
+       WHERE thread_root_id = c.thread_root_id AND shared_root_id = NEW.id;
     ELSE
       UPDATE app.conversations
          SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL
-       WHERE thread_root_id = c.thread_root_id;
+       WHERE thread_root_id = c.thread_root_id AND shared_root_id = NEW.id;
     END IF;
   END LOOP;
   RETURN NULL;

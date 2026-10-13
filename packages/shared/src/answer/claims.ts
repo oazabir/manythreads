@@ -37,6 +37,23 @@ const CLOSERS = new Set(['"', "'", ')', ']', '”', '’', '»', '*', '_', '`', 
 /** Words whose stop does not end a sentence (lower-cased, without the stop). One letter is always an initial. */
 const ABBREVIATIONS = new Set(['dr', 'mr', 'ms', 'mrs', 'vs', 'st', 'prof', 'inc', 'ltd', 'etc', 'approx', 'fig', 'cf', 'al', 'eg', 'ie', 'jr', 'sr']);
 const SNIPPET = 400;
+
+/** `text` cut to `max` UTF-16 units with an ellipsis, never between the two halves of a surrogate pair. */
+function clipText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+}
+/** The same without an ellipsis: the head of a string, whole code points only. */
+function headOf(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return text.slice(0, end);
+}
 const MARKER_OPEN: Readonly<Record<string, string>> = { '[': ']', '［': '］', '【': '】' };
 const NO_NUMBERS: ReadonlySet<number> = new Set();
 
@@ -97,6 +114,8 @@ function markerAt(text: string, i: number, removed: ReadonlySet<number>): { end:
         break;
       }
     }
+    // the client reads `\]` as a plain `]` before it looks for markers, so `[2\]` and `\[2\]` are markers there: a backslash may precede the bracket
+    if (text[j] === '\\' && text[j + 1] === close) j += 1;
     const c = text[j];
     if (c === close) return { end: j + 1, hit };
     if (j >= limit || (c !== ',' && c !== '，' && c !== '、' && c !== ';')) return null;
@@ -170,6 +189,29 @@ function holdsMarker(text: string, removed: ReadonlySet<number>): boolean {
   return false;
 }
 
+/** The runs of backticks of a text by their length: where each starts, and a cursor that only moves forward. */
+function backtickRuns(text: string): Map<number, { starts: number[]; at: number }> {
+  const runs = new Map<number, { starts: number[]; at: number }>();
+  let i = text.indexOf('`');
+  while (i >= 0) {
+    let r = 1;
+    while (text[i + r] === '`') r += 1;
+    const list = runs.get(r);
+    if (list) list.starts.push(i);
+    else runs.set(r, { starts: [i], at: 0 });
+    i = text.indexOf('`', i + r);
+  }
+  return runs;
+}
+
+/** The start of the next run of exactly `r` backticks at or after `from`, or -1. Openers advance, so the cursor does too. */
+function nextRun(runs: Map<number, { starts: number[]; at: number }>, r: number, from: number): number {
+  const list = runs.get(r);
+  if (!list) return -1;
+  while (list.at < list.starts.length && list.starts[list.at]! < from) list.at += 1;
+  return list.at < list.starts.length ? list.starts[list.at]! : -1;
+}
+
 /** The text of one block without the sentences that carry a removed marker. */
 function dropSentences(text: string, removed: ReadonlySet<number>): { text: string; dropped: string[] } {
   const n = text.length;
@@ -180,7 +222,7 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
   const flush = (end: number, carry: boolean): void => {
     if (hit) {
       const said = text.slice(start, end).replace(/\s+/g, ' ').trim();
-      dropped.push(said.length <= SNIPPET ? said : `${said.slice(0, SNIPPET - 1)}…`);
+      dropped.push(clipText(said, SNIPPET));
     } else {
       out += text.slice(start, end);
     }
@@ -188,14 +230,17 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
     // a removed marker group written after a stop and a space may be the prefix of what follows: that sentence goes with it
     hit = carry;
   };
+  let runs: Map<number, { starts: number[]; at: number }> | undefined;
   let i = 0;
   while (i < n) {
     const ch = text[i]!;
     if (ch === '`') {
-      // an inline code span is one piece: its stops end nothing, and a removed marker in it takes the sentence
+      // an inline code span is one piece: its stops end nothing, and a removed marker in it takes the sentence. The closing run is the next
+      // run of the same length (CommonMark); the runs are listed once, so the search is linear however the runs descend.
       let r = 1;
       while (text[i + r] === '`') r += 1;
-      const closeAt = text.indexOf('`'.repeat(r), i + r);
+      runs ??= backtickRuns(text);
+      const closeAt = nextRun(runs, r, i + r);
       if (closeAt < 0) {
         i += r;
         continue;
@@ -289,6 +334,12 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
   return { text: out, dropped };
 }
 
+/** A table row: starts and ends with a pipe and has another inside (`#1 overall [2].` or `| a` is prose, as the reader draws it). */
+function isTableRow(trimmed: string): boolean {
+  const t = trimmed.trimEnd();
+  return t.length >= 3 && t.startsWith('|') && t.endsWith('|') && t.indexOf('|', 1) < t.length - 1;
+}
+
 /** The mark of a fence line (a line that opens or closes a fenced block), or null. */
 function fenceMark(line: string): string | null {
   const t = line.trimStart();
@@ -330,7 +381,7 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
         continue;
       }
     }
-    if (line.trim() === '' || trimmed.startsWith('|')) {
+    if (line.trim() === '' || isTableRow(trimmed)) {
       if (cur !== null) {
         segs.push(cur);
         cur = null;
@@ -339,7 +390,7 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
       continue;
     }
     const cut = prefixLength(line);
-    const heading = trimmed.startsWith('#');
+    const heading = /^ {0,3}#{1,6} /.test(line);
     if (cur === null || cut > continuationLength(line) || heading) {
       if (cur !== null) segs.push(cur);
       cur = { kind: 'block', prefix: line.slice(0, cut), first: line.slice(cut), rest: [], raw: [line] };
@@ -366,7 +417,7 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
     }
     if (seg.kind === 'fence') {
       if (holdsMarker(seg.lines.join('\n'), removed)) {
-        said.push(seg.lines.join(' ').replace(/\s+/g, ' ').trim().slice(0, SNIPPET));
+        said.push(headOf(seg.lines.join(' ').replace(/\s+/g, ' ').trim(), SNIPPET));
         touched = true;
       } else {
         for (const l of seg.lines) {
@@ -378,7 +429,7 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
     }
     if (seg.kind === 'row') {
       if (holdsMarker(seg.line, removed)) {
-        said.push(seg.line.replace(/\s+/g, ' ').trim().slice(0, SNIPPET));
+        said.push(headOf(seg.line.replace(/\s+/g, ' ').trim(), SNIPPET));
         touched = true;
       } else {
         out.push(seg.line);
@@ -394,7 +445,7 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
     touched = true;
     if (holdsMarker(cutText.text, removed)) {
       // nothing of a removed claim may stay: a marker that survived the cut takes the whole block with it
-      said.push(...cutText.dropped, text.replace(/\s+/g, ' ').trim().slice(0, SNIPPET));
+      said.push(...cutText.dropped, headOf(text.replace(/\s+/g, ' ').trim(), SNIPPET));
       continue;
     }
     said.push(...cutText.dropped);
@@ -420,7 +471,13 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
     }
     squeezed.push(line);
   }
-  return { body: squeezed.join('\n').trim(), sentences: said.length, removed: said };
+  const result = squeezed.join('\n').trim();
+  // taking words out can join what was apart (`[` before the cut and `2]` after it): what is left is read again, and it only ever gets shorter
+  if (holdsMarker(result, removed)) {
+    const again = removeClaims(result, removed);
+    return { body: again.body, sentences: said.length + again.sentences, removed: [...said, ...again.removed] };
+  }
+  return { body: result, sentences: said.length, removed: said };
 }
 
 /** True when `copy` can be made from `original` by deleting characters only: the check that a copy added nothing. Linear. */

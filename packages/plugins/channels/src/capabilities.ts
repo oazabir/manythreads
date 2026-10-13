@@ -118,6 +118,7 @@ async function checkAnswerCopy(tx: PluginTx, copyOf: string, copy: AnswerPayload
     if ((l.masked === true) !== (there.kind === 'masked')) throw invalid(`meta.answer.lineage: ${String(l.n)} is masked in one place and not in the other`);
     if (l.masked === true) {
       if (l.label !== '' || l.at !== null || l.snippet !== null) throw invalid('meta.answer.lineage: a masked entry carries no label, age or quote');
+      if (there.kind === 'masked' && l.kind !== there.source) throw invalid(`meta.answer.lineage: ${String(l.n)} is of another kind than its citation says`);
     } else if (l.kind !== was.kind || (l.snippet !== null && l.snippet !== was.snippet)) {
       throw invalid(`meta.answer.lineage: ${String(l.n)} is not the original entry`);
     }

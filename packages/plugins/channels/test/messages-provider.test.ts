@@ -237,6 +237,26 @@ describe('a person’s masked copy of their own answer (P5-17)', () => {
     const bare = { ...base };
     delete (bare as { share?: unknown }).share;
     await expect(share(nadia, original, bare)).rejects.toMatchObject({ status: 400 });
+    // a lineage entry whose citation the copy does not have (removed, or never there)
+    await expect(
+      share(nadia, original, AnswerPayload.parse({ ...base, lineage: [...base.lineage, { n: 7, kind: 'message', label: 'x', at: null, snippet: null }] })),
+    ).rejects.toMatchObject({ status: 400 });
+    const withoutFirst = AnswerPayload.parse({ ...base, citations: base.citations.filter((c) => c.n !== 1), share: { masked: 1, removed: 1 } });
+    await expect(share(nadia, original, withoutFirst)).rejects.toMatchObject({ status: 400 });
+    // masked parity, both ways: a masked entry for a kept citation, a plain entry for a masked one
+    await expect(
+      share(nadia, original, AnswerPayload.parse({ ...base, lineage: base.lineage.map((l) => (l.n === 1 ? { n: 1, kind: 'message', label: '', at: null, snippet: null, masked: true } : l)) })),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      share(nadia, original, AnswerPayload.parse({ ...base, lineage: base.lineage.map((l) => (l.n === 2 ? { n: 2, kind: 'message', label: 'source 2', at: null, snippet: 'quote' } : l)) })),
+    ).rejects.toMatchObject({ status: 400 });
+    // a masked citation that says it was another kind of source than the original, and a masked lineage entry of another kind than its citation
+    await expect(
+      share(nadia, original, AnswerPayload.parse({ ...base, citations: base.citations.map((c) => (c.kind === 'masked' ? { ...c, source: 'drive' } : c)) })),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      share(nadia, original, AnswerPayload.parse({ ...base, lineage: base.lineage.map((l) => (l.n === 2 ? { ...l, kind: 'file' } : l)) })),
+    ).rejects.toMatchObject({ status: 400 });
     // and a kept label that was read again, with its quote gone, is fine
     const reread = AnswerPayload.parse({
       ...base,

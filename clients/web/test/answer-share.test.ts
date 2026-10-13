@@ -1,10 +1,11 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
-import { AnswerPayloadView, AnswerSharePreview } from '@manythreads/shared';
+import { AnswerPayloadView, AnswerSharePreview, removeClaims } from '@manythreads/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ApiError, setTransport, type TransportRequest } from '../src/api/client';
 import { Answer, maskedLine, shareNote } from '../src/channels/Answer';
+import { parseMarkdown, type Block, type Inline } from '../src/channels/markdown';
 import { ShareDialogView, refusalOf, type ShareDialogViewProps } from '../src/channels/AnswerShare';
 import { fetchShareTargets, handoffAnswer, previewAnswerShare, saveAnswerAsPage, shareAnswer } from '../src/screens/conversations/api';
 
@@ -249,5 +250,99 @@ describe('the answer endpoints', () => {
     const before = seen.length;
     expect(() => shareAnswer(address, uuid(31), [], 'not-a-digest')).toThrow();
     expect(seen.length).toBe(before);
+  });
+});
+
+// The guarantee of "Remove claim" is about what the READER sees, so it is tested against the client's own parser: every `[n]` that
+// `MessageMarkdown` would draw as a citation marker (a text node of a paragraph, heading, quote or list item, after escapes and emphasis are
+// read; never code) is collected, and none of the removed number may be left after `removeClaims`.
+const renderedMarkers = (source: string): number[] => {
+  const found: number[] = [];
+  const inline = (nodes: Inline[]): void => {
+    for (const n of nodes) {
+      if (n.t === 'text') for (const m of n.v.matchAll(/\[(\d{1,3})\]/g)) found.push(Number(m[1]));
+      else if (n.t === 'strong' || n.t === 'em' || n.t === 'del' || n.t === 'link') inline(n.c);
+    }
+  };
+  const blocks = (list: Block[]): void => {
+    for (const b of list) {
+      if (b.t === 'p' || b.t === 'heading') inline(b.c);
+      else if (b.t === 'quote') blocks(b.c);
+      else if (b.t === 'list') b.items.forEach(inline);
+    }
+  };
+  blocks(parseMarkdown(source));
+  return found;
+};
+
+describe('Remove claim, against what the client draws as a marker', () => {
+  const INLINE_FORMS = [
+    '[2]',
+    '\\[2\\]',
+    '[2\\]',
+    '\\[2]',
+    '[002]',
+    '[02]',
+    '**[2]**',
+    '*[2]*',
+    '_[2]_',
+    '~~[2]~~',
+    '[[2]](https://example.com/x)',
+    '[**[2]**](https://example.com/y)',
+    '[[2]](javascript:alert(1))',
+    '[x \\[2\\] y](https://example.com/z)',
+    '(see [2])',
+    '"[2]"',
+    '\\\\[2]',
+  ];
+  const BLOCK_FORMS = ['> [2]', '# [2]', '- [2]', '1. [2]', '> **[2]**', '## \\[2\\]'];
+
+  it('every form the client turns into a marker is removed with its sentence, and the neighbours stay', () => {
+    for (const form of INLINE_FORMS) {
+      const body = `Keep [1].\n\nThe claim ${form} stays here. After this one.\n\nTail [3].`;
+      expect(renderedMarkers(body), `${form}: the client should draw it`).toContain(2);
+      const out = removeClaims(body, new Set([2])).body;
+      expect(renderedMarkers(out), `${form}: still drawn after the removal: ${JSON.stringify(out)}`).not.toContain(2);
+      expect(out, form).toContain('Keep [1].');
+      expect(out, form).toContain('Tail [3].');
+    }
+    for (const form of BLOCK_FORMS) {
+      const body = `Keep [1].\n\n${form} The claim here. After this one.\n\nTail [3].`;
+      expect(renderedMarkers(body), `${form}: the client should draw it`).toContain(2);
+      const out = removeClaims(body, new Set([2])).body;
+      expect(renderedMarkers(out), `${form}: still drawn after the removal: ${JSON.stringify(out)}`).not.toContain(2);
+      expect(out, form).toContain('Keep [1].');
+      expect(out, form).toContain('Tail [3].');
+    }
+  });
+
+  it('forms the client does not turn into a marker are not touched: HTML entities and a link labelled with a bare number are text', () => {
+    for (const body of ['A claim &#91;2&#93; here. Keep [1].', 'A claim &lbrack;2&rbrack; here. Keep [1].', 'A claim in a `[x]` span. Keep [1].']) {
+      expect(renderedMarkers(body)).not.toContain(2);
+      expect(removeClaims(body, new Set([2])).body).toBe(body);
+    }
+  });
+
+  it('a sentence wrapped before a line that starts with # or | goes whole', () => {
+    expect(removeClaims('It was ranked\n#1 overall [2]. Keep [1].', new Set([2])).body).toBe('Keep [1].');
+    expect(removeClaims('It was ranked\n| first overall [2]. Keep [1].', new Set([2])).body).toBe('Keep [1].');
+    // a real table row still goes whole, and a heading is its own block
+    expect(removeClaims('# Title\nKeep [1].\n| a | b [2] |\n| c | d |', new Set([2])).body).toBe('# Title\nKeep [1].\n| c | d |');
+  });
+
+  it('whatever is written, no removed marker is left that the client would draw', () => {
+    const pieces = ['[', ']', '2', '\\', '*', '_', '~', '`', '(', ')', 'https://x.y/z', ' ', '\n', '\n\n', '#', '> ', '- ', '1. ', 'a', '.', '. ', '[2]', '\\[', '\\]', '&#91;', '```\n', '[1]', '|'];
+    let s = 99;
+    const next = (): number => {
+      s = (Math.imul(s, 1_664_525) + 1_013_904_223) >>> 0;
+      return s >>> 8;
+    };
+    for (let round = 0; round < 1_500; round += 1) {
+      let text = '';
+      const len = 1 + (next() % 60);
+      for (let i = 0; i < len; i += 1) text += pieces[next() % pieces.length]!;
+      const out = removeClaims(text, new Set([2])).body;
+      expect(renderedMarkers(out), JSON.stringify({ text, out })).not.toContain(2);
+    }
   });
 });

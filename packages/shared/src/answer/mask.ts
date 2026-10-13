@@ -62,7 +62,14 @@ export interface MaskedAnswer {
   removedText: string[];
 }
 
-const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
+/** Cut to `max` with an ellipsis, never between the two halves of a surrogate pair. */
+const clip = (text: string, max: number): string => {
+  if (text.length <= max) return text;
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+};
 
 /** The citation numbers of an answer, ascending: what a sharer may remove. */
 export const citationNumbers = (payload: AnswerPayload): number[] => payload.citations.map((c) => c.n).sort((a, b) => a - b);
