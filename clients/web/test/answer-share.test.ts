@@ -317,7 +317,7 @@ describe('Remove claim, against what the client draws as a marker', () => {
   });
 
   it('a decorated marker written after a stop and a space belongs to the sentence before it: the claim goes, and so does the next sentence', () => {
-    const forms = ['**[2]**', '\\[2\\]', '\\[2]', '[2\\]', '*[2]*', '_[2]_', '~~[2]~~', '([2])', '(see [2])', '"[2]"', '[[2]](https://example.com/x)', '[**[2]**](https://example.com/y)'];
+    const forms = ['**[2]**', '\\[2\\]', '\\[2]', '[2\\]', '*[2]*', '_[2]_', '~~[2]~~', '([2])', '(see [2])', '"[2]"', '[[2]](https://example.com/x)', '[**[2]**](https://example.com/y)', '[see [2]](https://example.com/z)', '^[2]', '<sup>[2]</sup>', '「[2]」', '（[2]）'];
     for (const form of forms) {
       const body = `Keep [1].\n\nRevenue grew by four percent. ${form} Costs fell. After this one.\n\nTail [3].`;
       expect(renderedMarkers(body), `${form}: the client should draw it`).toContain(2);
@@ -330,7 +330,7 @@ describe('Remove claim, against what the client draws as a marker', () => {
       expect(out, form).toContain('Tail [3].');
     }
     // a decoration around a marker that is not removed leaves its sentence alone, and a word with a marker on it belongs to its own sentence
-    expect(removeClaims('Revenue grew. **[1]** Costs fell [2]. After.', new Set([2])).body).toBe('Revenue grew. **[1]** After.');
+    expect(removeClaims('Revenue grew. **[1]** Costs fell [2]. After.', new Set([2])).body).toBe('Revenue grew. After.');
     expect(removeClaims('Revenue grew. Costs[2] fell. After.', new Set([2])).body).toBe('Revenue grew. After.');
   });
 
@@ -361,6 +361,57 @@ describe('Remove claim, against what the client draws as a marker', () => {
       for (let i = 0; i < len; i += 1) text += pieces[next() % pieces.length]!;
       const out = removeClaims(text, new Set([2])).body;
       expect(renderedMarkers(out), JSON.stringify({ text, out })).not.toContain(2);
+    }
+  });
+});
+
+describe('Remove claim: a marker at a sentence boundary, decorated at random', () => {
+  const lcg = (seed: number): (() => number) => {
+    let s = seed >>> 0;
+    return () => {
+      s = (Math.imul(s, 1_664_525) + 1_013_904_223) >>> 0;
+      return s >>> 8;
+    };
+  };
+
+  it('the sentences on both sides of the marker go, no other sentence does, and the client draws no removed marker', () => {
+    const next = lcg(424_242);
+    const pick = <T>(list: readonly T[]): T => list[next() % list.length]!;
+    // decoration before and after the marker: ASCII and CJK punctuation, symbols, brackets, quotes, emphasis, tags, a link address
+    const before = ['', '', '*', '**', '_', '~~', '(', '“', '"', '「', '（', '[', '^', '<sup>', '\\', '(see ', '[see ', '— ', '* ', '“**', '(_'];
+    const after = ['', '', ']', ')', '”', '"', '」', '）', '*', '**', '</sup>', '\\', '](https://example.com/a/very/long/path/to/somewhere)', ' —', ')*', '”)'];
+    const gapBefore = ['', ' ', '\n', '\u00a0', '\u2009'];
+    const gapAfter = ['', ' ', ' ', '\n'];
+    for (let round = 0; round < 800; round += 1) {
+      const count = 3 + (next() % 4);
+      const cjk = next() % 3 === 0;
+      const stops = cjk ? ['。', '！', '？'] : ['.', '.', '!', '?'];
+      const sentence = (i: number): string => {
+        const stop = pick(stops);
+        return (cjk ? `Tok${String(round * 10 + i)}事実です` : `Tok${String(round * 10 + i)} says something`) + stop;
+      };
+      const boundary = next() % (count - 1);
+      let text = '';
+      for (let i = 0; i < count; i += 1) {
+        text += sentence(i);
+        if (i === boundary) {
+          // the marker group sits between sentence i and sentence i + 1 (the gaps and decoration around it are the thing under test)
+          text += `${pick(gapBefore)}${pick(before)}[2]${pick(after)}${pick(gapAfter)}`;
+        } else if (i < count - 1) {
+          text += cjk ? pick(['', ' ']) : pick([' ', '\n']);
+        }
+      }
+      const out = removeClaims(text, new Set([2])).body;
+      const ctx = JSON.stringify({ text, out });
+      const has = (i: number): boolean => new RegExp(`Tok${String(round * 10 + i)}(?!\\d)`).test(out);
+      // the claim side: the sentence before the marker and the one after it are gone; no other sentence is lost
+      expect(has(boundary), `the claim before the marker was kept: ${ctx}`).toBe(false);
+      expect(has(boundary + 1), `the sentence after the marker was kept: ${ctx}`).toBe(false);
+      for (let i = 0; i < count; i += 1) {
+        if (i !== boundary && i !== boundary + 1) expect(has(i), `an unrelated sentence ${String(i)} was lost: ${ctx}`).toBe(true);
+      }
+      // and the reader's side: no marker 2 is drawn
+      expect(renderedMarkers(out), ctx).not.toContain(2);
     }
   });
 });

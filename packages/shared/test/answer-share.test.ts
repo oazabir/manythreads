@@ -196,7 +196,7 @@ describe('maskAnswer', () => {
 
 describe('removeClaims', () => {
   it('takes the sentences that carry a removed marker, the marker after a stop included', () => {
-    expect(removeClaims('First [1]. Second.[2] Third [3].', new Set([2])).body).toBe('First [1]. Third [3].');
+    expect(removeClaims('First [1]. Second.[2] Third [3].', new Set([2])).body).toBe('First [1].');
     expect(removeClaims('A claim [2]! And a question [3]? Done.', new Set([2, 3])).body).toBe('Done.');
     expect(removeClaims('It is 3.5 percent [1] today.', new Set([1])).body).toBe('');
   });
@@ -209,9 +209,35 @@ describe('removeClaims', () => {
     expect(removeClaims('Keep this. Revenue grew 4%. [2]', new Set([2])).body).toBe('Keep this.');
     // before the stop, or with no space, the group is the sentence's own and nothing else goes
     expect(removeClaims('Keep this. Revenue grew [1], [2]. Next claim.', new Set([2])).body).toBe('Keep this. Next claim.');
-    expect(removeClaims('Keep this. Revenue grew.[2] Next claim.', new Set([2])).body).toBe('Keep this. Next claim.');
-    // a marker group that is not removed leaves its sentence alone
-    expect(removeClaims('Revenue grew 4%. [1] Next claim [2].', new Set([2])).body).toBe('Revenue grew 4%. [1]');
+    // tight to the stop is a boundary too: the claim and its neighbour go
+    expect(removeClaims('Keep this. Revenue grew.[2] Next claim.', new Set([2])).body).toBe('Keep this.');
+    // a marker group that is not removed leaves its sentence alone; one after words is its unit's own
+    expect(removeClaims('Revenue grew 4%. [1] Next claim [2].', new Set([2])).body).toBe('Revenue grew 4%.');
+  });
+
+  it('one positional rule: a removed marker with no word before it in its unit is at a boundary, whatever decorates it, and the unit before goes too', () => {
+    const tail = ' Costs fell. After this one.';
+    const forms = [
+      '[2]', '**[2]**', '*[2]*', '_[2]_', '~~[2]~~', '\\[2\\]', '\\[2]', '[2\\]', '([2])', '(see [2])', '"[2]"', '“[2]”', '「[2]」', '（[2]）', '《[2]》',
+      '[[2]](https://example.com/x)', '[see [2]](https://example.com/x)', '^[2]', '<sup>[2]</sup>', '[1], [2]', '— [2] —', '* * [2]', '[2](https://example.com/y)',
+    ];
+    for (const form of forms) {
+      expect(removeClaims(`Revenue grew by four percent. ${form}${tail}`, new Set([2])).body, form).toBe('After this one.');
+    }
+    // the same with no space after the stop, and at the start of a block (nothing before it to take)
+    for (const form of ['[2]', '**[2]**', '([2])', '「[2]」', '\\[2\\]']) {
+      expect(removeClaims(`Revenue grew by four percent.${form}${tail}`, new Set([2])).body, `tight ${form}`).toBe('After this one.');
+      expect(removeClaims(`${form}${tail}\n\nKeep [1].`, new Set([2])).body, `first ${form}`).toBe('After this one.\n\nKeep [1].');
+    }
+    // a script written without spaces: a decorated marker right after the stop
+    for (const form of ['([2])', '（[2]）', '「[2]」', '“[2]”', '[2]', '**[2]**']) {
+      expect(removeClaims(`收入增长了。${form}成本下降了。保持不变。`, new Set([2])).body, form).toBe('保持不变。');
+    }
+    // after words in its unit a marker is the unit's own, however decorated: only that unit goes
+    for (const form of ['(see [2])', '**[2]**', '「[2]」', '([2])']) {
+      expect(removeClaims(`Revenue grew. Costs fell ${form}. After this one.`, new Set([2])).body, form).toBe('Revenue grew. After this one.');
+    }
+    expect(removeClaims('Revenue grew. (see the report) [2] Costs fell. After this one.', new Set([2])).body).toBe('Revenue grew. After this one.');
   });
 
   it('a sentence wrapped over several lines goes whole, a list item with its wrapped lines too, and a quote', () => {
@@ -243,7 +269,7 @@ describe('removeClaims', () => {
 
   it('reports the words it took out, per sentence', () => {
     const r = removeClaims('Keep this. Revenue grew 4%. [2] Costs fell [1]. And this stays.', new Set([2]));
-    expect(r.removed).toEqual(['Revenue grew 4%. [2]', 'Costs fell [1].']);
+    expect(r.removed).toEqual(['Revenue grew 4%.', '[2] Costs fell [1].']);
     expect(r.sentences).toBe(2);
     expect(r.body).toBe('Keep this. And this stays.');
   });
@@ -434,6 +460,11 @@ describe('hostile input stays linear', () => {
     ['a long run of spaces after a stop', (n) => `a.${' '.repeat(n)}[1]`],
     ['list items with wrapped lines', (n) => '- item\n  wrapped [1]\n'.repeat(n / 22)],
     ['escaped markers', (n) => '\\[2\\] '.repeat(n / 6)],
+    ['spaced decorated markers', (n) => 'Claim. **[2]** '.repeat(n / 15)],
+    ['spaced openers with words', (n) => 'Claim. (see '.repeat(n / 12)],
+    ['spaced link markers with long addresses', (n) => `Claim. [[2]](https://example.com/${'a'.repeat(200)}) `.repeat(n / 240)],
+    ['unspaced stops and decorated markers', (n) => '成本。([2])'.repeat(n / 7)],
+    ['openers without words', (n) => '. ([“「（'.repeat(n / 8)],
     ['descending backtick runs', (n) => Array.from({ length: Math.floor(Math.sqrt(n * 2)) }, (_, i) => '`'.repeat(i + 1) + ' x ').reverse().join('')],
     ['lines starting with hashes and pipes', (n) => 'ranked\n#1 overall\n| a\n'.repeat(n / 22)],
   ];

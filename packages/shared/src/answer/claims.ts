@@ -3,18 +3,26 @@
 // go, and returns that text with whole sentences deleted. What it returns is a subsequence of what it was given (a test pins it, and the messages
 // provider checks it again before it stores a copy), so a removal can shorten an answer and can never add a word to it.
 //
-// A claim is a sentence that carries the marker `[n]` of a removed citation. The model is told to write markers wherever it likes (`[1], [2]`,
-// before the stop, after it, after a space, at the start of a line), and what is stored is its text, so the segmentation FAILS TOWARD REMOVING
-// MORE: where the extent of a sentence is ambiguous the claim is never left behind.
+// A claim is a sentence unit that carries the marker `[n]` of a removed citation. The model is told to write markers wherever it likes (`[1], [2]`,
+// before the stop, after it, tight to it, after a space, at the start of a line, wrapped in emphasis, brackets, quotes or a link), and what is
+// stored is its text, so the segmentation FAILS TOWARD REMOVING MORE: where the extent of a sentence is ambiguous the claim is never left behind.
 //
 //   * The unit is a BLOCK, not a line: a paragraph (hard-wrapped lines included), a list item with its continuation lines, a quote, a heading, a
-//     table row (which goes whole). Sentences are found across the lines of a block, and a block that loses every sentence goes whole, with its
-//     bullet. Fenced code is never touched: a `[3]` inside it is text, not a marker.
-//   * A sentence ends at `.`, `!`, `?` (and their Arabic, Chinese and ellipsis forms), after any run of closers, markers and commas that follow it
-//     directly, when white space (a space or a line break) or the end follows — and the next word does not begin in lower case or with a digit
-//     (`... for $4M. according to the board [2].` is one sentence) and the stop does not close an abbreviation (`e.g.`, `U.S.`, `Dr.`, an initial).
-//   * A marker group written after the stop and a space (`Revenue grew 4%. [2] Next.`, `... . [1], [2]`) belongs to the sentence BEFORE it.
-//   * After a block was cut, a removed marker still in it (nothing should be) takes the whole block with it.
+//     table row (which goes whole). A block is cut into sentence units; a block that loses every unit goes whole, with its bullet.
+//   * A unit ends at `.`, `!`, `?` (and their Arabic, Indic, Chinese and ellipsis forms), after any run of stops and closers, when white space
+//     follows — and the next word does not begin in lower case or with a digit and the stop does not close an abbreviation (`e.g.`, `U.S.`,
+//     `Dr.`, an initial) — or when the stop is of a script written without spaces (`。！？`), or when a marker group follows the stop directly.
+//   * One positional rule decides where a removed marker group belongs, whatever decorates it (`**[2]**`, `\[2\]`, `([2])`, `(see [2])`, `"[2]"`,
+//     `「[2]」`, `[[2]](url)`, `<sup>[2]</sup>`, `^[2]`): it belongs to the unit it sits in; and if NO word character (a letter, a digit or a mark of
+//     any script) lies between the start of the unit and the group — only white space, punctuation, symbols, decoration, a link address, or words
+//     inside an opening bracket or quote that the group is also inside — it is at a sentence BOUNDARY: it may be the suffix of the sentence before
+//     or the prefix of this one, so BOTH go (the documented price is one innocent neighbour). A group after words is the unit's own: this unit goes.
+//     No list of decorations has to be complete; only word characters count.
+//   * Markers are `[2]`, `[1, 2]`, `[1-3]`, `[ 2 ]`, `［2］` and `【2】`, with a backslash allowed before the closing bracket (the client unescapes it);
+//     a group counts as removed when ANY number in it is.
+//   * Fenced code with a removed marker in it goes whole; a fence with no closing line is ordinary prose (it never shields what follows); an
+//     inline code span is read as one piece (its stops are no sentence ends, it counts as a word) and a removed marker in it takes its unit.
+//   * After a block was cut, a removed marker still in it (nothing should be) takes the whole block, and what is left is read again.
 //
 // One pass over each block, no backtracking: every character is looked at a constant number of times, so 20,000 characters of `[` or of `.` cost
 // what 20,000 of `a` do (a hostile-input timing test sits next to the function's tests).
@@ -123,13 +131,6 @@ function markerAt(text: string, i: number, removed: ReadonlySet<number>): { end:
   }
 }
 
-/** Is there a marker at `i`, or after the horizontal white space and line breaks that start there? */
-function markerAfterSpace(text: string, i: number): boolean {
-  let k = i;
-  while (k < text.length && isWs(text[k])) k += 1;
-  return markerAt(text, k, NO_NUMBERS) !== null;
-}
-
 /** The length of a line's leading marks: indentation, quote marks, a list bullet or number, a heading mark. */
 function prefixLength(line: string): number {
   const n = line.length;
@@ -180,65 +181,6 @@ function closesAbbreviation(text: string, i: number): boolean {
   return ABBREVIATIONS.has(word.toLowerCase());
 }
 
-/** Characters that decorate a marker without being words: emphasis, brackets, quotes, punctuation, and an escape's backslash. */
-const DECORATION = new Set(['*', '_', '~', '(', ')', '"', '“', '”', '‘', '’', "'", '«', '»', '<', '>', '{', '}', ',', ';', ':', '.', '!', '?', '-', '–', '—', '…', ']', '\\']);
-/** What may open a group that holds a few words before its marker: `(see [2])`, `"as the board put it [2]"`. */
-const OPENING = new Set(['(', '"', '“', '‘', '«']);
-
-/**
- * A marker group written after a stop and a space may carry decoration the client draws around it — `**[2]**`, `\\[2\\]`, `*[2]*`, `_[2]_`,
- * `~~[2]~~`, `([2])`, `"[2]"`, `[[2]](url)` — or a few words inside an opening bracket or quote (`(see [2])`). At `k` (the first character after
- * the white space): the end of such a group and whether it holds a removed number, or null when what follows is a word. At most 48 characters.
- */
-function decoratedGroup(text: string, k: number, removed: ReadonlySet<number>): { end: number; hit: boolean } | null {
-  const first = text[k];
-  if (first === undefined) return null;
-  const opened = OPENING.has(first);
-  const limit = Math.min(text.length, k + 48);
-  let p = k;
-  let found = false;
-  let hit = false;
-  while (p < limit) {
-    const c = text[p]!;
-    if (MARKER_OPEN[c] !== undefined) {
-      const m = markerAt(text, p, removed);
-      if (m !== null) {
-        found = true;
-        if (m.hit) hit = true;
-        p = m.end;
-        continue;
-      }
-      p += 1; // a bracket that is not a marker (`[[2]](url)`'s outer one)
-      continue;
-    }
-    if (c === '(' && found && text[p - 1] === ']') {
-      // the address of a link written around the marker
-      let q = p + 1;
-      while (q < Math.min(text.length, p + 256) && text[q] !== ')' && !isWs(text[q])) q += 1;
-      if (text[q] === ')') {
-        p = q + 1;
-        continue;
-      }
-    }
-    if (isWs(c)) {
-      if (found || !opened) break;
-      p += 1; // words inside an opening bracket or quote, before its marker
-      continue;
-    }
-    if (opened && !found && TERMINATORS.has(c)) return null; // a sentence of its own, not a note on the one before
-    if (DECORATION.has(c)) {
-      p += 1;
-      continue;
-    }
-    if (opened && !found) {
-      p += 1;
-      continue;
-    }
-    break; // a word: the marker, if there is one, is its
-  }
-  return found ? { end: p, hit } : null;
-}
-
 /** Does `text` hold a marker group of a removed citation? */
 function holdsMarker(text: string, removed: ReadonlySet<number>): boolean {
   for (let i = 0; i < text.length; i += 1) {
@@ -271,31 +213,63 @@ function nextRun(runs: Map<number, { starts: number[]; at: number }>, r: number,
   return list.at < list.starts.length ? list.starts[list.at]! : -1;
 }
 
-/** The text of one block without the sentences that carry a removed marker. */
+/** Characters that open a wrapper around a marker or a few words (`(see [2])`, `"[2]"`, `「[2]」`); the closers mirror them. */
+const WRAP_OPEN = new Set(['(', '[', '{', '（', '［', '【', '｛', '「', '『', '“', '‘', '«', '〈', '《']);
+const WRAP_CLOSE = new Set([')', ']', '}', '）', '］', '】', '｝', '」', '』', '”', '’', '»', '〉', '》']);
+const WORD = /[\p{L}\p{N}\p{M}]/u;
+
+/** The length (in UTF-16 units) of the word character at `i` (a letter, a digit or a mark of any script), or 0. */
+function wordLength(text: string, i: number): number {
+  const c = text.charCodeAt(i);
+  if (c < 128) return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) ? 1 : 0;
+  const cp = text.codePointAt(i)!;
+  return WORD.test(String.fromCodePoint(cp)) ? (cp > 0xffff ? 2 : 1) : 0;
+}
+
+/**
+ * The text of one block without the sentences that carry a removed marker.
+ *
+ * The block is cut into sentence units (a stop, then white space and a word that is not in lower case or a digit; or a stop of a script written
+ * without spaces; or a stop that a marker group follows directly). A removed marker belongs to the unit it sits in. Where it sits decides one
+ * thing: if no word character (a letter, digit or mark of any script) lies between the start of its unit and the marker — only white space,
+ * punctuation, symbols, quotes, brackets, emphasis, a link address, or a few words inside an opening bracket or quote that the marker is also
+ * inside — the marker is at a sentence BOUNDARY, and it may belong to the sentence before it or be the prefix of this one: both go. Otherwise it
+ * is the unit's own suffix or inline marker, and this unit alone goes. No list of decorations has to be complete: only word characters count.
+ */
 function dropSentences(text: string, removed: ReadonlySet<number>): { text: string; dropped: string[] } {
   const n = text.length;
-  let out = '';
-  const dropped: string[] = [];
+  const units: Array<{ start: number; end: number; hit: boolean; boundary: boolean }> = [];
   let start = 0;
-  let hit = false;
-  const flush = (end: number, carry: boolean): void => {
-    if (hit) {
-      const said = text.slice(start, end).replace(/\s+/g, ' ').trim();
-      dropped.push(clipText(said, SNIPPET));
-    } else {
-      out += text.slice(start, end);
-    }
+  let hit = false; // the unit holds a removed marker
+  let boundary = false; // one of them has no word character before it in the unit
+  let words = false; // a word character has been seen (outside a leading wrapper that is still open)
+  let lead = 0; // wrappers opened before any word and not yet closed
+  let pending = false; // words inside those wrappers: they count only once the wrapper closes
+  let quoteLead = false;
+  const endUnit = (end: number): void => {
+    units.push({ start, end, hit, boundary });
     start = end;
-    // a removed marker group written after a stop and a space may be the prefix of what follows: that sentence goes with it
-    hit = carry;
+    hit = false;
+    boundary = false;
+    words = false;
+    lead = 0;
+    pending = false;
+    quoteLead = false;
+  };
+  const closeWrapper = (): void => {
+    if (lead === 0) return;
+    lead -= 1;
+    if (lead === 0 && pending) {
+      words = true;
+      pending = false;
+    }
   };
   let runs: Map<number, { starts: number[]; at: number }> | undefined;
   let i = 0;
   while (i < n) {
     const ch = text[i]!;
     if (ch === '`') {
-      // an inline code span is one piece: its stops end nothing, and a removed marker in it takes the sentence. The closing run is the next
-      // run of the same length (CommonMark); the runs are listed once, so the search is linear however the runs descend.
+      // an inline code span is one piece, and counts as a word: its stops end nothing, and a removed marker in it takes the unit
       let r = 1;
       while (text[i + r] === '`') r += 1;
       runs ??= backtickRuns(text);
@@ -304,85 +278,100 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
         i += r;
         continue;
       }
-      if (holdsMarker(text.slice(i + r, closeAt), removed)) hit = true;
+      if (holdsMarker(text.slice(i + r, closeAt), removed)) {
+        hit = true;
+        if (!words) boundary = true;
+      }
+      if (lead > 0) pending = true;
+      else words = true;
       i = closeAt + r;
       continue;
     }
     if (MARKER_OPEN[ch] !== undefined) {
       const m = markerAt(text, i, removed);
       if (m !== null) {
-        if (m.hit) hit = true;
+        if (m.hit) {
+          hit = true;
+          if (!words) boundary = true;
+        }
         i = m.end;
+        if (text[i] === '(') {
+          // `[2](https://…)`: the address of a link that has the marker for its label
+          let q = i + 1;
+          while (q < Math.min(n, i + 258) && text[q] !== ')' && !isWs(text[q])) q += 1;
+          if (text[q] === ')') i = q + 1;
+        }
+        continue;
+      }
+    }
+    if (ch === '<' && /[A-Za-z/]/.test(text[i + 1] ?? '')) {
+      // an HTML tag (`<sup>`) is decoration, not words
+      let q = i + 1;
+      while (q < Math.min(n, i + 40) && text[q] !== '>' && !isWs(text[q])) q += 1;
+      if (text[q] === '>') {
+        i = q + 1;
+        continue;
+      }
+    }
+    if (WRAP_OPEN.has(ch)) {
+      if (!words) lead += 1;
+      i += 1;
+      continue;
+    }
+    if (ch === '"') {
+      if (quoteLead) {
+        quoteLead = false;
+        closeWrapper();
+      } else if (!words) {
+        quoteLead = true;
+        lead += 1;
+      }
+      i += 1;
+      continue;
+    }
+    if (WRAP_CLOSE.has(ch)) {
+      closeWrapper();
+      if (ch === ']' && text[i + 1] === '(') {
+        // the address of a link: not words
+        let q = i + 2;
+        while (q < Math.min(n, i + 258) && text[q] !== ')' && !isWs(text[q])) q += 1;
+        if (text[q] === ')') {
+          i = q + 1;
+          continue;
+        }
+      }
+      i += 1;
+      continue;
+    }
+    if (!TERMINATORS.has(ch)) {
+      const w = wordLength(text, i);
+      if (w > 0) {
+        if (lead > 0) pending = true;
+        else words = true;
+        i += w;
       } else {
         i += 1;
       }
       continue;
     }
-    if (!TERMINATORS.has(ch)) {
-      i += 1;
-      continue;
-    }
-    // the stop, then whatever belongs to the sentence after it: more stops, closers, a marker group (`[1][2]`, `[1], [2]`, `. [2]`)
+    // a stop, with the stops and closers that follow it directly
     let j = i + 1;
-    let spaced = false;
-    let carry = false;
     let last = ch;
     while (j < n) {
       const c = text[j]!;
-      if (TERMINATORS.has(c) || CLOSERS.has(c)) {
-        if (TERMINATORS.has(c)) last = c;
-        j += 1;
-        continue;
-      }
-      if (MARKER_OPEN[c] !== undefined) {
-        const m = markerAt(text, j, removed);
-        if (m === null) break;
-        if (m.hit) {
-          hit = true;
-          if (spaced) carry = true;
-        }
-        j = m.end;
-        continue;
-      }
-      if ((c === ',' || c === ';') && markerAfterSpace(text, j + 1)) {
-        j += 1;
-        continue;
-      }
-      if (isWs(c)) {
-        // white space, then a marker: the marker is this sentence's (the model writes `claim. [2]`) — and maybe the next one's prefix
-        let k = j;
-        while (k < n && isWs(text[k])) k += 1;
-        if (markerAt(text, k, NO_NUMBERS) !== null) {
-          spaced = true;
-          j = k;
-          continue;
-        }
-        // the same, with the decoration the client draws around a marker (`**[2]**`, `(see [2])`): this sentence's, and maybe the next one's prefix
-        const decorated = decoratedGroup(text, k, removed);
-        if (decorated !== null) {
-          spaced = true;
-          if (decorated.hit) {
-            hit = true;
-            carry = true;
-          }
-          j = decorated.end;
-          continue;
-        }
-      }
-      break;
+      if (TERMINATORS.has(c)) last = c;
+      else if (!CLOSERS.has(c)) break;
+      j += 1;
     }
     if (j >= n) {
       i = n;
       continue;
     }
     if (!isWs(text[j])) {
-      if (UNSPACED_STOPS.has(last)) {
-        // a script written without spaces: the sentence ends at the stop whatever follows
-        flush(j, carry);
-        i = j;
-      } else {
-        i = j; // "3.5", "a.b": a stop inside a word is not the end of anything
-      }
+      // no space after it: a stop inside a word ("3.5") ends nothing, a stop of a script written without spaces does, and so does a stop that a
+      // marker group follows directly (the group then opens the next unit and is judged there)
+      if (UNSPACED_STOPS.has(last) || markerAt(text, j, NO_NUMBERS) !== null) endUnit(j);
+      i = j;
       continue;
     }
     let k = j;
@@ -397,10 +386,25 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
       i = k;
       continue;
     }
-    flush(k, carry);
+    endUnit(k);
     i = k;
   }
-  flush(n, false);
+  endUnit(n);
+
+  // a marker at a boundary takes the unit before it as well
+  for (let u = 1; u < units.length; u += 1) {
+    if (units[u]!.boundary) units[u - 1]!.hit = true;
+  }
+  let out = '';
+  const dropped: string[] = [];
+  for (const unit of units) {
+    if (unit.hit) {
+      const said = text.slice(unit.start, unit.end).replace(/\s+/g, ' ').trim();
+      if (said !== '') dropped.push(clipText(said, SNIPPET));
+    } else {
+      out += text.slice(unit.start, unit.end);
+    }
+  }
   return { text: out, dropped };
 }
 
