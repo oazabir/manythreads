@@ -96,7 +96,7 @@ const PAGE = (path: string, content = 'written after approval', extra: Record<st
 function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string; content?: string; args?: Record<string, unknown> } = {}) {
   const args = extra.args ?? PAGE(path, extra.content);
   const { preview, truncated } = previewArgsDetailed(args);
-  return runs.asBot(run, (tx) =>
+  const filed = runs.asBot(run, (tx) =>
     provider.request(tx, {
       runId: run.runId,
       source: 'grant',
@@ -108,6 +108,11 @@ function request(run: BotRunHandle, path: string, extra: { dedupeKey?: string; c
       ...(extra.dedupeKey ? { dedupeKey: extra.dedupeKey } : {}),
     }),
   );
+  // what the runtime does next: a run that asked for an approval ends `stopped` (the re-run reads its source log, which is only whole once it has)
+  return filed.then(async (result) => {
+    await runs.close(run.runId, 'stopped');
+    return result;
+  });
 }
 
 const rowOf = (id: string) =>
@@ -415,8 +420,8 @@ describe('deciding', () => {
     const original = await openRun(scoped, nadia);
     const id = (await request(original, 'pages/orphaned-approval.md')).approvalId;
     expect(await w.system(async (tx) => (await tx.query<{ had_run: boolean }>('SELECT had_run FROM app.approvals WHERE id = $1', [id])).rows[0]!.had_run)).toBe(true);
-    // the run goes (a removed bot's runs are deleted with it): run_id becomes NULL, had_run stays
-    await w.system((tx) => tx.query('DELETE FROM app.bot_runs WHERE id = $1', [original.runId]));
+    // the run goes (what ON DELETE SET NULL does to the approval when its run row is deleted): run_id becomes NULL, had_run stays
+    await w.system((tx) => tx.query('UPDATE app.approvals SET run_id = NULL WHERE id = $1', [id]));
     expect(await w.system(async (tx) => (await tx.query<{ run_id: string | null; had_run: boolean }>('SELECT run_id, had_run FROM app.approvals WHERE id = $1', [id])).rows[0])).toEqual({ run_id: null, had_run: true });
     expect((await decide(rafi, id, 'approve')).status).toBe(200);
     const done = await until(async () => {

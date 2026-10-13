@@ -32,7 +32,12 @@ export const EXECUTE_QUEUE = 'approvals.execute';
 /** Lapsed pending approvals and approved calls that never finished are swept every five minutes. */
 export const SWEEP_QUEUE = 'approvals.sweep';
 
-const Payload = z.strictObject({ approvalId: z.uuid() });
+/** `waits`: how many times this call has been put off because the run that asked for it was still going (the job re-queues itself, at most `MAX_WAITS`). */
+const Payload = z.strictObject({ approvalId: z.uuid(), waits: z.number().int().min(0).max(1000).optional() });
+
+/** The run that asked is normally stopped before anyone approves; if it is not yet, the call waits ten seconds at a time, for at most five minutes. */
+const WAIT_MS = 10_000;
+const MAX_WAITS = 30;
 
 /** The repo path(s) the call names, which the broker's path guard must see (the same rule the MCP gateway applies at its door). */
 function authorizeContext(input: Record<string, unknown>): CapabilityAuthorizeContext {
@@ -127,7 +132,7 @@ export function registerResumeJob(ctx: PluginContext): void {
   ctx.jobs.register(
     EXECUTE_QUEUE,
     async (raw, tx, job) => {
-      const { approvalId } = Payload.parse(raw);
+      const { approvalId, waits = 0 } = Payload.parse(raw);
       const row = (
         await tx.query<ClaimedRow>(
           `SELECT a.id, a.workspace_id, a.team_id, a.source, a.tool, a.bot_id, a.requester_id, ra.kind AS requester_kind,
@@ -151,6 +156,18 @@ export function registerResumeJob(ctx: PluginContext): void {
       // What the stopped run had read decides what the re-run may write (memory rule): with that run gone there is nothing to inherit and the call
       // would pass for one that read nothing. Fail closed.
       if (row.had_run && row.run_id === null) return fail('The call was not made: the run that asked for it no longer exists, so what it had read cannot be carried over.');
+
+      // The source log of the run that asked can still grow while that run is going, and a copy of it would not be the whole. A run that asked for
+      // an approval ends `stopped` as soon as it notices; normally it has long before a person answers. If it has not, wait for it (a second job of
+      // this queue, not a retry: this one finishes, so its "never twice" rule is untouched).
+      if (row.run_id) {
+        const origin = (await tx.query<{ running: boolean }>("SELECT (status = 'running' AND ended_at IS NULL) AS running FROM app.bot_runs WHERE id = $1::uuid", [row.run_id])).rows[0];
+        if (origin?.running === true) {
+          if (waits >= MAX_WAITS) return fail('The call was not made: the run that asked for it was still going after five minutes, so what it had read could not be carried over.');
+          await ctx.jobs.enqueue(tx, EXECUTE_QUEUE, { approvalId, waits: waits + 1 }, { runAt: new Date(ctx.runtime.now().getTime() + WAIT_MS), dedupeKey: `approvals-execute:${approvalId}:${waits + 1}` });
+          return;
+        }
+      }
 
       let opened: Awaited<ReturnType<PluginContext['runs']['open']>> | null = null;
       // The same asker while they are still on the team (a person-only scope such as `person:*` then still means what it meant); without them the
