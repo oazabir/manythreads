@@ -401,6 +401,13 @@ describe('sharing to a channel', () => {
     expect(row).toMatchObject({ visibility: 'shared', mine: false, threadRootId: copyId });
   });
 
+  it('an answer cannot be edited, by the person who shared it or anybody: the text must stay the payload’s', async () => {
+    const edit = await w.call(omar, 'PATCH', `/api/channels/${devChannel}/messages/${copyId}`, { body: 'An invented claim [1].' });
+    expect(edit.status, JSON.stringify(edit.body)).toBe(409);
+    const body = await w.system(async (tx) => (await tx.query<{ body: string }>('SELECT body FROM app.messages WHERE id = $1', [copyId])).rows[0]!.body);
+    expect(body).toBe(BODY);
+  });
+
   it('is judged again when it is posted: a digest of another copy is a 409 and posts nothing', async () => {
     const before = (await copiesIn(guestOpen, omar.actorId)).length;
     const stale = (await preview(omar, channelTarget(devChannel))).parsed!.digest;
