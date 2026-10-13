@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
+  ANSWER_MASKED_KIND,
   isSupportedCitation,
   type AnswerChip,
   type AnswerCitation,
@@ -9,7 +10,6 @@ import {
   type AnswerUnsupportedCitation,
 } from '@manythreads/shared';
 import { fileContentUrl } from '../api/endpoints';
-import { useShell } from '../shell/context';
 import { messageLocation } from '../shell/messageLink';
 import { ago } from './format';
 import { Markdown } from './MessageMarkdown';
@@ -19,7 +19,9 @@ import { Markdown } from './MessageMarkdown';
  * platform's own statement of what the answer rests on — numbered citations that open the cited item, the Lineage (each source, how old, the
  * words quoted), Sources reached (what the run read; "your connection" for what was read as the asker), Outside scope (how many sources the
  * asker or the reply's readers could not see, and why — never a title) and "Answered for <person> · scoped · <alias>". The suggested next steps
- * are shown as chips and are inert here: P5-17 gives them their actions.
+ * are chips. In the asker's own conversation they act (P5-17: a follow-up is sent into the thread, "Hand to <bot>" opens a thread with that
+ * bot) and the answer can be shared to a channel with masking or saved as a page (`AnswerShare.tsx`); anywhere else they are only drawn.
+ * A copy a person shared says, for each source its readers may not open, "from <person>'s <kind> · not shared".
  *
  * Forward compatibility: a citation of a kind this client does not know arrives as `AnswerUnsupportedCitation` and is drawn as a neutral
  * "Unsupported source" chip — it never throws and never hides the answer.
@@ -64,6 +66,8 @@ export function citationTarget(c: AnswerCitation, teamSlug: string, teamSlugOf: 
       return { type: 'download', href: fileContentUrl(c.fileId) };
     case 'run':
       return c.botSlug ? { type: 'route', pathname: `/t/${teamSlug}/bots/${c.botSlug}`, search: '?tab=audit', state: null } : null;
+    case 'masked':
+      return null;
   }
 }
 
@@ -84,6 +88,13 @@ export function kindCount(kind: string, count: number): string {
 
 const KIND_LABEL: Record<string, string> = { message: 'Message', thread: 'Thread', page: 'Page', file: 'File', run: 'Run', memory: 'Memory' };
 const kindLabel = (kind: string): string => KIND_LABEL[kind] ?? 'Source';
+
+const SOURCE_NOUN: Record<string, string> = { message: 'message', thread: 'thread', page: 'page', file: 'file', run: 'run', drive: 'Drive', memory: 'memory item' };
+
+/** What a shared copy says of a source its readers may not open: "from Omar's message · not shared". Nothing of the source itself. */
+export function maskedLine(who: string | null, source: string): string {
+  return `from ${who ?? 'the asker'}’s ${SOURCE_NOUN[source] ?? 'source'} · not shared`;
+}
 
 const REASON: Record<AnswerOutsideReason, string> = {
   not_visible: 'not visible to the person who asked',
@@ -108,7 +119,16 @@ function CiteBody({ n, label }: { n: number; label: string }): ReactNode {
   );
 }
 
-function Citation({ c, teamSlug, teamSlugOf }: { c: AnswerCitation | AnswerUnsupportedCitation; teamSlug: string; teamSlugOf: TeamSlugOf }) {
+function Citation({ c, teamSlug, teamSlugOf, who }: { c: AnswerCitation | AnswerUnsupportedCitation; teamSlug: string; teamSlugOf: TeamSlugOf; who: string | null }) {
+  if (isSupportedCitation(c) && c.kind === ANSWER_MASKED_KIND) {
+    return (
+      <li>
+        <span className="an-cite an-cite-masked" data-testid="answer-citation" data-kind="masked" data-n={c.n} data-source={c.source}>
+          <CiteBody n={c.n} label={maskedLine(who, c.source)} />
+        </span>
+      </li>
+    );
+  }
   if (!isSupportedCitation(c)) {
     return (
       <li>
@@ -146,6 +166,14 @@ function Citation({ c, teamSlug, teamSlugOf }: { c: AnswerCitation | AnswerUnsup
       </span>
     </li>
   );
+}
+
+/** The line under a shared copy that says it was cut: "Shared by Omar · 1 source not shared · 1 claim removed". */
+export function shareNote(who: string | null, share: { masked: number; removed: number }): string {
+  const parts = [`Shared by ${who ?? 'the person who asked'}`];
+  if (share.masked > 0) parts.push(`${share.masked} ${share.masked === 1 ? 'source' : 'sources'} not shared`);
+  if (share.removed > 0) parts.push(`${share.removed} ${share.removed === 1 ? 'claim' : 'claims'} removed`);
+  return parts.join(' · ');
 }
 
 const NO_TEAMS: TeamSlugOf = () => null;
@@ -190,6 +218,14 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
   const marker = useMemo(
     () => (n: number, key: string): ReactNode => {
       const c = byNumber.get(n);
+      if (c && isSupportedCitation(c) && c.kind === ANSWER_MASKED_KIND) {
+        // a source the copy's readers may not open: the number stays (the claim rests on something), muted, and says so
+        return (
+          <sup key={key} className="an-ref an-ref-masked" data-testid="answer-marker-masked" title={maskedLine(payload.answeredFor.name, c.source)}>
+            <span>{n}</span>
+          </sup>
+        );
+      }
       if (c && isSupportedCitation(c)) {
         const target = citationTarget(c, slug, teamSlugOf);
         const label = `Source ${n}: ${c.label}`;
@@ -211,7 +247,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
       }
       return <sup key={key} className="an-ref an-ref-gone" data-testid="answer-marker-gone"><span>{n}</span></sup>;
     },
-    [byNumber, slug, teamSlugOf],
+    [byNumber, slug, teamSlugOf, payload.answeredFor.name],
   );
 
   return (
@@ -220,11 +256,14 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
         {/* the Answer's own text (`meta.answer.body`, which the platform keeps equal to the message's body) */}
         <Markdown source={payload.body} teamSlug={teamSlug} marker={marker} cited={citedNumbers} />
       </div>
+      {payload.share && (payload.share.masked > 0 || payload.share.removed > 0) ? (
+        <p className="an-share-note" data-testid="answer-share-note">{shareNote(payload.answeredFor.name, payload.share)}</p>
+      ) : null}
 
       {payload.citations.length > 0 ? (
         <ol className="an-cites" data-testid="answer-citations" aria-label="Sources cited">
           {payload.citations.map((c) => (
-            <Citation key={c.n} c={c} teamSlug={slug} teamSlugOf={teamSlugOf} />
+            <Citation key={c.n} c={c} teamSlug={slug} teamSlugOf={teamSlugOf} who={payload.answeredFor.name} />
           ))}
         </ol>
       ) : null}
@@ -234,10 +273,11 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
           <div className="an-h" role="heading" aria-level={4}>Lineage</div>
           <ol className="an-lin-list">
             {lineage.map((l) => (
-              <li key={l.n} className="an-lin" data-testid="answer-lineage-row" data-n={l.n}>
+              <li key={l.n} className={`an-lin ${l.masked ? 'an-lin-masked' : ''}`} data-testid="answer-lineage-row" data-n={l.n} data-masked={l.masked ? 'true' : undefined}>
                 <span className="an-n" aria-hidden="true">{l.n}</span>
-                <span className="an-nm">{l.label}</span>
+                <span className="an-nm">{l.masked ? maskedLine(payload.answeredFor.name, l.kind) : l.label}</span>
                 {l.at ? <span className="an-age" data-vt-mask>{ago(l.at)}</span> : null}
+                {l.masked ? <span className="an-sn an-sn-removed">snippet removed</span> : null}
                 {l.snippet ? <span className="an-sn" data-vt-mask>{`“${l.snippet}”`}</span> : null}
               </li>
             ))}
@@ -301,14 +341,4 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
       <div className="an-foot" data-testid="answer-for">{answeredForLine(payload.answeredFor)}</div>
     </div>
   );
-}
-
-/** The Answer inside the app: the team's slug for each team id comes from the shell. */
-export function AnswerMessage({ payload, teamSlug }: { payload: AnswerPayloadView; teamSlug: string | null }) {
-  const { teams } = useShell();
-  const teamSlugOf = useMemo<TeamSlugOf>(() => {
-    const slugs = new Map(teams.map((t) => [t.id as string, t.slug] as const));
-    return (teamId) => slugs.get(teamId) ?? null;
-  }, [teams]);
-  return <Answer payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} />;
 }

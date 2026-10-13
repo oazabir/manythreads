@@ -21,6 +21,14 @@ export interface MessagePostInput {
    * `answeredFor` and carry the message's own text as its `body` (403 for another run or bot, 400 for another text).
    */
   meta?: { answer?: unknown; runId?: string };
+  /**
+   * The answer this message is a masked copy of (P5-17): the id of an Answer in the caller's OWN bot conversation. Given, the provider accepts an
+   * `answer` posted by a person (no run), after checking it against that stored answer: the same run, bot and asker, the caller is the asker, the
+   * text is the original's with whole sentences taken out (a subsequence), every citation is one of the original's by number (kept as it was
+   * but for a re-read label, or masked), and nothing is added (no chips; "Sources reached" and the lineage are subsets). Nothing about the original
+   * is stored on the copy. 403 for an answer that is not the caller's, 400 for a copy that is not one.
+   */
+  copyOf?: string;
 }
 
 export interface MessagePosted {

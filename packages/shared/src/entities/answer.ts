@@ -13,7 +13,7 @@ import { ChannelKind } from './channel.ts';
 //     asker's own visibility (a citation the asker cannot read is not in it — only a count and a kind, in `outsideScope`).
 //
 // Extending it (P5-27 adds the memory citation, P5-17 masks a copy for a channel) is additive: a new member of the `kind` union, a new optional
-// field. A reader that meets a kind it does not know — `AnswerPayloadView`, the shape clients parse — keeps the citation as an "unsupported
+// field. P5-17 added both: `AnswerMaskedCitation` (what a shared copy says of a source its readers may not open) and `share` on the payload. A reader that meets a kind it does not know — `AnswerPayloadView`, the shape clients parse — keeps the citation as an "unsupported
 // source" instead of failing the whole message.
 
 /** Caps that keep a payload small: it is stored on the message row and travels with every read of the message. */
@@ -32,6 +32,11 @@ export const ANSWER_LIMITS = {
 /** The kinds of source an answer can cite in this version. P5-27 adds `memory`; the list is how clients tell "known" from "unsupported". */
 export const ANSWER_CITATION_KINDS = ['message', 'thread', 'page', 'file', 'run'] as const;
 export type AnswerCitationKind = (typeof ANSWER_CITATION_KINDS)[number];
+/**
+ * The kind of a citation in a shared copy whose source the copy's readers may not open (P5-17, SPEC §6.3). It is never something a bot cites: the
+ * share door writes it in place of the citation it replaces, and it carries nothing of the source but what kind it was.
+ */
+export const ANSWER_MASKED_KIND = 'masked' as const;
 
 /**
  * How far a source reaches, in the words the run's source log already uses (`app.run_source_log.scope`): `team` is a source anybody on the
@@ -136,6 +141,19 @@ export const AnswerRunCitation = z.object({
   botSlug: z.string().max(63).nullable(),
 });
 
+/**
+ * A source of the asker's that a shared copy's readers may not open: "from Omar's message · not shared" (SPEC §6.3). It keeps the number the text
+ * refers to and the kind of source, and **nothing else**: no label, no scope, no date, and none of the fields that say where the source lives
+ * (`teamId`, `channelId`, `channelName`, `path`, `fileId`, `runId`, `botSlug`) — the team of a private channel is itself something the people a
+ * conversation is shared with may not know.
+ */
+export const AnswerMaskedCitation = z.strictObject({
+  kind: z.literal(ANSWER_MASKED_KIND),
+  n: CitationBase.n,
+  /** What kind of source it was (`message`, `page`, `drive`, ...). */
+  source: SourceKind,
+});
+
 /** A citation the platform checked: every member names the source and carries the label and the reach the asker's view gave it. */
 export const AnswerCitation = z.discriminatedUnion('kind', [
   AnswerMessageCitation,
@@ -143,12 +161,13 @@ export const AnswerCitation = z.discriminatedUnion('kind', [
   AnswerPageCitation,
   AnswerFileCitation,
   AnswerRunCitation,
+  AnswerMaskedCitation,
 ]);
 export type AnswerCitation = z.infer<typeof AnswerCitation>;
 
 /** A kind this version does not know: kept so the message still renders, shown as a neutral "unsupported source". */
 export const AnswerUnsupportedCitation = z.looseObject({
-  kind: z.string().refine((k) => !(ANSWER_CITATION_KINDS as readonly string[]).includes(k), 'a known kind has its own shape'),
+  kind: z.string().refine((k) => k !== ANSWER_MASKED_KIND && !(ANSWER_CITATION_KINDS as readonly string[]).includes(k), 'a known kind has its own shape'),
   n: z.number().int().min(1).max(ANSWER_LIMITS.citations),
 });
 export type AnswerUnsupportedCitation = z.infer<typeof AnswerUnsupportedCitation>;
@@ -162,6 +181,8 @@ export const AnswerLineageEntry = z.object({
   /** When the source was written (a message's time, a file's upload, the page's last commit); null when the platform cannot tell. */
   at: IsoDateTime.nullable(),
   snippet: Snippet.nullable(),
+  /** The entry of a masked citation (a shared copy): `label` is empty, `at` and `snippet` are null, and a client draws "from <person>'s <kind> · not shared". */
+  masked: z.literal(true).optional(),
 });
 export type AnswerLineageEntry = z.infer<typeof AnswerLineageEntry>;
 
@@ -224,6 +245,11 @@ export const AnswerPayload = z.object({
   outsideScope: AnswerOutsideScope,
   answeredFor: AnswerAnsweredFor,
   chips: z.array(AnswerChip).max(ANSWER_LIMITS.chips),
+  /**
+   * Present on a copy that a person shared into a channel (P5-17): how many of the answer's citations were replaced by a masked one, and how
+   * many claims the sharer took out first. Counts only. An answer a bot posted has none.
+   */
+  share: z.object({ masked: z.number().int().nonnegative(), removed: z.number().int().nonnegative() }).optional(),
 });
 export type AnswerPayload = z.infer<typeof AnswerPayload>;
 
@@ -238,5 +264,5 @@ export type AnswerPayloadView = z.infer<typeof AnswerPayloadView>;
 
 /** True for a citation this version knows how to draw and open. */
 export function isSupportedCitation(c: AnswerCitation | AnswerUnsupportedCitation): c is AnswerCitation {
-  return (ANSWER_CITATION_KINDS as readonly string[]).includes(c.kind);
+  return c.kind === ANSWER_MASKED_KIND || (ANSWER_CITATION_KINDS as readonly string[]).includes(c.kind);
 }

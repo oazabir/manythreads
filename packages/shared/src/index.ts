@@ -14,3 +14,4 @@ export * from './markup/index.ts';
 export * from './okf/index.ts';
 export * from './surfaces/viewer.ts';
 export * from './surfaces/app-token.ts';
+export * from './answer/index.ts';

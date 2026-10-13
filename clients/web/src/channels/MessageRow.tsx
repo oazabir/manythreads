@@ -4,7 +4,8 @@ import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
-import { AnswerMessage } from './Answer';
+import { AnswerMessage } from './AnswerMessage';
+import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize } from './format';
 import { Markdown } from './MessageMarkdown';
 import { TOMBSTONE, type PendingSend } from './timeline';
@@ -43,10 +44,12 @@ type Props = {
   inThread?: boolean;
   highlight?: boolean;
   actions: RowActions;
+  /** Set in the reader's own conversation with a bot: an Answer in it that was for them can be shared, saved as a page and handed on (P5-17). */
+  answerTools?: AnswerTools;
 };
 
 /** One message: avatar, name, time, markdown, attachments, reactions, the reply count, and (on hover) the actions. */
-export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, inThread = false, highlight = false, actions }: Props) {
+export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, inThread = false, highlight = false, actions, answerTools }: Props) {
   // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
   const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
@@ -163,7 +166,12 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           </div>
         ) : m.meta.answer ? (
           // a bot's Answer: the text with its numbered sources, lineage, what was reached and what was out of scope (P5-18)
-          <AnswerMessage payload={m.meta.answer} teamSlug={teamSlug} />
+          <AnswerMessage
+            payload={m.meta.answer}
+            teamSlug={teamSlug}
+            messageId={m.id}
+            tools={answerTools !== undefined && m.channelId === answerTools.channelId && m.meta.answer.answeredFor.personId === people.me?.personId ? answerTools : undefined}
+          />
         ) : (
           <div className="txt"><Markdown source={m.body} teamSlug={teamSlug} /></div>
         )}

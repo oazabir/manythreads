@@ -129,6 +129,10 @@ export function registerMessageRoutes(deps: Deps): void {
       if (current.authorId !== tx.actor.id) throw forbidden('You can only edit your own messages');
       if (current.deletedAt) throw conflict('That message was deleted');
       if (current.body === body) return json(EditMessageResponse.parse(current));
+      // An answer's text is the payload's `body` (the Answer is drawn from it, and a shared copy was checked against its original): editing the
+      // message would make the two differ, so a message that carries an Answer is deleted and shared again, never edited.
+      const isAnswer = (await tx.query<{ answer: boolean }>("SELECT meta ? 'answer' AS answer FROM app.messages WHERE id = $1", [messageId])).rows[0]?.answer;
+      if (isAnswer === true) throw conflict('An answer cannot be edited. Delete it and share the answer again.');
       await requirePost(tx, channel);
       const res = await tx.query(
         `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now() WHERE id = $1 AND channel_id = $2 RETURNING id`,

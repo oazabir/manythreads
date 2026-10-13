@@ -10,6 +10,7 @@ import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
 import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
 import { FilesIcon, ThreadsIcon } from '../shell/icons';
+import type { AnswerTools } from './AnswerShare';
 import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
 import { MessageRow, PendingRow, type RowActions } from './MessageRow';
@@ -44,7 +45,7 @@ function Linked({ rootId }: { rootId: string }) {
  * A thread: the root message, whether the person follows it, the replies and a composer. In the right panel (beside the channel) and
  * in the main area of the Threads inbox. Opened from a link it needs no channel in view: the threads API says where the thread lives.
  */
-export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null, replyBlocked = null }: {
+export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null, replyBlocked = null, answerTools }: {
   rootId: string;
   variant: 'panel' | 'main';
   /** The channel the thread lives in, when the caller knows it and the URL does not say (a bot conversation has no `/c/:channel`). */
@@ -53,6 +54,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   awaiting?: string | null;
   /** Why nobody can reply here right now (a bot that is turned off): shown in place of the composer, which is not drawn. */
   replyBlocked?: string | null;
+  /** The reader's own conversation with a bot (P5-17): an Answer in it that was for them can be shared, saved as a page and handed on. */
+  answerTools?: AnswerTools;
 }) {
   const { team, teamSlug } = useShell();
   const slug = team?.slug ?? teamSlug;
@@ -199,7 +202,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         ) : null}
         {tl.items.length === 0 && tl.pending.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
         {tl.items.map((m) => (
-          <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={replyActions} />
+          <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
         ))}
         <ThreadApprovals rootId={rootId} slug={slug ?? null} />
         {waiting ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}

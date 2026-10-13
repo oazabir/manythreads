@@ -51,6 +51,7 @@ export * from './bots.bot.removed.ts';
 export * from './bots.run.closed.ts';
 export * from './conversations.conversation.started.ts';
 export * from './answer.answer.posted.ts';
+export * from './answer.answer.shared.ts';
 export * from './retention.sweep.completed.ts';
 export * from './retention.settings.changed.ts';
 export * from './llm.config.applied.ts';

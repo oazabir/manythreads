@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import { WritePageRequest } from '@manythreads/shared';
+import { registerAnswerPageRoute } from './answer-page.ts';
 import { writePage } from './pages.ts';
 import { registerPageRoutes } from './routes.ts';
 
@@ -7,7 +8,8 @@ export { writePage, refuse, type PageOutcome, type PageRefusal, type PageWritten
 
 /**
  * pages: durable pages (reports, saved answers, routine outputs) as text files under `pages/` of the team repo (SPEC section 6.4, PLAN P4-07).
- * `pages.write` creates, replaces or appends through the repo writer, as the caller, and emits `pages.page.written`. docs/plugins/pages.md.
+ * `pages.write` creates, replaces or appends through the repo writer, as the caller, and emits `pages.page.written`. "Save as page" (P5-17) writes the
+ * masked copy of an answer as `pages/answers/<date>-<slug>-<id>.md` through the same writer. docs/plugins/pages.md.
  */
 export default definePlugin({
   manifest: {
@@ -17,10 +19,13 @@ export default definePlugin({
     extends: ['event.emit'],
     // Not `files.write`: a bot that may only save pages (Brain's "Save as page") is granted `pages.write` alone. The broker's path guard covers both names.
     capabilities: [{ name: 'pages.write', destructive: false }],
-    events: { emits: ['pages.page.written'], consumes: [] },
+    // `answer.answer.shared`: the access event of "Save as page" (an answer of the caller's own conversation, masked for the team's readers)
+    events: { emits: ['pages.page.written', 'answer.answer.shared'], consumes: [] },
   },
   register(ctx) {
     registerPageRoutes(ctx);
+    // Save as page (PLAN P5-17): the masked copy of an answer of the caller's own conversation, written through `writePage`
+    registerAnswerPageRoute(ctx);
     // What the MCP gateway calls for a bot's `pages.write` tool (phase 5): `{ team, mode, path, content, baseBlobSha?, message? }` as the bot's transaction.
     // Answers `{ ok: true, ... }` or `{ ok: false, status, code, message }`; the broker has already logged a denial.
     ctx.capabilities.register('pages.write', async (input, tx) => {

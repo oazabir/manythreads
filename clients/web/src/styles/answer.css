@@ -252,3 +252,152 @@ button.an-chip:hover {
   border-color: var(--human-border);
   background: var(--human-wash);
 }
+
+/* ---- a shared copy: a source its readers may not open (P5-17, SPEC §6.3) ---- */
+.an-cite-masked {
+  border-style: dashed;
+  background: var(--shell);
+  color: var(--mute);
+}
+
+.an-cite-masked .an-n {
+  background: var(--paper);
+  color: var(--mute);
+}
+
+.an-ref-masked span {
+  color: var(--faint);
+  text-decoration: underline dotted;
+}
+
+.an-lin-masked .an-nm {
+  color: var(--mute);
+}
+
+.an-sn-removed {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.an-share-note {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+/* ---- what a person does with their own answer: the toolbar and the share dialog ---- */
+.an-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.an-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  max-width: 720px;
+}
+
+.an-act-done {
+  color: var(--ok-ink);
+  font-size: 12.5px;
+}
+
+.an-act-error {
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+.an-dlg {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.an-dlg-pick {
+  max-width: 100%;
+}
+
+.an-share-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.an-share-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+
+.an-share-masked {
+  border-style: dashed;
+  background: var(--shell);
+}
+
+.an-share-removed {
+  background: var(--warn-wash);
+  border-color: var(--warn-border);
+}
+
+.an-share-removed .an-share-label {
+  color: var(--mute);
+  text-decoration: line-through;
+}
+
+.an-share-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.an-share-sub {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.an-share-status {
+  color: var(--mute);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.an-share-kept .an-share-status {
+  color: var(--ok-ink);
+}
+
+.an-share-sum {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+@media (width <= 480px) {
+  .an-share-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .an-share-status {
+    grid-column: 2;
+  }
+
+  .an-share-toggle {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}

@@ -1,5 +1,5 @@
 import type { MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
-import { AnswerPayload } from '@manythreads/shared';
+import { AnswerPayload, isSubsequence } from '@manythreads/shared';
 import { z } from 'zod';
 import { forbidden, invalid } from './http.ts';
 import { postChannelMessage, type Deps } from './service.ts';
@@ -61,6 +61,57 @@ const ProviderMeta = z.strictObject({ answer: AnswerPayload.optional(), runId: z
  * is a check against the transaction, not a defence against plugin code that sets `app.run_id` itself: plugins are first-party code the
  * platform trusts (CLAUDE.md), and a hostile one could do much more.
  */
+/** The keys of a JSON value in a stable order, so two values with the same content compare equal whatever order they were built in. */
+function stable(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    return `{${Object.keys(o)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stable(o[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * A person's copy of an answer (P5-17): checked against the stored answer of their own conversation. The copy may be LESS than the original and
+ * nothing more: the text is a subsequence of it, every citation is one of its own by number (kept exactly as it was, or masked), no chips, and the
+ * lineage and "Sources reached" are subsets. Whom it was for, by which bot and run, is the original's, and the caller is that person.
+ */
+async function checkAnswerCopy(tx: PluginTx, copyOf: string, copy: AnswerPayload, body: string): Promise<void> {
+  const row = (
+    await tx.query<{ answer: unknown; person_id: string | null }>(
+      `SELECT x.meta -> 'answer' AS answer, app.person_id()::text AS person_id
+         FROM app.messages x JOIN app.channels c ON c.id = x.channel_id
+        WHERE x.id = $1 AND x.deleted_at IS NULL AND c.kind = 'bot_conversation' AND c.created_by = app.actor() AND x.meta ? 'answer'`,
+      [copyOf],
+    )
+  ).rows[0];
+  if (!row || row.person_id === null) throw forbidden('copyOf is an answer of the caller’s own conversation, and no other');
+  const parsed = AnswerPayload.safeParse(row.answer);
+  if (!parsed.success) throw invalid('copyOf: the original answer does not read');
+  const original = parsed.data;
+  if (copy.answeredFor.personId !== row.person_id) throw forbidden('meta.answer.answeredFor.personId is the person who shares, and no other');
+  if (stable(copy.answeredFor) !== stable(original.answeredFor)) throw invalid('meta.answer.answeredFor is the original answer’s');
+  if (copy.body !== body) throw invalid('meta.answer.body is the text of the message');
+  if (!isSubsequence(copy.body, original.body)) throw invalid('meta.answer.body is the original text with claims taken out, and nothing added');
+  if (copy.chips.length > 0) throw invalid('a copy of an answer carries no chips');
+  const originals = new Map(original.citations.map((c) => [c.n, c] as const));
+  for (const c of copy.citations) {
+    const was = originals.get(c.n);
+    if (!was) throw invalid(`meta.answer.citations: ${String(c.n)} is not a citation of the original`);
+    if (c.kind === 'masked') continue;
+    if (was.kind !== c.kind || stable({ ...was, label: '' }) !== stable({ ...c, label: '' })) {
+      throw invalid(`meta.answer.citations: ${String(c.n)} is not the original citation`);
+    }
+  }
+  const lineage = new Set(original.lineage.map((l) => l.n));
+  if (copy.lineage.some((l) => !lineage.has(l.n))) throw invalid('meta.answer.lineage names a citation the original has not');
+  const reached = new Set(original.sourcesReached.map((s) => stable(s)));
+  if (copy.sourcesReached.some((s) => !reached.has(stable(s)))) throw invalid('meta.answer.sourcesReached adds a source to the original');
+}
+
 export function registerMessageProvider(deps: Deps): void {
   const provider: MessageProvider = {
     id: 'channels',
@@ -69,7 +120,13 @@ export function registerMessageProvider(deps: Deps): void {
       if (!body.success) throw invalid('body: 1 to 40,000 characters');
       const meta = input.meta === undefined ? undefined : ProviderMeta.safeParse(input.meta);
       if (meta && !meta.success) throw invalid(`meta: ${meta.error.issues.map((i) => `${i.path.join('.') || '(meta)'}: ${i.message}`).join('; ')}`);
-      if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined)) {
+      if (input.copyOf !== undefined) {
+        // a person's masked copy of their own answer: no run, and the copy is checked against the original (never the other way round)
+        if (!meta?.success || meta.data.answer === undefined || meta.data.runId !== undefined) {
+          throw invalid('copyOf: a copy of an answer carries meta.answer and no runId');
+        }
+        await checkAnswerCopy(tx, input.copyOf, meta.data.answer, body.data);
+      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined)) {
         const here = (
           await tx.query<{ run_id: string | null; bot_id: string | null }>(
             `SELECT app.run_id()::text AS run_id,

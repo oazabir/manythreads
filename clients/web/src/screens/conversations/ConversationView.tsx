@@ -173,6 +173,8 @@ export function ConversationView() {
   const [failed, setFailed] = useState<{ body: string; attachments: FileSummary[]; message: string } | null>(null);
   const [sending, setSending] = useState(false);
   const channelId = bot?.channelId ?? null;
+  // the person's own conversation: an Answer in it can be shared, saved as a page and handed to another bot (P5-17)
+  const answerTools = useMemo(() => (channelId !== null && thread !== null ? { channelId, threadRootId: thread, team } : undefined), [channelId, thread, team]);
   const start = useCallback(
     async (body: string, attachments: FileSummary[]): Promise<void> => {
       if (channelId === null || sending) return;
@@ -264,7 +266,15 @@ export function ConversationView() {
           </button>
         ) : null}
         {thread !== null ? (
-          <ThreadBody key={thread} rootId={thread} variant="main" channelId={selected?.channelId ?? bot?.channelId ?? null} awaiting={blocked ? null : botName} replyBlocked={blocked ? blocked.message : null} />
+          <ThreadBody
+            key={thread}
+            rootId={thread}
+            variant="main"
+            channelId={selected?.channelId ?? bot?.channelId ?? null}
+            awaiting={blocked ? null : botName}
+            replyBlocked={blocked ? blocked.message : null}
+            {...(answerTools ? { answerTools } : {})}
+          />
         ) : (
           <div className="cv-start" data-testid="conversation-start">
             <div className="cv-intro">
