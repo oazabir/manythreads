@@ -513,7 +513,8 @@ describe('app.conversations_mark_shared (P5-17)', () => {
     // somebody else's conversation is theirs to change in no way: nothing is marked, even with a message of their own and a log line of their own
     const nadias = await say(teamChannel, nadia.actorId, 'Nadia’s own message');
     await shareLine(nadias, teamChannel, nadia);
-    expect(await code(mark(nadia, root, teamChannel, nadias))).toBe('42501');
+    // (a log line of hers for this thread cannot exist: the share log only takes the answer's own asker. Even so the update is of the caller's rows)
+    expect(await mark(nadia, root, teamChannel, nadias)).toBe(false);
     // and a message of the caller's own that was never shared from this conversation is no copy of it
     expect(await code(mark(priya, root, teamChannel, await say(teamChannel, priya.actorId, 'Priya’s own, unrelated message')))).toBe('42501');
     expect((await stateOf(root)).visibility).toBe('private');
