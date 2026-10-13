@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { CapabilityDecision, CapabilityHandler, PluginRuns, PluginTx, ToolDescriptor } from '@manythreads/sdk';
-import { guardPluginTx } from '@manythreads/sdk';
+import { RunEndedError, guardPluginTx } from '@manythreads/sdk';
+
+export { RunEndedError };
 import type { ActorId, RunId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import type { AuthorizeContext, CapabilityBroker } from '../capabilities/broker.ts';
@@ -58,14 +60,6 @@ export const newRunToken = (): string => randomBytes(32).toString('base64url');
 
 /** The sha256 a run token is compared by; exported for the gateway's own tests and docs. */
 export const hashRunToken = sha256;
-
-/** Thrown when something is asked of a run that has ended: its tokens are revoked, and the handle a still-running worker holds must stop working too. */
-export class RunEndedError extends Error {
-  constructor(runId: string) {
-    super(`run ${runId} has ended`);
-    this.name = 'RunEndedError';
-  }
-}
 
 const botActor = (run: BotRunHandle): Actor => ({
   kind: 'bot',
@@ -231,8 +225,9 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       return broker.authorize(botActor(run), capability, { ...context, trigger: context.trigger ?? run.trigger });
     },
 
-    async may(run: BotRunHandle, capability: string, context: AuthorizeContext = {}): Promise<CapabilityDecision> {
-      if (!(await live(run.runId))) return { allowed: false, reason: 'the run has ended', needsApproval: false };
+    async may(run: BotRunHandle, capability: string, context: AuthorizeContext = {}, options: { alreadyLive?: boolean } = {}): Promise<CapabilityDecision> {
+      // `alreadyLive`: the caller resolved the run's token in this very request (a listing asks once per capability): no second read per call
+      if (options.alreadyLive !== true && !(await live(run.runId))) return { allowed: false, reason: 'the run has ended', needsApproval: false };
       return broker.check(botActor(run), capability, { ...context, trigger: context.trigger ?? run.trigger });
     },
 

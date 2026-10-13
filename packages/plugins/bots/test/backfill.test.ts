@@ -194,6 +194,15 @@ capabilities:
     expect(await runTimeouts()).toBe(0);
   });
 
+  it('a row that cannot be read does not stop the rows after it: each is settled (or not) on its own', async () => {
+    // a file that no longer parses (a limit above the ceiling the format allows) and files that do: every pass settles the readable ones
+    const broken = await legacyBot('timeout-broken', limitedDefinition(10_000_000), { runtime: 'rules' });
+    const fine = await Promise.all(Array.from({ length: 5 }, (_, i) => legacyBot(`timeout-fine-${i}`, limitedDefinition(600 + i), { runtime: 'rules' })));
+    for (let pass = 0; pass < 3; pass += 1) await runTimeouts();
+    expect((await timeouts(broken)).run_timeout_known).toBe(false);
+    for (const [i, id] of fine.entries()) expect(await timeouts(id)).toEqual({ run_timeout_seconds: 600 + i, run_timeout_known: true });
+  });
+
   it('leaves a bot whose file moved on, or cannot be read, unknown for the loader (or tomorrow)', async () => {
     const moved = await legacyBot('timeout-moved', limitedDefinition(60), { runtime: 'rules', definitionSha: 'f'.repeat(64) });
     const missing = await legacyBot('timeout-missing', limitedDefinition(60), { runtime: 'rules' });

@@ -162,7 +162,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       // who may decide this bot's approvals (`role:<tag>` / `person:<id>`); empty means the team's leads
       fm.approvals?.approvers ?? [],
       // BOT.md `limits.timeoutSeconds`: what the stale-run reaper measures a run against
-      fm.limits?.timeoutSeconds ?? null,
+      fm.limits?.timeoutSeconds === undefined ? null : Math.min(fm.limits.timeoutSeconds, 604_800),
     ],
   );
   const botId = row.rows[0]!.id;

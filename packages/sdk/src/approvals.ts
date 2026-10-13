@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { BotRunTrigger, approvalSummary, previewArgsDetailed, type ApprovalResume, type ApprovalSource } from '@manythreads/shared';
-import type { BotRunHandle, PluginContext, PluginTx, ProviderImpl } from './types.ts';
+import { RunEndedError, type BotRunHandle, type PluginContext, type PluginTx, type ProviderImpl } from './types.ts';
 
 // The one handler for `needsApproval` (SPEC §7.3; PLAN P5-20): `ctx.providers.get<ApprovalProvider>('approvals')`, registered by the approvals
 // plugin. A call that must wait for a person — whichever of the four sources says so (an Environment with `protected: true`, `dispatch: strict`,
@@ -145,6 +145,8 @@ export async function requestToolApproval(
     );
   } catch (err) {
     if (err instanceof NoEligibleApproverError || err instanceof NeverApprovalGatedError) return { refused: err.message };
+    // The run was ended between the caller's check and this call (the reaper, a close): the model is told, the caller does not see an exception
+    if (err instanceof RunEndedError) return { refused: 'This run has ended, so the call cannot wait for an approval; start a new run.' };
     throw err;
   }
 }

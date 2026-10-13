@@ -27,7 +27,10 @@ All three are public in the session sense — the pairing token, then the run to
 `Authorization: Bearer` header and never part of the URL** (a path lands in proxy and access logs; `server/src/log-redact.ts`
 also masks anything that is not a run id in that position, as a backstop). The URL names the run and must agree with the
 token's run. Unknown, revoked, expired and already-closed tokens, a missing or non-Bearer header, and a run id that is not the
-token's all answer the same **401**, so a probe cannot tell which it hit. The token is shown once;
+token's all answer the same **401**, so a probe cannot tell which it hit. A run that is ended *while* a request is in flight
+(the reaper, an approval's re-run, a close from the same client) answers a `tools/call` with the tool result
+`{ ok: false, code: "run_ended" }` and anything else with the same 401 — never a 500. **Client rule: treat a 401 on `/close`
+after an approval as done** (the approval's re-run ends the run itself, so the run is already closed by the time the client closes it). The token is shown once;
 `app.mcp_run_tokens` keeps its sha256 and nothing else, has no GRANT for `manythreads_app`, and is read and written only
 by the kernel's run service (below).
 

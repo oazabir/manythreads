@@ -1,4 +1,4 @@
-import { NEVER_APPROVAL_GATED, NeverApprovalGatedError, requestToolApproval, type ApprovalProvider, type BotRunHandle, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { NEVER_APPROVAL_GATED, NeverApprovalGatedError, RunEndedError, requestToolApproval, type ApprovalProvider, type BotRunHandle, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
 import { createApprovalProvider } from '../src/provider.ts';
 
@@ -67,5 +67,19 @@ describe('requestToolApproval turns the provider’s refusal into an answer for 
     // the helper's own list does not name this tool, so the call reaches the provider, which refuses it
     const answer = await requestToolApproval(ctx as never, run, 'pages.write', {});
     expect(answer).toEqual({ refused: expect.stringMatching(/cannot wait for an approval/) });
+  });
+
+  it('a run that ended before the request is an answer for the model too, not an exception', async () => {
+    const provider = {
+      id: 'approvals',
+      request: () => Promise.reject(new RunEndedError('r')),
+      pendingForRun: () => Promise.resolve(0),
+      claim: () => Promise.resolve(null),
+    } as ApprovalProvider;
+    const ctx = {
+      providers: { get: () => provider },
+      runs: { asBot: (_run: BotRunHandle, fn: (tx: PluginTx) => Promise<unknown>) => fn(neverUsed) },
+    } as unknown as Pick<PluginContext, 'providers' | 'runs'>;
+    expect(await requestToolApproval(ctx as never, run, 'pages.write', {})).toEqual({ refused: expect.stringMatching(/run has ended/) });
   });
 });

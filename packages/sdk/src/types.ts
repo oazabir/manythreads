@@ -209,6 +209,20 @@ export interface ScopedKv {
 }
 
 /**
+ * Thrown by the run service's doors (`asBot`, `asReader`, `asApproved`) for a run that has ended: its tokens are revoked and a worker that still
+ * holds the handle may no longer act for it. `authorize` and `may` answer a denial instead. A caller that can say something to its client maps it
+ * (the MCP gateway answers `run_ended`; `requestToolApproval` answers `{ refused }`).
+ */
+export class RunEndedError extends Error {
+  readonly runId: string;
+  constructor(runId: string) {
+    super(`run ${runId} has ended`);
+    this.name = 'RunEndedError';
+    this.runId = runId;
+  }
+}
+
+/**
  * One bot run, as the MCP gateway works with it (SPEC §6.2, PLAN P5-09, decision in `docs/spikes/per-run-scoping.md`):
  * a row in `bot_runs` plus the bot actor the broker checks, and the person who asked when there is one.
  */
@@ -286,7 +300,7 @@ export interface PluginRuns {
    * is offered is not a request to use it; the call itself must go through `authorize`. A mutation is offered at
    * grant level here — its path is a per-call fact and is judged when the call is authorized.
    */
-  may(run: BotRunHandle, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+  may(run: BotRunHandle, capability: string, context?: CapabilityAuthorizeContext, options?: { alreadyLive?: boolean }): Promise<CapabilityDecision>;
   /** Every capability that has an implementation loaded, in registration order. */
   catalog(): readonly ToolDescriptor[];
   /** Calls a registered capability handler in `tx`; throws when nothing implements `capability`. */

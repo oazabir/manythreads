@@ -77,7 +77,7 @@ async function loadBot(slug: string, md: string): Promise<{ botId: string; actor
 }
 
 /** A run of a bot asked by a person (or nobody), answering in #dev under `rootId`. */
-async function openRun(bot: { botId: string }, asker: { actorId: string } | null, where: { channelId?: string; replyRootId?: string } = {}): Promise<BotRunHandle> {
+async function openRun(bot: { botId: string }, asker: { actorId: string } | null, where: { channelId?: string; replyRootId?: string; ttlSeconds?: number } = {}): Promise<BotRunHandle> {
   const { run } = await runs.open({
     botId: bot.botId,
     teamId: TEAM_IDS.Engineering,
@@ -86,6 +86,7 @@ async function openRun(bot: { botId: string }, asker: { actorId: string } | null
     askerActorId: asker?.actorId ?? null,
     channelId: where.channelId ?? channelId,
     replyRootId: where.replyRootId ?? rootId,
+    ...(where.ttlSeconds === undefined ? {} : { ttlSeconds: where.ttlSeconds }),
   });
   return run;
 }
@@ -436,6 +437,31 @@ describe('deciding', () => {
     const refs = await w.system(async (tx) => (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [rerun])).rows.map((r) => r.source_ref));
     expect(refs).toEqual(['finance/wait.xlsx', 'finance/late.xlsx']);
   });
+
+  it('a router run that is still working after the approval is left to finish until its own deadline, then ended; the call is made once it has', async () => {
+    // a run with a short budget (its token's expiry is the run's deadline); nobody closes it, as a worker that is past its budget would not
+    const original = await openRun(scoped, nadia, { ttlSeconds: 30 });
+    await w.system((tx) => tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'drive', 'finance/slow.xlsx', 'person')", [original.runId]));
+    const id = (await request(original, 'pages/slow-run.md', { keepRunning: true })).approvalId;
+    const started = Date.now();
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 12_000));
+    // the model is still working: the run is not ended under it, it can still log what it reads, and the call has not been made
+    expect(await rowOf(id)).toMatchObject({ status: 'approved', outcome: 'running' });
+    expect(await w.system(async (tx) => (await tx.query<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1', [original.runId])).rows[0]!.status)).toBe('running');
+    await runs.asBot(original, (tx) => runs.logSource(tx, { sourceType: 'drive', sourceRef: 'finance/after-approval.xlsx', scope: 'person' }));
+    expect((await w.call(omar, 'GET', '/api/teams/engineering/repo/blob?path=pages/slow-run.md')).status).toBe(404);
+    // past its own deadline (plus a short grace) it is ended all the same, and the call is made with the log as it stood
+    await until(async () => ((await rowOf(id))?.outcome === 'ran' ? true : null), 120_000, 'the call to be made once the run was past its deadline');
+    expect(Date.now() - started).toBeGreaterThan(30_000);
+    expect(await w.system(async (tx) => (await tx.query<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1', [original.runId])).rows[0]!.status)).toBe('stopped');
+    const rerun = await w.system(
+      async (tx) =>
+        (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs WHERE bot_id = $1 AND id <> $2 ORDER BY id DESC LIMIT 1', [scoped.botId, original.runId])).rows[0]!.id,
+    );
+    const refs = await w.system(async (tx) => (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [rerun])).rows.map((r) => r.source_ref));
+    expect(refs).toEqual(['finance/slow.xlsx', 'finance/after-approval.xlsx']);
+  }, 180_000);
 
   it('an external client’s run (nothing else will ever close it) is ended by the approval, not waited for: the call is made, with the log as it stood, and the run takes nothing more', async () => {
     // minted the way POST /api/mcp/runs does: no channel, no thread, no asker, and no router job behind it

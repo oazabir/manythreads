@@ -1,4 +1,4 @@
-import type { BotRunHandle, PluginContext, PluginTx } from '@manythreads/sdk';
+import { HttpError, RunEndedError, type BotRunHandle, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
 import { handleRpc } from '../src/protocol.ts';
 
@@ -231,6 +231,39 @@ describe('gateway-mcp protocol', () => {
     const deniedBody = (await body(denied)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
     expect(deniedBody.result.isError).toBe(true);
     expect(JSON.parse(deniedBody.result.content[0]!.text)).toMatchObject({ ok: false, code: 'forbidden' });
+  });
+
+  it('a run that ended under the call is a tool answer for a call and a 401 for anything else, never a 500', async () => {
+    const { ctx } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
+    const ended = () => Promise.reject(new RunEndedError(RUN.runId));
+    (ctx.runs as unknown as Record<string, unknown>)['authorize'] = ended;
+    (ctx.runs as unknown as Record<string, unknown>)['may'] = ended;
+
+    const call = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 31, method: 'tools/call', params: { name: 'messages.search', arguments: {} } });
+    expect(call.status).toBe(200);
+    const answered = (await body(call)) as { id: number; result: { isError?: boolean; content: Array<{ text: string }> } };
+    expect(answered.id).toBe(31);
+    expect(answered.result.isError).toBe(true);
+    expect(JSON.parse(answered.result.content[0]!.text)).toMatchObject({ ok: false, code: 'run_ended' });
+
+    await expect(handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 32, method: 'tools/list' })).rejects.toMatchObject({ status: 401 });
+    await expect(handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 32, method: 'tools/list' })).rejects.toBeInstanceOf(HttpError);
+
+    // anything else that goes wrong is still a fault
+    (ctx.runs as unknown as Record<string, unknown>)['may'] = () => Promise.reject(new Error('database went away'));
+    await expect(handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 33, method: 'tools/list' })).rejects.toThrow('database went away');
+  });
+
+  it('tools/list asks about each capability once and does not look the run up again for each', async () => {
+    const { ctx } = fakeContext({ tools: [SEARCH_TOOL, WRITE_TOOL], decisions: { 'messages.search': ALLOWED, 'pages.write': ALLOWED } });
+    const options: unknown[] = [];
+    const inner = ctx.runs.may.bind(ctx.runs);
+    (ctx.runs as unknown as Record<string, unknown>)['may'] = (run: BotRunHandle, name: string, context?: unknown, opts?: unknown) => {
+      options.push(opts);
+      return inner(run, name, context as never);
+    };
+    await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 34, method: 'tools/list' });
+    expect(options).toEqual([{ alreadyLive: true }, { alreadyLive: true }]);
   });
 
   it('transport faults are JSON-RPC errors', async () => {

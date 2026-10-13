@@ -1,6 +1,6 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
-import { EXECUTE_QUEUE, registerResumeJob } from '../src/resume.ts';
+import { EXECUTE_QUEUE, executeWait, registerResumeJob } from '../src/resume.ts';
 
 // The execute job without a database: what it records when something after the call fails. The call may be an email; once it has been made,
 // nothing that goes wrong afterwards (closing the run, say) may turn "it ran" into "it failed".
@@ -78,5 +78,21 @@ describe('approvals.execute', () => {
     expect(h.updates).toHaveLength(1);
     expect(h.updates[0]!.outcome).toBe('failed');
     expect(String(h.updates[0]!.detail)).toContain('interrupted');
+  });
+});
+
+describe('executeWait', () => {
+  const now = Date.parse('2026-01-01T12:00:00Z');
+  it('ends a run no worker holds at once', () => {
+    expect(executeWait({ held: false, nowMs: now, deadlineMs: now + 3_600_000, waits: 0 })).toEqual({ action: 'end' });
+  });
+  it('waits for a held run until its own deadline, however long its budget is', () => {
+    expect(executeWait({ held: true, nowMs: now, deadlineMs: now + 10 * 60_000, waits: 0 })).toEqual({ action: 'wait', delayMs: 10_000 });
+    // past the old flat five minutes, still before the deadline: waits
+    expect(executeWait({ held: true, nowMs: now + 6 * 60_000, deadlineMs: now + 10 * 60_000, waits: 36 })).toEqual({ action: 'wait', delayMs: 60_000 });
+    expect(executeWait({ held: true, nowMs: now + 10 * 60_000 + 10_000, deadlineMs: now + 10 * 60_000, waits: 40 })).toEqual({ action: 'wait', delayMs: 60_000 });
+  });
+  it('ends a held run once its deadline and the grace have passed', () => {
+    expect(executeWait({ held: true, nowMs: now + 10 * 60_000 + 30_000, deadlineMs: now + 10 * 60_000, waits: 50 })).toEqual({ action: 'end' });
   });
 });

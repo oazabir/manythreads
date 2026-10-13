@@ -1,4 +1,4 @@
-import type { BotRunHandle, HttpResponse, PluginContext } from '@manythreads/sdk';
+import { HttpError, RunEndedError, type BotRunHandle, type HttpResponse, type PluginContext } from '@manythreads/sdk';
 import {
   MCP_ERROR_CODES,
   MCP_PROTOCOL_VERSION,
@@ -53,7 +53,8 @@ export function toolResult(answer: unknown, isError = false): McpToolResult {
 async function listTools(ctx: PluginContext, run: BotRunHandle): Promise<McpToolDescriptor[]> {
   const offered: McpToolDescriptor[] = [];
   for (const tool of ctx.runs.catalog()) {
-    const decision = await ctx.runs.may(run, tool.name);
+    // the run's token was resolved (it is `running`) a moment ago, in this request: no liveness read per capability
+    const decision = await ctx.runs.may(run, tool.name, {}, { alreadyLive: true });
     if (!decision.allowed) continue;
     const definition = definitionOf(tool.name);
     offered.push(
@@ -108,6 +109,21 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
  * client expects; everything else comes back as an envelope with the caller's own id.
  */
 export async function handleRpc(ctx: PluginContext, run: BotRunHandle, raw: unknown): Promise<HttpResponse> {
+  try {
+    return await handleRpcInner(ctx, run, raw);
+  } catch (err) {
+    // The run was ended between resolving its token and acting for it (a close, the reaper, an approval's re-run): the client is told so, in
+    // the shape it already handles — a tool answer for a call, a 401 for anything else — never a 500.
+    if (!(err instanceof RunEndedError)) throw err;
+    const request = McpRequest.safeParse(raw);
+    if (request.success && request.data.method === 'tools/call') {
+      return reply(request.data.id, toolResult({ ok: false, code: 'run_ended', message: 'This run has ended; open a new one.' }, true));
+    }
+    throw new HttpError(401, 'unauthenticated', 'This run has ended');
+  }
+}
+
+async function handleRpcInner(ctx: PluginContext, run: BotRunHandle, raw: unknown): Promise<HttpResponse> {
   const parsed = McpRequest.safeParse(raw);
   if (!parsed.success) return fail(null, MCP_ERROR_CODES.invalidRequest, 'A JSON-RPC 2.0 request is required');
   const request = parsed.data;

@@ -164,7 +164,8 @@ export type BotPlacement = z.infer<typeof BotPlacement>;
 
 export const BotLimits = z.strictObject({
   sessionMinutes: z.number().int().positive().optional(),
-  timeoutSeconds: z.number().int().positive().optional(),
+  /** At most seven days: a run is closed `failed` past this (plus a grace) by the stale-run reaper, and the column that stores it is an integer. */
+  timeoutSeconds: z.number().int().positive().max(604_800).optional(),
   hops: z.number().int().nonnegative().optional(),
 });
 export type BotLimits = z.infer<typeof BotLimits>;

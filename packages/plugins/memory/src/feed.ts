@@ -62,6 +62,12 @@ interface Planned {
 /** The engine's answers that mean "this payload is wrong" (not "I am down" or "you may not"): worth trying the items singly. */
 const PAYLOAD_STATUSES = new Set([400, 413, 422]);
 
+/** A source that has waited this many passes for a key it never got is dropped. */
+const KEYLESS_MAX_DEFERRALS = 20;
+const KEYLESS_WARN_EVERY_MS = 60 * 60 * 1000;
+/** Process memory: when a workspace's missing-key line was last written. */
+const recentlyWarned = new Map<string, number>();
+
 const backoffMs = (attempts: number): number => Math.min(BACKOFF_CAP_MS, feedTuning().backoffBaseMs * 2 ** Math.max(0, attempts));
 
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err)).slice(0, 300);
@@ -128,13 +134,25 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
     const key = await readWorkspaceKey(tx, row.workspace_id, keys);
     if (key === null) {
       // The handler that marked this source makes the key in its own transaction, which commits with the row; a row without one is not retained
-      // under a key made here (a rollback would orphan what the engine was given). Looked at again shortly.
-      await tx.query(
-        `UPDATE app.memory_feed_pending SET not_before = now() + $3 * interval '1 millisecond' WHERE source_kind = $1 AND source_id = $2`,
-        [row.source_kind, row.source_id, feedTuning().deferMs],
-      );
-      log.warn(`memory: no digest key for workspace ${row.workspace_id}; ${row.source_kind} ${row.source_id} waits`);
-      stats.deferred += 1;
+      // under a key made here (a rollback would orphan what the engine was given). Looked at again shortly — and given up on after
+      // KEYLESS_MAX_DEFERRALS looks (a row that has no key by then never will: its handler's transaction made none), with one warning an hour per
+      // workspace instead of one per row per pass.
+      const attempts = row.attempts + 1;
+      const quiet = recentlyWarned.get(row.workspace_id) !== undefined && rt.now() - (recentlyWarned.get(row.workspace_id) as number) < KEYLESS_WARN_EVERY_MS;
+      if (attempts >= KEYLESS_MAX_DEFERRALS) {
+        await settle(row);
+        stats.dropped += 1;
+      } else {
+        await tx.query(
+          `UPDATE app.memory_feed_pending SET attempts = $3, not_before = now() + $4 * interval '1 millisecond' WHERE source_kind = $1 AND source_id = $2`,
+          [row.source_kind, row.source_id, attempts, feedTuning().deferMs],
+        );
+        stats.deferred += 1;
+      }
+      if (!quiet) {
+        recentlyWarned.set(row.workspace_id, rt.now());
+        log.warn(`memory: no digest key for workspace ${row.workspace_id}: ${row.source_kind} ${row.source_id} ${attempts >= KEYLESS_MAX_DEFERRALS ? 'was dropped after repeated waits' : 'waits'} (further lines of this kind for the workspace are suppressed for an hour)`);
+      }
       continue;
     }
     const decision = decide({

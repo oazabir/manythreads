@@ -21,6 +21,24 @@ export const modelAliasesOf = (model: { aliases?: readonly string[]; fallbacks?:
   ...new Set([...(model?.aliases ?? []), ...(model?.fallbacks ?? [])]),
 ];
 
+/**
+ * One row of a backfill inside a savepoint: a row that raises (a value the column cannot hold, a repo that errors) rolls back to its own savepoint
+ * and is reported; it does not abort the transaction and with it the whole daily job. Returns false when the row failed.
+ */
+async function perRow(tx: PluginTx, label: string, log: { warn(message: string): void } | undefined, fn: () => Promise<void>): Promise<boolean> {
+  await tx.query('SAVEPOINT backfill_row');
+  try {
+    await fn();
+    await tx.query('RELEASE SAVEPOINT backfill_row');
+    return true;
+  } catch (err) {
+    await tx.query('ROLLBACK TO SAVEPOINT backfill_row');
+    await tx.query('RELEASE SAVEPOINT backfill_row');
+    log?.warn(`bots: backfill of ${label} failed and was skipped: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
+
 type BackfillRow = {
   id: string;
   workspace_id: string;
@@ -49,37 +67,39 @@ export async function backfillModelAliases(ctx: PluginContext, tx: PluginTx, log
 
   let filled = 0;
   for (const row of rows) {
-    const path = `bots/${row.slug}/BOT.md`;
-    let content: Uint8Array;
-    try {
-      content = (await repo.blob(tx, row.team_id, path, 'main')).content;
-    } catch (err) {
-      log?.warn(`bots: backfill of ${row.slug}: ${path} is unreadable at main (${err instanceof Error ? err.message : String(err)})`);
-      continue;
-    }
-    // A newer file than the one the row was built from is the loader's to handle (its event is on the way or failed loudly);
-    // projecting a half of it here would leave the row describing two commits.
-    if (createHash('sha256').update(content).digest('hex') !== row.definition_sha) continue;
-    const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
-    if (!parsed.ok) continue;
-    const aliases = modelAliasesOf(parsed.frontmatter.model);
-    if (aliases.length === 0) continue;
+    await perRow(tx, row.slug, log, async () => {
+      const path = `bots/${row.slug}/BOT.md`;
+      let content: Uint8Array;
+      try {
+        content = (await repo.blob(tx, row.team_id, path, 'main')).content;
+      } catch (err) {
+        log?.warn(`bots: backfill of ${row.slug}: ${path} is unreadable at main (${err instanceof Error ? err.message : String(err)})`);
+        return;
+      }
+      // A newer file than the one the row was built from is the loader's to handle (its event is on the way or failed loudly);
+      // projecting a half of it here would leave the row describing two commits.
+      if (createHash('sha256').update(content).digest('hex') !== row.definition_sha) return;
+      const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
+      if (!parsed.ok) return;
+      const aliases = modelAliasesOf(parsed.frontmatter.model);
+      if (aliases.length === 0) return;
 
-    const updated = await tx.query<{ id: string }>(
-      `UPDATE app.bots SET model_aliases = $2::text[], updated_at = now() WHERE id = $1 AND cardinality(model_aliases) = 0 RETURNING id`,
-      [row.id, aliases],
-    );
-    if (updated.rows.length === 0) continue;
-    filled += 1;
-    await ctx.audit.emit(tx, {
-      type: 'bots.bot.loaded',
-      workspaceId: row.workspace_id,
-      teamId: row.team_id,
-      botId: row.id,
-      slug: row.slug,
-      path,
-      definitionSha: row.definition_sha,
-      mayTag: row.may_tag,
+      const updated = await tx.query<{ id: string }>(
+        `UPDATE app.bots SET model_aliases = $2::text[], updated_at = now() WHERE id = $1 AND cardinality(model_aliases) = 0 RETURNING id`,
+        [row.id, aliases],
+      );
+      if (updated.rows.length === 0) return;
+      filled += 1;
+      await ctx.audit.emit(tx, {
+        type: 'bots.bot.loaded',
+        workspaceId: row.workspace_id,
+        teamId: row.team_id,
+        botId: row.id,
+        slug: row.slug,
+        path,
+        definitionSha: row.definition_sha,
+        mayTag: row.may_tag,
+      });
     });
   }
   return filled;
@@ -88,12 +108,13 @@ export async function backfillModelAliases(ctx: PluginContext, tx: PluginTx, log
 /**
  * Fill `run_timeout_seconds` for the bots loaded before migration 0010 (`run_timeout_known = false`): re-read the file at `main` and, only if it
  * is the one the row was loaded from, write the limit it names (or nothing) and mark the row known. Rows whose file is unreadable, newer or
- * invalid stay unknown and are read again tomorrow. At most 200 per pass. Answers how many rows it settled.
+ * invalid stay unknown and are read again tomorrow. At most 200 per pass, chosen at random: a run of unreadable rows cannot starve the ones
+ * behind it. Each row runs in its own savepoint. Answers how many rows it settled.
  */
 export async function backfillRunTimeouts(ctx: PluginContext, tx: PluginTx, log?: { warn(message: string): void }): Promise<number> {
   const rows = (
     await tx.query<BackfillRow>(
-      `SELECT id, workspace_id, team_id, slug, definition_sha, may_tag FROM app.bots WHERE NOT run_timeout_known ORDER BY created_at, id LIMIT 200`,
+      `SELECT id, workspace_id, team_id, slug, definition_sha, may_tag FROM app.bots WHERE NOT run_timeout_known ORDER BY random() LIMIT 200`,
     )
   ).rows;
   if (rows.length === 0) return 0;
@@ -101,22 +122,25 @@ export async function backfillRunTimeouts(ctx: PluginContext, tx: PluginTx, log?
   if (!repo) throw new Error('the repo provider is not registered');
   let settled = 0;
   for (const row of rows) {
-    const path = `bots/${row.slug}/BOT.md`;
-    let content: Uint8Array;
-    try {
-      content = (await repo.blob(tx, row.team_id, path, 'main')).content;
-    } catch (err) {
-      log?.warn(`bots: run-timeout backfill of ${row.slug}: ${path} is unreadable at main (${err instanceof Error ? err.message : String(err)})`);
-      continue;
-    }
-    if (createHash('sha256').update(content).digest('hex') !== row.definition_sha) continue;
-    const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
-    if (!parsed.ok) continue;
-    const updated = await tx.query<{ id: string }>(
-      'UPDATE app.bots SET run_timeout_seconds = $2, run_timeout_known = true WHERE id = $1 AND NOT run_timeout_known RETURNING id',
-      [row.id, parsed.frontmatter.limits?.timeoutSeconds ?? null],
-    );
-    settled += updated.rows.length;
+    await perRow(tx, row.slug, log, async () => {
+      const path = `bots/${row.slug}/BOT.md`;
+      let content: Uint8Array;
+      try {
+        content = (await repo.blob(tx, row.team_id, path, 'main')).content;
+      } catch (err) {
+        log?.warn(`bots: run-timeout backfill of ${row.slug}: ${path} is unreadable at main (${err instanceof Error ? err.message : String(err)})`);
+        return;
+      }
+      if (createHash('sha256').update(content).digest('hex') !== row.definition_sha) return;
+      const parsed = parseBotMd(Buffer.from(content).toString('utf8'));
+      if (!parsed.ok) return;
+      const named = parsed.frontmatter.limits?.timeoutSeconds;
+      const updated = await tx.query<{ id: string }>(
+        'UPDATE app.bots SET run_timeout_seconds = $2, run_timeout_known = true WHERE id = $1 AND NOT run_timeout_known RETURNING id',
+        [row.id, named === undefined ? null : Math.min(named, 604_800)],
+      );
+      settled += updated.rows.length;
+    });
   }
   return settled;
 }

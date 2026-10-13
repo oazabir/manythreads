@@ -594,6 +594,35 @@ describe('when the engine is not there, or not well', () => {
     expect(await drain()).toMatchObject({ retained: 1 });
   });
 
+  it('sources of a keyless workspace warn once an hour, and are given up on after repeated waits', async () => {
+    const saved = KEY;
+    await sys((tx) => tx.query('DELETE FROM app.memory_workspace_keys WHERE workspace_id = $1', [omar.workspaceId]));
+    const ids = [await message(pubChannel, 'Keyless one.'), await message(pubChannel, 'Keyless two.'), await message(pubChannel, 'Keyless three.')];
+    for (const id of ids) await mark('message', id);
+    const lines: string[] = [];
+    const logger: PluginLogger = { info: () => undefined, warn: (m: string) => void lines.push(m) };
+    const base = Date.now() + 10 * 24 * 3_600_000; // far from any other test's clock
+    const at = (offsetMs: number): FeedRuntime => ({ ...runtime(), now: () => base + offsetMs });
+    const due = () => sys((tx) => tx.query('UPDATE app.memory_feed_pending SET not_before = now() WHERE source_id = ANY($1::text[])', [ids]));
+
+    expect(await sys((tx) => drainFeed(ctx, tx, logger, at(0)))).toMatchObject({ considered: 3, deferred: 3 });
+    expect(lines.filter((l) => l.includes('no digest key'))).toHaveLength(1); // three rows, one workspace, one line
+    await due();
+    await sys((tx) => drainFeed(ctx, tx, logger, at(10 * 60_000)));
+    expect(lines.filter((l) => l.includes('no digest key'))).toHaveLength(1); // still inside the hour
+    await due();
+    await sys((tx) => drainFeed(ctx, tx, logger, at(61 * 60_000)));
+    expect(lines.filter((l) => l.includes('no digest key'))).toHaveLength(2);
+    expect(await pendingOf('message', ids[0]!)).toMatchObject({ attempts: 3 });
+
+    // a row that has waited for a key this many times is dropped, not looked at for ever
+    await sys((tx) => tx.query('UPDATE app.memory_feed_pending SET attempts = 19, not_before = now() WHERE source_id = ANY($1::text[])', [ids]));
+    expect(await sys((tx) => drainFeed(ctx, tx, logger, at(62 * 60_000)))).toMatchObject({ considered: 3, dropped: 3, retained: 0 });
+    for (const id of ids) expect(await pendingOf('message', id)).toBeUndefined();
+    expect(stub.calls).toEqual([]);
+    await sys((tx) => tx.query('INSERT INTO app.memory_workspace_keys (workspace_id, key) VALUES ($1, $2)', [omar.workspaceId, saved]));
+  });
+
   it('a team that no longer exists is dropped quietly', async () => {
     const id = await message(pubChannel, 'The team is gone.');
     await mark('message', id);

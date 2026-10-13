@@ -32,12 +32,31 @@ export const EXECUTE_QUEUE = 'approvals.execute';
 /** Lapsed pending approvals and approved calls that never finished are swept every five minutes. */
 export const SWEEP_QUEUE = 'approvals.sweep';
 
-/** `waits`: how many times this call has been put off because the run that asked for it was still going (the job re-queues itself, at most `MAX_WAITS`). */
+/** `waits`: how many times this call has been put off because the run that asked for it was still going (the job re-queues itself until that run's own deadline, see `executeWait`). */
 const Payload = z.strictObject({ approvalId: z.uuid(), waits: z.number().int().min(0).max(1000).optional() });
 
-/** A run a router worker holds is normally stopped before anyone approves; if it is not yet, the call waits ten seconds at a time, for at most five minutes, then ends it. */
+/** A run a router worker holds is normally stopped before anyone approves; if it is not yet, the call waits (ten seconds at a time, then a minute) until that run's own deadline. */
 const WAIT_MS = 10_000;
-const MAX_WAITS = 30;
+/** After the first two minutes of waiting the check is a minute apart: a run with a long budget is not polled thousands of times. */
+const SLOW_AFTER_WAITS = 12;
+const SLOW_WAIT_MS = 60_000;
+/** A run is ended this long after its own deadline (its token's expiry), whatever it is doing: a run that is past its budget is not going to answer. */
+const DEADLINE_GRACE_MS = 30_000;
+/** When a run has no token row to say (it should always have one), this long after its start. */
+const FALLBACK_BUDGET_MS = 15 * 60 * 1000;
+
+/**
+ * What to do with a call whose origin run is still `running`:
+ *   * a run no worker holds (an external client's MCP run) is ended now — nothing else will ever end it;
+ *   * a run a router worker holds is waited for until its OWN deadline (its token expires with its budget, `limits.timeoutSeconds` plus slack): the
+ *     worker is still working, its model may be mid-turn and its reply still to post, and ending it under it would turn that reply into a refusal;
+ *   * past its deadline (plus a grace) it is ended all the same.
+ * `waits` only sets how often the check is repeated.
+ */
+export function executeWait(input: { held: boolean; nowMs: number; deadlineMs: number; waits: number }): { action: 'end' } | { action: 'wait'; delayMs: number } {
+  if (!input.held || input.nowMs >= input.deadlineMs + DEADLINE_GRACE_MS) return { action: 'end' };
+  return { action: 'wait', delayMs: input.waits < SLOW_AFTER_WAITS ? WAIT_MS : SLOW_WAIT_MS };
+}
 
 /** The repo path(s) the call names, which the broker's path guard must see (the same rule the MCP gateway applies at its door). */
 function authorizeContext(input: Record<string, unknown>): CapabilityAuthorizeContext {
@@ -166,15 +185,17 @@ export function registerResumeJob(ctx: PluginContext): void {
       //     of this queue, not a retry: this one finishes, so its "never twice" rule is untouched), and is then ended all the same.
       if (row.run_id) {
         const origin = (
-          await tx.query<{ running: boolean; held: boolean }>(
-            `SELECT (status = 'running' AND ended_at IS NULL) AS running, (channel_id IS NOT NULL OR reply_root_id IS NOT NULL) AS held
-               FROM app.bot_runs WHERE id = $1::uuid`,
-            [row.run_id],
+          await tx.query<{ running: boolean; held: boolean; deadline: Date }>(
+            `SELECT (r.status = 'running' AND r.ended_at IS NULL) AS running, (r.channel_id IS NOT NULL OR r.reply_root_id IS NOT NULL) AS held,
+                    coalesce((SELECT max(t.expires_at) FROM app.mcp_run_tokens t WHERE t.run_id = r.id), r.started_at + $2 * interval '1 millisecond') AS deadline
+               FROM app.bot_runs r WHERE r.id = $1::uuid`,
+            [row.run_id, FALLBACK_BUDGET_MS],
           )
         ).rows[0];
         if (origin?.running === true) {
-          if (origin.held && waits < MAX_WAITS) {
-            await ctx.jobs.enqueue(tx, EXECUTE_QUEUE, { approvalId, waits: waits + 1 }, { runAt: new Date(ctx.runtime.now().getTime() + WAIT_MS), dedupeKey: `approvals-execute:${approvalId}:${waits + 1}` });
+          const plan = executeWait({ held: origin.held, nowMs: ctx.runtime.now().getTime(), deadlineMs: origin.deadline.getTime(), waits });
+          if (plan.action === 'wait') {
+            await ctx.jobs.enqueue(tx, EXECUTE_QUEUE, { approvalId, waits: waits + 1 }, { runAt: new Date(ctx.runtime.now().getTime() + plan.delayMs), dedupeKey: `approvals-execute:${approvalId}:${waits + 1}` });
             return;
           }
           // `stopped`: the run ended waiting for a person, which is what it was doing. Its tokens are revoked here, so nothing is appended after.
@@ -254,9 +275,15 @@ export function registerResumeJob(ctx: PluginContext): void {
       );
       const stuck = await tx.query<{ id: string; workspace_id: string; team_id: string; source: string; tool: string; bot_id: string | null; was: string }>(
         `WITH stuck AS (
-             SELECT id, outcome AS was FROM app.approvals
-              WHERE status = 'approved' AND outcome IN ('queued', 'running')
-                AND coalesce(started_at, decided_at) < now() - make_interval(mins => $1) FOR UPDATE)
+             SELECT a.id, a.outcome AS was FROM app.approvals a
+              WHERE a.status = 'approved' AND a.outcome IN ('queued', 'running')
+                AND coalesce(a.started_at, a.decided_at) < now() - make_interval(mins => $1)
+                -- not one that is waiting, by design, for the run that asked to end (execute re-checks until that run's own deadline, which can
+                -- be longer than the sweep's threshold): while that run is still going the call has not stalled. The reaper ends a run whose
+                -- worker died, and from then on the usual threshold applies.
+                AND NOT (a.run_id IS NOT NULL AND EXISTS (
+                  SELECT 1 FROM app.bot_runs r WHERE r.id = a.run_id AND r.status = 'running' AND r.ended_at IS NULL AND r.started_at > now() - interval '1 day'))
+              FOR UPDATE OF a)
            UPDATE app.approvals a SET outcome = 'failed',
                   outcome_detail = CASE WHEN s.was = 'running'
                     THEN 'It started but never reported back; it may or may not have been made. Check before asking again.'
