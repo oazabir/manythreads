@@ -6,7 +6,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "lint": "eslint . && stylelint \"**/*.css\"",
-    "typecheck": "pnpm -r --parallel typecheck",
+    "typecheck": "pnpm -r --workspace-concurrency=2 typecheck",
     "build": "pnpm -r build",
     "test": "vitest run --project unit --project rls --project events --project schema-compat",
     "test:rls": "vitest run --project rls",
