@@ -469,8 +469,8 @@ describe('app.conversations_mark_shared (P5-17)', () => {
       ).rows[0]!.id;
       await tx.query(
         `INSERT INTO app.answer_shares (workspace_id, message_id, kind, channel_id, shared_by, digest, copy_message_id, kept_count, masked_count, removed_count)
-         VALUES ($1, $2, 'channel', $3, $4, encode(sha256($5::text::bytea), 'hex'), $5, 0, 0, 0) ON CONFLICT DO NOTHING`,
-        [omar.workspaceId, answer, channel, person.personId, message],
+         VALUES ($1, $2, 'channel', $3, $4, encode(sha256($6::text::bytea), 'hex'), $5::uuid, 0, 0, 0) ON CONFLICT DO NOTHING`,
+        [omar.workspaceId, answer, channel, person.personId, message, message],
       );
     });
   const reset = (thread: string): Promise<unknown> =>
