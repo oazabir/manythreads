@@ -109,6 +109,28 @@
   gap: 8px;
 }
 
+/* the end of a list: "Show older" asks for the next page after the cursor */
+.cv-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 14px;
+}
+
+.cv-more-failed {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* a bot that cannot answer right now: the reason stands where the message box would be */
+.cv-blocked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 /* phone: the message box first, the list under it; an open thread has the screen to itself */
 .inbox.cv.narrow {
   grid-template-rows: auto minmax(0, 1fr);

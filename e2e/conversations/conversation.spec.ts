@@ -6,8 +6,9 @@ import { addBot, apiOn, brainMd, channelOf, conversationStackEnv, openChat } fro
 /*
  * Talking to a bot (PLAN P5-16, SPEC §6.2, `[proto §12]`): the conversation view at /t/:team/bots/:botSlug/chat. A person's message goes
  * through the real router; the Hermes runtime is the stand-in of ./fake-hermes.mjs, so a real run is opened for them and the bot's reply is
- * posted into the thread by the platform. The empty state and the send run on both layouts; the rest is a desktop check of who may see what.
- * One stack for the whole file because the conversations build on each other (the person who talked, who may read it, what is shared).
+ * posted into the thread by the platform. Every flow runs on both layouts (phone: the list and the thread take the screen in turn); only the
+ * example-question click is desktop-only. One stack per project for the whole file because the conversations build on each other (the person
+ * who talked, who may read it, what is shared).
  */
 test.describe.configure({ mode: 'serial' });
 
@@ -137,7 +138,6 @@ test('an example question is sent as written, and starts its own thread', async 
 });
 
 test('private by default: a second member sees an empty list and cannot open it, nor can an admin', async ({ browser, playwright, isMobile }) => {
-  test.skip(isMobile, 'desktop layout');
   const nadiaChannel = await channelOf(stack, brainId, 'nadia');
   const root = (
     await stack.sql<{ thread_root_id: string }>(
@@ -146,7 +146,7 @@ test('private by default: a second member sees an empty list and cannot open it,
     )
   )[0]!.thread_root_id;
 
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat', false);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat', isMobile);
   try {
     // Rafi talked to nobody: his own list is empty, whatever Nadia and Priya asked
     await expect(rafi.page.getByTestId('conversation-list-empty')).toBeVisible();
@@ -172,7 +172,6 @@ test('private by default: a second member sees an empty list and cannot open it,
 });
 
 test('Shared lists what the team may open; somebody else’s opens through the shared copy, and a person of another team has no way in', async ({ browser, playwright, isMobile }) => {
-  test.skip(isMobile, 'desktop layout');
   // P5-17 builds the sharing itself (masking, preview, the access event); the data model is what this checks, so the row is arranged
   const nadia = await apiOn(playwright, stack, 'nadia');
   const dev = (await channelsOf(nadia))['dev']!;
@@ -186,7 +185,7 @@ test('Shared lists what the team may open; somebody else’s opens through the s
     [brainId, dev, copy.id],
   );
 
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat?tab=shared', false);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat?tab=shared', isMobile);
   try {
     const row = rafi.page.getByTestId('conversation-row');
     await expect(row).toHaveCount(1);
@@ -194,14 +193,15 @@ test('Shared lists what the team may open; somebody else’s opens through the s
     await expect(row).toContainText(copyText);
     await row.click();
     await expect(rafi.page.getByTestId('thread-view')).toContainText(copyText);
-    // Mine is still empty for him
+    // Mine is still empty for him (on a phone the thread has the screen: back to the list first)
+    if (isMobile) await rafi.page.getByTestId('conversation-back').click();
     await rafi.page.getByTestId('conversation-tab-mine').click();
     await expect(rafi.page.getByTestId('conversation-list-empty')).toBeVisible();
   } finally {
     await rafi.close();
   }
 
-  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat?tab=shared', false);
+  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat?tab=shared', isMobile);
   try {
     await expect(mine.page.getByTestId('conversation-row').getByTestId('conversation-label')).toHaveText('Shared with the team');
   } finally {
@@ -209,7 +209,7 @@ test('Shared lists what the team may open; somebody else’s opens through the s
   }
 
   // Sameera is on another team: the bot is not hers to talk to, and its conversations are not hers to list
-  const sameera = await openChat(browser, playwright, stack, 'sameera', '/t/engineering/bots/brain/chat?tab=shared', false);
+  const sameera = await openChat(browser, playwright, stack, 'sameera', '/t/engineering/bots/brain/chat?tab=shared', isMobile);
   try {
     await expect(sameera.page.getByText('You do not have access')).toBeVisible();
     await expect(sameera.page.getByTestId('conversation-row')).toHaveCount(0);
@@ -219,7 +219,6 @@ test('Shared lists what the team may open; somebody else’s opens through the s
 });
 
 test('Channel mentions lists the threads where the person named the bot — theirs only', async ({ browser, playwright, isMobile }) => {
-  test.skip(isMobile, 'desktop layout');
   const nadia = await apiOn(playwright, stack, 'nadia');
   const dev = (await channelsOf(nadia))['dev']!;
   const text = '@brain do we have the QA batch 7 numbers?';
@@ -227,7 +226,7 @@ test('Channel mentions lists the threads where the person named the bot — thei
   await nadia.ctx.dispose();
   await waitForReply('nadia', playwright, dev, mention.id);
 
-  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat?tab=mentions', false);
+  const mine = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat?tab=mentions', isMobile);
   try {
     const row = mine.page.getByTestId('conversation-row');
     await expect(row).toHaveCount(1);
@@ -241,7 +240,7 @@ test('Channel mentions lists the threads where the person named the bot — thei
     await mine.close();
   }
 
-  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat?tab=mentions', false);
+  const rafi = await openChat(browser, playwright, stack, 'rafi', '/t/engineering/bots/brain/chat?tab=mentions', isMobile);
   try {
     await expect(rafi.page.getByTestId('conversation-list-empty')).toContainText('No mentions yet');
   } finally {

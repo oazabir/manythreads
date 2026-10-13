@@ -4,7 +4,7 @@ import type { BotRun, BotSummary } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Alert, Avatar, Notice } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
-import { botMdPath } from './api';
+import { NO_CONVERSATION, botMdPath } from './api';
 import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, writeDefinition, type SaveFailure } from './store';
 import { TabPanel } from './tabs';
 
@@ -114,7 +114,11 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           </p>
         </div>
         <div className="b-head-act">
-          {bot.status === 'active' ? <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="open-conversation">Talk to {bot.name}</Link> : null}
+          {bot.status !== 'active' ? null : bot.conversational ? (
+            <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="open-conversation">Talk to {bot.name}</Link>
+          ) : (
+            <button type="button" className="btn s" disabled title={NO_CONVERSATION} data-testid="open-conversation">Talk to {bot.name}</button>
+          )}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
         </div>

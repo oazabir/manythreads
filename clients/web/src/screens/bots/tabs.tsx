@@ -113,7 +113,11 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
   return (
     <>
     <Block title="Triggers" count={`${triggers.length} ${triggers.length === 1 ? 'trigger' : 'triggers'}`}>
-      {triggers.length === 0 ? <NotSet>No triggers: this bot runs only when someone talks to it in a conversation.</NotSet> : null}
+      {triggers.length === 0 ? (
+        <NotSet>No triggers: this bot never runs, and nobody can talk to it. Add a conversation trigger to let people ask it things.</NotSet>
+      ) : !triggers.some((t) => t.type === 'conversation') ? (
+        <NotSet>No conversation trigger: nobody can talk to this bot. Add one to let people ask it things.</NotSet>
+      ) : null}
       {triggers.map((t, i) => (
         <div className="b-trg" key={`${t.type}-${String(i)}`} data-testid="trigger-row" data-trigger={t.type}>
           <span className="b-trg-type">{t.type}</span>
@@ -148,7 +152,7 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
                 <TextField label="Event" value={t.event ?? ''} readOnly={!canEdit} onChange={(event) => replace(i, { ...t, event: event === '' ? undefined : event })} hint="For example release.published." />
               </div>
             ) : null}
-            {t.type === 'conversation' ? <div className="b-hint">Present on every bot people may talk to.</div> : null}
+            {t.type === 'conversation' ? <div className="b-hint">Lets people talk to this bot in a conversation; without it, nobody can.</div> : null}
             {t.type === 'task_assigned' ? <div className="b-hint">Runs when a task on the board is assigned to this bot.</div> : null}
           </div>
           {canEdit ? <button type="button" className="btn s" aria-label={`Remove the ${t.type} trigger`} onClick={() => set(triggers.filter((_x, j) => j !== i))}>Remove</button> : null}
@@ -612,7 +616,7 @@ export function AuditTab({ bot, runs, slug }: TabProps) {
     <>
       <Block title="Runs" count={`${runs.length} newest`}>
         {runs.length === 0 ? (
-          <NotSet>No runs yet. A run is recorded here the moment this bot answers in a conversation, is mentioned or is triggered.</NotSet>
+          <NotSet>No runs yet. A run is recorded here the moment this bot is mentioned or is triggered. What someone asks it in a conversation is private to them, so those runs are listed only to the person who asked.</NotSet>
         ) : (
           runs.map((r) => (
             <div className="b-runrow" key={r.id} data-testid="run-row">

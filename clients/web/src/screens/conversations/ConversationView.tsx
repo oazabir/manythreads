@@ -45,6 +45,15 @@ const EMPTY: Record<ConversationScope, (bot: string, slug: string) => { title: s
 /** How long a list is allowed to be stale while a conversation is open: replies refresh it sooner (the open thread's newest message). */
 const STALE_POLL_MS = 15_000;
 
+/** What "Show older" has loaded after the list's own first page: the pages that follow its cursor, and where the next one starts. */
+interface Older {
+  items: ConversationListItem[];
+  next: string | null;
+  loading: boolean;
+  failed: boolean;
+}
+const NO_OLDER: Older = { items: [], next: null, loading: false, failed: false };
+
 export function ConversationView() {
   const { team = '', botSlug = '' } = useParams();
   const [params, setParams] = useSearchParams();
@@ -54,9 +63,58 @@ export function ConversationView() {
   const scope = scopeOf(params.get('tab'));
   const thread = params.get('thread');
   const opened = useQuery(`conversation-open:${team}:${botSlug}`, () => openConversation(team, botSlug));
+  // A bot that cannot answer right now (turned off, invalid, no conversation trigger) answers `open` with 409. The person's past
+  // conversations and what the team shared are still theirs to read, so the view stays; only the message box is replaced by the reason.
+  const blocked = opened.status === 'error' && isApiError(opened.error) && opened.error.status === 409 ? opened.error : null;
+  const bot = opened.status === 'ok' ? opened.data : null;
+  // the name and role of such a bot come from the roster, since `open` did not answer them
+  const roster = useQuery(`conversation-bot:${team}:${botSlug}:${blocked ? 'blocked' : 'open'}`, () => (blocked ? fetchBots(team) : Promise.resolve(null)));
+  const known = roster.status === 'ok' ? roster.data?.bots.find((b) => b.slug === botSlug) : undefined;
+  const botName = bot?.botName ?? known?.name ?? botSlug;
+  const botRole = bot?.botRole ?? known?.role ?? '';
   const [tick, setTick] = useState(0);
   const lists = useQuery(`conversations:${team}:${botSlug}:${scope}:${String(tick)}`, () => fetchConversations(team, botSlug, scope));
-  useHeaderTopic(opened.status === 'ok' ? opened.data.botRole : null);
+  useHeaderTopic(bot || known ? botRole : null);
+
+  // "Show older": the list answers its newest page and a cursor; each press asks for one more page after it. The pages are fetched again from
+  // the first page's cursor whenever that moves (a new conversation pushes the last of the first page past it), so the list never skips a row.
+  const firstCursor = lists.status === 'ok' ? lists.data.nextCursor : undefined;
+  const [olderPages, setOlderPages] = useState(0);
+  const [older, setOlder] = useState<Older>(NO_OLDER);
+  useEffect(() => {
+    setOlderPages(0);
+    setOlder(NO_OLDER);
+  }, [team, botSlug, scope]);
+  useEffect(() => {
+    if (olderPages === 0) {
+      setOlder(NO_OLDER);
+      return;
+    }
+    if (firstCursor === undefined) return;
+    if (firstCursor === null) {
+      setOlder(NO_OLDER);
+      return;
+    }
+    let live = true;
+    setOlder((o) => ({ ...o, loading: true, failed: false }));
+    void (async () => {
+      try {
+        let cursor: string | null = firstCursor;
+        const items: ConversationListItem[] = [];
+        for (let i = 0; i < olderPages && cursor !== null; i += 1) {
+          const page = await fetchConversations(team, botSlug, scope, cursor);
+          items.push(...page.items);
+          cursor = page.nextCursor;
+        }
+        if (live) setOlder({ items, next: cursor, loading: false, failed: false });
+      } catch {
+        if (live) setOlder((o) => ({ ...o, loading: false, failed: true }));
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [team, botSlug, scope, firstCursor, olderPages]);
 
   // The list follows the open conversation: its newest message (the bot's answer arrives) refreshes it, and so does coming back to the tab.
   const timeline = useTimeline(threadKey(thread ?? ''));
@@ -78,7 +136,12 @@ export function ConversationView() {
   }, [refresh]);
 
   const channelNames = useMemo(() => feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, ''))), [feed.groups]);
-  const items = lists.status === 'ok' ? lists.data.items : [];
+  const items = useMemo(() => {
+    const first = lists.status === 'ok' ? lists.data.items : [];
+    const seen = new Set(first.map((i) => `${i.source}:${i.threadRootId}`));
+    return [...first, ...(olderPages > 0 ? older.items.filter((i) => !seen.has(`${i.source}:${i.threadRootId}`)) : [])];
+  }, [lists, older.items, olderPages]);
+  const more = olderPages === 0 ? firstCursor !== undefined && firstCursor !== null : older.next !== null;
   const selected = thread === null ? undefined : items.find((i) => i.threadRootId === thread);
   const path = `/t/${team}/bots/${botSlug}/chat`;
 
@@ -100,7 +163,7 @@ export function ConversationView() {
 
   const [failed, setFailed] = useState<{ body: string; attachments: FileSummary[]; message: string } | null>(null);
   const [sending, setSending] = useState(false);
-  const channelId = opened.status === 'ok' ? opened.data.channelId : null;
+  const channelId = bot?.channelId ?? null;
   const start = useCallback(
     async (body: string, attachments: FileSummary[]): Promise<void> => {
       if (channelId === null || sending) return;
@@ -122,22 +185,21 @@ export function ConversationView() {
   );
 
   if (opened.status === 'loading') return <div className="view-empty" aria-busy="true" data-testid="conversation-loading" />;
-  if (opened.status === 'error') return <CannotTalk error={opened.error} slug={team} />;
-  const bot = opened.data;
+  if (opened.status === 'error' && blocked === null) return <CannotTalk error={opened.error} slug={team} />;
   const showList = !narrow || thread === null;
   const showMain = !narrow || thread !== null;
-  const empty = EMPTY[scope](bot.botName, botSlug);
+  const empty = EMPTY[scope](botName, botSlug);
 
   return (
-    <div className={`inbox cv ${narrow ? 'narrow' : ''} ${narrow && thread !== null ? 'cv-thread' : ''}`} data-testid="conversation-view" data-bot={botSlug} data-channel-id={bot.channelId}>
+    <div className={`inbox cv ${narrow ? 'narrow' : ''} ${narrow && thread !== null ? 'cv-thread' : ''}`} data-testid="conversation-view" data-bot={botSlug} data-channel-id={bot?.channelId ?? ''}>
       {showList ? (
         <div className="inl" data-landmark="conversation-list">
           <header className="inh cv-head">
             <h2 className="inh-title cv-title">
-              <Link to={{ pathname: path, search: scope === 'mine' ? '' : `?tab=${scope}` }} data-testid="conversation-home">{bot.botName}</Link>
+              <Link to={{ pathname: path, search: scope === 'mine' ? '' : `?tab=${scope}` }} data-testid="conversation-home">{botName}</Link>
               <span className="cv-sub"> · conversations with you</span>
             </h2>
-            <div className="tabs2" role="tablist" aria-label={`${bot.botName} conversations`}>
+            <div className="tabs2" role="tablist" aria-label={`${botName} conversations`}>
               {TABS.map((t) => (
                 <button key={t.id} type="button" role="tab" aria-selected={scope === t.id} data-testid={`conversation-tab-${t.id}`} className={scope === t.id ? 'on' : ''} onClick={() => go({ tab: t.id })}>
                   {t.label}
@@ -158,11 +220,23 @@ export function ConversationView() {
               <p className="view-empty-body">{empty.body}</p>
             </div>
           ) : (
-            <ul className="inlist" role="listbox" aria-label={`${TABS.find((t) => t.id === scope)?.label ?? ''} conversations`}>
-              {items.map((item) => (
-                <ConversationRow key={`${item.source}:${item.threadRootId}`} item={item} botName={bot.botName} on={item.threadRootId === thread} onOpen={() => go({ thread: item.threadRootId })} who={people.byPerson(item.personId)?.name ?? 'Someone'} />
-              ))}
-            </ul>
+            <>
+              <ul className="inlist" role="listbox" aria-label={`${TABS.find((t) => t.id === scope)?.label ?? ''} conversations`}>
+                {items.map((item) => (
+                  <ConversationRow key={`${item.source}:${item.threadRootId}`} item={item} botName={botName} on={item.threadRootId === thread} onOpen={() => go({ thread: item.threadRootId })} who={people.byPerson(item.personId)?.name ?? 'Someone'} />
+                ))}
+              </ul>
+              {more || older.failed ? (
+                <div className="cv-more">
+                  {more ? (
+                    <button type="button" className="btn s" data-testid="conversation-older" disabled={older.loading} onClick={() => setOlderPages((n) => n + 1)}>
+                      {older.loading ? 'Loading…' : 'Show older'}
+                    </button>
+                  ) : null}
+                  {older.failed ? <span className="cv-more-failed" role="alert">Could not load older conversations.</span> : null}
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
@@ -175,43 +249,55 @@ export function ConversationView() {
             </button>
           ) : null}
           {thread !== null ? (
-            <ThreadBody key={thread} rootId={thread} variant="main" channelId={selected?.channelId ?? bot.channelId} awaiting={bot.botName} />
+            <ThreadBody key={thread} rootId={thread} variant="main" channelId={selected?.channelId ?? bot?.channelId ?? null} awaiting={blocked ? null : botName} replyBlocked={blocked ? blocked.message : null} />
           ) : (
             <div className="cv-start" data-testid="conversation-start">
               <div className="cv-intro">
-                <Avatar name={bot.botName} kind="agent" />
+                <Avatar name={botName} kind="agent" />
                 <div>
-                  <h2 className="cv-name" data-testid="conversation-bot">{bot.botName}</h2>
-                  <p className="cv-role">{bot.botRole || 'Ask it anything it is here for.'}</p>
+                  <h2 className="cv-name" data-testid="conversation-bot">{botName}</h2>
+                  <p className="cv-role">{botRole || 'Ask it anything it is here for.'}</p>
                 </div>
               </div>
-              <div className="cv-chips" data-testid="prompt-chips" data-source={bot.promptSource}>
-                {bot.prompts.map((p) => (
-                  <button key={p} type="button" className="cv-chip" disabled={sending} data-testid="prompt-chip" onClick={() => void start(p, [])}>
-                    {p}
-                  </button>
-                ))}
-              </div>
+              {bot ? (
+                <div className="cv-chips" data-testid="prompt-chips" data-source={bot.promptSource}>
+                  {bot.prompts.map((p) => (
+                    <button key={p} type="button" className="cv-chip" disabled={sending} data-testid="prompt-chip" onClick={() => void start(p, [])}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {blocked ? (
+                <div className="cv-blocked" role="status" data-testid="conversation-blocked" data-code={blocked.code}>
+                  <Alert>{blocked.message}</Alert>
+                  <p className="cv-hint">Your earlier conversations with {botName} and the ones shared with the team are listed beside this.</p>
+                </div>
+              ) : null}
               {failed ? (
                 <div className="cv-failed" data-testid="conversation-send-failed">
                   <Alert>{failed.message}</Alert>
                   <button type="button" className="btn s" onClick={() => void start(failed.body, failed.attachments)}>Send again</button>
                 </div>
               ) : null}
-              <div className="cv-compose">
-                <Composer
-                  draftKey={`conversation:${bot.channelId}`}
-                  placeholder={`Ask ${bot.botName} anything…`}
-                  label={`Message ${bot.botName}`}
-                  channelId={bot.channelId}
-                  threadRootId={null}
-                  people={people}
-                  channelNames={channelNames}
-                  onSend={(body, attachments) => void start(body, attachments)}
-                  autoFocus
-                />
-              </div>
-              <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>
+              {bot ? (
+                <>
+                  <div className="cv-compose">
+                    <Composer
+                      draftKey={`conversation:${bot.channelId}`}
+                      placeholder={`Ask ${bot.botName} anything…`}
+                      label={`Message ${bot.botName}`}
+                      channelId={bot.channelId}
+                      threadRootId={null}
+                      people={people}
+                      channelNames={channelNames}
+                      onSend={(body, attachments) => void start(body, attachments)}
+                      autoFocus
+                    />
+                  </div>
+                  <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>
+                </>
+              ) : null}
             </div>
           )}
         </div>

@@ -3,6 +3,7 @@ import type { BotSummary } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
+import { NO_CONVERSATION } from './api';
 import { useBots } from './store';
 
 /*
@@ -45,7 +46,11 @@ function Row({ bot, slug }: { bot: BotSummary; slug: string }) {
       <div className="b-vis">{bot.visibility === 'workspace' ? 'shared with the workspace' : 'this team'}</div>
       <div><State bot={bot} /></div>
       <div className="b-act">
-        {bot.status === 'active' ? <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="bot-talk">Talk</Link> : null}
+        {bot.status !== 'active' ? null : bot.conversational ? (
+          <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="bot-talk">Talk</Link>
+        ) : (
+          <button type="button" className="btn s" disabled title={NO_CONVERSATION} data-testid="bot-talk">Talk</button>
+        )}
         <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}?tab=identity`} data-testid="bot-configure">Configure</Link>
       </div>
     </div>

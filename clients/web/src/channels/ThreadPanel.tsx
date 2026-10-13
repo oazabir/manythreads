@@ -44,13 +44,15 @@ function Linked({ rootId }: { rootId: string }) {
  * A thread: the root message, whether the person follows it, the replies and a composer. In the right panel (beside the channel) and
  * in the main area of the Threads inbox. Opened from a link it needs no channel in view: the threads API says where the thread lives.
  */
-export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null }: {
+export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null, replyBlocked = null }: {
   rootId: string;
   variant: 'panel' | 'main';
   /** The channel the thread lives in, when the caller knows it and the URL does not say (a bot conversation has no `/c/:channel`). */
   channelId?: string | null;
   /** The name of whoever is expected to answer: while the newest message is the reader's own and is recent, the thread says it is on it. */
   awaiting?: string | null;
+  /** Why nobody can reply here right now (a bot that is turned off): shown in place of the composer, which is not drawn. */
+  replyBlocked?: string | null;
 }) {
   const { team, teamSlug } = useShell();
   const slug = team?.slug ?? teamSlug;
@@ -213,7 +215,9 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         {typing ? <p className="typing" aria-live="polite">{typing}</p> : null}
       </div>
       {info.status === 'ok' && !canReply ? <p className="read-only">You can read this thread but not reply.</p> : null}
-      {canReply ? (
+      {canReply && replyBlocked !== null ? (
+        <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>
+      ) : canReply ? (
         <div className="rpf">
           <Composer
             draftKey={`thread:${rootId}`}
