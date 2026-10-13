@@ -106,16 +106,27 @@ async function checkAnswerCopy(tx: PluginTx, copyOf: string, copy: AnswerPayload
       throw invalid(`meta.answer.citations: ${String(c.n)} is not the original citation`);
     }
   }
-  // the lineage: an entry per citation the copy has, the original's but for its label and age (re-read) and with the bot's quote kept or gone
+  // the lineage: an entry per citation the copy has (and for none it has not), the original's but for its label and age (re-read) and with the
+  // bot's quote kept or gone; a masked entry is exactly the entry of a masked citation, and the masked citation says what kind of source it was
   const lineageOf = new Map(original.lineage.map((l) => [l.n, l] as const));
+  const citationOf = new Map(copy.citations.map((c) => [c.n, c] as const));
   for (const l of copy.lineage) {
     const was = lineageOf.get(l.n);
     if (!was) throw invalid('meta.answer.lineage names a citation the original has not');
+    const there = citationOf.get(l.n);
+    if (!there) throw invalid('meta.answer.lineage names a citation the copy does not have');
+    if ((l.masked === true) !== (there.kind === 'masked')) throw invalid(`meta.answer.lineage: ${String(l.n)} is masked in one place and not in the other`);
     if (l.masked === true) {
       if (l.label !== '' || l.at !== null || l.snippet !== null) throw invalid('meta.answer.lineage: a masked entry carries no label, age or quote');
     } else if (l.kind !== was.kind || (l.snippet !== null && l.snippet !== was.snippet)) {
       throw invalid(`meta.answer.lineage: ${String(l.n)} is not the original entry`);
     }
+  }
+  for (const c of copy.citations) {
+    if (c.kind !== 'masked') continue;
+    const was = originals.get(c.n);
+    const kind = was === undefined ? null : was.kind === 'masked' ? was.source : was.kind;
+    if (c.source !== kind) throw invalid(`meta.answer.citations: ${String(c.n)} says it was a ${c.source}`);
   }
   // "Sources reached": the original's entries (a label may be read again), none added
   const reached = new Set(original.sourcesReached.map((s) => stable({ ...s, label: null })));

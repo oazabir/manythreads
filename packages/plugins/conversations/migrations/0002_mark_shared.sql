@@ -11,7 +11,9 @@
 --   * the channel belongs to the conversation's own team AND is not private: a copy posted to another team's channel, or into a private room of
 --     the team, is not "shared with the team" (teammates outside the room would see a row they cannot open, and learn that a share happened),
 --     so it leaves the conversation private. The copy is posted all the same.
---   * the mark follows the copy: deleting it (a trigger below) makes the conversation private again.
+--   * the copy is a copy OF THIS CONVERSATION's answer: the answer plugin's share log (`app.answer_shares`, written by `answer_share_record`
+--     just before this is called) says the caller shared an answer of that thread as exactly that message;
+--   * the mark follows the copy: deleting it (a trigger below) makes the conversation private again, or points it at an older live copy.
 -- Answers false when nothing was marked (no such conversation of the caller's, not the bot's team's channel), and refuses (42501) anything else.
 CREATE FUNCTION app.conversations_mark_shared(p_thread_root uuid, p_channel uuid, p_copy uuid) RETURNS boolean
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
@@ -32,6 +34,12 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'the copy is not your message in a channel you may post in' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM app.answer_shares s JOIN app.messages am ON am.id = s.message_id
+     WHERE s.kind = 'channel' AND s.copy_message_id = p_copy AND s.shared_by = v_me AND am.thread_root_id = p_thread_root
+  ) THEN
+    RAISE EXCEPTION 'the copy is not a copy of an answer of this conversation' USING ERRCODE = 'insufficient_privilege';
+  END IF;
   UPDATE app.conversations c
      SET visibility = 'shared', shared_to = p_channel, shared_root_id = p_copy, shared_by = app.actor(), shared_at = now()
    WHERE c.thread_root_id = p_thread_root AND c.person_id = v_me AND c.workspace_id = v_ws
@@ -48,10 +56,29 @@ CREATE INDEX conversations_shared_root ON app.conversations (shared_root_id) WHE
 CREATE FUNCTION app.conversations_copy_deleted() RETURNS trigger
   LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
 AS $$
+DECLARE
+  c app.conversations;
+  r record;
 BEGIN
-  UPDATE app.conversations
-     SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL
-   WHERE shared_root_id = NEW.id;
+  FOR c IN SELECT * FROM app.conversations WHERE shared_root_id = NEW.id LOOP
+    -- another live copy of an answer of the same conversation, in a channel the whole team reads, keeps it shared; none makes it private
+    SELECT s.copy_message_id, s.channel_id, cm.author_id INTO r
+      FROM app.answer_shares s
+      JOIN app.messages am ON am.id = s.message_id AND am.thread_root_id = c.thread_root_id
+      JOIN app.messages cm ON cm.id = s.copy_message_id AND cm.deleted_at IS NULL AND cm.id <> NEW.id
+      JOIN app.channels ch ON ch.id = cm.channel_id AND ch.kind = 'channel' AND NOT ch.private AND ch.team_id = c.team_id
+     WHERE s.kind = 'channel' AND s.shared_by = c.person_id
+     ORDER BY s.created_at DESC
+     LIMIT 1;
+    IF FOUND THEN
+      UPDATE app.conversations SET shared_to = r.channel_id, shared_root_id = r.copy_message_id, shared_by = r.author_id, shared_at = now()
+       WHERE thread_root_id = c.thread_root_id;
+    ELSE
+      UPDATE app.conversations
+         SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL
+       WHERE thread_root_id = c.thread_root_id;
+    END IF;
+  END LOOP;
   RETURN NULL;
 END
 $$;

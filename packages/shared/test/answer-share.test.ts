@@ -25,6 +25,15 @@ import { uuid } from './fixtures.ts';
 // Masking an answer for the readers of a copy (PLAN P5-17, SPEC §6.3): the pure rules. The database decides which citations a place's readers
 // may open (answer migration 0003, tested in test/rls); this is what is built from its verdicts — and the proof that a copy is only ever less.
 
+/** A small deterministic generator (a 32-bit LCG with `Math.imul`, so the multiplication never leaves 32 bits). */
+const lcg = (seed: number): (() => number) => {
+  let s = seed >>> 0;
+  return () => {
+    s = (Math.imul(s, 1_664_525) + 1_013_904_223) >>> 0;
+    return s >>> 8;
+  };
+};
+
 const BODY = 'The deploy waits for the Monday window [1]. Leadership also has plans [2] that I cannot repeat. Your own question is [3].';
 
 const original = (over: Record<string, unknown> = {}): AnswerPayload =>
@@ -192,14 +201,15 @@ describe('removeClaims', () => {
     expect(removeClaims('It is 3.5 percent [1] today.', new Set([1])).body).toBe('');
   });
 
-  it('a marker group written after the stop and a space belongs to the sentence before it, never to the next one', () => {
-    expect(removeClaims('Revenue grew 4%. [2] Next claim.', new Set([2])).body).toBe('Next claim.');
-    expect(removeClaims('Revenue grew 4%. [1], [2] Next claim.', new Set([2])).body).toBe('Next claim.');
-    expect(removeClaims('Revenue grew 4%. [1][2]\nNext claim.', new Set([1])).body).toBe('Next claim.');
-    // at the end of the text the group goes with its sentence
+  it('a marker group written after the stop and a space takes the sentence before it AND the one after it (it may be a prefix): one neighbour is the price', () => {
+    expect(removeClaims('Revenue grew 4%. [2] Costs fell. Keep this.', new Set([2])).body).toBe('Keep this.');
+    expect(removeClaims('Revenue grew 4%. [1], [2] Costs fell. Keep this.', new Set([2])).body).toBe('Keep this.');
+    expect(removeClaims('Revenue grew 4%. [1][2]\nCosts fell. Keep this.', new Set([1])).body).toBe('Keep this.');
+    // at the end of the text there is no neighbour to take
     expect(removeClaims('Keep this. Revenue grew 4%. [2]', new Set([2])).body).toBe('Keep this.');
-    // and before the stop, as ever
+    // before the stop, or with no space, the group is the sentence's own and nothing else goes
     expect(removeClaims('Keep this. Revenue grew [1], [2]. Next claim.', new Set([2])).body).toBe('Keep this. Next claim.');
+    expect(removeClaims('Keep this. Revenue grew.[2] Next claim.', new Set([2])).body).toBe('Keep this. Next claim.');
     // a marker group that is not removed leaves its sentence alone
     expect(removeClaims('Revenue grew 4%. [1] Next claim [2].', new Set([2])).body).toBe('Revenue grew 4%. [1]');
   });
@@ -208,9 +218,9 @@ describe('removeClaims', () => {
     expect(removeClaims('The deal closes for $4M, according to\nthe board [2]. The rest stays.', new Set([2])).body).toBe('The rest stays.');
     expect(removeClaims('Intro.\n\n- Revenue closes for $4M\n  according to the board [2].\n- Other point [1].', new Set([2])).body).toBe('Intro.\n\n- Other point [1].');
     expect(removeClaims('> The board said so\n> in writing [2].\n\nAfter.', new Set([2])).body).toBe('After.');
-    // a marker at the start of a line of a paragraph: the sentence before it (a stop, then the line break) or, with none before it, the one it opens
+    // a marker at the start of a block opens its own sentence; one after a stop and a line break is the previous sentence's and the next one's
     expect(removeClaims('[2] The first claim here.\nThe second claim.', new Set([2])).body).toBe('The second claim.');
-    expect(removeClaims('Fine so far.\n[2] A hard-wrapped marker.', new Set([2])).body).toBe('A hard-wrapped marker.');
+    expect(removeClaims('Fine so far.\n[2] A hard-wrapped claim.\nStays put.', new Set([2])).body).toBe('Stays put.');
   });
 
   it('fails toward removing more: no break at a lower-case word, a digit or an abbreviation, so a claim is never cut short', () => {
@@ -232,9 +242,10 @@ describe('removeClaims', () => {
   });
 
   it('reports the words it took out, per sentence', () => {
-    const r = removeClaims('Keep this. Revenue grew 4%. [2] Next claim [1].', new Set([2]));
-    expect(r.removed).toEqual(['Revenue grew 4%. [2]']);
-    expect(r.sentences).toBe(1);
+    const r = removeClaims('Keep this. Revenue grew 4%. [2] Costs fell [1]. And this stays.', new Set([2]));
+    expect(r.removed).toEqual(['Revenue grew 4%. [2]', 'Costs fell [1].']);
+    expect(r.sentences).toBe(2);
+    expect(r.body).toBe('Keep this. And this stays.');
   });
 
   it('leaves the text alone when nothing is removed, and when the number is not in it', () => {
@@ -248,18 +259,52 @@ describe('removeClaims', () => {
     expect(removeClaims(body, new Set([2])).body).toBe('Intro text.\n\n- first point [1]\n- third point [3]\n\nClosing.');
   });
 
-  it('does not touch fenced code: a [2] in it is text', () => {
-    const body = 'Run it [2].\n\n```\nlist[2] = 1;\n```\n\nDone [1].';
-    expect(removeClaims(body, new Set([2])).body).toBe('```\nlist[2] = 1;\n```\n\nDone [1].');
+  it('fenced code that holds a removed marker goes whole; code that does not is left exactly as it was', () => {
+    expect(removeClaims('Figures:\n```\nRevenue 4.2M [2]\n```\nAfter.', new Set([2])).body).toBe('Figures:\nAfter.');
+    expect(removeClaims('Run it [1].\n\n```\nlist[3] = 1;\n\n\n  indented();\n```\n\nDone [2].', new Set([2])).body).toBe('Run it [1].\n\n```\nlist[3] = 1;\n\n\n  indented();\n```');
+    expect(removeClaims('~~~\nx [2]\n~~~\nKeep [1].', new Set([2])).body).toBe('Keep [1].');
+  });
+
+  it('a fence with no closing line is prose: it shields nothing after it', () => {
+    expect(removeClaims('```js\nCode.\n\nA claim [2]. Another claim [1].', new Set([2])).body).toBe('```js\nCode.\n\nAnother claim [1].');
+    // (the stray fence line is part of the sentence it starts: it goes with the claim, which is the side to err on)
+    expect(removeClaims('```\nA claim [2].\nKeep [1].', new Set([2])).body).toBe('Keep [1].');
+    // an odd number of fences: the last one is the stray
+    expect(removeClaims('```\ncode\n```\n\nA claim [2].\n\n```\nKeep [1].', new Set([2])).body).toBe('```\ncode\n```\n\n```\nKeep [1].');
+  });
+
+  it('an inline code span is one piece, and a removed marker in it takes its sentence', () => {
+    expect(removeClaims('Set `x. y [2]` first. Keep [1].', new Set([2])).body).toBe('Keep [1].');
+    expect(removeClaims('Call `a. b` then go [2]. Keep [1].', new Set([2])).body).toBe('Keep [1].');
+  });
+
+  it('white space of every kind is white space: NBSP, thin and zero-width spaces', () => {
+    expect(removeClaims('Revenue grew.\u00a0[2] Costs fell. Keep.', new Set([2])).body).toBe('Keep.');
+    expect(removeClaims('Revenue grew.\u2009[2]\u202fCosts fell. Keep.', new Set([2])).body).toBe('Keep.');
+    expect(removeClaims('Revenue grew.\u200b[2] Costs fell. Keep.', new Set([2])).body).toBe('Keep.');
+    expect(removeClaims('A claim [2].\u00a0Keep this.', new Set([2])).body).toBe('Keep this.');
+  });
+
+  it('every marker form carries its numbers: lists, ranges, spaces, full-width and lenticular brackets', () => {
+    for (const marker of ['[1, 2]', '[2, 3]', '[1-3]', '[ 2 ]', '［2］', '【2】', '[1;2]', '[2–4]']) {
+      expect(removeClaims(`A claim ${marker}. Keep [5].`, new Set([2])).body, marker).toBe('Keep [5].');
+    }
+    // a group of numbers none of which is removed is left alone, and so is a range that stops short
+    expect(removeClaims('A claim [1, 3]. Keep [5].', new Set([2])).body).toBe('A claim [1, 3]. Keep [5].');
+    expect(removeClaims('A claim [3-5]. Keep [5].', new Set([2])).body).toBe('A claim [3-5]. Keep [5].');
+    // four digits are a year, not a citation
+    expect(removeClaims('In [2024] it grew. Keep [5].', new Set([2])).body).toBe('In [2024] it grew. Keep [5].');
+  });
+
+  it('scripts written without spaces end a sentence at the stop; Urdu and Hindi stops end one too', () => {
+    expect(removeClaims('收入增长了四个百分点[2]。成本下降了。保持不变[1]。', new Set([2])).body).toBe('成本下降了。保持不变[1]。');
+    expect(removeClaims('यह एक दावा है [2]। यह रहेगा [1]।', new Set([2])).body).toBe('यह रहेगा [1]।');
+    expect(removeClaims('یہ ایک دعویٰ ہے [2]۔ یہ رہے گا [1]۔', new Set([2])).body).toBe('یہ رہے گا [1]۔');
   });
 
   it('is a deletion only: for any input the result is a subsequence of it', () => {
     const alphabet = ['a', 'b', ' ', '.', '!', '?', '[', ']', '1', '2', '3', '\n', '-', '*', '>', '`', '#', '. ', '[1]', '[2]', '。'];
-    let seed = 7;
-    const next = (): number => {
-      seed = (seed * 1_103_515_245 + 12_345) & 0x7fffffff;
-      return seed;
-    };
+    const next = lcg(7);
     for (let round = 0; round < 400; round += 1) {
       let text = '';
       const len = 1 + (next() % 60);
@@ -270,19 +315,79 @@ describe('removeClaims', () => {
     }
   });
 
-  it('never leaves a removed marker behind outside fenced code, whatever the layout', () => {
-    const alphabet = ['a', 'B', ' ', '.', '!', '?', '[', ']', '1', '2', '3', '\n', '\n\n', '- ', '> ', '# ', '| ', ', ', '. ', '[1]', '[2]', '[1], [2]', '。', 'e.g. ', '4%. ', '(', ')', '*'];
-    let seed = 11;
-    const next = (): number => {
-      seed = (seed * 1_103_515_245 + 12_345) & 0x7fffffff;
-      return seed;
-    };
-    for (let round = 0; round < 600; round += 1) {
+  // The claim side of the guarantee. Each unit of the generated answer is a sentence with a UNIQUE token; a unit "carries" the removed citation
+  // (number 2) or does not. The assertions: the token of every carrying unit is ABSENT; the token of every unit that neither carries nor sits next
+  // to one that does is PRESENT (a neighbour may go: a marker group after a stop may be a prefix); the text is a subsequence of the original.
+  // (A property test that only checks "[2] is gone" passes for a removal that deleted the innocent neighbour and kept the claim.)
+  type Unit = { text: string; carries: boolean; sep: string };
+  const unitFor = (i: number, pick: number): { text: string; carries: boolean; atLineStart?: boolean } => {
+    const t = `Tok${String(i)}`;
+    const kinds: Array<{ text: string; carries: boolean; atLineStart?: boolean }> = [
+      { text: `${t} says something plain.`, carries: false },
+      { text: `${t} says something [1].`, carries: false },
+      { text: `${t} says something [2].`, carries: true },
+      { text: `${t} says something [1, 2].`, carries: true },
+      { text: `${t} says something [1-3].`, carries: true },
+      { text: `${t} says something [ 2 ].`, carries: true },
+      { text: `${t} says something ［2］.`, carries: true },
+      { text: `${t} says something 【2】.`, carries: true },
+      { text: `${t} says something. [2]`, carries: true },
+      { text: `${t} says something.[2]`, carries: true },
+      { text: `${t} says something. [1], [2]`, carries: true },
+      { text: `[2] ${t} says something.`, carries: true },
+      { text: `${t} wraps over\ntwo lines [2].`, carries: true },
+      { text: `${t} wraps over\ntwo lines [1].`, carries: false },
+      { text: `- ${t} item [2].`, carries: true, atLineStart: true },
+      { text: `- ${t} item [3].`, carries: false, atLineStart: true },
+      { text: `\`\`\`\n${t} code [2]\n\`\`\``, carries: true, atLineStart: true },
+      { text: `\`\`\`\n${t} code [1]\n\`\`\``, carries: false, atLineStart: true },
+      { text: `${t} says \`a. b [2]\` inline.`, carries: true },
+      { text: `${t} 事実です[2]。`, carries: true },
+      { text: `${t} 事実です[1]。`, carries: false },
+      { text: `${t} यह तथ्य है [2]।`, carries: true },
+    ];
+    return kinds[pick % kinds.length]!;
+  };
+
+  it('removes the token of every claim that carries a removed marker and keeps the other tokens (barring the neighbour), in every layout', () => {
+    const seps = [' ', '\n', ' ', ' ', ' ', ' ', '\n\n'];
+    const next = lcg(20_261_013);
+    for (let round = 0; round < 500; round += 1) {
+      const count = 2 + (next() % 7);
+      const units: Unit[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const u = unitFor(round * 10 + i, next());
+        let sep = seps[next() % seps.length]!;
+        // a list item and a fenced block start a line (and a fence ends one)
+        if (u.atLineStart) sep = '\n\n';
+        const before = units[units.length - 1];
+        if (before !== undefined && /```$|^- /.test(before.text) && sep !== '\n\n') sep = '\n\n';
+        units.push({ text: u.text, carries: u.carries, sep });
+      }
+      const text = units.map((u, i) => (i === 0 ? '' : u.sep) + u.text).join('');
+      const out = removeClaims(text, new Set([2])).body;
+      const tokenOf = (i: number): string => /Tok\d+/.exec(units[i]!.text)![0];
+      units.forEach((u, i) => {
+        const near = (units[i - 1]?.carries ?? false) || (units[i + 1]?.carries ?? false);
+        const present = new RegExp(`${tokenOf(i)}(?!\\d)`).test(out);
+        const ctx = JSON.stringify({ text, out, token: tokenOf(i) });
+        if (u.carries) expect(present, `the claim must be gone: ${ctx}`).toBe(false);
+        else if (!near) expect(present, `an unrelated sentence was lost: ${ctx}`).toBe(true);
+      });
+      expect(isSubsequence(out, text), JSON.stringify({ text, out })).toBe(true);
+    }
+  });
+
+  it('never leaves a removed marker behind outside kept code, whatever the layout', () => {
+    const alphabet = ['a', 'B', ' ', '.', '!', '?', '[', ']', '1', '2', '3', '\n', '\n\n', '- ', '> ', '# ', '| ', ', ', '. ', '[1]', '[2]', '[1], [2]', '。', 'e.g. ', '4%. ', '(', ')', '*', ' ', ' ', '［2］', '【2】', '[1-3]', '`', '```\n'];
+    const next = lcg(11);
+    for (let round = 0; round < 800; round += 1) {
       let text = '';
       const len = 1 + (next() % 80);
       for (let i = 0; i < len; i += 1) text += alphabet[next() % alphabet.length]!;
       const out = removeClaims(text, new Set([2])).body;
-      expect(/\[2\]/.test(out), JSON.stringify({ text, out })).toBe(false);
+      // what is left holds no [2], in any marker form, except inside a fenced block that was kept (which holds none either: it would have gone)
+      expect(/\[\s*2\s*\]|［2］|【2】|\[1-3\]/.test(out), JSON.stringify({ text, out })).toBe(false);
       expect(isSubsequence(out, text), JSON.stringify({ text, out })).toBe(true);
     }
   });

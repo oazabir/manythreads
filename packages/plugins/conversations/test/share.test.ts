@@ -526,7 +526,19 @@ describe('what a share does to the conversation, and what a copy can wake', () =
     const jobsFor = (message: string) =>
       w.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.jobs WHERE queue = 'runtime-hermes.run' AND dedupe_key = $1", [`runtime-hermes:${brain.botId}:${message}`])).rows[0]!.n);
     await until(async () => ((await jobsFor(typed)) === 1 ? true : null), 30_000, 'the typed mention to fire a run');
-    // the router decides in outbox order: the copy was posted first, so its decision has been made
+    // not "it came first": wait for the copy's own event to have been delivered to every subscriber (the router among them), then look
+    const delivered = (message: string) =>
+      w.system(async (tx) => {
+        const rows = (
+          await tx.query<{ done: boolean }>(
+            `SELECT (o.done_at IS NOT NULL) AS done FROM app.outbox o JOIN app.events e ON e.id = o.event_id
+              WHERE e.type = 'channel.message.posted' AND e.payload ->> 'messageId' = $1`,
+            [message],
+          )
+        ).rows;
+        return rows.length > 0 && rows.every((r) => r.done);
+      });
+    await until(async () => ((await delivered(copy)) ? true : null), 30_000, 'the copy’s event to be delivered');
     expect(await jobsFor(copy)).toBe(0);
   });
 });

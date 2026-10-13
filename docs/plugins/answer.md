@@ -159,7 +159,7 @@ that is not the caller's own answer is a **404**, for an admin and a teammate al
 | list targets | `GET .../answer/targets` (conversations) | team channels the caller may post in (the picker) |
 | preview | `POST .../answer/preview` `{ target, remove }` (conversations) | the copy exactly as it would be posted, per citation `kept` / `masked` / `removed`, counts, `audience` (`team` or `wider`), and its `digest` |
 | share | `POST .../answer/share` `{ targetChannelId, remove, digest }` (conversations) | posts the masked copy into the channel **as the sharer**; 201, or 200 `replayed: true` for the same share again |
-| save as page | `POST .../answer/page` `{ remove, digest }` (pages) | writes the same copy as `pages/answers/<date>-<slug>-<id8>.md` through the one repo writer; 200 `created: false` when this answer was saved before |
+| save as page | `POST .../answer/page` `{ remove, digest }` (pages) | writes the same copy as `pages/answers/<slug>-<id8>.md` through the one repo writer; 200 `created: false` when this answer was saved before |
 | hand to a bot | `POST .../answer/handoff` `{ botId }` (conversations) | the answer, as the person's own message in their own conversation with another bot |
 
 **The rules** (each one has a test):
@@ -184,8 +184,12 @@ that is not the caller's own answer is a **404**, for an admin and a teammate al
    again that it is a subsequence of the original. The unit is a *block* (a paragraph with its hard-wrapped lines, a list item with its wrapped
    lines, a quote, a heading; a table row goes whole), not a line. A sentence ends at a stop followed by white space, unless the next word starts
    in lower case or with a digit or the stop closes an abbreviation (`e.g.`, `U.S.`, `Dr.`, an initial): where the extent is ambiguous the claim is
-   never left behind, at the price of an innocent neighbour going with it. A marker group written after the stop (`claim. [2] Next.`, `[1], [2]`)
-   belongs to the sentence before it. A removed marker that survives a cut takes its whole block. The preview lists the words that go (`removedText`)
+   never left behind, at the price of an innocent neighbour going with it. A marker group written after the stop and a space (`claim. [2] Next.`,
+   `[1], [2]`) belongs to the sentence before it **and**, when text follows, to the one after it (it may be a prefix): both go. Markers are `[2]`,
+   `[1, 2]`, `[1-3]`, `[ 2 ]`, `［2］` and `【2】`, and a group counts as removed when any number in it is (white space includes NBSP, thin and
+   zero-width spaces; scripts written without spaces, and the Urdu and Hindi stops, end a sentence at the stop). A fenced block or an inline code
+   span that holds a removed marker goes whole; a fence with no closing line is ordinary prose and shields nothing after it. A removed marker that
+   survives a cut takes its whole block. The preview lists the words that go (`removedText`)
    and the text as it will be posted. Nothing can add a word, a citation, a source or a chip (chips are dropped: a follow-up or a hand-off is the
    asker's own next step).
 5. **What the person confirms is what is posted.** The preview returns a sha-256 of (target, answer, copy); share and save take it back and the
@@ -224,7 +228,7 @@ re-judged for new readers; deleting it and sharing again is the remedy). (b) The
 conversation run, which only the asker can read (bots 0011) and which opens nothing; making it nullable would change a shared schema for no
 reader's gain. (c) The page is saved once: a second save of the same answer, on any day and with any cut, answers with the existing page and its
 counts, and edits to it are the Files screen's. (d) `answer_channel_reach` reads a channel's whole audience per preview and share (the cost grows
-with the channel's readers; the routes are limited to 120 and 30 a minute). (e) Segmentation of stored model text is a heuristic that errs toward
+with the channel's readers; the routes are limited to 120 and 30 a minute). (e) The client draws only `[n]` as a superscript: `[1, 2]`, `[1-3]` and the full-width forms are removed by the share and shown as text. (f) Segmentation of stored model text is a heuristic that errs toward
 removing more; a sentence the sharer wants kept next to a removed claim can be lost, and the preview says exactly which words go.
 
 **Not done here.** The Drive-specific masked source (a person's connection) is phase 8: until `person:*` reads write citable sources, a

@@ -29,38 +29,86 @@ export interface ClaimRemoval {
   removed: string[];
 }
 
-const TERMINATORS = new Set(['.', '!', '?', '…', '。', '！', '？', '؟']);
+const TERMINATORS = new Set(['.', '!', '?', '…', '。', '！', '？', '؟', '۔', '।', '॥']);
+/** Stops of scripts that are written without a space after them: the sentence ends there whatever follows. */
+const UNSPACED_STOPS = new Set(['。', '！', '？']);
 /** What may close a sentence right after its terminator: quotes, brackets and emphasis marks that belong to it. */
-const CLOSERS = new Set(['"', "'", ')', ']', '”', '’', '»', '*', '_', '`', '~']);
+const CLOSERS = new Set(['"', "'", ')', ']', '”', '’', '»', '*', '_', '`', '~', '」', '』', '）', '］', '】']);
 /** Words whose stop does not end a sentence (lower-cased, without the stop). One letter is always an initial. */
 const ABBREVIATIONS = new Set(['dr', 'mr', 'ms', 'mrs', 'vs', 'st', 'prof', 'inc', 'ltd', 'etc', 'approx', 'fig', 'cf', 'al', 'eg', 'ie', 'jr', 'sr']);
 const SNIPPET = 400;
+const MARKER_OPEN: Readonly<Record<string, string>> = { '[': ']', '［': '］', '【': '】' };
+const NO_NUMBERS: ReadonlySet<number> = new Set();
 
 const isDigit = (ch: string | undefined): boolean => ch !== undefined && ch >= '0' && ch <= '9';
-const isWs = (ch: string | undefined): boolean => ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n' || ch === ' ' || ch === '　';
+/** White space of every kind that reaches a reader as a gap: the ASCII ones, NBSP, the Unicode spaces, and the zero-width characters. */
+const isWs = (ch: string | undefined): boolean => {
+  if (ch === undefined) return false;
+  const c = ch.charCodeAt(0);
+  return (
+    c === 0x20 || (c >= 0x09 && c <= 0x0d) || c === 0xa0 || c === 0x1680 || (c >= 0x2000 && c <= 0x200d) || c === 0x2028 || c === 0x2029 ||
+    c === 0x202f || c === 0x205f || c === 0x2060 || c === 0x3000 || c === 0xfeff
+  );
+};
 const isLower = (ch: string): boolean => ch === ch.toLowerCase() && ch !== ch.toUpperCase();
 const isLetter = (ch: string): boolean => ch.toLowerCase() !== ch.toUpperCase();
 
-/** `[n]` at `i` (one to three digits): its number and the index after the closing bracket, or null. */
-function markerAt(text: string, i: number): { n: number; end: number } | null {
-  if (text[i] !== '[') return null;
+/**
+ * A marker group at `i`: `[n]`, `[a, b]`, `[a-b]`, `[ n ]`, `［n］`, `【n】` (numbers of one to three digits, at most 40 characters in all).
+ * `hit` says whether any number of it (any number of a range) is in `removed`.
+ */
+function markerAt(text: string, i: number, removed: ReadonlySet<number>): { end: number; hit: boolean } | null {
+  const close = MARKER_OPEN[text[i]!];
+  if (close === undefined) return null;
+  const limit = Math.min(text.length, i + 40);
   let j = i + 1;
-  let n = 0;
-  let digits = 0;
-  while (digits < 3 && isDigit(text[j])) {
-    n = n * 10 + (text.charCodeAt(j) - 48);
+  let hit = false;
+  for (;;) {
+    while (j < limit && isWs(text[j])) j += 1;
+    let a = 0;
+    let digits = 0;
+    while (digits < 3 && j < limit && isDigit(text[j])) {
+      a = a * 10 + (text.charCodeAt(j) - 48);
+      j += 1;
+      digits += 1;
+    }
+    if (digits === 0) return null;
+    let b = a;
+    while (j < limit && isWs(text[j])) j += 1;
+    const dash = text[j];
+    if (dash === '-' || dash === '–' || dash === '—' || dash === '~') {
+      j += 1;
+      while (j < limit && isWs(text[j])) j += 1;
+      b = 0;
+      digits = 0;
+      while (digits < 3 && j < limit && isDigit(text[j])) {
+        b = b * 10 + (text.charCodeAt(j) - 48);
+        j += 1;
+        digits += 1;
+      }
+      if (digits === 0) return null;
+      while (j < limit && isWs(text[j])) j += 1;
+    }
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    for (const r of removed) {
+      if (r >= lo && r <= hi) {
+        hit = true;
+        break;
+      }
+    }
+    const c = text[j];
+    if (c === close) return { end: j + 1, hit };
+    if (j >= limit || (c !== ',' && c !== '，' && c !== '、' && c !== ';')) return null;
     j += 1;
-    digits += 1;
   }
-  if (digits === 0 || text[j] !== ']') return null;
-  return { n, end: j + 1 };
 }
 
 /** Is there a marker at `i`, or after the horizontal white space and line breaks that start there? */
 function markerAfterSpace(text: string, i: number): boolean {
   let k = i;
   while (k < text.length && isWs(text[k])) k += 1;
-  return markerAt(text, k) !== null;
+  return markerAt(text, k, NO_NUMBERS) !== null;
 }
 
 /** The length of a line's leading marks: indentation, quote marks, a list bullet or number, a heading mark. */
@@ -113,6 +161,15 @@ function closesAbbreviation(text: string, i: number): boolean {
   return ABBREVIATIONS.has(word.toLowerCase());
 }
 
+/** Does `text` hold a marker group of a removed citation? */
+function holdsMarker(text: string, removed: ReadonlySet<number>): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    if (MARKER_OPEN[text[i]!] === undefined) continue;
+    if (markerAt(text, i, removed)?.hit === true) return true;
+  }
+  return false;
+}
+
 /** The text of one block without the sentences that carry a removed marker. */
 function dropSentences(text: string, removed: ReadonlySet<number>): { text: string; dropped: string[] } {
   const n = text.length;
@@ -120,7 +177,7 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
   const dropped: string[] = [];
   let start = 0;
   let hit = false;
-  const flush = (end: number): void => {
+  const flush = (end: number, carry: boolean): void => {
     if (hit) {
       const said = text.slice(start, end).replace(/\s+/g, ' ').trim();
       dropped.push(said.length <= SNIPPET ? said : `${said.slice(0, SNIPPET - 1)}…`);
@@ -128,15 +185,29 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
       out += text.slice(start, end);
     }
     start = end;
-    hit = false;
+    // a removed marker group written after a stop and a space may be the prefix of what follows: that sentence goes with it
+    hit = carry;
   };
   let i = 0;
   while (i < n) {
     const ch = text[i]!;
-    if (ch === '[') {
-      const m = markerAt(text, i);
+    if (ch === '`') {
+      // an inline code span is one piece: its stops end nothing, and a removed marker in it takes the sentence
+      let r = 1;
+      while (text[i + r] === '`') r += 1;
+      const closeAt = text.indexOf('`'.repeat(r), i + r);
+      if (closeAt < 0) {
+        i += r;
+        continue;
+      }
+      if (holdsMarker(text.slice(i + r, closeAt), removed)) hit = true;
+      i = closeAt + r;
+      continue;
+    }
+    if (MARKER_OPEN[ch] !== undefined) {
+      const m = markerAt(text, i, removed);
       if (m !== null) {
-        if (removed.has(m.n)) hit = true;
+        if (m.hit) hit = true;
         i = m.end;
       } else {
         i += 1;
@@ -149,16 +220,23 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
     }
     // the stop, then whatever belongs to the sentence after it: more stops, closers, a marker group (`[1][2]`, `[1], [2]`, `. [2]`)
     let j = i + 1;
+    let spaced = false;
+    let carry = false;
+    let last = ch;
     while (j < n) {
       const c = text[j]!;
       if (TERMINATORS.has(c) || CLOSERS.has(c)) {
+        if (TERMINATORS.has(c)) last = c;
         j += 1;
         continue;
       }
-      if (c === '[') {
-        const m = markerAt(text, j);
+      if (MARKER_OPEN[c] !== undefined) {
+        const m = markerAt(text, j, removed);
         if (m === null) break;
-        if (removed.has(m.n)) hit = true;
+        if (m.hit) {
+          hit = true;
+          if (spaced) carry = true;
+        }
         j = m.end;
         continue;
       }
@@ -167,10 +245,11 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
         continue;
       }
       if (isWs(c)) {
-        // white space, then a marker: the marker is this sentence's (the model writes `claim. [2]`)
+        // white space, then a marker: the marker is this sentence's (the model writes `claim. [2]`) — and maybe the next one's prefix
         let k = j;
         while (k < n && isWs(text[k])) k += 1;
-        if (markerAt(text, k) !== null) {
+        if (markerAt(text, k, NO_NUMBERS) !== null) {
+          spaced = true;
           j = k;
           continue;
         }
@@ -182,7 +261,13 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
       continue;
     }
     if (!isWs(text[j])) {
-      i = j; // "3.5", "a.b": a stop inside a word is not the end of anything
+      if (UNSPACED_STOPS.has(last)) {
+        // a script written without spaces: the sentence ends at the stop whatever follows
+        flush(j, carry);
+        i = j;
+      } else {
+        i = j; // "3.5", "a.b": a stop inside a word is not the end of anything
+      }
       continue;
     }
     let k = j;
@@ -197,20 +282,17 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
       i = k;
       continue;
     }
-    flush(k);
+    flush(k, carry);
     i = k;
   }
-  flush(n);
+  flush(n, false);
   return { text: out, dropped };
 }
 
-/** Does `text` still hold a marker of a removed citation? */
-function holdsMarker(text: string, removed: ReadonlySet<number>): boolean {
-  for (let i = text.indexOf('['); i >= 0; i = text.indexOf('[', i + 1)) {
-    const m = markerAt(text, i);
-    if (m !== null && removed.has(m.n)) return true;
-  }
-  return false;
+/** The mark of a fence line (a line that opens or closes a fenced block), or null. */
+function fenceMark(line: string): string | null {
+  const t = line.trimStart();
+  return t.startsWith('```') ? '```' : t.startsWith('~~~') ? '~~~' : null;
 }
 
 /**
@@ -219,31 +301,41 @@ function holdsMarker(text: string, removed: ReadonlySet<number>): boolean {
 export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimRemoval {
   if (removed.size === 0 || !holdsMarker(body, removed)) return { body, sentences: 0, removed: [] };
 
-  // pass 1: the structure. Raw lines (blank, fenced code), table rows, and blocks of prose (a paragraph, a list item, a quote, a heading)
+  // pass 1: the structure. Raw lines (blank), fenced blocks, table rows, and blocks of prose (a paragraph, a list item, a quote, a heading)
   type Block = { kind: 'block'; prefix: string; first: string; rest: string[]; raw: string[] };
-  type Seg = { kind: 'raw'; line: string } | { kind: 'row'; line: string } | Block;
+  type Seg = { kind: 'raw'; line: string } | { kind: 'row'; line: string } | { kind: 'fence'; lines: string[] } | Block;
   const segs: Seg[] = [];
   let cur: Block | null = null;
-  let fence: string | null = null;
-  for (const line of body.split('\n')) {
+  const lines = body.split('\n');
+  for (let li = 0; li < lines.length; li += 1) {
+    const line = lines[li]!;
     const trimmed = line.trimStart();
-    const mark = trimmed.startsWith('```') ? '```' : trimmed.startsWith('~~~') ? '~~~' : null;
-    if (fence !== null) {
-      segs.push({ kind: 'raw', line });
-      if (mark === fence) fence = null;
-      continue;
+    const mark = fenceMark(line);
+    if (mark !== null) {
+      // a fence is a fence only when something closes it: an opener with no closing line is a line of prose and shields nothing after it
+      let close = -1;
+      for (let k = li + 1; k < lines.length; k += 1) {
+        if (fenceMark(lines[k]!) === mark) {
+          close = k;
+          break;
+        }
+      }
+      if (close >= 0) {
+        if (cur !== null) {
+          segs.push(cur);
+          cur = null;
+        }
+        segs.push({ kind: 'fence', lines: lines.slice(li, close + 1) });
+        li = close;
+        continue;
+      }
     }
-    if (mark !== null || line.trim() === '' || trimmed.startsWith('|')) {
+    if (line.trim() === '' || trimmed.startsWith('|')) {
       if (cur !== null) {
         segs.push(cur);
         cur = null;
       }
-      if (mark !== null) {
-        fence = mark;
-        segs.push({ kind: 'raw', line });
-      } else {
-        segs.push(line.trim() === '' ? { kind: 'raw', line } : { kind: 'row', line });
-      }
+      segs.push(line.trim() === '' ? { kind: 'raw', line } : { kind: 'row', line });
       continue;
     }
     const cut = prefixLength(line);
@@ -262,13 +354,26 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
   }
   if (cur !== null) segs.push(cur);
 
-  // pass 2: each block loses the sentences that carry a removed marker (a table row goes whole)
+  // pass 2: each block loses the sentences that carry a removed marker (a table row and a fenced block go whole)
   const out: string[] = [];
+  const fenced = new Set<number>();
   const said: string[] = [];
   let touched = false;
   for (const seg of segs) {
     if (seg.kind === 'raw') {
       out.push(seg.line);
+      continue;
+    }
+    if (seg.kind === 'fence') {
+      if (holdsMarker(seg.lines.join('\n'), removed)) {
+        said.push(seg.lines.join(' ').replace(/\s+/g, ' ').trim().slice(0, SNIPPET));
+        touched = true;
+      } else {
+        for (const l of seg.lines) {
+          fenced.add(out.length);
+          out.push(l);
+        }
+      }
       continue;
     }
     if (seg.kind === 'row') {
@@ -298,20 +403,11 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
   }
   if (!touched) return { body, sentences: 0, removed: [] };
 
-  // paragraphs that lost all their lines leave runs of blank lines: one is enough (outside fenced code, where nothing was touched)
+  // paragraphs that lost all their lines leave runs of blank lines: one is enough (never inside the code that was kept)
   const squeezed: string[] = [];
-  let inFence: string | null = null;
   let blanks = 0;
-  for (const line of out) {
-    const trimmed = line.trimStart();
-    const mark = trimmed.startsWith('```') ? '```' : trimmed.startsWith('~~~') ? '~~~' : null;
-    if (inFence !== null) {
-      squeezed.push(line);
-      if (mark === inFence) inFence = null;
-      continue;
-    }
-    if (mark !== null) {
-      inFence = mark;
+  for (const [index, line] of out.entries()) {
+    if (fenced.has(index)) {
       blanks = 0;
       squeezed.push(line);
       continue;

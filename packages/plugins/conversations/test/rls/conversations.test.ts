@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createAppPool, createSystemPool, withActor, withSystem, type Actor, type Tx } from '@manythreads/kernel';
 import {
+  answerMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
   conversationsMigrationSource,
@@ -8,9 +9,11 @@ import {
   createTestDatabase,
   dropTestDatabase,
   explainRlsViolations,
+  filesMigrationSource,
   findPerRowPolicyCalls,
   personaActor,
   personas,
+  repoGitMigrationSource,
   TEAM_IDS,
   teamsMigrationSource,
   testClient,
@@ -78,7 +81,17 @@ const botSees = (actorId: string, runId: string | undefined, perm: 'read' | 'pos
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, conversationsMigrationSource],
+    // the sharing door reads the answer plugin's share log (`app.answer_shares`), whose functions read files and the repo index
+    sources: [
+      testKernelMigrationSource,
+      teamsMigrationSource,
+      channelsMigrationSource,
+      filesMigrationSource,
+      repoGitMigrationSource,
+      botsMigrationSource,
+      conversationsMigrationSource,
+      answerMigrationSource,
+    ],
   });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);
@@ -445,6 +458,21 @@ describe('app.conversations_mark_shared (P5-17)', () => {
   const stateOf = (thread: string) =>
     sys(async (tx) => (await tx.query<{ visibility: string; shared_to: string | null; shared_root_id: string | null; shared_by: string | null }>(
       'SELECT visibility, shared_to, shared_root_id, shared_by FROM app.conversations WHERE thread_root_id = $1', [thread])).rows[0]!);
+  /** The log line `answer_share_record` writes when a person shares an answer of this conversation as `message` (the thing the door checks). */
+  const shareLine = (message: string, channel: string, person: Persona = priya): Promise<unknown> =>
+    sys(async (tx) => {
+      const answer = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id) VALUES ($1, $2, $3, 'An answer', 'An answer', $4) RETURNING id`,
+          [omar.workspaceId, chat, botActorId, root],
+        )
+      ).rows[0]!.id;
+      await tx.query(
+        `INSERT INTO app.answer_shares (workspace_id, message_id, kind, channel_id, shared_by, digest, copy_message_id, kept_count, masked_count, removed_count)
+         VALUES ($1, $2, 'channel', $3, $4, encode(sha256($5::text::bytea), 'hex'), $5, 0, 0, 0) ON CONFLICT DO NOTHING`,
+        [omar.workspaceId, answer, channel, person.personId, message],
+      );
+    });
   const reset = (thread: string): Promise<unknown> =>
     sys((tx) => tx.query(`UPDATE app.conversations SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL WHERE thread_root_id = $1`, [thread]));
 
@@ -471,6 +499,8 @@ describe('app.conversations_mark_shared (P5-17)', () => {
     });
     copy = await say(teamChannel, priya.actorId, 'A masked copy');
     otherTeamCopy = await say(otherTeamChannel, priya.actorId, 'A masked copy elsewhere');
+    await shareLine(copy, teamChannel);
+    await shareLine(otherTeamCopy, otherTeamChannel);
   });
 
   it('marks the asker’s own conversation shared, through a copy that is theirs, in a channel of the bot’s team', async () => {
@@ -480,8 +510,12 @@ describe('app.conversations_mark_shared (P5-17)', () => {
   });
 
   it('refuses everybody but the asker, a copy that is not theirs, and a channel they cannot post in', async () => {
-    // somebody else's conversation is theirs to change in no way: nothing is marked
-    expect(await mark(nadia, root, teamChannel, await say(teamChannel, nadia.actorId, 'Nadia’s own message'))).toBe(false);
+    // somebody else's conversation is theirs to change in no way: nothing is marked, even with a message of their own and a log line of their own
+    const nadias = await say(teamChannel, nadia.actorId, 'Nadia’s own message');
+    await shareLine(nadias, teamChannel, nadia);
+    expect(await code(mark(nadia, root, teamChannel, nadias))).toBe('42501');
+    // and a message of the caller's own that was never shared from this conversation is no copy of it
+    expect(await code(mark(priya, root, teamChannel, await say(teamChannel, priya.actorId, 'Priya’s own, unrelated message')))).toBe('42501');
     expect((await stateOf(root)).visibility).toBe('private');
     // a message that is not the caller's own
     expect(await code(mark(priya, root, teamChannel, await say(teamChannel, nadia.actorId, 'Not Priya’s')))).toBe('42501');
@@ -507,17 +541,26 @@ describe('app.conversations_mark_shared (P5-17)', () => {
     );
     await sys((tx) => tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2)', [room, priya.personId]));
     const roomCopy = await say(room, priya.actorId, 'A masked copy in a room');
+    await shareLine(roomCopy, room);
     expect(await mark(priya, root, room, roomCopy)).toBe(false);
     expect((await stateOf(root)).visibility).toBe('private');
   });
 
-  it('deleting the copy makes the conversation private again, and not before', async () => {
+  it('deleting the copy makes the conversation private again, and not before; an older live copy takes the mark over', async () => {
+    const older = await say(teamChannel, priya.actorId, 'An older copy');
+    await shareLine(older, teamChannel);
+    expect(await mark(priya, root, teamChannel, older)).toBe(true);
     expect(await mark(priya, root, teamChannel, copy)).toBe(true);
+    expect((await stateOf(root)).shared_root_id).toBe(copy);
     // a message that is not the copy being deleted changes nothing
     const other = await say(teamChannel, nadia.actorId, 'Something else');
     await sys((tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [other]));
-    expect((await stateOf(root)).visibility).toBe('shared');
+    expect((await stateOf(root)).shared_root_id).toBe(copy);
+    // the newest copy goes: the conversation is still shared, through the older one that is live
     await sys((tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [copy]));
+    expect(await stateOf(root)).toMatchObject({ visibility: 'shared', shared_to: teamChannel, shared_root_id: older, shared_by: priya.actorId });
+    // the last one goes: private again
+    await sys((tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [older]));
     expect(await stateOf(root)).toEqual({ visibility: 'private', shared_to: null, shared_root_id: null, shared_by: null });
   });
 
