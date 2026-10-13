@@ -291,7 +291,7 @@ export function ConversationView() {
                     people={people}
                     channelNames={channelNames}
                     onSend={(body, attachments) => void start(body, attachments)}
-                    autoFocus
+                    autoFocus={!narrow}
                   />
                 </div>
                 <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>

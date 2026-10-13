@@ -194,7 +194,11 @@ test('Shared lists what the team may open; somebody else’s opens through the s
     await row.click();
     await expect(rafi.page.getByTestId('thread-view')).toContainText(copyText);
     // Mine is still empty for him (on a phone the thread has the screen: back to the list first)
-    if (isMobile) await rafi.page.getByTestId('conversation-back').click();
+    if (isMobile) {
+      await rafi.page.getByTestId('conversation-back').click();
+      // the message box takes its place above the list: click the tab once the layout has settled under it
+      await expect(rafi.page.getByRole('textbox', { name: 'Message Brain' })).toBeVisible();
+    }
     await rafi.page.getByTestId('conversation-tab-mine').click();
     await expect(rafi.page.getByTestId('conversation-list-empty')).toBeVisible();
   } finally {
