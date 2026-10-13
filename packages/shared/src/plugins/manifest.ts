@@ -22,6 +22,9 @@ export const EXTENSION_POINTS = [
   'provider.repo',
   // The one handler for `needsApproval` (P5-20): other plugins ask it for an approval instead of writing the rows themselves.
   'provider.approvals',
+  // The one path a channel message is written on (P5-18): a plugin that finishes a bot's reply with more than text (the Answer) posts through it,
+  // so the permission, thread rules, events, push, unread counters and mentions are the ones every message gets. Registered by `channels`.
+  'provider.messages',
   'command.register',
   'trigger.register',
   'component.register',

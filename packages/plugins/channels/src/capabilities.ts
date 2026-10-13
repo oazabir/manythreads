@@ -1,5 +1,7 @@
-import type { PluginTx } from '@manythreads/sdk';
+import type { MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
+import { AnswerPayload } from '@manythreads/shared';
 import { z } from 'zod';
+import { invalid } from './http.ts';
 import { postChannelMessage, type Deps } from './service.ts';
 
 // What a bot may do with channel messages (SPEC §7.1 lists `messages.*` among a bot's native capabilities; PLAN P5-10). A
@@ -40,4 +42,35 @@ export function registerMessageCapabilities(deps: Deps): void {
     });
     return { ok: true, messageId: posted.id, channelId: posted.channelId, threadRootId: posted.threadRootId };
   });
+}
+
+/**
+ * What the `messages` provider accepts as `meta` (PLAN P5-18): the platform's own bookkeeping, validated here so a plugin cannot store a
+ * payload the clients would not read. `answer` is an `AnswerPayload` (the answer plugin stamps it), `runId` the bot run that wrote the message.
+ */
+const ProviderMeta = z.strictObject({ answer: AnswerPayload.optional(), runId: z.uuid().optional() });
+
+/**
+ * The `messages` provider: how a plugin posts a message with more than text. It is the same `postChannelMessage` the route and the capability
+ * call, so a message made this way is indistinguishable from any other except for its `meta` — and it is not a capability, so no model can be
+ * granted it and call it with a payload of its own (docs/plugins/answer.md).
+ */
+export function registerMessageProvider(deps: Deps): void {
+  const provider: MessageProvider = {
+    id: 'channels',
+    async post(tx: PluginTx, input: ProviderPostInput): Promise<MessagePosted> {
+      const body = z.string().min(1).max(40_000).safeParse(input.body);
+      if (!body.success) throw invalid('body: 1 to 40,000 characters');
+      const meta = input.meta === undefined ? undefined : ProviderMeta.safeParse(input.meta);
+      if (meta && !meta.success) throw invalid(`meta: ${meta.error.issues.map((i) => `${i.path.join('.') || '(meta)'}: ${i.message}`).join('; ')}`);
+      const posted = await postChannelMessage(deps, tx, {
+        channelId: input.channelId,
+        body: body.data,
+        threadRootId: input.threadRootId ?? null,
+        ...(meta?.success ? { meta: meta.data as Record<string, unknown> } : {}),
+      });
+      return { id: posted.id, channelId: posted.channelId, threadRootId: posted.threadRootId, createdAt: posted.row.created_at.toISOString() };
+    },
+  };
+  deps.ctx.providers.register('messages', provider);
 }

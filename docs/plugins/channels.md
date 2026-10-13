@@ -172,12 +172,23 @@ message does. The author is the transaction's actor (the run's bot) and the perm
 is a member of its team (the loader writes that row), so it may post in its team's public channels and nowhere else — never a
 private channel, never a DM. `messages.search` stays the search plugin's; this plugin owns the write side only.
 
+## The `messages` provider (P5-18)
+
+`ctx.providers.get<MessageProvider>('messages')` (extension point `provider.messages`, type in `packages/sdk/src/messages.ts`) is how
+**another plugin** posts a message that carries more than text: `post(tx, { channelId, body, threadRootId?, meta? })`. It calls the same
+`postChannelMessage` as the route and the capability above, as the transaction's actor. `meta` is the platform's own bookkeeping and is
+validated here, so a plugin cannot store something clients will not read: `{ answer: AnswerPayload, runId }` only (the answer plugin;
+[answer.md](./answer.md)), anything else is a 400. It is a provider and not a capability on purpose: a capability is what a bot's model can
+be granted and call with arguments of its own, and `messages.post` takes no `meta`, so no tool can write an Answer. `meta.answer` and
+`meta.runId` then ride on `Message.meta` like `attachments` do (a deleted message shows `{}`), and `runtime-hermes` reads `meta.runId` to know
+a run already answered.
+
 ## Manifest
 
 | Field | Value |
 |---|---|
 | name / version / kind | `channels` / `0.1.0` / `server` |
-| extends | `event.emit`, `event.subscribe` |
+| extends | `event.emit`, `event.subscribe`, `provider.messages` |
 | capabilities | `messages.post` (not destructive) |
 | events | emits the ten types above, consumes `team.template.applied` |
 | migrations | `migrations` |

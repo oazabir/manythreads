@@ -1,0 +1,254 @@
+/* The Answer a bot finishes a reply with (PLAN P5-18, SPEC §12.4, `[proto §12]` plate 2): the text, numbered sources that open the cited item,
+ * the Lineage, Sources reached, Outside scope and "Answered for …". Every class of this file is prefixed `an`, so nothing in it can collide with
+ * a shared one (`.txt`, `.chip`, `.msg-main` are used, never redefined). Colours come from tokens.css only; it lays out at 390 px wide. */
+
+.an {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-width: 720px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--agent-border);
+  border-radius: 8px;
+  background: var(--agent-wash);
+}
+
+.an-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.an-ref {
+  margin-left: 1px;
+  font-size: 0.75em;
+  font-weight: 600;
+  line-height: 0;
+}
+
+.an-ref a,
+.an-ref span {
+  color: var(--human);
+  text-decoration: none;
+}
+
+.an-ref a:hover {
+  text-decoration: underline;
+}
+
+/* a number the answer cites that was left out (the asker or the readers cannot open it) */
+.an-ref-gone span {
+  color: var(--faint);
+}
+
+/* numbered citation chips: each opens the cited item */
+.an-cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.an-cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 9px 3px 4px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--txt);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+a.an-cite:hover {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+}
+
+.an-cite-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.an-cite-unsupported {
+  border-style: dashed;
+  color: var(--faint);
+}
+
+.an-n {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--human-wash);
+  color: var(--human);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.an-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}
+
+.an-h {
+  margin: 0;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.an-lin-list,
+.an-src-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.an-lin {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 12.5px;
+}
+
+.an-nm {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.an-age {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.an-sn {
+  grid-column: 2 / -1;
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.an-src {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12.5px;
+}
+
+.an-src-kind {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.an-src-label {
+  min-width: 0;
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+
+.an-mark {
+  padding: 1px 7px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--mute);
+  font-size: 10.5px;
+}
+
+.an-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.an-dot.full {
+  background: var(--ok);
+}
+
+.an-dot.scoped {
+  background: var(--warn);
+}
+
+.an-dot.miss {
+  background: var(--dot-off);
+}
+
+.an-miss {
+  color: var(--mute);
+}
+
+.an-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.an-chip {
+  padding: 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--txt);
+  font-size: 12px;
+}
+
+.an-chip-bot {
+  border-color: var(--agent-border);
+  color: var(--agent-ink);
+}
+
+.an-foot {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+@media (width <= 480px) {
+  .an {
+    padding: 8px 10px;
+  }
+
+  .an-lin {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .an-age {
+    grid-column: 2;
+  }
+}
+
+button.an-chip {
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+button.an-chip:hover {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+}

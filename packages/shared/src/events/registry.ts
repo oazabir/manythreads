@@ -18,6 +18,7 @@ import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
 import { BotsBotInvalidEvent } from './bots.bot.invalid.ts';
 import { BotsBotRemovedEvent } from './bots.bot.removed.ts';
 import { BotsRunClosedEvent } from './bots.run.closed.ts';
+import { AnswerAnswerPostedEvent } from './answer.answer.posted.ts';
 import { ConversationsConversationStartedEvent } from './conversations.conversation.started.ts';
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
@@ -85,6 +86,7 @@ export const eventRegistry = {
   'bots.bot.removed': { 1: BotsBotRemovedEvent },
   'bots.run.closed': { 1: BotsRunClosedEvent },
   'conversations.conversation.started': { 1: ConversationsConversationStartedEvent },
+  'answer.answer.posted': { 1: AnswerAnswerPostedEvent },
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
   'retention.settings.changed': { 1: RetentionSettingsChangedEvent },
   'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },

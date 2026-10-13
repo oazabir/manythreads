@@ -44,6 +44,8 @@ export const PROVIDER_KINDS = [
   'repo',
   /** The one handler for `needsApproval` (approvals plugin): `ApprovalProvider` in ./approvals.ts. */
   'approvals',
+  /** The one path a channel message is written on (channels plugin): `MessageProvider` in ./messages.ts. */
+  'messages',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

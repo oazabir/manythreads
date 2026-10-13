@@ -1,5 +1,5 @@
 import { definePlugin } from '@manythreads/sdk';
-import { registerMessageCapabilities } from './capabilities.ts';
+import { registerMessageCapabilities, registerMessageProvider } from './capabilities.ts';
 import { registerCohesion } from './cohesion.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
@@ -15,7 +15,8 @@ export default definePlugin({
     name: 'channels',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit', 'event.subscribe'],
+    // `provider.messages`: the one path a message is written on, for plugins that finish a bot's reply with more than text (PLAN P5-18).
+    extends: ['event.emit', 'event.subscribe', 'provider.messages'],
     // `messages.post` (PLAN P5-10): how a bot's runtime posts a reply into a thread. Not destructive — it adds a message like
     // any other — and `messages.search` stays the search plugin's (it owns the index).
     capabilities: [{ name: 'messages.post', destructive: false }],
@@ -44,5 +45,6 @@ export default definePlugin({
     registerTemplateConsumer(ctx);
     registerCohesion(ctx);
     registerMessageCapabilities(deps);
+    registerMessageProvider(deps);
   },
 });

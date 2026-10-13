@@ -14,6 +14,7 @@ import type { PersonaKey } from '../support/env.ts';
  */
 
 const FAKE = fileURLToPath(new URL('./fake-hermes.mjs', import.meta.url));
+const FAKE_ANSWER = fileURLToPath(new URL('./fake-hermes-answer.mjs', import.meta.url));
 
 /** The environment the stack's server reads when the runtime registers. The path of the stand-in must not hold a space (the prefix is split on them). */
 export function conversationStackEnv(): Record<string, string> {
@@ -24,6 +25,11 @@ export function conversationStackEnv(): Record<string, string> {
     MANYTHREADS_RUNTIME_DIR: mkdtempSync(join(tmpdir(), 'manythreads-e2e-hermes-')),
     MANYTHREADS_LITELLM_URL: 'http://litellm.invalid:4000',
   };
+}
+
+/** The same, with the stand-in that finishes a run with the `answer.post` tool (PLAN P5-18); see fake-hermes-answer.mjs. */
+export function answerStackEnv(): Record<string, string> {
+  return { ...conversationStackEnv(), MANYTHREADS_HERMES_PREFIX: FAKE_ANSWER };
 }
 
 const ENGINEERING = '00000000-0000-7000-8000-0000000b0001';
@@ -54,6 +60,9 @@ export const brainMd = (prompts: readonly string[]): string =>
     'Answers questions from the team repo and its memory.',
     '',
   ].join('\n');
+
+/** Brain as the Answer specs need it: it may read, post and finish with `answer.post`. */
+export const answeringBrainMd = (): string => brainMd(['What is blocking the release?']).replace('  native: [messages.post]', '  native: [messages.post, answer.post]');
 
 /**
  * A lead commits `bots/<slug>/BOT.md` (an admin may add a bot) and waits until the loader has made the bot: its row is active and its actor

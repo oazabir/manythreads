@@ -416,6 +416,20 @@ export function registerApprovalResume(ctx: PluginContext): void {
   });
 }
 
+/**
+ * Did this run already post its Answer into the thread it answers in? One indexed read of the thread (the system's transaction sees every channel);
+ * `meta.answer` and `meta.runId` are written by the platform alone (the `messages` provider validates them, and no tool can reach it).
+ */
+async function runPostedAnswer(tx: PluginTx, runId: string, channelId: string, replyRootId: string): Promise<boolean> {
+  const res = await tx.query(
+    `SELECT 1 FROM app.messages
+      WHERE channel_id = $1::uuid AND thread_root_id = $2::uuid AND meta ? 'answer' AND meta ->> 'runId' = $3::text AND deleted_at IS NULL
+      LIMIT 1`,
+    [channelId, replyRootId, runId],
+  );
+  return res.rows.length > 0;
+}
+
 /** Run one bot: the job half of P5-10. Everything it needs is re-read from the database and the repo (a payload is whatever was enqueued). */
 export function registerRunJob(ctx: PluginContext): void {
   ctx.jobs.register(RUN_QUEUE, async (raw, tx, job) => {
@@ -656,10 +670,14 @@ export function registerRunJob(ctx: PluginContext): void {
       }
       await handle.stop();
 
+      // A run that finished with an Answer (`answer.post`, PLAN P5-18) has posted its reply already — with its citations and what it reached —
+      // and the text the model printed after the tool call is that same reply, not a second one: it is not posted again. The message says which run
+      // wrote it in its `meta.runId`, which is how a run is known to have answered; nothing else counts (a plain `messages.post` does not).
+      const answered = ok && (await runPostedAnswer(tx, run.runId, payload.channelId, payload.replyRootId));
       // The reply is a message like any other: posted through the channels plugin's own `messages.post`, as the run's bot,
       // and authorized like every other call the run makes — a definition that never asked for `messages.post` cannot post.
       // A failed run posts nothing: the text a dying process managed to print is a fragment, not an answer.
-      if (ok && reply.trim() !== '') {
+      if (ok && !answered && reply.trim() !== '') {
         await scope.invoke('messages.post', {
           channelId: payload.channelId,
           body: reply,

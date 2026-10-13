@@ -1,5 +1,6 @@
 import type { CapabilityAuthorizeContext } from '@manythreads/sdk';
-import { PAGE_WRITE_MODES } from '@manythreads/shared';
+import { AnswerInput, PAGE_WRITE_MODES } from '@manythreads/shared';
+import { z } from 'zod';
 
 // What the MCP endpoint offers a run and how each tool behaves (PLAN P5-09). The catalog is not a second copy of
 // the capability list: `ctx.runs.catalog()` is the truth (every capability with an implementation), and this module
@@ -95,6 +96,13 @@ const MEMORY_RETAIN_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+/**
+ * The arguments of `answer.post`, from the same Zod schema the answer plugin validates with (so the description the model reads cannot drift from
+ * what is accepted). The citations are named by id; the platform reads the rest — labels, scopes, who it was for — as the person who asked.
+ */
+const ANSWER_POST_SCHEMA = z.toJSONSchema(AnswerInput, { io: 'input' }) as Record<string, unknown>;
+delete ANSWER_POST_SCHEMA['$schema'];
+
 /** Reads `{ hits: [{ id, channel? }] }` (the search plugin's answer) into source lines. */
 const hitsFrom = (sourceType: 'message' | 'file') => (result: unknown): ToolSource[] => {
   const hits = (result as { hits?: unknown } | null)?.hits;
@@ -149,6 +157,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     description:
       'Post a message into a channel of the team, as yourself. Use this to answer in the thread you were asked in; the platform posts your final reply for you.',
     inputSchema: MESSAGES_POST_SCHEMA,
+    kind: 'write',
+  },
+  'answer.post': {
+    name: 'answer.post',
+    description:
+      'Finish your reply with an Answer: the text, the sources it rests on, and what to suggest next. Cite what you read by id (a message, a thread, a page, a file, a run) and refer to each in the text as [1], [2], ... in the order you list them. The platform re-checks every citation as the person who asked: one they cannot open is removed from the answer and only counted, and the Answer says who it was for. It is posted in the thread you were asked in as your reply; call it once, as the last step, and do not post the same text again.',
+    inputSchema: ANSWER_POST_SCHEMA,
     kind: 'write',
   },
   'pages.write': {

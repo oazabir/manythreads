@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { ActorId, ChannelId, FileId, MessageId, WorkspaceId } from '../ids.ts';
+import { AnswerPayloadView } from './answer.ts';
 import { MAX_ATTACHMENTS_PER_MESSAGE } from './file.ts';
 
 export const Message = z.object({
@@ -15,6 +16,11 @@ export const Message = z.object({
   deletedAt: IsoDateTime.nullable(),
   meta: z.object({
     answerRef: z.string().optional(),
+    /**
+     * The Answer a bot finished its reply with (`answer.post`, PLAN P5-18): numbered citations, lineage, what was reached and what was out of
+     * scope, whom it was for. Written only by the platform. A payload that does not read (a newer shape) is dropped, never the message.
+     */
+    answer: AnswerPayloadView.optional().catch(undefined),
     surfaceRef: z.string().optional(),
     /** Files attached to the message, in the order the sender listed them (rows of `files` in the same channel, uploaded by the author). */
     attachments: z.array(FileId).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),

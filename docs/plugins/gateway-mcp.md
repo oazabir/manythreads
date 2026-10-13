@@ -73,6 +73,7 @@ what a call does beyond asking the broker:
 | `files.search` | read | the same over file names |
 | `messages.post` | write | posts a message (or a thread reply) into a channel of the run's team, as the bot — the same call the post route and a runtime's own reply go through (channels plugin, PLAN P5-10) |
 | `pages.write` | write | creates, replaces or appends a page through the repo writer, as the bot |
+| `answer.post` | write | finishes the run's reply with an Answer: a text, the sources it cites by id and some suggestions; the `answer` plugin re-reads every source as the person who asked and posts the message with its payload ([answer.md](./answer.md)). The description the model reads is generated from the same Zod schema the plugin validates with |
 | `knowledge.search` | stub | answers `{ hits: [], reason: "no bases configured" }` — never invented content |
 | `tasks.read`, `tasks.claim`, `tasks.complete`, `tasks.handoff` | stub | answer that the board is not part of this deployment yet |
 

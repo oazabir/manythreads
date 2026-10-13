@@ -7,6 +7,7 @@ export * from './repo.ts';
 export * from './memory.ts';
 export * from './memory-ledger.ts';
 export * from './approvals.ts';
+export * from './messages.ts';
 export * from './egress.ts';
 export * from './runtime.ts';
 export * from './http.ts';

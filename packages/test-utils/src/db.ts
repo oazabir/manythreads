@@ -93,6 +93,15 @@ export const conversationsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/conversations/migrations/', import.meta.url)),
 };
 
+/**
+ * Migrations of the answer plugin (`app.answer_run_sources`, `app.answer_resolve`, `app.answer_view`); pass it in `sources` after the channels, files,
+ * bots and repo-git sources (the functions read their tables).
+ */
+export const answerMigrationSource: MigrationSource = {
+  namespace: 'answer',
+  dir: fileURLToPath(new URL('../../plugins/answer/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',

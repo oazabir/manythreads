@@ -4,6 +4,7 @@ import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
+import { AnswerMessage } from './Answer';
 import { clock, fileKind, fileSize } from './format';
 import { Markdown } from './MessageMarkdown';
 import { TOMBSTONE, type PendingSend } from './timeline';
@@ -160,6 +161,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               {error ? <span className="edit-error" role="alert">{error}</span> : null}
             </div>
           </div>
+        ) : m.meta.answer ? (
+          // a bot's Answer: the text with its numbered sources, lineage, what was reached and what was out of scope (P5-18)
+          <AnswerMessage payload={m.meta.answer} teamSlug={teamSlug} />
         ) : (
           <div className="txt"><Markdown source={m.body} teamSlug={teamSlug} /></div>
         )}

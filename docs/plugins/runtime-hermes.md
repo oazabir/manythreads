@@ -100,6 +100,11 @@ plugin's own `messages.post` capability, in the run's bot transaction, so the re
 member: `channel.message.posted` fires, the audience is pushed, unread counters move, mentions resolve. The reply is not
 streamed into the thread delta by delta: a turn produces one message, and posting `text` deltas would be a message per token.
 
+A run that finished with an **Answer** (it called the `answer.post` tool, [answer.md](./answer.md)) has already posted its reply — the text,
+its sources and whom it was for — as a message of the thread carrying `meta.runId` = the run and `meta.answer`. The router checks for that
+message (one indexed read of the thread) and does **not** post the text the model printed after the tool call: it is the same reply, and a
+second message would repeat it. Only a message the answer plugin wrote counts; a plain `messages.post` of the model does not.
+
 ## What a run is allowed to do
 
 * The tools the model sees are the ones the broker grants (`gateway-mcp`'s `tools/list`), against the **run's** bot actor, and

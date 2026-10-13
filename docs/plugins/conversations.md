@@ -120,7 +120,7 @@ same sha); anything else — no repo plugin, an unreadable or invalid file, a ne
 - **`bots.run.closed` and the audit tab.** The closing event of a conversation run is team-scoped (ids only) and so reveals that a conversation run
   ended, not whose; scoping it to the asker would change the memory feed's reader of it.
 
-Share to #channel, masking, Save as page and Hand to a bot are P5-17; the `Answer` component is P5-18. A conversation run sees only the message
+Share to #channel, masking, Save as page and Hand to a bot are P5-17; the `Answer` (what a bot finishes a reply with: numbered sources, lineage, what it reached, what was out of scope, whom it was for) is the [answer](./answer.md) plugin's, P5-18. A conversation run sees only the message
 it was started for (the thread's history reaches the bot through its tools, not the prompt); the reply is posted when the run ends (the
 thread shows "<bot> is working on it…" for three minutes after the person's message). A bot's reply author is the generic "Bot" in the thread
 (`app.message_authors`; naming bots is for the bots plugin).
