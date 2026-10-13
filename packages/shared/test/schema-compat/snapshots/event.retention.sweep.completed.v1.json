@@ -41,6 +41,11 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "runsSkipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "runSourceLines": {
           "type": "integer",
           "minimum": 0,
@@ -69,6 +74,7 @@
       },
       "required": [
         "runs",
+        "runsSkipped",
         "runSourceLines",
         "runTokens",
         "runMemos",
