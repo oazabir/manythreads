@@ -378,7 +378,8 @@ describe('Remove claim: a marker at a sentence boundary, decorated at random', (
     const next = lcg(424_242);
     const pick = <T>(list: readonly T[]): T => list[next() % list.length]!;
     // decoration before and after the marker: ASCII and CJK punctuation, symbols, brackets, quotes, emphasis, tags, a link address
-    const before = ['', '', '*', '**', '_', '~~', '(', '“', '"', '「', '（', '[', '^', '<sup>', '\\', '(see ', '[see ', '— ', '* ', '“**', '(_'];
+    const before = ['', '', '*', '**', '_', '~~', '(', '“', '"', '「', '（', '[', '^', '<sup>', '\\', '(see ', '[see ', '— ', '＊ ', '“**', '(_'];
+    // (not `* `: after a line break that is a list item, a block of its own, and a marker at the start of a block belongs to that block)
     const after = ['', '', ']', ')', '”', '"', '」', '）', '*', '**', '</sup>', '\\', '](https://example.com/a/very/long/path/to/somewhere)', ' —', ')*', '”)'];
     const gapBefore = ['', ' ', '\n', '\u00a0', '\u2009'];
     const gapAfter = ['', ' ', ' ', '\n'];
