@@ -1,4 +1,4 @@
-import { expectLinear } from '@manythreads/test-utils';
+import { expectLinear } from '@manythreads/test-utils/linear';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {

@@ -1,4 +1,4 @@
-import { expectLinear } from '@manythreads/test-utils';
+import { expectLinear } from '@manythreads/test-utils/linear';
 import { describe, expect, it } from 'vitest';
 import { parseConcept } from '@manythreads/shared';
 import { MAX_DOC_CHARS } from '../src/constants.ts';

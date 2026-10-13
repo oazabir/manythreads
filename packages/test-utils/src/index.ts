@@ -11,4 +11,3 @@ export { seedRepo, SEED_REPO_IDS, SEED_REPO_ATTACHMENTS, type SeedRepoOptions, t
 export { seedGuard, seedGateBotMd, SEED_GUARD, type SeedGuardResult } from './seed-guard.ts';
 export { openSeedStorage, putSeedAttachment, type SeedStorageOptions, type SeedStorageKind } from './seed-storage.ts';
 export type { SeedAuthor, SeedLine } from './seed-data.ts';
-export { expectLinear, measureLinear, type LinearMeasure, type LinearOptions } from './linear.ts';

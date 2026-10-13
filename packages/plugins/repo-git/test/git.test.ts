@@ -1,4 +1,4 @@
-import { expectLinear } from '@manythreads/test-utils';
+import { expectLinear } from '@manythreads/test-utils/linear';
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
