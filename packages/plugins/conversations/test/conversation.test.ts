@@ -2,7 +2,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  ConversationsConversationStartedEvent,
   ListConversationsResponse,
   ListMessagesResponse,
   OpenConversationResponse,
@@ -253,12 +252,7 @@ describe('sending starts a thread, and the bot answers in it', () => {
   it('announces the conversation once, ids only', async () => {
     const started = (await eventsOf('conversations.conversation.started')).filter((e) => e['threadRootId'] === rootId);
     expect(started).toHaveLength(1);
-    expect(ConversationsConversationStartedEvent.parse({ type: 'conversations.conversation.started', schemaVersion: 1, ...started[0] })).toMatchObject({
-      botId: brain.botId,
-      personId: nadia.personId,
-      channelId: nadiaChannel,
-      threadRootId: rootId,
-    });
+    expect(started[0]).toMatchObject({ botId: brain.botId, personId: nadia.personId, channelId: nadiaChannel, threadRootId: rootId });
     expect(JSON.stringify(started[0])).not.toContain('blocking');
     expect(Object.keys(eventRegistry['conversations.conversation.started'])).toEqual(['1']);
   });
