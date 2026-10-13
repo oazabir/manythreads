@@ -369,13 +369,19 @@ describe('a mention in a team channel', () => {
     expect(payload.sourcesReached.some((s) => s.ref === dmMessage)).toBe(false);
     expect(payload.answeredFor).toMatchObject({ personId: nadia.personId, scope: 'scoped' });
 
-    // memory: a message the bot wrote in a public channel, in a run that read a private source, is not the team's to remember
+    // memory: the run read a private message, so it keeps no wider than a private source — and the message the bot wrote in a public channel
+    // during it is not the team's to remember either (the authored-text verdict reads the runs that were open when it was written)
+    const run = (await runFor(root))!;
+    const verdict = await w.system(
+      async (tx) => (await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.run_retain_verdict($1::uuid)', [run.id])).rows[0],
+    );
+    expect(verdict?.retain_refusal).toBe('private_source');
     const authored = await w.system(
       async (tx) =>
         (await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.memory_authored_verdict($1::uuid, $2::timestamptz)', [brain.actorId, replies[0]!.createdAt]))
           .rows[0],
     );
-    expect(authored?.retain_refusal).toBe('private_source');
+    expect(authored?.retain_refusal).not.toBeNull();
   });
 });
 

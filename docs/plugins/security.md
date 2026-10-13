@@ -63,6 +63,15 @@ A plugin that extends `run.close` and not `tool.invoke` gets a `ctx.runs` of whi
 
 **An ended run takes nothing more.** The run service checks, on every door that acts for a run (`asBot`, `asReader`, `asApproved`, `authorize`, `may`), that the run is still `running`: a worker that still holds the handle of a run that was ended (by the reaper, by an approval's re-run, by its own client) gets `RunEndedError` (a denied decision from `authorize` / `may`). Closing a run is therefore final for every call that starts after it: none appends to its source log or acts for it. A call that had already passed the check when the run was closed (a read in flight) can still land its line, so the log is settled shortly after the close rather than at the instant of it; what the memory rule reads, and what an approval's re-run inherits, is read after the run has ended, never while it is open.
 
+## The message path: `provider.messages`
+
+The channels plugin registers the one path a channel message is written on (`ctx.providers.get<MessageProvider>('messages')`, extension point
+`provider.messages`). It is for plugin code only: a plugin that finishes a bot's reply with more than text (the answer plugin's Answer) posts
+through it, with a `meta` the provider validates. It is deliberately **not** a capability: a capability is what a bot's model can be granted
+and call with arguments of its own, and a payload the platform vouches for (whom an answer was for, which sources it rests on) must not be
+something a model can write. `messages.post` takes no `meta`. Using the provider needs no `extends` entry; the posting still runs as the
+transaction's actor under the channel's own `post` rule.
+
 ## The MCP gateway's door: `tool.invoke`
 
 A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) may, in the platform's name:
