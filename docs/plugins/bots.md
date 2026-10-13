@@ -108,10 +108,16 @@ kernel's `schema-enums` test fails if SQL and Zod ever list different values.
    `app.session_tokens`: the gateway resolves a presented token as the system role (`ctx.identity.runAsSystem`),
    comparing hashes and revoking through `revoked_at`. Nothing that carries a token reads it through a request.
 3. **`bot_runs` — `rls: team; asker own`.** A run is readable by its team's readers and by its `asker_id` even when
-   the run's team is elsewhere (a person asks Brain from a DM). The app role may **INSERT** a run only for itself, in
+   the run's team is elsewhere (a person asks Brain from a DM) — **except a run of the `conversation` trigger, which only
+   its asker reads** (migration 0011: a conversation is one person's private use of the bot, so a teammate, the team's
+   lead and a workspace admin do not list it; a bot inside the run reads its own run through `app.run_id()`). The
+   bot page's run list (`GET …/bots/:botSlug`) repeats the predicate (`trigger_type <> 'conversation' OR asker_id =
+   app.actor()`) so it is right on its own. The app role may **INSERT** a run only for itself, in
    a team it can read (`workspace_id`, `app.readable_team_ids` and `asker_id = app.actor()` all in the WITH CHECK);
-   status changes and deletes are the runtime (system).
-4. **`run_source_log` — `rls: team`.** Readable with the run's team (a join onto `bot_runs`, no per-row helper), and
+   status changes and deletes are the runtime (system). A new reader of `bot_runs` as the request role must decide
+   what a conversation run shows: the system role (router, reaper, feed, retention, approvals' hand-back) reads all.
+4. **`run_source_log` — `rls: team`.** Readable with the run's team (a join onto `bot_runs`, no per-row helper; so a
+   conversation run's lines follow the run: its asker only), and
    appended to only by the run itself: the INSERT check is `run_id = app.run_id()`, the GUC `withActor` sets from the
    actor's `runId` (kernel `with-actor.ts`). Another writer is the system role.
 

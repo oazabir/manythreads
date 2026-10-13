@@ -21,11 +21,13 @@ export type BotRow = {
   status: string;
   placement: unknown;
   invalid_reason: unknown;
+  /** The BOT.md triggers as written (`bots.triggers`, jsonb); only `toBotSummary` reads it, for `conversational`. */
+  triggers?: unknown;
   created_at: Date;
   updated_at: Date;
 };
 export const BOT_COLUMNS =
-  'id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, created_at, updated_at';
+  'id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, triggers, created_at, updated_at';
 export const toBot = (r: BotRow): Bot =>
   Bot.parse({
     id: r.id,
@@ -44,6 +46,10 @@ export const toBot = (r: BotRow): Bot =>
     updatedAt: r.updated_at.toISOString(),
   });
 
+/** Whether the definition lists a `conversation` trigger: the only trigger a message in a conversation channel fires (runtime-hermes' router). */
+export const hasConversationTrigger = (triggers: unknown): boolean =>
+  Array.isArray(triggers) && triggers.some((t) => typeof t === 'object' && t !== null && (t as { type?: unknown }).type === 'conversation');
+
 /** The roster's row: the bot plus the display fields the loader copied onto it and the reason its last load failed (`invalid_reason`, null once repaired). */
 export const toBotSummary = (r: BotRow): BotSummary =>
   BotSummary.parse({
@@ -52,6 +58,7 @@ export const toBotSummary = (r: BotRow): BotSummary =>
     role: r.role,
     mayTag: r.may_tag,
     invalid: r.invalid_reason ?? null,
+    conversational: hasConversationTrigger(r.triggers),
   });
 
 export type BotRunRow = {

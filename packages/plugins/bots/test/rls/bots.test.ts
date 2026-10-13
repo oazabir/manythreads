@@ -42,6 +42,8 @@ const slugs = async (p: Persona): Promise<string[]> =>
 const sha = (n: number): string => n.toString(16).padStart(64, '0');
 /** The run whose sources the read tests look at, created in beforeAll. */
 let engRunId = '';
+/** Nadia's conversation run in Engineering (bots 0011: only she reads it). */
+let convRunId = '';
 
 beforeAll(async () => {
   db = await createTestDatabase({
@@ -80,6 +82,17 @@ beforeAll(async () => {
       `INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope)
        VALUES ($1, 0, 'message', 'm-1', 'channel'), ($1, 1, 'page', 'pages/report.md', 'team')`,
       [engRunId],
+    );
+    // a conversation run of Nadia's in Engineering: a person's private use of the bot, with a source line of its own
+    const conv = await tx.query<{ id: string }>(
+      `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, started_at, ended_at)
+       VALUES ($1, $2, $3, 'conversation', $4, 'done', now() - interval '2 minutes', now() - interval '1 minute') RETURNING id`,
+      [omar.workspaceId, eng.rows[0]!.id, ENG, nadia.actorId],
+    );
+    convRunId = conv.rows[0]!.id;
+    await tx.query(
+      `INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 7, 'message', 'm-conv', 'person')`,
+      [convRunId],
     );
   });
 }, 120_000);
@@ -174,11 +187,31 @@ describe('bots, bot_pairing_tokens, bot_runs and run_source_log (P5-03)', () => 
   it('a run is readable by its team and by its asker, and by nobody outside both', async () => {
     const runs = async (p: Persona): Promise<string[]> =>
       as(p, async (tx) => (await tx.query<{ status: string }>('SELECT status FROM app.bot_runs ORDER BY status')).rows.map((r) => r.status));
-    expect(await runs(nadia)).toEqual(['running']); // Engineering: her own run is that team's run
-    expect(await runs(rafi)).toEqual(['running']); // Engineering only: the Marketing run is not his
-    expect(await runs(sameera)).toEqual(['done']); // her own run in a team she is not on
-    expect(await runs(tariq)).toEqual(['done']); // Marketing: the team's run
+    expect(await runs(nadia)).toEqual(['done', 'running']); // Engineering: the team's mention run, and her own conversation run
+    expect(await runs(rafi)).toEqual(['running']); // Engineering only: the mention run; her conversation run and the Marketing run are not his
+    expect(await runs(sameera)).toEqual(['done']); // her own conversation run in a team she is not on
     expect(await runs(lena)).toEqual([]);
+  });
+
+  it('a conversation run is its asker’s alone: the team, its lead and a workspace admin do not read it, nor its source lines', async () => {
+    const runIds = async (p: Persona): Promise<string[]> => as(p, async (tx) => (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs ORDER BY id')).rows.map((r) => r.id));
+    const lines = async (p: Persona): Promise<string[]> =>
+      as(p, async (tx) => (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log ORDER BY seq, source_ref')).rows.map((r) => r.source_ref));
+    // the asker (a member of the team) reads it and what it logged
+    expect(await runIds(nadia)).toContain(convRunId);
+    expect(await lines(nadia)).toContain('m-conv');
+    // a teammate, the Marketing lead, and the workspace admin (who reads every team) do not
+    for (const who of [rafi, tariq, omar]) {
+      expect(await runIds(who), `${who.key} runs`).not.toContain(convRunId);
+      expect(await lines(who), `${who.key} lines`).not.toContain('m-conv');
+    }
+    // control: the same people do read a run of another trigger (the mention run of Engineering), so the silence is the rule and not an empty table
+    expect(await runIds(rafi)).toContain(engRunId);
+    expect(await runIds(omar)).toContain(engRunId);
+    // the bot inside the run reads that run, whoever asked (the run it was opened for is `app.run_id()`, set by the kernel)
+    const botActor = { kind: 'bot' as const, id: ActorId.parse(randomUUID()), workspaceId: omar.workspaceId, runId: convRunId as RunId };
+    const own = await withActor(botActor, async (tx) => (await tx.query<{ id: string }>('SELECT id FROM app.bot_runs ORDER BY id')).rows.map((r) => r.id), { pool: appPool });
+    expect(own).toContain(convRunId);
   });
 
   it('a member starts a run in a team they can read; outside it, or for someone else, refused', async () => {
@@ -268,7 +301,7 @@ describe('bots, bot_pairing_tokens, bot_runs and run_source_log (P5-03)', () => 
       as(p, async (tx) =>
         (await tx.query<{ source_ref: string }>('SELECT source_ref FROM app.run_source_log ORDER BY seq')).rows.map((r) => r.source_ref),
       );
-    expect(await refs(nadia)).toEqual(['m-1', 'pages/report.md']);
+    expect(await refs(nadia)).toEqual(['m-1', 'pages/report.md', 'm-conv']); // seq 0, 1 and her conversation run's line at 7
     expect(await refs(rafi)).toEqual(['m-1', 'pages/report.md']);
     expect(await refs(sameera)).toEqual([]);
     expect(await refs(lena)).toEqual([]);

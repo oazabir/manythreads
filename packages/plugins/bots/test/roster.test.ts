@@ -7,7 +7,7 @@ import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/w
 // reads over rows the loader wrote, and the `invalid` reason comes from the newest `bots.bot.invalid` event rather than a column. The
 // loader runs in the outbox consumer, so every assertion that follows a commit waits for it.
 
-const { omar, nadia, sameera, lena } = personas;
+const { omar, nadia, rafi, sameera, lena } = personas;
 vi.setConfig({ testTimeout: 60_000 });
 
 let w: RepoWorld;
@@ -62,11 +62,43 @@ describe('the bot roster and bot page', () => {
     const res = await listRoster(nadia);
     expect(res.status).toBe(200);
     const zed = summaryOf(res.body, 'p505-zed')!;
-    expect(zed).toMatchObject({ slug: 'p505-zed', name: 'Zed', role: 'Answers the roster tests', mayTag: ['reviewer'], status: 'active', invalid: null });
+    // Zed lists a mention trigger only, so nobody can talk to it (the router answers a conversation for the conversation trigger alone)
+    expect(zed).toMatchObject({ slug: 'p505-zed', name: 'Zed', role: 'Answers the roster tests', mayTag: ['reviewer'], status: 'active', invalid: null, conversational: false });
     // the list is ordered by the display name
     const names = res.body.bots.map((b) => b.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
     expect(res.body.bots.length).toBeGreaterThan(1);
+  });
+
+  it('`conversational` follows the definition: true once it lists a conversation trigger, false again when it is dropped', async () => {
+    const withConversation = validMd('Chatty', 'Talks', []).replace('  - type: mention\n', '  - type: mention\n  - type: conversation\n');
+    expect(withConversation).toContain('type: conversation');
+    expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p516-chatty/BOT.md', content: withConversation }], 'Add Chatty')).status).toBe(201);
+    await until(async () => summaryOf((await listRoster(nadia)).body, 'p516-chatty'), 10_000);
+    expect(summaryOf((await listRoster(nadia)).body, 'p516-chatty')).toMatchObject({ conversational: true });
+    expect((await getBot(nadia, 'p516-chatty')).body.bot.conversational).toBe(true);
+
+    const without = validMd('Chatty', 'Talks', []);
+    expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p516-chatty/BOT.md', content: without }], 'Chatty stops taking conversations')).status).toBe(201);
+    await until(async () => ((await getBot(nadia, 'p516-chatty')).body.bot.conversational === false ? true : null), 10_000);
+  });
+
+  it('the run list holds the runs of the team, and a conversation run only for the person who asked', async () => {
+    const bot = (await getBot(nadia, 'p516-chatty')).body.bot;
+    // two runs made as the system (what the run service does): a mention, and a conversation Nadia had with the bot
+    await w.system(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, ended_at) VALUES
+           ($1, $2, $3, 'mention', $4, 'done', now()),
+           ($1, $2, $3, 'conversation', $4, 'done', now())`,
+        [omar.workspaceId, bot.id, bot.teamId, nadia.actorId],
+      );
+    });
+    const triggersFor = async (who: typeof omar): Promise<string[]> => (await getBot(who, 'p516-chatty')).body.runs.map((r) => r.trigger).sort();
+    expect(await triggersFor(nadia)).toEqual(['conversation', 'mention']);
+    // a teammate, and the team's lead who is also a workspace admin, read the mention run and nothing of the conversation
+    expect(await triggersFor(rafi)).toEqual(['mention']);
+    expect(await triggersFor(omar)).toEqual(['mention']);
   });
 
   it('the bot page answers the definition path and the (empty) run list', async () => {

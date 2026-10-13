@@ -20,6 +20,11 @@ export const BotSummary = Bot.extend({
   role: z.string(),
   /** Compiled from `handover.mayTag`; empty when the definition names nobody. */
   mayTag: z.array(z.string()),
+  /**
+   * The definition lists a `conversation` trigger, so a message in a conversation with the bot is answered. A bot without one has no
+   * conversation to open: `POST …/conversation` answers 409 `bot_has_no_conversation_trigger`, and the clients offer no Talk button.
+   */
+  conversational: z.boolean(),
   invalid: z
     .object({
       fieldPath: z.string().nullable(),

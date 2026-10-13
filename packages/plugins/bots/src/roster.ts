@@ -44,7 +44,14 @@ export function registerBotRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       const row = (await botRows(tx, team.id, botSlug))[0];
       if (!row) throw notFound(`No bot "${botSlug}"`);
-      const runs = await tx.query<BotRunRow>(`SELECT ${BOT_RUN_COLUMNS} FROM app.bot_runs WHERE bot_id = $1 ORDER BY id DESC LIMIT 20`, [row.id]);
+      // A run of the `conversation` trigger is a person's private use of the bot: only its asker lists it, whoever else reads the team (a lead, a
+      // workspace admin). `bot_runs_select` (0011) says the same; the predicate stays here so this list is right on its own, not by the policy's luck.
+      const runs = await tx.query<BotRunRow>(
+        `SELECT ${BOT_RUN_COLUMNS} FROM app.bot_runs
+          WHERE bot_id = $1 AND (trigger_type <> 'conversation' OR asker_id = app.actor())
+          ORDER BY id DESC LIMIT 20`,
+        [row.id],
+      );
       return json({ bot: toBotSummary(row), path: botMdPath(row.slug), runs: runs.rows.map(toBotRun) });
     }),
   });
