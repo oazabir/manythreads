@@ -112,12 +112,16 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
             {bot.runtime === 'hermes' ? 'Hermes' : 'Rules'} · <span className="mono">{path}</span>
             {bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}
           </p>
+          {bot.status === 'active' && !bot.conversational ? (
+            // visible, and tied to the disabled button: a `title` never shows on a touch screen
+            <p className="b-sub b-talk-why" id="talk-why" data-testid="talk-why">{NO_CONVERSATION}</p>
+          ) : null}
         </div>
         <div className="b-head-act">
           {bot.status !== 'active' ? null : bot.conversational ? (
             <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="open-conversation">Talk to {bot.name}</Link>
           ) : (
-            <button type="button" className="btn s" disabled title={NO_CONVERSATION} data-testid="open-conversation">Talk to {bot.name}</button>
+            <button type="button" className="btn s" disabled title={NO_CONVERSATION} aria-describedby="talk-why" data-testid="open-conversation">Talk to {bot.name}</button>
           )}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>

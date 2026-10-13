@@ -232,7 +232,8 @@ describe('opening a conversation', () => {
     expect(created).toEqual([expect.objectContaining({ payload: expect.objectContaining({ kind: 'bot_conversation', private: true, name: '' }) })]);
     // announced like a DM's channel: no team on the event, so the stored row is not one that every member of the team can read
     expect(created[0]!.team_id).toBeNull();
-    expect(created[0]!.payload).not.toHaveProperty('teamId', expect.any(String));
+    // absent or null — never a team id: `not.toHaveProperty('teamId', expect.any(String))` would also pass for a null, and says nothing about a present value
+    expect(created[0]!.payload['teamId'] ?? null).toBeNull();
   });
 
   it('a bot with no prompts of its own shows the platform’s defaults', async () => {

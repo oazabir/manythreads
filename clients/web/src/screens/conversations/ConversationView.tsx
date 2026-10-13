@@ -45,14 +45,19 @@ const EMPTY: Record<ConversationScope, (bot: string, slug: string) => { title: s
 /** How long a list is allowed to be stale while a conversation is open: replies refresh it sooner (the open thread's newest message). */
 const STALE_POLL_MS = 15_000;
 
-/** What "Show older" has loaded after the list's own first page: the pages that follow its cursor, and where the next one starts. */
+/**
+ * What "Show older" has loaded after the list's own first page: the pages that follow its cursor, and where the next one starts. `pages` is how
+ * many presses the loaded rows answer: while it is behind the presses made (or while a load is running, or after one failed) the control stays
+ * on screen, so a press never makes it vanish and a failed load can be tried again.
+ */
 interface Older {
   items: ConversationListItem[];
   next: string | null;
+  pages: number;
   loading: boolean;
   failed: boolean;
 }
-const NO_OLDER: Older = { items: [], next: null, loading: false, failed: false };
+const NO_OLDER: Older = { items: [], next: null, pages: 0, loading: false, failed: false };
 
 export function ConversationView() {
   const { team = '', botSlug = '' } = useParams();
@@ -80,6 +85,7 @@ export function ConversationView() {
   // the first page's cursor whenever that moves (a new conversation pushes the last of the first page past it), so the list never skips a row.
   const firstCursor = lists.status === 'ok' ? lists.data.nextCursor : undefined;
   const [olderPages, setOlderPages] = useState(0);
+  const [olderAttempt, setOlderAttempt] = useState(0);
   const [older, setOlder] = useState<Older>(NO_OLDER);
   useEffect(() => {
     setOlderPages(0);
@@ -92,7 +98,8 @@ export function ConversationView() {
     }
     if (firstCursor === undefined) return;
     if (firstCursor === null) {
-      setOlder(NO_OLDER);
+      // the first page turned out to be the whole list: nothing is left to load, and the presses are answered
+      setOlder({ ...NO_OLDER, pages: olderPages });
       return;
     }
     let live = true;
@@ -106,7 +113,7 @@ export function ConversationView() {
           items.push(...page.items);
           cursor = page.nextCursor;
         }
-        if (live) setOlder({ items, next: cursor, loading: false, failed: false });
+        if (live) setOlder({ items, next: cursor, pages: olderPages, loading: false, failed: false });
       } catch {
         if (live) setOlder((o) => ({ ...o, loading: false, failed: true }));
       }
@@ -114,7 +121,7 @@ export function ConversationView() {
     return () => {
       live = false;
     };
-  }, [team, botSlug, scope, firstCursor, olderPages]);
+  }, [team, botSlug, scope, firstCursor, olderPages, olderAttempt]);
 
   // The list follows the open conversation: its newest message (the bot's answer arrives) refreshes it, and so does coming back to the tab.
   const timeline = useTimeline(threadKey(thread ?? ''));
@@ -141,7 +148,9 @@ export function ConversationView() {
     const seen = new Set(first.map((i) => `${i.source}:${i.threadRootId}`));
     return [...first, ...(olderPages > 0 ? older.items.filter((i) => !seen.has(`${i.source}:${i.threadRootId}`)) : [])];
   }, [lists, older.items, olderPages]);
-  const more = olderPages === 0 ? firstCursor !== undefined && firstCursor !== null : older.next !== null;
+  // the control stays while a load is running or has failed (the cursor is not known again until it succeeds), and until the rows answer the press
+  const waiting = olderPages > 0 && !older.failed && (older.loading || older.pages < olderPages);
+  const more = olderPages === 0 ? firstCursor !== undefined && firstCursor !== null : waiting || older.failed || older.next !== null;
   const selected = thread === null ? undefined : items.find((i) => i.threadRootId === thread);
   const path = `/t/${team}/bots/${botSlug}/chat`;
 
@@ -229,8 +238,15 @@ export function ConversationView() {
               {more || older.failed ? (
                 <div className="cv-more">
                   {more ? (
-                    <button type="button" className="btn s" data-testid="conversation-older" disabled={older.loading} onClick={() => setOlderPages((n) => n + 1)}>
-                      {older.loading ? 'Loading…' : 'Show older'}
+                    <button
+                      type="button"
+                      className="btn s"
+                      data-testid="conversation-older"
+                      aria-busy={waiting}
+                      disabled={waiting}
+                      onClick={() => (older.failed ? setOlderAttempt((n) => n + 1) : setOlderPages((n) => n + 1))}
+                    >
+                      {waiting ? 'Loading…' : older.failed ? 'Try again' : 'Show older'}
                     </button>
                   ) : null}
                   {older.failed ? <span className="cv-more-failed" role="alert">Could not load older conversations.</span> : null}
