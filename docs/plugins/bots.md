@@ -120,7 +120,7 @@ Read plans are hoisted: `bots`, `bot_runs` and `run_source_log` are checked by
 
 ## The stale-run reaper
 
-`bots.reap-runs` (hourly, `maxAttempts: 1`): a run still `running` past its bot's `bots.run_timeout_seconds` (BOT.md `limits.timeoutSeconds` as written, migration 0010, filled by the loader) plus ten minutes — six hours when the definition names none — is a run whose worker died. It is closed `failed` through the run service (`ctx.runs.close`, which is why the manifest extends `tool.invoke`), so `bots.run.closed` is emitted and its endpoint token is revoked; at most 200 per pass. Nothing else ever ended such a run, and everything that waits for runs to end (the memory feed holds a bot's output back while one of its runs is open) waited with it.
+`bots.reap-runs` (hourly, `maxAttempts: 1`): a run still `running` past its bot's `bots.run_timeout_seconds` (BOT.md `limits.timeoutSeconds` as written, migration 0010, filled by the loader on every load and, for a bot loaded before the column, by the daily `backfillRunTimeouts` which re-reads BOT.md at `main` when it is the file the row was loaded from; `run_timeout_known` says it was read) plus ten minutes — six hours when the definition names none — is a run whose worker died. It is closed `failed` through the run service (`ctx.runs.close`: the manifest extends `run.close`, the close-only door of [security.md](./security.md), not the whole run door), so `bots.run.closed` is emitted and its endpoint token is revoked; at most 200 per pass. A worker that still holds the reaped run's handle can do nothing more with it. Nothing else ever ended such a run, and everything that waits for runs to end (the memory feed holds a bot's output back while one of its runs is open) waited with it.
 
 ## Events
 

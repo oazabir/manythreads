@@ -57,6 +57,12 @@ system actor's; the database refuses anyone else) and `get` is system-only, so a
 through `provider.llm` at call time, never through a route. A route never returns a secret; it answers only whether one is
 stored.
 
+## The janitor's door: `run.close`
+
+A plugin that extends `run.close` and not `tool.invoke` gets a `ctx.runs` of which one member works: `close(runId, status)` — end a run through the run service (which revokes its tokens and emits `bots.run.closed`). Every other member (`open`, `asBot`, `asReader`, `asApproved`, `authorize`, `may`, `invoke`, `logSource`, `inheritSources`) throws, naming `tool.invoke`. It exists so the bots plugin's stale-run reaper can end a run whose worker died without being handed the whole run door. A plugin with both gets the full door.
+
+**An ended run takes nothing more.** The run service checks, on every door that acts for a run (`asBot`, `asReader`, `asApproved`, `authorize`, `may`), that the run is still `running`: a worker that still holds the handle of a run that was ended (by the reaper, by an approval's re-run, by its own client) gets `RunEndedError` (a denied decision from `authorize` / `may`). Closing a run is therefore final: its source log can no longer grow, which is what the memory rule reads.
+
 ## The MCP gateway's door: `tool.invoke`
 
 A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) may, in the platform's name:
