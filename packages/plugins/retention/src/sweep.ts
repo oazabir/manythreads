@@ -114,8 +114,18 @@ function effectiveCutoffs(state: SweepState, windows: WorkspaceWindows, now: num
   return { run: new Date(run).toISOString(), memory: new Date(memory).toISOString() };
 }
 
-/** Deletes `ids` (each re-checked against the eligibility predicate); returns the ones that went. Falls back to one run at a time, each in a savepoint. */
-async function deleteRuns(tx: PluginTx, state: SweepState, cutoff: string, ids: readonly string[]): Promise<{ deleted: string[]; skipped: string[] }> {
+/** An integrity refusal (SQLSTATE class 23: a check, a foreign key, a unique): the only kind of refusal a run-by-run retry can get past. */
+export function isIntegrityError(err: unknown): boolean {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && code.startsWith('23');
+}
+
+/**
+ * Deletes `ids` (each re-checked against the eligibility predicate); returns the ones that went and the ones the database refused. A batch that
+ * hits an integrity error is retried run by run, each in a savepoint. Anything else (a statement timeout, a deadlock, a cancel, a lost
+ * connection) is not a property of one run: it is thrown, and the job's retry handles it from the state it was given.
+ */
+export async function deleteRuns(tx: PluginTx, state: SweepState, cutoff: string, ids: readonly string[]): Promise<{ deleted: string[]; skipped: string[] }> {
   const sql = `DELETE FROM app.bot_runs r WHERE r.id = ANY($4::uuid[]) AND ${ELIGIBLE} RETURNING r.id`;
   const gated = [...NEVER_APPROVAL_GATED];
   await tx.query('SAVEPOINT retention_batch');
@@ -123,7 +133,8 @@ async function deleteRuns(tx: PluginTx, state: SweepState, cutoff: string, ids: 
     const res = await tx.query<{ id: string }>(sql, [state.workspaceId, cutoff, gated, [...ids]]);
     await tx.query('RELEASE SAVEPOINT retention_batch');
     return { deleted: res.rows.map((r) => r.id), skipped: [] };
-  } catch {
+  } catch (err) {
+    if (!isIntegrityError(err)) throw err;
     await tx.query('ROLLBACK TO SAVEPOINT retention_batch');
     await tx.query('RELEASE SAVEPOINT retention_batch');
   }
@@ -135,13 +146,36 @@ async function deleteRuns(tx: PluginTx, state: SweepState, cutoff: string, ids: 
       const res = await tx.query<{ id: string }>(sql, [state.workspaceId, cutoff, gated, [id]]);
       await tx.query('RELEASE SAVEPOINT retention_run');
       deleted.push(...res.rows.map((r) => r.id));
-    } catch {
+    } catch (err) {
+      if (!isIntegrityError(err)) throw err;
       await tx.query('ROLLBACK TO SAVEPOINT retention_run');
       await tx.query('RELEASE SAVEPOINT retention_run');
       skipped.push(id);
     }
   }
   return { deleted, skipped };
+}
+
+/** What hangs off each of these runs (source lines, endpoint tokens), taken before the delete cascades them away. */
+async function weightOf(tx: PluginTx, ids: readonly string[]): Promise<Map<string, { lines: number; tokens: number }>> {
+  const out = new Map<string, { lines: number; tokens: number }>();
+  const of = (id: string): { lines: number; tokens: number } => {
+    let w = out.get(id);
+    if (!w) {
+      w = { lines: 0, tokens: 0 };
+      out.set(id, w);
+    }
+    return w;
+  };
+  if (ids.length === 0) return out;
+  const lines = await tx.query<{ run_id: string; n: number }>('SELECT run_id, count(*)::int AS n FROM app.run_source_log WHERE run_id = ANY($1::uuid[]) GROUP BY run_id', [[...ids]]);
+  for (const r of lines.rows) of(r.run_id).lines = r.n;
+  const hasTokens = (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.mcp_run_tokens') IS NOT NULL AS ok")).rows[0]?.ok === true;
+  if (hasTokens) {
+    const tokens = await tx.query<{ run_id: string; n: number }>('SELECT run_id, count(*)::int AS n FROM app.mcp_run_tokens WHERE run_id = ANY($1::uuid[]) GROUP BY run_id', [[...ids]]);
+    for (const r of tokens.rows) of(r.run_id).tokens = r.n;
+  }
+  return out;
 }
 
 /** Runs one step of a sweep inside `tx` and says what comes next. */
@@ -175,25 +209,20 @@ export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepRe
         // when the run goes (docs/plugins/retention.md "The feed's verdict").
         counts.runMemos += (await tx.query<{ n: number }>('SELECT app.memory_memoize_runs($1::uuid[]) AS n', [ids])).rows[0]?.n ?? 0;
       }
-      const countOf = async (of: readonly string[]): Promise<{ lines: number; tokens: number }> => {
-        if (of.length === 0) return { lines: 0, tokens: 0 };
-        const lines = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.run_source_log WHERE run_id = ANY($1::uuid[])', [[...of]])).rows[0]?.n ?? 0;
-        const hasTokens = (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.mcp_run_tokens') IS NOT NULL AS ok")).rows[0]?.ok === true;
-        const tokens = hasTokens ? ((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.mcp_run_tokens WHERE run_id = ANY($1::uuid[])', [[...of]])).rows[0]?.n ?? 0) : 0;
-        return { lines, tokens };
-      };
-      const before = await countOf(ids);
+      const weights = await weightOf(tx, ids);
       if (!state.dryRun) {
         const done = await deleteRuns(tx, state, state.runLogCutoff, ids);
         doomed = done.deleted;
         skipped = done.skipped;
       }
-      // what the runs that stayed still hold is not "pruned": take it off the counts
-      const kept = skipped.length > 0 ? await countOf(skipped) : { lines: 0, tokens: 0 };
+      // Counted from the runs that actually went (what the DELETE returned), never from the ids the select proposed: the delete re-asserts the
+      // predicate and may decline a run, and a run that stayed still holds its lines and tokens.
       counts.runs += doomed.length;
       counts.runsSkipped += skipped.length;
-      counts.runSourceLines += before.lines - kept.lines;
-      counts.runTokens += before.tokens - kept.tokens;
+      for (const id of doomed) {
+        counts.runSourceLines += weights.get(id)?.lines ?? 0;
+        counts.runTokens += weights.get(id)?.tokens ?? 0;
+      }
       const last = rows[rows.length - 1]!;
       cursor = `${last.ended_at}|${last.id}`;
     }

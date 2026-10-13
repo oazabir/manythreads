@@ -17,7 +17,7 @@ export type SetRetentionSettingsRequest = z.infer<typeof SetRetentionSettingsReq
 export const RetentionSettingsResponse = z.object({ settings: RetentionSettings });
 export type RetentionSettingsResponse = z.infer<typeof RetentionSettingsResponse>;
 
-/** Queues a dry run for this workspace (counts only, whatever the deployment's mode is); its result appears as `lastSweep`. */
+/** Queues a dry run for this workspace (counts only, whatever the deployment's mode is); its result appears as `lastDryRun`. */
 export const PreviewRetentionResponse = z.object({ queued: z.literal(true) });
 export type PreviewRetentionResponse = z.infer<typeof PreviewRetentionResponse>;
 

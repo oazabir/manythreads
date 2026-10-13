@@ -97,8 +97,12 @@ describe('the settings routes', () => {
 
   it('leave an audit event naming who changed what, once, and none for a change that changes nothing', async () => {
     const before = (await eventsOf('retention.settings.changed')).length;
+    const stamped = (RetentionSettingsResponse.parse((await w.call(omar, 'GET', '/api/workspace/retention')).body).settings).updatedAt;
+    expect(stamped).not.toBeNull();
     await w.call(omar, 'PUT', '/api/workspace/retention', { runLogDays: 45 }); // unchanged
     expect((await eventsOf('retention.settings.changed')).length).toBe(before);
+    // a request that changes nothing does not move the stamp: it still names the last real change
+    expect(RetentionSettingsResponse.parse((await w.call(omar, 'GET', '/api/workspace/retention')).body).settings.updatedAt).toBe(stamped);
     await w.call(omar, 'PUT', '/api/workspace/retention', { runLogDays: 60 });
     const events = await eventsOf('retention.settings.changed');
     expect(events.length).toBe(before + 1);

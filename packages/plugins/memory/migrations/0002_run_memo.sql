@@ -6,12 +6,14 @@
 --    it is read. So a run that is about to be pruned leaves a MEMO first (`app.memory_memoize_runs`, called by retention in the transaction that
 --    deletes the run): its id, its bot, its window and its refusal — never its source lines. `app.memory_authored_verdict` reads the live runs
 --    and the memos as one set, with the same window rules, so a verdict does not change when the run it was made from is pruned.
---  * A memo is written only for a run whose verdict can change something: one whose refusal applies to something the bot authored in its window
---    (a message in a public channel, a commit), or one an approval was filed from (`approvals.run_id` is SET NULL when the run goes; the memo keeps
---    `approval_ids` so the approval's verdict survives too, clean or not). A run that read only team-visible sources, or wrote nothing team-visible,
---    and has no approval, leaves nothing: the verdict "no refusal" is what an absent run answers anyway. (A run summary the bank holds is not a
---    reason: a run that is gone, for any reason, keeps its summary in the bank — `resolveRun` answers `skip`, never `forget`.) So the table holds
---    one row per refusing run that wrote something, plus one per run that has an approval.
+--  * A memo is written only for a run whose verdict can change something: a REFUSING run that left a footprint — something the bot authored in
+--    its window (a message in a public channel, a commit), or any line of the feed's own about the run (its summary was withheld, a message of
+--    its was withheld: a commit of the bot may be in git and not in `repo_commits` yet, the reindex heals lazily, and after it the page's time
+--    falls inside the pruned run's window) — or a run an approval was filed from (`approvals.run_id` is SET NULL when the run goes; the memo keeps
+--    `approval_ids` so the approval's verdict survives too, clean or not). A run that read only team-visible sources, or left no footprint and has
+--    no approval, leaves nothing: the verdict "no refusal" is what an absent run answers anyway. (A run summary the bank holds is not a reason:
+--    a run that is gone, for any reason, keeps its summary in the bank — `resolveRun` answers `skip`, never `forget`.) So the table holds one row
+--    per refusing run with a footprint, plus one per run that has an approval.
 --  * `source_kind` gains `concept`: a file of the team's OKF bundle (`memory/`), mirrored into the bank by `memory-git-mirror` (P5-14).
 --  * `app.memory_retain_log_prune`: the one door through which log lines are ever removed, for retention. The log is append-only for the system
 --    role (0001 revokes DELETE); the door is owned by the table's owner and has two policies of its own, so nothing else gains a privilege. It
@@ -76,14 +78,16 @@ BEGIN
                  WHERE rc.team_id = c.team_id AND rc.author_id = c.bot_actor
                    AND (rc.committed_at BETWEEN c.started_at - interval '2 seconds' AND c.ended_at + interval '2 seconds'
                         OR rc.indexed_at BETWEEN c.started_at - interval '2 seconds' AND c.ended_at + interval '2 seconds'))
-           )) AS authored
+           )) AS authored,
+           -- any line of the feed's about the run: the withheld summary of a refusing run, a withheld message or page that names it
+           EXISTS (SELECT 1 FROM app.memory_retain_log l WHERE l.run_id = c.id OR (l.source_kind = 'run' AND l.source_id = c.id::text)) AS footprint
       FROM cand c
       CROSS JOIN LATERAL app.run_retain_verdict(c.id) v
   ), ins AS (
     INSERT INTO app.memory_run_memo (run_id, workspace_id, team_id, bot_id, started_at, ended_at, retain_refusal, approval_ids)
     SELECT j.id, j.workspace_id, j.team_id, j.bot_id, j.started_at, j.ended_at, j.retain_refusal, j.approvals
       FROM judged j
-     WHERE (j.retain_refusal IS NOT NULL AND j.authored) OR cardinality(j.approvals) > 0
+     WHERE (j.retain_refusal IS NOT NULL AND (j.authored OR j.footprint)) OR cardinality(j.approvals) > 0
     ON CONFLICT (run_id) DO NOTHING
     RETURNING 1
   )

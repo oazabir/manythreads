@@ -481,6 +481,40 @@ describe('the feed’s verdict about what a bot wrote does not depend on a run t
     });
   });
 
+  it('a refusing run whose commit was not indexed yet when it was pruned still withholds the page after the reindex', async () => {
+    const bot = await makeBot('unindexed-bot');
+    const startedAt = ago(100, -60_000);
+    const endedAt = ago(100, 300_000);
+    const inside = ago(100, 120_000);
+    const id = await run({ bot, startedAt, endedAt, lines: [['drive', 'x', 'person']] });
+    // the feed already said something about the run: its summary was withheld (the footprint). The bot's commit is in git, not in repo_commits.
+    await logLine({ kind: 'run', id, outcome: 'withheld', reason: 'person_source', at: ago(100), doc: null });
+    expect((await sweep()).counts).toMatchObject({ runs: 1, runMemos: 1 });
+    // the reindex heals: the commit's time falls inside the pruned run's window
+    await sys((tx) =>
+      tx.query(`INSERT INTO app.repo_commits (team_id, sha, author_id, message, committed_at, paths) VALUES ($1, md5('late') || 'bbbbbbbb', $2, 'write', $3::timestamptz, ARRAY['pages/late.md'])`, [ENG, bot.actor, inside]),
+    );
+    expect(await verdict(bot.actor, inside)).toMatchObject({ retain_refusal: 'person_source' });
+  });
+
+  it('a footprint by run id counts too (a message of the run was withheld), and a refusing run with no footprint and nothing authored leaves nothing', async () => {
+    const bot = await makeBot('footprint-bot');
+    const withLine = await run({ bot, startedAt: ago(100, -60_000), endedAt: ago(100, 300_000), lines: [['drive', 'x', 'person']] });
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, outcome, reason, run_id, created_at)
+         VALUES ($1, $2, 'b', 'message', 'some-message', 'withheld', 'authoring run: person_source', $3, now() - interval '100 days')`,
+        [omar.workspaceId, ENG, withLine],
+      ),
+    );
+    const bare = await run({ bot, startedAt: ago(101, -60_000), endedAt: ago(101, 300_000), lines: [['drive', 'y', 'person']] });
+    const { counts } = await sweep();
+    expect(counts).toMatchObject({ runs: 2, runMemos: 1 });
+    const memos = await sys(async (tx) => (await tx.query<{ run_id: string }>('SELECT run_id FROM app.memory_run_memo')).rows.map((r) => r.run_id));
+    expect(memos).toEqual([withLine]);
+    expect(memos).not.toContain(bare);
+  });
+
   it('memos of bots that no longer exist are removed (their verdict is bot_removed now); the others stay', async () => {
     const gone = await makeBot('goner');
     const stays = await makeBot('stayer');

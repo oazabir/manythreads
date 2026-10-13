@@ -45,14 +45,16 @@ export function registerRoutes(ctx: PluginContext): void {
       const body = SetRetentionSettingsRequest.parse(req.body);
       const before = await loadWindows(tx, tx.actor.workspaceId);
       const next = { runLogDays: body.runLogDays ?? before.runLogDays, memoryLogDays: body.memoryLogDays ?? before.memoryLogDays };
-      await tx.query(
-        `INSERT INTO app.retention_settings AS s (workspace_id, run_log_days, memory_log_days, updated_by, updated_at)
-         VALUES ($1::uuid, $2, $3, $4::uuid, now())
-         ON CONFLICT (workspace_id) DO UPDATE SET run_log_days = EXCLUDED.run_log_days, memory_log_days = EXCLUDED.memory_log_days,
-           updated_by = EXCLUDED.updated_by, updated_at = now()`,
-        [tx.actor.workspaceId, next.runLogDays, next.memoryLogDays, tx.actor.id],
-      );
+      // Only a window that really changes is a change: a request that says what is already so writes nothing, so `updatedAt` and `updatedBy`
+      // keep naming the last real change, and no row is made for it.
       if (next.runLogDays !== before.runLogDays || next.memoryLogDays !== before.memoryLogDays) {
+        await tx.query(
+          `INSERT INTO app.retention_settings AS s (workspace_id, run_log_days, memory_log_days, updated_by, updated_at)
+           VALUES ($1::uuid, $2, $3, $4::uuid, now())
+           ON CONFLICT (workspace_id) DO UPDATE SET run_log_days = EXCLUDED.run_log_days, memory_log_days = EXCLUDED.memory_log_days,
+             updated_by = EXCLUDED.updated_by, updated_at = now()`,
+          [tx.actor.workspaceId, next.runLogDays, next.memoryLogDays, tx.actor.id],
+        );
         await ctx.audit.emit(tx, {
           type: 'retention.settings.changed',
           workspaceId: tx.actor.workspaceId,
@@ -73,7 +75,7 @@ export function registerRoutes(ctx: PluginContext): void {
     handler: route(async (_req, tx) => {
       await requireWorkspaceAdmin(tx);
       if (retentionMode() === 'off') throw conflict('Retention is switched off in this deployment.');
-      // A dry run whatever the deployment's mode: it counts what the window would remove and deletes nothing. Its result is `lastSweep`.
+      // A dry run whatever the deployment's mode: it counts what the window would remove and deletes nothing. Its result is `lastDryRun`.
       // The job runs as the system, so the state is made here only to hand it the cutoffs (`startSweep` reads the workspace's windows).
       const state = await startSweep(tx, tx.actor.workspaceId, ctx.runtime.now(), true);
       await ctx.jobs.enqueue(tx, PRUNE_QUEUE, { ...state, workspaceId: tx.actor.workspaceId }, { dedupeKey: `preview:${tx.actor.workspaceId}` });
