@@ -172,7 +172,7 @@ export function ThreadsInbox() {
                   <li key={it.rootMessageId} role="option" aria-selected={on} data-root-id={it.rootMessageId} data-testid="thread-row">
                     <button type="button" className={`trow ${unread ? 'unread' : ''} ${on ? 'on' : ''}`} onClick={() => open(it.rootMessageId)}>
                       <span className="trow-main">
-                        <span className="ch">{it.channel.kind === 'dm' ? 'Direct message' : `# ${it.channel.name.replace(/^#/, '')}`}</span>
+                        <span className="ch">{it.channel.kind === 'dm' ? 'Direct message' : it.channel.kind === 'bot_conversation' ? 'Conversation with a bot' : `# ${it.channel.name.replace(/^#/, '')}`}</span>
                         <span className="ttl">{it.title}</span>
                         <span className="last">{it.lastReply ? `${it.lastReply.authorName}: ${it.lastReply.preview}` : it.replyCount === 1 ? '1 reply' : `${it.replyCount} replies`}</span>
                       </span>

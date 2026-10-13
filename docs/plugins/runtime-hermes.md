@@ -22,16 +22,18 @@ routes, and what each honestly means today:
 
 | Trigger | Fires when | Notes |
 |---|---|---|
-| `conversation` | the message landed in the bot's own channel (`channels.bot_id = bot.id`) | the unlisted per-bot channel P5-16 creates; the shape a person talking to a bot takes |
+| `conversation` | the message landed in the bot's own conversation channel (`channels.kind = 'bot_conversation'`, `channels.bot_id = bot.id`) | the unlisted, private channel the `conversations` plugin makes, one per bot and person ([conversations.md](./conversations.md)); the only trigger that fires there |
 | `mention` | the body names the bot (`@<slug>`), in the channels the trigger's `source` lists (all of them when it lists none) | read with the composer's parser, so a handle in a code span, a fence, a URL or an email wakes nobody |
 | `channel_message` | a message in a channel the trigger lists, or anywhere on the bot's team when it lists none | the trigger for a bot that answers everything |
 
-Never fires: a message a **bot** wrote (no bot answers a bot here — that is delegation, P6), a private channel, a DM, an
-archived channel. One message starts at most one run per bot (the job's dedupe key `runtime-hermes:<botId>:<messageId>`) and the
+Never fires: a message a **bot** wrote (no bot answers a bot here — that is delegation, P6), a private channel (a bot
+conversation is the one exception, and only for the bot it is with: no other bot of the team is considered there, and a
+`mention` or `channel_message` rule never wakes a bot inside somebody's conversation with it), a DM, an archived channel. One message starts at most one run per bot (the job's dedupe key `runtime-hermes:<botId>:<messageId>`) and the
 highest-priority trigger wins: conversation, then mention, then channel_message. A `routine`, `task_assigned`, `inbox` or
 `webhook` trigger is in `BOT.md` but not routed by this plugin yet.
 
-The run's prompt is one line of context and the message: `Nadia in #dev:\n\n@coder what changed?`. Behaviour is `SOUL.md`'s
+The run's prompt is one line of context and the message: `Nadia in #dev:\n\n@coder what changed?` (in a conversation channel,
+which has no name, `Nadia:\n\nWhat is blocking the release?`). Behaviour is `SOUL.md`'s
 job, never a prompt template's.
 
 ## The profile

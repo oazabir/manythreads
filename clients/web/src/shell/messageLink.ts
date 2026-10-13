@@ -27,8 +27,10 @@ export const dmPath = (slug: string, channelId: string): string => `/t/${slug}/d
  * root plus the thread in the right panel. `under` is what stays in the panel below the thread (the search results, so Back returns).
  */
 export function messageLocation(slug: string, t: MessageTarget, under: readonly PanelEntry[] = []): { pathname: string; search: string; state: unknown } {
-  const pathname = t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);
   const target = t.threadRootId ?? t.messageId;
+  // a conversation with a bot has no name to put in a URL: the conversation view finds the bot from the channel and opens the thread
+  if (t.channelKind === 'bot_conversation') return { pathname: `/t/${slug}/chat/${t.channelId}`, search: `?thread=${target}`, state: null };
+  const pathname = t.channelKind === 'dm' || !t.channelName ? dmPath(slug, t.channelId) : channelPath(slug, t.channelName);
   const stack = t.threadRootId ? [...under, { type: 'thread', id: t.threadRootId }] : [...under];
   const next = writePanel({ search: `?message=${target}`, state: null }, stack, false);
   return { pathname, search: next.search, state: next.state };

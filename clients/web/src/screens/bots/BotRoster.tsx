@@ -45,6 +45,7 @@ function Row({ bot, slug }: { bot: BotSummary; slug: string }) {
       <div className="b-vis">{bot.visibility === 'workspace' ? 'shared with the workspace' : 'this team'}</div>
       <div><State bot={bot} /></div>
       <div className="b-act">
+        {bot.status === 'active' ? <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="bot-talk">Talk</Link> : null}
         <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}?tab=identity`} data-testid="bot-configure">Configure</Link>
       </div>
     </div>

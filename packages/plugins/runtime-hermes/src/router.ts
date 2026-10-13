@@ -32,13 +32,15 @@ import { hasGate, runGate, type ClassifierDoor, type GateVerdict } from './gate.
 //
 // The three triggers, as this phase can honestly tell them apart:
 //
-//  * `conversation` — the message landed in the bot's own channel (`channels.bot_id = bot.id`, the unlisted per-bot channel
-//    P5-16 creates). This is also the shape a DM with a bot takes, so it is the trigger a person talking to a bot fires.
+//  * `conversation` — the message landed in the bot's own channel (`channels.bot_id = bot.id`, kind `bot_conversation`: the unlisted,
+//    private channel the conversations plugin makes, one per bot and person, P5-16). It is the trigger a person talking to a bot fires,
+//    and the only one that fires there: a bot's own conversation channel is not a place where a mention or a channel rule wakes anybody.
 //  * `mention` — the body names the bot (`@<slug>`), optionally only in the channels the trigger lists.
 //  * `channel_message` — a message in a channel the trigger lists (or, with no `source`, anywhere on the bot's team).
 //
 // What never fires a run: a message a **bot** wrote (no bot answers a bot in this phase — that is delegation, P6), a private
-// channel, a DM, an archived channel, and the bot's own reply, which is a message like any other. One message starts at most
+// channel (a bot conversation is the one exception, and only for its own bot), a DM, an archived channel, and the bot's own reply,
+// which is a message like any other. One message starts at most
 // one run per bot (the job's dedupe key), and the trigger with the highest priority wins: conversation, then mention, then
 // channel_message.
 
@@ -71,7 +73,9 @@ export function matchTrigger(triggers: readonly BotTrigger[], botSlug: string, v
   };
   const has = (type: BotTrigger['type']): BotTrigger | undefined => triggers.find((t) => t.type === type);
 
-  if (has('conversation') && view.isBotChannel) return 'conversation';
+  // The bot's own conversation channel answers to its `conversation` trigger and to nothing else: a `mention` or `channel_message` rule
+  // names channels of the team, and this one is a single person's private thread with the bot.
+  if (view.isBotChannel) return has('conversation') ? 'conversation' : null;
   const mention = has('mention');
   if (mention && view.mentions.has(botSlug.toLowerCase()) && inSource(mention)) return 'mention';
   const channelMessage = has('channel_message');
@@ -88,9 +92,12 @@ export function mentionedHandles(body: string): Set<string> {
   return new Set(parseMarkup(body).mentions.map((m) => m.handle.toLowerCase()));
 }
 
-/** What the run is asked, in one prompt: who said it, where, and the message itself. The bot's behaviour is SOUL.md's job. */
+/**
+ * What the run is asked, in one prompt: who said it, where, and the message itself. The bot's behaviour is SOUL.md's job. A conversation channel
+ * has no name (it is the person's own thread with the bot), so there the prompt is the person and the message.
+ */
 export function buildPrompt(input: { authorName: string; channelName: string; body: string }): string {
-  return `${input.authorName} in #${input.channelName}:\n\n${input.body}`;
+  return input.channelName === '' ? `${input.authorName}:\n\n${input.body}` : `${input.authorName} in #${input.channelName}:\n\n${input.body}`;
 }
 
 const RunPayload = z.strictObject({
@@ -130,6 +137,7 @@ interface MessageRow {
   channel_private: boolean;
   channel_archived: Date | null;
   channel_bot_id: string | null;
+  channel_kind: string;
   author_kind: string;
   author_name: string;
   [key: string]: unknown;
@@ -151,7 +159,7 @@ export function registerRouter(ctx: PluginContext): void {
       await tx.query<MessageRow>(
         `SELECT m.id, m.body, m.channel_id, m.thread_root_id, m.author_id,
                 c.name AS channel_name, c.team_id AS channel_team, c.private AS channel_private,
-                c.archived_at AS channel_archived, c.bot_id AS channel_bot_id,
+                c.archived_at AS channel_archived, c.bot_id AS channel_bot_id, c.kind AS channel_kind,
                 a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name
            FROM app.messages m
            JOIN app.channels c ON c.id = m.channel_id
@@ -166,17 +174,23 @@ export function registerRouter(ctx: PluginContext): void {
     // No bot answers a bot (delegation is P6), no bot runs from a private channel or a DM (SPEC §12), none from an archived
     // channel, and a message whose author is gone has nobody to answer.
     if (message.author_kind !== 'person') return;
-    if (message.channel_team === null || message.channel_private || message.channel_archived !== null) return;
+    // A bot conversation is the one private channel a bot runs from, and then only its own bot (a DM, a private team channel and every
+    // other bot's conversation stay out): the channel says who it is with, the bot's team is the channel's team.
+    const conversation = message.channel_kind === 'bot_conversation';
+    if (message.channel_team === null || message.channel_archived !== null) return;
+    if (message.channel_private && !conversation) return;
+    if (conversation && message.channel_bot_id === null) return;
 
     const view: MessageView = {
       channelName: message.channel_name,
       isBotChannel: false,
-      mentions: mentionedHandles(message.body),
+      mentions: conversation ? new Set() : mentionedHandles(message.body),
     };
     const bots = (
       await tx.query<BotRow>(
-        `SELECT id, slug, runtime, triggers FROM app.bots WHERE team_id = $1 AND status = 'active' ORDER BY slug`,
-        [message.channel_team],
+        `SELECT id, slug, runtime, triggers FROM app.bots
+          WHERE team_id = $1 AND status = 'active' AND ($2::uuid IS NULL OR id = $2::uuid) ORDER BY slug`,
+        [message.channel_team, conversation ? message.channel_bot_id : null],
       )
     ).rows;
     for (const bot of bots) {

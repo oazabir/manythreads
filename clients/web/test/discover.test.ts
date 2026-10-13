@@ -63,6 +63,11 @@ describe('where a message opens', () => {
     expect(loc.pathname).toBe(`/t/engineering/dm/${uuid(1)}`);
     expect(readPanel(loc).stack).toEqual([]);
   });
+  it('a conversation with a bot goes to the conversation view of its channel, with the thread named', () => {
+    const loc = messageLocation('engineering', { ...dev, channelKind: 'bot_conversation', channelName: null, messageId: uuid(6), threadRootId: uuid(5) }, []);
+    expect(loc.pathname).toBe(`/t/engineering/chat/${uuid(1)}`);
+    expect(new URLSearchParams(loc.search).get('thread')).toBe(uuid(5));
+  });
 });
 
 describe('direct message labels', () => {

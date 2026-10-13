@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import type { BotFrontmatter, BotRun, BotSummary } from '@manythreads/shared';
+import { DEFAULT_CONVERSATION_PROMPTS, MAX_CONVERSATION_PROMPTS, type BotFrontmatter, type BotRun, type BotSummary } from '@manythreads/shared';
 import { Time } from '../../components/ui';
 import { ChipsField, NumberField, SelectField, SwitchRow, TextField } from './fields';
 import { Block, Mono, NotSet, Row } from './parts';
@@ -107,7 +107,11 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
   const triggers: Triggers = fm(draft).triggers ?? [];
   const set = (next: Triggers): void => draft.patch((d) => ({ ...d, triggers: next.length > 0 ? next : undefined }));
   const replace = (i: number, value: Triggers[number]): void => set(triggers.map((x, j) => (j === i ? value : x)));
+  const prompts = fm(draft).conversation?.prompts ?? [];
+  const setPrompts = (next: string[]): void =>
+    draft.patch((d) => ({ ...d, conversation: next.length > 0 ? { ...d.conversation, prompts: next } : undefined }));
   return (
+    <>
     <Block title="Triggers" count={`${triggers.length} ${triggers.length === 1 ? 'trigger' : 'triggers'}`}>
       {triggers.length === 0 ? <NotSet>No triggers: this bot runs only when someone talks to it in a conversation.</NotSet> : null}
       {triggers.map((t, i) => (
@@ -156,6 +160,23 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
         </div>
       ) : null}
     </Block>
+    <Block title="Conversation" count="example questions on the empty state">
+      <ChipsField
+        label="Prompts"
+        values={prompts}
+        onChange={setPrompts}
+        readOnly={!canEdit}
+        placeholder="What is blocking the release?"
+        valid={(v) => v.length <= 200 && prompts.length < MAX_CONVERSATION_PROMPTS}
+        testId="conversation-prompts"
+        hint={
+          prompts.length === 0
+            ? `None written: people see “${DEFAULT_CONVERSATION_PROMPTS.join('”, “')}”. Up to ${String(MAX_CONVERSATION_PROMPTS)}; each is sent as written when chosen.`
+            : `Shown as chips above the message box while a person has no conversation yet. Up to ${String(MAX_CONVERSATION_PROMPTS)}.`
+        }
+      />
+    </Block>
+    </>
   );
 }
 

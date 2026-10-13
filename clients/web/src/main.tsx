@@ -10,6 +10,7 @@ import './styles/viewers.css';
 import './styles/files.css';
 import './styles/bots.css';
 import './styles/approvals.css';
+import './styles/conversations.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
 

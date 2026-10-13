@@ -44,14 +44,21 @@ function Linked({ rootId }: { rootId: string }) {
  * A thread: the root message, whether the person follows it, the replies and a composer. In the right panel (beside the channel) and
  * in the main area of the Threads inbox. Opened from a link it needs no channel in view: the threads API says where the thread lives.
  */
-export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'panel' | 'main' }) {
+export function ThreadBody({ rootId, variant, channelId: channelHint = null, awaiting = null }: {
+  rootId: string;
+  variant: 'panel' | 'main';
+  /** The channel the thread lives in, when the caller knows it and the URL does not say (a bot conversation has no `/c/:channel`). */
+  channelId?: string | null;
+  /** The name of whoever is expected to answer: while the newest message is the reader's own and is recent, the thread says it is on it. */
+  awaiting?: string | null;
+}) {
   const { team, teamSlug } = useShell();
   const slug = team?.slug ?? teamSlug;
   const people = usePeople();
   const tl = useTimeline(threadKey(rootId));
   const feed = useChannelFeed(slug);
   const inChannel = useMatch('/t/:team/c/:channel');
-  const hint = inChannel?.params.channel ? (findChannel(feed.groups, inChannel.params.channel)?.id ?? null) : null;
+  const hint = channelHint ?? (inChannel?.params.channel ? (findChannel(feed.groups, inChannel.params.channel)?.id ?? null) : null);
   const names = useMemo(() => feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, ''))), [feed.groups]);
   const typing = useTyping(threadKey(rootId));
   const scroller = useRef<HTMLDivElement>(null);
@@ -149,6 +156,10 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
     </div>
   ) : null;
   const teamForLink = slug ?? '';
+  // Waiting for an answer: the newest message is the reader's own, it is recent, and nothing of theirs is still being sent.
+  const newestMessage = tl.items.at(-1) ?? root;
+  const waiting =
+    awaiting !== null && self !== null && tl.pending.length === 0 && newestMessage.authorId === self && Date.now() - Date.parse(newestMessage.createdAt) < AWAIT_REPLY_MS;
 
   return (
     <div className={`thread ${variant}`} data-testid="thread-view" data-root-id={rootId}>
@@ -189,6 +200,7 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
           <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={replyActions} />
         ))}
         <ThreadApprovals rootId={rootId} slug={slug ?? null} />
+        {waiting ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}
         {tl.pending.map((p) => (
           <PendingRow
             key={p.localId}
@@ -219,5 +231,8 @@ export function ThreadBody({ rootId, variant }: { rootId: string; variant: 'pane
     </div>
   );
 }
+
+/** How long after the reader's own message a thread says the bot is working on it: a run that has not answered by then has failed, and the thread says nothing. */
+const AWAIT_REPLY_MS = 3 * 60_000;
 
 const isThreadHidden = (status: number | undefined): boolean => status === 403 || status === 404 || status === 400;

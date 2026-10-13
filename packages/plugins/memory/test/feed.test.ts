@@ -211,6 +211,37 @@ describe('what is never retained', () => {
     for (const id of [secret, whisper]) expect(await logOf('message', id)).toEqual([]);
   });
 
+  it('a message of a conversation with a bot, the bot’s answer and the conversation run leave the bank, the work list and the log untouched', async () => {
+    // the real door: the person opens their conversation with the bot and sends into it (the bot is on Engineering's roster, see beforeAll)
+    const opened = await w.call(nadia, 'POST', '/api/teams/engineering/bots/scribe/conversation');
+    expect(opened.status, JSON.stringify(opened.body)).toBe(201);
+    const channelId = (opened.body as { channelId: string }).channelId;
+    const question = await post(nadia, channelId, 'Private question: is the Falcon rewrite being cancelled?');
+    // the bot's answer is a message of the same private thread, written as the bot; and the run that wrote it is a conversation run
+    const botActor = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.actors WHERE kind = 'bot' AND ref_id = $1", [botId])).rows[0]!.id);
+    const answer = await w.system(
+      async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id) VALUES ($1, $2, $3, $4, $4, $5) RETURNING id`,
+            [omar.workspaceId, channelId, botActor, 'Nothing is decided about the Falcon rewrite.', question],
+          )
+        ).rows[0]!.id,
+    );
+    const run = await openRun('conversation', { channelId });
+    await runs.close(run, 'done');
+
+    // a public message behind them: once it is retained, everything before it has been handled
+    await post(nadia, devChannel, 'Control note behind the conversation: Heron.');
+    await until(async () => factWith('Heron'), 'the control message');
+    await idle();
+    expect(JSON.stringify(fake.state.calls)).not.toMatch(/Falcon|conversation run/);
+    for (const [kind, id] of [['message', question], ['message', answer], ['thread', question], ['run', run]] as const) {
+      expect(await logOf(kind, id), `${kind} ${id}`).toEqual([]);
+    }
+    expect(await pendingCount()).toBe(0);
+  });
+
   it('a channel made private takes its messages out of the bank: by its event, and by the sweep when there was no event', async () => {
     const byEvent = await createChannel('soon-private', false);
     const sweep = await createChannel('soon-private-too', false);

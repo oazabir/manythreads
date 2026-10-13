@@ -25,6 +25,14 @@ describe('matchTrigger', () => {
     expect(matchTrigger(list, 'coder', view({ isBotChannel: false }))).toBeNull();
   });
 
+  it('the bot’s own conversation channel answers to the conversation trigger and to nothing else', () => {
+    // a mention or a channel rule names channels of the team: neither wakes a bot inside one person's private thread with it
+    const rules = triggers('{ type: mention }', '{ type: channel_message }');
+    expect(matchTrigger(rules, 'coder', view({ channelName: '', isBotChannel: true, mentions: new Set(['coder']) }))).toBeNull();
+    expect(matchTrigger(triggers('{ type: channel_message }'), 'coder', view({ channelName: '', isBotChannel: true }))).toBeNull();
+    expect(matchTrigger(triggers('{ type: conversation }'), 'coder', view({ channelName: '', isBotChannel: true }))).toBe('conversation');
+  });
+
   it('fires mention when the body names the bot, and only in the channels the trigger lists', () => {
     const scoped = triggers('{ type: mention, source: { channels: ["#dev"] } }');
     expect(matchTrigger(scoped, 'coder', view({ mentions: new Set(['coder']) }))).toBe('mention');
@@ -68,6 +76,12 @@ describe('mentionedHandles', () => {
 });
 
 describe('buildPrompt', () => {
+  it('a conversation channel has no name: the prompt is the person and the message', () => {
+    expect(buildPrompt({ authorName: 'Nadia', channelName: '', body: 'What is blocking the release?' })).toBe(
+      'Nadia:\n\nWhat is blocking the release?',
+    );
+  });
+
   it('names the author, the channel and the message', () => {
     expect(buildPrompt({ authorName: 'Nadia', channelName: 'dev', body: '@coder what changed?' })).toBe(
       'Nadia in #dev:\n\n@coder what changed?',

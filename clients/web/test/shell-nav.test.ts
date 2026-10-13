@@ -77,6 +77,12 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/threads')).toBe('Threads');
     expect(viewTitle('/t/engineering/files')).toBe('Files');
     expect(viewTitle('/t/engineering/dm/abc')).toBe('Direct message');
+    expect(viewTitle('/t/engineering/bots/brain/chat')).toBe('Conversation');
+    expect(viewTitle('/t/engineering/bots/brain')).toBe('Bots');
     expect(viewTitle('/')).toBe('Home');
+  });
+
+  it('keeps the section when switching teams from a conversation with a bot', () => {
+    expect(teamSwitchPath('/t/engineering/bots/brain/chat', 'support')).toBe('/t/support/bots');
   });
 });

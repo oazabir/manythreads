@@ -6,8 +6,9 @@ import { postChannelMessage, type Deps } from './service.ts';
 // capability is how one plugin calls another's behaviour — plugins never import each other — so the reply a runtime posts
 // into a thread arrives here and goes through `postChannelMessage`, the same function the post route calls. Nothing about
 // the write changes because a bot made it: the author is the transaction's actor (the run's bot), the permission is
-// `app.channel_can(channel, 'post')` (a bot is a member of its team, so its team's channels — never a private channel or a
-// DM), and the message is a normal message: mention resolution, unread counters, live push, `channel.message.posted`.
+// `app.channel_can(channel, 'post')` (a bot is a member of its team, so its team's public channels — never a private channel or a
+// DM; the one exception is the bot conversation channel its own live run answers in, channels migration 0006), and the message is a
+// normal message: mention resolution, unread counters, live push, `channel.message.posted`.
 //
 // `messages.search` lives in the search plugin (it owns the index); this file is only the write side.
 

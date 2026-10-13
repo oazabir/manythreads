@@ -114,6 +114,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           </p>
         </div>
         <div className="b-head-act">
+          {bot.status === 'active' ? <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="open-conversation">Talk to {bot.name}</Link> : null}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
         </div>

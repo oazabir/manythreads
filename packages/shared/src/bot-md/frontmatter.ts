@@ -59,6 +59,18 @@ export const BotTrigger = z.discriminatedUnion('type', [
 ]);
 export type BotTrigger = z.infer<typeof BotTrigger>;
 
+/** At most this many example questions on a conversation's empty state (SPEC §6.2: "a few prompt chips"). */
+export const MAX_CONVERSATION_PROMPTS = 6;
+
+/**
+ * How the bot's conversation view opens (SPEC §6.2). `prompts` are the example questions shown as chips above the message box while the person has
+ * nothing yet; each one is sent as written when it is chosen, so it is a question, not a label. Left out, the platform's defaults are shown.
+ */
+export const BotConversation = z.strictObject({
+  prompts: z.array(z.string().min(1).max(200)).max(MAX_CONVERSATION_PROMPTS).optional(),
+});
+export type BotConversation = z.infer<typeof BotConversation>;
+
 const ModelBudgets = z.strictObject({
   dailyUsd: z.number().nonnegative().optional(),
   monthlyUsd: z.number().nonnegative().optional(),
@@ -194,6 +206,7 @@ export const BotFrontmatter = z.strictObject({
   model: BotModelConfig.optional(),
   visibility: BotVisibility.optional(),
   triggers: z.array(BotTrigger).optional(),
+  conversation: BotConversation.optional(),
   capabilities: BotCapabilities.optional(),
   knowledge: z.array(BotKnowledgeEntry).optional(),
   memory: BotMemory.optional(),

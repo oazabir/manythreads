@@ -84,6 +84,15 @@ export const retentionMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/retention/migrations/', import.meta.url)),
 };
 
+/**
+ * Migrations of the conversations plugin (`app.conversations_open`, `app.conversations`); pass it in `sources` after `channelsMigrationSource` and
+ * `botsMigrationSource` (it reads the bots table and the bot's runs, and makes a channel of the channels plugin).
+ */
+export const conversationsMigrationSource: MigrationSource = {
+  namespace: 'conversations',
+  dir: fileURLToPath(new URL('../../plugins/conversations/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',

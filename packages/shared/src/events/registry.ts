@@ -18,6 +18,7 @@ import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
 import { BotsBotInvalidEvent } from './bots.bot.invalid.ts';
 import { BotsBotRemovedEvent } from './bots.bot.removed.ts';
 import { BotsRunClosedEvent } from './bots.run.closed.ts';
+import { ConversationsConversationStartedEvent } from './conversations.conversation.started.ts';
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
@@ -83,6 +84,7 @@ export const eventRegistry = {
   'bots.bot.invalid': { 1: BotsBotInvalidEvent },
   'bots.bot.removed': { 1: BotsBotRemovedEvent },
   'bots.run.closed': { 1: BotsRunClosedEvent },
+  'conversations.conversation.started': { 1: ConversationsConversationStartedEvent },
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
   'retention.settings.changed': { 1: RetentionSettingsChangedEvent },
   'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },
@@ -177,6 +179,7 @@ export type AnyEvent =
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof BotsRunClosedEvent>
+  | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
@@ -238,6 +241,7 @@ export type LatestEvent =
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof BotsRunClosedEvent>
+  | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>

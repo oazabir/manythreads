@@ -19,6 +19,7 @@ import { DirectMessageView, HomeView, RequireTeam, SectionView, TeamHome } from 
 import { BotPage } from './screens/bots/BotPage';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
 import { BotRoster } from './screens/bots/BotRoster';
+import { ConversationRedirect, ConversationView } from './screens/conversations/ConversationView';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
 import { Teams } from './screens/Teams';
@@ -60,6 +61,8 @@ function AppRoutes() {
             <Route path="/t/:team/approvals" element={<RequireTeam><ApprovalsScreen /></RequireTeam>} />
             <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />
+            <Route path="/t/:team/bots/:botSlug/chat" element={<RequireTeam><ConversationView /></RequireTeam>} />
+            <Route path="/t/:team/chat/:channelId" element={<RequireTeam><ConversationRedirect /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
           </Route>

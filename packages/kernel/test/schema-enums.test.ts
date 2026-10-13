@@ -12,6 +12,7 @@ import {
   BotStatus,
   BotVisibility,
   ChannelKind,
+  ConversationVisibility,
   MemoryRetainOutcome,
   MemorySourceKind,
   MemoryStore,
@@ -42,6 +43,7 @@ import {
   approvalsMigrationSource,
   botsMigrationSource,
   channelsMigrationSource,
+  conversationsMigrationSource,
   filesMigrationSource,
   gatewayLlmMigrationSource,
   memoryMigrationSource,
@@ -98,6 +100,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'approvals.outcome': ApprovalOutcome,
   'approvals.resume_kind': ApprovalResumeKind,
   'approval_decisions.decision': ApprovalDecisionKind,
+  'conversations.visibility': ConversationVisibility,
   'memory_retain_log.store': MemoryStore,
   'memory_retain_log.source_kind': MemorySourceKind,
   'memory_retain_log.outcome': MemoryRetainOutcome,
@@ -118,7 +121,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

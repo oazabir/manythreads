@@ -54,5 +54,6 @@ export function viewTitle(pathname: string): string {
   const [, section = '', rest] = m;
   if (section === 'c' && rest) return `# ${decodeURIComponent(rest)}`;
   if (section === 'dm') return 'Direct message';
+  if (section === 'chat' || (section === 'bots' && /^\/t\/[^/]+\/bots\/[^/]+\/chat\/?$/.test(pathname))) return 'Conversation';
   return TITLES[section] ?? 'Home';
 }

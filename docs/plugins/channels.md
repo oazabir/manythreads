@@ -31,6 +31,20 @@ A suspended person sees nothing. The system role bypasses everything through `ap
 - Hidden and missing look the same: every refusal on an unseen channel is **403**, never 404.
 - `app.lookup_can_team()` answers NULL (not false) for a non-member: every definer-side check wraps it in `coalesce(..., false)` (MISTAKES P3-05).
 
+## Bot conversations (migration `0006_bot_conversations.sql`, PLAN P5-16)
+
+A channel of `kind = 'bot_conversation'` (reserved since 0001: private, `bot_id`) is a person's conversation with a bot; the
+[conversations plugin](./conversations.md) makes it, one per (bot, person), with the bot's team on `team_id` and the person as its only
+member, so everything that follows a channel's visibility keeps it theirs. 0006 changes two things of the channels plugin's own:
+
+- **`app.visible_channel_ids`**: a bot actor sees, for `read` and `post`, the bot conversation channel that **its own live run** answers
+  in (`bot_runs.channel_id`, the run `running`, the channel's `bot_id` the run's bot) and no other: not the same bot's channels with other
+  people, not anything outside a run, not after the run ended. This is what lets the runtime post its reply with `messages.post` as the
+  bot. A conversation channel is not readable by a bot as a standing right.
+- **`app.channels_remove_member`**: nobody leaves a bot conversation (a DM is the same).
+
+The channel directory (`GET /api/teams/:slug/channels`) lists `kind = 'channel'` only, so a conversation is never in the sidebar.
+
 ## Tables (migrations `0001_channels.sql`, `0002_messages.sql`, `0003_mentions_presence_typing.sql`)
 
 | Table | Notes |
