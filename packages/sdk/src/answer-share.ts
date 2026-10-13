@@ -7,8 +7,8 @@ import {
   type MaskedAnswer,
 } from '@manythreads/shared';
 import { z } from 'zod';
-import { HttpError, invalid, notFound } from './http.ts';
-import type { PluginTx } from './types.ts';
+import { invalid, notFound } from './http.ts';
+import { HttpError, type PluginTx } from './types.ts';
 
 // Sharing an answer of one's own conversation, as the plugins that do it see it (PLAN P5-17): `conversations` (share to a channel, hand to a bot)
 // and `pages` (save as a page) arrive at the same copy through the same steps, so the steps are here once:
