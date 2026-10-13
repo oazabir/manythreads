@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { parseConcept } from '@manythreads/shared';
+import { parseConcept, splitConcept } from '@manythreads/shared';
 import { startFakeHindsight, type FakeHindsight, type FakeHindsightFact } from '../../../../tools/fake-hindsight/src/server.ts';
 import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from '../../repo-git/test/world.ts';
 
@@ -98,9 +98,12 @@ describe('a commit under memory/', () => {
 
   it('wrote the bundle root once, through the one writer, as the system', async () => {
     const index = await until(async () => blob('memory/index.md'), 'memory/index.md');
-    const parsed = parseConcept(index);
-    expect(parsed).toMatchObject({ ok: true, frontmatter: { okf_version: '0.2' } });
+    // the bundle root is not a concept (no `type`): its frontmatter is `okf_version` and nothing else
+    const split = splitConcept(index);
+    expect(split).toMatchObject({ ok: true, frontmatter: 'okf_version: "0.2"\n' });
     expect(await blob('memory/log.md')).toContain('## ');
+    // git has the commit a moment before the index row is committed
+    await until(async () => ((await commitsOf()).some((c) => c.message === 'Create the team memory bundle') ? true : null), 'the bundle commit in the index');
     const commits = await commitsOf();
     expect(commits.filter((c) => c.message === 'Create the team memory bundle')).toEqual([{ message: 'Create the team memory bundle', author_id: null }]);
     // neither file is a concept: they are not in the bank
@@ -181,6 +184,7 @@ describe('the daily journal', () => {
     expect(journal).not.toContain('person_source');
     expect(journal).not.toContain(SOURCE_TEXT);
 
+    await until(async () => ((await commitsOf()).some((c) => c.message === `Journal ${YESTERDAY}`) ? true : null), 'the journal commit in the index');
     const author = (await commitsOf()).filter((c) => c.message === `Journal ${YESTERDAY}`);
     expect(author).toEqual([{ message: `Journal ${YESTERDAY}`, author_id: null }]);
 
