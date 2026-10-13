@@ -12,6 +12,7 @@ import {
   memoryMigrationSource,
   personas,
   repoGitMigrationSource,
+  retentionMigrationSource,
   TEAM_IDS,
   teamsMigrationSource,
   testKernelMigrationSource,
@@ -228,6 +229,7 @@ beforeAll(async () => {
       repoGitMigrationSource,
       memoryMigrationSource,
       memoryHindsightMigrationSource,
+      retentionMigrationSource,
     ],
   });
   await createPersonas(db);
@@ -992,5 +994,80 @@ describe('a page', () => {
     await drain();
     expect(stub.calls).toEqual([]);
     expect(await linesOf('page', source)).toEqual([]);
+  });
+});
+
+describe('after retention pruned the run', () => {
+  /** What retention does to a run: the memo first, then the run (its source lines go with it). */
+  const prune = (id: string): Promise<unknown> =>
+    sys(async (tx) => {
+      await tx.query('SELECT app.memory_memoize_runs($1::uuid[])', [[id]]);
+      await tx.query('DELETE FROM app.bot_runs WHERE id = $1', [id]);
+    });
+  const approvalOf = (runId: string, status: 'approved' | 'denied'): Promise<string> =>
+    sys(async (tx) => {
+      const id = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.approvals (workspace_id, team_id, source, status, outcome, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, run_id, decided_at)
+           VALUES ($1, $2, 'grant', $3, $4, 'pages.write', 'Write pages/reports/q3.md', '{}', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $5, 'Nadia', $6, $7, now()) RETURNING id`,
+          [omar.workspaceId, ENG, status, status === 'approved' ? 'ran' : 'none', nadia.actorId, botId, runId],
+        )
+      ).rows[0]!.id;
+      await tx.query('INSERT INTO app.approval_decisions (approval_id, workspace_id, team_id, decider_id, decider_name, decision) VALUES ($1, $2, $3, $4, $5, $6)', [id, omar.workspaceId, ENG, omar.actorId, 'Omar', status]);
+      return id;
+    });
+
+  it('a run summary that is in the bank stays there: the source is gone, the memory is not (a run that is gone any other way still forgets)', async () => {
+    const kept = await run([['memory', 'bank:team:test', 'team']]);
+    const removed = await run([['memory', 'bank:team:test', 'team']]);
+    for (const id of [kept, removed]) await mark('run', id);
+    await drain();
+    expect((await linesOf('run', kept)).map((l) => l.outcome)).toEqual(['retained']);
+    stub.reset();
+
+    await prune(kept);
+    await sys((tx) => tx.query('DELETE FROM app.bot_runs WHERE id = $1', [removed])); // no memo: not retention's doing
+    for (const id of [kept, removed]) await mark('run', id);
+    await drain();
+    expect((await linesOf('run', kept)).map((l) => l.outcome)).toEqual(['retained']);
+    expect((await linesOf('run', removed)).map((l) => [l.outcome, l.reason])).toEqual([['retained', ''], ['forgotten', 'gone']]);
+    expect(stub.forgets()).toHaveLength(1);
+  });
+
+  it('an approval withheld because its run read a person source is withheld after the run is pruned, and is not retained', async () => {
+    const r = await run([['drive', 'finance/q3.xlsx', 'person']]);
+    const id = await approvalOf(r, 'approved');
+    await mark('approval', id);
+    await drain();
+    expect(await linesOf('approval', id)).toMatchObject([{ outcome: 'withheld', reason: 'person_source' }]);
+    stub.reset();
+
+    await prune(r);
+    const row = await sys(async (tx) => (await tx.query<{ run_id: string | null; had_run: boolean }>('SELECT run_id, had_run FROM app.approvals WHERE id = $1', [id])).rows[0]);
+    expect(row).toEqual({ run_id: null, had_run: true });
+    await mark('approval', id);
+    await drain();
+    expect(stub.calls).toEqual([]);
+    expect(await linesOf('approval', id)).toHaveLength(1);
+  });
+
+  it('an approval whose run is gone and left no memo cannot be judged, which is a refusal (never "a run that read nothing")', async () => {
+    const r = await run([['memory', 'bank:team:test', 'team']]);
+    const id = await approvalOf(r, 'denied');
+    await sys((tx) => tx.query('DELETE FROM app.bot_runs WHERE id = $1', [r]));
+    await mark('approval', id);
+    await drain();
+    expect(stub.calls).toEqual([]);
+    expect(await linesOf('approval', id)).toMatchObject([{ outcome: 'withheld', reason: 'run_gone' }]);
+  });
+
+  it('an approval whose pruned run read only the team’s own sources is retained as before', async () => {
+    const r = await run([['memory', 'bank:team:test', 'team']]);
+    const id = await approvalOf(r, 'approved');
+    await prune(r);
+    await mark('approval', id);
+    await drain();
+    expect(stub.retains()).toHaveLength(1);
+    expect(await linesOf('approval', id)).toMatchObject([{ outcome: 'retained' }]);
   });
 });

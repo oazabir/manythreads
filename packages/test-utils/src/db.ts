@@ -72,6 +72,18 @@ export const memoryHindsightMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/memory-hindsight/migrations/', import.meta.url)),
 };
 
+/** Migrations of the memory-git-mirror plugin (`memory_mirror_pending`, `memory_mirror_teams`); pass it in `sources` after `memoryMigrationSource` and `repoGitMigrationSource`. */
+export const memoryGitMirrorMigrationSource: MigrationSource = {
+  namespace: 'memory-git-mirror',
+  dir: fileURLToPath(new URL('../../plugins/memory-git-mirror/migrations/', import.meta.url)),
+};
+
+/** Migrations of the retention plugin (`retention_settings`, the DELETE policies on the run logs); pass it in `sources` after `botsMigrationSource` and `memoryMigrationSource`. */
+export const retentionMigrationSource: MigrationSource = {
+  namespace: 'retention',
+  dir: fileURLToPath(new URL('../../plugins/retention/migrations/', import.meta.url)),
+};
+
 /** Migrations of the search plugin (search functions over messages, threads and files); pass it after the files source. */
 export const searchMigrationSource: MigrationSource = {
   namespace: 'search',

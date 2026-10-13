@@ -13,9 +13,10 @@ export type MemoryStore = z.infer<typeof MemoryStore>;
 
 /**
  * What a retained document was made of. The first five are the platform's feed (docs/plugins/memory.md); `run_tool` is a bot's own
- * `memory.retain` call (its source id is the document id the platform derived for it).
+ * `memory.retain` call (its source id is the document id the platform derived for it); `concept` is a file of the team's OKF bundle (`memory/`),
+ * mirrored into the bank by `memory-git-mirror` (docs/plugins/memory-git-mirror.md; its source id is `<team id>/<path>`).
  */
-export const MemorySourceKind = z.enum(['message', 'thread', 'run', 'approval', 'page', 'run_tool']);
+export const MemorySourceKind = z.enum(['message', 'thread', 'run', 'approval', 'page', 'run_tool', 'concept']);
 export type MemorySourceKind = z.infer<typeof MemorySourceKind>;
 
 /**
@@ -36,7 +37,7 @@ export const MemoryRetainLogEntry = z.object({
   /** The bank it went to, `team:<workspace slug>:<team slug>`, as named at the time. */
   bank: z.string(),
   sourceKind: MemorySourceKind,
-  /** The source object's id (a message, thread, run or approval id; `<team id>/<path>` for a page; the document id for a `run_tool`). */
+  /** The source object's id (a message, thread, run or approval id; `<team id>/<path>` for a page or a concept; the document id for a `run_tool`). */
   sourceId: z.string(),
   /** The engine's document id for `retained` and `forgotten` lines; null otherwise. */
   documentId: z.string().nullable(),

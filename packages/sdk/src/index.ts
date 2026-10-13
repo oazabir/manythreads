@@ -5,6 +5,7 @@ export * from './types.ts';
 export * from './cohesion.ts';
 export * from './repo.ts';
 export * from './memory.ts';
+export * from './memory-ledger.ts';
 export * from './approvals.ts';
 export * from './egress.ts';
 export * from './runtime.ts';

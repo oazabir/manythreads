@@ -14,7 +14,7 @@ the branch last). Loose objects pile up with writes; a periodic `git gc` over th
 ## The layout of a new team's repo (SPEC section 5.1, criterion 1)
 
 The first commit (author `manythreads`, subject "Create the team repository") writes `TEAM.md` and the folders of the layout. Git keeps no empty folder, so each is a `.gitkeep`
-until it has content; the Files tree hides `.gitkeep`.
+until it has content; the Files tree hides `.gitkeep`. The `memory-git-mirror` plugin adds `memory/index.md` and `memory/log.md` (the OKF bundle root) through the writer the first time a team's memory is used, on a deployment with a memory engine ([memory-git-mirror.md](./memory-git-mirror.md)).
 
 ```
 TEAM.md                       the pending TEAM.md of team creation (team_pending_files, stamped applied_at), else the template's copy, else a minimal manifest

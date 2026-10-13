@@ -1,4 +1,4 @@
-import type { MemoryProvider, PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
+import { noteMemoryNotConfigured, type MemoryProvider, type PluginContext, type PluginEvent, type PluginTx } from '@manythreads/sdk';
 import {
   ApprovalsApprovalDecidedEvent,
   ApprovalsApprovalResumedEvent,
@@ -58,27 +58,10 @@ export function registerConsumers(ctx: PluginContext): void {
     if (!enabled) {
       // One line per team per day says the feed is off (and why nothing of this team is in the bank). The change itself is queued only when the
       // bank holds a document for the source: a delete or an edit made while the engine is off must still take that document out when it is back.
-      // Events of one batch are handled at the same time: the lock makes the second of two see the first's line (the day's one line per team).
-      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`memory.not_configured:${teamId}`]);
-      await tx.query(
-        `INSERT INTO app.memory_retain_log (workspace_id, team_id, bank, source_kind, source_id, outcome, reason)
-         SELECT $1::uuid, $2::uuid, '(no engine)', $3, $4, 'not_configured', 'no memory engine is configured in this deployment'
-          WHERE NOT EXISTS (
-            SELECT 1 FROM app.memory_retain_log
-             WHERE team_id = $2::uuid AND outcome = 'not_configured' AND created_at > now() - $5::float8 * interval '1 millisecond')`,
-        [workspaceId, teamId, kinds[0], ids[0], NOT_CONFIGURED_EVERY_MS],
-      );
-      // set-based: which of them the bank holds a document for (the newest retained / forgotten line says retained)
-      const held = await tx.query<{ kind: string; id: string }>(
-        `SELECT s.kind, s.id FROM unnest($1::text[], $2::text[]) AS s(kind, id)
-          WHERE (SELECT l.outcome FROM app.memory_retain_log l
-                  WHERE l.source_kind = s.kind AND l.source_id = s.id AND l.outcome IN ${HELD_STATE_OUTCOMES_SQL}
-                  ORDER BY l.id DESC LIMIT 1) = 'retained'`,
-        [kinds, ids],
-      );
-      if (held.rows.length === 0) return;
-      kinds = held.rows.map((r) => r.kind);
-      ids = held.rows.map((r) => r.id);
+      const held = await noteMemoryNotConfigured(tx, { workspaceId, teamId, kinds, ids }, NOT_CONFIGURED_EVERY_MS);
+      if (held.length === 0) return;
+      kinds = held.map((r) => r.kind);
+      ids = held.map((r) => r.id);
     }
     // The digest key exists before any drain needs it, committed with the work row (see keys.ts)
     await ensureWorkspaceKey(tx, workspaceId);

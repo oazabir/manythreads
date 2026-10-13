@@ -1,4 +1,5 @@
-import { createHash, createHmac } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { memoryContentDigest } from '@manythreads/sdk';
 
 // Pure text work for the feed: what a source becomes as a memory document, the hash that recognises it again, and the id the engine files it
 // under. No database, no clock, no engine. Everything here is linear in the input (slices, joins and one hash; no regular expression with a
@@ -55,7 +56,7 @@ export function tidy(text: string): string {
  * document id carries. Keyed because an unkeyed digest of a message is a dictionary oracle for whoever reads the log or a document id — and a
  * `forgotten` line is a deleted, perhaps secret, text. The same text in the same workspace always has the same digest (idempotency).
  */
-export const contentHash = (text: string, key: Buffer | string): string => createHmac('sha256', key).update(text, 'utf8').digest('hex');
+export const contentHash = (text: string, key: Buffer | string): string => memoryContentDigest(text, key);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: string): boolean => UUID.test(value);

@@ -105,6 +105,7 @@ beforeAll(async () => {
   process.env['MANYTHREADS_HINDSIGHT_URL'] = fake.url;
   process.env['MANYTHREADS_MEMORY_DEBOUNCE_MS'] = '0';
   process.env['MANYTHREADS_MEMORY_DEFER_MS'] = '300';
+  process.env['MANYTHREADS_MIRROR_DEBOUNCE_MS'] = '0';
   world = await createWorld();
   await ensureChannels(world);
   const workspaceSlug = await world.system(async (tx) => (await tx.query<{ slug: string }>('SELECT slug FROM app.workspaces LIMIT 1')).rows[0]!.slug);
@@ -121,7 +122,7 @@ beforeAll(async () => {
 }, 240_000);
 
 afterAll(async () => {
-  for (const name of ['MANYTHREADS_HINDSIGHT_URL', 'MANYTHREADS_MEMORY_DEBOUNCE_MS', 'MANYTHREADS_MEMORY_DEFER_MS']) delete process.env[name];
+  for (const name of ['MANYTHREADS_HINDSIGHT_URL', 'MANYTHREADS_MEMORY_DEBOUNCE_MS', 'MANYTHREADS_MEMORY_DEFER_MS', 'MANYTHREADS_MIRROR_DEBOUNCE_MS']) delete process.env[name];
   await appPool?.end();
   await systemPool?.end();
   await world?.close();
@@ -229,6 +230,73 @@ describe('team A’s feed never lands in team B’s bank', () => {
     }
     for (const f of fake.state.banks.get(BANK_A) ?? []) {
       expect(f.metadata['team']).toBe(A);
+    }
+  });
+});
+
+describe('team A’s memory/ concepts (the git mirror) never land in team B’s bank', () => {
+  const CONCEPT_A = 'Falconwing keeps the Merlin escrow keys in the Osprey vault';
+  const CONCEPT_B = 'Halcyon renewals are handled by the Lanner desk on Thursdays';
+  const path = 'memory/facts/escrow.md';
+  const concept = (text: string): string => `---\ntype: Fact\ntitle: Escrow\n---\n\n${text}\n`;
+  const mirrorIdle = () =>
+    until(async () => world.system(async (tx) => ((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.memory_mirror_pending')).rows[0]!.n === 0 ? true : null)), 'the mirror work list to empty');
+
+  it('a concept committed to team A’s repo is in team A’s bank, typed and tagged, and in no other bank', async () => {
+    const res = await world.call(omar, 'POST', `/api/teams/${A}/repo/commit`, { changes: [{ op: 'put', path, content: concept(CONCEPT_A) }], message: 'Record the escrow facts' });
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+    await until(async () => inBank(BANK_A, 'Osprey vault'), 'the concept in team A’s bank');
+    await mirrorIdle();
+    const fact = (fake.state.banks.get(BANK_A) ?? []).find((f) => f.text.includes('Osprey vault'))!;
+    expect(fact.metadata).toMatchObject({ team: A, feed_kind: 'concept', concept_path: path, concept_type: 'Fact' });
+    expect(fact.tags).toContain('type:fact');
+    expect(inBank(BANK_B, 'Osprey')).toBe(false);
+    expect(sentTo(BANK_B)).not.toMatch(/Osprey|Merlin|escrow/i);
+  });
+
+  it('an event that names the wrong team changes nothing: the path is read from the team the event names, so team B reads nothing', async () => {
+    const before = fake.state.calls.length;
+    await world.system((tx) =>
+      emit(tx, {
+        type: 'repo.repo.committed',
+        schemaVersion: 1,
+        workspaceId: omar.workspaceId,
+        teamId: teamIds[B],
+        sha: 'a'.repeat(40),
+        parentSha: null,
+        authorId: null,
+        coAuthorIds: [],
+        subject: 'forged',
+        paths: [{ path, op: 'put' }],
+      }),
+    );
+    // a concept of team B's own behind it: when it is in team B's bank, the forged event has been handled
+    const own = await world.call(sameera, 'POST', `/api/teams/${B}/repo/commit`, { changes: [{ op: 'put', path: 'memory/facts/renewals.md', content: concept(CONCEPT_B) }], message: 'Record the renewals desk' });
+    expect(own.status, JSON.stringify(own.body)).toBeLessThan(300);
+    await until(async () => inBank(BANK_B, 'Lanner desk'), 'team B’s own concept');
+    await mirrorIdle();
+    const calls = fake.state.calls.slice(before);
+    expect(calls.filter((c) => c.bank === BANK_B).every((c) => !JSON.stringify(c.body).includes('Osprey'))).toBe(true);
+    expect(inBank(BANK_B, 'Osprey')).toBe(false);
+    expect(inBank(BANK_A, 'Lanner')).toBe(false);
+    expect(sentTo(BANK_A)).not.toMatch(/Lanner|Halcyon renewals/);
+  });
+
+  it('each team’s bundle root is written to its own repository', async () => {
+    for (const team of [A, B]) {
+      const root = await until(async () => {
+        const res = await world.call(omar, 'GET', `/api/teams/${team}/repo/blob?path=${encodeURIComponent('memory/index.md')}&ref=main`);
+        return res.status === 200 ? (res.body as { content: string }).content : null;
+      }, `the bundle root of ${team}`);
+      expect(root).toContain('okf_version');
+    }
+  });
+
+  it('every concept in each bank names its own team', async () => {
+    for (const [bank, team] of [[BANK_A, A], [BANK_B, B]] as const) {
+      for (const f of fake.state.banks.get(bank) ?? []) {
+        if (f.metadata['feed_kind'] === 'concept') expect(f.metadata['team']).toBe(team);
+      }
     }
   });
 });

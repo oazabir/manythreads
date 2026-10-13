@@ -102,9 +102,18 @@ COMMIT;
 
 (Narrow the `WHERE` to one team or one source when only some banks are gone.) Nothing else ever drops a failing forget.
 
+## When a run is pruned (P5-14, migration 0002)
+
+[retention](./retention.md) deletes run logs after a window. Two things must not change when it does, and migration `0002_run_memo.sql` is how they do not:
+
+* **The verdict about what a bot wrote.** `app.memory_memoize_runs(ids)` leaves a memo (`app.memory_run_memo`: window, bot, refusal, the approvals filed from the run — never source lines) for each pruned run that still matters, in the transaction that deletes it, and `app.memory_authored_verdict` reads live runs and memos as one set. A message withheld because its run read a person source stays withheld when a person replies to it a year later.
+* **What the bank holds.** A run whose summary is in the bank and whose row is gone for retention's reasons resolves to `skip('pruned')`, never `forget('gone')`. An approval whose run was pruned takes its verdict from the memo (`approval_ids`); one with no memo is withheld as `run_gone` (fail closed — `approvals.run_id` is SET NULL, and "no run" is not "a run that read nothing").
+
+`source_kind` also gains `concept`: the git mirror's lines ([memory-git-mirror.md](./memory-git-mirror.md)). The rules of reading and writing the log (`latestMemoryLine`, `appendMemoryLine`, the keyed digest, the `not_configured` note) live in `@manythreads/sdk` (`memory-ledger.ts`) since both plugins write the table; this plugin's `rows.ts` and `keys.ts` re-export them.
+
 ## memory_retain_log
 
-`app.memory_retain_log` (migration 0001; PLAN A.5 `memory_retain_log`): `workspace_id`, `team_id`, `store` (`team_bank`; `person_file` is P5-26's), `bank`, `source_kind`, `source_id`, `channel_id?` (so a channel that stops being public finds its documents), `document_id?`, `content_hash?` (the keyed digest of the retained text: the text itself is never stored; a column, **not a field of the API shape** — the scanner of `secret-readback.spec.ts` rightly refuses any key called `*hash*`), `outcome` (`retained` \| `forgotten` \| `withheld` \| `not_configured` \| `failed`), `reason`, `run_id?`, `source_scopes[]`, `actor_id?`, `link`, `created_at`. **Append-only** (no UPDATE/DELETE for any role). The newest line of a source says what the bank holds for it. A private channel's or DM's messages leave **no** line (the id of a private message is not for a lead who is not in the channel), and neither does a run of a private conversation (one line per turn would be a log of who talks to which bot); runs that read a person or private source, approvals and bot-authored text in public channels do, which is SPEC §15's "what was withheld".
+`app.memory_retain_log` (migration 0001; PLAN A.5 `memory_retain_log`): `workspace_id`, `team_id`, `store` (`team_bank`; `person_file` is P5-26's), `bank`, `source_kind`, `source_id`, `channel_id?` (so a channel that stops being public finds its documents), `document_id?`, `content_hash?` (the keyed digest of the retained text: the text itself is never stored; a column, **not a field of the API shape** — the scanner of `secret-readback.spec.ts` rightly refuses any key called `*hash*`), `outcome` (`retained` \| `forgotten` \| `withheld` \| `not_configured` \| `failed`), `reason`, `run_id?`, `source_scopes[]`, `actor_id?`, `link`, `created_at`. **Append-only** (no UPDATE/DELETE for the system role; the one door that removes lines is retention's `app.memory_retain_log_prune`, migration 0002). The newest line of a source says what the bank holds for it. A private channel's or DM's messages leave **no** line (the id of a private message is not for a lead who is not in the channel), and neither does a run of a private conversation (one line per turn would be a log of who talks to which bot); runs that read a person or private source, approvals and bot-authored text in public channels do, which is SPEC §15's "what was withheld".
 
 Row level security: `team` kind, `SELECT` for `app.readable_team_ids('manage')` (the team's leads and workspace admins; hoisted), all writes for the system role only, plus the one definer door `app.memory_retain_log_run` (memory-hindsight 0002) through which a run's own `memory.retain` logs `retained` (one line per document, `source_kind` `run_tool`) or `withheld` (the refusal as the reason). `GET /api/teams/:slug/memory/retain-log?outcome=&source=&before=&limit=` (`ListMemoryRetainLogResponse`: newest first, `next` cursor) answers the same people and 403 to everyone else.
 
@@ -124,6 +133,6 @@ Row level security: `team` kind, `SELECT` for `app.readable_team_ids('manage')` 
 
 * Handover, task and board changes as sources (phase 6 events); `files.file.uploaded`.
 * The feed's text does not pass `hook.pre_egress` (DLP) before it goes to the engine: the engine's own LLM calls go through the LiteLLM proxy, and a secret typed in a public channel is as visible to the team as to the bank. P10-04 (personal-data and custom-regex DLP) is where a feed hook belongs.
-* No backfill; no retention of the log itself (it is metadata; the P5-14 `retention` plugin decides).
+* No backfill. The log's retention is the `retention` plugin's ([retention.md](./retention.md)): attempt notes and superseded lines past a year; never a `withheld` line or the newest state of a source.
 * The memory screen (P5-26) will read `GET …/retain-log`; no UI change here.
 * A thread document is re-retained as a whole when it changes (≤ 18,000 characters): a very busy thread costs one call per debounce window.

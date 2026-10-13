@@ -275,7 +275,12 @@ export async function resolveRun(tx: PluginTx, runId: string): Promise<Resolutio
       [runId],
     )
   ).rows[0];
-  if (!r) return forget('gone');
+  if (!r) {
+    // A run that retention pruned leaves a memo (migration 0002): the log it was made from is gone, the document made from it is not, and the bank
+    // keeps it (the memory outlives the run's log). A run that is gone for any other reason (its bot was removed) has no document to keep.
+    const memo = (await tx.query('SELECT 1 FROM app.memory_run_memo WHERE run_id = $1::uuid', [runId])).rows[0];
+    return memo !== undefined ? skip('pruned') : forget('gone');
+  }
   const at: Provenance = {
     teamId: r.team_id,
     workspaceId: r.workspace_id,
@@ -344,6 +349,8 @@ interface ApprovalRow extends Record<string, unknown> {
   requester_id: string;
   requester_name: string;
   run_id: string | null;
+  /** The approval was filed from a run (`run_id` was set at insert); `run_id` is NULL afterwards when that run was deleted. */
+  had_run: boolean;
   channel_id: string | null;
   created_at: Date;
   decided_at: Date | null;
@@ -362,7 +369,7 @@ export async function resolveApproval(tx: PluginTx, approvalId: string): Promise
   const a = (
     await tx.query<ApprovalRow>(
       `SELECT a.id, a.workspace_id, a.team_id, a.source, a.status, a.outcome, a.outcome_detail, a.tool, a.summary, a.requester_id, a.requester_name,
-              a.run_id, a.channel_id, a.created_at, a.decided_at,
+              a.run_id, a.had_run, a.channel_id, a.created_at, a.decided_at,
               b.slug AS bot_slug, coalesce(nullif(b.name, ''), b.slug) AS bot_name, d.decider_name,
               c.kind AS channel_kind, c.private AS channel_private, c.team_id AS channel_team_id, c.name AS channel_name, t.slug AS team_slug
          FROM app.approvals a
@@ -396,6 +403,15 @@ export async function resolveApproval(tx: PluginTx, approvalId: string): Promise
       at.scopes = verdict.source_scopes;
       if (verdict.retain_refusal !== null) return { action: 'withhold', at, reason: verdict.retain_refusal };
     }
+  } else if (a.had_run) {
+    // The run it was filed from is gone: retention pruned it (and left a memo that remembers this approval), or it was deleted some other way.
+    // `approvals.run_id` is SET NULL by the foreign key, so "no run" is not "a run that read nothing narrower": the memo decides, and a run that
+    // left no memo cannot be judged, which is a refusal (fail closed, like `inheritSources`).
+    const memo = (
+      await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.memory_run_memo WHERE approval_ids @> ARRAY[$1::uuid] LIMIT 1', [approvalId])
+    ).rows[0];
+    if (memo === undefined) return { action: 'withhold', at, reason: 'run_gone' };
+    if (memo.retain_refusal !== null) return { action: 'withhold', at, reason: memo.retain_refusal };
   }
   const when = a.decided_at ?? a.created_at;
   const text = renderApproval({
