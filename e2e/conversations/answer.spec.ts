@@ -57,7 +57,8 @@ test('a bot finishes with an Answer: the sources the person may open, what was o
     await expect(page.getByTestId('answer-outside')).toContainText('1 message · not visible to the person who asked');
     await expect(page.getByText('Layoffs')).toHaveCount(0);
     await expect(page.getByText('a quote that must never be shown')).toHaveCount(0);
-    await expect(page.locator('body')).not.toContainText(leadsMessage);
+    // (the person's own message above shows the ids she typed; the Answer shows nothing of the one she cannot read)
+    await expect(answer).not.toContainText(leadsMessage);
 
     // whom it was for, and the suggestions (data only here)
     await expect(page.getByTestId('answer-for')).toHaveText('Answered for Nadia · scoped · smart');
