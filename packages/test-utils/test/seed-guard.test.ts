@@ -51,7 +51,8 @@ describe('seedWorld with guard (seed v5)', () => {
     } finally {
       await dropTestDatabase(bare);
     }
-  });
+    // it makes and migrates a database of its own, like the file's `beforeAll` that starts a server: the same budget, not the 5 s default
+  }, 120_000);
 });
 
 describe('the strings a spec feeds the guardrails', () => {

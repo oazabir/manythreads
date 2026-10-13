@@ -1,3 +1,4 @@
+import { expectLinear } from '@manythreads/test-utils';
 import { describe, expect, it } from 'vitest';
 import { parseConcept } from '@manythreads/shared';
 import { MAX_DOC_CHARS } from '../src/constants.ts';
@@ -128,8 +129,6 @@ describe('text helpers', () => {
 
   it('tidy collapses blank runs and trailing spaces in linear time', () => {
     expect(tidy('a  \n\n\n\nb\r\n\r\n\r\nc  ')).toBe('a\n\nb\n\nc');
-    const started = Date.now();
-    tidy('\n'.repeat(1_000_000));
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expectLinear((n) => '\n'.repeat(n), (input) => tidy(input), { n: 250_000, label: 'tidy' });
   });
 });

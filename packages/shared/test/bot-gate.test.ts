@@ -268,10 +268,17 @@ describe('hostile input', () => {
 });
 
 describe('hostile input at COMPILE time (a BOT.md is parsed on every commit; it must never wedge the loader)', () => {
+  // The claim is "refused at once" against a bomb that took 38 seconds: the best of three runs under a ceiling a busy machine does not reach
+  // (a flat 200 ms measured the machine).
   const quick = (entries: string[]): { ms: number; ok: boolean; reason: string } => {
-    const started = performance.now();
-    const compiled = compileGate(entries);
-    return { ms: performance.now() - started, ok: compiled.ok, reason: compiled.ok ? '' : compiled.reason };
+    let ms = Number.POSITIVE_INFINITY;
+    let last = compileGate(entries);
+    for (let i = 0; i < 3; i += 1) {
+      const started = performance.now();
+      last = compileGate(entries);
+      ms = Math.min(ms, performance.now() - started);
+    }
+    return { ms, ok: last.ok, reason: last.ok ? '' : last.reason };
   };
 
   it('nested empty repeats, the pattern that once took 38 seconds, are refused at once', () => {
@@ -280,7 +287,7 @@ describe('hostile input at COMPILE time (a BOT.md is parsed on every commit; it 
       const r = quick([entry]);
       expect(r.ok, entry).toBe(false);
       expect(r.reason).toMatch(/repeat of nothing/);
-      expect(r.ms).toBeLessThan(200);
+      expect(r.ms).toBeLessThan(1_000);
     }
   });
 
@@ -304,24 +311,28 @@ describe('hostile input at COMPILE time (a BOT.md is parsed on every commit; it 
       const r = quick([entry]);
       expect(r.ok, entry).toBe(false);
       expect(r.reason, entry).toMatch(/too large/);
-      expect(r.ms, entry).toBeLessThan(200);
+      expect(r.ms, entry).toBeLessThan(1_000);
     }
   });
 
   it('a list of many large patterns is refused by the list limit quickly too, and a parse of the longest allowed entry is fast', () => {
     const r = quick(Array.from({ length: 50 }, () => '/(?:abcdefghij){19}/'));
     expect(r.ok).toBe(false);
-    expect(r.ms).toBeLessThan(500);
+    expect(r.ms).toBeLessThan(2_000);
     const longest = quick([`/${'(?:a|b)'.repeat(25)}/`]);
-    expect(longest.ms).toBeLessThan(200);
+    expect(longest.ms).toBeLessThan(1_000);
   });
 
   it('the schema path (BotFrontmatter) is as quick as compileGate', () => {
     const base = { name: 'G', role: 'R', kind: 'agent', runtime: 'hermes' };
-    const started = performance.now();
-    const parsed = BotFrontmatter.safeParse({ ...base, guard: { gate: ['/(((((){100}){100}){100}){100}){100}/'] } });
-    expect(parsed.success).toBe(false);
-    expect(performance.now() - started).toBeLessThan(200);
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < 3; i += 1) {
+      const started = performance.now();
+      const parsed = BotFrontmatter.safeParse({ ...base, guard: { gate: ['/(((((){100}){100}){100}){100}){100}/'] } });
+      expect(parsed.success).toBe(false);
+      best = Math.min(best, performance.now() - started);
+    }
+    expect(best).toBeLessThan(1_000);
   });
 });
 

@@ -1,3 +1,4 @@
+import { expectLinear } from '../../test-utils/src/linear.ts';
 import { describe, expect, it } from 'vitest';
 import { BotFrontmatter } from '../src/bot-md/frontmatter.ts';
 import { parseBotMd, renderBotMd, splitBotMd } from '../src/bot-md/render.ts';
@@ -85,11 +86,12 @@ describe('hostile BOT.md input (parse is linear-time and bounded)', () => {
   const headers = '---\nschema: 1\nname: X\nrole: Y\nkind: agent\nruntime: hermes\n';
 
   it('a 1 MB file is refused at once, before it is split or parsed', () => {
-    const started = performance.now();
     const res = parseBotMd(`${headers}---\n${'a'.repeat(1024 * 1024)}`);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.failure.message).toMatch(/larger than 256 KB/);
-    expect(performance.now() - started).toBeLessThan(250);
+    // "at once" is a shape, not a number of milliseconds: a file four times as large is refused in about the same time (the size is checked
+    // before the file is split or parsed), and nowhere near a second
+    expectLinear((n) => `${headers}---\n${'a'.repeat(n)}`, (text) => parseBotMd(text), { n: 1024 * 1024, factor: 4, label: 'a refused BOT.md' });
   });
 
   it('a file just under the cap is still read', () => {

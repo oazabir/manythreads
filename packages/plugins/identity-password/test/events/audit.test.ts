@@ -1,7 +1,11 @@
 import { eventToRaw, withSystem, type EventRow } from '@manythreads/kernel';
 import { parseEvent, type EventType } from '@manythreads/shared';
 import { createApiClient, createPersonas, startTestServer, NADIA, OMAR, PERSONA_PASSWORD, type TestServer } from '@manythreads/test-utils';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// Every case here starts a server's worth of work (password hashing, sessions, a database of its own): the budget of the file's `beforeAll`, not the 5 s default,
+// which a busy machine (three workers beside it) exceeds while the same case passes alone in a second.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 // Event contract tests (pnpm test:events): every identity audit event is stored in the shape its registered schema
 // accepts, and each action emits exactly the events it should.

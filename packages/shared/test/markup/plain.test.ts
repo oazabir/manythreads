@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { toPlainText } from '../../src/index.ts';
+import { expectLinear } from '../../../test-utils/src/linear.ts';
 
 describe('toPlainText', () => {
   it('returns plain text unchanged', () => {
@@ -119,55 +120,55 @@ describe('toPlainText', () => {
 });
 
 describe('toPlainText on hostile input', () => {
+  // Each construction is a builder of any size, so the same hostile shape is timed at n and at 4n: the claim is linear cost (the ratio), with a
+  // generous ceiling for a real blow-up, not a flat millisecond limit that measures the machine (three workers beside it read 150 ms vs 50).
   const N = 40_000;
-  const repeat = (unit: string): string => unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
-  const hostile: Record<string, string> = {
-    'open brackets': repeat('['),
-    'nested brackets': repeat('[[') + repeat(']]').slice(0, N / 2),
-    'unclosed labels': repeat('[a'),
-    'link starts': repeat('[a]('),
-    'chained destinations': repeat('[a]((x)'),
-    'image starts': repeat('![a]('),
-    'titles without end': repeat('[a](x "t '),
-    'reference starts': repeat('[a][b'),
-    backticks: repeat('`'),
-    'backtick pairs': repeat('` ``'),
-    'growing backtick runs': Array.from({ length: 300 }, (_, i) => '`'.repeat(i + 1)).join(' ').slice(0, N),
-    'open fences': repeat('```\n'),
-    stars: repeat('*'),
-    'star openers': repeat('*a '),
-    'star closers': repeat('a* '),
-    'mixed stars and underscores': repeat('*_*_'),
-    'mixed emphasis': repeat('*a _b '),
-    'emphasis over lines': repeat('*a\n'),
-    underscores: repeat('_'),
-    'underscore openers': repeat('_a '),
-    'strike openers': repeat('~~a '),
-    tildes: repeat('~'),
-    'angle starts': repeat('<a '),
-    'tag starts': repeat('<b'),
-    'autolink starts': repeat('<http:'),
-    'entity starts': repeat('[[task:'),
-    backslashes: repeat('\\'),
-    newlines: repeat('\n'),
-    'long blank run': ' '.repeat(N) + 'x',
-    'long tab run': '\t'.repeat(N) + '-',
-    'heading blanks': '# a' + ' '.repeat(N) + 'b',
-    'list blanks': '-' + ' '.repeat(N) + 'x',
-    'table pipes': repeat('| a '),
-    'rule dashes': repeat('|-'),
-    'hash runs': repeat('#'),
-    'reference definitions': repeat('[a]: '),
-    quotes: repeat('> '),
-    'everything at once': repeat('[`*_~<![]()|#>\\\n '),
+  const repeat = (unit: string, n: number): string => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+  const hostile: Record<string, (n: number) => string> = {
+    'open brackets': (n) => repeat('[', n),
+    'nested brackets': (n) => repeat('[[', n) + repeat(']]', n).slice(0, n / 2),
+    'unclosed labels': (n) => repeat('[a', n),
+    'link starts': (n) => repeat('[a](', n),
+    'chained destinations': (n) => repeat('[a]((x)', n),
+    'image starts': (n) => repeat('![a](', n),
+    'titles without end': (n) => repeat('[a](x "t ', n),
+    'reference starts': (n) => repeat('[a][b', n),
+    backticks: (n) => repeat('`', n),
+    'backtick pairs': (n) => repeat('` ``', n),
+    'growing backtick runs': (n) => Array.from({ length: 900 }, (_, i) => '`'.repeat(i + 1)).join(' ').slice(0, n),
+    'open fences': (n) => repeat('```\n', n),
+    stars: (n) => repeat('*', n),
+    'star openers': (n) => repeat('*a ', n),
+    'star closers': (n) => repeat('a* ', n),
+    'mixed stars and underscores': (n) => repeat('*_*_', n),
+    'mixed emphasis': (n) => repeat('*a _b ', n),
+    'emphasis over lines': (n) => repeat('*a\n', n),
+    underscores: (n) => repeat('_', n),
+    'underscore openers': (n) => repeat('_a ', n),
+    'strike openers': (n) => repeat('~~a ', n),
+    tildes: (n) => repeat('~', n),
+    'angle starts': (n) => repeat('<a ', n),
+    'tag starts': (n) => repeat('<b', n),
+    'autolink starts': (n) => repeat('<http:', n),
+    'entity starts': (n) => repeat('[[task:', n),
+    backslashes: (n) => repeat('\\', n),
+    newlines: (n) => repeat('\n', n),
+    'long blank run': (n) => ' '.repeat(n) + 'x',
+    'long tab run': (n) => '\t'.repeat(n) + '-',
+    'heading blanks': (n) => '# a' + ' '.repeat(n) + 'b',
+    'list blanks': (n) => '-' + ' '.repeat(n) + 'x',
+    'table pipes': (n) => repeat('| a ', n),
+    'rule dashes': (n) => repeat('|-', n),
+    'hash runs': (n) => repeat('#', n),
+    'reference definitions': (n) => repeat('[a]: ', n),
+    quotes: (n) => repeat('> ', n),
+    'everything at once': (n) => repeat('[`*_~<![]()|#>\\\n ', n),
   };
 
-  it.each(Object.entries(hostile))('%s: 40,000 characters in under 50 ms', (_name, input) => {
-    expect(input.length).toBeGreaterThanOrEqual(N - 100);
+  it.each(Object.entries(hostile))('%s: scales linearly from 40,000 characters (n vs 4n), well under a second', (name, build) => {
+    expect(build(N).length).toBeGreaterThanOrEqual(N - 100);
     toPlainText('warm up **x** [a](b) `c`');
-    const start = performance.now();
-    toPlainText(input);
-    expect(performance.now() - start).toBeLessThan(50);
+    expectLinear(build, (input) => toPlainText(input), { n: N, label: name });
   });
 
   it('returns the same text for a long plain paragraph as for a short one', () => {

@@ -1,3 +1,4 @@
+import { expectLinear } from '@manythreads/test-utils';
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -37,11 +38,15 @@ describe('trailers in messages', () => {
     expect(parseCoAuthors(out)).toEqual([]);
   });
   it('a hostile message is linear', () => {
-    const hostile = `x\n\n${'Co-authored-by: '.repeat(20000)}<${'a'.repeat(40000)}`;
-    const t0 = performance.now();
-    neutraliseTrailerLines(hostile);
-    parseCoAuthors(hostile);
-    expect(performance.now() - t0).toBeLessThan(200);
+    // same construction at n and 4n: linear cost, and nowhere near a second (a flat 200 ms measured the machine)
+    expectLinear(
+      (n) => `x\n\n${'Co-authored-by: '.repeat(n)}<${'a'.repeat(2 * n)}`,
+      (hostile) => {
+        neutraliseTrailerLines(hostile);
+        parseCoAuthors(hostile);
+      },
+      { n: 20_000, label: 'a hostile commit message' },
+    );
   });
   it('commit() neutralises user trailers and appends only its own', async () => {
     const dir = await fresh();

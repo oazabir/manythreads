@@ -1,3 +1,4 @@
+import { expectLinear } from '@manythreads/test-utils';
 import { describe, expect, it } from 'vitest';
 import { redactUrl, withRedactedLogs } from '../src/log-redact.ts';
 
@@ -19,13 +20,11 @@ describe('log redaction (L4)', () => {
   });
 
   it('is linear on hostile input', () => {
-    const hostile = `/${'~mta.'.repeat(60_000)}`;
-    const t0 = performance.now();
-    redactUrl(hostile);
-    redactUrl(`/~mta.${'a'.repeat(300_000)}`);
-    redactUrl(`/api/mcp/runs/${'/api/mcp/runs/'.repeat(30_000)}`);
-    redactUrl(`/api/mcp/runs/${'a'.repeat(300_000)}`);
-    expect(performance.now() - t0).toBeLessThan(400);
+    expectLinear(
+      (n) => [`/${'~mta.'.repeat(n)}`, `/~mta.${'a'.repeat(5 * n)}`, `/api/mcp/runs/${'/api/mcp/runs/'.repeat(n / 2)}`, `/api/mcp/runs/${'a'.repeat(5 * n)}`],
+      (urls) => urls.forEach((url) => redactUrl(url)),
+      { n: 60_000, label: 'a hostile URL' },
+    );
   });
 
   it('wraps `true` and option objects, and leaves a ready-made logger alone', () => {

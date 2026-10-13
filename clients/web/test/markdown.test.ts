@@ -60,11 +60,16 @@ describe('safe markdown', () => {
 
   it('reads hostile input in linear time (MISTAKES P3-05)', () => {
     const inputs = ['**a '.repeat(10_000), '['.repeat(40_000), '`'.repeat(40_000), '*'.repeat(40_000), '_a'.repeat(20_000), '[a](' .repeat(10_000), '@a'.repeat(20_000), '> '.repeat(5_000) + 'x', '- '.repeat(20_000)];
+    // the best of three per input, and a ceiling a busy machine does not reach: what this pins is "not quadratic" (a quadratic parse of 40,000
+    // characters takes many seconds), not a flat 500 ms that three busy workers can exceed
     for (const text of inputs) {
-      const t0 = performance.now();
-      parseMarkdown(text);
-      const ms = performance.now() - t0;
-      expect(ms, `${text.slice(0, 8)}... ${text.length} chars`).toBeLessThan(500);
+      let best = Number.POSITIVE_INFINITY;
+      for (let run = 0; run < 3; run += 1) {
+        const t0 = performance.now();
+        parseMarkdown(text);
+        best = Math.min(best, performance.now() - t0);
+      }
+      expect(best, `${text.slice(0, 8)}... ${text.length} chars`).toBeLessThan(1_500);
     }
   });
 

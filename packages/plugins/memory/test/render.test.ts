@@ -1,3 +1,4 @@
+import { expectLinear } from '@manythreads/test-utils';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
@@ -40,13 +41,12 @@ describe('tidy', () => {
   });
 
   it('is linear: a megabyte of blank lines and of long lines takes well under a second', () => {
-    const blanks = '\n'.repeat(1_000_000);
-    const longLine = `${'x'.repeat(1_000_000)}\n`;
-    const started = Date.now();
-    tidy(blanks);
-    tidy(longLine);
-    tidy(' \r\n'.repeat(300_000));
-    expect(Date.now() - started).toBeLessThan(1000);
+    // the same three constructions at n and 4n: linear growth, under a ceiling a busy machine does not reach
+    expectLinear(
+      (n) => ['\n'.repeat(n), `${'x'.repeat(n)}\n`, ' \r\n'.repeat(n / 3)],
+      (inputs) => inputs.forEach((input) => tidy(input)),
+      { n: 250_000, label: 'tidy' },
+    );
   });
 });
 

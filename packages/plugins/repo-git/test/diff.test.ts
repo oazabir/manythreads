@@ -1,3 +1,4 @@
+import { expectLinear } from '@manythreads/test-utils';
 import { describe, expect, it } from 'vitest';
 import { parseUnifiedPatch } from '../src/diff.ts';
 
@@ -67,16 +68,18 @@ describe('parseUnifiedPatch', () => {
   });
 
   it('is linear on hostile input (a 5 MB patch of hunk headers and long lines)', () => {
-    const lines: string[] = [];
-    for (let i = 0; i < 20_000; i += 1) lines.push(`@@ -${i},1 +${i},1 @@ ${'x'.repeat(200)}`, `-${'-'.repeat(100)}`, `+${'+'.repeat(100)}`);
-    const big = lines.join('\n');
-    const t0 = performance.now();
-    const p = parseUnifiedPatch(big);
-    expect(p.hunks).toHaveLength(20_000);
-    expect(performance.now() - t0).toBeLessThan(1500);
-    const t1 = performance.now();
-    parseUnifiedPatch(`@@ -1 +1 @@ ${'@'.repeat(2_000_000)}`);
-    parseUnifiedPatch('@@ -1,1 +1,1 @@\n' + ' '.repeat(2_000_000));
-    expect(performance.now() - t1).toBeLessThan(500);
+    const patch = (hunks: number): string => {
+      const lines: string[] = [];
+      for (let i = 0; i < hunks; i += 1) lines.push(`@@ -${i},1 +${i},1 @@ ${'x'.repeat(200)}`, `-${'-'.repeat(100)}`, `+${'+'.repeat(100)}`);
+      return lines.join('\n');
+    };
+    expect(parseUnifiedPatch(patch(20_000)).hunks).toHaveLength(20_000);
+    // twice the patch costs about twice (a quadratic parser would cost four times), under a ceiling a busy machine does not reach
+    expectLinear(patch, (big) => parseUnifiedPatch(big), { n: 10_000, factor: 2, maxRatio: 3.5, ceilingMs: 2_000, label: 'a patch of hunk headers' });
+    expectLinear(
+      (n) => [`@@ -1 +1 @@ ${'@'.repeat(n)}`, `@@ -1,1 +1,1 @@\n${' '.repeat(n)}`],
+      (inputs) => inputs.forEach((input) => parseUnifiedPatch(input)),
+      { n: 1_000_000, factor: 2, maxRatio: 3.5, label: 'one very long line' },
+    );
   });
 });

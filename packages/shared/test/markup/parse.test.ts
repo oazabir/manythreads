@@ -1,3 +1,4 @@
+import { expectLinear } from '../../../test-utils/src/linear.ts';
 import { describe, expect, it } from 'vitest';
 import { MarkupParseResult, parseMarkup } from '../../src/index.ts';
 
@@ -295,29 +296,22 @@ describe('MarkupParseResult', () => {
 
 describe('hostile input (claims are checked with sorted-interval sweeps, not against every earlier claim)', () => {
   const MAX = 40_000; // the cap on a message body
-  const timeIt = (md: string): number => {
-    parseMarkup(md); // warm up the regexes
-    return Math.min(
-      ...Array.from({ length: 5 }, () => {
-        const start = performance.now();
-        parseMarkup(md);
-        return performance.now() - start;
-      }),
-    );
-  };
+  // Timed at the cap and at four times the cap, same construction: the cost must grow about fourfold (a quadratic sweep would grow sixteenfold),
+  // with a generous ceiling. A flat "under 30 ms" measured the machine: it failed beside three busy workers.
+  const unitsOf = (unit: string) => (n: number): string => unit.repeat(Math.ceil(n / unit.length));
 
-  it('13,000 mentions parse in under 30 ms and every one is found', () => {
+  it('13,000 mentions are all found, and cost grows linearly', () => {
     const md = '@a '.repeat(13_000);
     expect(md.length).toBeLessThanOrEqual(MAX);
     expect(parseMarkup(md).mentions).toHaveLength(13_000);
-    expect(timeIt(md)).toBeLessThan(30);
+    expectLinear(unitsOf('@a '), (input) => parseMarkup(input), { n: 39_000, label: '13,000 mentions' });
   });
 
-  it('13,000 channel references, 10,000 code spans, 8,000 URLs and a mix of all stay as fast', () => {
-    const cases = ['#a '.repeat(13_000), '`@x` '.repeat(8_000), 'http://x.y/@z '.repeat(2_800), '[[page:a]]@a #b `c` http://q '.repeat(1_300)];
-    for (const md of cases) {
-      expect(md.length).toBeLessThanOrEqual(MAX);
-      expect(timeIt(md), md.slice(0, 20)).toBeLessThan(60);
+  it('13,000 channel references, 10,000 code spans, 8,000 URLs and a mix of all grow just as linearly', () => {
+    const units = ['#a ', '`@x` ', 'http://x.y/@z ', '[[page:a]]@a #b `c` http://q '];
+    for (const unit of units) {
+      expect(unitsOf(unit)(MAX).length, unit).toBeLessThanOrEqual(MAX + unit.length);
+      expectLinear(unitsOf(unit), (input) => parseMarkup(input), { n: MAX, label: unit });
     }
   });
 

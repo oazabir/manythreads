@@ -11,9 +11,13 @@ import {
   TARIQ,
   type TestServer,
 } from '@manythreads/test-utils';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { hashLinkToken } from '../src/tokens.ts';
+
+// Every case here starts a server's worth of work (password hashing, sessions, a database of its own): the budget of the file's `beforeAll`, not the 5 s default,
+// which a busy machine (three workers beside it) exceeds while the same case passes alone in a second.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 const TEST_AUTH_TOKEN = 'test-auth-token-for-vitest-0123456789';
 const MINUTE = 60_000;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { expectLinear } from '../../../test-utils/src/linear.ts';
 import {
   OKF_FRONTMATTER_MAX_BYTES,
   OKF_VERSION,
@@ -83,22 +84,19 @@ describe('splitConcept', () => {
 });
 
 describe('hostile input is linear', () => {
-  const timed = (text: string): number => {
-    const t = Date.now();
-    parseConcept(text);
-    return Date.now() - t;
-  };
-  it.each([
-    ['nested flow sequences', `---\ntype: Fact\nx: ${'['.repeat(30_000)}\n---\n`],
-    ['nested flow mappings', `---\ntype: Fact\nx: ${'{a: '.repeat(10_000)}\n---\n`],
-    ['a long run of anchors', `---\ntype: Fact\n${'a: &x 1\n'.repeat(5_000)}---\n`],
-    ['a billion-laughs shape', `---\ntype: Fact\na: &a [x, x]\nb: &b [*a, *a]\nc: &c [*b, *b]\nd: &d [*c, *c]\ne: &e [*d, *d]\nf: [*e, *e]\n---\n`],
-    ['many keys', `---\ntype: Fact\n${Array.from({ length: 4_000 }, (_, i) => `k${i}: v${i}`).join('\n')}\n---\n`],
-    ['a long quoted string', `---\ntype: Fact\nnote: "${'a\\"'.repeat(15_000)}"\n---\n`],
-    ['a huge body', `---\ntype: Fact\n---\n${'# heading\n\n'.repeat(100_000)}`],
-  ])('%s is handled in well under a second', (_what, text) => {
-    // a loose ceiling (the box may be busy); P5-24 pins the 50 ms line on the full parser
-    expect(timed(text)).toBeLessThan(1_500);
+  // Each construction at n and at 4n: the cost must grow about fourfold (the parser's refusals before the YAML parser count as linear too), under
+  // a ceiling a busy machine does not reach. P5-24 pins the strict 50 ms line on the full parser.
+  const framed = (body: string): string => `---\ntype: Fact\n${body}---\n`;
+  it.each<[string, (n: number) => string]>([
+    ['nested flow sequences', (n) => framed(`x: ${'['.repeat(n)}\n`)],
+    ['nested flow mappings', (n) => framed(`x: ${'{a: '.repeat(n / 4)}\n`)],
+    ['a long run of anchors', (n) => framed('a: &x 1\n'.repeat(n / 8))],
+    ['a billion-laughs shape', (n) => framed(`a: &a [x, x]\nb: &b [*a, *a]\nc: &c [*b, *b]\nd: &d [*c, *c]\ne: &e [*d, *d]\nf: [*e, *e]\n${'#'.repeat(n)}\n`)],
+    ['many keys', (n) => framed(Array.from({ length: n / 10 }, (_, i) => `k${i}: v${i}\n`).join(''))],
+    ['a long quoted string', (n) => framed(`note: "${'a\\"'.repeat(n / 3)}"\n`)],
+    ['a huge body', (n) => `---\ntype: Fact\n---\n${'# heading\n\n'.repeat(n / 10)}`],
+  ])('%s', (name, build) => {
+    expectLinear(build, (text) => parseConcept(text), { n: 16_000, label: name });
   });
 });
 
