@@ -43,8 +43,10 @@ const oldRun = (days: number): Promise<string> =>
   );
 const runExists = (id: string) => w.system(async (tx) => (await tx.query('SELECT 1 FROM app.bot_runs WHERE id = $1', [id])).rows.length > 0);
 const eventsOf = (type: string) => w.system(async (tx) => (await tx.query<{ payload: Record<string, unknown> }>('SELECT payload FROM app.events WHERE type = $1 ORDER BY id', [type])).rows.map((r) => r.payload));
-const lastSweep = () =>
-  w.system(async (tx) => (await tx.query<{ last_sweep: { dryRun: boolean; counts: Record<string, number> } | null }>('SELECT last_sweep FROM app.retention_settings WHERE workspace_id = $1', [omar.workspaceId])).rows[0]?.last_sweep ?? null);
+const summaryOf = (column: 'last_sweep' | 'last_dry_run') =>
+  w.system(async (tx) => (await tx.query<{ s: { dryRun: boolean; counts: Record<string, number> } | null }>(`SELECT ${column} AS s FROM app.retention_settings WHERE workspace_id = $1`, [omar.workspaceId])).rows[0]?.s ?? null);
+const lastSweep = () => summaryOf('last_sweep');
+const lastDryRun = () => summaryOf('last_dry_run');
 
 beforeAll(async () => {
   w = await createRepoWorld();
@@ -70,7 +72,7 @@ describe('the settings routes', () => {
   it('answer the defaults, the deployment’s mode and no sweep to a workspace admin', async () => {
     const res = await w.call(omar, 'GET', '/api/workspace/retention');
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(RetentionSettingsResponse.parse(res.body).settings).toEqual({ runLogDays: 90, memoryLogDays: 365, mode: 'dry-run', lastSweep: null, updatedAt: null });
+    expect(RetentionSettingsResponse.parse(res.body).settings).toEqual({ runLogDays: 90, memoryLogDays: 365, mode: 'dry-run', lastSweep: null, lastDryRun: null, updatedAt: null });
   });
 
   it('are an admin’s: a member is refused and an anonymous caller is not signed in', async () => {
@@ -110,13 +112,15 @@ describe('a sweep', () => {
     const old = await oldRun(100);
     const res = await w.call(omar, 'POST', '/api/workspace/retention/preview');
     expect(res.status, JSON.stringify(res.body)).toBe(202);
-    const sweep = await until(async () => lastSweep(), 'the dry run to finish');
+    const sweep = await until(async () => lastDryRun(), 'the dry run to finish');
     expect(sweep).toMatchObject({ dryRun: true, counts: { runs: 1 } });
+    expect(await lastSweep()).toBeNull(); // a dry run is not "the last sweep"
     expect(await runExists(old)).toBe(true);
     const completed = await eventsOf('retention.sweep.completed');
     expect(completed.at(-1)).toMatchObject({ dryRun: true, counts: { runs: 1 } });
     const shown = RetentionSettingsResponse.parse((await w.call(omar, 'GET', '/api/workspace/retention')).body).settings;
-    expect(shown.lastSweep).toMatchObject({ dryRun: true, counts: { runs: 1 } });
+    expect(shown.lastDryRun).toMatchObject({ dryRun: true, counts: { runs: 1 } });
+    expect(shown.lastSweep).toBeNull();
   });
 
   it('with the deployment’s mode on, the daily job prunes the runs outside the workspace’s window, and a run inside it stays', async () => {
@@ -129,9 +133,23 @@ describe('a sweep', () => {
     expect(await runExists(outside)).toBe(false);
     expect(await runExists(inside)).toBe(true);
     expect(await lastSweep()).toMatchObject({ dryRun: false });
+    // the real sweep did not erase the dry run's report, and a preview now does not erase the real sweep's
+    expect(await lastDryRun()).toMatchObject({ dryRun: true });
     expect((await eventsOf('retention.sweep.completed')).at(-1)).toMatchObject({ dryRun: false, counts: { runs: expect.any(Number) } });
     // the old run of the dry run above went too (it was outside the window); the audit events of all of it are still there
     expect((await eventsOf('retention.sweep.completed')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a preview after a real sweep reports as a dry run and leaves the real sweep’s summary as it was', async () => {
+    process.env['MANYTHREADS_RETENTION'] = 'on';
+    const real = await lastSweep();
+    expect(real).toMatchObject({ dryRun: false });
+    const before = (await eventsOf('retention.sweep.completed')).length;
+    const res = await w.call(omar, 'POST', '/api/workspace/retention/preview');
+    expect(res.status).toBe(202);
+    await until(async () => ((await eventsOf('retention.sweep.completed')).length > before ? true : null), 'the preview to complete');
+    expect(await lastSweep()).toEqual(real);
+    expect((await eventsOf('retention.sweep.completed')).at(-1)).toMatchObject({ dryRun: true });
   });
 
   it('with the deployment’s mode off, nothing is counted and a preview is refused', async () => {

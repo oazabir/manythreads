@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PluginTx } from '@manythreads/sdk';
+import { NEVER_APPROVAL_GATED, type PluginTx } from '@manythreads/sdk';
 import {
   RETENTION_MEMORY_LOG_DAYS,
   RETENTION_RUN_LOG_DAYS,
@@ -8,6 +8,9 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { retentionBatch } from './config.ts';
+import { toRetentionWindows, type WorkspaceWindows } from './rows.ts';
+
+const DAY_MS = 24 * 3_600_000;
 
 // A sweep of one workspace, as a chain of small jobs (`retention.prune`): each step is ONE transaction that deletes at most a batch, then
 // enqueues the next step with the state it reached (phase, cursor, running totals). A backlog of a million runs is thousands of short
@@ -18,7 +21,12 @@ import { retentionBatch } from './config.ts';
 //   runs   ended runs of the workspace older than its window, oldest first, keyset-paged on (ended_at, id): the feed's memo is written for
 //          each (`app.memory_memoize_runs`), then the runs are deleted; run_source_log and mcp_run_tokens go with them (foreign key cascade).
 //          Never: a run still running, one a pending (or approved, unfinished) approval was filed from — its resume needs the run's source
-//          log (`ctx.runs.inheritSources`).
+//          log (`ctx.runs.inheritSources`) — and one a legacy row of a never-gated tool points at (deleting the run UPDATEs that row through the
+//          foreign key's SET NULL, which its NOT VALID check would refuse). A delete the database refuses anyway is retried run by run inside
+//          savepoints, so one run cannot stall the chain.
+//
+// The payload is not trusted: `app.enqueue_job` is callable by the request role. Every step derives its cutoffs again from the workspace's own
+// windows (never later than the window says, never later than the bound's minimum) and the delete re-asserts the whole eligibility predicate.
 //   log    superseded retained/forgotten lines and attempt notes of `memory_retain_log` older than the workspace's memory-log window, a page at a
 //          time through `app.memory_retain_log_prune`; never a `withheld` line, never the newest state of a source.
 //   memos  the memos of bots that no longer exist (every verdict about a removed bot is `bot_removed`, the memo says nothing more).
@@ -29,6 +37,7 @@ export const SWEEP_QUEUE = 'retention.sweep';
 
 const Counts = z.object({
   runs: z.number().int().nonnegative(),
+  runsSkipped: z.number().int().nonnegative(),
   runSourceLines: z.number().int().nonnegative(),
   runTokens: z.number().int().nonnegative(),
   runMemos: z.number().int().nonnegative(),
@@ -53,26 +62,22 @@ export const SweepState = z.object({
 });
 export type SweepState = z.infer<typeof SweepState>;
 
-export const emptyCounts = (): RetentionCounts => ({ runs: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0 });
+export const emptyCounts = (): RetentionCounts => ({ runs: 0, runsSkipped: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0 });
 
-export interface WorkspaceWindows {
-  runLogDays: number;
-  memoryLogDays: number;
-}
+export type { WorkspaceWindows };
 
 /** The workspace's windows (defaults when it never changed them), clamped to the bounds again so a hand-edited row cannot go below them. */
 export async function loadWindows(tx: PluginTx, workspaceId: string): Promise<WorkspaceWindows> {
   const row = (
     await tx.query<{ run_log_days: number; memory_log_days: number }>('SELECT run_log_days, memory_log_days FROM app.retention_settings WHERE workspace_id = $1::uuid', [workspaceId])
   ).rows[0];
-  const clamp = (v: number | undefined, b: { min: number; default: number; max: number }): number => (v === undefined ? b.default : Math.min(b.max, Math.max(b.min, Math.trunc(v))));
-  return { runLogDays: clamp(row?.run_log_days, RETENTION_RUN_LOG_DAYS), memoryLogDays: clamp(row?.memory_log_days, RETENTION_MEMORY_LOG_DAYS) };
+  return toRetentionWindows(row);
 }
 
 /** The first state of a sweep: its cutoffs are `now` minus the workspace's windows. */
 export async function startSweep(tx: PluginTx, workspaceId: string, now: Date, dryRun: boolean): Promise<SweepState> {
   const w = await loadWindows(tx, workspaceId);
-  const day = 24 * 3_600_000;
+  const day = DAY_MS;
   return {
     workspaceId,
     sweepId: randomUUID(),
@@ -89,9 +94,62 @@ export async function startSweep(tx: PluginTx, workspaceId: string, now: Date, d
 
 export type StepResult = { done: false; state: SweepState } | { done: true; summary: RetentionSweepSummary; durationMs: number };
 
+/**
+ * The eligibility of a run, as one predicate for the select and the delete ($1 workspace, $2 cutoff, $3 the tools that may never wait for an
+ * approval): ended, outside the window, of this workspace, with no approval that still needs it and no legacy row of a never-gated tool.
+ */
+const ELIGIBLE = `
+  r.workspace_id = $1::uuid AND r.ended_at IS NOT NULL AND r.status <> 'running' AND r.ended_at < $2::timestamptz
+  AND NOT EXISTS (
+    SELECT 1 FROM app.approvals a
+     WHERE a.run_id = r.id AND (a.status = 'pending' OR (a.status = 'approved' AND a.outcome IN ('none', 'queued', 'running')) OR a.tool = ANY($3::text[])))`;
+
+/**
+ * The cutoffs a step actually uses: the payload's, but never later than what the workspace's own window gives now, and never later than the
+ * bound's minimum. A forged payload with a recent cutoff therefore deletes exactly what an honest one would.
+ */
+function effectiveCutoffs(state: SweepState, windows: WorkspaceWindows, now: number): { run: string; memory: string } {
+  const run = Math.min(Date.parse(state.runLogCutoff), now - windows.runLogDays * DAY_MS, now - RETENTION_RUN_LOG_DAYS.min * DAY_MS);
+  const memory = Math.min(Date.parse(state.memoryLogCutoff), now - windows.memoryLogDays * DAY_MS, now - RETENTION_MEMORY_LOG_DAYS.min * DAY_MS);
+  return { run: new Date(run).toISOString(), memory: new Date(memory).toISOString() };
+}
+
+/** Deletes `ids` (each re-checked against the eligibility predicate); returns the ones that went. Falls back to one run at a time, each in a savepoint. */
+async function deleteRuns(tx: PluginTx, state: SweepState, cutoff: string, ids: readonly string[]): Promise<{ deleted: string[]; skipped: string[] }> {
+  const sql = `DELETE FROM app.bot_runs r WHERE r.id = ANY($4::uuid[]) AND ${ELIGIBLE} RETURNING r.id`;
+  const gated = [...NEVER_APPROVAL_GATED];
+  await tx.query('SAVEPOINT retention_batch');
+  try {
+    const res = await tx.query<{ id: string }>(sql, [state.workspaceId, cutoff, gated, [...ids]]);
+    await tx.query('RELEASE SAVEPOINT retention_batch');
+    return { deleted: res.rows.map((r) => r.id), skipped: [] };
+  } catch {
+    await tx.query('ROLLBACK TO SAVEPOINT retention_batch');
+    await tx.query('RELEASE SAVEPOINT retention_batch');
+  }
+  const deleted: string[] = [];
+  const skipped: string[] = [];
+  for (const id of ids) {
+    await tx.query('SAVEPOINT retention_run');
+    try {
+      const res = await tx.query<{ id: string }>(sql, [state.workspaceId, cutoff, gated, [id]]);
+      await tx.query('RELEASE SAVEPOINT retention_run');
+      deleted.push(...res.rows.map((r) => r.id));
+    } catch {
+      await tx.query('ROLLBACK TO SAVEPOINT retention_run');
+      await tx.query('RELEASE SAVEPOINT retention_run');
+      skipped.push(id);
+    }
+  }
+  return { deleted, skipped };
+}
+
 /** Runs one step of a sweep inside `tx` and says what comes next. */
-export async function sweepStep(tx: PluginTx, state: SweepState): Promise<StepResult> {
+export async function sweepStep(tx: PluginTx, given: SweepState): Promise<StepResult> {
   const batch = retentionBatch();
+  const windows = await loadWindows(tx, given.workspaceId);
+  const cut = effectiveCutoffs(given, windows, Date.now());
+  const state: SweepState = { ...given, runLogCutoff: cut.run, memoryLogCutoff: cut.memory };
   const counts: RetentionCounts = { ...state.counts };
   let { phase, cursor } = state;
 
@@ -101,32 +159,41 @@ export async function sweepStep(tx: PluginTx, state: SweepState): Promise<StepRe
       await tx.query<{ id: string; ended_at: string }>(
         `SELECT r.id, r.ended_at::text AS ended_at
            FROM app.bot_runs r
-          WHERE r.workspace_id = $1::uuid AND r.ended_at IS NOT NULL AND r.status <> 'running' AND r.ended_at < $2::timestamptz
-            AND ($3::timestamptz IS NULL OR (r.ended_at, r.id) > ($3::timestamptz, $4::uuid))
-            AND NOT EXISTS (
-              SELECT 1 FROM app.approvals a
-               WHERE a.run_id = r.id AND (a.status = 'pending' OR (a.status = 'approved' AND a.outcome IN ('none', 'queued', 'running'))))
+          WHERE ${ELIGIBLE}
+            AND ($4::timestamptz IS NULL OR (r.ended_at, r.id) > ($4::timestamptz, $5::uuid))
           ORDER BY r.ended_at, r.id
-          LIMIT $5`,
-        [state.workspaceId, state.runLogCutoff, cursorAt, cursorId, batch.runs],
+          LIMIT $6`,
+        [state.workspaceId, state.runLogCutoff, [...NEVER_APPROVAL_GATED], cursorAt, cursorId, batch.runs],
       )
     ).rows;
     if (rows.length > 0) {
       const ids = rows.map((r) => r.id);
-      const lines = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.run_source_log WHERE run_id = ANY($1::uuid[])', [ids])).rows[0]?.n ?? 0;
-      const tokens =
-        (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.mcp_run_tokens') IS NOT NULL AS ok")).rows[0]?.ok === true
-          ? ((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.mcp_run_tokens WHERE run_id = ANY($1::uuid[])', [ids])).rows[0]?.n ?? 0)
-          : 0;
+      let doomed = ids;
+      let skipped: string[] = [];
       if (!state.dryRun) {
         // The memo first, in the same transaction as the delete: the verdict about what the bot wrote while the run was open must not change
         // when the run goes (docs/plugins/retention.md "The feed's verdict").
         counts.runMemos += (await tx.query<{ n: number }>('SELECT app.memory_memoize_runs($1::uuid[]) AS n', [ids])).rows[0]?.n ?? 0;
-        await tx.query('DELETE FROM app.bot_runs WHERE id = ANY($1::uuid[])', [ids]);
       }
-      counts.runs += ids.length;
-      counts.runSourceLines += lines;
-      counts.runTokens += tokens;
+      const countOf = async (of: readonly string[]): Promise<{ lines: number; tokens: number }> => {
+        if (of.length === 0) return { lines: 0, tokens: 0 };
+        const lines = (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.run_source_log WHERE run_id = ANY($1::uuid[])', [[...of]])).rows[0]?.n ?? 0;
+        const hasTokens = (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.mcp_run_tokens') IS NOT NULL AS ok")).rows[0]?.ok === true;
+        const tokens = hasTokens ? ((await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.mcp_run_tokens WHERE run_id = ANY($1::uuid[])', [[...of]])).rows[0]?.n ?? 0) : 0;
+        return { lines, tokens };
+      };
+      const before = await countOf(ids);
+      if (!state.dryRun) {
+        const done = await deleteRuns(tx, state, state.runLogCutoff, ids);
+        doomed = done.deleted;
+        skipped = done.skipped;
+      }
+      // what the runs that stayed still hold is not "pruned": take it off the counts
+      const kept = skipped.length > 0 ? await countOf(skipped) : { lines: 0, tokens: 0 };
+      counts.runs += doomed.length;
+      counts.runsSkipped += skipped.length;
+      counts.runSourceLines += before.lines - kept.lines;
+      counts.runTokens += before.tokens - kept.tokens;
       const last = rows[rows.length - 1]!;
       cursor = `${last.ended_at}|${last.id}`;
     }

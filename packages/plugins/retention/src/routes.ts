@@ -2,7 +2,6 @@ import { conflict, forbidden, json, route, type PluginContext, type PluginTx } f
 import {
   PreviewRetentionResponse,
   RetentionSettingsResponse,
-  RetentionSweepSummary,
   SetRetentionSettingsRequest,
   getRetentionSettingsRoute,
   previewRetentionRoute,
@@ -10,6 +9,7 @@ import {
   type RetentionSettings,
 } from '@manythreads/shared';
 import { retentionMode } from './config.ts';
+import { RETENTION_SETTINGS_COLUMNS, toRetentionSettings, type RetentionSettingsRow } from './rows.ts';
 import { loadWindows, PRUNE_QUEUE, startSweep } from './sweep.ts';
 
 // Workspace → Retention: read and change how many days of run logs and memory bookkeeping the workspace keeps, and ask for a dry run. Workspace
@@ -21,18 +21,8 @@ async function requireWorkspaceAdmin(tx: PluginTx): Promise<void> {
 }
 
 async function loadSettings(tx: PluginTx, workspaceId: string): Promise<RetentionSettings> {
-  const windows = await loadWindows(tx, workspaceId);
-  const row = (
-    await tx.query<{ last_sweep: unknown; updated_at: Date | null }>('SELECT last_sweep, updated_at FROM app.retention_settings WHERE workspace_id = $1::uuid', [workspaceId])
-  ).rows[0];
-  const last = row?.last_sweep === null || row?.last_sweep === undefined ? null : RetentionSweepSummary.safeParse(row.last_sweep);
-  return {
-    runLogDays: windows.runLogDays,
-    memoryLogDays: windows.memoryLogDays,
-    mode: retentionMode(),
-    lastSweep: last !== null && last.success ? last.data : null,
-    updatedAt: row?.updated_at?.toISOString() ?? null,
-  };
+  const row = (await tx.query<RetentionSettingsRow>(`SELECT ${RETENTION_SETTINGS_COLUMNS} FROM app.retention_settings WHERE workspace_id = $1::uuid`, [workspaceId])).rows[0];
+  return toRetentionSettings(row, retentionMode());
 }
 
 export function registerRoutes(ctx: PluginContext): void {

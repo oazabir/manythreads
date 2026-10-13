@@ -99,7 +99,7 @@ export default definePlugin({
           `SELECT DISTINCT l.team_id, l.workspace_id
              FROM app.memory_retain_log l JOIN app.teams t ON t.id = l.team_id
             WHERE l.created_at >= $1::timestamptz AND l.created_at < $2::timestamptz
-              AND l.outcome IN ('retained', 'forgotten', 'withheld') AND t.archived_at IS NULL`,
+              AND l.store = 'team_bank' AND l.outcome IN ('retained', 'forgotten') AND t.archived_at IS NULL`,
           [from, to],
         );
         for (const t of teams.rows) {

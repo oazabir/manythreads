@@ -6,10 +6,12 @@
 --    it is read. So a run that is about to be pruned leaves a MEMO first (`app.memory_memoize_runs`, called by retention in the transaction that
 --    deletes the run): its id, its bot, its window and its refusal — never its source lines. `app.memory_authored_verdict` reads the live runs
 --    and the memos as one set, with the same window rules, so a verdict does not change when the run it was made from is pruned.
---  * A memo is written only for a run that still matters: one whose refusal applies to something the bot authored in its window (a message in a
---    public channel, a commit), one a retained document of the feed derives from (`source_kind = 'run'`), or one an approval was filed from
---    (`approvals.run_id` is SET NULL when the run goes; the memo keeps `approval_ids` so the approval's verdict survives too). A run that read
---    only team-visible sources and wrote nothing leaves nothing.
+--  * A memo is written only for a run whose verdict can change something: one whose refusal applies to something the bot authored in its window
+--    (a message in a public channel, a commit), or one an approval was filed from (`approvals.run_id` is SET NULL when the run goes; the memo keeps
+--    `approval_ids` so the approval's verdict survives too, clean or not). A run that read only team-visible sources, or wrote nothing team-visible,
+--    and has no approval, leaves nothing: the verdict "no refusal" is what an absent run answers anyway. (A run summary the bank holds is not a
+--    reason: a run that is gone, for any reason, keeps its summary in the bank — `resolveRun` answers `skip`, never `forget`.) So the table holds
+--    one row per refusing run that wrote something, plus one per run that has an approval.
 --  * `source_kind` gains `concept`: a file of the team's OKF bundle (`memory/`), mirrored into the bank by `memory-git-mirror` (P5-14).
 --  * `app.memory_retain_log_prune`: the one door through which log lines are ever removed, for retention. The log is append-only for the system
 --    role (0001 revokes DELETE); the door is owned by the table's owner and has two policies of its own, so nothing else gains a privilege. It
@@ -62,7 +64,6 @@ BEGIN
      WHERE r.id = ANY (p_run_ids) AND r.ended_at IS NOT NULL
   ), judged AS (
     SELECT c.*, v.retain_refusal,
-           EXISTS (SELECT 1 FROM app.memory_retain_log l WHERE l.source_kind = 'run' AND l.source_id = c.id::text) AS held,
            ARRAY(SELECT ap.id FROM app.approvals ap WHERE ap.run_id = c.id) AS approvals,
            (c.bot_actor IS NOT NULL AND (
               EXISTS (
@@ -82,7 +83,7 @@ BEGIN
     INSERT INTO app.memory_run_memo (run_id, workspace_id, team_id, bot_id, started_at, ended_at, retain_refusal, approval_ids)
     SELECT j.id, j.workspace_id, j.team_id, j.bot_id, j.started_at, j.ended_at, j.retain_refusal, j.approvals
       FROM judged j
-     WHERE (j.retain_refusal IS NOT NULL AND j.authored) OR j.held OR cardinality(j.approvals) > 0
+     WHERE (j.retain_refusal IS NOT NULL AND j.authored) OR cardinality(j.approvals) > 0
     ON CONFLICT (run_id) DO NOTHING
     RETURNING 1
   )

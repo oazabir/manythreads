@@ -15,6 +15,7 @@ import {
   retentionMigrationSource,
   TEAM_IDS,
   teamsMigrationSource,
+  testClient,
   testKernelMigrationSource,
   type TestDatabase,
 } from '@manythreads/test-utils';
@@ -33,6 +34,7 @@ const DAY = 24 * 3_600_000;
 
 let db: TestDatabase;
 let sysPool: pg.Pool;
+let owner: pg.Client;
 const sys = <T>(fn: (tx: Tx) => Promise<T>): Promise<T> => withSystem(fn, { pool: sysPool, workspaceId: omar.workspaceId });
 const ago = (days: number, extraMs = 0): string => new Date(Date.now() - days * DAY + extraMs).toISOString();
 
@@ -94,14 +96,14 @@ async function run(options: RunOptions = {}): Promise<string> {
 const runExists = async (id: string): Promise<boolean> => sys(async (tx) => (await tx.query('SELECT 1 FROM app.bot_runs WHERE id = $1', [id])).rows.length > 0);
 const linesLeft = async (id: string): Promise<number> => sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.run_source_log WHERE run_id = $1', [id])).rows[0]!.n);
 
-const approval = (runId: string, status: 'pending' | 'approved' | 'denied', outcome = status === 'approved' ? 'ran' : 'none'): Promise<string> =>
+const approval = (runId: string, status: 'pending' | 'approved' | 'denied', outcome = status === 'approved' ? 'ran' : 'none', tool = 'pages.write'): Promise<string> =>
   sys(async (tx) => {
     const id = (
       await tx.query<{ id: string }>(
         `INSERT INTO app.approvals (workspace_id, team_id, source, status, outcome, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, run_id, decided_at)
-         VALUES ($1, $2, 'grant', $3, $4, 'pages.write', 'Write pages/x.md', '{}', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $5, 'Nadia',
+         VALUES ($1, $2, 'grant', $3, $4, $8, 'Write pages/x.md', '{}', '{"kind":"handoff","payload":{}}', '{"roles":[],"people":[],"leads":true}', $5, 'Nadia',
                  (SELECT bot_id FROM app.bot_runs WHERE id = $6), $6, $7) RETURNING id`,
-        [omar.workspaceId, ENG, status, outcome, nadia.actorId, runId, status === 'pending' ? null : new Date().toISOString()],
+        [omar.workspaceId, ENG, status, outcome, nadia.actorId, runId, status === 'pending' ? null : new Date().toISOString(), tool],
       )
     ).rows[0]!.id;
     if (status !== 'pending') {
@@ -143,9 +145,10 @@ const logOf = (id: string) =>
   sys(async (tx) => (await tx.query<{ outcome: string; reason: string }>('SELECT outcome, reason FROM app.memory_retain_log WHERE source_id = $1 ORDER BY id', [id])).rows.map((r) => [r.outcome, r.reason]));
 
 /** One whole sweep, step by step, each in its own transaction. Returns the counts and how many steps it took. */
-async function sweep(options: { workspaceId?: string; dryRun?: boolean } = {}): Promise<{ counts: RetentionCounts; steps: number }> {
+async function sweep(options: { workspaceId?: string; dryRun?: boolean; forge?: (state: SweepState) => SweepState } = {}): Promise<{ counts: RetentionCounts; steps: number }> {
   const workspaceId = options.workspaceId ?? omar.workspaceId;
-  let state: SweepState = await sys((tx) => startSweep(tx, workspaceId, new Date(), options.dryRun ?? false));
+  const started: SweepState = await sys((tx) => startSweep(tx, workspaceId, new Date(), options.dryRun ?? false));
+  let state: SweepState = options.forge ? options.forge(started) : started;
   for (let steps = 1; steps < 200; steps += 1) {
     const current = state;
     const result = await sys((tx) => sweepStep(tx, current));
@@ -173,6 +176,8 @@ beforeAll(async () => {
   });
   await createPersonas(db);
   sysPool = createSystemPool(db.systemUrl, 2);
+  owner = testClient({ connectionString: db.ownerUrl });
+  await owner.connect();
   main = await makeBot('archivist');
   channelId = await sys(
     async (tx) =>
@@ -185,6 +190,7 @@ beforeAll(async () => {
 afterAll(async () => {
   delete process.env['MANYTHREADS_RETENTION_BATCH'];
   await sysPool?.end();
+  await owner?.end();
   if (db) await dropTestDatabase(db);
 });
 
@@ -285,6 +291,81 @@ describe('which runs are pruned', () => {
     expect(await runExists(mine)).toBe(true);
   });
 
+  it('a run a legacy never-gated approval row points at is left alone (deleting it would UPDATE that row through SET NULL and its NOT VALID check would refuse)', async () => {
+    await owner.query('ALTER TABLE app.approvals DROP CONSTRAINT approvals_never_gated');
+    let legacy = '';
+    try {
+      legacy = await run({ status: 'stopped' });
+      await approval(legacy, 'denied', 'none', 'memory.retain');
+    } finally {
+      await owner.query("ALTER TABLE app.approvals ADD CONSTRAINT approvals_never_gated CHECK (tool NOT IN ('memory.retain')) NOT VALID");
+    }
+    const fine = await run();
+    const { counts } = await sweep();
+    expect(counts).toMatchObject({ runs: 1, runsSkipped: 0 });
+    expect(await runExists(fine)).toBe(false);
+    expect(await runExists(legacy)).toBe(true);
+  });
+
+  it('a delete the database refuses anyway is retried run by run: the others go, the one is counted and left, and the sweep finishes', async () => {
+    let poison = '';
+    await owner.query('ALTER TABLE app.approvals DROP CONSTRAINT IF EXISTS approvals_test_poison');
+    try {
+      poison = await run({ startedAt: ago(110, -60_000), endedAt: ago(110) });
+      await approval(poison, 'denied', 'none', 'x.poison');
+      await owner.query("ALTER TABLE app.approvals ADD CONSTRAINT approvals_test_poison CHECK (tool <> 'x.poison') NOT VALID");
+      const good1 = await run({ startedAt: ago(105, -60_000), endedAt: ago(105) });
+      const good2 = await run({ startedAt: ago(100, -60_000), endedAt: ago(100) });
+      const { counts } = await sweep();
+      expect(counts).toMatchObject({ runs: 2, runsSkipped: 1 });
+      expect(await runExists(good1)).toBe(false);
+      expect(await runExists(good2)).toBe(false);
+      expect(await runExists(poison)).toBe(true);
+      // and the next night it is the same one, not a stalled chain
+      expect((await sweep()).counts).toMatchObject({ runs: 0, runsSkipped: 1 });
+    } finally {
+      await owner.query('ALTER TABLE app.approvals DROP CONSTRAINT IF EXISTS approvals_test_poison');
+    }
+  });
+
+  it('does not trust its payload: a forged recent cutoff deletes what the workspace’s window says and nothing else', async () => {
+    const young = await run({ startedAt: ago(10, -60_000), endedAt: ago(10) });
+    const middling = await run({ startedAt: ago(45, -60_000), endedAt: ago(45) });
+    const old = await run();
+    await logLine({ id: 'forged-a', outcome: 'retained', at: ago(200) });
+    await logLine({ id: 'forged-a', outcome: 'forgotten', at: ago(199), reason: 'replaced' });
+    await logLine({ id: 'forged-a', outcome: 'retained', at: ago(198) });
+    const { counts } = await sweep({ forge: (state) => ({ ...state, runLogCutoff: new Date().toISOString(), memoryLogCutoff: new Date().toISOString() }) });
+    expect(counts).toMatchObject({ runs: 1, memoryLogLines: 0 });
+    expect(await runExists(old)).toBe(false);
+    expect(await runExists(young)).toBe(true);
+    expect(await runExists(middling)).toBe(true);
+    expect(await logOf('forged-a')).toHaveLength(3);
+    // a cutoff below the bound's minimum is lifted to it as well: the window is 90 days here, but the floor is what a hand-set row could not pass
+    await sys((tx) => tx.query('INSERT INTO app.retention_settings (workspace_id, run_log_days) VALUES ($1, 30)', [omar.workspaceId]));
+    const forgedOld = await sweep({ forge: (state) => ({ ...state, runLogCutoff: ago(1) }) });
+    expect(forgedOld.counts.runs).toBe(1); // the 45-day run, by the 30-day window — and not the 10-day one
+    expect(await runExists(middling)).toBe(false);
+    expect(await runExists(young)).toBe(true);
+  });
+
+  it('a payload for another workspace is judged by that workspace’s window, and a window mid-sweep that is longer wins over the payload', async () => {
+    const run45 = await run({ startedAt: ago(45, -60_000), endedAt: ago(45) });
+    await sys((tx) => tx.query('INSERT INTO app.retention_settings (workspace_id, run_log_days) VALUES ($1, 30)', [omar.workspaceId]));
+    // the sweep started under a 30-day window; an admin then lengthened it to 200 days before the step ran
+    const started = await sys((tx) => startSweep(tx, omar.workspaceId, new Date(), false));
+    await sys((tx) => tx.query('UPDATE app.retention_settings SET run_log_days = 200 WHERE workspace_id = $1', [omar.workspaceId]));
+    const result = await sys((tx) => sweepStep(tx, started));
+    expect(result.done).toBe(false);
+    expect(await runExists(run45)).toBe(true);
+  });
+
+  it('a row made by a sweep says nothing was ever changed: updated_at stays NULL until an admin changes a window', async () => {
+    await sys((tx) => tx.query("INSERT INTO app.retention_settings (workspace_id, last_dry_run) VALUES ($1, '{}'::jsonb)", [omar.workspaceId]));
+    const row = await sys(async (tx) => (await tx.query<{ updated_at: Date | null; last_sweep: unknown }>('SELECT updated_at, last_sweep FROM app.retention_settings WHERE workspace_id = $1', [omar.workspaceId])).rows[0]);
+    expect(row).toEqual({ updated_at: null, last_sweep: null });
+  });
+
   it('the window cannot be set below its bound (the table refuses it)', async () => {
     await expect(sys((tx) => tx.query('INSERT INTO app.retention_settings (workspace_id, run_log_days) VALUES ($1, 7)', [omar.workspaceId]))).rejects.toMatchObject({ code: '23514' });
     await expect(sys((tx) => tx.query('INSERT INTO app.retention_settings (workspace_id, memory_log_days) VALUES ($1, 10)', [omar.workspaceId]))).rejects.toMatchObject({ code: '23514' });
@@ -342,16 +423,61 @@ describe('the feed’s verdict about what a bot wrote does not depend on a run t
     expect((await sweep()).counts.runMemos).toBe(0);
   });
 
-  it('a run a retained document derives from, or an approval was filed from, leaves a memo', async () => {
+  it('a run an approval was filed from leaves a memo (clean or not); a run whose summary the bank holds leaves none', async () => {
     const held = await run();
     await logLine({ kind: 'run', id: held, outcome: 'retained', at: ago(99) });
     const filed = await run({ lines: [['drive', 'x', 'person']] });
     const approvalId = await approval(filed, 'denied');
+    const filedClean = await run({ lines: [['message', 'x', 'team']] });
+    const cleanApproval = await approval(filedClean, 'approved');
     const { counts } = await sweep();
     expect(counts.runMemos).toBe(2);
     const memos = await sys(async (tx) => (await tx.query<{ run_id: string; retain_refusal: string | null; approval_ids: string[] }>('SELECT run_id, retain_refusal, approval_ids FROM app.memory_run_memo ORDER BY run_id')).rows);
-    expect(memos.find((m) => m.run_id === held)).toMatchObject({ retain_refusal: null, approval_ids: [] });
+    expect(memos.find((m) => m.run_id === held)).toBeUndefined();
     expect(memos.find((m) => m.run_id === filed)).toMatchObject({ retain_refusal: 'person_source', approval_ids: [approvalId] });
+    expect(memos.find((m) => m.run_id === filedClean)).toMatchObject({ retain_refusal: null, approval_ids: [cleanApproval] });
+  });
+
+  // The table of what leaves a memo and what does not, and that no verdict about what a bot wrote moves in any row of it.
+  describe.each([
+    { refusal: 'person', wrote: 'message', approved: false, memo: true },
+    { refusal: 'person', wrote: 'page', approved: false, memo: true },
+    { refusal: 'person', wrote: 'nothing', approved: false, memo: false },
+    { refusal: 'person', wrote: 'nothing', approved: true, memo: true },
+    { refusal: 'person', wrote: 'message', approved: true, memo: true },
+    { refusal: 'none', wrote: 'message', approved: false, memo: false },
+    { refusal: 'none', wrote: 'nothing', approved: false, memo: false },
+    { refusal: 'none', wrote: 'message', approved: true, memo: true },
+  ])('a run that read $refusal sources, wrote $wrote, approval filed: $approved', (row) => {
+    it(`memo ${row.memo ? 'written' : 'not written'}, and the verdict is the same after the prune`, async () => {
+      const bot = await makeBot(`matrix-${row.refusal}-${row.wrote}-${row.approved}`);
+      const startedAt = ago(100, -60_000);
+      const endedAt = ago(100, 300_000);
+      const inside = ago(100, 120_000);
+      const outside = ago(100, 3_900_000);
+      const id = await run({ bot, startedAt, endedAt, lines: row.refusal === 'person' ? [['drive', 'x', 'person']] : [['message', 'x', 'team']] });
+      if (row.wrote === 'message') await message(bot.actor, inside);
+      if (row.wrote === 'page') {
+        await sys((tx) =>
+          tx.query(`INSERT INTO app.repo_commits (team_id, sha, author_id, message, committed_at, paths) VALUES ($1, md5($2::text) || 'aaaaaaaa', $3, 'write', $4::timestamptz, ARRAY['pages/m.md'])`, [ENG, bot.bot, bot.actor, inside]),
+        );
+      }
+      if (row.approved) await approval(id, 'approved');
+      const instants = [startedAt, inside, endedAt, outside, ago(101)];
+      const before = await Promise.all(instants.map((at) => verdict(bot.actor, at)));
+      const { counts } = await sweep();
+      expect(counts.runs).toBe(1);
+      expect(counts.runMemos).toBe(row.memo ? 1 : 0);
+      const after = await Promise.all(instants.map((at) => verdict(bot.actor, at)));
+      // The feed asks for a verdict at the instants of what a bot wrote. Wherever the bot wrote something in the run's window, the answer is the same
+      // after the prune: the refusal the run had, and never "open". Where it wrote nothing there is nothing to judge, and no memo is needed.
+      if (row.wrote !== 'nothing') {
+        expect(after[1]).toMatchObject({ run_open: false, retain_refusal: before[1]!.retain_refusal });
+        expect(after[1]!.retain_refusal).toBe(row.refusal === 'person' ? 'person_source' : null);
+      }
+      // an instant outside the window was never covered, before or after
+      expect(after[3]).toMatchObject({ retain_refusal: null, runs: 0 });
+    });
   });
 
   it('memos of bots that no longer exist are removed (their verdict is bot_removed now); the others stay', async () => {
@@ -370,6 +496,27 @@ describe('the feed’s verdict about what a bot wrote does not depend on a run t
     const left = await sys(async (tx) => (await tx.query<{ bot_id: string }>('SELECT bot_id FROM app.memory_run_memo')).rows.map((r) => r.bot_id));
     expect(left).toEqual([stays.bot]);
     expect(await verdict(stays.actor, ago(100, 120_000))).toMatchObject({ retain_refusal: 'person_source' });
+  });
+});
+
+describe('the memoize plan', () => {
+  it('reads a bot’s messages through the author index and its commits through the team and time index: no new index is needed', async () => {
+    const plan = await sys(async (tx) => {
+      await tx.query('SET LOCAL enable_seqscan = off');
+      const messages = await tx.query<{ 'QUERY PLAN': string }>(
+        `EXPLAIN SELECT 1 FROM app.messages m JOIN app.channels ch ON ch.id = m.channel_id
+          WHERE m.author_id = gen_random_uuid() AND m.deleted_at IS NULL AND ch.kind = 'channel' AND NOT ch.private AND ch.team_id IS NOT NULL
+            AND m.created_at BETWEEN now() - interval '1 day' AND now()`,
+      );
+      const commits = await tx.query<{ 'QUERY PLAN': string }>(
+        `EXPLAIN SELECT 1 FROM app.repo_commits rc WHERE rc.team_id = gen_random_uuid() AND rc.author_id = gen_random_uuid()
+            AND rc.committed_at BETWEEN now() - interval '1 day' AND now()`,
+      );
+      return [...messages.rows, ...commits.rows].map((r) => r['QUERY PLAN']).join('\n');
+    });
+    expect(plan).toContain('messages_author');
+    expect(plan).toMatch(/repo_commits_/);
+    expect(plan).not.toMatch(/Seq Scan on messages/);
   });
 });
 

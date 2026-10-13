@@ -174,11 +174,12 @@ describe('the daily journal', () => {
       ok: true,
       frontmatter: { type: 'Journal', title: `Journal ${YESTERDAY}`, origin: 'journal', generated: { by: 'process:journal' } },
     });
-    expect(journal).toContain('| message | 2 | 1 | 0 |');
-    expect(journal).toContain('| bot run | 1 | 0 | 1 |');
+    expect(journal).toContain('| message | 2 | 1 |');
+    expect(journal).toContain('| bot run | 1 | 0 |');
+    expect(journal).not.toMatch(/left out|withheld/i);
     expect(journal).toContain('/t/engineering/c/dev?message=m1');
     expect(journal).toContain('/t/engineering/bots/coder');
-    // a forgotten source has no link; a withheld source is counted and never linked, with no reason
+    // a forgotten source has no link; a withheld source is neither counted nor linked, and its reason is not printed
     expect(journal).not.toContain('message=m2');
     expect(journal).not.toContain('secret-bot');
     expect(journal).not.toContain('person_source');

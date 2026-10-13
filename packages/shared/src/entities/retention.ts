@@ -21,6 +21,8 @@ export type RetentionMode = z.infer<typeof RetentionMode>;
 export const RetentionCounts = z.object({
   /** `bot_runs` rows. */
   runs: z.number().int().nonnegative(),
+  /** Eligible runs that could not be deleted (the database refused one; the sweep went on and left it). */
+  runsSkipped: z.number().int().nonnegative(),
   /** `run_source_log` lines that went with them. */
   runSourceLines: z.number().int().nonnegative(),
   /** `mcp_run_tokens` rows (the runs' endpoint credentials) that went with them. */
@@ -51,8 +53,11 @@ export const RetentionSettings = z.object({
   memoryLogDays: z.number().int().min(RETENTION_MEMORY_LOG_DAYS.min).max(RETENTION_MEMORY_LOG_DAYS.max),
   /** What the deployment allows; read-only here (an environment variable). */
   mode: RetentionMode,
-  /** The newest sweep of this workspace (a dry run is one too); null before the first. */
+  /** The newest sweep that deleted (mode `on`); null before the first. A dry run never replaces it. */
   lastSweep: RetentionSweepSummary.nullable(),
+  /** The newest dry run (the default mode, or a preview); null before the first. */
+  lastDryRun: RetentionSweepSummary.nullable(),
+  /** When an admin last changed the windows; null for a workspace that never did. */
   updatedAt: IsoDateTime.nullable(),
 });
 export type RetentionSettings = z.infer<typeof RetentionSettings>;

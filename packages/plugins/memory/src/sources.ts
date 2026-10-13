@@ -1,4 +1,5 @@
 import type { PluginTx } from '@manythreads/sdk';
+import { RUN_MEMO_COLUMNS, toMemoryRunMemo, type RunMemoRow } from './rows.ts';
 import { MAX_THREAD_REPLIES, isUuid, metadataOf, renderApproval, renderMessage, renderPage, renderRun, renderThread, tagOf, type FeedItem } from './render.ts';
 
 // What each kind of source is, read as it is NOW (system transaction). An event only says "this changed"; `resolve*` answers what the bank
@@ -275,12 +276,10 @@ export async function resolveRun(tx: PluginTx, runId: string): Promise<Resolutio
       [runId],
     )
   ).rows[0];
-  if (!r) {
-    // A run that retention pruned leaves a memo (migration 0002): the log it was made from is gone, the document made from it is not, and the bank
-    // keeps it (the memory outlives the run's log). A run that is gone for any other reason (its bot was removed) has no document to keep.
-    const memo = (await tx.query('SELECT 1 FROM app.memory_run_memo WHERE run_id = $1::uuid', [runId])).rows[0];
-    return memo !== undefined ? skip('pruned') : forget('gone');
-  }
+  // A run that is gone keeps its summary in the bank, whatever took it: retention pruned its log (the memory outlives the run's log), or its bot
+  // was removed. The summary is types and counts, never text, and it was made only for a run the narrowest-source rule allowed; nothing makes
+  // forgetting it a requirement, and a re-read (a channel rename) must not turn a pruned log into a forgotten memory.
+  if (!r) return skip('gone');
   const at: Provenance = {
     teamId: r.team_id,
     workspaceId: r.workspace_id,
@@ -407,11 +406,10 @@ export async function resolveApproval(tx: PluginTx, approvalId: string): Promise
     // The run it was filed from is gone: retention pruned it (and left a memo that remembers this approval), or it was deleted some other way.
     // `approvals.run_id` is SET NULL by the foreign key, so "no run" is not "a run that read nothing narrower": the memo decides, and a run that
     // left no memo cannot be judged, which is a refusal (fail closed, like `inheritSources`).
-    const memo = (
-      await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.memory_run_memo WHERE approval_ids @> ARRAY[$1::uuid] LIMIT 1', [approvalId])
-    ).rows[0];
+    const memoRow = (await tx.query<RunMemoRow>(`SELECT ${RUN_MEMO_COLUMNS} FROM app.memory_run_memo WHERE approval_ids @> ARRAY[$1::uuid] LIMIT 1`, [approvalId])).rows[0];
+    const memo = memoRow === undefined ? undefined : toMemoryRunMemo(memoRow);
     if (memo === undefined) return { action: 'withhold', at, reason: 'run_gone' };
-    if (memo.retain_refusal !== null) return { action: 'withhold', at, reason: memo.retain_refusal };
+    if (memo.retainRefusal !== null) return { action: 'withhold', at, reason: memo.retainRefusal };
   }
   const when = a.decided_at ?? a.created_at;
   const text = renderApproval({

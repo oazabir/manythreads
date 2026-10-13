@@ -55,3 +55,21 @@ export const MemoryRetainLogEntry = z.object({
   createdAt: IsoDateTime,
 });
 export type MemoryRetainLogEntry = z.infer<typeof MemoryRetainLogEntry>;
+
+/**
+ * What retention leaves of a run it pruned (`app.memory_run_memo`, memory migration 0002): the window the run covered, its bot, the refusal the
+ * narrowest-source rule gave it at the time (null: it read nothing narrower than the team) and the approvals that were filed from it. Never its
+ * source lines. System-only: no route returns it; the shape exists so that the one mapper (`toMemoryRunMemo`) is the only reader of the row.
+ */
+export const MemoryRunMemo = z.object({
+  runId: RunId,
+  workspaceId: WorkspaceId,
+  teamId: TeamId,
+  botId: z.uuid(),
+  startedAt: IsoDateTime,
+  endedAt: IsoDateTime,
+  retainRefusal: z.string().nullable(),
+  approvalIds: z.array(z.uuid()),
+  memoizedAt: IsoDateTime,
+});
+export type MemoryRunMemo = z.infer<typeof MemoryRunMemo>;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 import {
+  MemoryRunMemo,
   MemorySourceKind,
   RETENTION_MEMORY_LOG_DAYS,
   RETENTION_RUN_LOG_DAYS,
@@ -33,7 +34,7 @@ describe('retention.sweep.completed', () => {
     dryRun: false,
     runLogCutoff: '2026-07-15T03:07:00.000Z',
     memoryLogCutoff: '2025-10-13T03:07:00.000Z',
-    counts: { runs: 12, runSourceLines: 80, runTokens: 12, runMemos: 1, memoryLogLines: 40, memosRemoved: 0 },
+    counts: { runs: 12, runsSkipped: 0, runSourceLines: 80, runTokens: 12, runMemos: 1, memoryLogLines: 40, memosRemoved: 0 },
     durationMs: 1500,
   };
 
@@ -95,7 +96,7 @@ describe('RetentionSettings and its request', () => {
   });
 
   it('a settings answer has no field named like a credential or a hash', () => {
-    const shown = RetentionSettings.parse({ runLogDays: 90, memoryLogDays: 365, mode: 'dry-run', lastSweep: null, updatedAt: null });
+    const shown = RetentionSettings.parse({ runLogDays: 90, memoryLogDays: 365, mode: 'dry-run', lastSweep: null, lastDryRun: null, updatedAt: null });
     expect(Object.keys(shown).join(' ')).not.toMatch(/hash|secret|token|key|password/i);
   });
 });
@@ -103,5 +104,24 @@ describe('RetentionSettings and its request', () => {
 describe('MemorySourceKind', () => {
   it('has concept after run_tool (the order is the SQL CHECK’s)', () => {
     expect(MemorySourceKind.options).toEqual(['message', 'thread', 'run', 'approval', 'page', 'run_tool', 'concept']);
+  });
+});
+
+describe('MemoryRunMemo', () => {
+  const valid = {
+    runId: uuid(4),
+    workspaceId: uuid(1),
+    teamId: uuid(2),
+    botId: uuid(3),
+    startedAt: '2026-07-01T10:00:00.000Z',
+    endedAt: '2026-07-01T10:05:00.000Z',
+    retainRefusal: 'person_source',
+    approvalIds: [uuid(9)],
+    memoizedAt: '2026-10-13T03:07:00.000Z',
+  };
+  it('is the memo of a pruned run: window, bot, refusal and approvals', () => {
+    expect(MemoryRunMemo.parse(valid)).toEqual(valid);
+    expect(MemoryRunMemo.parse({ ...valid, retainRefusal: null }).retainRefusal).toBeNull();
+    expect(MemoryRunMemo.safeParse({ ...valid, approvalIds: ['x'] }).success).toBe(false);
   });
 });

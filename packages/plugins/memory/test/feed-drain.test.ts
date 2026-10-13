@@ -1017,21 +1017,25 @@ describe('after retention pruned the run', () => {
       return id;
     });
 
-  it('a run summary that is in the bank stays there: the source is gone, the memory is not (a run that is gone any other way still forgets)', async () => {
-    const kept = await run([['memory', 'bank:team:test', 'team']]);
+  it('a run summary that is in the bank stays there when the run is gone, however it went: the log is pruned, the memory is not', async () => {
+    const pruned = await run([['memory', 'bank:team:test', 'team']]);
     const removed = await run([['memory', 'bank:team:test', 'team']]);
-    for (const id of [kept, removed]) await mark('run', id);
+    for (const id of [pruned, removed]) await mark('run', id);
     await drain();
-    expect((await linesOf('run', kept)).map((l) => l.outcome)).toEqual(['retained']);
+    expect((await linesOf('run', pruned)).map((l) => l.outcome)).toEqual(['retained']);
     stub.reset();
 
-    await prune(kept);
-    await sys((tx) => tx.query('DELETE FROM app.bot_runs WHERE id = $1', [removed])); // no memo: not retention's doing
-    for (const id of [kept, removed]) await mark('run', id);
+    await prune(pruned);
+    // a run summary needs no memo: nothing a later verdict reads comes from it
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.memory_run_memo WHERE run_id = $1', [pruned])).rows.length)).toBe(0);
+    await sys((tx) => tx.query('DELETE FROM app.bot_runs WHERE id = $1', [removed])); // gone some other way
+    for (const id of [pruned, removed]) await mark('run', id);
     await drain();
-    expect((await linesOf('run', kept)).map((l) => l.outcome)).toEqual(['retained']);
-    expect((await linesOf('run', removed)).map((l) => [l.outcome, l.reason])).toEqual([['retained', ''], ['forgotten', 'gone']]);
-    expect(stub.forgets()).toHaveLength(1);
+    expect(stub.calls).toEqual([]);
+    for (const id of [pruned, removed]) {
+      expect((await linesOf('run', id)).map((l) => l.outcome)).toEqual(['retained']);
+      expect(await pendingOf('run', id)).toBeUndefined();
+    }
   });
 
   it('an approval withheld because its run read a person source is withheld after the run is pruned, and is not retained', async () => {

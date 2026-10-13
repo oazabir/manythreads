@@ -12,8 +12,8 @@ describe('renderJournal', () => {
     date: '2026-10-12',
     now: NOW,
     counts: [
-      { kind: 'message', retained: 8, forgotten: 1, withheld: 0 },
-      { kind: 'run', retained: 3, forgotten: 0, withheld: 2 },
+      { kind: 'message', retained: 8, forgotten: 1 },
+      { kind: 'run', retained: 3, forgotten: 0 },
     ],
     links: [
       { kind: 'message', at: '2026-10-12T09:14:02.000Z', link: '/t/engineering/c/dev?message=0190a000-0000-7000-8000-000000000001' },
@@ -38,9 +38,11 @@ describe('renderJournal', () => {
   });
 
   it('holds totals, a table by source and the links — and no text', () => {
-    expect(text).toContain('took in 11 items, took out 1 and left out 2');
-    expect(text).toContain('| message | 8 | 1 | 0 |');
-    expect(text).toContain('| bot run | 3 | 0 | 2 |');
+    expect(text).toContain('took in 11 items and took out 1.');
+    expect(text).toContain('| message | 8 | 1 |');
+    expect(text).toContain('| bot run | 3 | 0 |');
+    // what was left out is the retain log's (leads and admins), never a file every member reads
+    expect(text).not.toMatch(/left out|withheld/i);
     expect(text).toContain('- 09:14 [message](</t/engineering/c/dev?message=0190a000-0000-7000-8000-000000000001>)');
     expect(text).toContain('- and 9 more');
   });

@@ -5,7 +5,7 @@ import {
   type MemoryLogAppend,
   type MemoryLogLine,
 } from '@manythreads/sdk';
-import { MemoryRetainLogEntry } from '@manythreads/shared';
+import { MemoryRetainLogEntry, MemoryRunMemo } from '@manythreads/shared';
 
 /** One `memory_retain_log` row as the driver returns it. */
 export interface RetainLogRow extends Record<string, unknown> {
@@ -70,3 +70,33 @@ export type AppendLine = MemoryLogAppend;
 
 /** Appends one line (system transaction). Reasons and links are clipped to what the columns hold; nothing here carries retained text. */
 export const appendLine = appendMemoryLine;
+
+/** One `memory_run_memo` row as the driver returns it (migration 0002; system only, no route returns it). */
+export interface RunMemoRow extends Record<string, unknown> {
+  run_id: string;
+  workspace_id: string;
+  team_id: string;
+  bot_id: string;
+  started_at: Date;
+  ended_at: Date;
+  retain_refusal: string | null;
+  approval_ids: string[];
+  memoized_at: Date;
+}
+
+export const RUN_MEMO_COLUMNS = 'run_id, workspace_id, team_id, bot_id, started_at, ended_at, retain_refusal, approval_ids, memoized_at';
+
+/** The one place a `memory_run_memo` row becomes the shared `MemoryRunMemo`. */
+export function toMemoryRunMemo(r: RunMemoRow): MemoryRunMemo {
+  return MemoryRunMemo.parse({
+    runId: r.run_id,
+    workspaceId: r.workspace_id,
+    teamId: r.team_id,
+    botId: r.bot_id,
+    startedAt: r.started_at.toISOString(),
+    endedAt: r.ended_at.toISOString(),
+    retainRefusal: r.retain_refusal,
+    approvalIds: r.approval_ids,
+    memoizedAt: r.memoized_at.toISOString(),
+  });
+}

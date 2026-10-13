@@ -55,11 +55,11 @@ The first time a team's memory is touched (a commit with a path under `memory/`,
 * `memory/index.md` — frontmatter `okf_version: "0.2"` and nothing else, then a short note;
 * `memory/log.md` — date-grouped, newest first: one entry, "The memory bundle was created by the platform".
 
-It never overwrites a file that exists, records the team in `memory_mirror_teams` in the same transaction (so it happens once however many events arrive), and treats a 409 from a concurrent writer as "present". An archived team is left alone. **P5-25** makes the writer regenerate every directory's `index.md` and the log in the same commit as a change; these two files are what it starts from, and this job becomes a no-op for a team whose root exists.
+It never overwrites a file that exists, and records the team in `memory_mirror_teams` in the same transaction (so it happens once however many events arrive) **only when both files are in the index**. The writer's 409 is read for what it is: a 409 that **names files** means somebody wrote one in between (nothing was written, so the other may still be missing: look again, write what is missing), and a 409 that names none (`ref_conflict`) lost a race for the branch (write again); up to three attempts, then the job fails and is retried. Neither is ever "present" until a look at the index says so, and the same rule decides a journal's "exists". An archived team is left alone. **P5-25** makes the writer regenerate every directory's `index.md` and the log in the same commit as a change; these two files are what it starts from, and this job becomes a no-op for a team whose root exists.
 
 ## The journal
 
-`memory-git-mirror.journal` (cron `23 2 * * *`, UTC) finds the teams whose `memory_retain_log` has a `retained`, `forgotten` or `withheld` line in yesterday (UTC) and queues `memory-git-mirror.journal-team` for each (`{ workspaceId, teamId, date }`, deduplicated). The team job writes `memory/journal/<date>.md`:
+`memory-git-mirror.journal` (cron `23 2 * * *`, UTC) finds the teams whose `memory_retain_log` has a `retained` or `forgotten` line of the team bank in yesterday (UTC) and queues `memory-git-mirror.journal-team` for each (`{ workspaceId, teamId, date }`, deduplicated). The team job writes `memory/journal/<date>.md`:
 
 ```yaml
 type: Journal
@@ -70,7 +70,7 @@ origin: journal
 generated: { by: process:journal, at: <when> }
 ```
 
-The body is counts and links, **never the retained text**: a table of taken-in / taken-out / left-out by source kind, and a list of links to what was taken in that day and is still in the bank (no later `forgotten` line), at most 200, the rest counted. A withheld source is counted and never linked and its reason is not printed. The journal's own re-retain and other journals are not counted. Not written for a day with nothing in the log, for a day that is not over, when the file exists (a person's edit stays) or for an archived team; written through the one writer, so the commit emits `repo.repo.committed` and the mirror retains the journal like any concept (type `Journal`, origin `journal`).
+The body is counts and links, **never the retained text**: a table of taken-in / taken-out by source kind, and a list of links to what was taken in that day and is still in the bank (no later `forgotten` line), at most 200, the rest counted. **What was left out is not in it**: a journal is a file of the team repo that every member reads, while a withheld line (and why) is the retain log's, readable by leads and workspace admins (SPEC §15); a day with only withheld lines writes no journal. Only the team bank's lines count (`store = 'team_bank'`): a person's file (`person_file`, P5-26) never makes a team's journal, counts or links. The journal's own re-retain and other journals are not counted. Not written for a day with nothing in the log, for a day that is not over, when the file exists (a person's edit stays) or for an archived team; written through the one writer, so the commit emits `repo.repo.committed` and the mirror retains the journal like any concept (type `Journal`, origin `journal`).
 
 ## Privacy
 
@@ -84,6 +84,7 @@ The body is counts and links, **never the retained text**: a table of taken-in /
 
 * `test/render.test.ts`, `test/decide.test.ts`, `test/journal.test.ts` — pure: the document, tags and metadata, the keyed digest and the id, every case of the decision table, the journal text and the day rules.
 * `test/drain.test.ts` — the drain against a real database and a stand-in engine: retained once with its tags, unchanged, edited (forget then retain; a verifier alone is an edit), deleted, deprecated and made stable again, draft, invalid (once, and a held document goes), index/log/non-concepts skipped, binary, a bot's concept in a refused run / outside a run / in an open run (then `run_open`), another team's bank only, a wrong-team event, a team that is gone, engine down (back-off, `failed` after 8), a forget that never gives up, a 422 retried singly, no engine; and the event handler (every path marked, the root requested once, nothing for other paths, `not_configured`).
+* `test/bundle.test.ts` — the writer's refusals (file conflict, lost race, persistent, no file found), the bundle root recorded only when both files are there, a journal "exists" only when it is, the team bank's lines only (a `person_file` line adds nothing), no left-out column.
 * `test/mirror.test.ts` — through the real server and `tools/fake-hindsight`: a commit reaches the bank; the root written once as the system; an edit, `deprecated` and a delete; an invalid file; the journal from the cron job (counts and links, no text, no withheld link), mirrored, written once; no journal for an empty or unfinished day.
 * `test/rls/mirror.test.ts` — both tables invisible to the request role, harness rules, cascade.
 * `packages/plugins/memory-hindsight/test/cross-team/feeding.test.ts` (in `pnpm test:memory-cross-team`) — team A's concepts never reach team B's bank, whatever an event claims; each team's root is in its own repo.

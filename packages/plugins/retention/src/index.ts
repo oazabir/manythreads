@@ -67,9 +67,11 @@ export default definePlugin({
         return;
       }
       const summary = RetentionSweepSummary.parse(result.summary);
+      // A dry run (a preview, or the default mode) never replaces what the last real sweep did: each has its own column.
+      const column = summary.dryRun ? 'last_dry_run' : 'last_sweep';
       await tx.query(
-        `INSERT INTO app.retention_settings (workspace_id, last_sweep) VALUES ($1::uuid, $2::jsonb)
-         ON CONFLICT (workspace_id) DO UPDATE SET last_sweep = EXCLUDED.last_sweep`,
+        `INSERT INTO app.retention_settings (workspace_id, ${column}) VALUES ($1::uuid, $2::jsonb)
+         ON CONFLICT (workspace_id) DO UPDATE SET ${column} = EXCLUDED.${column}`,
         [state.workspaceId, JSON.stringify(summary)],
       );
       await ctx.audit.emit(tx, {
@@ -84,7 +86,7 @@ export default definePlugin({
       });
       const c = summary.counts;
       job.log.info(
-        `retention: workspace ${state.workspaceId} ${summary.dryRun ? 'dry run: would prune' : 'pruned'} ${c.runs} run(s) (${c.runSourceLines} source line(s), ${c.runTokens} token(s), ${c.runMemos} memo(s)), ${c.memoryLogLines} log line(s), ${c.memosRemoved} memo(s) of removed bots`,
+        `retention: workspace ${state.workspaceId} ${summary.dryRun ? 'dry run: would prune' : 'pruned'} ${c.runs} run(s) (${c.runSourceLines} source line(s), ${c.runTokens} token(s), ${c.runMemos} memo(s); ${c.runsSkipped} left because the database refused), ${c.memoryLogLines} log line(s), ${c.memosRemoved} memo(s) of removed bots`,
       );
     });
   },
