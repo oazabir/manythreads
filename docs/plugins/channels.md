@@ -186,6 +186,14 @@ acts for (`app.run_id()`; 403 otherwise), an `answer` names that run and the pos
 text as `body` (400). Migration `0007` adds the partial unique index `messages_one_answer_per_run` (one live message with `meta.answer` per
 `meta.runId`).
 
+**A person's copy of their own answer (P5-17).** `post(tx, { channelId, body, meta: { answer }, copyOf: <answer message id> })` posts a masked
+copy as the person the transaction acts for, with no run. `copyOf` makes the provider check the claim against the stored original, in the caller's
+own `bot_conversation` channel: the caller is the person the answer was for (403 otherwise, for another person's answer, a message in a channel, an
+id that is nothing, or a bot), `answeredFor` is the original's, the copy's text is the original's with whole sentences taken out (a subsequence)
+and is the message's own text, every citation is the original's by number (a masked one, or the same citation but for its label), the lineage and
+"Sources reached" are subsets, and there are no chips (400 otherwise). A `meta.runId` with `copyOf` is a 400. Nothing about the original is stored
+on the copy. Editing a message that carries an Answer is refused (409): the text must stay the payload's `body`.
+
 ## Manifest
 
 | Field | Value |

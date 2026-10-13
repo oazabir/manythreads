@@ -70,7 +70,8 @@ describe('conversations events', () => {
   it('registers the event at schema version 1 and the manifest lists it', async () => {
     expect(Object.keys(eventRegistry['conversations.conversation.started'])).toEqual(['1']);
     const plugin = (await import('../../src/index.ts')).default;
-    expect([...plugin.manifest.events.emits].sort()).toEqual(['channel.channel.created', 'conversations.conversation.started']);
+    // the third is the access event of sharing an answer (P5-17): its own contract is in answer's test/events
+    expect([...plugin.manifest.events.emits].sort()).toEqual(['answer.answer.shared', 'channel.channel.created', 'conversations.conversation.started']);
     expect([...plugin.manifest.events.consumes]).toEqual(['channel.message.posted']);
   });
 

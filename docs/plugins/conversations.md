@@ -50,13 +50,13 @@ the reason instead of hiding them.
 | Column | Meaning |
 |---|---|
 | `visibility` | `private` (the asker only) or `shared` (the bot's team lists it under Shared). CHECK, shared with the Zod `ConversationVisibility`. |
-| `shared_to`, `shared_root_id`, `shared_by`, `shared_at` | where P5-17 posted the shared copy, the thread it made there, who shared and when. The data model only: **P5-17 builds sharing** (the masking, the preview, the access event). Constraints: `shared` ⇔ `shared_at` set; a share target only while shared. |
+| `shared_to`, `shared_root_id`, `shared_by`, `shared_at` | where the shared copy was posted, the message it made there, who shared and when (the latest share of the conversation; [Sharing](#sharing-an-answer-p5-17)). Written by `app.conversations_mark_shared` (migration `0002`). Constraints: `shared` ⇔ `shared_at` set; a share target only while shared. |
 
 The row holds **no text**: a title or a preview is read from the messages with the reader's own visibility, so an edit or a deletion can never
 leave a stale copy on an index row (MISTAKES P5-13 on denormalised copies). Another person's shared conversation is listed through the copy that
 was posted into a channel the reader can read (`shared_root_id` in `shared_to`); with no readable copy it is listed with no title and cannot be
 opened. RLS (`conversations_select`, hoisted): the asker's own rows, and `shared` rows of the teams the caller may read; callers cannot write the
-table at all (the system role does: the indexer below, and P5-17's sharing door).
+table at all (the system role does: the indexer below, and the sharing door `app.conversations_mark_shared`).
 
 The index is written by a `channel.message.posted` subscriber: a **root** message (no `thread_root_id`) in a bot conversation channel, authored by
 the channel's person, inserts the row (idempotent on the root id) and announces `conversations.conversation.started` (below). It is not in the
@@ -111,6 +111,34 @@ same sha); anything else — no repo plugin, an unreadable or invalid file, a ne
 - Search and the Threads inbox show a person their own conversations (a search hit or inbox row opens at `/t/:team/chat/:channelId?thread=`,
   which finds the bot from the channel).
 
+## Sharing an answer (P5-17)
+
+What a person does with an answer of their own conversation is this plugin's routes (the conversation index is its table, and a hand-off goes
+through its `open` door); the masking rules and their SQL are the [answer](./answer.md#sharing-an-answer-p5-17) plugin's, and Save as page is the
+[pages](./pages.md#save-as-page) plugin's route over the same view. Every route is addressed by the answer's own message in the caller's own
+conversation channel and is a **404** for anybody else (an admin included).
+
+| Method and path | What it does |
+|---|---|
+| `GET /api/channels/:channelId/messages/:messageId/answer/targets` | the team channels the caller may post in (not conversations, DMs or archived channels), at most 200 |
+| `POST …/answer/preview` `{ target: { kind: 'channel', channelId } \| { kind: 'page' }, remove: number[] }` | the copy as it would be posted, items `kept` / `masked` / `removed`, `audience`, counts, `digest`. Writes nothing |
+| `POST …/answer/share` `{ targetChannelId, remove, digest }` | 201 posts the masked copy as the sharer; 200 `replayed: true` for the same share; 409 when the copy would now differ from the digest; 403 for a channel the caller cannot post in; 400 for a DM or conversation target or a number the answer has no citation for; 422 when nothing would be left |
+| `POST …/answer/handoff` `{ botId }` | 201 a thread in the caller's own conversation with that bot (200 `replayed`); only a bot the answer's chips name |
+
+A share marks the conversation `shared` (the team lists it under **Shared**, read through the copy) **only for a channel of the bot's team**;
+a copy in another team's channel is posted and the conversation stays private. The conversation's channel, thread and runs are never changed:
+"the original conversation stays private" is a test (a teammate and an admin read nothing of it; the Shared list shows the copy).
+
+**Events.** `answer.answer.shared` (v1) for each share (`kind` `channel` | `page` | `handoff`): ids, counts and the numbers of the masked and
+removed citations; workspace-scoped, no `teamId`. This plugin emits it for `channel` and `handoff`; `channel.channel.created` is emitted when a
+hand-off makes the person's conversation with the other bot. The log of a person's shares is `app.answer_shares` (the sharer reads their own).
+
+**Web.** In the conversation view an answer that was for the reader shows **Share to channel** and **Save as page** under it, and its chips act
+(a follow-up is sent into the same thread; "Hand to <bot>" opens that bot's conversation at the new thread). The dialog is the wireframe "Share
+preview with masking": the channel picker (channels the person can post in), `[n] label · kept` and `[n] from Omar's Drive · not shared / snippet
+removed [Remove claim on n]` rows (toggle buttons, `aria-pressed`), counts, Cancel and Share; focus is trapped, Escape closes, the classes are
+`an-*` (answer.css), `data-vt-mask` on the sharer's own view of a masked label.
+
 ## Open items
 
 - **`mentions` scan.** The Channel mentions list reads `bot_runs` by trigger `mention` and asker; a mention a bot never answered (no `mention` trigger,
@@ -120,15 +148,16 @@ same sha); anything else — no repo plugin, an unreadable or invalid file, a ne
 - **`bots.run.closed` and the audit tab.** The closing event of a conversation run is team-scoped (ids only) and so reveals that a conversation run
   ended, not whose; scoping it to the asker would change the memory feed's reader of it.
 
-Share to #channel, masking, Save as page and Hand to a bot are P5-17; the `Answer` (what a bot finishes a reply with: numbered sources, lineage, what it reached, what was out of scope, whom it was for) is the [answer](./answer.md) plugin's, P5-18. A conversation run sees only the message
+Share to #channel with masking, Save as page and Hand to a bot (P5-17) are below; the `Answer` (what a bot finishes a reply with: numbered sources, lineage, what it reached, what was out of scope, whom it was for) is the [answer](./answer.md) plugin's, P5-18. A conversation run sees only the message
 it was started for (the thread's history reaches the bot through its tools, not the prompt); the reply is posted when the run ends (the
 thread shows "<bot> is working on it…" for three minutes after the person's message). A bot's reply author is the generic "Bot" in the thread
 (`app.message_authors`; naming bots is for the bots plugin).
 
 ## Manifest
 
-`conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit']`, emits `conversations.conversation.started` and
-`channel.channel.created`, consumes `channel.message.posted`, `dependsOn: ['channels', 'bots']`, migrations `migrations`.
+`conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit']`, emits `conversations.conversation.started`,
+`channel.channel.created` and `answer.answer.shared`, consumes `channel.message.posted`, `dependsOn: ['channels', 'bots', 'answer']`, migrations
+`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared`).
 
 ## Tests
 
@@ -137,4 +166,7 @@ sees in a run, the index policies and constraints), `test/conversation.test.ts` 
 open, send, the run's trigger and asker, the reply, the three lists, privacy, paging), `test/events/conversations-events.test.ts`
 (`pnpm test:events`: no `team_id` on either event), `packages/plugins/runtime-hermes/test/router.test.ts` (the trigger rule), `packages/plugins/memory/test/feed.test.ts`
 (a conversation is never fed), `e2e/conversations/conversation.spec.ts` (`pnpm e2e conversations`: the empty state and chips on both layouts,
-send starts a thread and the reply appears, private by default, Shared, Channel mentions).
+send starts a thread and the reply appears, private by default, Shared, Channel mentions); `test/share.test.ts` (sharing through the server: who may
+touch an answer, preview, share, replay, masking per audience, removal, the event, Save as page, Hand to a bot), `test/rls/conversations.test.ts`
+(`app.conversations_mark_shared`), `e2e/conversations/share.spec.ts` (desktop and mobile-web: share with a masked citation, remove a claim, save as
+page, hand to a bot, follow-up).

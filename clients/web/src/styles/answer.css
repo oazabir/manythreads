@@ -353,17 +353,17 @@ button.an-chip:hover {
   border-color: var(--warn-border);
 }
 
-.an-share-removed .an-share-label {
-  color: var(--mute);
-  text-decoration: line-through;
-}
-
 .an-share-label {
   display: flex;
   flex-direction: column;
   min-width: 0;
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+.an-share-removed .an-share-label {
+  color: var(--mute);
+  text-decoration: line-through;
 }
 
 .an-share-sub {
