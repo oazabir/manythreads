@@ -20,7 +20,8 @@ const MAX_PAYLOAD_BYTES = 96_000;
  * `answer.post`: the bot finishes its reply with an Answer (PLAN P5-18). Runs in the run's bot transaction (the gateway's `asBot`), so the message
  * is the bot's and carries `app.run_id`; everything the model cannot be trusted with is read here, as the person who asked:
  *
- *   1. `app.answer_view` re-reads every citation and every source the run reached under the asker's own row level security;
+ *   1. `app.answer_view` takes only what the run's own source log says it reached, re-reads every such citation and every source the run
+ *      reached under the asker's own row level security, and serialises the calls of one run (one answer per run);
  *   2. `buildAnswer` keeps what the asker may open (and the reply's readers may), counts what it dropped, stamps `answeredFor` from the run;
  *   3. the message is posted through the channels plugin's `messages` provider — the same write every message takes — into the thread the run
  *      answers in. The model names no channel and no thread: they are the run's own.
@@ -91,7 +92,7 @@ export async function postAnswer(ctx: PluginContext, tx: PluginTx, input: Record
     citationsRemoved: built.droppedCitations,
     message:
       built.droppedCitations > 0
-        ? `Posted as your reply. ${built.droppedCitations} citation(s) were removed because the person who asked cannot open them. Do not post it again.`
+        ? `Posted as your reply. ${built.droppedCitations} citation(s) were removed: this run did not read them, or the person who asked (or the people who will read this reply) cannot open them. Do not post it again.`
         : 'Posted as your reply. Do not post it again.',
   };
 }

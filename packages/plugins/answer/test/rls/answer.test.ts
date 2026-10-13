@@ -25,7 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // ASKED — the migration adds no policy of its own, it asks the platform's. Every assertion here runs through the app pool (what a request is),
 // as a bot inside a run; the rows exist through the system role.
 
-const { omar, nadia, rafi, priya } = personas;
+const { omar, nadia, rafi, priya, lena, sameera } = personas;
 const ENG = TEAM_IDS.Engineering;
 const MKT = TEAM_IDS.Marketing;
 const WS = omar.workspaceId;
@@ -44,6 +44,7 @@ interface Resolved {
   scope?: string;
   audience?: boolean;
   label?: string | null;
+  reached?: boolean;
   channelId?: string;
   channelKind?: string;
   channelName?: string | null;
@@ -53,7 +54,7 @@ interface Resolved {
   botSlug?: string;
 }
 interface View {
-  run: { runId: string; hasAsker: boolean; askerName: string | null; askerPersonId: string | null; private: boolean; alias: string | null; botSlug: string | null; channelId: string | null; replyRootId: string | null };
+  run: { reach?: string; runId: string; hasAsker: boolean; askerName: string | null; askerPersonId: string | null; private: boolean; alias: string | null; botSlug: string | null; channelId: string | null; replyRootId: string | null };
   citations: Resolved[];
   sources: Array<Resolved & { kind: string; ref: string; logScope: string }>;
   bots: Array<{ id: string; slug: string; name: string }>;
@@ -102,6 +103,16 @@ let teamRun = '';
 let webhookRun = '';
 let finishedRun = '';
 let mentionRoot = '';
+// more places and messages
+let devMsg2 = '';
+let devReply = '';
+let guestOpen = '';
+let guestOpenMsg = '';
+let otherTeamOpen = '';
+let otherTeamOpenMsg = '';
+let teamAclOpen = '';
+let staleMember = '';
+let omarConversationRoot = '';
 
 const message = (channel: string, author: string, text: string, root: string | null = null, meta: Record<string, unknown> = {}): Promise<string> =>
   sys(
@@ -149,6 +160,14 @@ const file = (channelId: string, name: string): Promise<string> =>
         )
       ).rows[0]!.id,
   );
+
+const acl = (channelId: string, subject: 'person' | 'team', subjectId: string): Promise<void> =>
+  sys(async (tx) => {
+    await tx.query(
+      `INSERT INTO app.acl_entries (workspace_id, resource_type, resource_id, subject_type, subject_id, permission) VALUES ($1, 'channel', $2, $3, $4, 'read')`,
+      [WS, channelId, subject, subjectId],
+    );
+  });
 
 const log = (runId: string, lines: Array<[string, string, string]>): Promise<void> =>
   sys(async (tx) => {
@@ -222,6 +241,7 @@ beforeAll(async () => {
   const rafiRoot = await message(rafiChat, rafi.actorId, 'Rafi asks something private');
   rafiChatMsg = rafiRoot;
   const omarRoot = await message(omarChat, omar.actorId, 'Omar asks about the layoffs');
+  omarConversationRoot = omarRoot;
   nadiaConversation = await run({ trigger: 'conversation', asker: nadia.actorId, channel: nadiaChat, root: nadiaRoot });
   omarConversation = await run({ trigger: 'conversation', asker: omar.actorId, channel: omarChat, root: omarRoot });
   rafiConversation = await run({ trigger: 'conversation', asker: rafi.actorId, channel: rafiChat, root: rafiRoot, status: 'done' });
@@ -230,6 +250,22 @@ beforeAll(async () => {
   teamRun = await run({ trigger: 'mention', asker: rafi.actorId, channel: dev, root: mentionRoot, status: 'done' });
   webhookRun = await run({ trigger: 'webhook', asker: null, channel: dev, root: mentionRoot });
   finishedRun = await run({ trigger: 'conversation', asker: nadia.actorId, channel: nadiaChat, root: nadiaRoot, status: 'done' });
+
+  // a second readable message in #dev, and a reply in the thread of the first (a search can hit a reply)
+  devMsg2 = await message(dev, omar.actorId, 'Nobody searched for this one');
+  devReply = await message(dev, rafi.actorId, 'The window opens at nine', devMsg);
+
+  // channels whose readers are not all on Engineering: a guest with a grant, a person of another team with one; and ones whose are
+  guestOpen = await channel({ name: 'guest-open' });
+  guestOpenMsg = await message(guestOpen, omar.actorId, 'A note a guest may also read');
+  await acl(guestOpen, 'person', lena.personId);
+  otherTeamOpen = await channel({ name: 'support-liaison' });
+  otherTeamOpenMsg = await message(otherTeamOpen, omar.actorId, 'A note Customer support may also read');
+  await acl(otherTeamOpen, 'person', sameera.personId);
+  teamAclOpen = await channel({ name: 'eng-by-grant' });
+  await acl(teamAclOpen, 'team', ENG);
+  // a membership row of somebody who is not on the team: it gives no access (channels 0004), so it makes nobody a reader
+  staleMember = await channel({ name: 'stale-member', members: [sameera] });
 
   // a page of Engineering's repo and one of Marketing's
   await sys(async (tx) => {
@@ -246,34 +282,52 @@ afterAll(async () => {
   if (db) await dropTestDatabase(db);
 });
 
+type Line = [string, string, string];
+
+/** A run of the bot with some lines already in its source log: what it "reached". */
+const reachedRun = async (opts: { trigger: string; asker: string | null; channel: string | null; root: string | null; status?: string }, lines: Line[]): Promise<string> => {
+  const id = await run(opts);
+  if (lines.length > 0) await log(id, lines);
+  return id;
+};
+const inNadiaChat = (lines: Line[]): Promise<string> => reachedRun({ trigger: 'conversation', asker: nadia.actorId, channel: nadiaChat, root: nadiaRoot }, lines);
+const inDev = (asker: string | null, lines: Line[], trigger = 'mention'): Promise<string> => reachedRun({ trigger, asker, channel: dev, root: mentionRoot }, lines);
+
 describe('the view is the asker’s, not the bot’s and not anybody else’s', () => {
   it('reads a team channel, the person’s own conversation and nothing that is somebody else’s private place', async () => {
-    const v = await viewOf(botActor, nadiaConversation, [
+    const cites = [
       { kind: 'message', ref: devMsg },
       { kind: 'message', ref: leadsMsg },
       { kind: 'message', ref: dmOmarRafiMsg },
       { kind: 'message', ref: rafiChatMsg },
       { kind: 'message', ref: nadiaChatMsg },
       { kind: 'message', ref: dmNadiaOmarMsg },
-    ]);
+    ];
+    // everything the bot cites was reached by this run (the thread it answers in needs no line)
+    const r = await inNadiaChat(cites.filter((c) => c.ref !== nadiaChatMsg).map((c): Line => ['message', c.ref, 'channel']));
+    const v = await viewOf(botActor, r, cites);
     expect(v.citations.map((c) => c.found)).toEqual([true, false, false, false, true, true]);
-    expect(v.citations[0]).toMatchObject({ scope: 'team', audience: true, channelKind: 'channel', channelName: 'dev', channelId: dev, label: 'The deploy waits for the Monday window' });
+    expect(v.citations.every((c) => c.reached === true)).toBe(true);
+    expect(v.citations[0]).toMatchObject({ scope: 'team', audience: true, channelKind: 'channel', channelName: 'dev', channelId: dev, teamId: ENG, label: 'The deploy waits for the Monday window' });
     // her own conversation and a DM she is in reach no further than the people of that place
     expect(v.citations[4]).toMatchObject({ scope: 'channel', channelKind: 'bot_conversation', channelName: null });
-    expect(v.citations[5]).toMatchObject({ scope: 'channel', channelKind: 'dm', channelName: null });
+    expect(v.citations[5]).toMatchObject({ scope: 'channel', channelKind: 'dm', channelName: null, teamId: null });
     // the reply is her own conversation: everybody who reads it is her, so the reply's readers may see all she may
-    expect(v.run).toMatchObject({ hasAsker: true, askerName: 'Nadia', askerPersonId: nadia.personId, private: true, alias: 'smart', botSlug: 'brain' });
+    expect(v.run).toMatchObject({ hasAsker: true, askerName: 'Nadia', askerPersonId: nadia.personId, private: true, reach: 'asker', alias: 'smart', botSlug: 'brain' });
     expect(v.citations.filter((c) => c.found).every((c) => c.audience === true)).toBe(true);
     // a source that is hidden carries no label, no channel, nothing
-    expect(v.citations[1]).toEqual({ found: false });
+    expect(v.citations[1]).toEqual({ found: false, reached: true });
     expect(JSON.stringify(v)).not.toContain('Layoffs');
   });
 
   it('is the same bot with a different asker and a different view: the lead’s run reads the lead’s private channel, the member’s does not', async () => {
-    const forOmar = await viewOf(botActor, omarConversation, [{ kind: 'message', ref: leadsMsg }, { kind: 'file', ref: leadsFile }, { kind: 'message', ref: dmOmarRafiMsg }]);
+    const lines: Line[] = [['message', leadsMsg, 'channel'], ['file', leadsFile, 'channel'], ['message', dmOmarRafiMsg, 'channel']];
+    const cites = [{ kind: 'message', ref: leadsMsg }, { kind: 'file', ref: leadsFile }, { kind: 'message', ref: dmOmarRafiMsg }];
+    const omarRun = await reachedRun({ trigger: 'conversation', asker: omar.actorId, channel: omarChat, root: omarConversationRoot }, lines);
+    const forOmar = await viewOf(botActor, omarRun, cites);
     expect(forOmar.citations.map((c) => c.found)).toEqual([true, true, true]);
     expect(forOmar.run.askerName).toBe('Omar');
-    const forNadia = await viewOf(botActor, nadiaConversation, [{ kind: 'message', ref: leadsMsg }, { kind: 'file', ref: leadsFile }, { kind: 'message', ref: dmOmarRafiMsg }]);
+    const forNadia = await viewOf(botActor, await inNadiaChat(lines), cites);
     expect(forNadia.citations.map((c) => c.found)).toEqual([false, false, false]);
   });
 
@@ -289,6 +343,24 @@ describe('the view is the asker’s, not the bot’s and not anybody else’s', 
     expect(after.ids).toContain(nadiaChat);
     expect(after.ids).not.toContain(omarChat);
     expect(after.ids).not.toContain(rafiChat);
+  });
+
+  it('goes back to the bot after an error in the middle of the switched part, too (inside a savepoint, the way a caller would survive one)', async () => {
+    const out = await asBot(botActor, nadiaConversation, async (tx) => {
+      await tx.query('SAVEPOINT answer_probe');
+      let failed = false;
+      try {
+        // an object is not a list of citations: `jsonb_array_elements` raises after the identity was switched to the asker
+        await tx.query('SELECT app.answer_view($1::jsonb, $2::text[])', [JSON.stringify({ not: 'a list' }), []]);
+      } catch {
+        failed = true;
+      }
+      await tx.query('ROLLBACK TO SAVEPOINT answer_probe');
+      const me = (await tx.query<{ actor: string; kind: string }>("SELECT app.actor()::text AS actor, current_setting('app.actor_kind') AS kind")).rows[0]!;
+      return { failed, me };
+    });
+    expect(out.failed).toBe(true);
+    expect(out.me).toEqual({ actor: botActor, kind: 'bot' });
   });
 });
 
@@ -306,30 +378,55 @@ describe('who may ask', () => {
   });
 
   it('answer_resolve is no way to read as someone else: it answers for whoever calls it', async () => {
-    const asNadia = await as(nadia, async (tx) => (await tx.query<{ r: Resolved }>('SELECT app.answer_resolve($1, $2, NULL, $3::uuid, NULL, false) AS r', ['message', leadsMsg, ENG])).rows[0]!.r);
+    const asNadia = await as(nadia, async (tx) => (await tx.query<{ r: Resolved }>("SELECT app.answer_resolve($1, $2, NULL, $3::uuid, NULL, 'none') AS r", ['message', leadsMsg, ENG])).rows[0]!.r);
     expect(asNadia).toEqual({ found: false });
-    const asOmar = await as(omar, async (tx) => (await tx.query<{ r: Resolved }>('SELECT app.answer_resolve($1, $2, NULL, $3::uuid, NULL, false) AS r', ['message', leadsMsg, ENG])).rows[0]!.r);
+    const asOmar = await as(omar, async (tx) => (await tx.query<{ r: Resolved }>("SELECT app.answer_resolve($1, $2, NULL, $3::uuid, NULL, 'none') AS r", ['message', leadsMsg, ENG])).rows[0]!.r);
     expect(asOmar.found).toBe(true);
+  });
+
+  it('answer_reply_team_only is for the live run’s own bot as well: nobody else learns who reads a channel from it', async () => {
+    const ask = (actor: Actor) => withActor(actor, async (tx) => (await tx.query<{ v: boolean | null }>('SELECT app.answer_reply_team_only() AS v')).rows[0]!.v, { pool: appPool });
+    const r = await inDev(nadia.actorId, []);
+    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS, runId: r } as unknown as Actor)).toBe(true);
+    expect(await ask({ kind: 'bot', id: otherBotActor, workspaceId: WS, runId: r } as unknown as Actor)).toBe(false);
+    expect(await ask({ ...personaActor(nadia), runId: r } as Actor)).toBe(false);
+    expect(await ask({ kind: 'bot', id: botActor, workspaceId: WS } as unknown as Actor)).toBe(false);
   });
 });
 
 describe('the people who will read the reply', () => {
+  const sharedCites = [
+    { kind: 'message', ref: devMsg },
+    { kind: 'message', ref: dmNadiaOmarMsg },
+    { kind: 'message', ref: teamPrivateMsg },
+    { kind: 'message', ref: nadiaChatMsg },
+    { kind: 'file', ref: devFile },
+    { kind: 'file', ref: dmFile },
+    { kind: 'message', ref: leadsMsg },
+    { kind: 'page', ref: 'pages/specs/schedule-migration.md' },
+    { kind: 'page', ref: 'pages/launch/plan.md', team: MKT },
+    { kind: 'run', ref: nadiaConversation },
+    { kind: 'run', ref: rafiConversation },
+    { kind: 'run', ref: teamRun },
+  ];
+  const sharedLines = (): Line[] => [
+    ['message', devMsg, 'channel'],
+    ['message', dmNadiaOmarMsg, 'channel'],
+    ['message', teamPrivateMsg, 'channel'],
+    ['message', nadiaChatMsg, 'channel'],
+    ['file', devFile, 'channel'],
+    ['file', dmFile, 'channel'],
+    ['message', leadsMsg, 'channel'],
+    ['page', 'pages/specs/schedule-migration.md', 'team'],
+    ['page', `${MKT}:pages/launch/plan.md`, 'team'],
+    ['run', nadiaConversation, 'team'],
+    ['run', rafiConversation, 'team'],
+    ['run', teamRun, 'team'],
+  ];
+
   it('a reply in a team channel keeps what that channel may open and sets aside what only the asker can', async () => {
-    const v = await viewOf(botActor, nadiaMention, [
-      { kind: 'message', ref: devMsg },
-      { kind: 'message', ref: dmNadiaOmarMsg },
-      { kind: 'message', ref: teamPrivateMsg },
-      { kind: 'message', ref: nadiaChatMsg },
-      { kind: 'file', ref: devFile },
-      { kind: 'file', ref: dmFile },
-      { kind: 'message', ref: leadsMsg },
-      { kind: 'page', ref: 'pages/specs/schedule-migration.md' },
-      { kind: 'page', ref: 'pages/launch/plan.md', team: MKT },
-      { kind: 'run', ref: nadiaConversation },
-      { kind: 'run', ref: rafiConversation },
-      { kind: 'run', ref: teamRun },
-    ]);
-    expect(v.run).toMatchObject({ private: false, channelId: dev });
+    const v = await viewOf(botActor, await inDev(nadia.actorId, sharedLines()), sharedCites);
+    expect(v.run).toMatchObject({ private: false, reach: 'team', channelId: dev });
     const row = (i: number) => ({ found: v.citations[i]!.found, audience: v.citations[i]!.audience, scope: v.citations[i]!.scope });
     // readable by Nadia and by the channel
     expect(row(0)).toEqual({ found: true, audience: true, scope: 'team' });
@@ -339,15 +436,63 @@ describe('the people who will read the reply', () => {
     // readable by Nadia, not by the channel: a DM, a private room, her own conversation, a file in a DM, her own conversation run
     for (const i of [1, 2, 3, 5, 9]) expect(row(i), `citation ${i}`).toMatchObject({ found: true, audience: false });
     // not readable by Nadia at all: the lead's channel, Marketing's page, Rafi's conversation run
-    for (const i of [6, 8, 10]) expect(row(i), `citation ${i}`).toEqual({ found: false });
+    for (const i of [6, 8, 10]) expect(row(i), `citation ${i}`).toMatchObject({ found: false });
     expect(v.citations[7]).toMatchObject({ teamId: ENG });
     expect(v.citations[11]).toMatchObject({ botSlug: 'brain' });
   });
 
-  it('a run nobody asked reads as its bot: the team’s public channels, not the lead’s', async () => {
-    const v = await viewOf(botActor, webhookRun, [{ kind: 'message', ref: devMsg }, { kind: 'message', ref: leadsMsg }, { kind: 'message', ref: nadiaChatMsg }]);
-    expect(v.run).toMatchObject({ hasAsker: false, askerName: null, askerPersonId: null });
-    expect(v.citations.map((c) => c.found)).toEqual([true, false, false]);
+  it('a run nobody asked reads as its bot: the team’s public channels, not the lead’s, and its reply is the team’s to read', async () => {
+    const lines: Line[] = [['message', devMsg, 'channel'], ['message', leadsMsg, 'channel'], ['message', nadiaChatMsg, 'channel'], ['page', 'pages/specs/schedule-migration.md', 'team']];
+    const v = await viewOf(botActor, await inDev(null, lines, 'webhook'), [
+      { kind: 'message', ref: devMsg },
+      { kind: 'message', ref: leadsMsg },
+      { kind: 'message', ref: nadiaChatMsg },
+      { kind: 'page', ref: 'pages/specs/schedule-migration.md' },
+    ]);
+    expect(v.run).toMatchObject({ hasAsker: false, askerName: null, askerPersonId: null, reach: 'team' });
+    expect(v.citations.map((c) => c.found)).toEqual([true, false, false, true]);
+    expect(v.citations[0]).toMatchObject({ audience: true, scope: 'team' });
+    expect(v.citations[3]).toMatchObject({ audience: true, scope: 'team', teamId: ENG });
+  });
+
+  it('a channel a guest may also read shares nothing beyond itself: a team source is not shown there, what is in the channel is', async () => {
+    const guestRun = await reachedRun({ trigger: 'mention', asker: nadia.actorId, channel: guestOpen, root: guestOpenMsg }, [
+      ['message', devMsg, 'channel'],
+      ['message', guestOpenMsg, 'channel'],
+      ['page', 'pages/specs/schedule-migration.md', 'team'],
+      ['memory', 'bank:team:engineering', 'team'],
+    ]);
+    const v = await viewOf(botActor, guestRun, [{ kind: 'message', ref: devMsg }, { kind: 'message', ref: guestOpenMsg }, { kind: 'page', ref: 'pages/specs/schedule-migration.md' }]);
+    expect(v.run.reach).toBe('none');
+    expect(v.citations[0]).toMatchObject({ found: true, scope: 'team', audience: false });
+    expect(v.citations[1]).toMatchObject({ found: true, audience: true });
+    expect(v.citations[2]).toMatchObject({ found: true, scope: 'team', audience: false });
+    // and what the run read follows: the team's memory is not listed to a channel with a guest in it
+    expect(v.sources.find((s) => s.kind === 'memory')).toMatchObject({ audience: false });
+  });
+
+  it('a channel a person of another team may also read is no more the team’s than a guest’s', async () => {
+    const r = await reachedRun({ trigger: 'mention', asker: nadia.actorId, channel: otherTeamOpen, root: otherTeamOpenMsg }, [['message', devMsg, 'channel']]);
+    const v = await viewOf(botActor, r, [{ kind: 'message', ref: devMsg }, { kind: 'message', ref: otherTeamOpenMsg }]);
+    expect(v.run.reach).toBe('none');
+    expect(v.citations[0]).toMatchObject({ found: true, audience: false });
+  });
+
+  it('a private channel of the team, which the bot cannot read, shares only itself', async () => {
+    const r = await reachedRun({ trigger: 'mention', asker: nadia.actorId, channel: teamPrivate, root: teamPrivateMsg }, [['message', devMsg, 'channel'], ['message', teamPrivateMsg, 'channel']]);
+    const v = await viewOf(botActor, r, [{ kind: 'message', ref: devMsg }, { kind: 'message', ref: teamPrivateMsg }]);
+    expect(v.run).toMatchObject({ private: false, reach: 'none' });
+    expect(v.citations[0]).toMatchObject({ found: true, audience: false });
+    expect(v.citations[1]).toMatchObject({ found: true, audience: true });
+  });
+
+  it('a grant to the team itself, and a stale membership of somebody who is not on it, make nobody a reader who is not the team’s', async () => {
+    for (const [name, channelId] of [['grant to the team', teamAclOpen], ['membership row of a non-member', staleMember]] as const) {
+      const r = await reachedRun({ trigger: 'mention', asker: nadia.actorId, channel: channelId, root: mentionRoot }, [['message', devMsg, 'channel']]);
+      const v = await viewOf(botActor, r, [{ kind: 'message', ref: devMsg }]);
+      expect(v.run.reach, name).toBe('team');
+      expect(v.citations[0], name).toMatchObject({ found: true, audience: true });
+    }
   });
 });
 
@@ -369,8 +514,14 @@ describe('what the run reached', () => {
       ['drive', true, 'person'],
       ['file', true, 'channel'],
     ]);
-    // a source of no resolvable kind is judged by the line's own scope: a person's connection reaches the asker alone
+    // a source of no resolvable kind is judged by the line's own scope: in the asker's own conversation they are the only reader
     expect(v.sources.find((s) => s.kind === 'drive')).toMatchObject({ audience: true });
+  });
+
+  it('shows a team channel only the lines whose scope is the team’s: a person’s connection, a private scope and an unknown one are not', async () => {
+    const r = await inDev(nadia.actorId, [['memory', 'bank:team:engineering', 'team'], ['drive', 'doc-1', 'person'], ['wiki', 'page-9', 'channel']]);
+    const v = await viewOf(botActor, r, []);
+    expect(v.sources.map((s) => [s.kind, s.audience])).toEqual([['memory', true], ['drive', false], ['wiki', false]]);
   });
 
   it('hands the lines to the run’s bot and its asker, and to no one else', async () => {
@@ -385,6 +536,62 @@ describe('what the run reached', () => {
   });
 });
 
+describe('what the bot may cite: only what its run reached', () => {
+  it('looks nothing up for an id the run did not reach, and answers the same for a readable one, a hidden one and one that does not exist', async () => {
+    const r = await inNadiaChat([['message', devMsg, 'channel']]);
+    const v = await viewOf(botActor, r, [
+      { kind: 'message', ref: devMsg }, // reached
+      { kind: 'message', ref: devMsg2 }, // readable by the asker, never reached
+      { kind: 'message', ref: leadsMsg }, // hidden from the asker, never reached
+      { kind: 'message', ref: randomUUID() }, // nothing
+      { kind: 'file', ref: devFile },
+      { kind: 'page', ref: 'pages/specs/schedule-migration.md' },
+      { kind: 'run', ref: teamRun },
+      { kind: 'thread', ref: devMsg2 },
+    ]);
+    expect(v.citations[0]).toMatchObject({ found: true, reached: true });
+    for (const i of [1, 2, 3, 4, 5, 6, 7]) expect(v.citations[i], `citation ${i}`).toEqual({ found: false, reached: false });
+  });
+
+  it('counts as reached: what the source log names, the thread the run answers in, a thread a hit was a reply of, the run itself, a page by path or by team and path', async () => {
+    const r = await inNadiaChat([
+      ['message', devReply, 'channel'],
+      ['file', devFile, 'channel'],
+      ['run', teamRun, 'team'],
+      ['page', 'pages/specs/schedule-migration.md', 'team'],
+      ['page', `${MKT}:pages/launch/plan.md`, 'team'],
+    ]);
+    const v = await viewOf(botActor, r, [
+      { kind: 'message', ref: devReply },
+      { kind: 'thread', ref: devMsg }, // a reply of this thread was a hit
+      { kind: 'message', ref: nadiaRoot }, // the thread the run answers in
+      { kind: 'thread', ref: nadiaRoot },
+      { kind: 'message', ref: nadiaChatMsg },
+      { kind: 'file', ref: devFile },
+      { kind: 'run', ref: teamRun },
+      { kind: 'run', ref: r }, // its own
+      { kind: 'page', ref: 'pages/specs/schedule-migration.md' },
+      { kind: 'page', ref: 'pages/specs/schedule-migration.md', team: ENG },
+      { kind: 'page', ref: 'pages/launch/plan.md', team: MKT },
+      { kind: 'page', ref: 'pages/launch/plan.md' }, // the same path, but of the run's own team: not what was read
+    ]);
+    expect(v.citations.map((c) => c.reached)).toEqual([true, true, true, true, true, true, true, true, true, true, true, false]);
+  });
+
+  it('is not fooled by the case or the spelling of an id, or by a path that only looks like a logged one', async () => {
+    const r = await inNadiaChat([['message', devMsg, 'channel'], ['page', 'pages/specs/schedule-migration.md', 'team']]);
+    const v = await viewOf(botActor, r, [
+      { kind: 'message', ref: devMsg.toUpperCase() },
+      { kind: 'message', ref: `${devMsg} ` },
+      { kind: 'page', ref: 'pages/specs/../specs/schedule-migration.md' },
+      { kind: 'page', ref: 'pages/specs/schedule-migration.md/' },
+      { kind: 'file', ref: devMsg },
+    ]);
+    // an upper-case spelling is the same id; the others are not what was read
+    expect(v.citations.map((c) => c.reached)).toEqual([true, false, false, false, false]);
+  });
+});
+
 describe('one answer per run, and what a hand-off may name', () => {
   it('says "already" once this run has posted its answer, and not for another run’s, or for a plain reply', async () => {
     // a plain reply of the bot in the thread, and an answer of another run: neither counts
@@ -395,6 +602,50 @@ describe('one answer per run, and what a hand-off may name', () => {
     expect(await viewAs(botActor, nadiaConversation, [])).toEqual({ already: mine });
   });
 
+  it('does not count an answer that was deleted: the run may answer again, and then it is answered once more', async () => {
+    const r = await inNadiaChat([]);
+    const first = await message(nadiaChat, botActor, 'The first answer', nadiaRoot, { answer: { version: 1 }, runId: r });
+    expect(await viewAs(botActor, r, [])).toEqual({ already: first });
+    await sys(async (tx) => {
+      await tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [first]);
+    });
+    expect(await viewAs(botActor, r, [])).toMatchObject({ run: { runId: r } });
+    const second = await message(nadiaChat, botActor, 'The second answer', nadiaRoot, { answer: { version: 1 }, runId: r });
+    expect(await viewAs(botActor, r, [])).toEqual({ already: second });
+  });
+
+  it('is a hard guarantee of the table as well: a second live answer of one run is refused, whoever writes it', async () => {
+    const r = await inNadiaChat([]);
+    await message(nadiaChat, botActor, 'One', nadiaRoot, { answer: { version: 1 }, runId: r });
+    await expect(message(nadiaChat, botActor, 'Two', nadiaRoot, { answer: { version: 1 }, runId: r })).rejects.toMatchObject({ code: '23505' });
+    // a message that carries only a run id (a plain reply of the run) is not an answer
+    await expect(message(nadiaChat, botActor, 'Plain', nadiaRoot, { runId: r })).resolves.toBeTruthy();
+  });
+
+  it('serialises two calls of one run: the second waits for the first, and then finds its message', async () => {
+    const r = await inDev(nadia.actorId, []);
+    let posted = '';
+    const first = asBot(botActor, r, async (tx) => {
+      const seen = await tx.query<{ v: Record<string, unknown> | null }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS v', [JSON.stringify([]), []]);
+      expect(seen.rows[0]!.v).toMatchObject({ run: { runId: r } });
+      // the answer is posted a moment later, in the same transaction, as `answer.post` does
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      posted = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta)
+           VALUES (app.workspace_id(), $1, app.actor(), 'The answer', 'The answer', $2, $3::jsonb) RETURNING id`,
+          [dev, mentionRoot, JSON.stringify({ answer: { version: 1 }, runId: r })],
+        )
+      ).rows[0]!.id;
+    });
+    // the second call starts while the first still holds the run's lock
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const second = asBot(botActor, r, async (tx) => (await tx.query<{ v: unknown }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS v', [JSON.stringify([]), []])).rows[0]!.v);
+    const [, seenBySecond] = await Promise.all([first, second]);
+    expect(posted).not.toBe('');
+    expect(seenBySecond).toEqual({ already: posted });
+  });
+
   it('finds the bots of the run’s team by slug, never the answering bot itself, and none of another team', async () => {
     const v = await viewOf(botActor, omarConversation, [], ['coder', 'brain', 'ghost']);
     expect(v.bots).toEqual([{ id: otherBotId, slug: 'coder', name: 'Coder' }]);
@@ -403,32 +654,38 @@ describe('one answer per run, and what a hand-off may name', () => {
 
 describe('hostile input', () => {
   it('reads a reference that is not an id, a path that is a hundred thousand characters and a kind it does not know as "not found", and never raises', async () => {
-    const v = await viewOf(botActor, omarConversation, [
-      { kind: 'message', ref: "'; DROP TABLE app.messages; --" },
-      { kind: 'message', ref: 'x'.repeat(100_000) },
-      { kind: 'page', ref: 'p'.repeat(100_000) },
-      { kind: 'page', ref: '../../etc/passwd', team: 'not-a-uuid' },
-      { kind: 'memory', ref: 'concept' },
-      { kind: 'thread', ref: randomUUID() },
-      { kind: 'run', ref: randomUUID() },
-      { kind: 'file', ref: randomUUID() },
-    ]);
-    expect(v.citations).toEqual(Array.from({ length: 8 }, () => ({ found: false })));
+    // all of them are in the run's log, so the lookup itself is what is exercised (not only the "never reached" door in front of it)
+    const refs: Array<[string, string, string | undefined]> = [
+      ['message', "'; DROP TABLE app.messages; --", undefined],
+      ['message', 'x'.repeat(100_000), undefined],
+      ['page', 'p'.repeat(100_000), undefined],
+      ['page', '../../etc/passwd', 'not-a-uuid'],
+      ['memory', 'concept', undefined],
+      ['thread', randomUUID(), undefined],
+      ['run', randomUUID(), undefined],
+      ['file', randomUUID(), undefined],
+    ];
+    const r = await inNadiaChat(refs.map(([kind, ref]): Line => [kind, ref, 'team']));
+    const v = await viewOf(botActor, r, refs.map(([kind, ref, team]) => ({ kind, ref, ...(team ? { team } : {}) })));
+    expect(v.citations).toHaveLength(8);
+    // a malformed id is not an id (and not reached); the well-formed ones were reached and are not there
+    for (const [i, c] of v.citations.entries()) expect(c.found, `citation ${i}`).toBe(false);
   });
 
   it('looks at no more than forty citations, however many are sent', async () => {
     const cites = Array.from({ length: 5_000 }, () => ({ kind: 'message', ref: devMsg }));
     const started = Date.now();
-    const v = await viewOf(botActor, omarConversation, cites);
+    const v = await viewOf(botActor, await inNadiaChat([['message', devMsg, 'channel']]), cites);
     expect(v.citations).toHaveLength(40);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it('is not a way into another workspace or another team’s page: a team the asker is not on has no page for them', async () => {
-    const v = await viewOf(botActor, nadiaMention, [{ kind: 'page', ref: 'pages/launch/plan.md', team: MKT }]);
-    expect(v.citations[0]).toEqual({ found: false });
+    const asNadia = await inDev(nadia.actorId, [['page', `${MKT}:pages/launch/plan.md`, 'team']]);
+    const v = await viewOf(botActor, asNadia, [{ kind: 'page', ref: 'pages/launch/plan.md', team: MKT }]);
+    expect(v.citations[0]).toMatchObject({ found: false, reached: true });
     // Priya is on both teams: asked by her, the same page is found, and it is not the run's team's, so it does not reach a team channel
-    const priyaRun = await run({ trigger: 'mention', asker: priya.actorId, channel: dev, root: mentionRoot });
+    const priyaRun = await inDev(priya.actorId, [['page', `${MKT}:pages/launch/plan.md`, 'team']]);
     const forPriya = await viewOf(botActor, priyaRun, [{ kind: 'page', ref: 'pages/launch/plan.md', team: MKT }]);
     expect(forPriya.citations[0]).toMatchObject({ found: true, scope: 'channel', audience: false, teamId: MKT });
   });

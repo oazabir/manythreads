@@ -37,7 +37,7 @@ const TABS: ReadonlyArray<{ id: ConversationScope; label: string }> = [
 const scopeOf = (raw: string | null): ConversationScope => (TABS.some((t) => t.id === raw) ? (raw as ConversationScope) : 'mine');
 
 const EMPTY: Record<ConversationScope, (bot: string, slug: string) => { title: string; body: string }> = {
-  mine: (bot) => ({ title: 'Nothing yet', body: `Ask ${bot} something below.` }),
+  mine: (bot) => ({ title: 'Nothing yet', body: `Ask ${bot} something to start one.` }),
   shared: () => ({ title: 'Nothing shared yet', body: 'Conversations people share with the team show here.' }),
   mentions: (_bot, slug) => ({ title: 'No mentions yet', body: `Name @${slug} in a channel and the thread shows here.` }),
 };

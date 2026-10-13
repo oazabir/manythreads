@@ -98,6 +98,8 @@ export const AnswerMessageCitation = z.object({
   ...CitationBase,
   messageId: MessageId,
   channelId: ChannelId,
+  /** The team of the channel (null for a direct message): the team whose address the link carries, which is not always the reader's current page's. */
+  teamId: TeamId.nullable().default(null),
   /** Where it lives, so a client can open it without asking: a public channel's name, or what the place is (a direct message, a conversation). */
   channelKind: ChannelKind,
   channelName: z.string().max(80).nullable(),
@@ -109,6 +111,8 @@ export const AnswerThreadCitation = z.object({
   ...CitationBase,
   threadRootId: MessageId,
   channelId: ChannelId,
+  /** The team of the channel (null for a direct message), as on a message citation. */
+  teamId: TeamId.nullable().default(null),
   channelKind: ChannelKind,
   channelName: z.string().max(80).nullable(),
 });
@@ -173,8 +177,10 @@ export type AnswerSourceReached = z.infer<typeof AnswerSourceReached>;
 /**
  * Why a source is not in the answer. `not_visible`: the asker cannot read it (or it is gone). `not_granted`: the bot told us it was not given
  * access. `not_shared`: the asker can read it, but the people who will read this reply cannot (a private source cited into a channel).
+ * `not_reached`: the bot cited something its run did not read (the run's source log does not have it): it is neither looked up nor shown, so a
+ * citation is no way to ask whether an id exists.
  */
-export const AnswerOutsideReason = z.enum(['not_visible', 'not_granted', 'not_shared']);
+export const AnswerOutsideReason = z.enum(['not_visible', 'not_granted', 'not_shared', 'not_reached']);
 export type AnswerOutsideReason = z.infer<typeof AnswerOutsideReason>;
 
 /** What was out of scope: how many, of which kind and why — never a title, a snippet or an id. */

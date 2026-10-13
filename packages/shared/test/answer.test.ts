@@ -24,7 +24,7 @@ const payload = (over: Record<string, unknown> = {}): Record<string, unknown> =>
   version: 1,
   body: 'Review is green [1]; the deploy waits for the window [2].',
   citations: [
-    { kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), channelKind: 'channel', channelName: 'dev', threadRootId: null },
+    { kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), teamId: uuid(12), channelKind: 'channel', channelName: 'dev', threadRootId: null },
     { kind: 'page', n: 2, label: 'pages/specs/schedule-migration.md', scope: 'team', teamId: uuid(12), path: 'pages/specs/schedule-migration.md' },
   ],
   lineage: [
@@ -100,7 +100,7 @@ describe('AnswerPayloadView (what a client parses)', () => {
     const view = AnswerPayloadView.parse(
       payload({
         citations: [
-          { kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), channelKind: 'channel', channelName: 'dev', threadRootId: null },
+          { kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), teamId: uuid(12), channelKind: 'channel', channelName: 'dev', threadRootId: null },
           { kind: 'memory', n: 2, conceptPath: 'memory/facts/window.md', trustTier: 'human-reviewed', stale: false },
         ],
       }),
@@ -149,5 +149,35 @@ describe('answer.answer.posted', () => {
     expect(AnswerAnswerPostedEvent.parse(event)).toEqual(event);
     expect(Object.keys(AnswerAnswerPostedEvent.shape)).not.toContain('teamId');
     expect(parseEvent(event).type).toBe('answer.answer.posted');
+  });
+});
+
+describe('what a citation says of its team, and why a source is outside the scope', () => {
+  it('carries the team of a message or a thread (null for a direct message) so a link can use its own team’s address', () => {
+    const parsed = AnswerPayload.parse(payload());
+    expect(parsed.citations[0]).toMatchObject({ kind: 'message', teamId: uuid(12) });
+    const dm = AnswerPayload.parse(
+      payload({
+        citations: [
+          { kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), teamId: null, channelKind: 'dm', channelName: null, threadRootId: null },
+          { kind: 'thread', n: 2, label: 't', scope: 'channel', threadRootId: uuid(10), channelId: uuid(11), teamId: null, channelKind: 'dm', channelName: null },
+        ],
+      }),
+    );
+    expect(dm.citations.map((c) => (c.kind === 'message' || c.kind === 'thread' ? c.teamId : 'x'))).toEqual([null, null]);
+  });
+
+  it('reads a payload written before the team was carried as "no team", never as an unreadable message', () => {
+    const old = payload({
+      citations: [{ kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), channelKind: 'channel', channelName: 'dev', threadRootId: null }],
+      lineage: [],
+    });
+    expect(AnswerPayloadView.parse(old).citations[0]).toMatchObject({ kind: 'message', teamId: null });
+  });
+
+  it('names a source the bot never reached as its own reason', () => {
+    const p = AnswerPayload.parse(payload({ outsideScope: { count: 1, items: [{ kind: 'message', reason: 'not_reached', count: 1 }] } }));
+    expect(p.outsideScope.items[0]?.reason).toBe('not_reached');
+    expect(AnswerPayload.safeParse(payload({ outsideScope: { count: 1, items: [{ kind: 'message', reason: 'nope', count: 1 }] } })).success).toBe(false);
   });
 });

@@ -181,7 +181,10 @@ validated here, so a plugin cannot store something clients will not read: `{ ans
 [answer.md](./answer.md)), anything else is a 400. It is a provider and not a capability on purpose: a capability is what a bot's model can
 be granted and call with arguments of its own, and `messages.post` takes no `meta`, so no tool can write an Answer. `meta.answer` and
 `meta.runId` then ride on `Message.meta` like `attachments` do (a deleted message shows `{}`), and `runtime-hermes` reads `meta.runId` to know
-a run already answered.
+a run already answered. The provider checks the meta against the transaction instead of trusting it: `meta.runId` is the run the transaction
+acts for (`app.run_id()`; 403 otherwise), an `answer` names that run and the posting bot in `answeredFor` (403) and carries the message's own
+text as `body` (400). Migration `0007` adds the partial unique index `messages_one_answer_per_run` (one live message with `meta.answer` per
+`meta.runId`).
 
 ## Manifest
 

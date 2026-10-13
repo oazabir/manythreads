@@ -16,6 +16,7 @@ const message = (over: Record<string, unknown> = {}) => ({
   scope: 'team',
   messageId: uuid(10),
   channelId: uuid(11),
+  teamId: uuid(12),
   channelKind: 'channel',
   channelName: 'release-eng',
   threadRootId: null,
@@ -72,6 +73,26 @@ describe('the Answer', () => {
     expect(out).toContain('an-ref an-ref-gone');
   });
 
+  it('turns only the answer’s own numbers into markers: an array index or a number beyond its last citation stays text', () => {
+    const p = payload({ body: 'The slot is arr[0] and the table has [12] rows; the deploy waits [1].', citations: [message()], lineage: [], sourcesReached: [], outsideScope: { count: 0, items: [] }, chips: [] });
+    const out = html(p);
+    expect(out).toContain('arr[0]');
+    expect(out).toContain('[12]');
+    expect(out.match(/data-testid="answer-marker"/g)).toHaveLength(1);
+    // a citation the answer left out keeps its number, muted, when a later one was kept
+    const gap = html(payload({ body: 'See [1] and [2].', citations: [message({ n: 2 })], lineage: [], sourcesReached: [], outsideScope: { count: 0, items: [] }, chips: [] }));
+    expect(gap).toContain('an-ref an-ref-gone');
+    expect(gap).not.toContain('[1]');
+  });
+
+  it('marks the quoted words for the visual diff, keeps headings out of the message, and labels links only', () => {
+    const out = html();
+    expect(out).toMatch(/class="an-sn" data-vt-mask/);
+    expect(out).not.toContain('<h5');
+    // an unsupported source is a span with no aria-label of its own (a label on a non-interactive element is not read)
+    expect(out).not.toMatch(/<span[^>]*aria-label=/);
+  });
+
   it('lists the numbered citations as chips, with a neutral chip for a kind it does not know', () => {
     const out = html();
     expect(out.match(/data-testid="answer-citation"/g)).toHaveLength(4);
@@ -93,6 +114,7 @@ describe('the Answer', () => {
     expect(out).toContain('data-testid="answer-outside"');
     expect(out).toContain('2 messages · not visible to the person who asked');
     expect(out).toContain('1 memory item · not granted to this bot');
+    expect(html(payload({ outsideScope: { count: 1, items: [{ kind: 'message', reason: 'not_reached', count: 1 }] } }))).toContain('1 message · not read by this bot in this run');
   });
 
   it('says whom it was for, how it was scoped and on which alias, and offers the bots it may be handed to', () => {
@@ -174,8 +196,18 @@ describe('where a citation opens', () => {
     expect(citationTarget(cite(message({ channelKind: 'dm', channelName: null })), 'engineering', slugOf)).toMatchObject({ pathname: `/t/engineering/dm/${uuid(11)}` });
   });
 
+  it('opens a message of another team under that team’s address, not the page’s own', () => {
+    expect(citationTarget(cite(message({ teamId: uuid(30), channelName: 'launch' })), 'engineering', slugOf)).toMatchObject({ pathname: '/t/marketing/c/launch' });
+    expect(citationTarget(cite({ kind: 'thread', n: 1, label: 't', scope: 'team', threadRootId: uuid(10), channelId: uuid(11), teamId: uuid(30), channelKind: 'channel', channelName: 'launch' }), 'engineering', slugOf)).toMatchObject({
+      pathname: '/t/marketing/c/launch',
+    });
+    // a team the reader does not know (or a DM, which has none) falls back to the page's own
+    expect(citationTarget(cite(message({ teamId: uuid(99) })), 'engineering', slugOf)).toMatchObject({ pathname: '/t/engineering/c/release-eng' });
+    expect(citationTarget(cite(message({ teamId: null, channelKind: 'dm', channelName: null })), 'engineering', slugOf)).toMatchObject({ pathname: `/t/engineering/dm/${uuid(11)}` });
+  });
+
   it('opens a thread, a page of its own team, a file and the bot of a run', () => {
-    expect(citationTarget(cite({ kind: 'thread', n: 1, label: 't', scope: 'team', threadRootId: uuid(10), channelId: uuid(11), channelKind: 'channel', channelName: 'dev' }), 'engineering', slugOf)).toMatchObject({
+    expect(citationTarget(cite({ kind: 'thread', n: 1, label: 't', scope: 'team', threadRootId: uuid(10), channelId: uuid(11), teamId: uuid(12), channelKind: 'channel', channelName: 'dev' }), 'engineering', slugOf)).toMatchObject({
       type: 'route',
       pathname: '/t/engineering/c/dev',
     });

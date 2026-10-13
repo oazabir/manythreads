@@ -162,7 +162,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'answer.post': {
     name: 'answer.post',
     description:
-      'Finish your reply with an Answer: the text, the sources it rests on, and what to suggest next. Cite what you read by id (a message, a thread, a page, a file, a run) and refer to each in the text as [1], [2], ... in the order you list them. The platform re-checks every citation as the person who asked: one they cannot open is removed from the answer and only counted, and the Answer says who it was for. It is posted in the thread you were asked in as your reply; call it once, as the last step, and do not post the same text again.',
+      'Finish your reply with an Answer: the text, the sources it rests on, and what to suggest next. Cite what you read in this run by id (a message, a thread, a page, a file, a run) and refer to each in the text as [1], [2], ... in the order you list them. A source this run did not read is removed and only counted. The platform re-checks every citation as the person who asked: one they cannot open is removed from the answer and only counted, and the Answer says who it was for. It is posted in the thread you were asked in as your reply; call it once, as the last step, and do not post the same text again.',
     inputSchema: ANSWER_POST_SCHEMA,
     kind: 'write',
   },

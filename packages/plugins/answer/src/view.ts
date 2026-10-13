@@ -11,6 +11,11 @@ const Resolved = z.object({
   scope: AnswerScope.optional(),
   /** May the people who will read the reply open it? False for a private source cited into somebody else's channel. */
   audience: z.boolean().optional(),
+  /**
+   * Did the run's own source log say the bot reached it (a citation only)? `false` means nothing was looked up: `found` is false and says nothing
+   * about whether the source exists. Absent for the lines of the log themselves, which are what was reached by definition.
+   */
+  reached: z.boolean().optional(),
   label: z.string().nullable().optional(),
   at: z.string().nullable().optional(),
   channelId: z.uuid().nullable().optional(),
@@ -48,6 +53,8 @@ export const AnswerView = z.object({
     replyRootId: z.uuid().nullable(),
     /** The reply goes to the asker's own conversation: everybody who can read it is the asker. */
     private: z.boolean(),
+    /** Who will read the reply: `asker` alone, the run's `team` (and workspace admins), or `none` of those (somebody else may too). */
+    reach: z.enum(['asker', 'team', 'none']).optional(),
   }),
   citations: z.array(Resolved),
   sources: z.array(SourceRead),

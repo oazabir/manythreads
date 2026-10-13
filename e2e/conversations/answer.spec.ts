@@ -47,14 +47,15 @@ test('a bot finishes with an Answer: the sources the person may open, what was o
     await expect(answer).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId('answer-text')).toContainText('The deploy is waiting for the Monday window');
 
-    // one source she may open, labelled with the platform's own reading of it — the second is gone, and so is everything of it
+    // one source she may open, labelled with the platform's own reading of it — the second was never reached by the run (the search could not
+    // find a message she cannot read), so it is gone, and so is everything of it
     const cites = page.getByTestId('answer-citation');
     await expect(cites).toHaveCount(1);
     await expect(cites.first()).toContainText(PUBLIC_TEXT);
     await expect(cites.first()).toHaveAttribute('data-n', '1');
     await expect(page.getByTestId('answer-lineage-row')).toHaveCount(1);
     await expect(page.getByTestId('answer-lineage')).toContainText(PUBLIC_TEXT);
-    await expect(page.getByTestId('answer-outside')).toContainText('1 message · not visible to the person who asked');
+    await expect(page.getByTestId('answer-outside')).toContainText('1 message · not read by this bot in this run');
     await expect(page.getByText('Layoffs')).toHaveCount(0);
     await expect(page.getByText('a quote that must never be shown')).toHaveCount(0);
     // (the person's own message above shows the ids she typed; the Answer shows nothing of the one she cannot read)

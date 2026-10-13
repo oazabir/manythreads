@@ -103,7 +103,7 @@ streamed into the thread delta by delta: a turn produces one message, and postin
 A run that finished with an **Answer** (it called the `answer.post` tool, [answer.md](./answer.md)) has already posted its reply — the text,
 its sources and whom it was for — as a message of the thread carrying `meta.runId` = the run and `meta.answer`. The router checks for that
 message (one indexed read of the thread) and does **not** post the text the model printed after the tool call: it is the same reply, and a
-second message would repeat it. Only a message the answer plugin wrote counts; a plain `messages.post` of the model does not.
+second message would repeat it. Only a live message the answer plugin wrote counts (an Answer the person deleted does not: the run is then not "answered", in the tool as well); a plain `messages.post` of the model does not.
 
 ## What a run is allowed to do
 

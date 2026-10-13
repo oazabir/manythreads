@@ -16,7 +16,9 @@ export interface MessagePostInput {
   threadRootId?: string | null;
   /**
    * The platform's bookkeeping for the row, never a caller's: `answer` (an `AnswerPayload`, validated against the shared schema) and `runId`
-   * (the bot run that wrote the message, which is how the runtime knows the run already answered). Any other key is refused.
+   * (the bot run that wrote the message, which is how the runtime knows the run already answered). Any other key is refused. The provider checks
+   * them against the transaction: `runId` must be the run the transaction acts for, and an `answer` must name that run and the posting bot in
+   * `answeredFor` and carry the message's own text as its `body` (403 for another run or bot, 400 for another text).
    */
   meta?: { answer?: unknown; runId?: string };
 }

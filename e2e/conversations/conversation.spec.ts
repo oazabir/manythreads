@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { channelsOf, postAs } from '../support/stack-browser.ts';
@@ -52,7 +53,7 @@ test('the empty state is the bot, its example questions and the message box; the
     await expect(page.getByTestId('prompt-chip')).toHaveText([...PROMPTS]);
     await expect(page.getByRole('textbox', { name: 'Message Brain' })).toBeVisible();
     await expect(page.getByRole('button', { name: /new conversation/i })).toHaveCount(0);
-    await expect(page.getByTestId('conversation-list-empty')).toContainText('Ask Brain something below');
+    await expect(page.getByTestId('conversation-list-empty')).toContainText('Ask Brain something to start one');
     await expect(page.getByRole('tab', { name: 'Mine' })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('tab', { name: 'Shared' })).toBeVisible();
     await expect(page.getByRole('tab', { name: 'Channel mentions' })).toBeVisible();
@@ -132,6 +133,54 @@ test('an example question is sent as written, and starts its own thread', async 
     await expect(thread).toContainText(`Answering: Priya: ${PROMPTS[0]}`, { timeout: 60_000 });
     // Mine lists hers only: Nadia's conversation is not there
     await expect(page.getByTestId('conversation-row')).toHaveCount(1);
+  } finally {
+    await close();
+  }
+});
+
+test('"Show older" that fails offers "Try again", keeps the rows it had, and goes away once the page arrives', async ({ browser, playwright, isMobile }) => {
+  const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/brain/chat', isMobile);
+  try {
+    // the list is one page long; make it say there is another after a cursor, and make that page fail once before it answers
+    let failures = 1;
+    const fakeCursor = `1:${randomUUID()}`;
+    const asked: string[] = [];
+    await page.route('**/api/teams/engineering/bots/brain/conversations*', async (route) => {
+      const cursor = new URL(route.request().url()).searchParams.get('cursor');
+      if (cursor === null) {
+        const res = await route.fetch();
+        const body = (await res.json()) as { items: unknown[]; nextCursor: string | null };
+        await route.fulfill({ response: res, json: { ...body, nextCursor: body.nextCursor ?? fakeCursor } });
+        return;
+      }
+      asked.push(cursor);
+      if (failures > 0) {
+        failures -= 1;
+        await route.fulfill({ status: 500, json: { error: { code: 'internal', message: 'Internal server error' } } });
+        return;
+      }
+      await route.fulfill({ json: { items: [], nextCursor: null } });
+    });
+    await page.reload();
+
+    const rows = page.getByTestId('conversation-row');
+    await expect(rows.first()).toBeVisible();
+    const before = await rows.count();
+    const older = page.getByTestId('conversation-older');
+    await expect(older).toHaveText('Show older');
+
+    await older.click();
+    await expect(older).toHaveText('Try again');
+    await expect(page.getByRole('alert').filter({ hasText: 'Could not load older conversations.' })).toBeVisible();
+    // what was there stays
+    await expect(rows).toHaveCount(before);
+
+    await older.click();
+    await expect(older).toHaveCount(0);
+    await expect(rows).toHaveCount(before);
+    // the same cursor was asked for again, not a new one
+    expect(asked.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(asked).size).toBe(1);
   } finally {
     await close();
   }

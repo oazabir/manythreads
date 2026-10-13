@@ -37,7 +37,7 @@ export type TeamSlugOf = (teamId: string) => string | null;
 export function citationTarget(c: AnswerCitation, teamSlug: string, teamSlugOf: TeamSlugOf): CitationTarget {
   switch (c.kind) {
     case 'message': {
-      const to = messageLocation(teamSlug, {
+      const to = messageLocation(teamSlugOf(c.teamId ?? '') ?? teamSlug, {
         channelId: c.channelId,
         channelKind: c.channelKind,
         channelName: c.channelName,
@@ -47,7 +47,7 @@ export function citationTarget(c: AnswerCitation, teamSlug: string, teamSlugOf: 
       return { type: 'route', pathname: to.pathname, search: to.search, state: to.state };
     }
     case 'thread': {
-      const to = messageLocation(teamSlug, {
+      const to = messageLocation(teamSlugOf(c.teamId ?? '') ?? teamSlug, {
         channelId: c.channelId,
         channelKind: c.channelKind,
         channelName: c.channelName,
@@ -89,6 +89,7 @@ const REASON: Record<AnswerOutsideReason, string> = {
   not_visible: 'not visible to the person who asked',
   not_granted: 'not granted to this bot',
   not_shared: 'private to the person who asked, so not shown to this channel',
+  not_reached: 'not read by this bot in this run',
 };
 
 /** "Answered for Omar · scoped · smart": whom the answer was for, how it was scoped, and the model alias it ran on. */
@@ -118,11 +119,12 @@ function Citation({ c, teamSlug, teamSlugOf }: { c: AnswerCitation | AnswerUnsup
     );
   }
   const target = citationTarget(c, teamSlug, teamSlugOf);
-  const common = { className: `an-cite an-scope-${c.scope}`, 'data-testid': 'answer-citation', 'data-kind': c.kind, 'data-n': c.n, 'aria-label': `Source ${c.n}: ${c.label}` } as const;
+  const common = { className: `an-cite an-scope-${c.scope}`, 'data-testid': 'answer-citation', 'data-kind': c.kind, 'data-n': c.n } as const;
+  const label = `Source ${c.n}: ${c.label}`;
   if (target?.type === 'route') {
     return (
       <li>
-        <Link {...common} to={{ pathname: target.pathname, search: target.search }} state={target.state}>
+        <Link {...common} aria-label={label} to={{ pathname: target.pathname, search: target.search }} state={target.state}>
           <CiteBody n={c.n} label={c.label} />
         </Link>
       </li>
@@ -131,7 +133,7 @@ function Citation({ c, teamSlug, teamSlugOf }: { c: AnswerCitation | AnswerUnsup
   if (target?.type === 'download') {
     return (
       <li>
-        <a {...common} href={target.href} download>
+        <a {...common} aria-label={label} href={target.href} download>
           <CiteBody n={c.n} label={c.label} />
         </a>
       </li>
@@ -139,7 +141,7 @@ function Citation({ c, teamSlug, teamSlugOf }: { c: AnswerCitation | AnswerUnsup
   }
   return (
     <li>
-      <span {...common}>
+      <span {...common} title={label}>
         <CiteBody n={c.n} label={c.label} />
       </span>
     </li>
@@ -171,6 +173,13 @@ function Chip({ className, kind, chip, onChip, bot, children }: { className: str
 export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Props) {
   const slug = teamSlug ?? '';
   const byNumber = useMemo(() => new Map(payload.citations.map((c) => [c.n, c] as const)), [payload.citations]);
+  // only a number the answer has a citation for becomes a superscript, and the gaps below its highest (a citation the answer left out keeps
+  // its number, muted); `arr[0]` and a `[12]` beyond the last citation stay the text they were written as
+  const citedNumbers = useMemo(() => {
+    const kept = payload.citations.map((c) => c.n);
+    const top = kept.reduce((m, n) => Math.max(m, n), 0);
+    return new Set(Array.from({ length: top }, (_, i) => i + 1));
+  }, [payload.citations]);
   const lineage = payload.lineage;
   const reached = payload.sourcesReached;
   const outside = payload.outsideScope;
@@ -208,7 +217,8 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
   return (
     <div className="an" data-testid="answer" data-citations={payload.citations.length} data-landmark="answer">
       <div className="an-text txt" data-testid="answer-text">
-        <Markdown source={payload.body} teamSlug={teamSlug} marker={marker} />
+        {/* the Answer's own text (`meta.answer.body`, which the platform keeps equal to the message's body) */}
+        <Markdown source={payload.body} teamSlug={teamSlug} marker={marker} cited={citedNumbers} />
       </div>
 
       {payload.citations.length > 0 ? (
@@ -221,14 +231,14 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
 
       {lineage.length > 0 ? (
         <section className="an-sec" data-testid="answer-lineage" aria-label="Lineage">
-          <h5 className="an-h">Lineage</h5>
+          <div className="an-h" role="heading" aria-level={4}>Lineage</div>
           <ol className="an-lin-list">
             {lineage.map((l) => (
               <li key={l.n} className="an-lin" data-testid="answer-lineage-row" data-n={l.n}>
                 <span className="an-n" aria-hidden="true">{l.n}</span>
                 <span className="an-nm">{l.label}</span>
                 {l.at ? <span className="an-age" data-vt-mask>{ago(l.at)}</span> : null}
-                {l.snippet ? <span className="an-sn">{`“${l.snippet}”`}</span> : null}
+                {l.snippet ? <span className="an-sn" data-vt-mask>{`“${l.snippet}”`}</span> : null}
               </li>
             ))}
           </ol>
@@ -237,7 +247,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
 
       {reached.length > 0 ? (
         <section className="an-sec" data-testid="answer-reached" aria-label="Sources reached">
-          <h5 className="an-h">Sources reached</h5>
+          <div className="an-h" role="heading" aria-level={4}>Sources reached</div>
           <ul className="an-src-list">
             {reached.map((s, i) => (
               <li key={`${s.kind}:${s.ref}:${i}`} className="an-src" data-testid="answer-reached-row" data-marker={s.marker}>
@@ -253,7 +263,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
 
       {outside.count > 0 ? (
         <section className="an-sec" data-testid="answer-outside" aria-label="Outside scope">
-          <h5 className="an-h">Outside scope</h5>
+          <div className="an-h" role="heading" aria-level={4}>Outside scope</div>
           <ul className="an-src-list">
             {outside.items.map((o, i) => (
               <li key={`${o.kind}:${o.reason}:${i}`} className="an-src an-miss" data-testid="answer-outside-row" data-reason={o.reason}>
@@ -277,7 +287,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
 
       {handoffs.length > 0 ? (
         <section className="an-sec" data-testid="answer-chips" aria-label="Hand to a bot">
-          <h5 className="an-h">Hand to a bot</h5>
+          <div className="an-h" role="heading" aria-level={4}>Hand to a bot</div>
           <div className="an-chips">
             {handoffs.map((c) =>
               c.kind === 'handoff' ? (

@@ -62,7 +62,7 @@ export const brainMd = (prompts: readonly string[]): string =>
   ].join('\n');
 
 /** Brain as the Answer specs need it: it may read, post and finish with `answer.post`. */
-export const answeringBrainMd = (): string => brainMd(['What is blocking the release?']).replace('  native: [messages.post]', '  native: [messages.post, answer.post]');
+export const answeringBrainMd = (): string => brainMd(['What is blocking the release?']).replace('  native: [messages.post]', '  native: [messages.search, messages.post, answer.post]');
 
 /**
  * A lead commits `bots/<slug>/BOT.md` (an admin may add a bot) and waits until the loader has made the bot: its row is active and its actor

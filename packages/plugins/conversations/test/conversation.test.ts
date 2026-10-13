@@ -192,8 +192,13 @@ beforeAll(async () => {
     'brain',
     botMd({ name: 'Brain', triggers: ['{ type: conversation }', '{ type: mention }'], prompts: ['What is blocking the release?', 'Where are the 2.4 release notes?'] }),
   );
-  // a bot people may only @mention: it has no `conversation` trigger, so there is no conversation with it to open
-  quiet = await loadBot('quiet', botMd({ name: 'Quiet', triggers: ['{ type: mention }', '{ type: channel_message }'] }));
+  // a bot people may only @mention: it has no `conversation` trigger, so there is no conversation with it to open. Its `channel_message` trigger is
+  // bound to a channel nothing posts to: without a `source` the router fires it on every message of #dev, and it answered in the very threads
+  // the mention tests count the replies of (a reply count of 2 under load, one run in a few).
+  quiet = await loadBot(
+    'quiet',
+    botMd({ name: 'Quiet', triggers: ['{ type: mention }', '{ type: channel_message, source: { channels: ["#nobody-posts-here"] } }'] }),
+  );
   // a bot that can be talked to now and gives that up later in the file (its definition is edited): the channel stays, nothing answers in it
   drift = await loadBot('drift', botMd({ name: 'Drift', triggers: ['{ type: conversation }', '{ type: mention }'] }));
 }, 240_000);
@@ -426,8 +431,11 @@ describe('the lists', () => {
       visibility: null,
       title: '@brain do we have the QA batch 7 numbers?',
       lastAuthor: 'bot',
-      replyCount: 1,
     });
+    // brain's own replies, counted by author: whatever else may answer in a thread of #dev, the person got one answer from the bot asked
+    const answers = await repliesBy(nadia, devChannel, mention, brain.actorId);
+    expect(answers).toHaveLength(1);
+    expect(mine.items[0]!.replyCount).toBeGreaterThanOrEqual(answers.length);
     // a mention is a thread of a public channel, so it is not a conversation of the Mine list, and it is nobody else's
     expect((await list(nadia, 'brain')).items.map((i) => i.threadRootId)).not.toContain(mention);
     expect((await list(rafi, 'brain', '?scope=mentions')).items).toEqual([]);

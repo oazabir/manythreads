@@ -3,7 +3,9 @@
 // reads the run's own MCP endpoint and bearer token from the profile the platform rendered (`$HERMES_HOME/config.yaml`), cites the ids it finds
 // in the prompt, and calls the tool over HTTP. There is no model behind it; what the platform does with the call is the thing under test.
 //
-//   ANSWER-WITH-SOURCES <id> <id> ...   cite each id as a message, in order; suggest a follow-up and a hand-off to `coder`
+//   ANSWER-WITH-SOURCES <id> <id> ...   search the team's messages for the public question (so the run reaches it, as a model that reads before
+//                                       it cites would), then cite each id as a message, in order; suggest a follow-up and a hand-off to `coder`.
+//                                       An id the search did not reach is not discussed by the platform: it is only counted.
 //   ANSWER-TWICE                        call the tool twice (the second call must be refused)
 //   anything else                       echo, as fake-hermes.mjs does
 import { readFileSync } from 'node:fs';
@@ -26,6 +28,7 @@ const call = async (name, args) => {
 
 const ids = prompt.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? [];
 if (prompt.includes('ANSWER-WITH-SOURCES')) {
+  await call('messages.search', { query: 'Monday change window' });
   await call('answer.post', {
     body: `The deploy is waiting for the Monday window [1]. There is one more source behind this answer [2], which I may not repeat.`,
     citations: ids.map((id, i) => ({ kind: 'message', messageId: id, snippet: i === 0 ? 'The deploy waits for the Monday change window' : 'a quote that must never be shown' })),

@@ -10,6 +10,8 @@ import type { AnswerView, Resolved } from './view.ts';
 // The pure half of `answer.post`: what the bot sent plus what the asker's view said of it becomes the payload that is stored on the message.
 // Nothing here reads a database or a clock, so every rule of the answer is a unit test:
 //
+//   * a citation of something the run never reached (its source log does not have it) is not looked up at all and is only counted, with its
+//     own reason: the bot's capabilities bound what it can cite, and a citation is no way to ask whether an id exists;
 //   * a citation the asker cannot read is NOT in the payload, and nothing of it is: no label, no snippet, no id. It is a kind and a count;
 //   * a citation the asker can read but the reply's readers cannot (a private source cited into a team channel) is dropped the same way,
 //     with a different reason;
@@ -76,6 +78,12 @@ export function buildAnswer(input: AnswerInput, view: AnswerView): BuiltAnswer {
     const n = index + 1;
     const { kind, ref } = citationRef(c);
     const seen: Resolved = view.citations[index] ?? { found: false };
+    // first, whatever else is true of it: a source the run did not reach is not discussed (nothing was looked up, so there is nothing to know)
+    if (seen.reached === false) {
+      dropped += 1;
+      leave(kind, ref, 'not_reached');
+      return;
+    }
     if (!seen.found || seen.scope === undefined) {
       dropped += 1;
       leave(kind, ref, 'not_visible');
@@ -92,12 +100,12 @@ export function buildAnswer(input: AnswerInput, view: AnswerView): BuiltAnswer {
     switch (c.kind) {
       case 'message':
         if (seen.channelId && seen.channelKind) {
-          citation = { kind: 'message', ...base, messageId: c.messageId, channelId: seen.channelId, channelKind: seen.channelKind, channelName: seen.channelName ?? null, threadRootId: seen.threadRootId ?? null };
+          citation = { kind: 'message', ...base, messageId: c.messageId, channelId: seen.channelId, teamId: seen.teamId ?? null, channelKind: seen.channelKind, channelName: seen.channelName ?? null, threadRootId: seen.threadRootId ?? null };
         }
         break;
       case 'thread':
         if (seen.channelId && seen.channelKind) {
-          citation = { kind: 'thread', ...base, threadRootId: c.threadRootId, channelId: seen.channelId, channelKind: seen.channelKind, channelName: seen.channelName ?? null };
+          citation = { kind: 'thread', ...base, threadRootId: c.threadRootId, channelId: seen.channelId, teamId: seen.teamId ?? null, channelKind: seen.channelKind, channelName: seen.channelName ?? null };
         }
         break;
       case 'page':

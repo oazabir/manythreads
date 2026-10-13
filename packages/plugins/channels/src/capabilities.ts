@@ -1,7 +1,7 @@
 import type { MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
 import { AnswerPayload } from '@manythreads/shared';
 import { z } from 'zod';
-import { invalid } from './http.ts';
+import { forbidden, invalid } from './http.ts';
 import { postChannelMessage, type Deps } from './service.ts';
 
 // What a bot may do with channel messages (SPEC §7.1 lists `messages.*` among a bot's native capabilities; PLAN P5-10). A
@@ -54,6 +54,11 @@ const ProviderMeta = z.strictObject({ answer: AnswerPayload.optional(), runId: z
  * The `messages` provider: how a plugin posts a message with more than text. It is the same `postChannelMessage` the route and the capability
  * call, so a message made this way is indistinguishable from any other except for its `meta` — and it is not a capability, so no model can be
  * granted it and call it with a payload of its own (docs/plugins/answer.md).
+ *
+ * The provider does not take a caller's word for what the meta says. `meta.runId` is the transaction's own run (`app.run_id()`, set by the
+ * kernel when the run's bot acts, never by SQL a plugin could write), and an `answer` is the answer of that run, by the bot that is posting it,
+ * with the text that is the message: a plugin cannot post one run's Answer as another's, as another bot's, or with a text that differs from the
+ * payload clients draw.
  */
 export function registerMessageProvider(deps: Deps): void {
   const provider: MessageProvider = {
@@ -63,6 +68,25 @@ export function registerMessageProvider(deps: Deps): void {
       if (!body.success) throw invalid('body: 1 to 40,000 characters');
       const meta = input.meta === undefined ? undefined : ProviderMeta.safeParse(input.meta);
       if (meta && !meta.success) throw invalid(`meta: ${meta.error.issues.map((i) => `${i.path.join('.') || '(meta)'}: ${i.message}`).join('; ')}`);
+      if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined)) {
+        const here = (
+          await tx.query<{ run_id: string | null; bot_id: string | null }>(
+            `SELECT app.run_id()::text AS run_id,
+                    (SELECT a.ref_id::text FROM app.actors a WHERE a.id = app.actor() AND a.kind = 'bot') AS bot_id`,
+          )
+        ).rows[0];
+        const run = here?.run_id ?? null;
+        if (meta.data.runId !== undefined && (run === null || meta.data.runId !== run)) {
+          throw forbidden('meta.runId is the run this transaction acts for, and no other');
+        }
+        const answer = meta.data.answer;
+        if (answer !== undefined) {
+          if (meta.data.runId === undefined) throw invalid('meta.runId: an answer names the run that wrote it');
+          if (answer.answeredFor.runId !== run) throw forbidden('meta.answer.answeredFor.runId is the run this transaction acts for, and no other');
+          if (here?.bot_id == null || answer.answeredFor.botId !== here.bot_id) throw forbidden('meta.answer.answeredFor.botId is the bot that posts the answer, and no other');
+          if (answer.body !== body.data) throw invalid('meta.answer.body is the text of the message');
+        }
+      }
       const posted = await postChannelMessage(deps, tx, {
         channelId: input.channelId,
         body: body.data,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,14 +26,15 @@ const FAKE_HERMES = [
   "const target = (process.env.HERMES_FAKE_ORIGIN ?? '') + new URL(url).pathname;",
   "const scenarioPath = process.env.HERMES_FAKE_SCENARIO ?? '';",
   "const scenario = scenarioPath && existsSync(scenarioPath) ? JSON.parse(readFileSync(scenarioPath, 'utf8')) : { steps: [] };",
-  'const results = [];',
-  'let id = 0;',
-  'for (const step of scenario.steps) {',
-  '  id += 1;',
+  'const call = async (step, id) => {',
   "  const body = step.method === 'tools/list' ? { jsonrpc: '2.0', id, method: 'tools/list' } : { jsonrpc: '2.0', id, method: 'tools/call', params: { name: step.name, arguments: step.arguments ?? {} } };",
   "  const res = await fetch(target, { method: 'POST', headers: { authorization: bearer, 'content-type': 'application/json' }, body: JSON.stringify(body) });",
-  '  results.push({ status: res.status, body: await res.text() });',
-  '}',
+  '  return { status: res.status, body: await res.text() };',
+  '};',
+  '// `parallel`: every step at once (two calls of one run racing), else one after the other in the order written',
+  'let results = [];',
+  'if (scenario.parallel) results = await Promise.all(scenario.steps.map((step, i) => call(step, i + 1)));',
+  'else for (const [i, step] of scenario.steps.entries()) results.push(await call(step, i + 1));',
   "appendFileSync(process.env.HERMES_FAKE_SPOOL ?? '/dev/null', JSON.stringify({ prompt, results }) + '\\n');",
   "const reply = scenario.text ?? ('Answering: ' + prompt.replace(/\\s+/g, ' '));",
   "process.stdout.write(JSON.stringify({ type: 'text', text: 'Answering: ' }) + '\\n');",
@@ -130,8 +132,8 @@ async function loadBot(slug: string, md: string): Promise<LoadedBot> {
   return { botId, actorId };
 }
 
-const scenario = (steps: Array<{ method?: 'tools/list'; name?: string; arguments?: Record<string, unknown> }>, text?: string): void =>
-  writeFileSync(scenarioFile, JSON.stringify({ steps, ...(text !== undefined ? { text } : {}) }), 'utf8');
+const scenario = (steps: Array<{ method?: 'tools/list'; name?: string; arguments?: Record<string, unknown> }>, text?: string, parallel = false): void =>
+  writeFileSync(scenarioFile, JSON.stringify({ steps, ...(text !== undefined ? { text } : {}), ...(parallel ? { parallel: true } : {}) }), 'utf8');
 
 const send = async (who: typeof nadia, channelId: string, body: string, threadRootId: string | null = null): Promise<string> => {
   const res = await w.call(who, 'POST', `/api/channels/${channelId}/messages`, { channelId, body, threadRootId });
@@ -228,6 +230,8 @@ describe('a conversation answered with an Answer', () => {
     chat = await conversationOf(nadia, 'brain');
     scenario(
       [
+        // the bot reads before it cites: a citation of something the run did not reach is not discussed at all
+        { name: 'messages.search', arguments: { query: 'Monday change window' } },
         {
           name: 'answer.post',
           arguments: {
@@ -286,13 +290,19 @@ describe('a conversation answered with an Answer', () => {
   });
 
   it('counts what was left out by kind and reason, and what the bot said it could not reach', () => {
+    // the lead's message was never reached by this run's search (the asker cannot see it, so the search could not find it): not reached
     expect(payload.outsideScope).toEqual({
       count: 2,
       items: [
-        { kind: 'message', reason: 'not_visible', count: 1 },
+        { kind: 'message', reason: 'not_reached', count: 1 },
         { kind: 'drive', reason: 'not_granted', count: 1 },
       ],
     });
+  });
+
+  it('lists what the search reached, from the run’s own log, and not what it was told to cite', () => {
+    expect(payload.sourcesReached.some((s) => s.ref === devMessage && s.marker === 'full')).toBe(true);
+    expect(JSON.stringify(payload.sourcesReached)).not.toContain(leadsMessage);
   });
 
   it('says whom it was for: stamped from the run, not from anything the bot sent', () => {
@@ -316,7 +326,7 @@ describe('a conversation answered with an Answer', () => {
     );
     const mine = rows.find((r) => r.payload['messageId'] === answer.id)!;
     expect(mine.team_id).toBeNull();
-    expect(mine.payload).toMatchObject({ botId: brain.botId, askerPersonId: nadia.personId, channelId: chat, citationCount: 1, droppedCount: 1, reachedCount: 0 });
+    expect(mine.payload).toMatchObject({ botId: brain.botId, askerPersonId: nadia.personId, channelId: chat, citationCount: 1, droppedCount: 1, reachedCount: payload.sourcesReached.length });
     expect(mine.payload).not.toHaveProperty('teamId');
     expect(Object.keys(eventRegistry['answer.answer.posted'])).toEqual(['1']);
     // nothing of the text or of what was cited travels in the event
@@ -346,6 +356,7 @@ describe('a mention in a team channel', () => {
     scenario(
       [
         { name: 'messages.search', arguments: { query: 'zebra' } },
+        { name: 'messages.search', arguments: { query: 'Monday change window' } },
         {
           name: 'answer.post',
           arguments: {
@@ -371,7 +382,7 @@ describe('a mention in a team channel', () => {
       count: 3,
       items: [
         { kind: 'message', reason: 'not_shared', count: 2 },
-        { kind: 'message', reason: 'not_visible', count: 1 },
+        { kind: 'message', reason: 'not_reached', count: 1 },
       ],
     });
     expect(JSON.stringify(payload)).not.toContain('just between us');
@@ -424,20 +435,43 @@ describe('what a bot cannot do', () => {
     expect(replies.map((m) => m.body)).toEqual(['The first and only answer.']);
   });
 
-  it('cannot smuggle an answer through the plain post tool: `messages.post` takes no meta', async () => {
+  it('cannot smuggle an answer through the plain post tool: `messages.post` refuses a meta, and the same call without one stores one plain message', async () => {
+    const plain = { channelId: devChannel, body: 'Looks like an answer' };
+    const smuggled = { ...plain, meta: { answer: { version: 1, body: 'x' }, runId: randomUUID() } };
     scenario([
-      {
-        name: 'messages.post',
-        arguments: { channelId: devChannel, body: 'Looks like an answer', meta: { answer: { version: 1, body: 'x' } } },
-      },
+      { name: 'messages.post', arguments: smuggled },
+      // the control: what the tool does take, posted the same way
+      { name: 'messages.post', arguments: plain },
     ]);
     const chat = await conversationOf(nadia, 'brain');
     const root = await send(nadia, chat, 'Smuggle an answer');
     await finishedRun(root);
+    const seen = spooled().find((s) => s.prompt.includes('Smuggle an answer'))!;
+    // the strict schema of the tool answers the unknown key as a validation failure, naming it: nothing was stored for it
+    expect(seen.results[0]!.status).toBe(400);
+    expect(JSON.parse(seen.results[0]!.body)).toMatchObject({ error: { code: 'validation_failed' } });
+    expect(seen.results[0]!.body).toContain('meta');
+    expect(seen.results[1]!.status).toBe(200);
+    expect(toolAnswer(seen.results[1]!)).toMatchObject({ ok: true });
     const stored = await w.system(
-      async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.messages WHERE body = 'Looks like an answer'")).rows[0]!.n,
+      async (tx) => (await tx.query<{ meta: Record<string, unknown> }>("SELECT meta FROM app.messages WHERE body = 'Looks like an answer'")).rows,
     );
-    expect(stored).toBe(0);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.meta).not.toHaveProperty('answer');
+    expect(stored[0]!.meta).not.toHaveProperty('runId');
+  });
+
+  it('serialises two calls of one run made at the same moment: one is stored, the other is told so', async () => {
+    const args = { body: 'The one answer, whichever call won.' };
+    scenario([{ name: 'answer.post', arguments: args }, { name: 'answer.post', arguments: args }], 'The text printed after the calls', true);
+    const chat = await conversationOf(nadia, 'brain');
+    const root = await send(nadia, chat, 'Answer twice at once');
+    expect(await finishedRun(root)).toMatchObject({ status: 'done' });
+    const seen = spooled().find((s) => s.prompt.includes('Answer twice at once'))!;
+    const codes = seen.results.map((r) => toolAnswer(r)).map((a) => (a['ok'] === true ? 'ok' : String(a['code']))).sort();
+    expect(codes).toEqual(['already_answered', 'ok']);
+    const replies = (await thread(nadia, chat, root)).filter((m) => m.authorId === brain.actorId);
+    expect(replies.map((m) => m.body)).toEqual(['The one answer, whichever call won.']);
   });
 
   it('is not offered to a bot that was not granted it, and refused when it is called anyway', async () => {

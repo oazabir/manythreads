@@ -121,6 +121,56 @@ describe('the citations', () => {
   });
 });
 
+describe('a source the run never reached', () => {
+  it('is not discussed: dropped as not reached, whatever else the view says, with nothing of it in the payload', () => {
+    const i = input({ citations: [{ kind: 'message', messageId: uuid(10), snippet: 'guessing' }, { kind: 'page', path: 'pages/guess.md' }, { kind: 'message', messageId: uuid(11) }] });
+    const v = view({
+      citations: [
+        { found: false, reached: false },
+        // even a view that claimed more (it cannot: nothing was looked up) is not believed for a source that was not reached
+        { found: true, reached: false, scope: 'team', audience: true, label: 'pages/guess.md', teamId: uuid(3) },
+        visible({ reached: true, label: 'Read in this run' }),
+      ],
+    });
+    const { payload, droppedCitations, keptCitations } = buildAnswer(i, v);
+    expect(droppedCitations).toBe(2);
+    expect(keptCitations).toBe(1);
+    expect(payload.citations.map((c) => c.n)).toEqual([3]);
+    expect(payload.outsideScope.items).toEqual([
+      { kind: 'message', reason: 'not_reached', count: 1 },
+      { kind: 'page', reason: 'not_reached', count: 1 },
+    ]);
+    const json = JSON.stringify(payload);
+    expect(json).not.toContain('guessing');
+    expect(json).not.toContain('pages/guess.md');
+    expect(json).not.toContain(uuid(10));
+  });
+
+  it('is told apart from one that was read and cannot be opened', () => {
+    const i = input({ citations: [{ kind: 'message', messageId: uuid(10) }, { kind: 'message', messageId: uuid(11) }] });
+    const v = view({ citations: [{ found: false, reached: false }, { found: false, reached: true }] });
+    expect(buildAnswer(i, v).payload.outsideScope.items).toEqual([
+      { kind: 'message', reason: 'not_reached', count: 1 },
+      { kind: 'message', reason: 'not_visible', count: 1 },
+    ]);
+  });
+});
+
+describe('where a kept citation lives', () => {
+  it('carries the team of a message and of a thread (null for a direct message), as the platform read it', () => {
+    const i = input({ citations: [{ kind: 'message', messageId: uuid(10) }, { kind: 'thread', threadRootId: uuid(11) }, { kind: 'message', messageId: uuid(12) }] });
+    const v = view({
+      citations: [
+        visible({ teamId: uuid(3) }),
+        visible({ teamId: uuid(9), channelName: 'launch' }),
+        visible({ scope: 'channel', channelKind: 'dm', channelName: null, teamId: null }),
+      ],
+    });
+    const { payload } = buildAnswer(i, v);
+    expect(payload.citations.map((c) => (c.kind === 'message' || c.kind === 'thread' ? c.teamId : 'n/a'))).toEqual([uuid(3), uuid(9), null]);
+  });
+});
+
 describe('what the run reached and what was out of scope', () => {
   it('lists what the asker and the readers may see, marks the asker’s own connection, and counts the rest by kind and reason', () => {
     const v = view({
