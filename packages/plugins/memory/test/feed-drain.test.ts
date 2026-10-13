@@ -870,12 +870,17 @@ describe('an approval', () => {
 });
 
 describe('a page', () => {
-  const put = (path: string, text: string | null, options: { author?: string } = {}): Promise<string> =>
+  /** `indexedAt` undefined: the column default (now); null: a commit indexed before the column existed; a string: that instant. */
+  const put = (path: string, text: string | null, options: { author?: string; committedAt?: string; indexedAt?: string | null } = {}): Promise<string> =>
     sys(async (tx) => {
       const sha = (await tx.query<{ sha: string }>("SELECT md5(random()::text) || md5(random()::text) || 'abcdefgh' AS sha")).rows[0]!.sha.slice(0, 40);
       await tx.query(
-        `INSERT INTO app.repo_commits (team_id, sha, author_id, message, committed_at, paths) VALUES ($1, $2, $3, 'write', now(), ARRAY[$4]::text[])`,
-        [ENG, sha, options.author ?? omar.actorId, path],
+        options.indexedAt === undefined
+          ? `INSERT INTO app.repo_commits (team_id, sha, author_id, message, committed_at, paths) VALUES ($1, $2, $3, 'write', coalesce($5::timestamptz, now()), ARRAY[$4]::text[])`
+          : `INSERT INTO app.repo_commits (team_id, sha, author_id, message, committed_at, paths, indexed_at) VALUES ($1, $2, $3, 'write', coalesce($5::timestamptz, now()), ARRAY[$4]::text[], $6::timestamptz)`,
+        options.indexedAt === undefined
+          ? [ENG, sha, options.author ?? omar.actorId, path, options.committedAt ?? null]
+          : [ENG, sha, options.author ?? omar.actorId, path, options.committedAt ?? null, options.indexedAt],
       );
       await tx.query(
         `INSERT INTO app.repo_entries (team_id, path, blob_sha, size, last_commit_sha, text_plain) VALUES ($1, $2, $3, 10, $4, $5)
@@ -906,6 +911,33 @@ describe('a page', () => {
     await drain();
     expect(stub.calls.map((c) => c.op)).toEqual(['forget']);
     expect((await linesOf('page', source)).at(-1)).toMatchObject({ outcome: 'forgotten', reason: 'deleted' });
+  });
+
+  it('a bot page committed before indexed_at existed (NULL) is judged at its author date, not at the instant of the migration', async () => {
+    const bot = await sys(async (tx) => {
+      const id = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
+           VALUES ($1, $2, 'page-writer-legacy', 'Legacy page writer', '', 'agent', 'rules', 'team', repeat('a', 64), 'active') RETURNING id`,
+          [omar.workspaceId, ENG],
+        )
+      ).rows[0]!.id;
+      const actor = (await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, id])).rows[0]!.id;
+      return { id, actor };
+    });
+    // a run of that bot is open NOW (what was in flight when the migration ran), and a person-source run covered the page's real time
+    const open = await run([], { bot: bot.id, status: 'running' });
+    await run([['drive', 'x', 'person']], { bot: bot.id, startedAt: '2011-03-01T10:00:00.000Z', endedAt: '2011-03-01T10:05:00.000Z' });
+    const refused = await put('pages/legacy-refused.md', 'Written inside the person-source run.', { author: bot.actor, committedAt: '2011-03-01T10:02:00.000Z', indexedAt: null });
+    const clean = await put('pages/legacy-clean.md', 'Written long ago, outside any run.', { author: bot.actor, committedAt: '2011-07-01T10:00:00.000Z', indexedAt: null });
+    await mark('page', refused);
+    await mark('page', clean);
+    await drain();
+    expect(await linesOf('page', refused)).toMatchObject([{ outcome: 'withheld', reason: 'authoring run: person_source' }]);
+    // not deferred by the run that is open now: its time is the author date
+    expect((await linesOf('page', clean)).map((l) => l.outcome)).toEqual(['retained']);
+    expect(await pendingOf('page', clean)).toBeUndefined();
+    await sys((tx) => tx.query("UPDATE app.bot_runs SET status = 'done', ended_at = now() WHERE id = $1", [open]));
   });
 
   it('only pages are read: a path outside pages/ is not a page', async () => {

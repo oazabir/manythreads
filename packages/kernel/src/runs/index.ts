@@ -232,12 +232,18 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
 
     async inheritSources(run: BotRunHandle, fromRunId: string): Promise<number> {
       return withSystem(async (tx) => {
-        const same = await tx.query(
-          `SELECT 1 FROM app.bot_runs a JOIN app.bot_runs b ON b.bot_id = a.bot_id AND b.team_id = a.team_id AND b.workspace_id = a.workspace_id
-            WHERE a.id = $1::uuid AND b.id = $2::uuid`,
+        // The source is a run that has ended (its log can no longer grow, so the copy is whole) and the target one that is live (it is the run the
+        // lines are for); both are the same bot's, on the same team.
+        const same = await tx.query<{ src_ended: boolean; dst_live: boolean }>(
+          `SELECT (a.status <> 'running' AND a.ended_at IS NOT NULL) AS src_ended, (b.status = 'running' AND b.ended_at IS NULL) AS dst_live
+             FROM app.bot_runs a JOIN app.bot_runs b ON b.bot_id = a.bot_id AND b.team_id = a.team_id AND b.workspace_id = a.workspace_id
+            WHERE a.id = $1::uuid AND b.id = $2::uuid AND a.id <> b.id`,
           [fromRunId, run.runId],
         );
-        if ((same.rowCount ?? 0) === 0) throw new Error('a run can only inherit the source log of another run of the same bot');
+        const rel = same.rows[0];
+        if (!rel) throw new Error('a run can only inherit the source log of another run of the same bot');
+        if (!rel.src_ended) throw new Error('a run can only inherit the source log of a run that has ended');
+        if (!rel.dst_live) throw new Error('a run can only inherit a source log while it is itself running');
         // One statement, every distinct line, appended after whatever the run has already logged (an advisory lock per run, as the append door takes).
         await tx.query('SELECT pg_advisory_xact_lock(hashtext($1::uuid::text))', [run.runId]);
         const copied = await tx.query(

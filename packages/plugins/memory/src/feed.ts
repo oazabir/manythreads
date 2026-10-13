@@ -68,6 +68,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 
 export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLogger, rt: FeedRuntime): Promise<DrainStats> {
   const stats = emptyStats();
+  const keys = new Map<string, Buffer>(); // this drain's reads of the workspace keys (never kept longer: see keys.ts)
   const lock = await tx.query<{ ok: boolean }>('SELECT pg_try_advisory_xact_lock(hashtext($1)) AS ok', ['memory.feed.drain']);
   if (lock.rows[0]?.ok !== true) return stats; // another replica is draining
 
@@ -130,7 +131,7 @@ export async function drainFeed(ctx: PluginContext, tx: PluginTx, log: PluginLog
       res,
       last,
       deferredForMs: row.deferred_ms ?? 0,
-      key: await workspaceKey(tx, row.workspace_id),
+      key: await workspaceKey(tx, row.workspace_id, keys),
     });
     const at = 'at' in res ? res.at : null;
     const teamId = at?.teamId ?? last?.team_id ?? null;

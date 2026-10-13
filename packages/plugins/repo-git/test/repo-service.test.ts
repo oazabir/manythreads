@@ -168,6 +168,28 @@ describe('one writer per team across replicas', () => {
     expect(caught[0]!.payload.paths).toEqual([{ path: 'pages/orphan.md', op: 'put' }]);
   });
 
+  it('the catch-up event names only what the writer would have let through, in events of at most 500 paths', async () => {
+    const svc = w.replica();
+    const dir = w.gitDir(sup);
+    const old = (await git.resolve(dir, 'main'))!;
+    const changes = [
+      { path: 'bots/pushed/BOT.md', op: 'put' as const, content: Buffer.from('---\nschema: 1\n---\n') },
+      { path: 'TEAM.md', op: 'put' as const, content: Buffer.from('# pushed in\n') },
+      ...Array.from({ length: 1100 }, (_, i) => ({ path: `pages/many/${String(i).padStart(4, '0')}.md`, op: 'put' as const, content: Buffer.from(`page ${i}\n`) })),
+    ];
+    const made = await git.commit(dir, { expectedOld: old, changes, message: 'Pushed outside the writer', author: { name: 'Rafi', email: `${rafi.actorId}@actors.manythreads.invalid` } });
+    if (made.noop) throw new Error('x');
+    await w.as(sameera, (tx) => svc.write(tx, sup, person(sameera), [{ path: 'pages/after-big.md', op: 'put', ...text('x\n') }], 'After the big push'));
+    const events = await w.system(
+      async (tx) => (await tx.query<{ payload: { paths: Array<{ path: string; op: string }> } }>("SELECT payload FROM app.events WHERE type = 'repo.repo.committed' AND team_id = $1 AND payload ->> 'sha' = $2 ORDER BY id", [sup, made.sha])).rows,
+    );
+    expect(events.map((e) => e.payload.paths.length)).toEqual([500, 500, 100]);
+    const named = events.flatMap((e) => e.payload.paths.map((p) => p.path));
+    expect(named).toHaveLength(1100);
+    expect(named.some((p) => p === 'TEAM.md' || p.startsWith('bots/'))).toBe(false); // never applied by a subscriber that trusts the writer
+    expect(new Set(named).size).toBe(1100);
+  });
+
   it('a commit made outside the writer is indexed with its author read back from the identity', async () => {
     const svc = w.replica();
     const dir = w.gitDir(sup);

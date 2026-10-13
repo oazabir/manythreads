@@ -392,6 +392,42 @@ describe('deciding', () => {
     expect(verdict).toBe('person_source');
   });
 
+  it('inheriting a source log needs a stopped run to read from and a live one to write to, both of the same bot', async () => {
+    const stopped = await openRun(scoped, nadia);
+    await w.system((tx) => tx.query("INSERT INTO app.run_source_log (run_id, seq, source_type, source_ref, scope) VALUES ($1, 0, 'drive', 'x', 'person')", [stopped.runId]));
+    const live = await openRun(scoped, nadia);
+    // the source is still running: its log can still grow, so a copy of it is not the whole
+    await expect(runs.inheritSources(live, stopped.runId)).rejects.toThrow(/has ended/);
+    await runs.close(stopped.runId, 'stopped');
+    // another bot's run is not a source
+    const other = await openRun(leadsOnly, nadia);
+    await expect(runs.inheritSources(other, stopped.runId)).rejects.toThrow(/same bot/);
+    // a run is not its own source
+    await expect(runs.inheritSources(live, live.runId)).rejects.toThrow();
+    // the one that works: ended source, live target
+    expect(await runs.inheritSources(live, stopped.runId)).toBe(1);
+    // a closed target is refused
+    await runs.close(live.runId, 'done');
+    await expect(runs.inheritSources(live, stopped.runId)).rejects.toThrow(/itself running/);
+  });
+
+  it('an approval whose run is gone fails closed: the call is not made, and says why', async () => {
+    const original = await openRun(scoped, nadia);
+    const id = (await request(original, 'pages/orphaned-approval.md')).approvalId;
+    expect(await w.system(async (tx) => (await tx.query<{ had_run: boolean }>('SELECT had_run FROM app.approvals WHERE id = $1', [id])).rows[0]!.had_run)).toBe(true);
+    // the run goes (a removed bot's runs are deleted with it): run_id becomes NULL, had_run stays
+    await w.system((tx) => tx.query('DELETE FROM app.bot_runs WHERE id = $1', [original.runId]));
+    expect(await w.system(async (tx) => (await tx.query<{ run_id: string | null; had_run: boolean }>('SELECT run_id, had_run FROM app.approvals WHERE id = $1', [id])).rows[0])).toEqual({ run_id: null, had_run: true });
+    expect((await decide(rafi, id, 'approve')).status).toBe(200);
+    const done = await until(async () => {
+      const row = await rowOf(id);
+      return row?.outcome === 'failed' || row?.outcome === 'ran' ? row : null;
+    }, 30_000, 'the approved call to settle');
+    expect(done).toMatchObject({ outcome: 'failed' });
+    expect(done?.outcome_detail).toMatch(/no longer exists/);
+    expect((await w.call(omar, 'GET', '/api/teams/engineering/repo/blob?path=pages/orphaned-approval.md')).status).toBe(404);
+  });
+
   it('denying settles it without running anything', async () => {
     const id = (await request(await openRun(scoped, nadia), 'pages/denied.md')).approvalId;
     const res = await decide(rafi, id, 'deny', 'not now');

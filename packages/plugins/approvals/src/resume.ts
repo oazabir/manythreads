@@ -59,6 +59,8 @@ interface ClaimedRow extends Record<string, unknown> {
   thread_root_id: string | null;
   /** The run that asked: what it had read is what the re-run has read (`ctx.runs.inheritSources`, below). */
   run_id: string | null;
+  /** The approval was filed from a run (`run_id` was set); `run_id` is NULL now when that run was deleted. */
+  had_run: boolean;
   resume: unknown;
 }
 
@@ -129,7 +131,7 @@ export function registerResumeJob(ctx: PluginContext): void {
       const row = (
         await tx.query<ClaimedRow>(
           `SELECT a.id, a.workspace_id, a.team_id, a.source, a.tool, a.bot_id, a.requester_id, ra.kind AS requester_kind,
-                  a.channel_id, coalesce(c.private, false) AS channel_private, a.thread_root_id, a.run_id, a.resume
+                  a.channel_id, coalesce(c.private, false) AS channel_private, a.thread_root_id, a.run_id, a.had_run, a.resume
              FROM app.approvals a JOIN app.actors ra ON ra.id = a.requester_id LEFT JOIN app.channels c ON c.id = a.channel_id
             WHERE a.id = $1::uuid AND a.status = 'approved' AND a.outcome = 'running' AND a.resume_kind = 'tool'`,
           [approvalId],
@@ -146,6 +148,9 @@ export function registerResumeJob(ctx: PluginContext): void {
       const botId = row.bot_id;
       // Defence in depth: an approval for one of these is never filed, but a row from before that rule (or written some other way) is never run either.
       if (NEVER_APPROVAL_GATED.includes(call.capability)) return fail(neverApprovalGatedReason(call.capability));
+      // What the stopped run had read decides what the re-run may write (memory rule): with that run gone there is nothing to inherit and the call
+      // would pass for one that read nothing. Fail closed.
+      if (row.had_run && row.run_id === null) return fail('The call was not made: the run that asked for it no longer exists, so what it had read cannot be carried over.');
 
       let opened: Awaited<ReturnType<PluginContext['runs']['open']>> | null = null;
       // The same asker while they are still on the team (a person-only scope such as `person:*` then still means what it meant); without them the

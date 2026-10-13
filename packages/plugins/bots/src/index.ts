@@ -1,10 +1,12 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerBackfillJob } from './backfill.ts';
 import { registerBotLoader } from './loader.ts';
+import { registerReaperJob } from './reaper.ts';
 import { registerPairingRoutes } from './routes.ts';
 import { registerBotRoutes } from './roster.ts';
 
 export { BACKFILL_QUEUE, backfillModelAliases, modelAliasesOf } from './backfill.ts';
+export { REAP_QUEUE, reapStaleRuns } from './reaper.ts';
 export { hashPairingToken, mintPairingToken, newPairingToken, resolvePairingToken, revokePairingTokens } from './pairing.ts';
 export type { PairedBot } from './pairing.ts';
 
@@ -22,7 +24,8 @@ export default definePlugin({
     // `bot_runs` references app.threads, so this namespace must migrate after the channels plugin's
     dependsOn: ['channels'],
     migrations: 'migrations',
-    extends: ['event.subscribe', 'event.emit', 'job.register'],
+    // `tool.invoke` only for `ctx.runs.close`: the stale-run reaper ends a run through the run service, which emits `bots.run.closed`
+    extends: ['event.subscribe', 'event.emit', 'job.register', 'tool.invoke'],
     events: {
       emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed'],
       consumes: ['repo.repo.committed'],
@@ -31,6 +34,7 @@ export default definePlugin({
   register(ctx) {
     registerBotLoader(ctx);
     registerBackfillJob(ctx);
+    registerReaperJob(ctx);
     registerPairingRoutes(ctx);
     registerBotRoutes(ctx);
   },

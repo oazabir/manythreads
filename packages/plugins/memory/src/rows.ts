@@ -71,12 +71,15 @@ export interface LastLine extends Record<string, unknown> {
  *   * a `not_configured` or `failed` line is a note about an attempt and counts for nothing.
  *   * when the state is `forgotten` (or there is none), a `withheld` line newer than it is returned instead, so the same refusal is written once.
  */
+/** The two outcomes that say what the bank holds for a source (a SQL list, one constant: `latestLine`, `mark` and the channel sweep all read it). */
+export const HELD_STATE_OUTCOMES_SQL = "('retained', 'forgotten')";
+
 export async function latestLine(tx: PluginTx, kind: string, sourceId: string): Promise<LastLine | null> {
   const columns = 'id, team_id, workspace_id, bank, document_id, content_hash, outcome, reason, channel_id, created_at';
   const state = (
     await tx.query<LastLine>(
       `SELECT ${columns} FROM app.memory_retain_log
-        WHERE source_kind = $1 AND source_id = $2 AND outcome IN ('retained', 'forgotten') ORDER BY id DESC LIMIT 1`,
+        WHERE source_kind = $1 AND source_id = $2 AND outcome IN ${HELD_STATE_OUTCOMES_SQL} ORDER BY id DESC LIMIT 1`,
       [kind, sourceId],
     )
   ).rows[0];

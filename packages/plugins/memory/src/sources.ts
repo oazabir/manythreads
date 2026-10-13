@@ -448,7 +448,7 @@ export async function resolvePage(tx: PluginTx, sourceId: string): Promise<Resol
   if (!isUuid(teamId) || !path.startsWith('pages/')) return forget('gone');
   const p = (
     await tx.query<PageRow>(
-      `SELECT e.team_id, t.workspace_id, t.slug AS team_slug, e.path, e.text_plain, c.committed_at, c.indexed_at, c.author_id,
+      `SELECT e.team_id, t.workspace_id, t.slug AS team_slug, e.path, e.text_plain, c.committed_at, coalesce(c.indexed_at, c.committed_at) AS indexed_at, c.author_id,
               a.kind AS author_kind,
               CASE a.kind
                 WHEN 'person' THEN (SELECT pe.display_name FROM app.people pe WHERE pe.id = a.ref_id)

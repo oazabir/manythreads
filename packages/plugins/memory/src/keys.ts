@@ -2,11 +2,13 @@ import { randomBytes } from 'node:crypto';
 import type { PluginTx } from '@manythreads/sdk';
 
 // The per-workspace key of the feed's keyed digests (`memory_workspace_keys`, system only). Created on first use; a key never changes once it
-// exists (a changed key would make every retained document look edited). Cached per process: the value is immutable.
+// exists (a changed key would make every retained document look edited).
+//
+// Never cached across transactions: a key inserted by a drain whose transaction then rolls back would otherwise live on in this process while the
+// database (and every other replica) has none, and two replicas would name the same text differently. A drain passes one `cache` for its own
+// duration (one read of the row per workspace per drain, inside the transaction that either commits the key or does not).
 
-const cache = new Map<string, Buffer>();
-
-export async function workspaceKey(tx: PluginTx, workspaceId: string): Promise<Buffer> {
+export async function workspaceKey(tx: PluginTx, workspaceId: string, cache: Map<string, Buffer> = new Map()): Promise<Buffer> {
   const hit = cache.get(workspaceId);
   if (hit) return hit;
   const read = async (): Promise<Buffer | null> =>

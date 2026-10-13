@@ -11,6 +11,7 @@ import {
 } from '@manythreads/shared';
 import { feedTuning } from './config.ts';
 import { FEED_QUEUE, NOT_CONFIGURED_EVERY_MS } from './constants.ts';
+import { HELD_STATE_OUTCOMES_SQL } from './rows.ts';
 import { pageSourceId } from './sources.ts';
 
 // The event subscriptions. They run inside the outbox consumer's transaction, next to every other plugin's, so they do two cheap things and
@@ -70,7 +71,7 @@ export function registerConsumers(ctx: PluginContext): void {
       const held = await tx.query<{ kind: string; id: string }>(
         `SELECT s.kind, s.id FROM unnest($1::text[], $2::text[]) AS s(kind, id)
           WHERE (SELECT l.outcome FROM app.memory_retain_log l
-                  WHERE l.source_kind = s.kind AND l.source_id = s.id AND l.outcome IN ('retained', 'forgotten')
+                  WHERE l.source_kind = s.kind AND l.source_id = s.id AND l.outcome IN ${HELD_STATE_OUTCOMES_SQL}
                   ORDER BY l.id DESC LIMIT 1) = 'retained'`,
         [kinds, ids],
       );
@@ -180,7 +181,7 @@ export async function markRetainedOfChannels(
        SELECT DISTINCT ON (l.source_kind, l.source_id) l.source_kind, l.source_id, l.workspace_id, l.outcome
          FROM app.memory_retain_log l
         WHERE l.channel_id IN (SELECT id FROM channels) AND l.source_kind <> 'run_tool'
-          AND l.outcome IN ('retained', 'forgotten', 'withheld')
+          AND l.outcome IN ${HELD_STATE_OUTCOMES_SQL}
         ORDER BY l.source_kind, l.source_id, l.id DESC
      ), marked AS (
        INSERT INTO app.memory_feed_pending (source_kind, source_id, workspace_id, not_before)

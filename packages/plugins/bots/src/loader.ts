@@ -120,8 +120,8 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   ).rows[0]?.native ?? [];
 
   const row = await tx.query<{ id: string }>(
-    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[])
+    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16)
      ON CONFLICT (team_id, slug) DO UPDATE SET
        -- the display fields follow the definition (PLAN P5-05): the roster draws the row, never the file
        name           = EXCLUDED.name,
@@ -139,6 +139,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
        native         = EXCLUDED.native,
        model_aliases  = EXCLUDED.model_aliases,
        approvers      = EXCLUDED.approvers,
+       run_timeout_seconds = EXCLUDED.run_timeout_seconds,
        updated_at     = now()
      RETURNING id`,
     [
@@ -159,6 +160,8 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       modelAliasesOf(fm.model),
       // who may decide this bot's approvals (`role:<tag>` / `person:<id>`); empty means the team's leads
       fm.approvals?.approvers ?? [],
+      // BOT.md `limits.timeoutSeconds`: what the stale-run reaper measures a run against
+      fm.limits?.timeoutSeconds ?? null,
     ],
   );
   const botId = row.rows[0]!.id;

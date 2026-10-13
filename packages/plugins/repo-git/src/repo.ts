@@ -43,6 +43,9 @@ import { KeyedQueue } from './queue.ts';
 import { checkRepoContent, textOf } from './rules.ts';
 import { REPO_COLUMNS, REPO_COMMIT_COLUMNS, REPO_ENTRY_COLUMNS, toRepo, toRepoCommit, toRepoEntry, type RepoCommitRow, type RepoEntryRow, type RepoRow } from './rows.ts';
 
+/** The most paths one catch-up event names; a longer range is several events. */
+const CATCH_UP_PATHS_PER_EVENT = 500;
+
 // The repo service: one writer per team (PLAN P4-02, P4-05). Everything that changes a team repo goes through `write`.
 //
 //   in-process queue per team  ->  pg_advisory_xact_lock(team) in the caller's transaction  ->  git compare-and-swap  ->  index update
@@ -286,19 +289,30 @@ export function createRepoService(deps: RepoServiceDeps) {
     // were missing never emitted `repo.repo.committed`, so subscribers (the memory feed, the bots loader) never heard of their paths. One event
     // for the caught-up range says what changed: the paths those commits touched, `put` where the file is in the tree now, `delete` where it is not.
     // Not for an index that is new (`dbHead` null): that is the whole history, not a change.
+    //
+    // Paths the writer guards (`bots/`, `TEAM.md`, `skills/`, `routines/`) are left out of it, on purpose: state that reached git without going
+    // through the writer has not been through its rules (a lead edits a bot, only an admin adds one), and the bots loader applies whatever a
+    // `repo.repo.committed` names. A bot definition committed outside the writer is therefore never loaded by a catch-up; the next commit through the
+    // writer that touches it is what loads it. The event is split into events of at most CATCH_UP_PATHS_PER_EVENT paths, so one catch-up over a long
+    // history is many small events, not one without a bound.
     if (dbHead !== null && lastTouched.size > 0) {
       const present = new Set(files.map((f) => f.path));
       const last = commits[commits.length - 1] as { author_id: string | null; message: string };
-      await deps.emit(tx, {
-        type: 'repo.repo.committed',
-        teamId: t.id,
-        sha: head,
-        parentSha: dbHead,
-        authorId: last.author_id,
-        coAuthorIds: [],
-        subject: `Index caught up with ${shas.length} commit${shas.length === 1 ? '' : 's'} made outside the index`,
-        paths: [...lastTouched.keys()].map((path) => ({ path, op: present.has(path) ? ('put' as const) : ('delete' as const) })),
-      });
+      const paths = [...lastTouched.keys()]
+        .filter((path) => !isGuardedRepoPath(path))
+        .map((path) => ({ path, op: present.has(path) ? ('put' as const) : ('delete' as const) }));
+      for (let i = 0; i < paths.length; i += CATCH_UP_PATHS_PER_EVENT) {
+        await deps.emit(tx, {
+          type: 'repo.repo.committed',
+          teamId: t.id,
+          sha: head,
+          parentSha: dbHead,
+          authorId: last.author_id,
+          coAuthorIds: [],
+          subject: `Index caught up with ${shas.length} commit${shas.length === 1 ? '' : 's'} made outside the index`,
+          paths: paths.slice(i, i + CATCH_UP_PATHS_PER_EVENT),
+        });
+      }
     }
   }
 
