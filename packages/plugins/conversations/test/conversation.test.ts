@@ -435,8 +435,20 @@ describe('the lists', () => {
     // brain's own replies, counted by author: whatever else may answer in a thread of #dev, the person got one answer from the bot asked
     const answers = await repliesBy(nadia, devChannel, mention, brain.actorId);
     expect(answers).toHaveLength(1);
-    // and it is the only reply: nothing else is bound to answer in #dev (`quiet` is bound to a channel nothing posts to)
-    expect(mine.items[0]!.replyCount).toBe(answers.length);
+    // the counter of the list is the thread's real reply count. Other bots may answer in #dev too (`drift` keeps an unbound `channel_message`
+    // trigger after its conversation was taken away, on purpose, earlier in this file), so the count is compared with the thread itself, polled
+    // until the two agree, rather than with a constant that depends on who answered first.
+    await until(
+      async () => {
+        const res = await w.call(nadia, 'GET', `/api/channels/${devChannel}/messages?threadRootId=${mention}&limit=50`);
+        expect(res.status, JSON.stringify(res.body)).toBe(200);
+        const inThread = ListMessagesResponse.parse(res.body).items.length;
+        const row = (await list(nadia, 'brain', '?scope=mentions')).items.find((i) => i.threadRootId === mention);
+        return row !== undefined && row.replyCount === inThread && inThread >= answers.length ? true : null;
+      },
+      30_000,
+      'the list’s reply count to match the replies of the thread',
+    );
     // a mention is a thread of a public channel, so it is not a conversation of the Mine list, and it is nobody else's
     expect((await list(nadia, 'brain')).items.map((i) => i.threadRootId)).not.toContain(mention);
     expect((await list(rafi, 'brain', '?scope=mentions')).items).toEqual([]);
