@@ -50,6 +50,7 @@ describe('ErrorEnvelope', () => {
       'gone',
       'attachment_not_in_repo',
       'repo_quota_exceeded',
+      'bot_has_no_conversation_trigger',
     ]);
   });
 });

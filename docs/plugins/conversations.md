@@ -36,8 +36,12 @@ decides: a message in a `bot_conversation` channel fires **that channel's bot's 
 considered; a `mention` or `channel_message` rule never fires there), as the author's own run (`asker` = the person, `trigger_type` =
 `conversation`, `channel_id` = the conversation channel, `reply_root_id` = the thread root). The reply is posted as the bot with `messages.post`
 through the broker like every runtime call. The prompt of such a run is `<person>:\n\n<message>` (a conversation channel has no name).
-A bot with no `conversation` trigger does not answer in its conversation channel; the channel opens all the same (the roster says what a bot
-does; the conversation view shows its example questions).
+A bot whose definition lists no `conversation` trigger has no conversation to open: `open` answers **409 `bot_has_no_conversation_trigger`**
+(checked before anything is made, so no channel appears), the roster and the bot page carry `conversational: false` (`BotSummary`, read from the
+loader's `bots.triggers`) and the clients show Talk disabled with "Nobody can talk to this bot: its definition has no conversation trigger", and
+the Triggers tab says the same. A bot that *drops* the trigger later keeps the channel its people already have: nothing answers in it (the router
+answers a conversation channel for that trigger alone), the lists still show the past conversations, and the view replaces the message box with
+the reason instead of hiding them.
 
 ## The index and its visibility
 
@@ -62,8 +66,8 @@ request's transaction, so the list may trail the send by the outbox's latency; t
 
 | Method and path | What it does |
 |---|---|
-| `POST /api/teams/:slug/bots/:botSlug/conversation` | Opens (get-or-create) the caller's channel with the bot: `{ botId, botName, botRole, channelId, created, prompts, promptSource }`; 201 when this call made it, 200 when it existed. 403 for a person who may not talk to the bot, 404 for an unknown bot, 409 for a bot that is turned off or invalid. |
-| `GET /api/teams/:slug/bots/:botSlug/conversations?scope=mine\|shared\|mentions&limit=&cursor=` | One of the three lists, newest activity first (`last_reply_at`, else the root's time; the cursor is `<microseconds>:<thread id>`). |
+| `POST /api/teams/:slug/bots/:botSlug/conversation` | Opens (get-or-create) the caller's channel with the bot: `{ botId, botName, botRole, channelId, created, prompts, promptSource }`; 201 when this call made it, 200 when it existed. 403 for a person who may not talk to the bot, 404 for an unknown bot, 409 for a bot that is turned off or invalid, and 409 with code `bot_has_no_conversation_trigger` for one whose definition has no `conversation` trigger. |
+| `GET /api/teams/:slug/bots/:botSlug/conversations?scope=mine\|shared\|mentions&limit=&cursor=` | One of the three lists, newest activity first (`last_reply_at`, else the root's time; the cursor is `<microseconds>:<thread id>`, at most 16 digits: anything else, including a number past a bigint, is a 400 rather than a failed cast). The lists stay readable for a bot that cannot answer (turned off, invalid, no trigger). The web view's "Show older" follows `nextCursor`. |
 
 The three lists:
 
@@ -89,13 +93,18 @@ same sha); anything else — no repo plugin, an unreadable or invalid file, a ne
 
 | Type | Payload | When |
 |---|---|---|
-| `conversations.conversation.started` (v1) | `workspaceId, teamId, botId, personId, channelId, threadRootId` | once per conversation, when its root is indexed. Ids only, never text. |
-| `channel.channel.created` (existing) | `kind: 'bot_conversation'`, `private: true`, `name: ''`, the bot's `teamId` | when `open` makes the channel (as the person). |
+| `conversations.conversation.started` (v1) | `workspaceId, botId, personId, channelId, threadRootId` | once per conversation, when its root is indexed. Ids only, never text. **No `teamId`**: the stored `team_id` is what `events_select` lets every member of the team read, so a team-scoped event would tell a teammate that, and when, somebody talked to a bot in private. Without it the row is workspace-scoped (`team_id` null), as a DM's events are: only a workspace admin's policy reaches it. |
+| `channel.channel.created` (existing) | `kind: 'bot_conversation'`, `private: true`, `name: ''`, `teamId: null` | when `open` makes the channel (as the person); no team, for the same reason. |
 
 ## Privacy
 
 - Only the asker reads the channel, its members, its messages and its thread: a lead, a workspace admin and a second member of the team read
   nothing (`test/rls/conversations.test.ts`, `test/conversation.test.ts`).
+- A conversation's **runs** are the asker's alone too: `bot_runs_select` (bots migration 0011) hides a run of the `conversation` trigger from
+  everybody but its asker (and the run's own bot), and the bot page's run list filters it as well, so a teammate, the team's lead and a workspace
+  admin do not learn who asked a bot what, when, in which thread or with what result (`bots/test/rls/bots.test.ts`, `bots/test/roster.test.ts`,
+  `conversations/test/conversation.test.ts`). The lines a conversation run logged (`run_source_log`) follow the run. The system role (router,
+  reaper, feed, retention, approvals) is unchanged. `bots.run.closed` still carries `teamId, botId, runId, trigger, status` (ids, no asker).
 - The memory feed never reads a conversation: a message is fed only from a public channel of a team (`kind = 'channel'`), and a run whose trigger is
   `conversation` leaves no line (`memory` `test/feed.test.ts`, "a message of a conversation with a bot …").
 - `person:*` connections are for `conversation` and `mention` runs only (the broker, unchanged).
@@ -103,6 +112,13 @@ same sha); anything else — no repo plugin, an unreadable or invalid file, a ne
   which finds the bot from the channel).
 
 ## Open items
+
+- **`mentions` scan.** The Channel mentions list reads `bot_runs` by trigger `mention` and asker; a mention a bot never answered (no `mention` trigger,
+  a run refused before it opened) is not listed, and a retention prune takes older ones out. A scan of `message_mentions` needs bots recorded there.
+- **Unreadable copy.** Somebody else's shared conversation with no copy the reader can open is listed with the private root's id as its thread id (no
+  text, but an id the reader cannot open). A list row with `threadRootId` null and `sharedTo` null would say it without naming the id.
+- **`bots.run.closed` and the audit tab.** The closing event of a conversation run is team-scoped (ids only) and so reveals that a conversation run
+  ended, not whose; scoping it to the asker would change the memory feed's reader of it.
 
 Share to #channel, masking, Save as page and Hand to a bot are P5-17; the `Answer` component is P5-18. A conversation run sees only the message
 it was started for (the thread's history reaches the bot through its tools, not the prompt); the reply is posted when the run ends (the
@@ -119,6 +135,6 @@ thread shows "<bot> is working on it…" for three minutes after the person's me
 `test/rls/conversations.test.ts` (`pnpm test:rls`: the door and its refusals, one channel per bot and person, the admin reads nothing, what a bot
 sees in a run, the index policies and constraints), `test/conversation.test.ts` (the whole path through the real server with a stand-in Hermes:
 open, send, the run's trigger and asker, the reply, the three lists, privacy, paging), `test/events/conversations-events.test.ts`
-(`pnpm test:events`), `packages/plugins/runtime-hermes/test/router.test.ts` (the trigger rule), `packages/plugins/memory/test/feed.test.ts`
+(`pnpm test:events`: no `team_id` on either event), `packages/plugins/runtime-hermes/test/router.test.ts` (the trigger rule), `packages/plugins/memory/test/feed.test.ts`
 (a conversation is never fed), `e2e/conversations/conversation.spec.ts` (`pnpm e2e conversations`: the empty state and chips on both layouts,
 send starts a thread and the reply appears, private by default, Shared, Channel mentions).

@@ -20,6 +20,7 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CONVERSATION_COLUMNS, toConversation, type ConversationRow } from '../../src/rows.ts';
 
 // P5-16: who can open a conversation with a bot, who can read it, what the bot sees of it, and the index that records its visibility. The
 // rows exist through the system role; every assertion runs as a persona (or as a bot inside a run) through the app pool, which is what a
@@ -349,6 +350,33 @@ describe('app.conversations: the index and its visibility', () => {
     expect(await as(rafi, async (tx) => (await tx.query('SELECT id FROM app.messages WHERE id = $1', [root])).rows.length)).toBe(0);
     await sys((tx) => tx.query(`UPDATE app.conversations SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL WHERE thread_root_id = $1`, [root]));
     expect(await listed(priya)).toEqual([]);
+  });
+
+  it('a row maps into the shared Conversation entity, private and shared', async () => {
+    const read = (id: string) =>
+      sys(async (tx) => (await tx.query<ConversationRow>(`SELECT ${CONVERSATION_COLUMNS} FROM app.conversations WHERE thread_root_id = $1`, [id])).rows[0]!);
+    expect(toConversation(await read(root))).toMatchObject({
+      threadRootId: root,
+      workspaceId: omar.workspaceId,
+      teamId: ENG,
+      botId,
+      personId: nadia.personId,
+      visibility: 'private',
+      sharedTo: null,
+      sharedRootId: null,
+      sharedBy: null,
+      sharedAt: null,
+    });
+    await sys((tx) =>
+      tx.query(
+        `UPDATE app.conversations SET visibility = 'shared', shared_to = $2, shared_root_id = $3, shared_by = $4, shared_at = now() WHERE thread_root_id = $1`,
+        [root, copyChannel, copyRoot, nadia.actorId],
+      ),
+    );
+    const shared = toConversation(await read(root));
+    expect(shared).toMatchObject({ visibility: 'shared', sharedTo: copyChannel, sharedRootId: copyRoot, sharedBy: nadia.actorId });
+    expect(shared.sharedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    await sys((tx) => tx.query(`UPDATE app.conversations SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL WHERE thread_root_id = $1`, [root]));
   });
 
   it('a caller cannot write the index at all', async () => {

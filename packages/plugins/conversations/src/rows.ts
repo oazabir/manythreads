@@ -1,9 +1,44 @@
-import { ConversationListItem } from '@manythreads/shared';
+import { Conversation, ConversationListItem } from '@manythreads/shared';
 
-// The plugin's mapper for the rows its lists read (PLAN B: one mapper per table). A list row is the thread's own facts joined to what the
-// caller may read of it; nothing here is a copy stored on `conversations`.
+// The plugin's mappers (PLAN B: one mapper per table; a plugin cannot import the kernel's, so they live here, as in the bots plugin).
+// `toConversation` is the one place a row of `app.conversations` becomes the shared entity; `toListItem` maps the lists' rows, which are the
+// thread's own facts joined to what the caller may read of it (nothing in them is a copy stored on `conversations`).
 
 const iso = (d: Date): string => d.toISOString();
+const isoOrNull = (d: Date | null): string | null => (d === null ? null : d.toISOString());
+
+/** A row of `app.conversations`. */
+export type ConversationRow = {
+  thread_root_id: string;
+  workspace_id: string;
+  team_id: string;
+  bot_id: string;
+  person_id: string;
+  channel_id: string;
+  visibility: string;
+  shared_to: string | null;
+  shared_root_id: string | null;
+  shared_by: string | null;
+  shared_at: Date | null;
+  created_at: Date;
+};
+export const CONVERSATION_COLUMNS =
+  'thread_root_id, workspace_id, team_id, bot_id, person_id, channel_id, visibility, shared_to, shared_root_id, shared_by, shared_at, created_at';
+export const toConversation = (r: ConversationRow): Conversation =>
+  Conversation.parse({
+    threadRootId: r.thread_root_id,
+    workspaceId: r.workspace_id,
+    teamId: r.team_id,
+    botId: r.bot_id,
+    personId: r.person_id,
+    channelId: r.channel_id,
+    visibility: r.visibility,
+    sharedTo: r.shared_to,
+    sharedRootId: r.shared_root_id,
+    sharedBy: r.shared_by,
+    sharedAt: isoOrNull(r.shared_at),
+    createdAt: iso(r.created_at),
+  });
 
 /** One row of the shared list query (routes.ts). `act_us` is the newest activity in microseconds since the epoch: the keyset of every list. */
 export type ListRow = {

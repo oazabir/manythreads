@@ -2,6 +2,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  GetBotResponse,
+  ListBotsResponse,
   ListConversationsResponse,
   ListMessagesResponse,
   OpenConversationResponse,
@@ -76,7 +78,6 @@ const until = async <T>(fn: () => Promise<T | null | undefined | false>, ms: num
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 };
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const spoolLines = (): Array<{ homeName: string; prompt: string }> =>
   existsSync(spool)
@@ -142,10 +143,35 @@ const runsOf = (botId: string) =>
   );
 const eventsOf = (type: string) =>
   w.system(async (tx) => (await tx.query<{ payload: Record<string, unknown> }>('SELECT payload FROM app.events WHERE type = $1 ORDER BY id', [type])).rows.map((r) => r.payload));
+/** The stored rows of an event type: the `team_id` column is what `events_select` lets a team's members read. */
+const eventRowsOf = (type: string) =>
+  w.system(
+    async (tx) =>
+      (await tx.query<{ team_id: string | null; payload: Record<string, unknown> }>('SELECT team_id, payload FROM app.events WHERE type = $1 ORDER BY id', [type])).rows,
+  );
+/**
+ * The run jobs the router queued for a message and a bot. The router and the conversation indexer subscribe to the same `channel.message.posted`
+ * and the outbox consumer runs every handler of an event in one transaction, so once the conversation is indexed the router has decided: a job
+ * row (any state, `done` rows stay) is its "yes", and no row is its "no". No clock is involved.
+ */
+const jobsFor = (botId: string, messageId: string) =>
+  w.system(
+    async (tx) =>
+      (
+        await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.jobs WHERE queue = 'runtime-hermes.run' AND dedupe_key = $1", [`runtime-hermes:${botId}:${messageId}`])
+      ).rows[0]!.n,
+  );
+const botPage = async (who: typeof nadia, slug: string) => {
+  const res = await w.call(who, 'GET', `/api/teams/engineering/bots/${slug}`);
+  expect(res.status, JSON.stringify(res.body)).toBe(200);
+  return GetBotResponse.parse(res.body);
+};
 
 let brain: LoadedBot;
 let quiet: LoadedBot;
+let drift: LoadedBot;
 let nadiaChannel = '';
+let driftChannel = '';
 let rootId = '';
 
 beforeAll(async () => {
@@ -166,8 +192,10 @@ beforeAll(async () => {
     'brain',
     botMd({ name: 'Brain', triggers: ['{ type: conversation }', '{ type: mention }'], prompts: ['What is blocking the release?', 'Where are the 2.4 release notes?'] }),
   );
-  // a bot people may only @mention: it has no `conversation` trigger, so a conversation channel with it never wakes it
+  // a bot people may only @mention: it has no `conversation` trigger, so there is no conversation with it to open
   quiet = await loadBot('quiet', botMd({ name: 'Quiet', triggers: ['{ type: mention }', '{ type: channel_message }'] }));
+  // a bot that can be talked to now and gives that up later in the file (its definition is edited): the channel stays, nothing answers in it
+  drift = await loadBot('drift', botMd({ name: 'Drift', triggers: ['{ type: conversation }', '{ type: mention }'] }));
 }, 240_000);
 
 afterAll(async () => {
@@ -200,14 +228,34 @@ describe('opening a conversation', () => {
     const rafis = OpenConversationResponse.parse((await open(rafi, 'brain')).body);
     expect(rafis.channelId).not.toBe(nadiaChannel);
 
-    const created = (await eventsOf('channel.channel.created')).filter((e) => e['channelId'] === nadiaChannel);
-    expect(created).toEqual([expect.objectContaining({ kind: 'bot_conversation', private: true, name: '' })]);
+    const created = (await eventRowsOf('channel.channel.created')).filter((e) => e.payload['channelId'] === nadiaChannel);
+    expect(created).toEqual([expect.objectContaining({ payload: expect.objectContaining({ kind: 'bot_conversation', private: true, name: '' }) })]);
+    // announced like a DM's channel: no team on the event, so the stored row is not one that every member of the team can read
+    expect(created[0]!.team_id).toBeNull();
+    expect(created[0]!.payload).not.toHaveProperty('teamId', expect.any(String));
   });
 
   it('a bot with no prompts of its own shows the platform’s defaults', async () => {
-    const body = OpenConversationResponse.parse((await open(nadia, 'quiet')).body);
+    const opened = await open(nadia, 'drift');
+    expect(opened.status, JSON.stringify(opened.body)).toBe(201);
+    const body = OpenConversationResponse.parse(opened.body);
     expect(body.promptSource).toBe('default');
     expect(body.prompts.length).toBeGreaterThan(0);
+    driftChannel = body.channelId;
+  });
+
+  it('a bot whose definition has no conversation trigger has no conversation to open: 409, nothing is made, and the roster says so', async () => {
+    const res = await open(nadia, 'quiet');
+    expect(res.status, JSON.stringify(res.body)).toBe(409);
+    expect(res.body as { error: { code: string } }).toMatchObject({ error: { code: 'bot_has_no_conversation_trigger' } });
+    const made = await w.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.channels WHERE kind = 'bot_conversation' AND bot_id = $1", [quiet.botId])).rows[0]!.n);
+    expect(made).toBe(0);
+    // the roster carries what the clients need to hide Talk: it is the same fact `open` read
+    const roster = ListBotsResponse.parse((await w.call(nadia, 'GET', '/api/teams/engineering/bots')).body);
+    expect(roster.bots.find((b) => b.slug === 'quiet')).toMatchObject({ conversational: false, status: 'active' });
+    expect(roster.bots.find((b) => b.slug === 'brain')).toMatchObject({ conversational: true });
+    // a person who may not talk to the bot at all still gets the plain refusal first
+    expect((await open(sameera, 'quiet')).status).toBe(403);
   });
 
   it('is refused to a person of another team, to a guest, and for a bot that does not exist; it is not in the sidebar', async () => {
@@ -254,18 +302,36 @@ describe('sending starts a thread, and the bot answers in it', () => {
     expect(started).toHaveLength(1);
     expect(started[0]).toMatchObject({ botId: brain.botId, personId: nadia.personId, channelId: nadiaChannel, threadRootId: rootId });
     expect(JSON.stringify(started[0])).not.toContain('blocking');
+    // no team on it: the stored `team_id` column is what lets every member of the team read an event, and this one is one person's
+    expect(started[0]).not.toHaveProperty('teamId');
+    const stored = (await eventRowsOf('conversations.conversation.started')).filter((e) => e.payload['threadRootId'] === rootId);
+    expect(stored.map((e) => e.team_id)).toEqual([null]);
     expect(Object.keys(eventRegistry['conversations.conversation.started'])).toEqual(['1']);
   });
 
-  it('a bot with no conversation trigger is not woken by a conversation channel, whatever its other triggers say', async () => {
-    const channel = OpenConversationResponse.parse((await open(nadia, 'quiet')).body).channelId;
+  it('a bot that dropped its conversation trigger is not woken by the channel it already has, whatever its other triggers say', async () => {
+    // the router's positive control: the message that did wake Brain left a job (the same lookup is empty below)
+    expect(await jobsFor(brain.botId, rootId)).toBe(1);
     const before = spoolLines().length;
-    const root = await send(nadia, channel, '@quiet are you there?');
-    // the conversation is indexed by the same event the router read: once it is, the router has decided
-    await until(async () => ((await list(nadia, 'quiet')).items.some((i) => i.threadRootId === root) ? true : null), 20_000, 'the conversation to be indexed');
-    await sleep(2_000);
-    expect(await runsOf(quiet.botId)).toEqual([]);
+    const md = botMd({ name: 'Drift', triggers: ['{ type: mention }', '{ type: channel_message }'] });
+    expect((await w.commit(omar, 'engineering', [{ op: 'put', path: 'bots/drift/BOT.md', content: md }], 'Drift stops taking conversations')).status).toBe(201);
+    await until(
+      () =>
+        w.system(async (tx) => {
+          const r = await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.bots WHERE id = $1 AND NOT triggers @> '[{"type":"conversation"}]'::jsonb`, [drift.botId]);
+          return r.rows[0]!.n === 1;
+        }),
+      20_000,
+      'the loader to write the new triggers',
+    );
+    const root = await send(nadia, driftChannel, '@drift are you there?');
+    // the conversation is indexed by the same event, in the same transaction, the router read: once it is, the router has decided
+    await until(async () => ((await list(nadia, 'drift')).items.some((i) => i.threadRootId === root) ? true : null), 20_000, 'the conversation to be indexed');
+    expect(await jobsFor(drift.botId, root)).toBe(0);
+    expect(await runsOf(drift.botId)).toEqual([]);
     expect(spoolLines()).toHaveLength(before);
+    // and it cannot be opened again: the channel it had is the only one
+    expect((await open(nadia, 'drift')).status).toBe(409);
   });
 });
 
@@ -369,18 +435,55 @@ describe('the lists', () => {
   });
 
   it('pages newest first with a cursor, and refuses a cursor that is not one', async () => {
-    const channel = OpenConversationResponse.parse((await open(nadia, 'quiet')).body).channelId;
+    // Drift's channel exists but no run answers in it any more (its trigger is gone), so these are plain threads in a list
     const roots: string[] = [];
-    for (const text of ['first question', 'second question', 'third question']) roots.push(await send(nadia, channel, text));
-    await until(async () => ((await list(nadia, 'quiet')).items.length >= 4 ? true : null), 20_000, 'every conversation to be indexed');
-    const page1 = await list(nadia, 'quiet', '?limit=2');
+    for (const text of ['first question', 'second question', 'third question']) roots.push(await send(nadia, driftChannel, text));
+    await until(async () => ((await list(nadia, 'drift')).items.length >= 4 ? true : null), 20_000, 'every conversation to be indexed');
+    const page1 = await list(nadia, 'drift', '?limit=2');
     expect(page1.items).toHaveLength(2);
     expect(page1.nextCursor).not.toBeNull();
-    const page2 = await list(nadia, 'quiet', `?limit=2&cursor=${encodeURIComponent(page1.nextCursor!)}`);
+    const page2 = await list(nadia, 'drift', `?limit=2&cursor=${encodeURIComponent(page1.nextCursor!)}`);
     const seen = [...page1.items, ...page2.items].map((i: ConversationListItem) => i.threadRootId);
     expect(new Set(seen).size).toBe(seen.length);
     // newest first: the last thing sent leads
     expect(page1.items[0]!.threadRootId).toBe(roots[2]);
-    expect((await w.call(nadia, 'GET', '/api/teams/engineering/bots/quiet/conversations?cursor=nonsense')).status).toBe(400);
+    const bad = (cursor: string) => w.call(nadia, 'GET', `/api/teams/engineering/bots/drift/conversations?cursor=${encodeURIComponent(cursor)}`);
+    expect((await bad('nonsense')).status).toBe(400);
+    // a number past a bigint is not a position of this list: refused as a cursor, never a 500 from the cast
+    const root = '00000000-0000-7000-8000-000000000001';
+    expect((await bad(`9999999999999999999:${root}`)).status).toBe(400);
+    expect((await bad(`92233720368547758079:${root}`)).status).toBe(400);
+    // while the largest value it can hold is read as a cursor like any other
+    const ok = await bad(`9999999999999999:${root}`);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(ListConversationsResponse.parse(ok.body).items.length).toBeGreaterThan(0);
+  });
+});
+
+describe('what the team can learn about a conversation run', () => {
+  it('a bot page lists a conversation run to the person who asked, and to nobody else — not a member, a lead or an admin', async () => {
+    // Rafi talks to Brain too: his run is his, Nadia's is hers
+    const rafiChannel = OpenConversationResponse.parse((await open(rafi, 'brain')).body).channelId;
+    const rafiRoot = await send(rafi, rafiChannel, 'Is the on-call rota published?');
+    await until(async () => (await repliesBy(rafi, rafiChannel, rafiRoot, brain.actorId))[0], 40_000, 'the bot to answer Rafi');
+
+    const conversationRuns = async (who: typeof nadia) => (await botPage(who, 'brain')).runs.filter((r) => r.trigger === 'conversation');
+    // control: the team still reads the runs a mention fired (they happened in a channel it can read)
+    for (const who of [nadia, rafi, omar, personas.priya]) {
+      expect((await botPage(who, 'brain')).runs.some((r) => r.trigger === 'mention' && r.askerId === nadia.actorId), `${who.key} sees the mention run`).toBe(true);
+    }
+    // each asker sees their own conversation runs
+    expect((await conversationRuns(nadia)).length).toBeGreaterThan(0);
+    for (const run of await conversationRuns(nadia)) expect(run.askerId).toBe(nadia.actorId);
+    expect(await conversationRuns(rafi)).toHaveLength(1);
+    expect((await conversationRuns(rafi))[0]).toMatchObject({ askerId: rafi.actorId, trigger: 'conversation' });
+    // and nobody else's: Priya is a member, Omar is the team's lead and a workspace admin
+    for (const who of [personas.priya, omar]) {
+      expect(await conversationRuns(who), `${who.key} sees no conversation run`).toEqual([]);
+    }
+    expect((await botPage(omar, 'brain')).runs.filter((r) => r.askerId === rafi.actorId)).toEqual([]);
+    expect((await botPage(rafi, 'brain')).runs.filter((r) => r.trigger === 'conversation' && r.askerId === nadia.actorId)).toEqual([]);
+    // the conversation runs exist: the page's silence is the privacy rule, not an empty table
+    expect((await runsOf(brain.botId)).filter((r) => r.trigger_type === 'conversation').length).toBeGreaterThanOrEqual(3);
   });
 });

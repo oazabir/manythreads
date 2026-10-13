@@ -7,8 +7,9 @@ const { omar, nadia } = personas;
 vi.setConfig({ testTimeout: 180_000 });
 
 // Event contract tests (pnpm test:events): the event a new conversation announces is stored in the shape its registered schema accepts, with
-// the bot's team on it and no text of the conversation, once per conversation however many messages follow; and the channel made for it is
-// announced with the existing `channel.channel.created` as a private `bot_conversation`.
+// no text of the conversation and no team (a team-scoped event is readable by every member of the team, and a conversation is one person's),
+// once per conversation however many messages follow; and the channel made for it is announced with the existing `channel.channel.created`
+// as a private `bot_conversation`, also with no team, like a DM's.
 
 let w: World;
 let teamId = '';
@@ -42,8 +43,8 @@ beforeAll(async () => {
   teamId = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id);
   botId = await w.system(async (tx) => {
     const bot = await tx.query<{ id: string }>(
-      `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-       VALUES ($1, $2, 'evbot', 'EvBot', '', 'agent', 'rules', 'team', repeat('e', 64), 'active') RETURNING id`,
+      `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, triggers)
+       VALUES ($1, $2, 'evbot', 'EvBot', '', 'agent', 'rules', 'team', repeat('e', 64), 'active', '[{"type":"conversation"}]'::jsonb) RETURNING id`,
       [omar.workspaceId, teamId],
     );
     await tx.query("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2)", [omar.workspaceId, bot.rows[0]!.id]);
@@ -73,21 +74,26 @@ describe('conversations events', () => {
     expect([...plugin.manifest.events.consumes]).toEqual(['channel.message.posted']);
   });
 
-  it('one started event per conversation, parsing against its schema, with the team and the ids and no text', async () => {
+  it('one started event per conversation, parsing against its schema, with the ids and no text and no team', async () => {
     const rows = await eventRows('conversations.conversation.started');
     expect(rows).toHaveLength(2);
     const first = rows.find((r) => (r.payload as Record<string, unknown>)['threadRootId'] === rootId)!;
     const event = ConversationsConversationStartedEvent.parse(parseEvent(eventToRaw(first)));
-    expect(event).toMatchObject({ botId, personId: nadia.personId, channelId, threadRootId: rootId, teamId });
-    expect(first.team_id).toBe(teamId);
-    for (const row of rows) expect(JSON.stringify(row.payload)).not.toMatch(/migration|follow-up|question/);
+    expect(event).toMatchObject({ botId, personId: nadia.personId, channelId, threadRootId: rootId });
+    expect(event).not.toHaveProperty('teamId');
+    for (const row of rows) {
+      // the column `events_select` reads for team members: null, so only a workspace admin's policy reaches the row
+      expect(row.team_id, 'team_id').toBeNull();
+      expect(JSON.stringify(row.payload)).not.toMatch(/migration|follow-up|question/);
+    }
   });
 
-  it('the channel is announced as a private bot conversation of the bot’s team', async () => {
+  it('the channel is announced as a private bot conversation, with no team on the event', async () => {
     const rows = (await eventRows('channel.channel.created')).filter((r) => (r.payload as Record<string, unknown>)['channelId'] === channelId);
     expect(rows).toHaveLength(1);
     const event = ChannelChannelCreatedEvent.parse(parseEvent(eventToRaw(rows[0]!)));
-    expect(event).toMatchObject({ kind: 'bot_conversation', private: true, teamId, name: '' });
+    expect(event).toMatchObject({ kind: 'bot_conversation', private: true, teamId: null, name: '' });
+    expect(rows[0]!.team_id).toBeNull();
     expect(rows[0]!.actor_id).toBe(nadia.actorId);
   });
 });

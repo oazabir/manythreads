@@ -8,15 +8,18 @@ import {
   openConversationRoute,
   type ConversationScope,
 } from '@manythreads/shared';
-import { conflict, forbidden, invalid, json, notFound, requireTeam, route } from './http.ts';
+import { HttpError, conflict, forbidden, invalid, json, notFound, requireTeam, route } from './http.ts';
 import { promptsOf } from './prompts.ts';
 import { toListItem, type AuthorKinds, type ListRow } from './rows.ts';
 
 // The two routes of the conversation view (SPEC §6.2). Reading a thread and sending into it are the channels plugin's routes, with the id of
 // the channel `open` returns: the first message of a conversation is an ordinary channel message, and the bot's reply an ordinary reply.
 
-/** `<microseconds>:<root id>`: the keyset of every list (newest activity first, the thread id breaks a tie). */
-const CURSOR = /^(\d{1,19}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+/**
+ * `<microseconds>:<root id>`: the keyset of every list (newest activity first, the thread id breaks a tie). At most 16 digits: a time in
+ * microseconds reaches 16 digits in 2001 and 17 only in the year 2286, and a longer number could exceed the bigint it is cast to (22003, a 500).
+ */
+const CURSOR = /^(\d{1,16}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 interface BotRow {
   id: string;
@@ -25,12 +28,18 @@ interface BotRow {
   role: string;
   status: string;
   definition_sha: string;
+  /** The BOT.md triggers include `conversation`: the only trigger a message in a conversation channel fires. */
+  conversational: boolean;
   [key: string]: unknown;
 }
 
 /** The bot of the team, or 404: an unknown slug and one of another team answer alike. */
 async function requireBot(tx: PluginTx, teamId: string, botSlug: string): Promise<BotRow> {
-  const res = await tx.query<BotRow>('SELECT id, slug, name, role, status, definition_sha FROM app.bots WHERE team_id = $1 AND slug = $2', [teamId, botSlug]);
+  const res = await tx.query<BotRow>(
+    `SELECT id, slug, name, role, status, definition_sha, jsonb_path_exists(triggers, '$[*] ? (@.type == "conversation")') AS conversational
+       FROM app.bots WHERE team_id = $1 AND slug = $2`,
+    [teamId, botSlug],
+  );
   const bot = res.rows[0];
   if (!bot) throw notFound(`No bot "${botSlug}"`);
   return bot;
@@ -130,10 +139,19 @@ export function registerRoutes(ctx: PluginContext): void {
           bot.status === 'disabled' ? 'This bot is turned off, so it cannot answer.' : "This bot's BOT.md is invalid, so it cannot answer until it is fixed.",
         );
       }
+      // The router fires a message in a conversation channel only for the bot's `conversation` trigger (runtime-hermes' matchTrigger): without
+      // one nothing would ever answer, so there is no conversation to open (the roster says so, and the clients offer no Talk button).
+      if (!bot.conversational) {
+        throw new HttpError(
+          409,
+          'bot_has_no_conversation_trigger',
+          `${bot.name} does not take part in conversations: its definition has no conversation trigger.`,
+        );
+      }
       // One statement makes (or finds) the channel and its one member; a person who is not on the bot's team is refused there (403).
       const made = (await tx.query<{ channel_id: string; created: boolean }>('SELECT channel_id, created FROM app.conversations_open($1::uuid)', [bot.id])).rows[0]!;
       if (made.created) {
-        await ctx.audit.emit(tx, { type: 'channel.channel.created', channelId: made.channel_id, teamId: team.id, name: '', kind: 'bot_conversation', private: true });
+        await ctx.audit.emit(tx, { type: 'channel.channel.created', channelId: made.channel_id, teamId: null, name: '', kind: 'bot_conversation', private: true });
       }
       const chips = await promptsOf(ctx, tx, { teamId: team.id, slug: bot.slug, definitionSha: bot.definition_sha });
       return json(

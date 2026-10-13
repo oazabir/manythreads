@@ -14,6 +14,8 @@ export const ErrorCode = z.enum([
   'attachment_not_in_repo',
   /** 413: the team repository is over its size or file-count quota (`MANYTHREADS_REPO_MAX_BYTES`, `MANYTHREADS_REPO_MAX_FILES`); delete files or ask an admin to raise it. */
   'repo_quota_exceeded',
+  /** 409: a conversation cannot be opened with a bot whose BOT.md lists no `conversation` trigger; nothing would ever answer in it (conversations plugin). */
+  'bot_has_no_conversation_trigger',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 
