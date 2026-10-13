@@ -174,7 +174,7 @@ describe('maskAnswer', () => {
     }));
     const big = AnswerPayload.parse({
       ...original(),
-      body: `${'Claim [1]. '.repeat(1_500)}${'x'.repeat(1_000)}`,
+      body: `${'Claim [1]. '.repeat(1_500)}\n\n${'x'.repeat(1_000)}`,
       citations,
       lineage: citations.map((c) => ({ n: c.n, kind: 'file', label: c.label, at: null, snippet: null })),
       sourcesReached: Array.from({ length: ANSWER_LIMITS.sources }, (_, i) => ({ kind: 'file', ref: uuid(300 + i), label: null, marker: 'full' as const })),

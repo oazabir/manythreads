@@ -129,6 +129,14 @@
         "sourcesDropped"
       ]
     },
+    "removedText": {
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 400
+      }
+    },
     "payload": {
       "type": "object",
       "properties": {
@@ -790,6 +798,7 @@
     "audience",
     "items",
     "counts",
+    "removedText",
     "payload",
     "digest"
   ]
