@@ -4,6 +4,7 @@
   "enum": [
     "not_visible",
     "not_granted",
-    "not_shared"
+    "not_shared",
+    "not_reached"
   ]
 }
