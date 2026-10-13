@@ -316,6 +316,24 @@ describe('Remove claim, against what the client draws as a marker', () => {
     }
   });
 
+  it('a decorated marker written after a stop and a space belongs to the sentence before it: the claim goes, and so does the next sentence', () => {
+    const forms = ['**[2]**', '\\[2\\]', '\\[2]', '[2\\]', '*[2]*', '_[2]_', '~~[2]~~', '([2])', '(see [2])', '"[2]"', '[[2]](https://example.com/x)', '[**[2]**](https://example.com/y)'];
+    for (const form of forms) {
+      const body = `Keep [1].\n\nRevenue grew by four percent. ${form} Costs fell. After this one.\n\nTail [3].`;
+      expect(renderedMarkers(body), `${form}: the client should draw it`).toContain(2);
+      const out = removeClaims(body, new Set([2])).body;
+      // the claim side: its words are gone (not only the marker), and what is not a neighbour stays
+      expect(out, `${form}: the claim was kept: ${JSON.stringify(out)}`).not.toContain('Revenue grew');
+      expect(renderedMarkers(out), form).not.toContain(2);
+      expect(out, form).toContain('Keep [1].');
+      expect(out, form).toContain('After this one.');
+      expect(out, form).toContain('Tail [3].');
+    }
+    // a decoration around a marker that is not removed leaves its sentence alone, and a word with a marker on it belongs to its own sentence
+    expect(removeClaims('Revenue grew. **[1]** Costs fell [2]. After.', new Set([2])).body).toBe('Revenue grew. **[1]** After.');
+    expect(removeClaims('Revenue grew. Costs[2] fell. After.', new Set([2])).body).toBe('Revenue grew. After.');
+  });
+
   it('forms the client does not turn into a marker are not touched: HTML entities and a link labelled with a bare number are text', () => {
     for (const body of ['A claim &#91;2&#93; here. Keep [1].', 'A claim &lbrack;2&rbrack; here. Keep [1].', 'A claim in a `[x]` span. Keep [1].']) {
       expect(renderedMarkers(body)).not.toContain(2);
@@ -331,7 +349,7 @@ describe('Remove claim, against what the client draws as a marker', () => {
   });
 
   it('whatever is written, no removed marker is left that the client would draw', () => {
-    const pieces = ['[', ']', '2', '\\', '*', '_', '~', '`', '(', ')', 'https://x.y/z', ' ', '\n', '\n\n', '#', '> ', '- ', '1. ', 'a', '.', '. ', '[2]', '\\[', '\\]', '&#91;', '```\n', '[1]', '|'];
+    const pieces = ['[', ']', '2', '\\', '*', '_', '~', '`', '(', ')', 'https://x.y/z', ' ', '\n', '\n\n', '#', '> ', '- ', '1. ', 'a', '.', '. ', '[2]', '\\[', '\\]', '&#91;', '```\n', '[1]', '|', '**[2]**', '\\[2\\]', '(see [2])', '"[2]"', '. **[2]** ', '. ([2]) '];
     let s = 99;
     const next = (): number => {
       s = (Math.imul(s, 1_664_525) + 1_013_904_223) >>> 0;

@@ -180,6 +180,65 @@ function closesAbbreviation(text: string, i: number): boolean {
   return ABBREVIATIONS.has(word.toLowerCase());
 }
 
+/** Characters that decorate a marker without being words: emphasis, brackets, quotes, punctuation, and an escape's backslash. */
+const DECORATION = new Set(['*', '_', '~', '(', ')', '"', '“', '”', '‘', '’', "'", '«', '»', '<', '>', '{', '}', ',', ';', ':', '.', '!', '?', '-', '–', '—', '…', ']', '\\']);
+/** What may open a group that holds a few words before its marker: `(see [2])`, `"as the board put it [2]"`. */
+const OPENING = new Set(['(', '"', '“', '‘', '«']);
+
+/**
+ * A marker group written after a stop and a space may carry decoration the client draws around it — `**[2]**`, `\\[2\\]`, `*[2]*`, `_[2]_`,
+ * `~~[2]~~`, `([2])`, `"[2]"`, `[[2]](url)` — or a few words inside an opening bracket or quote (`(see [2])`). At `k` (the first character after
+ * the white space): the end of such a group and whether it holds a removed number, or null when what follows is a word. At most 48 characters.
+ */
+function decoratedGroup(text: string, k: number, removed: ReadonlySet<number>): { end: number; hit: boolean } | null {
+  const first = text[k];
+  if (first === undefined) return null;
+  const opened = OPENING.has(first);
+  const limit = Math.min(text.length, k + 48);
+  let p = k;
+  let found = false;
+  let hit = false;
+  while (p < limit) {
+    const c = text[p]!;
+    if (MARKER_OPEN[c] !== undefined) {
+      const m = markerAt(text, p, removed);
+      if (m !== null) {
+        found = true;
+        if (m.hit) hit = true;
+        p = m.end;
+        continue;
+      }
+      p += 1; // a bracket that is not a marker (`[[2]](url)`'s outer one)
+      continue;
+    }
+    if (c === '(' && found && text[p - 1] === ']') {
+      // the address of a link written around the marker
+      let q = p + 1;
+      while (q < Math.min(text.length, p + 256) && text[q] !== ')' && !isWs(text[q])) q += 1;
+      if (text[q] === ')') {
+        p = q + 1;
+        continue;
+      }
+    }
+    if (isWs(c)) {
+      if (found || !opened) break;
+      p += 1; // words inside an opening bracket or quote, before its marker
+      continue;
+    }
+    if (opened && !found && TERMINATORS.has(c)) return null; // a sentence of its own, not a note on the one before
+    if (DECORATION.has(c)) {
+      p += 1;
+      continue;
+    }
+    if (opened && !found) {
+      p += 1;
+      continue;
+    }
+    break; // a word: the marker, if there is one, is its
+  }
+  return found ? { end: p, hit } : null;
+}
+
 /** Does `text` hold a marker group of a removed citation? */
 function holdsMarker(text: string, removed: ReadonlySet<number>): boolean {
   for (let i = 0; i < text.length; i += 1) {
@@ -296,6 +355,17 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
         if (markerAt(text, k, NO_NUMBERS) !== null) {
           spaced = true;
           j = k;
+          continue;
+        }
+        // the same, with the decoration the client draws around a marker (`**[2]**`, `(see [2])`): this sentence's, and maybe the next one's prefix
+        const decorated = decoratedGroup(text, k, removed);
+        if (decorated !== null) {
+          spaced = true;
+          if (decorated.hit) {
+            hit = true;
+            carry = true;
+          }
+          j = decorated.end;
           continue;
         }
       }
