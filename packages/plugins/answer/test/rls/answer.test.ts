@@ -425,7 +425,7 @@ describe('hostile input', () => {
   });
 
   it('is not a way into another workspace or another team’s page: a team the asker is not on has no page for them', async () => {
-    const v = await viewOf(botActor, nadiaConversation, [{ kind: 'page', ref: 'pages/launch/plan.md', team: MKT }]);
+    const v = await viewOf(botActor, nadiaMention, [{ kind: 'page', ref: 'pages/launch/plan.md', team: MKT }]);
     expect(v.citations[0]).toEqual({ found: false });
     // Priya is on both teams: asked by her, the same page is found, and it is not the run's team's, so it does not reach a team channel
     const priyaRun = await run({ trigger: 'mention', asker: priya.actorId, channel: dev, root: mentionRoot });

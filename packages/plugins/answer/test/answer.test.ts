@@ -71,6 +71,7 @@ let devMessage = '';
 let leadsMessage = '';
 let dmChannel = '';
 let dmMessage = '';
+let roomMessage = '';
 const savedEnv: Record<string, string | undefined> = {};
 const ENV_KEYS = ['MANYTHREADS_HERMES_BIN', 'MANYTHREADS_HERMES_PREFIX', 'MANYTHREADS_RUNTIME_DIR', 'MANYTHREADS_LITELLM_URL', 'HERMES_FAKE_SPOOL', 'HERMES_FAKE_SCENARIO', 'HERMES_FAKE_ORIGIN'];
 
@@ -196,6 +197,12 @@ beforeAll(async () => {
   expect(dm.status, JSON.stringify(dm.body)).toBeLessThan(300);
   dmChannel = dm.body.dm.channel.id;
   dmMessage = await send(nadia, dmChannel, 'A word about the zebra rollout, just between us');
+  // a private channel of the team that Nadia sits in: a search of the team reaches it, a team channel's readers cannot read it
+  const room = await w.call<{ channel: { id: string } }>(omar, 'POST', '/api/teams/engineering/channels', { name: 'release-room', private: true });
+  expect(room.status, JSON.stringify(room.body)).toBe(201);
+  const added = await w.call(omar, 'POST', `/api/channels/${room.body.channel.id}/members`, { personId: nadia.personId });
+  expect(added.status, JSON.stringify(added.body)).toBeLessThan(300);
+  roomMessage = await send(omar, room.body.channel.id, 'Release room: the zebra rollout needs the Monday window');
 
   brain = await loadBot('brain', botMd('Brain', ['messages.search', 'messages.post', 'answer.post']));
   coder = await loadBot('coder', botMd('Coder', ['messages.post'], ['{ type: mention }']));
@@ -359,14 +366,19 @@ describe('a mention in a team channel', () => {
     const payload = AnswerPayload.parse(replies[0]!.meta.answer);
     // the channel reads it: the public message stays, the DM (hers to read, not the channel's) and the lead's channel do not
     expect(payload.citations.map((c) => c.n)).toEqual([1]);
-    expect(payload.outsideScope.items).toEqual([
-      { kind: 'message', reason: 'not_shared', count: 1 },
-      { kind: 'message', reason: 'not_visible', count: 1 },
-    ]);
+    // the DM she cited and the private room her search reached are hers to read and not the channel's: one reason; the lead's channel another
+    expect(payload.outsideScope).toEqual({
+      count: 3,
+      items: [
+        { kind: 'message', reason: 'not_shared', count: 2 },
+        { kind: 'message', reason: 'not_visible', count: 1 },
+      ],
+    });
     expect(JSON.stringify(payload)).not.toContain('just between us');
     expect(JSON.stringify(payload)).not.toContain(dmMessage);
-    // the search the run made reached the DM message (readable by Nadia): it is out of this channel's scope too, not listed
-    expect(payload.sourcesReached.some((s) => s.ref === dmMessage)).toBe(false);
+    // what the search reached: the public question is listed, the private room's note is only counted
+    expect(payload.sourcesReached.some((s) => s.ref === roomMessage)).toBe(false);
+    expect(payload.sourcesReached.length).toBeGreaterThan(0);
     expect(payload.answeredFor).toMatchObject({ personId: nadia.personId, scope: 'scoped' });
 
     // memory: the run read a private message, so it keeps no wider than a private source — and the message the bot wrote in a public channel
