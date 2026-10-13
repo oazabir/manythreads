@@ -142,6 +142,10 @@ because inside them `app.is_system()` is TRUE.
 `TEAM.md` from the template. Text only; the PNG, MP4 and Office file go to `channels/dev/` as attachments ([storage-s3.md](./storage-s3.md)). Idempotent: a step whose commit message is already in the team's
 history is skipped, so a person's later edit is never undone. Needs `git` in the process that seeds (the server image has it) and the same `MANYTHREADS_REPO_DIR` as the server.
 
+## The index catching up with git
+
+When git is ahead of an index that already exists (a transaction that rolled back after its commit, a push outside the writer), the next write re-indexes the missing commits and emits `repo.repo.committed` for that range, so subscribers (the memory feed) hear of the pages involved: `sha` is the new head, `parentSha` the old index head, paths are those the commits touched (`put` where the file is in the tree now, `delete` where it is not), in events of at most 500 paths. **Paths the writer guards (`bots/`, `TEAM.md`, `skills/`, `routines/`) are left out of it**: state that reached git without the writer has not been through its rules, and the bots loader applies whatever the event names; such a definition is loaded by the next commit through the writer that touches it, never by a catch-up. No event for an index that is new (that is the whole history, not a change). `repo_commits.indexed_at` (0002) is the database clock at which the index recorded a commit; NULL for commits indexed before the column existed.
+
 ## Tests
 
 

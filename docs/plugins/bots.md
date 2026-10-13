@@ -118,6 +118,10 @@ kernel's `schema-enums` test fails if SQL and Zod ever list different values.
 Read plans are hoisted: `bots`, `bot_runs` and `run_source_log` are checked by
 `findPerRowPolicyCalls` in `test/rls/bots.test.ts`, which fails the moment a policy calls a per-row helper.
 
+## The stale-run reaper
+
+`bots.reap-runs` (hourly, `maxAttempts: 1`): a run still `running` past its bot's `bots.run_timeout_seconds` (BOT.md `limits.timeoutSeconds` as written, migration 0010, filled by the loader) plus ten minutes — six hours when the definition names none — is a run whose worker died. It is closed `failed` through the run service (`ctx.runs.close`, which is why the manifest extends `tool.invoke`), so `bots.run.closed` is emitted and its endpoint token is revoked; at most 200 per pass. Nothing else ever ended such a run, and everything that waits for runs to end (the memory feed holds a bot's output back while one of its runs is open) waited with it.
+
 ## Events
 
 Emitted: `bots.bot.loaded`, `bots.bot.invalid`, `bots.bot.removed` (the loader above; payload in
