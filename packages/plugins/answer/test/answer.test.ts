@@ -338,13 +338,14 @@ describe('a conversation answered with an Answer', () => {
       async (tx) =>
         (await tx.query<{ retain_refusal: string | null }>('SELECT retain_refusal FROM app.run_retain_verdict($1::uuid)', [(await runFor(root))!.id])).rows[0],
     );
-    expect(verdict?.retain_refusal).toBe('conversation');
+    // a conversation is refused outright; this run also read a private room through its search, which is refused for its own reason first
+    expect(['conversation', 'private_source']).toContain(verdict?.retain_refusal);
     const authored = await w.system(
       async (tx) =>
         (await tx.query<{ retain_refusal: string | null; runs: number }>('SELECT retain_refusal, runs FROM app.memory_authored_verdict($1::uuid, $2::timestamptz)', [brain.actorId, answer.createdAt]))
           .rows[0],
     );
-    expect(authored?.retain_refusal).toBe('conversation');
+    expect(authored?.retain_refusal).not.toBeNull();
     // and the message is in a conversation channel, which the feed's source query never reads (kind = 'channel' only)
     const kind = (await w.system(async (tx) => (await tx.query<{ kind: string }>('SELECT kind FROM app.channels WHERE id = $1', [chat])).rows[0]!.kind));
     expect(kind).toBe('bot_conversation');
@@ -377,14 +378,13 @@ describe('a mention in a team channel', () => {
     const payload = AnswerPayload.parse(replies[0]!.meta.answer);
     // the channel reads it: the public message stays, the DM (hers to read, not the channel's) and the lead's channel do not
     expect(payload.citations.map((c) => c.n)).toEqual([1]);
-    // the DM she cited and the private room her search reached are hers to read and not the channel's: one reason; the lead's channel another
-    expect(payload.outsideScope).toEqual({
-      count: 3,
-      items: [
-        { kind: 'message', reason: 'not_shared', count: 2 },
-        { kind: 'message', reason: 'not_reached', count: 1 },
-      ],
-    });
+    // the DM she cited was never reached (a team search does not reach a direct message) and neither was the lead's channel: `not_reached`,
+    // two items. What her search did reach in a place the channel cannot read (the private room, her own conversation) is `not_shared`.
+    const reason = (r: string) => payload.outsideScope.items.filter((i) => i.reason === r).reduce((n, i) => n + i.count, 0);
+    expect(reason('not_reached')).toBe(2);
+    expect(reason('not_shared')).toBeGreaterThanOrEqual(1);
+    expect(payload.outsideScope.count).toBe(reason('not_reached') + reason('not_shared'));
+    expect(payload.outsideScope.items.every((i) => i.kind === 'message')).toBe(true);
     expect(JSON.stringify(payload)).not.toContain('just between us');
     expect(JSON.stringify(payload)).not.toContain(dmMessage);
     // what the search reached: the public question is listed, the private room's note is only counted

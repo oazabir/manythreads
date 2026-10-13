@@ -391,7 +391,8 @@ describe('who may ask', () => {
 });
 
 describe('the people who will read the reply', () => {
-  const sharedCites = [
+  // a function: the ids exist only once the file's beforeAll has made them
+  const sharedCites = (): Array<{ kind: string; ref: string; team?: string }> => [
     { kind: 'message', ref: devMsg },
     { kind: 'message', ref: dmNadiaOmarMsg },
     { kind: 'message', ref: teamPrivateMsg },
@@ -421,7 +422,7 @@ describe('the people who will read the reply', () => {
   ];
 
   it('a reply in a team channel keeps what that channel may open and sets aside what only the asker can', async () => {
-    const v = await viewOf(botActor, await inDev(nadia.actorId, sharedLines()), sharedCites);
+    const v = await viewOf(botActor, await inDev(nadia.actorId, sharedLines()), sharedCites());
     expect(v.run).toMatchObject({ private: false, reach: 'team', channelId: dev });
     const row = (i: number) => ({ found: v.citations[i]!.found, audience: v.citations[i]!.audience, scope: v.citations[i]!.scope });
     // readable by Nadia and by the channel
