@@ -8,6 +8,13 @@ import { defineConfig } from 'vitest/config';
  */
 const HOOK_TIMEOUT_MS = 120_000;
 
+/**
+ * A DB-backed test opens a real server and runs several transactions; under the full suite (three workers, one shared Postgres) a single
+ * test regularly passes 5 s while passing alone in under 2 s (threads inbox paging, seed-guard, identity). Correctness assertions are
+ * unchanged; the hostile-input timing tests carry their own ceilings (`expectLinear`).
+ */
+const TEST_TIMEOUT_MS = 30_000;
+
 export default defineConfig({
   test: {
     passWithNoTests: true,
@@ -26,6 +33,7 @@ export default defineConfig({
           ],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
+          testTimeout: TEST_TIMEOUT_MS,
         },
       },
       {
@@ -35,6 +43,7 @@ export default defineConfig({
           exclude: ['**/node_modules/**', '**/dist/**'],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
+          testTimeout: TEST_TIMEOUT_MS,
         },
       },
       {
@@ -44,6 +53,7 @@ export default defineConfig({
           exclude: ['**/node_modules/**', '**/dist/**'],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
+          testTimeout: TEST_TIMEOUT_MS,
         },
       },
       {
@@ -55,6 +65,7 @@ export default defineConfig({
           exclude: ['**/node_modules/**', '**/dist/**'],
           passWithNoTests: false,
           hookTimeout: HOOK_TIMEOUT_MS,
+          testTimeout: TEST_TIMEOUT_MS,
         },
       },
       {
@@ -64,6 +75,7 @@ export default defineConfig({
           exclude: ['**/node_modules/**', '**/dist/**'],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
+          testTimeout: TEST_TIMEOUT_MS,
         },
       },
     ],
