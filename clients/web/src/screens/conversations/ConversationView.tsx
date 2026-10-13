@@ -186,8 +186,8 @@ export function ConversationView() {
 
   if (opened.status === 'loading') return <div className="view-empty" aria-busy="true" data-testid="conversation-loading" />;
   if (opened.status === 'error' && blocked === null) return <CannotTalk error={opened.error} slug={team} />;
+  // On a phone an open thread has the screen to itself; with none open the message box comes first and the list sits under it (conversations.css).
   const showList = !narrow || thread === null;
-  const showMain = !narrow || thread !== null;
   const empty = EMPTY[scope](botName, botSlug);
 
   return (
@@ -240,68 +240,66 @@ export function ConversationView() {
           )}
         </div>
       ) : null}
-      {showMain ? (
-        <div className="inr" data-landmark="conversation-main">
-          {narrow ? (
-            <button type="button" className="btn s back-to-list" data-testid="conversation-back" onClick={() => go({ thread: null })}>
-              <BackIcon />
-              <span>Conversations</span>
-            </button>
-          ) : null}
-          {thread !== null ? (
-            <ThreadBody key={thread} rootId={thread} variant="main" channelId={selected?.channelId ?? bot?.channelId ?? null} awaiting={blocked ? null : botName} replyBlocked={blocked ? blocked.message : null} />
-          ) : (
-            <div className="cv-start" data-testid="conversation-start">
-              <div className="cv-intro">
-                <Avatar name={botName} kind="agent" />
-                <div>
-                  <h2 className="cv-name" data-testid="conversation-bot">{botName}</h2>
-                  <p className="cv-role">{botRole || 'Ask it anything it is here for.'}</p>
-                </div>
+      <div className="inr" data-landmark="conversation-main">
+        {narrow && thread !== null ? (
+          <button type="button" className="btn s back-to-list" data-testid="conversation-back" onClick={() => go({ thread: null })}>
+            <BackIcon />
+            <span>Conversations</span>
+          </button>
+        ) : null}
+        {thread !== null ? (
+          <ThreadBody key={thread} rootId={thread} variant="main" channelId={selected?.channelId ?? bot?.channelId ?? null} awaiting={blocked ? null : botName} replyBlocked={blocked ? blocked.message : null} />
+        ) : (
+          <div className="cv-start" data-testid="conversation-start">
+            <div className="cv-intro">
+              <Avatar name={botName} kind="agent" />
+              <div>
+                <h2 className="cv-name" data-testid="conversation-bot">{botName}</h2>
+                <p className="cv-role">{botRole || 'Ask it anything it is here for.'}</p>
               </div>
-              {bot ? (
-                <div className="cv-chips" data-testid="prompt-chips" data-source={bot.promptSource}>
-                  {bot.prompts.map((p) => (
-                    <button key={p} type="button" className="cv-chip" disabled={sending} data-testid="prompt-chip" onClick={() => void start(p, [])}>
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {blocked ? (
-                <div className="cv-blocked" role="status" data-testid="conversation-blocked" data-code={blocked.code}>
-                  <Alert>{blocked.message}</Alert>
-                  <p className="cv-hint">Your earlier conversations with {botName} and the ones shared with the team are listed beside this.</p>
-                </div>
-              ) : null}
-              {failed ? (
-                <div className="cv-failed" data-testid="conversation-send-failed">
-                  <Alert>{failed.message}</Alert>
-                  <button type="button" className="btn s" onClick={() => void start(failed.body, failed.attachments)}>Send again</button>
-                </div>
-              ) : null}
-              {bot ? (
-                <>
-                  <div className="cv-compose">
-                    <Composer
-                      draftKey={`conversation:${bot.channelId}`}
-                      placeholder={`Ask ${bot.botName} anything…`}
-                      label={`Message ${bot.botName}`}
-                      channelId={bot.channelId}
-                      threadRootId={null}
-                      people={people}
-                      channelNames={channelNames}
-                      onSend={(body, attachments) => void start(body, attachments)}
-                      autoFocus
-                    />
-                  </div>
-                  <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>
-                </>
-              ) : null}
             </div>
-          )}
-        </div>
-      ) : null}
+            {bot ? (
+              <div className="cv-chips" data-testid="prompt-chips" data-source={bot.promptSource}>
+                {bot.prompts.map((p) => (
+                  <button key={p} type="button" className="cv-chip" disabled={sending} data-testid="prompt-chip" onClick={() => void start(p, [])}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {blocked ? (
+              <div className="cv-blocked" role="status" data-testid="conversation-blocked" data-code={blocked.code}>
+                <Alert>{blocked.message}</Alert>
+                <p className="cv-hint">Your earlier conversations with {botName} and the ones shared with the team are listed beside this.</p>
+              </div>
+            ) : null}
+            {failed ? (
+              <div className="cv-failed" data-testid="conversation-send-failed">
+                <Alert>{failed.message}</Alert>
+                <button type="button" className="btn s" onClick={() => void start(failed.body, failed.attachments)}>Send again</button>
+              </div>
+            ) : null}
+            {bot ? (
+              <>
+                <div className="cv-compose">
+                  <Composer
+                    draftKey={`conversation:${bot.channelId}`}
+                    placeholder={`Ask ${bot.botName} anything…`}
+                    label={`Message ${bot.botName}`}
+                    channelId={bot.channelId}
+                    threadRootId={null}
+                    people={people}
+                    channelNames={channelNames}
+                    onSend={(body, attachments) => void start(body, attachments)}
+                    autoFocus
+                  />
+                </div>
+                <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>
+              </>
+            ) : null}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
