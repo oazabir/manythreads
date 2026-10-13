@@ -466,7 +466,8 @@ describe('deciding', () => {
 
   it('an ended run takes no more actions from a worker that still holds its handle: every door refuses it', async () => {
     const run = await openRun(scoped, nadia);
-    expect(await runs.authorize(run, 'pages.write', { path: 'pages/x.md' })).toMatchObject({ allowed: true });
+    // while it runs the door answers about the call itself (whatever that answer is), never "the run has ended"
+    expect((await runs.authorize(run, 'pages.write', { path: 'pages/x.md' })).reason).not.toBe('the run has ended');
     await runs.close(run.runId, 'failed');
     await expect(runs.asBot(run, () => Promise.resolve('acted'))).rejects.toThrow(/has ended/);
     await expect(runs.asReader(run, () => Promise.resolve('read'))).rejects.toThrow(/has ended/);

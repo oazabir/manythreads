@@ -23,7 +23,9 @@ CREATE TRIGGER approvals_had_run BEFORE INSERT ON app.approvals FOR EACH ROW EXE
 -- record exactly those as "never had a run" and the fail-closed rule would let them through. The system role writes the table (see 0002 for why the
 -- migrating role is not enough); a test seeds legacy rows and runs this block.
 -- legacy-begin
+-- Except the rows of a tool that may never wait (`approvals_never_gated`, 0002, NOT VALID): the constraint is checked on any UPDATE of such a row,
+-- and a final legacy row of that kind is history that nothing re-runs, so it keeps `had_run = false`.
 SET ROLE manythreads_system;
-UPDATE app.approvals SET had_run = true;
+UPDATE app.approvals SET had_run = true WHERE tool NOT IN ('memory.retain');
 RESET ROLE;
 -- legacy-end
