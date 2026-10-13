@@ -46,7 +46,7 @@ describe('the citations', () => {
     const { payload, keptCitations, droppedCitations } = buildAnswer(i, v);
     expect(keptCitations).toBe(2);
     expect(droppedCitations).toBe(0);
-    expect(payload.citations.map((c) => [c.n, c.kind, c.label, c.scope])).toEqual([
+    expect(payload.citations.map((c) => (c.kind === 'masked' ? [c.n, c.kind] : [c.n, c.kind, c.label, c.scope]))).toEqual([
       [1, 'message', 'Tester: 213 passing at f07b3d9', 'team'],
       [2, 'page', 'pages/specs/schedule-migration.md', 'team'],
     ]);
@@ -117,7 +117,8 @@ describe('the citations', () => {
   it('labels a source with a plain word when the platform could not read a name', () => {
     const i = input({ citations: [{ kind: 'file', fileId: uuid(10) }] });
     const { payload } = buildAnswer(i, view({ citations: [{ found: true, scope: 'team', audience: true, label: '   ' }] }));
-    expect(payload.citations[0]?.label).toBe('A file');
+    const first = payload.citations[0];
+    expect(first !== undefined && first.kind !== 'masked' ? first.label : null).toBe('A file');
   });
 });
 
@@ -283,7 +284,7 @@ describe('hostile input', () => {
     const { payload } = buildAnswer(i, v);
     expect(payload.citations).toHaveLength(ANSWER_LIMITS.citations);
     expect(payload.sourcesReached.length).toBeLessThanOrEqual(ANSWER_LIMITS.sources);
-    expect(payload.citations.every((c) => c.label.length <= ANSWER_LIMITS.label)).toBe(true);
+    expect(payload.citations.every((c) => c.kind === 'masked' || c.label.length <= ANSWER_LIMITS.label)).toBe(true);
     expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(96_000);
   });
 });

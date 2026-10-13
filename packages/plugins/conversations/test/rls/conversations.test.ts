@@ -431,3 +431,77 @@ describe('app.conversations: the index and its visibility', () => {
     expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.messages WHERE id = $1', [id])).rows.length)).toBe(1);
   });
 });
+
+describe('app.conversations_mark_shared (P5-17)', () => {
+  let chat = '';
+  let root = '';
+  let teamChannel = '';
+  let copy = '';
+  let otherTeamChannel = '';
+  let otherTeamCopy = '';
+
+  const mark = (p: Persona, thread: string, channel: string, message: string): Promise<boolean> =>
+    as(p, async (tx) => (await tx.query<{ ok: boolean }>('SELECT app.conversations_mark_shared($1::uuid, $2::uuid, $3::uuid) AS ok', [thread, channel, message])).rows[0]!.ok);
+  const stateOf = (thread: string) =>
+    sys(async (tx) => (await tx.query<{ visibility: string; shared_to: string | null; shared_root_id: string | null; shared_by: string | null }>(
+      'SELECT visibility, shared_to, shared_root_id, shared_by FROM app.conversations WHERE thread_root_id = $1', [thread])).rows[0]!);
+  const reset = (thread: string): Promise<unknown> =>
+    sys((tx) => tx.query(`UPDATE app.conversations SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL WHERE thread_root_id = $1`, [thread]));
+
+  beforeAll(async () => {
+    chat = (await open(priya)).channel_id;
+    root = await say(chat, priya.actorId, 'Priya asks something');
+    await sys(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.conversations (thread_root_id, workspace_id, team_id, bot_id, person_id, channel_id) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [root, omar.workspaceId, ENG, botId, priya.personId, chat],
+      );
+      teamChannel = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'shared-to-eng', 'channel', false) RETURNING id`,
+          [omar.workspaceId, ENG],
+        )
+      ).rows[0]!.id;
+      otherTeamChannel = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'shared-to-marketing', 'channel', false) RETURNING id`,
+          [omar.workspaceId, TEAM_IDS.Marketing],
+        )
+      ).rows[0]!.id;
+    });
+    copy = await say(teamChannel, priya.actorId, 'A masked copy');
+    otherTeamCopy = await say(otherTeamChannel, priya.actorId, 'A masked copy elsewhere');
+  });
+
+  it('marks the asker’s own conversation shared, through a copy that is theirs, in a channel of the bot’s team', async () => {
+    expect(await mark(priya, root, teamChannel, copy)).toBe(true);
+    expect(await stateOf(root)).toEqual({ visibility: 'shared', shared_to: teamChannel, shared_root_id: copy, shared_by: priya.actorId });
+    await reset(root);
+  });
+
+  it('refuses everybody but the asker, a copy that is not theirs, and a channel they cannot post in', async () => {
+    // somebody else's conversation is theirs to change in no way: nothing is marked
+    expect(await mark(nadia, root, teamChannel, await say(teamChannel, nadia.actorId, 'Nadia’s own message'))).toBe(false);
+    expect((await stateOf(root)).visibility).toBe('private');
+    // a message that is not the caller's own
+    expect(await code(mark(priya, root, teamChannel, await say(teamChannel, nadia.actorId, 'Not Priya’s')))).toBe('42501');
+    // a message in another channel than the one named
+    expect(await code(mark(priya, root, teamChannel, otherTeamCopy))).toBe('42501');
+    // a guest shares nothing
+    expect(await code(mark(lena, root, teamChannel, copy))).toBe('42501');
+    // a bot cannot
+    await expect(
+      withActor({ kind: 'bot', id: botActorId, workspaceId: omar.workspaceId } as Actor, async (tx) => tx.query('SELECT app.conversations_mark_shared($1::uuid, $2::uuid, $3::uuid)', [root, teamChannel, copy]), { pool: appPool }),
+    ).rejects.toMatchObject({ code: '42501' });
+    expect((await stateOf(root)).visibility).toBe('private');
+  });
+
+  it('a channel of another team leaves the conversation private (the copy is posted, the team has nothing to open)', async () => {
+    expect(await mark(priya, root, otherTeamChannel, otherTeamCopy)).toBe(false);
+    expect((await stateOf(root)).visibility).toBe('private');
+  });
+
+  it('is the only way a caller changes the index: a direct UPDATE is still refused', async () => {
+    expect(await code(as(priya, (tx) => tx.query(`UPDATE app.conversations SET visibility = 'shared', shared_at = now() WHERE thread_root_id = $1`, [root])))).toBe('42501');
+  });
+});

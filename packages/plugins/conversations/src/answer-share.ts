@@ -217,8 +217,11 @@ export function registerAnswerShareRoutes(ctx: PluginContext): void {
         throw new HttpError(409, 'bot_has_no_conversation_trigger', `${bot.name} does not take part in conversations: its definition has no conversation trigger.`);
       }
       // the person's own conversation with that bot (made on first use): the one door every conversation goes through
-      const opened = (await tx.query<{ channel_id: string }>('SELECT channel_id FROM app.conversations_open($1::uuid)', [bot.id])).rows[0];
+      const opened = (await tx.query<{ channel_id: string; created: boolean }>('SELECT channel_id, created FROM app.conversations_open($1::uuid)', [bot.id])).rows[0];
       if (!opened) throw conflict('The conversation could not be opened.');
+      if (opened.created) {
+        await ctx.audit.emit(tx, { type: 'channel.channel.created', channelId: opened.channel_id, teamId: null, name: '', kind: 'bot_conversation', private: true });
+      }
       // Who reads the destination decides what is handed over, with the very rule a channel share uses. A private conversation's only reader is
       // the asker, so nothing is lost; if somebody was given access to it (an ACL grant), the copy is masked for them like any share.
       const view = await loadShareView(tx, params, { channelId: opened.channel_id });

@@ -120,20 +120,20 @@ function CiteBody({ n, label }: { n: number; label: string }): ReactNode {
 }
 
 function Citation({ c, teamSlug, teamSlugOf, who }: { c: AnswerCitation | AnswerUnsupportedCitation; teamSlug: string; teamSlugOf: TeamSlugOf; who: string | null }) {
-  if (isSupportedCitation(c) && c.kind === ANSWER_MASKED_KIND) {
-    return (
-      <li>
-        <span className="an-cite an-cite-masked" data-testid="answer-citation" data-kind="masked" data-n={c.n} data-source={c.source}>
-          <CiteBody n={c.n} label={maskedLine(who, c.source)} />
-        </span>
-      </li>
-    );
-  }
   if (!isSupportedCitation(c)) {
     return (
       <li>
         <span className="an-cite an-cite-unsupported" data-testid="answer-citation" data-kind={c.kind} data-n={c.n}>
           <CiteBody n={c.n} label="Unsupported source" />
+        </span>
+      </li>
+    );
+  }
+  if (c.kind === ANSWER_MASKED_KIND) {
+    return (
+      <li>
+        <span className="an-cite an-cite-masked" data-testid="answer-citation" data-kind="masked" data-n={c.n} data-source={c.source}>
+          <CiteBody n={c.n} label={maskedLine(who, c.source)} />
         </span>
       </li>
     );
@@ -218,15 +218,15 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
   const marker = useMemo(
     () => (n: number, key: string): ReactNode => {
       const c = byNumber.get(n);
-      if (c && isSupportedCitation(c) && c.kind === ANSWER_MASKED_KIND) {
-        // a source the copy's readers may not open: the number stays (the claim rests on something), muted, and says so
-        return (
-          <sup key={key} className="an-ref an-ref-masked" data-testid="answer-marker-masked" title={maskedLine(payload.answeredFor.name, c.source)}>
-            <span>{n}</span>
-          </sup>
-        );
-      }
       if (c && isSupportedCitation(c)) {
+        if (c.kind === ANSWER_MASKED_KIND) {
+          // a source the copy's readers may not open: the number stays (the claim rests on something), muted, and says so
+          return (
+            <sup key={key} className="an-ref an-ref-masked" data-testid="answer-marker-masked" title={maskedLine(payload.answeredFor.name, c.source)}>
+              <span>{n}</span>
+            </sup>
+          );
+        }
         const target = citationTarget(c, slug, teamSlugOf);
         const label = `Source ${n}: ${c.label}`;
         if (target?.type === 'route') {

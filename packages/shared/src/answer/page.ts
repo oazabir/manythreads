@@ -9,12 +9,15 @@ export const ANSWER_PAGES_DIR = 'pages/answers';
 const TITLE_MAX = 80;
 const SLUG_MAX = 48;
 
-/** A title for the page: the first line of the answer, without markdown marks and `[n]` markers; "Saved answer" when it has none. */
+/**
+ * A title for the page: the first sentence of the first line of the answer, without markdown marks and `[n]` markers, at most 80 characters;
+ * "Saved answer" when it has none.
+ */
 export function pageTitle(body: string): string {
   for (const raw of body.split('\n')) {
+    const line = raw.trim();
     let out = '';
     let i = 0;
-    const line = raw.trim();
     // leading marks of a heading, quote or list item
     while (i < line.length && (line[i] === '#' || line[i] === '>' || line[i] === '-' || line[i] === '*' || line[i] === '+' || line[i] === ' ')) i += 1;
     while (i < line.length && out.length < TITLE_MAX + 20) {
@@ -31,7 +34,15 @@ export function pageTitle(body: string): string {
       if (ch !== '*' && ch !== '_' && ch !== '`' && ch !== '#') out += ch;
       i += 1;
     }
-    const title = out.replace(/\s+/g, ' ').trim();
+    // one space between words, none before a stop that a marker left behind, and the first sentence only
+    let title = out.replace(/\s+/g, ' ').replace(/ ([.,;:!?])/g, '$1').trim();
+    for (let k = 0; k < title.length; k += 1) {
+      const c = title[k]!;
+      if ((c === '.' || c === '!' || c === '?' || c === '。' || c === '؟') && (k + 1 === title.length || title[k + 1] === ' ')) {
+        title = title.slice(0, k).trim();
+        break;
+      }
+    }
     if (title !== '') return title.length <= TITLE_MAX ? title : `${title.slice(0, TITLE_MAX - 1).trimEnd()}…`;
   }
   return 'Saved answer';

@@ -828,6 +828,275 @@ describe('one answer per run, and what a hand-off may name', () => {
   });
 });
 
+describe('sharing an answer of one’s own conversation (P5-17)', () => {
+  interface ShareView {
+    answer: { messageId: string; channelId: string; threadRootId: string | null; teamId: string; botId: string; personId: string; payload: Record<string, unknown> };
+    target: { kind: string; channelId: string | null; name: string | null; teamId: string | null; private: boolean; archived: boolean; canPost: boolean } | null;
+    reach: 'asker' | 'team' | 'none';
+    citations: Array<{ n: number; kept: boolean; label: string | null; at: string | null }>;
+    sources: Array<{ kept: boolean }>;
+  }
+  const viewAsPerson = (p: Persona, message: string, channelId: string | null, page = false): Promise<ShareView | null> =>
+    as(p, async (tx) => (await tx.query<{ v: ShareView | null }>('SELECT app.answer_share_view($1::uuid, $2::uuid, $3::boolean) AS v', [message, channelId, page])).rows[0]!.v);
+  const keptNumbers = (v: ShareView | null): number[] => (v?.citations ?? []).filter((c) => c.kept).map((c) => c.n);
+
+  const msgCite = (n: number, id: string, channelId: string, over: Record<string, unknown> = {}) => ({
+    kind: 'message', n, label: `stored label ${String(n)}`, scope: 'team', messageId: id, channelId, teamId: ENG, channelKind: 'channel', channelName: 'x', threadRootId: null, ...over,
+  });
+  const payloadOf = (person: Persona, citations: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    version: 1,
+    body: citations.map((c) => `Claim [${String(c['n'])}].`).join(' '),
+    citations,
+    lineage: citations.map((c) => ({ n: c['n'], kind: c['kind'], label: c['label'], at: null, snippet: 'a quote' })),
+    sourcesReached: [],
+    outsideScope: { count: 0, items: [] },
+    answeredFor: { personId: person.personId, name: person.name, scope: 'scoped', alias: 'smart', botId, runId: randomUUID() },
+    chips: [],
+    ...extra,
+  });
+  const answerMessage = (chat: string, root: string, person: Persona, citations: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}): Promise<string> =>
+    message(chat, botActor, 'An answer', root, { answer: payloadOf(person, citations, extra), runId: randomUUID() });
+
+  let omarAnswer = '';
+  let marketingPage = '';
+
+  beforeAll(async () => {
+    marketingPage = 'pages/launch/plan.md';
+    const sources = [
+      { kind: 'message', ref: devMsg, label: 'stored', marker: 'full' },
+      { kind: 'message', ref: leadsMsg, label: 'stored', marker: 'full' },
+      { kind: 'drive', ref: 'doc-1', label: null, marker: 'scoped' },
+      { kind: 'page', ref: 'pages/specs/schedule-migration.md', label: 'stored', marker: 'full' },
+      { kind: 'memory', ref: 'bank:team:engineering', label: 'Team memory', marker: 'full' },
+    ];
+    omarAnswer = await answerMessage(
+      omarChat,
+      omarConversationRoot,
+      omar,
+      [
+        msgCite(1, devMsg, dev),
+        msgCite(2, leadsMsg, leads, { scope: 'channel', channelName: 'leads' }),
+        msgCite(3, dmOmarRafiMsg, dmOmarRafi, { scope: 'channel', channelKind: 'dm', channelName: null, teamId: null }),
+        { kind: 'page', n: 4, label: 'pages/specs/schedule-migration.md', scope: 'team', teamId: ENG, path: 'pages/specs/schedule-migration.md' },
+        { kind: 'run', n: 5, label: 'Brain · conversation', scope: 'person', runId: omarConversation, botId, botSlug: 'brain' },
+        { kind: 'file', n: 6, label: 'runbook.pdf', scope: 'team', fileId: devFile },
+        msgCite(7, teamPrivateMsg, teamPrivate, { scope: 'channel', channelName: 'release-room' }),
+        { kind: 'page', n: 8, label: 'pages/launch/plan.md', scope: 'channel', teamId: MKT, path: marketingPage },
+        msgCite(9, guestOpenMsg, guestOpen, { channelName: 'guest-open' }),
+      ],
+      { sourcesReached: sources },
+    );
+  });
+
+  it('is the asker’s own answer or nothing: not a teammate, not an admin, not a deleted one, not a plain message, not a copy in a channel', async () => {
+    expect(await viewAsPerson(omar, omarAnswer, dev)).not.toBeNull();
+    // somebody else's answer is nothing at all to the owner and admin of the workspace, and to a teammate
+    const nadiaAnswer = await answerMessage(nadiaChat, nadiaRoot, nadia, [msgCite(1, devMsg, dev)]);
+    expect(await viewAsPerson(omar, nadiaAnswer, dev)).toBeNull();
+    expect(await viewAsPerson(rafi, nadiaAnswer, dev)).toBeNull();
+    expect(await viewAsPerson(nadia, omarAnswer, dev)).toBeNull();
+    expect(await viewAsPerson(nadia, nadiaAnswer, dev)).not.toBeNull();
+    // an answer that was for another person, even sitting in this one's conversation
+    const forSomeoneElse = await answerMessage(omarChat, omarConversationRoot, nadia, [msgCite(1, devMsg, dev)]);
+    expect(await viewAsPerson(omar, forSomeoneElse, dev)).toBeNull();
+    // an answer by another bot than the conversation's
+    const otherBot = await message(omarChat, otherBotActor, 'Not this conversation’s bot', omarConversationRoot, {
+      answer: { ...payloadOf(omar, [msgCite(1, devMsg, dev)]), answeredFor: { personId: omar.personId, name: 'Omar', scope: 'scoped', alias: null, botId: otherBotId, runId: randomUUID() } },
+      runId: randomUUID(),
+    });
+    expect(await viewAsPerson(omar, otherBot, dev)).toBeNull();
+    // a plain message, a message that has an answer but sits in a channel (a shared copy is not shared again from there), and a deleted answer
+    expect(await viewAsPerson(omar, omarConversationRoot, dev)).toBeNull();
+    const copy = await message(dev, omar.actorId, 'A shared copy', null, { answer: payloadOf(omar, [msgCite(1, devMsg, dev)]) });
+    expect(await viewAsPerson(omar, copy, dev)).toBeNull();
+    const gone = await answerMessage(omarChat, omarConversationRoot, omar, [msgCite(1, devMsg, dev)]);
+    await sys(async (tx) => {
+      await tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [gone]);
+    });
+    expect(await viewAsPerson(omar, gone, dev)).toBeNull();
+    // a bot and a guest share nothing; a call that names both a channel and a page is not a call
+    expect(await asBot(botActor, undefined, async (tx) => (await tx.query('SELECT app.answer_share_view($1::uuid, NULL, false) AS v', [omarAnswer])).rows[0]!['v'])).toBeNull();
+    expect(await viewAsPerson(omar, omarAnswer, dev, true)).toBeNull();
+  });
+
+  it('a team channel keeps what the team may open and what lives in it, and masks every other source', async () => {
+    const v = await viewAsPerson(omar, omarAnswer, dev);
+    expect(v).toMatchObject({ reach: 'team', target: { kind: 'channel', channelId: dev, name: 'dev', canPost: true, private: false } });
+    // team message, team page, team file, a public channel's message: kept. A private channel, a DM, the asker's own run, a private room, another team's page: masked
+    expect(keptNumbers(v)).toEqual([1, 4, 6, 9]);
+    expect(v!.citations.find((c) => c.n === 1)).toMatchObject({ label: 'The deploy waits for the Monday window' });
+    // a masked one carries no label and no date
+    expect(v!.citations.find((c) => c.n === 2)).toEqual({ n: 2, kept: false, label: null, at: null });
+    // what the run read follows the same readers
+    expect(v!.sources.map((s) => s.kept)).toEqual([true, false, false, true, false]);
+  });
+
+  it('a private room of the team is the team’s too, and what lives in it is kept besides', async () => {
+    const v = await viewAsPerson(omar, omarAnswer, teamPrivate);
+    expect(v).toMatchObject({ reach: 'team', target: { private: true } });
+    expect(keptNumbers(v)).toEqual([1, 4, 6, 7, 9]);
+  });
+
+  it('a channel a guest may also read keeps only what lives in it; so does one a person of another team may read', async () => {
+    const guest = await viewAsPerson(omar, omarAnswer, guestOpen);
+    expect(guest).toMatchObject({ reach: 'none' });
+    expect(keptNumbers(guest)).toEqual([9]);
+    expect(guest!.sources.every((s) => !s.kept)).toBe(true);
+    const other = await viewAsPerson(omar, omarAnswer, otherTeamOpen);
+    expect(other).toMatchObject({ reach: 'none' });
+    expect(keptNumbers(other)).toEqual([]);
+  });
+
+  it('a person demoted to guest who keeps a roster row and an ACL grant is not the team: the channel is `none` again', async () => {
+    const ch = await channel({ name: 'share-demoted' });
+    await acl(ch, 'person', priya.personId);
+    expect(await viewAsPerson(omar, omarAnswer, ch)).toMatchObject({ reach: 'team' });
+    const original = await sys(async (tx) => (await tx.query<{ role: string }>('SELECT role FROM app.workspace_members WHERE person_id = $1', [priya.personId])).rows[0]!.role);
+    await asOwner(
+      `ALTER TABLE app.workspace_members DISABLE TRIGGER workspace_members_guard;
+       UPDATE app.workspace_members SET role = 'guest' WHERE person_id = '${priya.personId}';
+       ALTER TABLE app.workspace_members ENABLE TRIGGER workspace_members_guard;`,
+    );
+    try {
+      const after = await viewAsPerson(omar, omarAnswer, ch);
+      expect(after).toMatchObject({ reach: 'none' });
+      expect(keptNumbers(after)).toEqual([]);
+    } finally {
+      await asOwner(`UPDATE app.workspace_members SET role = '${original.replaceAll("'", "''")}' WHERE person_id = '${priya.personId}'`);
+    }
+  });
+
+  it('a direct message keeps only what lives in it; the asker’s own conversation with another bot keeps what the asker may open (a hand-off)', async () => {
+    const dm = await viewAsPerson(omar, omarAnswer, dmOmarRafi);
+    expect(dm).toMatchObject({ reach: 'none', target: { kind: 'dm', name: null } });
+    expect(keptNumbers(dm)).toEqual([3]);
+    const own = await viewAsPerson(omar, omarAnswer, omarChat);
+    expect(own).toMatchObject({ reach: 'asker', target: { kind: 'bot_conversation' } });
+    expect(keptNumbers(own)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    // but give somebody a grant on that conversation and it is no longer the asker's alone
+    const openFor = (p: Persona, bot: string): Promise<string> =>
+      as(p, async (tx) => (await tx.query<{ channel_id: string }>('SELECT channel_id FROM app.conversations_open($1::uuid)', [bot])).rows[0]!.channel_id);
+    const brainChat = await openFor(priya, botId);
+    const coderChat = await openFor(priya, otherBotId);
+    const answer = await answerMessage(brainChat, await message(brainChat, priya.actorId, 'A question'), priya, [msgCite(1, devMsg, dev)]);
+    expect(await viewAsPerson(priya, answer, coderChat)).toMatchObject({ reach: 'asker' });
+    await acl(coderChat, 'person', lena.personId);
+    expect(await viewAsPerson(priya, answer, coderChat)).toMatchObject({ reach: 'none' });
+  });
+
+  it('the team’s pages are read by the team: a team source is kept, a source only the asker may open is masked', async () => {
+    const v = await viewAsPerson(omar, omarAnswer, null, true);
+    expect(v).toMatchObject({ reach: 'team', target: { kind: 'page', teamId: ENG, canPost: true } });
+    expect(keptNumbers(v)).toEqual([1, 4, 6, 9]);
+  });
+
+  it('reads the source again as the sharer: an edited message has its new words, a deleted one is not kept, and one the sharer lost is not kept', async () => {
+    const fresh = await message(dev, omar.actorId, 'First words of the note');
+    const doomed = await message(dev, omar.actorId, 'A note that will be deleted');
+    const answer = await answerMessage(omarChat, omarConversationRoot, omar, [msgCite(1, fresh, dev), msgCite(2, doomed, dev)]);
+    expect((await viewAsPerson(omar, answer, dev))!.citations).toMatchObject([{ n: 1, kept: true, label: 'First words of the note' }, { n: 2, kept: true }]);
+    await sys(async (tx) => {
+      await tx.query("UPDATE app.messages SET body = 'Other words now', body_plain = 'Other words now' WHERE id = $1", [fresh]);
+      await tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [doomed]);
+    });
+    const after = await viewAsPerson(omar, answer, dev);
+    expect(after!.citations[0]).toMatchObject({ n: 1, kept: true, label: 'Other words now' });
+    expect(after!.citations[1]).toEqual({ n: 2, kept: false, label: null, at: null });
+    // a channel the sharer cannot read at all is no target (and every citation is left unjudged)
+    const unreadable = await viewAsPerson(omar, answer, nadiaChat);
+    expect(unreadable).toMatchObject({ target: null, reach: 'none', citations: [], sources: [] });
+  });
+
+  it('survives hostile payloads: a citation of an unknown kind, a path of a hundred thousand characters, numbers that are not numbers', async () => {
+    const answer = await answerMessage(omarChat, omarConversationRoot, omar, [
+      { kind: 'memory', n: 1, label: 'x', scope: 'team' },
+      { kind: 'page', n: 2, label: 'x', scope: 'team', teamId: 'not-a-uuid', path: 'p'.repeat(100_000) },
+      { kind: 'message', n: 'seven', label: 'x', scope: 'team', messageId: devMsg, channelId: dev },
+      { kind: 'message', n: 4, label: 'x', scope: 'team', messageId: "'; DROP TABLE app.messages; --", channelId: dev },
+    ]);
+    const v = await viewAsPerson(omar, answer, dev);
+    expect(v!.citations.map((c) => [c.n, c.kept])).toEqual([[1, false], [2, false], [4, false]]);
+  });
+
+  describe('app.answer_channel_reach', () => {
+    const reach = (p: Persona, channelId: string, team: string | null, asker: string | null): Promise<string> =>
+      as(p, async (tx) => (await tx.query<{ r: string }>('SELECT app.answer_channel_reach($1::uuid, $2::uuid, $3::uuid) AS r', [channelId, team, asker])).rows[0]!.r);
+
+    it('is the rule of a reply: a team channel, a grant to the team, a guest’s grant, a private room, a DM, and a channel the caller cannot read', async () => {
+      expect(await reach(omar, dev, ENG, omar.personId)).toBe('team');
+      expect(await reach(omar, teamAclOpen, ENG, omar.personId)).toBe('team');
+      expect(await reach(omar, guestOpen, ENG, omar.personId)).toBe('none');
+      expect(await reach(omar, otherTeamOpen, ENG, omar.personId)).toBe('none');
+      expect(await reach(omar, dmOmarRafi, ENG, omar.personId)).toBe('none');
+      // another team's channel is not the answer's team's
+      expect(await reach(omar, dev, MKT, omar.personId)).toBe('none');
+      // a channel the caller cannot read has no readers they may learn
+      expect(await reach(nadia, leads, ENG, nadia.personId)).toBe('none');
+    });
+
+    it('`asker` only for a bot conversation whose one reader is the asker', async () => {
+      expect(await reach(omar, omarChat, ENG, omar.personId)).toBe('asker');
+      expect(await reach(omar, omarChat, ENG, nadia.personId)).toBe('none');
+      expect(await reach(omar, omarChat, ENG, null)).toBe('none');
+    });
+  });
+
+  describe('the access log', () => {
+    const record = (p: Persona, message: string, kind: string, channelId: string | null, path: string | null, digest: string, copy: string | null) =>
+      as(p, async (tx) =>
+        (
+          await tx.query<{ id: string }>('SELECT app.answer_share_record($1::uuid, $2, $3::uuid, $4, $5, $6::uuid, 2, ARRAY[3,5], ARRAY[7]) AS id', [message, kind, channelId, path, digest, copy])
+        ).rows[0]!.id,
+      );
+    const find = (p: Persona, message: string, kind: string, channelId: string | null, digest: string) =>
+      as(p, async (tx) => (await tx.query<{ id: string | null }>('SELECT app.answer_share_find($1::uuid, $2, $3::uuid, $4) AS id', [message, kind, channelId, digest])).rows[0]!.id);
+    const digestA = 'a'.repeat(64);
+    const digestB = 'b'.repeat(64);
+
+    it('records the asker’s share, finds it again, and a second record of the same key replaces the pointer', async () => {
+      const copy = await message(dev, omar.actorId, 'A copy');
+      const id = await record(omar, omarAnswer, 'channel', dev, null, digestA, copy);
+      expect(id).toBeTruthy();
+      expect(await find(omar, omarAnswer, 'channel', dev, digestA)).toBe(copy);
+      // another cut is another share; another channel too; another person never finds it
+      expect(await find(omar, omarAnswer, 'channel', dev, digestB)).toBeNull();
+      expect(await find(omar, omarAnswer, 'channel', guestOpen, digestA)).toBeNull();
+      expect(await find(nadia, omarAnswer, 'channel', dev, digestA)).toBeNull();
+      // the copy is deleted and shared again: the same key, a new message
+      await sys(async (tx) => {
+        await tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [copy]);
+      });
+      expect(await find(omar, omarAnswer, 'channel', dev, digestA)).toBeNull();
+      const again = await message(dev, omar.actorId, 'A copy again');
+      expect(await record(omar, omarAnswer, 'channel', dev, null, digestA, again)).toBe(id);
+      expect(await find(omar, omarAnswer, 'channel', dev, digestA)).toBe(again);
+      const row = await sys(async (tx) => (await tx.query('SELECT kind, kept_count, masked_count, removed_count, masked_numbers, removed_numbers FROM app.answer_shares WHERE id = $1', [id])).rows[0]);
+      expect(row).toEqual({ kind: 'channel', kept_count: 2, masked_count: 2, removed_count: 1, masked_numbers: [3, 5], removed_numbers: [7] });
+    });
+
+    it('refuses anybody but the asker, a copy that is not the caller’s own, and a shape that is not a share', async () => {
+      const copy = await message(dev, omar.actorId, 'Omar’s copy');
+      await expect(record(nadia, omarAnswer, 'channel', dev, null, digestB, copy)).rejects.toMatchObject({ code: '42501' });
+      const nadiasCopy = await message(dev, nadia.actorId, 'Nadia’s message');
+      await expect(record(omar, omarAnswer, 'channel', dev, null, digestB, nadiasCopy)).rejects.toMatchObject({ code: '42501' });
+      await expect(record(omar, omarAnswer, 'page', dev, null, digestB, null)).rejects.toMatchObject({ code: '23514' });
+      await expect(record(omar, omarAnswer, 'channel', dev, null, 'not-a-digest', copy)).rejects.toMatchObject({ code: '23514' });
+      // a bot cannot write a share at all
+      await expect(asBot(botActor, nadiaConversation, async (tx) => tx.query('SELECT app.answer_share_record($1::uuid, $2, $3::uuid, NULL, $4, NULL, 0, NULL, NULL)', [omarAnswer, 'channel', dev, digestB]))).rejects.toMatchObject({ code: '42501' });
+    });
+
+    it('is readable by the sharer alone: not a teammate, not an admin who is not the sharer', async () => {
+      const mine = async (p: Persona): Promise<number> => as(p, async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.answer_shares')).rows[0]!.n);
+      expect(await mine(omar)).toBeGreaterThan(0);
+      expect(await mine(nadia)).toBe(0);
+      expect(await mine(rafi)).toBe(0);
+      // and nobody can write it: the request role has no privilege on the table beyond SELECT
+      await expect(as(omar, async (tx) => tx.query('DELETE FROM app.answer_shares'))).rejects.toMatchObject({ code: '42501' });
+      await expect(as(omar, async (tx) => tx.query('UPDATE app.answer_shares SET kept_count = 0'))).rejects.toMatchObject({ code: '42501' });
+    });
+  });
+});
+
 describe('hostile input', () => {
   it('reads a reference that is not an id, a path that is a hundred thousand characters and a kind it does not know as "not found", and never raises', async () => {
     // all of them are in the run's log, so the lookup itself is what is exercised (not only the "never reached" door in front of it)
