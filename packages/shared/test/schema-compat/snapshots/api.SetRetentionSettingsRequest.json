@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "runLogDays": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 3650
+    },
+    "memoryLogDays": {
+      "type": "integer",
+      "minimum": 90,
+      "maximum": 3650
+    }
+  },
+  "additionalProperties": false
+}

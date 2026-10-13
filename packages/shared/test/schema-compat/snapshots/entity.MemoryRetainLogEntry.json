@@ -35,7 +35,8 @@
         "run",
         "approval",
         "page",
-        "run_tool"
+        "run_tool",
+        "concept"
       ]
     },
     "sourceId": {
