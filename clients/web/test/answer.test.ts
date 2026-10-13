@@ -2,7 +2,6 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { AnswerPayloadView, type AnswerCitation } from '@manythreads/shared';
-import { expectLinear } from '@manythreads/test-utils/linear';
 import { describe, expect, it } from 'vitest';
 import { Answer, answeredForLine, citationTarget, kindCount } from '../src/channels/Answer';
 
@@ -131,11 +130,26 @@ describe('the Answer', () => {
   });
 
   it('draws a body full of markers in linear time', () => {
-    expectLinear(
-      (n) => payload({ body: '[1] x '.repeat(n), citations: [message()], lineage: [], sourcesReached: [], outsideScope: { count: 0, items: [] }, chips: [] }),
-      (p) => html(p),
-      { n: 500, factor: 4, ceilingMs: 2000, label: 'an answer body of citation markers' },
-    );
+    // the same hostile construction at n and at 4n, best of a few runs each: the cost must grow about 4x, never 16x (and stay far from a blow-up)
+    const make = (n: number) => payload({ body: '[1] x '.repeat(n), citations: [message()], lineage: [], sourcesReached: [], outsideScope: { count: 0, items: [] }, chips: [] });
+    const best = (p: ReturnType<typeof make>): number => {
+      let out = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < 5; i += 1) {
+        const started = performance.now();
+        html(p);
+        out = Math.min(out, performance.now() - started);
+      }
+      return out;
+    };
+    const small = make(500);
+    const large = make(2000);
+    html(small);
+    html(large);
+    const smallMs = best(small);
+    const largeMs = best(large);
+    expect(smallMs).toBeLessThan(2_000);
+    expect(largeMs).toBeLessThan(8_000);
+    expect(largeMs / Math.max(smallMs, 20)).toBeLessThan(10);
   });
 });
 

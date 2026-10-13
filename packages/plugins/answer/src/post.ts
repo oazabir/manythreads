@@ -38,8 +38,8 @@ export async function postAnswer(ctx: PluginContext, tx: PluginTx, input: Record
 
   const slugs = answer.chips.flatMap((chip) => (chip.kind === 'handoff' ? [chip.botSlug] : []));
   const cites = answer.citations.map((c) => citationRef(c));
-  const res = await tx.query<{ view: unknown }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS view', [JSON.stringify(cites), slugs]);
-  const raw = res.rows[0]?.view ?? null;
+  const res = await tx.query<{ v: unknown }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS v', [JSON.stringify(cites), slugs]);
+  const raw = res.rows[0]?.v ?? null;
   if (raw === null) return refuse('no_run', 'answer.post is for a live run of a bot: there is no run to answer for.');
   const already = AnswerAlready.safeParse(raw);
   if (already.success) {
