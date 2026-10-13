@@ -109,8 +109,8 @@ beforeAll(async () => {
   await w.system(async (tx) => {
     botId = (
       await tx.query<{ id: string }>(
-        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status)
-         VALUES ($1, $2, 'scribe', 'Scribe', '', 'agent', 'rules', 'team', repeat('c', 64), 'active') RETURNING id`,
+        `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, triggers)
+         VALUES ($1, $2, 'scribe', 'Scribe', '', 'agent', 'rules', 'team', repeat('c', 64), 'active', '[{"type":"conversation"}]'::jsonb) RETURNING id`,
         [omar.workspaceId, ENG],
       )
     ).rows[0]!.id;
@@ -232,8 +232,9 @@ describe('what is never retained', () => {
     await runs.close(run, 'done');
 
     // a public message behind them: once it is retained, everything before it has been handled
-    await post(nadia, devChannel, 'Control note behind the conversation: Heron.');
-    await until(async () => factWith('Heron'), 'the control message');
+    // a marker of its own (Harrier): the retained control note stays in the bank, so a later test that asserts a fact is gone must not share its word
+    await post(nadia, devChannel, 'Control note behind the conversation: Harrier.');
+    await until(async () => factWith('Harrier'), 'the control message');
     await idle();
     expect(JSON.stringify(fake.state.calls)).not.toMatch(/Falcon|conversation run/);
     for (const [kind, id] of [['message', question], ['message', answer], ['thread', question], ['run', run]] as const) {
