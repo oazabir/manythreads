@@ -95,9 +95,14 @@ describe('hostile input is linear', () => {
     ['many keys', (n) => framed(Array.from({ length: n / 10 }, (_, i) => `k${i}: v${i}\n`).join(''))],
     ['a long quoted string', (n) => framed(`note: "${'a\\"'.repeat(n / 3)}"\n`)],
     ['a huge body', (n) => `---\ntype: Fact\n---\n${'# heading\n\n'.repeat(n / 10)}`],
-  ])('%s', (name, build) => {
-    expectLinear(build, (text) => parseConcept(text), { n: 16_000, label: name });
-  });
+  ])(
+    '%s',
+    (name, build) => {
+      expectLinear(build, (text) => parseConcept(text), { n: 16_000, label: name });
+    },
+    // twelve parses of up to 64 KB each (the cap); the worst case, duplicate keys, costs ~0.3 s a parse: the 5 s default is the machine's, not the parser's
+    30_000,
+  );
 });
 
 describe('serializeConcept', () => {
