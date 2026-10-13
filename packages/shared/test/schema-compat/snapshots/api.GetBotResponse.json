@@ -112,6 +112,9 @@
             "type": "string"
           }
         },
+        "conversational": {
+          "type": "boolean"
+        },
         "invalid": {
           "anyOf": [
             {
@@ -164,6 +167,7 @@
         "createdAt",
         "updatedAt",
         "mayTag",
+        "conversational",
         "invalid"
       ]
     },
