@@ -383,7 +383,7 @@ describe('the lists', () => {
   });
 
   it('Shared: what the team may list; somebody else’s is read through the copy, never the private thread', async () => {
-    // P5-17 will do this (post a masked copy, set the visibility); here the data model is the subject, so it is arranged as the system
+    // the share itself is test/share.test.ts; here the lists are the subject, so the visibility is arranged as the system
     const copyText = 'Shared with the team: what is blocking the release';
     const copyRoot = await send(nadia, devChannel, copyText);
     await w.system((tx) =>
@@ -409,12 +409,19 @@ describe('the lists', () => {
     expect((await w.call(sameera, 'GET', '/api/teams/engineering/bots/brain/conversations?scope=shared')).status).toBe(403);
     // and the private thread is still Nadia's
     expect((await w.call(rafi, 'GET', `/api/channels/${nadiaChannel}/messages?limit=20`)).status).toBe(403);
-    // a shared conversation whose copy the reader cannot read has no title: nothing of the private thread is on the index row
+    // a shared conversation whose copy the reader cannot read is no row at all: a person and a time with nothing to open (and nothing of
+    // the private thread is on the index row)
     await w.system((tx) => tx.query(`UPDATE app.conversations SET shared_root_id = NULL, shared_to = NULL WHERE thread_root_id = $1`, [rootId]));
-    const bare = (await list(rafi, 'brain', '?scope=shared')).items[0]!;
-    expect(bare).toMatchObject({ title: '', preview: '', sharedTo: null, mine: false });
-    await w.system((tx) => tx.query(`UPDATE app.conversations SET visibility = 'private', shared_at = NULL, shared_by = NULL WHERE thread_root_id = $1`, [rootId]));
     expect((await list(rafi, 'brain', '?scope=shared')).items).toEqual([]);
+    await w.system((tx) => tx.query(`UPDATE app.conversations SET shared_root_id = $2, shared_to = $3 WHERE thread_root_id = $1`, [rootId, copyRoot, devChannel]));
+    expect((await list(rafi, 'brain', '?scope=shared')).items).toHaveLength(1);
+    // deleting the copy makes the conversation private again, for everybody (the trigger of conversations 0002), and the row is not listed
+    const gone = await w.call(nadia, 'DELETE', `/api/channels/${devChannel}/messages/${copyRoot}`);
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    expect((await list(rafi, 'brain', '?scope=shared')).items).toEqual([]);
+    expect((await list(nadia, 'brain', '?scope=shared')).items).toEqual([]);
+    const row = await w.system(async (tx) => (await tx.query<{ visibility: string; shared_to: string | null }>('SELECT visibility, shared_to FROM app.conversations WHERE thread_root_id = $1', [rootId])).rows[0]!);
+    expect(row).toEqual({ visibility: 'private', shared_to: null });
   });
 
   it('Channel mentions: threads where the person named the bot in a channel and it was asked — theirs only', async () => {

@@ -125,8 +125,10 @@ conversation channel and is a **404** for anybody else (an admin included).
 | `POST …/answer/share` `{ targetChannelId, remove, digest }` | 201 posts the masked copy as the sharer; 200 `replayed: true` for the same share; 409 when the copy would now differ from the digest; 403 for a channel the caller cannot post in; 400 for a DM or conversation target or a number the answer has no citation for; 422 when nothing would be left |
 | `POST …/answer/handoff` `{ botId }` | 201 a thread in the caller's own conversation with that bot (200 `replayed`); only a bot the answer's chips name |
 
-A share marks the conversation `shared` (the team lists it under **Shared**, read through the copy) **only for a channel of the bot's team**;
-a copy in another team's channel is posted and the conversation stays private. The conversation's channel, thread and runs are never changed:
+A share marks the conversation `shared` (the team lists it under **Shared**, read through the copy) **only for a channel of the bot's team that
+is not private**; a copy in another team's channel or in a private room is posted and the conversation stays private. Deleting the copy un-marks it
+(trigger `conversations_copy_deleted`), and the Shared list shows a row only while its copy is live and readable by the reader (so the "unreadable
+copy" open item below is closed). The conversation's channel, thread and runs are never changed:
 "the original conversation stays private" is a test (a teammate and an admin read nothing of it; the Shared list shows the copy).
 
 **Events.** `answer.answer.shared` (v1) for each share (`kind` `channel` | `page` | `handoff`): ids, counts and the numbers of the masked and
@@ -143,8 +145,6 @@ removed [Remove claim on n]` rows (toggle buttons, `aria-pressed`), counts, Canc
 
 - **`mentions` scan.** The Channel mentions list reads `bot_runs` by trigger `mention` and asker; a mention a bot never answered (no `mention` trigger,
   a run refused before it opened) is not listed, and a retention prune takes older ones out. A scan of `message_mentions` needs bots recorded there.
-- **Unreadable copy.** Somebody else's shared conversation with no copy the reader can open is listed with the private root's id as its thread id (no
-  text, but an id the reader cannot open). A list row with `threadRootId` null and `sharedTo` null would say it without naming the id.
 - **`bots.run.closed` and the audit tab.** The closing event of a conversation run is team-scoped (ids only) and so reveals that a conversation run
   ended, not whose; scoping it to the asker would change the memory feed's reader of it.
 
@@ -157,7 +157,7 @@ thread shows "<bot> is working on it…" for three minutes after the person's me
 
 `conversations` / `0.1.0` / `server`, `extends: ['event.subscribe', 'event.emit']`, emits `conversations.conversation.started`,
 `channel.channel.created` and `answer.answer.shared`, consumes `channel.message.posted`, `dependsOn: ['channels', 'bots', 'answer']`, migrations
-`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared`).
+`migrations` (`0001` the door and the index, `0002` `app.conversations_mark_shared` and the trigger that clears the mark with the copy).
 
 ## Tests
 

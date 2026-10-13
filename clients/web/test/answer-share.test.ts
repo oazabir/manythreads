@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router';
 import { AnswerPayloadView, AnswerSharePreview } from '@manythreads/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { setTransport, type TransportRequest } from '../src/api/client';
+import { ApiError, setTransport, type TransportRequest } from '../src/api/client';
 import { Answer, maskedLine, shareNote } from '../src/channels/Answer';
-import { ShareDialogView, type ShareDialogViewProps } from '../src/channels/AnswerShare';
+import { ShareDialogView, refusalOf, type ShareDialogViewProps } from '../src/channels/AnswerShare';
 import { fetchShareTargets, handoffAnswer, previewAnswerShare, saveAnswerAsPage, shareAnswer } from '../src/screens/conversations/api';
 
 // Share, save as page, hand to a bot (PLAN P5-17): how a copy with a masked source is drawn, what the preview dialog shows, and that each call
@@ -82,6 +82,7 @@ const preview = AnswerSharePreview.parse({
     { n: 3, kind: 'drive', status: 'removed', label: 'Q3 plan.pdf' },
   ],
   counts: { kept: 1, masked: 1, removed: 1, sentences: 1, sourcesDropped: 0 },
+  removedText: ['A claim that rested on the removed source [3].'],
   payload: {
     version: 1,
     body: 'One claim [1].',
@@ -147,6 +148,33 @@ describe('the share preview dialog', () => {
     const page = view({ mode: 'page', targets: [], targetId: '', preview: AnswerSharePreview.parse({ ...preview, target: { kind: 'page', channelId: null, name: null, private: false, path: 'pages/answers/2026-10-13-x-0000abcd.md' } }) });
     expect(page).toContain('pages/answers/2026-10-13-x-0000abcd.md');
     expect(page).toContain('Save as page');
+  });
+
+  it('shows exactly what goes and what is posted: the words taken out with each removed claim, and the text as it will read', () => {
+    const out = view({ removed: new Set([3]) });
+    expect(out).toContain('data-testid="answer-share-gone"');
+    expect(out).toContain('A claim that rested on the removed source [3].');
+    expect(out).toContain('data-testid="answer-share-body"');
+    expect(out).toContain('One claim [1].');
+    const none = view({ preview: AnswerSharePreview.parse({ ...preview, removedText: [] }) });
+    expect(none).not.toContain('answer-share-gone');
+  });
+
+  it('a 409 is not an error to retry: its words stay above the preview that was read again', () => {
+    const conflict = new ApiError({ code: 'conflict', status: 409, message: 'This answer would now read differently in that channel.' });
+    expect(refusalOf(conflict, 'It could not be shared.')).toEqual({ error: null, notice: 'This answer would now read differently in that channel.', reread: true });
+    expect(refusalOf(new ApiError({ code: 'forbidden', status: 403, message: 'You can read that channel but not post in it' }), 'x')).toEqual({
+      error: 'You can read that channel but not post in it',
+      notice: null,
+      reread: false,
+    });
+    expect(refusalOf(new Error('boom'), 'x')).toEqual({ error: 'boom', notice: null, reread: false });
+    // and the view says it, as a status, next to a preview that is there
+    const out = view({ notice: 'This answer would now read differently in that channel.' });
+    expect(out).toContain('data-testid="answer-share-changed"');
+    expect(out).toContain('role="status"');
+    expect(out).toContain('would now read differently');
+    expect(out).toContain('data-testid="answer-share-items"');
   });
 
   it('shows a refusal in an alert, and an empty list of channels in words', () => {

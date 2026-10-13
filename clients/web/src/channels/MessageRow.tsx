@@ -66,7 +66,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     setMenu(null);
     setConfirm(false);
   }, box);
-  const canEdit = own && !deleted;
+  // a message that carries an Answer is deleted and shared again, never edited (the server answers 409): its text is the payload's body
+  const canEdit = own && !deleted && m.meta.answer === undefined;
   const canDelete = !deleted && (own || people.canModerate);
 
   const save = async (): Promise<void> => {

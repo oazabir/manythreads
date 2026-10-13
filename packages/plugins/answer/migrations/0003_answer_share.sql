@@ -118,7 +118,7 @@ GRANT SELECT ON app.answer_shares TO manythreads_app;
 --     a target that is not readable is `none`);
 --   * `citations[i]` = `{ n, kept, label, at }` for the i-th stored citation, `kept` when the caller can open the source NOW and the readers may
 --     (the source is team-readable, or lives in the target channel itself, or the reach is `asker`); the label and date are the current ones;
---   * `sources[i]` = `{ kept }` for the i-th entry of "Sources reached": only message, file, page and run entries can be proven; every other
+--   * `sources[i]` = `{ kept, label }` (the label read now, for a kept one) for the i-th entry of "Sources reached": only message, file, page and run entries can be proven; every other
 --     kind is not kept (an unknown source is never shown).
 -- The decision is `app.answer_resolve` as the sharer against `reach` — no scope label of the stored payload decides anything.
 CREATE FUNCTION app.answer_share_view(p_message uuid, p_channel uuid, p_page boolean DEFAULT false) RETURNS jsonb
@@ -227,8 +227,8 @@ BEGIN
       ELSE
         v_res := jsonb_build_object('found', false);
       END IF;
-      v_srcs := v_srcs || jsonb_build_array(jsonb_build_object(
-        'kept', coalesce((v_res ->> 'found')::boolean, false) AND coalesce((v_res ->> 'audience')::boolean, false)));
+      v_ok := coalesce((v_res ->> 'found')::boolean, false) AND coalesce((v_res ->> 'audience')::boolean, false);
+      v_srcs := v_srcs || jsonb_build_array(jsonb_build_object('kept', v_ok, 'label', CASE WHEN v_ok THEN v_res -> 'label' END));
     END LOOP;
   END IF;
 

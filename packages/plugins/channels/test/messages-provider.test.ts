@@ -152,7 +152,7 @@ describe('a person’s masked copy of their own answer (P5-17)', () => {
         { n: 2, kind: 'message', label: 'source 2', at: null, snippet: 'quote' },
       ],
       sourcesReached: [{ kind: 'message', ref: randomUUID(), label: 'source 1', marker: 'full' }],
-      outsideScope: { count: 0, items: [] },
+      outsideScope: { count: 2, items: [{ kind: 'message', reason: 'not_visible', count: 2 }] },
       answeredFor: { personId: who.personId, name: who.name, scope: 'scoped', alias: 'smart', botId: brain.id, runId: randomUUID() },
       chips: [{ kind: 'followup', label: 'More?', prompt: 'More?' }],
     });
@@ -221,6 +221,30 @@ describe('a person’s masked copy of their own answer (P5-17)', () => {
     await expect(share(nadia, original, copyOf({ chips: originalPayload.chips }))).rejects.toMatchObject({ status: 400 });
     const reached = AnswerPayload.parse({ ...base, sourcesReached: [{ kind: 'message', ref: randomUUID(), label: 'invented', marker: 'full' }] });
     await expect(share(nadia, original, reached)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('refuses a lineage entry that is not the original’s, a quote that was not the bot’s, less left out than before, and a share note that is not true', async () => {
+    const base = copyOf();
+    const lineage = (over: Record<string, unknown>) => AnswerPayload.parse({ ...base, lineage: base.lineage.map((l) => (l.n === 1 ? { ...l, ...over } : l)) });
+    await expect(share(nadia, original, lineage({ snippet: 'a quote the bot never wrote' }))).rejects.toMatchObject({ status: 400 });
+    await expect(share(nadia, original, lineage({ kind: 'file' }))).rejects.toMatchObject({ status: 400 });
+    await expect(share(nadia, original, AnswerPayload.parse({ ...base, lineage: base.lineage.map((l) => (l.n === 2 ? { ...l, label: 'leaked' } : l)) }))).rejects.toMatchObject({ status: 400 });
+    // what was out of scope can only grow
+    await expect(share(nadia, original, copyOf({ outsideScope: { count: 0, items: [] } }))).rejects.toMatchObject({ status: 400 });
+    await expect(share(nadia, original, copyOf({ outsideScope: { count: 2, items: [{ kind: 'message', reason: 'not_visible', count: 1 }] } }))).rejects.toMatchObject({ status: 400 });
+    // the note on the copy is what the server computed from the two payloads
+    await expect(share(nadia, original, copyOf({ share: { masked: 0, removed: 0 } }))).rejects.toMatchObject({ status: 400 });
+    const bare = { ...base };
+    delete (bare as { share?: unknown }).share;
+    await expect(share(nadia, original, bare)).rejects.toMatchObject({ status: 400 });
+    // and a kept label that was read again, with its quote gone, is fine
+    const reread = AnswerPayload.parse({
+      ...base,
+      citations: base.citations.map((c) => (c.kind === 'message' ? { ...c, label: 'read again' } : c)),
+      lineage: base.lineage.map((l) => (l.n === 1 ? { ...l, label: 'read again', snippet: null } : l)),
+      sourcesReached: base.sourcesReached.map((s) => ({ ...s, label: 'read again' })),
+    });
+    await expect(share(nadia, original, reread)).resolves.toMatchObject({ channelId: dev });
   });
 
   it('is the asker’s own answer alone: not another person’s, not a copy in a channel, not an answer for another person, not a bot, not with a run', async () => {

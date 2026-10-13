@@ -37,6 +37,8 @@ export interface CitationVerdict {
 
 export interface SourceVerdict {
   kept: boolean;
+  /** The platform's current label of a kept source (read again, like a citation's). */
+  label?: string | null | undefined;
 }
 
 export type ShareItemStatus = 'kept' | 'masked' | 'removed';
@@ -56,6 +58,8 @@ export interface MaskedAnswer {
   counts: { kept: number; masked: number; removed: number; sentences: number; sourcesDropped: number };
   maskedNumbers: number[];
   removedNumbers: number[];
+  /** The words that were taken out with the removed claims, one entry per sentence: what the sharer's preview shows. */
+  removedText: string[];
 }
 
 const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
@@ -97,13 +101,16 @@ export function maskAnswer(
       const label = clip(v.label !== undefined && v.label !== null && v.label.trim() !== '' ? v.label.trim() : c.label, ANSWER_LIMITS.label);
       citations.push({ ...c, label });
       const old = lineageByN.get(c.n);
-      lineage.push({
-        n: c.n,
-        kind: old?.kind ?? c.kind,
-        label,
-        at: v.at !== undefined && v.at !== null ? v.at : (old?.at ?? null),
-        snippet: old?.snippet ?? null,
-      });
+      if (old) {
+        lineage.push({
+          n: c.n,
+          kind: old.kind,
+          label,
+          at: v.at !== undefined && v.at !== null ? v.at : old.at,
+          // the bot's quote was taken from the source as it was: a source that reads otherwise now (edited since) keeps no quote
+          snippet: label === old.label ? old.snippet : null,
+        });
+      }
       items.push({ n: c.n, kind: kindOf, status: 'kept', label });
     } else {
       maskedNumbers.push(c.n);
@@ -117,8 +124,11 @@ export function maskAnswer(
   const reached: AnswerPayload['sourcesReached'] = [];
   const dropped = new Map<string, number>();
   original.sourcesReached.forEach((s, i) => {
-    if (sources[i]?.kept === true) reached.push(s);
-    else dropped.set(s.kind, (dropped.get(s.kind) ?? 0) + 1);
+    const verdict = sources[i];
+    if (verdict?.kept === true) {
+      const now = verdict.label !== undefined && verdict.label !== null && verdict.label.trim() !== '' ? clip(verdict.label.trim(), ANSWER_LIMITS.label) : s.label;
+      reached.push({ ...s, label: now });
+    } else dropped.set(s.kind, (dropped.get(s.kind) ?? 0) + 1);
   });
   const outsideItems = original.outsideScope.items.map((i) => ({ ...i }));
   let sourcesDropped = 0;
@@ -130,7 +140,7 @@ export function maskAnswer(
     else outsideItems.push({ kind, reason, count });
   }
 
-  const { body, sentences } = removeClaims(original.body, removed);
+  const { body, sentences, removed: removedText } = removeClaims(original.body, removed);
   const copy = body.trim() === '' ? null : AnswerPayload.parse({
     version: 1,
     body,
@@ -154,5 +164,6 @@ export function maskAnswer(
     },
     maskedNumbers,
     removedNumbers,
+    removedText: removedText.slice(0, 200),
   };
 }

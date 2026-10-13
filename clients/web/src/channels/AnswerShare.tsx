@@ -44,6 +44,8 @@ export type ShareDialogViewProps = {
   /** The preview is being (re)read. */
   loading: boolean;
   error: string | null;
+  /** The copy would now read otherwise than what was confirmed (a 409): said above the fresh preview, which was read again. */
+  notice?: string | null;
   removed: ReadonlySet<number>;
   onToggle: (n: number) => void;
   /** Whose answer it is: "from Omar's Drive". */
@@ -87,6 +89,9 @@ export function ShareDialogView(p: ShareDialogViewProps): ReactNode {
       {p.error !== null ? (
         <p className="dlg-error" role="alert" data-testid="answer-share-error">{p.error}</p>
       ) : null}
+      {p.notice ? (
+        <p className="dlg-hint an-share-changed" role="status" data-testid="answer-share-changed">{p.notice}</p>
+      ) : null}
 
       {p.loading && p.preview === null ? <p className="dlg-hint" aria-busy="true">Reading what the readers may open…</p> : null}
 
@@ -124,6 +129,22 @@ export function ShareDialogView(p: ShareDialogViewProps): ReactNode {
           {`${counts.kept} kept · ${counts.masked} not shared · ${counts.removed} removed`}
         </p>
       ) : null}
+      {p.preview && p.preview.removedText.length > 0 ? (
+        <div className="an-share-gone" data-testid="answer-share-gone" data-vt-mask>
+          <span className="an-share-gone-h">Will be removed</span>
+          <ul>
+            {p.preview.removedText.map((t, i) => (
+              <li key={`${i}:${t}`}>{t}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {p.preview ? (
+        <div className="an-share-body" data-testid="answer-share-body" data-vt-mask>
+          <span className="an-share-gone-h">Will be posted</span>
+          <p>{p.preview.payload.body}</p>
+        </div>
+      ) : null}
       {wider ? (
         <p className="dlg-hint" data-testid="answer-share-wider">
           {p.mode === 'channel' && chosen ? `People outside the team may read # ${chosen.name}, ` : 'People outside the team may read this, '}
@@ -144,6 +165,15 @@ export function ShareDialogView(p: ShareDialogViewProps): ReactNode {
 
 const messageOf = (err: unknown, fallback: string): string => (isApiError(err) ? err.message : err instanceof Error ? err.message : fallback);
 
+/**
+ * What the dialog says when Share or Save is refused. A 409 is not an error to retry: the copy would now read otherwise than the one that was
+ * confirmed, so the preview is read again and the words stay above it (`notice`), where the person sees what changed before they confirm.
+ */
+export function refusalOf(err: unknown, fallback: string): { error: string | null; notice: string | null; reread: boolean } {
+  if (isApiError(err) && err.status === 409) return { error: null, notice: err.message, reread: true };
+  return { error: messageOf(err, fallback), notice: null, reread: false };
+}
+
 /** What a finished share or save tells the person, with the link to what was made. */
 type Done = { kind: 'channel'; text: string; to: string } | { kind: 'page'; text: string; to: string; search: string };
 
@@ -156,6 +186,7 @@ function ShareDialog({ mode, tools, messageId, who, onClose, onDone }: { mode: M
   const [preview, setPreview] = useState<AnswerSharePreview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
 
@@ -199,18 +230,21 @@ function ShareDialog({ mode, tools, messageId, who, onClose, onDone }: { mode: M
     void read();
   }, [read]);
 
-  const toggle = (n: number): void =>
+  const toggle = (n: number): void => {
+    setNotice(null);
     setRemoved((prev) => {
       const next = new Set(prev);
       if (next.has(n)) next.delete(n);
       else next.add(n);
       return next;
     });
+  };
 
   const confirm = async (): Promise<void> => {
     if (!preview || busy) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       if (mode === 'channel') {
         const res = await shareAnswer(address, targetId, remove, preview.digest);
@@ -222,12 +256,10 @@ function ShareDialog({ mode, tools, messageId, who, onClose, onDone }: { mode: M
       }
     } catch (e) {
       // a copy that would now read otherwise (a reader joined the channel since): look at the new preview before sharing
-      if (isApiError(e) && e.status === 409) {
-        setError(`${e.message}`);
-        void read();
-      } else {
-        setError(messageOf(e, 'It could not be shared.'));
-      }
+      const refused = refusalOf(e, 'It could not be shared.');
+      setError(refused.error);
+      setNotice(refused.notice);
+      if (refused.reread) void read();
     } finally {
       setBusy(false);
     }
@@ -244,10 +276,12 @@ function ShareDialog({ mode, tools, messageId, who, onClose, onDone }: { mode: M
         onTarget={(id) => {
           setTargetId(id);
           setRemoved(new Set());
+          setNotice(null);
         }}
         preview={preview}
         loading={loading}
         error={error}
+        notice={notice}
         removed={removed}
         onToggle={toggle}
         who={who}

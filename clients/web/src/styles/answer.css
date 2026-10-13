@@ -401,3 +401,45 @@ button.an-chip:hover {
     justify-self: start;
   }
 }
+
+.an-share-gone,
+.an-share-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--shell);
+  font-size: 12.5px;
+}
+
+.an-share-gone ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--mute);
+  text-decoration: line-through;
+}
+
+.an-share-body p {
+  margin: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.an-share-gone-h {
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.an-share-changed {
+  padding: 6px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 5px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}

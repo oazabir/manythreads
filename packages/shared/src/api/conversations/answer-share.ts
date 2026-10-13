@@ -76,6 +76,8 @@ export const AnswerSharePreview = z.object({
   audience: AnswerShareAudience,
   items: z.array(AnswerShareItem).max(ANSWER_LIMITS.citations),
   counts: AnswerShareCounts,
+  /** The words that go with the removed claims, one entry per sentence (the sharer's own text; the copy does not have it). */
+  removedText: z.array(z.string().max(400)).max(200),
   /** The Answer exactly as it will be posted (or written to the page), masked and with the claims removed. */
   payload: AnswerPayload,
   digest: AnswerShareDigest,

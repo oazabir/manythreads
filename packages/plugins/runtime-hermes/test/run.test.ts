@@ -216,7 +216,15 @@ describe('a hermes run, end to end', () => {
     expect(reply.body).toBe('Looking at the deploy: Nadia in #dev: @hermes-test-bot what changed in the deploy?');
 
     // One run row, opened for the mention, closed done, in no thread (the message was not inside one).
-    const run = await until(() => runOf(bot.botId), 15_000, 'the run row');
+    // (the row exists as soon as the run opens: wait for it to close, or the status read below is the one of a run still going)
+    const run = await until(
+      async () => {
+        const row = await runOf(bot.botId);
+        return row && row.status !== 'running' ? row : null;
+      },
+      15_000,
+      'the run to close',
+    );
     expect(run).toMatchObject({ status: 'done', trigger_type: 'mention', asker_id: nadia.actorId, thread_id: null });
 
     // One process for one run: the argv the runtime builds, the definition's body as SOUL.md, and the run's own MCP

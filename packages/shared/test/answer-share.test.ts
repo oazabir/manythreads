@@ -14,6 +14,7 @@ import {
   isSubsequence,
   isSupportedCitation,
   maskAnswer,
+  mdLine,
   pageSlug,
   pageTitle,
   removeClaims,
@@ -103,7 +104,23 @@ describe('maskAnswer', () => {
     const copy = maskAnswer(original(), [{ n: 1, kept: true, label: 'The window moved to Tuesday', at: '2026-10-05T08:00:00.000Z' }, { n: 2, kept: false }, { n: 3, kept: false }], [], []).copy!;
     const first = copy.citations[0]!;
     expect(first.kind === 'message' ? first.label : null).toBe('The window moved to Tuesday');
-    expect(copy.lineage[0]).toMatchObject({ n: 1, label: 'The window moved to Tuesday', at: '2026-10-05T08:00:00.000Z', snippet: 'waits for the Monday window' });
+    // the bot quoted the source as it was: a source that reads otherwise now keeps no quote
+    expect(copy.lineage[0]).toMatchObject({ n: 1, label: 'The window moved to Tuesday', at: '2026-10-05T08:00:00.000Z', snippet: null });
+  });
+
+  it('keeps the quote while the source still reads as it did, and reads the label of "Sources reached" again too', () => {
+    const same = maskAnswer(original(), KEEP_ONE, [], []).copy!;
+    expect(same.lineage[0]).toMatchObject({ n: 1, snippet: 'waits for the Monday window' });
+    const reread = maskAnswer(original(), KEEP_ONE, [{ kept: true, label: 'The window moved to Tuesday' }, { kept: false }, { kept: false }], []).copy!;
+    expect(reread.sourcesReached.map((s) => s.label)).toEqual(['The window moved to Tuesday']);
+    // a kept entry whose verdict carries no label keeps the stored one
+    expect(maskAnswer(original(), KEEP_ONE, [{ kept: true }, { kept: false }, { kept: false }], []).copy!.sourcesReached[0]!.label).toBe('The deploy waits for the Monday change window');
+  });
+
+  it('says what goes with a removed claim, as the words that are taken out', () => {
+    const m = maskAnswer(original(), KEEP_ONE, [], [2]);
+    expect(m.removedText).toEqual(['Leadership also has plans [2] that I cannot repeat.']);
+    expect(maskAnswer(original(), KEEP_ONE, [], []).removedText).toEqual([]);
   });
 
   it('removing a claim takes its sentence and its citation out, and nothing else; only removal', () => {
@@ -175,6 +192,51 @@ describe('removeClaims', () => {
     expect(removeClaims('It is 3.5 percent [1] today.', new Set([1])).body).toBe('');
   });
 
+  it('a marker group written after the stop and a space belongs to the sentence before it, never to the next one', () => {
+    expect(removeClaims('Revenue grew 4%. [2] Next claim.', new Set([2])).body).toBe('Next claim.');
+    expect(removeClaims('Revenue grew 4%. [1], [2] Next claim.', new Set([2])).body).toBe('Next claim.');
+    expect(removeClaims('Revenue grew 4%. [1][2]\nNext claim.', new Set([1])).body).toBe('Next claim.');
+    // at the end of the text the group goes with its sentence
+    expect(removeClaims('Keep this. Revenue grew 4%. [2]', new Set([2])).body).toBe('Keep this.');
+    // and before the stop, as ever
+    expect(removeClaims('Keep this. Revenue grew [1], [2]. Next claim.', new Set([2])).body).toBe('Keep this. Next claim.');
+    // a marker group that is not removed leaves its sentence alone
+    expect(removeClaims('Revenue grew 4%. [1] Next claim [2].', new Set([2])).body).toBe('Revenue grew 4%. [1]');
+  });
+
+  it('a sentence wrapped over several lines goes whole, a list item with its wrapped lines too, and a quote', () => {
+    expect(removeClaims('The deal closes for $4M, according to\nthe board [2]. The rest stays.', new Set([2])).body).toBe('The rest stays.');
+    expect(removeClaims('Intro.\n\n- Revenue closes for $4M\n  according to the board [2].\n- Other point [1].', new Set([2])).body).toBe('Intro.\n\n- Other point [1].');
+    expect(removeClaims('> The board said so\n> in writing [2].\n\nAfter.', new Set([2])).body).toBe('After.');
+    // a marker at the start of a line of a paragraph: the sentence before it (a stop, then the line break) or, with none before it, the one it opens
+    expect(removeClaims('[2] The first claim here.\nThe second claim.', new Set([2])).body).toBe('The second claim.');
+    expect(removeClaims('Fine so far.\n[2] A hard-wrapped marker.', new Set([2])).body).toBe('A hard-wrapped marker.');
+  });
+
+  it('fails toward removing more: no break at a lower-case word, a digit or an abbreviation, so a claim is never cut short', () => {
+    expect(removeClaims('It closes for $4M. according to the board [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('Revenue is 4. 2025 was better [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('See e.g. the board report [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('Ask Dr. Reyes about it [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('Ships from the U.S. by Friday [2]. After.', new Set([2])).body).toBe('After.');
+  });
+
+  it('markdown links and footnotes next to a marker are part of its sentence', () => {
+    expect(removeClaims('Read [the board note](https://example.com/a.html) for details [2](https://example.com/b). After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('A claim[^1] with a note [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('A claim with a note[^1]. Keep [1].', new Set([2])).body).toBe('A claim with a note[^1]. Keep [1].');
+  });
+
+  it('a table row that carries a removed marker goes whole', () => {
+    expect(removeClaims('| a | b |\n| - | - |\n| revenue [2] | 4% |\n| cost | 3% |', new Set([2])).body).toBe('| a | b |\n| - | - |\n| cost | 3% |');
+  });
+
+  it('reports the words it took out, per sentence', () => {
+    const r = removeClaims('Keep this. Revenue grew 4%. [2] Next claim [1].', new Set([2]));
+    expect(r.removed).toEqual(['Revenue grew 4%. [2]']);
+    expect(r.sentences).toBe(1);
+  });
+
   it('leaves the text alone when nothing is removed, and when the number is not in it', () => {
     expect(removeClaims(BODY, new Set()).body).toBe(BODY);
     expect(removeClaims(BODY, new Set([9])).body).toBe(BODY);
@@ -208,6 +270,23 @@ describe('removeClaims', () => {
     }
   });
 
+  it('never leaves a removed marker behind outside fenced code, whatever the layout', () => {
+    const alphabet = ['a', 'B', ' ', '.', '!', '?', '[', ']', '1', '2', '3', '\n', '\n\n', '- ', '> ', '# ', '| ', ', ', '. ', '[1]', '[2]', '[1], [2]', '。', 'e.g. ', '4%. ', '(', ')', '*'];
+    let seed = 11;
+    const next = (): number => {
+      seed = (seed * 1_103_515_245 + 12_345) & 0x7fffffff;
+      return seed;
+    };
+    for (let round = 0; round < 600; round += 1) {
+      let text = '';
+      const len = 1 + (next() % 80);
+      for (let i = 0; i < len; i += 1) text += alphabet[next() % alphabet.length]!;
+      const out = removeClaims(text, new Set([2])).body;
+      expect(/\[2\]/.test(out), JSON.stringify({ text, out })).toBe(false);
+      expect(isSubsequence(out, text), JSON.stringify({ text, out })).toBe(true);
+    }
+  });
+
   it('isSubsequence says no to an added word', () => {
     expect(isSubsequence('a c', 'a b c')).toBe(true);
     expect(isSubsequence('a d c', 'a b c')).toBe(false);
@@ -226,10 +305,17 @@ describe('hostile input stays linear', () => {
     ['bullets', (n) => '- a [1]\n'.repeat(n / 8)],
     ['digits in brackets', (n) => '[123456789]'.repeat(n / 11)],
     ['one very long line', (n) => `${'word '.repeat(n / 5)}[2].`],
+    ['stops, spaces and marker groups', (n) => '. [1], [2] '.repeat(n / 11)],
+    ['stops then commas', (n) => '.,'.repeat(n / 2)],
+    ['wrapped lines', (n) => 'a long line of words\n'.repeat(n / 21) + '[2].'],
+    ['line breaks after stops', (n) => '.\n'.repeat(n / 2)],
+    ['a long run of spaces after a stop', (n) => `a.${' '.repeat(n)}[1]`],
+    ['list items with wrapped lines', (n) => '- item\n  wrapped [1]\n'.repeat(n / 22)],
   ];
   for (const [name, build] of cases) {
     it(name, () => {
-      expectLinear(build, (input) => removeClaims(input, new Set([1, 2])), { n: 20_000, label: name, ceilingMs: 1500 });
+      // a removed marker at the end, so that the whole text is read and not turned away at the door
+      expectLinear(build, (input) => removeClaims(`${input} [2]`, new Set([1, 2])), { n: 20_000, label: name, ceilingMs: 1500 });
     });
   }
 });
@@ -238,15 +324,16 @@ describe('the page', () => {
   it('names a page by day, a slug of its first line and the tail of the answer’s id; only a-z, 0-9 and dashes reach the path', () => {
     const title = pageTitle('## **The deploy** waits for the `Monday` window [1].\n\nMore.');
     expect(title).toBe('The deploy waits for the Monday window');
-    const path = answerPagePath('2026-10-13', title, '0190a000-0000-7000-8000-0000deadbeef');
-    expect(path).toBe('pages/answers/2026-10-13-the-deploy-waits-for-the-monday-window-deadbeef.md');
-    expect(answerPagePath('2026-10-13', '../../../etc/passwd', uuid(1))).toMatch(/^pages\/answers\/2026-10-13-etc-passwd-[0-9a-f]{8}\.md$/);
+    const path = answerPagePath(title, '0190a000-0000-7000-8000-0000deadbeef');
+    expect(path).toBe('pages/answers/the-deploy-waits-for-the-monday-window-deadbeef.md');
+    expect(answerPagePath('../../../etc/passwd', uuid(1))).toMatch(/^pages\/answers\/etc-passwd-[0-9a-f]{8}\.md$/);
+    // no day in it: the same answer saved on another day is the same file
   });
 
   it('falls back to "answer" when no letter or digit is left (an Arabic title, symbols) and refuses a bad date', () => {
     expect(pageSlug('مرحبا بالعالم')).toBe('answer');
     expect(pageSlug('!!! ???')).toBe('answer');
-    expect(answerPagePath('not-a-date', 'x', uuid(1))).toMatch(/^pages\/answers\/1970-01-01-x-/);
+    expect(answerPagePath('x', uuid(1))).toMatch(/^pages\/answers\/x-[0-9a-f]{8}\.md$/);
     expect(pageSlug('a'.repeat(500)).length).toBeLessThanOrEqual(48);
   });
 
@@ -260,6 +347,24 @@ describe('the page', () => {
     expect(md).toContain("3. from Omar's run · not shared");
     expect(md).toContain('Answered for Omar · scoped · smart. Saved from a conversation on 2026-10-13.');
     for (const secret of ['Layoffs', 'leads', uuid(13), 'Brain · conversation']) expect(md).not.toContain(secret);
+  });
+});
+
+describe('a label on the team’s page', () => {
+  it('is one line with markdown structure escaped: a multi-line label cannot open a heading, a table or a link', () => {
+    expect(mdLine('first line\n# A heading\n| a | b |\n[x](https://evil.example)')).toBe('first line \\# A heading \\| a \\| b \\| \\[x\\](https://evil.example)');
+    const copy = AnswerPayload.parse({
+      ...original(),
+      citations: [{ kind: 'file', n: 1, label: 'plan.pdf\n\n# Injected heading\n<script>x</script>', scope: 'team', fileId: uuid(40) }],
+      lineage: [{ n: 1, kind: 'file', label: 'plan.pdf', at: null, snippet: 'a quote\n- with a bullet' }],
+      body: 'One claim [1].',
+      sourcesReached: [],
+    });
+    const md = answerPageMarkdown(copy, '2026-10-13');
+    expect(md).not.toMatch(/^# Injected/m);
+    expect(md).not.toContain('<script>');
+    expect(md).toContain('1. plan.pdf \\# Injected heading \\<script\\>x\\</script\\> (file)');
+    expect(md).not.toMatch(/^- with a bullet/m);
   });
 });
 

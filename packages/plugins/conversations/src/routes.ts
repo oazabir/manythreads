@@ -56,8 +56,8 @@ async function callerPersonId(tx: PluginTx): Promise<string> {
 //
 //  * mine: the caller's own conversations with this bot. The title is their own first message.
 //  * shared: the conversations shared with the team. Somebody else's is read through the copy that was posted into a channel
-//    (`shared_root_id`), never through the private thread; with no readable copy it has no title and its thread is the private root,
-//    which the caller cannot open (the row says so).
+//    (`shared_root_id`), never through the private thread, and is listed only while that copy is live and readable by the caller: a deleted
+//    copy, or one in a room the caller is not in, is no row at all (it would be a person and a time with nothing to open).
 //  * mentions: threads where the caller named the bot in a team channel and the bot was asked to answer: the runs the mention fired,
 //    one per thread, in channels the caller can read.
 const BASE: Record<ConversationScope, string> = {
@@ -81,7 +81,8 @@ const BASE: Record<ConversationScope, string> = {
       LEFT JOIN app.messages m ON m.id = c.thread_root_id AND m.deleted_at IS NULL
       LEFT JOIN app.messages sm ON sm.id = c.shared_root_id AND sm.deleted_at IS NULL
       LEFT JOIN app.channels sc ON sc.id = c.shared_to
-     WHERE c.bot_id = $2 AND c.visibility = 'shared' AND (c.person_id <> $1 OR m.id IS NOT NULL)`,
+     WHERE c.bot_id = $2 AND c.visibility = 'shared'
+       AND ((c.person_id = $1 AND m.id IS NOT NULL) OR (c.person_id <> $1 AND sm.id IS NOT NULL))`,
   mentions: `
     SELECT r.reply_root_id AS thread_id, r.channel_id, 'mention'::text AS source, ch.name AS channel_name,
            $1::uuid AS person_id, NULL::text AS visibility, NULL::uuid AS shared_to, NULL::text AS shared_name,

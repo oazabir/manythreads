@@ -47,7 +47,7 @@ export const AnswerShareView = z.object({
   /** Who reads the target: `asker` (their own conversation alone), `team` (the answer's team and admins), `none` (somebody else may too). */
   reach: z.enum(['asker', 'team', 'none']),
   citations: z.array(z.object({ n: z.number().int(), kept: z.boolean(), label: z.string().nullable().optional(), at: z.string().nullable().optional() })),
-  sources: z.array(z.object({ kept: z.boolean() })),
+  sources: z.array(z.object({ kept: z.boolean(), label: z.string().nullable().optional() })),
 });
 export type AnswerShareView = z.infer<typeof AnswerShareView>;
 

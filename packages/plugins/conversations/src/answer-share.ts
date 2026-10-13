@@ -58,6 +58,7 @@ export function previewOf(view: AnswerShareView, built: MaskedAnswer & { copy: A
     audience: view.reach === 'none' ? 'wider' : 'team',
     items: built.items,
     counts: built.counts,
+    removedText: built.removedText,
     payload: built.copy,
     digest: shareDigest(targetLabel, view.answer.messageId, built.copy),
   });
@@ -112,7 +113,7 @@ export function registerAnswerShareRoutes(ctx: PluginContext): void {
         const payload = storedAnswer(view);
         const remove = checkRemove(payload, body.remove);
         const built = buildCopy(view, payload, remove);
-        const path = answerPagePath(new Date().toISOString().slice(0, 10), pageTitle(built.copy.body), params.messageId);
+        const path = answerPagePath(pageTitle(built.copy.body), params.messageId);
         return json(previewOf(view, built, 'page', path));
       }
       const view = await loadShareView(tx, params, { channelId: body.target.channelId });

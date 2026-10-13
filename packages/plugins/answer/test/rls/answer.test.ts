@@ -927,8 +927,15 @@ describe('sharing an answer of one’s own conversation (P5-17)', () => {
     expect(v!.citations.find((c) => c.n === 1)).toMatchObject({ label: 'The deploy waits for the Monday window' });
     // a masked one carries no label and no date
     expect(v!.citations.find((c) => c.n === 2)).toEqual({ n: 2, kept: false, label: null, at: null });
-    // what the run read follows the same readers
+    // what the run read follows the same readers, and a kept entry is read again (its stored label was 'stored')
     expect(v!.sources.map((s) => s.kept)).toEqual([true, false, false, true, false]);
+    expect((v as unknown as { sources: Array<{ label?: string | null }> }).sources.map((s) => s.label ?? null)).toEqual([
+      'The deploy waits for the Monday window',
+      null,
+      null,
+      'pages/specs/schedule-migration.md',
+      null,
+    ]);
   });
 
   it('a private room of the team is the team’s too, and what lives in it is kept besides', async () => {

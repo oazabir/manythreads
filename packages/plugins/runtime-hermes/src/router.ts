@@ -140,6 +140,8 @@ interface MessageRow {
   channel_kind: string;
   author_kind: string;
   author_name: string;
+  /** The message carries an Answer (`meta.answer`): a person's masked copy of one (P5-17), never something typed. */
+  carries_answer: boolean;
   [key: string]: unknown;
 }
 
@@ -160,7 +162,8 @@ export function registerRouter(ctx: PluginContext): void {
         `SELECT m.id, m.body, m.channel_id, m.thread_root_id, m.author_id,
                 c.name AS channel_name, c.team_id AS channel_team, c.private AS channel_private,
                 c.archived_at AS channel_archived, c.bot_id AS channel_bot_id, c.kind AS channel_kind,
-                a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name
+                a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name,
+                (m.meta ? 'answer') AS carries_answer
            FROM app.messages m
            JOIN app.channels c ON c.id = m.channel_id
            JOIN app.actors a ON a.id = m.author_id
@@ -174,6 +177,9 @@ export function registerRouter(ctx: PluginContext): void {
     // No bot answers a bot (delegation is P6), no bot runs from a private channel or a DM (SPEC §12), none from an archived
     // channel, and a message whose author is gone has nobody to answer.
     if (message.author_kind !== 'person') return;
+    // A person's message that carries an Answer is a shared copy, made by the platform from a bot's text: whatever it names (an `@bot` a
+    // prompt-injected source planted in the answer) is not the sharer asking for anything, so no trigger fires for it.
+    if (message.carries_answer) return;
     // A bot conversation is the one private channel a bot runs from, and then only its own bot (a DM, a private team channel and every
     // other bot's conversation stay out): the channel says who it is with, the bot's team is the channel's team.
     const conversation = message.channel_kind === 'bot_conversation';

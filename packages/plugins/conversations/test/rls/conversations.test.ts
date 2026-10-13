@@ -496,6 +496,31 @@ describe('app.conversations_mark_shared (P5-17)', () => {
     expect((await stateOf(root)).visibility).toBe('private');
   });
 
+  it('a private room of the bot’s own team leaves it private too: the team would be shown a row it cannot open', async () => {
+    const room = await sys(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'private-room-eng', 'channel', true) RETURNING id`,
+          [omar.workspaceId, ENG],
+        )
+      ).rows[0]!.id,
+    );
+    await sys((tx) => tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2)', [room, priya.personId]));
+    const roomCopy = await say(room, priya.actorId, 'A masked copy in a room');
+    expect(await mark(priya, root, room, roomCopy)).toBe(false);
+    expect((await stateOf(root)).visibility).toBe('private');
+  });
+
+  it('deleting the copy makes the conversation private again, and not before', async () => {
+    expect(await mark(priya, root, teamChannel, copy)).toBe(true);
+    // a message that is not the copy being deleted changes nothing
+    const other = await say(teamChannel, nadia.actorId, 'Something else');
+    await sys((tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [other]));
+    expect((await stateOf(root)).visibility).toBe('shared');
+    await sys((tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [copy]));
+    expect(await stateOf(root)).toEqual({ visibility: 'private', shared_to: null, shared_root_id: null, shared_by: null });
+  });
+
   it('a channel of another team leaves the conversation private (the copy is posted, the team has nothing to open)', async () => {
     expect(await mark(priya, root, otherTeamChannel, otherTeamCopy)).toBe(false);
     expect((await stateOf(root)).visibility).toBe('private');

@@ -106,10 +106,31 @@ async function checkAnswerCopy(tx: PluginTx, copyOf: string, copy: AnswerPayload
       throw invalid(`meta.answer.citations: ${String(c.n)} is not the original citation`);
     }
   }
-  const lineage = new Set(original.lineage.map((l) => l.n));
-  if (copy.lineage.some((l) => !lineage.has(l.n))) throw invalid('meta.answer.lineage names a citation the original has not');
-  const reached = new Set(original.sourcesReached.map((s) => stable(s)));
-  if (copy.sourcesReached.some((s) => !reached.has(stable(s)))) throw invalid('meta.answer.sourcesReached adds a source to the original');
+  // the lineage: an entry per citation the copy has, the original's but for its label and age (re-read) and with the bot's quote kept or gone
+  const lineageOf = new Map(original.lineage.map((l) => [l.n, l] as const));
+  for (const l of copy.lineage) {
+    const was = lineageOf.get(l.n);
+    if (!was) throw invalid('meta.answer.lineage names a citation the original has not');
+    if (l.masked === true) {
+      if (l.label !== '' || l.at !== null || l.snippet !== null) throw invalid('meta.answer.lineage: a masked entry carries no label, age or quote');
+    } else if (l.kind !== was.kind || (l.snippet !== null && l.snippet !== was.snippet)) {
+      throw invalid(`meta.answer.lineage: ${String(l.n)} is not the original entry`);
+    }
+  }
+  // "Sources reached": the original's entries (a label may be read again), none added
+  const reached = new Set(original.sourcesReached.map((s) => stable({ ...s, label: null })));
+  if (copy.sourcesReached.some((s) => !reached.has(stable({ ...s, label: null })))) throw invalid('meta.answer.sourcesReached adds a source to the original');
+  // what was left out only grows: a copy cannot claim the answer was less limited than it was
+  if (copy.outsideScope.count < original.outsideScope.count) throw invalid('meta.answer.outsideScope is not smaller than the original’s');
+  for (const item of original.outsideScope.items) {
+    const now = copy.outsideScope.items.find((i) => i.kind === item.kind && i.reason === item.reason);
+    if (!now || now.count < item.count) throw invalid('meta.answer.outsideScope is not smaller than the original’s');
+  }
+  // the share note is what the server computed from the two payloads, never a claim
+  const have = new Set(copy.citations.map((c) => c.n));
+  const masked = copy.citations.filter((c) => c.kind === 'masked').length;
+  const gone = original.citations.filter((c) => !have.has(c.n)).length;
+  if (copy.share?.masked !== masked || copy.share.removed !== gone) throw invalid('meta.answer.share is the number of citations masked and removed');
 }
 
 export function registerMessageProvider(deps: Deps): void {

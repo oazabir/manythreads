@@ -89,6 +89,19 @@ test('share to a channel: the preview says which sources are kept and which are 
     await close();
   }
 
+  // Nadia's own copy in #dev: it can be deleted and shared again, never edited (the server answers 409), so the menu has no Edit
+  const own = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/c/dev', isMobile);
+  try {
+    const copy = own.page.getByTestId('message').filter({ has: own.page.getByTestId('answer') }).first();
+    await expect(copy).toBeVisible({ timeout: 30_000 });
+    await copy.hover();
+    await copy.getByRole('button', { name: 'More actions' }).click();
+    await expect(own.page.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
+    await expect(own.page.getByRole('menuitem', { name: 'Edit' })).toHaveCount(0);
+  } finally {
+    await own.close();
+  }
+
   // Omar reads #dev: the copy is there, the room's message is "not shared" and nothing of it is on the page; the conversation stays Nadia's
   const omar = await openChat(browser, playwright, stack, 'omar', '/t/engineering/c/dev', isMobile);
   try {

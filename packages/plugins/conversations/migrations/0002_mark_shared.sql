@@ -8,8 +8,10 @@
 -- actor and the lookup_* helpers, never the is_* ones (MISTAKES P2 review). What it accepts, all of it checked here and none of it argument:
 --   * the caller is a person who is a non-guest member of the workspace, and the conversation is theirs (`person_id = app.person_id()`);
 --   * the copy is the caller's own live message, in `p_channel`, a channel of kind `channel` they may post in;
---   * the channel belongs to the conversation's own team: a copy posted to another team's channel is not "shared with the team" (that team's
---     readers would see a row they cannot open), so it leaves the conversation private.
+--   * the channel belongs to the conversation's own team AND is not private: a copy posted to another team's channel, or into a private room of
+--     the team, is not "shared with the team" (teammates outside the room would see a row they cannot open, and learn that a share happened),
+--     so it leaves the conversation private. The copy is posted all the same.
+--   * the mark follows the copy: deleting it (a trigger below) makes the conversation private again.
 -- Answers false when nothing was marked (no such conversation of the caller's, not the bot's team's channel), and refuses (42501) anything else.
 CREATE FUNCTION app.conversations_mark_shared(p_thread_root uuid, p_channel uuid, p_copy uuid) RETURNS boolean
   LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
@@ -33,17 +35,38 @@ BEGIN
   UPDATE app.conversations c
      SET visibility = 'shared', shared_to = p_channel, shared_root_id = p_copy, shared_by = app.actor(), shared_at = now()
    WHERE c.thread_root_id = p_thread_root AND c.person_id = v_me AND c.workspace_id = v_ws
-     AND c.team_id = (SELECT ch.team_id FROM app.channels ch WHERE ch.id = p_channel);
+     AND EXISTS (SELECT 1 FROM app.channels ch WHERE ch.id = p_channel AND ch.team_id = c.team_id AND NOT ch.private);
   GET DIAGNOSTICS n = ROW_COUNT;
   RETURN n > 0;
 END
 $$;
 
+-- A shared mark with no copy behind it is a dead row (a person, a time, no title) in everybody's Shared list. When a copy is deleted the
+-- conversation that was shared through it is private again. (The lists also read the copy itself, so a row whose copy is gone is never listed.)
+CREATE INDEX conversations_shared_root ON app.conversations (shared_root_id) WHERE shared_root_id IS NOT NULL;
+
+CREATE FUNCTION app.conversations_copy_deleted() RETURNS trigger
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, app, pg_temp
+AS $$
+BEGIN
+  UPDATE app.conversations
+     SET visibility = 'private', shared_to = NULL, shared_root_id = NULL, shared_by = NULL, shared_at = NULL
+   WHERE shared_root_id = NEW.id;
+  RETURN NULL;
+END
+$$;
+
+CREATE TRIGGER conversations_copy_deleted AFTER UPDATE OF deleted_at ON app.messages
+  FOR EACH ROW WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
+  EXECUTE FUNCTION app.conversations_copy_deleted();
+
 REVOKE ALL ON FUNCTION app.conversations_mark_shared(uuid, uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app.conversations_copy_deleted() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.conversations_mark_shared(uuid, uuid, uuid) TO manythreads_app, manythreads_system;
 
 GRANT CREATE ON SCHEMA app TO manythreads_system;
 ALTER FUNCTION app.conversations_mark_shared(uuid, uuid, uuid) OWNER TO manythreads_system;
+ALTER FUNCTION app.conversations_copy_deleted() OWNER TO manythreads_system;
 REVOKE CREATE ON SCHEMA app FROM manythreads_system;
 
 COMMENT ON FUNCTION app.conversations_mark_shared(uuid, uuid, uuid) IS

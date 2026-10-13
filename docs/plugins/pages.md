@@ -38,13 +38,14 @@ Refusals are returned as the error envelope without rolling the transaction back
 ## Save as page
 
 `POST /api/channels/:channelId/messages/:messageId/answer/page` `{ remove: number[], digest }` writes the masked copy of an answer of the **caller's
-own conversation** as `pages/answers/<date>-<slug>-<id8>.md` of the answer's team repo, through `writePage` (so the broker, the guarded paths, the
+own conversation** as `pages/answers/<slug>-<id8>.md` of the answer's team repo, through `writePage` (so the broker, the guarded paths, the
 `pages/` prefix, the commit as the person and `pages.page.written` are the ones above; a person cannot save outside their team's repo: the page is
 the answer's team's, and the writer's role check applies). The page is team content, so the copy is made for the team's readers by the same rule a
 share to a team-wide channel uses ([answer.md](./answer.md#sharing-an-answer-p5-17), target `page`): a source only the asker may open reads
 "from Omar's message · not shared" in the file, with no label, snippet or id. The file name is `slugged first sentence + the last 8 hex of the
-answer's id`, made of `a-z`, `0-9` and `-` only (linear), so the same answer is the same file: saving it again finds the page and answers 200
-`created: false` (nothing is overwritten); another answer never collides. The text is the answer's own with the claims the sharer removed taken out.
+answer's id` (no day in it), made of `a-z`, `0-9` and `-` only (linear), so the same answer is the same file on any day: saving it again finds
+the page and answers 200 `created: false` with the counts of the save that wrote it (nothing is overwritten); another answer never collides. Source
+names and quotes are one line each with markdown structure escaped, so a multi-line label cannot open a heading or a link on the team's page. The text is the answer's own with the claims the sharer removed taken out.
 The question the person asked is not on the page. Access event: `answer.answer.shared` with `kind: 'page'` (ids and counts, no path, no team).
 
 ## Event

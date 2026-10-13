@@ -172,15 +172,22 @@ that is not the caller's own answer is a **404**, for an admin and a teammate al
 2. **Which citations those readers may open, as the sharer, now.** `app.answer_share_view` (migration 0003, `SECURITY INVOKER`) re-resolves
    every citation of the stored answer with `app.answer_resolve` under the sharer's own RLS against that reach. A source is **kept** only when
    found and shown to the readers (team-readable, or living in the target channel itself, or reach `asker`). A source the sharer can no longer
-   read, one deleted since, an edited one (its label is read again, never copied), anything of the asker's own run, a private channel's message,
+   read, one deleted since, an edited one (its label is read again, never copied, and the bot's quote of it goes when the label moved; "Sources
+   reached" labels are read again too), anything of the asker's own run, a private channel's message,
    a DM, another team's page: **masked**. A citation with no verdict is masked: absent is never "may be shown". Entries of "Sources reached"
    that cannot be proven (a connection, a memory bank, anything not a message, file, page or run) are dropped and counted as `not_shared`.
 3. **A masked citation is its number and its kind** (`{ kind: 'masked', n, source }`, strict): no label, scope, date or snippet, and **none of
    the fields that say where the source lives** — no `teamId`, `channelId`, `channelName`, `path`, `fileId`, `runId`, `botSlug`. A masked
    lineage row has an empty label, no age and no snippet. The text is unchanged: readers see that a claim rests on something they cannot open.
-4. **Remove claim is removal only.** A request carries citation numbers, never text. The copy's text is the answer's own with whole sentences
-   that carry a removed `[n]` taken out (`removeClaims`, linear, fenced code untouched); the provider checks again that it is a subsequence of the
-   original. Nothing can add a word, a citation, a source or a chip (chips are dropped: a follow-up or a hand-off is the asker's own next step).
+4. **Remove claim is removal only, and fails toward removing more.** A request carries citation numbers, never text. The copy's text is the
+   answer's own with the sentences that carry a removed `[n]` taken out (`removeClaims`, linear, fenced code untouched); the provider checks
+   again that it is a subsequence of the original. The unit is a *block* (a paragraph with its hard-wrapped lines, a list item with its wrapped
+   lines, a quote, a heading; a table row goes whole), not a line. A sentence ends at a stop followed by white space, unless the next word starts
+   in lower case or with a digit or the stop closes an abbreviation (`e.g.`, `U.S.`, `Dr.`, an initial): where the extent is ambiguous the claim is
+   never left behind, at the price of an innocent neighbour going with it. A marker group written after the stop (`claim. [2] Next.`, `[1], [2]`)
+   belongs to the sentence before it. A removed marker that survives a cut takes its whole block. The preview lists the words that go (`removedText`)
+   and the text as it will be posted. Nothing can add a word, a citation, a source or a chip (chips are dropped: a follow-up or a hand-off is the
+   asker's own next step).
 5. **What the person confirms is what is posted.** The preview returns a sha-256 of (target, answer, copy); share and save take it back and the
    server rebuilds the copy from the live readers first. A copy that would now read otherwise (a reader joined the channel since) is a **409**
    with nothing posted.
@@ -192,8 +199,12 @@ that is not the caller's own answer is a **404**, for an admin and a teammate al
    nothing and answers 200. A different cut has a different digest and is a new copy, reached only through its own preview. A copy that was
    deleted is replaced by the next share of the same key.
 8. **The conversation stays private.** The copy is a message in the channel; the conversation's own channel, thread and runs are unchanged. The
-   asker's conversation index row is marked `shared` through `app.conversations_mark_shared` (conversations 0002), only for a channel of the bot's
-   team, so the team lists it under Shared and reads it through the copy.
+   asker's conversation index row is marked `shared` through `app.conversations_mark_shared` (conversations 0002) only for a channel of the bot's
+   team that is **not private** (a private room's copy is posted and the conversation stays private: the rest of the team would be listed a row they
+   cannot open, and learn that a share happened), so the team lists it under Shared and reads it through the copy. Deleting the copy makes the
+   conversation private again (a trigger), and the Shared list shows only rows whose copy is live and readable by the reader.
+   A posted copy is nobody's request: the router fires no trigger for a person's message that carries an Answer, so an `@bot` planted in the text
+   by a source wakes nobody.
 9. **The access event** `answer.answer.shared` (v1): `kind` (`channel`, `page`, `handoff`), `personId`, `botId`, `runId`, `messageId` (the
    answer), `channelId`, `copyMessageId`, `keptCount`, `maskedCount`, `removedCount`, `maskedNumbers`, `removedNumbers`. Ids, counts and the
    numbers of citations; never an id, label, snippet or team of a source, and no `teamId` (workspace-scoped: a team-scoped row is readable by
@@ -207,6 +218,14 @@ No capability is involved, so a bot can never message a person through it. *Mask
 asker's (its run is the asker's run), and the destination is the asker's own conversation, whose only reader is the asker, so
 `answer_channel_reach` is `asker` and nothing is lost. If somebody was given access to that conversation (an ACL grant), the reach is `none` and
 the hand-off is masked exactly like a share to that audience.
+
+**Accepted residuals.** (a) A copy is a stored message: people who join the channel later read it as it was masked at share time (a copy is not
+re-judged for new readers; deleting it and sharing again is the remedy). (b) The copy keeps `answeredFor.runId` — the id of the asker's own
+conversation run, which only the asker can read (bots 0011) and which opens nothing; making it nullable would change a shared schema for no
+reader's gain. (c) The page is saved once: a second save of the same answer, on any day and with any cut, answers with the existing page and its
+counts, and edits to it are the Files screen's. (d) `answer_channel_reach` reads a channel's whole audience per preview and share (the cost grows
+with the channel's readers; the routes are limited to 120 and 30 a minute). (e) Segmentation of stored model text is a heuristic that errs toward
+removing more; a sentence the sharer wants kept next to a removed claim can be lost, and the preview says exactly which words go.
 
 **Not done here.** The Drive-specific masked source (a person's connection) is phase 8: until `person:*` reads write citable sources, a
 person-scoped citation is the asker's own conversation run and `sourcesReached` lines with the `scoped` marker. Seed v5 (P5-21) is the guard

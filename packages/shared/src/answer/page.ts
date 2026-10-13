@@ -66,14 +66,21 @@ export function pageSlug(title: string): string {
 }
 
 /**
- * `pages/answers/<date>-<slug>-<8 hex of the answer's id>.md`. The last eight characters of a time-ordered id are its random part, so two answers
- * saved on one day under one title never meet, and saving the same answer twice names the same file (the second save finds it: it is the same
- * page). Only `a-z`, `0-9` and `-` ever reach the path; nothing in it comes from the answer but the slug.
+ * `pages/answers/<slug>-<8 hex of the answer's id>.md`. The last eight characters of a time-ordered id are its random part, so two answers
+ * with one title never meet, and saving the same answer again — on any day — names the same file (the second save finds it: it is the same page,
+ * and is never overwritten). Only `a-z`, `0-9` and `-` ever reach the path; nothing in it comes from the answer but the slug.
  */
-export function answerPagePath(date: string, title: string, messageId: string): string {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '1970-01-01';
+export function answerPagePath(title: string, messageId: string): string {
   const tail = messageId.replace(/[^0-9a-f]/gi, '').toLowerCase().slice(-8).padStart(8, '0');
-  return `${ANSWER_PAGES_DIR}/${day}-${pageSlug(title)}-${tail}.md`;
+  return `${ANSWER_PAGES_DIR}/${pageSlug(title)}-${tail}.md`;
+}
+
+/**
+ * A source's name or quote as a single line of a list item: one space between words, and the characters markdown reads as structure (or as
+ * HTML) escaped, so a multi-line label cannot open a heading, a table or a link on a page the whole team reads.
+ */
+export function mdLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().replace(/[\\`*_{}[\]<>#|~!]/g, (c) => `\\${c}`);
 }
 
 /** The kind of a source in words, for the page's source list. */
@@ -85,8 +92,8 @@ const NOUN: Record<string, string> = { message: 'message', thread: 'thread', pag
  */
 export function answerPageMarkdown(copy: AnswerPayload, savedOn: string): string {
   const title = pageTitle(copy.body);
-  const who = copy.answeredFor.name ?? 'the team';
-  const lines: string[] = [`# ${title}`, '', copy.body.trim(), ''];
+  const who = mdLine(copy.answeredFor.name ?? 'the team');
+  const lines: string[] = [`# ${mdLine(title)}`, '', copy.body.trim(), ''];
   if (copy.citations.length > 0) {
     lines.push('## Sources', '');
     const byN = new Map(copy.lineage.map((l) => [l.n, l] as const));
@@ -97,8 +104,8 @@ export function answerPageMarkdown(copy: AnswerPayload, savedOn: string): string
       }
       const l = byN.get(c.n);
       const age = l?.at ? ` · ${l.at.slice(0, 10)}` : '';
-      const snippet = l?.snippet ? ` — “${l.snippet.replace(/\s+/g, ' ')}”` : '';
-      lines.push(`${c.n}. ${c.label} (${NOUN[c.kind] ?? 'source'})${age}${snippet}`);
+      const snippet = l?.snippet ? ` — “${mdLine(l.snippet)}”` : '';
+      lines.push(`${c.n}. ${mdLine(c.label)} (${NOUN[c.kind] ?? 'source'})${age}${snippet}`);
     }
     lines.push('');
   }
@@ -106,7 +113,7 @@ export function answerPageMarkdown(copy: AnswerPayload, savedOn: string): string
     lines.push(`${copy.outsideScope.count} more source${copy.outsideScope.count === 1 ? '' : 's'} could not be shown here.`, '');
   }
   const foot = [`Answered for ${who}`, copy.answeredFor.scope];
-  if (copy.answeredFor.alias) foot.push(copy.answeredFor.alias);
+  if (copy.answeredFor.alias) foot.push(mdLine(copy.answeredFor.alias));
   lines.push('---', '', `*${foot.join(' · ')}. Saved from a conversation on ${savedOn}.*`, '');
   return lines.join('\n');
 }

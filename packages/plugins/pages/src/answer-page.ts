@@ -27,7 +27,8 @@ import { refusalResponse } from './routes.ts';
 // may open is "from <person>'s <kind> · not shared" in the file, with its label, snippet and ids left out.
 //
 // The request carries the digest the preview returned and the numbers of the claims to remove, never any text. A page is never overwritten:
-// the file name carries the answer's id, so saving the same answer again finds the page and answers with its path (`created: false`).
+// the file name carries the answer's id and no date, so saving the same answer again, on any day, finds the page and answers with its path and
+// the counts of the save that wrote it (`created: false`).
 
 const DAY = (): string => new Date().toISOString().slice(0, 10);
 
@@ -56,7 +57,7 @@ export function registerAnswerPageRoute(ctx: PluginContext): void {
       }
 
       const day = DAY();
-      const path = answerPagePath(day, pageTitle(built.copy.body), params.messageId);
+      const path = answerPagePath(pageTitle(built.copy.body), params.messageId);
       const outcome = await writePage(ctx, tx, {
         team: view.answer.teamId,
         request: { mode: 'create', path, content: answerPageMarkdown(built.copy, day), message: 'Save an answer as a page' },
@@ -64,7 +65,16 @@ export function registerAnswerPageRoute(ctx: PluginContext): void {
       if (!outcome.ok) {
         // the same answer saved before: that page is the answer's page, and nothing a second save would write is worth overwriting it for
         if (outcome.status === 409 && (outcome.conflicts ?? []).some((c) => c.path === path && c.reason === 'exists')) {
-          return { status: 200, body: SaveAnswerPageResponse.parse({ path, created: false, counts: built.counts }) };
+          // the counts are those of the page that is there (the earlier save's log line), not of the cut this request would have written
+          const was = (
+            await tx.query<{ kept_count: number; masked_count: number; removed_count: number }>(
+              `SELECT kept_count, masked_count, removed_count FROM app.answer_shares
+                WHERE message_id = $1::uuid AND kind = 'page' AND path = $2 AND shared_by = app.person_id() ORDER BY created_at DESC LIMIT 1`,
+              [params.messageId, path],
+            )
+          ).rows[0];
+          const counts = { kept: was?.kept_count ?? 0, masked: was?.masked_count ?? 0, removed: was?.removed_count ?? 0, sentences: 0, sourcesDropped: 0 };
+          return { status: 200, body: SaveAnswerPageResponse.parse({ path, created: false, counts }) };
         }
         return refusalResponse(outcome);
       }
