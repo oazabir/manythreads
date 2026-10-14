@@ -150,7 +150,7 @@ test('lena (guest): engineering is closed to her', async ({ browser }) => {
     await expect(page.getByText('You cannot see this channel.')).toBeVisible();
     await shoot(page, 'j-lena-noaccess');
     await page.goto('/t/engineering/bots');
-    await expect(page.getByTestId('no-access').or(page.getByRole('heading', { name: 'Page not found' }))).toBeVisible();
+    await expect(page.getByTestId('no-access').or(page.getByRole('heading', { name: 'You do not have access' }))).toBeVisible();
     await shoot(page, 'j-lena-bots');
   } finally {
     await page.context().close();
