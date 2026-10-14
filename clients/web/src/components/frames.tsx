@@ -72,6 +72,7 @@ export function SettingsFrame() {
     groups.push({
       heading: 'Workspace',
       items: [
+        { to: '/onboarding', label: 'Setup' },
         { to: '/settings/workspace/general', label: 'General' },
         { to: '/settings/workspace/sign-in', label: 'Sign-in' },
         { to: '/settings/workspace/members', label: 'Members' },

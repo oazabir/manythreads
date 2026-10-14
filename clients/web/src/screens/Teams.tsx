@@ -102,7 +102,7 @@ export function Teams() {
 
       {!loading && teams.length === 0 ? (
         <EmptyState title={admin ? 'Create your first team.' : 'You are not on a team yet.'}>
-          {admin ? 'A team gets channels, a board, a memory bank and default bots from its template.' : 'A workspace admin can add you to one.'}
+          {admin ? <>A team gets channels, a board, a memory bank and default bots from its template. <Link to="/onboarding">Continue setup</Link> walks the five steps in order.</> : 'A workspace admin can add you to one.'}
         </EmptyState>
       ) : null}
 

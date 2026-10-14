@@ -23,6 +23,7 @@ import { ConversationRedirect, ConversationView } from './screens/conversations/
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
 import { Teams } from './screens/Teams';
+import { Onboarding } from './screens/onboarding/Onboarding';
 import { Members, Roles, WorkspaceGeneral } from './screens/WorkspaceSettings';
 
 // developer page: its viewers load on demand, not with the app
@@ -68,6 +69,9 @@ function AppRoutes() {
           </Route>
           <Route path="/account" element={<Account />} />
           <Route element={<SettingsFrame />}>
+            <Route element={<AdminOnly />}>
+              <Route path="/onboarding" element={<Onboarding />} />
+            </Route>
             <Route path="/teams" element={<Teams />} />
             <Route path="/teams/:slug" element={<TeamRedirect />} />
             <Route path="/settings" element={<Navigate to="/settings/workspace/general" replace />} />
