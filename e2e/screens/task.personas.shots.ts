@@ -96,7 +96,7 @@ test('rafi (on-call approver): approvals inbox and incidents', async ({ browser 
   try {
     await page.goto('/t/engineering/approvals');
     await frame(page);
-    await expect(page.getByText('Nothing waiting')).toBeVisible();
+    await expect(page.getByTestId('approvals-empty')).toBeVisible();
     await shoot(page, 'j-rafi-approvals');
     await channel(page, 'engineering', 'incidents');
     await shoot(page, 'j-rafi-incidents');
