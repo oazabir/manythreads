@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import * as api from '../../src/api/index.ts';
+import { BotEvalSet } from '../../src/bot-md/evals.ts';
 import { BotFrontmatter } from '../../src/bot-md/frontmatter.ts';
 import * as entities from '../../src/entities/index.ts';
 import * as markup from '../../src/markup/index.ts';
@@ -27,6 +28,7 @@ const all: [string, z.ZodType, 'input' | 'output'][] = [
   ...namedSchemas('api', api).map(([n, s]): [string, z.ZodType, 'input' | 'output'] => [n, s, 'input']),
   ...namedSchemas('markup', markup).map(([n, s]): [string, z.ZodType, 'input' | 'output'] => [n, s, 'output']),
   ['bot-md.BotFrontmatter', BotFrontmatter, 'input'],
+  ['bot-md.BotEvalSet', BotEvalSet, 'input'],
 ];
 
 describe('JSON Schema snapshots', () => {

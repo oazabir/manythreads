@@ -43,6 +43,8 @@ describe('templates', () => {
     const t = TeamTemplate.parse(body.template);
     expect(t.channels.map((c) => c.name)).toEqual(['#general', '#dev', '#releases', '#incidents', '#alerts', '#standup']);
     expect(t.teamMd).toContain('name: Engineering');
+    // the bot definitions the template ships (Brain in every one) travel with it
+    expect(Object.keys(t.files ?? {}).sort()).toEqual(['bots/brain/BOT.md', 'bots/brain/evals/brain.yaml', 'bots/coder/BOT.md']);
     expect((await w.call(nadia, 'GET', '/api/templates/nope')).status).toBe(404);
     expect((await w.call(null, 'GET', '/api/templates')).status).toBe(401);
   });
@@ -61,6 +63,8 @@ describe('apply a template (P2-08)', () => {
     expect(def.channels.map((c) => c.name)).toEqual(['#general', '#dev', '#releases', '#incidents', '#alerts', '#standup']);
     expect(def.board.name).toBeTruthy();
     expect(def.bots.map((b) => b.name)).toContain('Brain');
+    // the team keeps the definition without the bot files: they are committed to its repository, not repeated in every response
+    expect(def.files).toBeUndefined();
 
     const roster = GetTeamRosterResponse.parse(ok(await w.call(omar, 'GET', '/api/teams/platform/roster')));
     expect(roster.members.map((m) => [m.displayName, m.role])).toEqual([['Omar', 'lead']]);
@@ -69,6 +73,8 @@ describe('apply a template (P2-08)', () => {
       const files = await tx.query<{ files: Record<string, string> }>('SELECT files FROM app.team_pending_files WHERE team_id = $1', [teamId]);
       expect(files.rows).toHaveLength(1);
       expect(files.rows[0]?.files['TEAM.md']).toBe(def.teamMd);
+      // the first commit of the repository carries TEAM.md and the bot definitions of the template
+      expect(Object.keys(files.rows[0]?.files ?? {}).sort()).toEqual(['TEAM.md', 'bots/brain/BOT.md', 'bots/brain/evals/brain.yaml', 'bots/coder/BOT.md']);
       const tags = await tx.query<{ name: string }>(
         'SELECT r.name FROM app.team_role_tags t JOIN app.roles r ON r.id = t.role_id WHERE t.team_id = $1 ORDER BY r.name',
         [teamId],
@@ -91,7 +97,10 @@ describe('apply a template (P2-08)', () => {
       const count = async (sql: string): Promise<number> =>
         (await tx.query<{ n: number }>(sql, sql.includes('$1') ? [teamId] : [])).rows[0]?.n ?? -1;
       expect(await count("SELECT count(*)::int AS n FROM app.teams WHERE slug = 'platform'")).toBe(1);
-      expect(await count('SELECT count(*)::int AS n FROM app.team_members WHERE team_id = $1')).toBe(1);
+      // people only: the loader seats the template's bots on the team once the repository's first commit is made
+      expect(
+        await count("SELECT count(*)::int AS n FROM app.team_members tm JOIN app.actors a ON a.id = tm.actor_id AND a.kind = 'person' WHERE tm.team_id = $1"),
+      ).toBe(1);
       expect(await count('SELECT count(*)::int AS n FROM app.team_pending_files WHERE team_id = $1')).toBe(1);
       expect(await count('SELECT count(*)::int AS n FROM app.team_role_tags WHERE team_id = $1')).toBe(3);
       expect(await count("SELECT count(*)::int AS n FROM app.events WHERE type = 'team.template.applied' AND team_id = $1")).toBe(1);

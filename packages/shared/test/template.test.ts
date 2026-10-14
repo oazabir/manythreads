@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TeamTemplate } from '../src/index.ts';
+import { TEMPLATE_FILES_MAX, TeamTemplate, templateDefinitionOf } from '../src/index.ts';
 
 const ok = {
   id: 'engineering',
@@ -35,5 +35,34 @@ describe('TeamTemplate', () => {
     expect(TeamTemplate.safeParse({ ...ok, roleTags: ['on-call'] }).success).toBe(false);
     expect(TeamTemplate.safeParse({ ...ok, channels: [ok.channels[0], ok.channels[0]] }).success).toBe(false);
     expect(TeamTemplate.safeParse({ ...ok, version: 0 }).success).toBe(false);
+  });
+
+  it('carries the bot files a template ships, one folder deep, for bots it lists', () => {
+    const files = { 'bots/brain/BOT.md': '---\nname: Brain\n---\n', 'bots/brain/evals/brain.yaml': 'set: brain\n' };
+    expect(TeamTemplate.parse({ ...ok, files }).files).toEqual(files);
+    // a template read without them is still valid (the copy a team stores has none)
+    expect(TeamTemplate.safeParse(ok).success).toBe(true);
+  });
+
+  it('refuses a file anywhere else, for a bot the template does not list, or empty', () => {
+    const accepts = (path: string, text = 'x'): boolean => TeamTemplate.safeParse({ ...ok, files: { [path]: text } }).success;
+    expect(accepts('bots/brain/BOT.md')).toBe(true);
+    expect(accepts('bots/coder/BOT.md')).toBe(false); // not one of the template's bots
+    expect(accepts('TEAM.md')).toBe(false);
+    expect(accepts('pages/readme.md')).toBe(false);
+    expect(accepts('bots/brain/memory.md')).toBe(false);
+    expect(accepts('bots/brain/evals/../BOT.md')).toBe(false);
+    expect(accepts('bots/brain/evals/a/b.yaml')).toBe(false);
+    expect(accepts('bots/Brain/BOT.md')).toBe(false);
+    expect(accepts('bots/brain/BOT.md', '')).toBe(false);
+    const many = Object.fromEntries(Array.from({ length: TEMPLATE_FILES_MAX + 1 }, (_, i) => [`bots/brain/evals/s${i}.yaml`, 'x']));
+    expect(TeamTemplate.safeParse({ ...ok, files: many }).success).toBe(false);
+  });
+
+  it('keeps the stored definition free of the bot files', () => {
+    const withFiles = TeamTemplate.parse({ ...ok, files: { 'bots/brain/BOT.md': 'x' } });
+    const stored = templateDefinitionOf(withFiles);
+    expect('files' in stored).toBe(false);
+    expect(TeamTemplate.parse(stored)).toEqual(ok);
   });
 });

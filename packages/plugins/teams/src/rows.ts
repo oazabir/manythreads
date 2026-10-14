@@ -27,9 +27,12 @@ export type TeamRow = {
 
 export const TEAM_COLUMNS =
   't.id, t.workspace_id, t.slug, t.name, t.template, t.template_definition, t.archived_at, t.created_at, t.updated_at';
-/** Columns plus the caller's role and the roster size, for the detail and list shapes. */
+/**
+ * Columns plus the caller's role and the roster size, for the detail and list shapes. The size is the people of the roster (`app.teams_roster`,
+ * which the Roster screen draws): `team_members` also holds the team's bots, which the loader seats there, and the screens say "N people".
+ */
 export const TEAM_WITH_COUNTS = `${TEAM_COLUMNS}, app.team_role(t.id) AS my_role,
-  (SELECT count(*)::int FROM app.team_members tm WHERE tm.team_id = t.id) AS member_count`;
+  (SELECT count(*)::int FROM app.teams_roster(t.id)) AS member_count`;
 
 const teamFields = (row: TeamRow) => ({
   id: row.id,

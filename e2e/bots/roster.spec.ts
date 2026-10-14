@@ -165,3 +165,42 @@ test('a definition that fails to load is the red banner on the page and the rost
     await fixedContext.close();
   }
 });
+
+test('a team made from a template starts with its bots: Brain in every template, and the one the team is for', async ({ browser, playwright }) => {
+  // the first commit of the new team's repository carries the template's BOT.md files and the loader seats them, so the roster is not empty
+  const omar = await apiOn(playwright, stack, 'omar');
+  try {
+    const made = await omar.post<{ team: { slug: string }; created: boolean }>('/api/teams/from-template', {
+      templateId: 'customer-support',
+      name: 'Front desk',
+      slug: 'front-desk',
+    });
+    expect(made.created).toBe(true);
+  } finally {
+    await omar.ctx.dispose();
+  }
+
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/front-desk/bots');
+  try {
+    await expect(page.getByTestId('bots-roster')).toBeVisible();
+    const brain = rosterRow(page, 'brain');
+    await expect(brain).toBeVisible({ timeout: 45_000 });
+    await expect(brain).toContainText('Brain');
+    await expect(brain).toContainText('agent');
+    await expect(brain).toContainText('Hermes');
+    await expect(rosterRow(page, 'support-responder')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('roster-count')).toContainText('2 bots');
+
+    // the bot's page reads the file the first commit wrote, and its allowlist is the one SPEC §12.4 names plus the answer tool
+    await brain.getByTestId('bot-open').click();
+    await expect(page.getByTestId('bot-page')).toBeVisible();
+    await expect(page.locator('[data-landmark="bot-head"]')).toContainText('bots/brain/BOT.md');
+    await page.getByTestId('tab-capabilities').click();
+    const native = page.getByTestId('caps-native');
+    for (const capability of ['knowledge.search', 'files.search', 'memory.recall', 'messages.search', 'answer.post', 'pages.write']) {
+      await expect(native).toContainText(capability);
+    }
+  } finally {
+    await context.close();
+  }
+});

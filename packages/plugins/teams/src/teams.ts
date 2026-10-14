@@ -1,5 +1,5 @@
 import type { PluginDb, PluginTemplates, PluginTx } from '@manythreads/sdk';
-import type { TeamTemplate } from '@manythreads/shared';
+import { templateDefinitionOf, type TeamTemplate } from '@manythreads/shared';
 import { conflict, forbidden, HttpError, notFound } from './http.ts';
 import { TEAM_WITH_COUNTS, type TeamRow } from './rows.ts';
 
@@ -93,7 +93,7 @@ export interface NewTeam {
 /**
  * Get-or-create on (workspace, slug) with the kernel's one `INSERT ... ON CONFLICT DO SELECT` (`ctx.db.getOneOrCreate`): a
  * repeat returns the existing team and writes nothing. When the team is new (its pre-drawn id came back) the caller becomes
- * `lead`, the template's role tags are defined, and TEAM.md is held in team_pending_files; the caller emits the events.
+ * `lead`, the template's role tags are defined, and TEAM.md with the template's bot files is held in team_pending_files; the caller emits the events.
  */
 export async function getOrCreateTeam(tx: PluginTx, db: PluginDb, input: NewTeam): Promise<{ team: TeamRow; created: boolean }> {
   const id = await newId(tx);
@@ -105,7 +105,8 @@ export async function getOrCreateTeam(tx: PluginTx, db: PluginDb, input: NewTeam
       slug: input.slug,
       name: input.name,
       template: input.template?.id ?? null,
-      template_definition: input.template ? JSON.stringify(input.template) : null,
+      // the team keeps the template's definition without its bot files: those are committed to the repository below, once
+      template_definition: input.template ? JSON.stringify(templateDefinitionOf(input.template)) : null,
     },
     conflict: ['workspace_id', 'slug'],
     returning: ['id'],
@@ -119,7 +120,12 @@ export async function getOrCreateTeam(tx: PluginTx, db: PluginDb, input: NewTeam
     ]);
     if (input.template) {
       for (const tag of input.template.roleTags) await tx.query('SELECT * FROM app.teams_tag_define($1, $2)', [id, tag]);
-      await tx.query('SELECT app.put_team_pending_files($1, $2::jsonb)', [id, JSON.stringify({ 'TEAM.md': input.template.teamMd })]);
+      // The first commit of the repository: TEAM.md and the bot definitions the template ships (Brain in every template, PLAN P5-19). The bots
+      // loader reads them from that commit like any other, so a team made from a template starts with its roster.
+      await tx.query('SELECT app.put_team_pending_files($1, $2::jsonb)', [
+        id,
+        JSON.stringify({ ...(input.template.files ?? {}), 'TEAM.md': input.template.teamMd }),
+      ]);
     }
   }
   return { team: await teamById(tx, row.id), created };

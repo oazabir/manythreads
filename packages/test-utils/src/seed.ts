@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { createSystemPool, loadTemplates, withSystem } from '@manythreads/kernel';
+import { templateDefinitionOf } from '@manythreads/shared';
 import { createPersonas, KAHF_WORKSPACE, type CreatedPersonas } from './create-personas.ts';
 import type { TestDatabase } from './db.ts';
 import { KAHF_WORKSPACE_ID, TEAM_IDS, type TeamName } from './personas.ts';
@@ -118,7 +119,7 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
           await tx.query(
             `UPDATE app.teams SET template = $2, template_definition = $3::jsonb
               WHERE id = $1 AND template IS NULL`,
-            [id, template.id, JSON.stringify(template)],
+            [id, template.id, JSON.stringify(templateDefinitionOf(template))],
           );
         }
       },
