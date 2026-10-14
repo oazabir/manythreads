@@ -8,7 +8,7 @@ A bot that answers a question can end its run with one tool call, **`answer.post
 other; SPEC calls the surface "the `answer` tool"). It sends a text, the sources the text rests on **by id**, and some suggestions. The
 platform re-reads every one of them as the person who asked, keeps what that person may open, counts what it left out without naming it,
 stamps whom the answer was for from the run, and posts the message into the thread the run answers in. The message's text is the answer's
-text; its `meta.answer` is the payload the client draws. Any bot may be granted the tool; nothing in the platform knows Brain is special.
+text; its `meta.answer` is the payload the client draws. Any bot may be granted the tool; nothing in the platform knows Brain is special (Brain is a `BOT.md` every team template ships: what it is granted and told is in [templates.md](../templates.md)).
 
 ```
 BOT.md  capabilities.native: [messages.search, answer.post]      (or answer.*)

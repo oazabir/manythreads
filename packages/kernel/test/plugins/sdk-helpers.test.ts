@@ -83,6 +83,9 @@ roleTags: []
     await mkdir(path.join(tmp, id), { recursive: true });
     await writeFile(path.join(tmp, id, 'template.yaml'), text);
     await writeFile(path.join(tmp, id, 'TEAM.md'), `---\nname: ${id}\n---\n`);
+    // every team template ships Brain's definition
+    await mkdir(path.join(tmp, id, 'bots', 'brain'), { recursive: true });
+    await writeFile(path.join(tmp, id, 'bots', 'brain', 'BOT.md'), '---\nname: Brain\nrole: r\nkind: agent\nruntime: hermes\n---\n\n# Brain\n');
   };
   beforeAll(async () => {
     tmp = await mkdtemp(path.join(os.tmpdir(), 'manythreads-tpl-'));

@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "default": 1,
+      "type": "number",
+      "const": 1
+    },
+    "set": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "cases": {
+      "minItems": 1,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "given": {
+            "type": "object",
+            "properties": {
+              "where": {
+                "type": "string",
+                "enum": [
+                  "conversation",
+                  "thread",
+                  "channel"
+                ]
+              },
+              "mail": {
+                "type": "string",
+                "enum": [
+                  "off",
+                  "on"
+                ]
+              },
+              "sources": {
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 32,
+                      "pattern": "^[a-z0-9][a-z0-9-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "team",
+                        "channel",
+                        "person"
+                      ]
+                    },
+                    "visibleToAsker": {
+                      "type": "boolean"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 600
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "scope",
+                    "visibleToAsker",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          "expect": {
+            "type": "object",
+            "properties": {
+              "minCitations": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 40
+              },
+              "maxCitations": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 40
+              },
+              "citesKinds": {
+                "minItems": 1,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                }
+              },
+              "mentions": {
+                "minItems": 1,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "notMentions": {
+                "minItems": 1,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "statesOutsideScope": {
+                "type": "boolean"
+              },
+              "outsideScopeKinds": {
+                "minItems": 1,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                }
+              },
+              "statesUnknown": {
+                "type": "boolean"
+              },
+              "offersHandoff": {
+                "type": "boolean"
+              },
+              "toolCalls": {
+                "type": "object",
+                "properties": {
+                  "required": {
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*(\\.([a-z][a-z0-9_]*|\\*))+$"
+                    }
+                  },
+                  "forbidden": {
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]*(\\.([a-z][a-z0-9_]*|\\*))+$"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "id",
+          "question",
+          "expect",
+          "rationale"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "set",
+    "cases"
+  ],
+  "additionalProperties": false
+}
