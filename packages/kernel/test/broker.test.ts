@@ -48,6 +48,11 @@ describe('broker: path guard (bot actors)', () => {
     'bots/x/BOT.md',
     'bots/x',
     'bots',
+    // PLAN P5-23 criterion 13: the platform files a bot must never write itself
+    'bots/coder/lessons.md',
+    'bots/coder/memory.md',
+    'bots/coder/people/00000000-0000-7000-8000-0000000d0002.md',
+    'bots/brain/people/00000000-0000-7000-8000-0000000d0002.md',
     'TEAM.md',
     'skills/x',
     'skills/x/SKILL.md',

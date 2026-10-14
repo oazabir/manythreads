@@ -119,6 +119,18 @@ Row level security: `team` kind, `SELECT` for `app.readable_team_ids('manage')` 
 
 `app.memory_feed_pending` is the work list (system only: no privilege for the request role).
 
+## Platform writes (P5-23)
+
+`bots/<slug>/lessons.md` (the Workshop's lessons file) and `bots/<slug>/people/<id>.md` (per-person notes,
+e.g. Brain's notes on how each person likes answers) are written by the platform — the system actor, through
+`appendLesson` / `appendPersonNote` in `packages/plugins/memory/src/platform.ts`, through the one repo writer —
+never through a bot's file capability. The broker's path guard and the writer both deny bot writes under `bots/`
+whatever the grant (`packages/kernel/test/broker.test.ts` pins `lessons.md`, `memory.md` and `people/<id>.md`);
+people (team role) and the system are not subject to it, so a lead's commit and the platform's both land as their
+own author (the system's commits carry a null author). Entries are dated appends, at most
+`PLATFORM_ENTRY_MAX_CHARS` characters; an archived team is left alone; a lost 409 race is retried. The bot-facing
+`memory.write` tool is P5-26; the `person_file` retain-log store arrives with it.
+
 ## Tests
 
 * `test/render.test.ts`, `test/decide.test.ts`, `test/window.test.ts` — pure: bounded and linear text work (a megabyte of blank lines in well under a second), document ids, the reconcile table (idempotent, replace, forget, withhold once per reason, defer then give up), the sliding window.

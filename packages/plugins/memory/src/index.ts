@@ -13,6 +13,7 @@ import { SlidingWindow } from './window.ts';
 
 export { decide } from './decide.ts';
 export type { Decision } from './decide.ts';
+export { appendLesson, appendPersonNote, lessonPath, personNotePath, PLATFORM_ENTRY_MAX_CHARS } from './platform.ts';
 export { drainFeed } from './feed.ts';
 export type { DrainStats, FeedRuntime } from './feed.ts';
 export { SlidingWindow } from './window.ts';
