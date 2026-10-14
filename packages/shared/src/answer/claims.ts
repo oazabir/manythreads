@@ -12,12 +12,18 @@
 //   * A unit ends at `.`, `!`, `?` (and their Arabic, Indic, Chinese and ellipsis forms), after any run of stops and closers, when white space
 //     follows — and the next word does not begin in lower case or with a digit and the stop does not close an abbreviation (`e.g.`, `U.S.`,
 //     `Dr.`, an initial) — or when the stop is of a script written without spaces (`。！？`), or when a marker group follows the stop directly.
+//   * A split can be wrong, and no list of abbreviations is complete (`Sen.`, `Gov.`, `Corp.`, `Mt.`, `ca. €3M`): so a unit that FOLLOWS a doubtful
+//     split — a `.` after a word of four letters or fewer (any script, any case) or after a token with a dot inside it (`v2.3`, `a.txt`), or a
+//     next character that is not a letter — is marked SOFT, and
+//     when a soft unit is taken the unit before it is taken too (backwards, so doubtful splits chain). The documented price is one innocent
+//     neighbour when a short word ends a sentence and the next one carries the marker; the claim itself is never left half behind.
 //   * One positional rule decides where a removed marker group belongs, whatever decorates it (`**[2]**`, `\[2\]`, `([2])`, `(see [2])`, `"[2]"`,
 //     `「[2]」`, `[[2]](url)`, `<sup>[2]</sup>`, `^[2]`): it belongs to the unit it sits in; and if NO word character (a letter, a digit or a mark of
 //     any script) lies between the start of the unit and the group — only white space, punctuation, symbols, decoration, a link address, or words
 //     inside an opening bracket or quote that the group is also inside — it is at a sentence BOUNDARY: it may be the suffix of the sentence before
 //     or the prefix of this one, so BOTH go (the documented price is one innocent neighbour). A group after words is the unit's own: this unit goes.
-//     No list of decorations has to be complete; only word characters count.
+//     No list of decorations has to be complete; only word characters count. The same holds across blocks: a block whose first unit has no word
+//     character at all (`[2]` alone in a paragraph or a list item) also takes the last unit of the block immediately before it.
 //   * Markers are `[2]`, `[1, 2]`, `[1-3]`, `[ 2 ]`, `［2］` and `【2】`, with a backslash allowed before the closing bracket (the client unescapes it);
 //     a group counts as removed when ANY number in it is.
 //   * Fenced code with a removed marker in it goes whole; a fence with no closing line is ordinary prose (it never shields what follows); an
@@ -77,6 +83,9 @@ const isWs = (ch: string | undefined): boolean => {
 };
 const isLower = (ch: string): boolean => ch === ch.toLowerCase() && ch !== ch.toUpperCase();
 const isLetter = (ch: string): boolean => ch.toLowerCase() !== ch.toUpperCase();
+const ANY_LETTER = /^\p{L}$/u;
+/** A letter of any script, cased or not (`isLetter` knows only the cased ones: it is right for "does a sentence start here", not for "is this a word"). */
+const isAnyLetter = (ch: string | undefined): boolean => ch !== undefined && ANY_LETTER.test(ch);
 
 /**
  * A marker group at `i`: `[n]`, `[a, b]`, `[a-b]`, `[ n ]`, `［n］`, `【n】` (numbers of one to three digits, at most 40 characters in all).
@@ -226,8 +235,35 @@ function wordLength(text: string, i: number): number {
   return WORD.test(String.fromCodePoint(cp)) ? (cp > 0xffff ? 2 : 1) : 0;
 }
 
+interface Unit {
+  start: number;
+  end: number;
+  /** The unit holds a removed marker (or was taken with a neighbour). */
+  hit: boolean;
+  /** A removed marker in it has no word character before it in the unit. */
+  boundary: boolean;
+  /** It follows a split that may have been an abbreviation's stop or a short word's: if it goes, the unit before it goes too. */
+  soft: boolean;
+  /** No word character at all in the unit (a marker and decoration only). */
+  wordless: boolean;
+}
+
 /**
- * The text of one block without the sentences that carry a removed marker.
+ * The stop at `i` may close something that is not a sentence: a word of one to four letters (any script, any case: `Sen.`, `Gov.`, `ca.`, `St.`,
+ * `done.`), or a token with a dot inside it (`v2.3`, `a.txt`, `example.com/a.b`, `p.m`, `Ph.D`). The sentence may go on after it.
+ */
+function doubtfulBefore(text: string, i: number): boolean {
+  let count = 0;
+  while (count < 5 && i - count - 1 >= 0 && isAnyLetter(text[i - count - 1])) count += 1;
+  if (count >= 1 && count <= 4) return true;
+  for (let q = i - 1, steps = 0; q >= 0 && steps < 64 && !isWs(text[q]); q -= 1, steps += 1) {
+    if (text[q] === '.') return true;
+  }
+  return false;
+}
+
+/**
+ * One block cut into sentence units, each marked with what the removal needs to know.
  *
  * The block is cut into sentence units (a stop, then white space and a word that is not in lower case or a digit; or a stop of a script written
  * without spaces; or a stop that a marker group follows directly). A removed marker belongs to the unit it sits in. Where it sits decides one
@@ -236,18 +272,22 @@ function wordLength(text: string, i: number): number {
  * inside — the marker is at a sentence BOUNDARY, and it may belong to the sentence before it or be the prefix of this one: both go. Otherwise it
  * is the unit's own suffix or inline marker, and this unit alone goes. No list of decorations has to be complete: only word characters count.
  */
-function dropSentences(text: string, removed: ReadonlySet<number>): { text: string; dropped: string[] } {
+function segmentBlock(text: string, removed: ReadonlySet<number>): Unit[] {
   const n = text.length;
-  const units: Array<{ start: number; end: number; hit: boolean; boundary: boolean }> = [];
+  const units: Unit[] = [];
   let start = 0;
+  let softNext = false; // the unit that is starting follows a doubtful split
+  let sawWord = false;
   let hit = false; // the unit holds a removed marker
   let boundary = false; // one of them has no word character before it in the unit
   let words = false; // a word character has been seen (outside a leading wrapper that is still open)
   let lead = 0; // wrappers opened before any word and not yet closed
   let pending = false; // words inside those wrappers: they count only once the wrapper closes
   let quoteLead = false;
-  const endUnit = (end: number): void => {
-    units.push({ start, end, hit, boundary });
+  const endUnit = (end: number, soft = false): void => {
+    units.push({ start, end, hit, boundary, soft: softNext, wordless: !sawWord });
+    softNext = soft;
+    sawWord = false;
     start = end;
     hit = false;
     boundary = false;
@@ -282,6 +322,7 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
         hit = true;
         if (!words) boundary = true;
       }
+      sawWord = true;
       if (lead > 0) pending = true;
       else words = true;
       i = closeAt + r;
@@ -346,6 +387,7 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
     if (!TERMINATORS.has(ch)) {
       const w = wordLength(text, i);
       if (w > 0) {
+        sawWord = true;
         if (lead > 0) pending = true;
         else words = true;
         i += w;
@@ -386,26 +428,40 @@ function dropSentences(text: string, removed: ReadonlySet<number>): { text: stri
       i = k;
       continue;
     }
-    endUnit(k);
+    // a doubtful split: a short word before the stop (`Sen.`, `ca.`, `done.`), or something that is not a letter after it (`€3M`)
+    endUnit(k, (ch === '.' && doubtfulBefore(text, i)) || !isAnyLetter(next));
     i = k;
   }
   endUnit(n);
+  return units;
+}
 
-  // a marker at a boundary takes the unit before it as well
+/**
+ * The text of one block without the units that are hit. A removed marker at a boundary takes the unit before it, a unit that is hit takes the
+ * unit before it when its own split was doubtful (and so on back: soft splits chain), and `forceLast` (a marker-only block follows) takes the
+ * last unit.
+ */
+function assembleBlock(text: string, units: Unit[], forceLast: boolean): { text: string; dropped: string[]; any: boolean } {
   for (let u = 1; u < units.length; u += 1) {
     if (units[u]!.boundary) units[u - 1]!.hit = true;
   }
+  if (forceLast && units.length > 0) units[units.length - 1]!.hit = true;
+  for (let u = units.length - 1; u >= 1; u -= 1) {
+    if (units[u]!.hit && units[u]!.soft) units[u - 1]!.hit = true;
+  }
+  let any = false;
   let out = '';
   const dropped: string[] = [];
   for (const unit of units) {
     if (unit.hit) {
+      any = true;
       const said = text.slice(unit.start, unit.end).replace(/\s+/g, ' ').trim();
       if (said !== '') dropped.push(clipText(said, SNIPPET));
     } else {
       out += text.slice(unit.start, unit.end);
     }
   }
-  return { text: out, dropped };
+  return { text: out, dropped, any };
 }
 
 /** A table row: starts and ends with a pipe and has another inside (`#1 overall [2].` or `| a` is prose, as the reader draws it). */
@@ -479,12 +535,23 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
   }
   if (cur !== null) segs.push(cur);
 
-  // pass 2: each block loses the sentences that carry a removed marker (a table row and a fenced block go whole)
+  // pass 2: each block loses the units that carry a removed marker (a table row and a fenced block go whole)
+  const units = segs.map((seg) => (seg.kind === 'block' ? segmentBlock([seg.first, ...seg.rest].join('\n'), removed) : null));
+  // a block whose first unit holds a removed marker and nothing else (`[2]` alone in a paragraph, or a list item) takes the last unit of the
+  // block right before it (blank lines apart) as well: the boundary rule, across blocks
+  const forced = segs.map(() => false);
+  let previous = -1;
+  segs.forEach((seg, idx) => {
+    if (seg.kind === 'raw' && seg.line.trim() === '') return;
+    const mine = units[idx];
+    if (mine !== null && mine !== undefined && mine.length > 0 && mine[0]!.hit && mine[0]!.wordless && previous >= 0) forced[previous] = true;
+    previous = seg.kind === 'block' ? idx : -1;
+  });
   const out: string[] = [];
   const fenced = new Set<number>();
   const said: string[] = [];
   let touched = false;
-  for (const seg of segs) {
+  for (const [idx, seg] of segs.entries()) {
     if (seg.kind === 'raw') {
       out.push(seg.line);
       continue;
@@ -511,11 +578,11 @@ export function removeClaims(body: string, removed: ReadonlySet<number>): ClaimR
       continue;
     }
     const text = [seg.first, ...seg.rest].join('\n');
-    if (!holdsMarker(text, removed)) {
+    const cutText = assembleBlock(text, units[idx]!, forced[idx]!);
+    if (!cutText.any) {
       out.push(...seg.raw);
       continue;
     }
-    const cutText = dropSentences(text, removed);
     touched = true;
     if (holdsMarker(cutText.text, removed)) {
       // nothing of a removed claim may stay: a marker that survived the cut takes the whole block with it

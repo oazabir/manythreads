@@ -34,6 +34,13 @@ const lcg = (seed: number): (() => number) => {
   };
 };
 
+/** Things that end in a stop and are not the end of a sentence, each with the word that follows (an abbreviation list can never be complete). */
+const ABBREVIATION_POOL = [
+  'Sen. Warren', 'Gov. Newsom', 'Corp. Annual', 'Mt. Hood', 'Co. Ltd', 'Dept. Health', 'Rep. Lee', 'Gen. Motors', 'Univ. Press', 'Ave. North',
+  'ca. €3M', 'No. 5', 'J. R. R. Tolkien', 'Fig. 3', 'St. Louis', 'Mr. Smith', 'v2.3. Release', 'example.com/a.b Today', 'a.txt Today', 'p.m. Eastern',
+  'Ph.D. Candidates', 'approx. Five',
+];
+
 const BODY = 'The deploy waits for the Monday window [1]. Leadership also has plans [2] that I cannot repeat. Your own question is [3].';
 
 const original = (over: Record<string, unknown> = {}): AnswerPayload =>
@@ -206,13 +213,14 @@ describe('removeClaims', () => {
     expect(removeClaims('Revenue grew 4%. [1], [2] Costs fell. Keep this.', new Set([2])).body).toBe('Keep this.');
     expect(removeClaims('Revenue grew 4%. [1][2]\nCosts fell. Keep this.', new Set([1])).body).toBe('Keep this.');
     // at the end of the text there is no neighbour to take
-    expect(removeClaims('Keep this. Revenue grew 4%. [2]', new Set([2])).body).toBe('Keep this.');
+    expect(removeClaims('Keep everything. Revenue grew 4%. [2]', new Set([2])).body).toBe('Keep everything.');
     // before the stop, or with no space, the group is the sentence's own and nothing else goes
-    expect(removeClaims('Keep this. Revenue grew [1], [2]. Next claim.', new Set([2])).body).toBe('Keep this. Next claim.');
+    expect(removeClaims('Keep everything. Revenue grew [1], [2]. Next claim.', new Set([2])).body).toBe('Keep everything. Next claim.');
     // tight to the stop is a boundary too: the claim and its neighbour go
-    expect(removeClaims('Keep this. Revenue grew.[2] Next claim.', new Set([2])).body).toBe('Keep this.');
-    // a marker group that is not removed leaves its sentence alone; one after words is its unit's own
-    expect(removeClaims('Revenue grew 4%. [1] Next claim [2].', new Set([2])).body).toBe('Revenue grew 4%.');
+    expect(removeClaims('Keep everything. Revenue grew.[2] Next claim.', new Set([2])).body).toBe('Keep everything.');
+    // a marker group that is not removed opens the next unit: the split before it is doubtful (a character that is not a letter follows the
+    // stop), so the sentence before goes with the claim — the price of a soft split is one neighbour, and the group after words is its unit's own
+    expect(removeClaims('Keep everything. Revenue grew 4%. [1] Next claim [2].', new Set([2])).body).toBe('Keep everything.');
   });
 
   it('one positional rule: a removed marker with no word before it in its unit is at a boundary, whatever decorates it, and the unit before goes too', () => {
@@ -235,9 +243,10 @@ describe('removeClaims', () => {
     }
     // after words in its unit a marker is the unit's own, however decorated: only that unit goes
     for (const form of ['(see [2])', '**[2]**', '「[2]」', '([2])']) {
-      expect(removeClaims(`Revenue grew. Costs fell ${form}. After this one.`, new Set([2])).body, form).toBe('Revenue grew. After this one.');
+      expect(removeClaims(`Revenue grew strongly. Costs fell ${form}. After this one.`, new Set([2])).body, form).toBe('Revenue grew strongly. After this one.');
     }
-    expect(removeClaims('Revenue grew. (see the report) [2] Costs fell. After this one.', new Set([2])).body).toBe('Revenue grew. After this one.');
+    // a unit that opens with a bracket follows a doubtful split (no letter after the stop): the neighbour goes with it
+    expect(removeClaims('Revenue grew strongly. (see the report) [2] Costs fell. After this one.', new Set([2])).body).toBe('After this one.');
   });
 
   it('a sentence wrapped over several lines goes whole, a list item with its wrapped lines too, and a quote', () => {
@@ -257,6 +266,33 @@ describe('removeClaims', () => {
     expect(removeClaims('Ships from the U.S. by Friday [2]. After.', new Set([2])).body).toBe('After.');
   });
 
+  it('an abbreviation nobody listed cannot cut a claim in two: a split that may be wrong is soft, and a soft unit that goes takes the unit before it', () => {
+    expect(removeClaims("Revenue rose 4% year over year, according to Sen. Warren's office [2]. After.", new Set([2])).body).toBe('After.');
+    expect(removeClaims('Costs fell to ca. €3M [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('Keep everything. Gov. Newsom signed it [2]. After this.', new Set([2])).body).toBe('Keep everything. After this.');
+    for (const item of ABBREVIATION_POOL) {
+      expect(removeClaims(`Keep everything. Claim was reported by ${item} in the filing [2]. After this.`, new Set([2])).body, item).toBe('Keep everything. After this.');
+    }
+    // doubtful splits chain backwards, and stop at the first one that was not doubtful
+    expect(removeClaims('Keep everything. Sen. Gov. Warren said it [2]. After.', new Set([2])).body).toBe('Keep everything. After.');
+    // a version number or a file name is a token with a dot inside it
+    expect(removeClaims('Keep everything. It ships v2.3. Release notes say so [2]. After.', new Set([2])).body).toBe('Keep everything. After.');
+    // the price: a short word that ends a sentence, and the next sentence carries the marker, so one innocent neighbour goes
+    expect(removeClaims('Keep everything. The work is done. Costs fell [2]. After that.', new Set([2])).body).toBe('Keep everything. After that.');
+    // a long word before the stop and a letter after it is a sentence end: nothing goes with the claim
+    expect(removeClaims('Keep everything. Costs fell sharply [2]. After that.', new Set([2])).body).toBe('Keep everything. After that.');
+  });
+
+  it('a block that starts with nothing but a removed marker takes the last unit of the block right before it, and only that one', () => {
+    expect(removeClaims('Revenue grew 4%.\n\n[2]\n\nKeep everything.', new Set([2])).body).toBe('Keep everything.');
+    expect(removeClaims('Keep everything. Revenue grew 4%.\n\n[2]\n\nKeep that.', new Set([2])).body).toBe('Keep everything.\n\nKeep that.');
+    expect(removeClaims('- Revenue grew 4%.\n- [2]\n- Keep everything.', new Set([2])).body).toBe('- Keep everything.');
+    expect(removeClaims('Revenue grew 4%.\n\n**[2]**\n\nKeep everything.', new Set([2])).body).toBe('Keep everything.');
+    // not when something else lies between (a table row, a fence), and not when the block has words of its own: those open their own sentence
+    expect(removeClaims('Revenue grew 4%.\n\n| a | b |\n\n[2]', new Set([2])).body).toBe('Revenue grew 4%.\n\n| a | b |');
+    expect(removeClaims('Revenue grew 4%.\n\n[2] Costs fell.', new Set([2])).body).toBe('Revenue grew 4%.');
+  });
+
   it('markdown links and footnotes next to a marker are part of its sentence', () => {
     expect(removeClaims('Read [the board note](https://example.com/a.html) for details [2](https://example.com/b). After.', new Set([2])).body).toBe('After.');
     expect(removeClaims('A claim[^1] with a note [2]. After.', new Set([2])).body).toBe('After.');
@@ -268,10 +304,10 @@ describe('removeClaims', () => {
   });
 
   it('reports the words it took out, per sentence', () => {
-    const r = removeClaims('Keep this. Revenue grew 4%. [2] Costs fell [1]. And this stays.', new Set([2]));
+    const r = removeClaims('Keep everything. Revenue grew 4%. [2] Costs fell [1]. And this stays.', new Set([2]));
     expect(r.removed).toEqual(['Revenue grew 4%.', '[2] Costs fell [1].']);
     expect(r.sentences).toBe(2);
-    expect(r.body).toBe('Keep this. And this stays.');
+    expect(r.body).toBe('Keep everything. And this stays.');
   });
 
   it('leaves the text alone when nothing is removed, and when the number is not in it', () => {
@@ -421,6 +457,69 @@ describe('removeClaims', () => {
     }
   });
 
+  // An abbreviation, an initial, a version or a file name INSIDE a claim must not leave the first half of the claim behind: the unique token comes
+  // BEFORE the abbreviation, the marker after it. The sentence before the claim survives; the one after it too (unless the marker sits after a stop).
+  const SUFFIXES = [
+    { text: ' [2].', prefixy: false },
+    { text: '[2].', prefixy: false },
+    { text: ' [1, 2].', prefixy: false },
+    { text: ' [ 2 ].', prefixy: false },
+    { text: ' ［2］.', prefixy: false },
+    { text: ' **[2]**.', prefixy: false },
+    { text: ' ([2]).', prefixy: false },
+    { text: ' [1-3].', prefixy: false },
+    { text: '. [2]', prefixy: true },
+    { text: '.[2]', prefixy: true },
+  ];
+
+  it('an abbreviation, initial, version or file name inside a claim never leaves its first half behind', () => {
+    let n = 0;
+    for (const item of ABBREVIATION_POOL) {
+      for (const suffix of SUFFIXES) {
+        for (const gap of [' ', '\n']) {
+          n += 1;
+          const claim = `Claim${String(n)} was reported by ${item.replace(' ', gap)} in the filing${suffix.text}`;
+          const text = `Pre${String(n)} stays in place elsewhere. ${claim} Post${String(n)} stays in place elsewhere.`;
+          const out = removeClaims(text, new Set([2])).body;
+          const ctx = JSON.stringify({ text, out });
+          expect(out, `the claim's first half was kept: ${ctx}`).not.toMatch(new RegExp(`Claim${String(n)}(?!\\d)`));
+          expect(out, `the claim's words were kept: ${ctx}`).not.toContain('was reported by');
+          expect(out, `the claim's last words were kept: ${ctx}`).not.toContain('in the filing');
+          expect(out, `the sentence before was lost: ${ctx}`).toContain(`Pre${String(n)} stays in place elsewhere.`);
+          // (a marker after the stop may be the prefix of the sentence after it: that one is the documented neighbour)
+          if (!suffix.prefixy) expect(out, `the sentence after was lost: ${ctx}`).toContain(`Post${String(n)} stays in place elsewhere.`);
+          expect(isSubsequence(out, text), ctx).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('the same pool in a random layout: every claim is gone whole, and only the neighbours of a claim may go with it', () => {
+    const next = lcg(808_080);
+    const pick = <T>(list: readonly T[]): T => list[next() % list.length]!;
+    for (let round = 0; round < 400; round += 1) {
+      const count = 2 + (next() % 6);
+      const units: Array<{ text: string; carries: boolean; token: string }> = [];
+      for (let i = 0; i < count; i += 1) {
+        const token = `Tok${String(round * 10 + i)}`;
+        const kind = next() % 3;
+        if (kind === 0) units.push({ text: `${token} stays in place elsewhere.`, carries: false, token });
+        else if (kind === 1) units.push({ text: `${token} was reported by ${pick(ABBREVIATION_POOL)} in the filing [1].`, carries: false, token });
+        else units.push({ text: `${token} was reported by ${pick(ABBREVIATION_POOL)} in the filing${pick(SUFFIXES.filter((x) => !x.prefixy)).text}`, carries: true, token });
+      }
+      const text = units.map((u) => u.text).join(pick([' ', ' ', '\n']));
+      const out = removeClaims(text, new Set([2])).body;
+      units.forEach((u, i) => {
+        const near = (units[i - 1]?.carries ?? false) || (units[i + 1]?.carries ?? false);
+        const present = new RegExp(`${u.token}(?!\\d)`).test(out);
+        const ctx = JSON.stringify({ text, out, token: u.token });
+        if (u.carries) expect(present, `the claim must be gone: ${ctx}`).toBe(false);
+        else if (!near) expect(present, `an unrelated sentence was lost: ${ctx}`).toBe(true);
+      });
+      expect(isSubsequence(out, text), JSON.stringify({ text, out })).toBe(true);
+    }
+  });
+
   it('never leaves a removed marker behind outside kept code, whatever the layout', () => {
     const alphabet = ['a', 'B', ' ', '.', '!', '?', '[', ']', '1', '2', '3', '\n', '\n\n', '- ', '> ', '# ', '| ', ', ', '. ', '[1]', '[2]', '[1], [2]', '。', 'e.g. ', '4%. ', '(', ')', '*', ' ', ' ', '［2］', '【2】', '[1-3]', '`', '```\n'];
     const next = lcg(11);
@@ -466,6 +565,13 @@ describe('hostile input stays linear', () => {
     ['unspaced stops and decorated markers', (n) => '成本。([2])'.repeat(n / 7)],
     ['openers without words', (n) => '. ([“「（'.repeat(n / 8)],
     ['descending backtick runs', (n) => Array.from({ length: Math.floor(Math.sqrt(n * 2)) }, (_, i) => '`'.repeat(i + 1) + ' x ').reverse().join('')],
+    ['abbreviations, initials, versions and file names', (n) => {
+      const block = ABBREVIATION_POOL.map((p) => `Claim was reported by ${p} in the filing. `).join('');
+      return block.repeat(Math.ceil(n / block.length));
+    }],
+    ['one soft split after another', (n) => 'Sen. Warren '.repeat(n / 12)],
+    ['dotted tokens and file names', (n) => 'v2.3. a.txt example.com/a.b. '.repeat(n / 28)],
+    ['non-letters after stops', (n) => 'ca. €3M. ($4) "x" '.repeat(n / 18)],
     ['lines starting with hashes and pipes', (n) => 'ranked\n#1 overall\n| a\n'.repeat(n / 22)],
   ];
   for (const [name, build] of cases) {

@@ -329,9 +329,10 @@ describe('Remove claim, against what the client draws as a marker', () => {
       expect(out, form).toContain('After this one.');
       expect(out, form).toContain('Tail [3].');
     }
-    // a decoration around a marker that is not removed leaves its sentence alone, and a word with a marker on it belongs to its own sentence
-    expect(removeClaims('Revenue grew. **[1]** Costs fell [2]. After.', new Set([2])).body).toBe('Revenue grew. After.');
-    expect(removeClaims('Revenue grew. Costs[2] fell. After.', new Set([2])).body).toBe('Revenue grew. After.');
+    // a word with a marker on it belongs to its own sentence; a unit that opens with decoration follows a doubtful split (no letter after the
+    // stop), so the sentence before it goes too: one neighbour is the price of never leaving half a claim behind
+    expect(removeClaims('Revenue grew strongly. Costs[2] fell. After.', new Set([2])).body).toBe('Revenue grew strongly. After.');
+    expect(removeClaims('Revenue grew strongly. **[1]** Costs fell [2]. After.', new Set([2])).body).toBe('After.');
   });
 
   it('forms the client does not turn into a marker are not touched: HTML entities and a link labelled with a bare number are text', () => {

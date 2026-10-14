@@ -184,8 +184,12 @@ that is not the caller's own answer is a **404**, for an admin and a teammate al
    again that it is a subsequence of the original. The unit is a *block* (a paragraph with its hard-wrapped lines, a list item with its wrapped
    lines, a quote, a heading; a table row goes whole), not a line. A sentence ends at a stop followed by white space, unless the next word starts
    in lower case or with a digit or the stop closes an abbreviation (`e.g.`, `U.S.`, `Dr.`, an initial): where the extent is ambiguous the claim is
-   never left behind, at the price of an innocent neighbour going with it. A marker group written after the stop and a space (`claim. [2] Next.`,
-   `[1], [2]`) belongs to the sentence before it **and**, when text follows, to the one after it (it may be a prefix): both go. Markers are `[2]`,
+   never left behind, at the price of an innocent neighbour going with it. No list of abbreviations is relied on: a split that may be wrong
+   (a stop after a word of four letters or fewer, or after a token with a dot inside it such as `v2.3` or `a.txt`, or before a character that is
+   not a letter, as in `Sen. Warren`, `Corp. Annual`, `ca. €3M`) is *soft*, and when the unit after a soft split goes, the unit before it goes
+   too (and so on back). A marker group written after the stop and a space (`claim. [2] Next.`,
+   `[1], [2]`) belongs to the sentence before it **and**, when text follows, to the one after it (it may be a prefix): both go; so does a
+   paragraph or list item that is nothing but a removed marker (`[2]` alone): it takes the last unit of the block right before it. Markers are `[2]`,
    `[1, 2]`, `[1-3]`, `[ 2 ]`, `［2］` and `【2】`, and a group counts as removed when any number in it is (white space includes NBSP, thin and
    zero-width spaces; scripts written without spaces, and the Urdu and Hindi stops, end a sentence at the stop). A fenced block or an inline code
    span that holds a removed marker goes whole; a fence with no closing line is ordinary prose and shields nothing after it. A removed marker that
@@ -228,7 +232,7 @@ re-judged for new readers; deleting it and sharing again is the remedy). (b) The
 conversation run, which only the asker can read (bots 0011) and which opens nothing; making it nullable would change a shared schema for no
 reader's gain. (c) The page is saved once: a second save of the same answer, on any day and with any cut, answers with the existing page and its
 counts, and edits to it are the Files screen's. (d) `answer_channel_reach` reads a channel's whole audience per preview and share (the cost grows
-with the channel's readers; the routes are limited to 120 and 30 a minute). (e) **Segmentation is a proximity heuristic, not a provenance guarantee.** A claim is "the sentence a marker sits in (or next to)"; a model can keep a claim by putting its marker in another block, by paraphrasing the claim in a sentence that carries no marker, or by writing a marker in a form no reader parses. The control is the preview the sharer confirms: `removedText` (the words that go) and the text as it will be posted, with the digest binding the two to what is written. (f) The client draws only `[n]` as a superscript: `[1, 2]`, `[1-3]` and the full-width forms are removed by the share and shown as text. (g) Segmentation of stored model text is a heuristic that errs toward
+with the channel's readers; the routes are limited to 120 and 30 a minute). (e) **Segmentation is a proximity heuristic, not a provenance guarantee.** A claim is "the sentence a marker sits in (or next to)"; a model can keep a claim by putting its marker in another block, by paraphrasing the claim in a sentence that carries no marker, or by writing a marker in a form no reader parses. The control is the preview the sharer confirms: `removedText` (the words that go) and the text as it will be posted, with the digest binding the two to what is written. (f) The client draws only `[n]` as a superscript: `[1, 2]`, `[1-3]` and the full-width forms are removed by the share and shown as text. (h) A soft split can cost one extra neighbour sentence: a sentence that ends in a short word (`…is done.`) or before a bracket, a quote or emphasis, followed by a sentence that carries a removed marker, goes with it, and a chain of such splits goes back as far as it runs; the preview lists the words. (g) Segmentation of stored model text is a heuristic that errs toward
 removing more; a sentence the sharer wants kept next to a removed claim can be lost, and the preview says exactly which words go.
 
 **Not done here.** The Drive-specific masked source (a person's connection) is phase 8: until `person:*` reads write citable sources, a
