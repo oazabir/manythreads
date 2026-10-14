@@ -39,6 +39,9 @@ const ABBREVIATION_POOL = [
   'Sen. Warren', 'Gov. Newsom', 'Corp. Annual', 'Mt. Hood', 'Co. Ltd', 'Dept. Health', 'Rep. Lee', 'Gen. Motors', 'Univ. Press', 'Ave. North',
   'ca. €3M', 'No. 5', 'J. R. R. Tolkien', 'Fig. 3', 'St. Louis', 'Mr. Smith', 'v2.3. Release', 'example.com/a.b Today', 'a.txt Today', 'p.m. Eastern',
   'Ph.D. Candidates', 'approx. Five',
+  // a stop that is a question, an exclamation, an ellipsis or is followed by a closing quote or bracket, a number before the stop, a mark after a letter
+  'Yahoo! Finance', 'Why? Warren', 'now... Warren', 'done." Warren', 'Friday?" Dana', '“Friday?” Dana', 'Friday?» Dana', 'Friday？」 Dana', 'Am 3. Mai',
+  'डॉ. शर्मा', 'Hello… Warren',
 ];
 
 const BODY = 'The deploy waits for the Monday window [1]. Leadership also has plans [2] that I cannot repeat. Your own question is [3].';
@@ -277,6 +280,13 @@ describe('removeClaims', () => {
     expect(removeClaims('Keep everything. Sen. Gov. Warren said it [2]. After.', new Set([2])).body).toBe('Keep everything. After.');
     // a version number or a file name is a token with a dot inside it
     expect(removeClaims('Keep everything. It ships v2.3. Release notes say so [2]. After.', new Set([2])).body).toBe('Keep everything. After.');
+    // a quoted question, an exclamation inside a name, an ellipsis, a closing quote after the stop, a number before it (`Am 3. Mai`)
+    expect(removeClaims('"Can we ship Friday?" Dana asked [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('Revenue rose 5% according to Yahoo! Finance [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('It grew... Warren said so [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('"We ship in November." Warren said [2]. After.', new Set([2])).body).toBe('After.');
+    expect(removeClaims('Keep everything. Am 3. Mai fiel es [2]. After.', new Set([2])).body).toBe('Keep everything. After.');
+    expect(removeClaims('Keep everything. डॉ. शर्मा ने कहा [2]. After.', new Set([2])).body).toBe('Keep everything. After.');
     // the price: a short word that ends a sentence, and the next sentence carries the marker, so one innocent neighbour goes
     expect(removeClaims('Keep everything. The work is done. Costs fell [2]. After that.', new Set([2])).body).toBe('Keep everything. After that.');
     // a long word before the stop and a letter after it is a sentence end: nothing goes with the claim
@@ -291,6 +301,14 @@ describe('removeClaims', () => {
     // not when something else lies between (a table row, a fence), and not when the block has words of its own: those open their own sentence
     expect(removeClaims('Revenue grew 4%.\n\n| a | b |\n\n[2]', new Set([2])).body).toBe('Revenue grew 4%.\n\n| a | b |');
     expect(removeClaims('Revenue grew 4%.\n\n[2] Costs fell.', new Set([2])).body).toBe('Revenue grew 4%.');
+  });
+
+  it('a heading is the block before a marker-only block; chains of soft splits stay inside their block', () => {
+    expect(removeClaims('Keep everything.\n\n## Costs\n\n[2]\n\nAfter that.', new Set([2])).body).toBe('Keep everything.\n\nAfter that.');
+    // a paragraph of soft sentences with the marker in the last goes whole, and its neighbours stay: no chain crosses a block
+    expect(removeClaims('Keep everything.\n\nWhy? Why? Why? Why? Warren said it [2].\n\nAfter that.', new Set([2])).body).toBe('Keep everything.\n\nAfter that.');
+    expect(removeClaims('Why? Why? One.\n\nWhy? Why? Two [2].\n\nWhy? Why? Three.', new Set([2])).body).toBe('Why? Why? One.\n\nWhy? Why? Three.');
+    expect(removeClaims('- Why? Why? One.\n- Why? Why? Two [2].\n- Why? Why? Three.', new Set([2])).body).toBe('- Why? Why? One.\n- Why? Why? Three.');
   });
 
   it('markdown links and footnotes next to a marker are part of its sentence', () => {
@@ -478,7 +496,7 @@ describe('removeClaims', () => {
       for (const suffix of SUFFIXES) {
         for (const gap of [' ', '\n']) {
           n += 1;
-          const claim = `Claim${String(n)} was reported by ${item.replace(' ', gap)} in the filing${suffix.text}`;
+          const claim = `Claim${String(n)} was reported by ${item.replace(/ (?=[^ ]*$)/, gap)} in the filing${suffix.text}`;
           const text = `Pre${String(n)} stays in place elsewhere. ${claim} Post${String(n)} stays in place elsewhere.`;
           const out = removeClaims(text, new Set([2])).body;
           const ctx = JSON.stringify({ text, out });
@@ -569,6 +587,7 @@ describe('hostile input stays linear', () => {
       const block = ABBREVIATION_POOL.map((p) => `Claim was reported by ${p} in the filing. `).join('');
       return block.repeat(Math.ceil(n / block.length));
     }],
+    ['questions, quotes, ellipses and numbers before stops', (n) => 'Why? "Yes." Now... Dana in 2023. Am 3. Mai '.repeat(n / 36)],
     ['one soft split after another', (n) => 'Sen. Warren '.repeat(n / 12)],
     ['dotted tokens and file names', (n) => 'v2.3. a.txt example.com/a.b. '.repeat(n / 28)],
     ['non-letters after stops', (n) => 'ca. €3M. ($4) "x" '.repeat(n / 18)],

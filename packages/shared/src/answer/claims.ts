@@ -13,8 +13,9 @@
 //     follows — and the next word does not begin in lower case or with a digit and the stop does not close an abbreviation (`e.g.`, `U.S.`,
 //     `Dr.`, an initial) — or when the stop is of a script written without spaces (`。！？`), or when a marker group follows the stop directly.
 //   * A split can be wrong, and no list of abbreviations is complete (`Sen.`, `Gov.`, `Corp.`, `Mt.`, `ca. €3M`): so a unit that FOLLOWS a doubtful
-//     split — a `.` after a word of four letters or fewer (any script, any case) or after a token with a dot inside it (`v2.3`, `a.txt`), or a
-//     next character that is not a letter — is marked SOFT, and
+//     split — a `.` after a word of four letters or fewer (any script, any case), after a number (`Am 3. Mai`) or after a token with a dot inside
+//     it (`v2.3`, `a.txt`); a `?`, `!` or `…`; a run of stops or a closing quote or bracket after the stop (`...`, `Friday?" Dana`, `done." Warren`);
+//     or a next character that is not a letter — is marked SOFT, and
 //     when a soft unit is taken the unit before it is taken too (backwards, so doubtful splits chain). The documented price is one innocent
 //     neighbour when a short word ends a sentence and the next one carries the marker; the claim itself is never left half behind.
 //   * One positional rule decides where a removed marker group belongs, whatever decorates it (`**[2]**`, `\[2\]`, `([2])`, `(see [2])`, `"[2]"`,
@@ -83,9 +84,25 @@ const isWs = (ch: string | undefined): boolean => {
 };
 const isLower = (ch: string): boolean => ch === ch.toLowerCase() && ch !== ch.toUpperCase();
 const isLetter = (ch: string): boolean => ch.toLowerCase() !== ch.toUpperCase();
-const ANY_LETTER = /^\p{L}$/u;
-/** A letter of any script, cased or not (`isLetter` knows only the cased ones: it is right for "does a sentence start here", not for "is this a word"). */
-const isAnyLetter = (ch: string | undefined): boolean => ch !== undefined && ANY_LETTER.test(ch);
+const ANY_LETTER = /^[\p{L}\p{M}]$/u;
+/** The stops that end an ordinary statement; the others (`?`, `!`, `…` and their forms) may sit inside quoted speech or a name (`Yahoo! Finance`). */
+const PERIODS = new Set(['.', '。', '।', '۔', '॥']);
+/** The length (1 or 2 UTF-16 units) of the letter (or combining mark) of any script, cased or not, that starts at `i`, or 0. */
+function letterAt(text: string, i: number): number {
+  const cp = text.codePointAt(i);
+  if (cp === undefined) return 0;
+  const ch = String.fromCodePoint(cp);
+  return ANY_LETTER.test(ch) ? ch.length : 0;
+}
+/** The same for the letter that ENDS at `i` (looking back, by code point). */
+function letterEndingAt(text: string, i: number): number {
+  const c = text.charCodeAt(i);
+  if (c >= 0xdc00 && c <= 0xdfff && i > 0) {
+    const h = text.charCodeAt(i - 1);
+    if (h >= 0xd800 && h <= 0xdbff) return letterAt(text, i - 1) === 2 ? 2 : 0;
+  }
+  return letterAt(text, i) === 1 ? 1 : 0;
+}
 
 /**
  * A marker group at `i`: `[n]`, `[a, b]`, `[a-b]`, `[ n ]`, `［n］`, `【n】` (numbers of one to three digits, at most 40 characters in all).
@@ -250,14 +267,25 @@ interface Unit {
 
 /**
  * The stop at `i` may close something that is not a sentence: a word of one to four letters (any script, any case: `Sen.`, `Gov.`, `ca.`, `St.`,
- * `done.`), or a token with a dot inside it (`v2.3`, `a.txt`, `example.com/a.b`, `p.m`, `Ph.D`). The sentence may go on after it.
+ * `done.`), a number (`Am 3. Mai`), or a token with a dot inside it (`v2.3`, `a.txt`, `example.com/a.b`, `p.m`, `Ph.D`). The sentence may go on
+ * after it.
  */
 function doubtfulBefore(text: string, i: number): boolean {
   let count = 0;
-  while (count < 5 && i - count - 1 >= 0 && isAnyLetter(text[i - count - 1])) count += 1;
+  let q = i - 1;
+  while (count < 5 && q >= 0) {
+    const w = letterEndingAt(text, q);
+    if (w === 0) break;
+    count += 1;
+    q -= w;
+  }
   if (count >= 1 && count <= 4) return true;
-  for (let q = i - 1, steps = 0; q >= 0 && steps < 64 && !isWs(text[q]); q -= 1, steps += 1) {
-    if (text[q] === '.') return true;
+  // a number before the stop (`Am 3. Mai`, `in 2023.`): an ordinal, or a year that ends nothing
+  let d = i - 1;
+  while (d >= 0 && i - d <= 12 && isDigit(text[d])) d -= 1;
+  if (d < i - 1 && (d < 0 || isWs(text[d]))) return true;
+  for (let r = i - 1, steps = 0; r >= 0 && steps < 64 && !isWs(text[r]); r -= 1, steps += 1) {
+    if (text[r] === '.') return true;
   }
   return false;
 }
@@ -409,10 +437,13 @@ function segmentBlock(text: string, removed: ReadonlySet<number>): Unit[] {
       i = n;
       continue;
     }
+    // a question or an exclamation, a run of stops (`...`), or a closing quote or bracket after the stop (`Friday?" Dana asked`, `done." Warren`):
+    // the sentence may go on after it, so the next unit is soft
+    const loud = !PERIODS.has(ch) || j - i > 1;
     if (!isWs(text[j])) {
       // no space after it: a stop inside a word ("3.5") ends nothing, a stop of a script written without spaces does, and so does a stop that a
       // marker group follows directly (the group then opens the next unit and is judged there)
-      if (UNSPACED_STOPS.has(last) || markerAt(text, j, NO_NUMBERS) !== null) endUnit(j);
+      if (UNSPACED_STOPS.has(last) || markerAt(text, j, NO_NUMBERS) !== null) endUnit(j, loud);
       i = j;
       continue;
     }
@@ -429,7 +460,7 @@ function segmentBlock(text: string, removed: ReadonlySet<number>): Unit[] {
       continue;
     }
     // a doubtful split: a short word before the stop (`Sen.`, `ca.`, `done.`), or something that is not a letter after it (`€3M`)
-    endUnit(k, (ch === '.' && doubtfulBefore(text, i)) || !isAnyLetter(next));
+    endUnit(k, loud || (ch === '.' && doubtfulBefore(text, i)) || letterAt(text, k) === 0);
     i = k;
   }
   endUnit(n);

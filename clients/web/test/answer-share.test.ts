@@ -388,8 +388,10 @@ describe('Remove claim: a marker at a sentence boundary, decorated at random', (
       const count = 3 + (next() % 4);
       const cjk = next() % 3 === 0;
       const stops = cjk ? ['。', '！', '？'] : ['.', '.', '!', '?'];
+      const stopOf: string[] = [];
       const sentence = (i: number): string => {
         const stop = pick(stops);
+        stopOf[i] = stop;
         return (cjk ? `Tok${String(round * 10 + i)}事実です` : `Tok${String(round * 10 + i)} says something`) + stop;
       };
       const boundary = next() % (count - 1);
@@ -406,11 +408,14 @@ describe('Remove claim: a marker at a sentence boundary, decorated at random', (
       const out = removeClaims(text, new Set([2])).body;
       const ctx = JSON.stringify({ text, out });
       const has = (i: number): boolean => new RegExp(`Tok${String(round * 10 + i)}(?!\\d)`).test(out);
-      // the claim side: the sentence before the marker and the one after it are gone; no other sentence is lost
+      // the claim side: the sentence before the marker and the one after it are gone; no other sentence is lost (barring a soft split)
       expect(has(boundary), `the claim before the marker was kept: ${ctx}`).toBe(false);
       expect(has(boundary + 1), `the sentence after the marker was kept: ${ctx}`).toBe(false);
+      // (a `?` or `!` before a sentence is a doubtful split: a claim that is taken takes the sentence before it, and so on back to a full stop)
+      const mayGo = new Set<number>();
+      for (let j = boundary; j > 0 && stopOf[j - 1] !== '.' && stopOf[j - 1] !== '。'; j -= 1) mayGo.add(j - 1);
       for (let i = 0; i < count; i += 1) {
-        if (i !== boundary && i !== boundary + 1) expect(has(i), `an unrelated sentence ${String(i)} was lost: ${ctx}`).toBe(true);
+        if (i !== boundary && i !== boundary + 1 && !mayGo.has(i)) expect(has(i), `an unrelated sentence ${String(i)} was lost: ${ctx}`).toBe(true);
       }
       // and the reader's side: no marker 2 is drawn
       expect(renderedMarkers(out), ctx).not.toContain(2);
