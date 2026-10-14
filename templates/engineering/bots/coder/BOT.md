@@ -48,8 +48,6 @@ guard:
 approvals:
   needsApproval:
     - files.write
-  approvers:
-    - role:on-call
 handover:
   mayTag:
     - reviewer

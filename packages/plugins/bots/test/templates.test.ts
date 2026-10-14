@@ -266,6 +266,10 @@ describe('every shipped definition', () => {
     }
   });
 
+  it('names no approver tag: a named tag is exactly its holders and a new team has defined it with none, so leads and admins decide', () => {
+    for (const s of shipped) expect(s.fm.approvals?.approvers, `${s.template.id}/${s.slug}`).toBeUndefined();
+  });
+
   it('names only aliases of the closed set, channels the template has, tags it defines and bots it lists', () => {
     for (const s of shipped) {
       for (const alias of [...(s.fm.model?.aliases ?? []), ...(s.fm.model?.fallbacks ?? [])]) {
@@ -276,7 +280,7 @@ describe('every shipped definition', () => {
         if ('source' in trigger && trigger.source) for (const c of trigger.source.channels) expect(channels.has(c), `${s.slug}: ${c}`).toBe(true);
       }
       const tags = new Set(s.template.roleTags);
-      const principals = [...(s.fm.approvals?.approvers ?? []), ...(s.fm.handover?.toPerson ?? []), ...(s.fm.handover?.escalation?.to ?? [])];
+      const principals = [...(s.fm.handover?.toPerson ?? []), ...(s.fm.handover?.escalation?.to ?? [])];
       for (const p of principals) expect(tags.has(p), `${s.slug}: ${p}`).toBe(true);
       const bots = new Set(s.template.bots.map((b) => b.slug));
       for (const tag of s.fm.handover?.mayTag ?? []) {
@@ -314,8 +318,18 @@ describe('every shipped definition', () => {
     );
     check(
       'support-responder',
-      ['I want a refund', 'There is a billing problem with my invoice', 'Please cancel my subscription', 'I will sue you', 'This product is unsafe'],
-      ['What does the manual say about changing a delivery address?', 'How do I reset my password?'],
+      [
+        'I want a refund',
+        'There is a billing problem with my invoice',
+        'Please cancel my subscription',
+        'I canceled my order yesterday',
+        'I will sue you',
+        'This product is unsafe',
+        'I want my money back',
+        'I was charged twice',
+        'I am going to dispute this',
+      ],
+      ['What does the manual say about changing a delivery address?', 'How do I reset my password?', 'Sue from accounting asked about delivery'],
     );
     check(
       'content-drafter',
@@ -324,10 +338,9 @@ describe('every shipped definition', () => {
     );
   });
 
-  it('holds outbound email behind a person: the support responder lists no send that does not wait', () => {
+  it("records the support responder's outbound email as waiting for a person, for the connection gateway of phase 8 (the loader compiles native grants only)", () => {
     const s = shipped.find((x) => x.slug === 'support-responder')!;
     expect(s.fm.approvals?.needsApproval).toEqual(['email.send', 'email.forward']);
-    expect(s.fm.approvals?.approvers).toEqual(['role:support-lead']);
     expect(s.fm.guard?.preset).toBe('customer-facing');
     expect(s.fm.knowledge).toEqual([{ base: 'manuals', answer_only_from: true }]);
     // no connection is named: a mailbox is the team's to connect, and the approval is waiting for it

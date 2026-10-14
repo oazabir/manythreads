@@ -122,9 +122,22 @@ cases:
     rationale: Why the case is there, for the person who reads a failure.
 ```
 
-`expect` keys: `minCitations`, `maxCitations`, `citesKinds`, `mentions`, `notMentions`, `statesOutsideScope`, `outsideScopeKinds`,
-`statesUnknown`, `offersHandoff`, `toolCalls.required`, `toolCalls.forbidden`. A forbidden token must be in a source of its case (a test
-refuses a vacuous one), and a required phrase in a source the asker may open.
+`expect` keys, each a predicate over the posted Answer (`AnswerPayload`) and the run's calls (the contract is the comment above
+`BotEvalExpect` in `packages/shared/src/bot-md/evals.ts`):
+
+| Key | True when |
+|---|---|
+| `mentions` / `notMentions` | each phrase is / no phrase is in the text: `body`, plus every citation's and lineage entry's `label` and `snippet`, every chip's `label` and `prompt`, every outside-scope item's `kind`; case-insensitive substring |
+| `minCitations` / `maxCitations` / `citesKinds` | counted over `citations` that are not `masked`; each kind is some citation's `kind` |
+| `statesOutsideScope` | `outsideScope.count` is at least 1 (`false`: it is 0); the wording of `body` is not judged |
+| `outsideScopeKinds` | each kind is the `kind` of an item of `outsideScope.items` |
+| `statesUnknown` | `citations` is empty, `body` has no `[n]` marker, and `body` is not empty |
+| `offersHandoff` | `chips` has a chip of kind `handoff` (unknown slugs are dropped by the platform) |
+| `toolCalls.required` / `forbidden` | every name was called / none was, over the run's calls (`x.*` is a namespace; a refused call counts as called) |
+
+A forbidden token must be in a source of its case (a test refuses a vacuous one), and a required phrase in a source the asker may open.
+A negative assertion alone passes a bot that refuses everything, so the injection and memory cases also require the legitimate answer
+(`minCitations`/`mentions`), and the thread case forbids the channel's older, wrong answer.
 
 | Case | What it pins |
 |---|---|
@@ -153,26 +166,30 @@ list more (CRM, Jira, browser, `tasks.create`), it is left out.
 | Model | `code`, `fast`, effort medium | `smart`, `fast` | `smart`, `fast` |
 | Native | `tasks.read/claim/complete`, `messages.post`, `messages.search`, `files.search`, `files.write`, `knowledge.search`, `memory.recall` | `knowledge.search`, `messages.search`, `messages.post`, `memory.recall` | `pages.write`, `messages.post`, `messages.search`, `files.search`, `knowledge.search`, `memory.recall` |
 | Runtime | `shell`, `files`, `git` | | |
-| Waits for a person | `files.write` | `email.send`, `email.forward` (declared; no mailbox is connected) | nothing (a draft is a page) |
-| Approvers | `role:on-call` | `role:support-lead` | `role:brand-owner` |
+| Waits for a person | `files.write` | `email.send`, `email.forward` (recorded for the connection gateway; see below) | nothing (a draft is a page) |
+| Approvers | the team's leads and admins | the team's leads and admins | the team's leads and admins |
 | Guard | `standard` + gate | `customer-facing` + gate | `standard` + gate |
 | Hands over to | reviewer, tester; `role:on-call` | enquiry-bot; `role:escalation-owner` | brand-reviewer; `role:campaign-owner` |
 | Knowledge | | `manuals`, `answer_only_from` | |
 
-* **Approvers and hand-over targets are the team's own** (`TEAM.md`: `defaults.approvers`, `dispatch.handover`), and a test refuses a
-  principal the template does not define as a role tag, a channel it does not have, or a `mayTag` it does not list.
+* **No approver tag is named.** A named tag (`role:on-call`) means exactly its holders, the requester never decides, and a new team has
+  the tag defined with no members: nobody could approve. Without `approvers` the team's leads and admins decide. Hand-over targets
+  (`toPerson`, `mayTag`) are the team's own (`TEAM.md` `dispatch.handover`), and a test refuses a role tag the template does not define, a
+  channel it does not have, or a `mayTag` it does not list.
 * **Gate lists are patterns** (`/\brefund(s|ed|ing)?\b/i`), never phrases. A phrase entry makes the classifier on the `local` alias judge
   every message, and a gate that cannot reach a classifier holds *all* of them (`classifier_unavailable`): a deployment with no `local`
   alias would silence the bot. Patterns are decided by stage one alone. A team that has bound `local` adds topics beside them. The gates
   are the plates' topics: Coder credential rotation, licence change, deleting production data; Support billing, refunds, cancelling,
-  legal, safety; Content drafter medical claims, competitors, legal claims, price changes. A test checks each list holds its own messages
+  legal, safety, money back, a double charge, a dispute; Content drafter medical claims, competitors, legal claims, price changes. A test checks each list holds its own messages
   and passes ordinary ones, and that no example question of the bot is held by its own gate.
 * **Coder.** `files.write` waits for a person. The team repository has one branch, so "branch-scoped" is the sandbox's git branch and the
   code host's, not a path rule; no GitHub connection is named because the template cannot know the team's. Nothing destructive is
   granted, no merge, no force-push; `bots/`, `TEAM.md`, `skills/`, `routines/` are the broker's to refuse whatever the file says. Note that
   `files.write` has no implementation behind the MCP endpoint yet, so the model is not offered it today; the grant is in place.
-* **Support responder.** No `inbox` trigger and no mailbox connection: the plate shows them as the team's configuration. The two email
-  tools are declared as waiting for a person so the day a team connects mail they are already held.
+* **Support responder.** No `inbox` trigger and no mailbox connection: the plate shows them as the team's configuration. `email.send` and
+  `email.forward` are **recorded** in `approvals.needsApproval` for the phase-8 connection gateway: today nothing enforces them (the loader
+  compiles `needsApproval` onto native grants only, and these are not native), and there is no mail tool to call. The phase-8 task that
+  resolves connection tools must apply the list.
 * **Content drafter.** Drafts are pages under `pages/drafts/` through `pages.write`; it never publishes or sends.
 
 ## Tests

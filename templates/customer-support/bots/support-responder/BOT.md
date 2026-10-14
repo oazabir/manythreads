@@ -34,15 +34,16 @@ guard:
   gate:
     - /\brefund(s|ed|ing)?\b/i
     - /\b(billing|invoices?|chargebacks?|overcharged?)\b/i
-    - /\bcancel(s|led|ling|lation|lations)?\b/i
-    - /\b(legal|lawyers?|lawsuit|attorney|sue|suing)\b/i
+    - /\bcancel(s|ed|led|ling|lation|lations)?\b/i
+    - /\b(legal|lawyers?|lawsuit|attorney|sue\s+(you|us|the)|suing)\b/i
     - /\b(safety|injur(y|ed|ies)|unsafe|hazard)\b/i
+    - /\bmoney\s+back\b/i
+    - /\bcharged\s+(twice|again|too\s+much)\b/i
+    - /\b(disputes?|disputed|disputing|reimburse(d|ment)?|compensat(e|ion))\b/i
 approvals:
   needsApproval:
     - email.send
     - email.forward
-  approvers:
-    - role:support-lead
 handover:
   mayTag:
     - enquiry-bot

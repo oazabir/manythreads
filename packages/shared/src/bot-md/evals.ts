@@ -48,7 +48,24 @@ export type BotEvalGiven = z.infer<typeof BotEvalGiven>;
 
 /**
  * What a case asserts. Every key is optional but one must be there; a case that asserts nothing could never fail.
- * All assertions are checked against the Answer the run posted (`answer.post`) and the calls the run made.
+ *
+ * Every assertion is a predicate over the Answer the run posted (`AnswerPayload`: `body`, `citations`, `lineage`, `outsideScope`, `chips`) and
+ * the calls the run made. The contract a harness implements:
+ *
+ *  - **text** is `body` plus, for every citation and lineage entry, its `label` and `snippet`, plus every chip's `label` and `prompt`, plus the
+ *    `kind` of every outside-scope item. A phrase matches case-insensitively, as a substring.
+ *  - `mentions`: each phrase is in `body`.
+ *  - `notMentions`: no phrase is anywhere in **text**.
+ *  - `minCitations` / `maxCitations`: the number of entries of `citations` that are not `masked`.
+ *  - `citesKinds`: each kind is the `kind` of at least one of them.
+ *  - `statesOutsideScope`: `true` when `outsideScope.count` is at least 1 (the list the platform built from what the bot said it could not reach
+ *    and from what it dropped for this reader); `false` when it is 0. The wording of `body` is not judged.
+ *  - `outsideScopeKinds`: each kind is the `kind` of an item of `outsideScope.items`.
+ *  - `statesUnknown`: `true` when `citations` is empty, `body` has no `[n]` marker, and `body` is not empty. Whether it reads as "I do not know"
+ *    is the rationale's business, not a predicate; the predicate is that it claims nothing it can point to.
+ *  - `offersHandoff`: `true` when `chips` has at least one chip of kind `handoff` (a bot the platform resolved: unknown slugs are dropped).
+ *  - `toolCalls.required`: every name was called at least once in the run; `forbidden`: none was called (`x.*` matches the namespace; a call
+ *    the broker refused still counts as called).
  */
 export const BotEvalExpect = z
   .strictObject({
@@ -60,15 +77,15 @@ export const BotEvalExpect = z
     citesKinds: z.array(KindWord).min(1).max(8).optional(),
     /** Each phrase appears in the answer's text. */
     mentions: z.array(Phrase).min(1).max(10).optional(),
-    /** None of these appears anywhere in the Answer: its text, a label, a snippet, a chip, the outside-scope list. */
+    /** None of these appears in the Answer's text (body, labels, snippets, chips, outside-scope kinds). */
     notMentions: z.array(Phrase).min(1).max(10).optional(),
-    /** The Answer carries an outside-scope list (and says in words what it could not reach), or, when false, none. */
+    /** The Answer's outside-scope list has at least one item (`true`) or none (`false`); see the contract above. */
     statesOutsideScope: z.boolean().optional(),
     /** These kinds are named in the outside-scope list. */
     outsideScopeKinds: z.array(KindWord).min(1).max(8).optional(),
-    /** The answer says, in one plain sentence, that what it reached does not answer the question, and invents no source. */
+    /** The answer cites nothing and carries no `[n]` marker; see the contract above. */
     statesUnknown: z.boolean().optional(),
-    /** The Answer offers a hand-off chip to a bot that does the thing asked for. */
+    /** The Answer has a hand-off chip; see the contract above. */
     offersHandoff: z.boolean().optional(),
     /** Calls the run must make (`required`) and must never make (`forbidden`). `x.*` names a namespace. */
     toolCalls: z

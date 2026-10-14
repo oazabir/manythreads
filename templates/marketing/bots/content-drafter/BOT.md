@@ -39,8 +39,6 @@ guard:
     - /\b(raise|cut|lower|change)\s+(the\s+|our\s+)?prices?\b/i
 approvals:
   needsApproval: []
-  approvers:
-    - role:brand-owner
 handover:
   mayTag:
     - brand-reviewer
