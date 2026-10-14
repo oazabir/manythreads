@@ -123,7 +123,7 @@ export function parseBotEvalSet(content: string): BotEvalSetParse {
   if (content.length > BOT_EVAL_SET_MAX_CHARS) return { ok: false, message: `the scenario set is larger than ${BOT_EVAL_SET_MAX_CHARS / 1024} KB` };
   let doc: unknown;
   try {
-    doc = parseYaml(content.replace(/^﻿/, ''), { maxAliasCount: 20 });
+    doc = parseYaml(content.replace(/^\uFEFF/, ''), { maxAliasCount: 20 });
   } catch (err) {
     return { ok: false, message: `scenario set: ${err instanceof Error ? err.message : String(err)}` };
   }

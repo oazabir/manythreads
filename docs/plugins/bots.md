@@ -159,3 +159,13 @@ resolves to the bot's ids + actor; forged/unknown tokens resolve to null; member
 401, unknown slugs 404 and no refusal writes; the definer functions refuse a member and an outsider with **42501**,
 refuse a short hash (22000) and a random bot id (02000), while the system role mints and revokes past the caller
 check; revoke turns every live token off (`{ revoked: 2 }` → `{ revoked: 0 }`) and a new mint works again.
+
+## Definitions a template ships (P5-19)
+
+A team made from a template starts with the bots its template ships: Brain in all five, plus Coder (Engineering), Support responder
+(Customer support) and Content drafter (Marketing). They are `bots/<slug>/BOT.md` files in the first commit of the team's repository, and
+this loader reads that commit like any other, so nothing here knows a bot came from a template. The files, what each one grants and why,
+the scenario set Brain's `evals: { set: brain, minScore: 1 }` names (`bots/brain/evals/brain.yaml`, schema `BotEvalSet` in
+`packages/shared/src/bot-md/evals.ts`; the Evals tab shows the set's name and the minimum, the cases are read by the eval harness) and the
+mail opt-in are in [docs/templates.md](../templates.md). A template's gate lists are patterns, never phrases: a phrase entry needs the
+classifier on the `local` alias for every message ([runtime-hermes.md](./runtime-hermes.md#the-gate-p5-11)).
