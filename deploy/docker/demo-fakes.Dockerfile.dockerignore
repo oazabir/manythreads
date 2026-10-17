@@ -1,0 +1,4 @@
+# The demo-fakes image only adds the two stand-in tools onto the server image.
+*
+!tools/fake-llm/**
+!tools/fake-hindsight/**

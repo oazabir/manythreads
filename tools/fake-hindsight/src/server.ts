@@ -99,6 +99,20 @@ export async function startFakeHindsight(options: FakeHindsightOptions = {}): Pr
       if (!authorized) return send(res, 401, { detail: 'Unauthorized' });
 
       if (method === 'GET' && path === '/health') return send(res, 200, { status: 'healthy' });
+      // Demo observability: what each bank holds and which banks every request named (last 200 calls). Like the engine it
+      // stands in for, this is operator tooling, not part of the Hindsight API; it honours the api key when one is set.
+      if (method === 'GET' && path === '/state') {
+        if (!authorized) return send(res, 401, { detail: 'Unauthorized' });
+        return send(res, 200, {
+          banks: Object.fromEntries(
+            [...state.banks.entries()].map(([id, facts]) => [
+              id,
+              facts.map((f) => ({ id: f.id, text: f.text, context: f.context, tags: f.tags, documentId: f.documentId })),
+            ]),
+          ),
+          calls: state.calls.slice(-200),
+        });
+      }
       if (match?.[1] === undefined || bank === null) return send(res, 404, { detail: 'Not Found' });
       const rest = match[2] ?? '';
 

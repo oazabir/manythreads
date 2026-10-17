@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { demoScenarioCompletion } from './scenario.ts';
 
 /*
  * fake-llm — a LiteLLM proxy that is not LiteLLM (PLAN P5-08, `tools/fake-llm`).
@@ -70,6 +71,13 @@ export interface FakeLlmOptions {
   beforeRespond?: (call: FakeLlmCall) => Promise<void> | void;
   /** Behave as a proxy whose config file names `router_settings.fallbacks`: `/config/update` for it answers 400. */
   fallbacksLocked?: boolean;
+  /**
+   * When `'demo'`, chat completions are answered by the deterministic bot-chain
+   * scenario (`scenario.ts`: orchestrator/coder/tester/brain) instead of the
+   * canned sentence — unless `completion` is also set, which wins. The CLI sets
+   * this with `--scenario demo` / `FAKE_LLM_SCENARIO=demo`.
+   */
+  scenario?: 'demo';
   /**
    * What a chat completion answers (default: a canned sentence). A string is the assistant's text; `{ status, body }` is a raw answer
    * (a 500 to prove a caller's error path). A test makes the classifier of the gate (PLAN P5-11) say yes or no with this, and reads what it
@@ -235,12 +243,28 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
       if (path === '/chat/completions' || path === '/v1/chat/completions') {
         const model = str(asObject(body)['model']) || 'unknown';
         let content = 'This is the fake proxy.';
+        if (options.scenario === 'demo' && !options.completion) {
+          const rawMessages = asObject(body)['messages'];
+          const messages = (Array.isArray(rawMessages) ? rawMessages : []).map((m) => ({ role: str(asObject(m)['role']), content: str(asObject(m)['content']) }));
+          content = demoScenarioCompletion({ model, messages, authorized });
+        }
         if (options.completion) {
           const rawMessages = asObject(body)['messages'];
           const messages = (Array.isArray(rawMessages) ? rawMessages : []).map((m) => ({ role: str(asObject(m)['role']), content: str(asObject(m)['content']) }));
           const answer = await options.completion({ model, messages, authorized });
           if (typeof answer !== 'string') return json(res, answer.status, answer.body);
           content = answer;
+        }
+        // An agent loop (Hermes) asks for server-sent events, like it does of the real proxy: one content chunk, one stop
+        // chunk, then [DONE] — the same text the non-streaming answer carries.
+        if (asObject(body)['stream'] === true) {
+          const created = Math.floor(Date.now() / 1000);
+          const chunk = (delta: unknown, finish: string | null): string =>
+            `data: ${JSON.stringify({ id: 'chatcmpl-fake', object: 'chat.completion.chunk', created, model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+          const text = `${chunk({ role: 'assistant', content }, null)}${chunk({}, 'stop')}data: [DONE]\n\n`;
+          res.writeHead(200, { 'content-type': 'text/event-stream', 'content-length': Buffer.byteLength(text) });
+          res.end(text);
+          return;
         }
         return json(res, 200, {
           id: 'chatcmpl-fake',

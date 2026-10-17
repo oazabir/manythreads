@@ -41,6 +41,15 @@ describe('fake-hindsight', () => {
     expect(fake.banksTouched()).toEqual(expect.arrayContaining(['team:a', 'team:b']));
   });
 
+  it('state shows each bank and the recent calls, and needs the key like any other route', async () => {
+    expect((await send('GET', '/state')).status).toBe(401);
+    await retain('team:state', 'the launch codename is Nightjar');
+    const state = (await send('GET', '/state', undefined, auth)).body;
+    const banks = state['banks'] as Record<string, Array<Record<string, unknown>>>;
+    expect(banks['team:state']!.map((f) => f['text'])).toEqual(['the launch codename is Nightjar']);
+    expect(fake.state.calls.at(-1)).toMatchObject({ method: 'GET', path: '/state', authorized: true });
+  });
+
   it('retaining under a document id again replaces it; deleting an unknown document is a 404', async () => {
     await retain('team:c', 'first version of the plan', 'plan');
     await retain('team:c', 'second version of the plan', 'plan');

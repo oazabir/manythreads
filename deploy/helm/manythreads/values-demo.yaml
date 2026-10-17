@@ -1,0 +1,18 @@
+# Demo overlay (NOT production): serve the site with the deterministic stand-ins —
+# fake-llm (demo bot-chain scenario) as the model proxy, fake-hindsight as the
+# memory engine, and the Hermes agent baked into the server image. Applied with:
+#   bash tools/devbox/deploy.sh --demo
+# A deploy without --demo removes the stand-ins and their wiring again.
+demo:
+  enabled: true
+  image: manythreads/demo-fakes
+server:
+  image: manythreads/server-demo
+  env:
+    MANYTHREADS_LITELLM_URL: http://manythreads-fake-llm:4000
+    MANYTHREADS_HINDSIGHT_URL: http://manythreads-fake-hindsight:8888
+    MANYTHREADS_HERMES_BIN: /home/node/.local/bin/hermes
+    MANYTHREADS_RUNTIME_DIR: /home/node/.hermes/profiles
+    # Run profiles live in the install's own profiles/ directory: pm-era Hermes only boots when HERMES_HOME is
+    # <home>/profiles/<name> (its committed dependency environment is resolved from <home>), so a bare directory
+    # elsewhere answers "no dependency environment is committed for this install" and the run fails.

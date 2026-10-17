@@ -213,4 +213,25 @@ describe('the gateway client against a real proxy', () => {
     const health = await fetch(`${fake.url}/health/readiness`);
     expect(health.status).toBe(200);
   });
+
+  it('streams a completion as server-sent events when asked, with the same text as the plain answer', async () => {
+    fake = await startFakeLlm({ scenario: 'demo' });
+    const res = await fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'smart',
+        stream: true,
+        messages: [{ role: 'user', content: '@orchestrator plan the release checklist work' }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const frames = (await res.text()).split('\n\n').filter((f) => f !== '');
+    expect(frames.at(-1)).toBe('data: [DONE]');
+    const first = JSON.parse(frames[0]!.slice('data: '.length)) as { choices: [{ delta: { content: string }; finish_reason: null }] };
+    expect(first.choices[0].delta.content).toContain('Orchestrator here');
+    const last = JSON.parse(frames.at(-2)!.slice('data: '.length)) as { choices: [{ delta: object; finish_reason: string }] };
+    expect(last.choices[0].finish_reason).toBe('stop');
+  });
 });

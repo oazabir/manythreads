@@ -153,3 +153,9 @@ web:
 litellm: { enabled: false }
 hindsight: { enabled: false }
 hermes: { enabled: false }
+
+# Demo stand-ins (fake-llm, fake-hindsight, Hermes in the server image): off by
+# default; deploy/helm/manythreads/values-demo.yaml turns them on (`deploy.sh --demo`).
+demo:
+  enabled: false
+  image: manythreads/demo-fakes

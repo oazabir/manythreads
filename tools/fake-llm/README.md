@@ -17,6 +17,8 @@ Two jobs:
 ```
 pnpm -C tools/fake-llm start                 # http://127.0.0.1:4000
 FAKE_LLM_PORT=4123 FAKE_LLM_MASTER_KEY=sk-fake pnpm -C tools/fake-llm start
+pnpm -C tools/fake-llm start -- --scenario=demo   # bot-chain + brain demo completions
+FAKE_LLM_SCENARIO=demo pnpm -C tools/fake-llm start
 ```
 
 Then aim the gateway at it (`deploy/compose/dev.env.example` documents both variables):
@@ -27,6 +29,28 @@ MANYTHREADS_LITELLM_MASTER_KEY=sk-fake
 ```
 
 With no `FAKE_LLM_MASTER_KEY`, the management endpoints are open — convenient in dev, and never what a test does.
+
+## Demo scenario (`--scenario=demo`)
+
+A deterministic, persona-routed completion for exercising the bots UI with no
+provider (`src/scenario.ts`, tested in `test/scenario.test.ts`). It sees only
+the OpenAI messages — the bot slug never reaches it — so name the persona in
+the text and that persona answers:
+
+| You send (last user turn) | Who answers | What comes back |
+|---|---|---|
+| `orchestrator: plan <task>` | Orchestrator | numbered plan, delegates step 1 to `@coder` |
+| `@coder implement <task>` | Coder | small diff, hands to `@tester` |
+| `@tester verify <task> … @orchestrator` | Tester | PASS checklist, confirms to `@orchestrator` |
+| tester `PASS … @orchestrator` in history | Orchestrator | next-step plan |
+| `brain: what do you know about <topic>?` | Brain | seeded memory facts with `memory://bank/…` links |
+
+Walk the chain in the UI: ask the orchestrator bot to plan a task, paste its
+`@coder …` line to the coder bot, paste the coder's `@tester …` line to the
+tester bot, then paste the tester's confirmation back to the orchestrator for
+the next step. Ask the brain bot about the deploy command, on-call, or proxy
+keys to see the memory-grounded answers. An explicit `completion` option still
+wins over the scenario, so gate/classifier tests are unaffected.
 
 This is not a replacement for [the real thing](https://docs.litellm.ai/docs/proxy/model_management): the repo's compose
 profile runs actual LiteLLM (`pnpm llm:up`). fake-llm is for when that container cannot be pulled, when a call path

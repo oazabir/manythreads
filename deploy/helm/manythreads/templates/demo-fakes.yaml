@@ -1,0 +1,105 @@
+{{- if .Values.demo.enabled }}
+{{- /* Demo stand-ins (NOT production): the deterministic fake-llm proxy (demo bot-chain scenario) and the fake-hindsight memory
+       engine, from the demo-fakes image (the server image's runtime plus the two tool directories). The demo values file points
+       the server at them (MANYTHREADS_LITELLM_URL, MANYTHREADS_HINDSIGHT_URL). ClusterIP only; the ingress never routes to them. */ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-fake-llm
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fake-llm
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: fake-llm
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: fake-llm
+    spec:
+      containers:
+        - name: fake-llm
+          image: {{ .Values.demo.image }}:{{ .Values.imageTag }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["./node_modules/.bin/tsx", "tools/fake-llm/src/cli.ts"]
+          ports:
+            - { name: http, containerPort: 4000 }
+          env:
+            - { name: FAKE_LLM_PORT, value: "4000" }
+            - { name: FAKE_LLM_HOST, value: "0.0.0.0" }
+            - { name: FAKE_LLM_SCENARIO, value: "demo" }
+          readinessProbe:
+            httpGet: { path: /health/readiness, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-fake-llm
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: fake-llm
+  ports:
+    - { name: http, port: 4000, targetPort: http }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-fake-hindsight
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fake-hindsight
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: fake-hindsight
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: fake-hindsight
+    spec:
+      containers:
+        - name: fake-hindsight
+          image: {{ .Values.demo.image }}:{{ .Values.imageTag }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["./node_modules/.bin/tsx", "tools/fake-hindsight/src/cli.ts"]
+          ports:
+            - { name: http, containerPort: 8888 }
+          env:
+            - { name: FAKE_HINDSIGHT_PORT, value: "8888" }
+            - { name: FAKE_HINDSIGHT_HOST, value: "0.0.0.0" }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-fake-hindsight
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/component: fake-hindsight
+  ports:
+    - { name: http, port: 8888, targetPort: http }
+{{- end }}

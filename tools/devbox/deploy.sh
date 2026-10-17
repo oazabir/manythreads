@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 # deploy.sh — runs ON the devbox. Builds server+web images, imports them into
 # k3s containerd, helm-upgrades manythreads, smoke-tests https://manythreads.kahf.to/
-# Usage: /root/manythreads/tools/devbox/deploy.sh [--rebuild-postgres]
+# Usage: /root/manythreads/tools/devbox/deploy.sh [--rebuild-postgres] [--demo]
+#   --demo also builds the Hermes agent image (once; cached as manythreads/hermes:stable),
+#   the demo server layer, and the fake-llm + fake-hindsight stand-ins, and points the
+#   server at them (deploy/helm/manythreads/values-demo.yaml). A later deploy
+#   without --demo removes the stand-ins and their wiring again.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 REBUILD_PG=false
-[ "${1:-}" = "--rebuild-postgres" ] && REBUILD_PG=true
+DEMO=false
+for arg in "$@"; do
+  case "$arg" in
+    --rebuild-postgres) REBUILD_PG=true ;;
+    --demo) DEMO=true ;;
+    *) echo "unknown argument $arg (want --rebuild-postgres or --demo)"; exit 2 ;;
+  esac
+done
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH="$PATH:/usr/local/bin"
@@ -37,6 +48,22 @@ docker build -f deploy/docker/server.Dockerfile -t "manythreads/server:$TAG" .
 docker build -f deploy/docker/web.Dockerfile -t "manythreads/web:$TAG" .
 
 IMAGES=("manythreads/server:$TAG" "manythreads/web:$TAG")
+if [ "$DEMO" = true ]; then
+  if k3s ctr -n k8s.io images ls -q | grep -q "manythreads/hermes:stable"; then
+    echo "manythreads/hermes:stable already imported; skipping (remove it from containerd to force a rebuild)"
+  else
+    echo "--- build hermes agent image (one-time; the installer pulls upstream)"
+    docker build -f deploy/docker/hermes.Dockerfile -t manythreads/hermes:stable .
+    echo "importing manythreads/hermes:stable"
+    docker save manythreads/hermes:stable | k3s ctr -n k8s.io images import - | tail -n 2
+  fi
+  echo "--- build demo server layer"
+  docker build -f deploy/docker/server-demo.Dockerfile --build-arg SERVER_TAG="$TAG" -t "manythreads/server-demo:$TAG" .
+  IMAGES+=("manythreads/server-demo:$TAG")
+  echo "--- build demo-fakes image"
+  docker build -f deploy/docker/demo-fakes.Dockerfile --build-arg SERVER_TAG="$TAG" -t "manythreads/demo-fakes:$TAG" .
+  IMAGES+=("manythreads/demo-fakes:$TAG")
+fi
 if [ "$REBUILD_PG" = true ] || ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/postgres:19"; then
   docker build -t manythreads/postgres:19 deploy/postgres
   IMAGES+=("manythreads/postgres:19")
@@ -52,7 +79,7 @@ done
 
 echo "--- prune old server/web images (keep $TAG and pod-in-use)"
 USED=$(kubectl get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' | sort -u)
-k3s ctr -n k8s.io images ls -q | grep -E 'manythreads/(server|web):' | while read -r ref; do
+k3s ctr -n k8s.io images ls -q | grep -E 'manythreads/(server|server-demo|demo-fakes|web):' | while read -r ref; do
   short=${ref#docker.io/}
   case "$short" in *":$TAG") continue ;; esac
   echo "$USED" | grep -qx "$short" && continue
@@ -64,9 +91,11 @@ helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null 2>&1 || tr
 helm repo update cnpg >/dev/null
 helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace --wait --timeout 5m
 
-echo "--- helm upgrade manythreads (imageTag=$TAG)"
+HELM_ARGS=(--set imageTag="$TAG")
+[ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
+echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
 if ! helm upgrade --install manythreads ./deploy/helm/manythreads -n manythreads \
-  --set imageTag="$TAG" --wait --timeout 10m; then
+  "${HELM_ARGS[@]}" --wait --timeout 10m; then
   echo "WARNING: helm --wait failed; checking web + postgres readiness"
   kubectl get pods -n manythreads
   kubectl rollout status deploy/manythreads-web -n manythreads --timeout=60s
