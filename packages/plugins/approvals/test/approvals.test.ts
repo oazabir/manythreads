@@ -736,6 +736,21 @@ describe('review round 3', () => {
     expect(await w.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.approvals WHERE channel_id = $1', [secret])).rows[0]?.n)).toBe(0);
   });
 
+  it('a refusal leaves the caller transaction usable: the run can still be answered after it', async () => {
+    const run = await openRun(scoped, nadia, { channelId: secret });
+    // the door's AP001 used to abort the caller's transaction, so everything the runtime did next (the audit
+    // line, the notice, closing the run) failed with "current transaction is aborted" and the run ended failed
+    await runs.asBot(run, async (tx) => {
+      await expect(provider.request(tx, {
+        runId: run.runId, source: 'grant', tool: 'pages.write', summary: 's', argsPreview: {},
+        resume: { kind: 'tool', capability: 'pages.write', args: PAGE('pages/secret.md'), trigger: 'mention' },
+      })).rejects.toBeInstanceOf(NoEligibleApproverError);
+      await expect(tx.query('SELECT 1 AS one')).resolves.toMatchObject({ rows: [{ one: 1 }] });
+    });
+    await runs.close(run.runId, 'stopped');
+    expect(await w.system(async (tx) => (await tx.query<{ status: string }>('SELECT status FROM app.bot_runs WHERE id = $1', [run.runId])).rows[0]?.status)).toBe('stopped');
+  });
+
   it('once a person who could decide is in it, it is filed for that conversation only: visible to its people, pushed to them, resumed without text', async () => {
     await w.system((tx) => tx.query('INSERT INTO app.channel_members (channel_id, person_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [secret, rafi.personId]));
     const run = await openRun(scoped, nadia, { channelId: secret, replyRootId: rootId });

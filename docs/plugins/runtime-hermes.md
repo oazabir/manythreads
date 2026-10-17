@@ -26,11 +26,19 @@ routes, and what each honestly means today:
 | `mention` | the body names the bot (`@<slug>`), in the channels the trigger's `source` lists (all of them when it lists none) | read with the composer's parser, so a handle in a code span, a fence, a URL or an email wakes nobody |
 | `channel_message` | a message in a channel the trigger lists, or anywhere on the bot's team when it lists none | the trigger for a bot that answers everything |
 
-Never fires: a message a **bot** wrote (no bot answers a bot here — that is delegation, P6), a private channel (a bot
-conversation is the one exception, and only for the bot it is with: no other bot of the team is considered there, and a
-`mention` or `channel_message` rule never wakes a bot inside somebody's conversation with it), a DM, an archived channel. One message starts at most one run per bot (the job's dedupe key `runtime-hermes:<botId>:<messageId>`) and the
+Never fires: a private channel (a bot conversation is the one exception, and only for the bot it is with: no other bot of the
+team is considered there, and a `mention` or `channel_message` rule never wakes a bot inside somebody's conversation with
+it), a DM, an archived channel. One message starts at most one run per bot (the job's dedupe key `runtime-hermes:<botId>:<messageId>`) and the
 highest-priority trigger wins: conversation, then mention, then channel_message. A `routine`, `task_assigned`, `inbox` or
 `webhook` trigger is in `BOT.md` but not routed by this plugin yet.
+
+**Delegation** — the one way a bot answers a bot. A bot-authored message fires a run only as an explicit `@mention` in a
+public team channel, of a bot the author may tag (its `tasks.handoff` grant, compiled by the bots loader from
+`handover.mayTag`, names the target), and only a few hops deep per thread (`MAX_DELEGATION_DEPTH`, three: the chain's hops
+all answer in the same thread, so the deepest run off the thread's root is the chain's length, recorded on the run row as
+`delegation_depth`). A bot's prose never trips another bot's `channel_message` rule, a bot never wakes itself, and a message
+carrying an Answer never hands off. The run has no person asker: reads run as the bot, and an approval it raises names the
+bot itself as the requester.
 
 The run's prompt is one line of context and the message: `Nadia in #dev:\n\n@coder what changed?` (in a conversation channel,
 which has no name, `Nadia:\n\nWhat is blocking the release?`). Behaviour is `SOUL.md`'s
@@ -151,7 +159,7 @@ Not yet done, deliberately:
 |---|---|---|
 | `MANYTHREADS_HERMES_BIN` | `hermes` | the Hermes entry point (the container's binary in a deployment) |
 | `MANYTHREADS_HERMES_PREFIX` | *(empty)* | arguments before `chat`, space-separated (`docker exec -i <container> hermes`) |
-| `MANYTHREADS_RUNTIME_DIR` | `$TMPDIR/manythreads-runtime` | where a run's profile home is written |
+| `MANYTHREADS_RUNTIME_DIR` | `$TMPDIR/manythreads-runtime` | where a run's profile home is written; point it at the install's own `profiles/` directory (`<home>/profiles`), because pm-era Hermes only boots when `HERMES_HOME` is `<home>/profiles/<name>` (its committed dependency environment is resolved from `<home>`) |
 | `MANYTHREADS_HERMES_KILL_GRACE` | `15` | seconds between SIGTERM and SIGKILL |
 | `MANYTHREADS_HERMES_ENV_PASSTHROUGH` | *(empty)* | comma-separated extra variable names the child inherits (`HTTPS_PROXY,NO_PROXY`); `MANYTHREADS_*`, `DATABASE*` and `PG*` are never passed |
 | `MANYTHREADS_LITELLM_URL` | *(unset)* | the workspace's model gateway; without it a hermes run is refused before starting |

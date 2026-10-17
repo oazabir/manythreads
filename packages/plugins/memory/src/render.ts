@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { memoryContentDigest } from '@manythreads/sdk';
+import { clip } from '@manythreads/shared';
+
+// Re-exported from `@manythreads/shared` for compat: `render.test.ts` imports `clip` from this path.
+export { clip };
 
 // Pure text work for the feed: what a source becomes as a memory document, the hash that recognises it again, and the id the engine files it
 // under. No database, no clock, no engine. Everything here is linear in the input (slices, joins and one hash; no regular expression with a
@@ -22,15 +26,6 @@ export interface FeedItem {
   tags: string[];
   /** Provenance: source, actor, time, link, ... (values are at most 500 characters; the provider adds team, workspace and `source: platform`). */
   metadata: Record<string, string>;
-}
-
-/** The first `max` characters of `text`, never ending inside a surrogate pair, with an ellipsis when something was cut. */
-export function clip(text: string, max: number): string {
-  if (text.length <= max) return text;
-  let end = Math.max(0, max - 1);
-  const last = text.charCodeAt(end - 1);
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1; // a high surrogate whose partner was cut
-  return `${text.slice(0, end)}…`;
 }
 
 /** Collapses runs of blank lines and trailing spaces; keeps the author's own line structure. Linear: one pass over the lines. */

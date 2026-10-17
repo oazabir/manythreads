@@ -42,16 +42,22 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
     thread_root_id: string | null;
     author_id: string;
     author_person_id: string | null;
-    author_name: string | null;
+    person_name: string | null;
+    bot_name: string | null;
+    bot_slug: string | null;
     body_plain: string;
     deleted_at: Date | null;
   }>(
+    // The author is a person or a bot, so both are looked up: a person's display name, and a bot's own name from the bots plugin's row
+    // (its actor's `ref_id` is the bot row). A bot of no row (deleted, or the bots plugin absent) keeps the old generic label.
     `SELECT m.id, m.workspace_id, m.channel_id, c.kind AS channel_kind, m.thread_root_id, m.author_id, m.body_plain, m.deleted_at,
-            a.ref_id AS author_person_id, p.display_name AS author_name
+            pa.ref_id AS author_person_id, p.display_name AS person_name, b.name AS bot_name, b.slug AS bot_slug
        FROM app.messages m
        JOIN app.channels c ON c.id = m.channel_id
-       LEFT JOIN app.actors a ON a.id = m.author_id AND a.kind = 'person'
-       LEFT JOIN app.people p ON p.id = a.ref_id
+       LEFT JOIN app.actors pa ON pa.id = m.author_id AND pa.kind = 'person'
+       LEFT JOIN app.people p ON p.id = pa.ref_id
+       LEFT JOIN app.actors ba ON ba.id = m.author_id AND ba.kind = 'bot'
+       LEFT JOIN app.bots b ON b.id = ba.ref_id AND b.workspace_id = m.workspace_id
       WHERE m.id = $1`,
     [messageId],
   );
@@ -65,7 +71,7 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
     threadRootId: r.thread_root_id,
     authorActorId: r.author_id,
     authorPersonId: r.author_person_id,
-    authorName: r.author_name ?? 'Bot',
+    authorName: r.person_name ?? r.bot_name ?? r.bot_slug ?? 'Bot',
     bodyPlain: r.body_plain,
     deleted: r.deleted_at !== null,
   };

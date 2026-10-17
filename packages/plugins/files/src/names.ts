@@ -7,6 +7,7 @@ export const MAX_NAME_BYTES = 255;
 const utf8Bytes = (s: string): number => Buffer.byteLength(s, 'utf8');
 
 /** Cuts `name` to at most `max` bytes without splitting a character, keeping the extension (up to 16 bytes of it) when there is one. */
+/* NOTE: intentionally not the shared `clip` (`@manythreads/shared`): that cuts UTF-16 units with an ellipsis, while this cuts UTF-8 bytes and preserves the extension. */
 function clip(name: string, max: number): string {
   if (utf8Bytes(name) <= max) return name;
   const dot = name.lastIndexOf('.');

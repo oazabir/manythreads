@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { memoryContentDigest } from '@manythreads/sdk';
-import { trustTier, type OkfFrontmatter, type TrustTier } from '@manythreads/shared';
+import { clip, trustTier, type OkfFrontmatter, type TrustTier } from '@manythreads/shared';
 import { MAX_DOC_CHARS } from './constants.ts';
 
 // Pure text work for the mirror: what a concept becomes as a memory document, the digest that recognises it again and the id the engine files it
@@ -15,14 +15,9 @@ export function documentIdFor(path: string, digest: string): string {
   return `okf:${createHash('sha256').update(path, 'utf8').digest('hex').slice(0, 24)}:${digest.slice(0, 16)}`;
 }
 
+// Re-exported from `@manythreads/shared` for compat: `render.test.ts` imports `clip` from this path.
 /** The first `max` characters of `text`, never ending inside a surrogate pair, with an ellipsis when something was cut. */
-export function clip(text: string, max: number): string {
-  if (text.length <= max) return text;
-  let end = Math.max(0, max - 1);
-  const last = text.charCodeAt(end - 1);
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
-  return `${text.slice(0, end)}…`;
-}
+export { clip };
 
 /** Collapses runs of blank lines and trailing spaces; keeps the author's own line structure. Linear: one pass over the lines. */
 export function tidy(text: string): string {

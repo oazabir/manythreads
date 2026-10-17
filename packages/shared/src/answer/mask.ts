@@ -7,6 +7,7 @@ import {
   type AnswerOutsideReason,
 } from '../entities/answer.ts';
 import { removeClaims } from './claims.ts';
+import { clip } from '../text/index.ts';
 
 // Masking an answer for the people a copy of it is shared with (SPEC §6.3, PLAN P5-17). The decision "may this reader open that source" is not
 // made here: the database asks the platform's own policies, as the sharer, against the readers of the place the copy goes to
@@ -61,15 +62,6 @@ export interface MaskedAnswer {
   /** The words that were taken out with the removed claims, one entry per sentence: what the sharer's preview shows. */
   removedText: string[];
 }
-
-/** Cut to `max` with an ellipsis, never between the two halves of a surrogate pair. */
-const clip = (text: string, max: number): string => {
-  if (text.length <= max) return text;
-  let end = max - 1;
-  const last = text.charCodeAt(end - 1);
-  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
-  return `${text.slice(0, end)}…`;
-};
 
 /** The citation numbers of an answer, ascending: what a sharer may remove. */
 export const citationNumbers = (payload: AnswerPayload): number[] => payload.citations.map((c) => c.n).sort((a, b) => a - b);

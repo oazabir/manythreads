@@ -1,6 +1,7 @@
 import {
   ANSWER_LIMITS,
   AnswerPayload,
+  clip,
   type AnswerCitationInput,
   type AnswerInput,
   type AnswerOutsideReason,
@@ -47,8 +48,6 @@ const iso = (value: string | null | undefined): string | null => {
   const t = Date.parse(value);
   return Number.isNaN(t) ? null : new Date(t).toISOString();
 };
-
-const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 
 export interface BuiltAnswer {
   payload: AnswerPayload;

@@ -105,8 +105,8 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
         }
         const inserted = (
           await tx.query<{ id: string }>(
-            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running') RETURNING id`,
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'running') RETURNING id`,
             [
               input.workspaceId,
               input.botId,
@@ -116,6 +116,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
               input.threadId ?? null,
               input.channelId ?? null,
               input.replyRootId ?? null,
+              Math.max(0, Math.floor(input.delegationDepth ?? 0)),
             ],
           )
         ).rows[0];

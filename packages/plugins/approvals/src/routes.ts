@@ -19,7 +19,7 @@ import {
   listApprovalsRoute,
   listThreadApprovalsRoute,
 } from '@manythreads/shared';
-import { conflict, forbidden, json, notFound, requireTeam, route } from './http.ts';
+import { conflict, forbidden, json, notFound, requireTeam, route } from '@manythreads/sdk';
 import { factsOf, pushChanged } from './notify.ts';
 import { APPROVAL_SELECT, blockReasonsOf, toApproval, type ApprovalRow } from './rows.ts';
 import { RESUME_QUEUE } from './resume.ts';

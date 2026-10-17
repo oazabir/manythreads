@@ -1,4 +1,5 @@
 import { ANSWER_MASKED_KIND, type AnswerPayload } from '../entities/answer.ts';
+import { clip } from '../text/index.ts';
 
 // "Hand to a bot" (SPEC §12.4, PLAN P5-17): the message the asker sends, as themselves, into their own conversation with another bot. The text is
 // made from the question they asked and the copy of the answer (masked for the readers of that conversation, which for a private one is the asker
@@ -6,8 +7,6 @@ import { ANSWER_MASKED_KIND, type AnswerPayload } from '../entities/answer.ts';
 
 const QUESTION_MAX = 2_000;
 const MESSAGE_MAX = 39_000;
-
-const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 
 /** What the receiving bot is given: where it came from, the question, the answer's text, and each source's name. */
 export function handoffMessage(input: { fromBot: string; question: string; copy: AnswerPayload }): string {

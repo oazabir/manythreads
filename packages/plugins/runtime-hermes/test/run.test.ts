@@ -33,6 +33,15 @@ const FAKE_HERMES = [
   "const bearer = /Authorization: (.*)$/m.exec(config)?.[1] ?? 'null';",
   "const record = { argv: process.argv.slice(2), homeName: home.slice(home.lastIndexOf('/') + 1), soul: soul.trim().split('\\n')[0], mcpUrl: JSON.parse(url), bearer: JSON.parse(bearer), prompt, canary: process.env.MANYTHREADS_TEST_CANARY ?? null, envNames: Object.keys(process.env).sort().join(',') };",
   "appendFileSync(process.env.HERMES_FAKE_SPOOL ?? '/dev/null', JSON.stringify(record) + '\\n');",
+  "const chain = prompt.match(/chain ([a-z0-9._-]+( +[a-z0-9._-]+)*)/i);",
+  "if (chain) {",
+  "  const parts = chain[1].split(/ +/);",
+  "  const target = parts[0];",
+  "  const rest = parts.slice(1);",
+  "  const handoff = rest.length > 0 ? '@' + target + ' please continue chain ' + rest.join(' ') : '@' + target + ' please continue';",
+  "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 0, text: handoff, tokens: { input: 5, output: 5, total: 10 } }) + '\\n');",
+  "  process.exit(0);",
+  "}",
   "if (prompt.includes('FAIL-THE-RUN')) {",
   "  process.stdout.write(JSON.stringify({ type: 'text', text: 'half an answ' }) + '\\n');",
   "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 1, text: 'half an answ', error: 'model fell over' }) + '\\n');",
@@ -45,7 +54,7 @@ const FAKE_HERMES = [
 ].join('\n');
 
 /** One definition, with the pieces a test takes away named as parameters. */
-const botMd = (parts: { name: string; model?: string; capabilities?: string; extra?: string[] }): string =>
+const botMd = (parts: { name: string; model?: string; capabilities?: string; triggers?: string[]; handover?: string[]; extra?: string[] }): string =>
   [
     '---',
     'schema: 1',
@@ -55,7 +64,8 @@ const botMd = (parts: { name: string; model?: string; capabilities?: string; ext
     'runtime: hermes',
     ...(parts.model ? ['model:', `  aliases: [${parts.model}]`] : []),
     'triggers:',
-    '  - type: mention',
+    ...(parts.triggers ?? ['  - type: mention']),
+    ...(parts.handover ? ['handover:', `  mayTag: [${parts.handover.join(', ')}]`] : []),
     ...(parts.capabilities ? ['capabilities:', `  native: [${parts.capabilities}]`] : []),
     ...(parts.extra ?? []),
     '---',
@@ -134,30 +144,57 @@ async function loadBot(slug: string, md: string): Promise<LoadedBot> {
 }
 
 /** Post a message as nadia in #dev and answer its id. */
-async function post(body: string): Promise<string> {
-  const res = await w.call(nadia, 'POST', `/api/channels/${channelId}/messages`, { channelId, body, threadRootId: null });
+async function post(body: string, channel: string = channelId): Promise<string> {
+  const res = await w.call(nadia, 'POST', `/api/channels/${channel}/messages`, { channelId: channel, body, threadRootId: null });
   expect(res.status, JSON.stringify(res.body)).toBe(201);
   return (res.body as { id: string }).id;
 }
 
 /** The messages one bot wrote in the thread `rootId`, as nadia reads them back. */
-const messagesBy = async (rootId: string, authorId: string): Promise<{ id: string; body: string }[]> => {
-  const res = await w.call(nadia, 'GET', `/api/channels/${channelId}/messages?threadRootId=${rootId}&limit=50`);
+const messagesBy = async (rootId: string, authorId: string, channel: string = channelId): Promise<{ id: string; body: string }[]> => {
+  const res = await w.call(nadia, 'GET', `/api/channels/${channel}/messages?threadRootId=${rootId}&limit=50`);
   expect(res.status, JSON.stringify(res.body)).toBe(200);
   return ListMessagesResponse.parse(res.body).items.filter((m) => m.authorId === authorId);
 };
 
+/** Prove a negative by waiting: a sleep is a nap, so negatives below wait on the reply that proves the router decided. */
+const quiet = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** The newest run of a bot, as the run table has it. */
 const runOf = (
   botId: string,
-): Promise<{ id: string; status: string; trigger_type: string; asker_id: string | null; thread_id: string | null } | undefined> =>
+): Promise<{ id: string; status: string; trigger_type: string; asker_id: string | null; thread_id: string | null; delegation_depth: number } | undefined> =>
   w.system(async (tx) =>
     (
-      await tx.query<{ id: string; status: string; trigger_type: string; asker_id: string | null; thread_id: string | null }>(
-        `SELECT id, status, trigger_type, asker_id, thread_id FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1`,
+      await tx.query<{ id: string; status: string; trigger_type: string; asker_id: string | null; thread_id: string | null; delegation_depth: number }>(
+        `SELECT id, status, trigger_type, asker_id, thread_id, delegation_depth FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1`,
         [botId],
       )
     ).rows[0],
+  );
+
+/** Every run of a bot, oldest first. */
+const runsOf = (
+  botId: string,
+): Promise<{ id: string; status: string; trigger_type: string; asker_id: string | null; delegation_depth: number }[]> =>
+  w.system(async (tx) =>
+    (
+      await tx.query<{ id: string; status: string; trigger_type: string; asker_id: string | null; delegation_depth: number }>(
+        `SELECT id, status, trigger_type, asker_id, delegation_depth FROM app.bot_runs WHERE bot_id = $1 ORDER BY started_at, id`,
+        [botId],
+      )
+    ).rows,
+  );
+
+/** Whether the router queued a run for this bot on this message: the absence a negative asserts, with a positive control. */
+const jobsFor = (botId: string, messageId: string): Promise<number> =>
+  w.system(async (tx) =>
+    (
+      await tx.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM app.jobs WHERE queue = 'runtime-hermes.run' AND dedupe_key = $1`,
+        [`runtime-hermes:${botId}:${messageId}`],
+      )
+    ).rows[0]!.n,
   );
 
 /**
@@ -713,6 +750,43 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       expect(notice.body).not.toMatch(/\$|credential/); // no figures, no gate entry
     });
 
+    it('a hold nobody in the conversation could decide stops the run and says so in the thread, instead of failing it', async () => {
+      // the asker's own 1:1 conversation with the bot: the gate holds, but nobody in it but Nadia (who asked) could
+      // decide — the on-call approver is not in it. The filing refusal used to abort the run's transaction, so the
+      // audit line, the notice and the close all failed with "current transaction is aborted" and the run ended failed.
+      const bot = await loadBot(
+        'gate-alone',
+        botMd({
+          name: 'GateAlone',
+          model: 'smart',
+          capabilities: 'messages.post',
+          extra: ['guard:', "  gate: ['credential rotation']", 'approvals:', '  approvers: ["role:on-call"]'],
+        }).replace('  - type: mention', '  - type: conversation'),
+      );
+      const before = spoolLines().length;
+      const opened = await w.call<{ channelId: string }>(nadia, 'POST', '/api/teams/engineering/bots/gate-alone/conversation');
+      expect(opened.status, JSON.stringify(opened.body)).toBe(201);
+      const alone = opened.body.channelId;
+      const posted = await w.call(nadia, 'POST', `/api/channels/${alone}/messages`, {
+        channelId: alone,
+        body: 'please start the credential rotation',
+        threadRootId: null,
+      });
+      expect(posted.status, JSON.stringify(posted.body)).toBe(201);
+      const rootId = (posted.body as { id: string }).id;
+
+      const run = await finished(bot.botId);
+      expect(run).toMatchObject({ status: 'stopped', trigger_type: 'conversation' });
+      expect(spoolLines()).toHaveLength(before); // Hermes never started: the model was not called
+      expect(await approvalsOf(bot.botId)).toEqual([]); // nothing filed: nobody could decide it
+      const read = await w.call(nadia, 'GET', `/api/channels/${alone}/messages?threadRootId=${rootId}&limit=50`);
+      expect(read.status, JSON.stringify(read.body)).toBe(200);
+      const notice = ListMessagesResponse.parse(read.body).items.filter((m) => m.authorId === bot.actorId)[0];
+      expect(notice?.body).toMatch(/Held by this bot's gate/);
+      const [event] = await gateEvents(bot.botId);
+      expect(event).toMatchObject({ stage: 'exact', entry: 'credential rotation', approvalId: null });
+    });
+
     it('a runtime that makes no model call is not gated: a rules bot with a gate list still runs', async () => {
       const md = [
         '---',
@@ -750,5 +824,153 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the run to answer');
       expect(classifierCalls().length).toBe(calls);
     });
+  });
+});
+
+describe('bot-to-bot delegation in team channels', () => {
+  const finished = (botId: string) =>
+    until(async () => {
+      const row = await runOf(botId);
+      return row && row.status !== 'running' ? row : null;
+    }, 30_000, 'the run to end');
+
+  it('a bot-authored @mention the author may tag opens a run for the target in the same thread, with no person asker', async () => {
+    const orch = await loadBot('dlg-orch', botMd({ name: 'DlgOrch', model: 'smart', capabilities: 'messages.post', handover: ['dlg-coder'] }));
+    const coder = await loadBot('dlg-coder', botMd({ name: 'DlgCoder', model: 'smart', capabilities: 'messages.post' }));
+    const before = spoolLines().length;
+
+    const rootId = await post('@dlg-orch start chain dlg-coder');
+    // the person's run answers first, handing off with a mention of the coder
+    const handoff = await until(async () => (await messagesBy(rootId, orch.actorId))[0], 30_000, 'the orchestrator to hand off');
+    expect(handoff.body).toBe('@dlg-coder please continue');
+    // the mention wakes the coder: its own run, in the same thread, answering the bot's message
+    const reply = await until(async () => (await messagesBy(rootId, coder.actorId))[0], 30_000, 'the coder to pick up');
+    expect(reply.body).toContain('@dlg-coder please continue');
+    const run = await finished(coder.botId);
+    expect(run).toMatchObject({ status: 'done', trigger_type: 'mention', asker_id: null, delegation_depth: 1 });
+    expect(callsOf('dlg-coder', run!.id)).toHaveLength(1);
+    expect(callsOf('dlg-coder', run!.id)[0]!['prompt']).toContain('DlgOrch in #dev:');
+    // and the chain stops there: the coder's echo names only itself, which never wakes itself
+    expect(spoolLines()).toHaveLength(before + 2);
+    expect((await finished(orch.botId)).status).toBe('done');
+    await quiet(4000);
+    expect(spoolLines()).toHaveLength(before + 2);
+    expect(await runsOf(orch.botId)).toHaveLength(1);
+  });
+
+  it('without a handover grant the mention wakes nobody', async () => {
+    const orch = await loadBot('dlg-orch2', botMd({ name: 'DlgOrch2', model: 'smart', capabilities: 'messages.post' }));
+    const coder = await loadBot('dlg-coder2', botMd({ name: 'DlgCoder2', model: 'smart', capabilities: 'messages.post' }));
+
+    const rootId = await post('@dlg-orch2 start chain dlg-coder2');
+    // the reply proves the router saw the bot-authored message and decided: no job for the coder is the decision
+    const handoff = await until(async () => (await messagesBy(rootId, orch.actorId))[0], 30_000, 'the orchestrator to answer');
+    expect(handoff.body).toBe('@dlg-coder2 please continue');
+    expect(await jobsFor(coder.botId, handoff.id)).toBe(0);
+    expect((await finished(orch.botId)).status).toBe('done');
+    await quiet(4000);
+    expect(await runsOf(coder.botId)).toEqual([]);
+  });
+
+  it('a bot mention never trips a channel_message trigger', async () => {
+    const orch = await loadBot('dlg-orch3', botMd({ name: 'DlgOrch3', model: 'smart', capabilities: 'messages.post', handover: ['dlg-chanonly'] }));
+    const chan = await loadBot(
+      'dlg-chanonly',
+      botMd({ name: 'DlgChanonly', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: channel_message'] }),
+    );
+
+    const rootId = await post('@dlg-orch3 start chain dlg-chanonly');
+    const handoff = await until(async () => (await messagesBy(rootId, orch.actorId))[0], 30_000, 'the orchestrator to answer');
+    expect(handoff.body).toBe('@dlg-chanonly please continue');
+    expect(await jobsFor(chan.botId, handoff.id)).toBe(0);
+    expect((await finished(orch.botId)).status).toBe('done');
+    // the person's own message did wake it through channel_message (the person path is untouched): one run, depth zero —
+    // and nothing off the bot's mention. Its reply answers the person's message through the stand-in's handoff branch.
+    const reply = await until(async () => (await messagesBy(rootId, chan.actorId))[0], 30_000, 'the channel bot to answer the person');
+    expect(reply.body).toBe('@dlg-chanonly please continue');
+    expect(await runsOf(chan.botId)).toMatchObject([{ status: 'done', trigger_type: 'channel_message', asker_id: nadia.actorId, delegation_depth: 0 }]);
+    await quiet(4000);
+  });
+
+  it('a chain three deep runs, and the fourth mention is an ordinary message', async () => {
+    const orch = await loadBot(
+      'dlg-chain-orch',
+      botMd({ name: 'DlgChainOrch', model: 'smart', capabilities: 'messages.post', handover: ['dlg-chain-coder', 'dlg-chain-extra'] }),
+    );
+    const coder = await loadBot(
+      'dlg-chain-coder',
+      botMd({ name: 'DlgChainCoder', model: 'smart', capabilities: 'messages.post', handover: ['dlg-chain-tester'] }),
+    );
+    const tester = await loadBot(
+      'dlg-chain-tester',
+      botMd({ name: 'DlgChainTester', model: 'smart', capabilities: 'messages.post', handover: ['dlg-chain-orch'] }),
+    );
+    const extra = await loadBot('dlg-chain-extra', botMd({ name: 'DlgChainExtra', model: 'smart', capabilities: 'messages.post' }));
+
+    const rootId = await post('@dlg-chain-orch start chain dlg-chain-coder dlg-chain-tester dlg-chain-orch dlg-chain-extra');
+    // three hops, each answering in the same thread: coder, tester, then the orchestrator again (each reply is authored
+    // by the run that wrote it, so each hop is awaited on its author's messages)
+    const first = await until(
+      async () => (await messagesBy(rootId, orch.actorId)).filter((m) => m.body.startsWith('@dlg-chain-coder'))[0],
+      30_000,
+      'the orchestrator to hand to the coder',
+    );
+    expect(first.body).toBe('@dlg-chain-coder please continue chain dlg-chain-tester dlg-chain-orch dlg-chain-extra');
+    const second = await until(async () => (await messagesBy(rootId, coder.actorId))[0], 30_000, 'the coder to pick up');
+    expect(second.body).toBe('@dlg-chain-tester please continue chain dlg-chain-orch dlg-chain-extra');
+    const third = await until(async () => (await messagesBy(rootId, tester.actorId))[0], 30_000, 'the tester to pick up');
+    expect(third.body).toBe('@dlg-chain-orch please continue chain dlg-chain-extra');
+    // the depth-three run still answers (its own reply is allowed); what must not happen is a fifth run off that reply
+    const fourth = await until(
+      async () => (await messagesBy(rootId, orch.actorId)).filter((m) => m.body === '@dlg-chain-extra please continue')[0],
+      30_000,
+      'the orchestrator to answer a second time',
+    );
+    expect(fourth.body).toBe('@dlg-chain-extra please continue');
+    // the fourth hop would be depth four: the mention is an ordinary message and no fifth process starts.
+    // Counted by process home, not the shared spool file: a straggler from another test must not fail this one, and a
+    // fifth chain process (the loop the cap exists to stop) may not hide in the total.
+    await quiet(6000);
+    const orchRuns = await runsOf(orch.botId);
+    expect(orchRuns.map((r) => r.delegation_depth)).toEqual([0, 3]);
+    expect(orchRuns.every((r) => r.status === 'done')).toBe(true);
+    const coderRuns = await runsOf(coder.botId);
+    expect(coderRuns).toMatchObject([{ status: 'done', asker_id: null, delegation_depth: 1 }]);
+    const testerRuns = await runsOf(tester.botId);
+    expect(testerRuns).toMatchObject([{ status: 'done', asker_id: null, delegation_depth: 2 }]);
+    expect(await runsOf(extra.botId)).toEqual([]);
+    const homes = new Set(
+      spoolLines()
+        .map((l) => String(l['homeName'] ?? ''))
+        .filter((h) => h.startsWith('dlg-chain-')),
+    );
+    expect(homes).toEqual(
+      new Set([`dlg-chain-orch-${orchRuns[0]!.id}`, `dlg-chain-orch-${orchRuns[1]!.id}`, `dlg-chain-coder-${coderRuns[0]!.id}`, `dlg-chain-tester-${testerRuns[0]!.id}`]),
+    );
+  });
+
+  it('a bot-authored mention inside a 1:1 conversation wakes nobody', async () => {
+    const orch = await loadBot(
+      'dlg-conv-orch',
+      botMd({
+        name: 'DlgConvOrch',
+        model: 'smart',
+        capabilities: 'messages.post',
+        triggers: ['  - type: conversation', '  - type: mention'],
+        handover: ['dlg-conv-coder'],
+      }),
+    );
+    const coder = await loadBot('dlg-conv-coder', botMd({ name: 'DlgConvCoder', model: 'smart', capabilities: 'messages.post' }));
+    const opened = await w.call<{ channelId: string }>(nadia, 'POST', '/api/teams/engineering/bots/dlg-conv-orch/conversation');
+    expect([200, 201]).toContain(opened.status);
+    const alone = opened.body.channelId;
+    const rootId = await post('@dlg-conv-orch start chain dlg-conv-coder', alone);
+    // the orchestrator answers in the 1:1; its mention of the coder must not wake it there
+    const handoff = await until(async () => (await messagesBy(rootId, orch.actorId, alone))[0], 30_000, 'the orchestrator to answer');
+    expect(handoff.body).toBe('@dlg-conv-coder please continue');
+    expect(await jobsFor(coder.botId, handoff.id)).toBe(0);
+    await quiet(4000);
+    expect(await runsOf(coder.botId)).toEqual([]);
+    expect((await finished(orch.botId)).status).toBe('done');
   });
 });

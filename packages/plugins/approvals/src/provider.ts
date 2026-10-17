@@ -1,12 +1,10 @@
 import { NEVER_APPROVAL_GATED, NeverApprovalGatedError, NoEligibleApproverError, type ApprovalProvider, type ApprovalRequestInput, type PluginContext, type PluginTx } from '@manythreads/sdk';
-import { ApprovalResume, ApprovalsApprovalRequestedEvent, ApprovalsApprovalResumedEvent } from '@manythreads/shared';
+import { ApprovalResume, ApprovalsApprovalRequestedEvent, ApprovalsApprovalResumedEvent, clip } from '@manythreads/shared';
 import { pushChanged } from './notify.ts';
 
 // The one handler for `needsApproval` (PLAN P5-20): the provider other plugins reach as `ctx.providers.get<ApprovalProvider>('approvals')`.
 // The four sources differ only in the text and the resume they pass; everything after that — the row, who may decide, the event and the
 // push — is this file and the two definer doors of migration 0001.
-
-const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
   return {
@@ -22,6 +20,10 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
       }
       type Filed = { o_id: string; o_created: boolean; o_workspace_id: string; o_team_id: string; o_bot_id: string; o_run_id: string; o_requester_id: string; o_private: boolean };
       let res: { rows: Filed[] };
+      // The door refuses with AP001 when the run is in a private conversation nobody but the requester could decide
+      // in — and a refused statement leaves the caller's transaction aborted. Fence the call in a savepoint so the
+      // caller can still answer (a notice, a stopped run) instead of tripping over "current transaction is aborted".
+      await tx.query('SAVEPOINT approval_request');
       try {
         res = await tx.query<Filed>(
         'SELECT * FROM app.approvals_request($1::uuid, $2, $3, $4, $5::jsonb, $6::boolean, $7::jsonb, $8::text[], $9)',
@@ -39,9 +41,13 @@ export function createApprovalProvider(ctx: PluginContext): ApprovalProvider {
         );
       } catch (err) {
         // AP001: the run is in a private conversation and nobody in it but the requester could decide this
-        if ((err as { code?: string }).code === 'AP001') throw new NoEligibleApproverError();
+        if ((err as { code?: string }).code === 'AP001') {
+          await tx.query('ROLLBACK TO SAVEPOINT approval_request');
+          throw new NoEligibleApproverError();
+        }
         throw err;
       }
+      await tx.query('RELEASE SAVEPOINT approval_request');
       const row = res.rows[0];
       if (!row) throw new Error('the approval request answered no row');
       if (row.o_created) {

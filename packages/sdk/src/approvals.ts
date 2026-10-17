@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { BotRunTrigger, approvalSummary, previewArgsDetailed, type ApprovalResume, type ApprovalSource } from '@manythreads/shared';
-import { RunEndedError, type BotRunHandle, type PluginContext, type PluginTx, type ProviderImpl } from './types.ts';
+import { RunEndedError, type BotRunHandle, type CapabilityAuthorizeContext, type PluginContext, type PluginTx, type ProviderImpl } from './types.ts';
 
 // The one handler for `needsApproval` (SPEC §7.3; PLAN P5-20): `ctx.providers.get<ApprovalProvider>('approvals')`, registered by the approvals
 // plugin. A call that must wait for a person — whichever of the four sources says so (an Environment with `protected: true`, `dispatch: strict`,
@@ -85,6 +85,22 @@ function stable(value: unknown): string {
 /** The one key for "this tool with these arguments": asking twice is one approval per asker (the database scopes it by bot and asker). */
 export const approvalDedupeKey = (tool: string, input: Record<string, unknown>): string =>
   createHash('sha256').update(`${tool}\n${stable(input)}`).digest('hex');
+
+/**
+ * What the broker must know beyond the capability's name: the repo path(s) the call itself names. A mutation (`files.*`,
+ * `pages.write`) is judged on the path its own arguments name — the same path the handler would write — and a call that
+ * names none is refused rather than judged blind. The one shared copy (previously duplicated in runtime-hermes, approvals
+ * and gateway-mcp with identical bodies): a runtime's direct call, an approval resume and the MCP gateway door all need it
+ * for the same reason.
+ */
+export function authorizeContext(input: Record<string, unknown>): CapabilityAuthorizeContext {
+  const path = input['path'];
+  const paths = input['paths'];
+  return {
+    ...(typeof path === 'string' ? { path } : {}),
+    ...(Array.isArray(paths) && paths.every((p): p is string => typeof p === 'string') ? { paths } : {}),
+  };
+}
 
 /**
  * Capabilities that can never wait for an approval. An approved call is re-run later in a NEW run that has none of the first run's context (no

@@ -254,6 +254,11 @@ export interface OpenRunInput {
   /** Where the run answers (the channel and the thread root, or the message that opens one): an approval raised by the run puts its card there. */
   channelId?: string | null;
   replyRootId?: string | null;
+  /**
+   * How many bot-authored mentions deep this run sits (0 = a person asked). The router caps the chain per thread, so two
+   * bots naming each other cannot trade model calls forever.
+   */
+  delegationDepth?: number | null;
   /** How long the run's endpoint stays usable (seconds); the service's default applies when omitted. */
   ttlSeconds?: number;
 }
