@@ -16,6 +16,8 @@ export const ErrorCode = z.enum([
   'repo_quota_exceeded',
   /** 409: a conversation cannot be opened with a bot whose BOT.md lists no `conversation` trigger; nothing would ever answer in it (conversations plugin). */
   'bot_has_no_conversation_trigger',
+  /** 422: a file under `memory/` that is not valid OKF (no frontmatter, no `type`, bad YAML); the envelope names the file and the reason, nothing is committed. */
+  'okf_invalid',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

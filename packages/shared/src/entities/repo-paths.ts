@@ -117,5 +117,17 @@ export function repoMimeOf(path: string): string {
 
 /** Where attachments of channels appear in the Files tree: `channels/<name>/<file>` (SPEC section 5.2). Not a folder of the git repo. */
 export const FILES_CHANNELS_DIR = 'channels';
+/** `inbox/` is Files storage (team ACL), never a repo folder (PLAN D6, P5-25): the writer refuses it. */
+export const REPO_FORBIDDEN_TOP_DIRS: readonly string[] = ['inbox', 'channels'];
+
+/** True for `memory/...`: the OKF bundle. Bots never write it via `files.*` (only via `memory.write`, P5-26). */
+export function isMemoryPath(normalized: string): boolean {
+  return fold(normalized.split('/')[0] ?? '') === 'memory';
+}
+
+/** True for `inbox/...`: never a repo path. */
+export function isInboxPath(normalized: string): boolean {
+  return fold(normalized.split('/')[0] ?? '') === 'inbox';
+}
 /** `memory/` is written by the team's memory (journal, facts); the tree shows a note, people may still edit facts. */
 export const FILES_MEMORY_DIR = 'memory';

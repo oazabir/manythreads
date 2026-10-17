@@ -18,6 +18,82 @@ export function renderBundleIndex(): string {
   );
 }
 
+/** One entry of a directory `index.md` (OKF §8): a heading section, a link to a concept, and its description. */
+export interface OkfIndexEntry {
+  section: string;
+  path: string;
+  title: string;
+  description: string;
+}
+
+/** A directory index: sections in order, entries in order. */
+export interface OkfIndex {
+  sections: readonly string[];
+  entries: readonly OkfIndexEntry[];
+}
+
+/** Parse a directory `index.md`: `#` headings open sections, `* [title](path) - description` bullets are entries. Never throws. */
+export function parseIndex(content: string): OkfIndex {
+  const sections: string[] = [];
+  const entries: OkfIndexEntry[] = [];
+  let section = '';
+  for (const raw of content.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const head = /^#{1,6}\s+(.*?)\s*$/.exec(line)?.[1]?.trim() ?? null;
+    if (head !== null && head !== '') {
+      section = head;
+      if (!sections.includes(section)) sections.push(section);
+      continue;
+    }
+    const item = /^[*\-+]\s+\[([^\]]+)\]\(([^)]+)\)\s*(?:-\s*(.*))?$/.exec(line.trim());
+    if (item) {
+      entries.push({ section, path: item[2]?.trim() ?? '', title: item[1]?.trim() ?? '', description: (item[3] ?? '').trim() });
+    }
+  }
+  return { sections, entries };
+}
+
+/** Render a directory `index.md` deterministically: `# <section>` groups in given order, one bullet per entry. */
+export function renderIndex(index: OkfIndex): string {
+  const lines: string[] = [];
+  const order = index.sections.length > 0 ? [...index.sections] : [...new Set(index.entries.map((e) => e.section))];
+  for (const section of order) {
+    if (section !== '') lines.push(`# ${section}`, '');
+    for (const entry of index.entries) {
+      if (entry.section !== section) continue;
+      const tail = entry.description === '' ? '' : ` - ${entry.description}`;
+      lines.push(`* [${entry.title}](${entry.path})${tail}`);
+    }
+    lines.push('');
+  }
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+export type OkfLogEntry = BundleLogEntry;
+export type OkfLog = readonly OkfLogEntry[];
+
+/** Parse a `log.md` (OKF §9): `## YYYY-MM-DD` headings open date groups (newest first), `-` bullets are entries. Never throws. */
+export function parseLog(content: string): OkfLog {
+  const entries: BundleLogEntry[] = [];
+  let date = '';
+  for (const raw of content.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const head = /^#{2,6}\s+(\d{4}-\d{2}-\d{2})\s*$/.exec(line.trim())?.[1];
+    if (head !== undefined) {
+      date = head;
+      continue;
+    }
+    const bullet = /^[*\-+]\s+(.*?)\s*$/.exec(line.trim())?.[1];
+    if (bullet !== undefined && bullet !== '' && date !== '') entries.push({ date, text: bullet });
+  }
+  return entries;
+}
+
+/** Render a `log.md` deterministically (same shape as `renderBundleLog`, without the `# Memory log` title requirement). */
+export function renderLog(entries: OkfLog): string {
+  return renderBundleLog(entries);
+}
+
 /** One dated entry of `memory/log.md` (`date` is `YYYY-MM-DD`). */
 export interface BundleLogEntry {
   date: string;

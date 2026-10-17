@@ -24,7 +24,29 @@ export const OKF_MAX_FLOW_DEPTH = 32;
 export const OkfStatus = z.enum(['draft', 'stable', 'deprecated']);
 export type OkfStatus = z.infer<typeof OkfStatus>;
 
-const Verification = z.looseObject({ by: z.string().min(1).max(200), at: z.string().max(64).optional() });
+/** Actor convention (OKF §7): `human:<id>` for a person, `process:<id>` for an automated process, `<producer>/<version>` for agents/tools. */
+export const OkfActor = z.string().min(1).max(200).refine((v) => v.startsWith('human:') && v.length > 6 || v.startsWith('process:') && v.length > 8 || /^[^/\s]+\/[^/\s]+$/.test(v), { message: 'must be human:<id>, process:<id> or <producer>/<version>' });
+export type OkfActor = z.infer<typeof OkfActor>;
+
+/** `usage_window`: the `{ from, to }` range framing a source's `usage_count` (ISO 8601, explicit offset). May sit beside `sources` (shared) or on one entry (override). */
+export const OkfUsageWindow = z.looseObject({ from: z.string().max(64).optional(), to: z.string().max(64).optional() });
+export type OkfUsageWindow = z.infer<typeof OkfUsageWindow>;
+
+/** One `sources` entry (OKF §5): `resource` required (URL, bundle path, reference path or scope descriptor); credibility signals optional. A plain string is the historical shorthand for `{ resource }` and still reads. */
+export const OkfSourceObject = z.looseObject({
+  resource: z.string().min(1).max(2000),
+  id: z.string().min(1).max(200).optional(),
+  title: z.string().max(500).optional(),
+  author: z.string().min(1).max(200).optional(),
+  usage_count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  last_modified: z.string().max(64).optional(),
+  usage_window: OkfUsageWindow.optional(),
+});
+export type OkfSourceObject = z.infer<typeof OkfSourceObject>;
+export const OkfSource = z.union([z.string().min(1).max(2000), OkfSourceObject]);
+export type OkfSource = z.infer<typeof OkfSource>;
+
+const Verification = z.looseObject({ by: OkfActor, at: z.string().max(64).optional() });
 
 /**
  * The frontmatter of a concept. `type` is the only required key and its value is free (unknown types are fine). The platform sets `generated`,
@@ -37,7 +59,9 @@ export const OkfFrontmatter = z.looseObject({
   tags: z.array(z.string().max(100)).max(100).optional(),
   status: OkfStatus.optional(),
   stale_after: z.string().max(64).optional(),
-  generated: z.looseObject({ by: z.string().min(1).max(200), at: z.string().max(64).optional() }).optional(),
+  sources: z.array(OkfSource).max(100).optional(),
+  usage_window: OkfUsageWindow.optional(),
+  generated: z.looseObject({ by: OkfActor, at: z.string().max(64).optional() }).optional(),
   verified: z.preprocess((v) => (v !== null && typeof v === 'object' && !Array.isArray(v) ? [v] : v), z.array(Verification).max(100)).optional(),
   origin: z.string().max(64).optional(),
   share: z.string().max(64).optional(),

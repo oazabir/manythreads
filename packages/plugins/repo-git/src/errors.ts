@@ -17,5 +17,6 @@ export const repoForbidden = (message: string): RepoError => new RepoError(403, 
 export const repoNotFound = (message: string): RepoError => new RepoError(404, 'not_found', message);
 export const repoInvalid = (message: string): RepoError => new RepoError(400, 'validation_failed', message);
 export const notInRepo = (message: string): RepoError => new RepoError(422, 'attachment_not_in_repo', message);
+export const okfInvalid = (file: string, reason: string): RepoError => new RepoError(422, 'okf_invalid', `${file}: ${reason}`);
 export const repoQuota = (message: string): RepoError => new RepoError(413, 'repo_quota_exceeded', message);
 export const repoBusy = (): RepoError => new RepoError(503, 'internal', 'The repository service is busy; try again in a moment');

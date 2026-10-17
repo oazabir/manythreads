@@ -2,7 +2,7 @@
  * The referee rule (guide §7): bots never write `bots/`, `TEAM.md`, `skills/`, `routines/`. Changes arrive only
  * as an approved proposal. Paths are repo-relative and case-sensitive.
  */
-import { isGuardedRepoPath } from '@manythreads/shared';
+import { isGuardedRepoPath, isInboxPath, isMemoryPath } from '@manythreads/shared';
 
 /** `files.*` verbs that only read. Everything else under `files.` is treated as a write (fail closed). */
 const READ_ONLY_FILE_VERBS: ReadonlySet<string> = new Set(['read', 'list', 'search', 'get', 'stat', 'diff', 'history']);
@@ -63,6 +63,19 @@ export function checkBotWritePath(raw: string): PathVerdict {
       return {
         allowed: false,
         reason: `path "${normalized.path}" is not bot-writable (bots/, TEAM.md, skills/ and routines/ change only through an approved proposal)`,
+      };
+    }
+    // PLAN D6 / P5-25: a bot writes memory only through `memory.write` (P5-26); `inbox/` is Files storage, never a repo path.
+    if (isMemoryPath(normalized.path)) {
+      return {
+        allowed: false,
+        reason: `path "${normalized.path}" is team memory: bots write it only through memory.write, never through files.*`,
+      };
+    }
+    if (isInboxPath(normalized.path)) {
+      return {
+        allowed: false,
+        reason: `path "${normalized.path}" is the team inbox (Files storage), never a repository path`,
       };
     }
   }

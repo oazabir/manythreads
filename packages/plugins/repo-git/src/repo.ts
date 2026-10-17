@@ -22,11 +22,14 @@ import {
   ActorId,
   REPO_PLACEHOLDER,
   isBotDefinitionPath,
+  isConceptPath,
   isGuardedRepoPath,
+  isInboxPath,
+  parseConcept,
   parseRepoPath,
   type RepoConflict,
 } from '@manythreads/shared';
-import { repoBusy, repoForbidden, repoInvalid, repoNotFound, repoQuota, notInRepo, RepoError } from './errors.ts';
+import { repoBusy, repoForbidden, repoInvalid, repoNotFound, repoQuota, notInRepo, okfInvalid, RepoError } from './errors.ts';
 import {
   GitBlobTooLargeError,
   GitError,
@@ -378,6 +381,16 @@ export function createRepoService(deps: RepoServiceDeps) {
       // `channels/<name>/` of the Files tree is where channel attachments appear: a repo file there would be hidden by (or hide) them.
       if (parsed.path.split('/')[0]?.normalize('NFKC').toLowerCase() === FILES_CHANNELS_DIR) {
         throw repoInvalid(`path "${parsed.path}": channels/ is reserved for the attachments of channels; put the page under pages/`);
+      }
+      // PLAN D6 / P5-25: `inbox/` is Files storage, never a repo folder.
+      if (isInboxPath(parsed.path)) {
+        throw repoInvalid(`path "${parsed.path}": inbox/ is the team inbox (Files storage), never a repository folder`);
+      }
+      // P5-25: every concept file under `memory/` is validated now; index.md/log.md are platform-generated (P5-25 regenerates them).
+      if (c.op !== 'delete' && isConceptPath(parsed.path)) {
+        const text = typeof c.content === 'string' ? c.content : Buffer.from(c.content as Uint8Array).toString('utf8');
+        const verdict = parseConcept(text);
+        if (!verdict.ok) throw okfInvalid(parsed.path, verdict.reason);
       }
       if (seen.has(parsed.path)) throw repoInvalid(`path "${parsed.path}" appears twice in one commit`);
       seen.add(parsed.path);

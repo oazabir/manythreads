@@ -401,7 +401,12 @@ const botLessons = (v: TeamVoice): string => `# ${v.bot.name}: lessons
 Corrections from the team are collected here by the Workshop. None yet.
 `;
 
-const factMd = (f: { title: string; body: string }): string => `# ${f.title}
+const factMd = (f: { title: string; body: string }): string => `---
+type: Fact
+title: ${JSON.stringify(f.title)}
+---
+
+# ${f.title}
 
 ${f.body}
 `;
@@ -459,7 +464,7 @@ export function repoSteps(slug: string): RepoStep[] {
     {
       actor: 'system',
       message: 'Consolidate 2026-03-06',
-      files: [{ path: 'memory/journal/2026-03-06.md', content: `# 2026-03-06\n\n${v.journal}\n` }],
+      files: [{ path: 'memory/journal/2026-03-06.md', content: `---\ntype: Journal\n---\n\n# 2026-03-06\n\n${v.journal}\n` }],
     },
   ];
 }

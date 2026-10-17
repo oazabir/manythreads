@@ -138,11 +138,14 @@ describe('a commit under memory/', () => {
     expect((await logOf('memory/facts/second.md')).at(-1)).toMatchObject({ outcome: 'forgotten', reason: 'deleted' });
   });
 
-  it('a file that is not a concept is withheld with its reason and never retained', async () => {
-    await put('memory/facts/notes.md', '# Just notes, no frontmatter\n\nThe Peregrine deadline is Monday.\n', 'Add loose notes');
-    await until(async () => ((await logOf('memory/facts/notes.md')).length > 0 ? true : null), 'the withheld line');
+  it('a file that is not a concept is refused at commit and never retained', async () => {
+    // P5-25: the repo writer validates every concept path, so a file with no
+    // frontmatter never lands (422 okf_invalid) and the mirror has nothing to withhold.
+    const res = await w.commit(nadia, 'engineering', [{ op: 'put', path: 'memory/facts/notes.md', content: '# Just notes, no frontmatter\n\nThe Peregrine deadline is Monday.\n' }], 'Add loose notes');
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(JSON.stringify(res.body)).toContain('okf_invalid');
     await idle();
-    expect(await logOf('memory/facts/notes.md')).toMatchObject([{ outcome: 'withheld', reason: expect.stringContaining('okf_invalid') }]);
+    expect(await logOf('memory/facts/notes.md')).toEqual([]);
     expect(factWith('Peregrine')).toBeUndefined();
   });
 });

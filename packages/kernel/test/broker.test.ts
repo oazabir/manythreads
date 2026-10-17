@@ -73,6 +73,14 @@ describe('broker: path guard (bot actors)', () => {
     'TEAM.MD',
     'Skills/x',
     'TEAM.md.',
+    // PLAN P5-25: bots write memory only through memory.write; inbox/ is never a repo path
+    'memory/facts/x.md',
+    'memory/index.md',
+    'memory/journal/2026-10-14.md',
+    'Memory/facts/x.md',
+    'inbox/x',
+    'inbox/drop.md',
+    'Inbox/x.md',
     'pages/%252e%252e/bots/x',
     '%2e/./TEAM.md',
   ];

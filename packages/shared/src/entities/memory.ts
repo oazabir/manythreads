@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { ActorId, RunId, TeamId, WorkspaceId } from '../ids.ts';
+import { OkfFrontmatter, isStale, trustTier } from '../okf/concept.ts';
 import { RunSourceScope } from './bot.ts';
 
 // The memory retain log (PLAN.md A.5, P5-13; SPEC §12.1, §15): what the platform put into a team's memory bank, replaced there, took out of it, or
@@ -73,3 +74,26 @@ export const MemoryRunMemo = z.object({
   memoizedAt: IsoDateTime,
 });
 export type MemoryRunMemo = z.infer<typeof MemoryRunMemo>;
+
+/** A concept of the team's OKF bundle as the platform sees it (PLAN P5-24, SPEC §12.1): path + validated frontmatter + body, with the derived trust tier, staleness and deprecation. */
+export const MemoryConcept = z.object({
+  path: z.string().min(1).max(500),
+  frontmatter: OkfFrontmatter,
+  body: z.string(),
+  trustTier: z.enum(['unverified', 'machine-confirmed', 'human-reviewed']),
+  stale: z.boolean(),
+  deprecated: z.boolean(),
+});
+export type MemoryConcept = z.infer<typeof MemoryConcept>;
+
+/** Builds a `MemoryConcept` from a parsed concept file; `now` judges `stale_after`. */
+export function toMemoryConcept(path: string, frontmatter: OkfFrontmatter, body: string, now: Date): MemoryConcept {
+  return {
+    path,
+    frontmatter,
+    body,
+    trustTier: trustTier(frontmatter),
+    stale: isStale(frontmatter, now),
+    deprecated: frontmatter.status === 'deprecated',
+  };
+}

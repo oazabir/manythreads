@@ -51,6 +51,7 @@ describe('ErrorEnvelope', () => {
       'attachment_not_in_repo',
       'repo_quota_exceeded',
       'bot_has_no_conversation_trigger',
+      'okf_invalid',
     ]);
   });
 });
