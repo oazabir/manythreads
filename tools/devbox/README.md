@@ -11,6 +11,7 @@ sync rules, troubleshooting).
 | `Sync-Down.ps1` | rsync the devbox checkout back (rarely needed). |
 | `Remote.ps1 "<cmd>"` | Run one command on the devbox inside the repo. |
 | `Ship.ps1` | Full pipeline: local gates → sync → remote install/lint/typecheck/tests → docker build + helm deploy to k3s → verify https://manythreads.kahf.to/. |
+| `Watchdog.ps1` | Background progress check every 5 min (`temp/watchdog.log`, `temp/watchdog.alert` after 15 min with no change): is a gate/deploy still printing, and is a devbox process hung? `-Stop` ends a running one. |
 | `_common.ps1` | Shared rsync/ssh discovery + exclude list (dot-sourced). |
 | `remote-gates.sh` | Runs on the devbox: `pnpm install`, lint, typecheck, `pnpm db:up`, `pnpm test`. |
 | `deploy.sh` | Runs on the devbox: build server+web images, import into k3s, prune old tags, `helm upgrade --install`, smoke-test the site. |
