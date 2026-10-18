@@ -1,6 +1,6 @@
 # memory-git-mirror
 
-The OKF bundle's mirror between `memory/` in a team's repo and the team's Hindsight bank (SPEC §12.1, PLAN D6 and P5-14). The repo is the truth; the bank is the retrieval engine over it. A commit under `memory/` re-retains each changed concept; a delete or `status: deprecated` forgets it; the first use of a team's memory writes the bundle root; the daily consolidation writes `memory/journal/<date>.md`.
+The OKF bundle's mirror between `memory/` in a team's repo and the team's Hindsight bank (SPEC §12.1, PLAN D6 and P5-14). The repo is the truth; the bank is the retrieval engine over it. A commit under `memory/` re-retains each changed concept; a delete or `status: deprecated` forgets it; the writer keeps every directory's `index.md` and the log in step with the concepts around them (and a bundle that has no root gets one on first use); the daily consolidation writes `memory/journal/<date>.md`.
 
 Package: `packages/plugins/memory-git-mirror` (PLAN writes `plugins/memory-git-mirror`; same `discoverPlugins` deviation as the other plugins). Manifest: `extends: ['event.subscribe', 'job.register']`, `dependsOn: ['memory', 'repo-git', 'bots']`, consumes `repo.repo.committed`. It writes to the engine only through the memory provider (`provider.memory`, today memory-hindsight) with `provider.forTeam(tx, teamId)` in a system transaction, so the bank is derived from the team the **database** says a path belongs to, never from an event field, an argument or a bot. It writes to a repository only through the one writer (`ctx.providers.get<RepoProvider>('repo')`), as the system actor.
 
@@ -10,7 +10,7 @@ Package: `packages/plugins/memory-git-mirror` (PLAN writes `plugins/memory-git-m
 
 `memory/**.md` except `index.md` and `log.md` (`isConceptPath`, `@manythreads/shared`). Every other file under `memory/` (`.gitkeep`, a `.csv`) is not a concept and is never read. The file is read from the repo **index** (`repo_entries.text_plain`: UTF-8 text up to 1 MB; no git process) and parsed by the shared OKF parser (`parseConcept`): frontmatter capped at 64 KB, aliases and anchors refused, `type` required.
 
-> **P5-24 is not built yet.** The minimum the mirror needs lives in `packages/shared/src/okf` (`parseConcept`, `serializeConcept`, `OkfFrontmatter`, `trustTier`, `isStale`, `isConceptPath`, `renderBundleIndex`, `renderBundleLog`), written under the names PLAN P5-24 lists so that task **extends the module in place**: it adds `sources`, `usage_window`, the actor convention, `OkfIndex`/`OkfLog` and the 40 hostile inputs; it does not rename or replace what is here. `okf_invalid` (422) in the repo writer is P5-25; until then a file that is not OKF reaches git and the mirror reports it.
+> **P5-24 and P5-25 are built.** The parser lives in `packages/shared/src/okf` (`parseConcept`, `serializeConcept`, `OkfFrontmatter`, `OkfTrustTier`, `trustTier`, `isStale`, `isConceptPath`, `renderBundleIndex`, `renderBundleLog`), written under the names PLAN P5-24 lists so that task **extends the module in place**: it adds `sources`, `usage_window`, the actor convention, `OkfIndex`/`OkfLog` and the 40 hostile inputs; it does not rename or replace what is here. P5-25 puts the writer in front of it: the repo writer parses every `memory/**.md` put (except `index.md`/`log.md`/`inbox/**`) and refuses the commit with `okf_invalid` (422, naming the file and the reason), stamps authorship onto concepts a person wrote, and regenerates every directory's `index.md` and the log in the same commit — so a file that is not OKF no longer reaches git through the writer, and `memory/` is written by one writer that agrees with the mirror.
 
 | What the file is now | The bank | Log line |
 |---|---|---|
@@ -55,7 +55,7 @@ The first time a team's memory is touched (a commit with a path under `memory/`,
 * `memory/index.md` — frontmatter `okf_version: "0.2"` and nothing else, then a short note;
 * `memory/log.md` — date-grouped, newest first: one entry, "The memory bundle was created by the platform".
 
-It never overwrites a file that exists, and records the team in `memory_mirror_teams` in the same transaction (so it happens once however many events arrive) **only when both files are in the index**. The writer's 409 is read for what it is: a 409 that **names files** means somebody wrote one in between (nothing was written, so the other may still be missing: look again, write what is missing), and a 409 that names none (`ref_conflict`) lost a race for the branch (write again); up to three attempts, then the job fails and is retried. Neither is ever "present" until a look at the index says so, and the same rule decides a journal's "exists". An archived team is left alone. **P5-25** makes the writer regenerate every directory's `index.md` and the log in the same commit as a change; these two files are what it starts from, and this job becomes a no-op for a team whose root exists.
+It never overwrites a file that exists, and records the team in `memory_mirror_teams` in the same transaction (so it happens once however many events arrive) **only when both files are in the index**. The writer's 409 is read for what it is: a 409 that **names files** means somebody wrote one in between (nothing was written, so the other may still be missing: look again, write what is missing), and a 409 that names none (`ref_conflict`) lost a race for the branch (write again); up to three attempts, then the job fails and is retried. Neither is ever "present" until a look at the index says so, and the same rule decides a journal's "exists". An archived team is left alone. **P5-25** has the writer regenerate every directory's `index.md` and the log in the same commit as a change, so a team whose root exists already has these two files and **this job is a no-op for it**; the job remains as the bootstrap for a bundle that predates the writer (or that a person made by hand).
 
 ## The journal
 
@@ -92,7 +92,7 @@ The body is counts and links, **never the retained text**: a table of taken-in /
 
 ## Not here (open)
 
-* `okf_invalid` refusal in the writer, the regenerated indexes and log, `memory_concepts`: P5-25. `memory.write` and recall filters: P5-26. The full parser: P5-24.
+* `okf_invalid` refusal in the writer, the regenerated indexes and log, `memory_concepts`: built (P5-25). `memory.write` and recall filters: P5-26. The full parser (`sources`, `usage_window`, the actor convention, the hostile-input suite): P5-24.
 * Retention of the retain log's concept lines follows the same rule as every other line (docs/plugins/retention.md).
 * A concept longer than the engine takes is cut (a note says so); chunked documents are not built.
 * No backfill: a concept that was in `memory/` before the engine was configured enters the bank when it is next committed.

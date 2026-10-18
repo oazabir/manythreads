@@ -10,6 +10,7 @@ import {
   RepoRepoCommittedEvent,
 } from '@manythreads/shared';
 import { feedTuning } from './config.ts';
+import { syncConcepts } from './concepts.ts';
 import { FEED_QUEUE, NOT_CONFIGURED_EVERY_MS } from './constants.ts';
 import { ensureWorkspaceKey } from './keys.ts';
 import { HELD_STATE_OUTCOMES_SQL } from './rows.ts';
@@ -131,11 +132,14 @@ export function registerConsumers(ctx: PluginContext): void {
 
   // Every `pages/` path a commit touches, written or deleted, whoever wrote it: `pages.write` (a person or a bot), the Files screen's save
   // (`POST repo/commit`, which emits no `pages.page.written`), a restore. A put replaces the page's document, a delete forgets it.
+  // The same event rebuilds the team's `memory_concepts` frontmatter index (PLAN P5-25): the platform's read view of the OKF bundle, git being the
+  // truth. It is a plain set-based rebuild from `repo_entries` (the index the writer just updated), never a second source of truth.
   ctx.events.subscribe('repo.repo.committed', async (raw, tx) => {
     const parsed = RepoRepoCommittedEvent.safeParse(raw);
     if (!parsed.success) return;
     const pages = parsed.data.paths.filter((p) => p.path.startsWith('pages/'));
     await mark(tx, parsed.data.workspaceId, parsed.data.teamId, pages.map((p): Source => ['page', pageSourceId(parsed.data.teamId, p.path)]));
+    await syncConcepts(tx, parsed.data.teamId, parsed.data.paths);
   });
 
   ctx.events.subscribe('bots.run.closed', async (raw, tx) => {

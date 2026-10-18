@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { ActorId, RunId, TeamId, WorkspaceId } from '../ids.ts';
-import { OkfFrontmatter, isStale, trustTier } from '../okf/concept.ts';
+import { OkfFrontmatter, OkfStatus, OkfTrustTier, isStale, trustTier } from '../okf/concept.ts';
 import { RunSourceScope } from './bot.ts';
+import { GitSha } from './repo.ts';
 
 // The memory retain log (PLAN.md A.5, P5-13; SPEC §12.1, §15): what the platform put into a team's memory bank, replaced there, took out of it, or
 // refused to put there, and why. Every enum here matches a CHECK of the memory plugin's migration 0001_retain_log.sql (and is listed in the
@@ -80,7 +81,7 @@ export const MemoryConcept = z.object({
   path: z.string().min(1).max(500),
   frontmatter: OkfFrontmatter,
   body: z.string(),
-  trustTier: z.enum(['unverified', 'machine-confirmed', 'human-reviewed']),
+  trustTier: OkfTrustTier,
   stale: z.boolean(),
   deprecated: z.boolean(),
 });
@@ -97,3 +98,27 @@ export function toMemoryConcept(path: string, frontmatter: OkfFrontmatter, body:
     deprecated: frontmatter.status === 'deprecated',
   };
 }
+
+/**
+ * A concept as the database's frontmatter index knows it (PLAN Appendix A.5, `memory_concepts`; SPEC §12.1): one row per concept, rebuilt from
+ * `repo.committed`, holding everything but the body. The Memory screen, Brain's filters and share selection read it; git stays the truth. `stale`
+ * is not a column (it depends on "now"): it is derived from `staleAfter` where it is shown.
+ */
+export const MemoryConceptSummary = z.object({
+  path: z.string().min(1).max(500),
+  type: z.string().min(1).max(200),
+  title: z.string().max(500),
+  description: z.string().max(2_000).nullable(),
+  tags: z.array(z.string().max(100)),
+  status: OkfStatus,
+  staleAfter: IsoDateTime.nullable(),
+  trustTier: OkfTrustTier,
+  /** The extension key `origin` (`drop`, `share`, `journal`, `person`, ...), empty when the concept carries none. */
+  origin: z.string().max(64),
+  shareNever: z.boolean(),
+  /** The team a received digest came from (the extension key `from`), when it names one. */
+  fromTeam: TeamId.nullable(),
+  blobSha: GitSha,
+  generatedAt: IsoDateTime.nullable(),
+});
+export type MemoryConceptSummary = z.infer<typeof MemoryConceptSummary>;

@@ -164,8 +164,13 @@ export function serializeConcept(frontmatter: Record<string, unknown>, body: str
   return `---\n${yaml}---\n\n${body.replace(/^\s*\n+/, '').replace(/\s+$/, '')}\n`;
 }
 
-/** SPEC §12.1: no `verified` → unverified; machine verifiers only → machine-confirmed; a `human:` verifier → human-reviewed. Advisory, never an access rule. */
-export type TrustTier = 'unverified' | 'machine-confirmed' | 'human-reviewed';
+/**
+ * SPEC §12.1 / OKF §5.3: no `verified` → unverified; machine verifiers only → machine-confirmed; a `human:` verifier → human-reviewed.
+ * Advisory, never an access rule. A schema (not a bare type) because the same three values are the SQL CHECK of `memory_concepts.trust_tier`
+ * and the `MemoryConcept` field: one vocabulary, so the table, the entity and the writer cannot drift.
+ */
+export const OkfTrustTier = z.enum(['unverified', 'machine-confirmed', 'human-reviewed']);
+export type TrustTier = z.infer<typeof OkfTrustTier>;
 
 export function trustTier(frontmatter: Pick<OkfFrontmatter, 'verified'>): TrustTier {
   const verified = frontmatter.verified ?? [];

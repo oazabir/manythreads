@@ -25,8 +25,13 @@ import {
   isConceptPath,
   isGuardedRepoPath,
   isInboxPath,
+  isMemoryPath,
+  memoryIndexFiles,
+  memoryLogFile,
   parseConcept,
   parseRepoPath,
+  serializeConcept,
+  type BundleConcept,
   type RepoConflict,
 } from '@manythreads/shared';
 import { repoBusy, repoForbidden, repoInvalid, repoNotFound, repoQuota, notInRepo, okfInvalid, RepoError } from './errors.ts';
@@ -98,6 +103,8 @@ export interface RepoServiceDeps {
   /** `MANYTHREADS_REPO_DIR`, absolute. */
   repoDir: string;
   git: GitLayer;
+  /** The clock the writer stamps provenance with (default: `new Date`). Injectable so a test can pin `generated.at`. */
+  now?: () => Date;
   /** `ctx.capabilities.authorize`: the kernel broker. Bots are checked through it, never by a rule of this plugin. */
   authorize(tx: PluginTx, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
   /** `ctx.audit.emit`. */
@@ -500,7 +507,8 @@ export function createRepoService(deps: RepoServiceDeps) {
       try {
         await takeLock(tx, t.id);
         const { gitDir, head } = await ensureLocked(tx, t);
-        return await commitUnderLock(tx, t, gitDir, head, prepared, text, identity, authorId, co);
+        const at = (deps.now ?? (() => new Date()))().toISOString();
+        return await commitUnderLock(tx, t, gitDir, head, prepared, text, identity, authorId, co, actor, at);
       } catch (err) {
         return mapGit(err);
       }
@@ -526,6 +534,76 @@ export function createRepoService(deps: RepoServiceDeps) {
     if (count + created > maxFiles) throw repoQuota(`This team's repository would hold more than ${maxFiles} files: delete files you no longer need, or ask an admin to raise the limit`);
   }
 
+  // ---- the memory bundle (P5-25): stamping and regeneration ----------------------------------------------------
+
+  /**
+   * Stamps the platform's provenance on one concept file (SPEC §12.1). A person's direct edit sets `generated.by: human:<id>` and **appends** a
+   * `{ by: human:<id>, at }` verification (a person who edits in the UI has looked at the concept); any other writer sets `generated` only when
+   * the concept carries none — it must not overwrite the `process:journal`/`archivist/<alias>` a producer already wrote. A file `parseConcept`
+   * refuses is returned unchanged (the writer refused it before reaching here).
+   */
+  function stampConcept(text: string, at: string, personActorId: string | null): string {
+    const parsed = parseConcept(text);
+    if (!parsed.ok) return text;
+    const frontmatter: Record<string, unknown> = { ...parsed.frontmatter };
+    if (personActorId !== null) {
+      const by = `human:${personActorId}`;
+      frontmatter['generated'] = { by, at };
+      // The parser reads a bare mapping as a one-element list, so `verified` is always an array here; the cap keeps the file valid (100 entries).
+      const verified = Array.isArray(parsed.frontmatter.verified) ? parsed.frontmatter.verified : [];
+      frontmatter['verified'] = [...verified, { by, at }].slice(-100);
+    } else if (parsed.frontmatter.generated === undefined) {
+      frontmatter['generated'] = { by: 'process:platform', at };
+    } else {
+      return text;
+    }
+    return serializeConcept(frontmatter, parsed.body);
+  }
+
+  /**
+   * Regenerates the bundle's `index.md` files and `log.md` for the tree this commit produces (SPEC §12.1, PLAN criterion 18): a pure function of
+   * the concepts, so the same tree always renders the same bytes. Runs only when the commit changes a concept or the root already exists, so a
+   * team whose memory was never used keeps no bundle. A directory that loses its last concept loses its `index.md`; the root and the log stay.
+   */
+  async function regenerateMemory(gitDir: string, head: string, finals: { path: string; op: 'put' | 'delete'; content?: Buffer }[]): Promise<void> {
+    const memory = (await git.listFiles(gitDir, head)).filter((e) => e.type === 'blob' && isMemoryPath(e.path));
+    const concepts = new Map<string, string>();
+    const pathBySha = new Map<string, string>();
+    for (const e of memory) if (isConceptPath(e.path)) pathBySha.set(e.sha, e.path);
+    if (pathBySha.size > 0) {
+      const blobs = await git.readBlobs(gitDir, [...pathBySha.keys()], REPO_MAX_FILE_BYTES, 64 * 1024 * 1024);
+      for (const [sha, bytes] of blobs) {
+        const path = pathBySha.get(sha);
+        if (bytes !== null && path !== undefined) concepts.set(path, textOf(bytes) ?? '');
+      }
+    }
+    // The tree this commit produces: the concepts of the head, with what the commit writes or deletes.
+    for (const f of finals) {
+      if (!isConceptPath(f.path)) continue;
+      if (f.op === 'delete') concepts.delete(f.path);
+      else if (f.content !== undefined) concepts.set(f.path, f.content.toString('utf8'));
+    }
+    const rootExists = memory.some((e) => e.path === 'memory/index.md');
+    // Nothing to regenerate for a bundle that was never started and whose commit files no concept (the first commit's `.gitkeep` folders).
+    if (!rootExists && concepts.size === 0) return;
+    const parsed: BundleConcept[] = [];
+    for (const [path, text] of concepts) {
+      const concept = parseConcept(text);
+      if (concept.ok) parsed.push({ path, frontmatter: concept.frontmatter });
+    }
+    const wanted = memoryIndexFiles(parsed);
+    wanted.set('memory/log.md', memoryLogFile(parsed));
+    const generated: { path: string; op: 'put' | 'delete'; content?: Buffer }[] = [...wanted].map(([path, content]) => ({ path, op: 'put' as const, content: Buffer.from(content, 'utf8') }));
+    // A directory index whose directory is gone (its last concept was deleted): delete it. The root is always wanted, so it is never here.
+    for (const e of memory) if (e.path.endsWith('/index.md') && !wanted.has(e.path)) generated.push({ path: e.path, op: 'delete' });
+    // Replace any change to a file we regenerate (a direct edit of an `index.md` or the log is the platform's to overwrite, not a second entry).
+    for (const g of generated) {
+      const at = finals.findIndex((f) => f.path === g.path);
+      if (at >= 0) finals.splice(at, 1);
+    }
+    finals.push(...generated);
+  }
+
   async function commitUnderLock(
     tx: PluginTx,
     t: TeamInfo,
@@ -536,6 +614,8 @@ export function createRepoService(deps: RepoServiceDeps) {
     identity: GitIdentity,
     authorId: string | null,
     co: readonly CommitIdentity[],
+    actor: RepoActor,
+    at: string,
   ): Promise<RepoWriteResult> {
     // What the tree holds now at every path (and at each folder above it), in one git call.
     const ancestors = new Set<string>();
@@ -623,7 +703,15 @@ export function createRepoService(deps: RepoServiceDeps) {
 
     if (finals.length === 0) return { sha: head, parentSha: head, noop: true, authorId, paths: [] };
 
+    // P5-25: stamp the platform's provenance on the concepts this commit writes, then regenerate the bundle's indexes and log in the same commit.
+    const personActorId = actor.kind === 'person' ? actor.id : null;
+    for (const f of finals) {
+      if (f.op === 'put' && f.content !== undefined && isConceptPath(f.path)) f.content = Buffer.from(stampConcept(f.content.toString('utf8'), at, personActorId), 'utf8');
+    }
+
     await assertQuota(tx, t, gitDir, finals, stat);
+
+    if (finals.some((f) => isMemoryPath(f.path))) await regenerateMemory(gitDir, head, finals);
 
     const made = await git.commit(gitDir, {
       expectedOld: head,

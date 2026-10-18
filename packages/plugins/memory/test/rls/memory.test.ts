@@ -1,4 +1,5 @@
 import { createAppPool, createSystemPool, withActor, withSystem, type Tx } from '@manythreads/kernel';
+import type { PluginTx } from '@manythreads/sdk';
 import {
   approvalsMigrationSource,
   botsMigrationSource,
@@ -23,12 +24,13 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { syncConcepts } from '../../src/concepts.ts';
 
 // P5-13, the database half: the narrowest-source rule (`app.run_retain_verdict`) as a matrix, its one reader for a live run
 // (`app.memory_run_scope`), the same rule for what a bot wrote (`app.memory_authored_verdict`), and who may read and write `memory_retain_log`.
 // Rows exist through the system role; every request-side assertion runs as a persona or as a bot through the app pool.
 
-const { omar, nadia, rafi, tariq, priya, lena } = personas;
+const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ENG = TEAM_IDS.Engineering;
 const MKT = TEAM_IDS.Marketing;
 
@@ -463,5 +465,116 @@ describe('memory_retain_log and memory_feed_pending: who reads, who writes', () 
     await sys((tx) => tx.query("UPDATE app.bot_runs SET status = 'done', ended_at = now() WHERE id = $1", [id]));
     const after = await withActor({ kind: 'bot', id: botActorId, workspaceId: omar.workspaceId, runId: id } as never, async (tx) => (await tx.query<{ n: number }>("SELECT app.memory_retain_log_run('retained', 'b', ARRAY['d']) AS n")).rows[0]!.n, { pool: appPool });
     expect(after).toBe(0);
+  });
+});
+
+// ---- memory_concepts: the frontmatter index of the OKF bundle (P5-25) ---------------------------------------------------
+
+describe('memory_concepts: the frontmatter index of the OKF bundle', () => {
+  const blob = 'c'.repeat(40);
+  const stored = (path: string, text: string): Promise<void> =>
+    sys(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.repo_entries (team_id, path, kind, blob_sha, size, last_commit_sha, text_plain)
+         VALUES ($1, $2, 'file', $3, $4, $3, $5)
+         ON CONFLICT (team_id, path) DO UPDATE SET blob_sha = EXCLUDED.blob_sha, size = EXCLUDED.size, text_plain = EXCLUDED.text_plain`,
+        [ENG, path, blob, text.length, text],
+      );
+    });
+  const sync = (paths: { path: string; op: 'put' | 'delete' }[]): Promise<void> =>
+    sys((tx) => syncConcepts(tx as unknown as PluginTx, ENG, paths));
+  const rows = (p: Persona) =>
+    as(
+      p,
+      async (tx) =>
+        (
+          await tx.query<{ path: string; type: string; title: string; description: string | null; tags: string[]; status: string; trust_tier: string; origin: string; share_never: boolean; from_team: string | null; blob_sha: string; generated_at: Date | null; stale_after: Date | null }>(
+            'SELECT path, type, title, description, tags, status, trust_tier, origin, share_never, from_team, blob_sha, generated_at, stale_after FROM app.memory_concepts WHERE team_id = $1 ORDER BY path',
+            [ENG],
+          )
+        ).rows,
+    );
+
+  const fact = [
+    '---',
+    'type: Fact',
+    'title: Onboarding',
+    'description: How we onboard.',
+    'tags: [people, process]',
+    'stale_after: 2026-01-01',
+    'origin: journal',
+    'share: never',
+    `from: ${MKT}`,
+    'generated:',
+    `  by: human:${omar.actorId}`,
+    '  at: 2026-10-02T09:00:00Z',
+    'verified:',
+    `  by: human:${omar.actorId}`,
+    '  at: 2026-10-02T09:05:00Z',
+    '---',
+    'body',
+    '',
+  ].join('\n');
+
+  it('rebuilds one row from the tree, with trust, status, the two instants and the extension keys', async () => {
+    await stored('memory/facts/onboarding.md', fact);
+    await sync([{ path: 'memory/facts/onboarding.md', op: 'put' }]);
+    expect(await rows(nadia)).toEqual([
+      {
+        path: 'memory/facts/onboarding.md',
+        type: 'Fact',
+        title: 'Onboarding',
+        description: 'How we onboard.',
+        tags: ['people', 'process'],
+        status: 'stable',
+        trust_tier: 'human-reviewed',
+        origin: 'journal',
+        share_never: true,
+        from_team: MKT,
+        blob_sha: blob,
+        generated_at: new Date('2026-10-02T09:00:00Z'),
+        stale_after: new Date('2026-01-01T00:00:00Z'),
+      },
+    ]);
+  });
+
+  it('a delete, a path gone from the tree, or a file that is no longer valid OKF leaves no row', async () => {
+    await sync([{ path: 'memory/facts/onboarding.md', op: 'delete' }]);
+    expect(await rows(nadia)).toEqual([]);
+    // the event says put, but the index has nothing there: the row is not resurrected
+    await stored('memory/facts/ghost.md', '---\ntype: Fact\ntitle: Ghost\n---\nbody\n');
+    await sync([{ path: 'memory/facts/ghost.md', op: 'put' }]);
+    expect((await rows(nadia)).map((r) => r.path)).toEqual(['memory/facts/ghost.md']);
+    await sys((tx) => tx.query("DELETE FROM app.repo_entries WHERE team_id = $1 AND path = 'memory/facts/ghost.md'", [ENG]));
+    await sync([{ path: 'memory/facts/ghost.md', op: 'put' }]);
+    expect(await rows(nadia)).toEqual([]);
+    // a file that stops being valid OKF takes its row out with it (git keeps the history)
+    await stored('memory/facts/ghost.md', '---\ntitle: no type here\n---\nbody\n');
+    await sync([{ path: 'memory/facts/ghost.md', op: 'put' }]);
+    expect(await rows(nadia)).toEqual([]);
+  });
+
+  it('is readable by whoever reads the team, and written by no request role', async () => {
+    await stored('memory/facts/onboarding.md', fact);
+    await sync([{ path: 'memory/facts/onboarding.md', op: 'put' }]);
+    expect((await rows(omar)).map((r) => r.path)).toEqual(['memory/facts/onboarding.md']); // admin: every team
+    expect((await rows(nadia)).map((r) => r.path)).toEqual(['memory/facts/onboarding.md']); // Engineering member
+    expect(await rows(priya)).toHaveLength(1); // Engineering + Marketing member
+    for (const p of [sameera, tariq, lena]) expect(await rows(p), p.key).toEqual([]);
+    for (const who of [omar, nadia, tariq]) {
+      expect(await code(as(who, (tx) => tx.query("INSERT INTO app.memory_concepts (team_id, path, blob_sha) VALUES ($1, 'memory/x.md', $2)", [ENG, blob]))), who.key).toBe('42501');
+      expect(await code(as(who, (tx) => tx.query("UPDATE app.memory_concepts SET title = 'x'"))), who.key).toBe('42501');
+      expect(await code(as(who, (tx) => tx.query('DELETE FROM app.memory_concepts'))), who.key).toBe('42501');
+    }
+  });
+
+  it('passes the RLS harness and reads without a per-row policy helper', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      expect(await findPerRowPolicyCalls(admin, 'memory_concepts')).toEqual([]);
+    } finally {
+      await admin.end();
+    }
   });
 });

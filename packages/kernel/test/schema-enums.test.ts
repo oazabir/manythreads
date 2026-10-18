@@ -16,6 +16,8 @@ import {
   MemoryRetainOutcome,
   MemorySourceKind,
   MemoryStore,
+  OkfStatus,
+  OkfTrustTier,
   MentionKind,
   PresenceStatus,
   AclSubjectType,
@@ -104,6 +106,8 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'memory_retain_log.store': MemoryStore,
   'memory_retain_log.source_kind': MemorySourceKind,
   'memory_retain_log.outcome': MemoryRetainOutcome,
+  'memory_concepts.status': OkfStatus,
+  'memory_concepts.trust_tier': OkfTrustTier,
 };
 
 /**
