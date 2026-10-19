@@ -28,14 +28,18 @@ pnpm db:up
 
 # A new exported Zod schema adds a file snapshot, and with CI unset `toMatchFileSnapshot` WRITES the missing file and
 # passes: the suite would be green while the snapshot exists only on this machine, and the next Sync-Up (rsync
-# --delete) would delete it. Every snapshot is committed, so the tree before the run is the reference: a run that
-# CHANGES this directory wrote one, and the operator has to copy it back and commit it.
+# --delete) would delete it. Two guards, because the before/after one alone was not enough: P5-28's route schemas were
+# written during an earlier run on this box, so a later gate saw an unchanged directory and CI went red on `main`.
+#   * the suite runs with CI=true, so vitest REFUSES to write a snapshot that is missing and the gate fails with the
+#     same error CI reports — a snapshot that exists only here can never pass;
+#   * every snapshot is committed, so a run that still changes this directory (a hand-run with `-u`, another
+#     mechanism) is loud: the operator copies it back with Sync-Down.ps1 and commits it.
 snapshots() { git status --porcelain -- packages/shared/test/schema-compat/snapshots || true; }
 
 snap_before=$(snapshots)
 
-stage "tests (vitest, maxWorkers=3)"
-pnpm test --maxWorkers=3
+stage "tests (vitest, maxWorkers=3; CI=true, so a missing snapshot fails as it does in CI)"
+CI=true pnpm test --maxWorkers=3
 
 stage "snapshots (schema-compat must not have written any)"
 snap_after=$(snapshots)
