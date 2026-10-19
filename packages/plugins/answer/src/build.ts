@@ -25,6 +25,7 @@ const DEFAULT_LABEL: Record<AnswerCitationInput['kind'], string> = {
   page: 'A page',
   file: 'A file',
   run: 'A run',
+  memory: 'A memory item',
 };
 
 /** The id a citation names, as the SQL view reads it and as the dropped-item set keys it. */
@@ -40,6 +41,8 @@ export function citationRef(c: AnswerCitationInput): { kind: string; ref: string
       return { kind: 'file', ref: c.fileId, team: null };
     case 'run':
       return { kind: 'run', ref: c.runId, team: null };
+    case 'memory':
+      return { kind: 'memory', ref: c.conceptPath, team: null };
   }
 }
 
@@ -115,6 +118,9 @@ export function buildAnswer(input: AnswerInput, view: AnswerView): BuiltAnswer {
         break;
       case 'run':
         if (seen.botId) citation = { kind: 'run', ...base, runId: c.runId, botId: seen.botId, botSlug: seen.botSlug ?? null };
+        break;
+      case 'memory':
+        if (seen.conceptType && seen.trustTier) citation = { kind: 'memory', ...base, conceptPath: c.conceptPath, type: seen.conceptType, trustTier: seen.trustTier, stale: seen.stale ?? false, deprecated: seen.deprecated ?? false, fromTeam: seen.fromTeam ?? null };
         break;
     }
     if (citation === null) {

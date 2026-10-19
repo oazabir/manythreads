@@ -66,6 +66,10 @@ export function citationTarget(c: AnswerCitation, teamSlug: string, teamSlugOf: 
       return { type: 'download', href: fileContentUrl(c.fileId) };
     case 'run':
       return c.botSlug ? { type: 'route', pathname: `/t/${teamSlug}/bots/${c.botSlug}`, search: '?tab=audit', state: null } : null;
+    case 'memory': {
+      const slug = (c.fromTeam ? teamSlugOf(c.fromTeam) : null) ?? teamSlug;
+      return { type: 'route', pathname: `/t/${slug}/memory`, search: `?open=${encodeURIComponent(c.conceptPath)}`, state: null };
+    }
     case 'masked':
       return null;
   }

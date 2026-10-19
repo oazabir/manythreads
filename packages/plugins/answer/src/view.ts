@@ -25,6 +25,12 @@ const Resolved = z.object({
   teamId: z.uuid().nullable().optional(),
   botId: z.uuid().nullable().optional(),
   botSlug: z.string().nullable().optional(),
+  /** Memory concept fields (P5-27), resolved by the view for a `memory` citation. */
+  conceptType: z.string().nullable().optional(),
+  trustTier: z.enum(['unverified', 'machine-confirmed', 'human-reviewed']).nullable().optional(),
+  stale: z.boolean().optional(),
+  deprecated: z.boolean().optional(),
+  fromTeam: z.uuid().nullable().optional(),
 });
 export type Resolved = z.infer<typeof Resolved>;
 

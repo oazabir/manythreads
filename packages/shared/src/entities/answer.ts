@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
+import { OkfTrustTier } from '../okf/concept.ts';
 import { BotId, ChannelId, FileId, MessageId, PersonId, RunId, TeamId } from '../ids.ts';
 import { ChannelKind } from './channel.ts';
 
@@ -30,7 +31,7 @@ export const ANSWER_LIMITS = {
 } as const;
 
 /** The kinds of source an answer can cite in this version. P5-27 adds `memory`; the list is how clients tell "known" from "unsupported". */
-export const ANSWER_CITATION_KINDS = ['message', 'thread', 'page', 'file', 'run'] as const;
+export const ANSWER_CITATION_KINDS = ['message', 'thread', 'page', 'file', 'run', 'memory'] as const;
 export type AnswerCitationKind = (typeof ANSWER_CITATION_KINDS)[number];
 /**
  * The kind of a citation in a shared copy whose source the copy's readers may not open (P5-17, SPEC §6.3). It is never something a bot cites: the
@@ -62,6 +63,8 @@ export const AnswerCitationInput = z.discriminatedUnion('kind', [
   /** A file uploaded to a channel or to the team's Files. */
   z.strictObject({ kind: z.literal('file'), fileId: FileId, snippet: Snippet.optional() }),
   z.strictObject({ kind: z.literal('run'), runId: RunId, snippet: Snippet.optional() }),
+  /** A concept of the team's OKF memory bundle. */
+  z.strictObject({ kind: z.literal('memory'), conceptPath: z.string().min(1).max(500), snippet: Snippet.optional() }),
 ]);
 export type AnswerCitationInput = z.infer<typeof AnswerCitationInput>;
 
@@ -140,6 +143,18 @@ export const AnswerRunCitation = z.object({
   /** The bot's slug, for the link to its page; null when the bot is gone. */
   botSlug: z.string().max(63).nullable(),
 });
+export const AnswerMemoryCitation = z.object({
+  kind: z.literal('memory'),
+  ...CitationBase,
+  conceptPath: z.string().min(1).max(500),
+  /** The concept's OKF type. */
+  type: z.string().min(1).max(200),
+  trustTier: OkfTrustTier,
+  stale: z.boolean(),
+  deprecated: z.boolean(),
+  /** The team a received digest came from, when the concept is a shared one. */
+  fromTeam: TeamId.nullable().default(null),
+});
 
 /**
  * A source of the asker's that a shared copy's readers may not open: "from Omar's message · not shared" (SPEC §6.3). It keeps the number the text
@@ -161,6 +176,7 @@ export const AnswerCitation = z.discriminatedUnion('kind', [
   AnswerPageCitation,
   AnswerFileCitation,
   AnswerRunCitation,
+  AnswerMemoryCitation,
   AnswerMaskedCitation,
 ]);
 export type AnswerCitation = z.infer<typeof AnswerCitation>;
