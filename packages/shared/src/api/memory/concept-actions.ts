@@ -4,6 +4,9 @@ import { TeamSlug } from '../teams/common.ts';
 export const ConceptPathParams = z.object({ slug: TeamSlug, path: z.string().min(1).max(500) });
 export type ConceptPathParams = z.infer<typeof ConceptPathParams>;
 
+export const RebuildConceptsPathParams = z.object({ slug: TeamSlug });
+export type RebuildConceptsPathParams = z.infer<typeof RebuildConceptsPathParams>;
+
 export const RebuildConceptsResponse = z.object({ concepts: z.number().int().nonnegative() });
 export type RebuildConceptsResponse = z.infer<typeof RebuildConceptsResponse>;
 export const rebuildConceptsRoute = { method: 'POST', path: '/api/teams/:slug/memory/concepts/rebuild' } as const;
