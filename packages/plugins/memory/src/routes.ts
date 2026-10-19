@@ -2,7 +2,8 @@ import type { PluginContext } from '@manythreads/sdk';
 import { ConceptPathParams, ConfirmConceptResponse, DeprecateConceptResponse, ListMemoryConceptsPathParams, ListMemoryConceptsResponse, ListMemoryRetainLogPathParams, ListMemoryRetainLogQuery, ListMemoryRetainLogResponse, RebuildConceptsPathParams, RebuildConceptsResponse, confirmConceptRoute, deprecateConceptRoute, listMemoryConceptsRoute, listMemoryRetainLogRoute, rebuildConceptsRoute } from '@manythreads/shared';
 import { json, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { RETAIN_LOG_COLUMNS, toMemoryRetainLogEntry, type RetainLogRow } from './rows.ts';
-import { listMemoryConcepts, rebuildConcepts } from './concepts.ts';
+import { listMemoryConcepts } from './concepts.ts';
+import { CONCEPTS_QUEUE } from './constants.ts';
 
 /**
  * `GET /api/teams/:slug/memory/retain-log`: what the platform retained into the team's bank, replaced, forgot or withheld, newest first. The
@@ -51,8 +52,10 @@ export function registerRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const { slug } = RebuildConceptsPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
-      const concepts = await rebuildConcepts(tx, team.id);
-      return json({ concepts });
+      await requireManage(tx, team);
+      // the index table is the system's to write: the rebuild is queued, and the job does it in its own system transaction
+      await ctx.jobs.enqueue(tx, CONCEPTS_QUEUE, { teamId: team.id }, { dedupeKey: `memory-concepts:${team.id}` });
+      return json({ concepts: 0 });
     }),
   });
 

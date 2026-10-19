@@ -55,6 +55,15 @@ if (teams.length === 0) teams.push('engineering', 'customer-support', 'marketing
 for (const team of teams) {
   const r = await api('POST', `/api/teams/${team}/memory/concepts/rebuild`);
   console.log(`${team}: HTTP ${r.status} ${JSON.stringify(r.json)?.slice(0, 200)}`);
-  const list = await api('GET', `/api/teams/${team}/memory/concepts`);
-  console.log(`  listed: ${Array.isArray(list.json?.items) ? list.json.items.length : 'n/a'}`);
+  // the rebuild is queued and runs as the system: poll until the index carries the team's concepts
+  for (let i = 0; i < 30; i++) {
+    const list = await api('GET', `/api/teams/${team}/memory/concepts`);
+    const n = Array.isArray(list.json?.items) ? list.json.items.length : -1;
+    if (n > 0) {
+      console.log(`  listed: ${n}`);
+      break;
+    }
+    if (i === 29) console.log(`  listed: ${n} (still empty after 30 tries)`);
+    await new Promise((r2) => setTimeout(r2, 2000));
+  }
 }

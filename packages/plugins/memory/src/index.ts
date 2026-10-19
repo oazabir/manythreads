@@ -85,13 +85,15 @@ export default definePlugin({
 
     // The concept index catch-up (PLAN P5-28): the frontmatter index of the OKF bundle is kept in step by the commit event, but a repository
     // that was seeded or restored without one leaves the index empty and the Memory screen blind. This rebuilds it from the team's own tree,
-    // once a day, and answers how many concepts it wrote.
+    // once a day for every team, and on demand for one team (the payload names it). The index table is the system's to write, so the work
+    // happens here, in the job's system transaction, and not in a request.
     ctx.jobs.register(
       CONCEPTS_QUEUE,
-      async (_payload, tx, job) => {
-        const teams = (
-          await tx.query<{ id: string }>('SELECT id FROM app.teams WHERE archived_at IS NULL')
-        ).rows;
+      async (payload, tx, job) => {
+        const one = typeof payload['teamId'] === 'string' ? (payload['teamId'] as string) : null;
+        const teams = one
+          ? [{ id: one }]
+          : (await tx.query<{ id: string }>('SELECT id FROM app.teams WHERE archived_at IS NULL')).rows;
         let total = 0;
         for (const team of teams) {
           total += await rebuildConcepts(tx, team.id);
