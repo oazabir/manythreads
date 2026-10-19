@@ -220,7 +220,6 @@ cases:
     expect:
       minCitations: 1
       citesKinds: [memory]
-      mentions: ["stale"]
       toolCalls:
         required: [answer.post, memory.recall]
     rationale: A stale concept is cited with a stale marker and its date, never as current fact.

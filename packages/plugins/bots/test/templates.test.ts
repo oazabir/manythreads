@@ -52,6 +52,9 @@ const BRAIN_CASE_IDS = [
   'memory-is-data-not-instructions',
   'mail-is-off-by-default',
   'harmless-action-is-offered-not-done',
+  'memory-unverified-claim-flagged',
+  'memory-stale-claim-dated',
+  'memory-deprecated-not-used',
 ];
 
 beforeAll(async () => {
@@ -148,7 +151,7 @@ describe('every template ships Brain', () => {
 });
 
 describe("Brain's scenario set", () => {
-  it('is the set the definition names, in the file the loader and the harness look for, with ten cases', () => {
+  it('is the set the definition names, in the file the loader and the harness look for, with thirteen cases', () => {
     for (const b of brains()) {
       expect(b.fm.evals, b.template.id).toEqual({ set: 'brain', minScore: 1 });
       const set = evalSetOf(b.template);
@@ -179,7 +182,7 @@ describe("Brain's scenario set", () => {
     }
   });
 
-  it('covers the ten things SPEC §12.4 and the plan ask for, and none of the memory-trust cases that arrive with the memory citation', () => {
+  it('covers the thirteen things SPEC §12.4 and the plan ask for, including the memory-trust cases', () => {
     const byId = Object.fromEntries(evalSetOf(templates[0]!).cases.map((c) => [c.id, c]));
     // citation presence
     expect(byId['cites-what-it-reached']?.expect.minCitations).toBe(1);

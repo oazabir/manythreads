@@ -31,7 +31,7 @@ const payload = (over: Record<string, unknown> = {}) =>
       message(),
       { kind: 'page', n: 2, label: 'pages/specs/schedule-migration.md', scope: 'team', teamId: uuid(12), path: 'pages/specs/schedule-migration.md' },
       { kind: 'file', n: 3, label: 'migration-plan.pdf', scope: 'channel', fileId: uuid(13) },
-      { kind: 'memory', n: 4, conceptPath: 'memory/facts/window.md', trustTier: 'human-reviewed', stale: false },
+      { kind: 'futurekind', n: 4, label: 'unknown source', scope: 'team' },
     ],
     lineage: [
       { n: 1, kind: 'message', label: 'Tester: 213 passing at f07b3d9', at: new Date(Date.now() - 4 * 3_600_000).toISOString(), snippet: '213 passing at f07b3d9. Ready.' },
