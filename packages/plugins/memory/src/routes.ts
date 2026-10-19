@@ -49,7 +49,7 @@ export function registerRoutes(ctx: PluginContext): void {
     ...confirmConceptRoute,
     schema: { response: ConfirmConceptResponse },
     handler: route(async (req, tx) => {
-      const { slug, path } = ConceptPathParams.parse(req.params);
+      const { slug } = ConceptPathParams.parse(req.params);
       await requireTeam(tx, slug);
       // Confirm appends `verified: human:<actor>` to the concept through the repo writer (P5-28). Stubbed here; full commit lands in a follow-up.
       return json({ ok: true });
