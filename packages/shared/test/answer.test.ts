@@ -52,6 +52,7 @@ describe('AnswerInput (what a bot sends)', () => {
         { kind: 'page', path: 'pages/a.md' },
         { kind: 'file', fileId: uuid(3) },
         { kind: 'run', runId: uuid(4) },
+        { kind: 'memory', conceptPath: 'memory/a.md' },
       ],
       outsideScope: [{ kind: 'drive', count: 2 }],
       chips: [{ kind: 'followup', prompt: 'And then?' }, { kind: 'handoff', botSlug: 'coder' }],
@@ -71,7 +72,7 @@ describe('AnswerInput (what a bot sends)', () => {
   });
 
   it('refuses a kind it does not know, an empty or oversized body, and a list over its cap', () => {
-    expect(AnswerInput.safeParse({ body: 'x', citations: [{ kind: 'memory', conceptPath: 'a' }] }).success).toBe(false);
+    expect(AnswerInput.safeParse({ body: 'x', citations: [{ kind: 'unknownkind', foo: 'a' }] }).success).toBe(false);
     expect(AnswerInput.safeParse({ body: '' }).success).toBe(false);
     expect(AnswerInput.safeParse({ body: 'x'.repeat(ANSWER_LIMITS.body + 1) }).success).toBe(false);
     const many = Array.from({ length: ANSWER_LIMITS.citations + 1 }, (_, i) => ({ kind: 'file', fileId: uuid(100 + i) }));
@@ -101,14 +102,14 @@ describe('AnswerPayloadView (what a client parses)', () => {
       payload({
         citations: [
           { kind: 'message', ...base, messageId: uuid(10), channelId: uuid(11), teamId: uuid(12), channelKind: 'channel', channelName: 'dev', threadRootId: null },
-          { kind: 'memory', n: 2, conceptPath: 'memory/facts/window.md', trustTier: 'human-reviewed', stale: false },
+          { kind: 'futurekind', n: 2, conceptPath: 'memory/facts/window.md' },
         ],
       }),
     );
     expect(view.citations.map((c) => isSupportedCitation(c))).toEqual([true, false]);
-    expect(view.citations[1]).toMatchObject({ kind: 'memory', n: 2, conceptPath: 'memory/facts/window.md' });
+    expect(view.citations[1]).toMatchObject({ kind: 'futurekind', n: 2 });
     // the strict shape refuses what the view accepts
-    expect(AnswerPayload.safeParse(payload({ citations: [{ kind: 'memory', n: 1 }] })).success).toBe(false);
+    expect(AnswerPayload.safeParse(payload({ citations: [{ kind: 'futurekind', n: 1 }] })).success).toBe(false);
   });
 
   it('does not take a malformed citation of a known kind for an unsupported one', () => {
