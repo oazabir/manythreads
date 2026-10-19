@@ -127,7 +127,7 @@ export const treeShows = (row: FileRow): boolean => row.kind === 'folder' || row
 
 export const READ_ONLY_COPY = 'Change by pull request';
 export const GIT_TEXT_ONLY_COPY = 'This folder is stored in git, which holds text only. Upload attachments to a channel folder.';
-export const MEMORY_COPY = 'Managed by team memory';
+export const MEMORY_COPY = 'OKF memory bundle';
 
 /** Names of a new file or folder: one path segment the repo accepts (no slash, no dot-only name, no control characters). */
 export function nameProblem(raw: string): string | null {
