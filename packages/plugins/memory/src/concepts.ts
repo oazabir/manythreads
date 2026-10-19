@@ -120,3 +120,45 @@ export async function syncConcepts(tx: PluginTx, teamId: string, paths: readonly
     [teamId, JSON.stringify(records)],
   );
 }
+
+/** Read a team's concept index (PLAN P5-28): the frontmatter index only, newest generated first. git stays the truth for bodies. */
+export async function listMemoryConcepts(tx: PluginTx, teamId: string): Promise<MemoryConceptSummary[]> {
+  const rows = (
+    await tx.query<{
+      path: string;
+      type: string;
+      title: string;
+      description: string | null;
+      tags: string[];
+      status: string;
+      stale_after: Date | null;
+      trust_tier: string;
+      origin: string;
+      share_never: boolean;
+      from_team: string | null;
+      blob_sha: string;
+      generated_at: Date | null;
+    }>(
+      `SELECT path, type, title, description, tags, status, stale_after, trust_tier, origin, share_never, from_team, blob_sha, generated_at
+         FROM app.memory_concepts WHERE team_id = $1::uuid ORDER BY path`,
+      [teamId],
+    )
+  ).rows;
+  return rows.map((r) =>
+    MemoryConceptSummary.parse({
+      path: r.path,
+      type: r.type,
+      title: r.title,
+      description: r.description,
+      tags: r.tags,
+      status: r.status,
+      staleAfter: r.stale_after ? r.stale_after.toISOString() : null,
+      trustTier: r.trust_tier,
+      origin: r.origin,
+      shareNever: r.share_never,
+      fromTeam: r.from_team,
+      blobSha: r.blob_sha,
+      generatedAt: r.generated_at ? r.generated_at.toISOString() : null,
+    }),
+  );
+}
