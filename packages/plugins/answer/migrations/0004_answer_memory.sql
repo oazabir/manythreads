@@ -102,10 +102,16 @@ BEGIN
 
   ELSIF p_kind = 'memory' THEN
     -- p_ref is the concept path (not a uuid). The concept's team is the run's team unless a digest names another.
-    SELECT mc.path, mc.type, mc.trust_tier, mc.stale_after, mc.status, mc.from_team, mc.title
-      INTO mc
-      FROM app.memory_concepts mc
-     WHERE mc.team_id = coalesce(p_team, p_run_team) AND mc.path = p_ref;
+    -- The table belongs to the `memory` plugin: a deployment without it (or a test database that does not
+    -- carry that plugin's migrations) has no concepts at all, and the citation is simply not found. The
+    -- lookup is dynamic so the missing relation is never planned.
+    IF to_regclass('app.memory_concepts') IS NULL THEN
+      RETURN jsonb_build_object('found', false);
+    END IF;
+    EXECUTE 'SELECT path, type, trust_tier, stale_after, status, from_team, title
+               FROM app.memory_concepts
+              WHERE team_id = $1::uuid AND path = $2'
+      INTO mc USING coalesce(p_team, p_run_team), p_ref;
     IF NOT FOUND THEN RETURN jsonb_build_object('found', false); END IF;
     v_scope := 'team';
     v_label := coalesce(mc.title, mc.path);

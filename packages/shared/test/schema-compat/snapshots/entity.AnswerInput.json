@@ -132,6 +132,29 @@
               "runId"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "memory"
+              },
+              "conceptPath": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "snippet": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "kind",
+              "conceptPath"
+            ],
+            "additionalProperties": false
           }
         ]
       }

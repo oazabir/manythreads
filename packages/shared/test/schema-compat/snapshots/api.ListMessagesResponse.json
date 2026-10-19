@@ -408,6 +408,80 @@
                               "properties": {
                                 "kind": {
                                   "type": "string",
+                                  "const": "memory"
+                                },
+                                "n": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 40
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 200
+                                },
+                                "scope": {
+                                  "type": "string",
+                                  "enum": [
+                                    "team",
+                                    "channel",
+                                    "person"
+                                  ]
+                                },
+                                "conceptPath": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 500
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "trustTier": {
+                                  "type": "string",
+                                  "enum": [
+                                    "unverified",
+                                    "machine-confirmed",
+                                    "human-reviewed"
+                                  ]
+                                },
+                                "stale": {
+                                  "type": "boolean"
+                                },
+                                "deprecated": {
+                                  "type": "boolean"
+                                },
+                                "fromTeam": {
+                                  "default": null,
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "uuid",
+                                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "n",
+                                "label",
+                                "scope",
+                                "conceptPath",
+                                "type",
+                                "trustTier",
+                                "stale",
+                                "deprecated"
+                              ]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
                                   "const": "masked"
                                 },
                                 "n": {
