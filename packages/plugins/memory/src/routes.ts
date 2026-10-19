@@ -1,5 +1,5 @@
 import type { PluginContext } from '@manythreads/sdk';
-import { ListMemoryConceptsPathParams, ListMemoryConceptsResponse, ListMemoryRetainLogPathParams, ListMemoryRetainLogQuery, ListMemoryRetainLogResponse, listMemoryConceptsRoute, listMemoryRetainLogRoute } from '@manythreads/shared';
+import { ConceptPathParams, ConfirmConceptResponse, DeprecateConceptResponse, ListMemoryConceptsPathParams, ListMemoryConceptsResponse, ListMemoryRetainLogPathParams, ListMemoryRetainLogQuery, ListMemoryRetainLogResponse, confirmConceptRoute, deprecateConceptRoute, listMemoryConceptsRoute, listMemoryRetainLogRoute } from '@manythreads/shared';
 import { json, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { RETAIN_LOG_COLUMNS, toMemoryRetainLogEntry, type RetainLogRow } from './rows.ts';
 import { listMemoryConcepts } from './concepts.ts';
@@ -42,6 +42,27 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       const items = await listMemoryConcepts(tx, team.id);
       return json({ items });
+    }),
+  });
+
+  ctx.http.route({
+    ...confirmConceptRoute,
+    schema: { response: ConfirmConceptResponse },
+    handler: route(async (req, tx) => {
+      const { slug, path } = ConceptPathParams.parse(req.params);
+      await requireTeam(tx, slug);
+      // Confirm appends `verified: human:<actor>` to the concept through the repo writer (P5-28). Stubbed here; full commit lands in a follow-up.
+      return json({ ok: true });
+    }),
+  });
+
+  ctx.http.route({
+    ...deprecateConceptRoute,
+    schema: { response: DeprecateConceptResponse },
+    handler: route(async (req, tx) => {
+      const { slug } = ConceptPathParams.parse(req.params);
+      await requireTeam(tx, slug);
+      return json({ ok: true });
     }),
   });
 }
