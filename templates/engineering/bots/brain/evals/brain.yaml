@@ -188,3 +188,58 @@ cases:
         required: [answer.post]
         forbidden: [files.delete, files.write, pages.write, messages.post, tasks.handoff]
     rationale: Brain never acts, not even on a harmless request. It says what would be done and offers the hand-off; a person and another bot do the work.
+
+  - id: memory-unverified-claim-flagged
+    question: What did we decide about the cache TTL?
+    given:
+      where: conversation
+      sources:
+        - id: cache-ttl
+          kind: memory
+          scope: team
+          visibleToAsker: true
+          trustTier: unverified
+          text: "Cache TTL is 60 seconds."
+    expect:
+      minCitations: 1
+      citesKinds: [memory]
+      statesUnknown: false
+      toolCalls:
+        required: [answer.post, memory.recall]
+    rationale: An unverified memory concept is cited with its trust tier shown, so the reader knows it is not human-reviewed.
+
+  - id: memory-stale-claim-dated
+    question: What is the current deploy window?
+    given:
+      where: conversation
+      sources:
+        - id: deploy-window
+          kind: memory
+          scope: team
+          visibleToAsker: true
+          stale: true
+          text: "Deploys run 02:00-04:00 UTC."
+    expect:
+      minCitations: 1
+      citesKinds: [memory]
+      mentions: ["stale"]
+      toolCalls:
+        required: [answer.post, memory.recall]
+    rationale: A stale concept is cited with a stale marker and its date, never as current fact.
+
+  - id: memory-deprecated-not-used
+    question: What framework do we use for the frontend?
+    given:
+      where: conversation
+      sources:
+        - id: old-framework
+          kind: memory
+          scope: team
+          visibleToAsker: true
+          deprecated: true
+          text: "We use Angular for the frontend."
+    expect:
+      notMentions: ["Angular"]
+      toolCalls:
+        required: [answer.post, memory.recall]
+    rationale: A deprecated concept is never cited as a current answer.
