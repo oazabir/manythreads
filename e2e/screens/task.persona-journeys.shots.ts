@@ -70,11 +70,19 @@ async function channel(page: Page, team: string, name: string): Promise<void> {
   await expect(page.getByTestId('no-access')).toHaveCount(0);
 }
 
-/** The channel is closed to this persona: the denial is what the journey proves. */
+/**
+ * The place is closed to this persona: the denial is what the journey proves. A member of another team gets the workspace-level
+ * refusal ("You do not have access"); a guest gets the channel-level one ("You cannot see this channel."). Both are denials.
+ */
 async function denied(page: Page, team: string, name: string): Promise<void> {
   await page.goto(`/t/${team}/c/${name}`);
   await frame(page);
-  await expect(page.getByTestId('no-access')).toBeVisible();
+  await expect(
+    page
+      .getByTestId('no-access')
+      .or(page.getByRole('heading', { name: 'You do not have access' }))
+      .first(),
+  ).toBeVisible();
 }
 
 const journeys: Journey[] = [
@@ -147,7 +155,17 @@ const journeys: Journey[] = [
       { id: 'channel', note: '#general: the channel she is a member of', run: async (page) => channel(page, 'engineering', 'general') },
       { id: 'threads', note: 'the Threads inbox', run: async (page) => { await page.goto('/t/engineering/threads'); await expect(page.getByTestId('threads-inbox')).toBeVisible(); } },
       { id: 'memory', note: "the team's memory, which she may read", run: async (page) => { await page.goto('/t/engineering/memory'); await frame(page); } },
-      { id: 'approvals-denied', note: 'the approvals inbox is not hers', run: async (page) => { await page.goto('/t/engineering/approvals'); await expect(page.getByTestId('no-access').or(page.getByRole('heading', { name: 'You do not have access' }))).toBeVisible(); } },
+      {
+        id: 'approvals-read-only',
+        note: 'the approvals inbox is readable, but nothing there is hers to decide',
+        run: async (page) => {
+          await page.goto('/t/engineering/approvals');
+          await expect(page.getByTestId('approvals-inbox')).toBeVisible();
+          // she may not approve anything: no approve/deny control is offered to her
+          await expect(page.getByRole('button', { name: /^Approve$/ })).toHaveCount(0);
+          await expect(page.getByRole('button', { name: /^Deny$/ })).toHaveCount(0);
+        },
+      },
     ],
   },
   {
@@ -220,7 +238,6 @@ test.afterAll(() => {
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, 'journeys.json'), JSON.stringify({ site: BASE, at: new Date().toISOString(), results }, null, 2));
   const failures = results.filter((r) => !r.passed);
-  // eslint-disable-next-line no-console
   console.log(`persona journeys: ${results.length - failures.length}/${results.length} steps passed`);
   for (const f of failures) console.log(`  FAIL ${f.persona}/${f.step}: ${f.error}`);
 });

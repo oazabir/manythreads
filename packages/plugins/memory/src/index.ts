@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import {
+  CONCEPTS_QUEUE,
   FEED_QUEUE,
   FORGETS_PER_TEAM_PER_MINUTE,
   RECONCILE_QUEUE,
@@ -7,6 +8,7 @@ import {
   WINDOW_MS,
 } from './constants.ts';
 import { CONSUMED_EVENTS, markRetainedOfChannels, registerConsumers } from './consumers.ts';
+import { rebuildConcepts } from './concepts.ts';
 import { drainFeed } from './feed.ts';
 import { registerRoutes } from './routes.ts';
 import { registerWriteTool } from './write.ts';
@@ -14,7 +16,7 @@ import { SlidingWindow } from './window.ts';
 
 export { decide } from './decide.ts';
 export type { Decision } from './decide.ts';
-export { syncConcepts, toMemoryConceptSummary } from './concepts.ts';
+export { rebuildConcepts, syncConcepts, toMemoryConceptSummary } from './concepts.ts';
 export { appendLesson, appendPersonNote, lessonPath, personNotePath, PLATFORM_ENTRY_MAX_CHARS } from './platform.ts';
 export { bundleAbsoluteLinks, conceptText, draftPathFor, isPersonOwned, splitPlatformKeys, PLATFORM_OWNED_KEYS } from './write.ts';
 export { drainFeed } from './feed.ts';
@@ -79,6 +81,24 @@ export default definePlugin({
         if (marked > 0) job.log.info(`memory: ${marked} document(s) of channels that are no longer team-visible were queued to be forgotten`);
       },
       { cron: '17 * * * *', maxAttempts: 1, concurrency: 1 },
+    );
+
+    // The concept index catch-up (PLAN P5-28): the frontmatter index of the OKF bundle is kept in step by the commit event, but a repository
+    // that was seeded or restored without one leaves the index empty and the Memory screen blind. This rebuilds it from the team's own tree,
+    // once a day, and answers how many concepts it wrote.
+    ctx.jobs.register(
+      CONCEPTS_QUEUE,
+      async (_payload, tx, job) => {
+        const teams = (
+          await tx.query<{ id: string }>('SELECT id FROM app.teams WHERE archived_at IS NULL')
+        ).rows;
+        let total = 0;
+        for (const team of teams) {
+          total += await rebuildConcepts(tx, team.id);
+        }
+        if (total > 0) job.log.info(`memory: rebuilt the concept index of ${teams.length} team(s) (${total} concept(s))`);
+      },
+      { cron: '23 3 * * *', maxAttempts: 1, concurrency: 1 },
     );
   },
 });

@@ -121,6 +121,79 @@ export async function syncConcepts(tx: PluginTx, teamId: string, paths: readonly
   );
 }
 
+/**
+ * Rebuilds a team's whole concept index from the repo tree (PLAN P5-28). The index is normally kept in step by the commit event, but a
+ * repository that was seeded or restored without one (a demo environment, a restored backup) would leave the index empty and the Memory
+ * screen blind. This reads the team's `memory/**` tree as it is now and writes the index from it, set-based: the same parser, the same
+ * summary, the same rows.
+ *
+ * It is a catch-up and a self-heal, like the bots' daily backfill: safe to repeat, and it never touches a body (git stays the truth).
+ */
+export async function rebuildConcepts(tx: PluginTx, teamId: string): Promise<number> {
+  const rows = (
+    await tx.query<{ path: string; blob_sha: string; text_plain: string | null }>(
+      `SELECT path, blob_sha, text_plain FROM app.repo_entries
+        WHERE team_id = $1::uuid AND path LIKE 'memory/%'`,
+      [teamId],
+    )
+  ).rows;
+
+  const records: Record<string, unknown>[] = [];
+  const gone: string[] = [];
+  for (const row of rows) {
+    if (!isConceptPath(row.path) || row.text_plain === null) continue;
+    const parsed = parseConcept(row.text_plain);
+    if (!parsed.ok) {
+      gone.push(row.path);
+      continue;
+    }
+    const s = toMemoryConceptSummary(row.path, parsed.frontmatter, row.blob_sha);
+    records.push({
+      path: s.path,
+      type: s.type,
+      title: s.title,
+      description: s.description,
+      tags: s.tags,
+      status: s.status,
+      stale_after: s.staleAfter,
+      trust_tier: s.trustTier,
+      origin: s.origin,
+      share_never: s.shareNever,
+      from_team: s.fromTeam,
+      blob_sha: s.blobSha,
+      generated_at: s.generatedAt,
+    });
+  }
+
+  // A concept the tree no longer holds takes its row out (git is the truth).
+  await tx.query(
+    `DELETE FROM app.memory_concepts
+      WHERE team_id = $1::uuid
+        AND NOT (path = ANY($2::text[]))`,
+    [teamId, records.map((r) => r.path as string)],
+  );
+  if (gone.length > 0) {
+    await tx.query('DELETE FROM app.memory_concepts WHERE team_id = $1::uuid AND path = ANY($2::text[])', [teamId, gone]);
+  }
+  if (records.length === 0) return 0;
+
+  await tx.query(
+    `INSERT INTO app.memory_concepts
+       (team_id, path, type, title, description, tags, status, stale_after, trust_tier, origin, share_never, from_team, blob_sha, generated_at)
+     SELECT $1::uuid, r.path, r.type, r.title, r.description, r.tags, r.status, r.stale_after, r.trust_tier, r.origin, r.share_never, r.from_team, r.blob_sha, r.generated_at
+       FROM jsonb_to_recordset($2::jsonb) AS r(
+         path text, type text, title text, description text, tags text[], status text, stale_after timestamptz,
+         trust_tier text, origin text, share_never boolean, from_team uuid, blob_sha text, generated_at timestamptz)
+     ON CONFLICT (team_id, path) DO UPDATE SET
+       type = EXCLUDED.type, title = EXCLUDED.title, description = EXCLUDED.description, tags = EXCLUDED.tags,
+       status = EXCLUDED.status, stale_after = EXCLUDED.stale_after, trust_tier = EXCLUDED.trust_tier,
+       origin = EXCLUDED.origin, share_never = EXCLUDED.share_never, from_team = EXCLUDED.from_team,
+       blob_sha = EXCLUDED.blob_sha, generated_at = EXCLUDED.generated_at`,
+    [teamId, JSON.stringify(records)],
+  );
+  return records.length;
+}
+
 /** Read a team's concept index (PLAN P5-28): the frontmatter index only, newest generated first. git stays the truth for bodies. */
 export async function listMemoryConcepts(tx: PluginTx, teamId: string): Promise<MemoryConceptSummary[]> {
   const rows = (

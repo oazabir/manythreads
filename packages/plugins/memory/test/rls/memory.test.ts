@@ -24,7 +24,7 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { syncConcepts } from '../../src/concepts.ts';
+import { rebuildConcepts, syncConcepts } from '../../src/concepts.ts';
 
 // P5-13, the database half: the narrowest-source rule (`app.run_retain_verdict`) as a matrix, its one reader for a live run
 // (`app.memory_run_scope`), the same rule for what a bot wrote (`app.memory_authored_verdict`), and who may read and write `memory_retain_log`.
@@ -576,5 +576,32 @@ describe('memory_concepts: the frontmatter index of the OKF bundle', () => {
     } finally {
       await admin.end();
     }
+  });
+
+  it('rebuilds the whole index from the tree, for a repository that was seeded without a commit event', async () => {
+    // a repository seeded straight into `repo_entries` (a demo environment, a restored backup) has no commit event, so the
+    // index was never filled: the Memory screen would show nothing. The catch-up reads the tree and fills it.
+    await sys(async (tx) => {
+      await tx.query('DELETE FROM app.memory_concepts WHERE team_id = $1', [ENG]);
+    });
+    await stored('memory/facts/onboarding.md', fact);
+    await stored('memory/facts/second.md', fact.replace('title: Onboarding', 'title: Second'));
+    expect(await rows(nadia)).toEqual([]); // the index is empty: the tree is there, the index is not
+
+    const written = await sys((tx) => rebuildConcepts(tx as unknown as PluginTx, ENG));
+    expect(written).toBe(2);
+    expect((await rows(nadia)).map((r) => r.path)).toEqual(['memory/facts/onboarding.md', 'memory/facts/second.md']);
+
+    // a concept the tree no longer holds takes its row out (git is the truth)
+    await sys(async (tx) => {
+      await tx.query("DELETE FROM app.repo_entries WHERE team_id = $1 AND path = 'memory/facts/second.md'", [ENG]);
+    });
+    expect(await sys((tx) => rebuildConcepts(tx as unknown as PluginTx, ENG))).toBe(1);
+    expect((await rows(nadia)).map((r) => r.path)).toEqual(['memory/facts/onboarding.md']);
+
+    // a file that is no longer valid OKF takes no row with it
+    await stored('memory/facts/broken.md', '---\ntitle: no type here\n---\nbody\n');
+    expect(await sys((tx) => rebuildConcepts(tx as unknown as PluginTx, ENG))).toBe(1);
+    expect((await rows(nadia)).map((r) => r.path)).toEqual(['memory/facts/onboarding.md']);
   });
 });

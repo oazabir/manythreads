@@ -1,8 +1,8 @@
 import type { PluginContext } from '@manythreads/sdk';
-import { ConceptPathParams, ConfirmConceptResponse, DeprecateConceptResponse, ListMemoryConceptsPathParams, ListMemoryConceptsResponse, ListMemoryRetainLogPathParams, ListMemoryRetainLogQuery, ListMemoryRetainLogResponse, confirmConceptRoute, deprecateConceptRoute, listMemoryConceptsRoute, listMemoryRetainLogRoute } from '@manythreads/shared';
+import { ConceptPathParams, ConfirmConceptResponse, DeprecateConceptResponse, ListMemoryConceptsPathParams, ListMemoryConceptsResponse, ListMemoryRetainLogPathParams, ListMemoryRetainLogQuery, ListMemoryRetainLogResponse, RebuildConceptsResponse, confirmConceptRoute, deprecateConceptRoute, listMemoryConceptsRoute, listMemoryRetainLogRoute, rebuildConceptsRoute } from '@manythreads/shared';
 import { json, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { RETAIN_LOG_COLUMNS, toMemoryRetainLogEntry, type RetainLogRow } from './rows.ts';
-import { listMemoryConcepts } from './concepts.ts';
+import { listMemoryConcepts, rebuildConcepts } from './concepts.ts';
 
 /**
  * `GET /api/teams/:slug/memory/retain-log`: what the platform retained into the team's bank, replaced, forgot or withheld, newest first. The
@@ -42,6 +42,17 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       const items = await listMemoryConcepts(tx, team.id);
       return json({ items });
+    }),
+  });
+
+  ctx.http.route({
+    ...rebuildConceptsRoute,
+    schema: { response: RebuildConceptsResponse },
+    handler: route(async (req, tx) => {
+      const { slug } = ConceptPathParams.parse(req.params);
+      const team = await requireTeam(tx, slug);
+      const concepts = await rebuildConcepts(tx, team.id);
+      return json({ concepts });
     }),
   });
 

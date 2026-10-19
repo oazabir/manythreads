@@ -2,6 +2,8 @@
 export const FEED_QUEUE = 'memory.feed';
 /** The sweep for documents whose source stopped being team-visible without an event (an operator's SQL): hourly. */
 export const RECONCILE_QUEUE = 'memory.reconcile';
+/** The catch-up that rebuilds the OKF bundle's frontmatter index from the team's tree, for a repository seeded without a commit event: daily. */
+export const CONCEPTS_QUEUE = 'memory.concepts';
 
 /** Sources read per drain, across teams. */
 export const DRAIN_BATCH = 200;
