@@ -120,13 +120,15 @@ The full set is in one gallery: `temp/screenshots/index.html` (open it in Chrome
 | | |
 |---|---|
 | Site | https://manythreads.kahf.to/ (HTTP 200, `/readyz` ready) |
-| Helm revision | 40 |
+| Helm revision | 44 |
 | Migrations | 74 |
-| Image | `517a9ba53c84-7cb7a16d` |
-| Server pod | `manythreads-server-7cc8c5c589-k5vsw` (Running) |
-| Web pod | `manythreads-web-6b86996fd4-d7swn` (Running) |
+| Image | `517a9ba53c84-f6c0ff8e` |
+| Server pod | `manythreads-server-7cfb954db4-m5r8b` (Running) |
+| Web pod | `manythreads-web-5b59784d65-zjk4q` (Running) |
+| Devbox gate | 233 files passed / 3 skipped, 3,776 passed / 65 skipped / 0 failed; lint and typecheck clean |
 
 ## Notes
 
 - The demo deployment had no bots loaded for Customer support and Marketing: their repositories were seeded directly, so the bots plugin never saw the commit that loads a bot. `tools/devbox/push-template-bots.sh` commits the shipped template definitions as the workspace admin, which is what made the Support responder, the Content drafter and both teams' Brain real for this run.
+- The demo's memory facts had no OKF frontmatter (the demo predates the bundle), so the concept index had nothing to list. `tools/devbox/okf-ify-memory.sh` re-commits them as proper concepts, and the new catch-up job (`memory.concepts`) rebuilds the index from the team's tree.
 - Every persona's password was set to a one-off value for the run and rotated to an unknown value afterwards; no secret is in any picture.
