@@ -92,7 +92,7 @@ export class CapabilityBroker {
       const paths = [...(context.path !== undefined ? [context.path] : []), ...(context.paths ?? [])];
       if (paths.length === 0) return deny(`"${capability}" needs a path to be authorized`);
       for (const path of paths) {
-        const verdict = checkBotWritePath(path);
+        const verdict = checkBotWritePath(path, capability);
         if (!verdict.allowed) return deny(verdict.reason);
       }
     }

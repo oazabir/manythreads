@@ -114,7 +114,7 @@ nothing else reaches git.
 
 `channels/` is **reserved** (400 on write, any case): the Files tree shows channel attachments there ([files.md](./files.md)), so a repo file of that name would hide or be hidden. The provider has `list(tx, teamId, folder)`: the
 files and folders directly below a folder from the index (one grouped query over `repo_entries` joined to `repo_commits`: size, blob, the commit time and author of the last change, a folder's newest below it; `.gitkeep` is
-never a row; a folder that does not exist is 404). `write` takes `options.capability` (`files.write` default, `pages.write` for [pages](./pages.md)).
+never a row; a folder that does not exist is 404). `write` takes `options.capability` (`files.write` default, `pages.write` for [pages](./pages.md), `memory.write` for the memory plugin's tool): the caller says which capability it is acting under, and the broker re-checks the path at the commit.
 
 Refusals are returned as the error envelope without rolling the request back, so a repository the request had to create (its first commit is already in git) keeps its index rows.
 

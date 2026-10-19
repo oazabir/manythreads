@@ -73,6 +73,8 @@ what a call does beyond asking the broker:
 | `files.search` | read | the same over file names |
 | `messages.post` | write | posts a message (or a thread reply) into a channel of the run's team, as the bot — the same call the post route and a runtime's own reply go through (channels plugin, PLAN P5-10) |
 | `pages.write` | write | creates, replaces or appends a page through the repo writer, as the bot |
+| `memory.recall`, `memory.retain` | read / write | the `memory` plugin's bank tools ([memory-hindsight.md](./memory-hindsight.md)): the description is here, the handler is there |
+| `memory.write` | write | proposes ONE OKF concept into `memory/**` through the `memory` plugin ([memory.md](./memory.md), P5-26): the path is judged by the broker before the handler runs, provenance is the platform's, and a concept a person wrote is never overwritten (a `draft` sibling is filed). The description and the JSON Schema come from the same `OkfProposal` the plugin validates with |
 | `answer.post` | write | finishes the run's reply with an Answer: a text, the sources it cites by id and some suggestions; the `answer` plugin re-reads every source as the person who asked and posts the message with its payload ([answer.md](./answer.md)). The description the model reads is generated from the same Zod schema the plugin validates with |
 | `knowledge.search` | stub | answers `{ hits: [], reason: "no bases configured" }` — never invented content |
 | `tasks.read`, `tasks.claim`, `tasks.complete`, `tasks.handoff` | stub | answer that the board is not part of this deployment yet |

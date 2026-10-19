@@ -129,5 +129,14 @@ export function isMemoryPath(normalized: string): boolean {
 export function isInboxPath(normalized: string): boolean {
   return fold(normalized.split('/')[0] ?? '') === 'inbox';
 }
+
+/**
+ * `memory/shared/...`: the part of the bundle a bot's `memory.write` never reaches (SPEC §12.1 confines a bot's path to `memory/**` outside
+ * `memory/shared/`). Only people and the platform write there, so the tool refuses it and the broker's path guard denies it.
+ */
+export function isMemorySharedPath(normalized: string): boolean {
+  const parts = normalized.split('/');
+  return fold(parts[0] ?? '') === 'memory' && fold(parts[1] ?? '') === 'shared';
+}
 /** `memory/` is written by the team's memory (journal, facts); the tree shows a note, people may still edit facts. */
 export const FILES_MEMORY_DIR = 'memory';

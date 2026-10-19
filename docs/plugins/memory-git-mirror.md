@@ -74,7 +74,7 @@ The body is counts and links, **never the retained text**: a table of taken-in /
 
 ## Privacy
 
-`memory/` is the team's repo: team-visible by definition. The one rule that remains is the feed's: **what a bot wrote without being asked to retain it must not out-reach the run that wrote it.** A concept whose last commit was a bot's is judged exactly as a page is: `app.memory_authored_verdict(bot actor, commit time)` at the git author date and at the instant the index recorded it; a run still open defers; any refusal withholds. (The bot writer path, `memory.write`, is P5-26 and out of scope; until then a bot reaches `memory/` only through a `files.write` grant.) The platform's own writes here — the root and the journal — contain no retained text. A run's verdicts survive retention (docs/plugins/retention.md "The feed's verdict").
+`memory/` is the team's repo: team-visible by definition. The one rule that remains is the feed's: **what a bot wrote without being asked to retain it must not out-reach the run that wrote it.** A concept whose last commit was a bot's is judged exactly as a page is: `app.memory_authored_verdict(bot actor, commit time)` at the git author date and at the instant the index recorded it; a run still open defers; any refusal withholds. (A bot reaches `memory/` only through `memory.write`, P5-26 — a `files.write` grant is not a way in; the broker's guard refuses a bot's `files.*` write under `memory/` outright.) The platform's own writes here — the root and the journal — contain no retained text. A run's verdicts survive retention (docs/plugins/retention.md "The feed's verdict").
 
 ## Tables (`migrations/0001_mirror.sql`)
 
@@ -92,7 +92,7 @@ The body is counts and links, **never the retained text**: a table of taken-in /
 
 ## Not here (open)
 
-* `okf_invalid` refusal in the writer, the regenerated indexes and log, `memory_concepts`: built (P5-25). `memory.write` and recall filters: P5-26. The full parser (`sources`, `usage_window`, the actor convention, the hostile-input suite): P5-24.
+* `okf_invalid` refusal in the writer, the regenerated indexes and log, `memory_concepts`: built (P5-25). `memory.write` — the bot's own door into `memory/**`, with the broker's path guard, the platform's provenance, the draft sibling and recall's filters: built (P5-26). The full parser (`sources`, `usage_window`, the actor convention, the hostile-input suite): P5-24.
 * Retention of the retain log's concept lines follows the same rule as every other line (docs/plugins/retention.md).
 * A concept longer than the engine takes is cut (a note says so); chunked documents are not built.
 * No backfill: a concept that was in `memory/` before the engine was configured enters the bank when it is next committed.

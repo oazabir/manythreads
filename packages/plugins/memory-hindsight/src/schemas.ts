@@ -1,31 +1,10 @@
-import { MemoryError } from '@manythreads/sdk';
+import { refuseBankFields } from '@manythreads/sdk';
 import { z } from 'zod';
 
 // Everything a caller may hand to memory, and nothing about WHERE it goes. No schema here has a `bank`, `team` or `workspace` field, all are
 // strict, and `refuseBankFields` runs before parsing so that a forged one gets its own answer instead of a generic "unrecognized key". The same
-// schemas shape the bot-facing tools (the model sees them as the tool's inputSchema in gateway-mcp's catalog) and the provider's own inputs.
-
-/** Any key that could name a bank, a team, a workspace or a tenant, in any spelling (`bank_id`, `teamId`, `memoryBank`, `Team`). */
-const BANK_LIKE = /bank|team|workspace|tenant/i;
-
-/** Rejects a field that names a bank. Looks at the top level of the object and of each item of `items`; values are never inspected. */
-export function refuseBankFields(input: unknown): void {
-  const check = (obj: unknown): void => {
-    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return;
-    for (const key of Object.keys(obj)) {
-      if (BANK_LIKE.test(key)) {
-        throw new MemoryError('bank_not_allowed', `“${key}” is not accepted: the memory bank is chosen by the platform from the run, never by the caller.`);
-      }
-    }
-  };
-  if (Array.isArray(input)) {
-    for (const item of input) check(item);
-    return;
-  }
-  check(input);
-  const items = (input as { items?: unknown } | null)?.items;
-  if (Array.isArray(items)) for (const item of items) check(item);
-}
+// schemas shape the provider's own inputs. (`refuseBankFields` itself is the SDK's: the memory plugin's `memory.recall`/`memory.write` doors use it too.)
+export { refuseBankFields };
 
 export const MAX_CONTENT_CHARS = 20_000;
 export const MAX_RECALL_LIMIT = 50;
@@ -39,7 +18,15 @@ const Tag = z
 export const RecallArgs = z.strictObject({
   query: z.string().trim().min(2).max(500),
   limit: z.number().int().min(1).max(MAX_RECALL_LIMIT).optional(),
+  /** Keep only facts carrying all of these labels: a concept's own tags (`tag:<tag>`) or any of the platform's (`okf`, `type:<type>`, `trust:…`). */
   tags: z.array(Tag).max(10).optional(),
+  /** Keep only facts about concepts of these OKF `type`s (a fact that is not a concept of the bundle carries none and is left out). */
+  types: z.array(z.string().min(1).max(200)).max(20).optional(),
+  /**
+   * Include the team's `deprecated` concepts, which the mirror takes out of the bank: they are found in the frontmatter index and read from git.
+   * Off by default, so a deprecated concept is not recalled (PLAN criterion 17).
+   */
+  includeDeprecated: z.boolean().optional(),
 });
 export type RecallArgs = z.infer<typeof RecallArgs>;
 

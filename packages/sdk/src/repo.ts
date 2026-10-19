@@ -46,7 +46,7 @@ export interface RepoWriteResult {
  * delete is always `files.delete`. Ignored for people (team role) and the system.
  */
 export interface RepoWriteOptions {
-  capability?: 'files.write' | 'pages.write';
+  capability?: 'files.write' | 'pages.write' | 'memory.write';
 }
 
 export interface RepoBlob {

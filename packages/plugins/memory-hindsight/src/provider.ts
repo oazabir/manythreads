@@ -116,6 +116,7 @@ function makeBank(client: HindsightClient, id: string, stamp: Stamp, options: { 
           context: f.context,
           tags: f.tags,
           documentId: f.documentId,
+          ...(f.metadata === undefined ? {} : { metadata: f.metadata }),
         }));
         return { bank: id, hits };
       });

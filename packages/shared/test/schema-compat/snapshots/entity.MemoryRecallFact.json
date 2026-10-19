@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "type": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "context": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "documentId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "conceptType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "trustTier": {
+      "type": "string",
+      "enum": [
+        "unverified",
+        "machine-confirmed",
+        "human-reviewed"
+      ]
+    },
+    "stale": {
+      "type": "boolean"
+    },
+    "deprecated": {
+      "type": "boolean"
+    },
+    "origin": {
+      "type": "string",
+      "maxLength": 64
+    }
+  },
+  "required": [
+    "id",
+    "text",
+    "type",
+    "context",
+    "tags",
+    "documentId"
+  ],
+  "additionalProperties": false
+}

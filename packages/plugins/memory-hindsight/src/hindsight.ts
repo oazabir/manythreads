@@ -70,6 +70,8 @@ export interface HindsightFact {
   context: string | null;
   tags: string[];
   documentId: string | null;
+  /** The provenance the platform stamped on the document, as the engine echoes it (the mirror's `concept_path`, `trust_tier`, `stale_after`, …). */
+  metadata?: Record<string, string>;
 }
 
 export interface HindsightRetainItem {
@@ -124,6 +126,21 @@ function fetchTransport(baseUrl: string, apiKey: string | null, timeoutMs: numbe
 
 const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
+/** The most metadata keys a fact's provenance is read into (the platform writes a handful; anything more is not ours). */
+const METADATA_MAX_KEYS = 40;
+
+/** The engine's `metadata` map (`{ string: string }` by contract; the provider only ever stamps strings): unknown shapes are left out, not guessed at. */
+function metadataOf(raw: unknown): Record<string, string> | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== 'string') continue;
+    out[key.slice(0, 64)] = value.slice(0, 500);
+    if (Object.keys(out).length >= METADATA_MAX_KEYS) break;
+  }
+  return Object.keys(out).length === 0 ? undefined : out;
+}
+
 /** One recall result in the engine's shape (`document_id`, snake case) as ours. A malformed entry is dropped, not guessed at. */
 function toFact(raw: unknown): HindsightFact | null {
   if (raw === null || typeof raw !== 'object') return null;
@@ -131,6 +148,7 @@ function toFact(raw: unknown): HindsightFact | null {
   const id = str(r['id']);
   const text = str(r['text']);
   if (id === null || text === null) return null;
+  const metadata = metadataOf(r['metadata']);
   return {
     id,
     text,
@@ -138,6 +156,7 @@ function toFact(raw: unknown): HindsightFact | null {
     context: str(r['context']),
     tags: Array.isArray(r['tags']) ? r['tags'].filter((t): t is string => typeof t === 'string') : [],
     documentId: str(r['document_id']),
+    ...(metadata === undefined ? {} : { metadata }),
   };
 }
 

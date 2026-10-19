@@ -282,7 +282,15 @@ describe('sending starts a thread, and the bot answers in it', () => {
     const reply = await until(async () => (await repliesBy(nadia, nadiaChannel, rootId, brain.actorId))[0], 40_000, 'the bot to answer in the thread');
     expect(reply.body).toBe('Answering: Nadia: What is blocking the release?');
 
-    const runs = await runsOf(brain.botId);
+    // the reply lands before the run is closed (the router ends it once the process exits): wait for the close, not the reply
+    const runs = await until(
+      async () => {
+        const rows = await runsOf(brain.botId);
+        return rows.length === 1 && rows[0]!.status === 'done' ? rows : null;
+      },
+      40_000,
+      'the conversation run to be closed',
+    );
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
       status: 'done',

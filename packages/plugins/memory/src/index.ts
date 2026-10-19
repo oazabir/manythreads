@@ -9,12 +9,14 @@ import {
 import { CONSUMED_EVENTS, markRetainedOfChannels, registerConsumers } from './consumers.ts';
 import { drainFeed } from './feed.ts';
 import { registerRoutes } from './routes.ts';
+import { registerWriteTool } from './write.ts';
 import { SlidingWindow } from './window.ts';
 
 export { decide } from './decide.ts';
 export type { Decision } from './decide.ts';
 export { syncConcepts, toMemoryConceptSummary } from './concepts.ts';
 export { appendLesson, appendPersonNote, lessonPath, personNotePath, PLATFORM_ENTRY_MAX_CHARS } from './platform.ts';
+export { bundleAbsoluteLinks, conceptText, draftPathFor, isPersonOwned, splitPlatformKeys, PLATFORM_OWNED_KEYS } from './write.ts';
 export { drainFeed } from './feed.ts';
 export type { DrainStats, FeedRuntime } from './feed.ts';
 export { SlidingWindow } from './window.ts';
@@ -35,6 +37,9 @@ export default definePlugin({
     kind: 'server',
     extends: ['event.subscribe', 'job.register'],
     events: { emits: [], consumes: [...CONSUMED_EVENTS] },
+    // `memory.write` (P5-26): the one tool a bot writes the team's OKF bundle through. Not destructive: it commits a file like `pages.write`,
+    // through the one writer, as the bot, and the broker's path guard is what confines it to `memory/**` outside `memory/shared/`.
+    capabilities: [{ name: 'memory.write', destructive: false }],
     // The verdict function and the sources read these plugins' tables (bot_runs and run_source_log, channels and messages, files, approvals, repo_entries).
     dependsOn: ['channels', 'bots', 'files', 'approvals', 'repo-git'],
     migrations: 'migrations',
@@ -42,6 +47,7 @@ export default definePlugin({
   register(ctx) {
     registerRoutes(ctx);
     registerConsumers(ctx);
+    registerWriteTool(ctx);
 
     // Windows live in this process: a per-replica limit that restarts empty (CLAUDE.md: rate limits never go in the database).
     const runtime = {

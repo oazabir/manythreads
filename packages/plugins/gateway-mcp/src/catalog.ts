@@ -1,5 +1,5 @@
 import type { CapabilityAuthorizeContext } from '@manythreads/sdk';
-import { AnswerInput, PAGE_WRITE_MODES } from '@manythreads/shared';
+import { AnswerInput, OkfProposal, PAGE_WRITE_MODES } from '@manythreads/shared';
 import { z } from 'zod';
 
 // What the MCP endpoint offers a run and how each tool behaves (PLAN P5-09). The catalog is not a second copy of
@@ -80,6 +80,16 @@ const MEMORY_RECALL_SCHEMA = {
     query: { type: 'string', minLength: 2, maxLength: 500, description: 'What to remember: a question or a few words.' },
     limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Most facts to answer with (default 10).' },
     tags: { type: 'array', items: { type: 'string' }, maxItems: 10, description: 'Only facts that carry all of these tags.' },
+    types: {
+      type: 'array',
+      items: { type: 'string' },
+      maxItems: 20,
+      description: 'Only facts about memory concepts of these OKF types. A fact that is not a concept of the bundle has no type and is left out.',
+    },
+    includeDeprecated: {
+      type: 'boolean',
+      description: 'Also answer with the team’s deprecated concepts, which the memory no longer holds (they are read from the bundle). Off by default.',
+    },
   },
   required: ['query'],
   additionalProperties: false,
@@ -102,6 +112,14 @@ const MEMORY_RETAIN_SCHEMA = {
  */
 const ANSWER_POST_SCHEMA = z.toJSONSchema(AnswerInput, { io: 'input' }) as Record<string, unknown>;
 delete ANSWER_POST_SCHEMA['$schema'];
+
+/**
+ * The arguments of `memory.write`, from the same Zod schema the memory plugin validates with (`OkfProposal`, PLAN P5-26): the fields an author
+ * sets on one concept, and nothing the platform owns — a `verified`, `origin`, `sources`, `generated`, `share` or `usage_window` a model sends is
+ * dropped and reported, never written.
+ */
+const MEMORY_WRITE_SCHEMA = z.toJSONSchema(OkfProposal, { io: 'input' }) as Record<string, unknown>;
+delete MEMORY_WRITE_SCHEMA['$schema'];
 
 /** Reads `{ hits: [{ id, channel? }] }` (the search plugin's answer) into source lines. */
 const hitsFrom = (sourceType: 'message' | 'file') => (result: unknown): ToolSource[] => {
@@ -150,6 +168,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     description:
       'Add something to the team’s memory so every bot on the team can recall it later. Only things the whole team may know; the tool refuses when this run read anything from a private channel or conversation, or was started in one.',
     inputSchema: MEMORY_RETAIN_SCHEMA,
+    kind: 'write',
+  },
+  'memory.write': {
+    name: 'memory.write',
+    description:
+      'Write one concept into the team’s memory bundle — a file under memory/ — so the team can recall and cite it later: a decision, a fact, a reference. The commit is yours. You cannot claim provenance: a `verified`, `origin`, `sources`, `generated`, `share` or `usage_window` you send is dropped, the platform stamps its own, and a concept a person last wrote or verified is never overwritten — your text is filed as a draft sibling that links to it. Give the concept an exact `path` (memory/facts/cache-ttl.md), a `type` that says what it is (`decision`, `fact`, `reference`, …) — a proposal with no `type` is refused `okf_invalid` and nothing is written — and a body that makes sense on its own.',
+    inputSchema: MEMORY_WRITE_SCHEMA,
     kind: 'write',
   },
   'messages.post': {

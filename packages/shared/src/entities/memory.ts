@@ -99,6 +99,57 @@ export function toMemoryConcept(path: string, frontmatter: OkfFrontmatter, body:
   };
 }
 
+/** The most body text one proposal may carry; the repo itself refuses a file over 1 MB, this is the tighter door. */
+export const MEMORY_PROPOSAL_BODY_MAX_CHARS = 200_000;
+
+/**
+ * One concept a bot proposes through `memory.write` (PLAN P5-26; SPEC §12.1): the fields an author sets — `type`, `title`, `description`, `tags`,
+ * `resource`, optionally `stale_after` and `status`. The platform's keys (`sources`, `generated`, `verified`, `origin`, `share`) are never here: the
+ * tool drops them if the model sends them, so a bot cannot claim provenance it does not have. Phase 8's Archivist proposes a list of these.
+ *
+ * `type` is optional in the shape but not in OKF: the tool validates the concept it would write with `parseConcept` — the one pure validator the
+ * repo writer, the web editor's preview and this tool all call (PLAN §5) — so a proposal without a `type` is refused `okf_invalid`, in the
+ * parser's own words, exactly as a person's raw save of the same file would be.
+ */
+export const OkfProposal = z.strictObject({
+  /** The bundle-relative path of the concept (`memory/**` outside `memory/shared/`); the file path is the concept's identity. */
+  path: z.string().min(1).max(500),
+  type: z.string().trim().min(1).max(200).optional(),
+  title: z.string().max(500).optional(),
+  description: z.string().max(2_000).optional(),
+  tags: z.array(z.string().min(1).max(100)).max(100).optional(),
+  status: OkfStatus.optional(),
+  /** The frontmatter key `stale_after` (an ISO date, or a bare `YYYY-MM-DD`). */
+  staleAfter: z.string().max(64).optional(),
+  /** An extra frontmatter key OKF keeps: what the concept is about (a URL, a bundle path, a reference). */
+  resource: z.string().min(1).max(2_000).optional(),
+  body: z.string().max(MEMORY_PROPOSAL_BODY_MAX_CHARS).optional(),
+});
+export type OkfProposal = z.infer<typeof OkfProposal>;
+
+/**
+ * One fact `memory.recall` answers with (PLAN P5-26; SPEC §12.1). It is the engine's fact (id, text, the engine's own `type`, context, tags,
+ * document id) and — when the fact is a concept of the bundle, which the mirror's metadata says — the OKF provenance a reader needs to judge and
+ * cite it: the bundle path, the concept's `type`, its trust tier, whether `now` has passed `stale_after`, whether it is deprecated, and its origin.
+ * A fact whose concept the engine has forgotten (a deprecated one) is answered from the frontmatter index and carries the same fields.
+ */
+export const MemoryRecallFact = z.object({
+  id: z.string(),
+  text: z.string(),
+  /** The engine's own kind of fact (`world`, `experience`, `observation`), not the OKF `type`. */
+  type: z.string().nullable(),
+  context: z.string().nullable(),
+  tags: z.array(z.string()),
+  documentId: z.string().nullable(),
+  path: z.string().min(1).max(500).optional(),
+  conceptType: z.string().min(1).max(200).optional(),
+  trustTier: OkfTrustTier.optional(),
+  stale: z.boolean().optional(),
+  deprecated: z.boolean().optional(),
+  origin: z.string().max(64).optional(),
+});
+export type MemoryRecallFact = z.infer<typeof MemoryRecallFact>;
+
 /**
  * A concept as the database's frontmatter index knows it (PLAN Appendix A.5, `memory_concepts`; SPEC §12.1): one row per concept, rebuilt from
  * `repo.committed`, holding everything but the body. The Memory screen, Brain's filters and share selection read it; git stays the truth. `stale`

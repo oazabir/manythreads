@@ -27,7 +27,7 @@ const person: Actor = { kind: 'person', id: ActorId.parse(randomUUID()), workspa
 
 function setup(granted: string[] = [], approval: string[] = []) {
   const registry = new CapabilityRegistry();
-  for (const name of ['files.read', 'files.write', 'files.delete', 'files.move', 'pages.write', 'tasks.claim', 'gmail.read']) {
+  for (const name of ['files.read', 'files.write', 'files.delete', 'files.move', 'pages.write', 'memory.write', 'tasks.claim', 'gmail.read']) {
     registry.register({ name, destructive: false, plugin: 'test' });
   }
   registry.register({ name: 'files.purge', destructive: true, plugin: 'test' });
@@ -146,6 +146,56 @@ describe('broker: path guard (bot actors)', () => {
     const system: Actor = { kind: 'system', id: ActorId.parse(randomUUID()), workspaceId };
     expect((await broker.authorize(system, 'files.write', { path: 'bots/x/BOT.md' })).allowed).toBe(true);
     expect((await broker.authorize(person, 'files.write', { path: 'bots/x/BOT.md' })).allowed).toBe(true);
+  });
+});
+
+describe('broker: the memory.write path guard (PLAN P5-26)', () => {
+  const allowed = ['memory/facts/cache-ttl.md', 'memory/decisions/2026-10-01-cache.md', 'memory/a.md', './memory/b.md', 'memory/facts/../notes.md'];
+
+  it.each(allowed)('allows memory.write to a concept path %s', async (path) => {
+    const { broker, denials } = setup(['memory.write']);
+    expect(await broker.authorize(bot('conversation'), 'memory.write', { path })).toEqual({
+      allowed: true,
+      reason: 'granted',
+      needsApproval: false,
+    });
+    expect(denials).toHaveLength(0);
+  });
+
+  const refused = [
+    // the platform's own two files, and the shared subtree a bot never writes (P5-25)
+    'memory/index.md',
+    'memory/log.md',
+    'memory/shared/glossary.md',
+    'memory/shared/deep/x.md',
+    // only concepts: memory/**.md
+    'memory/facts/notes.txt',
+    'memory/facts/x.md.bak',
+    'memory/facts',
+    'memory/readme',
+    // a memory.write is confined to memory/**: no page, no bot file, no route around the guard
+    'pages/x.md',
+    'docs/x.md',
+    'TEAM.md',
+    'bots/x/BOT.md',
+    'inbox/drop.md',
+    'memory/../pages/x.md',
+    '../memory/x.md',
+    'memory/%2e%2e/shared/x.md',
+  ];
+
+  it.each(refused)('denies memory.write on %s, and logs it', async (path) => {
+    const { broker, denials } = setup(['memory.write']);
+    const d = await broker.authorize(bot('conversation'), 'memory.write', { path });
+    expect(d.allowed, d.reason).toBe(false);
+    expect(d.needsApproval).toBe(false);
+    expect(denials).toHaveLength(1);
+    expect(denials[0]).toMatchObject({ capability: 'memory.write', actorKind: 'bot', path });
+  });
+
+  it('a files.write grant is still no way into memory/, and memory.write is no way into a page', async () => {
+    expect((await setup(['files.write']).broker.authorize(bot('conversation'), 'files.write', { path: 'memory/facts/x.md' })).allowed).toBe(false);
+    expect((await setup(['memory.write']).broker.authorize(bot('conversation'), 'memory.write', { path: 'pages/x.md' })).allowed).toBe(false);
   });
 });
 

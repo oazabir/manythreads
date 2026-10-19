@@ -20,6 +20,12 @@ export interface MemoryHit {
   tags: string[];
   /** The document the fact came from: what a forget or an idempotent re-retain addresses. */
   documentId: string | null;
+  /**
+   * The provenance the item was retained with, as the engine returns it (the platform writes it; the memory plugin reads it back to label a
+   * concept's fact with its bundle path, its OKF type, trust tier, staleness and origin). Optional: an engine that does not return it, or a
+   * hand-written fact, leaves it out.
+   */
+  metadata?: Record<string, string>;
 }
 
 export interface MemoryRecallRequest {
@@ -107,10 +113,35 @@ export class MemoryError extends Error {
   }
 }
 
+/** Any key that could name a bank, a team, a workspace or a tenant, in any spelling (`bank_id`, `teamId`, `memoryBank`, `Team`). */
+const BANK_LIKE = /bank|team|workspace|tenant/i;
+
+/**
+ * Rejects an input that names a bank (or a team, a workspace, a tenant, in the `items` of a batch too). Runs before a schema parse so a forged key
+ * gets its own answer (`bank_not_allowed`) instead of a generic "unrecognized key"; only keys are looked at, never values. Every memory door calls
+ * it — the provider, `memory.recall`, `memory.retain` and `memory.write`: nobody names a bank, the platform derives it.
+ */
+export function refuseBankFields(input: unknown): void {
+  const check = (obj: unknown): void => {
+    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return;
+    for (const key of Object.keys(obj)) {
+      if (BANK_LIKE.test(key)) {
+        throw new MemoryError('bank_not_allowed', `“${key}” is not accepted: the memory bank is chosen by the platform from the run, never by the caller.`);
+      }
+    }
+  };
+  if (Array.isArray(input)) {
+    for (const item of input) check(item);
+    return;
+  }
+  check(input);
+  const items = (input as { items?: unknown } | null)?.items;
+  if (Array.isArray(items)) for (const item of items) check(item);
+}
+
 export interface MemoryProvider extends ProviderImpl {
   /** False when no engine is configured: every bank call then rejects with `not_configured`. */
-  readonly enabled: boolean;
-  /**
+  readonly enabled: boolean;  /**
    * The bank of the run `tx` belongs to (the transaction `ctx.runs.asBot` / `asReader` hands out): the team the run was opened for, found from
    * the database by `app.run_id()`, and only while the run is live and `tx.actor` is the run's bot or the person who asked.
    * Rejects `no_run` otherwise.
