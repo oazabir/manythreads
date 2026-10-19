@@ -385,20 +385,6 @@ export function createRepoService(deps: RepoServiceDeps) {
     for (const c of changes) {
       const parsed = parseRepoPath(c.path);
       if (!parsed.ok) throw repoInvalid(`path "${c.path}": ${parsed.reason}`);
-      // `channels/<name>/` of the Files tree is where channel attachments appear: a repo file there would be hidden by (or hide) them.
-      if (parsed.path.split('/')[0]?.normalize('NFKC').toLowerCase() === FILES_CHANNELS_DIR) {
-        throw repoInvalid(`path "${parsed.path}": channels/ is reserved for the attachments of channels; put the page under pages/`);
-      }
-      // PLAN D6 / P5-25: `inbox/` is Files storage, never a repo folder.
-      if (isInboxPath(parsed.path)) {
-        throw repoInvalid(`path "${parsed.path}": inbox/ is the team inbox (Files storage), never a repository folder`);
-      }
-      // P5-25: every concept file under `memory/` is validated now; index.md/log.md are platform-generated (P5-25 regenerates them).
-      if (c.op !== 'delete' && isConceptPath(parsed.path)) {
-        const text = typeof c.content === 'string' ? c.content : Buffer.from(c.content as Uint8Array).toString('utf8');
-        const verdict = parseConcept(text);
-        if (!verdict.ok) throw okfInvalid(parsed.path, verdict.reason);
-      }
       if (seen.has(parsed.path)) throw repoInvalid(`path "${parsed.path}" appears twice in one commit`);
       seen.add(parsed.path);
       prepared.push({
@@ -410,6 +396,20 @@ export function createRepoService(deps: RepoServiceDeps) {
     }
     for (const a of seen) for (const b of seen) if (a !== b && b.startsWith(`${a}/`)) throw repoInvalid(`paths "${a}" and "${b}" overlap (a file and a folder of one name)`);
     return { prepared, message: text };
+  }
+
+  /**
+   * The repository's own path rules, which are nobody's to break — `channels/<name>/` of the Files tree is where channel attachments appear (a repo
+   * file there would be hidden by, or hide, them) and `inbox/` is Files storage, never a repo folder (PLAN D6 / P5-25). Checked AFTER the broker:
+   * a bot that may not write here at all gets its capability denial (and its audit event), not this 400.
+   */
+  function assertRepoPaths(prepared: readonly Prepared[]): void {
+    for (const c of prepared) {
+      if (c.path.split('/')[0]?.normalize('NFKC').toLowerCase() === FILES_CHANNELS_DIR) {
+        throw repoInvalid(`path "${c.path}": channels/ is reserved for the attachments of channels; put the page under pages/`);
+      }
+      if (isInboxPath(c.path)) throw repoInvalid(`path "${c.path}": inbox/ is the team inbox (Files storage), never a repository folder`);
+    }
   }
 
   /** Who may write what (PLAN P4-05). Bots go through the kernel broker; people by team role; guests never. */
@@ -483,6 +483,15 @@ export function createRepoService(deps: RepoServiceDeps) {
     const t = await team(tx, teamId);
     const { prepared, message: text } = plan(changes, message);
     await authorizeWrite(tx, t, actor, prepared, options);
+    assertRepoPaths(prepared);
+    // P5-25: every concept file under `memory/` is validated by the one parser — AFTER authorization, never before it: a bot that may not write
+    // `memory/` gets the broker's 403 (and its audit event), not a content verdict on a file it was never allowed to write (this ordering is what
+    // `e2e/api/memory/okf-writer.spec.ts` pins). `index.md`/`log.md` are platform-generated and are regenerated in the same commit.
+    for (const c of prepared) {
+      if (c.content === null || !isConceptPath(c.path)) continue;
+      const verdict = parseConcept(c.content.toString('utf8'));
+      if (!verdict.ok) throw okfInvalid(c.path, verdict.reason);
+    }
     for (const c of prepared) {
       if (c.content === null) continue;
       const verdict = checkRepoContent(c.content);

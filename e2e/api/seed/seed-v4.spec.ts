@@ -42,9 +42,13 @@ test('Engineering: the §5.1 layout with pages, an app, memory with two subfolde
   expect(await names(nadia, 'engineering', 'pages')).toEqual(expect.arrayContaining(['runbook.md', 'reports', 'diagrams', 'weekly-digest.md', 'changelog.md']));
   expect(await names(nadia, 'engineering', 'pages/reports')).toEqual(['signups.csv']);
   expect(await names(nadia, 'engineering', 'pages/diagrams')).toEqual(['dispatch.mmd']);
-  expect(await names(nadia, 'engineering', 'memory')).toEqual(['facts', 'journal']);
-  expect((await names(nadia, 'engineering', 'memory/facts')).filter((n) => n.endsWith('.md')).length).toBeGreaterThanOrEqual(2);
-  expect((await names(nadia, 'engineering', 'memory/journal')).filter((n) => n.endsWith('.md')).length).toBe(1);
+  // the bundle carries the platform's own files (P5-25): the root index and log, and an `index.md` inside every folder that holds a concept
+  const sorted = (ns: string[]): string[] => [...ns].sort();
+  expect(sorted(await names(nadia, 'engineering', 'memory'))).toEqual(['facts', 'index.md', 'journal', 'log.md']);
+  const facts = await names(nadia, 'engineering', 'memory/facts');
+  expect(facts.filter((n) => n.endsWith('.md') && n !== 'index.md').length).toBeGreaterThanOrEqual(2);
+  const journal = await names(nadia, 'engineering', 'memory/journal');
+  expect(journal.filter((n) => n.endsWith('.md') && n !== 'index.md')).toHaveLength(1);
   expect(await names(nadia, 'engineering', 'apps/release-checklist')).toEqual(['index.html']);
   expect(await names(nadia, 'engineering', 'bots/coder')).toEqual(['BOT.md', 'lessons.md', 'memory.md']);
   expect(await text(nadia, 'engineering', 'pages/runbook.md')).toContain('## Rollback');

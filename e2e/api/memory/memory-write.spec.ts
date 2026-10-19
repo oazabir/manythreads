@@ -154,6 +154,9 @@ test('a path that is not a concept of the bundle is refused by the broker, audit
   const run = await openRun(request, SLUG);
 
   const refused = ['memory/shared/glossary.md', 'memory/index.md', 'memory/log.md', 'memory/facts/notes.txt', 'pages/x.md', 'inbox/drop.md'];
+  // `index.md`/`log.md` exist by now (the earlier test committed a concept): "nothing was committed" is their bytes not moving, plus the
+  // paths that must not exist still not existing.
+  const before = { index: await blobText(request, 'memory/index.md'), log: await blobText(request, 'memory/log.md') };
   for (const path of refused) {
     const { isError, answer } = await call(request, run, 'memory.write', { path, type: 'fact', body: 'x\n' });
     expect(answer, path).toMatchObject({ ok: false, code: 'forbidden' });
@@ -165,7 +168,11 @@ test('a path that is not a concept of the bundle is refused by the broker, audit
   );
   expect(denials.map((d) => d.payload['path'])).toEqual(refused);
   expect(denials.every((d) => d.payload['actorKind'] === 'bot')).toBe(true);
-  for (const path of refused.filter((p) => p.startsWith('memory/'))) expect(await blobText(request, path), path).toBe('');
+  for (const path of ['memory/shared/glossary.md', 'memory/facts/notes.txt', 'pages/x.md', 'inbox/drop.md']) {
+    expect(await blobText(request, path), path).toBe('');
+  }
+  expect(await blobText(request, 'memory/index.md')).toBe(before.index);
+  expect(await blobText(request, 'memory/log.md')).toBe(before.log);
 });
 
 test('a bot without the grant is never offered memory.write', async ({ request }) => {
