@@ -70,7 +70,7 @@ export function MemoryScreen() {
               <span className={`mm-chip mm-chip-trust mm-trust-${c.trustTier}`}>{c.trustTier}</span>
               {c.stale && <span className="mm-chip mm-chip-stale">stale</span>}
               {c.status === 'deprecated' && <span className="mm-chip mm-chip-deprecated">deprecated</span>}
-              {c.fromTeam && <span className="mm-chip mm-chip-from">from {c.fromTeam}'s digest</span>}
+              {c.fromTeam && <span className="mm-chip mm-chip-from">from a shared digest</span>}
             </li>
           ))}
         </ul>
@@ -83,6 +83,7 @@ export function MemoryScreen() {
               <span className={`mm-chip mm-chip-trust mm-trust-${selected.trustTier}`}>{selected.trustTier}</span>
               {selected.stale && <span className="mm-chip mm-chip-stale">stale</span>}
               {selected.status === 'deprecated' && <span className="mm-chip mm-chip-deprecated">deprecated</span>}
+              {selected.fromTeam && <span className="mm-chip mm-chip-from">from a shared digest</span>}
             </div>
             {selected.tags.length > 0 && <div className="mm-tags">{selected.tags.join(', ')}</div>}
             <div className="mm-actions">

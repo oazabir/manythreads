@@ -12,6 +12,7 @@ import './styles/bots.css';
 import './styles/approvals.css';
 import './styles/conversations.css';
 import './styles/answer.css';
+import './styles/memory.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
 

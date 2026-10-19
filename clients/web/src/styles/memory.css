@@ -1,0 +1,199 @@
+/*
+ * The Memory screen (PLAN P5-28): the team's OKF memory bundle - concepts, trust tiers and provenance.
+ * The concept list is a tree on the left, the concept itself on the right. Colours come from tokens.css only;
+ * the chips are the shared `.chip` of app.css with a memory suffix for the tier and the markers.
+ */
+
+.mm-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px;
+  height: 100%;
+  overflow: auto;
+}
+
+.mm-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mm-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.mm-subtitle {
+  margin: 0;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.mm-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(280px, 420px);
+  gap: 20px;
+  align-items: start;
+}
+
+.mm-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.mm-concept {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hairline);
+  cursor: pointer;
+}
+
+.mm-concept:last-child {
+  border-bottom: none;
+}
+
+.mm-concept:hover {
+  background: var(--table-head);
+}
+
+.mm-concept-selected {
+  background: var(--nav-on);
+}
+
+.mm-concept-path {
+  font-size: 13px;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.mm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+.mm-chip-type {
+  border-color: var(--agent);
+  background: var(--agent-wash);
+  color: var(--agent);
+}
+
+.mm-trust-human-reviewed,
+.mm-chip-trust.mm-trust-human-reviewed {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.mm-trust-machine-confirmed,
+.mm-chip-trust.mm-trust-machine-confirmed {
+  border-color: var(--human);
+  color: var(--human);
+}
+
+.mm-trust-unverified,
+.mm-chip-trust.mm-trust-unverified {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.mm-chip-stale {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.mm-chip-deprecated {
+  border-color: var(--rule);
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.mm-chip-from {
+  border-color: var(--human);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.mm-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 16px;
+}
+
+.mm-detail-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mm-detail-desc {
+  margin: 0;
+  color: var(--mute);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.mm-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mm-tags {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.mm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.mm-actions button {
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.mm-actions button:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+/* Phone: the concept and its detail are one column, and the detail follows the list. */
+@media (width <= 720px) {
+  .mm-screen {
+    padding: 14px 16px;
+  }
+
+  .mm-body {
+    grid-template-columns: 1fr;
+  }
+}
