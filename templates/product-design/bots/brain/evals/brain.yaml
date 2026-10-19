@@ -198,7 +198,6 @@ cases:
           kind: memory
           scope: team
           visibleToAsker: true
-          trustTier: unverified
           text: "Cache TTL is 60 seconds."
     expect:
       minCitations: 1
@@ -217,7 +216,6 @@ cases:
           kind: memory
           scope: team
           visibleToAsker: true
-          stale: true
           text: "Deploys run 02:00-04:00 UTC."
     expect:
       minCitations: 1
@@ -236,7 +234,6 @@ cases:
           kind: memory
           scope: team
           visibleToAsker: true
-          deprecated: true
           text: "We use Angular for the frontend."
     expect:
       notMentions: ["Angular"]
