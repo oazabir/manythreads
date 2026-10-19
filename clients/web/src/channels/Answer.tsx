@@ -145,11 +145,23 @@ function Citation({ c, teamSlug, teamSlugOf, who }: { c: AnswerCitation | Answer
   const target = citationTarget(c, teamSlug, teamSlugOf);
   const common = { className: `an-cite an-scope-${c.scope}`, 'data-testid': 'answer-citation', 'data-kind': c.kind, 'data-n': c.n } as const;
   const label = `Source ${c.n}: ${c.label}`;
+  const memoryBadges = c.kind === 'memory'
+    ? (
+      <span className="an-memory-badges" data-testid="answer-memory-badges">
+        <span className="an-memory-badge an-memory-badge-type">{c.type}</span>
+        <span className={`an-memory-badge an-memory-badge-trust an-memory-trust-${c.trustTier}`}>{c.trustTier}</span>
+        {c.stale && <span className="an-memory-badge an-memory-badge-stale">stale</span>}
+        {c.deprecated && <span className="an-memory-badge an-memory-badge-deprecated">deprecated</span>}
+        {c.fromTeam && <span className="an-memory-badge an-memory-badge-from">from {c.fromTeam}'s digest</span>}
+      </span>
+    )
+    : null;
   if (target?.type === 'route') {
     return (
       <li>
         <Link {...common} aria-label={label} to={{ pathname: target.pathname, search: target.search }} state={target.state}>
           <CiteBody n={c.n} label={c.label} />
+          {memoryBadges}
         </Link>
       </li>
     );
@@ -159,6 +171,7 @@ function Citation({ c, teamSlug, teamSlugOf, who }: { c: AnswerCitation | Answer
       <li>
         <a {...common} aria-label={label} href={target.href} download>
           <CiteBody n={c.n} label={c.label} />
+          {memoryBadges}
         </a>
       </li>
     );
@@ -167,6 +180,7 @@ function Citation({ c, teamSlug, teamSlugOf, who }: { c: AnswerCitation | Answer
     <li>
       <span {...common} title={label}>
         <CiteBody n={c.n} label={c.label} />
+        {memoryBadges}
       </span>
     </li>
   );
