@@ -38,10 +38,13 @@ server:
   replicas: 1
   # The release runs in test mode, and that is deliberate: the api specs sign in with the
   # test-only actor header (`x-manythreads-dev-actor`), which the server honours only when
-  # NODE_ENV is not production. The live release keeps NODE_ENV=production (the image's
-  # default); only this throwaway namespace turns it off.
+  # NODE_ENV is not production, and they call the test-only plugin's routes
+  # (`/api/test/echo`, `/api/test/stub-resources`), which exist only when the test plugins
+  # are loaded. The live release keeps NODE_ENV=production and no test plugins (the image's
+  # defaults); only this throwaway namespace turns them on.
   env:
     NODE_ENV: test
+    MANYTHREADS_TEST_PLUGINS: "1"
   blobs:
     persistence:
       enabled: true

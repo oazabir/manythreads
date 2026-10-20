@@ -106,7 +106,8 @@ test('one answer per run: a second call is refused and the thread has the first'
 });
 
 test('a citation of a kind this client has never seen is a neutral chip and the answer still reads', async ({ browser, playwright, isMobile }) => {
-  // arrange what only a newer server would write: a `memory` citation (P5-27) next to the known one, on the first answer's message
+  // arrange what only a newer server would write: a citation of a kind this client has never
+  // seen (P5-27 gave the client the `memory` kind, so `calendar` is the unknown one now)
   const answered = (
     await stack.sql<{ id: string; meta: { answer: { citations: unknown[] } } }>(
       `SELECT m.id, m.meta FROM app.messages m WHERE m.meta ? 'answer' AND m.body LIKE 'The deploy is waiting%' ORDER BY m.created_at LIMIT 1`,
@@ -116,7 +117,7 @@ test('a citation of a kind this client has never seen is a neutral chip and the 
     ...answered.meta,
     answer: {
       ...answered.meta.answer,
-      citations: [...answered.meta.answer.citations, { kind: 'memory', n: 2, conceptPath: 'memory/facts/window.md', trustTier: 'human-reviewed', stale: false, deprecated: false }],
+      citations: [...answered.meta.answer.citations, { kind: 'calendar', n: 2 }],
     },
   };
   // the row's trigger keeps a message's meta fixed for every caller but the system role: the owner lifts it for this one statement
@@ -132,7 +133,7 @@ test('a citation of a kind this client has never seen is a neutral chip and the 
   try {
     await expect(page.getByTestId('answer')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('answer-citation')).toHaveCount(2);
-    await expect(page.locator('[data-testid="answer-citation"][data-kind="memory"]')).toContainText('Unsupported source');
+    await expect(page.locator('[data-testid="answer-citation"][data-kind="calendar"]')).toContainText('Unsupported source');
     await expect(page.getByTestId('answer-text')).toContainText('The deploy is waiting for the Monday window');
   } finally {
     await close();

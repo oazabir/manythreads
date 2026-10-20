@@ -102,32 +102,40 @@ if [ "$RUN_TESTS" = "1" ]; then
   docker compose -f deploy/compose/docker-compose.dev.yml --profile s3 up -d --wait minio || true
   CI=true MANYTHREADS_TEST_S3=1 MANYTHREADS_TEST_S3_ENDPOINT=http://127.0.0.1:9000 pnpm test --maxWorkers=3
 
-  stage "port-forward to the CI release (web $CI_WEB_PORT)"
-  # One forward, to the web service: the web pod's nginx proxies /api (and /ws) to the
-  # server, so the api specs use the same origin as the browser ones. A second forward to
-  # the server service would die whenever the server pod restarts, and a port-forward to
-  # a pod that restarts is a port-forward that stops answering.
+  stage "the candidate release answers (the CI namespace, through a port-forward)"
+  # A short port-forward: the release is checked here and left alone after that. The test
+  # suite itself runs against its own instances (the Playwright config starts a fresh
+  # database, an empty world and an idle world for it) — pointing the whole suite at one
+  # deployed release would break the specs that need a pristine world, and the ones that
+  # write would leave their traces in it for the specs that follow.
   kubectl -n "$CI_NAMESPACE" port-forward svc/manythreads-web "$CI_WEB_PORT:80" >/dev/null 2>&1 &
+  PF_PIDS+=($!)
+  # The server itself, for the one route the web pod does not proxy (/openapi.json).
+  kubectl -n "$CI_NAMESPACE" port-forward svc/manythreads-server "$CI_API_PORT:3000" >/dev/null 2>&1 &
   PF_PIDS+=($!)
   for _ in $(seq 1 60); do
     if curl -fsS -o /dev/null "http://127.0.0.1:$CI_WEB_PORT/healthz" 2>/dev/null; then break; fi
     sleep 2
   done
-  curl -fsS -o /dev/null "http://127.0.0.1:$CI_WEB_PORT/healthz" || fail "the CI release did not answer on the port-forward"
+  CI_ORIGIN="http://127.0.0.1:$CI_WEB_PORT"
+  curl -fsS -o /dev/null "$CI_ORIGIN/healthz" || fail "the CI release did not answer /healthz"
+  curl -fsS -o /dev/null "$CI_ORIGIN/readyz" || fail "the CI release did not answer /readyz"
+  curl -fsS -o /dev/null "http://127.0.0.1:$CI_API_PORT/openapi.json" || fail "the CI release did not answer /openapi.json"
+  # A persona signs in through the real form and sees the seeded world.
+  COOKIE_JAR=$(mktemp)
+  curl -fsS -c "$COOKIE_JAR" -o /dev/null -X POST "$CI_ORIGIN/api/auth/password/sign-in" \
+    -H "Content-Type: application/json" \
+    --data-binary '{"email":"omar@kahf.example","password":"correct-horse-battery"}' \
+    || fail "no persona could sign in to the CI release"
+  curl -fsS -b "$COOKIE_JAR" -o /dev/null "$CI_ORIGIN/api/teams/engineering/channels" \
+    || fail "the signed-in persona could not read the channel directory"
+  rm -f "$COOKIE_JAR"
+  echo "the candidate release answers, a persona signs in and the seeded world is there"
 
-  stage "the browser suite (playwright, against the CI release)"
-  # The specs that start a stack of their own need the built web client. With an external
-  # origin the Playwright config starts no web server, and that server was what built the
-  # client — so build it here, or every one of those specs fails in its beforeAll.
-  pnpm --filter @manythreads/web build
-  # The test sign-in token of the CI release: the api specs read it from the environment.
-  # It never leaves the devbox (it is read from the release's own secret).
-  CI_TEST_TOKEN=$(kubectl -n "$CI_NAMESPACE" get secret manythreads-server-secrets -o jsonpath='{.data.test-auth-token}' | base64 -d)
-  [ -n "$CI_TEST_TOKEN" ] || fail "the CI release has no test sign-in token"
-  MANYTHREADS_TEST_AUTH_TOKEN="$CI_TEST_TOKEN" \
-    MANYTHREADS_URL="http://127.0.0.1:$CI_WEB_PORT" \
-    MANYTHREADS_API_URL="http://127.0.0.1:$CI_WEB_PORT" \
-    pnpm e2e
+  stage "the browser and api suite (playwright, with its own instances on the devbox)"
+  # Two workers: the devbox is shared with whatever else runs there, and a suite that
+  # fights for the CPU fails on timeouts that are not the product's.
+  pnpm e2e --workers=2
 fi
 
 # --- 5 · promote the same build to the live namespace -------------------------

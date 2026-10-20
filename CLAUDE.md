@@ -116,10 +116,11 @@ Keep command output small: pipe through `tail -n 40` or grep for failures. Never
 **The GitHub runner carries code only.** The `ci` workflow copies the tree to the devbox and
 runs `tools/devbox/ci.sh` there: the build, the whole test suite (unit, integration and the
 browser tests) and the deploy all happen on the devbox, which owns the cluster. The candidate
-is deployed first into its own k3s namespace (`manythreads-ci`, `values-ci.yaml`) and the
-browser tests run against that release; only a green run promotes the same build to the live
-namespace (`manythreads`). Never install or run Playwright on a GitHub runner: its image has
-no Chromium build.
+is deployed first into its own k3s namespace (`manythreads-ci`, `values-ci.yaml`) and checked
+there — it answers, a persona signs in, the seeded world is there; only then is the same build
+promoted to the live namespace (`manythreads`). The test suite itself runs with the instances
+it starts for itself (a fresh database, an empty world, an idle world), never against that one
+release. Never install or run Playwright on a GitHub runner: its image has no Chromium build.
 
 ## Agent rules (for every subagent)
 - Read this file and `MISTAKES.md` first. Read only the spec/plan sections your task cites.

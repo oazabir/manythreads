@@ -23,8 +23,9 @@ The scripts live in `tools\devbox\` — see [Scripts](#scripts) below.
 
 The GitHub Actions run the same pipeline on the devbox, in their own checkout (`/root/ci`):
 the `ci` workflow copies the tree there and runs `tools/devbox/ci.sh`, which builds the
-images, deploys the candidate into the CI namespace (`manythreads-ci`), runs the whole test
-suite against it, and promotes the same build to the live namespace (`manythreads`).
+images, deploys the candidate into the CI namespace (`manythreads-ci`), checks that release,
+runs the test suite (with the instances it starts for itself) and promotes the same build to
+the live namespace (`manythreads`).
 
 ## What runs where
 
