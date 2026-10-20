@@ -17,6 +17,8 @@ duplicated and existing passwords are kept.
 Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
 
   --demo           random persona passwords, stored only as hashes and printed nowhere (public deployments)
+  --fixed-passwords  keep the demo content but give every persona the known test password, so a browser test can
+                    sign in (the CI release on the devbox; never a public deployment)
   --no-content     only the workspace, teams and people (no channels or messages)
   --no-repo        leave out seed v4 (the repositories and the three extra attachments)
   --guard          add seed v5: the standard guard preset and the local alias bound to a model on this machine (needs the gateway-llm tables)
@@ -26,8 +28,9 @@ Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
   -h, --help       this text
 `;
 
-function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: number; content: boolean; attachment: boolean; repo: boolean; guard: boolean } | null {
+function parseArgs(argv: string[]): { demo: boolean; fixedPasswords: boolean; migrate: boolean; wait: number; content: boolean; attachment: boolean; repo: boolean; guard: boolean } | null {
   let demo = false;
+  let fixedPasswords = false;
   let content = true;
   let repo = true;
   let attachment = true;
@@ -37,6 +40,7 @@ function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: num
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--demo') demo = true;
+    else if (a === '--fixed-passwords') fixedPasswords = true;
     else if (a === '--migrate') migrate = true;
     else if (a === '--no-content') content = false;
     else if (a === '--no-repo') repo = false;
@@ -48,7 +52,7 @@ function parseArgs(argv: string[]): { demo: boolean; migrate: boolean; wait: num
     else throw new Error(`unknown argument "${a}"\n\n${USAGE}`);
   }
   if (!Number.isFinite(wait) || wait < 0) throw new Error('--wait takes a number of seconds');
-  return { demo, migrate, wait, content, attachment, repo, guard };
+  return { demo, fixedPasswords, migrate, wait, content, attachment, repo, guard };
 }
 
 const env = process.env;
@@ -114,7 +118,7 @@ while (!(await migrated(url, args.content, args.repo))) {
   await sleep(2000);
 }
 
-const result = await seedWorld({ systemUrl: url }, { demo: args.demo, content: args.content, repo: args.content && args.repo, guard: args.guard, contentOptions: { attachment: args.attachment }, log: (line) => console.log(`seed: ${line}`) });
+const result = await seedWorld({ systemUrl: url }, { demo: args.demo, passwordMode: args.fixedPasswords ? 'fixed' : undefined, content: args.content, repo: args.content && args.repo, guard: args.guard, contentOptions: { attachment: args.attachment }, log: (line) => console.log(`seed: ${line}`) });
 // Nothing below prints a credential: in demo mode the passwords never leave seedWorld.
 console.log(
   result.skipped

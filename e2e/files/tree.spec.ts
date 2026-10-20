@@ -34,7 +34,7 @@ test('one tree over the repo and the attachments of #dev', async ({ browser, pla
     await expect(tree(page, 'memory/journal')).toBeVisible();
     await expect(tree(page, 'memory/facts')).toBeVisible();
     await expect(page.locator('[data-testid="tree-node"][data-path^="memory/"][data-kind="folder"]')).toHaveCount(2);
-    await expect(tree(page, 'memory')).toHaveAttribute('title', 'Managed by team memory');
+    await expect(tree(page, 'memory')).toHaveAttribute('title', 'OKF memory bundle');
 
     // channels/dev/: the channel folder opens in the same tree; its attachments are the rows of the list
     await tree(page, 'channels').getByTestId('tree-caret').click();

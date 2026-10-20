@@ -22,10 +22,11 @@ describe('sidebar contract', () => {
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);
   });
 
-  it('entries not built yet carry product copy for their empty state (Files is built: it carries none)', () => {
+  it('entries not built yet carry product copy for their empty state (Files and Boards are built: they carry none)', () => {
     const copy = Object.fromEntries(CORE_NAV.map((i) => [i.id, i.emptyState]));
     expect(copy['files']).toBeUndefined();
-    expect(copy['boards']).toBe('No boards yet');
+    // Boards is a real screen now, so the sidebar must not subtitle it "No boards yet" beside a board that exists.
+    expect(copy['boards']).toBeUndefined();
     expect(copy['approvals']).toBe('Nothing waiting');
     expect(copy['bots']).toBe('No bots yet');
     expect(JSON.stringify(CORE_NAV)).not.toMatch(/later phase|phase \d/i);

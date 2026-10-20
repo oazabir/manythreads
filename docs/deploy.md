@@ -1,20 +1,53 @@
 # Deploying manythreads (k3s at manythreads.kahf.to)
 
-Single-node k3s (65.109.71.84, SSH port 44033). The sandbox cannot reach SSH; only GitHub Actions can,
-using the repo secret `ROOT_PASSWORD` (via `sshpass -e`, never echoed).
+Single-node k3s (65.109.71.84, SSH port 44033), which is also the **devbox** — the box the
+Windows dev loop and the test suites run on. The sandbox cannot reach SSH; only GitHub
+Actions can, using the repo secret `ROOT_PASSWORD` (via `sshpass -e`, never echoed).
+
+## The rule: the GitHub runner carries code, the devbox builds and tests
+The Actions workflows are triggers and transport, not builders. A GitHub runner costs minutes
+we do not have, and its image carries no browser, so the end-to-end tests could not run there
+at all. Every workflow that touches the product therefore copies the tree to the devbox
+(`/root/ci`, its own checkout) and runs a script there.
+
+| Workflow | What it does on the devbox |
+|---|---|
+| `ci` (push to `main`, pull request, manual) | `tools/devbox/ci.sh`: install, lint, typecheck, build the images, deploy the candidate into the **CI namespace** `manythreads-ci`, check that release, run the unit, integration and browser suites, and — on a push to `main` — promote the same build to the live namespace `manythreads` and smoke-test the site. A pull request stops before the live deploy (`--no-deploy`). |
+| `release` (a "Phase N · …" push to `main`, manual) | tags `phase-N` and `v0.N.0`; the deploy of that same push is the `ci` workflow's job, so the two never deploy at once. |
+| `deploy` (`v*` tag, manual) | `tools/devbox/deploy.sh` on the devbox: build, import, helm upgrade, smoke test. |
+| `screenshots` (manual) | the browser run happens on the devbox (it has Chromium); the runner takes the pictures back and commits them to the `screenshots` branch. |
+| `ops-*` (manual) | kubectl/helm against the cluster from the runner; no build. |
+
+## The CI namespace (`manythreads-ci`)
+The candidate build is deployed into its own k3s namespace before anything reaches the live
+one (`deploy/helm/manythreads/values-ci.yaml`): its own Postgres cluster, its own volumes, no
+ingress (nothing on the internet can reach it) and the test sign-in route on. The pipeline
+checks that release there — it answers, a persona signs in through the real form, the seeded
+world is there — and only then promotes the same build to the live namespace (`manythreads`).
+Every run replaces the namespace, so the check always sees a pristine world.
+
+The **test suite** does not run against that release: the Playwright config starts the
+instances it needs for itself (a server with a fresh database, an empty world, an idle world),
+and several specs write to the instance they use. Pointing the whole suite at one deployed
+release would break the specs that need an empty world and let one spec's leftovers reach the
+next. The suite therefore runs on the devbox with its own instances, and the CI namespace
+proves the thing the suite cannot: that the **built image** starts, migrates, seeds and
+serves.
 
 ## How a deploy works
-- Pushing a tag `v*` runs `.github/workflows/deploy.yml`, which checks out **latest `main`** (not the tagged
-  commit) and runs the composite action `.github/actions/deploy-manythreads`.
+- A push to `main` runs `.github/workflows/ci.yml`: it copies the tree to the devbox and runs
+  `tools/devbox/ci.sh`, which builds `manythreads/server:<sha>` and `manythreads/web:<sha>` on
+  the devbox, imports them into its own k3s containerd (no registry; `imagePullPolicy:
+  IfNotPresent`; old server/web tags are pruned except the new one and those in use by pods),
+  installs helm if missing and the CloudNativePG operator (`cnpg/cloudnative-pg` into
+  `cnpg-system`), runs `helm upgrade --install` into `manythreads-ci`, tests that release, and
+  then promotes the same tag into `manythreads` and smoke-tests `https://manythreads.kahf.to/`.
+- Pushing a tag `v*` runs `.github/workflows/deploy.yml`, which checks out **latest `main`**
+  (not the tagged commit) and runs the composite action `.github/actions/deploy-manythreads`
+  (the same devbox path, without the tests).
 - `ops-rollout` does the same for any branch/sha without tagging.
-- The action: builds `manythreads/server:<sha>` and `manythreads/web:<sha>` (and `manythreads/postgres:19` the first time,
-  or with `rebuild-postgres`), ships them with `docker save | gzip | ssh 'gunzip | k3s ctr -n k8s.io images import -'`
-  (no registry; `imagePullPolicy: IfNotPresent`; old server/web tags are pruned except the new one and those in use by pods),
-  installs helm if missing and the CloudNativePG operator (`cnpg/cloudnative-pg` into `cnpg-system`),
-  copies `deploy/helm/manythreads` over, runs `helm upgrade --install manythreads ... --wait --timeout 10m`
-  and smoke-tests `https://manythreads.kahf.to/` (and `/healthz`, soft-fail).
-- If `helm --wait` fails only because the server crash-loops (while `packages/server/src/main.ts` is a stub),
-  the action warns and continues as long as web and Postgres are ready.
+- If `helm --wait` fails only because the server crash-loops, the deploy warns and continues
+  as long as web and Postgres are ready.
 - TLS: the original whoami ingress had no `tls:` block; Traefik serves websecure with its default cert.
   The chart keeps that (`ingress.tls.enabled=false`), so the smoke test uses `curl -k`.
   Set `ingress.tls.*` in values when a real certificate exists. whoami is deleted on the first manythreads deploy.
@@ -98,11 +131,12 @@ a random password that is stored only as an argon2id hash and printed nowhere, s
 Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-repo] [--no-attachment] [--migrate] [--wait <secs>]`.
 
 ## Screenshots of the live site
-`.github/workflows/screenshots.yml` runs when `release` completes successfully for a `Phase N ·` merge (and by hand: Actions, screenshots,
-Run workflow, optional phase). It generates a random one-off password (`openssl rand -hex 24`, masked with `::add-mask::` before first
+`.github/workflows/screenshots.yml` runs **by hand only** (Actions, screenshots, Run workflow, optional phase) — the owner rule is that
+Actions minutes are reserved for building and deploying, and phase-exit pictures are taken on the devbox over SSH. It generates a random one-off password (`openssl rand -hex 24`, masked with `::add-mask::` before first
 use), sets it for Omar, Nadia, Rafi and Lena through `remote_set_password` (`.github/actions/lib/remote.sh`: the password goes over the SSH
 stream into `kubectl exec -i ... admin set-password <email>` on stdin, never in an argument or a log), then runs `e2e/screens/live.shots.ts`
-(`pnpm -C e2e exec playwright test -c screens/live.config.ts`), which signs in through the real sign-in form. At 1440x900: sign-in, teams, roster, members,
+(`pnpm -C e2e exec playwright test -c screens/live.config.ts`) — **on the devbox**, because a GitHub runner has no Chromium; the runner
+copies the tree there, fetches the pictures back and commits them to the `screenshots` branch. The shots sign in through the real sign-in form. At 1440x900: sign-in, teams, roster, members,
 account, settings sign-in, teams as a guest (phase 2), and for phase 3 `channel-dev-thread` (Nadia in #dev with the "Deploy plan" thread in the right panel), `threads-inbox` (Rafi, Unread tab with
 his unread reply), `search-rolback` (Nadia searches the typo "rolback"), `dm` (Rafi and Nadia), `guest-releases` (Lena in #releases). At 390x844: sign-in, members, `guest-releases`, `channel-dev` (Nadia, drawer closed)
 and `channel-dev-drawer` (drawer open). Selectors are roles, labels, `data-landmark` and `data-testid`. The folder is `phase-N/{desktop,mobile}/`, N from the `Phase N ·` merge title (or the latest `phase-*` tag when run by hand).

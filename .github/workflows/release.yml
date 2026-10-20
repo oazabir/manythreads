@@ -1,9 +1,11 @@
 name: release
-# Phase exit: tag main as phase-N and v0.N.0, then deploy latest main.
+# Phase exit: tag main as phase-N and v0.N.0.
 # Runs automatically when a push to main has a head commit titled "Phase N · ..." (the phase PR
 # merge commit), or manually via workflow_dispatch.
 # Exists because the coding sandbox cannot push tags; tags pushed with GITHUB_TOKEN
-# do not trigger deploy.yml, so this workflow deploys itself.
+# do not trigger deploy.yml, so this workflow tags them itself.
+# The deploy of that push is the ci workflow's job (it builds, tests and deploys on the devbox);
+# this one only tags, so the two never deploy at the same time.
 on:
   push:
     branches: [main]
@@ -18,7 +20,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: deploy
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -47,8 +49,3 @@ jobs:
             if git rev-parse -q --verify "refs/tags/$t" >/dev/null; then echo "$t exists, keeping it"; continue; fi
             git tag -a "$t" -m "Phase $PHASE" && git push -q origin "refs/tags/$t"
           done
-      - if: steps.phase.outputs.phase != ''
-        uses: ./.github/actions/deploy-manythreads
-        with:
-          label: main
-          ssh-password: ${{ secrets.ROOT_PASSWORD }}

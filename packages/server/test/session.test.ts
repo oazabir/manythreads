@@ -111,4 +111,26 @@ describe('proxy trust and the test endpoint token', () => {
     expect(() => resolveTestAuthToken(undefined, { MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30), NODE_ENV: 'production' })).toThrow(/production/);
     expect(() => resolveTestAuthToken('short', { NODE_ENV: 'test' })).toThrow(/16 characters/);
   });
+
+  it('lets a throwaway test environment opt in explicitly (the CI release on the devbox)', () => {
+    // Without the opt-in, a production process refuses to start with the token at all.
+    expect(() =>
+      resolveTestAuthToken(undefined, { MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30), NODE_ENV: 'production' }),
+    ).toThrow(/production/);
+    // With it, the token is accepted — and the flag is honoured only when it is exactly "1".
+    expect(
+      resolveTestAuthToken(undefined, {
+        MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30),
+        NODE_ENV: 'production',
+        MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION: '1',
+      }),
+    ).toBe('x'.repeat(30));
+    expect(() =>
+      resolveTestAuthToken(undefined, {
+        MANYTHREADS_TEST_AUTH_TOKEN: 'x'.repeat(30),
+        NODE_ENV: 'production',
+        MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION: 'true',
+      }),
+    ).toThrow(/production/);
+  });
 });

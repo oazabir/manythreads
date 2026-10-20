@@ -21,6 +21,12 @@ https://manythreads.kahf.to  ◄── k3s (Traefik ingress, namespace `manythre
 
 The scripts live in `tools\devbox\` — see [Scripts](#scripts) below.
 
+The GitHub Actions run the same pipeline on the devbox, in their own checkout (`/root/ci`):
+the `ci` workflow copies the tree there and runs `tools/devbox/ci.sh`, which builds the
+images, deploys the candidate into the CI namespace (`manythreads-ci`), checks that release,
+runs the test suite (with the instances it starts for itself) and promotes the same build to
+the live namespace (`manythreads`).
+
 ## What runs where
 
 | Step | Where | Command |
@@ -33,11 +39,13 @@ The scripts live in `tools\devbox\` — see [Scripts](#scripts) below.
 | Build images (`docker build`, includes `vite build`) | devbox | via `deploy.sh` |
 | Deploy to k3s (`helm upgrade --install`) | devbox | via `deploy.sh` |
 | Verify the live site | Windows (curl) + devbox (kubectl) | end of `Ship.ps1` |
+| The CI pipeline (build, test, deploy) | devbox | `tools/devbox/ci.sh` (the `ci` workflow runs it) |
 
-The GitHub Actions deploy path (tags/`main` → `release.yml`/`ops-rollout`, see
-[docs/deploy.md](docs/deploy.md)) is unchanged and still deploys **committed `main`**.
+The GitHub Actions path (tags/`main` → `ci`/`release`/`deploy`, see
+[docs/deploy.md](docs/deploy.md)) runs the same build, the same tests and the same deploy on
+the devbox — the runner only carries the code. It deploys **committed `main`**.
 This loop is for iterating on your working tree; a `Ship.ps1` deploy is overwritten
-the next time Actions deploys `main`.
+the next time the pipeline deploys `main`.
 
 ## One-time setup (Windows)
 
@@ -126,7 +134,8 @@ Granular steps when you want them:
 | `Ship.ps1` | The full pipeline: `Check` → `Sync-Up` → `remote-gates.sh` → `deploy.sh` → verify. Switches: `-SkipLocal`, `-SkipTests`, `-SkipDeploy`, `-ExpectString`. |
 | `_common.ps1` | Shared rsync/ssh discovery and the exclude list (dot-sourced, not run directly). |
 | `remote-gates.sh` | Runs on the devbox: `pnpm install` → `pnpm lint` → `pnpm typecheck` → `pnpm db:up` → `pnpm test --maxWorkers=3`. `--no-tests` stops after typecheck. |
-| `deploy.sh` | Runs on the devbox: `docker build` server+web → import into k3s containerd → prune old tags → `helm upgrade --install` → smoke-test the site. |
+| `ci.sh` | Runs on the devbox: the whole pipeline — install, lint, typecheck, build the images, deploy the candidate into the CI namespace (`manythreads-ci`), run the unit, integration and browser suites against it, and promote the same build to the live namespace. `--no-tests`, `--no-deploy`. |
+| `deploy.sh` | Runs on the devbox: `docker build` server+web → import into k3s containerd → prune old tags → `helm upgrade --install` → smoke-test the site. `--no-build` promotes a build that is already there (`ci.sh` does that). |
 
 ## How deploy + verify works
 
@@ -148,6 +157,10 @@ Granular steps when you want them:
 
 ## Sync rules
 
+- **Two checkouts on the devbox.** `/root/manythreads` is this loop's (what `Sync-Up.ps1`
+  writes); `/root/ci` is the pipeline's, and every CI run replaces it. `Sync-Up` never
+  touches `/root/ci` — and while another agent works in `/root/manythreads`, an rsync with
+  `--delete` over it can delete or overwrite that agent's uncommitted files.
 - **Contents only, not history.** rsync copies the working tree; `.git/` is excluded
   on both sides. Commit/push with git as usual (`git push` / on the devbox
   `git pull`) — the devbox checkout tracks the same origin.

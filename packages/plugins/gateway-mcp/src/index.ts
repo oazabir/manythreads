@@ -15,10 +15,9 @@ export { registerMcpRoutes } from './routes.ts';
  * capabilities plugins registered, checked one by one by the kernel's broker; the JSON-RPC face is in
  * `src/protocol.ts` and the shapes on the wire are HTTP's (docs/plugins/gateway-mcp.md).
  *
- * It also declares, for now, the capabilities whose owning plugin does not exist yet — `knowledge.search`
- * (answering an empty result with the reason, which SPEC §12.4 asks for until bases are configured) and the four
- * `tasks.*` names (answering that the board is not part of this deployment). Both are stubs by construction: they
- * never invent content, and when their plugins land they take the declaration over.
+ * It still declares `knowledge.search`, whose owning plugin does not exist yet: a stub that answers an empty result
+ * with the reason (SPEC §12.4 asks for that until bases are configured) and never invents content. The `tasks.*`
+ * tools are the tasks plugin's own capabilities now; this catalog only describes them (PLAN P6-02).
  */
 export default definePlugin({
   manifest: {

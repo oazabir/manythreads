@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,39}$"
+    },
+    "protected": {
+      "default": false,
+      "type": "boolean"
+    },
+    "needsApproval": {
+      "default": false,
+      "type": "boolean"
+    },
+    "windows": {
+      "default": [],
+      "maxItems": 14,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "mon",
+                "tue",
+                "wed",
+                "thu",
+                "fri",
+                "sat",
+                "sun"
+              ]
+            }
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+          }
+        },
+        "required": [
+          "days",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "deployCap": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "autoRollback": {
+      "default": true,
+      "type": "boolean"
+    },
+    "credentialRef": {
+      "default": "",
+      "type": "string",
+      "maxLength": 200
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "additionalProperties": false
+}

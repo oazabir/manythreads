@@ -22,6 +22,12 @@ export interface SeedOptions {
    * the test-session endpoint. Default false: everybody has `PERSONA_PASSWORD` (tests).
    */
   demo?: boolean;
+  /**
+   * The personas' passwords: `random` (hashed and forgotten, the public-demo default) or `fixed` (everybody has
+   * `PERSONA_PASSWORD`, so a test can sign in). Overrides `demo` when it is set: the CI release on the devbox seeds the
+   * demo content with the known password, because a browser test has to sign in as a persona.
+   */
+  passwordMode?: 'fixed' | 'random';
   /** Where team templates live (default: `MANYTHREADS_TEMPLATES_DIR`, else `templates/` at the repository root). */
   templatesDir?: string;
   /**
@@ -86,7 +92,7 @@ const defaultTemplatesDir = (): string =>
  */
 export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: SeedOptions = {}): Promise<SeedResult> {
   const log = options.log ?? (() => undefined);
-  const passwordMode = options.demo ? 'random' : 'fixed';
+  const passwordMode = options.passwordMode ?? (options.demo ? 'random' : 'fixed');
   const pool = createSystemPool(db.systemUrl, 2);
   let existing: string[];
   try {

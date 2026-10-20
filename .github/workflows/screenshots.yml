@@ -4,10 +4,16 @@ name: screenshots
 # k3s (ci, release, deploy); everything else runs from the devbox over SSH. Phase-exit screenshots run on the devbox
 # (live.shots.ts via Remote.ps1, pictures synced down and committed to the `screenshots` branch from here), and the
 # per-task feature screenshots in temp/screenshots work the same way — so this workflow never triggers automatically.
+#
+# The browser runs on the devbox too: the GitHub runner has no Chromium for its image (Playwright refuses to install
+# one there), and the devbox already has a browser and the checkout. The runner only carries the code, takes the
+# pictures back and commits them.
+#
 # It signs in as Omar, Nadia, Rafi and Lena through the real password form,
 # with a random one-off password it sets first through the server's admin CLI (`pnpm --filter @manythreads/server admin
 # set-password`, run in the server pod over SSH, password on stdin only, masked, never in a command line or log), saves the
-# screens (1440x900 and 390x844: sign-in, settings, the phase 3 conversations from the demo seed) as a workflow artifact and commits them to the `screenshots` branch under phase-<N>/. The
+# screens (1440x900 and 390x844: sign-in, settings, the phase 3 conversations from the demo seed) and commits them to the
+# `screenshots` branch under phase-<N>/. The
 # passwords are rotated to fresh unknown values when the job ends. No test-auth bypass is involved (`testAuth.enabled` stays
 # false). It never pushes to main or to a claude/* branch.
 on:
@@ -31,7 +37,7 @@ env:
 jobs:
   shots:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,19 +59,6 @@ jobs:
             echo "No phase release to photograph for this run."
           fi
 
-      - if: steps.phase.outputs.phase != ''
-        uses: pnpm/action-setup@v4
-      - if: steps.phase.outputs.phase != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - if: steps.phase.outputs.phase != ''
-        run: pnpm install --frozen-lockfile
-      - if: steps.phase.outputs.phase != ''
-        name: Install Playwright Chromium
-        run: pnpm -C e2e exec playwright install --with-deps chromium
-
       - name: Set a one-off password for the screenshot personas
         if: steps.phase.outputs.phase != ''
         env:
@@ -81,13 +74,38 @@ jobs:
             remote_set_password "$who@kahf.example" "$PW"
           done
 
-      - name: Take the screenshots
+      - name: Take the screenshots on the devbox
         if: steps.phase.outputs.phase != ''
         env:
-          MANYTHREADS_LIVE_URL: ${{ env.SITE_URL }}
-          MANYTHREADS_SHOTS_DIR: ${{ github.workspace }}/shots
-        # MANYTHREADS_LIVE_PASSWORD comes from the step above ($GITHUB_ENV, masked)
-        run: pnpm -C e2e exec playwright test -c screens/live.config.ts
+          SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+          LIVE_URL: ${{ env.SITE_URL }}
+          # The password travels in the SSH stream (an exported variable in the remote shell), never in an argument.
+          LIVE_PASSWORD: ${{ env.MANYTHREADS_LIVE_PASSWORD }}
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          remote 'rm -rf /root/ci && mkdir -p /root/ci'
+          tar czf - --exclude=node_modules --exclude=.codegraph --exclude=temp \
+            --exclude=e2e/test-results --exclude=e2e/playwright-report . \
+            | remote 'tar xzf - -C /root/ci'
+          remote_sh "LIVE_URL=$LIVE_URL" "LIVE_PASSWORD=$LIVE_PASSWORD" <<'REMOTE'
+          set -euo pipefail
+          cd /root/ci
+          pnpm install --frozen-lockfile
+          # The browser is already on this box; the runner has none for its image.
+          pnpm -C e2e exec playwright install chromium
+          MANYTHREADS_LIVE_URL="$LIVE_URL" MANYTHREADS_LIVE_PASSWORD="$LIVE_PASSWORD" MANYTHREADS_SHOTS_DIR=/root/ci/shots \
+            pnpm -C e2e exec playwright test -c screens/live.config.ts
+          REMOTE
+
+      - name: Fetch the pictures
+        if: steps.phase.outputs.phase != ''
+        env:
+          SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          mkdir -p "${{ github.workspace }}/shots"
+          remote 'tar czf - -C /root/ci shots 2>/dev/null' | tar xzf - -C "${{ github.workspace }}"
+          ls -l "${{ github.workspace }}/shots" | head -20
 
       - name: Upload screenshots
         if: steps.phase.outputs.phase != ''

@@ -92,3 +92,32 @@ export type NotificationId = z.infer<typeof NotificationId>;
 
 export const ApprovalId = z.uuid().brand<'ApprovalId'>();
 export type ApprovalId = z.infer<typeof ApprovalId>;
+
+// Phase 6: tasks, boards, rhythms.
+
+export const GoalId = z.uuid().brand<'GoalId'>();
+export type GoalId = z.infer<typeof GoalId>;
+
+export const TaskClaimId = z.uuid().brand<'TaskClaimId'>();
+export type TaskClaimId = z.infer<typeof TaskClaimId>;
+
+export const TaskEventId = z.uuid().brand<'TaskEventId'>();
+export type TaskEventId = z.infer<typeof TaskEventId>;
+
+export const HandoffId = z.uuid().brand<'HandoffId'>();
+export type HandoffId = z.infer<typeof HandoffId>;
+
+export const EnvironmentId = z.uuid().brand<'EnvironmentId'>();
+export type EnvironmentId = z.infer<typeof EnvironmentId>;
+
+export const BoardId = z.uuid().brand<'BoardId'>();
+export type BoardId = z.infer<typeof BoardId>;
+
+export const RunnerId = z.uuid().brand<'RunnerId'>();
+export type RunnerId = z.infer<typeof RunnerId>;
+
+export const RhythmId = z.uuid().brand<'RhythmId'>();
+export type RhythmId = z.infer<typeof RhythmId>;
+
+export const RhythmRunId = z.uuid().brand<'RhythmRunId'>();
+export type RhythmRunId = z.infer<typeof RhythmRunId>;
