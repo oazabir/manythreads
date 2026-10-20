@@ -10,3 +10,4 @@ e2e/data/
 data/repos/
 temp/
 .freebuff/
+.codegraph/

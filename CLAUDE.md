@@ -121,6 +121,18 @@ Keep command output small: pipe through `tail -n 40` or grep for failures. Never
   full gates run when no agent is active.
 - Return a short summary: what changed, paths, test results, open issues. No file dumps.
 
+## Plain language (every reply, doc, commit and UI string)
+- **Never repeat text verbatim.** Do not echo the request, the prompt, a previous message or this file back at the reader.
+  Paraphrase it, or leave it out. No filler openers, no restating the plan you were handed, no "as requested above".
+- **No undefined jargon.** Define every term of art in plain words the first time it appears in a reply, a doc page or a
+  commit message, even when this file already uses it — one clause, at the point of use: "the outbox — the queue of events
+  written in the same transaction as the change that caused them". A reader who has not read `PLAN.md` or the spec must
+  still follow the sentence.
+- **The project's own shorthand counts as jargon** and gets the same treatment: outbox, task substrate, run, provider,
+  capability, RLS (row-level security), persona, plate, definition / `BOT.md`, guardrail, memory bank, OKF bundle. If a
+  term cannot be defined in one clause, the sentence is doing too much work — split it.
+- A plugin doc page opens by saying what the plugin is and what a reader needs in order to use it, not by naming its phase.
+
 ## Sidebar contract (every client, every team)
 Files (10) · Boards (20) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) ·
 Bots (50). The Bots header opens the team's bot roster at `/t/<team>/bots`; a row opens the bot's page
