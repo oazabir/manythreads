@@ -1,0 +1,87 @@
+# The CI release: the candidate build, exercised on the devbox in its own k3s namespace
+# (`manythreads-ci`), never in the live one. tools/devbox/ci.sh installs it, runs the test
+# suite against it, and only then promotes the same image tag to the live namespace.
+#
+# Three things make it different from the live release:
+#   * no ingress — nothing on the internet can reach it; the test run reaches it over a
+#     port-forward on the devbox (the e2e reads MANYTHREADS_URL for it);
+#   * the test sign-in route is on (testAuth), because a browser test signs in as a persona
+#     and the seed gave the personas the known test password (seed.fixedPasswords). Both are
+#     safe only because this namespace is throwaway and unreachable;
+#   * small storage: the database and the volumes are a few gigabytes, not tens, because
+#     every run starts from a fresh release.
+#
+# The release name is `manythreads-ci`; the chart's resource names are fixed, so the same
+# names live in this namespace without clashing with the live ones.
+imagePullPolicy: IfNotPresent
+
+# The origin the test run uses. Not a real domain: the e2e reaches the release over a
+# port-forward, and the cookie's Secure flag follows this value (so it is plain http).
+domain: manythreads-ci.local
+publicUrl: "http://127.0.0.1:18080"
+
+ingress:
+  enabled: false
+
+postgres:
+  mode: cnpg
+  instances: 1
+  storage:
+    size: 2Gi
+    storageClass: local-path
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+server:
+  enabled: true
+  replicas: 1
+  # The release runs in test mode, and that is deliberate: the api specs sign in with the
+  # test-only actor header (`x-manythreads-dev-actor`), which the server honours only when
+  # NODE_ENV is not production. The live release keeps NODE_ENV=production (the image's
+  # default); only this throwaway namespace turns it off.
+  env:
+    NODE_ENV: test
+  blobs:
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: local-path
+      accessMode: ReadWriteOnce
+      keep: false
+      mountPath: /data/blobs
+  repos:
+    persistence:
+      enabled: true
+      size: 1Gi
+      storageClass: local-path
+      accessMode: ReadWriteOnce
+      keep: false
+      mountPath: /data/repos
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { cpu: "2", memory: 2Gi }
+
+web:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: "1", memory: 512Mi }
+
+# The personas get the known test password so a browser test can sign in as them.
+# Never on a public deployment: a random, unrecoverable password is the rule there.
+seed:
+  demo: true
+  fixedPasswords: true
+
+# The mail catcher of the live release is not needed here (the tests read mail from the
+# database), and the CI namespace has no SMTP relay.
+mailpit:
+  enabled: false
+mail:
+  smtpUrl: ""
+
+# The test sign-in route (POST /api/test/session). Throwaway namespace only.
+testAuth:
+  enabled: true

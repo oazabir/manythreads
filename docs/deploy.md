@@ -1,20 +1,46 @@
 # Deploying manythreads (k3s at manythreads.kahf.to)
 
-Single-node k3s (65.109.71.84, SSH port 44033). The sandbox cannot reach SSH; only GitHub Actions can,
-using the repo secret `ROOT_PASSWORD` (via `sshpass -e`, never echoed).
+Single-node k3s (65.109.71.84, SSH port 44033), which is also the **devbox** — the box the
+Windows dev loop and the test suites run on. The sandbox cannot reach SSH; only GitHub
+Actions can, using the repo secret `ROOT_PASSWORD` (via `sshpass -e`, never echoed).
+
+## The rule: the GitHub runner carries code, the devbox builds and tests
+The Actions workflows are triggers and transport, not builders. A GitHub runner costs minutes
+we do not have, and its image carries no browser, so the end-to-end tests could not run there
+at all. Every workflow that touches the product therefore copies the tree to the devbox
+(`/root/ci`, its own checkout) and runs a script there.
+
+| Workflow | What it does on the devbox |
+|---|---|
+| `ci` (push to `main`, pull request, manual) | `tools/devbox/ci.sh`: install, lint, typecheck, build the images, deploy the candidate into the **CI namespace** `manythreads-ci`, run the unit, integration and browser suites against it, and — on a push to `main` — promote the same build to the live namespace `manythreads` and smoke-test the site. A pull request stops before the live deploy (`--no-deploy`). |
+| `release` (a "Phase N · …" push to `main`, manual) | tags `phase-N` and `v0.N.0`; the deploy of that same push is the `ci` workflow's job, so the two never deploy at once. |
+| `deploy` (`v*` tag, manual) | `tools/devbox/deploy.sh` on the devbox: build, import, helm upgrade, smoke test. |
+| `screenshots` (manual) | the browser run happens on the devbox (it has Chromium); the runner takes the pictures back and commits them to the `screenshots` branch. |
+| `ops-*` (manual) | kubectl/helm against the cluster from the runner; no build. |
+
+## The CI namespace (`manythreads-ci`)
+The candidate build is deployed into its own k3s namespace before anything reaches the live
+one (`deploy/helm/manythreads/values-ci.yaml`): its own Postgres cluster, its own volumes, no
+ingress (nothing on the internet can reach it) and the test sign-in route on, so a browser
+test can sign in as a persona. The test suite reaches it over a port-forward on the devbox
+(`MANYTHREADS_URL` and `MANYTHREADS_API_URL` point the Playwright run at it). Every run
+replaces the namespace, so the tests always see a pristine world. The live namespace
+(`manythreads`) is touched only after the tests are green.
 
 ## How a deploy works
-- Pushing a tag `v*` runs `.github/workflows/deploy.yml`, which checks out **latest `main`** (not the tagged
-  commit) and runs the composite action `.github/actions/deploy-manythreads`.
+- A push to `main` runs `.github/workflows/ci.yml`: it copies the tree to the devbox and runs
+  `tools/devbox/ci.sh`, which builds `manythreads/server:<sha>` and `manythreads/web:<sha>` on
+  the devbox, imports them into its own k3s containerd (no registry; `imagePullPolicy:
+  IfNotPresent`; old server/web tags are pruned except the new one and those in use by pods),
+  installs helm if missing and the CloudNativePG operator (`cnpg/cloudnative-pg` into
+  `cnpg-system`), runs `helm upgrade --install` into `manythreads-ci`, tests that release, and
+  then promotes the same tag into `manythreads` and smoke-tests `https://manythreads.kahf.to/`.
+- Pushing a tag `v*` runs `.github/workflows/deploy.yml`, which checks out **latest `main`**
+  (not the tagged commit) and runs the composite action `.github/actions/deploy-manythreads`
+  (the same devbox path, without the tests).
 - `ops-rollout` does the same for any branch/sha without tagging.
-- The action: builds `manythreads/server:<sha>` and `manythreads/web:<sha>` (and `manythreads/postgres:19` the first time,
-  or with `rebuild-postgres`), ships them with `docker save | gzip | ssh 'gunzip | k3s ctr -n k8s.io images import -'`
-  (no registry; `imagePullPolicy: IfNotPresent`; old server/web tags are pruned except the new one and those in use by pods),
-  installs helm if missing and the CloudNativePG operator (`cnpg/cloudnative-pg` into `cnpg-system`),
-  copies `deploy/helm/manythreads` over, runs `helm upgrade --install manythreads ... --wait --timeout 10m`
-  and smoke-tests `https://manythreads.kahf.to/` (and `/healthz`, soft-fail).
-- If `helm --wait` fails only because the server crash-loops (while `packages/server/src/main.ts` is a stub),
-  the action warns and continues as long as web and Postgres are ready.
+- If `helm --wait` fails only because the server crash-loops, the deploy warns and continues
+  as long as web and Postgres are ready.
 - TLS: the original whoami ingress had no `tls:` block; Traefik serves websecure with its default cert.
   The chart keeps that (`ingress.tls.enabled=false`), so the smoke test uses `curl -k`.
   Set `ingress.tls.*` in values when a real certificate exists. whoami is deleted on the first manythreads deploy.

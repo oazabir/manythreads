@@ -142,6 +142,10 @@ kms:
 # store) it runs with --no-attachment.
 seed:
   demo: true
+  # fixedPasswords: give every persona the known test password instead of a random one, so a
+  # browser test can sign in as them. The CI release on the devbox turns it on (values-ci.yaml);
+  # never on a public deployment, where a random, unrecoverable password is the rule.
+  fixedPasswords: false
 
 web:
   enabled: true

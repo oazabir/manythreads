@@ -1,51 +1,64 @@
 #!/usr/bin/env bash
 # deploy.sh — runs ON the devbox. Builds server+web images, imports them into
 # k3s containerd, helm-upgrades manythreads, smoke-tests https://manythreads.kahf.to/
-# Usage: /root/manythreads/tools/devbox/deploy.sh [--rebuild-postgres] [--demo]
+# Usage: /root/manythreads/tools/devbox/deploy.sh [--rebuild-postgres] [--demo] [--no-build]
 #   --demo also builds the Hermes agent image (once; cached as manythreads/hermes:stable),
 #   the demo server layer, and the fake-llm + fake-hindsight stand-ins, and points the
 #   server at them (deploy/helm/manythreads/values-demo.yaml). A later deploy
 #   without --demo removes the stand-ins and their wiring again.
+#   --no-build skips the image build: the images are already built and imported (the CI
+#   pipeline builds once, tests the candidate in its own namespace, then promotes the very
+#   same tag here with this script).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 REBUILD_PG=false
 DEMO=false
+BUILD=true
 for arg in "$@"; do
   case "$arg" in
     --rebuild-postgres) REBUILD_PG=true ;;
     --demo) DEMO=true ;;
-    *) echo "unknown argument $arg (want --rebuild-postgres or --demo)"; exit 2 ;;
+    --no-build) BUILD=false ;;
+    *) echo "unknown argument $arg (want --rebuild-postgres, --demo or --no-build)"; exit 2 ;;
   esac
 done
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH="$PATH:/usr/local/bin"
 
-TAG=$(git rev-parse --short=12 HEAD)
-if [ -n "$(git status --porcelain)" ]; then
-  # The sync dev loop (WINDOWS_DEV.md) deploys uncommitted working-tree content, and
-  # docker/k3s identify images by tag: tagging by HEAD alone would leave k8s serving
-  # the PREVIOUS image on every deploy whose changes are not committed. Tag by tree
-  # CONTENT instead, so every distinct tree rolls the deployment and an unchanged
-  # tree stays a no-op. Untracked files are hashed too (new files matter).
-  H=$(
-    {
-      git diff HEAD --binary
-      git ls-files -o --exclude-standard -z | while IFS= read -r -d '' f; do
-        printf '%s\0' "$f"
-        cat "$f" 2>/dev/null || true
-      done
-    } | sha256sum | cut -c1-8
-  )
-  TAG="$TAG-$H"
-  echo "working tree differs from HEAD; content suffix -$H"
+# The tag of the build. The CI pipeline sets TAG (one build, tested and then promoted);
+# by hand it is the short sha of HEAD, with a content suffix when the tree is not committed.
+if [ -z "${TAG:-}" ]; then
+  TAG=$(git rev-parse --short=12 HEAD)
+  if [ -n "$(git status --porcelain)" ]; then
+    # The sync dev loop (WINDOWS_DEV.md) deploys uncommitted working-tree content, and
+    # docker/k3s identify images by tag: tagging by HEAD alone would leave k8s serving
+    # the PREVIOUS image on every deploy whose changes are not committed. Tag by tree
+    # CONTENT instead, so every distinct tree rolls the deployment and an unchanged
+    # tree stays a no-op. Untracked files are hashed too (new files matter).
+    H=$(
+      {
+        git diff HEAD --binary
+        git ls-files -o --exclude-standard -z | while IFS= read -r -d '' f; do
+          printf '%s\0' "$f"
+          cat "$f" 2>/dev/null || true
+        done
+      } | sha256sum | cut -c1-8
+    )
+    TAG="$TAG-$H"
+    echo "working tree differs from HEAD; content suffix -$H"
+  fi
 fi
 echo "deploying $(git rev-parse HEAD) as tag $TAG"
 
-echo "--- build images"
-docker build -f deploy/docker/server.Dockerfile -t "manythreads/server:$TAG" .
-docker build -f deploy/docker/web.Dockerfile -t "manythreads/web:$TAG" .
+if [ "$BUILD" = "true" ]; then
+  echo "--- build images"
+  docker build -f deploy/docker/server.Dockerfile -t "manythreads/server:$TAG" .
+  docker build -f deploy/docker/web.Dockerfile -t "manythreads/web:$TAG" .
+else
+  echo "--- images are already built (--no-build): manythreads/server:$TAG, manythreads/web:$TAG"
+fi
 
 IMAGES=("manythreads/server:$TAG" "manythreads/web:$TAG")
 if [ "$DEMO" = true ]; then

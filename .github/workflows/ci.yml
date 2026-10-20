@@ -1,8 +1,18 @@
 name: ci
 
+# The runner does nothing but carry the code to the devbox: the build, the tests and the
+# deploy all happen on the box that owns the cluster (tools/devbox/ci.sh). A GitHub runner
+# costs minutes we do not have, its image carries no browser (so the end-to-end tests
+# could not run there at all), and the devbox is where the whole team already works.
+#
+# A pull request builds and tests the candidate in the CI namespace and stops there. A push
+# to main does the same and then promotes the very same build to the live namespace.
+
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,82 +22,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  devbox:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
+      - name: Install sshpass
+        run: sudo apt-get install -y -qq sshpass
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      # The image build downloads from apt and GitHub; a stalled network call must fail fast and retry, not hold the job for 30 minutes.
-      - name: Build Postgres 19 image
-        timeout-minutes: 20
-        run: |
-          for attempt in 1 2 3; do
-            if timeout 360 docker build -t manythreads/postgres:19 deploy/postgres; then exit 0; fi
-            echo "docker build attempt $attempt failed or timed out"
-          done
-          exit 1
-
-      - name: Start Postgres
-        run: |
-          docker run -d --name manythreads-pg -p 55432:5432 \
-            -e POSTGRES_USER=manythreads_owner \
-            -e POSTGRES_PASSWORD=manythreads \
-            -e POSTGRES_DB=manythreads \
-            manythreads/postgres:19
-          for i in $(seq 1 60); do
-            if docker exec manythreads-pg pg_isready -U manythreads_owner -d manythreads; then exit 0; fi
-            sleep 2
-          done
-          docker logs manythreads-pg | tail -n 40
-          exit 1
-
-      # MinIO for the storage-s3 contract suite (MinIO publishes no images any more: a mirror of the last community release). A plain
-      # `docker run` like Postgres above, because a service container cannot pass the `server /data` arguments. The suite creates its bucket.
-      - name: Start MinIO
-        run: |
-          docker run -d --name manythreads-minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=manythreads \
-            -e MINIO_ROOT_PASSWORD=manythreads-secret \
-            ghcr.io/coollabsio/minio:RELEASE.2025-10-15T17-29-55Z server /data
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:9000/minio/health/live; then exit 0; fi
-            sleep 2
-          done
-          docker logs manythreads-minio | tail -n 40
-          exit 1
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - name: Copy the tree to the devbox
         env:
-          MANYTHREADS_TEST_S3: "1"
-          MANYTHREADS_TEST_S3_ENDPOINT: http://localhost:9000
-      - run: pnpm test:rls
-      - run: pnpm test:events
-      - run: pnpm test:schema-compat
-      - run: pnpm test:memory-cross-team
+          SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          # A fresh directory every run: the devbox keeps its own checkout at /root/manythreads
+          # for the Windows dev loop, and this one is only the pipeline's scratch space.
+          remote 'rm -rf /root/ci && mkdir -p /root/ci'
+          tar czf - --exclude=node_modules --exclude=.codegraph --exclude=temp \
+            --exclude=e2e/test-results --exclude=e2e/playwright-report . \
+            | remote 'tar xzf - -C /root/ci'
+          remote 'cd /root/ci && git rev-parse --short=12 HEAD'
 
-      - name: Install Playwright Chromium
-        run: pnpm -C e2e exec playwright install --with-deps chromium
-
-      - name: End-to-end
-        run: pnpm e2e --pass-with-no-tests
-
-      - name: Upload Playwright report
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: |
-            e2e/playwright-report
-            e2e/test-results
-          if-no-files-found: ignore
+      - name: Build, test and deploy on the devbox
+        env:
+          SSHPASS: ${{ secrets.ROOT_PASSWORD }}
+        run: |
+          source "$GITHUB_WORKSPACE/.github/actions/lib/remote.sh"
+          DEPLOY_FLAG=""
+          if [ "${{ github.event_name }}" = "push" ]; then DEPLOY_FLAG=""; else DEPLOY_FLAG="--no-deploy"; fi
+          remote "cd /root/ci && bash tools/devbox/ci.sh $DEPLOY_FLAG"

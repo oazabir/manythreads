@@ -14,7 +14,8 @@ sync rules, troubleshooting).
 | `Watchdog.ps1` | Background progress check every 5 min (`temp/watchdog.log`, `temp/watchdog.alert` after 15 min with no change): is a gate/deploy still printing, and is a devbox process hung? `-Stop` ends a running one. |
 | `_common.ps1` | Shared rsync/ssh discovery + exclude list (dot-sourced). |
 | `remote-gates.sh` | Runs on the devbox: `pnpm install`, lint, typecheck, `pnpm db:up`, `pnpm test`. |
-| `deploy.sh` | Runs on the devbox: build server+web images, import into k3s, prune old tags, `helm upgrade --install`, smoke-test the site. |
+| `ci.sh` | Runs on the devbox: the whole pipeline — install, lint, typecheck, build the images, deploy the candidate into the CI namespace `manythreads-ci`, run the unit, integration and browser suites against it, promote the same build to the live namespace. `--no-tests`, `--no-deploy`. The `ci` GitHub workflow runs this. |
+| `deploy.sh` | Runs on the devbox: build server+web images, import into k3s, prune old tags, `helm upgrade --install`, smoke-test the site. `--no-build` promotes a build that is already there. |
 
 Devbox: `root@65.109.71.84:44033` (SSH host `devbox`, see `~/.ssh/config`), checkout
 `/root/manythreads`, k3s serves **https://manythreads.kahf.to** (namespace

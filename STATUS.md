@@ -20,6 +20,15 @@ existing one (`app.can(team, 'manage')` + `app.is_workspace_admin()`), and the b
 The Files tree still offers `bots/` read-only to everyone but an admin (a bot is edited on its Bots page). `TEAM.md`,
 `skills/` and `routines/` stay lead-or-admin (SPEC §3, restated for `bots/`).
 
+**Pipeline (2026-10-20): the GitHub runner no longer builds or tests.** The `ci` workflow copies the tree to the
+devbox and runs `tools/devbox/ci.sh` there: install, lint, typecheck, build the images, deploy the candidate into
+the devbox's own CI namespace (`manythreads-ci`, no ingress, its own database), run the unit, integration and
+browser suites against that release, and — on a push to `main` — promote the very same build to the live namespace
+and smoke-test the site. The browser tests run on the devbox because a GitHub runner has no Chromium (Playwright
+refuses to install one on its image) and Actions minutes are scarce. A phase merge is now tagged by `release.yml`
+and deployed by the `ci` workflow of the same push. Details: `docs/deploy.md`, `WINDOWS_DEV.md`; the lessons are
+in `MISTAKES.md`.
+
 **Open on main:** the phase-5 exit fix is pushed; the round before it was **red** — `ci` run **39266435425** on **`27dcf6c`** (the commit that closed P5-27/P5-28) failed in `pnpm test`: two schema-compat snapshots that P5-28's route schemas added existed only on the devbox (`api.RebuildConceptsPathParams`, `api.RebuildConceptsResponse`), so `rls`, `events`, `schema-compat` and the End-to-end step never ran that round (lint, typecheck, 233 files and 3,827 tests passed). Both snapshots are now committed and `tools/devbox/remote-gates.sh` runs the suite with `CI=true`, so a snapshot written-but-not-committed fails the devbox gate exactly where it fails CI (lessons in `MISTAKES.md`). Before this round: CI green on `f24ca75` (run 37144311363, incl. End-to-end 10m6s), and before it 37143552731 on `52013bf`, 37142818365 on `feb935c`, 37142052270 on `8316c1f`, 37141297569 on `dd4353e`, 37140658508 on `5e3774f` (the flaky read-state e2e fixed there: `read-state.test.ts:137` used a random uuid as the
 mark-read position — lesson in `MISTAKES.md`). Earlier greens: 37138533733 on `237fa30` (screenshot cycle),
 37118752282 on `e7d72cf`. The `50f2fd1` red stays closed: the min-password-8 change left `'too-short'`

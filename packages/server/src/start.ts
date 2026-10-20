@@ -60,11 +60,17 @@ export function trustProxyFromEnv(raw: string | undefined): boolean | number | s
 /**
  * The token behind `POST /api/test/session`. It is a way to sign in as anyone without a password, so a production
  * process refuses to start with it set, and a weak value is refused anywhere.
+ *
+ * `MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION=1` is the one way past that refusal, and only for a throwaway test
+ * environment: the CI release on the devbox (its own k3s namespace, no ingress, the devbox's loopback only) sets it
+ * so a browser test can sign in as a persona. The chart's `testAuth.enabled` sets it with the token, and a real
+ * deployment leaves `testAuth.enabled` off, so the variable is never set there.
  */
 export function resolveTestAuthToken(explicit: string | null | undefined, env: NodeJS.ProcessEnv): string | null {
   const token = explicit === undefined ? (env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? null) : explicit;
   if (token === null || token === '') return null;
-  if (env['NODE_ENV'] === 'production') {
+  const allowed = env['MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION'] === '1';
+  if (env['NODE_ENV'] === 'production' && !allowed) {
     throw new Error('MANYTHREADS_TEST_AUTH_TOKEN is set in production: the test sign-in endpoint must never run on a real deployment.');
   }
   if (token.length < 16) throw new Error('MANYTHREADS_TEST_AUTH_TOKEN must be at least 16 characters.');

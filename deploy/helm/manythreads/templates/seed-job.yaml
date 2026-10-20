@@ -50,7 +50,7 @@ spec:
         - name: seed
           image: {{ .Values.server.image }}:{{ .Values.imageTag }}
           imagePullPolicy: {{ .Values.imagePullPolicy }}
-          command: ["pnpm", "seed", "--demo", "--wait", "600"{{ if not $repos }}, "--no-repo"{{ end }}{{ if and (eq .Values.server.storage.type "local") (not .Values.server.blobs.persistence.enabled) }}, "--no-attachment"{{ end }}]
+          command: ["pnpm", "seed", "--demo", "--wait", "600"{{ if .Values.seed.fixedPasswords }}, "--fixed-passwords"{{ end }}{{ if not $repos }}, "--no-repo"{{ end }}{{ if and (eq .Values.server.storage.type "local") (not .Values.server.blobs.persistence.enabled) }}, "--no-attachment"{{ end }}]
           {{- if or $localBlobs $repos }}
           volumeMounts:
             {{- if $localBlobs }}
