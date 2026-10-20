@@ -34,6 +34,9 @@ runs:
         tar czf - --exclude=node_modules --exclude=.codegraph --exclude=temp \
           --exclude=e2e/test-results --exclude=e2e/playwright-report . \
           | remote 'tar xzf - -C /root/ci'
+        # The files arrive owned by the runner's user; git on the devbox refuses a
+        # repository it does not own ("dubious ownership"), so it takes them over.
+        remote 'chown -R root:root /root/ci'
         remote 'cd /root/ci && git rev-parse --short=12 HEAD'
 
     - name: Build and deploy on the devbox

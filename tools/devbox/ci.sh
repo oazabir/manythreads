@@ -26,6 +26,10 @@ cd "$(dirname "$0")/../.."
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 export PATH="$PATH:/usr/local/bin"
 
+# The tree may arrive owned by another user (the GitHub runner copies it); git refuses a
+# repository it does not own.
+git config --global --add safe.directory /root/ci 2>/dev/null || true
+
 CI_NAMESPACE="${CI_NAMESPACE:-manythreads-ci}"
 LIVE_NAMESPACE="${LIVE_NAMESPACE:-manythreads}"
 CI_WEB_PORT="${CI_WEB_PORT:-18080}"
