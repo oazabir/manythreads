@@ -49,6 +49,8 @@ type Upload = {
   status: 'uploading' | 'done' | 'error';
   error?: string;
   file?: FileSummary;
+  /** A local thumbnail URL of an image, drawn while it uploads; revoked with the row. */
+  preview?: string;
   abort?: AbortController;
 };
 
@@ -91,7 +93,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     draftFor.current = draftKey;
     setText(readDraft(draftKey));
     setUploads((list) => {
-      list.forEach((u) => u.abort?.abort());
+      list.forEach((u) => {
+        u.abort?.abort();
+        if (u.preview) URL.revokeObjectURL(u.preview);
+      });
       return [];
     });
   }, [draftKey]);
@@ -103,7 +108,14 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   useEffect(() => {
     if (autoFocus) area.current?.focus();
   }, [autoFocus, threadRootId]);
-  useEffect(() => () => uploadsRef.current.forEach((u) => u.abort?.abort()), []);
+  useEffect(
+    () => () =>
+      uploadsRef.current.forEach((u) => {
+        u.abort?.abort();
+        if (u.preview) URL.revokeObjectURL(u.preview);
+      }),
+    [],
+  );
   const uploadsRef = useRef(uploads);
   useEffect(() => {
     uploadsRef.current = uploads;
@@ -194,12 +206,14 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     if (!filesOn) return;
     for (const file of files) {
       const id = nextId.current++;
+      // an image shows its own thumbnail from the moment it is added, from the local bytes: no wait for the upload
+      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
       if (file.size > MAX_UPLOAD_BYTES) {
-        setUploads((l) => [...l, { id, name: file.name, size: file.size, progress: 0, status: 'error', error: TOO_LARGE }]);
+        setUploads((l) => [...l, { id, name: file.name, size: file.size, progress: 0, status: 'error', error: TOO_LARGE, preview }]);
         continue;
       }
       const abort = new AbortController();
-      setUploads((l) => [...l, { id, name: file.name, size: file.size, progress: 0, status: 'uploading', abort }]);
+      setUploads((l) => [...l, { id, name: file.name, size: file.size, progress: 0, status: 'uploading', preview, abort }]);
       uploadChannelFile(channelId, file, (f) => setUploads((l) => l.map((u) => (u.id === id ? { ...u, progress: f } : u))), abort.signal).then(
         (meta) => setUploads((l) => l.map((u) => (u.id === id ? { ...u, status: 'done', progress: 1, name: meta.name, file: { id: meta.id, name: meta.name, size: meta.size, mime: meta.mime } } : u))),
         (e: unknown) => {
@@ -212,7 +226,9 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   };
   const removeUpload = (id: number): void =>
     setUploads((l) => {
-      l.find((u) => u.id === id)?.abort?.abort();
+      const gone = l.find((u) => u.id === id);
+      gone?.abort?.abort();
+      if (gone?.preview) URL.revokeObjectURL(gone.preview);
       return l.filter((u) => u.id !== id);
     });
 
@@ -225,6 +241,9 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     // a message of only files has no text of its own: the server wants one character, so it carries the file names
     const body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
     onSend(body, ready);
+    uploads.forEach((u) => {
+      if (u.preview) URL.revokeObjectURL(u.preview);
+    });
     setText('');
     setUploads([]);
     setCaret(0);
@@ -317,7 +336,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         {uploads.length > 0 ? (
           <ul className="cfiles" aria-label="Attachments">
             {uploads.map((u) => (
-              <li key={u.id} className={`cfile ${u.status}`} data-testid="upload" data-status={u.status}>
+              <li key={u.id} className={`cfile ${u.preview ? 'image' : ''} ${u.status}`} data-testid="upload" data-status={u.status}>
+                {u.preview ? <img src={u.preview} alt="" className="cfile-preview" /> : null}
                 <span className="cfile-name">{u.name}</span>
                 <span className="cfile-size">{fileSize(u.size)}</span>
                 {u.status === 'uploading' ? (

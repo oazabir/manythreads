@@ -97,7 +97,7 @@ test('a send that fails stays in place as "Not sent · Retry" and is delivered b
   }
 });
 
-test('attachments: upload with progress, a card on the message, remove, and "Too large (50 MB)"', async ({ browser }, testInfo) => {
+test('attachments: upload with progress, a card for a file or a preview for a picture, remove, and "Too large (50 MB)"', async ({ browser }, testInfo) => {
   const omar = await apiAs('omar');
   const { id, name } = await createChannel(omar, 'files');
   // the clip appears only on a server that stores files
@@ -159,13 +159,42 @@ test('attachments: upload with progress, a card on the message, remove, and "Too
     expect(res.status()).toBe(200);
     expect((await res.body()).equals(pdf)).toBe(true);
 
-    // a file only: it goes without text, and the message carries the file's name
+    // pictures only: they go without text, drawn as previews in a grid rather than as file cards
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
-    await page.locator('input[type=file]').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: png });
+    await page.locator('input[type=file]').setInputFiles([
+      { name: 'photo.png', mimeType: 'image/png', buffer: png },
+      { name: 'diagram.png', mimeType: 'image/png', buffer: png },
+    ]);
+    await expect(uploads).toHaveCount(2);
     await expect(uploads.filter({ hasText: 'photo.png' })).toHaveAttribute('data-status', 'done', { timeout: 10_000 });
+    await expect(uploads.filter({ hasText: 'diagram.png' })).toHaveAttribute('data-status', 'done', { timeout: 10_000 });
+
+    // each image shows its own small preview in the box, and the picture is really decoded there
+    const thumbs = uploads.locator('img.cfile-preview');
+    await expect(thumbs).toHaveCount(2);
+    expect(await thumbs.first().evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+
     await page.getByRole('button', { name: 'Send' }).click();
     await expect(messages(page)).toHaveCount(2);
-    await expect(messages(page).nth(1).getByTestId('attachment')).toContainText('photo.png');
+    const pictures = messages(page).nth(1);
+    await expect(pictures.getByTestId('attachment')).toHaveCount(0);
+    const grid = pictures.getByTestId('message-images');
+    await expect(grid).toHaveAttribute('data-layout', 'grid');
+    await expect(pictures.getByTestId('message-image')).toHaveCount(2);
+    await expect(pictures.getByTestId('message-image').first().getByRole('img')).toHaveAttribute('alt', 'photo.png');
+
+    // a press opens the full picture on a scrim, with its download in the corner
+    await pictures.getByTestId('message-image').first().click();
+    const lightbox = page.getByTestId('image-lightbox');
+    await expect(lightbox).toBeVisible();
+    await expect(lightbox.getByRole('img')).toHaveAttribute('alt', 'photo.png');
+    const download = lightbox.getByTestId('image-download');
+    await expect(download).toHaveAttribute('download', 'photo.png');
+    const got = await page.request.get((await download.getAttribute('href')) ?? '');
+    expect(got.status()).toBe(200);
+    expect((await got.body()).equals(png)).toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('image-lightbox')).toHaveCount(0);
   } finally {
     await rafi.context.close();
     await omar.ctx.dispose();

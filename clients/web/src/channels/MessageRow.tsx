@@ -7,7 +7,9 @@ import { useDismiss } from '../shell/useDismiss';
 import { AnswerMessage } from './AnswerMessage';
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize } from './format';
+import { splitAttachments } from './images';
 import { Markdown } from './MessageMarkdown';
+import { MessageImages } from './MessageImages';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import type { People } from './hooks';
 
@@ -69,6 +71,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // a message that carries an Answer is deleted and shared again, never edited (the server answers 409): its text is the payload's body
   const canEdit = own && !deleted && m.meta.answer === undefined;
   const canDelete = !deleted && (own || people.canModerate);
+  // an image is drawn as a picture, not as a file card; a message may carry both kinds at once
+  const attached = splitAttachments(m.attachments);
 
   const save = async (): Promise<void> => {
     const body = (editing ?? '').trim();
@@ -176,8 +180,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : (
           <div className="txt"><Markdown source={m.body} teamSlug={teamSlug} /></div>
         )}
-        {!deleted && m.attachments && m.attachments.length > 0 ? (
-          <div className="atts">{m.attachments.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
+        {deleted ? null : <MessageImages files={attached.images} />}
+        {!deleted && attached.files.length > 0 ? (
+          <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
         ) : null}
         {!deleted && m.reactions.length > 0 ? (
           <div className="reactions">
@@ -210,6 +215,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
 /** A message this tab is sending, or that failed: shown in its place with "Not sent · Retry". */
 export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: PendingSend; name: string; onRetry: () => void; onDiscard: () => void }) {
   const failed = pending.status === 'failed';
+  const attached = splitAttachments(pending.attachments);
   return (
     <div className={`msg pending ${failed ? 'failed' : ''}`} data-testid="pending-message" data-status={pending.status}>
       <Avatar name={name} />
@@ -219,7 +225,8 @@ export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: Pen
           <time dateTime={pending.createdAt} data-vt-mask>{clock(pending.createdAt)}</time>
         </div>
         <div className="txt"><Markdown source={pending.body} /></div>
-        {pending.attachments.length > 0 ? <div className="atts">{pending.attachments.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}
+        <MessageImages files={attached.images} />
+        {attached.files.length > 0 ? <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}
         {failed ? (
           <div className="send-state" role="alert">
             <span>{'Not sent · '}</span>
