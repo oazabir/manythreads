@@ -6,10 +6,10 @@ test.skip(({ isMobile }) => isMobile, 'desktop layout; the phone composer is cov
 
 /**
  * PLAN section 4, `e2e/files/attach.spec.ts` and criterion 7 (browser half): a PDF, a PNG and an 80 MB file are chosen in the composer, so
- * two uploads finish and one is refused as "Too large (50 MB)" before a byte is sent; the message carries two cards and each card
- * downloads the same bytes. (The server half, 403 for Lena without a grant, is e2e/api/files/attach-acl.spec.ts.)
+ * two uploads finish and one is refused as "Too large (50 MB)" before a byte is sent; the message draws the PDF as a card and the picture
+ * as a picture, and both download the same bytes. (The server half, 403 for Lena without a grant, is e2e/api/files/attach-acl.spec.ts.)
  */
-test('a PDF and a PNG upload, an 80 MB file is refused in the box, and the cards download the same bytes', async ({ browser }, testInfo) => {
+test('a PDF and a PNG upload, an 80 MB file is refused in the box, and both download the same bytes', async ({ browser }, testInfo) => {
   const omar = await apiAs('omar');
   const { id, name } = await createChannel(omar, 'attach');
   const probe = await omar.ctx.get(`/api/channels/${id}/files?limit=1`);
@@ -38,17 +38,26 @@ test('a PDF and a PNG upload, an 80 MB file is refused in the box, and the cards
 
     await page.getByRole('textbox', { name: `Message #${name}` }).fill('The report and the screenshot');
     await page.getByRole('button', { name: 'Send' }).click();
-    const cards = messages(page).first().getByTestId('attachment');
-    await expect(cards).toHaveCount(2);
+    // the PDF stays a card; the picture is drawn on the message itself, not as a card
+    const sent = messages(page).first();
+    const cards = sent.getByTestId('attachment');
+    await expect(cards).toHaveCount(1);
     await expect(cards.filter({ hasText: 'report.pdf' })).toContainText('KB');
-    await expect(cards.filter({ hasText: 'photo.png' })).toBeVisible();
+    const pictures = sent.getByTestId('message-image');
+    await expect(pictures).toHaveCount(1);
 
-    for (const [file, bytes] of [['report.pdf', pdf], ['photo.png', png]] as const) {
-      const href = (await cards.filter({ hasText: file }).getAttribute('href')) ?? '';
-      const res = await page.request.get(href);
-      expect(res.status(), file).toBe(200);
-      expect((await res.body()).equals(bytes), `${file} downloads as the bytes that went up`).toBe(true);
-    }
+    // the card downloads its file…
+    const cardHref = (await cards.filter({ hasText: 'report.pdf' }).getAttribute('href')) ?? '';
+    const cardRes = await page.request.get(cardHref);
+    expect(cardRes.status(), 'report.pdf').toBe(200);
+    expect((await cardRes.body()).equals(pdf), 'report.pdf downloads as the bytes that went up').toBe(true);
+
+    // …and the picture does, from the full view a press opens
+    await pictures.first().click();
+    const pictureHref = (await page.getByTestId('image-download').getAttribute('href')) ?? '';
+    const pictureRes = await page.request.get(pictureHref);
+    expect(pictureRes.status(), 'photo.png').toBe(200);
+    expect((await pictureRes.body()).equals(png), 'photo.png downloads as the bytes that went up').toBe(true);
   } finally {
     await rafi.context.close();
     await omar.ctx.dispose();
