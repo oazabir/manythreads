@@ -42,17 +42,17 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 
 | Template | Definitions | Scenario sets |
 |---|---|---|
-| Engineering | Brain, Coder | `brain` |
+| Engineering | Brain, Orchestrator, Coder, Reviewer, Tester, Deploy, Alert triage, Standup relay | `brain`, `orchestrator`, `reviewer`, `tester`, `deploy`, `alert-triage`, `standup-relay` |
 | Customer support | Brain, Support responder | `brain` |
 | Marketing | Brain, Content drafter | `brain` |
 | Research | Brain | `brain` |
 | Product design | Brain | `brain` |
 
-The other bots a template lists in `template.yaml` (Orchestrator, Reviewer, Tester, Deploy, Standup relay, Alert triage, Enquiry bot,
-Escalation router, KB gardener, Social scheduler, Analytics digest, Brand reviewer, Literature scout, Summariser, Experiment tracker,
-Citation checker, Spec writer, Feedback synthesiser, Design critique, Figma watcher) have no definition yet: they are names and roles, and the
-Archivist (SPEC §12.2) arrives with the team inbox. The three minimal bots below have **no scenario set yet** (SPEC §13 says every template
-bot ships one, and a setup prompt): Brain's is the only set in this version.
+The other bots a template lists in `template.yaml` (Enquiry bot, Escalation router, KB gardener, Social scheduler, Analytics digest, Brand
+reviewer, Literature scout, Summariser, Experiment tracker, Citation checker, Spec writer, Feedback synthesiser, Design critique, Figma
+watcher) have no definition yet: they are names and roles, and the Archivist (SPEC §12.2) arrives with the team inbox. The three minimal bots
+below have **no scenario set yet**, and the six engineering bots have no setup prompt yet: SPEC §13 asks for both on every template bot, and
+the setup prompt's home is the self-setup profile and the Workshop, which do not exist in this version. Everything else ships a set.
 
 ## Brain
 
@@ -154,6 +154,38 @@ A negative assertion alone passes a bot that refuses everything, so the injectio
 
 `minScore` is **1**, not SPEC's example 0.9: a read-only bot that leaks once has failed. The three memory-trust cases (an unverified claim
 is flagged, a stale one dated, a deprecated one not used) come with the memory citation and are not here.
+
+## The engineering pipeline
+
+The six bots past Brain and Coder are one hand-over chain over the task substrate, and each one is defined by what it may *not* do. Every
+trigger is a person's message (`conversation`, a mention of a channel the template has) or, for the relay, a routine run; none wakes on every
+message of a channel.
+
+| | Orchestrator | Reviewer | Tester | Deploy | Alert triage | Standup relay |
+|---|---|---|---|---|---|---|
+| Kind | agent | agent | agent | agent | agent | **automation** |
+| Triggers | conversation, mention #dev/#releases | `task_assigned`, mention #dev/#releases, conversation | `task_assigned`, mention #dev, conversation | `task_assigned`, mention #releases, conversation | mention #alerts, conversation | `routine`, mention #standup, conversation |
+| Model | `smart`, `fast`; medium | `code`, `fast`; high | `code`, `fast`; medium | `smart`, `fast`; low | `fast`, `smart`; low | `fast`; low |
+| Native | `tasks.read`, `tasks.create`, `tasks.handoff`, `messages.post/search`, `files.search`, `knowledge.search`, `memory.recall` | `tasks.read/claim/complete/handoff`, `messages.post/search`, `files.search`, `knowledge.search`, `memory.recall` | the same as Reviewer | `tasks.read/claim/complete/deploy`, `messages.post/search`, `knowledge.search`, `memory.recall` | `tasks.read/create/handoff`, `messages.post/search`, `knowledge.search`, `memory.recall` | `tasks.read`, `messages.post/search`, `files.search`, `knowledge.search`, `memory.recall` |
+| Runtime tools | none | `files`, `git` | `shell`, `files`, `git` | none | none | none |
+| Waits for a person | nothing (it plans) | nothing (it reads) | nothing (it proves) | **`tasks.deploy`** — every release, so a production one cannot slip through | nothing (it routes) | nothing (it reports) |
+| Hands over to | coder, reviewer, tester, deploy, alert-triage; `role:on-call` | coder, tester; `role:on-call` | coder, reviewer; `role:on-call` | — | coder, deploy; `role:on-call` | — |
+| Evals (`minScore`) | `orchestrator` (0.9) | `reviewer` (0.9) | `tester` (0.9) | `deploy` (1) | `alert-triage` (1) | `standup-relay` (1) |
+
+* **The planner does not write.** Orchestrator has no `files.write`, `pages.write` or `tasks.deploy`, and that is the point of the split: it
+  splits a goal into cards (`tasks.create`), gives each one an owner (`tasks.handoff`), and is not a second unchecked author. There is no
+  assign tool — a handover is the assignment — and its `mayTag` list is what bounds who it can wake.
+* **The reviewer reads, the tester proves.** Reviewer holds `files` and `git` but not `shell`, so it can read a diff and cannot run what it
+  reviews. Tester holds `shell` too, and its body is what makes the freshness rule real: a `code` card leaves it with the sha of the commit
+  that passed, and the platform refuses a completion whose branch moved past that commit. Neither may write the change.
+* **Deploy only asks.** Its one act is `tasks.deploy`, and `approvals.needsApproval` names it, so even an unprotected environment waits for a
+  person; a protected production environment waits for a person who is not the requester. The body forbids the failure mode that matters more
+  than any grant: calling an accepted request a release.
+* **Triage routes, the relay reports.** Nine alerts with one cause become one card with an owner; nothing in either bot can restart, scale,
+  delete or deploy. The relay is the template's one automation: a routine run wakes it, it reads the board and the channels, and it posts one
+  message in #standup, under `standup-relay`'s eval set, which refuses an invented update and a private conversation's words.
+* **Gates.** Deploy repeats Coder's credential-rotation and production-deletion patterns; the other four ship none, because their channels are
+  where a person already decides what they see. Every pattern is stage-one only, and no example question of a bot is held by its own list.
 
 ## The three minimal bots
 

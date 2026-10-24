@@ -1,3 +1,5 @@
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LiteLlmError, createLiteLlmClient } from '../../../packages/plugins/gateway-llm/src/litellm.ts';
 import { startFakeLlm, type FakeLlm } from '../src/server.ts';
@@ -12,11 +14,34 @@ import { startFakeLlm, type FakeLlm } from '../src/server.ts';
  */
 
 let fake: FakeLlm | undefined;
+let upstream: Server | undefined;
 
 afterEach(async () => {
   await fake?.close();
   fake = undefined;
+  await new Promise<void>((resolve) => (upstream ? upstream.close(() => resolve()) : resolve()));
+  upstream = undefined;
 });
+
+/** A real gateway's chat-completions endpoint, as tiny as it can be: it records what it was sent and answers as told. */
+async function startUpstream(answer: (request: { body: Record<string, unknown>; authorization: string }, res: import('node:http').ServerResponse) => void): Promise<{
+  url: string;
+  seen: Array<{ body: Record<string, unknown>; authorization: string }>;
+}> {
+  const seen: Array<{ body: Record<string, unknown>; authorization: string }> = [];
+  const server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      const request = { body: JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>, authorization: req.headers.authorization ?? '' };
+      seen.push(request);
+      answer(request, res);
+    });
+  });
+  upstream = server;
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, seen };
+}
 
 const DOC = {
   model_list: [
@@ -233,5 +258,82 @@ describe('the gateway client against a real proxy', () => {
     expect(first.choices[0].delta.content).toContain('Orchestrator here');
     const last = JSON.parse(frames.at(-2)!.slice('data: '.length)) as { choices: [{ delta: object; finish_reason: string }] };
     expect(last.choices[0].finish_reason).toBe('stop');
+  });
+});
+
+describe('fake-llm with a real gateway behind it', () => {
+  /** The body the upstream answered, as the agent's own client would read it. */
+  const answer = (content: string) => ({
+    id: 'chatcmpl-real',
+    model: 'default',
+    choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 31, completion_tokens: 5, total_tokens: 36 },
+  });
+
+  it('sends a completion upstream with the gateway key, under the upstream model name, and keeps the key out of its state', async () => {
+    const real = await startUpstream((_request, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(answer('from the real model')));
+    });
+    fake = await startFakeLlm({ masterKey: 'sk-fake', upstream: { url: `${real.url}/v1`, apiKey: 'sk-upstream-secret', model: 'default' } });
+
+    // The bot's own virtual key is what a run presents; the stand-in owns the upstream credential.
+    const res = await fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer sk-bot-abc' },
+      body: JSON.stringify({ model: 'smart', messages: [{ role: 'user', content: 'say hi' }] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { choices: [{ message: { content: string } }]; usage: { total_tokens: number } };
+    expect(body.choices[0].message.content).toBe('from the real model');
+    expect(body.usage.total_tokens).toBe(36);
+    // The alias `smart` is manythreads' name for the model; the upstream is asked for its own.
+    expect(real.seen).toHaveLength(1);
+    expect(real.seen[0]?.body['model']).toBe('default');
+    expect(real.seen[0]?.body['messages']).toEqual([{ role: 'user', content: 'say hi' }]);
+    expect(real.seen[0]?.authorization).toBe('Bearer sk-upstream-secret');
+    // The management side is still in memory: the gateway's push never reaches the real proxy.
+    expect(JSON.stringify([...fake.state.keys.values()])).not.toContain('sk-upstream-secret');
+    expect(fake.state.calls.some((c) => c.path === '/v1/chat/completions')).toBe(true);
+  });
+
+  it('streams the upstream\'s own frames through untouched, so an agent reads a real SSE answer', async () => {
+    const real = await startUpstream((_request, res) => {
+      const frame = (delta: object, finish: string | null): string =>
+        `data: ${JSON.stringify({ id: 'chatcmpl-real', object: 'chat.completion.chunk', created: 1, model: 'default', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+      res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+      res.write(frame({ role: 'assistant', content: '' }, null));
+      res.write(frame({ content: 'streamed ' }, null));
+      res.write(frame({ content: 'answer' }, null));
+      res.end(`${frame({}, 'stop')}data: [DONE]\n\n`);
+    });
+    fake = await startFakeLlm({ upstream: { url: real.url, apiKey: 'sk-upstream-secret' } });
+
+    const res = await fetch(`${fake.url}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'default', stream: true, messages: [{ role: 'user', content: 'say hi' }] }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/event-stream');
+    const text = await res.text();
+    expect(text).toContain('streamed ');
+    expect(text).toContain('answer');
+    expect(text.trimEnd().endsWith('data: [DONE]')).toBe(true);
+    // No `model` option: the caller's name goes through as asked.
+    expect(real.seen[0]?.body['model']).toBe('default');
+    expect(real.seen[0]?.body['stream']).toBe(true);
+  });
+
+  it('answers 502 when the upstream cannot be reached, rather than pretending a model answered', async () => {
+    // A port nothing listens on: the gateway's own error path is what a run sees.
+    fake = await startFakeLlm({ upstream: { url: 'http://127.0.0.1:9', apiKey: 'sk-upstream-secret' } });
+    const res = await fetch(`${fake.url}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'default', messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: { message: string } }).error.message).toContain('upstream');
   });
 });

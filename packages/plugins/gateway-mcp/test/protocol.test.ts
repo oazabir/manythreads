@@ -119,6 +119,25 @@ describe('gateway-mcp protocol', () => {
     expect(logged).toEqual([]);
   });
 
+  it('accepts the `_meta` MCP reserves on params, so a real client’s call is a call and not bad params', async () => {
+    // Hermes sends `"_meta": {}` on every tools/call (the MCP spec reserves the field for progress and tracing). Refusing it read as
+    // "tools/call needs a tool name and object arguments" in the agent's own words, and it stopped using the tools altogether.
+    const { ctx, invoked } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
+    const res = await handleRpc(ctx, RUN, {
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/call',
+      params: { name: 'messages.search', arguments: { query: 'deploy' }, _meta: {} },
+    });
+    const { result } = (await body(res)) as { error?: unknown; result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ hits: [] });
+    // `_meta` is the protocol's, never the tool's: the handler sees only the arguments.
+    expect(invoked.map((c) => c.name)).toEqual(['messages.search']);
+    expect(invoked[0]!.input).not.toHaveProperty('_meta');
+    expect(invoked[0]!.input['query']).toBe('deploy');
+  });
+
   it('a grant that needs approval stops before the handler runs', async () => {
     const { ctx, invoked } = fakeContext({
       tools: [WRITE_TOOL],

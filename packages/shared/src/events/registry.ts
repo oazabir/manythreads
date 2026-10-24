@@ -26,6 +26,12 @@ import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
 import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
 import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
+import { TasksTaskCreatedEvent } from './tasks.task.created.ts';
+import { TasksTaskUpdatedEvent } from './tasks.task.updated.ts';
+import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
+import { TasksTaskCompletedEvent } from './tasks.task.completed.ts';
+import { TasksTaskHandedOffEvent } from './tasks.task.handed_off.ts';
+import { RhythmsRhythmRanEvent } from './rhythms.rhythm.ran.ts';
 import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
@@ -130,6 +136,12 @@ export const eventRegistry = {
   'workspace.member.role_changed': { 1: WorkspaceMemberRoleChangedEvent },
   'reading.state.changed': { 1: ReadingStateChangedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
+  'tasks.task.created': { 1: TasksTaskCreatedEvent },
+  'tasks.task.updated': { 1: TasksTaskUpdatedEvent },
+  'tasks.task.claimed': { 1: TasksTaskClaimedEvent },
+  'tasks.task.completed': { 1: TasksTaskCompletedEvent },
+  'tasks.task.handed_off': { 1: TasksTaskHandedOffEvent },
+  'rhythms.rhythm.ran': { 1: RhythmsRhythmRanEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 
@@ -194,7 +206,13 @@ export type AnyEvent =
   | z.infer<typeof ReadingStateChangedEvent>
   | z.infer<typeof KernelCapabilityDeniedEvent>
   | z.infer<typeof KernelTestPingedEvent>
-  | z.infer<typeof KernelTestPingedEventV2>;
+  | z.infer<typeof KernelTestPingedEventV2>
+  | z.infer<typeof TasksTaskCreatedEvent>
+  | z.infer<typeof TasksTaskUpdatedEvent>
+  | z.infer<typeof TasksTaskClaimedEvent>
+  | z.infer<typeof TasksTaskCompletedEvent>
+  | z.infer<typeof TasksTaskHandedOffEvent>
+  | z.infer<typeof RhythmsRhythmRanEvent>;
 
 /** The newest version of every event: what `upcast` returns and emitters write. */
 export type LatestEvent =
@@ -252,7 +270,13 @@ export type LatestEvent =
   | z.infer<typeof ApprovalsApprovalRequestedEvent>
   | z.infer<typeof ApprovalsApprovalDecidedEvent>
   | z.infer<typeof ApprovalsApprovalResumedEvent>
-  | z.infer<typeof LlmKeyChangedEvent>;
+  | z.infer<typeof LlmKeyChangedEvent>
+  | z.infer<typeof TasksTaskCreatedEvent>
+  | z.infer<typeof TasksTaskUpdatedEvent>
+  | z.infer<typeof TasksTaskClaimedEvent>
+  | z.infer<typeof TasksTaskCompletedEvent>
+  | z.infer<typeof TasksTaskHandedOffEvent>
+  | z.infer<typeof RhythmsRhythmRanEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

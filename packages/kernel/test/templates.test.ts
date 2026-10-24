@@ -37,7 +37,16 @@ describe('shipped templates', () => {
     const definitions = Object.fromEntries(all.map((t) => [t.id, Object.keys(t.files ?? {}).filter((k) => k.endsWith('/BOT.md')).sort()]));
     expect(definitions).toEqual({
       'customer-support': ['bots/brain/BOT.md', 'bots/support-responder/BOT.md'],
-      engineering: ['bots/brain/BOT.md', 'bots/coder/BOT.md'],
+      engineering: [
+        'bots/alert-triage/BOT.md',
+        'bots/brain/BOT.md',
+        'bots/coder/BOT.md',
+        'bots/deploy/BOT.md',
+        'bots/orchestrator/BOT.md',
+        'bots/reviewer/BOT.md',
+        'bots/standup-relay/BOT.md',
+        'bots/tester/BOT.md',
+      ],
       marketing: ['bots/brain/BOT.md', 'bots/content-drafter/BOT.md'],
       'product-design': ['bots/brain/BOT.md'],
       research: ['bots/brain/BOT.md'],

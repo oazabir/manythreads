@@ -15,6 +15,7 @@ sync rules, troubleshooting).
 | `_common.ps1` | Shared rsync/ssh discovery + exclude list (dot-sourced). |
 | `remote-gates.sh` | Runs on the devbox: `pnpm install`, lint, typecheck, `pnpm db:up`, `pnpm test`. |
 | `ci.sh` | Runs on the devbox: the whole pipeline — install, lint, typecheck, build the images, deploy the candidate into the CI namespace `manythreads-ci`, check that release, run the unit, integration and browser suites, promote the same build to the live namespace. `--no-tests`, `--no-deploy`. The `ci` GitHub workflow runs this. |
+| `hermes-live.mjs` | Runs the real Hermes CLI against a seeded stack and a real model (fake-llm forwards to the gateway), and checks nine bot journeys: mention, conversation, channel message, delegation, answer, approval, gate, task claim, refusal. See [runtime-hermes](../../docs/plugins/runtime-hermes.md#connecting-a-dev-box-real-hermes-a-real-model). |
 | `deploy.sh` | Runs on the devbox: build server+web images, import into k3s, prune old tags, `helm upgrade --install`, smoke-test the site. `--no-build` promotes a build that is already there. |
 
 Devbox: `root@65.109.71.84:44033` (SSH host `devbox`, see `~/.ssh/config`), checkout

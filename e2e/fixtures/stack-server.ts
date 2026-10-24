@@ -120,7 +120,17 @@ const server = await startServer({
   trustProxy: 1,
   ...(process.env['MANYTHREADS_STACK_DEV_AUTH'] === '1' ? { devAuth: true } : {}),
   ...(process.env['MANYTHREADS_STACK_TEST_PLUGINS'] === '1' ? { testPlugins: true } : {}),
-  logger: { level: 'info', stream: { write: (line: string) => void (logs.length < 2000 && logs.push(line)) } },
+  // A failing spec's log is the first thing anyone wants and the last thing this process prints: `MANYTHREADS_STACK_LOG=1` echoes each line
+  // to stderr as it is written, so a run can be watched without reading a stack trace back into a guess.
+  logger: {
+    level: 'info',
+    stream: {
+      write: (line: string) => {
+        if (logs.length < 2000) logs.push(line);
+        if (process.env['MANYTHREADS_STACK_LOG'] === '1') process.stderr.write(`${line}\n`);
+      },
+    },
+  },
 });
 // The server's plugin migrations have run: now the conversations (seed v3 needs the channel tables).
 // `repo` is seed v3 plus seed v4: the team repositories (pages with history, a CSV, a diagram, an app, memory, bots) and the attachments of #dev.

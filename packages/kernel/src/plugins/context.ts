@@ -7,6 +7,8 @@ import type {
   EmitEvent,
   EnqueueJobOptions,
   GetOneOrCreateInput,
+  HttpCaller,
+  HttpRequest,
   JobHandler,
   JobOptions,
   PluginAccess,
@@ -27,12 +29,13 @@ import type {
   StorageScope,
 } from '@manythreads/sdk';
 import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
+import type pg from 'pg';
 import { getOneOrCreate } from '../db/get-or-create.ts';
 import { createEntityLinkService } from '../entity-links/index.ts';
 import { createReadStateService } from '../read-state/index.ts';
 import { parseCron } from '../jobs/cron.ts';
 import { publishRealtime } from '../transport/realtime.ts';
-import type { Actor, Tx } from '../db/with-actor.ts';
+import { NIL_UUID, withActor, withSystem, type Actor, type Tx } from '../db/with-actor.ts';
 import { enqueue } from '../jobs/index.ts';
 import { createTemplateService } from '../templates/service.ts';
 import { runEgressChain } from './egress.ts';
@@ -55,6 +58,9 @@ export interface ContextDeps {
   broker?: { authorize(actor: Actor, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision> };
   /** `ctx.runs`, the MCP gateway's run/tool door (PLAN P5-09); absent when the host has no database pools. */
   runs?: PluginRuns;
+  /** The app pool (`ctx.db.as`) and the system pool (`ctx.db.system`); absent when the host has no database. */
+  pool?: pg.Pool;
+  systemPool?: pg.Pool;
 }
 
 /** The `ctx` handed to `register`. Using an extension point the manifest did not declare throws. */
@@ -105,6 +111,17 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   const db: PluginDb = {
     getOneOrCreate: <R extends Record<string, unknown>>(tx: PluginTx, input: GetOneOrCreateInput) =>
       getOneOrCreate<R>(guardPluginTx(tx) as unknown as Tx, input),
+    as: async <T>(caller: HttpCaller | null, fn: (tx: PluginTx) => Promise<T>): Promise<T> => {
+      if (!deps.pool) throw new PluginError(`Plugin "${name}": ctx.db.as needs a database pool`, { plugin: name });
+      const actor: Actor = caller
+        ? { kind: caller.kind, id: caller.actorId as Actor['id'], workspaceId: caller.workspaceId as Actor['workspaceId'] }
+        : { kind: 'person', id: NIL_UUID as Actor['id'], workspaceId: NIL_UUID as Actor['workspaceId'] };
+      return withActor(actor, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: deps.pool });
+    },
+    system: async <T>(fn: (tx: PluginTx) => Promise<T>): Promise<T> => {
+      if (!deps.systemPool) throw new PluginError(`Plugin "${name}": ctx.db.system needs a database pool`, { plugin: name });
+      return withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: deps.systemPool });
+    },
   };
 
   const templates = deps.templates ?? createTemplateService();
@@ -296,9 +313,14 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
             { plugin: name },
           );
         }
+        if (definition.ws && definition.handler) throw new PluginError(`Plugin "${name}": a route is either a handler or a socket, not both`, { plugin: name });
+        if (definition.ws && definition.method !== 'GET') throw new PluginError(`Plugin "${name}": a socket route must be GET`, { plugin: name });
+        if (!definition.ws && !definition.handler) throw new PluginError(`Plugin "${name}": a route needs a handler or a socket`, { plugin: name });
         registries.httpRoutes.add(name, {
           ...definition,
-          handler: (request, tx) => definition.handler(request, guardPluginTx(tx)),
+          ...(definition.handler
+            ? { handler: (request: HttpRequest, tx: PluginTx) => definition.handler!(request, guardPluginTx(tx)) }
+            : {}),
           fullPath,
         });
       },

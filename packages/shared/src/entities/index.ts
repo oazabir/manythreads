@@ -22,3 +22,5 @@ export * from './mcp.ts';
 export * from './approval.ts';
 export * from './memory.ts';
 export * from './retention.ts';
+export * from './task.ts';
+export * from './rhythm.ts';

@@ -1,5 +1,6 @@
 import type { PluginContext, PluginTx, RepoProvider, RepoWriteChange, RepoWriteResult } from '@manythreads/sdk';
 import { PAGES_DIR, WritePageRequest, isGuardedRepoPath, type PageWriteMode, type RepoConflict } from '@manythreads/shared';
+import { applyLiveWrite } from './live.ts';
 
 // `pages.write` (SPEC section 6.4, PLAN P4-07): create, replace or append a page, which is a text file under `pages/` of the team repo. Plain file write plus
 // commit through the repo writer (one commit per call, the caller as author); live editing with Yjs replaces the writer in phase 6.
@@ -72,6 +73,20 @@ export async function writePage(ctx: PluginContext, tx: PluginTx, input: WritePa
     return refuse(403, 'forbidden', 'Change by pull request: pages.write does not change bots/, TEAM.md, skills/ or routines/');
   }
   if (!path.startsWith(`${PAGES_DIR}/`)) return refuse(400, 'validation_failed', `pages.write writes under ${PAGES_DIR}/ (for example pages/reports/week-37.md)`);
+
+  // A page with a live session takes the change into the session's document (P6-09), so a bot and the people editing never clobber each other.
+  const live = await applyLiveWrite(ctx, {
+    teamId: team.id,
+    path,
+    mode,
+    content,
+    ...(baseBlobSha !== undefined ? { baseBlobSha } : {}),
+    actor: { id: tx.actor.id, kind: tx.actor.kind, workspaceId: tx.actor.workspaceId },
+  });
+  if (live) {
+    const written = live.paths.find((p) => p.path === path);
+    return { ok: true, created: mode === 'create', mode, result: live, blobSha: written?.blobSha ?? null, size: written?.size ?? null };
+  }
 
   const change: RepoWriteChange =
     mode === 'append'

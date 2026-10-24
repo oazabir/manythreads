@@ -58,6 +58,21 @@ export const approvalsMigrationSource: MigrationSource = {
 };
 
 /**
+ * Migrations of the tasks plugin (`goals`, `tasks`, `task_claims`, `task_events`, `handoffs`, `environments`, `deploy_requests`,
+ * `deploys`, `boards`, `runners`); pass it after `approvalsMigrationSource` (handoffs and the strict-handoff door reference approvals).
+ */
+export const tasksMigrationSource: MigrationSource = {
+  namespace: 'tasks',
+  dir: fileURLToPath(new URL('../../plugins/tasks/migrations/', import.meta.url)),
+};
+
+/** Migrations of the rhythms plugin (`rhythms`, `rhythm_runs`); pass it after `botsMigrationSource` (a rhythm runs as a bot). */
+export const rhythmsMigrationSource: MigrationSource = {
+  namespace: 'rhythms',
+  dir: fileURLToPath(new URL('../../plugins/rhythms/migrations/', import.meta.url)),
+};
+
+/**
  * Migrations of the memory plugin (`memory_retain_log`, `memory_feed_pending`, `app.run_retain_verdict`); pass it in `sources` after the files and
  * approvals sources (it reads bots, channels, files, approvals and repo-git) and before `memoryHindsightMigrationSource`.
  */

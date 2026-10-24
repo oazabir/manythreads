@@ -91,6 +91,8 @@ beforeAll(async () => {
       "INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id",
       [omar.workspaceId, botId],
     );
+    // The loader seats a bot on its team (that one row is what gives it the team's public channels and the board's `post` door).
+    await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')`, [teamId, actor.rows[0]!.id, omar.workspaceId]);
     return { botId, actorId: actor.rows[0]!.id };
   });
 
@@ -106,6 +108,7 @@ beforeAll(async () => {
   await grant('messages.search', false);
   await grant('knowledge.search', false);
   await grant('pages.write', true);
+  await grant('tasks.create', false);
 
   const minted = await world.call(omar, 'POST', '/api/teams/engineering/bots/mcpgateway/pairing-tokens', {});
   expect(minted.status, JSON.stringify(minted.body)).toBe(201);
@@ -181,6 +184,57 @@ describe('gateway-mcp endpoint', () => {
     );
     expect(logged.length).toBe(answer.hits.length);
     expect(logged[0]).toMatchObject({ source_type: 'message', source_ref: answer.hits[0]!.id, scope: 'channel' });
+  });
+
+  it('a card created by a tool is the board’s own card: the bot writes it in its team, with the route’s row, history and event', async () => {
+    const res = await callRunUrl(run, {
+      jsonrpc: '2.0',
+      id: 55,
+      method: 'tools/call',
+      params: { name: 'tasks.create', arguments: { title: 'Add retry to the upload client', branch: 'fix/upload-retry', kind: 'code', priority: 'high' } },
+    });
+    const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+    expect(result.isError, JSON.stringify(result)).toBeFalsy();
+    const answer = JSON.parse(result.content[0]!.text) as { ok: boolean; task: { id: string; teamId: string; title: string; state: string; kind: string; priority: string; createdBy: string } };
+    expect(answer.ok).toBe(true);
+    expect(answer.task).toMatchObject({
+      teamId,
+      title: 'Add retry to the upload client',
+      state: 'open',
+      kind: 'code',
+      priority: 'high',
+      createdBy: bot.actorId,
+    });
+
+    // The route's door wrote the row and its `created` history; the event is what a board reads to redraw.
+    const stored = await world.system(async (tx) =>
+      (await tx.query<{ created_by: string; branch: string }>('SELECT created_by, branch FROM app.tasks WHERE id = $1::uuid', [answer.task.id])).rows[0],
+    );
+    expect(stored).toMatchObject({ created_by: bot.actorId, branch: 'fix/upload-retry' });
+    const history = await world.system(async (tx) =>
+      (await tx.query<{ actor_id: string; type: string }>('SELECT actor_id, type FROM app.task_events WHERE task_id = $1::uuid', [answer.task.id])).rows,
+    );
+    expect(history).toEqual([{ actor_id: bot.actorId, type: 'created' }]);
+    const emitted = await world.system(async (tx) =>
+      (await tx.query<{ payload: { taskId: string; creatorId: string } }>("SELECT payload FROM app.events WHERE type = 'tasks.task.created' AND team_id = $1 ORDER BY id DESC LIMIT 1", [teamId])).rows[0],
+    );
+    expect(emitted?.payload).toMatchObject({ taskId: answer.task.id, creatorId: bot.actorId });
+  });
+
+  it('a card a tool creates names its own team and refuses one with no title before anything is written', async () => {
+    const before = await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.tasks WHERE team_id = $1', [teamId])).rows[0]!.n);
+    const res = await callRunUrl(run, {
+      jsonrpc: '2.0',
+      id: 56,
+      method: 'tools/call',
+      params: { name: 'tasks.create', arguments: { title: '', branch: 'fix/upload-retry' } },
+    });
+    // A tool's own refusal is an answer the model can read and retry, not a transport failure: only the broker's refusals carry `isError`.
+    const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'invalid_input' });
+    const after = await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.tasks WHERE team_id = $1', [teamId])).rows[0]!.n);
+    expect(after).toBe(before);
   });
 
   it('a tool with no grant is refused and the denial is audited', async () => {

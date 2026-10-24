@@ -29,7 +29,8 @@ test.describe('Nadia, a member', () => {
     // the rows arrive once the team list has loaded
     await expect.poll(() => sidebarRows(page)).toEqual(['Files', 'Boards', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
     await expect(sidebar).not.toContainText('No files yet');
-    await expect(sidebar).toContainText('No boards yet');
+    // Files and Boards are built screens: their sidebar rows carry no "nothing here" subtitle.
+    await expect(sidebar).not.toContainText('No boards yet');
     await expect(sidebar).toContainText('Nothing waiting');
     await expect(sidebar).toContainText('No bots yet');
     await expect(sidebar).not.toContainText(/phase|later/i);

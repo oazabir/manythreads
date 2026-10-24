@@ -123,6 +123,23 @@ export interface HttpRequest {
    */
   stream?: AsyncIterable<Uint8Array>;
 }
+/**
+ * One live socket as a plugin sees it: a WebSocket upgrade on a route declared with `ws`. The server has already authenticated the request (the
+ * same rules and hooks as an HTTP route) and hands over the bytes untouched, so a plugin speaks its own protocol (pages speak Yjs) without the
+ * platform choosing one. `send` takes a string or bytes; `close` is idempotent.
+ */
+export interface PluginSocket {
+  send(data: string | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+  /** `message` carries a string for a text frame, bytes for a binary one. */
+  on(event: 'message', listener: (data: string | Uint8Array) => void): void;
+  on(event: 'close', listener: () => void): void;
+  on(event: 'error', listener: (err: Error) => void): void;
+}
+
+/** A route that upgrades instead of answering: `GET` only, no schema (`body` and `query` are the plugin's to validate). */
+export type PluginSocketHandler = (socket: PluginSocket, request: HttpRequest) => void | Promise<void>;
+
 export interface HttpResponse {
   status?: number;
   body?: unknown;
@@ -178,7 +195,13 @@ export interface HttpRouteDefinition {
    * `body` that is a Node `Readable` in the response is piped to the client unserialised (downloads; give no `schema.response`).
    */
   rawBody?: boolean;
-  handler(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
+  /**
+   * The route upgrades to a WebSocket instead of answering (`GET` only; `handler` is then absent). Authentication, CSRF and the session's live
+   * re-check run exactly as for an HTTP route, so a socket is never anonymous on a private route. A socket has no transaction: the plugin opens
+   * its own (`ctx.db`) when it needs the database.
+   */
+  ws?: PluginSocketHandler;
+  handler?(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 
 /** What the broker needs beyond the actor: repo-relative paths for `files.*` mutations, the trigger of the run, request constraints. */
@@ -431,6 +454,17 @@ export interface PluginDb {
    * pre-drawn id in `values` (`SELECT uuidv7()`) and compare it with the returned `id`.
    */
   getOneOrCreate<R extends Record<string, unknown> = Record<string, unknown>>(tx: PluginTx, input: GetOneOrCreateInput): Promise<R>;
+  /**
+   * One transaction as the caller, for work that has no request of its own: a socket frame, a timer, a connection's own bookkeeping. RLS and
+   * the plugin's SQL guard apply exactly as in a route. The caller is the authenticated actor the socket was opened with; `null` is the
+   * anonymous actor (which sees and writes nothing). Absent only when the host has no database.
+   */
+  as<T>(caller: HttpCaller | null, fn: (tx: PluginTx) => Promise<T>): Promise<T>;
+  /**
+   * One transaction as the system actor (no RLS): the platform's own bookkeeping — folding a live document into a commit, sweeping what a dead
+   * process left behind. A plugin that reaches for this to answer a person's request is wrong; routes and sockets have the actor already.
+   */
+  system<T>(fn: (tx: PluginTx) => Promise<T>): Promise<T>;
 }
 
 /** An audit event as a plugin writes it: `schemaVersion` defaults to 1 and `workspaceId` to the transaction's workspace. */

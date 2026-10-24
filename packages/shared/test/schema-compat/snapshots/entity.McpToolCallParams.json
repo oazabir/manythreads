@@ -13,6 +13,13 @@
         "type": "string"
       },
       "additionalProperties": {}
+    },
+    "_meta": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
     }
   },
   "required": [

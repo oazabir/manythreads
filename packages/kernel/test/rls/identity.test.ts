@@ -151,7 +151,7 @@ describe('S tables: nobody as manythreads_app can read secrets, password hashes,
     const rows = await w.system((tx) => tx.query<{ hash: string }>('SELECT hash FROM password_credentials'));
     expect(rows.rows).toHaveLength(7);
     for (const { hash } of rows.rows) expect(hash.startsWith('$argon2id$')).toBe(true);
-    expect(await verifyPassword(rows.rows[0]?.hash ?? '', 'correct-horse-battery')).toBe(true);
+    expect(await verifyPassword(rows.rows[0]?.hash ?? '', 'manythreadspassword')).toBe(true);
     expect(await verifyPassword(rows.rows[0]?.hash ?? '', 'wrong-horse-battery')).toBe(false);
     expect(await verifyPassword('not-a-hash', 'x')).toBe(false);
     expect((await hashPassword('another-long-password')).startsWith('$argon2id$')).toBe(true);

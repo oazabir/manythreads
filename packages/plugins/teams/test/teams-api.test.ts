@@ -25,6 +25,25 @@ afterAll(async () => {
   await w?.close();
 });
 
+/** The engineering template's bot definitions and scenario sets (P6-12: eight bots, one pipeline). */
+const ENGINEERING_BOT_FILES = [
+  'bots/alert-triage/BOT.md',
+  'bots/alert-triage/evals/alert-triage.yaml',
+  'bots/brain/BOT.md',
+  'bots/brain/evals/brain.yaml',
+  'bots/coder/BOT.md',
+  'bots/deploy/BOT.md',
+  'bots/deploy/evals/deploy.yaml',
+  'bots/orchestrator/BOT.md',
+  'bots/orchestrator/evals/orchestrator.yaml',
+  'bots/reviewer/BOT.md',
+  'bots/reviewer/evals/reviewer.yaml',
+  'bots/standup-relay/BOT.md',
+  'bots/standup-relay/evals/standup-relay.yaml',
+  'bots/tester/BOT.md',
+  'bots/tester/evals/tester.yaml',
+];
+
 const ok = <T>(res: { status: number; body: unknown }, status = 200): T => {
   expect(res.status, JSON.stringify(res.body)).toBe(status);
   return res.body as T;
@@ -43,8 +62,8 @@ describe('templates', () => {
     const t = TeamTemplate.parse(body.template);
     expect(t.channels.map((c) => c.name)).toEqual(['#general', '#dev', '#releases', '#incidents', '#alerts', '#standup']);
     expect(t.teamMd).toContain('name: Engineering');
-    // the bot definitions the template ships (Brain in every one) travel with it
-    expect(Object.keys(t.files ?? {}).sort()).toEqual(['bots/brain/BOT.md', 'bots/brain/evals/brain.yaml', 'bots/coder/BOT.md']);
+    // the bot definitions the template ships (Brain in every one) travel with it; engineering ships its whole pipeline
+    expect(Object.keys(t.files ?? {}).sort()).toEqual(ENGINEERING_BOT_FILES);
     expect((await w.call(nadia, 'GET', '/api/templates/nope')).status).toBe(404);
     expect((await w.call(null, 'GET', '/api/templates')).status).toBe(401);
   });
@@ -74,7 +93,7 @@ describe('apply a template (P2-08)', () => {
       expect(files.rows).toHaveLength(1);
       expect(files.rows[0]?.files['TEAM.md']).toBe(def.teamMd);
       // the first commit of the repository carries TEAM.md and the bot definitions of the template
-      expect(Object.keys(files.rows[0]?.files ?? {}).sort()).toEqual(['TEAM.md', 'bots/brain/BOT.md', 'bots/brain/evals/brain.yaml', 'bots/coder/BOT.md']);
+      expect(Object.keys(files.rows[0]?.files ?? {}).sort()).toEqual(['TEAM.md', ...ENGINEERING_BOT_FILES]);
       const tags = await tx.query<{ name: string }>(
         'SELECT r.name FROM app.team_role_tags t JOIN app.roles r ON r.id = t.role_id WHERE t.team_id = $1 ORDER BY r.name',
         [teamId],

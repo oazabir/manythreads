@@ -318,6 +318,131 @@
   resize: vertical;
 }
 
+.live {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.live-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--human-border);
+  border-radius: 7px;
+  background: var(--human-wash);
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.live-dot.synced {
+  background: var(--ok, rgb(28 154 95));
+}
+
+.live-dot.offline {
+  background: var(--danger, rgb(192 57 43));
+}
+
+.live-state {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.live-hint {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.live-people {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.live-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--txt);
+}
+
+.live-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: rgb(255 255 255);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.live-saved {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.live-editor {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.live-area {
+  display: block;
+  width: 100%;
+  min-height: 320px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+}
+
+.live-caret-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.live-caret {
+  position: absolute;
+  width: 2px;
+  height: 1.35em;
+  border-left: 2px solid currentcolor;
+}
+
+.live-caret-name {
+  position: absolute;
+  bottom: 100%;
+  left: -2px;
+  padding: 0 4px;
+  border-radius: 3px 3px 3px 0;
+  color: rgb(255 255 255);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: 9.5px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
 .slash-menu {
   position: absolute;
   z-index: 5;

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -74,11 +75,29 @@ export const PROFILE_MARKER = '.manythreads-profile';
 const PROFILE_DIR_NAME = /^[a-z0-9][a-z0-9._-]*-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|no-run)$/;
 
 /**
+ * Whether this directory is one of ours and holds nothing but the `logs/` Hermes writes as it exits.
+ *
+ * The removal at the end of a run is a `rm -rf` racing a process that is finishing: Hermes can write its log directory after the
+ * files (the run token, the bot's key) are already gone, which leaves a named husk with no marker for the sweep to recognise. A
+ * directory named `<slug>-<run uuid>` whose only entry is `logs/`, holding nothing but `*.log` files, is that husk and nothing
+ * else.
+ */
+async function isProfileHusk(path: string): Promise<boolean> {
+  const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
+  if (entries === null || entries.length !== 1) return false;
+  const only = entries[0];
+  if (only?.name !== 'logs' || !only.isDirectory()) return false;
+  const logs = await readdir(resolve(path, 'logs'), { withFileTypes: true }).catch(() => null);
+  return logs !== null && logs.every((entry) => entry.isFile() && entry.name.endsWith('.log'));
+}
+
+/**
  * Remove profile directories a crashed or killed server left behind (a profile holds the run token and the bot's key and is
  * removed when its run ends; a process that died mid-run never got to). Called once at startup; only directories that (1) are
- * named the way `profileHome` names them, (2) carry `PROFILE_MARKER` and (3) are older than `maxAgeMs` go — so an operator who
- * points `MANYTHREADS_RUNTIME_DIR` at a directory with other things in it loses none of them, and a profile another replica
- * sharing the directory is using right now is left alone. Answers how many went.
+ * named the way `profileHome` names them, (2) carry `PROFILE_MARKER` (or are the empty husk `isProfileHusk` describes) and (3)
+ * are older than `maxAgeMs` go — so an operator who points `MANYTHREADS_RUNTIME_DIR` at a directory with other things in it
+ * loses none of them, and a profile another replica sharing the directory is using right now is left alone. Answers how many
+ * went.
  */
 export async function sweepStaleProfiles(dataRoot: string, maxAgeMs: number, now: number = Date.now()): Promise<number> {
   let names: string[];
@@ -93,8 +112,12 @@ export async function sweepStaleProfiles(dataRoot: string, maxAgeMs: number, now
     const path = resolve(dataRoot, name);
     try {
       const info = await stat(path);
-      if (!info.isDirectory() || now - info.mtimeMs < maxAgeMs) continue;
-      if (!(await stat(resolve(path, PROFILE_MARKER))).isFile()) continue;
+      if (!info.isDirectory()) continue;
+      // A husk cannot be a live run's profile (that one holds `config.yaml` and `SOUL.md`), so its age is not evidence either way: it
+      // goes at once. A marked profile keeps the age rule, which is what leaves another replica's run alone.
+      const husk = await isProfileHusk(path);
+      const marked = await stat(resolve(path, PROFILE_MARKER)).then((s) => s.isFile(), () => false);
+      if (!husk && (!marked || now - info.mtimeMs < maxAgeMs)) continue;
       await rm(path, { recursive: true, force: true });
       removed += 1;
     } catch {
@@ -149,7 +172,19 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
       const { dir, written } = profilePaths(options.dataRoot, profile.home, profile.files);
       // The profile holds the run token and the bot's key: owner-only directory and files, and gone again if anything between
       // here and a running child fails (a spawn that throws, a full disk) — not only when the stream ends.
-      const removeProfile = () => rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      // A process that is still finishing can recreate its log directory after the removal (Hermes writes `logs/` as it exits), so this
+      // asks twice more before it gives up: what must not stay behind is the file holding the run's token and the bot's key.
+      const removeProfile = async (): Promise<void> => {
+        // Hermes' own state registry can write `logs/` as it shuts down, after the removal already succeeded: a removal only counts
+        // once it has stayed removed through two quiet checks.
+        let quiet = 0;
+        for (let attempt = 0; attempt < 6 && quiet < 2; attempt += 1) {
+          await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+          await new Promise((r) => setTimeout(r, 200));
+          quiet = existsSync(dir) ? 0 : quiet + 1;
+        }
+        if (existsSync(dir)) scope.log(`runtime-hermes: the profile of run ${input.endpoint?.runId ?? '?'} could not be removed (Hermes wrote to it as it exited)`);
+      };
       let child: ChildProcess;
       try {
         await mkdir(resolve(options.dataRoot), { recursive: true, mode: 0o700 });

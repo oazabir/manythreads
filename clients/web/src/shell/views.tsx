@@ -72,16 +72,3 @@ export function DirectMessageView() {
   if (!dm) return <NoChannelAccess />;
   return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: dmLabel(dm, session.person.id) }} />;
 }
-const SECTIONS = {
-  boards: { title: 'No boards yet', body: 'Boards the team creates show up here.' },
-} as const;
-
-export function SectionView({ section }: { section: keyof typeof SECTIONS }) {
-  const s = SECTIONS[section];
-  return (
-    <div className="view-empty">
-      <p className="view-empty-title">{s.title}</p>
-      <p className="view-empty-body">{s.body}</p>
-    </div>
-  );
-}

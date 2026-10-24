@@ -318,6 +318,8 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
       ...(runs ? { runs } : {}),
       templates,
       ...(options.emit ? { emit: options.emit } : {}),
+      ...(options.database?.pool ? { pool: options.database.pool } : {}),
+      ...(options.database?.systemPool ? { systemPool: options.database.systemPool } : {}),
     });
     try {
       await p.definition.register(ctx);

@@ -15,10 +15,13 @@ import { SignIn } from './screens/SignIn';
 import { SignInMethods } from './screens/SignInMethods';
 import { Shell } from './shell/Shell';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
-import { DirectMessageView, HomeView, RequireTeam, SectionView, TeamHome } from './shell/views';
+import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
 import { BotRoster } from './screens/bots/BotRoster';
+import { BoardsScreen } from './screens/boards/BoardsScreen';
+import { OrgScreen } from './screens/boards/OrgScreen';
+import { RhythmsScreen } from './screens/boards/RhythmsScreen';
 import { ConversationRedirect, ConversationView } from './screens/conversations/ConversationView';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
@@ -60,7 +63,9 @@ function AppRoutes() {
             <Route path="/t/:team/threads" element={<RequireTeam><ThreadsInbox /></RequireTeam>} />
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/memory" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense></RequireTeam>} />
-            <Route path="/t/:team/boards" element={<RequireTeam><SectionView section="boards" /></RequireTeam>} />
+            <Route path="/t/:team/boards" element={<RequireTeam><BoardsScreen /></RequireTeam>} />
+            <Route path="/t/:team/org" element={<RequireTeam><OrgScreen /></RequireTeam>} />
+            <Route path="/t/:team/rhythms" element={<RequireTeam><RhythmsScreen /></RequireTeam>} />
             <Route path="/t/:team/approvals" element={<RequireTeam><ApprovalsScreen /></RequireTeam>} />
             <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />

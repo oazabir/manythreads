@@ -209,7 +209,9 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   const storageDirs = new Set(Object.values(STORAGE_PLUGIN_DIRS));
   const sources: PluginSource[] = (await discoverPlugins(pluginsDir)).filter((s) => {
     if (!('dir' in s) || s.dir === undefined) return true;
-    const dirName = s.dir.split('/').filter(Boolean).pop() ?? '';
+    // A plugin's directory is a path from the filesystem, so it is separated by `\` on Windows: splitting on `/` alone left the last
+    // segment as the whole path and loaded BOTH storage plugins (the s3 one then stopped the start asking for a bucket).
+    const dirName = s.dir.split(/[\\/]/).filter(Boolean).pop() ?? '';
     if (storageDirs.has(dirName)) return dirName === STORAGE_PLUGIN_DIRS[storage];
     if (SPIKE_PLUGIN_DIRS.has(dirName)) return options.testPlugins === true || options.spikePlugins === true;
     return options.testPlugins === true || !TEST_ONLY_PLUGIN_DIRS.has(dirName);

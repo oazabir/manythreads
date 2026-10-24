@@ -1,8 +1,8 @@
 # pages
 
 Durable pages: reports, saved answers, routine outputs. A page is a **text file under `pages/` of the team repo** ([repo-git.md](./repo-git.md)); `pages.write` is plain file write plus commit
-(SPEC section 6.4, PLAN P4-07). Concurrent live editing with Yjs replaces the writer in phase 6 (`pages.write` then writes through the same document).
-Code: `packages/plugins/pages`. Schemas: `packages/shared/src/{api/pages/write-page,events/pages.page.written}`. No tables, no migrations.
+(SPEC section 6.4, PLAN P4-07). A page can also be **edited live** by several people (and a bot) at once over a Yjs document, with one co-authored commit per session (P6-09).
+Code: `packages/plugins/pages`. Schemas: `packages/shared/src/{api/pages/write-page,events/pages.page.written}`. Migration `0002_live_pages.sql`.
 
 ## The capability and the route
 
@@ -35,6 +35,41 @@ transaction. The plugin looks the provider up per request (`ctx.providers.get('r
 
 Refusals are returned as the error envelope without rolling the transaction back (see repo-git: a refusal never undoes work the request had to do first); the 409 body is `RepoConflictResponse`.
 
+## Live editing (P6-09)
+
+`GET /api/teams/:slug/pages/live?path=pages/…` upgrades to a WebSocket (a plugin socket route; the kernel's `HttpRouteDefinition.ws`). Frames are binary and speak the
+standard Yjs protocol: type `0` is sync (step1/step2/update, `y-protocols/sync`) and type `1` is awareness (`y-protocols/awareness`); the server also sends one text frame,
+`{ type: 'committed', path, sha, editors }`, when a session commits. Authentication and CSRF are the platform's ordinary hooks on the upgrade; only a **person on the team**
+may open a page, the path must be under `pages/`, and the four guarded paths are refused. A socket has no transaction of its own: the plugin opens one with `ctx.db.as(caller, …)`
+(a door added with this phase) for the read, the update ledger and the commit.
+
+| table | what it holds |
+|---|---|
+| `page_docs` | the Yjs snapshot per `(team, path)`, the newest `page_updates` id it contains (`last_update_id`) and the `last_commit_sha` |
+| `page_updates` | every update, append-only, `(team, path, id)` and BRIN on time: who changed which page, and the replay tail after a crash |
+| `page_awareness` | live cursors (UNLOGGED, 30 s expiry, PK `(team, path, actor)`): a cursor is worth nothing after a failover and the clients send it again |
+
+**The document's text is the markdown source.** Frontmatter is split off on load and re-attached on commit, so the live editor and the committed file hold the same bytes and rich
+rendering still works on the file. Loading applies the snapshot then every update after `last_update_id`; a process that died mid-session therefore loses nothing that reached
+the ledger.
+
+**One commit per session.** When the last socket closes there is a 2 s grace for a reload, then the session commits (`MANYTHREADS_PAGE_LEAVE_MS`); with editors still present, a
+commit happens after 60 s without an update (`MANYTHREADS_PAGE_IDLE_MS`). The commit's author is the first person who edited (else the first editor) and **every other editor
+is a `Co-authored-by`**; the message is `Edit <path> live with N editors`. It goes through the ordinary repo writer with `baseBlobSha` from the session, so a commit made outside
+the session is a 409 that leaves the room dirty instead of overwriting it. The snapshot and `last_update_id` are then written as the system actor, and `pages.page.written` is
+emitted for the commit. A session that ends where it started writes nothing.
+
+**Bots write through the same document.** `pages.write` (route and capability) first asks the live registry; with a room open the change is applied to the same `Y.Text`, broadcast
+to the editors, committed at once as the bot (with the session's editors as co-authors) and returned as the ordinary `WritePageResponse`. With no room it is the plain writer
+below. A `create` never goes into a live room (the page exists), and a `baseBlobSha` that does not match the session's is left to the ordinary writer to refuse.
+
+**Limits (deliberate, for P10).** Rooms live in one process: two replicas editing one page hold two documents, and the second commit loses the `baseBlobSha` race (the room stays
+dirty and retries). Awareness is per process and dies with it. Nothing is applied to the repo until the session commits, so a page is not "saved" on every keystroke.
+
+**Screen.** `clients/web/src/viewers/markdown/live.ts` is the browser end (sync, awareness, a minimal-diff editor that turns a keystroke into one insert/delete, peers and colours)
+and `LivePageEditor.tsx` draws the source, the presence chips and the remote carets; the Markdown viewer's **Live** button opens it only when the page has no unsaved edit, and
+**Done** hands the committed source back to the viewer.
+
 ## Save as page
 
 `POST /api/channels/:channelId/messages/:messageId/answer/page` `{ remove: number[], digest }` writes the masked copy of an answer of the **caller's
@@ -56,5 +91,7 @@ One per write that changed the page; a refused, conflicting or no-op write emits
 ## Tests
 
 `test/pages.test.ts` (create/replace/append, 409 with current content, no-op, concurrent appends, linear history, the four guarded paths for people and a bot with audit, a bot with only `pages.write`, a bot with only
-`files.write`, team access), `test/events/pages-events.test.ts` (`pnpm test:events`), `test/manifest.test.ts`; `e2e/api/repo/pages-write.spec.ts` (`pnpm e2e --project=api`); Save as page: `packages/plugins/conversations/test/share.test.ts` and
-`e2e/conversations/share.spec.ts`.
+`files.write`, team access), `test/events/pages-events.test.ts` (`pnpm test:events`), `test/manifest.test.ts`, `test/live.test.ts` (two editors over the real socket: concurrent text,
+awareness with cursors, one commit with both as co-authors and the page's bytes, snapshot reload, idle commit, the three refusals, the update ledger);
+`clients/web/test/live-page.test.ts` (diffing, convergence, peers and carets, the socket handshake and the commit notice); `e2e/api/repo/pages-write.spec.ts` (`pnpm e2e --project=api`); Save as page:
+`packages/plugins/conversations/test/share.test.ts` and `e2e/conversations/share.spec.ts`.

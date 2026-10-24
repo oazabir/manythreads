@@ -18,7 +18,7 @@ const CHARSET = new Set(['text/html', 'text/css', 'text/javascript', 'text/xml',
  */
 const withAppHeaders = (res: HttpResponse): HttpResponse => ({ ...res, headers: { ...res.headers, ...embeddedAppHeaders() } });
 
-type Handler = Parameters<PluginContext['http']['route']>[0]['handler'];
+type Handler = NonNullable<Parameters<PluginContext['http']['route']>[0]['handler']>;
 
 /** `GET /api/teams/:slug/repo/app/<folder>/<file>`; a folder (or `.../`) answers its `index.html`. */
 export function registerRepoAppRoute(ctx: PluginContext, repo: RepoService): void {

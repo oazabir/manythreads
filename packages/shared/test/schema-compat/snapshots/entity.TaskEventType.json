@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "created",
+    "claimed",
+    "released",
+    "state_changed",
+    "handed_off",
+    "completed",
+    "reworked",
+    "deployed"
+  ]
+}

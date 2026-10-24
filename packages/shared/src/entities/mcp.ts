@@ -76,10 +76,16 @@ export const McpToolResult = z.strictObject({
 });
 export type McpToolResult = z.infer<typeof McpToolResult>;
 
-/** `tools/call` params. `arguments` are the tool's own input, validated by the handler that owns the capability. */
+/**
+ * `tools/call` params. `arguments` are the tool's own input, validated by the handler that owns the capability. `_meta` is MCP's
+ * own reserved field on every params object (progress tokens, tracing) and is not a tool argument: a client that sends it —
+ * Hermes' does, as `_meta: {}` on every call — must not be refused for it (the refusal read "tools/call needs a tool name and
+ * object arguments", and the agent gave up on the tools). It is accepted and ignored.
+ */
 export const McpToolCallParams = z.strictObject({
   name: z.string().min(1).max(64),
   arguments: z.record(z.string(), z.unknown()).optional(),
+  _meta: z.record(z.string(), z.unknown()).optional(),
 });
 export type McpToolCallParams = z.infer<typeof McpToolCallParams>;
 

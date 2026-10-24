@@ -32,7 +32,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import { HttpError, type HttpRequest } from '@manythreads/sdk';
+import { HttpError, type HttpRequest, type PluginSocket } from '@manythreads/sdk';
 import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -371,7 +371,82 @@ async function mountPluginRoutes(
   sessions: SessionService | undefined,
 ): Promise<void> {
   if (!host) return;
+  /** The same request the HTTP handler sees, built from the Fastify request (a socket upgrade has no body). */
+  const requestOf = (req: FastifyRequest, def: MountedRoute): HttpRequest => ({
+    params: req.params as Record<string, string>,
+    query: req.query as Record<string, string | undefined>,
+    body: def.rawBody ? undefined : req.body,
+    ...(def.rawBody ? { stream: req.raw } : {}),
+    headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v])),
+    ip: req.ip,
+    caller: req.actor
+      ? {
+          actorId: req.actor.id,
+          kind: req.actor.kind === 'bot' ? 'bot' : 'person',
+          workspaceId: req.actor.workspaceId,
+          personId: req.authSession?.personId ?? null,
+          sessionId: req.authSession?.sessionId ?? null,
+        }
+      : null,
+  });
+  const routeConfig = (def: MountedRoute): Record<string, unknown> => ({
+    ...(def.rateLimit ? { rateLimit: def.rateLimit } : {}),
+    ...(def.public ? { public: true } : {}),
+    ...(def.csrfExempt ? { csrfExempt: true } : {}),
+  });
+  /** The slice of a `ws` socket the bridge below uses (the package's own types are not a server dependency). */
+  interface RawSocket {
+    send(data: string | Uint8Array, options: { binary: boolean }): void;
+    close(code?: number, reason?: string): void;
+    on(event: 'message', cb: (data: Buffer, isBinary: boolean) => void): void;
+    on(event: 'close', cb: () => void): void;
+    on(event: 'error', cb: (err: Error) => void): void;
+  }
   const mount = (target: FastifyInstance, plugin: string, def: MountedRoute): void => {
+    if (def.ws) {
+      // A plugin's own live protocol: the hooks above have already authenticated the upgrade, and the frame bytes are handed over untouched.
+      target.route({
+        method: def.method,
+        url: def.fullPath,
+        websocket: true,
+        config: routeConfig(def),
+        handler: (raw: RawSocket, req: FastifyRequest) => {
+          const socket = raw;
+          const request = requestOf(req, def);
+          const deliver = (event: 'message' | 'close' | 'error', listener: (value?: unknown) => void): void => {
+            if (event === 'message') {
+              socket.on('message', (data, isBinary) => listener(isBinary ? new Uint8Array(data) : data.toString()));
+            } else if (event === 'close') {
+              socket.on('close', () => listener());
+            } else {
+              socket.on('error', (err) => listener(err instanceof Error ? err : new Error(String(err))));
+            }
+          };
+          const peer: PluginSocket = {
+            send: (data) => {
+              try {
+                socket.send(data, { binary: typeof data !== 'string' });
+              } catch {
+                // the peer went away between the read and the send: the close event does the cleaning up
+              }
+            },
+            close: (code, reason) => {
+              try {
+                socket.close(code, reason);
+              } catch {
+                /* already closing */
+              }
+            },
+            on: (event, listener) => deliver(event, listener as (value?: unknown) => void),
+          };
+          void Promise.resolve(def.ws!(peer, request)).catch((err: unknown) => {
+            req.log.error({ err, plugin }, 'plugin socket failed');
+            peer.close(1011, 'server error');
+          });
+        },
+      } as never);
+      return;
+    }
     const schema: Record<string, unknown> = {};
     if (def.schema?.body) schema['body'] = def.schema.body;
     if (def.schema?.query) schema['querystring'] = def.schema.query;
@@ -380,35 +455,13 @@ async function mountPluginRoutes(
       method: def.method,
       url: def.fullPath,
       schema: schema as never,
-      config: {
-        ...(def.rateLimit ? { rateLimit: def.rateLimit } : {}),
-        ...(def.public ? { public: true } : {}),
-        ...(def.csrfExempt ? { csrfExempt: true } : {}),
-      },
+      config: routeConfig(def),
       handler: async (req, reply) => {
         // A public route without a caller runs as the anonymous actor: RLS applies, it sees and writes nothing.
         const actor = req.actor ?? ANONYMOUS;
         const pool = actor.kind === 'system' ? systemPool : poolOpt.pool;
-        const request: HttpRequest = {
-          params: req.params as Record<string, string>,
-          query: req.query as Record<string, string | undefined>,
-          body: def.rawBody ? undefined : req.body,
-          ...(def.rawBody ? { stream: req.raw } : {}),
-          headers: Object.fromEntries(
-            Object.entries(req.headers).map(([k, v]) => [k, Array.isArray(v) ? v.join(', ') : v]),
-          ),
-          ip: req.ip,
-          caller: req.actor
-            ? {
-                actorId: req.actor.id,
-                kind: req.actor.kind === 'bot' ? 'bot' : 'person',
-                workspaceId: req.actor.workspaceId,
-                personId: req.authSession?.personId ?? null,
-                sessionId: req.authSession?.sessionId ?? null,
-              }
-            : null,
-        };
-        const res = await withActor(actor, (tx) => Promise.resolve(def.handler(request, tx)), pool ? { pool } : {}).catch(
+        const request = requestOf(req, def);
+        const res = await withActor(actor, (tx) => Promise.resolve(def.handler!(request, tx)), pool ? { pool } : {}).catch(
           (err: unknown) => {
             if (err instanceof Error && !(err instanceof z.ZodError) && !(err instanceof HttpError)) {
               req.log.error({ err, plugin }, 'plugin route failed');

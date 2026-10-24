@@ -16,6 +16,16 @@ import {
   MemoryRetainOutcome,
   MemorySourceKind,
   MemoryStore,
+  GoalStatus,
+  HandoffMode,
+  RhythmEffort,
+  RhythmKind,
+  RhythmRunStatus,
+  RunnerStatus,
+  TaskEventType,
+  TaskKind,
+  TaskPriority,
+  TaskState,
   OkfStatus,
   OkfTrustTier,
   MentionKind,
@@ -49,6 +59,8 @@ import {
   filesMigrationSource,
   gatewayLlmMigrationSource,
   memoryMigrationSource,
+  rhythmsMigrationSource,
+  tasksMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
   type TestDatabase,
@@ -108,6 +120,16 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'memory_retain_log.outcome': MemoryRetainOutcome,
   'memory_concepts.status': OkfStatus,
   'memory_concepts.trust_tier': OkfTrustTier,
+  'goals.status': GoalStatus,
+  'tasks.state': TaskState,
+  'tasks.kind': TaskKind,
+  'tasks.priority': TaskPriority,
+  'task_events.type': TaskEventType,
+  'handoffs.mode': HandoffMode,
+  'runners.status': RunnerStatus,
+  'rhythms.kind': RhythmKind,
+  'rhythms.effort': RhythmEffort,
+  'rhythm_runs.status': RhythmRunStatus,
 };
 
 /**
@@ -125,7 +147,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

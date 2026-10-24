@@ -66,7 +66,7 @@ The kernel provides six services: identity, the append-only event log, the plugi
 
 **Three kernel services make plugins cohere** `[proto §02]`: the entity-link table; the read-state service; the right panel with a back stack.
 
-**Sidebar contract** `[proto §02, §11, §12]`: Files (10) · Boards (20) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) · Bots (50). The **Bots header** opens the team roster; **a bot's name** opens its conversation view (§7.6).
+**Sidebar contract** `[proto §02, §11, §12]`: Files (10) · Boards (20) · Org chart (23) · Rhythms (26) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) · Bots (50). The **Bots header** opens the team roster; **a bot's name** opens its conversation view (§7.6).
 
 ---
 
@@ -162,7 +162,7 @@ Durable outputs. Every routine and every task step may declare `output: { page, 
 
 ### 6.5 Boards and rhythms `[proto §11]`
 
-Boards are saved views over the task substrate: Open · In progress · Verify · Waiting on a person · Done. **Rhythms** is the board's third tab: **heartbeat** (a scheduled prompt; the bot decides), **routine** (a scheduled task with a contract and an output page; `routines/<slug>.yaml`), **task** (one prompt, one run, one output). Each rhythm may override `model`/`effort`.
+Boards are saved views over the task substrate: Open · In progress · Verify · Waiting on a person · Done. **Rhythms** has its own sidebar entry (26): **heartbeat** (a scheduled prompt; the bot decides), **routine** (a scheduled task with a contract and an output page; `routines/<slug>.yaml`), **task** (one prompt, one run, one output). Each rhythm may override `model`/`effort`.
 
 ---
 

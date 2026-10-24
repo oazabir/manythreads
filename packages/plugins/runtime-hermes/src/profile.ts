@@ -43,6 +43,9 @@ export function renderConfig(input: BotRuntimeInput): string {
   const effort = input.definition.frontmatter.model?.effort;
   const gateway = input.gateway;
   const endpoint = input.endpoint;
+  // The Hermes provider is the only runtime that starts a process, so it is the only one that renders `config.yaml`; a `rules` bot is
+  // never handed to it (the job resolves the provider by the definition's runtime), and this says so where the file is written.
+  if (input.bot.runtime !== 'hermes') throw new Error(`bot ${input.bot.slug}: only a "hermes" runtime renders a profile (got ${input.bot.runtime})`);
   if (!alias) throw new Error(`bot ${input.bot.slug}: a hermes run needs model.aliases[0] in its BOT.md`);
   if (!gateway) throw new Error(`bot ${input.bot.slug}: no LLM gateway is configured for this workspace`);
   if (!endpoint) throw new Error(`bot ${input.bot.slug}: a hermes run needs the run's own MCP endpoint`);

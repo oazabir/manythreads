@@ -1,13 +1,15 @@
 import { NavContribution, sortNav } from '@manythreads/shared';
 
 /*
- * The sidebar contract (SPEC section 3): Files (10) · Boards (20) · Threads (30) · Approvals (35) · channel groups (40) ·
- * Direct messages (45) · Bots (50). The entries are a declarative `surface.nav` contribution list sorted by `order`; a plugin
- * adds its own entry the same way. Entries whose plugin is not loaded yet show their empty state.
+ * The sidebar contract (SPEC section 3): Files (10) · Boards (20) · Org chart (23) · Rhythms (26) · Threads (30) · Approvals (35) ·
+ * channel groups (40) · Direct messages (45) · Bots (50). The entries are a declarative `surface.nav` contribution list sorted by `order`;
+ * a plugin adds its own entry the same way. Entries whose plugin is not loaded yet show their empty state.
  */
 export const CORE_NAV: NavContribution[] = [
   { id: 'files', order: 10, label: 'Files', kind: 'item', path: '/files', icon: 'files' },
-  { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards', emptyState: 'No boards yet' },
+  { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards' },
+  { id: 'org', order: 23, label: 'Org chart', kind: 'item', path: '/org', icon: 'org' },
+  { id: 'rhythms', order: 26, label: 'Rhythms', kind: 'item', path: '/rhythms', icon: 'rhythms' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', emptyState: 'Nothing waiting', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
@@ -36,7 +38,7 @@ export function navCount(item: NavContribution, counts: Readonly<Record<string, 
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['threads', 'files', 'boards', 'approvals', 'bots'] as const;
+const SECTIONS = ['threads', 'files', 'boards', 'org', 'rhythms', 'approvals', 'bots'] as const;
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {
@@ -45,7 +47,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', approvals: 'Approvals', bots: 'Bots' };
+const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Rhythms', approvals: 'Approvals', bots: 'Bots' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

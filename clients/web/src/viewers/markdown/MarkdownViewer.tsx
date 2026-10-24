@@ -4,6 +4,7 @@ import { Markdown } from '@tiptap/markdown';
 import type { ViewerProps } from '../../kernel/viewers';
 import { SaveFooter, ViewerBar, useSave } from '../common';
 import { bodyToDoc, contentExtensions, docToText } from './codec';
+import { LivePageEditor } from './LivePageEditor';
 import { SlashCommand } from './slash';
 
 /** Pages above this size open as raw text: the parser is not built for books, and a rich editor would stall. */
@@ -18,6 +19,7 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   const initial = useMemo(() => (big ? null : bodyToDoc(text)), [text, big]);
   const frontmatter = initial?.frontmatter ?? '';
   const [mode, setMode] = useState<'rich' | 'raw'>(big ? 'raw' : 'rich');
+  const [live, setLive] = useState(false);
   const [current, setCurrent] = useState(text);
   const [saved, setSaved] = useState(text);
   const saver = useSave(onSave);
@@ -58,11 +60,36 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   const doSave = async () => {
     if (await saver.save(current)) setSaved(current);
   };
+  // Leaving live editing: the server has committed the source, so the viewer shows exactly that text (no refetch, no second save).
+  const leaveLive = (finalText: string) => {
+    setLive(false);
+    setCurrent(finalText);
+    setSaved(finalText);
+    setMode(big ? 'raw' : 'rich');
+    const next = bodyToDoc(finalText);
+    if (editor && !big) {
+      programmatic.current = true;
+      editor.commands.setContent(next.doc, { emitUpdate: false });
+      programmatic.current = false;
+    }
+  };
 
   return (
     <div className="vw md" data-testid="viewer-markdown" data-mode={mode}>
       <ViewerBar path={path}>
-        {!readOnly ? (
+        {!readOnly && !live ? (
+          <button
+            type="button"
+            className="btn sm"
+            data-testid="go-live"
+            disabled={dirty || big}
+            title={dirty ? 'Save or discard your edit before editing together' : big ? 'Large files are edited as raw text' : 'Edit with others, with live cursors'}
+            onClick={() => setLive(true)}
+          >
+            Live
+          </button>
+        ) : null}
+        {!readOnly && !live ? (
           <button type="button" className="btn primary sm" disabled={!dirty || saver.status === 'saving'} onClick={() => void doSave()}>
             {saver.status === 'saving' ? 'Saving…' : 'Save'}
           </button>
@@ -82,11 +109,12 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
         </div>
       ) : null}
 
-      <div className="md-editor" hidden={mode !== 'rich'}>
+      {live ? <LivePageEditor path={path} teamSlug={context.teamSlug} onExit={leaveLive} /> : null}
+      <div className="md-editor" hidden={mode !== 'rich' || live}>
         <EditorContent editor={editor} />
         {frontmatter !== '' ? <p className="vw-note">This page has frontmatter. Use Raw to change it.</p> : null}
       </div>
-      {mode === 'raw' ? (
+      {mode === 'raw' && !live ? (
         <textarea
           className="md-raw"
           aria-label="Raw Markdown"

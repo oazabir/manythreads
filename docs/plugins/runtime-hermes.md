@@ -72,6 +72,12 @@ shows. `--run-budget` comes from the definition's `limits.timeoutSeconds`; the p
 grace`, default 15 s) and stops the process with SIGTERM, then SIGKILL. There is no daemon to manage and no state shared
 between runs.
 
+**The profile's removal is retried.** A process that is still finishing can write its log directory after the files are gone, so the
+removal asks three times, a tenth of a second apart, and says so in the log if the directory survives. A leftover shaped like that —
+`<bot slug>-<run id>` holding nothing but `logs/*.log`, its marker gone with the files — is also swept at startup by name and
+content, and without waiting for the two-hour age rule: a live profile always holds `config.yaml` and `SOUL.md`, so a directory
+holding only logs cannot be one that a running replica still needs.
+
 **The child's environment is an allowlist**, not the server's: `PATH`, `HOME`, `LANG`/`LC_*`, `TZ`, the temp-dir variables,
 `HERMES_*` and the CA-bundle variables (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
 `NODE_EXTRA_CA_CERTS` — a deployment behind a private CA cannot reach the model gateway without them), plus `HERMES_HOME`. The
@@ -163,6 +169,44 @@ Not yet done, deliberately:
 | `MANYTHREADS_HERMES_KILL_GRACE` | `15` | seconds between SIGTERM and SIGKILL |
 | `MANYTHREADS_HERMES_ENV_PASSTHROUGH` | *(empty)* | comma-separated extra variable names the child inherits (`HTTPS_PROXY,NO_PROXY`); `MANYTHREADS_*`, `DATABASE*` and `PG*` are never passed |
 | `MANYTHREADS_LITELLM_URL` | *(unset)* | the workspace's model gateway; without it a hermes run is refused before starting |
+
+## Connecting a dev box (real Hermes, a real model)
+
+A dev box with the Hermes CLI installed can run the real thing against a real model, and the platform still owns only its own
+settings. Two pieces make that possible without touching a shared model proxy:
+
+* **`tools/devbox/hermes-live.mjs`** starts the e2e stack (a fresh seeded database, every plugin, the real router and run job)
+  with `MANYTHREADS_HERMES_BIN` pointing at the dev box's `hermes`, and plays a person's part over HTTP: it binds the `smart`
+  alias, commits one `BOT.md` per check, mentions the bot, talks in a conversation, posts in a watched channel, and reads the
+  runs, replies, approvals and repo commits back from the database. It runs nine checks: mention, conversation,
+  `channel_message`, delegation between bots, `answer.post`, a call that waits for a person, the gate, `tasks.claim`, and a
+  bot whose reply is refused. `LIVE_ONLY=mention,gate` runs a subset.
+* **fake-llm with `FAKE_LLM_UPSTREAM`** is the model side (`tools/fake-llm/README.md`): the management API the gateway plugin
+  drives stays in memory, and chat completions are forwarded — streaming included — to a real OpenAI-compatible gateway with a
+  key this process holds and the workspace never sees. Pointing the platform at a shared proxy instead would write that proxy's
+  model list and mint keys on it, which is not something a test run should do.
+
+```
+# on the dev box, from the repo root; the key stays in the environment
+set -a; . /root/.hermes/.env; set +a
+LIVE_UPSTREAM=https://litellm.example/v1 LIVE_UPSTREAM_KEY_ENV=LITELLM_API_KEY \
+  node tools/devbox/hermes-live.mjs
+```
+
+`MANYTHREADS_RUNTIME_DIR` must be the Hermes install's own `profiles/` directory (`/root/.hermes/profiles` on the dev box):
+Hermes resolves its committed dependency environment from the install home, and a profile written anywhere else fails to boot
+with "no dependency environment is committed for this install". The run token and the bot's key live in that profile for the
+length of the run only.
+
+Two things this check found, worth knowing when a run behaves oddly:
+
+* **`_meta` on `tools/call`.** Hermes sends MCP's reserved `"_meta": {}` on every tool call. The gateway's strict params
+  schema refused it, so the agent got "tools/call needs a tool name and object arguments", gave up on the tools and answered
+  from memory. The schema now accepts `_meta` and ignores it (`packages/shared/src/entities/mcp.ts`).
+* **A bot's alias must be one the workspace can bind.** `model.aliases` is free-form in a definition, the workspace's alias set
+  is closed (`smart`, `fast`, `code`, `local`, …). A bot naming `default` can never be given a key, so it can never call a real
+  gateway — the seeded placeholder bot did exactly that, and the stand-in runtime hid it because it ignores the key. The seed's
+  bots ask for `smart` now.
 
 ## Tests
 

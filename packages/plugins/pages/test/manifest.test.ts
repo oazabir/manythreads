@@ -11,6 +11,14 @@ describe('the pages plugin', () => {
     expect(host.capabilities.get('pages.write')).toMatchObject({ destructive: false, plugin: 'pages' });
     expect(() => host.capabilities.assertGrantable(['pages.write'])).not.toThrow();
     expect(pages.manifest.events?.emits).toEqual(['pages.page.written', 'answer.answer.shared']);
-    expect(host.registries.httpRoutes.list().map((r) => `${r.value.method} ${r.value.path}`)).toEqual(['POST /api/teams/:slug/pages/write', 'POST /api/channels/:channelId/messages/:messageId/answer/page']);
+    expect(host.registries.httpRoutes.list().map((r) => `${r.value.method} ${r.value.path}`)).toEqual([
+      'POST /api/teams/:slug/pages/write',
+      'GET /api/teams/:slug/pages/live',
+      'POST /api/channels/:channelId/messages/:messageId/answer/page',
+    ]);
+    // The live page is a socket route: no HTTP handler, a socket handler (P6-09).
+    const live = host.registries.httpRoutes.list().find((r) => r.value.path === '/api/teams/:slug/pages/live')!.value;
+    expect(live.ws).toBeTypeOf('function');
+    expect(live.handler).toBeUndefined();
   });
 });

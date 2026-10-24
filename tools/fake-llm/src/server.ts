@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
 import { demoScenarioCompletion } from './scenario.ts';
 
 /*
@@ -84,6 +85,14 @@ export interface FakeLlmOptions {
    * was sent from `state.calls`.
    */
   completion?: (request: { model: string; messages: Array<{ role: string; content: string }>; authorized: boolean }) => string | { status: number; body: unknown } | Promise<string | { status: number; body: unknown }>;
+  /**
+   * A real OpenAI-compatible gateway to send chat completions to, instead of answering them. The management endpoints stay in
+   * memory, so a dev box can run a real agent against a real model while the platform still owns only a stand-in's config and
+   * keys: nothing this server's owner does reaches the upstream's own settings. `model` renames what is sent (manythreads'
+   * aliases, `smart` and the like, are not the upstream's names), and `apiKey` is the upstream's bearer — held here, never
+   * stored in `state`, never logged.
+   */
+  upstream?: { url: string; apiKey?: string; model?: string; timeoutMs?: number };
 }
 
 const json = (res: ServerResponse, status: number, body: unknown): void => {
@@ -94,6 +103,55 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
 
 /** The proxy's error shape: a message under `error`, which is what the client's duplicate detection reads. */
 const error = (res: ServerResponse, status: number, message: string): void => json(res, status, { error: { message } });
+
+/**
+ * Pass one chat completion to the real gateway and stream its answer back unchanged. Bytes are piped rather than parsed: the
+ * agent's own client reads the SSE frames, and rewriting them would test this file instead of the model. The status and the
+ * `content-type` go through too, so a refusal from upstream is a refusal here.
+ */
+async function forwardCompletion(
+  upstream: NonNullable<FakeLlmOptions['upstream']>,
+  req: IncomingMessage,
+  res: ServerResponse,
+  body: unknown,
+): Promise<void> {
+  const base = upstream.url.replace(/\/+$/, '');
+  const url = `${base}${/\/v1$/.test(base) ? '' : '/v1'}/chat/completions`;
+  const payload = asObject(body);
+  const outbound = upstream.model ? { ...payload, model: upstream.model } : payload;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), upstream.timeoutMs ?? 300_000);
+  // The caller hanging up (a stopped run) must stop the upstream call too: a model turn nobody will read is money.
+  res.once('close', () => controller.abort());
+  try {
+    const answer = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(upstream.apiKey ? { authorization: `Bearer ${upstream.apiKey}` } : {}),
+        // A gateway behind a CDN/WAF rejects the OpenAI SDK's identifying headers; a plain client name passes.
+        'user-agent': 'manythreads-fake-llm',
+        accept: req.headers.accept ?? 'application/json',
+      },
+      body: JSON.stringify(outbound),
+      signal: controller.signal,
+    });
+    const type = answer.headers.get('content-type') ?? 'application/json';
+    res.writeHead(answer.status, { 'content-type': type, 'cache-control': 'no-store' });
+    if (answer.body) {
+      // `Readable.fromWeb` is the one bridge from fetch's WHATWG stream to a node response.
+      Readable.fromWeb(answer.body as Parameters<typeof Readable.fromWeb>[0]).pipe(res);
+      return;
+    }
+    res.end();
+  } catch (err) {
+    // Nothing answered upstream (down, DNS, refused, timed out): say so, rather than letting the agent read a 200 with no frames.
+    if (!res.headersSent) error(res, 502, `upstream ${upstream.url} could not be reached: ${err instanceof Error ? err.name : 'unknown'}`);
+    else res.destroy();
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function readJson(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -241,6 +299,7 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
 
       // Not the management API: a canned completion, so a smoke test can prove a call path end to end and read its usage.
       if (path === '/chat/completions' || path === '/v1/chat/completions') {
+        if (options.upstream) return forwardCompletion(options.upstream, req, res, body);
         const model = str(asObject(body)['model']) || 'unknown';
         let content = 'This is the fake proxy.';
         if (options.scenario === 'demo' && !options.completion) {

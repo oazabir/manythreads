@@ -11,6 +11,11 @@ import { startFakeLlm } from './server.ts';
  * which is what makes a one-line dev setup possible; a test always sets one so the 401 path is covered too.
  * `FAKE_LLM_HOST` (default 127.0.0.1) names the interface to bind; the demo deployment sets 0.0.0.0 so the
  * pod's probes and the server reach it.
+ *
+ * `FAKE_LLM_UPSTREAM` names a real OpenAI-compatible gateway to forward chat completions to, so a real agent runs against a
+ * real model while this server keeps the config and the keys. The credential is never a literal in the environment here:
+ * `FAKE_LLM_UPSTREAM_KEY_ENV` names the variable that holds it (e.g. `LITELLM_API_KEY`), and `FAKE_LLM_UPSTREAM_MODEL`
+ * renames the model asked for (manythreads' aliases are not the gateway's model names).
  */
 
 const port = Number(process.env['FAKE_LLM_PORT'] ?? 4000);
@@ -24,12 +29,35 @@ if (scenario !== undefined && scenario !== 'demo') {
   process.exit(1);
 }
 
-const fake = await startFakeLlm({ port, host, ...(masterKey ? { masterKey } : {}), ...(scenario === 'demo' ? { scenario: 'demo' as const } : {}) });
+const upstreamUrl = (process.env['FAKE_LLM_UPSTREAM'] ?? '').trim().replace(/\/+$/, '');
+const upstreamKeyEnv = (process.env['FAKE_LLM_UPSTREAM_KEY_ENV'] ?? '').trim();
+const upstreamKey = upstreamKeyEnv === '' ? '' : (process.env[upstreamKeyEnv] ?? '').trim();
+const upstreamName = (process.env['FAKE_LLM_UPSTREAM_MODEL'] ?? '').trim();
+if (upstreamKeyEnv !== '' && upstreamKey === '') {
+  console.error(`FAKE_LLM_UPSTREAM_KEY_ENV names ${upstreamKeyEnv}, which is not set`);
+  process.exit(1);
+}
+const upstream =
+  upstreamUrl === ''
+    ? undefined
+    : { url: upstreamUrl, ...(upstreamKey === '' ? {} : { apiKey: upstreamKey }), ...(upstreamName === '' ? {} : { model: upstreamName }) };
+
+const fake = await startFakeLlm({
+  port,
+  host,
+  ...(masterKey ? { masterKey } : {}),
+  ...(scenario === 'demo' ? { scenario: 'demo' as const } : {}),
+  ...(upstream ? { upstream } : {}),
+});
 
 // The line a probe waits for; the URL is the value MANYTHREADS_LITELLM_URL takes.
 console.log(`fake-llm ready: ${fake.url} (master key ${masterKey ? 'required' : 'not required'}${scenario === 'demo' ? ', scenario demo' : ''})`);
 console.log(`  management: /model/new /model/update /model/delete /config/update /key/generate /key/delete`);
-console.log(`  also:       /chat/completions (${scenario === 'demo' ? 'demo bot-chain scenario' : 'canned'}), /health/readiness, /state`);
+console.log(
+  `  also:       /chat/completions (${
+    upstream ? `forwarded to ${upstreamUrl}${upstreamName === '' ? '' : ` as ${upstreamName}`}` : scenario === 'demo' ? 'demo bot-chain scenario' : 'canned'
+  }), /health/readiness, /state`,
+);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {

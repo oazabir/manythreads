@@ -373,7 +373,7 @@ role: ${v.bot.role}
 kind: agent
 runtime: hermes
 model:
-  aliases: [default]
+  aliases: [smart]
 triggers:
   - type: ${v.bot.trigger}
   - type: conversation

@@ -13,9 +13,9 @@ import { z } from 'zod';
 //   * `write` — a call runs in the run's bot transaction, so the commit carries the bot; the broker's path guard and
 //               grant rules decide, never this table.
 //   * `stub`  — a capability this plugin declares itself because the plugin that will own it does not exist yet
-//               (knowledge bases arrive with connections; the board arrives with tasks). A stub answers what it
-//               knows and nothing else: it never invents content. When the owning plugin lands it declares the
-//               capability and this declaration goes — see docs/plugins/gateway-mcp.md.
+//               (knowledge bases arrive with connections). A stub answers what it knows and nothing else: it never
+//               invents content. When the owning plugin lands it declares the capability and this declaration goes —
+//               see docs/plugins/gateway-mcp.md.
 
 export type ToolKind = 'read' | 'write' | 'stub';
 
@@ -92,6 +92,12 @@ const MEMORY_RECALL_SCHEMA = {
     },
   },
   required: ['query'],
+  additionalProperties: false,
+} as const;
+
+const TASK_READ_SCHEMA = {
+  type: 'object',
+  properties: { taskId: { type: 'string', description: 'One card by id; leave it out for the board.' } },
   additionalProperties: false,
 } as const;
 
@@ -207,41 +213,96 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   },
   'tasks.read': {
     name: 'tasks.read',
-    description: 'Read the team’s board. The board is not part of this deployment yet; the tool says so and nothing else.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    kind: 'stub',
-    answer: { ok: false, code: 'not_available', message: 'The task board is not available in this deployment yet.' },
+    description:
+      'Read the team’s task board: the cards you can see, newest change first, or one card when you name it. Each card carries its state, kind, priority, owner, branch and the commit it was based on and tested at.',
+    inputSchema: TASK_READ_SCHEMA,
+    kind: 'read',
+  },
+  'tasks.create': {
+    name: 'tasks.create',
+    description:
+      'Create a card on the team’s board. The card is created as you, in your own team; name a branch of work, and give it a goal, a kind, a priority or the environment it ships to when the work needs one. Creating a card does not assign it: hand it to the bot or person who should do the work, which wakes them with the card.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', minLength: 1, maxLength: 200, description: 'What the work is, in one line.' },
+        description: { type: 'string', maxLength: 8000, description: 'What done looks like, and anything the next owner needs.' },
+        kind: { type: 'string', enum: ['code', 'content', 'ops', 'other'], description: 'A `code` card needs the commit that was tested before it can be done (default `code`).' },
+        priority: { type: 'string', enum: ['low', 'normal', 'high'], description: 'How soon (default `normal`).' },
+        branch: { type: 'string', minLength: 1, maxLength: 200, description: 'The branch of work this card belongs to; one card has one owner at a time.' },
+        goalId: { type: 'string', description: 'The goal this card works toward, when the team has one.' },
+        environmentId: { type: 'string', description: 'The environment the work ships to, when it is a deploy card.' },
+      },
+      required: ['title', 'branch'],
+      additionalProperties: false,
+    },
+    kind: 'write',
   },
   'tasks.claim': {
     name: 'tasks.claim',
-    description: 'Claim a task. The board is not part of this deployment yet; the tool says so and nothing else.',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' } }, required: ['taskId'], additionalProperties: false },
-    kind: 'stub',
-    answer: { ok: false, code: 'not_available', message: 'The task board is not available in this deployment yet.' },
-  },
-  'tasks.complete': {
-    name: 'tasks.complete',
-    description: 'Complete a task. The board is not part of this deployment yet; the tool says so and nothing else.',
+    description:
+      'Claim a card so you own it. One card has one owner: another live claim answers `already_owned` and nothing changes. The claim expires after `ttlSeconds` (default one hour) and the card is free again; while it is yours nobody else can claim it.',
     inputSchema: {
       type: 'object',
-      properties: { taskId: { type: 'string' }, summary: { type: 'string' } },
+      properties: { taskId: { type: 'string', description: 'The card to claim.' }, ttlSeconds: { type: 'integer', minimum: 60, maximum: 86_400, description: 'How long the claim holds (default 3600).' } },
       required: ['taskId'],
       additionalProperties: false,
     },
-    kind: 'stub',
-    answer: { ok: false, code: 'not_available', message: 'The task board is not available in this deployment yet.' },
+    kind: 'write',
+  },
+  'tasks.complete': {
+    name: 'tasks.complete',
+    description:
+      'Complete a card you own. A `code` card needs the commit that was tested: pass `testedSha`, and `branchHeadSha` when the branch has moved (a stale tested commit, or a branch head beyond it, is refused with the reason). The card’s history records the commit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'The card to complete.' },
+        testedSha: { type: 'string', description: 'The commit that was tested.' },
+        branchHeadSha: { type: 'string', description: 'The branch head at completion; defaults to the tested commit.' },
+      },
+      required: ['taskId'],
+      additionalProperties: false,
+    },
+    kind: 'write',
+  },
+  'tasks.deploy': {
+    name: 'tasks.deploy',
+    description:
+      'Request a deploy to one of the team’s environments. The environment’s own rules decide: a protected environment waits for a person who is not the requester, a change window or the daily cap can refuse it, and the answer says which. Never assume the deploy happened — read the card or the thread for the outcome.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        environmentId: { type: 'string', description: 'The environment to deploy to.' },
+        taskId: { type: 'string', description: 'The card the deploy belongs to, when there is one.' },
+        note: { type: 'string', maxLength: 4000, description: 'What is going out, for the person who decides.' },
+      },
+      required: ['environmentId'],
+      additionalProperties: false,
+    },
+    kind: 'write',
   },
   'tasks.handoff': {
     name: 'tasks.handoff',
-    description: 'Hand a task to another bot or person. The board is not part of this deployment yet; the tool says so and nothing else.',
-    inputSchema: { type: 'object', properties: { taskId: { type: 'string' }, to: { type: 'string' } }, required: ['taskId'], additionalProperties: false },
-    kind: 'stub',
-    answer: { ok: false, code: 'not_available', message: 'The task board is not available in this deployment yet.' },
+    description:
+      'Hand a card to another bot or person: ownership moves in one step, the new owner is woken with the card, and your turn ends. You may only hand to someone your `tasks.handoff` grant names (`mayTag`); another target is refused before anything moves.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: { type: 'string', description: 'The card to hand over.' },
+        toActorId: { type: 'string', description: 'The actor id of the bot or person who takes it.' },
+        mode: { type: 'string', enum: ['bot', 'person'], description: 'Who takes it over (default `bot`).' },
+        note: { type: 'string', maxLength: 4000, description: 'What the next owner needs to know.' },
+      },
+      required: ['taskId', 'toActorId'],
+      additionalProperties: false,
+    },
+    kind: 'write',
   },
 };
 
-/** Capabilities this plugin declares itself (the stubs above); the manifest lists exactly these names. */
-export const STUB_CAPABILITIES: readonly string[] = ['knowledge.search', 'tasks.read', 'tasks.claim', 'tasks.complete', 'tasks.handoff'];
+/** Capabilities this plugin declares itself (the stubs above); the manifest lists exactly these names. `tasks.*` are declared by the tasks plugin. */
+export const STUB_CAPABILITIES: readonly string[] = ['knowledge.search'];
 
 /** The entry for a capability, with a plain fallback so an unlisted tool is still offered honestly. */
 export function definitionOf(name: string): ToolDefinition {

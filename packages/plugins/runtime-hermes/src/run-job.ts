@@ -420,7 +420,6 @@ export function registerRunJob(ctx: PluginContext): void {
       job.log.warn(`runtime-hermes: no bot_runtime provider is loaded for "${bot.runtime}" (bot ${bot.slug})`);
       return;
     }
-
     const definition = await loadDefinition(ctx, tx, bot, job.log);
     if (!definition) return;
     const { frontmatter, alias, holdOnDetection, approvers } = definition;
@@ -493,7 +492,13 @@ export function registerRunJob(ctx: PluginContext): void {
       let reply = '';
       let ok = false;
       for await (const event of handle.events) {
-        if (event.type === 'tool') toolCalls += 1;
+        // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
+        // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
+        if (event.type === 'tool') {
+          toolCalls += 1;
+          job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
+        }
+        if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : 'failed'}`);
         if (event.type !== 'result') continue;
         reply = event.text;
         ok = event.ok;

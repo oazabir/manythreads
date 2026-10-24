@@ -24,7 +24,7 @@ export const NavContribution = z.strictObject({
   label: z.string().min(1).max(40),
   kind: z.enum(['item', 'group-list', 'header']),
   path: z.string().startsWith('/').or(z.string().startsWith('~/')).optional(),
-  icon: z.enum(['files', 'boards', 'threads', 'approvals', 'dm']).optional(),
+  icon: z.enum(['files', 'boards', 'org', 'rhythms', 'threads', 'approvals', 'dm']).optional(),
   /** Shown beside the entry while its section has nothing in it (product copy: "No files yet"). */
   emptyState: z.string().min(1).max(60).optional(),
   badge: NavBadge.optional(),

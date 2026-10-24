@@ -26,6 +26,20 @@ export const BoardsIcon = () => (
     <path d="M6.2 2.5v11M9.8 2.5v7" />
   </Svg>
 );
+export const OrgIcon = () => (
+  <Svg>
+    <rect x="2" y="2.5" width="5" height="4" rx="1" />
+    <rect x="9" y="9.5" width="5" height="4" rx="1" />
+    <path d="M4.5 6.5v3.5a1.5 1.5 0 0 0 1.5 1.5h3" />
+    <path d="M4.5 10v3.5M11.5 6.5V4" />
+  </Svg>
+);
+export const RhythmsIcon = () => (
+  <Svg>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 4.8V8l2.4 1.6" />
+  </Svg>
+);
 export const ThreadsIcon = () => (
   <Svg>
     <path d="M2.5 4A1.5 1.5 0 0 1 4 2.5h8A1.5 1.5 0 0 1 13.5 4v5A1.5 1.5 0 0 1 12 10.5H7L4.2 13v-2.5H4A1.5 1.5 0 0 1 2.5 9z" />
@@ -79,7 +93,7 @@ export const LockIcon = () => (
   </Svg>
 );
 
-export const NAV_ICONS = { files: FilesIcon, boards: BoardsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
+export const NAV_ICONS = { files: FilesIcon, boards: BoardsIcon, org: OrgIcon, rhythms: RhythmsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
 
 export const ReplyIcon = () => (
   <Svg size={14}>

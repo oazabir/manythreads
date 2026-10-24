@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { WritePageRequest } from '@manythreads/shared';
 import { registerAnswerPageRoute } from './answer-page.ts';
+import { registerLivePageRoute } from './live.ts';
 import { writePage } from './pages.ts';
 import { registerPageRoutes } from './routes.ts';
 
@@ -21,9 +22,13 @@ export default definePlugin({
     capabilities: [{ name: 'pages.write', destructive: false }],
     // `answer.answer.shared`: the access event of "Save as page" (an answer of the caller's own conversation, masked for the team's readers)
     events: { emits: ['pages.page.written', 'answer.answer.shared'], consumes: [] },
+    // 0002: the live document, its update ledger and awareness (P6-09); 0001 was the empty base the plugin shipped with.
+    migrations: 'migrations',
   },
   register(ctx) {
     registerPageRoutes(ctx);
+    // Live pages (P6-09): one Yjs document per page, sync + awareness over a socket, one co-authored commit per session.
+    registerLivePageRoute(ctx);
     // Save as page (PLAN P5-17): the masked copy of an answer of the caller's own conversation, written through `writePage`
     registerAnswerPageRoute(ctx);
     // What the MCP gateway calls for a bot's `pages.write` tool (phase 5): `{ team, mode, path, content, baseBlobSha?, message? }` as the bot's transaction.

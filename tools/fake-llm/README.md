@@ -30,6 +30,24 @@ MANYTHREADS_LITELLM_MASTER_KEY=sk-fake
 
 With no `FAKE_LLM_MASTER_KEY`, the management endpoints are open — convenient in dev, and never what a test does.
 
+### A real model behind the stand-in
+
+`FAKE_LLM_UPSTREAM` forwards chat completions to a real OpenAI-compatible gateway — streaming included, bytes untouched —
+while the management API stays in memory. That is how a dev box runs a real agent (Hermes) against a real model without
+either the platform writing to a shared proxy's config or the gateway's master key reaching the workspace:
+
+```
+FAKE_LLM_UPSTREAM=https://litellm.example/v1 \
+FAKE_LLM_UPSTREAM_KEY_ENV=LITELLM_API_KEY \
+FAKE_LLM_UPSTREAM_MODEL=default \
+FAKE_LLM_MASTER_KEY=sk-fake \
+  pnpm -C tools/fake-llm start
+```
+
+The credential is read from the variable `FAKE_LLM_UPSTREAM_KEY_ENV` names, never written into the command line or into
+this server's state. `FAKE_LLM_UPSTREAM_MODEL` renames what is asked for, because manythreads' aliases (`smart`, `fast`) are
+not the gateway's model names. A refused or unreachable upstream is answered as `502` with the reason, so a run fails loudly.
+
 ## Demo scenario (`--scenario=demo`)
 
 A deterministic, persona-routed completion for exercising the bots UI with no
@@ -69,7 +87,7 @@ needs to be proven with no provider behind it, and for the test suite.
 | `POST /key/update`, `GET /key/info` | `200`; `404` for an unknown key |
 | `POST /key/delete` | `200`, or `404` when nothing was deleted |
 | `GET /health/readiness`, `/health/liveliness` | `200`, no key required — a probe has no credential to send |
-| `POST /chat/completions` (also `/v1/chat/completions`) | A canned completion with `usage` (12 prompt / 7 completion tokens), or whatever the `completion` option answers (a string, or `{ status, body }`; it is handed the model, the messages and whether the master key was right). **No auth check** — it exists to prove a call path, not to be a provider |
+| `POST /chat/completions` (also `/v1/chat/completions`) | A canned completion with `usage` (12 prompt / 7 completion tokens), or whatever the `completion` option answers (a string, or `{ status, body }`; it is handed the model, the messages and whether the master key was right), or — with `FAKE_LLM_UPSTREAM` — the real gateway's answer, status, headers and SSE frames passed through. **No auth check** — it exists to prove a call path, not to be a provider |
 | `GET /state` | The deployments, keys, fallback chains and a call count, for a test to read back |
 
 `startFakeLlm({ beforeRespond })` runs a hook after a request is recorded and before it is answered, so a test can change the

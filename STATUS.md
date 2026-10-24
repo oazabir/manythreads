@@ -41,7 +41,8 @@ mark-read position — lesson in `MISTAKES.md`). Earlier greens: 37138533733 on 
 | 3 Channels, threads, DMs | gate green locally (lint, typecheck, 1,617 unit tests, rls, events, schema-compat, e2e api 60 / desktop 115 / mobile-web 14, vt 32, bench:search p95 182 ms at 1M, bench:rls 55 ms); retro `docs/retro/phase-3.md` | phase-3, v0.3.0 (deployed, live shots in docs/retro/screens/phase-3/live) |
 | 4 Files and the team repo | done — merged PR #6, released and deployed; gate green locally (lint, typecheck, test 2,076, rls 262, events 122, schema-compat 370, e2e 247, vt); security review 1C/4M/6L fixed; retro `docs/retro/phase-4.md` | phase-4 / v0.4.0 (live shots on the `screenshots` branch) |
 | 5 Bots, gateways, conversations, Brain | **done (2026-10-19)** — P5-00 … P5-26 landed before; **P5-27 (memory in answers)** and **P5-28 (the web Memory screen, `/t/:team/memory`)** closed this pass. Devbox gate: 233 files passed / 3 skipped, 3,773 passed / 65 skipped / 0 failed; lint + typecheck clean. Deployed: helm rev 42, 74 migrations, image `517a9ba53c84-f6c0ff8e`, `/` 200, `/readyz` ready. **Live verified: 44/44 persona journey steps passed** on https://manythreads.kahf.to (7 personas, desktop + phone, read-only) — evidence in `docs/verification/phase5-live-verify.md`. Earlier detail below — P5-00 reflect verified, **P5-03 done**, min-password-8 landed (owner decision), **P5-04 done** (loader + pairing + events; devbox gate green: 2,126 passed / 53 skipped; CI green at `b16096e`, run 37118010707); **P5-01 + P5-02 spikes done** (slack-compat door + Hermes adapter proven, per-run URL decision); **P5-05 done** (BOT.md editor: roster + 14-tab page + red banner; 6 new e2e specs green on the devbox; gate green: 2,143 passed / 53 skipped); **P5-06 done** (LLM gateway: providers + 8 aliases + fallbacks from the DB, LiteLLM in compose, virtual key per bot; devbox: the plugin's own config/keys/RLS suites 12/6/5 passed, schema-enums 30); **P5-07 done and deployed** (budgets workspace → team → bot → session + rate limits enforced before the call, `llm_spend` ledger, the four guard presets, pre-call DLP hook; gateway-llm **63 passed**, schema-enums 34; the red full-suite gate was a real kernel bug — one LISTEN connection per job worker exhausted the 10-connection system pool and hung every server-booting suite — **fixed in `kernel/outbox/listen.ts` (shared listener) and the full gate is green: 2,256 passed / 53 skipped**); live `Ship.ps1` green, image `dc828bfb2166-e376792e`, helm rev 12, 39 migrations, `/` 200); **P5-08 done and deployed** (the Workspace → LLM page: model providers, the eight aliases with ordered fallbacks, budgets and rate limits at all four scopes, the four guard presets with the egress allowlist and caching, and the spend report — `clients/web/src/screens/admin/llm`, behind `AdminOnly` and a new LLM entry in the settings nav, reading the presets/aliases/scopes from `@manythreads/shared` so the page and the enforcement cannot drift; plus **`tools/fake-llm`**, a LiteLLM management-API double that exercises the gateway client's own `fetch` transport over a real socket — the first time those paths, bodies and duplicate/404 habits have been checked against a server rather than an injected transport; 18 new web tests pin the exact method, path and body of every LLM endpoint plus the spend range's day arithmetic; devbox gate green **2,281 passed / 53 skipped** (150 files), local lint + typecheck clean; live `Ship.ps1` green, image `dc828bfb2166-ed89bda6`, helm rev 13, 39 migrations, `/` 200, healthz/readyz ok; live route check — `/settings/workspace/llm` 200, the five LLM API routes 401 anonymous, a nonsense path 404; **feature screenshots are blocked: `MANYTHREADS_LIVE_PASSWORD` is a runtime secret and is not on this machine or the devbox**); **P5-09 done** (the MCP gateway: `POST /api/mcp/runs` turns a bot's pairing token into a run + URL + token, MCP 2024-11-05 behind `.../runs/:token`, one 401 for unknown/revoked/expired/closed, only the sha256 stored; the kernel's `ctx.runs` runs a read as the *asking person* and a write as the *bot*, both with `app.run_id`, always against the bot's allowlist — `tools/list` at grant level, `tools/call` authorized with the path its arguments name so the path guard refuses `bots/`, `TEAM.md`, `skills/`, `routines/` before any handler, `needsApproval` fails closed, `knowledge.search`/`tasks.*` answer honestly as stubs; every read's hits land in `run_source_log` through the new `app.run_source_log_append` door (bots 0004); devbox gateway-mcp **22 passed**, kernel broker 128, both RLS suites 14, full gate green **2,318 passed / 53 skipped / 0 failed**; local lint + typecheck clean); **P5-10 done** (the runtimes: `runtime-hermes` renders a Hermes profile from `BOT.md` — the LiteLLM gateway with the bot's own virtual key and the run's own MCP endpoint, nothing else — and runs one process per invocation, prompt on stdin; `runtime-rules` runs the definition's native capabilities in order with no model anywhere; the router fires on `channel.message.posted` per active bot and trigger (`conversation`/`mention`/`channel_message`, never a bot's own message, a DM or a private channel, one run per bot per message) and the job posts the reply through `channels.messages.post` **in the run's bot transaction**; the `bots` loader (0005) now compiles `capabilities.native` into `capability_grants` and makes the bot's actor a **team member** - the one row that gives a bot its team's public channels; 30 new unit tests, devbox bots+runtimes **64 passed**, full gate green **2,351 passed / 53 skipped / 0 failed**, local lint + typecheck clean); **P5-24 done and pushed 2026-10-17; P5-25 + P5-26 done.** Review refactor done + deployed 2026-10-17 (module splits, shared helpers, seed fixtures; bots 0013 names a bot by its own row instead of "Bot") — helm rev 36, 70 migrations, gate 3,696 passed** | |
-| 6–13 | not started | |
+| 6 Tasks, boards, rhythms | **in progress (2026-10-20) — the substrate, the Boards screen and the Rhythms tab are built and the gate is green; the runner, the shared repos, Yjs and the templates are not.** Landed: **P6-01** (goals, tasks, task_events with BRIN, task_claims with one live claim, handoffs, environments, deploys, boards, runners — see `packages/plugins/tasks/migrations/0001_tasks.sql`), **P6-02** (`tasks` plugin: 17 routes and the five `tasks.*` tools, replacing the MCP stubs), **P6-03** (atomic handover, `mayTag` from `BOT.md`, `dispatch: strict` through Approvals `0004_task_approvals.sql`, the card moves on approval exactly once), **P6-04** (freshness: a code card needs `tested_sha`, a moved `base_sha` is refused with the reason on the card; rework and handoff bounds), **P6-05 part 1** (environments, protected/needs-approval deploys with windows, daily cap and one approval), **P6-07** (five-column boards API, a drag goes through the task rules, and the **Boards screen**: `/t/:team/boards` with the saved-view selector, the columns, drag through the same rules with the server's refusal shown, the card panel with claim/complete/rework/handoff and its history, New card, the **Org chart** tab with the `mayTag` edges), **P6-08** (rhythms schema, the `rhythms.tick` job, routine contracts under `routines/`, `model`/`effort` overrides, run ledger, and the **Rhythms tab**: the list with next run, pause/enable, Run now and the run ledger, the create form for a lead — a member gets the proposal sentence), **P6-10 rules variant** (`tasks/test/counting.test.ts`: 20 bots, one counter, 1…20 with no gap in 0.7 s), **P6-11 events** (five `tasks.*` and one `rhythms.*` contract, 10 schema tests). Server-half devbox gate: **239 files / 3,916 passed / 65 skipped / 0 failed**, lint and typecheck clean. Not built: P6-00, the shared-repo half of P6-05, P6-06's runner binary, seed v6 (P6-12 landed later — see below). The screens are new this pass: web unit tests **276 passed** (30 new in `clients/web/test/boards.test.ts`), the new Playwright spec `e2e/boards/board.spec.ts` **5 passed** on the devbox, and the tests caught one assumption worth keeping (a claim *starts* a card: the panel is in In progress before any drag, `MISTAKES.md`). Nothing was deployed this round. **Action before any push/CI:** the 90 new schema-compat snapshots are untracked local files and must be committed with this work or CI's `schema-compat` job fails on a missing snapshot (the same trap as the phase-5 exit, `MISTAKES.md`). | |
+| 7–13 | not started | |
 
 ## Phase 1 summary
 All tasks P1-01…P1-13 merged with reviewer PASS (P1-04b security hardening added: system actor = real
@@ -668,3 +669,281 @@ Screens: `docs/retro/screens/phase-1/`.
 - **Pushed (2026-10-17):** four commits on `main` — the phase-5 review refactor + bots 0012/0013, the P5-24/P5-25 OKF work, the demo environment and tooling, and this STATUS/MISTAKES update. Gate on the devbox before the push: `pnpm lint` clean, `pnpm typecheck` clean, `pnpm test` **231 files / 3,686 passed / 71 skipped** with **4 failures that were Postgres connection-slot exhaustion** (`remaining connection slots are reserved for roles with the SUPERUSER attribute` — the devbox pool was busy): the three specs (`repo-git/test/repo-service.test.ts`, `test-utils/test/seed-repo.test.ts`, `identity-password/test/identity.test.ts`) all pass on a `--maxWorkers=3` re-run (**53 passed / 1 skipped**), so the tree is green.
 - **Demo environment (pushed 2026-10-17, not deployed by default):** `deploy.sh --demo` builds a Hermes agent image, a demo server layer and the fake-llm/fake-hindsight stand-ins and helm-upgrades with `values-demo.yaml`; a plain deploy removes them again. `tools/devbox/demo-bots/` (five BOT.md + memory.md seeds), `demo-journeys.mjs`, `live-inspect.sh`, `personas-shots.sh`, and the `task.b2b`/`task.demo` shot files are the operator tooling; `fake-llm` gained a scripted scenario and `fake-hindsight` an operator `/state` view + `FAKE_HINDSIGHT_HOST`.
 - **Tooling lesson (MISTAKES):** never run `Ship.ps1` piped through `2>&1` on PowerShell 5.1 — ssh's stderr becomes a terminating `NativeCommandError` and the run dies at `db:up` while the gates are fine. Run it plain (already recorded for P5-04).
+
+## Phase 6 so far (2026-10-20, backend half, not deployed)
+
+**What is built.** `tasks` (`packages/plugins/tasks`, migration 0001, 17 routes, five tools) and `rhythms`
+(`packages/plugins/rhythms`, 0001 + 0002) with the shared schemas under `packages/shared/src/api/tasks/` and
+`entities/task.ts` / `entities/rhythm.ts`; approvals `0004_task_approvals.sql` adds the one door a strict handover and a
+protected deploy wait behind; `shared/src/common/cron.ts` is the schedule grammar the API validates, the template's next slot
+and the tick job all use. Docs: [docs/plugins/tasks.md](docs/plugins/tasks.md), [docs/plugins/rhythms.md](docs/plugins/rhythms.md);
+the gateway doc's tool table now lists `tasks.*` as real tools and only `knowledge.search` as a stub.
+
+**Rules the code enforces (each has a test).** One live claim per card (partial unique index; the loser gets 409
+`already_owned`); a claim expires through the `tasks.claim-timeout` job; a `code` card cannot be done without `tested_sha`, and a
+`branchHeadSha` that differs from `base_sha` is refused `stale_base` *and the reason stays on the card*; rework and handover are
+bounded; a handover is one transaction (old claim released, new owner set, `handed_off` written) and a bot reaches only the targets
+its `tasks.handoff` grant's `mayTag` names — the route and the tool ask the same `mayHandoffToActor`; `strict` files the handoff and
+an approval, the card moves only on approval and exactly once (its `applied_at`); a `protected` environment needs a person other
+than the requester; a board drag calls the same transition door as `PATCH /tasks/:id`; a rhythm's tick advances `next_run_at` and
+files its run in one transaction (`FOR UPDATE SKIP LOCKED`), a bad routine contract becomes a `failed` run with the reason, and a
+task rhythm creates its card through the system door (`app.rhythms_fire`) so `created_by` is the rhythm's creator.
+
+**The six failures this pass found and fixed** (all in `MISTAKES.md`):
+1. every member card create was 403 — the schema policed writes with `readable_team_ids('write')`, which is leads only; member
+   actions use `'post'` (16 policy/door lines);
+2. the tasks manifest called its tools `destructive`, which the broker reads as "can never be granted" — every template load failed;
+3. `SELECT app.tasks_handoff_pending(...)` was read under a column name that does not exist (`app_…`), so a filed handoff answered
+   "Could not file the handoff"; the release route had the same shape and silently ignored `not_owner`;
+4. the stale-completion reason was written by the door and then rolled back when the route threw its 409 — the route now returns the
+   409 so the reason commits;
+5. a handover resolved its target by joining `app.actors`, which a person sees only their own row of — targets are resolved through
+   `app.tasks_actor_of`/`app.tasks_bot_of`;
+6. the cron parser with month/day names refused numeric fields (`0 0 30 2 *` was a parse error, not "never fires").
+
+**Verification.** Devbox `bash tools/devbox/remote-gates.sh`: install, lint and typecheck clean; **239 files / 3,916 passed /
+65 skipped / 0 failed** in ~6 min (242 files, 3 skipped); the snapshot guard passed. Targeted: tasks api 12, counting 1, tasks rls
+3, rhythms 6, bots templates 5 (the template-loader suite that caught #2), plus the 10 new event contracts and the 90 new
+schema-compat snapshots (written locally with `pnpm vitest run packages/shared/test/schema-compat`, then committed nowhere yet —
+see the phase table).
+
+**What is deliberately not in this pass** (each is a phase-6 row in PLAN.md, not a hidden gap): P6-00 (Helm/controller skeleton),
+the shared-repo half of P6-05 (bare mirror, per-bot worktrees, branch-scoped push tokens, git smart-HTTP), P6-06's runner binary
+(the `runners` table and its routes exist; no process registers itself, and the register route is a normal team-manager route, not a
+runner token door), P6-09 (Yjs pages), P6-10's Hermes variant (the rules variant is the one in the suite), P6-11's seed v6,
+P6-12's template bots. The Boards screen and the Rhythms tab landed after this note (below). A queued `rhythm_runs` row has no
+starter yet: the tick files the ledger honestly, but `run_id` stays null until the runtime that opens a run for it lands.
+
+## Phase 6, the Boards screen and the Rhythms tab (2026-10-20, not deployed)
+
+**P6-07's screen and P6-08's tab are built.** `/t/:team/boards` is the real screen now, not the placeholder: the sidebar's Boards entry
+opens it, and the three tabs live in `?tab=` so a board or a rhythm can be linked to (`?board=<id>` also selects a saved view, `?card=<id>`
+opens one card).
+
+- **Board** — a saved view's columns in their saved order, each read per state with the board's own `filter` (a value that is not a valid
+  id or kind is dropped, never sent as a guess). A drag is the board's `move` route; the screen only offers a target the transition table
+  and the column set allow, and a code card without its tested sha is not offered Done. When the server refuses anyway (409), its sentence
+  is what the board shows — the screen never invents a reason. A card opens the panel: owner, branch, the two shas, the bounds, the blocker,
+  Claim/Release/Complete/Send back, a bot handoff with `dispatch: strict`, the move select (the keyboard path a drag needs), and the
+  history read from `task_events` (`Open → In progress`, `handed it to Reviewer (bot)`, `completed it, tested at …`). New card posts to the
+  task API; New board is offered to a lead or a workspace admin only, as the route's `requireManage` says.
+- **Org chart** — leads above members, the bots beside them with the hands each `handover.mayTag` names (a `person:<id>`, a bot slug, or a
+  role tag), and an entry that names nobody on the team today marked as such rather than hidden.
+- **Rhythms** — the list (kind, bot, schedule, next run from the server's `next_run_at`), pause/enable, Run now (the same path a tick
+  takes), and the run ledger with its reason. The form validates with the shared schema (a routine needs its contract; the schedule's next
+  run is computed with the shared cron parser, so the form cannot accept an expression the server would refuse); a member sees the proposal
+  sentence and no buttons.
+
+**Files:** `clients/web/src/screens/boards/` (`BoardsScreen`, `BoardView`, `CardPanel`, `OrgChart`, `RhythmsTab`, `api`, and the pure
+`board`/`rhythm`/`people` helpers), `clients/web/src/styles/boards.css`, the route in `App.tsx`, and the removal of the last `SectionView`
+placeholder. `CORE_NAV` no longer subtitles Boards "No boards yet" (it is a built screen now), and `e2e/shell/shell.spec.ts` asserts that.
+
+**Verification (this pass).** Web unit **276 passed / 22 files** (30 new: column grouping, drop rules, filter reading, card request, history
+wording, the chart, the rhythm form, and every client route reaching the path its plugin mounts). Devbox `pnpm lint` clean;
+`pnpm typecheck` clean; `pnpm -C e2e exec playwright test -c playwright.config.ts --project=desktop boards/` **5 passed in 47.6 s** — the
+columns, claim → move → history, the code-card Done rule on the screen **and** the route (409), the org chart, and the lead-only rhythm
+form. No deploy, no commit, no push this pass; the phase-6 schema-compat snapshots are still untracked and must be committed with the work
+before CI.
+
+## Hermes, live on the dev box (2026-10-21)
+
+The bot path was proven against the real thing: the dev box's own Hermes CLI (`/root/.local/bin/hermes`, install at
+`/root/.hermes`), a real model behind the workspace's LiteLLM gateway, the real router and run job, and the real MCP door. Nothing was
+committed, pushed or deployed; the stack was a throwaway seeded database.
+
+**The connection.** `tools/devbox/hermes-live.mjs` starts fake-llm with `FAKE_LLM_UPSTREAM` (its management API stays in memory, chat
+completions are forwarded — streaming included — to the gateway with a key only that process holds) and the e2e stack with
+`MANYTHREADS_HERMES_BIN`, `MANYTHREADS_RUNTIME_DIR=/root/.hermes/profiles` and `MANYTHREADS_LITELLM_URL` at the relay. Pointing the
+platform at the shared proxy instead would rewrite that proxy's model list and mint keys on it, which a check must not do. The recipe is
+in [runtime-hermes.md](docs/plugins/runtime-hermes.md#connecting-a-dev-box-real-hermes-a-real-model); the relay mode is in
+[fake-llm's README](tools/fake-llm/README.md) and its tests.
+
+**Nine journeys, 9/9 green, real model every time** (each one a `BOT.md` committed through the API and a person's message):
+
+| Journey | What it proved |
+|---|---|
+| mention | the run answered in the thread and used `messages.search` (10 source lines, a real hit quoted) |
+| conversation | a private conversation woke the bot; the reply landed in it |
+| channel_message | a watched channel woke the bot with no mention |
+| delegation | a bot's `@helper` started a second run at `delegation_depth` 1, same thread |
+| answer | the model finished with `answer.post`; `meta.answer.citations` carried the hit it read |
+| approval | `pages.write` under `approvals.needsApproval` closed the run `stopped`; approving it re-ran the call once (`outcome: ran`) and `pages/live-approval.md` was committed |
+| gate | the words held the message before any model call (`llm.gate`, run `stopped`); approving re-runs it and the reply arrives |
+| tasks | a real run claimed a board card; `task_events` recorded `claimed` |
+| failure | a bot without `messages.post` ran, its reply was refused, nothing was posted |
+
+**Two defects found and fixed.**
+
+1. **The gateway refused the MCP field the protocol reserves.** Hermes sends `params._meta` on every `tools/call`; the strict schema
+   answered `invalidParams`, the agent read "tools/call needs a tool name and object arguments", tried three times, dropped its tools and
+   answered from memory. `McpToolCallParams` now accepts and ignores `_meta` (`packages/shared/src/entities/mcp.ts`), with a protocol test
+   that fails the old way. Every existing test had built params the way we wrote them, and the one Hermes stand-in speaks no MCP, so the
+   wire was never exercised until a real client sent bytes.
+2. **The seeded bots asked for an alias no workspace can bind.** Their `BOT.md` named `default`; the workspace's alias set is closed and
+   only a bound alias mints a key, so no seeded bot could ever call a real gateway. The stand-in runtime ignores the key, so the suite was
+   green. The seed now asks for `smart` (`packages/test-utils/src/seed-repo-content.ts`).
+
+**Observability added.** A run's tool calls are now logged (`runtime-hermes: run <id> called <tool>` and `… answered|failed`), which is how
+the `_meta` refusal was found: the replies looked plausible while the tools were never used. `e2e/fixtures/stack-server.ts` echoes its log
+to stderr with `MANYTHREADS_STACK_LOG=1`, so a failing stack run can be read instead of guessed at.
+
+**Checks (dev box).** `pnpm lint` clean; `pnpm typecheck` clean; unit for shared + gateway-mcp + runtime-hermes + fake-llm **631 passed /
+30 files**; `CI=true pnpm test:schema-compat` **640 passed** after regenerating `entity.McpToolCallParams.json`; Playwright
+`conversations/answer.spec.ts` (desktop) **4 passed**. Not run: the whole suite and the other e2e areas — no server code outside the run
+job's logging changed.
+
+**Open.** The `tasks.*` tools were exercised for `tasks.read`/`tasks.claim` only; `tasks.complete`, `tasks.handoff`, `memory.*`,
+`pages.write` without an approval, `rules` bots and the gate's classifier stage (it needs a `local` alias pointed at a model on the box)
+were not part of this pass. A run's tool *arguments and results* are still not recorded anywhere (the names are); an Answer is, because
+the plugin stores it.
+
+**Third fix, found while cleaning up the runs.** Each run's profile (its `SOUL.md`, `config.yaml` with the bot's key, and the run
+token) is removed when the run ends, but Hermes' state registry writes `logs/` as it shuts down — after the removal — so
+`/root/.hermes/profiles` had collected twenty `<bot>-<run>` directories holding log files. The removal now counts only once it has
+stayed removed through two quiet checks (`hermes.ts`), and the startup sweep removes a directory of that name whose only entry is
+`logs/*.log` **regardless of age** (a live profile always holds more than logs). Tests: the provider's `hermes.test.ts` **18 passed**
+on the dev box; after a live mention the profiles directory is empty.
+
+## Phase 6 · live pages (P6-09), 2026-10-21 (not deployed, not committed)
+
+**P6-09 is built.** A page under `pages/` can now be edited by several people at once on a server-held Yjs document, and the session becomes one commit
+with every editor as a co-author. A bot's `pages.write` goes through the same document while a session is open, so a bot and a person never clobber each
+other. This closes the phase's page criterion (two people and a bot, one page, cursors visible, one co-authored commit).
+
+**What landed.**
+
+- **A plugin socket route.** `HttpRouteDefinition.ws` (SDK) lets a plugin own a WebSocket route; the server mounts it with `websocket: true` after the
+  ordinary authentication/CSRF hooks and hands over raw frames (`packages/server/src/build-server.ts`). `PluginSocket` is the small surface a plugin sees.
+  The kernel registry rejects a route with both a handler and a socket, a non-GET socket, or neither. `ctx.db.as(caller, fn)` / `ctx.db.system(fn)` give a
+  socket (or a timer) one transaction as the caller or the system: the same RLS and SQL guard a route gets, without inventing a second DB door.
+- **`packages/plugins/pages/migrations/0002_live_pages.sql`**: `page_docs` (Yjs snapshot, `last_update_id`, `last_commit_sha`), `page_updates`
+  (append-only, BRIN on time, who changed which page) and `page_awareness` (UNLOGGED cursors, 30 s expiry). RLS team policies, comments, grants.
+- **`packages/plugins/pages/src/live.ts`**: one room per `(team, path)` in this process; standard Yjs sync + awareness frames; frontmatter split off and
+  re-attached; load from snapshot + updates after `last_update_id` (a crash loses nothing that reached the ledger); a 2 s grace after the last socket
+  then one commit, or 60 s idle with editors still there; author = first person editor, every other editor a `Co-authored-by`; `baseBlobSha` from the
+  session so an outside commit is a 409 that leaves the room dirty; `pages.page.written` + the snapshot in the same moment. Bots: `applyLiveWrite` is
+  asked first by `pages.write` and applies/commits/broadcasts when a room is open.
+- **Client**: `clients/web/src/viewers/markdown/live.ts` (protocol, minimal-diff edit, peers/colours/carets) and `LivePageEditor.tsx` (source editor,
+  presence chips, remote carets, the server's commit notice); the Markdown viewer has a **Live** button (only with no unsaved edit) and **Done** hands the
+  committed source back without a reload. Styles in `viewers.css` (no raw hex).
+
+**Verification.** Pages suite **20 passed / 4 files** including `test/live.test.ts` (two editors over the real socket: concurrent edits converge, both
+cursors travel with their actor, one commit with both as co-authors and the page's exact bytes, snapshot reload, idle commit, 404/guard/anonymous refusals,
+update ledger + snapshot); web **283 passed / 23 files** including `test/live-page.test.ts` (diffing, convergence, peers, the client's socket handshake,
+the commit notice); root `pnpm lint` and `pnpm typecheck` clean locally; devbox `bash tools/devbox/remote-gates.sh` green below.
+
+**Found while building (in `MISTAKES.md`).** A socket's first frames arrive before the page has loaded (buffer, then replay); the room registry was keyed
+by team id but looked up by slug (every socket had its own document); a test waited on a commit message containing `live` while the page path was
+`pages/live/...` (the create commit matched).
+
+**Limits, deliberate and for P10.** Rooms are in one process: two replicas hold two documents and the second commit loses the `baseBlobSha` race (the room
+stays dirty and retries). Awareness is per process and UNLOGGED. There is no per-keystroke save; the repo sees the session, not the typing.
+
+**Still not in phase 6:** P6-00 (Helm/controller), the shared-repo half of P6-05 (bare mirror, per-bot worktrees, branch push tokens, smart-HTTP, merge
+behind approval), P6-06's runner binary and placement, the rhythm run starter (queued runs still have no `run_id`), P6-10's Hermes variant, P6-11's seed v6
+(boards, rhythms, a production environment) and P6-12's engineering template bots. Nothing was committed, pushed or deployed this pass.
+
+## Phase 6 · the engineering pipeline (P6-12), 2026-10-22 (not deployed, not committed)
+
+**P6-12 is built, and it needed one missing tool first.** The engineering template's `template.yaml` has listed eight bots since phase 5;
+two had definitions. The other six now do, as one hand-over chain over the task substrate, each defined as much by what it may not do:
+
+| Bot | What it does | What it holds |
+|---|---|---|
+| Orchestrator | splits a goal into cards, gives each one an owner, watches the board | `tasks.read/create/handoff`, `messages.post/search`, `files.search`, `knowledge.search`, `memory.recall`; `mayTag` coder, reviewer, tester, deploy, alert-triage |
+| Reviewer | reads the diff, judges it, hands it on or back with the reason | the four task tools, the four reads; runtime `files`, `git` — it can read a diff and cannot run it |
+| Tester | runs the suite, records the tested commit, completes the card | as Reviewer plus runtime `shell`, so it is the bot that can produce a `testedSha` |
+| Deploy | asks for a release, reports what the environment said | `tasks.read/claim/complete/deploy`; **`tasks.deploy` is in `approvals.needsApproval`**, so every release waits for a person |
+| Alert triage | one card per cause, one summary per batch, pages on-call | `tasks.read/create/handoff`, the reads; no tool that touches a running system |
+| Standup relay | the template's one automation: a routine run posts the daily standup | `tasks.read`, the reads, `messages.post`; it never writes the card or the page |
+
+Each ships a scenario set (`bots/<slug>/evals/<slug>.yaml`, 3 cases): the planner is forbidden `files.write`/`pages.write`/`tasks.deploy`, the
+reviewer and tester forbidden to edit what they judge and to complete a red suite, Deploy forbidden to deploy an untested card (and to call an
+accepted request a release), triage forbidden to restart anything, the relay forbidden to invent an update or carry a private message into
+#standup. `minScore` is 0.9 for the four bots whose judgement has room and 1 for Deploy, triage and the relay.
+
+**The gap this found: `tasks.create` was a route with no tool.** P6-02's list is create, assign, claim, complete, handoff, but only the last
+four (plus `read`/`deploy`) were capabilities, so an Orchestrator could not have created the card it exists to create. The create route's door
+is now `insertCard` (`packages/plugins/tasks/src/create.ts`): the route and the new `tasks.create` tool share it, so a card a model made and a
+card a person made are the same row, the same `created` history and the same `tasks.task.created` event. The tool writes in the calling bot's
+own team (a tool never names a team), checks a named goal/environment belongs to it, and refuses a bad body with `invalid_input` before anything
+is written. `tasks.deploy` also gained the catalog entry it was missing, so a model sees what the environment's rules are before it calls it.
+
+**Files.** `templates/engineering/bots/{orchestrator,reviewer,tester,deploy,alert-triage,standup-relay}/BOT.md` and their `evals/`;
+`packages/plugins/tasks/src/{create.ts,capabilities.ts,index.ts,routes.ts}`; `packages/plugins/gateway-mcp/src/catalog.ts`;
+`packages/plugins/bots/test/templates.test.ts` (the 14-file roster and a block of per-bot assertions); `packages/kernel/test/templates.test.ts`
+(engineering's eight definitions); [docs/templates.md](docs/templates.md) (the pipeline table and the six rules); the tool tables in
+[docs/plugins/tasks.md](docs/plugins/tasks.md) and [docs/plugins/gateway-mcp.md](docs/plugins/gateway-mcp.md).
+
+**Also repaired (see `MISTAKES.md`).** The previous pass had left the tree red: it had added `hermes-paper`/`ask` to the BOT.md runtime enum, edited the already-applied `bots/0001_bots.sql` to match, added a dead run-job guard, and mangled two test files (joined lines, an
+`if (!fake) return` that skipped a budget test). All of it is reverted to what the spec and the migration say (`hermes | rules`); the
+legitimate work from the Hermes pass — the profile-removal retry, the startup sweep of log-only husks, the run's tool-call logging — is kept.
+The Windows-only file-mode assertion in `hermes.test.ts` now skips the POSIX permission bits by platform instead of failing on them.
+
+**Verification.** `packages/plugins/bots/test/templates.test.ts` **29 passed** — the file-level rules (all 14 definitions and 7 sets parse, the
+per-bot assertions, the editor's own-form byte round-trip) **and** the real-server block: a team created from each of the five templates, its
+14 bots active with exactly the grants of their files, no `bots.bot.invalid`, the files byte-identical in the first commit, and Brain's
+conversation opening with its prompts. `packages/plugins/gateway-mcp/test/gateway.test.ts` **17 passed**, including the two new cases: a
+`tasks.create` call over the real MCP endpoint writes the card as the bot with its `created` history and event, and an empty title is
+`invalid_input` with nothing written. `packages/plugins/tasks/test/api.test.ts` **12 passed** after the `insertCard` extraction;
+`packages/kernel/test/templates.test.ts` **14 passed**; shared bot-md/eval-set/render suites and runtime-hermes + runtime-rules **34 passed**.
+`pnpm typecheck` and `pnpm lint` clean. The DB suites ran against the devbox's compose Postgres over an SSH tunnel (this machine has no
+Docker); the devbox database was stopped again afterwards. The full suite and the devbox gate (`bash tools/devbox/remote-gates.sh`) were
+not run in this pass.
+
+**One portability fix this found.** `startServer`'s storage-plugin filter split a plugin's directory on `/` only, which on Windows leaves the
+last segment as the whole path: both `storage-local` and `storage-s3` loaded, and every DB test on Windows died in `s3ConfigFromEnv` asking
+for a bucket before the first assertion. It now splits on either separator (`packages/server/src/start.ts`), which is what let the DB blocks
+above run at all.
+
+## Phase 6, deployed to the dev box (2026-10-22)
+
+**Shipped.** The phase-6 working tree is on **https://manythreads.kahf.to** — image `1f671dbabb11-daf31e95` (built from the uncommitted
+tree; the dev box tags a dirty tree by content, so each fix below is its own tag), helm **rev 48**, **79 migrations**, 30 plugins including
+`tasks` and `rhythms` (the previous image had `runtime-hermes` but neither). Nothing is committed or pushed.
+
+**Gates before the ship.** `pnpm lint` + `pnpm typecheck` clean locally; `bash tools/devbox/remote-gates.sh` on the dev box **242 files
+passed / 3 skipped, 3,967 passed / 65 skipped, 0 failed** (5 min). It caught one stale test: `teams/test/teams-api.test.ts` still expected
+the engineering template to ship two bot definitions, so it now pins the 15-file (TEAM.md + eight bots with their eval sets) first commit.
+
+**Two defects the live site found that no suite could.**
+
+1. **The web image's nginx swallowed the upgrade on `/api/`.** A live page is a plugin socket route under `/api/teams/:slug/pages/live`;
+   `location /api/` proxied it with the default HTTP/1.0 and no `Upgrade`, so the server saw an ordinary GET, `@fastify/websocket`
+   answered 404, and the editor said "Offline — changes stay here until the connection is back". Only `/ws` (the kernel's own hub) had
+   the upgrade lines. `deploy/docker/nginx.conf` now passes `proxy_http_version 1.1`, `Upgrade`/`Connection` and a 3600 s read timeout on
+   `/api/` too (the headers repeated, because a location that sets any `proxy_set_header` inherits none).
+2. **Presence names the person, the rows name the actor.** The browser knows `session.person.id`; the socket compares an awareness state's
+   `actorId` with `caller.actorId`, and `page_awareness.actor_id` is a foreign key to `actors`. Every awareness frame from every browser was
+   therefore silently refused, so two editors converged on the text but never saw each other's cursor (the unit test passed because it sent
+   the actor id). The route now takes a state naming the caller's own person and rewrites it to the actor id before applying it (and for a
+   dev-header actor, which has no session person, it resolves the person from the actor's `ref_id`). `pages/test/live.test.ts` gains the case:
+   two editors, one sending its person id, both see each other and the cursor row holds the actor.
+
+**Live proof (signed in through the real form as Omar, then Nadia in an incognito window).** Boards: created the `Release` board (five
+columns), created the card `Phase 6 smoke test` (code, `feature/phase-6-smoke`), claimed it (Omar, `in_progress`), dragged it to Done and got
+the server's own refusal — "A code card needs its tested commit before Done" — then completed it with a tested sha and saw it land in Done
+with `completed it, tested at …` history. Rhythms: the tab lists the empty state and the lead-only form (Name, Bot, Kind, Schedule, model
+alias, effort). Files → `pages/runbook.md` → **Live**: two windows, both "Live", each showing the other's presence chip, text typed in one
+appearing in the other; closing both committed the session once as Omar. The temporary card and the two smoke-test edits are the only data
+left behind (the runbook's stray marker was removed by the session's own commit).
+
+**Credentials for testing.** `omar@kahf.example` (workspace owner + admin, Engineering lead) and `nadia@kahf.example` (Engineering member),
+both with the one-off password `phase6-devbox-9f2c` (set with `admin set-password`; rotate with the same CLI — each run signs their sessions out).
+
+## Sidebar screens, and pictures in the chat (2026-10-23)
+
+**Moved.** The org chart and Rhythms left the Boards tab bar and are pages of their own with sidebar entries at orders 23 and 26
+(`/t/<team>/org`, `/t/<team>/rhythms`); `SECTIONS`/`TITLES` in `shell/nav.ts` follow them, so a team switch and the header title keep the
+section. Boards is only the board again. `surface.nav`'s icon enum gained `org` and `rhythms` (both drawn in `shell/icons.tsx`).
+
+**Added.** An image attachment in a message is drawn as a small cropped preview — one picture at its own height, several in a grid — instead
+of a file card; a press opens the full picture on a scrim with Download in its corner, Esc or a press outside closes it, and focus returns to
+the thumbnail. Only the types the files route serves inline are previewed (`INLINE_IMAGE_TYPES`); an SVG stays a file card because the route
+serves it as opaque bytes. The preview lays the stored bytes out small: the files route has no resized variant, so a channel of large
+pictures still downloads them whole.
+
+**Verified.** `tsc` (web, shared), eslint and stylelint clean; the new unit cases and the sidebar contract pass (14 tests). On the dev box,
+Playwright `boards/board.spec.ts` and `channels/composer.spec.ts` on the built client: **8 passed, 8 skipped (mobile)** — the org and
+Rhythms pages through their sidebar links, Boards with no tabs left, and two pictures in a grid opening the lightbox, whose Download returns
+the uploaded bytes. Not deployed: the live site still runs the phase-6 image.

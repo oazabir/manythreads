@@ -15,6 +15,9 @@
   "dependencies": {
     "@manythreads/sdk": "workspace:*",
     "@manythreads/shared": "workspace:*",
+    "lib0": "^0.2.119",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33",
     "zod": "^4"
   },
   "devDependencies": {
@@ -22,6 +25,8 @@
     "@manythreads/test-utils": "workspace:*",
     "@types/node": "^22",
     "@types/pg": "^8",
-    "pg": "^8"
+    "@types/ws": "^8.18.2",
+    "pg": "^8",
+    "ws": "^8.22.0"
   }
 }

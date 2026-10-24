@@ -76,11 +76,16 @@ what a call does beyond asking the broker:
 | `memory.recall`, `memory.retain` | read / write | the `memory` plugin's bank tools ([memory-hindsight.md](./memory-hindsight.md)): the description is here, the handler is there |
 | `memory.write` | write | proposes ONE OKF concept into `memory/**` through the `memory` plugin ([memory.md](./memory.md), P5-26): the path is judged by the broker before the handler runs, provenance is the platform's, and a concept a person wrote is never overwritten (a `draft` sibling is filed). The description and the JSON Schema come from the same `OkfProposal` the plugin validates with |
 | `answer.post` | write | finishes the run's reply with an Answer: a text, the sources it cites by id and some suggestions; the `answer` plugin re-reads every source as the person who asked and posts the message with its payload ([answer.md](./answer.md)). The description the model reads is generated from the same Zod schema the plugin validates with |
+| `tasks.read` | read | the team's cards the run can see, or one card, newest change first (the `tasks` plugin, PLAN P6-02) |
+| `tasks.create` | write | creates a card as the bot, in the bot's own team (a tool never names a team); the card and its `created` history go through the same door as `POST /tasks`, and assignment stays a handover, not a create |
+| `tasks.claim` | write | claims a card: one live claim per card, a second claim answers `already_owned`; the claim expires after `ttlSeconds` |
+| `tasks.complete` | write | completes a card the run owns; a `code` card needs `testedSha`, and a branch head beyond `base_sha` is refused `stale_base` |
+| `tasks.handoff` | write | moves a card to another bot or person in one transaction; a bot reaches only the targets its `tasks.handoff` grant's `mayTag` names (the same allowlist the board enforces), and a `dispatch: strict` handover can wait in Approvals |
+| `tasks.deploy` | write | asks for a release to one of the team's environments; the environment decides (a protected one waits for a person who is not the requester, a change window or the daily cap can refuse), and the answer carries the outcome rather than a promise |
 | `knowledge.search` | stub | answers `{ hits: [], reason: "no bases configured" }` — never invented content |
-| `tasks.read`, `tasks.claim`, `tasks.complete`, `tasks.handoff` | stub | answer that the board is not part of this deployment yet |
 
-The last five are declared by this plugin because the plugin that will own them does not exist yet (knowledge bases come
-with connections, the board with tasks). When one lands it declares the capability and this declaration goes — a
+`knowledge.search` is declared by this plugin because the plugin that will own it does not exist yet (knowledge bases come
+with connections). When it lands it declares the capability and this declaration goes — a
 duplicate name is a load-time error in the capability registry, so the handover cannot be forgotten silently.
 
 Three shapes of refusal, all answers a model can read and act on rather than transport errors: no grant, or a mutation

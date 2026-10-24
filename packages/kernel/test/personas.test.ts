@@ -113,7 +113,7 @@ describe('createPersonas', () => {
       expect(row.hash).toMatch(/^\$argon2id\$/);
       expect(await verifyPassword(row.hash, PERSONA_PASSWORD)).toBe(true);
     }
-    expect(PERSONA_PASSWORD).toBe('correct-horse-battery');
+    expect(PERSONA_PASSWORD).toBe('manythreadspassword');
     expect(hashes.rows.map((r) => r.person_id).sort()).toEqual(allPersonas.map((p) => p.personId).sort());
     expect(NADIA.workspaceId).toBe(KAHF_WORKSPACE_ID);
     expect(RAFI.teams[0]?.tags).toEqual(['role:on-call']);

@@ -229,8 +229,14 @@ describe('every shipped definition', () => {
       [
         'customer-support/brain',
         'customer-support/support-responder',
+        'engineering/alert-triage',
         'engineering/brain',
         'engineering/coder',
+        'engineering/deploy',
+        'engineering/orchestrator',
+        'engineering/reviewer',
+        'engineering/standup-relay',
+        'engineering/tester',
         'marketing/brain',
         'marketing/content-drafter',
         'product-design/brain',
@@ -360,6 +366,66 @@ describe('every shipped definition', () => {
     expect(coder.fm.handover?.mayTag).toEqual(['reviewer', 'tester']);
   });
 
+  it('the engineering pipeline: Orchestrator plans and hands over, and has no tool that writes, tests or ships', () => {
+    const orchestrator = shipped.find((s) => s.slug === 'orchestrator')!;
+    expect(orchestrator.template.id).toBe('engineering');
+    expect(orchestrator.fm.kind).toBe('agent');
+    expect(orchestrator.fm.capabilities?.native).toEqual([
+      'tasks.read',
+      'tasks.create',
+      'tasks.handoff',
+      'messages.post',
+      'messages.search',
+      'files.search',
+      'knowledge.search',
+      'memory.recall',
+    ]);
+    // It creates cards and hands them out; it never edits a file, writes a page or requests a deploy.
+    for (const forbidden of ['files.write', 'pages.write', 'tasks.deploy', 'tasks.complete']) {
+      expect(orchestrator.fm.capabilities?.native, forbidden).not.toContain(forbidden);
+    }
+    expect(orchestrator.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'tester', 'deploy', 'alert-triage']);
+    expect(orchestrator.fm.evals).toEqual({ set: 'orchestrator', minScore: 0.9 });
+  });
+
+  it('Reviewer and Tester move a card on with the evidence, and neither edits the change', () => {
+    const reviewer = shipped.find((s) => s.slug === 'reviewer')!;
+    const tester = shipped.find((s) => s.slug === 'tester')!;
+    for (const s of [reviewer, tester]) {
+      expect(s.fm.capabilities?.native, s.slug).toEqual(expect.arrayContaining(['tasks.read', 'tasks.claim', 'tasks.complete', 'tasks.handoff']));
+      expect(s.fm.capabilities?.native, s.slug).not.toContain('files.write');
+      expect(s.fm.capabilities?.native, s.slug).not.toContain('pages.write');
+    }
+    // The reviewer reads the diff but runs nothing; the tester runs the suite and is the one that records a tested commit.
+    expect(reviewer.fm.capabilities?.runtime).toEqual(['files', 'git']);
+    expect(tester.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
+    expect(reviewer.fm.handover?.mayTag).toEqual(['coder', 'tester']);
+    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'reviewer']);
+    expect(tester.body).toContain('tested sha');
+  });
+
+  it('Deploy can only request a release: every release in its file waits for a person, and it holds no write tool', () => {
+    const deploy = shipped.find((s) => s.slug === 'deploy')!;
+    expect(deploy.fm.capabilities?.native).toContain('tasks.deploy');
+    expect(deploy.fm.approvals?.needsApproval).toEqual(['tasks.deploy']);
+    expect(deploy.fm.evals).toEqual({ set: 'deploy', minScore: 1 });
+    for (const unwelcome of ['files.write', 'pages.write', 'tasks.handoff']) expect(deploy.fm.capabilities?.native, unwelcome).not.toContain(unwelcome);
+    expect(deploy.body).toContain('You never claim a deploy succeeded');
+  });
+
+  it('Alert triage turns a batch into an owned card, and Standup relay is the automation that posts the summary', () => {
+    const triage = shipped.find((s) => s.slug === 'alert-triage')!;
+    const relay = shipped.find((s) => s.slug === 'standup-relay')!;
+    expect(triage.fm.capabilities?.native).toEqual(expect.arrayContaining(['tasks.create', 'tasks.handoff']));
+    expect(triage.fm.capabilities?.native).not.toContain('tasks.deploy');
+    expect(triage.fm.handover?.mayTag).toEqual(['coder', 'deploy']);
+    expect(relay.fm.kind).toBe('automation');
+    expect(relay.fm.capabilities?.native).toEqual(['tasks.read', 'messages.post', 'messages.search', 'files.search', 'knowledge.search', 'memory.recall']);
+    // It is the only template bot woken by a schedule; every other trigger is a person's message.
+    expect(relay.fm.triggers?.map((t) => t.type)).toEqual(['routine', 'mention', 'conversation']);
+    expect(relay.fm.capabilities?.native).not.toContain('pages.write');
+  });
+
   it('is plain product copy: no plan or phase wording, no template placeholders, no retired name', () => {
     // the retired name is built, not written, so that this file is free of it too
     const retired = String.fromCharCode(109, 97, 106, 108, 105, 115);
@@ -420,7 +486,7 @@ describe('a team created from a template starts with its bots', () => {
 
       for (const m of mine) {
         const row = roster.find((b) => b.slug === m.slug)!;
-        expect(row, `${t.id}/${m.slug}`).toMatchObject({ name: m.fm.name, role: m.fm.role, kind: 'agent', runtime: 'hermes', status: 'active', invalid: null, conversational: true });
+        expect(row, `${t.id}/${m.slug}`).toMatchObject({ name: m.fm.name, role: m.fm.role, kind: m.fm.kind, runtime: 'hermes', status: 'active', invalid: null, conversational: true });
 
         // the compiled allowlist is the file's, plus `tasks.handoff` where `handover.mayTag` names somebody, and nothing the file does not say
         const grants = await w.system(async (tx) =>
@@ -436,7 +502,8 @@ describe('a team created from a template starts with its bots', () => {
         );
         const native = m.fm.capabilities?.native ?? [];
         const wantedHandoff = (m.fm.handover?.mayTag ?? []).length > 0 ? ['tasks.handoff'] : [];
-        expect(grants.map((g) => g.capability), `${t.id}/${m.slug}`).toEqual([...native, ...wantedHandoff].sort());
+        // one grant per capability: a bot that names `tasks.handoff` itself and also has `handover.mayTag` still gets one row
+        expect(grants.map((g) => g.capability), `${t.id}/${m.slug}`).toEqual([...new Set([...native, ...wantedHandoff])].sort());
         const waiting = new Set(m.fm.approvals?.needsApproval ?? []);
         for (const g of grants.filter((x) => native.includes(x.capability))) expect(g.needs_approval, `${m.slug} ${g.capability}`).toBe(waiting.has(g.capability));
         // the broker would grant every one of them: registered, none destructive
