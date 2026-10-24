@@ -1,4 +1,4 @@
-import { seedRepo } from '@manythreads/test-utils';
+import { ownerSql, seedRepo } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { GetBotResponse, ListBotsResponse, BotSummary } from '@manythreads/shared';
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
@@ -64,6 +64,11 @@ describe('the bot roster and bot page', () => {
     const zed = summaryOf(res.body, 'p505-zed')!;
     // Zed lists a mention trigger only, so nobody can talk to it (the router answers a conversation for the conversation trigger alone)
     expect(zed).toMatchObject({ slug: 'p505-zed', name: 'Zed', role: 'Answers the roster tests', mayTag: ['reviewer'], status: 'active', invalid: null, conversational: false });
+    // a card names its holder by actor id, so the roster carries the bot's actor id (not the bots row id), for a member who cannot read the actor row
+    const actor = await ownerSql(w.server.db.ownerUrl, `SELECT id FROM app.actors WHERE kind = 'bot' AND ref_id = $1`, [zed.id]);
+    expect(zed.actorId).toBe(actor[0]?.['id']);
+    expect(zed.actorId).not.toBe(zed.id);
+    expect((await getBot(nadia, 'p505-zed')).body.bot.actorId).toBe(zed.actorId);
     // the list is ordered by the display name
     const names = res.body.bots.map((b) => b.name);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
+import { ActorId } from '../../ids.ts';
 import { Bot, BotRun } from '../../entities/bot.ts';
 import { TeamSlug } from '../teams/common.ts';
 import { BotSlug } from './pairing.ts';
@@ -16,6 +17,11 @@ import { BotSlug } from './pairing.ts';
  * carries none; `bots.bot.invalid` stays the team-readable alert and history, never the page's state.
  */
 export const BotSummary = Bot.extend({
+  /**
+   * The bot's actor id: what a card's `ownerId`, a history line's `actorId` and a message's author carry (never `id`, which is the
+   * bots row). Null only if the actor row is missing, which the loader never leaves.
+   */
+  actorId: ActorId.nullable(),
   name: z.string().min(1),
   role: z.string(),
   /** Compiled from `handover.mayTag`; empty when the definition names nobody. */

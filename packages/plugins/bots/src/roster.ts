@@ -15,6 +15,12 @@ import { BOT_COLUMNS, BOT_RUN_COLUMNS, toBotRun, toBotSummary, type BotRow, type
 // page fetches through `repo/blob` and saves through `repo/commit` — so a member who is not a lead is refused by the repo writer's own
 // guarded-path rule (403) and the page offers a pull request instead of a Save button. Nothing here writes.
 
+/** bot id -> actor id for a team's bots (`app.team_bot_actor_ids`: a person cannot read a bot's actor row). */
+async function botActorIds(tx: PluginTx, teamId: string): Promise<Map<string, string>> {
+  const res = await tx.query<{ bot_id: string; actor_id: string }>('SELECT bot_id, actor_id FROM app.team_bot_actor_ids($1)', [teamId]);
+  return new Map(res.rows.map((r) => [r.bot_id, r.actor_id]));
+}
+
 async function botRows(tx: PluginTx, teamId: string, slug?: string): Promise<BotRow[]> {
   const res = await tx.query<BotRow>(
     `SELECT ${BOT_COLUMNS} FROM app.bots WHERE team_id = $1${slug === undefined ? '' : ' AND slug = $2'} ORDER BY name, slug`,
@@ -31,7 +37,8 @@ export function registerBotRoutes(ctx: PluginContext): void {
       const { slug } = ListBotsPathParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       // the route's response schema validates what leaves; the invalid reason is the row's own `invalid_reason` (the loader sets and clears it)
-      const bots = (await botRows(tx, team.id)).map(toBotSummary);
+      const actors = await botActorIds(tx, team.id);
+      const bots = (await botRows(tx, team.id)).map((r) => toBotSummary(r, actors.get(r.id) ?? null));
       return json({ bots });
     }),
   });
@@ -52,7 +59,7 @@ export function registerBotRoutes(ctx: PluginContext): void {
           ORDER BY id DESC LIMIT 20`,
         [row.id],
       );
-      return json({ bot: toBotSummary(row), path: botMdPath(row.slug), runs: runs.rows.map(toBotRun) });
+      return json({ bot: toBotSummary(row, (await botActorIds(tx, team.id)).get(row.id) ?? null), path: botMdPath(row.slug), runs: runs.rows.map(toBotRun) });
     }),
   });
 }

@@ -33,9 +33,6 @@ import {
   ReworkTaskRequest,
   ReworkTaskResponse,
   TasksTaskClaimedEvent,
-  TasksTaskCompletedEvent,
-  TasksTaskHandedOffEvent,
-  TasksTaskUpdatedEvent,
   UpdateEnvironmentRequest,
   UpdateEnvironmentResponse,
   UpdateGoalRequest,
@@ -73,6 +70,8 @@ import {
 } from '@manythreads/shared';
 import { conflict, forbidden, json, notFound, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { insertCard } from './create.ts';
+import { postHandoffCard } from './card.ts';
+import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
 import { handoverAllowlist, mayHandoffToActor } from './handoff.ts';
 import { TASK_SELECT, actorOf, toBoard, toEnvironment, toGoal, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type GoalRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
 
@@ -86,26 +85,6 @@ async function taskOf(tx: PluginTx, teamId: string, taskId: string): Promise<Tas
 /** The actor's name, for a refusal a person can read ("Already owned by Reviewer"). */
 async function nameOf(tx: PluginTx, actorId: string): Promise<string> {
   return (await actorOf(tx, actorId))?.name ?? 'someone';
-}
-
-/** Emit `tasks.task.updated`, the one event a board, a thread and a runtime watch. */
-async function emitUpdated(ctx: PluginContext, tx: PluginTx, before: Task, after: Task): Promise<void> {
-  await ctx.audit.emit(
-    tx,
-    TasksTaskUpdatedEvent.parse({
-      type: 'tasks.task.updated',
-      schemaVersion: 1,
-      workspaceId: after.workspaceId,
-      teamId: after.teamId,
-      taskId: after.id,
-      state: after.state,
-      fromState: before.state,
-      kind: after.kind,
-      ownerId: after.ownerId,
-      testedSha: after.testedSha,
-      actorId: tx.actor.id,
-    }),
-  );
 }
 
 export function registerRoutes(ctx: PluginContext): void {
@@ -233,6 +212,11 @@ export function registerRoutes(ctx: PluginContext): void {
         await tx.query<{ o_outcome: string; o_owner_id: string | null; o_expires_at: Date | null }>('SELECT * FROM app.tasks_claim($1::uuid)', [taskId])
       ).rows[0];
       if (!res || res.o_outcome === 'not_found') throw notFound('No such card');
+      if (res.o_outcome === 'already_owned' && res.o_owner_id === tx.actor.id) {
+        // The holder asking again: succeed, change nothing, emit nothing.
+        const live = await tx.query<{ expires_at: Date }>('SELECT expires_at FROM app.task_claims WHERE task_id = $1::uuid AND released_at IS NULL ORDER BY claimed_at DESC LIMIT 1', [taskId]);
+        return json(ClaimTaskResponse.parse({ task: await taskOf(tx, team.id, taskId), expiresAt: (live.rows[0]?.expires_at ?? new Date()).toISOString() }));
+      }
       if (res.o_outcome === 'already_owned') throw conflict(`already_owned: already owned by ${await nameOf(tx, res.o_owner_id ?? '')}`);
       if (res.o_outcome === 'not_claimable') throw conflict('not_claimable: this card cannot be claimed in its current state');
       const task = await taskOf(tx, team.id, taskId);
@@ -294,19 +278,7 @@ export function registerRoutes(ctx: PluginContext): void {
         return { status: 409, body: { error: { code: 'conflict', message: res.o_reason || res.o_outcome } } };
       }
       const after = await taskOf(tx, team.id, taskId);
-      await ctx.audit.emit(
-        tx,
-        TasksTaskCompletedEvent.parse({
-          type: 'tasks.task.completed',
-          schemaVersion: 1,
-          workspaceId: after.workspaceId,
-          teamId: after.teamId,
-          taskId: after.id,
-          kind: after.kind,
-          actorId: tx.actor.id,
-          testedSha: after.testedSha,
-        }),
-      );
+      await emitCompleted(ctx, tx, after);
       await emitUpdated(ctx, tx, before, after);
       return json(CompleteTaskResponse.parse({ task: after }));
     }),
@@ -385,10 +357,11 @@ export function registerRoutes(ctx: PluginContext): void {
         ).rows[0]?.approval_id;
         if (!approvalId) throw conflict('Could not file the approval');
         await tx.query('SELECT app.tasks_attach_approval($1::uuid, $2::uuid)', [handoffId, approvalId]);
+        await postHandoffCard(ctx, tx, { task: before, handoffId, toActorId, note: body.note, pending: true, origin: { channelId: body.channelId, threadRootId: body.threadRootId } });
         const handoffRow = (await tx.query<HandoffRow>('SELECT * FROM app.handoffs WHERE id = $1::uuid', [handoffId])).rows[0];
         return json(
           HandoffTaskResponse.parse({
-            task: before,
+            task: await taskOf(tx, team.id, taskId),
             handoff: toHandoff(handoffRow as HandoffRow),
             pendingApproval: true,
             approvalId,
@@ -411,24 +384,10 @@ export function registerRoutes(ctx: PluginContext): void {
       if (!handoffRow) throw conflict('The handoff was not recorded');
       const handoff: Handoff = toHandoff(handoffRow);
       const after = await taskOf(tx, team.id, taskId);
-      await ctx.audit.emit(
-        tx,
-        TasksTaskHandedOffEvent.parse({
-          type: 'tasks.task.handed_off',
-          schemaVersion: 1,
-          workspaceId: after.workspaceId,
-          teamId: after.teamId,
-          taskId: after.id,
-          handoffId: handoff.id,
-          fromActorId: handoff.fromActorId,
-          toActorId: handoff.toActorId,
-          mode: handoff.mode,
-          approvalId: handoff.approvalId,
-          note: handoff.note,
-        }),
-      );
+      await emitHandedOff(ctx, tx, after, handoff);
+      await postHandoffCard(ctx, tx, { task: after, handoffId: handoff.id, toActorId, note: body.note, pending: false, origin: { channelId: body.channelId, threadRootId: body.threadRootId } });
       await emitUpdated(ctx, tx, before, after);
-      return json(HandoffTaskResponse.parse({ task: after, handoff, pendingApproval: false, approvalId: null }));
+      return json(HandoffTaskResponse.parse({ task: await taskOf(tx, team.id, taskId), handoff, pendingApproval: false, approvalId: null }));
     }),
   });
 

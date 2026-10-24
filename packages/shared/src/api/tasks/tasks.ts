@@ -102,6 +102,12 @@ export const HandoffTaskRequest = z
     mode: z.enum(['bot', 'person']),
     note: z.string().trim().max(1000).default(''),
     strict: z.boolean().default(false),
+    /**
+     * Where the handover was asked for, so the card message ("A → @bot: note") is posted there as a reply and not in some other channel:
+     * the channel, and the thread root when the request came from inside a thread. Absent: the card's own thread, or the team's first public channel.
+     */
+    channelId: z.uuid().optional(),
+    threadRootId: z.uuid().optional(),
   })
   .refine((v) => (v.toActorId === undefined) !== (v.toBotSlug === undefined), 'name exactly one target: toActorId or toBotSlug');
 export type HandoffTaskRequest = z.infer<typeof HandoffTaskRequest>;

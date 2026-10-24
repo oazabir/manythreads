@@ -1,6 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerCapabilities } from './capabilities.ts';
-import { registerApprovalSubscriber } from './events.ts';
+import { registerApprovalSubscriber, registerNotWokenSubscriber } from './events.ts';
 import { registerJobs } from './jobs.ts';
 import { registerRoutes } from './routes.ts';
 
@@ -31,7 +31,7 @@ export default definePlugin({
     ],
     events: {
       emits: ['tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
-      consumes: ['approvals.approval.decided'],
+      consumes: ['approvals.approval.decided', 'runtime.task.not_woken'],
     },
     dependsOn: ['approvals'],
     migrations: 'migrations',
@@ -41,5 +41,6 @@ export default definePlugin({
     registerCapabilities(ctx);
     registerJobs(ctx);
     registerApprovalSubscriber(ctx);
+    registerNotWokenSubscriber(ctx);
   },
 });

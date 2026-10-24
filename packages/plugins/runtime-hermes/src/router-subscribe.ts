@@ -10,6 +10,7 @@ import {
   type BotTrigger,
 } from '@manythreads/shared';
 import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView } from './match.ts';
+import { registerTaskRouter } from './router-tasks.ts';
 import { RUN_QUEUE, RunPayload } from './run-job.ts';
 
 // Trigger routing (PLAN P5-10: "route `conversation`, `mention`, `channel_message` triggers"). One subscription on
@@ -50,6 +51,8 @@ interface MessageRow {
   author_name: string;
   /** The message carries an Answer (`meta.answer`): a person's masked copy of one (P5-17), never something typed. */
   carries_answer: boolean;
+  /** The message announces a card handover (`meta.handoff`, written by the tasks plugin): it starts no run. */
+  is_handoff_card: boolean;
   [key: string]: unknown;
 }
 
@@ -63,6 +66,7 @@ interface BotRow {
 
 /** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
 export function registerRouter(ctx: PluginContext): void {
+  registerTaskRouter(ctx);
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ChannelMessagePostedEvent.parse(raw);
     const message = (
@@ -71,7 +75,7 @@ export function registerRouter(ctx: PluginContext): void {
                 c.name AS channel_name, c.team_id AS channel_team, c.private AS channel_private,
                 c.archived_at AS channel_archived, c.bot_id AS channel_bot_id, c.kind AS channel_kind,
                 a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name,
-                (m.meta ? 'answer') AS carries_answer
+                (m.meta ? 'answer') AS carries_answer, (m.meta ? 'handoff') AS is_handoff_card
            FROM app.messages m
            JOIN app.channels c ON c.id = m.channel_id
            JOIN app.actors a ON a.id = m.author_id
@@ -82,6 +86,10 @@ export function registerRouter(ctx: PluginContext): void {
       )
     ).rows[0];
     if (!message) return;
+    // The announcement a handover posts ("Orchestrator → @coder: ...") carries `meta.handoff`, set only by the tasks plugin through the message
+    // door. It is not a request of its own: the assignment's event (router-tasks.ts) wakes the new owner, so this message starts nothing,
+    // whoever wrote it.
+    if (message.is_handoff_card) return;
     // A bot answering a bot is a delegation (below): an explicit @mention in a public team channel, mayTag-gated and
     // depth-capped. Anything else that is not a person — a gone author included — starts nothing.
     if (message.author_kind === 'bot') {
@@ -183,7 +191,7 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
   const replyRootId = message.thread_root_id ?? message.id;
   const deepest = (
     await tx.query<{ max: number }>(
-      `SELECT COALESCE(MAX(delegation_depth), 0)::int AS max FROM app.bot_runs WHERE reply_root_id = $1::uuid AND delegation_depth > 0`,
+      `SELECT COALESCE(MAX(delegation_depth), 0)::int AS max FROM app.bot_runs WHERE reply_root_id = $1::uuid AND delegation_depth > 0 AND trigger_type <> 'task_assigned'`,
       [replyRootId],
     )
   ).rows[0];

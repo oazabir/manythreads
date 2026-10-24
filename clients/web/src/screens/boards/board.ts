@@ -98,7 +98,8 @@ export function ownerLabel(ownerId: string | null, roster: readonly RosterMember
   if (ownerId === null) return 'nobody yet';
   const person = roster.find((m) => m.actorId === ownerId);
   if (person) return person.displayName;
-  const bot = bots.find((b) => b.id === ownerId);
+  // A card names its holder by ACTOR id; a bot's actor id is `actorId` (its `id` is the bots row, a different uuid).
+  const bot = bots.find((b) => b.actorId === ownerId);
   if (bot) return bot.name;
   return 'someone no longer on the team';
 }

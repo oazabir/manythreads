@@ -51,9 +51,10 @@ export const hasConversationTrigger = (triggers: unknown): boolean =>
   Array.isArray(triggers) && triggers.some((t) => typeof t === 'object' && t !== null && (t as { type?: unknown }).type === 'conversation');
 
 /** The roster's row: the bot plus the display fields the loader copied onto it and the reason its last load failed (`invalid_reason`, null once repaired). */
-export const toBotSummary = (r: BotRow): BotSummary =>
+export const toBotSummary = (r: BotRow, actorId: string | null = null): BotSummary =>
   BotSummary.parse({
     ...toBot(r),
+    actorId,
     name: r.name,
     role: r.role,
     mayTag: r.may_tag,

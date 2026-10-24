@@ -2,6 +2,8 @@
 // (`index.ts`, `test/router.test.ts`) still resolves here, so no caller changes.
 export {
   buildPrompt,
+  buildTaskPrompt,
+  type CardFacts,
   matchTrigger,
   MAX_DELEGATION_DEPTH,
   mayTagSlugs,

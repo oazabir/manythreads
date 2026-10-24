@@ -26,6 +26,8 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 - **One live claim per card.** `POST …/claim` inserts a claim and sets the owner in one transaction; the loser's insert hits the partial
   unique index and answers 409 `already_owned` with nothing changed. A claim expires (the `tasks.claim-timeout` job runs
   `app.tasks_expire_claims()` every minute), so a bot that dies mid-task does not hold a card forever.
+  **Claiming a card you already hold succeeds and changes nothing**: the route and the `tasks.claim` tool answer ok with the live claim's
+  expiry (the tool adds `alreadyYours: true`), write no second claim row and emit no event. Only a different caller gets `already_owned`.
 - **Freshness (P6-04).** A `code` card cannot reach `done` without `tested_sha`. A complete that names a `branchHeadSha` different from the
   card's `base_sha` is refused `stale_base` and the reason is written on the card. `rework` and `handoff` are bounded (`rework_count`,
   `handoff_count`); past the bound a person has to look at the card.
@@ -34,6 +36,31 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
   `constraints.mayTag` names — compiled by the bots loader from `BOT.md` `handover.mayTag`; the check is `mayHandoffToActor`, used by the
   route and the tool alike, so a tool call cannot reach a target the board refuses. A target is a bot slug, `person:<person id>` or a role
   name.
+- **The card's thread and the announcement.** A handover (route or tool) posts a message written as the sender: "Orchestrator → @coder: <note>".
+  It goes **where the handover was asked for**: the channel and thread a route request names (`channelId`, `threadRootId` in the body), or the
+  one the calling bot run answers in (`bot_runs.channel_id/reply_root_id`, read through `app.run_id()`), as a reply in that thread. That place
+  must be a channel of the card's team where the new owner may also post (checked with `app.channel_actor_can_post` of the channels plugin, which asks the channel
+  visibility rule for that actor). From anywhere else — a DM, a bot's own conversation, a private channel the new owner cannot post in, a place
+  the sender cannot read — the card is a short line ("Orchestrator handed “title” to @coder") in the team's first public channel and carries
+  **no note**, so text from a private place is never copied into a public one. With no origin at all, the card's own thread
+  (`tasks.thread_root_id`) is used, else the first public channel the sender may post in. The message becomes the card's thread root when the
+  card had none (`app.tasks_record_card`, which refuses a message that is not the sender's or is outside the card's team).
+  The message carries `meta.handoff` (the channels message door accepts that key only from plugin code), which every bot router reads to start
+  no run from the @mention in it.
+- **When the card cannot be announced or the owner cannot be woken, the history says so.** Every failure leaves the handover standing and writes a
+  `not_woken` line on the card (`app.tasks_note_event`) with a reason code: `no_message_door`, `sender_cannot_post`, `no_channel`,
+  `post_failed` (a fixed code; the error text is not stored) from the tasks side; `no_thread`, `channel_unavailable`, `receiver_cannot_post`, `wake_limit` from the runtime (event
+  `runtime.task.not_woken`, consumed here). Plugins have no logger, so this history and that event are the log.
+- **A bot sender is checked by the broker.** The `tasks.handoff` tool (and the route, when the caller is a bot) asks the capability broker for
+  `messages.post` before posting; a bot without that grant still hands the card over, posts nothing and gets a `sender_cannot_post` line.
+- **A strict handover** posts "would like to hand … (waiting for approval)", with the note only where a full card is allowed, when it is filed.
+  When the approval applies it nothing is posted: that runs in a system transaction, there is no door that writes a message as the original
+  sender or as the approver, and the system actor has no author row. The wake does not depend on that note: it needs the card's thread, which
+  comes from an earlier announcement or from the filing note; a card that has none gets a `no_thread` line.
+- **Waking the owner.** `tasks.task.handed_off` (and `tasks.task.completed`, for the card's creator) is what starts a bot whose `BOT.md` has
+  a `task_assigned` trigger — see "Task assignments" in [runtime-hermes.md](./runtime-hermes.md). The `tasks.handoff` and `tasks.complete`
+  tools emit the same events as the routes, so a handover made by a tool wakes the next bot too. The handover bound (five changes of hands)
+  is the loop bound for a chain of bots.
 - **Strict handovers wait.** `POST …/handoff` with `strict: true` files the handoff (`app.tasks_handoff_pending`, the card does not move),
   asks the approvals plugin for a `dispatch` approval, and answers 202 with `pendingApproval: true`. Approving it runs
   `app.tasks_apply_handoff` exactly once (the handoff row's `applied_at` is the latch); denying it leaves the card with its owner.
@@ -51,7 +78,7 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 | POST | `/tasks` | team writer (lead or member with `write`) |
 | GET | `/tasks/:taskId`, `/tasks/:taskId/events` | any team reader |
 | PATCH | `/tasks/:taskId` | team writer |
-| POST | `/tasks/:taskId/claim`, `/release`, `/complete`, `/rework`, `/handoff` | the owner (a lead may hand over or rework anyone's card) |
+| POST | `/tasks/:taskId/claim`, `/release`, `/complete`, `/rework`, `/handoff` | the owner (a lead may hand over or rework anyone's card; the creator of a card nobody owns may hand it over, since a bot that splits a goal creates cards and passes each on without ever holding one) |
 | GET/POST | `/goals`, PATCH `/goals/:goalId` | reader / writer |
 | GET/POST | `/environments`, PATCH `/environments/:environmentId` | reader / **lead** (manage) |
 | POST | `/environments/:environmentId/deploy` | team writer; protected environments ask a person |
@@ -63,6 +90,11 @@ shared schemas under `packages/shared/src/api/tasks/`.
 
 ## The `tasks.*` tools (P6-02)
 
+`tasks.read` names people so a bot can tell its own cards from another's: next to `owner_id` and `created_by` it returns `owner` and `creator`
+(a bot by its slug, a person by display name, `unknown` if the actor is gone), and the caller's own entries end in `(you)`, e.g.
+`owner: "reviewer (you)"`; the top-level `you` field says who is asking. Names come from `app.tasks_actor_labels` (migration 0005), which
+reads only actors of the caller's workspace. A `task_assigned` run's prompt also opens with "You are <name> (@<slug>)."
+
 The plugin declares `tasks.read`, `tasks.create`, `tasks.claim`, `tasks.complete`, `tasks.handoff` and `tasks.deploy` (`src/capabilities.ts`).
 They call the same SQL doors as the routes — `tasks.create` and the create route share `insertCard`, so a card a tool made and a card a person
 made are the same row with the same `created` history — and the MCP gateway only describes them (`docs/plugins/gateway-mcp.md`), so a granted
@@ -72,6 +104,6 @@ not an HTTP-only rule.
 
 ## Not built yet
 
-`packages/runner` (P6-06's runner binary and its outbound connection) and the shared-repo half of P6-05 (bare mirror, per-bot worktrees,
+The runner program and its connection are the [runners](./runners.md) plugin and `packages/runner` (P6-06); the shared-repo half of P6-05 (bare mirror, per-bot worktrees,
 branch-scoped push tokens, smart-HTTP) are not part of this plugin. The `runners` table and its routes exist so the screen and the
-`tasks.claim-timeout` sweep have something to read; a runner process that registers itself is still to come.
+`tasks.claim-timeout` sweep have something to read; the [runners](./runners.md) plugin is what makes a row `online` for real: a runner process connects with a token, says what it can do, and the row follows its connection.

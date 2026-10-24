@@ -1,5 +1,5 @@
 import type { PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
-import { ApprovalsApprovalDecidedEvent, TasksTaskHandedOffEvent, TasksTaskUpdatedEvent } from '@manythreads/shared';
+import { ApprovalsApprovalDecidedEvent, RuntimeTaskNotWokenEvent, TasksTaskHandedOffEvent, TasksTaskUpdatedEvent } from '@manythreads/shared';
 import { TASK_SELECT, toTask, type TaskRow } from './rows.ts';
 
 /**
@@ -59,5 +59,16 @@ export function registerApprovalSubscriber(ctx: PluginContext): void {
 
     // A deploy request: approving it records the deploy in the ledger (and on the card), once.
     await tx.query('SELECT * FROM app.tasks_apply_deploy($1::uuid)', [event.approvalId]);
+  });
+}
+
+/**
+ * The runtime could not wake a bot for a card (`runtime.task.not_woken`): the miss goes on the card's history as a `not_woken` line with the
+ * reason code, so a card that nobody picked up says why. The line is written once per event; the door ignores a card that is gone.
+ */
+export function registerNotWokenSubscriber(ctx: PluginContext): void {
+  ctx.events.subscribe('runtime.task.not_woken', async (raw: PluginEvent, tx: PluginTx) => {
+    const event = RuntimeTaskNotWokenEvent.parse(raw);
+    await tx.query('SELECT app.tasks_note_event($1::uuid, $2, $3::jsonb)', [event.taskId, 'not_woken', JSON.stringify({ reason: event.reason })]);
   });
 }

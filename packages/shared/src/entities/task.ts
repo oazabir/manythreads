@@ -34,6 +34,8 @@ export const TaskEventType = z.enum([
   'completed',
   'reworked',
   'deployed',
+  /** The new owner of a card could not be woken (`data.reason` says why); the card was handed over all the same. */
+  'not_woken',
 ]);
 export type TaskEventType = z.infer<typeof TaskEventType>;
 

@@ -120,6 +120,45 @@ describe('tasks API', () => {
     expect(live[0]?.['n']).toBe(1);
   });
 
+  it('lets the owner claim again: ok, the same single claim row, no second event', async () => {
+    const task = await createTask();
+    const first = await call(nadia, 'POST', `/api/teams/engineering/tasks/${task.id}/claim`);
+    expect(first.status).toBe(200);
+    const again = await call(nadia, 'POST', `/api/teams/engineering/tasks/${task.id}/claim`);
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(ClaimTaskResponse.parse(again.body).task.ownerId).toBe(nadia.actorId);
+    expect(ClaimTaskResponse.parse(again.body).expiresAt).toBe(ClaimTaskResponse.parse(first.body).expiresAt);
+    const claims = await ownerSql(server.db.ownerUrl, 'SELECT count(*)::int AS n FROM app.task_claims WHERE task_id = $1', [task.id]);
+    expect(claims[0]?.['n']).toBe(1);
+    const events = ListTaskEventsResponse.parse((await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}/events`)).body).items;
+    expect(events.filter((e) => e.type === 'claimed')).toHaveLength(1);
+    // another person still gets already_owned
+    expect((await call(rafi, 'POST', `/api/teams/engineering/tasks/${task.id}/claim`)).status).toBe(409);
+  });
+
+  /** `app.tasks_actor_labels` as `asker` (workspace + actor settings set in the same statement, as a request would have them). */
+  const labelsAs = (asker: string, ids: string[]) =>
+    ownerSql(
+      server.db.ownerUrl,
+      `SELECT l.o_actor_id, l.o_kind, l.o_slug
+         FROM (SELECT set_config('app.workspace_id', $1, true) AS w, set_config('app.actor_id', $2, true) AS a) c,
+              LATERAL app.tasks_actor_labels($3::uuid[]) l WHERE c.w <> '' AND c.a <> '' ORDER BY l.o_kind`,
+      [KAHF_WORKSPACE_ID, asker, ids],
+    );
+
+  it('names actors for the tasks.read tool: a bot by slug, a person by display name', async () => {
+    const rows = await labelsAs(reviewer.actorId, [reviewer.actorId, nadia.actorId]);
+    expect(rows.map((r) => [r['o_kind'], r['o_slug']])).toEqual([['bot', 'reviewer'], ['person', null]]);
+  });
+
+  it('names no actor the caller cannot already see (a member of another team, or one only in a team the caller cannot read)', async () => {
+    // Sameera is in Customer support only; nadia and the engineering bots are in Engineering only.
+    expect(await labelsAs(sameera.actorId, [nadia.actorId, coder.actorId])).toEqual([]);
+    const own = await labelsAs(sameera.actorId, [sameera.actorId, nadia.actorId]);
+    expect(own.map((r) => r['o_actor_id'])).toEqual([sameera.actorId]);
+    expect(await labelsAs(nadia.actorId, [sameera.actorId])).toEqual([]);
+  });
+
   it('refuses to complete a code card without a tested sha, then accepts one', async () => {
     const task = await createTask();
     await call(nadia, 'POST', `/api/teams/engineering/tasks/${task.id}/claim`);
@@ -178,6 +217,69 @@ describe('tasks API', () => {
     // A target the file does name is allowed.
     const inside = await call(asBot(coder), 'POST', `/api/teams/engineering/tasks/${task.id}/handoff`, { toBotSlug: 'reviewer', mode: 'bot' });
     expect(inside.status, JSON.stringify(inside.body)).toBe(200);
+  });
+
+  describe('the creator of an unowned card', () => {
+    const create = async (who: Persona | { kind: 'bot'; actorId: string }) => {
+      const res = await call(who, 'POST', '/api/teams/engineering/tasks', { title: 'Split me', branch: 'split/me' });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      return CreateTaskResponse.parse(res.body).task;
+    };
+    const hand = (who: Persona | { kind: 'bot'; actorId: string }, id: string, body: Record<string, unknown>) =>
+      call(who, 'POST', `/api/teams/engineering/tasks/${id}/handoff`, body);
+
+    it('hands its own unowned card to a mayTag target, and the card moves', async () => {
+      const task = await create(asBot(coder));
+      const moved = await hand(asBot(coder), task.id, { toBotSlug: 'reviewer', mode: 'bot' });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+      expect(HandoffTaskResponse.parse(moved.body).task).toMatchObject({ ownerId: reviewer.actorId, state: 'in_progress', handoffCount: 1 });
+    });
+
+    it('a member who did not create the card is refused, and the sentence says who may', async () => {
+      const task = await create(asBot(coder));
+      const denied = await hand(rafi, task.id, { toActorId: reviewer.actorId, mode: 'bot' });
+      expect([403, 409]).toContain(denied.status);
+      expect(messageOf(denied.body)).toMatch(/owner, a lead of its team, or its creator/);
+      const read = await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}`);
+      expect((read.body['task'] as Record<string, unknown>)['ownerId']).toBeNull();
+    });
+
+    it('the creator is refused once someone else owns the card', async () => {
+      const task = await create(asBot(coder));
+      expect((await call(rafi, 'POST', `/api/teams/engineering/tasks/${task.id}/claim`)).status).toBe(200);
+      const denied = await hand(asBot(coder), task.id, { toBotSlug: 'reviewer', mode: 'bot' });
+      expect([403, 409]).toContain(denied.status);
+      expect(messageOf(denied.body)).toMatch(/owner, a lead of its team, or its creator/);
+    });
+
+    it('a person who created an unowned card may hand it to a bot of the team or to themselves, never to another person', async () => {
+      const task = await create(rafi);
+      const toPerson = await hand(rafi, task.id, { toActorId: priya.actorId, mode: 'person' });
+      expect([403, 409]).toContain(toPerson.status);
+      expect(messageOf(toPerson.body)).toMatch(/yourself or to a bot of this team/);
+      const still = await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}`);
+      expect((still.body['task'] as Record<string, unknown>)['ownerId']).toBeNull();
+      const toBot = await hand(rafi, task.id, { toActorId: reviewer.actorId, mode: 'bot' });
+      expect(toBot.status, JSON.stringify(toBot.body)).toBe(200);
+      const mine = await create(rafi);
+      const toSelf = await hand(rafi, mine.id, { toActorId: rafi.actorId, mode: 'bot' });
+      expect(toSelf.status, JSON.stringify(toSelf.body)).toBe(200);
+    });
+
+    it('a lead may still hand an unowned card to another person', async () => {
+      const task = await create(rafi);
+      const moved = await hand(omar, task.id, { toActorId: priya.actorId, mode: 'person' });
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    });
+
+    it('a bot creator is still bound by mayTag', async () => {
+      const task = await create(asBot(coder));
+      const outside = await hand(asBot(coder), task.id, { toBotSlug: 'stranger', mode: 'bot' });
+      expect(outside.status).toBe(403);
+      expect(messageOf(outside.body)).toMatch(/mayTag/);
+      const read = await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}`);
+      expect((read.body['task'] as Record<string, unknown>)['ownerId']).toBeNull();
+    });
   });
 
   it('files a strict handoff in Approvals, refuses the requester, and applies it on approval', async () => {

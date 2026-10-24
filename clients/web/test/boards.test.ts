@@ -47,6 +47,8 @@ const TEAM = '00000000-0000-7000-8000-0000000000aa';
 const WS = '00000000-0000-7000-8000-000000000001';
 const ACTOR = '00000000-0000-7000-8000-0000000000a1';
 const BOT = '00000000-0000-7000-8000-0000000000b1';
+/** The bot's actor id: what a card carries as its owner. Deliberately not the bots row id. */
+const BOT_ACTOR = '00000000-0000-7000-8000-0000000000a9';
 const BOARD = '00000000-0000-7000-8000-0000000000bb';
 
 const board = (over: Record<string, unknown> = {}): Board =>
@@ -110,6 +112,7 @@ const member = (over: Record<string, unknown> = {}): RosterMember =>
 const bot = (over: Record<string, unknown> = {}): BotSummary =>
   BotSummary.parse({
     id: BOT,
+    actorId: BOT_ACTOR,
     workspaceId: WS,
     teamId: TEAM,
     slug: 'reviewer',
@@ -212,13 +215,15 @@ describe('who holds a card', () => {
     const bots = [bot()];
     expect(ownerLabel(null, people, bots)).toBe('nobody yet');
     expect(ownerLabel(ACTOR, people, bots)).toBe('Nadia Rahman');
-    expect(ownerLabel(BOT, people, bots)).toBe('Reviewer');
+    expect(ownerLabel(BOT_ACTOR, people, bots)).toBe('Reviewer');
+    // the bots row id is not an actor: a card never carries it
+    expect(ownerLabel(BOT, people, bots)).toBe('someone no longer on the team');
     expect(ownerLabel('00000000-0000-7000-8000-0000000000ff', people, bots)).toBe('someone no longer on the team');
   });
 });
 
 describe('a card’s history reads in words', () => {
-  const nameOf = (id: string | null): string => (id === BOT ? 'Reviewer' : 'Nadia Rahman');
+  const nameOf = (id: string | null): string => (id === BOT_ACTOR ? 'Reviewer' : 'Nadia Rahman');
   const event = (type: TaskEvent['type'], data: Record<string, unknown> = {}): TaskEvent =>
     TaskEvent.parse({ id: '00000000-0000-7000-8000-0000000000e1', taskId: task().id, teamId: TEAM, actorId: ACTOR, type, data, createdAt: AT });
 
@@ -227,7 +232,7 @@ describe('a card’s history reads in words', () => {
     expect(eventLine(event('claimed'), nameOf)).toBe('claimed it');
     expect(eventLine(event('released', { reason: 'claim expired' }), nameOf)).toBe('released it (claim expired)');
     expect(eventLine(event('state_changed', { from: 'open', to: 'in_progress' }), nameOf)).toBe('Open → In progress');
-    expect(eventLine(event('handed_off', { toActorId: BOT, mode: 'bot' }), nameOf)).toBe('handed it to Reviewer (bot)');
+    expect(eventLine(event('handed_off', { toActorId: BOT_ACTOR, mode: 'bot' }), nameOf)).toBe('handed it to Reviewer (bot)');
     expect(eventLine(event('completed', { testedSha: 'abcdef1' }), nameOf)).toBe('completed it, tested at abcdef1');
     expect(eventLine(event('completed', { from: 'verify', to: 'done' }), nameOf)).toBe('moved it to Done');
     expect(eventLine(event('reworked', { reason: 'tests red' }), nameOf)).toBe('sent it back: tests red');
@@ -305,7 +310,7 @@ const REPLIES: Record<string, unknown> = {
   [`POST /api/teams/engineering/tasks/${task().id}/complete`]: { task: task({ state: 'done' }) },
   [`POST /api/teams/engineering/tasks/${task().id}/rework`]: { task: task({ state: 'in_progress' }) },
   [`POST /api/teams/engineering/tasks/${task().id}/handoff`]: {
-    task: task({ ownerId: BOT }),
+    task: task({ ownerId: BOT_ACTOR }),
     handoff: {
       id: '00000000-0000-7000-8000-0000000000f1',
       taskId: task().id,
