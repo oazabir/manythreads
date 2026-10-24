@@ -1,0 +1,144 @@
+{{- if .Values.hindsight.enabled }}
+{{- if not .Values.litellm.enabled }}{{ fail "hindsight.enabled needs litellm.enabled: fact extraction goes through the LLM gateway" }}{{ end }}
+{{- /*
+  Team memory: Hindsight, the retrieval engine behind the memory-hindsight plugin. ClusterIP only (no ingress route); it keeps its
+  data in its own database `hindsight`, owned by its own login role `hindsight` that cannot connect to the application database.
+  Two init containers make this work on an already-initialised cluster:
+    1. setup-database  creates the role and database (idempotent; same state as deploy/postgres/init/20-hindsight-db.sql)
+    2. mint-llm-key    waits for LiteLLM and creates the virtual key limited to the alias `fast` (idempotent; deploy/compose/memory-up.sh does the same)
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-hindsight
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hindsight
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: hindsight
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: hindsight
+    spec:
+      initContainers:
+        - name: setup-database
+          image: {{ .Values.postgres.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+            - name: HS_PW
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-db-password } }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              H={{ include "manythreads.pgHost" . }}; O={{ .Values.postgres.owner }}
+              until pg_isready -h $H -U $O -d {{ .Values.postgres.database }}; do sleep 2; done
+              psql -v ON_ERROR_STOP=1 -v pw="$HS_PW" -h $H -U $O -d {{ .Values.postgres.database }} <<'SQL'
+              SELECT format('CREATE ROLE hindsight LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', :'pw')
+                WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hindsight') \gexec
+              SELECT format('ALTER ROLE hindsight PASSWORD %L', :'pw') \gexec
+              SELECT 'CREATE DATABASE hindsight OWNER hindsight'
+                WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'hindsight') \gexec
+              ALTER DATABASE hindsight OWNER TO hindsight;
+              REVOKE ALL ON DATABASE hindsight FROM PUBLIC;
+              GRANT CONNECT ON DATABASE hindsight TO hindsight;
+              REVOKE CONNECT ON DATABASE {{ .Values.postgres.database }} FROM PUBLIC;
+              SQL
+              psql -v ON_ERROR_STOP=1 -h $H -U $O -d hindsight -c 'CREATE EXTENSION IF NOT EXISTS vector' -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm'
+        - name: mint-llm-key
+          image: {{ .Values.hindsight.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: MASTER_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: litellm-master-key } }
+            - name: HS_LLM_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-llm-key } }
+          command:
+            - python3
+            - -c
+            - |
+              import json, time, urllib.request, urllib.error, urllib.parse, os, sys
+              base = "http://manythreads-litellm:4000"
+              master, key = os.environ["MASTER_KEY"], os.environ["HS_LLM_KEY"]
+              def call(path, body=None):
+                  req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
+                                               headers={"authorization": "Bearer " + master, "content-type": "application/json"})
+                  return urllib.request.urlopen(req, timeout=15)
+              for _ in range(90):
+                  try:
+                      call("/health/readiness"); break
+                  except Exception:
+                      time.sleep(4)
+              else:
+                  sys.exit("LiteLLM did not become ready")
+              try:
+                  call("/key/info?key=" + urllib.parse.quote(key)); print("key present"); sys.exit(0)
+              except urllib.error.HTTPError:
+                  pass
+              try:
+                  call("/key/generate", {"key": key, "models": ["fast"], "metadata": {"purpose": "hindsight fact extraction"}}); print("key minted")
+              except urllib.error.HTTPError as e:
+                  text = e.read().decode()
+                  if e.code in (400, 409) and ("already" in text.lower() or "duplicate" in text.lower()):
+                      print("key present")
+                  else:
+                      sys.exit("could not mint the key: %s %s" % (e.code, text[:200]))
+      containers:
+        - name: hindsight
+          image: {{ .Values.hindsight.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports: [{ name: http, containerPort: 8888 }]
+          env:
+            - name: HS_PW
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-db-password } }
+            - name: HINDSIGHT_API_DATABASE_URL
+              value: postgresql://hindsight:$(HS_PW)@{{ include "manythreads.pgHost" . }}:5432/hindsight
+            - { name: HINDSIGHT_API_TENANT_EXTENSION, value: "hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension" }
+            - name: HINDSIGHT_API_TENANT_API_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-api-key } }
+            - { name: HINDSIGHT_API_LLM_PROVIDER, value: openai }
+            - { name: HINDSIGHT_API_LLM_BASE_URL, value: "http://manythreads-litellm:4000/v1" }
+            - name: HINDSIGHT_API_LLM_API_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-llm-key } }
+            - { name: HINDSIGHT_API_LLM_MODEL, value: {{ .Values.hindsight.llmModel | quote }} }
+            - { name: HINDSIGHT_API_RETAIN_EXTRACTION_MODE, value: {{ .Values.hindsight.extractionMode | quote }} }
+            - { name: HINDSIGHT_API_SKIP_LLM_VERIFICATION, value: {{ .Values.hindsight.skipLlmVerification | quote }} }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+            failureThreshold: 60
+          {{- with .Values.hindsight.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-hindsight
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: hindsight
+  ports:
+    - { name: http, port: 8888, targetPort: http }
+{{- end }}

@@ -1,0 +1,106 @@
+{{- if .Values.litellm.enabled }}
+{{- /*
+  The LLM gateway: the LiteLLM proxy. The manythreads server's gateway-llm plugin pushes models and fallback chains into it
+  and mints per-bot virtual keys; providers are configured in the product (Workspace -> LLM API), not here.
+  Its state lives in its own database `litellm` in the same Postgres server. The init container creates that database when it is
+  missing, so this works on a cluster that was initialised long ago (a CNPG bootstrap script runs only once).
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: manythreads-litellm-config
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+data:
+  litellm.yaml: |
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+    litellm_settings:
+      drop_params: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-litellm
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: litellm
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: litellm
+    spec:
+      initContainers:
+        - name: create-database
+          image: {{ .Values.postgres.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              until pg_isready -h {{ include "manythreads.pgHost" . }} -U {{ .Values.postgres.owner }} -d {{ .Values.postgres.database }}; do sleep 2; done
+              psql -v ON_ERROR_STOP=1 -h {{ include "manythreads.pgHost" . }} -U {{ .Values.postgres.owner }} -d {{ .Values.postgres.database }} <<'SQL'
+              SELECT 'CREATE DATABASE litellm' WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'litellm') \gexec
+              SQL
+      containers:
+        - name: litellm
+          image: {{ .Values.litellm.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--config", "/config/litellm.yaml", "--port", "4000", "--num_workers", "1"]
+          ports: [{ name: http, containerPort: 4000 }]
+          env:
+            - name: LITELLM_MASTER_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: litellm-master-key } }
+            - name: LITELLM_SALT_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: litellm-salt-key } }
+            - name: OWNER_PW
+              valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+            - { name: STORE_MODEL_IN_DB, value: "True" }
+            - name: DATABASE_URL
+              value: postgresql://{{ .Values.postgres.owner }}:$(OWNER_PW)@{{ include "manythreads.pgHost" . }}:5432/litellm
+          readinessProbe:
+            httpGet: { path: /health/readiness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - { name: config, mountPath: /config, readOnly: true }
+          {{- with .Values.litellm.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: config
+          configMap: { name: manythreads-litellm-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-litellm
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: litellm
+  ports:
+    - { name: http, port: 4000, targetPort: http }
+{{- end }}

@@ -98,13 +98,22 @@ k3s ctr -n k8s.io images ls -q | grep -E 'manythreads/(server|server-demo|demo-f
   echo "$USED" | grep -qx "$short" && continue
   k3s ctr -n k8s.io images rm "$ref" || true
 done
+# Docker keeps its own copy of every build and a build cache; left alone they filled the disk on 2026-10-24, the kubelet
+# tainted the node with disk-pressure and garbage-collected the images every pod needed (MISTAKES.md).
+docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^manythreads/(server|server-demo|demo-fakes|web):' | while read -r ref; do
+  case "$ref" in *":$TAG") continue ;; esac
+  echo "$USED" | grep -qx "$ref" && continue
+  docker rmi "$ref" >/dev/null 2>&1 || true
+done
+docker builder prune -f --keep-storage 8gb >/dev/null 2>&1 || true
 
 echo "--- ensure CNPG operator"
 helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null 2>&1 || true
 helm repo update cnpg >/dev/null
 helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace --wait --timeout 5m
 
-HELM_ARGS=(--set imageTag="$TAG")
+# The live install runs a real LiteLLM gateway and Hindsight memory engine (values-live.yaml); --demo overrides that with stand-ins.
+HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml)
 [ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
 echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
 if ! helm upgrade --install manythreads ./deploy/helm/manythreads -n manythreads \

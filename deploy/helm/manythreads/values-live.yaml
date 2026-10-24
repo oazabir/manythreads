@@ -1,0 +1,15 @@
+# The live install (namespace `manythreads`): a real LLM gateway (LiteLLM) and a real memory engine (Hindsight) next to the server.
+# tools/devbox/deploy.sh applies this file on every deploy. values-ci.yaml does not (the test namespace stays small and starts fresh
+# each run), and values-demo.yaml switches both off again in favour of its stand-ins.
+litellm:
+  enabled: true
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 2Gi }
+hindsight:
+  enabled: true
+  # The live workspace binds `fast` to a real model (Workspace → LLM), so Hindsight's startup check of it stays on.
+  skipLlmVerification: "false"
+  resources:
+    requests: { cpu: 100m, memory: 1Gi }
+    limits: { memory: 4Gi }

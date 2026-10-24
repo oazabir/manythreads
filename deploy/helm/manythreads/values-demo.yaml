@@ -16,3 +16,7 @@ server:
     # Run profiles live in the install's own profiles/ directory: pm-era Hermes only boots when HERMES_HOME is
     # <home>/profiles/<name> (its committed dependency environment is resolved from <home>), so a bare directory
     # elsewhere answers "no dependency environment is committed for this install" and the run fails.
+
+# The stand-ins replace the real gateway and memory engine; do not run both.
+litellm: { enabled: false }
+hindsight: { enabled: false }

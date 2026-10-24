@@ -75,6 +75,17 @@ spec:
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: test-auth-token } }
             - { name: MANYTHREADS_ALLOW_TEST_AUTH_IN_PRODUCTION, value: "1" }
             {{- end }}
+            {{- /* The in-cluster gateway and memory engine, unless server.env names its own URL (the demo overlay points at stand-ins). */}}
+            {{- if and .Values.litellm.enabled (not (hasKey .Values.server.env "MANYTHREADS_LITELLM_URL")) }}
+            - { name: MANYTHREADS_LITELLM_URL, value: "http://manythreads-litellm:4000" }
+            - name: MANYTHREADS_LITELLM_MASTER_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: litellm-master-key } }
+            {{- end }}
+            {{- if and .Values.hindsight.enabled (not (hasKey .Values.server.env "MANYTHREADS_HINDSIGHT_URL")) }}
+            - { name: MANYTHREADS_HINDSIGHT_URL, value: "http://manythreads-hindsight:8888" }
+            - name: MANYTHREADS_HINDSIGHT_API_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-api-key } }
+            {{- end }}
             {{- range $k, $v := .Values.server.env }}
             - { name: {{ $k }}, value: {{ $v | quote }} }
             {{- end }}

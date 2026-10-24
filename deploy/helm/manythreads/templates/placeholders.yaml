@@ -1,4 +1,4 @@
-{{- /* LiteLLM, Hindsight and Hermes are placeholders until their phases; nothing renders while disabled. */ -}}
-{{- if or .Values.litellm.enabled .Values.hindsight.enabled .Values.hermes.enabled }}
-{{- fail "litellm/hindsight/hermes are not implemented yet; keep them disabled" }}
+{{- /* Hermes runs on the host through a runner, not in the cluster: nothing renders for it, and turning it on is a mistake. LiteLLM and Hindsight have real templates (litellm.yaml, hindsight.yaml). */ -}}
+{{- if .Values.hermes.enabled }}
+{{- fail "hermes is not a cluster workload (it runs on the host through a runner); keep hermes.enabled false" }}
 {{- end }}

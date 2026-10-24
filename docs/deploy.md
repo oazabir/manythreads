@@ -55,7 +55,7 @@ serves.
 ## Chart (`deploy/helm/manythreads`)
 No CRDs of our own (D4). Postgres is a CNPG `Cluster` `manythreads-pg` (service `manythreads-pg-rw`) with
 `postgres.mode: statefulset` as a fallback (same image). Passwords live in secrets `manythreads-db-owner` and
-`manythreads-db-app` (generated once, kept across upgrades). LiteLLM/Hindsight/Hermes are disabled placeholders.
+`manythreads-db-app` (generated once, kept across upgrades). LiteLLM and Hindsight are real workloads (below); Hermes is not a cluster workload (it runs on the host through a runner) and `hermes.enabled` only fails the render.
 nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`, `/ws` to `manythreads-server`.
 
 ## Server environment (set by the chart)
@@ -74,7 +74,24 @@ nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`,
 | `MANYTHREADS_STORAGE_DIR` | `server.blobs.persistence.mountPath`, `/data/blobs`: the PVC `manythreads-blobs` (below), used by `storage-local`. |
 | `MANYTHREADS_REPO_DIR` | `server.repos.persistence.mountPath`, `/data/repos`: the PVC `manythreads-repos` (below). The server image includes `git`. |
 | `MANYTHREADS_KMS_PREVIOUS_KEYS` | Secret key `kms-previous-keys` from `kms.previousKeys` (empty by default; rotation below). |
+| `MANYTHREADS_LITELLM_URL`, `MANYTHREADS_LITELLM_MASTER_KEY` | With `litellm.enabled`: `http://manythreads-litellm:4000` and the Secret `manythreads-llm-secrets` key `litellm-master-key`. Skipped when `server.env` names its own `MANYTHREADS_LITELLM_URL` (the demo overlay points at fake-llm), so the overlay always wins. |
+| `MANYTHREADS_HINDSIGHT_URL`, `MANYTHREADS_HINDSIGHT_API_KEY` | With `hindsight.enabled`: `http://manythreads-hindsight:8888` and the Secret key `hindsight-api-key`. Skipped the same way when `server.env` sets the URL. |
 | `MANYTHREADS_TEST_AUTH_TOKEN` | Secret key `test-auth-token` (40 random alphanumerics), injected **only when `testAuth.enabled`** (test environments; not used by the screenshots workflow). |
+
+**LLM gateway and memory engine (`litellm`, `hindsight`).** The LLM gateway is LiteLLM (a proxy that turns every model call into one OpenAI-style API); the
+memory engine is Hindsight (stores and searches what a team's bots remember). Both are off in the base `values.yaml`; `values-live.yaml` turns them on and
+`tools/devbox/deploy.sh` always applies it, so the live namespace runs them. `values-ci.yaml` keeps them off (the CI namespace is rebuilt every run and should stay small),
+and `values-demo.yaml` switches them off again in favour of its stand-ins (`deploy.sh --demo`). Images come from the local docker/k3s store
+(`ghcr.io/berriai/litellm:main-stable`, `ghcr.io/vectorize-io/hindsight:0.10.3`, `imagePullPolicy: IfNotPresent`; import with `docker save IMG | k3s ctr -n k8s.io images import -`).
+* **Secret `manythreads-llm-secrets`** (generated once with `lookup`, kept by `helm.sh/resource-policy: keep`, never rotated by an upgrade): `litellm-master-key`, `litellm-salt-key`
+  (encrypts provider keys stored in LiteLLM: never change it), `hindsight-db-password`, `hindsight-api-key`, `hindsight-llm-key` (a LiteLLM virtual key limited to the alias `fast`; Hindsight never holds the master key).
+* **LiteLLM** (`manythreads-litellm:4000`, ClusterIP): `STORE_MODEL_IN_DB=True`; its database `litellm` lives in the same Postgres server. An init container creates it when missing
+  (`CREATE DATABASE` as the owner role), which works on a cluster initialised long ago (CNPG bootstrap SQL runs only once). It connects as `manythreads_owner`, as in compose. The server's
+  gateway-llm plugin pushes models into it; providers are set in the product (Workspace -> LLM API), never in the chart.
+* **Hindsight** (`manythreads-hindsight:8888`, ClusterIP, no ingress route): its own login role `hindsight` and database `hindsight` (same state as `deploy/postgres/init/20-hindsight-db.sql`),
+  created by an init container; a second init container waits for LiteLLM and creates the `fast`-only virtual key if absent (what `deploy/compose/memory-up.sh` does). `hindsight.skipLlmVerification`
+  is `"true"` until a provider is configured behind the alias `fast`; then set it `"false"`.
+* Run `kubectl -n manythreads exec deploy/manythreads-server -- node -e "fetch('http://manythreads-litellm:4000/health/liveliness').then(r=>r.text()).then(console.log)"` to check the gateway from inside the cluster.
 
 **Mailpit** (`mailpit.enabled`, default on for the test environment) is a Deployment + ClusterIP Service `manythreads-mailpit`
 (SMTP 1025, UI 8025). The ingress never routes to it; read mail with

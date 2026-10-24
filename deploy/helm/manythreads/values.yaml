@@ -153,9 +153,23 @@ web:
   replicas: 1
   resources: {}
 
-# Disabled-by-default placeholders (filled in later phases).
-litellm: { enabled: false }
-hindsight: { enabled: false }
+# LLM gateway (LiteLLM) and team memory (Hindsight). Off in the base values (the CI namespace keeps them off to save memory);
+# values-live.yaml turns them on for the live install, and tools/devbox/deploy.sh applies it. Keys are generated once into the
+# Secret manythreads-llm-secrets (kept across upgrades). Providers are NOT configured here: use Workspace -> LLM API in the product.
+litellm:
+  enabled: false
+  image: ghcr.io/berriai/litellm:main-stable
+  resources: {}
+hindsight:
+  enabled: false          # needs litellm.enabled
+  image: ghcr.io/vectorize-io/hindsight:0.10.3
+  llmModel: fast          # the LiteLLM alias its fact extraction calls
+  extractionMode: concise # `chunks` calls no model
+  # Skip the model check at start-up. True while no provider is configured behind the alias `fast`
+  # (the check would fail and the pod never become ready); set "false" once a provider is configured.
+  skipLlmVerification: "true"
+  resources: {}
+# Hermes runs on the host through a runner, never in the cluster: this switch only fails the render if turned on.
 hermes: { enabled: false }
 
 # Demo stand-ins (fake-llm, fake-hindsight, Hermes in the server image): off by
