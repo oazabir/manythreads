@@ -461,6 +461,19 @@ importers:
         specifier: workspace:*
         version: link:../../kernel
 
+  packages/plugins/hermes-pods:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+
   packages/plugins/identity-oidc:
     dependencies:
       '@manythreads/sdk':

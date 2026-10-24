@@ -84,6 +84,29 @@ else
   echo "manythreads/postgres:19 already imported; skipping (use --rebuild-postgres to force)"
 fi
 
+# Managed Hermes pods (values-live.yaml hermesPods): the Hermes container and the workbench. Tagged by the content of their build
+# folders, so an unchanged folder is a no-op and a changed one rolls the pods. Built whether or not --no-build is given (the CI
+# pipeline builds only server+web); needs manythreads/hermes:stable (the official Hermes install, deploy/docker/hermes.Dockerfile).
+PODS_ARGS=()
+if grep -q '^hermesPods:' deploy/helm/manythreads/values-live.yaml 2>/dev/null; then
+  HP_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C deploy/images/hermes-pod -cf - . | sha256sum | cut -c1-10)
+  WB_TAG=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C deploy/images/workbench -cf - . | sha256sum | cut -c1-10)
+  if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/hermes-pod:$HP_TAG\$"; then
+    echo "--- build manythreads/hermes-pod:$HP_TAG"
+    if ! docker image inspect manythreads/hermes:stable >/dev/null 2>&1; then
+      docker build -f deploy/docker/hermes.Dockerfile -t manythreads/hermes:stable .
+    fi
+    docker build -f deploy/images/hermes-pod/Dockerfile -t "manythreads/hermes-pod:$HP_TAG" deploy/images/hermes-pod
+    IMAGES+=("manythreads/hermes-pod:$HP_TAG")
+  fi
+  if ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/workbench:$WB_TAG\$"; then
+    echo "--- build manythreads/workbench:$WB_TAG"
+    docker build -f deploy/images/workbench/Dockerfile -t "manythreads/workbench:$WB_TAG" deploy/images/workbench
+    IMAGES+=("manythreads/workbench:$WB_TAG")
+  fi
+  PODS_ARGS=(--set "hermesPods.images.hermes=manythreads/hermes-pod:$HP_TAG" --set "hermesPods.images.workbench=manythreads/workbench:$WB_TAG")
+fi
+
 echo "--- import into k3s"
 for img in "${IMAGES[@]}"; do
   echo "importing $img"
@@ -92,7 +115,7 @@ done
 
 echo "--- prune old server/web images (keep $TAG and pod-in-use)"
 USED=$(kubectl get pods -A -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' | sort -u)
-k3s ctr -n k8s.io images ls -q | grep -E 'manythreads/(server|server-demo|demo-fakes|web):' | while read -r ref; do
+k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(server|server-demo|demo-fakes|web):' || true; } | while read -r ref; do
   short=${ref#docker.io/}
   case "$short" in *":$TAG") continue ;; esac
   echo "$USED" | grep -qx "$short" && continue
@@ -100,10 +123,22 @@ k3s ctr -n k8s.io images ls -q | grep -E 'manythreads/(server|server-demo|demo-f
 done
 # Docker keeps its own copy of every build and a build cache; left alone they filled the disk on 2026-10-24, the kubelet
 # tainted the node with disk-pressure and garbage-collected the images every pod needed (MISTAKES.md).
-docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^manythreads/(server|server-demo|demo-fakes|web):' | while read -r ref; do
+docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(server|server-demo|demo-fakes|web):' || true; } | while read -r ref; do
   case "$ref" in *":$TAG") continue ;; esac
   echo "$USED" | grep -qx "$ref" && continue
   docker rmi "$ref" >/dev/null 2>&1 || true
+done
+# pod images: keep the current content tags and whatever a pod still uses
+docker images --format '{{.Repository}}:{{.Tag}}' | { grep -E '^manythreads/(hermes-pod|workbench):' || true; } | while read -r ref; do
+  case "$ref" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}") continue ;; esac
+  echo "$USED" | grep -qx "$ref" && continue
+  docker rmi "$ref" >/dev/null 2>&1 || true
+done
+k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench):' || true; } | while read -r ref; do
+  short=${ref#docker.io/}
+  case "$short" in *":${HP_TAG:-none}"|*":${WB_TAG:-none}") continue ;; esac
+  echo "$USED" | grep -qx "$short" && continue
+  k3s ctr -n k8s.io images rm "$ref" || true
 done
 docker builder prune -f --keep-storage 8gb >/dev/null 2>&1 || true
 
@@ -113,7 +148,7 @@ helm repo update cnpg >/dev/null
 helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace --wait --timeout 5m
 
 # The live install runs a real LiteLLM gateway and Hindsight memory engine (values-live.yaml); --demo overrides that with stand-ins.
-HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml)
+HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}")
 [ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
 echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
 if ! helm upgrade --install manythreads ./deploy/helm/manythreads -n manythreads \

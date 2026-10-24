@@ -1,0 +1,17 @@
+#!/bin/sh
+# Server-side `update` hook of every repository of record under /workspace/repos.
+# $1 = ref being updated. When the push came from a bot (mt-receive-pack.sh sets MT_BOT_PUSH=1 itself; sudo strips anything a bot
+# could set) the only refs a bot may move are branches other than main, master and the branch HEAD points to. No tags, no other refs.
+# A push made by the platform's own account (an operator running git as `repo` directly) is not restricted.
+[ "${MT_BOT_PUSH:-}" = "1" ] || exit 0
+ref="$1"
+head=$(git symbolic-ref -q HEAD 2>/dev/null || true)
+case "$ref" in
+  refs/heads/*) ;;
+  *) echo "refused: bots may push branches only ($ref)" >&2; exit 1 ;;
+esac
+if [ "$ref" = "refs/heads/main" ] || [ "$ref" = "refs/heads/master" ] || { [ -n "$head" ] && [ "$ref" = "$head" ]; }; then
+  echo "refused: $ref is protected; push another branch (for example bot/<name>/<topic>) and ask for a merge." >&2
+  exit 1
+fi
+exit 0

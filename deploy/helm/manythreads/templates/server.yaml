@@ -22,6 +22,13 @@ spec:
         {{- include "manythreads.labels" . | nindent 8 }}
         app.kubernetes.io/component: server
     spec:
+      {{- if .Values.hermesPods.enabled }}
+      # the hermes-pods plugin talks to the Kubernetes API with this account (a Role in this namespace; templates/hermes-pods.yaml)
+      serviceAccountName: manythreads-server
+      automountServiceAccountToken: true
+      {{- else }}
+      automountServiceAccountToken: false
+      {{- end }}
       {{- if or .Values.server.blobs.persistence.enabled .Values.server.repos.persistence.enabled }}
       securityContext:
         fsGroup: 1000   # `node` in the image; a no-op on local-path, needed on volumes that honour fsGroup
@@ -85,6 +92,26 @@ spec:
             - { name: MANYTHREADS_HINDSIGHT_URL, value: "http://manythreads-hindsight:8888" }
             - name: MANYTHREADS_HINDSIGHT_API_KEY
               valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-api-key } }
+            {{- end }}
+            {{- with .Values.hermesPods }}
+            {{- if .enabled }}
+            - { name: MANYTHREADS_HERMES_PODS, value: "1" }
+            - { name: MANYTHREADS_HERMES_PODS_NAMESPACE, value: {{ .namespace | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_HERMES_IMAGE, value: {{ .images.hermes | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_WORKBENCH_IMAGE, value: {{ .images.workbench | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_WORKSPACE_SIZE, value: {{ .workspaceSize | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_HOME_SIZE, value: {{ .homeSize | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_STORAGE_CLASS, value: {{ .storageClass | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_REPOS, value: {{ join "," .repos | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW, value: {{ join "," .repoOriginAllow | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_DEPLOYER_BOT, value: {{ .deployerBot | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_APPS_PREFIX, value: {{ .apps.prefix | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_APPS_HOST, value: {{ .apps.host | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_RESOURCES, value: {{ dict "hermes" .hermesResources "workbench" .workbenchResources | toJson | quote }} }
+            {{- /* Team pods live in another namespace: a short Service name would not resolve there, so the profiles get full ones. */}}
+            - { name: MANYTHREADS_INCLUSTER_URL, value: {{ printf "http://manythreads-server.%s.svc.cluster.local:3000" $.Release.Namespace | quote }} }
+            - { name: MANYTHREADS_INCLUSTER_LLM_URL, value: {{ printf "http://manythreads-litellm.%s.svc.cluster.local:4000/v1" $.Release.Namespace | quote }} }
+            {{- end }}
             {{- end }}
             {{- range $k, $v := .Values.server.env }}
             - { name: {{ $k }}, value: {{ $v | quote }} }

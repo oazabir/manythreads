@@ -1,0 +1,22 @@
+# Only the Hermes container (same pod, localhost) connects, with a per-bot key that Hermes alone holds.
+Port 2222
+ListenAddress 127.0.0.1
+HostKey /etc/ssh/host/ssh_host_ed25519_key
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+# keys live in a root-owned directory, one file per user: a bot cannot add its own
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+AllowGroups bots
+AllowTcpForwarding no
+X11Forwarding no
+PermitTunnel no
+GatewayPorts no
+UsePAM no
+PrintMotd no
+StrictModes yes
+LogLevel INFO
+AllowAgentForwarding no
+PermitUserEnvironment no
+PermitUserRC no

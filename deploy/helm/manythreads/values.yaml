@@ -152,6 +152,12 @@ web:
   image: manythreads/web
   replicas: 1
   resources: {}
+  # Public screenshot gallery at /screenshots/ (a volume the nginx serves; filled by tools/devbox/publish-screenshots.sh). Off here,
+  # on in values-live.yaml. The pictures are public by design: never put anything in it that is not meant for anyone with the link.
+  screenshots:
+    enabled: false
+    size: 1Gi
+    storageClass: local-path
 
 # LLM gateway (LiteLLM) and team memory (Hindsight). Off in the base values (the CI namespace keeps them off to save memory);
 # values-live.yaml turns them on for the live install, and tools/devbox/deploy.sh applies it. Keys are generated once into the
@@ -177,3 +183,56 @@ hermes: { enabled: false }
 demo:
   enabled: false
   image: manythreads/demo-fakes
+
+# Managed Hermes pods ("mode B", docs/plugins/hermes-pods.md): the platform runs one pod per team (`hermes-<team>`) holding the team's bots.
+# The server's hermes-pods plugin creates and updates them through the Kubernetes API (a ServiceAccount of its own with a Role in THIS
+# namespace only). Off in the base values; values-live.yaml turns it on. The two images are built by tools/devbox/deploy.sh
+# (deploy/images/hermes-pod, deploy/images/workbench) and imported into k3s; nothing is pulled from a registry.
+hermesPods:
+  enabled: false
+  images:
+    hermes: manythreads/hermes-pod:1      # Hermes Agent (official installer) + the profile sync
+    workbench: manythreads/workbench:1    # the bots' shell: Playwright/Chromium, git, node, python, kubectl, sshd
+  workspaceSize: 10Gi        # /workspace of each team's workbench (repositories of record + every bot's clone)
+  homeSize: 2Gi              # the Hermes container's profiles (state.db, sessions) and ssh keys
+  storageClass: local-path
+  # Repositories of record created in every team's workbench: "name" or "name=https://origin/url" (bots may create more themselves).
+  repos: []
+  # https:// URL prefixes a repository of record may be cloned from (the `name=url` form of `repos`). Empty = no origin is accepted.
+  repoOriginAllow: []
+  # Bots whose slug is `deployer` get the namespace-scoped deployer credential (below). Empty = no bot gets one.
+  deployerBot: deployer
+  hermesResources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { memory: 3Gi }
+  workbenchResources:
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { memory: 4Gi }
+  # Namespace of the teams' pods. Pod security "baseline" is enforced there; the controller's rights are limited to it.
+  namespace: manythreads-bots
+  # Teams whose deployer bot may ship apps. Each gets a namespace `<apps.prefix><team slug>` (pod security "restricted", a quota, default limits,
+  # default-deny network policy) and its own deployer account. A team not listed gets no deployer credential. The list is in the chart on purpose:
+  # creating namespaces and roles at run time would give the server the power to grant itself anything.
+  appTeams: [engineering, marketing, customer-support]
+  apps:
+    prefix: apps-
+    # Deployed apps are reached at https://<app>.<host> (a wildcard DNS name `*.<host>` must point at the cluster; kahf.to's does).
+    host: apps.manythreads.kahf.to
+    quota:
+      pods: "20"
+      requests.cpu: "4"
+      requests.memory: 8Gi
+      limits.memory: 16Gi
+      persistentvolumeclaims: "5"
+      requests.storage: 20Gi
+      services: "10"
+      count/ingresses.networking.k8s.io: "10"
+    limitRange:
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+      default: { memory: 512Mi }
+      max: { memory: 4Gi }
+  # The Kubernetes API address as a pod reaches it AFTER service NAT, for the network policy (k3s: the node's IP, port 6443). Empty = look up
+  # the `kubernetes` endpoints at render time; the render FAILS when that finds nothing (helm template), so set it explicitly there.
+  apiServer:
+    cidr: ""
+    port: 6443

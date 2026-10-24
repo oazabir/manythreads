@@ -1,0 +1,320 @@
+{{- if .Values.hermesPods.enabled }}
+{{- $hp := .Values.hermesPods }}
+{{- $bots := $hp.namespace }}
+{{- $rel := .Release.Namespace }}
+# Managed Hermes pods (docs/plugins/hermes-pods.md). Three kinds of namespace, each with its own walls:
+#   {{ $rel }}        the platform itself. The controller has NO rights here.
+#   {{ $bots }}       the teams' pods (Hermes + workbench). Pod security "baseline" is enforced (no privileged pods, no hostPath, no host networking).
+#   {{ $hp.apps.prefix }}<team>   one namespace per team in `hermesPods.appTeams`, where that team's deployer bot ships apps: pod security "restricted"
+#                     enforced, a quota, default limits, a default-deny network policy, its own deployer account.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: manythreads-server
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $bots }}
+  labels:
+    app.kubernetes.io/part-of: manythreads
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
+  annotations:
+    helm.sh/resource-policy: keep
+---
+# What the controller may do, in the pods namespace only: the objects of a team's pod. No pods/exec, nothing cluster-wide, nothing in {{ $rel }}.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: manythreads-hermes-pods-controller
+  namespace: {{ $bots }}
+rules:
+  - apiGroups: ["apps"]
+    resources: [deployments]
+    verbs: [get, list, create, patch, update]
+  - apiGroups: [""]
+    resources: [services, secrets, configmaps, persistentvolumeclaims]
+    verbs: [get, list, create, patch, update]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: manythreads-hermes-pods-controller
+  namespace: {{ $bots }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: manythreads-hermes-pods-controller }
+subjects:
+  - { kind: ServiceAccount, name: manythreads-server, namespace: {{ $rel }} }
+---
+# The pods can reach: DNS, the server (MCP + API), the LLM gateway, the Kubernetes API (the deployer's kubectl) and the public internet on 80/443
+# (package registries, git over https). Nothing else: no database, no other namespace, no private address. Ingress: only the server may call the
+# gateway port. (Enforced by k3s' built-in network policy controller.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: manythreads-hermes-pods
+  namespace: {{ $bots }}
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/component: hermes-pod }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $rel }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: server } }
+      ports:
+        - { port: 8642, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $rel }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: server } }
+      ports:
+        - { port: {{ .Values.server.port }}, protocol: TCP }
+    {{- if .Values.litellm.enabled }}
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $rel }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: litellm } }
+      ports:
+        - { port: 4000, protocol: TCP }
+    {{- end }}
+    {{- $cidr := $hp.apiServer.cidr }}
+    {{- if not $cidr }}
+      {{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" }}
+      {{- if and $ep $ep.subsets }}{{ $cidr = printf "%s/32" (index (index $ep.subsets 0).addresses 0).ip }}{{ else }}{{ fail "hermesPods.apiServer.cidr is required: the chart could not look up the Kubernetes API address (helm template has no cluster); set it, e.g. 10.0.2.15/32" }}{{ end }}
+    {{- end }}
+    - to:
+        - ipBlock: { cidr: {{ $cidr }} }
+      ports:
+        - { port: {{ $hp.apiServer.port }}, protocol: TCP }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 80, protocol: TCP }
+{{- range $team := $hp.appTeams }}
+{{- $ns := printf "%s%s" $hp.apps.prefix $team }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: manythreads
+    manythreads.io/apps: "true"
+    manythreads.io/team: {{ $team | quote }}
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+  annotations:
+    helm.sh/resource-policy: keep
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: {{ $ns }}
+automountServiceAccountToken: false
+---
+# A long-lived token for this team's deployer (the kubelet fills it in). The controller reads it from here and writes it, as a kubeconfig, into
+# that team's pod for the deployer bot's Unix user alone.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-token
+  namespace: {{ $ns }}
+  annotations:
+    kubernetes.io/service-account.name: deployer
+type: kubernetes.io/service-account-token
+---
+# The deployer's whole power: this one namespace, workloads that pass pod security "restricted", and no RBAC objects.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: ["apps"]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["batch"]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["networking.k8s.io"]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [services, configmaps, secrets, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, pods/log, events]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: {{ $ns }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: deployer }
+subjects:
+  - { kind: ServiceAccount, name: deployer, namespace: {{ $ns }} }
+---
+# The controller reads this one Secret (and nothing else) in the team's apps namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: manythreads-hermes-pods-token-reader
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [deployer-token]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: manythreads-hermes-pods-token-reader
+  namespace: {{ $ns }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: manythreads-hermes-pods-token-reader }
+subjects:
+  - { kind: ServiceAccount, name: manythreads-server, namespace: {{ $rel }} }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: apps
+  namespace: {{ $ns }}
+spec:
+  hard:
+    {{- toYaml $hp.apps.quota | nindent 4 }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: apps
+  namespace: {{ $ns }}
+spec:
+  limits:
+    - type: Container
+      {{- toYaml $hp.apps.limitRange | nindent 6 }}
+---
+# Default deny both ways, then: DNS and the public internet (80/443, no private, link-local or CGNAT address) out; the ingress controller in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-internet
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 80, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+{{- end }}
+{{- if $hp.appTeams }}
+---
+# Admission rules for every apps namespace (the namespace label manythreads.io/team names its team):
+#  * an Ingress host must be <app>.<team>.{{ $hp.apps.host }}: under its own team's name, never a wildcard, never the platform's host or another team's;
+#    no default backend; no traefik.* annotation (they could attach middlewares or entrypoints that bypass the rules above);
+#  * a Service must be ClusterIP with no externalIPs, loadBalancerIP or loadBalancerSourceRanges (externalIPs would let a deployer capture
+#    cluster addresses such as kube-dns or the API server: CVE-2020-8554);
+#  * a PersistentVolumeClaim may not name a volume (it could claim someone else's released PersistentVolume).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: manythreads-apps-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector: { matchLabels: { manythreads.io/apps: "true" } }
+    resourceRules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [ingresses]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [services, persistentvolumeclaims]
+  variables:
+    - name: team
+      expression: "has(namespaceObject.metadata.labels) && 'manythreads.io/team' in namespaceObject.metadata.labels ? namespaceObject.metadata.labels['manythreads.io/team'] : ''"
+  validations:
+    - expression: "variables.team != ''"
+      message: "this namespace has no manythreads.io/team label"
+    - expression: >-
+        object.kind != 'Ingress' || (has(object.spec.rules) && size(object.spec.rules) > 0 && object.spec.rules.all(r, has(r.host) && !r.host.startsWith('*') && r.host.endsWith('.' + variables.team + '.{{ $hp.apps.host }}') && size(r.host) > size('.' + variables.team + '.{{ $hp.apps.host }}')))
+      message: "an Ingress in an apps namespace needs a host <app>.<team>.{{ $hp.apps.host }} for its own team (no wildcard)"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.defaultBackend)"
+      message: "an Ingress in an apps namespace may not set a default backend"
+    - expression: "object.kind != 'Ingress' || !has(object.metadata.annotations) || !object.metadata.annotations.exists(k, k.startsWith('traefik.'))"
+      message: "an Ingress in an apps namespace may not carry traefik.* annotations"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.tls) || object.spec.tls.all(t, !has(t.hosts) || t.hosts.all(h, !h.startsWith('*') && h.endsWith('.' + variables.team + '.{{ $hp.apps.host }}')))"
+      message: "an Ingress tls host must be under the team's own host too"
+    - expression: "object.kind != 'Service' || !has(object.spec.type) || object.spec.type == 'ClusterIP'"
+      message: "a Service in an apps namespace must be of type ClusterIP"
+    - expression: "object.kind != 'Service' || ((!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0) && (!has(object.spec.loadBalancerIP) || object.spec.loadBalancerIP == '') && (!has(object.spec.loadBalancerSourceRanges) || size(object.spec.loadBalancerSourceRanges) == 0))"
+      message: "a Service in an apps namespace may not set externalIPs, loadBalancerIP or loadBalancerSourceRanges"
+    - expression: "object.kind != 'PersistentVolumeClaim' || !has(object.spec.volumeName) || object.spec.volumeName == ''"
+      message: "a PersistentVolumeClaim in an apps namespace may not name a volume"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: manythreads-apps-guard
+spec:
+  policyName: manythreads-apps-guard
+  validationActions: [Deny]
+{{- end }}
+{{- end }}

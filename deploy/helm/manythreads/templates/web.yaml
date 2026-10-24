@@ -1,4 +1,22 @@
 {{- if .Values.web.enabled }}
+{{- if .Values.web.screenshots.enabled }}
+# The public screenshot gallery (https://<domain>/screenshots/): a small volume the web pod serves read-only and that
+# tools/devbox/publish-screenshots.sh fills. Kept on `helm uninstall` like the other data volumes.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: manythreads-screenshots
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.web.screenshots.storageClass }}
+  resources:
+    requests: { storage: {{ .Values.web.screenshots.size }} }
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,6 +26,11 @@ metadata:
     app.kubernetes.io/component: web
 spec:
   replicas: {{ .Values.web.replicas }}
+  {{- if .Values.web.screenshots.enabled }}
+  # the screenshots volume is ReadWriteOnce: the old pod lets go of it before the new one starts
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/component: web
@@ -28,10 +51,19 @@ spec:
           readinessProbe:
             httpGet: { path: /, port: http }
             periodSeconds: 5
+          {{- if .Values.web.screenshots.enabled }}
+          volumeMounts:
+            - { name: screenshots, mountPath: /srv/screenshots }
+          {{- end }}
           {{- with .Values.web.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      {{- if .Values.web.screenshots.enabled }}
+      volumes:
+        - name: screenshots
+          persistentVolumeClaim: { claimName: manythreads-screenshots }
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service

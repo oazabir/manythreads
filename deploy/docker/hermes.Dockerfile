@@ -17,7 +17,11 @@ ENV HOME=/home/node
 WORKDIR /home/node
 # --skip-browser/--skip-computer-use are the installer's own opt-outs (a headless
 # run needs neither); on failure the install log's tail is printed before exit.
+# The installer is pinned by checksum: when upstream changes it the build stops, and a person reads the change and updates the sum.
+# (It installs the upstream main branch of Hermes; the installer has no release-tag option, so the checksum is the pin. Built 2026-10: v0.22.5.)
+ARG HERMES_INSTALLER_SHA256=abf338605dae6dd28d101673ac6aed7995c955745db46d47676bc591a7957209
 RUN curl -fsSL https://hermes-agent.nousresearch.com/install.sh -o /tmp/hermes-install.sh \
+    && echo "${HERMES_INSTALLER_SHA256}  /tmp/hermes-install.sh" | sha256sum -c - \
     && (bash /tmp/hermes-install.sh --skip-browser --skip-computer-use \
       || (tail -60 /home/node/.hermes/logs/install.log 2>/dev/null; exit 1)) \
     && rm /tmp/hermes-install.sh

@@ -13,3 +13,10 @@ hindsight:
   resources:
     requests: { cpu: 100m, memory: 1Gi }
     limits: { memory: 4Gi }
+web:
+  screenshots:
+    enabled: true
+hermesPods:
+  enabled: true
+  apiServer:
+    cidr: 10.0.2.15/32   # k3s on the devbox: the node IP (kubectl get endpoints kubernetes)
