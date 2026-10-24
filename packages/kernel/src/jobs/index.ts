@@ -48,6 +48,8 @@ export interface WorkerOptions {
   workerId: string;
   /** Jobs in flight at once (default 1). */
   concurrency?: number;
+  /** A payload field name: at most one job per distinct value of it runs at a time, in the whole queue (see `claimJobs`). */
+  serialKey?: string;
   pollMs?: number;
   /** Lease length; heartbeats renew it every leaseMs/3 (default 60000, as in A.8). */
   leaseMs?: number;
@@ -78,11 +80,39 @@ export async function claimJobs(
   queue: string,
   workerId: string,
   limit: number,
-  options: { leaseMs?: number; pool?: pg.Pool } = {},
+  options: { leaseMs?: number; pool?: pg.Pool; serialKey?: string } = {},
 ): Promise<ClaimedJob[]> {
-  const { leaseMs = 60_000 } = options;
+  const { leaseMs = 60_000, serialKey } = options;
   return withSystem(
     async (tx) => {
+      if (serialKey !== undefined) {
+        // Serial claim: one job per distinct value of the payload field `serialKey` is running at a time. The decision reads other
+        // claimers' effects ("is one running?"), which `SKIP LOCKED` cannot see, so claimers of this queue take turns on a transaction-level
+        // advisory lock; the next claimer's statement starts after this commit and sees the jobs it set running.
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`jobs.claim:${queue}`]);
+        const res = await tx.query<ClaimedJob>(
+          `WITH pick AS (
+             SELECT id, run_at FROM (
+               SELECT DISTINCT ON (coalesce(j.payload ->> $5, j.id::text)) j.id, j.run_at
+                 FROM app.jobs j
+                WHERE j.queue = $1 AND j.state = 'ready' AND j.run_at <= now()
+                  AND NOT EXISTS (SELECT 1 FROM app.jobs r
+                                   WHERE r.queue = j.queue AND r.state = 'running' AND r.payload ->> $5 = j.payload ->> $5)
+                ORDER BY coalesce(j.payload ->> $5, j.id::text), j.run_at, j.id) d
+              ORDER BY run_at, id LIMIT $4),
+           next AS (
+             SELECT id FROM app.jobs WHERE id IN (SELECT id FROM pick) AND state = 'ready' ORDER BY run_at, id FOR UPDATE SKIP LOCKED),
+           upd AS (
+             UPDATE app.jobs j SET state = 'running', attempts = j.attempts + 1
+             FROM next WHERE j.id = next.id RETURNING j.id, j.payload, j.attempts),
+           lease AS (
+             INSERT INTO app.job_leases (job_id, worker_id, expires_at)
+             SELECT id, $2, now() + $3 * interval '1 millisecond' FROM upd RETURNING job_id)
+           SELECT upd.id, upd.payload, upd.attempts FROM upd JOIN lease ON lease.job_id = upd.id`,
+          [queue, workerId, leaseMs, limit, serialKey],
+        );
+        return res.rows;
+      }
       const res = await tx.query<ClaimedJob>(
         `WITH next AS (
            SELECT id FROM app.jobs WHERE queue = $1 AND state = 'ready' AND run_at <= now()
@@ -137,6 +167,7 @@ export function startWorker(options: WorkerOptions): Worker {
     handler,
     workerId,
     concurrency = 1,
+    serialKey,
     pollMs = 5000,
     leaseMs = 60_000,
     maxAttempts = 5,
@@ -227,7 +258,7 @@ export function startWorker(options: WorkerOptions): Worker {
       let claimed: ClaimedJob[] = [];
       if (free > 0) {
         try {
-          claimed = await claimJobs(queue, workerId, free, { leaseMs, pool });
+          claimed = await claimJobs(queue, workerId, free, { leaseMs, pool, ...(serialKey !== undefined ? { serialKey } : {}) });
         } catch {
           claimed = [];
         }

@@ -116,6 +116,9 @@ export type BoardId = z.infer<typeof BoardId>;
 export const RunnerId = z.uuid().brand<'RunnerId'>();
 export type RunnerId = z.infer<typeof RunnerId>;
 
+export const HermesConnectionId = z.uuid().brand<'HermesConnectionId'>();
+export type HermesConnectionId = z.infer<typeof HermesConnectionId>;
+
 export const RhythmId = z.uuid().brand<'RhythmId'>();
 export type RhythmId = z.infer<typeof RhythmId>;
 

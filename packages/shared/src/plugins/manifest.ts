@@ -27,6 +27,8 @@ export const EXTENSION_POINTS = [
   'provider.messages',
   // The connected runners of a team and the one way to send a job to one (P6-06): registered by the runners plugin, used by runtime-hermes.
   'provider.runner',
+  // The managed Hermes pod's profile specs and its change notice (runtime-hermes): what a pod controller reads to keep the pod in step with the team's bots.
+  'provider.hermes.profiles',
   'command.register',
   'trigger.register',
   'component.register',

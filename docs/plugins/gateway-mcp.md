@@ -123,3 +123,12 @@ later. What the gateway does **not** log is the query itself or anything a stub 
 use), writes the URL and (as a bearer header) the token into the Hermes profile it generates, and posts the run's reply through `messages.post` in the
 run's bot transaction. The loader compiles a `BOT.md`'s `capabilities.native` into `app.capability_grants` (bots migration
 0005), so the tools a bot is offered come from its own file.
+
+## The bot's stable endpoint
+
+`POST /api/mcp/bots/<botId>` is for a Hermes gateway profile, which holds one address and one token and cannot be given a new pair per run. The
+credential is the bot's token (its pairing token: minted, rotated at `POST /api/teams/:slug/bots/:botSlug/pairing-tokens/rotate`, and revoked by a
+lead). A call is attributed to the bot's currently open run — `ctx.runs.openRunOf(botId)`, the newest running run not opened through the public
+mint — and then goes through the same `handleRpc` as the per-run endpoint. With no run open, `initialize`, `ping` and `tools/list` answer normally
+(the list is judged as for a conversation) and `tools/call` is a tool error with code `no_open_run`. An unknown, revoked or other bot's token is a
+401 identical to every other 401 of the endpoint.

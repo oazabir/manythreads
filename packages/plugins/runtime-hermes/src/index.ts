@@ -2,8 +2,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { definePlugin, type RunnerDoor } from '@manythreads/sdk';
 import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
+import { registerConnectionRoutes, resolveTarget } from './connections.ts';
+import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
+import { registerProfileChanges } from './profile-changes.ts';
 import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
 
+export { renderGatewayProfile, GATEWAY_ENV, type GatewayProfileInput, type GatewayProfileFiles } from './gateway-profile.ts';
+export { runOnGateway, managedProfileName, profileFor, sessionIdFor, sseFrames, type GatewayRuntimeOptions, type GatewayTarget } from './gateway.ts';
+export { runConcurrencyFrom } from './run-job.ts';
 export { chatArgs, profileHome, renderConfig, renderProfile } from './profile.ts';
 export { GUARDED_TOOLSETS, RUNTIME_GRANT_TOOLSETS, hermesToolsets, type HermesToolsets } from './toolsets.ts';
 export { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
@@ -31,12 +37,24 @@ export default definePlugin({
     kind: 'server',
     // The run/tool door (mint a run per invocation, post the reply as the run's bot), the message subscription that routes
     // triggers, the job a run executes in, and the provider itself.
-    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.bot_runtime', 'tool.invoke', 'hook.pre_egress'],
+    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.bot_runtime', 'provider.hermes.profiles', 'tool.invoke', 'hook.pre_egress'],
+    migrations: 'migrations',
     // `runtime.gate.held`: the gate stopped a run before any model call (P5-11). `hook.pre_egress` is used to redact the message an approver is shown.
-    events: { emits: ['runtime.gate.held', 'runtime.task.not_woken'], consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed'] },
+    events: {
+      emits: [
+        'runtime.gate.held',
+        'runtime.task.not_woken',
+        'hermes.connection.created',
+        'hermes.connection.updated',
+        'hermes.connection.deleted',
+        'hermes.connection.tested',
+        'hermes.profiles.changed',
+      ],
+      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed'],
+    },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
-    dependsOn: ['bots', 'channels', 'guardrails-dlp'],
+    dependsOn: ['bots', 'channels', 'teams', 'guardrails-dlp'],
   },
   register(ctx) {
     const dataRoot = (process.env['MANYTHREADS_RUNTIME_DIR'] ?? join(tmpdir(), 'manythreads-runtime')).trim();
@@ -56,8 +74,18 @@ export default definePlugin({
         killGraceSeconds: Number(process.env['MANYTHREADS_HERMES_KILL_GRACE'] ?? '15') || 15,
         // Looked up per run: the runners plugin may load after this one.
         runners: () => ctx.providers.get<RunnerDoor>('runner'),
+        // The Hermes gateways of the team's connections (`placement.gateway`), looked up per run.
+        gateways: { resolve: (query) => resolveTarget(ctx, query) },
       }),
     );
+    const profiles = createProfilesProvider(
+      ctx,
+      { info: (line) => void process.stderr.write(`${line}\n`), warn: (line) => void process.stderr.write(`${line}\n`) },
+      managedEnvFrom(process.env),
+    );
+    ctx.providers.register('hermes.profiles', profiles);
+    registerProfileChanges(ctx, profiles.notify);
+    registerConnectionRoutes(ctx, {}, profiles.notify);
     registerRouter(ctx);
     registerApprovalResume(ctx);
     registerRunJob(ctx);

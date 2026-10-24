@@ -48,6 +48,8 @@ export const PROVIDER_KINDS = [
   'messages',
   /** The connected runners of a team, and the one way to send a job to one (runners plugin): `RunnerDoor` in ./runner.ts. */
   'runner',
+  /** The managed Hermes pod's profile specs (runtime-hermes): `HermesProfilesProvider` in ./hermes-profiles.ts. */
+  'hermes.profiles',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {
@@ -284,6 +286,8 @@ export interface OpenRunInput {
    * bots naming each other cannot trade model calls forever.
    */
   delegationDepth?: number | null;
+  /** The queue job that opens this run (`JobInfo.jobId`): recorded on the run, so a retried job can tell its own earlier run from another job's. */
+  jobId?: string | null;
   /** How long the run's endpoint stays usable (seconds); the service's default applies when omitted. */
   ttlSeconds?: number;
 }
@@ -308,6 +312,12 @@ export interface PluginRuns {
   open(input: OpenRunInput): Promise<{ run: BotRunHandle; token: string }>;
   /** The run behind a presented token's sha256, or null when it is unknown, revoked, expired or already ended. */
   resolve(tokenHash: Buffer): Promise<BotRunHandle | null>;
+  /**
+   * The run a bot is working on right now, for an endpoint that is addressed by the bot and not by the run (a Hermes gateway profile holds one
+   * fixed MCP address and token): the newest `running` run of the bot that has a live endpoint and was not opened through the public mint
+   * (`webhook`). The runtime serialises runs per bot, so at most one qualifies. Null when the bot has no run open.
+   */
+  openRunOf(botId: string): Promise<BotRunHandle | null>;
   /** Ends a run and revokes its token. False when it had already ended. */
   close(runId: string, status: 'done' | 'failed' | 'stopped'): Promise<boolean>;
   /**
@@ -466,7 +476,7 @@ export interface PluginDb {
    * One transaction as the system actor (no RLS): the platform's own bookkeeping — folding a live document into a commit, sweeping what a dead
    * process left behind. A plugin that reaches for this to answer a person's request is wrong; routes and sockets have the actor already.
    */
-  system<T>(fn: (tx: PluginTx) => Promise<T>): Promise<T>;
+  system<T>(fn: (tx: PluginTx) => Promise<T>, options?: { workspaceId?: string }): Promise<T>;
 }
 
 /** An audit event as a plugin writes it: `schemaVersion` defaults to 1 and `workspaceId` to the transaction's workspace. */
@@ -496,6 +506,8 @@ export interface JobInfo {
   workerId: string;
   /** The server's logger: one line per call, no secrets. Put run metrics here (counts, bytes, milliseconds). */
   log: PluginLogger;
+  /** One short transaction as the system actor, scoped to the payload's workspace: for a `detached` job, whose own `tx` is unusable. Commits when `fn` returns. */
+  transaction<T>(fn: (tx: PluginTx) => Promise<T>): Promise<T>;
 }
 
 /**
@@ -508,6 +520,17 @@ export type JobHandler = (payload: Record<string, unknown>, tx: PluginTx, job: J
 export interface JobOptions {
   /** Jobs of this queue in flight at once in one server process (default 1). */
   concurrency?: number;
+  /**
+   * Run the handler OUTSIDE a database transaction. The handler's `tx` then throws when used; it opens short transactions of its own with
+   * `job.transaction(fn)` (system actor, scoped to `payload.workspaceId`). For work that waits on something slow, a model turn most of all: a
+   * transaction held open for minutes pins a connection and a snapshot. A throw (or a return) still ends the job as usual.
+   */
+  detached?: boolean;
+  /**
+   * The name of a payload field. At most one job per distinct value of that field is running at a time in the whole queue, across server
+   * processes: the others wait (their order is kept). Jobs whose payload has no such field are not serialised.
+   */
+  serialKey?: string;
   /** Attempts before the job is dead-lettered (default 5). */
   maxAttempts?: number;
   /**

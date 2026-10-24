@@ -226,3 +226,41 @@ describe('cron ticker', () => {
     expect(new Set(jobs.rows.map((r: { dedupe_key: string }) => r.dedupe_key)).size).toBe(2);
   });
 });
+
+describe('serial keys: one job per key at a time, across workers', () => {
+  it('never runs two jobs with the same payload key together, while different keys run side by side', async () => {
+    const queue = `serial.${randomUUID().slice(0, 8)}`;
+    await withSystem(
+      async (tx) => {
+        for (const key of ['a', 'a', 'a', 'b', 'b', 'c']) await enqueue(tx, queue, { botId: key });
+      },
+      { pool },
+    );
+    const live = new Map<string, number>();
+    let overall = 0;
+    let overallPeak = 0;
+    let violated = false;
+    let done = 0;
+    const handler = async (payload: Record<string, unknown>): Promise<void> => {
+      const key = String(payload['botId']);
+      live.set(key, (live.get(key) ?? 0) + 1);
+      if (live.get(key)! > 1) violated = true;
+      overall += 1;
+      overallPeak = Math.max(overallPeak, overall);
+      await sleep(150);
+      overall -= 1;
+      live.set(key, live.get(key)! - 1);
+      done += 1;
+    };
+    // two workers on one queue (two server processes), each with room for several jobs
+    const workers = ['w1', 'w2'].map((workerId) => startWorker({ queue, workerId, handler, pool, concurrency: 4, serialKey: 'botId', pollMs: 30 }));
+    try {
+      await waitFor(() => done === 6);
+      expect(violated).toBe(false);
+      expect(overallPeak).toBeGreaterThanOrEqual(2);
+      expect((await states(queue))['done']).toBe(6);
+    } finally {
+      await Promise.all(workers.map((w) => w.stop()));
+    }
+  });
+});

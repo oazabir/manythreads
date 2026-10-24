@@ -28,7 +28,7 @@ import type {
   SecretService,
   StorageScope,
 } from '@manythreads/sdk';
-import type { ExtensionPoint, PluginManifest } from '@manythreads/shared';
+import type { ExtensionPoint, PluginManifest, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import { getOneOrCreate } from '../db/get-or-create.ts';
 import { createEntityLinkService } from '../entity-links/index.ts';
@@ -119,9 +119,13 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
         : { kind: 'person', id: NIL_UUID as Actor['id'], workspaceId: NIL_UUID as Actor['workspaceId'] };
       return withActor(actor, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: deps.pool });
     },
-    system: async <T>(fn: (tx: PluginTx) => Promise<T>): Promise<T> => {
+    system: async <T>(fn: (tx: PluginTx) => Promise<T>, options: { workspaceId?: string } = {}): Promise<T> => {
       if (!deps.systemPool) throw new PluginError(`Plugin "${name}": ctx.db.system needs a database pool`, { plugin: name });
-      return withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: deps.systemPool });
+      // `workspaceId` scopes the transaction to one workspace (what a secret written from it belongs to); without it the system actor sees all of them.
+      return withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), {
+        pool: deps.systemPool,
+        ...(options.workspaceId ? { workspaceId: options.workspaceId as WorkspaceId } : {}),
+      });
     },
   };
 
@@ -285,6 +289,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           invoke: refuse('invoke'),
           logSource: refuse('logSource'),
           inheritSources: refuse('inheritSources'),
+          openRunOf: refuse('openRunOf'),
         } as PluginRuns);
       }
       // `run.resolve` alone is the token checker's door: `resolve` works (a presented run token to the run it opens, or null), every other member refuses.
@@ -310,6 +315,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           invoke: refuse('invoke'),
           logSource: refuse('logSource'),
           inheritSources: refuse('inheritSources'),
+          openRunOf: refuse('openRunOf'),
         } as PluginRuns);
       }
       // The door that can open a bot run and enter a transaction as its bot (PLAN P5-09); see docs/plugins/security.md.
@@ -393,7 +399,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     get secrets(): SecretService {
       // The secret service also encrypts a model provider's API key (gateway-llm, PLAN P5-06), so a plugin that
       // extends `provider.llm` may use it too; `docs/plugins/security.md` explains both doors.
-      useOneOf(['provider.identity', 'provider.llm'], 'ctx.secrets');
+      useOneOf(['provider.identity', 'provider.llm', 'provider.hermes.profiles'], 'ctx.secrets');
       if (!deps.secrets) {
         throw new PluginError(`Plugin "${name}": no secret service is wired into the host`, { plugin: name });
       }

@@ -362,14 +362,25 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
           pollMs,
           ...(value.options.concurrency !== undefined ? { concurrency: value.options.concurrency } : {}),
           ...(value.options.maxAttempts !== undefined ? { maxAttempts: value.options.maxAttempts } : {}),
-          handler: (payload, job) => {
+          ...(value.options.serialKey !== undefined ? { serialKey: value.options.serialKey } : {}),
+          handler: async (payload, job) => {
             const workspaceId = typeof payload['workspaceId'] === 'string' ? (payload['workspaceId'] as WorkspaceId) : undefined;
-            return withSystem(
-              async (tx) => {
-                await value.handler(payload, guardPluginTx(tx as unknown as PluginTx), { ...job, log });
-              },
-              { pool: systemPool, ...(workspaceId ? { workspaceId } : {}) },
-            );
+            const inTransaction = <T>(fn: (tx: PluginTx) => Promise<T>): Promise<T> =>
+              withSystem((tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: systemPool, ...(workspaceId ? { workspaceId } : {}) });
+            // A detached job gets no transaction of its own: whatever it does with the database it does in short ones (`job.transaction`),
+            // so a slow step (a model turn) holds no connection and no snapshot.
+            if (value.options.detached === true) {
+              const unusable = new Proxy({} as PluginTx, {
+                get() {
+                  throw new Error('this job is detached: open a transaction with job.transaction(fn)');
+                },
+              });
+              await value.handler(payload, unusable, { ...job, log, transaction: inTransaction });
+              return;
+            }
+            await inTransaction(async (tx) => {
+              await value.handler(payload, tx, { ...job, log, transaction: (fn) => fn(tx) });
+            });
           },
         }),
       );

@@ -66,6 +66,12 @@ export const tasksMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/tasks/migrations/', import.meta.url)),
 };
 
+/** Migrations of the runtime-hermes plugin (`hermes_connections`, `hermes_profile_secrets`); pass it after `botsMigrationSource` (it references bots and teams). */
+export const runtimeHermesMigrationSource: MigrationSource = {
+  namespace: 'runtime-hermes',
+  dir: fileURLToPath(new URL('../../plugins/runtime-hermes/migrations/', import.meta.url)),
+};
+
 /** Migrations of the runners plugin (`runner_tokens`); pass it after `tasksMigrationSource` (the token table references `runners`). */
 export const runnersMigrationSource: MigrationSource = {
   namespace: 'runners',

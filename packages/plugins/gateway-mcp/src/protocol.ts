@@ -187,3 +187,51 @@ async function handleRpcInner(ctx: PluginContext, run: BotRunHandle, raw: unknow
       return fail(request.id, MCP_ERROR_CODES.methodNotFound, `Unknown method “${request.method}”`);
   }
 }
+
+/** The bot behind a presented bot token (`app.bots_pairing_resolve`): enough to list tools when no run is open. */
+export interface PairedBotHandle {
+  botId: string;
+  botActorId: string;
+  teamId: string;
+  workspaceId: string;
+}
+
+/** What a bot's tool list is judged against when no run is open: the widest trigger, so a client that lists once, at connect, sees every tool the bot can ever be offered. */
+const LISTING_TRIGGER = 'conversation';
+const NO_RUN_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * One JSON-RPC request at the bot's stable endpoint. The caller is a gateway profile that holds ONE address and ONE token for the bot (it cannot
+ * be given a new token per run), so the run is looked up here: the bot's currently open run, which the runtime guarantees is at most one. A tool
+ * call is attributed to that run exactly as a call at the run's own endpoint is — the same `handleRpc`, so reads are the asker's, writes the
+ * bot's, approvals and the source log are the run's. With no run open, a call is answered with a clear tool error and the protocol's own
+ * methods (`initialize`, `ping`, `tools/list`) still work, because a client connects and lists before any conversation exists.
+ */
+export async function handleBotRpc(ctx: PluginContext, bot: PairedBotHandle, run: BotRunHandle | 'ambiguous' | null, raw: unknown): Promise<HttpResponse> {
+  if (run !== null && run !== 'ambiguous') return handleRpc(ctx, run, raw);
+  if (run === 'ambiguous') {
+    // More than one run of this bot is open: attributing a call to either could be wrong, so no call is made (fail closed).
+    const request = McpRequest.safeParse(raw);
+    if (request.success && request.data.method === 'tools/call') {
+      return reply(request.data.id, toolResult({ ok: false, code: 'ambiguous_run', message: 'More than one conversation is open for this bot, so the call cannot be attributed. Try again shortly.' }, true));
+    }
+  }
+  const request = McpRequest.safeParse(raw);
+  if (request.success && request.data.method === 'tools/call') {
+    return reply(
+      request.data.id,
+      toolResult({ ok: false, code: 'no_open_run', message: 'No conversation is waiting for this bot, so there is nothing to act for. Tools work only while the bot is answering a message.' }, true),
+    );
+  }
+  const listing: BotRunHandle = {
+    runId: NO_RUN_ID,
+    botId: bot.botId,
+    botActorId: bot.botActorId,
+    teamId: bot.teamId,
+    workspaceId: bot.workspaceId,
+    trigger: LISTING_TRIGGER,
+    askerActorId: null,
+    expiresAt: new Date(0).toISOString(),
+  };
+  return handleRpc(ctx, listing, raw);
+}

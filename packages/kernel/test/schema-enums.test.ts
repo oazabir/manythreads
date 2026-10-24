@@ -17,6 +17,8 @@ import {
   MemorySourceKind,
   MemoryStore,
   GoalStatus,
+  HermesConnectionKind,
+  HermesConnectionStatus,
   HandoffMode,
   RhythmEffort,
   RhythmKind,
@@ -60,6 +62,7 @@ import {
   gatewayLlmMigrationSource,
   memoryMigrationSource,
   rhythmsMigrationSource,
+  runtimeHermesMigrationSource,
   tasksMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
@@ -127,6 +130,8 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'task_events.type': TaskEventType,
   'handoffs.mode': HandoffMode,
   'runners.status': RunnerStatus,
+  'hermes_connections.kind': HermesConnectionKind,
+  'hermes_connections.status': HermesConnectionStatus,
   'rhythms.kind': RhythmKind,
   'rhythms.effort': RhythmEffort,
   'rhythm_runs.status': RhythmRunStatus,
@@ -147,7 +152,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

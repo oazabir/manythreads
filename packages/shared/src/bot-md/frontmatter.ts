@@ -161,16 +161,42 @@ export const BotHandover = z.strictObject({
 });
 export type BotHandover = z.infer<typeof BotHandover>;
 
+/**
+ * Where a bot's runs execute. `gateway` is the way forward: the bot is a profile on a Hermes gateway reached over HTTP.
+ *  - Mode A, "connect your Hermes": `gateway: { connection: <name of a team connection>, profile: <profile on that gateway> }`. The customer owns
+ *    the profile, its model and its tools; they add manythreads' MCP server to the profile.
+ *  - Mode B, "managed": `gateway: { connection: managed }` (no `profile`): the team's own Hermes pod, and the profile is named `mt-<bot slug>`
+ *    by the platform.
+ * `node` and `runner` are LEGACY (a process started on the server's host, or on a runner machine) and stay valid only until bots are switched
+ * to a gateway; they cannot be combined with `gateway`.
+ */
+export const BotGatewayPlacement = z
+  .strictObject({
+    connection: Slug,
+    profile: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, 'letters, digits, ".", "_" or "-"').optional(),
+  })
+  .refine((g) => (g.connection === 'managed') === (g.profile === undefined), {
+    message: 'mode B (connection "managed") takes no profile; mode A (a connection of your own) needs one',
+    path: ['profile'],
+  });
+export type BotGatewayPlacement = z.infer<typeof BotGatewayPlacement>;
+
 export const BotPlacement = z
   .strictObject({
     node: Slug.optional(),
+    /** LEGACY: the runner machine that runs this bot's process. Use `gateway` instead. */
     runner: Slug.optional(),
+    gateway: BotGatewayPlacement.optional(),
     requires: z.array(Slug).optional(),
     isolation: Slug.optional(),
   })
   .refine((p) => p.node === undefined || p.runner === undefined, {
     message: 'set either node or runner, not both',
     path: ['runner'],
+  })
+  .refine((p) => p.gateway === undefined || (p.node === undefined && p.runner === undefined), {
+    message: 'a gateway placement cannot be combined with node or runner',
+    path: ['gateway'],
   });
 export type BotPlacement = z.infer<typeof BotPlacement>;
 

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "baseUrl": {
+      "type": "string",
+      "maxLength": 500,
+      "format": "uri"
+    },
+    "apiKey": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 500
+    }
+  },
+  "additionalProperties": false
+}

@@ -105,8 +105,8 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
         }
         const inserted = (
           await tx.query<{ id: string }>(
-            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'running') RETURNING id`,
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, job_id, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'running') RETURNING id`,
             [
               input.workspaceId,
               input.botId,
@@ -117,6 +117,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
               input.channelId ?? null,
               input.replyRootId ?? null,
               Math.max(0, Math.floor(input.delegationDepth ?? 0)),
+              input.jobId ?? null,
             ],
           )
         ).rows[0];
@@ -157,6 +158,39 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
             [tokenHash],
           )
         ).rows[0];
+        if (!row) return null;
+        return {
+          runId: row.run_id,
+          botId: row.bot_id,
+          botActorId: row.bot_actor_id,
+          teamId: row.team_id,
+          workspaceId: row.workspace_id,
+          trigger: row.trigger_type,
+          askerActorId: row.asker_id,
+          expiresAt: row.expires_at.toISOString(),
+        } satisfies BotRunHandle;
+      }, system);
+    },
+
+    async openRunOf(botId: string): Promise<BotRunHandle | null> {
+      return withSystem(async (tx) => {
+        const rows = (
+          await tx.query<RunRow>(
+            `SELECT r.id AS run_id, r.bot_id, t.expires_at, r.team_id, r.workspace_id, r.trigger_type, r.asker_id, a.id AS bot_actor_id
+               FROM app.bot_runs r
+               JOIN app.mcp_run_tokens t ON t.run_id = r.id AND t.revoked_at IS NULL AND t.expires_at > now()
+               JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = r.bot_id
+              WHERE r.bot_id = $1::uuid AND r.status = 'running' AND r.ended_at IS NULL AND r.job_id IS NOT NULL
+              ORDER BY r.started_at DESC, r.id DESC LIMIT 2`,
+            [botId],
+          )
+        ).rows;
+        if (rows.length > 1) {
+          const err = new Error(`bot ${botId} has more than one open job run`);
+          err.name = 'AmbiguousRunError';
+          throw err;
+        }
+        const row = rows[0];
         if (!row) return null;
         return {
           runId: row.run_id,

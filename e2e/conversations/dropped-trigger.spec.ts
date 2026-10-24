@@ -88,6 +88,17 @@ test('a bot that dropped its conversation trigger keeps the lists; the message b
   expect(await channelOf(stack, driftId, 'nadia')).toBe(channelId);
   const { page, close } = await openChat(browser, playwright, stack, 'nadia', '/t/engineering/bots/drift/chat', isMobile);
   try {
+    // a bot with no conversation trigger has no 1:1 chat to offer: the roster and the bot's page draw no Talk control at all (not a disabled one)
+    await page.goto('/t/engineering/bots');
+    await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]')).toBeVisible();
+    await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-talk')).toHaveCount(0);
+    await expect(page.locator('[data-testid="bot-row"][data-bot="drift"]').getByTestId('bot-configure')).toBeVisible();
+    await page.goto('/t/engineering/bots/drift');
+    await expect(page.getByTestId('bot-title')).toContainText('Drift');
+    await expect(page.getByTestId('open-conversation')).toHaveCount(0);
+    await expect(page.getByTestId('talk-why')).toHaveCount(0);
+    await page.goto('/t/engineering/bots/drift/chat');
+
     // the earlier conversation is still listed under Mine
     const row = page.getByTestId('conversation-row');
     await expect(row).toHaveCount(1);

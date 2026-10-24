@@ -27,7 +27,7 @@ export default definePlugin({
     // `run.close`: the stale-run reaper ends a run through the run service (which emits `bots.run.closed`) and can do nothing else with `ctx.runs`
     extends: ['event.subscribe', 'event.emit', 'job.register', 'run.close'],
     events: {
-      emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed'],
+      emits: ['bots.bot.loaded', 'bots.bot.invalid', 'bots.bot.removed', 'bots.pairing.rotated'],
       consumes: ['repo.repo.committed'],
     },
   },

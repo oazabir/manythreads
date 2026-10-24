@@ -10,6 +10,8 @@ import {
 } from '@manythreads/sdk';
 import { childEnv, removeProfileDir, startGroupProcess, writeProfile, type ProcessExit } from '@manythreads/sdk/process';
 import { chatArgs, renderProfile } from './profile.ts';
+import { runOnGateway, type GatewayRuntimeOptions } from './gateway.ts';
+import { refusedRun } from './refused.ts';
 import { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 
 // The environment allowlist, the profile directory handling and the process-group start/stop live in `@manythreads/sdk/process`: the
@@ -51,6 +53,11 @@ export interface HermesRuntimeOptions {
    * whose `placement.runner` names a runner is dispatched there instead of being started in this process's host.
    */
   runners?: () => RunnerDoor | undefined;
+  /**
+   * The Hermes gateways a bot can be placed on (`placement.gateway`): resolves the connection a bot names to an address and a key. Absent in a
+   * deployment with none; a bot placed on a gateway then fails with a clear reason instead of running somewhere else.
+   */
+  gateways?: Pick<GatewayRuntimeOptions, 'resolve' | 'fetch' | 'retryUnitMs' | 'requestTimeoutMs'>;
 }
 
 export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeProvider {
@@ -62,20 +69,17 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
     render: (input: BotRuntimeInput) => renderProfile(input),
 
     async run(input: BotRuntimeInput, scope: BotRuntimeScope): Promise<BotRuntimeHandle> {
-      const runner = input.definition.frontmatter.placement?.runner;
+      const placement = input.definition.frontmatter.placement;
+      // A gateway placement is the way forward and wins; `runner` and the host's own process are the legacy paths that still serve live bots.
+      if (placement?.gateway !== undefined) {
+        const gateways = options.gateways;
+        if (!gateways) return refusedRun(`bot ${input.bot.slug} is placed on a Hermes gateway, but this server has none configured`);
+        return runOnGateway({ ...gateways, killGraceSeconds: options.killGraceSeconds }, input, scope, placement.gateway);
+      }
+      const runner = placement?.runner;
       if (runner !== undefined) return runOnRunner(options, input, scope, runner);
       return runHere(options, input, scope);
     },
-  };
-}
-
-/** A run that could not start: one failed `result` carrying the reason, so the run closes `failed` and says why. */
-function refusedRun(reason: string, failure?: 'runner_offline'): BotRuntimeHandle {
-  return {
-    stop: async () => undefined,
-    events: (async function* refused(): AsyncGenerator<BotRuntimeEvent> {
-      yield { type: 'result', text: '', ok: false, error: reason, ...(failure ? { failure } : {}), tokens: null };
-    })(),
   };
 }
 

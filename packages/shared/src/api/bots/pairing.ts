@@ -24,3 +24,15 @@ export type RevokePairingTokensResponse = z.infer<typeof RevokePairingTokensResp
 
 export const mintPairingTokenRoute = { method: 'POST', path: '/api/teams/:slug/bots/:botSlug/pairing-tokens' } as const;
 export const revokePairingTokensRoute = { method: 'DELETE', path: '/api/teams/:slug/bots/:botSlug/pairing-tokens' } as const;
+
+/**
+ * Rotate: turn every live token off and mint a fresh one in the same step. This is how a bot placed on a Hermes gateway gets a new
+ * credential for its stable MCP endpoint (`/api/mcp/bots/<botId>`) without a gap in which two tokens work.
+ */
+export const rotatePairingTokenRoute = { method: 'POST', path: '/api/teams/:slug/bots/:botSlug/pairing-tokens/rotate' } as const;
+export const RotatePairingTokenResponse = z.object({
+  token: z.string().min(1),
+  createdAt: IsoDateTime,
+  revoked: z.number().int().nonnegative(),
+});
+export type RotatePairingTokenResponse = z.infer<typeof RotatePairingTokenResponse>;

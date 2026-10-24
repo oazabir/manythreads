@@ -171,7 +171,7 @@ ctx.http.route({
 - Over the limit is `429 rate_limited`. Counters live in the process, so with N replicas each allows the full limit.
 - Routes need a signed-in actor. `public: true` opts a route out (health-like or test routes); it then runs as an
   anonymous actor that RLS lets see nothing.
-- Real callers authenticate with the session cookie (`manythreads_session`); unsafe methods (POST, PUT, PATCH, DELETE) on a
+- Real callers authenticate with the session cookie (`manythreads_session`, named `__Host-manythreads_session` when cookies are Secure); unsafe methods (POST, PUT, PATCH, DELETE) on a
   cookie-authenticated request also need the double-submit `x-csrf-token` header or they are `403`. The handler's `tx` runs as
   that person. `req.caller` (actor id, person id, session id) and `req.headers` / `req.ip` are on the request.
 - Tests send `x-manythreads-dev-actor: {"kind":"person","id":"<uuid>","workspaceId":"<uuid>"}`, honoured **only** when

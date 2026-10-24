@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tools": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "manythreadsTools": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "checkedAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "error",
+    "tools",
+    "manythreadsTools",
+    "checkedAt"
+  ]
+}

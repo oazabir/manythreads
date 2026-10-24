@@ -21,3 +21,4 @@ export * from './memory/index.ts';
 export * from './retention/index.ts';
 export * from './tasks/index.ts';
 export * from './runners/index.ts';
+export * from './hermes/index.ts';

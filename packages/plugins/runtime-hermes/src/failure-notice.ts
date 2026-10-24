@@ -6,12 +6,13 @@ import type { RunPayload } from './run-job.ts';
 // never the error text (it can carry a key's first characters, a hash, an address or a stack trace), never the model's half answer.
 
 /** The causes a notice can name. `limit` and `approval` are raised by the run job where it knows them; the rest are read off a failed run. */
-export type FailureCategory = 'gateway' | 'runner_offline' | 'timeout' | 'limit' | 'approval' | 'other';
+export type FailureCategory = 'gateway' | 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'limit' | 'approval' | 'other';
 
 /** The whole text a person sees, per category. Fixed strings: nothing from the failure is ever put into them. */
 export const FAILURE_NOTICE: Record<FailureCategory, string> = {
   gateway: "I couldn't answer: the model gateway refused the call. Try again in a little while; if it keeps happening, tell a workspace admin.",
   runner_offline: "I couldn't answer: this team's runner is offline. Try again once it is back.",
+  hermes_unreachable: "I couldn't answer: this bot's Hermes is unreachable. Try again once it is back; if it stays down, tell a lead of this team.",
   timeout: "I couldn't answer: I ran out of time before I finished. A shorter or narrower question may fit.",
   limit: "I couldn't answer: a budget, rate limit or safety rule stopped the call before anything was sent to a model.",
   approval: "I couldn't answer: this was held for approval, and nobody here can approve it.",
@@ -27,7 +28,7 @@ export function looksLikeRejectedKey(error: string | undefined): boolean {
  * The category of a failed run. The runtime's own word (`failure`) wins; otherwise the error text is read for the few shapes that name the model
  * gateway, a clock that ran out, or an absent runner. Reading is internal: only the category leaves this function.
  */
-export function classifyFailure(error: string | undefined, failure?: 'runner_offline' | 'timeout'): FailureCategory {
+export function classifyFailure(error: string | undefined, failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout'): FailureCategory {
   if (failure !== undefined) return failure;
   const text = error ?? '';
   if (looksLikeRejectedKey(text) || /\b(403|429|5\d\d)\b|litellm|proxy server|model gateway|rate.?limit|overloaded|api[ _-]?error|connection error/i.test(text)) return 'gateway';

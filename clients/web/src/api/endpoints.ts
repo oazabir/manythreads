@@ -225,7 +225,7 @@ import {
   updateLlmProviderRoute,
   type AuthenticatedSession,
 } from '@manythreads/shared';
-import { CSRF_COOKIE, CSRF_HEADER, ApiError, buildPath, call, readCookie } from './client';
+import { CSRF_HEADER, ApiError, buildPath, call, readCsrfCookie } from './client';
 
 /*
  * The one place screens get data from. Every function wraps exactly one real route descriptor and its shared
@@ -425,7 +425,7 @@ export function uploadChannelFile(
     xhr.setRequestHeader('accept', 'application/json');
     xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
     xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name));
-    const csrf = readCookie(CSRF_COOKIE, document.cookie);
+    const csrf = readCsrfCookie(document.cookie);
     if (csrf) xhr.setRequestHeader(CSRF_HEADER, csrf);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);

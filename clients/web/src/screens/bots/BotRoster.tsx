@@ -3,7 +3,6 @@ import type { BotSummary } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
-import { NO_CONVERSATION } from './api';
 import { useBots } from './store';
 
 /*
@@ -40,21 +39,16 @@ function Row({ bot, slug }: { bot: BotSummary; slug: string }) {
           <Link to={`/t/${slug}/bots/${bot.slug}`} data-testid="bot-open">{bot.name}</Link>
         </div>
         <div className="d">{bot.role || 'No role written yet.'}</div>
-        {bot.status === 'active' && !bot.conversational ? (
-          // visible, and tied to the disabled button below: a `title` never shows on a touch screen
-          <div className="d b-talk-why" id={`talk-why-${bot.slug}`} data-testid="bot-talk-why">{NO_CONVERSATION}</div>
-        ) : null}
       </div>
       <div><span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span></div>
       <div className="mono b-where">{bot.runtime === 'hermes' ? `Hermes · ${placeOf(bot)}` : `Rules · ${placeOf(bot)}`}</div>
       <div className="b-vis">{bot.visibility === 'workspace' ? 'shared with the workspace' : 'this team'}</div>
       <div><State bot={bot} /></div>
       <div className="b-act">
-        {bot.status !== 'active' ? null : bot.conversational ? (
+        {/* a bot with no conversation trigger has no 1:1 chat: the button is not drawn at all (the API refuses it too) */}
+        {bot.status === 'active' && bot.conversational ? (
           <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="bot-talk">Talk</Link>
-        ) : (
-          <button type="button" className="btn s" disabled title={NO_CONVERSATION} aria-describedby={`talk-why-${bot.slug}`} data-testid="bot-talk">Talk</button>
-        )}
+        ) : null}
         <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}?tab=identity`} data-testid="bot-configure">Configure</Link>
       </div>
     </div>

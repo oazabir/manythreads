@@ -49,4 +49,3 @@ export async function writeDefinition(slug: string, path: string, content: strin
 export { botMdPath };
 
 /** Why there is no Talk button on a bot whose definition has no `conversation` trigger: the router answers a conversation only for that trigger. */
-export const NO_CONVERSATION = 'Nobody can talk to this bot: its definition has no conversation trigger.';

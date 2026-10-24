@@ -66,6 +66,7 @@ export class ExtensionRegistries {
     approvals: new ExtensionRegistry(),
     messages: new ExtensionRegistry(),
     runner: new ExtensionRegistry(),
+    'hermes.profiles': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

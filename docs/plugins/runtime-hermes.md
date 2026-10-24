@@ -1,5 +1,11 @@
 # runtime-hermes
 
+> **Where bots run now.** A bot is a *profile on a Hermes gateway* — a Hermes program that answers over HTTP (its `api_server`) and keeps
+> one named profile per bot (identity, model, tools). This server sends each run to that gateway; it no longer has to start a process. The
+> sections *Hermes gateways* and *The `hermes.profiles` provider* below describe it. Starting a process on the server's host (`placement.node`
+> or none) and on a runner machine (`placement.runner`) are **legacy**: they still run the bots that have not been switched, and nothing in
+> them was removed.
+
 The agent runtime (SPEC §7.1, §10.2; PLAN P5-10). One `bot_runtime` provider — `hermes` — that renders a Hermes profile from a
 `BOT.md`, starts and stops one Hermes process per run in it, plus the router that decides which posted message wakes which bot
 and the job that runs one. `runtime-rules` registers the other provider, so the plugin pair is the whole runtime surface.
@@ -251,6 +257,8 @@ Not yet done, deliberately:
 | `MANYTHREADS_RUNTIME_DIR` | `$TMPDIR/manythreads-runtime` | where a run's profile home is written; point it at the install's own `profiles/` directory (`<home>/profiles`), because pm-era Hermes only boots when `HERMES_HOME` is `<home>/profiles/<name>` (its committed dependency environment is resolved from `<home>`) |
 | `MANYTHREADS_HERMES_KILL_GRACE` | `15` | seconds between SIGTERM and SIGKILL |
 | `MANYTHREADS_HERMES_ENV_PASSTHROUGH` | *(empty)* | comma-separated extra variable names the child inherits (`HTTPS_PROXY,NO_PROXY`); `MANYTHREADS_*`, `DATABASE*` and `PG*` are never passed |
+| `MANYTHREADS_HERMES_ALLOWED_HOSTS` | *(unset)* | see *the outbound guard* above |
+| `MANYTHREADS_RUN_CONCURRENCY` | `6` | runs of different bots at once per server process |
 | `MANYTHREADS_LITELLM_URL` | *(unset)* | the workspace's model gateway; without it a hermes run is refused before starting |
 
 ## Connecting a dev box (real Hermes, a real model)
@@ -377,3 +385,127 @@ match nothing is refused; and, like JavaScript, `a{2}{3}` / `a+{2}` are refused.
 flag `i` only. BOT.md **load** refuses (the definition becomes `invalid` with `guard.gate.<n>` and the reason): backreferences, lookaround, named groups, other flags, a repetition inside an unbounded
 repetition (`(a+)+`, the shape that hangs every other engine the pattern is pasted into), a pattern over 200 instructions, a list over 1,000 instructions of patterns together, an entry over 200
 characters, a list over 50 entries.
+
+## Hermes gateways
+
+A Hermes *gateway* is a Hermes program with its HTTP API switched on. It can serve many *profiles* (a profile is a directory with `SOUL.md`,
+`config.yaml` and `.env`: who the bot is, which model and tools it has, and its secrets). A bot is placed on a gateway in its `BOT.md`:
+
+```yaml
+# Mode A, "connect your Hermes": a gateway you run yourself. You own the profile, its model and its tools.
+placement:
+  gateway: { connection: host, profile: coder }
+
+# Mode B, "managed": the team's own Hermes pod in the cluster. The platform writes the profile, named mt-<bot slug>.
+placement:
+  gateway: { connection: managed }
+```
+
+`node`/`runner` cannot be combined with `gateway`. `connection` is the name of a *Hermes connection* of the team (below); `managed` is the
+reserved name of the team's own pod, which takes no `profile`.
+
+### Hermes connections (mode A)
+
+A lead or workspace admin of the team manages them (`GET|POST /api/teams/:slug/hermes/connections`, `PATCH|DELETE …/:connectionId`,
+`POST …/:connectionId/test`). A connection is a name, the gateway's address (plain `http(s)`, no credentials in it) and its API key. The key
+is encrypted and **write-only**: nothing returns it, only `hasApiKey`. The server never follows a redirect from the gateway's address. Events:
+`hermes.connection.created|updated|deleted|tested`.
+
+*Test* answers in one of three fixed sentences: it answered, it did not answer (or not as a Hermes gateway for that profile), or it refused the
+key. Nothing the remote side said is returned or logged — only status codes. The gateway's API lists no MCP tools, so `tools` and
+`manythreadsTools` are always null.
+
+**Where a connection may point (the outbound guard).** A lead types the address, and this server will call it, so every request passes
+`src/outbound.ts` at the moment it is made (not only when the address is saved): the name is judged, then every address it resolves to, and the
+socket connects to the address that was checked (a name that answers differently a second later cannot slip past). Always refused unless the operator
+lists them: loopback, link-local (including the cloud metadata address 169.254.169.254), unspecified and multicast addresses, the Kubernetes API
+address, and this deployment's own names (`manythreads-*`, `*.svc.cluster.local`, `kubernetes.default*`, `localhost`). Public hosts and private
+ranges (10/8, 172.16/12, 192.168/16, fc00::/7 — where a customer's Hermes lives, e.g. `http://10.42.0.1:8642`) are allowed. Redirects are errors.
+`MANYTHREADS_HERMES_ALLOWED_HOSTS` (comma list of host names, `*.suffix`, IPs and CIDRs): when set, ONLY those are allowed, and a listed entry
+overrides the refusals above (an in-cluster gateway, a loopback dev gateway). A listed *name* is still never allowed to resolve to loopback or
+link-local unless that address is listed too. The team's own managed pod is registered by the platform and does not pass through this guard.
+
+**Setting up a gateway for mode A.** On the machine that runs Hermes: turn on the API server (`API_SERVER_ENABLED=true`, a key of at least 16
+characters as `API_SERVER_KEY` in the *profile's* `.env`), and restart the gateway once. In the profile's `config.yaml` add manythreads as an MCP
+server and keep its tools visible:
+
+```yaml
+mcp_servers:
+  manythreads:
+    url: https://<this server>/api/mcp/bots/<bot id>
+    headers: { Authorization: "Bearer ${MANYTHREADS_MCP_TOKEN}" }
+tools: { tool_search: { enabled: "off" } }   # otherwise Hermes hides MCP tools behind a search tool
+```
+
+`MANYTHREADS_MCP_TOKEN` is the bot's token, minted on the bot's page (`POST /api/teams/:slug/bots/:botSlug/pairing-tokens`, shown once) and
+replaced with `POST …/pairing-tokens/rotate`. A profile reads its MCP settings when the gateway starts serving it, so after a rotation restart that
+profile (`hermes -p <profile> gateway restart`). One key per connection: it must be the `API_SERVER_KEY` of the profiles you place on it.
+
+### The wire
+
+Measured on Hermes 0.21.5; `tools/fake-hermes-gateway` reproduces it for tests.
+
+| Step | Request |
+|---|---|
+| start | `POST /p/<profile>/v1/runs` with `Authorization: Bearer <key>`, `Idempotency-Key: <our run id>`, body `{input, session_id}` → 202 `{run_id}` |
+| watch | `GET /p/<profile>/v1/runs/<id>/events` (server-sent events): `tool.started`, `tool.completed`, `message.delta`, then `run.completed` (with `output`, `usage`) or `run.failed` / `run.cancelled` |
+| stop | `POST /p/<profile>/v1/runs/<id>/stop` |
+
+* The idempotency key is our run id, so a start repeated after a lost answer returns the run that exists; there is never a second one.
+* `session_id` is `<bot id>:<thread root id>`: a thread is one Hermes session, and the bot remembers the thread's earlier turns on its side.
+* A dropped stream is reopened where it stopped (`Last-Event-ID`); if it will not stay, the run's status is polled until it says how it ended.
+* The gateway answers 429 over its live-run cap (10 by default): the start waits the time it names (doubling, at most about two minutes) and tries again.
+* The platform's ceiling is the same as for a process: the definition's `limits.timeoutSeconds` (600 by default) plus the kill grace, then `stop`.
+* Limits on what a gateway may send: one event at most 1 MiB, one JSON answer at most 2 MiB; past that the run is stopped and fails with "too large".
+  A stream that cannot resume (no `seq`) is replayed from its start and the part already seen is skipped, so text is never doubled.
+* A refusal at start repeats only the status code; the gateway's body never reaches a message or a log.
+* Failure words: an address nobody answers on, or a gateway that says it is unavailable, is the failure *"this bot's Hermes is unreachable"*
+  (its own notice in the thread, `hermes_unreachable`); a refused key, a missing profile or a failed run is the generic notice, and the log
+  carries the reason.
+
+### The bot's stable MCP endpoint
+
+A gateway profile holds **one** MCP address and token and cannot be given a new one per run, so the bot has a fixed endpoint,
+`POST /api/mcp/bots/<bot id>` (`gateway-mcp`), whose credential is the bot's token. Every call is attributed to the bot's **currently open run** — the
+same code as the per-run endpoint, so reads are the asker's, writes are the bot's, approvals and the source log belong to that run. The runtime
+guarantees at most one open run per bot (below). With no run open: `initialize`, `ping` and `tools/list` still work (a client lists tools when it
+connects), and a tool call is answered with the tool error *"No conversation is waiting for this bot"*. A wrong, revoked or another bot's token is
+one and the same 401. Memory tools (`memory.recall`, `memory.retain`, `memory.write`) work through it like any other: the bank is the team's, derived
+by the platform.
+
+### Runs, concurrency and transactions
+
+The run job is *detached*: it holds no database transaction while the model works. Three short transactions bracket the turn (read and open the
+run and pass the gate and pre-call check; post the reply and close). Different bots run side by side (`MANYTHREADS_RUN_CONCURRENCY`, default 6 per
+server process); jobs of the same bot never overlap (`serialKey: 'botId'` in the job queue, enforced across processes). A job retried after a crash
+does not run the bot again: the earlier run (recorded with the job's id in `bot_runs.job_id`, matched exactly, so another job's run in the same thread
+never counts) is closed as failed, the asker is told once, and nothing is sent to the model a second time. A server rollout that stops a
+process in the middle of a long detached run takes this same path: the run fails, the asker gets the notice, and the message is not answered again.
+The bot's stable endpoint attributes a call only to a run that a queue job opened (`job_id` set); an approval's re-run or a public mint never
+receives a call there, and two open job runs of one bot fail the call closed (`ambiguous_run`). The endpoint counts failed authentications per client
+address (60 a minute, then 429) and authenticated calls per bot (600 a minute).
+
+## The `hermes.profiles` provider (mode B)
+
+For a controller that keeps the team's pod in step with the team's bots (`ctx.providers.get<HermesProfilesProvider>('hermes.profiles')`, type in
+`@manythreads/sdk`):
+
+| Member | What it does |
+|---|---|
+| `profilesForTeam(teamId)` | for every active bot of the team placed on `managed`: `{ profile: 'mt-<slug>', botId, files, secrets }`. `files` are `SOUL.md`, `config.yaml`, `.env.template`; `secrets` are `{ MCP_TOKEN, LLM_KEY, API_SERVER_KEY }`. Credentials are created on first use and then stable. If a lead revokes or rotates the bot's tokens, that is remembered and the bot has **no entry** until a lead or workspace admin calls `POST /api/teams/:slug/bots/:botSlug/hermes/reenable` (fresh `MCP_TOKEN`, same API key); the platform never mints a replacement by itself. A bot with no model alias or no LLM-gateway key yet has no entry. |
+| `setManagedGateway(teamId, { baseUrl })` | says where the team's pod answers (the connection named `managed`), so runs go there. Idempotent. |
+| `onChange(listener)` | called in this process after a team's managed profile set may have changed; also written as the event `hermes.profiles.changed` (`teamId`) for other processes. |
+
+The controller writes `files` into `<HERMES_HOME>/profiles/<profile>/` and the secrets into that profile's `.env` as `API_SERVER_KEY`,
+`MANYTHREADS_MCP_TOKEN`, `MANYTHREADS_LLM_KEY` (the names in `.env.template`), then makes the gateway serve or restart the profile. Requests from this
+server to the pod use the profile's `API_SERVER_KEY`. `config.yaml` points the model at `http://manythreads-litellm:4000/v1` and MCP at
+`http://manythreads-server:3000/api/mcp/bots/<botId>` (override with `MANYTHREADS_INCLUSTER_LLM_URL` / `MANYTHREADS_INCLUSTER_URL`); when the
+definition grants `shell` and `MANYTHREADS_MANAGED_SSH_HOST` (`_USER`, `_CWD`) is set, the profile's terminal is that ssh host. The renderer is
+`renderGatewayProfile` (pure; tested byte for byte in `test/gateway-profile.test.ts`).
+
+### Tests for the gateway path
+
+`test/gateway.test.ts` (the transport against `tools/fake-hermes-gateway`: start, events, replay, 429, drop, stop, ceiling, refusals),
+`test/gateway-profile.test.ts` (the renderer), `test/gateway-run.test.ts` (connections, a run end to end with real tool calls at the bot endpoint,
+memory recalled across threads, serial runs per bot, mode B credentials). Run the fake as a dev stand-in with
+`npx tsx tools/fake-hermes-gateway/src/cli.ts [key]`.

@@ -2,6 +2,8 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   BotPairingPathParams,
   MintPairingTokenResponse,
+  RotatePairingTokenResponse,
+  rotatePairingTokenRoute,
   RevokePairingTokensResponse,
   mintPairingTokenRoute,
   revokePairingTokensRoute,
@@ -40,6 +42,24 @@ export function registerPairingRoutes(ctx: PluginContext): void {
       }
       const minted = await mintPairingToken(tx, bot.id);
       return json(MintPairingTokenResponse.parse({ token: minted.token, createdAt: minted.createdAt.toISOString() }), 201);
+    }),
+  });
+
+  // Rotate: every live token off and one new one, in one transaction, so there is never a moment with two tokens that work or none (a Hermes
+  // profile holding the old token loses access the moment the lead pastes the new one in).
+  ctx.http.route({
+    ...rotatePairingTokenRoute,
+    rateLimit: { limit: 10, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const { slug, botSlug } = BotPairingPathParams.parse(req.params);
+      const team = await requireTeam(tx, slug);
+      await requireManage(tx, team);
+      const bot = await requireBot(tx, team.id, botSlug);
+      if (bot.status !== 'active') throw conflict('This bot is not active. Turn it on and fix its definition before pairing it.');
+      const revoked = await revokePairingTokens(tx, bot.id);
+      const minted = await mintPairingToken(tx, bot.id);
+      await ctx.audit.emit(tx, { type: 'bots.pairing.rotated', workspaceId: team.workspace_id, teamId: team.id, botId: bot.id, actorId: tx.actor.id, revoked, at: ctx.runtime.now().toISOString() });
+      return json(RotatePairingTokenResponse.parse({ token: minted.token, createdAt: minted.createdAt.toISOString(), revoked }), 201);
     }),
   });
 

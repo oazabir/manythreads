@@ -32,6 +32,12 @@ import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
 import { TasksTaskCompletedEvent } from './tasks.task.completed.ts';
 import { TasksTaskHandedOffEvent } from './tasks.task.handed_off.ts';
 import { RhythmsRhythmRanEvent } from './rhythms.rhythm.ran.ts';
+import { HermesConnectionCreatedEvent } from './hermes.connection.created.ts';
+import { HermesConnectionUpdatedEvent } from './hermes.connection.updated.ts';
+import { HermesConnectionDeletedEvent } from './hermes.connection.deleted.ts';
+import { HermesConnectionTestedEvent } from './hermes.connection.tested.ts';
+import { HermesProfilesChangedEvent } from './hermes.profiles.changed.ts';
+import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
 import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
 import { RunnersRunnerConnectedEvent } from './runners.runner.connected.ts';
 import { RunnersRunnerDisconnectedEvent } from './runners.runner.disconnected.ts';
@@ -154,6 +160,12 @@ export const eventRegistry = {
   'runners.job.refused': { 1: RunnersJobRefusedEvent },
   'runners.token.minted': { 1: RunnersTokenMintedEvent },
   'runners.token.revoked': { 1: RunnersTokenRevokedEvent },
+  'hermes.connection.created': { 1: HermesConnectionCreatedEvent },
+  'hermes.connection.updated': { 1: HermesConnectionUpdatedEvent },
+  'hermes.connection.deleted': { 1: HermesConnectionDeletedEvent },
+  'hermes.connection.tested': { 1: HermesConnectionTestedEvent },
+  'hermes.profiles.changed': { 1: HermesProfilesChangedEvent },
+  'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 

@@ -169,3 +169,9 @@ the scenario set Brain's `evals: { set: brain, minScore: 1 }` names (`bots/brain
 `packages/shared/src/bot-md/evals.ts`; the Evals tab shows the set's name and the minimum, the cases are read by the eval harness) and the
 mail opt-in are in [docs/templates.md](../templates.md). A template's gate lists are patterns, never phrases: a phrase entry needs the
 classifier on the `local` alias for every message ([runtime-hermes.md](./runtime-hermes.md#the-gate-p5-11)).
+
+## Gateway placement and the bot token
+
+`placement.gateway` puts a bot on a Hermes gateway (docs/plugins/runtime-hermes.md); `placement.runner` is legacy. The bot token is the pairing
+token: `POST …/pairing-tokens` mints one, `POST …/pairing-tokens/rotate` revokes all live ones and mints a new one in one step (event
+`bots.pairing.rotated`), `DELETE …/pairing-tokens` revokes. Only a lead or workspace admin may.

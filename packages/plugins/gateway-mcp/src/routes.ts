@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { PluginContext } from '@manythreads/sdk';
+import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import { McpRunCloseRequest, McpRunMintRequest, McpRunMintResponse } from '@manythreads/shared';
 import { z } from 'zod';
 import { HttpError } from '@manythreads/sdk';
 import { json, route, unauthenticated } from './http.ts';
-import { handleRpc } from './protocol.ts';
+import { handleBotRpc, handleRpc } from './protocol.ts';
 
 // The endpoint (SPEC §11, PLAN P5-09). The runtime holds one pairing token for its bot and asks for a run; the
 // answer is one URL and one token for that run only (docs/spikes/per-run-scoping.md). Every call to that URL is
@@ -53,9 +53,45 @@ async function resolveRun(ctx: PluginContext, req: { headers: Record<string, str
 /** The trigger of a run opened through the public mint: not a conversation or a mention, so it never carries `person:*`. */
 const PUBLIC_MINT_TRIGGER = 'webhook';
 
+/** The bot a presented bot token belongs to, and only when the URL names that same bot. One 401 for an unknown, revoked or someone else's token. */
+async function resolveBotToken(
+  tx: PluginTx,
+  req: { headers: Record<string, string | undefined>; params: Record<string, string>; ip: string },
+  failed: (ip: string) => Error,
+): Promise<{ botId: string; botActorId: string; teamId: string; workspaceId: string }> {
+  const token = bearerToken(req);
+  if (token === null) throw failed(req.ip);
+  const paired = (await tx.query<PairedBotRow>('SELECT * FROM app.bots_pairing_resolve($1)', [sha256(token)])).rows[0];
+  if (!paired || paired.bot_id !== req.params['botId']) throw failed(req.ip);
+  return { botId: paired.bot_id, botActorId: paired.actor_id, teamId: paired.team_id, workspaceId: paired.workspace_id };
+}
+
 const CloseResponse = z.strictObject({ ok: z.literal(true), closed: z.boolean() });
 
+/** Failed bot-token attempts per client address per minute before further failures answer 429, and calls per bot per minute once authenticated. */
+const BOT_FAILURES_PER_IP_PER_MINUTE = 60;
+const BOT_CALLS_PER_BOT_PER_MINUTE = 600;
+
+/** A sliding window of timestamps per key, in this process; pruned so a flood of distinct keys cannot grow it without bound. */
+function windowed(limit: number, make: () => Error): (key: string) => Error | null {
+  const seen = new Map<string, number[]>();
+  return (key) => {
+    const at = Date.now();
+    const recent = (seen.get(key) ?? []).filter((t) => at - t < 60_000);
+    recent.push(at);
+    seen.set(key, recent);
+    if (seen.size > 5000) for (const [k, times] of seen) if (times.every((t) => at - t >= 60_000)) seen.delete(k);
+    return recent.length > limit ? make() : null;
+  };
+}
+
 export function registerMcpRoutes(ctx: PluginContext): void {
+  // The bot endpoint is reached by every profile of a pod from one address, so a per-address bucket would let one noisy bot starve the rest:
+  // failures count per client address (a token-guessing flood is slowed), authenticated calls per bot.
+  const rateLimited = (): Error => new HttpError(429, 'rate_limited', 'Too many requests; slow down', { 'retry-after': '30' });
+  const countFailure = windowed(BOT_FAILURES_PER_IP_PER_MINUTE, rateLimited);
+  const failedBotAuth = (ip: string): Error => countFailure(ip) ?? unauthenticated('A valid bot token is required');
+  const countBotCall = windowed(BOT_CALLS_PER_BOT_PER_MINUTE, rateLimited);
   ctx.http.route({
     method: 'POST',
     path: '/api/mcp/runs',
@@ -101,6 +137,24 @@ export function registerMcpRoutes(ctx: PluginContext): void {
     handler: route(async (req) => {
       const run = await resolveRun(ctx, req);
       return handleRpc(ctx, run, req.body);
+    }),
+  });
+
+  // The bot's stable endpoint (mode A and B of the Hermes gateway): one address and one token per BOT, for a profile that cannot be given a new
+  // token per run. The credential is the bot's pairing token (minted, rotated and revoked by a lead on the bot's page).
+  ctx.http.route({
+    method: 'POST',
+    path: '/api/mcp/bots/:botId',
+    public: true,
+    handler: route(async (req, tx) => {
+      const bot = await resolveBotToken(tx, req, failedBotAuth);
+      const limited = countBotCall(bot.botId);
+      if (limited) throw limited;
+      const run = await ctx.runs.openRunOf(bot.botId).catch((err: unknown) => {
+        if (err instanceof Error && err.name === 'AmbiguousRunError') return 'ambiguous' as const;
+        throw err;
+      });
+      return handleBotRpc(ctx, bot, run, req.body);
     }),
   });
 

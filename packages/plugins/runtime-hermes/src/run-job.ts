@@ -5,6 +5,7 @@ import {
   type ApprovalProvider,
   type BotRunHandle,
   type BotRuntimeHandle,
+  type JobInfo,
   type BotRuntimeInput,
   type BotRuntimeProvider,
   type BotRuntimeScope,
@@ -125,7 +126,7 @@ export async function reportFailure(input: {
   botId: string;
   category?: FailureCategory;
   error?: string | undefined;
-  failure?: 'runner_offline' | 'timeout' | undefined;
+  failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout' | undefined;
 }): Promise<void> {
   const { ctx, tx, log, run, payload, botId } = input;
   if (looksLikeRejectedKey(input.error)) {
@@ -424,7 +425,7 @@ export async function postReply(input: {
   reply: string;
   ok: boolean;
   /** Why a failed run failed; with `botId` and `log` it lets the asker be told (`reportFailure`). Without them a failed run closes silently. */
-  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: 'runner_offline' | 'timeout' | undefined };
+  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout' | undefined };
 }): Promise<void> {
   const { ctx, tx, run, payload, scope, reply, ok, failed } = input;
   const answered = ok && (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId));
@@ -458,131 +459,193 @@ async function runPostedReply(tx: PluginTx, runId: string, channelId: string, re
   return res.rows.length > 0;
 }
 
-/** Run one bot: the job half of P5-10. Everything it needs is re-read from the database and the repo (a payload is whatever was enqueued). */
-export function registerRunJob(ctx: PluginContext): void {
-  ctx.jobs.register(RUN_QUEUE, async (raw, tx, job) => {
-    const payload = RunPayload.parse(raw);
-    const bot = (
-      await tx.query<RunBotRow>(
-        `SELECT id, slug, name, runtime, definition_sha, team_id, workspace_id, status
-           FROM app.bots WHERE id = $1 AND workspace_id = $2`,
-        [payload.botId, payload.workspaceId],
-      )
-    ).rows[0];
-    if (!bot || bot.status !== 'active') return; // a disabled, invalid or removed bot does not answer
-    if (bot.team_id !== payload.teamId) return;
+/** Runs of different bots at once in one server process (`MANYTHREADS_RUN_CONCURRENCY`, default 6). Runs of the SAME bot never overlap. */
+export function runConcurrencyFrom(env: NodeJS.ProcessEnv): number {
+  const n = Number((env['MANYTHREADS_RUN_CONCURRENCY'] ?? '').trim());
+  return Number.isInteger(n) && n >= 1 && n <= 64 ? n : 6;
+}
 
-    const provider = ctx.providers.get<BotRuntimeProvider>('bot_runtime', bot.runtime);
-    if (!provider) {
-      job.log.warn(`runtime-hermes: no bot_runtime provider is loaded for "${bot.runtime}" (bot ${bot.slug})`);
-      return;
-    }
-    const definition = await loadDefinition(ctx, tx, bot, job.log);
-    if (!definition) return;
-    const { frontmatter, alias, holdOnDetection, approvers } = definition;
+/** What the short first transaction leaves for the model turn. */
+interface PreparedRun {
+  bot: RunBotRow;
+  provider: BotRuntimeProvider;
+  run: BotRunHandle;
+  input: BotRuntimeInput;
+  scope: BotRuntimeScope;
+}
 
-    // The token outlives the run's own budget (plus the kill grace): a run whose token expired mid-turn would lose its tools
-    // for the rest of the turn. The kernel clamps this to its maximum.
-    const ttlSeconds = (frontmatter.limits?.timeoutSeconds ?? DEFAULT_RUN_BUDGET_SECONDS) + RUN_TOKEN_SLACK_SECONDS;
-    let opened: Awaited<ReturnType<PluginContext['runs']['open']>>;
-    try {
-      opened = await ctx.runs.open({
-        botId: bot.id,
-        teamId: bot.team_id,
-        workspaceId: bot.workspace_id,
-        trigger: payload.trigger,
-        askerActorId: payload.askerActorId,
-        delegationDepth: payload.delegation?.depth ?? 0,
-        threadId: payload.runThreadId,
-        // where the reply goes, so an approval this run raises leaves its card in that thread
-        channelId: payload.channelId,
-        replyRootId: payload.replyRootId,
-        ttlSeconds,
-      });
-    } catch (err) {
-      // A run that cannot be opened (an asker no longer on the team, a bot that moved) will not open on a retry either: say so
-      // once and end the job rather than letting the queue replay it five times.
-      job.log.warn(`runtime-hermes: no run for bot ${bot.slug}: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-    const { run, token } = opened;
-
-    let toolCalls = 0;
-    let handle: BotRuntimeHandle | undefined;
-    try {
-      if ((await checkGate({ ctx, tx, log: job.log, provider, definition, payload, run, bot })) === 'stop') return;
-
-      // What a Hermes run lacks (no alias, no gateway URL) is reported by the provider's own profile render.
-      const gatewayBase = (process.env['MANYTHREADS_LITELLM_URL'] ?? '').trim().replace(/\/+$/, '');
-      const preflight = await checkPreflight({
-        ctx,
-        tx,
-        log: job.log,
-        provider,
-        bot,
-        run,
-        payload,
-        alias,
-        gatewayBase,
-        holdOnDetection,
-        approvers,
-      });
-      if (!preflight) return;
-
-      const { input, scope } = buildScope({
-        ctx,
-        log: job.log,
-        bot,
-        definition,
-        payload,
-        prompt: preflight.prompt,
-        run,
-        token,
-        provider,
-        gatewayBase,
-        key: preflight.key,
-        approvers,
-      });
-
-      handle = await provider.run(input, scope);
-
-      let reply = '';
-      let ok = false;
-      let error: string | undefined;
-      let failure: 'runner_offline' | 'timeout' | undefined;
-      for await (const event of handle.events) {
-        // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
-        // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
-        if (event.type === 'tool') {
-          toolCalls += 1;
-          job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
-        }
-        if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
-        if (event.type !== 'result') continue;
-        reply = event.text;
-        ok = event.ok;
-        error = event.error;
-        failure = event.failure;
-        if (event.tokens) job.log.info(`runtime-hermes: run ${run.runId} used ${event.tokens.total} tokens over ${toolCalls} tool calls`);
-        if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
-      }
-      await handle.stop();
-
-      await postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure } });
-    } catch (err) {
-      if (err instanceof ApprovalPending) {
-        job.log.info(`runtime-hermes: run ${run.runId} stopped: "${err.capability}" is waiting for an approval`);
-        await handle?.stop().catch(() => undefined);
-        await ctx.runs.close(run.runId, 'stopped');
-        return;
-      }
-      // A model call is not something to replay blindly: the run is closed as failed and the reason is logged, rather than
-      // letting the job retry (which would re-ask the model and post a second answer).
-      job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);
-      await handle?.stop().catch(() => undefined);
-      const waiting = await ctx.providers.get<ApprovalProvider>('approvals')?.pendingForRun(tx, run.runId).catch(() => 0);
-      if (!waiting) await reportFailure({ ctx, tx, log: job.log, run, payload, botId: bot.id, error: err instanceof Error ? err.message : String(err) }).catch(() => undefined);
-      await ctx.runs.close(run.runId, 'failed');
-    }
+/**
+ * A retried job (its lease was lost mid-run, or the server died) must not run the bot a second time: a model turn is not replayable, and a
+ * second answer would contradict the first. If an earlier attempt of THIS job already opened a run, that run is closed as failed (the asker is
+ * told once) and the job ends; nothing is sent to the model again.
+ */
+export async function settleEarlierAttempt(ctx: PluginContext, log: PluginLogger, job: JobInfo, payload: RunPayload): Promise<boolean> {
+  if (job.attempt <= 1) return false;
+  const earlier = await job.transaction(async (tx) => {
+    const res = await tx.query<{ id: string; status: string }>(
+      `SELECT r.id, r.status FROM app.bot_runs r WHERE r.job_id = $1::uuid ORDER BY r.started_at DESC LIMIT 1`,
+      [job.jobId],
+    );
+    return res.rows[0];
   });
+  if (!earlier) return false;
+  log.warn(`runtime-hermes: job ${job.jobId} was retried after run ${earlier.id} began; the run is not repeated`);
+  if (earlier.status === 'running') {
+    const open = await ctx.runs.openRunOf(payload.botId);
+    if (open && open.runId === earlier.id) {
+      await job.transaction((tx) => reportFailure({ ctx, tx, log, run: open, payload, botId: payload.botId, category: 'other' })).catch(() => undefined);
+    }
+    await ctx.runs.close(earlier.id, 'failed');
+  }
+  return true;
+}
+
+/**
+ * Run one bot: the job half of P5-10. Everything it needs is re-read from the database and the repo (a payload is whatever was enqueued).
+ *
+ * The job is *detached*: it holds no database transaction while the model works. Three short transactions bracket the turn — one to read, open
+ * the run and pass the gate and the pre-call check; the turn itself (minutes, with no connection held); one to post the reply and close the run.
+ * Jobs of the same bot are serialised by the queue (`serialKey`), so at most one run per bot is open, which is what lets a gateway profile
+ * reach the bot's stable MCP endpoint and be attributed to "the bot's open run".
+ */
+export function registerRunJob(ctx: PluginContext, options: { concurrency?: number } = {}): void {
+  ctx.jobs.register(
+    RUN_QUEUE,
+    async (raw, _unusable, job) => {
+      const payload = RunPayload.parse(raw);
+      if (await settleEarlierAttempt(ctx, job.log, job, payload)) return;
+
+      let prepared: PreparedRun | undefined;
+      let opened: BotRunHandle | undefined;
+      let handle: BotRuntimeHandle | undefined;
+      let approvers: readonly string[] = [];
+      try {
+        // 1. Read, open the run, gate, pre-call check (one short transaction).
+        const result = await job.transaction(async (tx): Promise<PreparedRun | null> => {
+          const bot = (
+            await tx.query<RunBotRow>(
+              `SELECT id, slug, name, runtime, definition_sha, team_id, workspace_id, status
+                 FROM app.bots WHERE id = $1 AND workspace_id = $2`,
+              [payload.botId, payload.workspaceId],
+            )
+          ).rows[0];
+          if (!bot || bot.status !== 'active') return null; // a disabled, invalid or removed bot does not answer
+          if (bot.team_id !== payload.teamId) return null;
+
+          const provider = ctx.providers.get<BotRuntimeProvider>('bot_runtime', bot.runtime);
+          if (!provider) {
+            job.log.warn(`runtime-hermes: no bot_runtime provider is loaded for "${bot.runtime}" (bot ${bot.slug})`);
+            return null;
+          }
+          const definition = await loadDefinition(ctx, tx, bot, job.log);
+          if (!definition) return null;
+          const { frontmatter, alias, holdOnDetection } = definition;
+          approvers = definition.approvers;
+
+          // The token outlives the run's own budget (plus the kill grace): a run whose token expired mid-turn would lose its tools
+          // for the rest of the turn. The kernel clamps this to its maximum.
+          const ttlSeconds = (frontmatter.limits?.timeoutSeconds ?? DEFAULT_RUN_BUDGET_SECONDS) + RUN_TOKEN_SLACK_SECONDS;
+          let openedRun: Awaited<ReturnType<PluginContext['runs']['open']>>;
+          try {
+            openedRun = await ctx.runs.open({
+              botId: bot.id,
+              teamId: bot.team_id,
+              workspaceId: bot.workspace_id,
+              trigger: payload.trigger,
+              askerActorId: payload.askerActorId,
+              delegationDepth: payload.delegation?.depth ?? 0,
+              jobId: job.jobId,
+              threadId: payload.runThreadId,
+              // where the reply goes, so an approval this run raises leaves its card in that thread
+              channelId: payload.channelId,
+              replyRootId: payload.replyRootId,
+              ttlSeconds,
+            });
+          } catch (err) {
+            // A run that cannot be opened (an asker no longer on the team, a bot that moved) will not open on a retry either: say so
+            // once and end the job rather than letting the queue replay it five times.
+            job.log.warn(`runtime-hermes: no run for bot ${bot.slug}: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
+          }
+          const { run, token } = openedRun;
+          opened = run;
+
+          if ((await checkGate({ ctx, tx, log: job.log, provider, definition, payload, run, bot })) === 'stop') return null;
+
+          // What a Hermes run lacks (no alias, no gateway URL) is reported by the provider's own profile render.
+          const gatewayBase = (process.env['MANYTHREADS_LITELLM_URL'] ?? '').trim().replace(/\/+$/, '');
+          const preflight = await checkPreflight({ ctx, tx, log: job.log, provider, bot, run, payload, alias, gatewayBase, holdOnDetection, approvers });
+          if (!preflight) return null;
+
+          const { input, scope } = buildScope({
+            ctx,
+            log: job.log,
+            bot,
+            definition,
+            payload,
+            prompt: preflight.prompt,
+            run,
+            token,
+            provider,
+            gatewayBase,
+            key: preflight.key,
+            approvers,
+          });
+          return { bot, provider, run, input, scope };
+        });
+        if (!result) return;
+        prepared = result;
+        const { bot, provider, run, input, scope } = prepared;
+
+        // 2. The model turn: no transaction held.
+        let toolCalls = 0;
+        handle = await provider.run(input, scope);
+        let reply = '';
+        let ok = false;
+        let error: string | undefined;
+        let failure: 'runner_offline' | 'hermes_unreachable' | 'timeout' | undefined;
+        for await (const event of handle.events) {
+          // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
+          // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
+          if (event.type === 'tool') {
+            toolCalls += 1;
+            job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
+          }
+          if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
+          if (event.type !== 'result') continue;
+          reply = event.text;
+          ok = event.ok;
+          error = event.error;
+          failure = event.failure;
+          if (event.tokens) job.log.info(`runtime-hermes: run ${run.runId} used ${event.tokens.total} tokens over ${toolCalls} tool calls`);
+          if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
+        }
+        await handle.stop();
+
+        // 3. Post the reply and close the run (one short transaction).
+        await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure } }));
+      } catch (err) {
+        if (!opened) throw err; // nothing started: let the queue retry
+        const run = opened;
+        if (err instanceof ApprovalPending) {
+          job.log.info(`runtime-hermes: run ${run.runId} stopped: "${err.capability}" is waiting for an approval`);
+          await handle?.stop().catch(() => undefined);
+          await ctx.runs.close(run.runId, 'stopped');
+          return;
+        }
+        // A model call is not something to replay blindly: the run is closed as failed and the reason is logged, rather than
+        // letting the job retry (which would re-ask the model and post a second answer).
+        job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);
+        await handle?.stop().catch(() => undefined);
+        await job
+          .transaction(async (tx) => {
+            const waiting = await ctx.providers.get<ApprovalProvider>('approvals')?.pendingForRun(tx, run.runId).catch(() => 0);
+            if (!waiting) await reportFailure({ ctx, tx, log: job.log, run, payload, botId: payload.botId, error: err instanceof Error ? err.message : String(err) });
+          })
+          .catch(() => undefined);
+        await ctx.runs.close(run.runId, 'failed');
+      }
+    },
+    { detached: true, concurrency: options.concurrency ?? runConcurrencyFrom(process.env), serialKey: 'botId' },
+  );
 }

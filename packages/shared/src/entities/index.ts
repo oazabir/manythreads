@@ -24,3 +24,4 @@ export * from './memory.ts';
 export * from './retention.ts';
 export * from './task.ts';
 export * from './rhythm.ts';
+export * from './hermes.ts';
