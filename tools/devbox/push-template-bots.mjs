@@ -25,7 +25,7 @@ let csrf = null;
 const store = (res) => {
   for (const set of res.headers.getSetCookie()) {
     cookies.push(set.split(';')[0]);
-    const m = /^manythreads_csrf=([^;]*)/.exec(set);
+    const m = /^(?:__Host-)?manythreads_csrf=([^;]+)/.exec(set);
     if (m) csrf = decodeURIComponent(m[1]);
   }
 };

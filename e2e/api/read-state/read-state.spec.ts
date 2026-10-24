@@ -18,7 +18,7 @@ async function signedIn(playwright: { request: { newContext(o: { baseURL: string
   return ctx;
 }
 const csrf = async (ctx: APIRequestContext): Promise<Record<string, string>> => {
-  const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf');
+  const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
   return cookie ? { 'x-csrf-token': cookie.value } : {};
 };
 

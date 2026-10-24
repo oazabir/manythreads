@@ -127,7 +127,7 @@ async function as(who) {
   if ((await call('POST', '/api/test/session', { email: `${who}@kahf.example` }, { 'x-test-auth': 'live-hermes-token' })) === undefined) {
     throw new Error(`no session for ${who}`);
   }
-  const csrf = () => ({ 'x-csrf-token': cookies.get('manythreads_csrf') ?? '' });
+  const csrf = () => ({ 'x-csrf-token': cookies.get('__Host-manythreads_csrf') || cookies.get('manythreads_csrf') || '' });
   const api = {
     get: (path) => call('GET', path),
     post: (path, body) => call('POST', path, body ?? {}, csrf()),

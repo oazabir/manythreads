@@ -72,6 +72,15 @@ describe('api client: CSRF', () => {
     expect(seen[0]?.headers).not.toHaveProperty('x-csrf-token');
   });
 
+  it('sends the __Host- csrf cookie, and prefers it over a plain one a subdomain may have set', async () => {
+    const a = setup(() => ({ status: 200, body: { id: 'x', n: 1 } }), 'a=1; __Host-manythreads_csrf=secure1');
+    await a.api.call(postRoute, { response: Item });
+    expect(a.seen[0]?.headers['x-csrf-token']).toBe('secure1');
+    const b = setup(() => ({ status: 200, body: { id: 'x', n: 1 } }), 'manythreads_csrf=tossed; __Host-manythreads_csrf=secure2');
+    await b.api.call(postRoute, { response: Item });
+    expect(b.seen[0]?.headers['x-csrf-token']).toBe('secure2');
+  });
+
   it('reads cookies by exact name', () => {
     expect(readCookie('manythreads_csrf', 'x_manythreads_csrf=no; manythreads_csrf=yes')).toBe('yes');
     expect(readCookie('manythreads_csrf', undefined)).toBeUndefined();

@@ -51,7 +51,7 @@ export function createApiClient(baseUrl: string, options: { userAgent?: string }
       const headers: Record<string, string> = { 'user-agent': userAgent, ...opts.headers };
       if (cookies.size > 0) headers['cookie'] = [...cookies].map(([k, v]) => `${k}=${v}`).join('; ');
       const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase());
-      const csrf = cookies.get('manythreads_csrf');
+      const csrf = (cookies.get('__Host-manythreads_csrf') ?? cookies.get('manythreads_csrf'));
       if (unsafe && csrf && opts.csrf !== false && headers['x-csrf-token'] === undefined) headers['x-csrf-token'] = csrf;
       let body: string | undefined;
       if (opts.body !== undefined) {

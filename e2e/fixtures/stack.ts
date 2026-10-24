@@ -106,7 +106,7 @@ export async function signedInContext(
 
 /** The CSRF header the web client sends on writes. */
 export async function csrf(ctx: APIRequestContext): Promise<Record<string, string>> {
-  const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf');
+  const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
   return cookie ? { 'x-csrf-token': cookie.value } : {};
 }
 

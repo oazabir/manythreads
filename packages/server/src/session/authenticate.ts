@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { CSRF_COOKIE, CSRF_HEADER, SESSION_COOKIE } from './config.ts';
+import { CSRF_HEADER, cookieNames } from './config.ts';
 import { clearSessionCookies, setSessionCookies } from './cookies.ts';
 import type { SessionService } from './service.ts';
 import { csrfTokenFor, safeEqual } from './tokens.ts';
@@ -12,6 +12,8 @@ export interface RequestSession {
   /** The presented token; only used to verify the CSRF token bound to it. Never log it. */
   token: string;
   expiresAt: Date;
+  /** Name of the readable CSRF cookie that belongs to the cookie this session was read from. */
+  csrfCookie: string;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -22,7 +24,9 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * and is flagged so `finishSessionCookies` can clear it from the browser.
  */
 export async function authenticateCookie(req: FastifyRequest, reply: FastifyReply, sessions: SessionService): Promise<void> {
-  const token = req.cookies[SESSION_COOKIE];
+  const names = cookieNames(sessions.config.secureCookies);
+  const token = req.cookies[names.session];
+  const csrfCookie = names.csrf;
   if (!token) return;
   const result = await sessions.resolve(token);
   if (!result.ok) {
@@ -31,7 +35,7 @@ export async function authenticateCookie(req: FastifyRequest, reply: FastifyRepl
   }
   const s = result.session;
   req.actor = s.actor;
-  req.authSession = { sessionId: s.sessionId, personId: s.personId, workspaceId: s.workspaceId, token: s.token, expiresAt: s.expiresAt };
+  req.authSession = { sessionId: s.sessionId, personId: s.personId, workspaceId: s.workspaceId, token: s.token, expiresAt: s.expiresAt, csrfCookie };
   if (s.rotated) setSessionCookies(reply, s.rotated, sessions.config);
 }
 
@@ -40,20 +44,21 @@ export function finishSessionCookies(req: FastifyRequest, reply: FastifyReply, s
   if (!req.staleSessionCookie) return;
   const header = reply.getHeader('set-cookie');
   const list = Array.isArray(header) ? header : typeof header === 'string' ? [header] : [];
-  if (list.some((c) => c.startsWith(`${SESSION_COOKIE}=`))) return;
+  const name = cookieNames(sessions.config.secureCookies).session;
+  if (list.some((c) => c.startsWith(`${name}=`))) return;
   clearSessionCookies(reply, sessions.config);
 }
 
 /**
  * Double-submit CSRF for cookie-authenticated unsafe requests: the `x-csrf-token` header must equal the readable
- * `manythreads_csrf` cookie AND the token derived from this session's token, so a forged cookie is not enough.
+ * `manythreads_csrf` cookie (the `__Host-` one for a Secure server; the cookie matching the session cookie in use) AND the token derived from this session's token, so a forged cookie is not enough.
  * Requests without a cookie session (dev header, anonymous) are not subject to it: there is nothing to forge.
  */
 export function csrfAllows(req: FastifyRequest): boolean {
   if (SAFE_METHODS.has(req.method)) return true;
   if (!req.authSession || req.routeOptions.config.csrfExempt === true) return true;
   const header = req.headers[CSRF_HEADER];
-  const cookie = req.cookies[CSRF_COOKIE];
+  const cookie = req.cookies[req.authSession.csrfCookie];
   if (typeof header !== 'string' || typeof cookie !== 'string' || header === '') return false;
   return safeEqual(header, cookie) && safeEqual(header, csrfTokenFor(req.authSession.token));
 }

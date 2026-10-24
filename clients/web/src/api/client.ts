@@ -47,9 +47,16 @@ export const fetchTransport: Transport = async (req) => {
   }
 };
 
+/** The readable CSRF cookie: `__Host-`-prefixed when the server's cookies are Secure, plain on local http. */
 export const CSRF_COOKIE = 'manythreads_csrf';
+export const CSRF_COOKIE_HOST = `__Host-${CSRF_COOKIE}`;
 export const CSRF_HEADER = 'x-csrf-token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/** The CSRF token to send: the `__Host-` cookie (which a subdomain cannot set) first, the plain one only when it is absent. */
+export function readCsrfCookie(cookieString: string | undefined): string | undefined {
+  return readCookie(CSRF_COOKIE_HOST, cookieString) ?? readCookie(CSRF_COOKIE, cookieString);
+}
 
 export function readCookie(name: string, cookieString: string | undefined): string | undefined {
   if (!cookieString) return undefined;
@@ -164,7 +171,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       }
     }
     if (!SAFE_METHODS.has(method)) {
-      const csrf = readCookie(CSRF_COOKIE, cookies());
+      const csrf = readCsrfCookie(cookies());
       if (csrf) headers[CSRF_HEADER] = csrf;
     }
 

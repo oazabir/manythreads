@@ -21,7 +21,7 @@ async function login(key: PersonaKey): Promise<{ api: APIRequestContext; csrf: (
   const api = await request.newContext({ baseURL: stack.origin });
   const res = await api.post('/api/auth/password/sign-in', { data: { email: personaEmail(key), password: PERSONA_PASSWORD } });
   if (!res.ok()) throw new Error(`sign-in as ${key}: ${res.status()}`);
-  return { api, csrf: async () => Object.fromEntries((await api.storageState()).cookies.filter((c) => c.name === 'manythreads_csrf').map((c) => ['x-csrf-token', c.value])) };
+  return { api, csrf: async () => Object.fromEntries((await api.storageState()).cookies.filter((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf').map((c) => ['x-csrf-token', c.value])) };
 }
 type Who = Awaited<ReturnType<typeof login>>;
 const send = async <T = unknown>(who: Who, path: string, data?: unknown): Promise<T> => {

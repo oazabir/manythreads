@@ -108,7 +108,7 @@ test('#dev holds a PDF, a PNG, an MP4 and an Office file: Nadia downloads them, 
 
 test('the seeded app opens over the real route with a per-open token and no cookie (a sandboxed frame has none)', async ({ playwright }) => {
   const nadia = await as(playwright, personas.nadia);
-  const csrf = (await nadia.storageState()).cookies.find((c) => c.name === 'manythreads_csrf')?.value ?? '';
+  const csrf = (await nadia.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf')?.value ?? '';
   const issued = await nadia.post('/api/teams/engineering/repo/app-token', { data: { path: 'apps/release-checklist' }, headers: { 'x-csrf-token': csrf } });
   expect(issued.status()).toBe(200);
   const { url } = IssueAppTokenResponse.parse(await issued.json());
@@ -134,6 +134,6 @@ test('the seeded app opens over the real route with a per-open token and no cook
   }
   // Lena (a guest) cannot get a token for it
   const lena = await as(playwright, personas.lena);
-  const lenaCsrf = (await lena.storageState()).cookies.find((c) => c.name === 'manythreads_csrf')?.value ?? '';
+  const lenaCsrf = (await lena.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf')?.value ?? '';
   expect((await lena.post('/api/teams/engineering/repo/app-token', { data: { path: 'apps/release-checklist' }, headers: { 'x-csrf-token': lenaCsrf } })).status()).toBe(403);
 });

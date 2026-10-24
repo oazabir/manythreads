@@ -60,7 +60,7 @@ for (const [vp, suffix] of [[DESKTOP, 'desktop'], [MOBILE, 'mobile']] as const) 
 
 // Omar: teams create, roster of a team made from the template, members, account, sign-in methods
 const omar = await signedIn(browser, 'omar', DESKTOP);
-const csrf = (await omar.cookies()).find((c) => c.name === 'manythreads_csrf')?.value ?? '';
+const csrf = (await omar.cookies()).find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf')?.value ?? '';
 const made = await omar.request.post('/api/teams/from-template', { data: { templateId: 'engineering', name: 'Platform', slug: 'platform' }, headers: { 'x-csrf-token': csrf } });
 if (!made.ok()) throw new Error(`from-template: ${made.status()}`);
 await shot(omar, '/teams', 'teams-create-desktop', async (page) => {

@@ -19,7 +19,7 @@ export interface Api {
 export async function apiAs(key: PersonaKey): Promise<Api> {
   const ctx = await request.newContext({ baseURL: WEB, storageState: authState(key) });
   const headers = async (): Promise<Record<string, string>> => {
-    const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf');
+    const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
     return cookie ? { 'x-csrf-token': cookie.value } : {};
   };
   return {

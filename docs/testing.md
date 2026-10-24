@@ -1,7 +1,7 @@
 # Testing against a running server
 
 How tests and screenshot runs get an authenticated caller. Real people sign in with a session cookie
-(`manythreads_session`, HttpOnly) plus a readable CSRF cookie (`manythreads_csrf`); tests have three ways in.
+(`manythreads_session`, HttpOnly) plus a readable CSRF cookie (`manythreads_csrf`); both get a `__Host-` prefix when cookies are Secure (never in tests, which run on http); tests have three ways in.
 
 ## 1. Sessions through the real routes (preferred)
 

@@ -31,7 +31,7 @@ async function signedIn(playwright: PlaywrightWorkerArgs['playwright'], baseURL:
 
 /** Writes with the CSRF header the way the web client does. */
 async function csrf(ctx: APIRequestContext): Promise<Record<string, string>> {
-  const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf');
+  const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
   return cookie ? { 'x-csrf-token': cookie.value } : {};
 }
 

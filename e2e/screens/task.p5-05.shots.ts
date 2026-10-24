@@ -36,7 +36,7 @@ async function signIn(browser: Browser): Promise<Page> {
 }
 
 async function csrfHeaders(page: Page): Promise<Record<string, string>> {
-  const csrf = (await page.context().cookies(BASE)).find((c) => c.name === 'manythreads_csrf');
+  const csrf = (await page.context().cookies(BASE)).find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
   if (!csrf) throw new Error('no manythreads_csrf cookie after sign-in');
   return { 'x-csrf-token': csrf.value };
 }

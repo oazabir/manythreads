@@ -16,12 +16,12 @@ test('Nadia signs in and the session cookie is HttpOnly', async ({ page, context
   await expect(page.locator('[data-landmark="header"]')).toContainText('Kahf Software');
 
   const cookies = await context.cookies();
-  const session = cookies.find((c) => c.name === 'manythreads_session');
+  const session = cookies.find((c) => c.name === 'manythreads_session' || c.name === '__Host-manythreads_session');
   expect(session, 'session cookie').toBeDefined();
   expect(session?.httpOnly).toBe(true);
   expect(session?.sameSite).not.toBe('None');
   // the CSRF companion is readable by the page, the session cookie is not
-  expect(cookies.find((c) => c.name === 'manythreads_csrf')?.httpOnly).toBe(false);
+  expect(cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf')?.httpOnly).toBe(false);
   expect(await page.evaluate(() => document.cookie)).not.toContain('manythreads_session');
 });
 

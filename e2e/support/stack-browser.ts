@@ -22,7 +22,7 @@ export async function apiOn(playwright: PlaywrightWorkerArgs['playwright'], stac
   const signIn = await ctx.post('/api/test/session', { data: { email }, headers: { 'x-test-auth': stack.testAuthToken } });
   expect(signIn.status(), `test sign-in as ${email}`).toBe(200);
   const headers = async (): Promise<Record<string, string>> => {
-    const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf');
+    const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_csrf' || c.name === '__Host-manythreads_csrf');
     return cookie ? { 'x-csrf-token': cookie.value } : {};
   };
   return {

@@ -66,7 +66,7 @@ test('no GET route returns a secret, hash or token field, for any persona or ano
   ];
   const sessionTokens = new Map<string, string>();
   for (const [name, ctx] of callers) {
-    const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_session');
+    const cookie = (await ctx.storageState()).cookies.find((c) => c.name === 'manythreads_session' || c.name === '__Host-manythreads_session');
     if (cookie) sessionTokens.set(name, cookie.value);
   }
 

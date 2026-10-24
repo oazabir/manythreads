@@ -12,8 +12,22 @@ export interface SessionConfig {
   secureCookies: boolean;
 }
 
+/**
+ * Plain cookie names: used when cookies are not Secure (local http). On a Secure server they are never read (only expired).
+ * With Secure cookies the names carry the `__Host-` prefix (see `cookieNames`).
+ */
 export const SESSION_COOKIE = 'manythreads_session';
 export const CSRF_COOKIE = 'manythreads_csrf';
+
+/**
+ * Why the prefix: apps that bots deploy live on subdomains of the platform host, and a subdomain can set a cookie with
+ * `Domain=<platform host>` that the browser then sends to the platform ("cookie tossing": log people out, fix a
+ * session id, shadow the CSRF cookie). A `__Host-` cookie must be Secure, host-only and Path=/, so the browser
+ * refuses it from any subdomain and from any `Domain=` attribute. It needs Secure, so plain http keeps the plain names.
+ */
+export function cookieNames(secure: boolean): { session: string; csrf: string } {
+  return secure ? { session: `__Host-${SESSION_COOKIE}`, csrf: `__Host-${CSRF_COOKIE}` } : { session: SESSION_COOKIE, csrf: CSRF_COOKIE };
+}
 export const CSRF_HEADER = 'x-csrf-token';
 
 const MINUTE = 60_000;
