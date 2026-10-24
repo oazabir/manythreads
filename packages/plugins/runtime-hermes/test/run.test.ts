@@ -52,6 +52,10 @@ const FAKE_HERMES = [
   "  if (thread) args.threadRootId = thread;",
   "  const res = await fetch(origin + new URL(JSON.parse(url)).pathname, { method: 'POST', headers: { 'content-type': 'application/json', authorization: JSON.parse(bearer) }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'messages.post', arguments: args } }) });",
   "  const answer = await res.text();",
+  "  if (prompt.includes('THEN-TIME-OUT')) {",
+  "    process.stdout.write(JSON.stringify({ type: 'result', exit_code: 1, text: '', error: 'the run was stopped (SIGTERM)' }) + '\\n');",
+  "    process.exit(1);",
+  "  }",
   "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 0, text: 'Done - the final text, ' + (res.ok ? 'tool ok' : 'tool failed ' + answer), tokens: { input: 5, output: 5, total: 10 } }) + '\\n');",
   "  process.exit(0);",
   "}",
@@ -526,6 +530,18 @@ describe('a run that ends without an answer tells the asker why (a category, nev
     }, 30_000, 'the notice');
     expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.timeout]);
     expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id, runFailure: 'timeout' }]);
+  });
+
+  it('a run that posted its answer and was then stopped adds no failure notice under it', async () => {
+    const bot = await loadBot('notice-posted', botMd({ name: 'NoticePosted', model: 'smart', capabilities: 'messages.post' }));
+    const rootId = await post(`@notice-posted TOOL-POST THEN-TIME-OUT origin=${w.server.url}`);
+    const run = await finishedRun(bot.botId);
+    expect(run.status).toBe('failed');
+    await until(async () => (await messagesBy(rootId, bot.actorId)).length > 0, 30_000, 'the posted answer');
+    await quiet(1000);
+    const said = await messagesBy(rootId, bot.actorId);
+    expect(said.map((m) => m.body)).toEqual(['Full answer posted by the tool']);
+    expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id }]);
   });
 
   it('a bot placed on a runner that is not there says the runner is offline', async () => {

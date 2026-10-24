@@ -411,6 +411,69 @@ describe('where the card is announced, and what is on the record when nobody can
     expect(await channelOfRoot(rootId)).toBe(channelId);
   });
 
+  it('an orchestrator message that names the new owner in the card thread wakes it no second time (the handover already did)', async () => {
+    const orch = await loadBot('ta-orch10', botMd({ name: 'TaOrch10', model: 'smart', capabilities: 'messages.post', handover: ['ta-coder10'] }));
+    const coder = await loadBot('ta-coder10', botMd({ name: 'TaCoder10', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: mention', '  - type: task_assigned'] }));
+    const taskId = await cardOwnedBy(orch, 'Dup card');
+    const kickoff = await w.call<{ id: string }>(nadia, 'POST', `/api/channels/${channelId}/messages`, { channelId, body: 'kickoff for the dup card', threadRootId: null });
+    const rootId = kickoff.body.id;
+    expect((await handoff(orch, taskId, 'ta-coder10', 'go', false, { channelId, threadRootId: rootId })).status).toBe(200);
+    await until(async () => (await messagesBy(rootId, coder.actorId, channelId))[0], 30_000, 'the handover run to reply');
+    await finished(coder.botId);
+
+    // the orchestrator's prose in the same thread names the coder, who still owns the card
+    const prose = await w.call(asBot(orch), 'POST', `/api/channels/${channelId}/messages`, { channelId, body: 'Tester next: @ta-coder10 please check it', threadRootId: rootId });
+    expect(prose.status, JSON.stringify(prose.body)).toBe(201);
+    await new Promise((r) => setTimeout(r, 4000));
+    expect(await runsOf(coder.botId)).toHaveLength(1);
+  });
+
+  describe('a prose @mention of a bot by another bot', () => {
+    const setup = async (n: string) => {
+      const orch = await loadBot(`ta-orch${n}`, botMd({ name: `TaOrch${n}`, model: 'smart', capabilities: 'messages.post', handover: [`ta-coder${n}`] }));
+      const coder = await loadBot(`ta-coder${n}`, botMd({ name: `TaCoder${n}`, model: 'smart', capabilities: 'messages.post', triggers: ['  - type: mention', '  - type: task_assigned'] }));
+      const kick = async (text: string): Promise<string> => (await w.call<{ id: string }>(nadia, 'POST', `/api/channels/${channelId}/messages`, { channelId, body: text, threadRootId: null })).body.id;
+      const prose = async (rootId: string, slug: string): Promise<void> => {
+        const res = await w.call(asBot(orch), 'POST', `/api/channels/${channelId}/messages`, { channelId, body: `Also, @${slug} please look`, threadRootId: rootId });
+        expect(res.status, JSON.stringify(res.body)).toBe(201);
+      };
+      return { orch, coder, kick, prose };
+    };
+    const runCount = async (botId: string, n: number): Promise<void> => {
+      await until(async () => ((await runsOf(botId)).length >= n ? true : null), 30_000, `${n} runs`);
+    };
+
+    it('a queued run in the thread and no card: the mention still gets its own run (it may carry a new instruction)', async () => {
+      const { coder, kick, prose } = await setup('11');
+      const rootId = await kick('thread without a card');
+      await prose(rootId, 'ta-coder11');
+      await prose(rootId, 'ta-coder11');
+      await runCount(coder.botId, 2);
+    });
+
+    it('a card the bot already finished does not block the mention', async () => {
+      const { orch, coder, kick, prose } = await setup('12');
+      const taskId = await cardOwnedBy(orch, 'Done card');
+      const rootId = await kick('thread of a done card');
+      expect((await handoff(orch, taskId, 'ta-coder12', 'go', false, { channelId, threadRootId: rootId })).status).toBe(200);
+      await finished(coder.botId);
+      expect((await w.call(asBot(coder), 'POST', `${TASKS}/${taskId}/complete`, {})).status).toBe(200);
+      await prose(rootId, 'ta-coder12');
+      await runCount(coder.botId, 2);
+    });
+
+    it('a card the bot owns in another thread does not block the mention here', async () => {
+      const { orch, coder, kick, prose } = await setup('13');
+      const taskId = await cardOwnedBy(orch, 'Other-thread card');
+      const cardRoot = await kick('the card thread');
+      expect((await handoff(orch, taskId, 'ta-coder13', 'go', false, { channelId, threadRootId: cardRoot })).status).toBe(200);
+      await finished(coder.botId);
+      const otherRoot = await kick('another thread');
+      await prose(otherRoot, 'ta-coder13');
+      await runCount(coder.botId, 2);
+    });
+  });
+
   it('a handover asked for in a private channel puts nothing of it in a public one: a short card with no note, and the note reaches only the new owner', async () => {
     const orch = await loadBot('ta-orch6', botMd({ name: 'TaOrch6', model: 'smart', capabilities: 'messages.post', handover: ['ta-coder6'] }));
     const coder = await loadBot('ta-coder6', botMd({ name: 'TaCoder6', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: task_assigned'] }));

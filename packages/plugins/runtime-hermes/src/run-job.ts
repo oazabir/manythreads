@@ -139,6 +139,12 @@ export async function reportFailure(input: {
       log.warn(`runtime-hermes: run ${run.runId}: the gateway could not be asked to re-check the bot's key: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // A run that already put a live message into its reply thread did the work; a notice under it would contradict it (a run stopped at its
+  // time limit after posting its result, say). Same thread restriction as the reply check in `postReply`.
+  if (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId)) {
+    log.info(`runtime-hermes: run ${run.runId}: no failure notice (the run already posted into its thread)`);
+    return;
+  }
   await postFailureNotice(ctx, tx, run, payload, input.category ?? classifyFailure(input.error, input.failure), (line) => log.warn(line));
 }
 

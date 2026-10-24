@@ -175,6 +175,17 @@ describe('the hermes provider with a runner', () => {
     await collected;
   });
 
+  it('a run the runner stopped at its own budget (exit 143, before the platform ceiling) is a timeout, not "other"', async () => {
+    const f = fakeDoor();
+    const quick = { ...input('placement: { runner: server-1 }\n', GATEWAY), limits: { runBudgetSeconds: 0, maxTurns: null, sessionMinutes: null } };
+    const handle = await createHermesProvider(options(f.door, { killGraceSeconds: 30 })).run(quick, scope());
+    const collected = drain(handle.events);
+    f.exit(143, null, '');
+    const result = (await collected).at(-1)!;
+    expect(result).toMatchObject({ type: 'result', ok: false, failure: 'timeout' });
+    await handle.stop();
+  });
+
   it('a runner that is not there fails the run at once, with the reason, and starts nothing', async () => {
     const door: RunnerDoor = {
       id: 'runners',

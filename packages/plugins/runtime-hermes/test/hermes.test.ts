@@ -227,6 +227,17 @@ describe('the hermes provider: one process per run', () => {
   });
 });
 
+describe('a local run that ends unanswered after its budget', () => {
+  it('is classified a timeout even when the ceiling had not fired (the child left on its own)', async () => {
+    const h = harness({ killGraceSeconds: 30 });
+    const handle = await h.provider.run(input({ limits: { runBudgetSeconds: 0, maxTurns: null, sessionMinutes: null } }), scope([]));
+    h.children[0]!.ends(143);
+    const events = await drain(handle.events);
+    expect(events.at(-1)).toMatchObject({ type: 'result', ok: false, failure: 'timeout' });
+    await handle.stop();
+  });
+});
+
 describe('the child process is a sandboxed guest of the server', () => {
   const SECRETS: NodeJS.ProcessEnv = {
     PATH: '/usr/bin',

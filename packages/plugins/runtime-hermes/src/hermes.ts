@@ -79,6 +79,11 @@ function refusedRun(reason: string, failure?: 'runner_offline'): BotRuntimeHandl
   };
 }
 
+/** "Out of time" for a run that ended unanswered: the ceiling fired, or the run's own budget had already passed when it ended. */
+function pastBudget(input: BotRuntimeInput, startedAt: number, ceilingFired: () => boolean): () => boolean {
+  return () => ceilingFired() || Date.now() - startedAt >= (input.limits.runBudgetSeconds ?? 600) * 1000;
+}
+
 /**
  * The run on a runner (SPEC §7.4): the same profile, rendered here, is sent to the machine the definition names, and what comes back is
  * the child's stdout lines and its exit — the same two things a local child gives — so `consume` reads both alike. The prompt travels as
@@ -125,7 +130,10 @@ async function runOnRunner(options: HermesRuntimeOptions, input: BotRuntimeInput
     void kill();
   }, budget * 1000);
   ceiling.unref?.();
-  const events = consume(dispatch.lines[Symbol.asyncIterator](), kill, () => stderrTail, exited, () => timedOut);
+  // The runner enforces the same budget itself and usually gets there first (its stop arrives as a signal or an odd exit code, before this
+  // ceiling fires), so a run that ended unanswered after the budget has passed also counts as having run out of time.
+  const startedAt = Date.now();
+  const events = consume(dispatch.lines[Symbol.asyncIterator](), kill, () => stderrTail, exited, pastBudget(input, startedAt, () => timedOut));
   return {
     stop: async () => {
       clearTimeout(ceiling);
@@ -175,7 +183,8 @@ async function runHere(options: HermesRuntimeOptions, input: BotRuntimeInput, sc
     await removeProfile();
     throw err;
   }
-  const events = consume(child.lines, child.kill, child.stderrTail, child.exited, () => timedOut);
+  const startedAt = Date.now();
+  const events = consume(child.lines, child.kill, child.stderrTail, child.exited, pastBudget(input, startedAt, () => timedOut));
   const close = async (): Promise<void> => {
     await child.settle();
     await removeProfile();
@@ -228,6 +237,7 @@ async function* consume(
           text: replyText(deltas, event),
           ok: event.ok,
           ...(event.error === undefined ? {} : { error: event.error }),
+          ...(!event.ok && timedOut() ? { failure: 'timeout' as const } : {}),
           tokens: event.tokens,
         };
         continue;

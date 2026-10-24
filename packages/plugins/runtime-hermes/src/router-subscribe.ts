@@ -207,6 +207,8 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
   for (const bot of bots) {
     if (!mayTag.has(bot.slug.toLowerCase())) continue;
     if (matchTrigger(bot.triggers ?? [], bot.slug, view) !== 'mention') continue;
+    // A card in this thread was handed to the bot, which woke it already: the prose mention would only wake it a second time.
+    if (await alreadyOnThread(tx, bot.id, replyRootId)) continue;
     await ctx.jobs.enqueue(
       tx,
       RUN_QUEUE,
@@ -226,6 +228,20 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
       { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` },
     );
   }
+}
+
+/**
+ * Did a handover already put this thread in `botId`'s hands? True when it owns an unfinished task card whose thread is this one: the handover
+ * woke it, so a prose @mention of it after the handover is redundant. A queued or running run is deliberately NOT a reason to skip: such a
+ * mention may carry a new instruction, and it gets its own run afterwards. (`routeDelegation` runs in the outbox's system transaction.)
+ */
+async function alreadyOnThread(tx: PluginTx, botId: string, replyRootId: string): Promise<boolean> {
+  const res = await tx.query(
+    `SELECT 1 FROM app.tasks t JOIN app.actors a ON a.id = t.owner_id AND a.kind = 'bot'
+      WHERE a.ref_id = $1::uuid AND t.thread_root_id = $2::uuid AND t.state <> 'done' LIMIT 1`,
+    [botId, replyRootId],
+  );
+  return res.rows.length > 0;
 }
 
 /**
