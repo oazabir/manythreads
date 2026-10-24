@@ -468,7 +468,7 @@ describe('classify: the one completion the platform makes for itself (the gate\'
       ],
       max_tokens: 8,
       temperature: 0,
-      metadata: { workspace_id: omar.workspaceId, bot_id: botId, purpose: 'gate' },
+      metadata: { manythreads_workspace: omar.workspaceId, manythreads_bot: botId, purpose: 'gate' },
     });
     const ledger = await sys(async (tx) =>
       (await tx.query<Record<string, unknown>>(`SELECT alias, prompt_tokens, completion_tokens, cost_usd::float AS cost, run_id, session_id FROM app.llm_spend WHERE bot_id = $1`, [botId])).rows,

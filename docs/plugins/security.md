@@ -72,6 +72,10 @@ and call with arguments of its own, and a payload the platform vouches for (whom
 something a model can write. `messages.post` takes no `meta`. Using the provider needs no `extends` entry; the posting still runs as the
 transaction's actor under the channel's own `post` rule.
 
+## The token checker's door: `run.resolve`
+
+A plugin that extends `run.resolve` (and not `tool.invoke`) gets a `ctx.runs` of which one member works: `resolve(sha256)`, which turns a presented run token into the run it opens (or null for an unknown, revoked, expired or finished one). Every other member throws, naming `tool.invoke`. It exists for an endpoint that takes a run's token as its credential without acting for the run: `gateway-llm`'s run-scoped model proxy (`/api/llm/runs/<runId>/v1`, [runners.md](./runners.md)) authenticates an agent on a runner this way, then calls the model with the bot's own key as the system. It cannot open a run, enter a transaction as the bot, or call a tool.
+
 ## The MCP gateway's door: `tool.invoke`
 
 A plugin that extends `tool.invoke` (`ctx.runs`, the MCP gateway of PLAN P5-09) may, in the platform's name:

@@ -10,6 +10,7 @@ import { createLiteLlmClient, type LlmGateway } from './litellm.ts';
 export const APPLY_CONFIG_QUEUE = 'gateway-llm.apply-config';
 export const SYNC_KEY_QUEUE = 'gateway-llm.sync-key';
 export const RECONCILE_QUEUE = 'gateway-llm.reconcile';
+export const BOOT_HEAL_QUEUE = 'gateway-llm.boot-heal';
 
 /** A client from `MANYTHREADS_LITELLM_URL` / `MANYTHREADS_LITELLM_MASTER_KEY`; disabled when the URL is unset. */
 export function gatewayFromEnv(env: NodeJS.ProcessEnv = process.env): LlmGateway {

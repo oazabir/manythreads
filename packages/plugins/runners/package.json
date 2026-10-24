@@ -1,0 +1,30 @@
+{
+  "name": "@manythreads/plugin-runners",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "manythreads": {
+    "entry": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@manythreads/sdk": "workspace:*",
+    "@manythreads/shared": "workspace:*",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@manythreads/kernel": "workspace:*",
+    "@manythreads/test-utils": "workspace:*",
+    "@types/node": "^22",
+    "@types/pg": "^8",
+    "@types/ws": "^8",
+    "pg": "^8",
+    "ws": "^8",
+    "yaml": "^2.9.1"
+  }
+}

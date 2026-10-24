@@ -94,12 +94,14 @@ export interface BotRuntimeScope {
 export type BotRuntimeEvent =
   | { type: 'text'; text: string }
   | { type: 'tool'; name: string; input: unknown }
-  | { type: 'tool_result'; name: string; ok: boolean }
+  | { type: 'tool_result'; name: string; ok: boolean; reason?: string | undefined }
   | {
       type: 'result';
       text: string;
       ok: boolean;
       error?: string;
+      /** Why a failed run failed, when the runtime knows it better than the error text says: the runner was not there, or the clock ran out. */
+      failure?: 'runner_offline' | 'timeout';
       /** What the model reported for this turn, when the runtime knows (a Hermes `result` record carries it). */
       tokens?: { input: number; output: number; total: number } | null;
     };

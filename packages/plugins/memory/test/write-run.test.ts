@@ -191,3 +191,14 @@ it('refuses arguments that are not a proposal, and a transaction that is not a l
   const asPerson = await w.as(omar, async (tx) => await handler({ path: 'memory/facts/x.md', type: 'fact', body: 'x\n' }, tx as PluginTx));
   expect(asPerson).toMatchObject({ ok: false, status: 403, code: 'forbidden' });
 });
+
+it('does not hand a database error to the model: it is thrown for the gateway to word generically', async () => {
+  const { run } = await openRun();
+  const pgError = Object.assign(new Error('duplicate key value violates unique constraint "memory_run_context_pkey"'), { code: '23505' });
+  await expect(
+    runs.asBot(run, async (tx) => {
+      const failing = { ...tx, actor: tx.actor, query: () => Promise.reject(pgError) } as unknown as PluginTx;
+      return await handler({ path: 'memory/facts/pg.md', type: 'fact', body: 'x\n' }, failing);
+    }),
+  ).rejects.toBe(pgError);
+});

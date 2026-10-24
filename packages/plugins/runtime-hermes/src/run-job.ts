@@ -21,6 +21,7 @@ import {
 import { z } from 'zod';
 import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
+import { classifyFailure, looksLikeRejectedKey, postFailureNotice, type FailureCategory } from './failure-notice.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
 
 /** The job queue one run executes in. */
@@ -35,7 +36,7 @@ export const RunPayload = z.strictObject({
   botId: z.uuid(),
   teamId: z.uuid(),
   channelId: z.uuid(),
-  trigger: z.enum(['conversation', 'mention', 'channel_message']),
+  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned']),
   askerActorId: z.uuid().nullable(),
   /** Where the reply goes: the thread root when the message is inside one, else the message itself (the reply opens the thread). */
   replyRootId: z.uuid(),
@@ -66,6 +67,8 @@ export interface LlmDoor {
   id: string;
   [member: string]: unknown;
   botKey(tx: PluginTx, botId: string): Promise<string | null>;
+  /** Tell the gateway the proxy refused this bot's key, so it checks the key at the proxy and registers it again if the proxy lost it. Optional: an older gateway has none. */
+  keyRejected?(tx: PluginTx, botId: string): Promise<void>;
   /** The gate's classifier call (P5-11). */
   classify: ClassifierDoor['classify'];
   preflight(
@@ -107,6 +110,36 @@ export class ApprovalPending extends Error {
     super(`"${capability}" is waiting for a person's approval`);
     this.name = 'ApprovalPending';
   }
+}
+
+/**
+ * A run that ended without an answer: ask the gateway to re-check the bot's key when the proxy refused it (the next run then works), and tell the
+ * asker in one short line why there is no answer. The line names a category only (`failure-notice.ts`); the error text goes to the log, nowhere else.
+ */
+export async function reportFailure(input: {
+  ctx: PluginContext;
+  tx: PluginTx;
+  log: PluginLogger;
+  run: BotRunHandle;
+  payload: RunPayload;
+  botId: string;
+  category?: FailureCategory;
+  error?: string | undefined;
+  failure?: 'runner_offline' | 'timeout' | undefined;
+}): Promise<void> {
+  const { ctx, tx, log, run, payload, botId } = input;
+  if (looksLikeRejectedKey(input.error)) {
+    const llm = ctx.providers.get<LlmDoor>('llm');
+    try {
+      await tx.query('SAVEPOINT run_key_rejected');
+      await llm?.keyRejected?.(tx, botId);
+      await tx.query('RELEASE SAVEPOINT run_key_rejected');
+    } catch (err) {
+      await tx.query('ROLLBACK TO SAVEPOINT run_key_rejected').catch(() => undefined);
+      log.warn(`runtime-hermes: run ${run.runId}: the gateway could not be asked to re-check the bot's key: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  await postFailureNotice(ctx, tx, run, payload, input.category ?? classifyFailure(input.error, input.failure), (line) => log.warn(line));
 }
 
 type ParsedDefinition = Extract<ReturnType<typeof parseBotMd>, { ok: true }>;
@@ -278,11 +311,14 @@ export async function checkPreflight(input: {
             ? `runtime-hermes: run ${run.runId} stopped before the call: waiting for an approval`
             : `runtime-hermes: run ${run.runId} refused before the call: held for approval, and the approvals plugin is not loaded`,
         );
+        // With a card in the thread the asker knows; without one nobody can release the call, and they would see a bot that never answers.
+        if (!filed) await reportFailure({ ctx, tx, log, run, payload, botId: bot.id, category: 'approval' });
         await ctx.runs.close(run.runId, 'stopped');
         return null;
       }
       if (!decision.allowed) {
         log.warn(`runtime-hermes: run ${run.runId} refused before the call: ${decision.message ?? 'not allowed'}`);
+        await reportFailure({ ctx, tx, log, run, payload, botId: bot.id, category: 'limit' });
         await ctx.runs.close(run.runId, 'stopped');
         return null;
       }
@@ -329,7 +365,15 @@ export function buildScope(input: {
     // The URL names the run and carries no credential (a URL is logged by proxies and access logs); the token travels as a
     // bearer header, which the rendered profile sets.
     endpoint: { runId: run.runId, url: `${ctx.runtime.publicUrl}/api/mcp/runs/${run.runId}`, token },
-    gateway: provider.usesGateway && gatewayBase !== '' ? { baseUrl: gatewayBase, key } : null,
+    // A run placed on a runner reaches the models through this server, not through the cluster's LiteLLM address (which the runner's
+    // machine cannot resolve) and without the bot's virtual key (which never leaves the server): the run's own token is the credential
+    // of the run-scoped proxy `gateway-llm` serves at `/api/llm/runs/<runId>/v1`.
+    gateway:
+      provider.usesGateway && gatewayBase !== ''
+        ? definition.frontmatter.placement?.runner !== undefined
+          ? { baseUrl: `${ctx.runtime.publicUrl}/api/llm/runs/${run.runId}`, key: token }
+          : { baseUrl: gatewayBase, key }
+        : null,
     // SPEC §7.1's limits: a run's own wall clock. The definition schema has no turn count, so none is passed.
     limits: { runBudgetSeconds: definition.frontmatter.limits?.timeoutSeconds ?? null, maxTurns: null, sessionMinutes: definition.frontmatter.limits?.sessionMinutes ?? null },
   };
@@ -357,7 +401,8 @@ export function buildScope(input: {
 
 // A run that finished with an Answer (`answer.post`, PLAN P5-18) has posted its reply already — with its citations and what it reached —
 // and the text the model printed after the tool call is that same reply, not a second one: it is not posted again. The message says which run
-// wrote it in its `meta.runId`, which is how a run is known to have answered; nothing else counts (a plain `messages.post` does not).
+// wrote it in its `meta.runId`, which is how a run is known to have answered. A plain `messages.post` the run made into the reply channel counts
+// too (the tool stamps `meta.runId`, and puts a post with no thread into the reply thread), so the model's own message is not followed by the final text.
 //
 // The reply is a message like any other: posted through the channels plugin's own `messages.post`, as the run's bot,
 // and authorized like every other call the run makes — a definition that never asked for `messages.post` cannot post.
@@ -372,9 +417,11 @@ export async function postReply(input: {
   scope: BotRuntimeScope;
   reply: string;
   ok: boolean;
+  /** Why a failed run failed; with `botId` and `log` it lets the asker be told (`reportFailure`). Without them a failed run closes silently. */
+  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: 'runner_offline' | 'timeout' | undefined };
 }): Promise<void> {
-  const { ctx, tx, run, payload, scope, reply, ok } = input;
-  const answered = ok && (await runPostedAnswer(tx, run.runId, payload.channelId, payload.replyRootId));
+  const { ctx, tx, run, payload, scope, reply, ok, failed } = input;
+  const answered = ok && (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId));
   if (ok && !answered && reply.trim() !== '') {
     await scope.invoke('messages.post', {
       channelId: payload.channelId,
@@ -384,19 +431,23 @@ export async function postReply(input: {
   }
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
   const waiting = approvals ? await approvals.pendingForRun(tx, run.runId) : 0;
+  // A failed run says so once (never the half answer above); one that is waiting for a person has its card in the thread already.
+  if (!ok && waiting === 0 && failed) await reportFailure({ ctx, tx, log: failed.log, run, payload, botId: failed.botId, error: failed.error, failure: failed.failure });
   await ctx.runs.close(run.runId, waiting > 0 ? 'stopped' : ok ? 'done' : 'failed');
 }
 
 /**
- * Did this run already post its Answer into the thread it answers in? One indexed read of the thread (the system's transaction sees every channel);
- * `meta.answer` and `meta.runId` are written by the platform alone (the `messages` provider validates them, and no tool can reach it).
+ * Did this run already post its reply? Either its Answer in the thread it answers in, or any message it wrote itself into that same thread
+ * (a failure notice does not count; a post into another thread or channel leaves the asker's thread unanswered). `meta.runId` is written by the platform alone: the `messages` provider and the `messages.post` tool set it
+ * from the transaction's own run, and no argument can.
  */
-async function runPostedAnswer(tx: PluginTx, runId: string, channelId: string, replyRootId: string): Promise<boolean> {
+async function runPostedReply(tx: PluginTx, runId: string, channelId: string, replyRootId: string): Promise<boolean> {
   const res = await tx.query(
     `SELECT 1 FROM app.messages
-      WHERE channel_id = $1::uuid AND thread_root_id = $2::uuid AND meta ? 'answer' AND meta ->> 'runId' = $3::text AND deleted_at IS NULL
+      WHERE channel_id = $1::uuid AND (thread_root_id = $3::uuid OR id = $3::uuid)
+        AND meta ->> 'runId' = $2::text AND deleted_at IS NULL AND NOT (meta ? 'runFailure')
       LIMIT 1`,
-    [channelId, replyRootId, runId],
+    [channelId, runId, replyRootId],
   );
   return res.rows.length > 0;
 }
@@ -491,6 +542,8 @@ export function registerRunJob(ctx: PluginContext): void {
 
       let reply = '';
       let ok = false;
+      let error: string | undefined;
+      let failure: 'runner_offline' | 'timeout' | undefined;
       for await (const event of handle.events) {
         // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
         // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
@@ -498,16 +551,18 @@ export function registerRunJob(ctx: PluginContext): void {
           toolCalls += 1;
           job.log.info(`runtime-hermes: run ${run.runId} called ${event.name}`);
         }
-        if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : 'failed'}`);
+        if (event.type === 'tool_result') job.log.info(`runtime-hermes: run ${run.runId} ${event.name} ${event.ok ? 'answered' : `failed: ${event.reason ?? 'no reason given'}`}`);
         if (event.type !== 'result') continue;
         reply = event.text;
         ok = event.ok;
+        error = event.error;
+        failure = event.failure;
         if (event.tokens) job.log.info(`runtime-hermes: run ${run.runId} used ${event.tokens.total} tokens over ${toolCalls} tool calls`);
         if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
       }
       await handle.stop();
 
-      await postReply({ ctx, tx, run, payload, scope, reply, ok });
+      await postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure } });
     } catch (err) {
       if (err instanceof ApprovalPending) {
         job.log.info(`runtime-hermes: run ${run.runId} stopped: "${err.capability}" is waiting for an approval`);
@@ -519,6 +574,8 @@ export function registerRunJob(ctx: PluginContext): void {
       // letting the job retry (which would re-ask the model and post a second answer).
       job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);
       await handle?.stop().catch(() => undefined);
+      const waiting = await ctx.providers.get<ApprovalProvider>('approvals')?.pendingForRun(tx, run.runId).catch(() => 0);
+      if (!waiting) await reportFailure({ ctx, tx, log: job.log, run, payload, botId: bot.id, error: err instanceof Error ? err.message : String(err) }).catch(() => undefined);
       await ctx.runs.close(run.runId, 'failed');
     }
   });

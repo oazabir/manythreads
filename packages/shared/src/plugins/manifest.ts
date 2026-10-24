@@ -25,6 +25,8 @@ export const EXTENSION_POINTS = [
   // The one path a channel message is written on (P5-18): a plugin that finishes a bot's reply with more than text (the Answer) posts through it,
   // so the permission, thread rules, events, push, unread counters and mentions are the ones every message gets. Registered by `channels`.
   'provider.messages',
+  // The connected runners of a team and the one way to send a job to one (P6-06): registered by the runners plugin, used by runtime-hermes.
+  'provider.runner',
   'command.register',
   'trigger.register',
   'component.register',
@@ -42,6 +44,9 @@ export const EXTENSION_POINTS = [
   // Also not in section 3: the right to END a bot run through the run service (`ctx.runs.close`) and nothing else of `ctx.runs` — no opening a run,
   // no entering one as its bot. For janitors (the bots plugin's stale-run reaper); the full run door is `tool.invoke`. docs/plugins/security.md.
   'run.close',
+  // Also not in section 3: the right to resolve a presented run token to its run (`ctx.runs.resolve`) and nothing else of `ctx.runs`. For an endpoint that takes the
+  // run's token as its credential without acting for the run (the run-scoped model proxy of gateway-llm, P6-06); the full run door is `tool.invoke`.
+  'run.resolve',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);

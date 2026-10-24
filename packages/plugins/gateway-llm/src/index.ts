@@ -1,18 +1,20 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerConfigJob } from './config.ts';
-import { registerKeySubscriptions, registerReconcileJob, registerSyncKeyJob } from './keys.ts';
+import { registerBootHealJob, registerKeySubscriptions, registerReconcileJob, registerSyncKeyJob } from './keys.ts';
 import { registerLlmProvider } from './provider.ts';
 import { registerLlmRoutes } from './routes.ts';
+import { registerRunProxy } from './run-proxy.ts';
 
 export { ALL_ALIASES, buildConfigDocument, configFingerprint, pushLlmConfig, registerConfigJob, resolveModel } from './config.ts';
 export type { AliasRow, KeyRow, ProviderRow } from './rows.ts';
-export { botKeyModels, keyPrefix, mintBotKey, newBotKey, revokeBotKey, syncBotKey, syncWorkspaceKeys } from './keys.ts';
+export { botKeyModels, keyPrefix, mintBotKey, newBotKey, requestKeyCheck, revokeBotKey, syncBotKey, syncWorkspaceKeys } from './keys.ts';
 export type { KeySyncResult } from './keys.ts';
 export { createLiteLlmClient, LiteLlmError } from './litellm.ts';
 export type { LiteLlmConfigDocument, LiteLlmTransport, LlmGateway } from './litellm.ts';
-export { APPLY_CONFIG_QUEUE, RECONCILE_QUEUE, SYNC_KEY_QUEUE, gatewayFromEnv } from './gateway.ts';
+export { APPLY_CONFIG_QUEUE, BOOT_HEAL_QUEUE, RECONCILE_QUEUE, SYNC_KEY_QUEUE, gatewayFromEnv } from './gateway.ts';
 export type { LlmProviderServices } from './provider.ts';
 export { classify } from './complete.ts';
+export { MAX_PROXY_BODY_BYTES, runProxyHandlers, type RunProxyDeps } from './run-proxy.ts';
 export type { LlmClassifyRequest, LlmClassifyResult } from './complete.ts';
 export { createSlidingWindow, decide, loadEgress, loadFallbackChain, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';
 export type { EgressTarget, LlmCallDecision, LlmCallRequest, LlmScopeSnapshot, LlmSpendRecord, RateHit } from './limits.ts';
@@ -31,7 +33,9 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     migrations: 'migrations',
-    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.llm', 'hook.pre_egress'],
+    // `run.resolve` for one thing: turning a presented run token into its run (`ctx.runs.resolve`) in the run-scoped model proxy
+    // (run-proxy.ts). It opens no run and enters no transaction as a bot.
+    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.llm', 'hook.pre_egress', 'run.resolve'],
     events: {
       emits: ['llm.config.applied', 'llm.key.changed', 'llm.budget.exceeded', 'llm.guard.decided'],
       consumes: ['bots.bot.loaded', 'bots.bot.removed'],
@@ -43,8 +47,10 @@ export default definePlugin({
     registerConfigJob(ctx);
     registerSyncKeyJob(ctx);
     registerReconcileJob(ctx);
+    registerBootHealJob(ctx);
     registerKeySubscriptions(ctx);
-    registerLlmProvider(ctx);
+    const llm = registerLlmProvider(ctx);
+    registerRunProxy(ctx, (tx, botId) => llm.botKey(tx, botId), (tx, botId) => llm.keyRejected(tx, botId));
     registerLlmRoutes(ctx);
   },
 });

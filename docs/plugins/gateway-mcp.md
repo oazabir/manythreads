@@ -96,6 +96,11 @@ naming a path the bot may never write → `{ ok: false, code: 'forbidden' }` wit
 is the same approval (per asker). A *read* flagged `needsApproval` is not parked — it answers `{ ok: false, code: 'forbidden' }` (a re-run after approval would run it as the bot, not as the person it was asked for). Without the approvals plugin the answer stays `{ ok: false, code: 'approval_required' }` (fail closed);
 a granted name nothing implements → `{ ok: false, code: 'unknown_tool' }`.
 
+A handler that **throws** is also an answer (`isError`), never a transport error: the platform's own errors keep their code and sentence
+(`validation_failed` for a bad or unknown argument, `forbidden`, `not_found`, `conflict`); any other error (a database refusal, which names
+columns and constraints) becomes `{ ok: false, code: 'failed', message: 'the call failed' }` and its real text goes to the server log only.
+A run that ended under the call is not an answer of this kind: it is rethrown and becomes `run_ended` (a call) or a 401.
+
 ## What the run read
 
 Every hit a read answers with becomes a line in `app.run_source_log` (`sourceType` `message` or `file`, the hit's id,

@@ -1,10 +1,11 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { definePlugin } from '@manythreads/sdk';
+import { definePlugin, type RunnerDoor } from '@manythreads/sdk';
 import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
 import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
 
 export { chatArgs, profileHome, renderConfig, renderProfile } from './profile.ts';
+export { GUARDED_TOOLSETS, RUNTIME_GRANT_TOOLSETS, hermesToolsets, type HermesToolsets } from './toolsets.ts';
 export { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 export { childEnv, createHermesProvider, HERMES_RUNTIME_ID, sweepStaleProfiles, type HermesRuntimeOptions } from './hermes.ts';
 export { CLASSIFIER_INSTRUCTION, GATE_BUDGET_MS, wrapMessage, checkList, chunksOf, classifierPrompt, hasGate, parseAnswer, runGate, type ClassifierDoor, type GateInput, type GateVerdict } from './gate.ts';
@@ -32,7 +33,7 @@ export default definePlugin({
     // triggers, the job a run executes in, and the provider itself.
     extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.bot_runtime', 'tool.invoke', 'hook.pre_egress'],
     // `runtime.gate.held`: the gate stopped a run before any model call (P5-11). `hook.pre_egress` is used to redact the message an approver is shown.
-    events: { emits: ['runtime.gate.held'], consumes: ['channel.message.posted', 'approvals.approval.decided'] },
+    events: { emits: ['runtime.gate.held', 'runtime.task.not_woken'], consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed'] },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
     dependsOn: ['bots', 'channels', 'guardrails-dlp'],
@@ -53,6 +54,8 @@ export default definePlugin({
         // The whole environment is offered; the provider passes on only its allowlist (`childEnv`).
         env: process.env,
         killGraceSeconds: Number(process.env['MANYTHREADS_HERMES_KILL_GRACE'] ?? '15') || 15,
+        // Looked up per run: the runners plugin may load after this one.
+        runners: () => ctx.providers.get<RunnerDoor>('runner'),
       }),
     );
     registerRouter(ctx);

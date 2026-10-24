@@ -79,4 +79,23 @@ describe('ctx.identity', () => {
     const both = definePlugin({ manifest: { name: 'both', version: '0.1.0', kind: 'server', extends: ['tool.invoke', 'run.close'] }, register: () => undefined });
     await expect(createPluginContext(both.manifest, { ...base, runs }).runs.asBot({} as never, () => Promise.resolve('x'))).rejects.toThrow(/real asBot/);
   });
+
+  it('run.resolve is a door of its own: resolve works (a token to its run), close and every other member of ctx.runs is refused', async () => {
+    const seen: string[] = [];
+    const runs = {
+      resolve: (hash: Buffer) => {
+        seen.push(hash.toString('hex'));
+        return Promise.resolve({ runId: 'run-1' });
+      },
+      close: () => Promise.reject(new Error('the real close must not be reached')),
+      open: () => Promise.reject(new Error('the real open must not be reached')),
+    } as never;
+    const proxy = definePlugin({ manifest: { name: 'proxy', version: '0.1.0', kind: 'server', extends: ['run.resolve'] }, register: () => undefined });
+    const ctx = createPluginContext(proxy.manifest, { ...base, runs });
+    await expect(ctx.runs.resolve(Buffer.from('ab', 'hex'))).resolves.toEqual({ runId: 'run-1' });
+    expect(seen).toEqual(['ab']);
+    for (const member of ['close', 'open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'inheritSources'] as const) {
+      expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.resolve.*tool\.invoke/);
+    }
+  });
 });

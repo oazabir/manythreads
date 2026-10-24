@@ -5,6 +5,7 @@ import { ListMessagesResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
+import { FAILURE_NOTICE } from '../src/failure-notice.ts';
 import { CLASSIFIER_INSTRUCTION, wrapMessage } from '../src/gate.ts';
 
 // The run job end to end (PLAN P5-10): a person's mention goes through the outbox subscription, the router decides, the job
@@ -42,6 +43,26 @@ const FAKE_HERMES = [
   "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 0, text: handoff, tokens: { input: 5, output: 5, total: 10 } }) + '\\n');",
   "  process.exit(0);",
   "}",
+  "if (prompt.includes('TOOL-POST')) {",
+  "  const origin = /origin=(\\S+)/.exec(prompt)?.[1] ?? '';",
+  "  const args = { body: 'Full answer posted by the tool' };",
+  "  const channel = /channel=([0-9a-f-]{36})/.exec(prompt)?.[1];",
+  "  const thread = /thread=([0-9a-f-]{36})/.exec(prompt)?.[1];",
+  "  if (prompt.includes('with-channel') || channel) args.channelId = channel ?? /channelid=([0-9a-f-]{36})/.exec(prompt)?.[1];",
+  "  if (thread) args.threadRootId = thread;",
+  "  const res = await fetch(origin + new URL(JSON.parse(url)).pathname, { method: 'POST', headers: { 'content-type': 'application/json', authorization: JSON.parse(bearer) }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'messages.post', arguments: args } }) });",
+  "  const answer = await res.text();",
+  "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 0, text: 'Done - the final text, ' + (res.ok ? 'tool ok' : 'tool failed ' + answer), tokens: { input: 5, output: 5, total: 10 } }) + '\\n');",
+  "  process.exit(0);",
+  "}",
+  "if (prompt.includes('FAIL-GATEWAY')) {",
+  "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 1, text: '', error: 'Error code: 401 - Invalid proxy server token passed. key sk-AbCdEf12 hash 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 at http://litellm.internal:4000/v1' }) + '\\n');",
+  '  process.exit(1);',
+  '}',
+  "if (prompt.includes('SLEEP-FOREVER')) {",
+  '  setInterval(() => undefined, 1000);',
+  '  await new Promise(() => undefined);',
+  '}',
   "if (prompt.includes('FAIL-THE-RUN')) {",
   "  process.stdout.write(JSON.stringify({ type: 'text', text: 'half an answ' }) + '\\n');",
   "  process.stdout.write(JSON.stringify({ type: 'result', exit_code: 1, text: 'half an answ', error: 'model fell over' }) + '\\n');",
@@ -312,7 +333,75 @@ describe('a hermes run, end to end', () => {
 
     expect(run.status).toBe('failed');
     expect(spoolLines()).toHaveLength(before);
-    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+    // it was granted messages.post, so the asker is told (a reason category only)
+    expect((await messagesBy(rootId, bot.actorId)).map((m) => m.body)).toEqual([FAILURE_NOTICE.other]);
+  });
+});
+
+describe('a run that posts with messages.post lands in its own thread and is not answered twice', () => {
+  const botFor = (slug: string): Promise<LoadedBot> => loadBot(slug, botMd({ name: slug, model: 'smart', capabilities: 'messages.post' }));
+  const ask = (slug: string, extra: string, channel: string = channelId): Promise<string> => post(`@${slug} TOOL-POST origin=${w.server.url} ${extra}`, channel);
+  const settled = (botId: string) =>
+    until(async () => {
+      const row = await runOf(botId);
+      return row && row.status !== 'running' ? row : null;
+    }, 30_000, 'the run to close');
+  /** Every top-level and threaded message of one bot in the channel, newest last. */
+  const inChannel = async (authorId: string, channel: string = channelId): Promise<{ body: string; threadRootId: string | null }[]> => {
+    const res = await w.call(nadia, 'GET', `/api/channels/${channel}/messages?limit=100`);
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    return ListMessagesResponse.parse(res.body).items.filter((m) => m.authorId === authorId).map((m) => ({ body: m.body, threadRootId: m.threadRootId }));
+  };
+
+  it('a post with no thread goes into the thread the run was asked in, and the final text is not posted as well', async () => {
+    const bot = await botFor('tool-thread-bot');
+    const rootId = await ask('tool-thread-bot', `channel=${channelId}`);
+    await settled(bot.botId);
+    const said = await messagesBy(rootId, bot.actorId);
+    expect(said.map((m) => m.body)).toEqual(['Full answer posted by the tool']);
+    // nothing from this bot at the top level of the channel
+    expect((await inChannel(bot.actorId)).filter((m) => m.threadRootId === null)).toEqual([]);
+  });
+
+  it('a post that leaves out the channel as well is the same', async () => {
+    const bot = await botFor('tool-nochannel-bot');
+    const rootId = await ask('tool-nochannel-bot', '');
+    await settled(bot.botId);
+    expect((await messagesBy(rootId, bot.actorId)).map((m) => m.body)).toEqual(['Full answer posted by the tool']);
+  });
+
+  it('an explicit thread wins over the run\'s own for the tool post, and the asker\'s thread still gets the final text', async () => {
+    const bot = await botFor('tool-explicit-bot');
+    const other = await post('another thread, started by a person');
+    const rootId = await ask('tool-explicit-bot', `channel=${channelId} thread=${other}`);
+    await settled(bot.botId);
+    expect((await messagesBy(other, bot.actorId)).map((m) => m.body)).toEqual(['Full answer posted by the tool']);
+    // the run posted into another thread, so the asker's own thread is still unanswered: the final text goes there
+    expect((await messagesBy(rootId, bot.actorId)).map((m) => m.body)).toEqual(['Done - the final text, tool ok']);
+  });
+
+  it('a post into another channel is left where it was put, and the final text still answers in the thread', async () => {
+    const bot = await botFor('tool-elsewhere-bot');
+    const otherChannel = await w.system(async (tx) => {
+      const r = await tx.query<{ id: string }>(
+        `SELECT c.id FROM app.channels c JOIN app.teams t ON t.id = c.team_id
+          WHERE t.slug = 'engineering' AND c.kind = 'channel' AND NOT c.private AND c.id <> $1 AND c.archived_at IS NULL ORDER BY c.name LIMIT 1`,
+        [channelId],
+      );
+      return r.rows[0]?.id ?? '';
+    });
+    expect(otherChannel).not.toBe('');
+    const rootId = await ask('tool-elsewhere-bot', `channel=${otherChannel}`);
+    await settled(bot.botId);
+    expect((await inChannel(bot.actorId, otherChannel)).map((m) => [m.body, m.threadRootId])).toEqual([['Full answer posted by the tool', null]]);
+    expect((await messagesBy(rootId, bot.actorId)).map((m) => m.body)).toEqual(['Done - the final text, tool ok']);
+  });
+
+  it('a run that posts nothing has its final text posted, as before', async () => {
+    const bot = await botFor('tool-silent-bot');
+    const rootId = await post('@tool-silent-bot what changed?');
+    await settled(bot.botId);
+    expect((await messagesBy(rootId, bot.actorId)).map((m) => m.body)).toEqual(['Looking at the deploy: Nadia in #dev: @tool-silent-bot what changed?']);
   });
 });
 
@@ -338,7 +427,10 @@ describe('a hermes run, the details', () => {
     }, 30_000, 'the failed run row');
     expect(run.status).toBe('failed');
     expect(callsOf('hermes-fails', run.id)).toHaveLength(1);
-    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+    // no half answer: the one message is the notice, and it carries none of the error text
+    const said = await messagesBy(rootId, bot.actorId);
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.other]);
+    expect(said[0]!.body).not.toMatch(/half an answ|fell over/);
   });
 
   it('the prompt that reaches the model is the gateway\'s redacted text, not the raw one', async () => {
@@ -388,6 +480,112 @@ describe('a hermes run, the details', () => {
     const posted = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 15_000, 'the rule to post');
     expect(posted.body).toBe('Nadia in #dev:\n\n@rules-counter go');
     expect(spoolLines()).toHaveLength(before); // no Hermes process for a rules bot
+  });
+});
+
+describe('a run that ends without an answer tells the asker why (a category, never the error)', () => {
+  const finishedRun = (botId: string) =>
+    until(async () => {
+      const row = await runOf(botId);
+      return row && row.status !== 'running' ? row : null;
+    }, 60_000, 'the run to end');
+  /** The meta of every message the bot wrote in the thread: where the run id and the category are kept. */
+  const metaOf = (botActorId: string, rootId: string): Promise<Record<string, unknown>[]> =>
+    w.system(async (tx) =>
+      (await tx.query<{ meta: Record<string, unknown> }>(`SELECT meta FROM app.messages WHERE author_id = $1 AND thread_root_id = $2 ORDER BY id`, [botActorId, rootId])).rows.map((r) => r.meta),
+    );
+
+  it('a refused model call says the gateway refused it, hides the key, hash and address, names the run only in meta, and asks the gateway to re-check the key', async () => {
+    const bot = await loadBot('notice-gateway', botMd({ name: 'NoticeGateway', model: 'smart', capabilities: 'messages.post' }));
+    const rootId = await post('@notice-gateway FAIL-GATEWAY please');
+    const run = await finishedRun(bot.botId);
+    expect(run.status).toBe('failed');
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, bot.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.gateway]);
+    expect(said[0]!.body).not.toMatch(/sk-|9f86d0|litellm|401|token|http/i);
+    expect(said[0]!.body).not.toContain(run.id);
+    expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id, runFailure: 'gateway' }]);
+    // the proxy refusing the key queues a check of that key at the gateway, for this bot
+    const queued = await w.system(async (tx) =>
+      (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.jobs WHERE queue = 'gateway-llm.sync-key' AND dedupe_key = $1`, [`recheck:${bot.botId}`])).rows[0]!.n,
+    );
+    expect(queued).toBe(1);
+  });
+
+  it('a run that ran out of time says so', async () => {
+    const bot = await loadBot('notice-timeout', botMd({ name: 'NoticeTimeout', model: 'smart', capabilities: 'messages.post', extra: ['limits:', '  timeoutSeconds: 1'] }));
+    const rootId = await post('@notice-timeout SLEEP-FOREVER');
+    const run = await finishedRun(bot.botId);
+    expect(run.status).toBe('failed');
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, bot.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.timeout]);
+    expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id, runFailure: 'timeout' }]);
+  });
+
+  it('a bot placed on a runner that is not there says the runner is offline', async () => {
+    const bot = await loadBot('notice-runner', botMd({ name: 'NoticeRunner', model: 'smart', capabilities: 'messages.post', extra: ['placement:', '  runner: nowhere'] }));
+    const rootId = await post('@notice-runner hello');
+    const run = await finishedRun(bot.botId);
+    expect(run.status).toBe('failed');
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, bot.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.runner_offline]);
+    expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id, runFailure: 'runner_offline' }]);
+  });
+
+  it('a call a budget stops before it is sent says a limit stopped it', async () => {
+    const bot = await loadBot('notice-limit', botMd({ name: 'NoticeLimit', model: 'smart', capabilities: 'messages.post' }));
+    await w.system(async (tx) => {
+      await tx.query(`INSERT INTO app.llm_limits (workspace_id, scope, bot_id, limit_usd) VALUES ($1, 'bot', $2, 0)`, [personas.omar.workspaceId, bot.botId]);
+    });
+    const before = spoolLines().length;
+    const rootId = await post('@notice-limit what changed?');
+    expect((await finishedRun(bot.botId)).status).toBe('stopped');
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, bot.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.limit]);
+    expect(spoolLines()).toHaveLength(before);
+  });
+
+  it('a bot never granted messages.post stays silent, failed run or not', async () => {
+    const bot = await loadBot('notice-silent', botMd({ name: 'NoticeSilent', model: 'smart' }));
+    const rootId = await post('@notice-silent FAIL-GATEWAY');
+    expect((await finishedRun(bot.botId)).status).toBe('failed');
+    await quiet(500);
+    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+  });
+
+  it('a run a person is already asked about posts no second line: the approval card is the notice', async () => {
+    const bot = await loadBot(
+      'notice-card',
+      botMd({ name: 'NoticeCard', model: 'smart', capabilities: 'messages.post', extra: ['guard:', '  rules: ["dlp:require_approval"]', 'approvals:', '  approvers: ["role:on-call"]'] }),
+    );
+    const rootId = await post(`@notice-card please use sk-proj-${'Ab3dEf6hIj'.repeat(8)} to deploy`);
+    expect((await finishedRun(bot.botId)).status).toBe('stopped');
+    await quiet(500);
+    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+  });
+
+  it('leaves exactly one notice for a failed run, found again by its run id in the meta (the guard a retried job relies on)', async () => {
+    const bot = await loadBot('notice-once', botMd({ name: 'NoticeOnce', model: 'smart', capabilities: 'messages.post' }));
+    const rootId = await post('@notice-once FAIL-GATEWAY');
+    const run = await finishedRun(bot.botId);
+    await until(async () => (await messagesBy(rootId, bot.actorId)).length > 0, 30_000, 'the notice');
+    // postFailureNotice looks for a notice carrying this run id before it posts, so a retried job finds this one and adds nothing
+    const again = await w.system(async (tx) =>
+      (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.messages WHERE thread_root_id = $1 AND meta ->> 'runId' = $2 AND meta ? 'runFailure'`, [rootId, run.id])).rows[0]!.n,
+    );
+    expect(again).toBe(1);
   });
 });
 

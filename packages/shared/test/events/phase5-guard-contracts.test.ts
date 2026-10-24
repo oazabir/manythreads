@@ -90,3 +90,15 @@ describe('runtime.gate.held', () => {
     expect(failsAt({ ...valid, ...over })).toContain(field);
   });
 });
+
+describe('runtime.task.not_woken', () => {
+  const valid = { type: 'runtime.task.not_woken', schemaVersion: 1, workspaceId: uuid(1), teamId: uuid(2), taskId: uuid(3), botId: uuid(4), reason: 'no_thread' };
+
+  it('is registered at version 1 and carries ids and a reason code, nothing else', () => {
+    expect(Object.keys(eventRegistry['runtime.task.not_woken'])).toEqual(['1']);
+    expect(parseEvent(valid)).toEqual(valid);
+    expect(parseEvent({ ...valid, reason: 'wake_limit' })).toMatchObject({ reason: 'wake_limit' });
+    expect(failsAt({ ...valid, reason: 'because' })).toContain('reason');
+    expect(failsAt({ ...valid, note: 'card text' })).not.toBe('');
+  });
+});

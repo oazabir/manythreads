@@ -1,11 +1,21 @@
-import { existsSync } from 'node:fs';
-import { chmod, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
-import { createInterface } from 'node:readline';
-import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
-import type { BotRuntimeEvent, BotRuntimeHandle, BotRuntimeInput, BotRuntimeProvider, BotRuntimeScope } from '@manythreads/sdk';
+import { spawn as nodeSpawn } from 'node:child_process';
+import {
+  RunnerUnavailableError,
+  type BotRuntimeEvent,
+  type BotRuntimeHandle,
+  type BotRuntimeInput,
+  type BotRuntimeProvider,
+  type BotRuntimeScope,
+  type RunnerDoor,
+} from '@manythreads/sdk';
+import { childEnv, removeProfileDir, startGroupProcess, writeProfile, type ProcessExit } from '@manythreads/sdk/process';
 import { chatArgs, renderProfile } from './profile.ts';
 import { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
+
+// The environment allowlist, the profile directory handling and the process-group start/stop live in `@manythreads/sdk/process`: the
+// runner (`packages/runner`) runs the same agent the same way on another machine, and the two must not drift. They are re-exported
+// here because this was their home and the plugin's tests and callers name them.
+export { childEnv, passthroughNames, PROFILE_MARKER, sweepStaleProfiles } from '@manythreads/sdk/process';
 
 // The `hermes` bot_runtime provider (SPEC §7.1, §10.2; PLAN P5-10): one Hermes invocation per run, in a profile rendered
 // for that run alone, talking to the run's own MCP endpoint — the per-run URL decision of docs/spikes/per-run-scoping.md.
@@ -23,110 +33,6 @@ import { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 /** The provider's id, which is also the `bots.runtime` value it runs. */
 export const HERMES_RUNTIME_ID = 'hermes';
 
-/**
- * The only parent variables a Hermes child inherits: what a program needs to find its binaries, its locale and its clock,
- * and Hermes' own `HERMES_*` settings. Everything else in the server's environment — the KMS key, the database URLs and
- * their passwords, the LiteLLM master key, the test auth token — stays in the server. A run's authority is its profile
- * (the bot's virtual key and the run's token), never the platform's credentials, so an agent that runs a shell tool
- * (`env`, `/proc/self/environ`) finds none of them (MISTAKES: child process env inheritance).
- */
-const ENV_ALLOWLIST = new Set([
-  'PATH', 'HOME', 'LANG', 'LANGUAGE', 'TZ', 'TMPDIR', 'TEMP', 'TMP', 'SYSTEMROOT', 'USER', 'LOGNAME', 'SHELL', 'TERM',
-  // Where a TLS client finds its trust roots: a deployment behind a private CA (or a proxy that re-signs) names them here, and
-  // an agent without them cannot reach the model gateway at all. Paths, not credentials.
-  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'REQUESTS_CA_BUNDLE', 'CURL_CA_BUNDLE', 'NODE_EXTRA_CA_CERTS',
-]);
-const ENV_PREFIXES = ['LC_', 'HERMES_'];
-
-/**
- * Names an operator may never pass through, whatever `MANYTHREADS_HERMES_ENV_PASSTHROUGH` says: the platform's own settings and
- * credentials (`MANYTHREADS_*`) and the database's (`DATABASE*`, `PG*`). The opt-in exists for `HTTPS_PROXY`, `NO_PROXY` and
- * the like; a list that names the KMS key is a mistake the code refuses rather than honours.
- */
-const PASSTHROUGH_REFUSED = /^(?:MANYTHREADS_|DATABASE|PG)/i;
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/** The extra names `MANYTHREADS_HERMES_ENV_PASSTHROUGH` (comma-separated) lets through, with the refused ones dropped. */
-export function passthroughNames(list: string | undefined): string[] {
-  return (list ?? '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter((name) => ENV_NAME.test(name) && !PASSTHROUGH_REFUSED.test(name));
-}
-
-/**
- * The child's environment: the allowlisted part of `source`, plus the operator's opt-in names (`MANYTHREADS_HERMES_ENV_PASSTHROUGH`,
- * read from `source` itself) minus anything `PASSTHROUGH_REFUSED`. `HERMES_HOME` is added by the caller.
- */
-export function childEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const extra = new Set(passthroughNames(source['MANYTHREADS_HERMES_ENV_PASSTHROUGH']));
-  const env: NodeJS.ProcessEnv = {};
-  for (const [name, value] of Object.entries(source)) {
-    if (value === undefined) continue;
-    if (ENV_ALLOWLIST.has(name) || ENV_PREFIXES.some((prefix) => name.startsWith(prefix)) || extra.has(name)) env[name] = value;
-  }
-  return env;
-}
-
-/** Written into every profile this code creates; the sweep deletes only directories that carry it. */
-export const PROFILE_MARKER = '.manythreads-profile';
-
-/** `<bot slug>-<run uuid>` (or `-no-run`): the only names `profileHome` produces. The sweep never looks at anything else. */
-const PROFILE_DIR_NAME = /^[a-z0-9][a-z0-9._-]*-(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|no-run)$/;
-
-/**
- * Whether this directory is one of ours and holds nothing but the `logs/` Hermes writes as it exits.
- *
- * The removal at the end of a run is a `rm -rf` racing a process that is finishing: Hermes can write its log directory after the
- * files (the run token, the bot's key) are already gone, which leaves a named husk with no marker for the sweep to recognise. A
- * directory named `<slug>-<run uuid>` whose only entry is `logs/`, holding nothing but `*.log` files, is that husk and nothing
- * else.
- */
-async function isProfileHusk(path: string): Promise<boolean> {
-  const entries = await readdir(path, { withFileTypes: true }).catch(() => null);
-  if (entries === null || entries.length !== 1) return false;
-  const only = entries[0];
-  if (only?.name !== 'logs' || !only.isDirectory()) return false;
-  const logs = await readdir(resolve(path, 'logs'), { withFileTypes: true }).catch(() => null);
-  return logs !== null && logs.every((entry) => entry.isFile() && entry.name.endsWith('.log'));
-}
-
-/**
- * Remove profile directories a crashed or killed server left behind (a profile holds the run token and the bot's key and is
- * removed when its run ends; a process that died mid-run never got to). Called once at startup; only directories that (1) are
- * named the way `profileHome` names them, (2) carry `PROFILE_MARKER` (or are the empty husk `isProfileHusk` describes) and (3)
- * are older than `maxAgeMs` go — so an operator who points `MANYTHREADS_RUNTIME_DIR` at a directory with other things in it
- * loses none of them, and a profile another replica sharing the directory is using right now is left alone. Answers how many
- * went.
- */
-export async function sweepStaleProfiles(dataRoot: string, maxAgeMs: number, now: number = Date.now()): Promise<number> {
-  let names: string[];
-  try {
-    names = await readdir(dataRoot);
-  } catch {
-    return 0; // no directory yet: nothing to sweep
-  }
-  let removed = 0;
-  for (const name of names) {
-    if (!PROFILE_DIR_NAME.test(name)) continue;
-    const path = resolve(dataRoot, name);
-    try {
-      const info = await stat(path);
-      if (!info.isDirectory()) continue;
-      // A husk cannot be a live run's profile (that one holds `config.yaml` and `SOUL.md`), so its age is not evidence either way: it
-      // goes at once. A marked profile keeps the age rule, which is what leaves another replica's run alone.
-      const husk = await isProfileHusk(path);
-      const marked = await stat(resolve(path, PROFILE_MARKER)).then((s) => s.isFile(), () => false);
-      if (!husk && (!marked || now - info.mtimeMs < maxAgeMs)) continue;
-      await rm(path, { recursive: true, force: true });
-      removed += 1;
-    } catch {
-      // raced with the run that owns it, no marker, or unreadable: leave it for the next start
-    }
-  }
-  return removed;
-}
-
 export interface HermesRuntimeOptions {
   /** The Hermes entry point (`MANYTHREADS_HERMES_BIN`, default `hermes`). */
   bin: string;
@@ -140,26 +46,14 @@ export interface HermesRuntimeOptions {
   killGraceSeconds: number;
   /** Injectable for tests; the real `node:child_process.spawn`. */
   spawn?: typeof nodeSpawn;
-}
-
-/** Everything the profile directory needs to be written, in order, with `..` and absolute paths refused. */
-function profilePaths(dataRoot: string, home: string, files: Record<string, string>): { dir: string; written: [string, string][] } {
-  const root = resolve(dataRoot);
-  const dir = resolve(root, home);
-  if (dir !== root && !dir.startsWith(root + sep)) throw new Error(`runtime-hermes: refusing to render outside ${root}`);
-  const written: [string, string][] = [];
-  for (const [path, content] of Object.entries(files)) {
-    const target = resolve(dir, path);
-    if (!target.startsWith(dir + sep)) throw new Error(`runtime-hermes: refusing to write ${path} outside the profile`);
-    written.push([target, content]);
-  }
-  return { dir, written };
+  /**
+   * The runners door (`ctx.providers.get('runner')`), looked up when a run needs it (the runners plugin may load after this one). A bot
+   * whose `placement.runner` names a runner is dispatched there instead of being started in this process's host.
+   */
+  runners?: () => RunnerDoor | undefined;
 }
 
 export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeProvider {
-  const spawn = options.spawn ?? nodeSpawn;
-  const useGroups = process.platform !== 'win32';
-
   return {
     id: HERMES_RUNTIME_ID,
     usesGateway: true,
@@ -168,144 +62,137 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
     render: (input: BotRuntimeInput) => renderProfile(input),
 
     async run(input: BotRuntimeInput, scope: BotRuntimeScope): Promise<BotRuntimeHandle> {
-      const profile = renderProfile(input);
-      const { dir, written } = profilePaths(options.dataRoot, profile.home, profile.files);
-      // The profile holds the run token and the bot's key: owner-only directory and files, and gone again if anything between
-      // here and a running child fails (a spawn that throws, a full disk) — not only when the stream ends.
-      // A process that is still finishing can recreate its log directory after the removal (Hermes writes `logs/` as it exits), so this
-      // asks twice more before it gives up: what must not stay behind is the file holding the run's token and the bot's key.
-      const removeProfile = async (): Promise<void> => {
-        // Hermes' own state registry can write `logs/` as it shuts down, after the removal already succeeded: a removal only counts
-        // once it has stayed removed through two quiet checks.
-        let quiet = 0;
-        for (let attempt = 0; attempt < 6 && quiet < 2; attempt += 1) {
-          await rm(dir, { recursive: true, force: true }).catch(() => undefined);
-          await new Promise((r) => setTimeout(r, 200));
-          quiet = existsSync(dir) ? 0 : quiet + 1;
-        }
-        if (existsSync(dir)) scope.log(`runtime-hermes: the profile of run ${input.endpoint?.runId ?? '?'} could not be removed (Hermes wrote to it as it exited)`);
-      };
-      let child: ChildProcess;
-      try {
-        await mkdir(resolve(options.dataRoot), { recursive: true, mode: 0o700 });
-        await mkdir(dir, { recursive: true, mode: 0o700 });
-        await chmod(dir, 0o700);
-        // First, so a crash between here and the end of the run leaves a directory the startup sweep is allowed to remove.
-        await writeFile(resolve(dir, PROFILE_MARKER), 'manythreads runtime profile: removed when its run ends\n', { encoding: 'utf8', mode: 0o600 });
-        for (const [target, content] of written) await writeFile(target, content, { encoding: 'utf8', mode: 0o600 });
-        child = spawn(options.bin, [...options.prefix, ...chatArgs(input)], {
-          cwd: dir,
-          env: { ...childEnv(options.env), HERMES_HOME: dir },
-          stdio: ['pipe', 'pipe', 'pipe'],
-          // Its own process group, so a stop reaches whatever the agent started (a shell tool's children) and not only Hermes.
-          // Not on Windows, where `detached` opens a console window and there are no groups to signal.
-          detached: useGroups,
-        });
-      } catch (err) {
-        await removeProfile();
-        throw err;
-      }
-      // A child that exits before reading its prompt closes the pipe: the write error is the child's failure to report (the
-      // exit handler below does), not an unhandled 'error' event that would take the server down.
-      child.stdin?.on('error', () => undefined);
-      child.stdin?.end(input.prompt);
-      // The exit is listened for *here*, not when the stream is first read: a binary that fails immediately (a wrong argv, a
-      // missing model) can be gone before the job takes its first event, and a listener attached afterwards would wait for a
-      // `close` that already happened — a run that never ends holds its job worker forever.
-      const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit) => {
-        child.once('error', () => resolveExit({ code: null, signal: null }));
-        child.once('close', (code, signal) => resolveExit({ code, signal }));
-      });
-
-      let stderr = '';
-      child.stderr?.on('data', (chunk: Buffer) => {
-        // Keep only the tail: a dying process can print a lot, and the log line is one sentence.
-        stderr = (stderr + chunk.toString('utf8')).slice(-2000);
-      });
-
-      // The child leads its own process group (`detached`), and the group — not the leader — is what a stop is about: the leader
-      // can exit (normally, or by SIGTERM) while a shell tool's children go on running. So "is there anything left to signal"
-      // is asked of the group (`kill(-pid, 0)`: ESRCH means no member is left), never of `child.exitCode`.
-      let groupGone = !useGroups || typeof child.pid !== 'number';
-      /** Whether any member of the child's process group is still there. Once it is gone the pid may be reused: never signal again. */
-      const groupExists = (): boolean => {
-        if (groupGone || typeof child.pid !== 'number') return false;
-        try {
-          process.kill(-child.pid, 0);
-          return true;
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code === 'EPERM') return true; // exists, not ours to signal: treat as present
-          groupGone = true; // ESRCH
-          return false;
-        }
-      };
-      /** Signal the whole group while it exists; with no group to hit (a platform without them, a stand-in child) the child alone. */
-      const signal = (name: NodeJS.Signals): void => {
-        if (useGroups && typeof child.pid === 'number') {
-          if (!groupExists()) return;
-          try {
-            process.kill(-child.pid, name);
-            return;
-          } catch {
-            // gone between the probe and the signal, or not ours: fall through to the child itself
-          }
-        }
-        if (child.exitCode === null && child.signalCode === null) child.kill(name);
-      };
-      /** Wait until the group has no member left, up to `ms`: a profile directory is not removed from under a process still in it. */
-      const groupGoneWithin = async (ms: number): Promise<void> => {
-        const deadline = Date.now() + ms;
-        while (groupExists() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
-      };
-      let killTimer: NodeJS.Timeout | undefined;
-      const kill = (() => {
-        let stopped = false;
-        return async (): Promise<void> => {
-          if (stopped) return;
-          stopped = true;
-          signal('SIGTERM');
-          killTimer = setTimeout(() => signal('SIGKILL'), options.killGraceSeconds * 1000);
-          killTimer.unref?.();
-        };
-      })();
-
-      // A hard ceiling: the turn budget is Hermes' own, this is the platform's (a wedged process would hold the job).
-      const budget = (input.limits.runBudgetSeconds ?? 600) + options.killGraceSeconds;
-      const ceiling = setTimeout(() => {
-        scope.log(`runtime-hermes: run ${input.endpoint?.runId ?? '?'} exceeded ${budget}s and was stopped`);
-        void kill();
-      }, budget * 1000);
-      ceiling.unref?.();
-
-      // The stdout lines are collected from the moment the process exists, not from the moment the job first asks for an event: a process
-      // that has already exited and been reaped has already ended and destroyed its stdout, and a reader attached after that never sees
-      // an end (the stream is gone, and no 'close' is coming), so the run would hold its job worker forever. (A loaded box finds this
-      // window easily: the process group tests of hermes.test.ts hung exactly there.)
-      const lines = child.stdout ? createInterface({ input: child.stdout })[Symbol.asyncIterator]() : null;
-      const events = consume(lines, kill, () => stderr, exited);
-      const close = async (): Promise<void> => {
-        clearTimeout(ceiling);
-        // The profile (token, key) goes only once nothing of the run is left in it: after the group is gone, or after the
-        // SIGTERM grace plus the SIGKILL's turn, whichever comes first.
-        await groupGoneWithin(options.killGraceSeconds * 1000 + 2_000);
-        clearTimeout(killTimer);
-        await removeProfile();
-      };
-      return {
-        stop: async () => {
-          await kill();
-          await close();
-        },
-        events: (async function* stream(): AsyncGenerator<BotRuntimeEvent> {
-          try {
-            yield* events;
-          } finally {
-            await kill();
-            await close();
-          }
-        })(),
-      };
+      const runner = input.definition.frontmatter.placement?.runner;
+      if (runner !== undefined) return runOnRunner(options, input, scope, runner);
+      return runHere(options, input, scope);
     },
+  };
+}
+
+/** A run that could not start: one failed `result` carrying the reason, so the run closes `failed` and says why. */
+function refusedRun(reason: string, failure?: 'runner_offline'): BotRuntimeHandle {
+  return {
+    stop: async () => undefined,
+    events: (async function* refused(): AsyncGenerator<BotRuntimeEvent> {
+      yield { type: 'result', text: '', ok: false, error: reason, ...(failure ? { failure } : {}), tokens: null };
+    })(),
+  };
+}
+
+/**
+ * The run on a runner (SPEC §7.4): the same profile, rendered here, is sent to the machine the definition names, and what comes back is
+ * the child's stdout lines and its exit — the same two things a local child gives — so `consume` reads both alike. The prompt travels as
+ * data in the job, never as an argument. A stop (the run job's, or the ceiling below) is sent to the runner, which signals its process
+ * group; the runner enforces the budget on its own as well, so a server that dies mid-run does not leave the agent running.
+ */
+async function runOnRunner(options: HermesRuntimeOptions, input: BotRuntimeInput, scope: BotRuntimeScope, runner: string): Promise<BotRuntimeHandle> {
+  const runId = input.endpoint?.runId ?? '?';
+  const door = options.runners?.();
+  if (!door) return refusedRun(`bot ${input.bot.slug} is placed on runner "${runner}", but this server has no runners service`, 'runner_offline');
+  const profile = renderProfile(input);
+  let dispatch: Awaited<ReturnType<RunnerDoor['dispatch']>>;
+  try {
+    dispatch = await door.dispatch({
+      teamId: input.bot.teamId,
+      runner,
+      job: {
+        runId,
+        profile: { home: profile.home, files: profile.files },
+        prompt: input.prompt,
+        runBudgetSeconds: input.limits.runBudgetSeconds,
+        maxTurns: input.limits.maxTurns,
+        killGraceSeconds: options.killGraceSeconds,
+      },
+    });
+  } catch (err) {
+    const reason = err instanceof RunnerUnavailableError ? err.reason : `the runner "${runner}" could not be reached: ${err instanceof Error ? err.message : String(err)}`;
+    scope.log(`runtime-hermes: run ${runId} was not started: ${reason}`);
+    return refusedRun(reason, 'runner_offline');
+  }
+  let stderrTail = '';
+  const exited: Promise<ProcessExit> = dispatch.exited.then((exit) => {
+    stderrTail = exit.stderrTail;
+    return { code: exit.code, signal: exit.signal as NodeJS.Signals | null };
+  });
+  let stopping: Promise<void> | undefined;
+  const kill = (): Promise<void> => (stopping ??= dispatch.stop().catch(() => undefined));
+  // The platform's own ceiling, as for a local child: the runner's budget is the first line of defence, this is the second.
+  const budget = (input.limits.runBudgetSeconds ?? 600) + options.killGraceSeconds;
+  let timedOut = false;
+  const ceiling = setTimeout(() => {
+    timedOut = true;
+    scope.log(`runtime-hermes: run ${runId} exceeded ${budget}s and was stopped`);
+    void kill();
+  }, budget * 1000);
+  ceiling.unref?.();
+  const events = consume(dispatch.lines[Symbol.asyncIterator](), kill, () => stderrTail, exited, () => timedOut);
+  return {
+    stop: async () => {
+      clearTimeout(ceiling);
+      await kill();
+    },
+    events: (async function* stream(): AsyncGenerator<BotRuntimeEvent> {
+      try {
+        yield* events;
+      } finally {
+        clearTimeout(ceiling);
+        await kill();
+      }
+    })(),
+  };
+}
+
+/** The run in this process's own host: a profile directory, a child that leads its process group, the profile removed when nothing is left. */
+async function runHere(options: HermesRuntimeOptions, input: BotRuntimeInput, scope: BotRuntimeScope): Promise<BotRuntimeHandle> {
+  const profile = renderProfile(input);
+  let dir = '';
+  let child: ReturnType<typeof startGroupProcess>;
+  let timedOut = false;
+  // The profile holds the run token and the bot's key: owner-only directory and files, and gone again if anything between
+  // here and a running child fails (a spawn that throws, a full disk) — not only when the stream ends.
+  const removeProfile = async (): Promise<void> => {
+    if (dir === '') return;
+    if (!(await removeProfileDir(dir))) scope.log(`runtime-hermes: the profile of run ${input.endpoint?.runId ?? '?'} could not be removed (Hermes wrote to it as it exited)`);
+  };
+  try {
+    dir = await writeProfile(options.dataRoot, profile.home, profile.files);
+    child = startGroupProcess({
+      ...(options.spawn ? { spawn: options.spawn } : {}),
+      bin: options.bin,
+      args: [...options.prefix, ...chatArgs(input)],
+      cwd: dir,
+      env: { ...childEnv(options.env), HERMES_HOME: dir },
+      stdin: input.prompt,
+      killGraceSeconds: options.killGraceSeconds,
+      // A hard ceiling: the turn budget is Hermes' own, this is the platform's (a wedged process would hold the job).
+      budgetSeconds: input.limits.runBudgetSeconds ?? 600,
+      onCeiling: (budget) => {
+        timedOut = true;
+        scope.log(`runtime-hermes: run ${input.endpoint?.runId ?? '?'} exceeded ${budget}s and was stopped`);
+      },
+    });
+  } catch (err) {
+    await removeProfile();
+    throw err;
+  }
+  const events = consume(child.lines, child.kill, child.stderrTail, child.exited, () => timedOut);
+  const close = async (): Promise<void> => {
+    await child.settle();
+    await removeProfile();
+  };
+  return {
+    stop: async () => {
+      await child.kill();
+      await close();
+    },
+    events: (async function* stream(): AsyncGenerator<BotRuntimeEvent> {
+      try {
+        yield* events;
+      } finally {
+        await child.kill();
+        await close();
+      }
+    })(),
   };
 }
 
@@ -319,6 +206,7 @@ async function* consume(
   kill: () => Promise<void>,
   stderrTail: () => string,
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+  timedOut: () => boolean = () => false,
 ): AsyncGenerator<BotRuntimeEvent> {
   const deltas: string[] = [];
   let result: HermesEvent & { type: 'result' } | null = null;
@@ -348,7 +236,7 @@ async function* consume(
         yield { type: 'tool', name: event.name, input: event.input };
         continue;
       }
-      yield { type: 'tool_result', name: event.name, ok: event.ok };
+      yield { type: 'tool_result', name: event.name, ok: event.ok, ...(event.reason ? { reason: event.reason } : {}) };
     }
   }
 
@@ -363,6 +251,7 @@ async function* consume(
         exit.signal !== null
           ? `the ${HERMES_RUNTIME_ID} run was stopped (${exit.signal})`
           : `the ${HERMES_RUNTIME_ID} run ended without a result (exit ${exit.code ?? 'unknown'})${tail === '' ? '' : `: ${tail}`}`,
+      ...(timedOut() ? { failure: 'timeout' as const } : {}),
       tokens: null,
     };
     await kill();

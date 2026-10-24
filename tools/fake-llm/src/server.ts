@@ -102,6 +102,11 @@ const json = (res: ServerResponse, status: number, body: unknown): void => {
 };
 
 /** The proxy's error shape: a message under `error`, which is what the client's duplicate detection reads. */
+const hasKey = (value: unknown, name: string): boolean =>
+  Array.isArray(value)
+    ? value.some((v) => hasKey(v, name))
+    : typeof value === 'object' && value !== null && Object.entries(value).some(([k, v]) => k === name || hasKey(v, name));
+
 const error = (res: ServerResponse, status: number, message: string): void => json(res, status, { error: { message } });
 
 /**
@@ -189,6 +194,19 @@ export async function startFakeLlm(options: FakeLlmOptions = {}): Promise<FakeLl
       const recorded: FakeLlmCall = { method: req.method ?? 'GET', path, body, authorized };
       state.calls.push(recorded);
       await options.beforeRespond?.(recorded);
+
+      // The real proxy refuses any body that carries a `workspace_id` key, at any depth (it reads it as a client-side passthrough).
+      if (
+        authorized &&
+        (path === '/key/generate' || path === '/key/update' || path === '/chat/completions' || path === '/v1/chat/completions') &&
+        hasKey(body, 'workspace_id')
+      ) {
+        return error(
+          res,
+          401,
+          'workspace_id is not allowed in request body. Clientside passthrough requires explicit admin opt-in. Contact your admin to enable this feature.',
+        );
+      }
 
       // A test inspects the proxy through this, which is why it needs the key like any other management call.
       if (path === '/state' && req.method === 'GET') {

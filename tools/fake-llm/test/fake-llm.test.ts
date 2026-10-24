@@ -174,6 +174,20 @@ describe('the gateway client against a real proxy', () => {
     expect(fake.state.models.size).toBe(0);
   });
 
+  it('refuses a body carrying workspace_id, at any depth, as the real proxy does', async () => {
+    fake = await startFakeLlm({ masterKey: 'sk-fake' });
+    const gateway = createLiteLlmClient({ baseUrl: fake.url, masterKey: 'sk-fake' });
+    await expect(gateway.mintKey({ key: 'sk-bot-1', aliases: ['smart'], metadata: { workspace_id: 'w' } })).rejects.toMatchObject({ status: 401 });
+    await gateway.mintKey({ key: 'sk-bot-1', aliases: ['smart'], metadata: { manythreads_workspace: 'w', manythreads_bot: 'b' } });
+    const res = await fetch(`${fake.url}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer sk-fake' },
+      body: JSON.stringify({ model: 'smart', messages: [{ role: 'user', content: 'hi' }], metadata: { workspace_id: 'w' } }),
+    });
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(await res.json())).toContain('workspace_id is not allowed in request body');
+  });
+
   it('stays disabled without a URL: it fails loudly instead of pretending to have pushed', async () => {
     const gateway = createLiteLlmClient({ baseUrl: null, masterKey: null });
     expect(gateway.enabled).toBe(false);

@@ -90,6 +90,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
 
   let approvedDoor: PluginRuns | undefined;
   let closeOnlyDoor: PluginRuns | undefined;
+  let resolveOnlyDoor: PluginRuns | undefined;
 
   const mount = (path: string): string => {
     if (!path.startsWith('/')) throw new PluginError(`Plugin "${name}": http route path "${path}" must start with "/"`, { plugin: name });
@@ -275,6 +276,31 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           close: (runId, status) => runs.close(runId, status),
           open: refuse('open'),
           resolve: refuse('resolve'),
+          asBot: refuse('asBot'),
+          asApproved: refuse('asApproved'),
+          asReader: refuse('asReader'),
+          authorize: refuse('authorize'),
+          may: refuse('may'),
+          catalog: refuse('catalog'),
+          invoke: refuse('invoke'),
+          logSource: refuse('logSource'),
+          inheritSources: refuse('inheritSources'),
+        } as PluginRuns);
+      }
+      // `run.resolve` alone is the token checker's door: `resolve` works (a presented run token to the run it opens, or null), every other member refuses.
+      // It is for an endpoint that takes the run's token as its credential without acting for the run (the run-scoped model proxy, P6-06).
+      if (!manifest.extends.includes('tool.invoke') && manifest.extends.includes('run.resolve')) {
+        if (!deps.runs) {
+          throw new PluginError(`Plugin "${name}": ctx.runs is only available when the plugin host has database pools`, { plugin: name });
+        }
+        const runs = deps.runs;
+        const refuse = (member: string) => (): never => {
+          throw new PluginError(`Plugin "${name}" extends "run.resolve" only: ctx.runs.${member} needs "tool.invoke"`, { plugin: name });
+        };
+        return (resolveOnlyDoor ??= {
+          resolve: (hash: Buffer) => runs.resolve(hash),
+          close: refuse('close'),
+          open: refuse('open'),
           asBot: refuse('asBot'),
           asApproved: refuse('asApproved'),
           asReader: refuse('asReader'),

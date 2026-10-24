@@ -97,10 +97,31 @@ the other way: `POST /key/delete`, then the secret and the row go. Both are idem
 changes nothing twice.
 
 A daily reconcile (`gateway-llm.reconcile`, 03:23 UTC) syncs every active hermes bot's key (mint, update or revoke), revokes what is orphaned — a bot deleted while
+
+**A proxy that lost its keys.** If the proxy is replaced or its database is wiped, every bot's key still exists in our table but the proxy no longer knows it, and
+every run fails with the proxy's 401 "Invalid proxy server token". So whenever the proxy is configured, a sync does not trust the row: even when the alias set is
+unchanged it sends one `POST /key/update` for the bot, and a 404 ("no such key") is answered by registering the **same key value** again (`/key/generate`) — the value
+in `ctx.secrets` is never rotated, so the runtime and the proxy agree without anyone touching a bot. The sync reports that as `healed`. Three things run it:
+the daily reconcile (all active bots, one proxy call each); the **boot heal** (`gateway-llm.boot-heal`, a cron every 5 minutes whose handler does nothing after its first
+success in a server process, because ordinary plugins have no start hook — so a restart heals within five minutes, once); and a **rejected-key report**: when a run (the
+Hermes runtime reads the 401 in the run's error; the run-scoped proxy sees the upstream answer) hits the proxy's 401, it calls `provider.llm.keyRejected(tx, botId)`,
+which queues a `sync-key` job for that bot (dedupe key `recheck:<botId>`, and at most one a minute per bot per process), so the next run works.
 its job was dead-lettered leaves a key behind — and re-queues the config push. That is what makes the guarantee self-healing. Syncs of one bot are serialised by `pg_advisory_xact_lock(hashtext('llm-key:' || bot_id))`, so two jobs that both saw "no key" cannot each mint one (an orphaned secret and a stray proxy key). A bot loaded before `bots` migration 0008 has an empty `model_aliases` and so no key: the bots plugin's own daily job fills it from `BOT.md` and re-announces `bots.bot.loaded`, which is what mints it (see [bots.md](./bots.md)).
 
 `provider.llm` is how a runtime gets the key: `ctx.providers.get<LlmProviderServices>('llm').botKey(tx, botId)`, in a system
 transaction. P5-09/P5-10 use it to point a bot's profile at the gateway with the bot's own key.
+
+## The run-scoped proxy for runner-placed bots (P6-06)
+
+A bot placed on a [runner](./runners.md) runs on a machine that cannot reach the proxy's cluster address and must not hold the bot's key.
+Its profile therefore calls the server: `POST /api/llm/runs/:runId/v1/chat/completions` and `GET /api/llm/runs/:runId/v1/models`, with the
+run's own token as `Authorization: Bearer` (the token its MCP endpoint takes; `src/run-proxy.ts`). The token must open a run (not
+finished, expired or revoked) and the URL must name that same run — every failure is the same 401. The handler reads the bot's key as the
+system, calls `MANYTHREADS_LITELLM_URL` with it, and passes the status, content type and body through, streaming included; 503 when no
+gateway is configured or the bot has no key, 502 when the gateway cannot be reached, 413 over 16 MiB of request. The routes are `public`
+(the token is the credential) and `rawBody` (the framework's 1 MiB JSON limit does not apply). The plugin declares `run.resolve`, the narrow
+door that only resolves a token to its run ([security](./security.md)). The pre-call check still runs in `runtime-hermes` before the
+run, as for any run.
 
 ## Budgets, rate limits and the spend ledger (P5-07)
 

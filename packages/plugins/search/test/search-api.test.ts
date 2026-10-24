@@ -42,7 +42,16 @@ const postAged = (channelId: string, author: typeof nadia, body: string, age: st
   });
 let n = 0;
 /** A random word that shares no trigrams worth mentioning with any other (two of them never match each other). */
-const word = (): string => Array.from({ length: 10 }, () => 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]).join('');
+// No two neighbouring letters alike: dropping one letter of a word like "abcddefghi" gives the same word back,
+// so the "typo" test would compare an exact spelling with itself (about 1 run in 25).
+const word = (): string => {
+  let out = '';
+  while (out.length < 10) {
+    const c = 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]!;
+    if (c !== out[out.length - 1]) out += c;
+  }
+  return out;
+};
 
 describe('typos (criterion 6)', () => {
   it('"rolback" finds "rollback", for a member of the team', async () => {

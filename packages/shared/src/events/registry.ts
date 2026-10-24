@@ -32,6 +32,11 @@ import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
 import { TasksTaskCompletedEvent } from './tasks.task.completed.ts';
 import { TasksTaskHandedOffEvent } from './tasks.task.handed_off.ts';
 import { RhythmsRhythmRanEvent } from './rhythms.rhythm.ran.ts';
+import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
+import { RunnersRunnerConnectedEvent } from './runners.runner.connected.ts';
+import { RunnersRunnerDisconnectedEvent } from './runners.runner.disconnected.ts';
+import { RunnersTokenMintedEvent } from './runners.token.minted.ts';
+import { RunnersTokenRevokedEvent } from './runners.token.revoked.ts';
 import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
@@ -39,6 +44,7 @@ import { LlmGuardDecidedEvent } from './llm.guard.decided.ts';
 import { GuardrailsDlpDecidedEvent } from './guardrails.dlp.decided.ts';
 import { GuardrailsEgressDecidedEvent } from './guardrails.egress.decided.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
+import { RuntimeTaskNotWokenEvent } from './runtime.task.not_woken.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
 import { IdentityPasswordChangedEvent } from './identity.password.changed.ts';
@@ -107,6 +113,7 @@ export const eventRegistry = {
   'guardrails.dlp.decided': { 1: GuardrailsDlpDecidedEvent },
   'guardrails.egress.decided': { 1: GuardrailsEgressDecidedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
+  'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
@@ -142,6 +149,11 @@ export const eventRegistry = {
   'tasks.task.completed': { 1: TasksTaskCompletedEvent },
   'tasks.task.handed_off': { 1: TasksTaskHandedOffEvent },
   'rhythms.rhythm.ran': { 1: RhythmsRhythmRanEvent },
+  'runners.runner.connected': { 1: RunnersRunnerConnectedEvent },
+  'runners.runner.disconnected': { 1: RunnersRunnerDisconnectedEvent },
+  'runners.job.refused': { 1: RunnersJobRefusedEvent },
+  'runners.token.minted': { 1: RunnersTokenMintedEvent },
+  'runners.token.revoked': { 1: RunnersTokenRevokedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 

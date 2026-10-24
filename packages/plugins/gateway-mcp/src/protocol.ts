@@ -41,6 +41,9 @@ const reply = (id: McpRequest['id'] | null, result: unknown): HttpResponse =>
 const fail = (id: McpRequest['id'] | null, code: number, message: string, data?: unknown): HttpResponse =>
   json(McpEnvelope.parse({ jsonrpc: '2.0', id: id ?? null, error: { code, message, ...(data === undefined ? {} : { data }) } }));
 
+/** A handler's own `{ ok: false }` answer: the client must see it as a failed call (with the reason in the content), not a success. */
+const isRefusal = (answer: unknown): boolean => typeof answer === 'object' && answer !== null && (answer as { ok?: unknown }).ok === false;
+
 /** One tool answer: the JSON of whatever the capability returned, in one text block. */
 export function toolResult(answer: unknown, isError = false): McpToolResult {
   return McpToolResult.parse({
@@ -100,8 +103,35 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
     });
     return toolResult(answer);
   }
-  const answer = await ctx.runs.asBot(run, (tx) => ctx.runs.invoke(tx, params.name, input));
-  return toolResult(answer);
+  try {
+    const answer = await ctx.runs.asBot(run, (tx) => ctx.runs.invoke(tx, params.name, input));
+    return toolResult(answer, isRefusal(answer));
+  } catch (err) {
+    // A run that ended under the call is control flow (the caller turns it into `run_ended` / 401), not a tool answer.
+    if (err instanceof RunEndedError) throw err;
+    return toolResult(thrownAnswer(params.name, err), true);
+  }
+}
+
+/** Where the real text of an unexpected error goes (the server's stderr); tests replace it. The plugin SDK has no request logger. */
+let faultLog: (line: string) => void = (line) => void process.stderr.write(`${line}\n`);
+export function setFaultLog(fn: (line: string) => void): void {
+  faultLog = fn;
+}
+
+/**
+ * A handler that throws is still a tool answer, so the model reads why. Only the platform's own errors carry their sentence (an `HttpError`
+ * keeps its code — `validation_failed`, `forbidden`, `not_found`, `conflict` — and message; a Zod failure is `validation_failed` naming the fields).
+ * Anything else (a database error with column and constraint names, say) is logged here and the model gets a generic sentence.
+ */
+function thrownAnswer(tool: string, err: unknown): { ok: false; code: string; message: string } {
+  if (err instanceof HttpError) return { ok: false, code: err.code, message: err.message.slice(0, 300) };
+  if (err instanceof z.ZodError) {
+    const issues = err.issues.map((i) => `${i.path.map(String).join('.') || '(input)'}: ${i.message}`).join('; ');
+    return { ok: false, code: 'validation_failed', message: issues.slice(0, 300) };
+  }
+  faultLog(`gateway-mcp: tool call ${tool} threw: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
+  return { ok: false, code: 'failed', message: 'the call failed' };
 }
 
 /**

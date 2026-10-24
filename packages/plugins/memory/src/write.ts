@@ -38,12 +38,22 @@ const statusOf = (err: unknown): number | null => {
   return typeof status === 'number' ? status : null;
 };
 
-/** A refusal from the writer (`RepoError`: a status, a code, a sentence) or a `MemoryError` (a forged bank key) as the model reads it. */
+/** True for the writer's own refusal (`RepoError`, named rather than imported: a plugin cannot reach into repo-git). Its message is a sentence written for the reader. */
+const isRepoRefusal = (err: unknown): err is Error & { code: string } =>
+  err instanceof Error && err.name === 'RepoError' && typeof (err as { code?: unknown }).code === 'string';
+
+/**
+ * A refusal from the writer (`RepoError`: a status, a code, a sentence) or a `MemoryError` (a forged bank key) as the model reads it. Anything else
+ * (a database error, a bug) is rethrown: the MCP gateway turns a thrown error into a generic answer and logs the real text server-side, so a raw
+ * driver message never reaches the model.
+ */
 function answerFor(err: unknown): ToolAnswer {
   if (err instanceof MemoryError) return { ok: false, code: err.code, message: err.message, ...(err.status === null ? {} : { status: err.status }) };
-  const status = statusOf(err);
-  const code = typeof (err as { code?: unknown } | null | undefined)?.code === 'string' ? (err as { code: string }).code : 'unavailable';
-  return { ok: false, code, message: err instanceof Error ? err.message : 'memory.write failed.', ...(status === null ? {} : { status }) };
+  if (isRepoRefusal(err)) {
+    const status = statusOf(err);
+    return { ok: false, code: err.code, message: err.message, ...(status === null ? {} : { status }) };
+  }
+  throw err;
 }
 
 /**
@@ -223,8 +233,8 @@ function draftBody(proposal: OkfProposal, body: string): string {
 }
 
 /**
- * The `memory.write` capability (PLAN P5-26). Registered here, implemented here; the MCP gateway describes it. A refusal is an answer, never a
- * throw: the model reads `{ ok: false, code, message, status }` and can try again.
+ * The `memory.write` capability (PLAN P5-26). Registered here, implemented here; the MCP gateway describes it. A refusal is an answer: the model reads
+ * `{ ok: false, code, message, status }` and can try again. A fault (a database error, a bug) is thrown, so the gateway can word it generically.
  */
 export function registerWriteTool(ctx: PluginContext): void {
   ctx.capabilities.register('memory.write', async (input, tx): Promise<ToolAnswer> => {

@@ -1,4 +1,5 @@
 import type { PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
+import { requestKeyCheck } from './keys.ts';
 import { classify, type LlmClassifyRequest, type LlmClassifyResult } from './complete.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
@@ -11,6 +12,8 @@ export interface LlmProviderServices extends ProviderImpl {
   id: string;
   /** The bot's live virtual key (null when it has none). System transaction only — `ctx.secrets.get` refuses any other. */
   botKey(tx: PluginTx, botId: string): Promise<string | null>;
+  /** The proxy answered 401 to this bot's key: queue a check of the key at the proxy (registered again if the proxy lost it). Cheap, deduplicated, rate-limited. */
+  keyRejected(tx: PluginTx, botId: string): Promise<void>;
   /**
    * Everything the gateway knows before a model call: the preset's egress rule, the pre-call DLP hook and every
    * applicable budget and rate limit. A refusal is answered with its reason and an event, never by throwing, so a
@@ -28,7 +31,7 @@ export interface LlmProviderServices extends ProviderImpl {
   classify(tx: PluginTx, request: LlmClassifyRequest): Promise<LlmClassifyResult>;
 }
 
-export function registerLlmProvider(ctx: PluginContext): void {
+export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
   // One limiter per process, shared by every runtime call (PLAN D3: rate limits live in process memory, per replica).
   const window = createSlidingWindow();
   const impl: LlmProviderServices = {
@@ -40,9 +43,13 @@ export function registerLlmProvider(ctx: PluginContext): void {
       if (!row?.secret_id) return null;
       return ctx.secrets.get(tx, row.secret_id);
     },
+    keyRejected: async (tx, botId) => {
+      await requestKeyCheck(ctx, tx, botId);
+    },
     preflight: (tx, request) => preflight(ctx, tx, window.hit, request),
     recordSpend: (tx, record) => recordSpend(tx, record),
     classify: (tx, request) => classify(ctx, tx, window.hit, request),
   };
   ctx.providers.register('llm', impl);
+  return impl;
 }

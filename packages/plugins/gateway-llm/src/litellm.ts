@@ -53,8 +53,11 @@ export interface LlmGateway {
   applyConfig(document: LiteLlmConfigDocument): Promise<number>;
   /** Registers a caller-chosen key with the proxy, limited to `aliases` (never empty: an empty list means every model). */
   mintKey(input: { key: string; aliases: readonly string[]; metadata: Record<string, string> }): Promise<void>;
-  /** Changes which aliases a key may call. A key the proxy lost (404) is registered again. `aliases` is never empty. */
-  updateKey(input: { key: string; aliases: readonly string[]; metadata: Record<string, string> }): Promise<void>;
+  /**
+   * Changes which aliases a key may call. A key the proxy lost (404) is registered again with the same value. `aliases` is never empty.
+   * Answers true when the proxy did not know the key and it had to be registered again (a replaced proxy, a wiped database).
+   */
+  updateKey(input: { key: string; aliases: readonly string[]; metadata: Record<string, string> }): Promise<boolean>;
   /** Deletes a key. A key the proxy never had (404) is not an error: revoking twice is a no-op. */
   revokeKey(key: string): Promise<void>;
   /**
@@ -245,9 +248,10 @@ export function createLiteLlmClient(options: LiteLlmClientOptions): LlmGateway {
       if (result.status === 404) {
         // The proxy lost its database (or the key): register it again rather than leave the bot without access.
         ok('/key/generate', await post('/key/generate', body));
-        return;
+        return true;
       }
       ok('/key/update', result);
+      return false;
     },
 
     async revokeKey(key) {

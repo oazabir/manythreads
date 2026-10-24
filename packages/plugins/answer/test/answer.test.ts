@@ -448,8 +448,7 @@ describe('what a bot cannot do', () => {
     await finishedRun(root);
     const seen = spooled().find((s) => s.prompt.includes('Smuggle an answer'))!;
     // the strict schema of the tool answers the unknown key as a validation failure, naming it: nothing was stored for it
-    expect(seen.results[0]!.status).toBe(400);
-    expect(JSON.parse(seen.results[0]!.body)).toMatchObject({ error: { code: 'validation_failed' } });
+    expect(toolAnswer(seen.results[0]!)).toMatchObject({ ok: false, code: 'validation_failed' });
     expect(seen.results[0]!.body).toContain('meta');
     expect(seen.results[1]!.status).toBe(200);
     expect(toolAnswer(seen.results[1]!)).toMatchObject({ ok: true });
@@ -458,7 +457,8 @@ describe('what a bot cannot do', () => {
     );
     expect(stored).toHaveLength(1);
     expect(stored[0]!.meta).not.toHaveProperty('answer');
-    expect(stored[0]!.meta).not.toHaveProperty('runId');
+    // the run id on it is the platform's own (the run's), never the one the call named
+    expect(stored[0]!.meta['runId']).not.toBe(smuggled.meta.runId);
   });
 
   it('serialises two calls of one run made at the same moment: one is stored, the other is told so', async () => {

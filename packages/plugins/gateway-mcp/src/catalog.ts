@@ -51,9 +51,9 @@ const SEARCH_SCHEMA = {
 const MESSAGES_POST_SCHEMA = {
   type: 'object',
   properties: {
-    channelId: { type: 'string', description: 'The channel to post in — the one the run was asked in, or one you read about.' },
+    channelId: { type: 'string', description: 'The channel to post in; leave it out for the channel you were asked in, or name one you read about.' },
     body: { type: 'string', maxLength: 40_000, description: 'The message, in the same markup a person writes.' },
-    threadRootId: { type: 'string', description: 'The thread to reply in; leave it out to post a new top-level message.' },
+    threadRootId: { type: 'string', description: 'The thread to reply in. Leave it out in the channel you were asked in and the message goes into the thread you were asked in; in any other channel it is a new top-level message.' },
   },
   required: ['body'],
   additionalProperties: false,
@@ -186,7 +186,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'messages.post': {
     name: 'messages.post',
     description:
-      'Post a message into a channel of the team, as yourself. Use this to answer in the thread you were asked in; the platform posts your final reply for you.',
+      'Post a message into a channel of the team, as yourself. In the channel you were asked in it lands in the thread you were asked in (unless you name another thread). Posting is optional for your answer: the platform posts your final reply there for you, and posts nothing extra if you already posted a message yourself, so use this only for something beyond the answer.',
     inputSchema: MESSAGES_POST_SCHEMA,
     kind: 'write',
   },
@@ -214,7 +214,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'tasks.read': {
     name: 'tasks.read',
     description:
-      'Read the team’s task board: the cards you can see, newest change first, or one card when you name it. Each card carries its state, kind, priority, owner, branch and the commit it was based on and tested at.',
+      'Read the team’s task board: the cards you can see, newest change first, or one card when you name it. Each card carries its state, kind, priority, owner and creator (named by bot slug or person name, with "(you)" on your own), branch and the commit it was based on and tested at.',
     inputSchema: TASK_READ_SCHEMA,
     kind: 'read',
   },
@@ -241,7 +241,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'tasks.claim': {
     name: 'tasks.claim',
     description:
-      'Claim a card so you own it. One card has one owner: another live claim answers `already_owned` and nothing changes. The claim expires after `ttlSeconds` (default one hour) and the card is free again; while it is yours nobody else can claim it.',
+      'Claim a card so you own it. One card has one owner: another live claim answers `already_owned` and nothing changes; claiming a card you already own just succeeds. The claim expires after `ttlSeconds` (default one hour) and the card is free again; while it is yours nobody else can claim it.',
     inputSchema: {
       type: 'object',
       properties: { taskId: { type: 'string', description: 'The card to claim.' }, ttlSeconds: { type: 'integer', minimum: 60, maximum: 86_400, description: 'How long the claim holds (default 3600).' } },
@@ -290,11 +290,12 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
       type: 'object',
       properties: {
         taskId: { type: 'string', description: 'The card to hand over.' },
-        toActorId: { type: 'string', description: 'The actor id of the bot or person who takes it.' },
+        toBotSlug: { type: 'string', description: 'The slug of the bot of your team who takes it, e.g. "reviewer" (one your `mayTag` names). Use this or toActorId.' },
+        toActorId: { type: 'string', description: 'The actor id of the bot or person who takes it, when you have it (a bot is easier to name by toBotSlug).' },
         mode: { type: 'string', enum: ['bot', 'person'], description: 'Who takes it over (default `bot`).' },
         note: { type: 'string', maxLength: 4000, description: 'What the next owner needs to know.' },
       },
-      required: ['taskId', 'toActorId'],
+      required: ['taskId'],
       additionalProperties: false,
     },
     kind: 'write',

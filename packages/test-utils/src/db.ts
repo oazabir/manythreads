@@ -66,6 +66,12 @@ export const tasksMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/tasks/migrations/', import.meta.url)),
 };
 
+/** Migrations of the runners plugin (`runner_tokens`); pass it after `tasksMigrationSource` (the token table references `runners`). */
+export const runnersMigrationSource: MigrationSource = {
+  namespace: 'runners',
+  dir: fileURLToPath(new URL('../../plugins/runners/migrations/', import.meta.url)),
+};
+
 /** Migrations of the rhythms plugin (`rhythms`, `rhythm_runs`); pass it after `botsMigrationSource` (a rhythm runs as a bot). */
 export const rhythmsMigrationSource: MigrationSource = {
   namespace: 'rhythms',

@@ -16,11 +16,12 @@ export interface MessagePostInput {
   threadRootId?: string | null;
   /**
    * The platform's bookkeeping for the row, never a caller's: `answer` (an `AnswerPayload`, validated against the shared schema) and `runId`
-   * (the bot run that wrote the message, which is how the runtime knows the run already answered). Any other key is refused. The provider checks
+   * (the bot run that wrote the message, which is how the runtime knows the run already answered) and `runFailure` (the category of a failed run's notice,
+   * which is how the runtime knows it already said so; it needs `runId`). Any other key is refused. The provider checks
    * them against the transaction: `runId` must be the run the transaction acts for, and an `answer` must name that run and the posting bot in
    * `answeredFor` and carry the message's own text as its `body` (403 for another run or bot, 400 for another text).
    */
-  meta?: { answer?: unknown; runId?: string };
+  meta?: { answer?: unknown; runId?: string; runFailure?: string };
   /**
    * The answer this message is a masked copy of (P5-17): the id of an Answer in the caller's OWN bot conversation. Given, the provider accepts an
    * `answer` posted by a person (no run), after checking it against that stored answer: the same run, bot and asker, the caller is the asker, the

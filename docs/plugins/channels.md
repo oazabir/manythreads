@@ -165,7 +165,7 @@ caller, so a private message resolves for nobody else.
 
 ## `messages.post` (P5-10)
 
-One capability, so a bot can post: `messages.post` takes `{ channelId, body, threadRootId? }` and answers the new message's ids.
+One capability, so a bot can post: `messages.post` takes `{ channelId, body, threadRootId? }` and answers the new message's ids. Inside a bot run that has a reply place (a mention, conversation, channel message or task assignment), `channelId` may be left out (it is the run's channel), and a post to that same channel with no `threadRootId` goes into the run's reply thread; an explicit `threadRootId` is used as given and another channel is untouched. The message carries `meta.runId` (taken from the transaction's run, never from the arguments), which is how the runtime knows the run already spoke and posts no second, final-text message.
 It is not a second write path — the route and the capability both call `postChannelMessage` in `service.ts`, so a bot's reply gets
 permission, thread rules, attachments, the event, the live push, the unread counters and mention resolution exactly as a person's
 message does. The author is the transaction's actor (the run's bot) and the permission is `app.channel_can(channel, 'post')`: a bot

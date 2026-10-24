@@ -1,6 +1,7 @@
 import { HttpError, RunEndedError, type BotRunHandle, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
-import { handleRpc } from '../src/protocol.ts';
+import { z } from 'zod';
+import { handleRpc, setFaultLog } from '../src/protocol.ts';
 
 // The JSON-RPC face without a database: what a run is offered, what a call does, and which failures are answers
 // (isError content the model reads) versus transport errors (a JSON-RPC error envelope). The gateway's own
@@ -67,8 +68,10 @@ function fakeContext(options: {
     },
   };
   const providers = { get: (kind: string) => (kind === 'approvals' ? options.approvals : undefined) };
+  const warned: string[] = [];
+  setFaultLog((m) => void warned.push(m));
   const ctx = { manifest: { version: '0.1.0' }, runs, providers } as unknown as PluginContext;
-  return { ctx, invoked, logged, authorized };
+  return { ctx, invoked, logged, authorized, warned };
 }
 
 const body = async (res: { body?: unknown }): Promise<Record<string, unknown>> => res.body as Record<string, unknown>;
@@ -271,6 +274,54 @@ describe('gateway-mcp protocol', () => {
     // anything else that goes wrong is still a fault
     (ctx.runs as unknown as Record<string, unknown>)['may'] = () => Promise.reject(new Error('database went away'));
     await expect(handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 33, method: 'tools/list' })).rejects.toThrow('database went away');
+  });
+
+  it('a handler that throws is a tool answer: platform errors keep their code and sentence, anything else is generic and logged', async () => {
+    let thrown: unknown;
+    const { ctx, warned } = fakeContext({
+      tools: [WRITE_TOOL],
+      decisions: { 'pages.write': ALLOWED },
+      answer: () => {
+        throw thrown;
+      },
+    });
+    const call = async (id: number) => {
+      const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'pages.write', arguments: { path: 'pages/x.md' } } });
+      const { result } = (await body(res)) as { result: { isError?: boolean; content: Array<{ text: string }> } };
+      expect(result.isError).toBe(true);
+      return JSON.parse(result.content[0]!.text) as { ok: boolean; code: string; message: string };
+    };
+    thrown = new HttpError(400, 'validation_failed', 'Unrecognized key: "meta"');
+    expect(await call(60)).toEqual({ ok: false, code: 'validation_failed', message: 'Unrecognized key: "meta"' });
+    thrown = new HttpError(409, 'conflict', 'Someone changed it first.');
+    expect(await call(61)).toMatchObject({ code: 'conflict', message: 'Someone changed it first.' });
+    thrown = new HttpError(403, 'forbidden', 'Not yours.');
+    expect(await call(62)).toMatchObject({ code: 'forbidden' });
+    thrown = new HttpError(404, 'not_found', 'No such card.');
+    expect(await call(63)).toMatchObject({ code: 'not_found' });
+    const bad = z.object({ title: z.string() }).safeParse({});
+    thrown = bad.error;
+    expect(await call(64)).toMatchObject({ code: 'validation_failed', message: expect.stringContaining('title') });
+    expect(warned).toEqual([]);
+
+    // a database-shaped error: nothing of its text reaches the model, the real text is logged
+    thrown = Object.assign(new Error('invalid input syntax for type uuid: "x" (constraint tasks_owner_fk on relation app.tasks)'), { code: '22P02' });
+    const generic = await call(65);
+    expect(generic).toEqual({ ok: false, code: 'failed', message: 'the call failed' });
+    expect(warned.join(' ')).toContain('invalid input syntax for type uuid');
+  });
+
+  it('a run that ends while the handler runs is rethrown, not turned into a tool answer', async () => {
+    const { ctx } = fakeContext({
+      tools: [WRITE_TOOL],
+      decisions: { 'pages.write': ALLOWED },
+      answer: () => {
+        throw new RunEndedError(RUN.runId);
+      },
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 66, method: 'tools/call', params: { name: 'pages.write', arguments: { path: 'pages/x.md' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }> } };
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ code: 'run_ended' });
   });
 
   it('tools/list asks about each capability once and does not look the run up again for each', async () => {

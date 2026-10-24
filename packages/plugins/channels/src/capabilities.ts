@@ -16,9 +16,10 @@ import { postChannelMessage, type Deps } from './service.ts';
 
 /** The tool's arguments, exactly as the MCP gateway's catalog describes them to a model. */
 export const PostMessageInput = z.strictObject({
-  channelId: z.uuid(),
+  /** Absent inside a run that has a reply place: the channel the run answers in. */
+  channelId: z.uuid().optional(),
   body: z.string().min(1).max(40_000),
-  /** The thread to reply in: the root message id. Absent posts a new top-level message. */
+  /** The thread to reply in: the root message id. Absent posts a new top-level message, except inside a run (see `runReplyPlace`). */
   threadRootId: z.uuid().nullish(),
 });
 export type PostMessageInput = z.infer<typeof PostMessageInput>;
@@ -31,14 +32,35 @@ export interface PostMessageAnswer {
   threadRootId: string | null;
 }
 
+/** Where the bot run this transaction acts for answers (its own row; a bot reads its live run), or null outside a run or for a run with no reply place. */
+async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: string; replyRootId: string } | null> {
+  const here = (await tx.query<{ run_id: string | null }>(`SELECT app.run_id()::text AS run_id`)).rows[0]?.run_id ?? null;
+  if (here === null) return null;
+  const row = (
+    await tx.query<{ channel_id: string | null; reply_root_id: string | null }>(
+      `SELECT channel_id::text AS channel_id, reply_root_id::text AS reply_root_id FROM app.bot_runs WHERE id = $1::uuid`,
+      [here],
+    )
+  ).rows[0];
+  if (!row?.channel_id || !row.reply_root_id) return null;
+  return { runId: here, channelId: row.channel_id, replyRootId: row.reply_root_id };
+}
+
 export function registerMessageCapabilities(deps: Deps): void {
   const { ctx } = deps;
   ctx.capabilities.register('messages.post', async (input: Record<string, unknown>, tx: PluginTx): Promise<PostMessageAnswer> => {
     const parsed = PostMessageInput.parse(input);
+    const place = await runReplyPlace(tx);
+    const channelId = parsed.channelId ?? place?.channelId;
+    if (channelId === undefined) throw invalid('channelId: name the channel to post in');
+    // Inside a run that answers in a thread, a post to that same channel with no thread belongs in that thread (an explicit thread, or another
+    // channel, is left alone). The message names its run, which is how the runtime knows the run already spoke and posts no second reply.
+    const threadRootId = parsed.threadRootId ?? (place !== null && place.channelId === channelId ? place.replyRootId : null);
     const posted = await postChannelMessage(deps, tx, {
-      channelId: parsed.channelId,
+      channelId,
       body: parsed.body,
-      threadRootId: parsed.threadRootId ?? null,
+      threadRootId,
+      ...(place === null ? {} : { meta: { runId: place.runId } }),
     });
     return { ok: true, messageId: posted.id, channelId: posted.channelId, threadRootId: posted.threadRootId };
   });
@@ -48,7 +70,14 @@ export function registerMessageCapabilities(deps: Deps): void {
  * What the `messages` provider accepts as `meta` (PLAN P5-18): the platform's own bookkeeping, validated here so a plugin cannot store a
  * payload the clients would not read. `answer` is an `AnswerPayload` (the answer plugin stamps it), `runId` the bot run that wrote the message.
  */
-const ProviderMeta = z.strictObject({ answer: AnswerPayload.optional(), runId: z.uuid().optional() });
+const ProviderMeta = z.strictObject({
+  answer: AnswerPayload.optional(),
+  runId: z.uuid().optional(),
+  /** The tasks plugin's mark on the message announcing a card handover: bot routers read the key's presence and start no run from it. */
+  handoff: z.strictObject({ taskId: z.uuid() }).optional(),
+  /** The category of the short notice a failed run leaves in the thread (runtime-hermes): at most one per run, found again by this key. */
+  runFailure: z.enum(['gateway', 'runner_offline', 'timeout', 'limit', 'approval', 'other']).optional(),
+});
 
 /**
  * The `messages` provider: how a plugin posts a message with more than text. It is the same `postChannelMessage` the route and the capability
@@ -159,7 +188,7 @@ export function registerMessageProvider(deps: Deps): void {
           throw invalid('copyOf: a copy of an answer carries meta.answer and no runId');
         }
         await checkAnswerCopy(tx, input.copyOf, meta.data.answer, body.data);
-      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined)) {
+      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined || meta.data.runFailure !== undefined)) {
         const here = (
           await tx.query<{ run_id: string | null; bot_id: string | null }>(
             `SELECT app.run_id()::text AS run_id,
@@ -167,6 +196,7 @@ export function registerMessageProvider(deps: Deps): void {
           )
         ).rows[0];
         const run = here?.run_id ?? null;
+        if (meta.data.runFailure !== undefined && meta.data.runId === undefined) throw invalid('meta.runId: a failure notice names the run it is about');
         if (meta.data.runId !== undefined && (run === null || meta.data.runId !== run)) {
           throw forbidden('meta.runId is the run this transaction acts for, and no other');
         }

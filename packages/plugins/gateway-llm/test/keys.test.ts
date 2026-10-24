@@ -17,7 +17,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import gatewayLlm from '../src/index.ts';
 import { pushLlmConfig } from '../src/config.ts';
-import { botKeyModels, keyPrefix, mintBotKey, newBotKey, revokeBotKey, syncBotKey } from '../src/keys.ts';
+import { botKeyModels, forgetBootHeal, forgetKeyChecks, keyPrefix, mintBotKey, newBotKey, requestKeyCheck, revokeBotKey, syncBotKey } from '../src/keys.ts';
 import { configFingerprint } from '../src/config.ts';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 
@@ -121,8 +121,8 @@ describe('newBotKey', () => {
 });
 
 describe('the gateway queues', () => {
-  it('registers the config, sync-key and reconcile queues under the plugin namespace', () => {
-    expect([...jobs.keys()].sort()).toEqual(['gateway-llm.apply-config', 'gateway-llm.reconcile', 'gateway-llm.sync-key']);
+  it('registers the config, sync-key, reconcile and boot-heal queues under the plugin namespace', () => {
+    expect([...jobs.keys()].sort()).toEqual(['gateway-llm.apply-config', 'gateway-llm.boot-heal', 'gateway-llm.reconcile', 'gateway-llm.sync-key']);
   });
 });
 
@@ -287,13 +287,13 @@ describe('against a proxy', () => {
     await bind(['smart', 'fast', 'code'], { smart: ['fast'] });
     const botId = await sys((tx) => makeBot(tx, 'proxy-probe', ['smart']));
     expect(await sys((tx) => mintBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId))).toBe(true);
-    const registered = [...fake.state.keys.values()].find((k) => k.metadata['bot_id'] === botId);
+    const registered = [...fake.state.keys.values()].find((k) => k.metadata['manythreads_bot'] === botId);
     expect(registered?.models).toEqual(['smart', 'fast']); // not `code`: the workspace's other alias is not this bot's
     expect([...fake.state.keys.values()].every((k) => k.models.length > 0)).toBe(true); // the proxy reads [] as "every model"
 
     await sys((tx) => tx.query('UPDATE app.bots SET model_aliases = $2 WHERE id = $1', [botId, ['smart', 'code']]));
     expect(await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId))).toBe('updated');
-    expect([...fake.state.keys.values()].find((k) => k.metadata['bot_id'] === botId)?.models).toEqual(['smart', 'fast', 'code']);
+    expect([...fake.state.keys.values()].find((k) => k.metadata['manythreads_bot'] === botId)?.models).toEqual(['smart', 'fast', 'code']);
     expect(fake.state.calls.some((c) => c.path === '/key/update')).toBe(true);
   });
 
@@ -327,4 +327,141 @@ describe('against a proxy', () => {
     expect(quiet).toBe(after);
     expect(await sys((tx) => configFingerprint(tx as unknown as PluginTx, omar.workspaceId))).toHaveLength(32);
   });
+  describe('a proxy that lost its keys (replaced, or its database wiped)', () => {
+    const keyOf = async (botId: string): Promise<string> =>
+      sys(async (tx) => {
+        const row = (await tx.query<{ secret_id: string }>('SELECT secret_id FROM app.llm_keys WHERE bot_id = $1', [botId])).rows[0]!;
+        return ctx.secrets.get(tx as unknown as PluginTx, row.secret_id);
+      });
+
+    it('sync registers the SAME key again when the proxy does not know it, and leaves a known key alone', async () => {
+      await bind(['smart']);
+      const botId = await sys((tx) => makeBot(tx, 'lost-key', ['smart']));
+      expect(await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId))).toBe('minted');
+      const key = await keyOf(botId);
+      expect(fake.state.keys.has(key)).toBe(true);
+      // the proxy knows it: nothing to do
+      expect(await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId))).toBe('unchanged');
+
+      fake.state.keys.delete(key); // the proxy is replaced
+      expect(await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId))).toBe('healed');
+      expect(fake.state.keys.get(key)?.models).toEqual(['smart']);
+      expect(await keyOf(botId)).toBe(key); // not rotated: the runtime and the proxy agree on the value they already had
+      expect(await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId))).toBe('unchanged');
+    });
+
+    it('the daily reconcile heals every active bot, one proxy call each', async () => {
+      await bind(['smart']);
+      const a = await sys((tx) => makeBot(tx, 'heal-a', ['smart']));
+      const b = await sys((tx) => makeBot(tx, 'heal-b', ['smart']));
+      for (const id of [a, b]) await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, id));
+      const keys = [await keyOf(a), await keyOf(b)];
+      fake.state.keys.clear();
+      fake.state.calls.length = 0;
+      await runJob('gateway-llm.reconcile', {});
+      for (const k of keys) expect(fake.state.keys.has(k)).toBe(true);
+      const perKey = fake.state.calls.filter((c) => c.path === '/key/update' || c.path === '/key/generate');
+      expect(perKey.filter((c) => c.path === '/key/update').length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('the boot heal does the reconcile once per process start, then does nothing', async () => {
+      await bind(['smart']);
+      const botId = await sys((tx) => makeBot(tx, 'boot-heal', ['smart']));
+      await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId));
+      const key = await keyOf(botId);
+      fake.state.keys.clear();
+      forgetBootHeal();
+      await runJob('gateway-llm.boot-heal', {});
+      expect(fake.state.keys.has(key)).toBe(true);
+      fake.state.keys.clear();
+      fake.state.calls.length = 0;
+      await runJob('gateway-llm.boot-heal', {}); // already healed in this process: no proxy call at all
+      expect(fake.state.calls).toEqual([]);
+      expect(fake.state.keys.has(key)).toBe(false);
+    });
+
+    it('a revoke racing a sync leaves no key at the proxy and no row (both take the per-bot lock)', async () => {
+      await bind(['smart']);
+      const botId = await sys((tx) => makeBot(tx, 'race-revoke', ['smart']));
+      await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId));
+      const key = await keyOf(botId);
+      fake.state.keys.delete(key); // the sync below will have to re-register it
+      const slow = await startFakeLlm({
+        masterKey: 'sk-fake',
+        beforeRespond: async (call) => {
+          if (call.path === '/key/update') await new Promise((r) => setTimeout(r, 400));
+        },
+      });
+      const was = process.env['MANYTHREADS_LITELLM_URL'];
+      process.env['MANYTHREADS_LITELLM_URL'] = slow.url;
+      try {
+        const syncing = sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId));
+        await new Promise((r) => setTimeout(r, 150)); // the sync holds the lock and is waiting on the proxy
+        const revoking = sys((tx) => revokeBotKey(ctx, tx as unknown as PluginTx, botId));
+        await Promise.all([syncing, revoking]);
+        expect(slow.state.keys.has(key)).toBe(false);
+        expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.llm_keys WHERE bot_id = $1', [botId])).rows.length)).toBe(0);
+      } finally {
+        process.env['MANYTHREADS_LITELLM_URL'] = was;
+        await slow.close();
+      }
+    });
+
+    it('one bot that cannot be synced does not stop the others, and the boot heal stays armed', async () => {
+      await bind(['smart']);
+      const bad = await sys((tx) => makeBot(tx, 'heal-bad', ['smart']));
+      const good = await sys((tx) => makeBot(tx, 'heal-good', ['smart']));
+      for (const id of [bad, good]) await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, id));
+      const badKey = await keyOf(bad);
+      const goodKey = await keyOf(good);
+      fake.state.keys.clear();
+      const failing = await startFakeLlm({
+        masterKey: 'sk-fake',
+        beforeRespond: (call) => {
+          const b = call.body as { key?: string } | null;
+          if (call.path === '/key/update' && b?.key === badKey) throw new Error('boom');
+        },
+      });
+      const was = process.env['MANYTHREADS_LITELLM_URL'];
+      process.env['MANYTHREADS_LITELLM_URL'] = failing.url;
+      try {
+        forgetBootHeal();
+        await runJob('gateway-llm.boot-heal', {});
+        expect(failing.state.keys.has(goodKey)).toBe(true);
+        failing.state.calls.length = 0;
+        await runJob('gateway-llm.boot-heal', {}); // not marked done: it tries again
+        expect(failing.state.calls.length).toBeGreaterThan(0);
+      } finally {
+        process.env['MANYTHREADS_LITELLM_URL'] = was;
+        await failing.close();
+      }
+    });
+
+    it('a bot that is not active gets no key check', async () => {
+      const botId = await sys((tx) => makeBot(tx, 'inactive-check', ['smart']));
+      await sys((tx) => tx.query(`UPDATE app.bots SET status = 'disabled' WHERE id = $1`, [botId]));
+      forgetKeyChecks();
+      expect(await sys((tx) => requestKeyCheck(ctx, tx as unknown as PluginTx, botId))).toBe(false);
+    });
+
+    it('a 401 reported for a bot queues one sync (deduplicated, rate-limited), and running it heals the key', async () => {
+      await bind(['smart']);
+      const botId = await sys((tx) => makeBot(tx, 'rejected-key', ['smart']));
+      await sys((tx) => syncBotKey(ctx, tx as unknown as PluginTx, omar.workspaceId, botId));
+      const key = await keyOf(botId);
+      fake.state.keys.clear();
+      forgetKeyChecks();
+      const queued = (): Promise<number> =>
+        sys(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.jobs WHERE queue = 'gateway-llm.sync-key' AND payload ->> 'botId' = $1", [botId])).rows[0]!.n);
+      const before = await queued();
+      expect(await sys((tx) => requestKeyCheck(ctx, tx as unknown as PluginTx, botId))).toBe(true);
+      expect(await sys((tx) => requestKeyCheck(ctx, tx as unknown as PluginTx, botId))).toBe(false); // cooldown
+      forgetKeyChecks();
+      await sys((tx) => requestKeyCheck(ctx, tx as unknown as PluginTx, botId)); // dedupe key: still the one waiting
+      expect((await queued()) - before).toBe(1);
+      await runJob('gateway-llm.sync-key', { workspaceId: omar.workspaceId, botId, action: 'mint' });
+      expect(fake.state.keys.has(key)).toBe(true);
+    });
+  });
+
 });

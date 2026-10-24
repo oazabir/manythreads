@@ -3,6 +3,7 @@ export * from './ids.ts';
 export * from './common/index.ts';
 export * from './entities/index.ts';
 export * from './api/index.ts';
+export * from './runner/protocol.ts';
 export * from './events/index.ts';
 export * from './bot-md/index.ts';
 export * from './tokens.ts';

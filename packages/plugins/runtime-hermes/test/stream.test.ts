@@ -62,3 +62,51 @@ describe('replyText', () => {
     expect(replyText([], null)).toBe('');
   });
 });
+
+describe('refusalReason', () => {
+  it('reads the tool message out of an MCP result and removes links and secrets', async () => {
+    const { refusalReason, parseHermesLine } = await import('../src/stream.ts');
+    const text = JSON.stringify({ ok: false, code: 'forbidden', message: 'not in your handover.mayTag (reviewer) see https://x.test/a?token=abc and sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' });
+    const reason = refusalReason({ content: [{ type: 'text', text }], isError: true });
+    expect(reason).toBe('not in your handover.mayTag (reviewer) see [link] and [hidden]');
+    expect(refusalReason('x'.repeat(500))?.length).toBeLessThanOrEqual(200);
+    expect(refusalReason(undefined)).toBeUndefined();
+    const line = JSON.stringify({ type: 'tool_result', name: 'mcp__manythreads__tasks_handoff', output: text, is_error: true });
+    expect(parseHermesLine(line)).toMatchObject({ type: 'tool_result', ok: false, reason: expect.stringContaining('handover.mayTag') });
+  });
+
+  it('hides key=value secrets, sk- keys, emails, ids, long base64 and links, and stays linear on hostile input', async () => {
+    const { refusalReason } = await import('../src/stream.ts');
+    const dirty = [
+      'password=hunter2 and api_key: abc123',
+      'Authorization: Bearer abcdefgh12345678',
+      'key sk-AbCdEf12 and sk-live_ZZZZ9999',
+      'mail nadia@kahf.co or a.b+c@sub.example.org',
+      'card 018f3c2e-7b1a-7c3d-9e4f-0123456789ab',
+      `blob ${'QUJD'.repeat(20)}==`,
+      'see https://host.internal:4000/v1?x=1',
+    ].join(' | ');
+    const reason = refusalReason(dirty)!;
+    for (const leak of ['hunter2', 'abc123', 'abcdefgh12345678', 'AbCdEf12', 'ZZZZ9999', 'nadia@', 'sub.example', '018f3c2e', 'QUJDQUJD', 'host.internal']) {
+      expect(reason).not.toContain(leak);
+    }
+    for (const kept of ['[link]', '[email]', '[id]', '[hidden]']) expect(reason).toContain(kept);
+    expect(reason.length).toBeLessThanOrEqual(200);
+
+    const hostile = [
+      'a'.repeat(300_000),
+      'key='.repeat(60_000),
+      '-'.repeat(300_000),
+      'a@'.repeat(100_000),
+      `${'0123456789abcdef-'.repeat(20_000)}`,
+      'http://'.repeat(50_000),
+      ' '.repeat(300_000) + 'x',
+      'bearer'.concat(' '.repeat(200_000)),
+    ];
+    for (const input of hostile) {
+      const started = performance.now();
+      refusalReason(input);
+      expect(performance.now() - started).toBeLessThan(250);
+    }
+  });
+});

@@ -73,7 +73,7 @@ export async function classify(ctx: PluginContext, tx: PluginTx, rate: RateHit, 
       system: request.system,
       user: decision.text,
       maxTokens: request.maxTokens,
-      metadata: { workspace_id: request.workspaceId, ...(request.botId ? { bot_id: request.botId } : {}), purpose: 'gate' },
+      metadata: { manythreads_workspace: request.workspaceId, ...(request.botId ? { manythreads_bot: request.botId } : {}), purpose: 'gate' },
       ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
     });
     await recordSpend(tx, {

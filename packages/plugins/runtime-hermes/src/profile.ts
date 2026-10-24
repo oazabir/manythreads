@@ -1,4 +1,6 @@
 import type { BotRuntimeInput, BotRuntimeProfile } from '@manythreads/sdk';
+import { hermesChatArgs } from '@manythreads/sdk/process';
+import { hermesToolsets } from './toolsets.ts';
 
 // The profile a Hermes run executes in (SPEC §7.1, §10.2; PLAN P5-10: "render profile from BOT.md (body is SOUL.md)").
 //
@@ -57,7 +59,12 @@ export function renderConfig(input: BotRuntimeInput): string {
     '  provider: "manythreads"',
     `  default: ${scalar(alias)}`,
   ];
-  if (effort) lines.push('agent:', `  reasoning_effort: ${scalar(effort)}`);
+  // The definition's grant, as tools (toolsets.ts): the profile says what the process may do, and the rest is disabled by name.
+  const toolsets = hermesToolsets(input.definition.frontmatter.capabilities?.runtime);
+  lines.push('platform_toolsets:', `  cli: [${toolsets.enabled.map(scalar).join(', ')}]`);
+  lines.push('agent:');
+  if (effort) lines.push(`  reasoning_effort: ${scalar(effort)}`);
+  lines.push(`  disabled_toolsets: [${toolsets.disabled.map(scalar).join(', ')}]`);
   lines.push(
     'providers:',
     '  manythreads:',
@@ -90,8 +97,5 @@ export function renderProfile(input: BotRuntimeInput): BotRuntimeProfile {
 
 /** The argv after the binary (and any prefix): one one-shot turn, structured JSONL on stdout, the query on stdin. */
 export function chatArgs(input: BotRuntimeInput): string[] {
-  const args = ['chat', '--query-file', '-', '--oneshot', '--format', 'stream-json'];
-  if (input.limits.runBudgetSeconds !== null) args.push('--run-budget', String(input.limits.runBudgetSeconds));
-  if (input.limits.maxTurns !== null) args.push('--max-turns', String(input.limits.maxTurns));
-  return args;
+  return hermesChatArgs(input.limits);
 }

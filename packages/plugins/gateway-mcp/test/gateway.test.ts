@@ -109,6 +109,23 @@ beforeAll(async () => {
   await grant('knowledge.search', false);
   await grant('pages.write', true);
   await grant('tasks.create', false);
+  await world.system((tx) =>
+    tx.query(
+      `INSERT INTO app.capability_grants (team_id, actor_id, capability, constraints) VALUES ($1, $2, 'tasks.handoff', '{"mayTag":["reviewer"]}')`,
+      [teamId, bot.actorId],
+    ),
+  );
+  // A second bot of the team, whom the first may hand cards to (and a third it may not).
+  for (const slug of ['reviewer', 'stranger']) {
+    await world.system(async (tx) => {
+      const b = await tx.query<{ id: string }>(
+        `INSERT INTO app.bots (workspace_id, team_id, slug, kind, runtime, visibility, definition_sha, status) VALUES ($1, $2, $3, 'agent', 'rules', 'team', repeat('d', 64), 'active') RETURNING id`,
+        [omar.workspaceId, teamId, slug],
+      );
+      const a = await tx.query<{ id: string }>("INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id", [omar.workspaceId, b.rows[0]!.id]);
+      await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')`, [teamId, a.rows[0]!.id, omar.workspaceId]);
+    });
+  }
 
   const minted = await world.call(omar, 'POST', '/api/teams/engineering/bots/mcpgateway/pairing-tokens', {});
   expect(minted.status, JSON.stringify(minted.body)).toBe(201);
@@ -229,12 +246,46 @@ describe('gateway-mcp endpoint', () => {
       method: 'tools/call',
       params: { name: 'tasks.create', arguments: { title: '', branch: 'fix/upload-retry' } },
     });
-    // A tool's own refusal is an answer the model can read and retry, not a transport failure: only the broker's refusals carry `isError`.
+    // A tool's own refusal is an answer the model can read and retry (the reason is in the content), not a transport failure; it is marked
+    // `isError` so the client (and the runtime's log) sees a failed call rather than a success.
     const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
-    expect(result.isError).toBeUndefined();
+    expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'invalid_input' });
     const after = await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.tasks WHERE team_id = $1', [teamId])).rows[0]!.n);
     expect(after).toBe(before);
+  });
+
+  it('a bot that was handed a card by a person hands it on by tool, naming the bot by slug (live: the slug in toActorId threw, with no reason)', async () => {
+    const created = await world.call(omar, 'POST', '/api/teams/engineering/tasks', { title: 'Pad the cents', branch: 'fix/pad-cents', kind: 'code', priority: 'normal' });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = (created.body as { task: { id: string } }).task.id;
+    const handed = await world.call(omar, 'POST', `/api/teams/engineering/tasks/${id}/handoff`, { toBotSlug: 'mcpgateway', mode: 'bot', note: 'build it' });
+    expect(handed.status, JSON.stringify(handed.body)).toBe(200);
+    const tool = async (args: Record<string, unknown>) => {
+      const res = await callRunUrl(run, { jsonrpc: '2.0', id: 90, method: 'tools/call', params: { name: 'tasks.handoff', arguments: { taskId: id, ...args } } });
+      const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+      return { isError: result.isError, answer: JSON.parse(result.content[0]!.text) as { ok: boolean; code?: string; message?: string } };
+    };
+    const owner = () => world.system(async (tx) => (await tx.query<{ owner: string }>('SELECT a.ref_id::text AS owner FROM app.tasks t JOIN app.actors a ON a.id = t.owner_id WHERE t.id = $1::uuid', [id])).rows[0]?.owner);
+
+    // Refusals say what to do instead, and arrive as failed calls.
+    const outside = await tool({ toBotSlug: 'stranger' });
+    expect(outside.isError).toBe(true);
+    expect(outside.answer).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(outside.answer.message).toContain('handover.mayTag');
+    const missing = await tool({});
+    expect(missing).toMatchObject({ isError: true, answer: { ok: false, code: 'invalid_input' } });
+    expect(missing.answer.message).toContain('toBotSlug');
+    const unknown = await tool({ toBotSlug: 'nobody' });
+    expect(unknown.answer).toMatchObject({ ok: false, code: 'not_found' });
+    expect(await owner()).toBe(bot.botId);
+
+    // A slug in the wrong field still works.
+    const done = await tool({ toActorId: 'reviewer', note: 'please review' });
+    expect(done.isError, JSON.stringify(done)).toBeFalsy();
+    expect(done.answer.ok).toBe(true);
+    const row = await world.system(async (tx) => (await tx.query<{ slug: string }>('SELECT b.slug FROM app.tasks t JOIN app.actors a ON a.id = t.owner_id JOIN app.bots b ON b.id = a.ref_id WHERE t.id = $1::uuid', [id])).rows[0]);
+    expect(row?.slug).toBe('reviewer');
   });
 
   it('a tool with no grant is refused and the denial is audited', async () => {

@@ -1,0 +1,33 @@
+# One manythreads runner per team on this host (SPEC §7.4: one runner, one team). The instance name is the team's runner name:
+#
+#   systemctl enable --now manythreads-runner@engineering.service
+#
+# It reads two files you create first (docs/plugins/runners.md, "Install on a host"):
+#   /etc/manythreads/runner-%i.env     the settings (MANYTHREADS_RUNNER_SERVER=…, MANYTHREADS_RUNNER_NAME=%i, the workspace root, …)
+#   /etc/manythreads/runner-%i.token   the runner token, mode 0600, owned by the user that runs this unit
+#
+# The program is run from a checkout of the repository (WorkingDirectory) with `tsx`; there is no build step. To use another checkout or
+# user, add a drop-in (`systemctl edit manythreads-runner@engineering`) that sets WorkingDirectory=, User= and an empty `ExecStart=` followed
+# by the new one.
+[Unit]
+Description=manythreads runner (%i)
+Documentation=file:///root/manythreads/docs/plugins/runners.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/manythreads
+EnvironmentFile=/etc/manythreads/runner-%i.env
+Environment=MANYTHREADS_RUNNER_TOKEN_FILE=/etc/manythreads/runner-%i.token
+ExecStart=/root/manythreads/node_modules/.bin/tsx packages/runner/src/main.ts
+# SIGTERM stops the running jobs (their process groups) and disconnects; give them time to wind down before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=90
+Restart=always
+RestartSec=5
+# The agent and its tools are children of the runner: when the unit stops, nothing they started stays behind.
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

@@ -9,6 +9,7 @@
     "handed_off",
     "completed",
     "reworked",
-    "deployed"
+    "deployed",
+    "not_woken"
   ]
 }

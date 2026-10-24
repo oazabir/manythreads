@@ -46,6 +46,8 @@ export const PROVIDER_KINDS = [
   'approvals',
   /** The one path a channel message is written on (channels plugin): `MessageProvider` in ./messages.ts. */
   'messages',
+  /** The connected runners of a team, and the one way to send a job to one (runners plugin): `RunnerDoor` in ./runner.ts. */
+  'runner',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

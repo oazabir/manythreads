@@ -772,6 +772,43 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  packages/plugins/runners:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      '@types/ws':
+        specifier: ^8
+        version: 8.18.2
+      pg:
+        specifier: ^8
+        version: 8.23.1
+      ws:
+        specifier: ^8
+        version: 8.22.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   packages/plugins/runtime-hermes:
     dependencies:
       '@manythreads/sdk':
@@ -990,6 +1027,34 @@ importers:
       pg:
         specifier: ^8
         version: 8.23.1
+
+  packages/runner:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../shared
+      tsx:
+        specifier: ^4
+        version: 4.23.15
+      ws:
+        specifier: ^8
+        version: 8.22.0
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      '@types/ws':
+        specifier: ^8
+        version: 8.18.2
 
   packages/sdk:
     dependencies:
