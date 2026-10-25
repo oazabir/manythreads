@@ -62,10 +62,20 @@ describe('renderGatewayProfile', () => {
 
   it('turns capabilities.runtime into the profile toolsets, and the ssh terminal the shell runs in', () => {
     const yaml = parseYaml(renderGatewayProfile(definition(), input())['config.yaml']) as Record<string, any>;
-    expect(yaml['platform_toolsets']['api_server']).toEqual(['terminal', 'file']);
+    // with an ssh terminal the files are in the workbench: Hermes' own file tools would write the wrong disk, so the shell is the file tool
+    expect(yaml['platform_toolsets']['api_server']).toEqual(['terminal']);
+    expect(yaml['agent']['disabled_toolsets']).toContain('file');
     expect(yaml['agent']['disabled_toolsets']).not.toContain('terminal');
     expect(yaml['agent']['disabled_toolsets']).toContain('browser');
     expect(yaml['terminal']).toEqual({ backend: 'ssh', ssh_host: 'dev-box.internal', ssh_user: 'hermes', cwd: '/workspace/engineering' });
+  });
+
+  it('leaves the file tools out on a team pod even when the pod adds the terminal itself, and keeps them where files are local', () => {
+    const pod = parseYaml(renderGatewayProfile(definition(), input({ terminal: undefined as never, filesInWorkbench: true }))['config.yaml']) as Record<string, any>;
+    expect(pod['platform_toolsets']['api_server']).toEqual(['terminal']);
+    expect(pod['agent']['disabled_toolsets']).toContain('file');
+    const local = parseYaml(renderGatewayProfile(definition(), input({ terminal: undefined as never }))['config.yaml']) as Record<string, any>;
+    expect(local['platform_toolsets']['api_server']).toEqual(['terminal', 'file']);
   });
 
   it('renders no terminal block when none is given, and is byte-stable', () => {

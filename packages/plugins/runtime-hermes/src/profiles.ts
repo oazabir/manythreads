@@ -76,6 +76,7 @@ export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, en
               botSlug: bot.slug,
               mcpUrl: mcpUrlOf(env.serverUrl),
               mcpTokenVar: GATEWAY_ENV.mcpToken,
+              filesInWorkbench: true,
               model: { baseUrl: env.llmUrl, apiKeyVar: GATEWAY_ENV.llmKey, alias: definition.alias },
               ...(wantsShell && env.terminal ? { terminal: { backend: 'ssh' as const, ...env.terminal } } : {}),
             },
