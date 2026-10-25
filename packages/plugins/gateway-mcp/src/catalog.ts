@@ -59,6 +59,17 @@ const MESSAGES_POST_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const MESSAGES_UPDATE_SCHEMA = {
+  type: 'object',
+  properties: {
+    channelId: { type: 'string', description: 'The channel the message is in; leave it out for the channel you were asked in.' },
+    messageId: { type: 'string', description: 'The id of a message you posted yourself (messages.post returns it).' },
+    body: { type: 'string', maxLength: 40_000, description: 'The new text. It replaces the whole message.' },
+  },
+  required: ['messageId', 'body'],
+  additionalProperties: false,
+} as const;
+
 const PAGES_WRITE_SCHEMA = {
   type: 'object',
   properties: {
@@ -188,6 +199,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     description:
       'Post a message into a channel of the team, as yourself. In the channel you were asked in it lands in the thread you were asked in (unless you name another thread). Posting is optional for your answer: the platform posts your final reply there for you, and posts nothing extra if you already posted a message yourself, so use this only for something beyond the answer.',
     inputSchema: MESSAGES_POST_SCHEMA,
+    kind: 'write',
+  },
+  'messages.update': {
+    name: 'messages.update',
+    description:
+      'Replace the text of a message you posted yourself, for example a checklist you keep current in a thread instead of posting a new one each time. Only your own messages can be edited. An edit never notifies or wakes anyone: people or bots named in the new text are not mentioned by it, so post a new message to hand something over.',
+    inputSchema: MESSAGES_UPDATE_SCHEMA,
     kind: 'write',
   },
   'answer.post': {

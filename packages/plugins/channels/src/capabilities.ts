@@ -2,7 +2,7 @@ import type { MessagePostInput as ProviderPostInput, MessagePosted, MessageProvi
 import { AnswerPayload, isSubsequence } from '@manythreads/shared';
 import { z } from 'zod';
 import { forbidden, invalid } from './http.ts';
-import { postChannelMessage, type Deps } from './service.ts';
+import { editChannelMessage, postChannelMessage, type Deps } from './service.ts';
 
 // What a bot may do with channel messages (SPEC §7.1 lists `messages.*` among a bot's native capabilities; PLAN P5-10). A
 // capability is how one plugin calls another's behaviour — plugins never import each other — so the reply a runtime posts
@@ -23,6 +23,18 @@ export const PostMessageInput = z.strictObject({
   threadRootId: z.uuid().nullish(),
 });
 export type PostMessageInput = z.infer<typeof PostMessageInput>;
+
+/**
+ * `messages.update`: replace the text of a message the bot posted itself (a checklist it keeps current). Same length limit as a post.
+ * An edit never wakes anyone: mentions and links are not re-read, so a name added by an edit is plain text.
+ */
+export const UpdateMessageInput = z.strictObject({
+  /** Absent inside a run that has a reply place: the channel the run answers in. */
+  channelId: z.uuid().optional(),
+  messageId: z.uuid(),
+  body: z.string().min(1).max(40_000),
+});
+export type UpdateMessageInput = z.infer<typeof UpdateMessageInput>;
 
 /** The answer: ids, never the message text back (the run already knows what it wrote). */
 export interface PostMessageAnswer {
@@ -63,6 +75,15 @@ export function registerMessageCapabilities(deps: Deps): void {
       ...(place === null ? {} : { meta: { runId: place.runId } }),
     });
     return { ok: true, messageId: posted.id, channelId: posted.channelId, threadRootId: posted.threadRootId };
+  });
+  // Only the bot's own messages (editChannelMessage refuses any other author), audited as `channel.message.edited` like a person's edit and
+  // pushed live as `message.edited`. Mentions are not re-read (`syncRefs: false`): an edit notifies and wakes nobody.
+  ctx.capabilities.register('messages.update', async (input: Record<string, unknown>, tx: PluginTx): Promise<PostMessageAnswer> => {
+    const parsed = UpdateMessageInput.parse(input);
+    const channelId = parsed.channelId ?? (await runReplyPlace(tx))?.channelId;
+    if (channelId === undefined) throw invalid('channelId: name the channel the message is in');
+    const edited = await editChannelMessage(deps, tx, { channelId, messageId: parsed.messageId, body: parsed.body, syncRefs: false });
+    return { ok: true, messageId: edited.id, channelId: edited.channelId, threadRootId: edited.threadRootId };
   });
 }
 

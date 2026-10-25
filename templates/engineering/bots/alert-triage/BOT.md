@@ -37,9 +37,14 @@ approvals:
 handover:
   mayTag:
     - coder
-    - deploy
+    - deployer
   toPerson:
     - role:on-call
+placement:
+  gateway:
+    connection: managed
+limits:
+  timeoutSeconds: 1200
 evals:
   set: alert-triage
   minScore: 1

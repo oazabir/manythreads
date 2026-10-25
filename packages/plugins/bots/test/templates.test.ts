@@ -231,8 +231,9 @@ describe('every shipped definition', () => {
         'customer-support/support-responder',
         'engineering/alert-triage',
         'engineering/brain',
+        'engineering/browser-tester',
         'engineering/coder',
-        'engineering/deploy',
+        'engineering/deployer',
         'engineering/orchestrator',
         'engineering/reviewer',
         'engineering/standup-relay',
@@ -360,10 +361,11 @@ describe('every shipped definition', () => {
     const drafter = shipped.find((x) => x.slug === 'content-drafter')!;
     expect(drafter.fm.capabilities?.native).toContain('pages.write');
     expect(drafter.fm.capabilities?.native).not.toContain('files.write');
+    // the engineering Coder works through git in the team's Hermes pod (a branch it pushes), so it holds no repository write that waits for approval
     const coder = shipped.find((x) => x.slug === 'coder')!;
-    expect(coder.fm.capabilities?.native).toContain('files.write');
-    expect(coder.fm.approvals?.needsApproval).toEqual(['files.write']);
-    expect(coder.fm.handover?.mayTag).toEqual(['reviewer', 'tester']);
+    expect(coder.fm.capabilities?.native).not.toContain('files.write');
+    expect(coder.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
+    expect(coder.fm.handover?.mayTag).toEqual(['reviewer', 'tester', 'orchestrator']);
   });
 
   it('the engineering pipeline: Orchestrator plans and hands over, and has no tool that writes, tests or ships', () => {
@@ -375,16 +377,18 @@ describe('every shipped definition', () => {
       'tasks.create',
       'tasks.handoff',
       'messages.post',
+      'messages.update',
       'messages.search',
       'files.search',
       'knowledge.search',
       'memory.recall',
+      'memory.retain',
     ]);
     // It creates cards and hands them out; it never edits a file, writes a page or requests a deploy.
     for (const forbidden of ['files.write', 'pages.write', 'tasks.deploy', 'tasks.complete']) {
       expect(orchestrator.fm.capabilities?.native, forbidden).not.toContain(forbidden);
     }
-    expect(orchestrator.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'tester', 'deploy', 'alert-triage']);
+    expect(orchestrator.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'tester', 'deployer', 'browser-tester', 'brain', 'alert-triage']);
     expect(orchestrator.fm.evals).toEqual({ set: 'orchestrator', minScore: 0.9 });
   });
 
@@ -396,21 +400,36 @@ describe('every shipped definition', () => {
       expect(s.fm.capabilities?.native, s.slug).not.toContain('files.write');
       expect(s.fm.capabilities?.native, s.slug).not.toContain('pages.write');
     }
-    // The reviewer reads the diff but runs nothing; the tester runs the suite and is the one that records a tested commit.
-    expect(reviewer.fm.capabilities?.runtime).toEqual(['files', 'git']);
+    // Both run the project's tests in the pod's shell; the tester is the one that records a tested commit and passes the build on to Deployer.
+    expect(reviewer.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
     expect(tester.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
-    expect(reviewer.fm.handover?.mayTag).toEqual(['coder', 'tester']);
-    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'reviewer']);
+    expect(reviewer.fm.handover?.mayTag).toEqual(['coder', 'tester', 'orchestrator']);
+    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'deployer', 'orchestrator']);
+    expect(tester.fm.limits?.timeoutSeconds).toBe(2400);
     expect(tester.body).toContain('tested sha');
   });
 
-  it('Deploy can only request a release: every release in its file waits for a person, and it holds no write tool', () => {
-    const deploy = shipped.find((s) => s.slug === 'deploy')!;
-    expect(deploy.fm.capabilities?.native).toContain('tasks.deploy');
-    expect(deploy.fm.approvals?.needsApproval).toEqual(['tasks.deploy']);
-    expect(deploy.fm.evals).toEqual({ set: 'deploy', minScore: 1 });
-    for (const unwelcome of ['files.write', 'pages.write', 'tasks.handoff']) expect(deploy.fm.capabilities?.native, unwelcome).not.toContain(unwelcome);
-    expect(deploy.body).toContain('You never claim a deploy succeeded');
+  it('the engineering chain runs on the team’s pod: every agent bot is placed on the managed gateway, and the preview chain is wired', () => {
+    for (const s of shipped.filter((x) => x.template.id === 'engineering' && x.fm.kind === 'agent')) {
+      expect(s.fm.placement?.gateway, s.slug).toEqual({ connection: 'managed' });
+    }
+    const deployer = shipped.find((s) => s.slug === 'deployer')!;
+    expect(deployer.fm.capabilities?.native).not.toContain('tasks.deploy');
+    expect(deployer.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
+    expect(deployer.fm.limits?.timeoutSeconds).toBe(2400);
+    expect(deployer.fm.handover?.mayTag).toEqual(['browser-tester', 'tester', 'coder', 'orchestrator']);
+    expect(deployer.fm.evals).toEqual({ set: 'deployer', minScore: 0.9 });
+    expect(deployer.body).toContain('deploy/preview/README.md');
+    expect(deployer.body).toContain('test.manythreads.kahf.to');
+    const browser = shipped.find((s) => s.slug === 'browser-tester')!;
+    expect(browser.fm.capabilities?.runtime).toEqual(['shell', 'files', 'browser']);
+    expect(browser.fm.handover?.mayTag).toEqual(['deployer', 'coder', 'orchestrator']);
+    expect(browser.fm.triggers?.map((t) => t.type)).toEqual(['task_assigned', 'mention', 'conversation']);
+    for (const slug of ['coder', 'tester', 'deployer']) {
+      expect(shipped.find((s) => s.slug === slug)!.fm.limits?.timeoutSeconds, slug).toBeGreaterThanOrEqual(1800);
+    }
+    // the Orchestrator keeps one checklist current by editing its own message
+    expect(shipped.find((s) => s.slug === 'orchestrator')!.body).toContain('messages.update');
   });
 
   it('Alert triage turns a batch into an owned card, and Standup relay is the automation that posts the summary', () => {
@@ -418,7 +437,7 @@ describe('every shipped definition', () => {
     const relay = shipped.find((s) => s.slug === 'standup-relay')!;
     expect(triage.fm.capabilities?.native).toEqual(expect.arrayContaining(['tasks.create', 'tasks.handoff']));
     expect(triage.fm.capabilities?.native).not.toContain('tasks.deploy');
-    expect(triage.fm.handover?.mayTag).toEqual(['coder', 'deploy']);
+    expect(triage.fm.handover?.mayTag).toEqual(['coder', 'deployer']);
     expect(relay.fm.kind).toBe('automation');
     expect(relay.fm.capabilities?.native).toEqual(['tasks.read', 'messages.post', 'messages.search', 'files.search', 'knowledge.search', 'memory.recall']);
     // It is the only template bot woken by a schedule; every other trigger is a person's message.

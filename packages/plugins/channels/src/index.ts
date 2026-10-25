@@ -19,7 +19,11 @@ export default definePlugin({
     extends: ['event.emit', 'event.subscribe', 'provider.messages'],
     // `messages.post` (PLAN P5-10): how a bot's runtime posts a reply into a thread. Not destructive — it adds a message like
     // any other — and `messages.search` stays the search plugin's (it owns the index).
-    capabilities: [{ name: 'messages.post', destructive: false }],
+    capabilities: [
+      { name: 'messages.post', destructive: false },
+      // `messages.update`: a bot edits a message it posted itself (a checklist kept current); never wakes anyone.
+      { name: 'messages.update', destructive: false },
+    ],
     events: {
       emits: [
         'channel.message.posted',

@@ -1,7 +1,7 @@
 # Source: SPEC-FINAL §13 (Engineering row), §5.3; prototype #onboarding Step 5 · Teams.
 id: engineering
 name: Engineering
-description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that code, review, test and deploy.
+description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that code, review, test, deploy to a preview and test the running site in a browser.
 version: 1
 channels:
   - name: "#general"
@@ -35,9 +35,12 @@ bots:
   - slug: tester
     name: Tester
     role: "Writes and runs tests, verifies a change before it moves to Done."
-  - slug: deploy
-    name: Deploy
-    role: "Ships releases; production deploys wait for a person."
+  - slug: deployer
+    name: Deployer
+    role: "Deploys a tested commit into the team's preview namespace in k3s and gets it ready for browser testing."
+  - slug: browser-tester
+    name: Browser tester
+    role: "Tests the deployed site in a real headless browser and reports what it saw."
   - slug: standup-relay
     name: Standup relay
     role: "Collects updates and posts the daily standup."

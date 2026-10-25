@@ -42,7 +42,7 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 
 | Template | Definitions | Scenario sets |
 |---|---|---|
-| Engineering | Brain, Orchestrator, Coder, Reviewer, Tester, Deploy, Alert triage, Standup relay | `brain`, `orchestrator`, `reviewer`, `tester`, `deploy`, `alert-triage`, `standup-relay` |
+| Engineering | Brain, Orchestrator, Coder, Reviewer, Tester, Deployer, Browser tester, Alert triage, Standup relay | `brain`, `orchestrator`, `reviewer`, `tester`, `deployer`, `alert-triage`, `standup-relay` |
 | Customer support | Brain, Support responder | `brain` |
 | Marketing | Brain, Content drafter | `brain` |
 | Research | Brain | `brain` |
@@ -186,6 +186,30 @@ message of a channel.
   message in #standup, under `standup-relay`'s eval set, which refuses an invented update and a private conversation's words.
 * **Gates.** Deploy repeats Coder's credential-rotation and production-deletion patterns; the other four ship none, because their channels are
   where a person already decides what they see. Every pattern is stage-one only, and no example question of a bot is held by its own list.
+
+## The preview chain (Engineering)
+
+The comparison table above describes the first version of the pipeline. The Engineering template now runs end to end on the team's own Hermes
+pod (Hermes is the agent program the bots run on): every agent bot is placed on the managed gateway (`placement.gateway.connection: managed`),
+so a team made from the template needs no gateway of its own. The flow, asked in a project channel:
+
+1. **Orchestrator** creates the cards (`tasks.create`), posts one checklist message in the thread (each step, owner, status) and keeps it
+   current with `messages.update` whenever a card is done or handed back (an edit wakes nobody, so it hands cards over with `tasks.handoff`).
+   It records decisions with `memory.retain` and ends with a summary. It may hand to every bot of the team.
+2. **Coder** writes the change and its test on the card's branch in `~/<project>` (the pod's repository of record is
+   `/workspace/repos/<project>.git`) and hands to **Reviewer**, who reads the diff and runs the tests, then to **Tester**, who builds the
+   project and runs its own test suite at the exact commit and states the commands and results. Tester's `tasks.complete` records the tested sha.
+3. **Deployer** takes the tested commit and follows `deploy/preview/README.md` of the project's repository: images are built in the
+   cluster, the chart is installed into the team's preview namespace, the rollout and `/healthz` are checked, the ingress for
+   `test.manythreads.kahf.to` is set, test accounts are created with the admin command line, and the URL and account emails (never
+   passwords) are retained in memory. It hands to **Browser tester** with the URL and credentials in the handoff note.
+4. **Browser tester** (runtime tools `shell`, `files`, `browser`) recalls the address and accounts, writes a Playwright test for headless
+   Chromium that signs in and exercises the changed feature, posts what it saw with screenshot file names, then completes the card or
+   hands it back to Coder (or to Deployer when the environment, not the change, is broken).
+
+Time limits are generous for the slow steps: Coder 1800 s, Tester and Deployer 2400 s, Browser tester 1800 s. Every bot recalls from and
+retains to the team's shared memory. Deployer holds no `tasks.deploy`: the preview namespace is a test sandbox, and production releases are
+not part of this template's flow.
 
 ## The three minimal bots
 

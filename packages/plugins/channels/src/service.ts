@@ -290,3 +290,54 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
   await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
   return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push };
 }
+
+/** What editing one message needs. */
+export interface EditMessageInput {
+  channelId: string;
+  messageId: string;
+  body: string;
+  /**
+   * Bring the message's mentions and links in line with the new text (a person's edit). A bot's edit passes false: the mentions and links the
+   * message was posted with stay as they were, a name added later is plain text, and nobody is notified or woken.
+   */
+  syncRefs: boolean;
+}
+
+/**
+ * Replace the text of one of the caller's own messages — **the one path a channel message is edited on**: the edit route and the
+ * `messages.update` capability both call it, so the permission, the `channel.message.edited` event and the live push are the same.
+ * The caller is `app.actor()`: only the author may edit, a deleted message and an Answer cannot be edited.
+ */
+export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMessageInput): Promise<ChannelMessage> {
+  const { channelId, messageId, body } = input;
+  const channel = await requireChannel(tx, channelId);
+  const current = await findChannelMessage(tx, channelId, messageId);
+  if (!current) throw notFound('No such message');
+  if (current.authorId !== tx.actor.id) throw forbidden('You can only edit your own messages');
+  if (current.deletedAt) throw conflict('That message was deleted');
+  if (current.body === body) return current;
+  // An answer's text is the payload's `body` (the Answer is drawn from it, and a shared copy was checked against its original): editing the
+  // message would make the two differ, so a message that carries an Answer is deleted and shared again, never edited.
+  const isAnswer = (await tx.query<{ answer: boolean }>("SELECT meta ? 'answer' AS answer FROM app.messages WHERE id = $1", [messageId])).rows[0]?.answer;
+  if (isAnswer === true) throw conflict('An answer cannot be edited. Delete it and share the answer again.');
+  await requirePost(tx, channel);
+  const res = await tx.query(
+    `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now() WHERE id = $1 AND channel_id = $2 RETURNING id`,
+    [messageId, channelId, body, toPlainText(body)],
+  );
+  if (res.rows.length === 0) throw forbidden('You cannot edit this message');
+  await deps.ctx.audit.emit(tx, {
+    type: 'channel.message.edited',
+    channelId,
+    teamId: channel.team_id,
+    messageId,
+    editorId: tx.actor.id,
+    threadRootId: current.threadRootId,
+  });
+  const edited = (await findChannelMessage(tx, channelId, messageId))!;
+  await pushMessage(deps, tx, await audience(tx, channelId), 'message.edited', edited);
+  if (input.syncRefs) {
+    await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId }, 'edit');
+  }
+  return edited;
+}

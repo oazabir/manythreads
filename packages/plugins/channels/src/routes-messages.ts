@@ -22,10 +22,8 @@ import {
   postMessageRoute,
   reactRoute,
   unreactRoute,
-  toPlainText,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, json, notFound, route } from './http.ts';
-import { syncMessageRefs } from './mentions.ts';
 import {
   MESSAGE_COLUMNS,
   toChannelMessage,
@@ -38,10 +36,10 @@ import {
   audience,
   can,
   findChannelMessage,
-  pushMessage,
   pushMessageDeleted,
   pushReaction,
   reactionsFor,
+  editChannelMessage,
   postChannelMessage,
   requireChannel,
   requirePost,
@@ -123,34 +121,8 @@ export function registerMessageRoutes(deps: Deps): void {
     handler: route(async (req, tx) => {
       const { channelId, messageId } = MessagePathParams.parse(req.params);
       const { body } = EditMessageRequest.parse(req.body);
-      const channel = await requireChannel(tx, channelId);
-      const current = await findChannelMessage(tx, channelId, messageId);
-      if (!current) throw notFound('No such message');
-      if (current.authorId !== tx.actor.id) throw forbidden('You can only edit your own messages');
-      if (current.deletedAt) throw conflict('That message was deleted');
-      if (current.body === body) return json(EditMessageResponse.parse(current));
-      // An answer's text is the payload's `body` (the Answer is drawn from it, and a shared copy was checked against its original): editing the
-      // message would make the two differ, so a message that carries an Answer is deleted and shared again, never edited.
-      const isAnswer = (await tx.query<{ answer: boolean }>("SELECT meta ? 'answer' AS answer FROM app.messages WHERE id = $1", [messageId])).rows[0]?.answer;
-      if (isAnswer === true) throw conflict('An answer cannot be edited. Delete it and share the answer again.');
-      await requirePost(tx, channel);
-      const res = await tx.query(
-        `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now() WHERE id = $1 AND channel_id = $2 RETURNING id`,
-        [messageId, channelId, body, toPlainText(body)],
-      );
-      if (res.rows.length === 0) throw forbidden('You cannot edit this message');
-      await emit(tx, {
-        type: 'channel.message.edited',
-        channelId,
-        teamId: channel.team_id,
-        messageId,
-        editorId: tx.actor.id,
-        threadRootId: current.threadRootId,
-      });
-      const edited = (await findChannelMessage(tx, channelId, messageId))!;
-      const readers = await audience(tx, channelId);
-      await pushMessage(deps, tx, readers, 'message.edited', edited);
-      await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId }, 'edit');
+      // The write itself is `editChannelMessage` (service.ts) — the same call the `messages.update` capability makes.
+      const edited = await editChannelMessage(deps, tx, { channelId, messageId, body, syncRefs: true });
       return json(EditMessageResponse.parse(edited));
     }),
   });

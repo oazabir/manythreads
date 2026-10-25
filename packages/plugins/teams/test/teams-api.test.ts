@@ -25,15 +25,16 @@ afterAll(async () => {
   await w?.close();
 });
 
-/** The engineering template's bot definitions and scenario sets (P6-12: eight bots, one pipeline). */
+/** The engineering template's bot definitions and scenario sets (P6-12: nine bots, one pipeline). */
 const ENGINEERING_BOT_FILES = [
   'bots/alert-triage/BOT.md',
   'bots/alert-triage/evals/alert-triage.yaml',
   'bots/brain/BOT.md',
   'bots/brain/evals/brain.yaml',
+  'bots/browser-tester/BOT.md',
   'bots/coder/BOT.md',
-  'bots/deploy/BOT.md',
-  'bots/deploy/evals/deploy.yaml',
+  'bots/deployer/BOT.md',
+  'bots/deployer/evals/deployer.yaml',
   'bots/orchestrator/BOT.md',
   'bots/orchestrator/evals/orchestrator.yaml',
   'bots/reviewer/BOT.md',

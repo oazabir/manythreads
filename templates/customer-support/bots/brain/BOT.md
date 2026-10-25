@@ -43,6 +43,9 @@ guard:
   preset: standard
 approvals:
   needsApproval: []
+placement:
+  gateway:
+    connection: managed
 evals:
   set: brain
   minScore: 1

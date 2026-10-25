@@ -172,6 +172,11 @@ message does. The author is the transaction's actor (the run's bot) and the perm
 is a member of its team (the loader writes that row), so it may post in its team's public channels and nowhere else — never a
 private channel, never a DM. `messages.search` stays the search plugin's; this plugin owns the write side only.
 
+
+## `messages.update`
+
+A bot can replace the text of a message it posted itself, for example one checklist it keeps current in a thread instead of posting a new one each time. It takes `{ channelId?, messageId, body }` (the same 1 to 40,000 character limit as a post; `channelId` may be left out inside a run that has a reply place) and answers the message's ids. It goes through `editChannelMessage`, the function the edit route (`PATCH /api/channels/:channelId/messages/:messageId`) also calls, so the author check (only the bot's own message; a person's message or another bot's is refused 403), the `channel.message.edited` event and the live `message.edited` push to clients are the same as for a person's edit. One difference: an edit by a bot never re-reads mentions or links, so a name added in an edit is plain text and nobody is notified or woken; to hand something over, post a new message or hand over a card.
+
 ## The `messages` provider (P5-18)
 
 `ctx.providers.get<MessageProvider>('messages')` (extension point `provider.messages`, type in `packages/sdk/src/messages.ts`) is how
@@ -200,7 +205,7 @@ on the copy. Editing a message that carries an Answer is refused (409): the text
 |---|---|
 | name / version / kind | `channels` / `0.1.0` / `server` |
 | extends | `event.emit`, `event.subscribe`, `provider.messages` |
-| capabilities | `messages.post` (not destructive) |
+| capabilities | `messages.post`, `messages.update` (neither destructive) |
 | events | emits the ten types above, consumes `team.template.applied` |
 | migrations | `migrations` |
 
