@@ -14,7 +14,7 @@ publicUrl: ""
 #   letsencrypt  The cluster is reached directly; cert-manager (installed by deploy.sh in this mode) asks Let's Encrypt for a certificate.
 #                Without `wildcard` it proves ownership by answering a web request on port 80 (HTTP-01, through Traefik). With `wildcard` it must
 #                prove ownership with a DNS record (DNS-01): `dns01` names the DNS provider (only `cloudflare`) and a Secret holding its API token.
-# `wildcard` also covers *.<domain>, the hosts of the apps bots deploy (<app>--<team>.<domain>). In either mode a Traefik TLSStore named `default`
+# `wildcard` also covers *.<domain>, the hosts of the apps bots deploy (<app>--<team>.<domain>); only used with hermesPods.apps.routing=host. In either mode a Traefik TLSStore named `default`
 # then makes the wildcard certificate Traefik's default, so app Ingresses in other namespaces (which cannot read this Secret) get it too.
 tls:
   mode: none            # none | cloudflare | letsencrypt
@@ -265,8 +265,13 @@ hermesPods:
   appTeams: [engineering, marketing, customer-support]
   apps:
     prefix: apps-
-    # Deployed apps are reached at https://<app>--<team>.<host>: ONE label under the host, so one wildcard certificate (`*.<host>`, see `tls`)
-    # covers them all. A wildcard DNS name `*.<host>` must point at the cluster. Empty = `domain`.
+    # How deployed apps are reached.
+    #   path (default)  https://<domain>/apps/<team>/<app>/ on the platform's own host: no wildcard DNS record or certificate. The chart puts a
+    #                   middleware chain in each apps namespace that keeps the platform's cookies from the app and loads the app in a sandbox.
+    #   host            https://<app>--<team>.<host>/: ONE label under the host, so one wildcard certificate (`*.<host>`, see `tls`) covers them
+    #                   all; a wildcard DNS name `*.<host>` must point at the cluster.
+    routing: path
+    # `host` routing only: the domain app hosts live under. Empty = `domain`. (`path` routing always uses `domain`.)
     host: ""
     quota:
       pods: "20"

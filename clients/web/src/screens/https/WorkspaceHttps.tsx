@@ -18,7 +18,7 @@ export function WorkspaceHttps() {
       </p>
       <QueryView q={q}>
         {(h) => {
-          const pattern = appHostPattern(h.appsDomain);
+          const pattern = appHostPattern(h.appsDomain, h.appsRouting);
           return (
             <>
               <section className="box" aria-labelledby="https-now" data-landmark="https-now">

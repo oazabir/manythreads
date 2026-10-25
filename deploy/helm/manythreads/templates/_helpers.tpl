@@ -45,6 +45,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "manythreads.tlsMode" -}}
 {{- if not (regexMatch "^[0-9]+$" (toString .Values.server.trustProxy)) -}}{{ fail (printf "server.trustProxy must be a whole number (got %q)" (toString .Values.server.trustProxy)) }}{{- end -}}
 {{- $t := .Values.tls -}}
+{{- $wc := include "manythreads.wildcard" . -}}
 {{- if not (has $t.mode (list "none" "cloudflare" "letsencrypt")) -}}{{ fail (printf "tls.mode must be none, cloudflare or letsencrypt (got %q)" (toString $t.mode)) }}{{- end -}}
 {{- if eq $t.mode "cloudflare" -}}
 {{- if not (has $t.cloudflare.origin (list "strict" "flexible")) -}}{{ fail (printf "tls.cloudflare.origin must be strict or flexible (got %q)" (toString $t.cloudflare.origin)) }}{{- end -}}
@@ -52,9 +53,9 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- if eq $t.mode "letsencrypt" -}}
 {{- if not (has $t.letsencrypt.server (list "production" "staging")) -}}{{ fail (printf "tls.letsencrypt.server must be production or staging (got %q)" (toString $t.letsencrypt.server)) }}{{- end -}}
-{{- if and $t.wildcard (not (and $t.letsencrypt.dns01 $t.letsencrypt.dns01.provider)) -}}{{ fail "a wildcard Let's Encrypt certificate needs tls.letsencrypt.dns01 (provider and apiTokenSecret); or set tls.wildcard=false" }}{{- end -}}
-{{- if and $t.wildcard (ne $t.letsencrypt.dns01.provider "cloudflare") -}}{{ fail (printf "tls.letsencrypt.dns01.provider must be cloudflare (got %q)" (toString $t.letsencrypt.dns01.provider)) }}{{- end -}}
-{{- if and $t.wildcard (not $t.letsencrypt.dns01.apiTokenSecret) -}}{{ fail "tls.letsencrypt.dns01.apiTokenSecret is required for a wildcard certificate" }}{{- end -}}
+{{- if and $wc (not (and $t.letsencrypt.dns01 $t.letsencrypt.dns01.provider)) -}}{{ fail "a wildcard Let's Encrypt certificate needs tls.letsencrypt.dns01 (provider and apiTokenSecret); or set tls.wildcard=false (or hermesPods.apps.routing=path, which needs no wildcard)" }}{{- end -}}
+{{- if and $wc (ne $t.letsencrypt.dns01.provider "cloudflare") -}}{{ fail (printf "tls.letsencrypt.dns01.provider must be cloudflare (got %q)" (toString $t.letsencrypt.dns01.provider)) }}{{- end -}}
+{{- if and $wc (not $t.letsencrypt.dns01.apiTokenSecret) -}}{{ fail "tls.letsencrypt.dns01.apiTokenSecret is required for a wildcard certificate" }}{{- end -}}
 {{- end -}}
 {{- $t.mode -}}
 {{- end }}
@@ -67,7 +68,19 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 {{- end }}
 
-{{/* Host the deployed apps live under: <app>--<team>.<appsHost>. */}}
+{{/* How deployed apps are reached: `path` (https://<domain>/apps/<team>/<app>/, the default) or `host` (https://<app>--<team>.<appsHost>/). */}}
+{{- define "manythreads.appsRouting" -}}
+{{- $r := .Values.hermesPods.apps.routing | default "path" -}}
+{{- if not (has $r (list "path" "host")) -}}{{ fail (printf "hermesPods.apps.routing must be path or host (got %q)" (toString $r)) }}{{- end -}}
+{{- $r -}}
+{{- end }}
+
+{{/* Non-empty when a wildcard certificate (*.<domain>) is wanted: only `host` routing needs one. */}}
+{{- define "manythreads.wildcard" -}}
+{{- if and .Values.tls.wildcard (eq (include "manythreads.appsRouting" .) "host") }}yes{{ end -}}
+{{- end }}
+
+{{/* Host of the deployed apps. `host` routing: <app>--<team>.<appsHost>. `path` routing: the platform's own domain (apps are paths under it). */}}
 {{- define "manythreads.appsHost" -}}
-{{- .Values.hermesPods.apps.host | default .Values.domain -}}
+{{- if eq (include "manythreads.appsRouting" .) "path" -}}{{ .Values.domain }}{{- else -}}{{ .Values.hermesPods.apps.host | default .Values.domain }}{{- end -}}
 {{- end }}

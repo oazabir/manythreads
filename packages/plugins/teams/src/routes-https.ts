@@ -43,6 +43,7 @@ export function registerHttpsRoutes(ctx: PluginContext): void {
           acmeServer: cfg.acmeServer,
           domain: hostOf(cfg.publicUrl),
           appsDomain: cfg.appsDomain,
+          appsRouting: cfg.appsRouting,
           checks: [publicUrl, wildcard, clientIp, checkProxyMatch(cfg.mode, req.headers)],
           seenAs,
         }),

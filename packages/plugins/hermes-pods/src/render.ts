@@ -20,9 +20,13 @@ export interface PodConfig {
   deployerBot: string;
   /** A team's apps live in the namespace `<appsPrefix><team slug>`; each has its own deployer ServiceAccount (the chart makes them). */
   appsPrefix: string;
+  /** How apps are reached: `path` = https://<appsHost>/apps/<team>/<app>/ (the platform's own host); `host` = https://<app>--<team>.<appsHost>/. */
+  appsRouting: AppsRouting;
   appsHost: string;
   resources: { hermes: Resources; workbench: Resources };
 }
+
+export type AppsRouting = 'path' | 'host';
 
 export interface Resources {
   requests?: Record<string, string>;
@@ -52,6 +56,17 @@ export interface Names {
 /** The team's slug as it appears in names: lowercase letters, digits and dashes, at most 40 characters. */
 export function slugForName(slug: string): string {
   return slug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'team';
+}
+
+/** The public address of a team's app, in the form this install's routing gives it (the chart's admission policy enforces the same shapes). */
+export function appUrlFor(cfg: { appsRouting: AppsRouting; appsHost: string }, team: Team, app: string): string {
+  const t = slugForName(team.slug);
+  return cfg.appsRouting === 'host' ? `https://${app}--${t}.${cfg.appsHost}/` : `https://${cfg.appsHost}/apps/${t}/${app}/`;
+}
+
+/** The address pattern to tell the deployer bot, with `<app>` left for it to fill in. */
+export function appUrlPattern(cfg: { appsRouting: AppsRouting; appsHost: string }, team: Team): string {
+  return appUrlFor(cfg, team, '<app>');
 }
 
 /** The namespace of a team's deployed apps. */
@@ -188,10 +203,25 @@ export function buildKeySecret(cfg: PodConfig, team: Team, names: Names, apiKey:
 }
 
 /** A kubeconfig that signs in as the `deployer` ServiceAccount of the apps namespace and does nothing else (`token` is that account's own). */
-export function buildDeployerKubeconfig(input: { token: string; caPem: string; appsNamespace: string; server?: string }): string {
+export function buildDeployerKubeconfig(input: { token: string; caPem: string; appsNamespace: string; server?: string; appUrlPattern?: string; appsRouting?: AppsRouting }): string {
   const server = input.server ?? 'https://kubernetes.default.svc';
   const j = (v: string): string => JSON.stringify(v);
+  // Comments at the top tell the deployer bot, which reads this file, how its apps are reached and what an Ingress must look like.
+  const guide = input.appUrlPattern
+    ? input.appsRouting === 'host'
+      ? [
+          `# Apps are reached at ${input.appUrlPattern}: an Ingress with host "<app>--<team>.<domain>", no tls section needed.`,
+        ]
+      : [
+          `# Apps are reached at ${input.appUrlPattern} (this exact public address, on the platform's own host).`,
+          '# The Ingress must have: host = the platform host, path /apps/<team>/<app> with pathType Prefix, and exactly the annotation',
+          `#   traefik.ingress.kubernetes.io/router.middlewares: ${input.appsNamespace}-apps-path@kubernetescrd`,
+          '# and no tls section. The app receives paths with /apps/<team>/<app> removed (it is sent as X-Forwarded-Prefix); it never sees the platform\'s',
+          '# cookies, runs in a sandbox (no cookies, no localStorage), and must use relative URLs and allow cross-origin requests (CORS) to itself.',
+        ]
+    : [];
   return [
+    ...guide,
     'apiVersion: v1',
     'kind: Config',
     'clusters:',

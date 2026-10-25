@@ -93,18 +93,40 @@ could create namespaces and roles could grant itself anything. So **a team must 
 deployer bot gets a credential**; the controller logs a warning otherwise. The server's only right in an apps namespace is to read the Secret `deployer-token`.
 
 **The deployer.** The `deployer` Role in `apps-<team>` is full control of deployments, statefulsets, jobs, cronjobs, ingresses, services, configmaps, secrets and
-volume claims, read of pods, logs and events (and deleting pods), nothing else, no RBAC objects. An admission policy (`manythreads-apps-guard`) adds: an Ingress
-must use a host of the form `<app>--<team>.<hermesPods.apps.host>` (one label; the app part may use single hyphens but never `--`, because `--` separates it from the team, so two teams can never get the same host; at most 63 characters; never a wildcard, never the platform's own host or another team's) and no default backend, and a Service must be ClusterIP.
+volume claims, read of pods, logs and events (and deleting pods), nothing else, no RBAC objects. An admission policy (`manythreads-apps-guard`, a Kubernetes rule that checks every object before it is stored) adds the rules below, which depend on `hermesPods.apps.routing`
+(see "Where deployed apps are reached"). In both modes an Ingress (the object that publishes a Service on a web address) has no default backend, and a Service must be ClusterIP.
+* `path` routing (default): every rule host is exactly the platform's own host, and every path is `/apps/<team>/<app>` (a trailing slash is allowed) with pathType `Prefix`, where `<team>` is the
+  namespace's own team and `<app>` is one segment of lowercase letters, digits and single hyphens, at most 63 characters. An app can therefore never claim `/`, `/api`, `/mcp` or another team's paths.
+  The Ingress must carry exactly the annotation `traefik.ingress.kubernetes.io/router.middlewares: apps-<team>-apps-path@kubernetescrd` (the protective chain below), no other `traefik.*` annotation, and no `tls` section (it could install a certificate for the platform's host).
+* `host` routing: a host of the form `<app>--<team>.<hermesPods.apps.host>` (one label; the app part may use single hyphens but never `--`, because `--` separates it from the team, so two teams can never get the same host; at most 63 characters; never a wildcard, never the platform's own host or another team's); no `traefik.*` annotation.
 The controller turns the team's token into a kubeconfig (server `https://kubernetes.default.svc`, default namespace `apps-<team>`) in the team's `…-deployer`
 Secret; the workbench writes it to `/workspace/bots/bot-deployer/.kube/config`, **mode 0600, written by that bot's own user**, and removes it when the bot stops being the deployer. Team B's deployer
 cannot touch `apps-<teamA>`.
 
-**Where deployed apps are reached.** An app is a Deployment + Service + Ingress whose host is `<app>--<team>.<hermesPods.apps.host>`, for example
-`money--engineering.manythreads.kahf.to` (app `money`, team `engineering`). `hermesPods.apps.host` defaults to the install's `domain`. The name is a single
-label under the domain (no dot between app and team), so ONE wildcard certificate for `*.<domain>` covers every app. Traefik routes by host.
-A wildcard DNS name `*.<domain>` must point at the cluster. The certificate comes from the chart's `tls` block (`tls.wildcard: true`): in either HTTPS mode it
-becomes Traefik's default certificate, so app Ingresses in the teams' namespaces need no certificate of their own. See "HTTPS: Cloudflare or Let's Encrypt"
-in `docs/deploy.md`. With `tls.mode: none` Traefik serves its self-signed certificate and browsers warn.
+**Where deployed apps are reached.** An app is a Deployment + Service + Ingress. `hermesPods.apps.routing` chooses the address:
+
+| `routing` | Address | Needs |
+|---|---|---|
+| `path` (default) | `https://<domain>/apps/<team>/<app>/`, e.g. `https://manythreads.kahf.to/apps/engineering/money/` | nothing beyond the platform's own domain and certificate |
+| `host` | `https://<app>--<team>.<hermesPods.apps.host>/`, e.g. `https://money--engineering.manythreads.kahf.to/` | a wildcard DNS record `*.<domain>` pointing at the cluster and a wildcard certificate (`tls.wildcard: true`; Cloudflare's free certificate does not cover a name two levels below the zone) |
+
+`host` routing is the earlier behaviour, unchanged: one label `<app>--<team>` under the domain, so one wildcard certificate covers every app, and Traefik (the cluster's web router) routes by host.
+In either HTTPS mode the certificate becomes Traefik's default, so app Ingresses in the teams' namespaces need no certificate of their own (see "HTTPS: Cloudflare or Let's Encrypt" in `docs/deploy.md`). With `tls.mode: none` Traefik serves its self-signed certificate and browsers warn.
+
+**Path routing and why the apps are sandboxed.** In `path` mode an app shares the platform's address (its *origin*: scheme, host and port), so a browser would otherwise send the platform's session cookies to the
+bot-written app and let the app's JavaScript act as the signed-in person. The chart prevents both. In every apps namespace it creates Traefik `Middleware` objects (small request/response filters) that the
+deployer cannot change, because its Role has no rights on `traefik.io` objects, and the admission policy accepts only an Ingress that names the chain `apps-path`:
+
+1. `apps-slash`: `/apps/<team>/<app>` without the trailing slash is redirected to the address with one, so relative links in the page resolve under the app.
+2. `apps-isolate`: the **`Cookie` and `Authorization` request headers are deleted**, so the app's backend never sees the platform's cookies or tokens. The response gets
+   `Content-Security-Policy: sandbox allow-scripts allow-forms allow-popups allow-downloads` (the page runs in an *opaque origin*, a throw-away identity that is not the platform's: its scripts cannot read the platform's cookies, storage or API answers),
+   `X-Content-Type-Options: nosniff` and `Referrer-Policy: same-origin` (these replace whatever the app set), and any `Set-Cookie` the app sends is dropped (Traefik removes a header whose configured value is empty), so an app cannot plant cookies on the platform's host.
+3. `apps-strip`: `/apps/<team>/<app>` is cut from the path before the app sees it; Traefik passes the removed part to the app in the `X-Forwarded-Prefix` header.
+
+**What this means for people who write apps** (the deployer bot is told the same in its kubeconfig file): the app is served from a sub-path, so it must use **relative URLs** (`./style.css`, not `/style.css`) or build
+absolute ones from `X-Forwarded-Prefix`; it gets **no cookies** (no sessions of its own: use tokens in the URL fragment or its own API calls); **`localStorage`, `sessionStorage` and IndexedDB are unavailable** in a sandboxed page;
+because the page's origin is opaque, calls to the app's own backend count as cross-origin, so the backend must answer with `Access-Control-Allow-Origin: *` (and cannot use credentials). Top-level navigation out of the page, and the platform's cookies, are not available to it.
+Apps that need real cookies or storage should use `host` routing, which gives every app its own origin.
 
 ## The workbench is root: how it is kept safe
 

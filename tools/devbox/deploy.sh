@@ -11,7 +11,10 @@
 #   --acme-staging                      letsencrypt: use Let's Encrypt's staging server (untrusted certificates, no rate limits)
 #   --dns-token-file FILE               letsencrypt wildcard: Cloudflare API token (DNS edit) -> Secret manythreads-cloudflare-dns
 #   --no-wildcard                       do not cover *.<domain> (letsencrypt then needs no DNS token)
-#   --wildcard                          cover *.<domain> again (undoes a remembered --no-wildcard)
+#   --wildcard                          cover *.<domain> again (undoes a remembered --no-wildcard); only used with --apps-routing host
+#   --apps-routing path|host            how deployed apps are reached: path (default) = https://<domain>/apps/<team>/<app>/ on the main domain,
+#                                       so no wildcard DNS record or certificate is needed; host = https://<app>--<team>.<domain>/ (needs both).
+#                                       Remembered like the HTTPS flags.
 #   --demo also builds the Hermes agent image (once; cached as manythreads/hermes:stable),
 #   the demo server layer, and the fake-llm + fake-hindsight stand-ins, and points the
 #   server at them (deploy/helm/manythreads/values-demo.yaml). A later deploy
@@ -34,6 +37,7 @@ ACME_STAGING=false
 DNS_TOKEN_FILE=""
 NO_WILDCARD=false
 YES_WILDCARD=false
+APPS_ROUTING=""
 need_value() { [ "$2" -ge 2 ] || { echo "$1 needs a value"; exit 2; }; }
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -49,11 +53,13 @@ while [ "$#" -gt 0 ]; do
     --dns-token-file) need_value "$1" "$#"; DNS_TOKEN_FILE="$2"; shift ;;
     --no-wildcard) NO_WILDCARD=true ;;
     --wildcard) YES_WILDCARD=true ;;
-    *) echo "unknown argument $1 (want --rebuild-postgres, --demo, --no-build, --tls, --cf-origin, --origin-cert, --origin-key, --acme-email, --acme-staging, --dns-token-file, --wildcard or --no-wildcard)"; exit 2 ;;
+    --apps-routing) need_value "$1" "$#"; APPS_ROUTING="$2"; shift ;;
+    *) echo "unknown argument $1 (want --rebuild-postgres, --demo, --no-build, --tls, --cf-origin, --origin-cert, --origin-key, --acme-email, --acme-staging, --dns-token-file, --wildcard, --no-wildcard or --apps-routing)"; exit 2 ;;
   esac
   shift
 done
 case "$TLS_MODE" in ""|none|cloudflare|letsencrypt) ;; *) echo "--tls wants none, cloudflare or letsencrypt"; exit 2 ;; esac
+case "$APPS_ROUTING" in ""|path|host) ;; *) echo "--apps-routing wants path or host"; exit 2 ;; esac
 case "$CF_ORIGIN" in ""|strict|flexible) ;; *) echo "--cf-origin wants strict or flexible"; exit 2 ;; esac
 { [ -z "$ORIGIN_CERT" ] && [ -z "$ORIGIN_KEY" ]; } || { [ -f "$ORIGIN_CERT" ] && [ -f "$ORIGIN_KEY" ]; } || { echo "--origin-cert and --origin-key both need an existing file"; exit 2; }
 [ -z "$DNS_TOKEN_FILE" ] || [ -f "$DNS_TOKEN_FILE" ] || { echo "--dns-token-file: no such file"; exit 2; }
@@ -203,10 +209,29 @@ WILDCARD=$(echo "$CUR" | jq -r 'if .tls.wildcard == null then empty else (.tls.w
 WILDCARD=${WILDCARD:-true}
 [ "$NO_WILDCARD" = true ] && WILDCARD=false
 [ "$YES_WILDCARD" = true ] && WILDCARD=true
-TLS_ARGS=(--set tls.mode="$TLS_MODE" --set tls.wildcard="$WILDCARD" --set tls.cloudflare.origin="$CF_ORIGIN"
+APPS_ROUTING=${APPS_ROUTING:-$(cur .hermesPods.apps.routing)}
+APPS_ROUTING=${APPS_ROUTING:-path}
+# A release made before path routing existed has no routing value: it served apps by host (<app>--<team>.<domain>). Defaulting to path makes the
+# admission policy refuse updates to those Ingresses, so say so (read-only look; nothing here changes the cluster).
+if [ -n "$RELEASES" ] && [ -z "$(cur .hermesPods.apps.routing)" ] && [ "$APPS_ROUTING" = path ]; then
+  OLD_APPS=$({ kubectl get ns -l manythreads.io/apps=true -o name 2>/dev/null; kubectl get ns -o name 2>/dev/null | grep '^namespace/apps-' || true; } | sed 's|^namespace/||' | sort -u)
+  OLD_HOSTED=""
+  for ns in $OLD_APPS; do
+    found=$(kubectl get ingress -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.rules[0].host}{"\n"}{end}' 2>/dev/null | awk -F'\t' '$2 ~ /--/ {print "'"$ns"'/" $1 " (" $2 ")"}' || true)
+    [ -z "$found" ] || OLD_HOSTED="$OLD_HOSTED$found"$'\n'
+  done
+  if [ -n "$OLD_HOSTED" ]; then
+    echo "WARNING: this release has no apps routing value and these app Ingresses use host form (<app>--<team>.<domain>):"
+    printf '%s' "$OLD_HOSTED" | sed 's/^/    /'
+    echo "WARNING: switching to path routing (the default) makes the admission policy refuse updates to them. Each app has to be redeployed under"
+    echo "WARNING: /apps/<team>/<app>. To keep host routing for now, pass --apps-routing host."
+  fi
+fi
+# (The chart only asks for a wildcard certificate with host routing; with path routing the apps sit under the main domain and tls.wildcard is ignored.)
+TLS_ARGS=(--set hermesPods.apps.routing="$APPS_ROUTING" --set tls.mode="$TLS_MODE" --set tls.wildcard="$WILDCARD" --set tls.cloudflare.origin="$CF_ORIGIN"
   --set tls.letsencrypt.server="$ACME_SERVER")
 [ -z "$ACME_EMAIL" ] || TLS_ARGS+=(--set-string tls.letsencrypt.email="$ACME_EMAIL")
-echo "--- https mode: $TLS_MODE (wildcard=$WILDCARD)"
+echo "--- https mode: $TLS_MODE (wildcard=$WILDCARD, used only with host routing; apps routing=$APPS_ROUTING)"
 
 # Secrets are made from files and never echoed. Server-side apply keeps no last-applied copy of the content in an annotation (client-side apply would).
 kubectl create namespace manythreads --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -267,7 +292,7 @@ else
 fi
 
 if [ "$TLS_MODE" = letsencrypt ]; then
-  if [ "$WILDCARD" = true ] && ! have_secret manythreads-cloudflare-dns; then
+  if [ "$WILDCARD" = true ] && [ "$APPS_ROUTING" = host ] && ! have_secret manythreads-cloudflare-dns; then
     echo "ERROR: a wildcard Let's Encrypt certificate needs a Cloudflare DNS token: pass --dns-token-file FILE (or --no-wildcard)"; exit 1
   fi
   echo "--- ensure cert-manager"

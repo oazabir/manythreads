@@ -19,6 +19,7 @@ web:
 hermesPods:
   enabled: true
   apps:
-    host: manythreads.kahf.to
+    routing: path        # apps at https://manythreads.kahf.to/apps/<team>/<app>/: the main certificate covers them, no wildcard
+    host: manythreads.kahf.to   # used only by routing: host
   apiServer:
     cidr: 10.0.2.15/32   # k3s on the devbox: the node IP (kubectl get endpoints kubernetes)

@@ -1,4 +1,4 @@
-import { parseRepos, type PodConfig, type Resources } from './render.ts';
+import { parseRepos, type AppsRouting, type PodConfig, type Resources } from './render.ts';
 
 const DEFAULT_RESOURCES = {
   hermes: { requests: { cpu: '250m', memory: '1Gi' }, limits: { memory: '3Gi' } },
@@ -29,6 +29,7 @@ export function configFrom(env: NodeJS.ProcessEnv): PodConfig {
     repoOriginAllow: get('REPO_ORIGIN_ALLOW', '').split(',').map((x) => x.trim()).filter((x) => x.startsWith('https://')),
     deployerBot: get('DEPLOYER_BOT', 'deployer'),
     appsPrefix: get('APPS_PREFIX', 'apps-'),
+    appsRouting: (get('APPS_ROUTING', 'path') === 'host' ? 'host' : 'path') satisfies AppsRouting,
     appsHost: get('APPS_HOST', 'manythreads.kahf.to'),
     resources,
   };

@@ -17,6 +17,8 @@ export type HttpsConfig = {
   acmeServer: 'production' | 'staging' | null;
   publicUrl: string;
   appsDomain: string | null;
+  /** `path`: apps live under /apps/ on the platform's own domain; `host`: one subdomain per app (needs a wildcard certificate). */
+  appsRouting: 'path' | 'host';
 };
 
 type Env = Record<string, string | undefined>;
@@ -37,6 +39,7 @@ export function readHttpsConfig(env: Env, publicUrl: string): HttpsConfig {
     acmeServer: mode === 'letsencrypt' ? ((env['MANYTHREADS_TLS_ACME_SERVER'] ?? '').trim() === 'staging' ? 'staging' : 'production') : null,
     publicUrl,
     appsDomain: HOSTNAME.test(apps) ? apps : null,
+    appsRouting: (env['MANYTHREADS_HERMES_PODS_APPS_ROUTING'] ?? '').trim() === 'host' ? 'host' : 'path',
   };
 }
 
@@ -100,6 +103,9 @@ export async function checkPublicUrl(cfg: HttpsConfig, fetchFn: FetchLike): Prom
 }
 
 export async function checkWildcard(cfg: HttpsConfig, fetchFn: FetchLike, randomHex: () => string): Promise<HttpsCheck> {
+  if (cfg.appsRouting === 'path') {
+    return { id: 'wildcard', status: 'skipped', detail: 'Apps are served under /apps/ on this domain, so no wildcard certificate is needed.' };
+  }
   if (!cfg.wildcard) return { id: 'wildcard', status: 'skipped', detail: 'Wildcard certificates are off, so app addresses are not checked.' };
   if (!cfg.appsDomain) return { id: 'wildcard', status: 'skipped', detail: 'Apps have no domain of their own, so there is nothing to check.' };
   const host = `mt-check-${randomHex()}-probe.${cfg.appsDomain}`;
@@ -167,6 +173,7 @@ export async function runHttpsChecks(
     acmeServer: cfg.acmeServer,
     domain: hostOf(cfg.publicUrl),
     appsDomain: cfg.appsDomain,
+    appsRouting: cfg.appsRouting,
     checks: [publicUrl, wildcard, clientIp, checkProxyMatch(cfg.mode, req.headers)],
     seenAs,
   };

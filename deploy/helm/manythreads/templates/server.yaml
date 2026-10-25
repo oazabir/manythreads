@@ -61,7 +61,7 @@ spec:
             - { name: MANYTHREADS_TRUST_PROXY, value: {{ if eq $tlsMode "cloudflare" }}{{ add (int .Values.server.trustProxy) 1 | quote }}{{ else }}{{ .Values.server.trustProxy | quote }}{{ end }} }
             {{- end }}
             - { name: MANYTHREADS_TLS_MODE, value: {{ $tlsMode | quote }} }
-            - { name: MANYTHREADS_TLS_WILDCARD, value: {{ if and .Values.tls.wildcard (ne $tlsMode "none") }}"1"{{ else }}"0"{{ end }} }
+            - { name: MANYTHREADS_TLS_WILDCARD, value: {{ if and (include "manythreads.wildcard" .) (ne $tlsMode "none") }}"1"{{ else }}"0"{{ end }} }
             {{- if eq $tlsMode "cloudflare" }}
             - { name: MANYTHREADS_TLS_ORIGIN, value: {{ .Values.tls.cloudflare.origin | quote }} }
             {{- end }}
@@ -118,6 +118,7 @@ spec:
             - { name: MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW, value: {{ join "," .repoOriginAllow | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_DEPLOYER_BOT, value: {{ .deployerBot | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_APPS_PREFIX, value: {{ .apps.prefix | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_APPS_ROUTING, value: {{ include "manythreads.appsRouting" $ | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_APPS_HOST, value: {{ include "manythreads.appsHost" $ | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_RESOURCES, value: {{ dict "hermes" .hermesResources "workbench" .workbenchResources | toJson | quote }} }
             {{- /* Team pods live in another namespace: a short Service name would not resolve there, so the profiles get full ones. */}}

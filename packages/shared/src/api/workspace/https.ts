@@ -28,7 +28,7 @@ export const GetWorkspaceHttpsResponse = z.object({
   mode: HttpsMode,
   /** Set only in Cloudflare mode. */
   origin: HttpsOrigin.nullable(),
-  /** Whether one certificate covers every app host (`<app>--<team>.<apps domain>`). */
+  /** Whether one certificate covers every app host (`<app>--<team>.<apps domain>`). Always false when apps are served by path. */
   wildcard: z.boolean(),
   /** Let's Encrypt only: `staging` certificates are not trusted by browsers. */
   acmeServer: z.enum(['production', 'staging']).nullable(),
@@ -36,6 +36,8 @@ export const GetWorkspaceHttpsResponse = z.object({
   domain: z.string().nullable(),
   /** The domain app hosts live under, or null when apps have no domain of their own. */
   appsDomain: z.string().nullable(),
+  /** How apps are reached: `path` = under `/apps/<team>/<app>/` on the platform's own domain (no wildcard certificate needed); `host` = one subdomain per app. Absent from older servers. */
+  appsRouting: z.enum(['path', 'host']).optional(),
   checks: z.array(HttpsCheck),
   /** What the server derived for this very request. */
   seenAs: z.object({ clientIp: z.string(), viaCloudflare: z.boolean() }),

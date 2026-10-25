@@ -2,6 +2,7 @@
 {{- $hp := .Values.hermesPods }}
 {{- $bots := $hp.namespace }}
 {{- $rel := .Release.Namespace }}
+{{- $routing := include "manythreads.appsRouting" . }}
 # Managed Hermes pods (docs/plugins/hermes-pods.md). Three kinds of namespace, each with its own walls:
 #   {{ $rel }}        the platform itself. The controller has NO rights here.
 #   {{ $bots }}       the teams' pods (Hermes + workbench). Pod security "baseline" is enforced (no privileged pods, no hostPath, no host networking).
@@ -261,12 +262,91 @@ spec:
     - from:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
           podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+{{- if eq $routing "path" }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" $team) }}{{ fail (printf "hermesPods.appTeams: %q is not a valid team slug (lowercase letters, digits and dashes)" $team) }}{{ end }}
+---
+# Path routing: the team's apps are served at https://<domain>/apps/<team>/<app>/ on the PLATFORM's own host. That shares the browser's origin with
+# the platform, so the traffic of every app passes through this chain. The deployer has no rights on traefik.io objects, so it cannot change or
+# skip it, and the admission policy only lets an Ingress name the chain `apps-path`.
+#   apps-slash    /apps/<team>/<app> (no trailing slash) is redirected to the same address with one, so relative links in the app resolve under it
+#   apps-isolate  the app's backend never sees the platform's cookies or an Authorization header; what the app answers is loaded in an opaque
+#                 origin (CSP sandbox without allow-same-origin), so its scripts cannot read the platform's cookies, storage or API responses;
+#                 the app cannot set cookies on the platform's host (Set-Cookie is dropped)
+#   apps-strip    /apps/<team>/<app> is cut from the path before the app sees it (Traefik passes it on as X-Forwarded-Prefix)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apps-slash
+  namespace: {{ $ns }}
+spec:
+  redirectRegex:
+    regex: {{ printf "^[^:]+://[^/]+(/apps/%s/[a-z0-9-]+)(\\?.*)?$" $team | quote }}
+    replacement: "${1}/${2}"
+    permanent: false
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apps-isolate
+  namespace: {{ $ns }}
+spec:
+  headers:
+    customRequestHeaders:
+      Cookie: ""
+      Authorization: ""
+    customResponseHeaders:
+      Content-Security-Policy: "sandbox allow-scripts allow-forms allow-popups allow-downloads"
+      X-Content-Type-Options: "nosniff"
+      Referrer-Policy: "same-origin"
+      Set-Cookie: ""
+      # Bot-written apps are served from the platform's own origin, so an app must not be able to reach the browser with headers that act
+      # on the whole origin: wipe its data, pin HTTPS, redirect to another protocol endpoint, add a link, refresh away, widen a service
+      # worker's scope, pin keys, report on the platform's policy, or allow credentialed cross-origin reads. An empty value removes the header.
+      Clear-Site-Data: ""
+      Strict-Transport-Security: ""
+      Alt-Svc: ""
+      Link: ""
+      Refresh: ""
+      Service-Worker-Allowed: ""
+      Public-Key-Pins: ""
+      Content-Security-Policy-Report-Only: ""
+      Access-Control-Allow-Credentials: ""
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apps-strip
+  namespace: {{ $ns }}
+spec:
+  stripPrefixRegex:
+    regex:
+      - {{ printf "^/apps/%s/[a-z0-9-]+" $team | quote }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: apps-path
+  namespace: {{ $ns }}
+spec:
+  chain:
+    middlewares:
+      - name: apps-slash
+      - name: apps-isolate
+      - name: apps-strip
+{{- end }}
 {{- end }}
 {{- if $hp.appTeams }}
 ---
 # Admission rules for every apps namespace (the namespace label manythreads.io/team names its team):
+{{- if eq $routing "path" }}
+#  * (path routing) every Ingress rule host must be exactly the platform's own host, {{ include "manythreads.appsHost" . }}, and every path /apps/<team>/<app> (a trailing slash is allowed) with pathType Prefix:
+#    <app> is lowercase letters, digits and single hyphens, at most 63 characters, <team> is the namespace's own team. So an app can never claim `/`, `/api`, `/mcp` or another team's paths.
+#    It must carry exactly the annotation that names this namespace's `apps-path` middleware chain (cookie stripping, sandbox headers, prefix stripping) and no other traefik.* annotation;
+#    no tls section (it could install a certificate for the platform's host); no default backend;
+{{- else }}
 #  * an Ingress host must be <app>--<team>.{{ include "manythreads.appsHost" . }}: one label `<app>--<team>` (the app part has no `--`, so the first `--` splits it uniquely and two teams can never share a host; at most 63 characters), never a wildcard, never the platform's host or another team's;
 #    no default backend; no traefik.* annotation (they could attach middlewares or entrypoints that bypass the rules above);
+{{- end }}
 #  * a Service must be ClusterIP with no externalIPs, loadBalancerIP or loadBalancerSourceRanges (externalIPs would let a deployer capture
 #    cluster addresses such as kube-dns or the API server: CVE-2020-8554);
 #  * a PersistentVolumeClaim may not name a volume (it could claim someone else's released PersistentVolume).
@@ -295,6 +375,19 @@ spec:
   validations:
     - expression: "variables.team != ''"
       message: "this namespace has no manythreads.io/team label"
+{{- if eq $routing "path" }}
+    - expression: >-
+        object.kind != 'Ingress' || (has(object.spec.rules) && size(object.spec.rules) > 0 && object.spec.rules.all(r, has(r.host) && r.host == variables.appsHost && has(r.http) && size(r.http.paths) > 0 && r.http.paths.all(p, has(p.pathType) && p.pathType == 'Prefix' && has(p.path) && p.path.matches('^/apps/' + variables.team + '/[a-z0-9]([a-z0-9]|-[a-z0-9])*/?$') && size(p.path) - size('/apps/' + variables.team + '/') - (p.path.endsWith('/') ? 1 : 0) <= 63)))
+      message: "an Ingress in an apps namespace must use the platform's host and only paths /apps/<team>/<app> for its own team (one segment of lowercase letters, digits and single hyphens, at most 63 characters, pathType Prefix)"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.defaultBackend)"
+      message: "an Ingress in an apps namespace may not set a default backend"
+    - expression: "object.kind != 'Ingress' || (has(object.metadata.annotations) && 'traefik.ingress.kubernetes.io/router.middlewares' in object.metadata.annotations && object.metadata.annotations['traefik.ingress.kubernetes.io/router.middlewares'] == namespaceObject.metadata.name + '-apps-path@kubernetescrd')"
+      message: "an Ingress in an apps namespace must carry the annotation traefik.ingress.kubernetes.io/router.middlewares: <namespace>-apps-path@kubernetescrd (the chain that keeps the platform's cookies from the app)"
+    - expression: "object.kind != 'Ingress' || !has(object.metadata.annotations) || object.metadata.annotations.all(k, !k.startsWith('traefik.') || k == 'traefik.ingress.kubernetes.io/router.middlewares')"
+      message: "an Ingress in an apps namespace may not carry traefik.* annotations other than router.middlewares"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.tls) || size(object.spec.tls) == 0"
+      message: "an Ingress in an apps namespace may not have a tls section: the platform's own certificate serves it"
+{{- else }}
     - expression: >-
         object.kind != 'Ingress' || (has(object.spec.rules) && size(object.spec.rules) > 0 && object.spec.rules.all(r, has(r.host) && (r.host.endsWith('.' + variables.appsHost) && size(r.host.substring(0, size(r.host) - size('.' + variables.appsHost))) <= 63 && r.host.substring(0, size(r.host) - size('.' + variables.appsHost)).endsWith('--' + variables.team) && size(r.host.substring(0, size(r.host) - size('.' + variables.appsHost))) > size('--' + variables.team) && r.host.substring(0, size(r.host) - size('.' + variables.appsHost)).substring(0, size(r.host.substring(0, size(r.host) - size('.' + variables.appsHost))) - size('--' + variables.team)).matches('^[a-z0-9]([a-z0-9]|-[a-z0-9])*$'))))
       message: "an Ingress in an apps namespace needs a host <app>--<team>.{{ include "manythreads.appsHost" . }} for its own team (one label, no wildcard)"
@@ -304,6 +397,11 @@ spec:
       message: "an Ingress in an apps namespace may not carry traefik.* annotations"
     - expression: "object.kind != 'Ingress' || !has(object.spec.tls) || object.spec.tls.all(t, !has(t.hosts) || t.hosts.all(h, h.endsWith('.' + variables.appsHost) && size(h.substring(0, size(h) - size('.' + variables.appsHost))) <= 63 && h.substring(0, size(h) - size('.' + variables.appsHost)).endsWith('--' + variables.team) && size(h.substring(0, size(h) - size('.' + variables.appsHost))) > size('--' + variables.team) && h.substring(0, size(h) - size('.' + variables.appsHost)).substring(0, size(h.substring(0, size(h) - size('.' + variables.appsHost))) - size('--' + variables.team)).matches('^[a-z0-9]([a-z0-9]|-[a-z0-9])*$')))"
       message: "an Ingress tls host must follow the same <app>--<team> rule"
+{{- end }}
+    - expression: "object.kind != 'Ingress' || !has(object.spec.ingressClassName) || object.spec.ingressClassName == 'traefik'"
+      message: "an Ingress in an apps namespace may only use the traefik ingress class (or none)"
+    - expression: "object.kind != 'Ingress' || !has(object.metadata.annotations) || !('kubernetes.io/ingress.class' in object.metadata.annotations) || object.metadata.annotations['kubernetes.io/ingress.class'] == 'traefik'"
+      message: "an Ingress in an apps namespace may not carry a kubernetes.io/ingress.class annotation other than traefik"
     - expression: "object.kind != 'Service' || !has(object.spec.type) || object.spec.type == 'ClusterIP'"
       message: "a Service in an apps namespace must be of type ClusterIP"
     - expression: "object.kind != 'Service' || ((!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0) && (!has(object.spec.loadBalancerIP) || object.spec.loadBalancerIP == '') && (!has(object.spec.loadBalancerSourceRanges) || size(object.spec.loadBalancerSourceRanges) == 0))"

@@ -21,6 +21,15 @@ describe('Domain & HTTPS commands', () => {
     expect(describeMode(mode('cloudflare', 'strict'))).toMatch(/^Cloudflare proxy, Full \(strict\): Cloudflare serves visitors/);
     expect(describeMode(mode('letsencrypt', null, 'staging'))).toContain('test certificates');
   });
+  it('does not ask for a DNS token when apps are served by path', () => {
+    const p = { ...mode('none'), appsRouting: 'path' as const };
+    expect(switchOptions(p).find((o) => o.id === 'letsencrypt')?.command).toBe('tools/devbox/deploy.sh --tls letsencrypt --acme-email you@example.com');
+    expect(describeMode({ ...mode('letsencrypt', null, 'production'), appsRouting: 'path' })).toContain('no wildcard certificate');
+    expect(switchOptions({ ...mode('none'), appsRouting: 'host' }).find((o) => o.id === 'letsencrypt')?.command).toContain('--dns-token-file');
+  });
+  it('shows the path address pattern', () => {
+    expect(appHostPattern('example.com', 'path')).toBe('https://example.com/apps/<team>/<app>/');
+  });
   it('shows the app address pattern', () => {
     expect(appHostPattern('apps.example.com')).toBe('<app>--<team>.apps.example.com');
     expect(appHostPattern(null)).toBeNull();

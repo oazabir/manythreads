@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import hermesPods, { staticSource, startController } from '../src/index.ts';
 import { HttpK8s, resourcePath, type K8s, type K8sObject } from '../src/k8s.ts';
 import { Reconciler, type ProfileSource } from '../src/reconcile.ts';
-import { assignUsers, buildDeployerKubeconfig, namesFor, parseRepos, unixUserFor, type PodConfig } from '../src/render.ts';
+import { configFrom } from '../src/config.ts';
+import { appUrlFor, assignUsers, buildDeployerKubeconfig, namesFor, parseRepos, unixUserFor, type PodConfig } from '../src/render.ts';
 
 // The controller against a fake Kubernetes API (an in-memory store with server-side-apply semantics: same object in, same object out) and
 // a stand-in for the platform's `hermes.profiles` provider.
@@ -49,6 +50,7 @@ const CFG: PodConfig = {
   repoOriginAllow: [],
   deployerBot: 'deployer',
   appsPrefix: 'apps-',
+  appsRouting: 'path',
   appsHost: 'example.test',
   resources: { hermes: { limits: { memory: '3Gi' } }, workbench: { limits: { memory: '4Gi' } } },
 };
@@ -222,6 +224,20 @@ describe('helpers', () => {
     expect(assignUsers([spec('b'), spec('a')], { 'bot-b': 20007 }, '').map((u) => [u.user, u.uid])).toEqual([['bot-a', 20000], ['bot-b', 20007]]);
     expect(parseRepos('one, two=https://example.test/x.git,../bad,Bad')).toEqual([{ name: 'one' }, { name: 'two', origin: 'https://example.test/x.git' }]);
     expect(buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'apps' })).toContain('current-context: deployer');
+  });
+
+  it('routes apps by path by default and by host when asked', () => {
+    expect(configFrom({}).appsRouting).toBe('path');
+    expect(configFrom({ MANYTHREADS_HERMES_PODS_APPS_ROUTING: 'weird' }).appsRouting).toBe('path');
+    expect(configFrom({ MANYTHREADS_HERMES_PODS_APPS_ROUTING: 'host' }).appsRouting).toBe('host');
+    expect(appUrlFor(CFG, TEAM, 'money')).toBe('https://example.test/apps/engineering/money/');
+    expect(appUrlFor({ ...CFG, appsRouting: 'host' }, TEAM, 'money')).toBe('https://money--engineering.example.test/');
+    const path = buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'apps-engineering', appsRouting: 'path', appUrlPattern: 'https://example.test/apps/engineering/<app>/' });
+    expect(path).toContain('router.middlewares: apps-engineering-apps-path@kubernetescrd');
+    expect(path).toContain('current-context: deployer');
+    const host = buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'apps-engineering', appsRouting: 'host', appUrlPattern: 'https://<app>--engineering.example.test/' });
+    expect(host).not.toContain('apps-path');
+    expect(buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'a' }).startsWith('apiVersion: v1')).toBe(true);
   });
 
   it('reads the static test profiles', async () => {

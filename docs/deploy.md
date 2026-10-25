@@ -155,19 +155,22 @@ without `--tls` keeps whatever the release has now.
 
 | Mode | What it is | Flags |
 |---|---|---|
-| `cloudflare` | Cloudflare's proxy sits in front and terminates TLS for visitors. `origin: strict` (recommended): Cloudflare checks the cluster's certificate ("Full (strict)"), a Cloudflare Origin CA certificate for `<domain>` and `*.<domain>` kept in the Secret `manythreads-origin-cert`. `origin: flexible` (not recommended): Cloudflare talks plain HTTP to the cluster, so the hop between Cloudflare and you is unencrypted; the router also answers on port 80. | `--tls cloudflare --cf-origin strict --origin-cert cert.pem --origin-key key.pem` |
+| `cloudflare` | Cloudflare's proxy sits in front and terminates TLS for visitors. `origin: strict` (recommended): Cloudflare checks the cluster's certificate ("Full (strict)"), a Cloudflare Origin CA certificate for `<domain>` (and `*.<domain>` with host routing) kept in the Secret `manythreads-origin-cert`. `origin: flexible` (not recommended): Cloudflare talks plain HTTP to the cluster, so the hop between Cloudflare and you is unencrypted; the router also answers on port 80. | `--tls cloudflare --cf-origin strict --origin-cert cert.pem --origin-key key.pem` |
 | `letsencrypt` | The cluster is reached directly. cert-manager (a Kubernetes add-on that gets and renews certificates; the script installs it, pinned to chart v1.21.3) asks Let's Encrypt for a certificate for `<domain>` and, with `tls.wildcard`, `*.<domain>`. | `--tls letsencrypt --acme-email you@example.com [--acme-staging] [--dns-token-file token.txt] [--no-wildcard]` |
 
-`tls.wildcard` (default on) also covers `*.<domain>`, where the apps bots deploy live (`<app>--<team>.<domain>`, one label deep: see `docs/plugins/hermes-pods.md`).
-In both modes a Traefik `TLSStore` named `default` then makes that certificate Traefik's default, so app Ingresses in other namespaces, which cannot read the
-Secret, are served with it. The render stops with a message on an unknown mode, `letsencrypt` without an email, or a wildcard `letsencrypt` without `dns01`.
+`tls.wildcard` (default on) also covers `*.<domain>`, but only matters with `hermesPods.apps.routing: host`, where the apps bots deploy live at `<app>--<team>.<domain>` (one label deep: see `docs/plugins/hermes-pods.md`).
+With the default `routing: path` the apps live at `https://<domain>/apps/<team>/<app>/`, on the platform's own host, so the one certificate of the main domain covers them: no wildcard DNS record, no wildcard
+certificate, no DNS token (the wildcard setting is then ignored). The deployed apps are fenced in by middlewares (the platform's cookies never reach them and their pages run in a sandbox); the consequences for app authors are in `docs/plugins/hermes-pods.md`.
+`tools/devbox/deploy.sh --apps-routing path|host` chooses (and remembers) the mode. Switching to `host` needs a wildcard DNS record `*.<domain>` and a wildcard certificate, and, with Let's Encrypt, `--dns-token-file`.
+In both modes a Traefik `TLSStore` named `default` makes the chart's certificate Traefik's default, so Ingresses in other namespaces, which cannot read the
+Secret, are served with it. The render stops with a message on an unknown mode, `letsencrypt` without an email, or a wildcard `letsencrypt` (host routing) without `dns01`.
 
 **Cloudflare, step by step.**
-1. DNS: `<domain>` and `*.<domain>` point at the cluster, with the orange cloud (proxied) on.
+1. DNS: `<domain>` points at the cluster, with the orange cloud (proxied) on (and `*.<domain>` too, with `--apps-routing host`).
 2. SSL/TLS, Overview: set the encryption mode to **Full (strict)**. (Flexible only if you pass `--cf-origin flexible`.)
-3. SSL/TLS, Origin Server: create an Origin Certificate for `<domain>, *.<domain>` and save the certificate and key to files on the devbox, then deploy with `--origin-cert` and `--origin-key`. The script stores them in the Secret and never prints them.
-4. The edge certificate: Cloudflare's free Universal SSL covers the zone and ONE level below it (`kahf.to`, `*.kahf.to`). `manythreads.kahf.to` is covered, but `*.manythreads.kahf.to`
-   (the apps) is two levels down, so it needs Advanced Certificate Manager or Total TLS. Without one, the apps' addresses show a certificate error at the edge.
+3. SSL/TLS, Origin Server: create an Origin Certificate for `<domain>` (add `*.<domain>` for host routing) and save the certificate and key to files on the devbox, then deploy with `--origin-cert` and `--origin-key`. The script stores them in the Secret and never prints them.
+4. The edge certificate: Cloudflare's free Universal SSL covers the zone and ONE level below it (`kahf.to`, `*.kahf.to`). `manythreads.kahf.to` is covered, and so are the apps with the default path routing.
+   Only host routing needs `*.manythreads.kahf.to`, which is two levels down and needs Advanced Certificate Manager or Total TLS; without one, the apps' addresses show a certificate error at the edge.
 5. Behind Cloudflare the real visitor is one proxy further out, so the chart sets `MANYTHREADS_TRUST_PROXY` to `server.trustProxy + 1` (unless `server.env` sets it), and in this mode
    the deploy script gives Traefik Cloudflare's published address ranges (`tls.cloudflare.trustedIPs`) as the proxies whose forwarded headers it believes. That lives in k3s's
    `HelmChartConfig` named `traefik` in `kube-system`, which is cluster-wide, so the script merges it into any existing one instead of the chart rendering it. Refresh the ranges from https://www.cloudflare.com/ips/ now and then.

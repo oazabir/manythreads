@@ -3,6 +3,7 @@ import type { GatewayProfileSpec, PluginLogger } from '@manythreads/sdk';
 import type { K8s, K8sObject } from './k8s.ts';
 import {
   GATEWAY_PORT,
+  appUrlPattern,
   appsNamespaceFor,
   assignUsers,
   botSlugOf,
@@ -92,7 +93,7 @@ export class Reconciler {
       const token = b64(data['token']);
       const ca = b64(data['ca.crt']);
       if (token !== '' && ca !== '') {
-        deployerSecret = buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig({ token, caPem: ca, appsNamespace: appsNs }));
+        deployerSecret = buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig({ token, caPem: ca, appsNamespace: appsNs, appsRouting: cfg.appsRouting, appUrlPattern: appUrlPattern(cfg, team) }));
         withDeployer = true;
       } else {
         this.log.warn(`hermes-pods: there is no ready deployer token in ${appsNs} (add the team to hermesPods.appTeams); the deployer bot of ${team.slug} has no kubeconfig`);

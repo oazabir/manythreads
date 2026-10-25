@@ -18,7 +18,7 @@ spec:
     privateKeySecretRef:
       name: manythreads-letsencrypt-account
     solvers:
-      {{- if .Values.tls.wildcard }}
+      {{- if include "manythreads.wildcard" . }}
       - dns01:
           cloudflare:
             apiTokenSecretRef:
@@ -43,14 +43,15 @@ spec:
     kind: Issuer
   dnsNames:
     - {{ .Values.domain | quote }}
-    {{- if .Values.tls.wildcard }}
+    {{- if include "manythreads.wildcard" . }}
     - {{ printf "*.%s" .Values.domain | quote }}
     {{- end }}
 {{- end }}
-{{- if and .Values.tls.wildcard $secret }}
+{{- if $secret }}
 ---
 # Traefik's default certificate. App Ingresses live in other namespaces and cannot read the Secret above, so they would get Traefik's
-# self-signed one; the store named `default` hands them the wildcard certificate instead.
+# self-signed one; the store named `default` hands them this certificate instead (the wildcard one in `host` routing; with `path` routing the
+# apps share the platform's host, whose own Ingress already carries the certificate, and the store is the safe fallback).
 apiVersion: traefik.io/v1alpha1
 kind: TLSStore
 metadata:

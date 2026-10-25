@@ -5,7 +5,7 @@ import type { GetWorkspaceHttpsResponse } from '@manythreads/shared';
  * other mode. The server cannot change the mode (it has no rights on the cluster), so the page hands the admin the command.
  */
 
-export type HttpsModeInfo = Pick<GetWorkspaceHttpsResponse, 'mode' | 'origin' | 'wildcard' | 'acmeServer'>;
+export type HttpsModeInfo = Pick<GetWorkspaceHttpsResponse, 'mode' | 'origin' | 'wildcard' | 'acmeServer'> & Partial<Pick<GetWorkspaceHttpsResponse, 'appsRouting'>>;
 
 export type SwitchOption = {
   id: 'none' | 'cloudflare-strict' | 'cloudflare-flexible' | 'letsencrypt';
@@ -14,6 +14,9 @@ export type SwitchOption = {
   summary: string;
   command: string;
 };
+
+/** Apps served by path (the default) need no wildcard certificate, so no DNS token either. An older server that does not say is treated as `host`. */
+const byPath = (c: HttpsModeInfo): boolean => c.appsRouting === 'path';
 
 const DEPLOY = 'tools/devbox/deploy.sh';
 
@@ -48,18 +51,29 @@ export const currentOptionId = (c: HttpsModeInfo): SwitchOption['id'] =>
   c.mode === 'cloudflare' ? (c.origin === 'flexible' ? 'cloudflare-flexible' : 'cloudflare-strict') : c.mode;
 
 /** The deploy command for every mode except the one in use. */
-export const switchOptions = (c: HttpsModeInfo): SwitchOption[] => OPTIONS.filter((o) => o.id !== currentOptionId(c));
+const forRouting = (o: SwitchOption, c: HttpsModeInfo): SwitchOption =>
+  o.id === 'letsencrypt' && byPath(c)
+    ? {
+        ...o,
+        summary: 'This cluster gets its own free certificate for the domain and serves visitors directly. Apps live under /apps/ on the same domain, so no wildcard certificate or DNS token is needed.',
+        command: `${DEPLOY} --tls letsencrypt --acme-email you@example.com`,
+      }
+    : o;
+
+export const switchOptions = (c: HttpsModeInfo): SwitchOption[] => OPTIONS.filter((o) => o.id !== currentOptionId(c)).map((o) => forRouting(o, c));
 
 /** The current mode in plain words: its name, then what it means. */
 export function describeMode(c: HttpsModeInfo): string {
-  const o = OPTIONS.find((x) => x.id === currentOptionId(c));
-  if (!o) return 'Unknown';
+  const found = OPTIONS.find((x) => x.id === currentOptionId(c));
+  if (!found) return 'Unknown';
+  const o = forRouting(found, c);
   const staging = c.mode === 'letsencrypt' && c.acmeServer === 'staging' ? " (test certificates: browsers will warn until you switch to the production server, run the command again without '--acme-staging')" : '';
   return `${o.title}: ${o.summary}${staging}`;
 }
 
-/** Where app addresses live, e.g. `<app>--<team>.apps.example.com`, or null when apps have no domain of their own. */
-export const appHostPattern = (appsDomain: string | null): string | null => (appsDomain ? `<app>--<team>.${appsDomain}` : null);
+/** Where app addresses live: `https://example.com/apps/<team>/<app>/` when routed by path, `<app>--<team>.apps.example.com` otherwise; null when apps have no domain. */
+export const appHostPattern = (appsDomain: string | null, routing: 'path' | 'host' = 'host'): string | null =>
+  appsDomain ? (routing === 'path' ? `https://${appsDomain}/apps/<team>/<app>/` : `<app>--<team>.${appsDomain}`) : null;
 
 export const statusWord = (s: GetWorkspaceHttpsResponse['checks'][number]['status']): string =>
   ({ ok: 'ok', warn: 'check', fail: 'failed', skipped: 'skipped' })[s];

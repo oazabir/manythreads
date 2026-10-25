@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { checkClientIp, checkProxyMatch, classifyFetchError, readHttpsConfig, runHttpsChecks, type HttpsConfig } from '../src/https-checks.ts';
 
 const cfg = (over: Partial<HttpsConfig> = {}): HttpsConfig => ({
-  mode: 'cloudflare', origin: 'strict', wildcard: true, acmeServer: null, publicUrl: 'https://mt.example.com', appsDomain: 'apps.example.com', ...over,
+  mode: 'cloudflare', origin: 'strict', wildcard: true, acmeServer: null, publicUrl: 'https://mt.example.com', appsDomain: 'apps.example.com', appsRouting: 'host', ...over,
 });
 const failing = (code: string, name = 'TypeError') => async () => {
   throw Object.assign(new Error('fetch failed'), { name, cause: { code } });
@@ -23,6 +23,25 @@ describe('readHttpsConfig', () => {
     expect(c).toMatchObject({ mode: 'cloudflare', origin: 'flexible', wildcard: true, appsDomain: 'apps.example.com', acmeServer: null });
     const l = readHttpsConfig({ MANYTHREADS_TLS_MODE: 'letsencrypt', MANYTHREADS_TLS_ACME_SERVER: 'staging', MANYTHREADS_HERMES_PODS_APPS_HOST: 'bad host/' }, 'https://a');
     expect(l).toMatchObject({ mode: 'letsencrypt', origin: null, acmeServer: 'staging', appsDomain: null });
+  });
+});
+
+describe('path routing', () => {
+  it('reads the routing, path by default', () => {
+    expect(readHttpsConfig({}, 'http://x').appsRouting).toBe('path');
+    expect(readHttpsConfig({ MANYTHREADS_HERMES_PODS_APPS_ROUTING: 'host' }, 'http://x').appsRouting).toBe('host');
+    expect(readHttpsConfig({ MANYTHREADS_HERMES_PODS_APPS_ROUTING: 'nonsense' }, 'http://x').appsRouting).toBe('path');
+  });
+  it('skips the wildcard check without making any request', async () => {
+    const seen: string[] = [];
+    const spy = async (u: string) => {
+      seen.push(u);
+      return { status: 200, body: null };
+    };
+    const r = await runHttpsChecks(cfg({ appsRouting: 'path' }), req, spy, hex);
+    expect(r.checks[1]).toMatchObject({ id: 'wildcard', status: 'skipped', detail: expect.stringContaining('no wildcard certificate is needed') });
+    expect(seen.filter((u) => u.includes('mt-check-'))).toEqual([]);
+    expect(r.appsRouting).toBe('path');
   });
 });
 
