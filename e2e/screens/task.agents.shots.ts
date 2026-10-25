@@ -44,3 +44,57 @@ test('the Agents page lists the connections and how to connect', async ({ browse
     await page.context().close();
   }
 });
+
+const T = { timeout: 20_000 };
+const CHAIN_ROOT = '01a17468-1c8a-7417-a867-9e54dea44675'; // the formatPercent goal, run by Orchestrator, Coder, Reviewer and Tester on Claude Code
+
+test('a goal carried by bots running on Claude Code, in its thread', async ({ browser }) => {
+  const page = await signIn(browser);
+  try {
+    await page.goto(`/t/engineering/c/dev?message=${CHAIN_ROOT}`);
+    const root = page.locator(`[data-message-id="${CHAIN_ROOT}"]`);
+    await expect(root).toBeVisible(T);
+    await root.getByText(/\d+ repl(y|ies)/).first().click(T);
+    const view = page.getByTestId('thread-view');
+    await expect(view.getByText('Tester').first()).toBeVisible(T);
+    await shoot(page, 'agents-02-claude-thread');
+    // the thread panel scrolls on its own: one picture per screenful
+    const parts = await view.evaluate((el) => {
+      const s = [el, ...Array.from(el.querySelectorAll<HTMLElement>('*'))].find((c) => c.scrollHeight > c.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(c).overflowY));
+      if (!s) return 0;
+      s.setAttribute('data-ag-scroll', '1');
+      return Math.min(6, Math.ceil(s.scrollHeight / s.clientHeight));
+    });
+    for (let i = 1; i < parts; i++) {
+      await page.locator('[data-ag-scroll="1"]').evaluate((el, n) => { el.scrollTop = n * el.clientHeight; }, i);
+      await page.waitForTimeout(400);
+      await shoot(page, `agents-02-claude-thread-part${i + 1}`);
+    }
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('Brain on Claude Code answers a one-to-one chat', async ({ browser }) => {
+  const page = await signIn(browser);
+  try {
+    await page.goto('/t/engineering/bots/brain/chat');
+    await expect(page.getByText(/memory_recall/).first()).toBeVisible(T);
+    await shoot(page, 'agents-03-brain-claude');
+  } finally {
+    await page.context().close();
+  }
+});
+
+test('an app the deployer bot shipped, served under /apps/<team>/<app>/', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: DESKTOP });
+  const page = await context.newPage();
+  try {
+    const res = await page.goto(`${BASE}/apps/engineering/money/`);
+    expect(res?.status()).toBe(200);
+    expect(res?.headers()['content-security-policy']).toContain('sandbox');
+    await shoot(page, 'agents-04-path-app');
+  } finally {
+    await context.close();
+  }
+});
