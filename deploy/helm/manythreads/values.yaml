@@ -68,7 +68,11 @@ ingress:
 
 postgres:
   mode: cnpg             # cnpg | statefulset
-  image: manythreads/postgres:19
+  # CloudNativePG's Postgres 19 build pinned by digest, plus pgvector (deploy/postgres/cnpg.Dockerfile), served by the in-cluster registry so the
+  # node can always pull it again. A Postgres beta's data files open only with the build that wrote them: the `19beta4` tag on Docker Hub was
+  # rebuilt with a new catalog version and the old build was gone from the node, which took the live database down (2026-10-25). Change this
+  # only together with a dump and restore, or pg_upgrade. deploy.sh builds and pushes it when the registry lacks it.
+  image: registry.local:5000/platform/postgres-cnpg:19beta4-202609281634-u999@sha256:2baddfe22d0422a54cb06ecd15ff342cb9956ac1c286dd89bfc365179ad54c2d
   instances: 1
   database: manythreads
   owner: manythreads_owner

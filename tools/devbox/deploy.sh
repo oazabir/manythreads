@@ -122,11 +122,20 @@ if [ "$DEMO" = true ]; then
   docker build -f deploy/docker/demo-fakes.Dockerfile --build-arg SERVER_TAG="$TAG" -t "manythreads/demo-fakes:$TAG" .
   IMAGES+=("manythreads/demo-fakes:$TAG")
 fi
-if [ "$REBUILD_PG" = true ] || ! k3s ctr -n k8s.io images ls -q | grep -q "manythreads/postgres:19"; then
+# The database image: CloudNativePG's pinned Postgres 19 build plus pgvector (deploy/postgres/cnpg.Dockerfile), kept in the in-cluster registry
+# (registry.local:5000 -> the registry's node port) so the node can pull it again after an image clean-up. Built and pushed only when the
+# registry does not have it; the chart pins its digest. --rebuild-postgres also rebuilds the old local manythreads/postgres:19 (compose).
+PG_REF=platform/postgres-cnpg:19beta4-202609281634-u999
+if ! curl -sf -o /dev/null -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json' "http://127.0.0.1:30500/v2/${PG_REF%%:*}/manifests/${PG_REF##*:}"; then
+  echo "--- build and push the database image ($PG_REF)"
+  docker build -f deploy/postgres/cnpg.Dockerfile -t "127.0.0.1:30500/$PG_REF" deploy/postgres
+  docker push "127.0.0.1:30500/$PG_REF"
+else
+  echo "database image $PG_REF is in the registry"
+fi
+if [ "$REBUILD_PG" = true ]; then
   docker build -t manythreads/postgres:19 deploy/postgres
   IMAGES+=("manythreads/postgres:19")
-else
-  echo "manythreads/postgres:19 already imported; skipping (use --rebuild-postgres to force)"
 fi
 
 # Managed Hermes pods (values-live.yaml hermesPods): the Hermes container and the workbench. Tagged by the content of their build

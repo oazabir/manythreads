@@ -93,7 +93,7 @@ Check: `curl -s http://127.0.0.1:30500/v2/` answers `{}`, and a pod using `regis
 ## Preview install
 
 `deploy/preview/values-preview.yaml` is the chart's values for the install the bot runs with `helm upgrade --install` inside the target: no Hermes pods, no LiteLLM or Hindsight (the server starts without them; bot runs and memory answer that they are not configured), the mail catcher on, `tls.mode=letsencrypt` with `wildcard=false` (a
-namespaced Issuer and Certificate, proved by HTTP-01 through Traefik), `tls.defaultStore=false`, images from the registry, `postgres.image=manythreads/postgres:19` (already on the node), the demo seed on.
+namespaced Issuer and Certificate, proved by HTTP-01 through Traefik), `tls.defaultStore=false`, images from the registry, `postgres.image` = the same pinned CloudNativePG build as the live release, the demo seed on.
 
 `tls.defaultStore=false` matters: the chart normally makes the Traefik `TLSStore` named `default` (Traefik's fallback certificate); the live release owns it, and a second one in another namespace would fight it.
 

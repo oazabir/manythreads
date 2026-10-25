@@ -25,7 +25,7 @@ ingress:
 
 postgres:
   mode: cnpg
-  image: manythreads/postgres:19   # already on the node (IfNotPresent); the node cannot pull it from anywhere
+  image: registry.local:5000/platform/postgres-cnpg:19beta4-202609281634-u999@sha256:2baddfe22d0422a54cb06ecd15ff342cb9956ac1c286dd89bfc365179ad54c2d   # the same pinned build as the live release
   instances: 1
   storage:
     size: 2Gi
