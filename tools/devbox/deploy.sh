@@ -194,7 +194,9 @@ k3s ctr -n k8s.io images ls -q | { grep -E 'manythreads/(hermes-pod|workbench):'
   echo "$USED" | grep -qx "$short" && continue
   k3s ctr -n k8s.io images rm "$ref" || true
 done
-docker builder prune -f --keep-storage 8gb >/dev/null 2>&1 || true
+# 3 GB of build cache: at 8 GB the cache, the image copies and a bot's build in a team pod filled the disk again on 2026-10-25, and the
+# clean-up that followed deleted the database image (see the postgres note in values.yaml).
+docker builder prune -f --keep-storage 3gb >/dev/null 2>&1 || true
 
 # --- HTTPS: decide the effective tls settings (flags win; otherwise whatever the release has now, so a plain redeploy keeps the mode)
 # "No release yet" is a normal first install; a FAILED read of an existing release must stop the deploy, or a plain redeploy could flip the mode.
