@@ -1,0 +1,103 @@
+/* Projects page. Classes are prefixed `pj-` / `projects-`; shared classes (.box, .fld, .btn, .d) are used, never redefined. */
+.projects-screen {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 28px;
+  overflow: auto;
+  align-content: start;
+}
+
+.pj-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.pj-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pj-lede {
+  max-width: 70ch;
+  margin: 3px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.pj-row {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.pj-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.pj-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 13.5px;
+}
+
+.pj-branch {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.pj-addr {
+  margin-top: 3px;
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.pj-meta {
+  margin-top: 5px;
+  font-size: 12.5px;
+}
+
+.pj-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.pj-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.pj-edit {
+  margin-top: 10px;
+}
+
+.pj-select {
+  width: 100%;
+  max-width: 360px;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+@media (width <= 640px) {
+  .pj-row {
+    flex-direction: column;
+  }
+}

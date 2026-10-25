@@ -7,9 +7,11 @@ import {
 import {
   ApprovalsApprovalDecidedEvent,
   ChannelMessagePostedEvent,
+  isRepoOriginAllowed,
+  parseRepoOriginAllow,
   type BotTrigger,
 } from '@manythreads/shared';
-import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView } from './match.ts';
+import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView, type ProjectNote } from './match.ts';
 import { registerTaskRouter } from './router-tasks.ts';
 import { RUN_QUEUE, RunPayload } from './run-job.ts';
 
@@ -62,6 +64,20 @@ interface BotRow {
   runtime: string;
   triggers: BotTrigger[] | null;
   [key: string]: unknown;
+}
+
+/** The project the channel is tied to, if any (the projects plugin's table; read in the outbox's system transaction). */
+async function projectOfChannel(tx: PluginTx, channelId: string): Promise<ProjectNote | null> {
+  const row = (
+    await tx.query<{ name: string; repo_url: string; default_branch: string }>(
+      'SELECT name, repo_url, default_branch FROM app.projects WHERE channel_id = $1::uuid',
+      [channelId],
+    )
+  ).rows[0];
+  if (!row) return null;
+  // the same allowlist the pod controller applies (the server's own setting), so the note never promises a copy the pod does not hold
+  const allow = parseRepoOriginAllow(process.env['MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW']);
+  return { name: row.name, repoUrl: row.repo_url, defaultBranch: row.default_branch, cloned: isRepoOriginAllowed(row.repo_url, allow) };
 }
 
 /** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
@@ -119,6 +135,7 @@ export function registerRouter(ctx: PluginContext): void {
         [message.channel_team, conversation ? message.channel_bot_id : null],
       )
     ).rows;
+    const project = await projectOfChannel(tx, message.channel_id);
     for (const bot of bots) {
       const trigger = matchTrigger(bot.triggers ?? [], bot.slug, {
         ...view,
@@ -134,7 +151,7 @@ export function registerRouter(ctx: PluginContext): void {
         askerActorId: message.author_id,
         replyRootId: message.thread_root_id ?? message.id,
         runThreadId: message.thread_root_id,
-        prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body }),
+        prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
         text: message.body.slice(0, 40_000),
       };
       await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
@@ -204,6 +221,7 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
     )
   ).rows;
   const view: MessageView = { channelName: message.channel_name, isBotChannel: false, mentions };
+  const project = await projectOfChannel(tx, message.channel_id);
   for (const bot of bots) {
     if (!mayTag.has(bot.slug.toLowerCase())) continue;
     if (matchTrigger(bot.triggers ?? [], bot.slug, view) !== 'mention') continue;
@@ -221,7 +239,7 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
         askerActorId: null,
         replyRootId,
         runThreadId: message.thread_root_id,
-        prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body }),
+        prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
         text: message.body.slice(0, 40_000),
         delegation: { fromBotId: author.id, depth },
       } satisfies RunPayload,

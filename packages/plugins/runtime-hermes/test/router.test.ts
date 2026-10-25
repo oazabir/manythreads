@@ -89,6 +89,26 @@ describe('buildPrompt', () => {
   });
 });
 
+describe('buildPrompt in a project channel', () => {
+  it('adds one short note naming the repository, the branch and where it lives on the pod', () => {
+    const project = { name: 'manythreads', repoUrl: 'https://github.com/oazabir/manythreads', defaultBranch: 'main', cloned: true };
+    expect(buildPrompt({ authorName: 'Nadia', channelName: 'dev', body: 'fix it', project })).toBe(
+      "Nadia in #dev:\n\nfix it\n\nThis channel is project manythreads: repository https://github.com/oazabir/manythreads, branch main. On the team's Hermes pod its repository of record is /workspace/repos/manythreads.git and your clone is ~/manythreads.",
+    );
+  });
+
+  it('says so when the pod holds no copy because the address is not on the allowed list', () => {
+    const project = { name: 'x', repoUrl: 'https://evil.example/x', defaultBranch: 'main', cloned: false };
+    const text = buildPrompt({ authorName: 'Nadia', channelName: 'dev', body: 'fix it', project });
+    expect(text).toContain('not cloned on the team pod (its address is not on the allowed list)');
+    expect(text).not.toContain('/workspace/repos/');
+  });
+
+  it('adds nothing when the channel has no project', () => {
+    expect(buildPrompt({ authorName: 'Nadia', channelName: 'dev', body: 'hi', project: null })).toBe('Nadia in #dev:\n\nhi');
+  });
+});
+
 describe('buildTaskPrompt', () => {
   const card = {
     id: '01a16e30-db0c-7bee-96d0-0d21812106ef',

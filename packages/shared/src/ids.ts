@@ -124,3 +124,6 @@ export type RhythmId = z.infer<typeof RhythmId>;
 
 export const RhythmRunId = z.uuid().brand<'RhythmRunId'>();
 export type RhythmRunId = z.infer<typeof RhythmRunId>;
+
+export const ProjectId = z.uuid().brand<'ProjectId'>();
+export type ProjectId = z.infer<typeof ProjectId>;

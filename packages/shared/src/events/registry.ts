@@ -73,6 +73,9 @@ import { TeamTagCreatedEvent } from './team.tag.created.ts';
 import { TeamTagDeletedEvent } from './team.tag.deleted.ts';
 import { TeamTagAssignedEvent } from './team.tag.assigned.ts';
 import { TeamTagRemovedEvent } from './team.tag.removed.ts';
+import { ProjectCreatedEvent } from './project.project.created.ts';
+import { ProjectUpdatedEvent } from './project.project.updated.ts';
+import { ProjectDeletedEvent } from './project.project.deleted.ts';
 import { IdentityProviderChangedEvent } from './identity.provider.changed.ts';
 import { IdentityOidcSignedInEvent } from './identity.oidc.signed_in.ts';
 import { IdentityOidcRefusedEvent } from './identity.oidc.refused.ts';
@@ -142,6 +145,9 @@ export const eventRegistry = {
   'team.tag.deleted': { 1: TeamTagDeletedEvent },
   'team.tag.assigned': { 1: TeamTagAssignedEvent },
   'team.tag.removed': { 1: TeamTagRemovedEvent },
+  'project.project.created': { 1: ProjectCreatedEvent },
+  'project.project.updated': { 1: ProjectUpdatedEvent },
+  'project.project.deleted': { 1: ProjectDeletedEvent },
   'identity.provider.changed': { 1: IdentityProviderChangedEvent },
   'identity.oidc.signed_in': { 1: IdentityOidcSignedInEvent },
   'identity.oidc.refused': { 1: IdentityOidcRefusedEvent },
@@ -195,6 +201,9 @@ export type AnyEvent =
   | z.infer<typeof TeamTagDeletedEvent>
   | z.infer<typeof TeamTagAssignedEvent>
   | z.infer<typeof TeamTagRemovedEvent>
+  | z.infer<typeof ProjectCreatedEvent>
+  | z.infer<typeof ProjectUpdatedEvent>
+  | z.infer<typeof ProjectDeletedEvent>
   | z.infer<typeof IdentityProviderChangedEvent>
   | z.infer<typeof IdentityOidcSignedInEvent>
   | z.infer<typeof IdentityOidcRefusedEvent>
@@ -262,6 +271,9 @@ export type LatestEvent =
   | z.infer<typeof TeamTagDeletedEvent>
   | z.infer<typeof TeamTagAssignedEvent>
   | z.infer<typeof TeamTagRemovedEvent>
+  | z.infer<typeof ProjectCreatedEvent>
+  | z.infer<typeof ProjectUpdatedEvent>
+  | z.infer<typeof ProjectDeletedEvent>
   | z.infer<typeof IdentityProviderChangedEvent>
   | z.infer<typeof IdentityOidcSignedInEvent>
   | z.infer<typeof IdentityOidcRefusedEvent>

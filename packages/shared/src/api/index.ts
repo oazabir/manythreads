@@ -22,3 +22,4 @@ export * from './retention/index.ts';
 export * from './tasks/index.ts';
 export * from './runners/index.ts';
 export * from './hermes/index.ts';
+export * from './projects/index.ts';

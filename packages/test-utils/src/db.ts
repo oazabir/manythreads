@@ -410,3 +410,9 @@ export async function ownerSql<T extends Record<string, unknown> = Record<string
     await client.end();
   }
 }
+
+/** Migrations of the projects plugin (`app.projects`); pass it in `sources` after `channelsMigrationSource` (a project is tied to a channel). */
+export const projectsMigrationSource: MigrationSource = {
+  namespace: 'projects',
+  dir: fileURLToPath(new URL('../../plugins/projects/migrations/', import.meta.url)),
+};

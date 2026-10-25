@@ -193,3 +193,10 @@
 .b-head > .ag-roster-link {
   margin-left: auto;
 }
+
+.ag-head-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}

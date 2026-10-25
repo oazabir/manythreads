@@ -20,6 +20,10 @@ import {
   changePasswordRoute,
   checkBootstrapRoute,
   createHermesConnectionRoute,
+  createProjectRoute,
+  deleteProjectRoute,
+  listProjectsRoute,
+  updateProjectRoute,
   createInvitationRoute,
   deleteHermesConnectionRoute,
   listHermesConnectionsRoute,
@@ -686,6 +690,53 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     c['lastCheckedAt'] = NOW;
     c['lastError'] = null;
     return { ok: true, error: null, tools: null, manythreadsTools: null, checkedAt: NOW };
+  });
+  // Projects: a team's repositories, each tied to at most one channel; they live in memory.
+  const projects = new Map<string, Array<Record<string, unknown>>>();
+  const projectsOf = (t: TeamState): Array<Record<string, unknown>> => {
+    let list = projects.get(t.slug);
+    if (!list) projects.set(t.slug, (list = []));
+    return list;
+  };
+  const projectOf = (t: TeamState, id: string | undefined): Record<string, unknown> => {
+    const pr = projectsOf(t).find((x) => x['id'] === id);
+    if (!pr) throw new MockHttpError(404, 'not_found', 'No such project.');
+    return pr;
+  };
+  const freeChannel = (t: TeamState, channelId: unknown, except: unknown): void => {
+    if (channelId == null) return;
+    const other = projectsOf(t).find((x) => x['channelId'] === channelId && x['id'] !== except);
+    if (other) throw new MockHttpError(409, 'conflict', `That channel already belongs to the project ${String(other['name'])}`);
+  };
+  on(listProjectsRoute, ({ params }) => ({ items: projectsOf(teamOf(params.slug)) }));
+  on(createProjectRoute, ({ params, body }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const list = projectsOf(t);
+    if (list.some((x) => x['name'] === body.name)) throw new MockHttpError(409, 'conflict', 'That already exists');
+    freeChannel(t, body.channelId, null);
+    const pr = {
+      id: nextId('f'), workspaceId: uuid('a', 1), teamId: t.id, name: String(body.name), repoUrl: String(body.repoUrl), defaultBranch: body.defaultBranch ?? 'main',
+      channelId: body.channelId ?? null, createdBy: me().id, createdAt: NOW, updatedAt: NOW,
+    };
+    list.push(pr);
+    return created({ project: pr });
+  });
+  on(updateProjectRoute, ({ params, body }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const pr = projectOf(t, params.projectId);
+    if (body.channelId !== undefined) freeChannel(t, body.channelId, pr['id']);
+    for (const k of ['repoUrl', 'defaultBranch', 'channelId'] as const) if (body[k] !== undefined) pr[k] = body[k];
+    pr['updatedAt'] = NOW;
+    return { project: pr };
+  });
+  on(deleteProjectRoute, ({ params }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const pr = projectOf(t, params.projectId);
+    projectsOf(t).splice(projectsOf(t).indexOf(pr), 1);
+    return { deleted: true };
   });
   on(createTeamTagRoute, ({ params, body }) => {
     const t = teamOf(params.slug);

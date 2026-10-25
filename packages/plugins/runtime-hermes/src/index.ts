@@ -54,7 +54,7 @@ export default definePlugin({
     },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).
-    dependsOn: ['bots', 'channels', 'teams', 'guardrails-dlp'],
+    dependsOn: ['bots', 'channels', 'teams', 'guardrails-dlp', 'projects'],
   },
   register(ctx) {
     const dataRoot = (process.env['MANYTHREADS_RUNTIME_DIR'] ?? join(tmpdir(), 'manythreads-runtime')).trim();

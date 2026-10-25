@@ -25,3 +25,5 @@ export * from './retention.ts';
 export * from './task.ts';
 export * from './rhythm.ts';
 export * from './hermes.ts';
+export * from './project.ts';
+export * from './repo-origin.ts';

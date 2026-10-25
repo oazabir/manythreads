@@ -8,6 +8,8 @@ export {
   MAX_DELEGATION_DEPTH,
   mayTagSlugs,
   mentionedHandles,
+  projectNote,
+  type ProjectNote,
   type MessageView,
   type RoutedTrigger,
 } from './match.ts';

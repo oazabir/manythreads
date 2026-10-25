@@ -9,6 +9,7 @@ import './styles/discover.css';
 import './styles/viewers.css';
 import './styles/files.css';
 import './styles/agents.css';
+import './styles/projects.css';
 import './styles/bots.css';
 import './styles/approvals.css';
 import './styles/conversations.css';

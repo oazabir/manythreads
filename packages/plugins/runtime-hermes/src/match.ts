@@ -52,8 +52,26 @@ export function mentionedHandles(body: string): Set<string> {
  * What the run is asked, in one prompt: who said it, where, and the message itself. The bot's behaviour is SOUL.md's job. A conversation channel
  * has no name (it is the person's own thread with the bot), so there the prompt is the person and the message.
  */
-export function buildPrompt(input: { authorName: string; channelName: string; body: string }): string {
-  return input.channelName === '' ? `${input.authorName}:\n\n${input.body}` : `${input.authorName} in #${input.channelName}:\n\n${input.body}`;
+export function buildPrompt(input: { authorName: string; channelName: string; body: string; project?: ProjectNote | null }): string {
+  const head = input.channelName === '' ? `${input.authorName}:\n\n${input.body}` : `${input.authorName} in #${input.channelName}:\n\n${input.body}`;
+  return input.project ? `${head}\n\n${projectNote(input.project)}` : head;
+}
+
+/** The project a channel is tied to (the projects plugin): what a bot asked in that channel needs to know about its code. */
+export interface ProjectNote {
+  name: string;
+  repoUrl: string;
+  defaultBranch: string;
+  /** False when the address is not on the pod's allowed list (or is not plain): the team pod then holds no copy of it. */
+  cloned: boolean;
+}
+
+/** One short, factual block. On the team's pod the repository of record is a bare copy and each bot has its own clone in its home folder. */
+export function projectNote(p: ProjectNote): string {
+  const head = `This channel is project ${p.name}: repository ${p.repoUrl}, branch ${p.defaultBranch}. `;
+  return p.cloned
+    ? head + `On the team's Hermes pod its repository of record is /workspace/repos/${p.name}.git and your clone is ~/${p.name}.`
+    : head + `It is not cloned on the team pod (its address is not on the allowed list).`;
 }
 
 /**

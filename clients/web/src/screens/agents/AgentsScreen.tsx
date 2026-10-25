@@ -313,7 +313,10 @@ export function AgentsScreen() {
             A bot picks one of these connections in its Placement settings.
           </p>
         </div>
-        {canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="agents-add-open">Add connection</button> : null}
+        <div className="ag-head-links">
+          <Link className="btn s" to={`/t/${slug}/projects`} data-testid="agents-projects-link">Projects</Link>
+          {canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="agents-add-open">Add connection</button> : null}
+        </div>
       </div>
       {!canEdit ? <Notice tone="warn">Only a team lead or a workspace admin can change these. You can see what is set.</Notice> : null}
       {adding ? <AddForm slug={slug} origin={origin} onDone={() => { setAdding(false); reload(); }} /> : null}

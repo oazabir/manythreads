@@ -16,6 +16,8 @@ import { useShell } from '../shell/context';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon } from '../shell/icons';
 import { useHeaderTopic } from '../shell/topic';
+import { fetchProjects } from './projects/api';
+import { headerTopic, projectOfChannel } from './projects/commands';
 import { useRealtimeStatus } from '../realtime';
 
 export function NoChannelAccess() {
@@ -54,7 +56,10 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const panel = usePanel();
   const [params] = useSearchParams();
   const info = useQuery(`channel:${channelId}`, () => fetchChannel(channelId));
-  useHeaderTopic(!dm && info.status === 'ok' ? info.data.channel.purpose : null);
+  // A channel tied to a project says so beside its title. A person who cannot read the team's projects (a guest) simply sees no chip.
+  const projects = useQuery(`projects:${teamSlug}`, () => fetchProjects(teamSlug));
+  const project = !dm && projects.status === 'ok' ? projectOfChannel(projects.data.items, channelId) : undefined;
+  useHeaderTopic(!dm && info.status === 'ok' ? headerTopic(project, info.data.channel.purpose) : null);
   const tl = useTimeline(channelKey(channelId));
   const channelNames = useNames(teamSlug);
   const status = useRealtimeStatus();
