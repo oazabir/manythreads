@@ -211,46 +211,50 @@ export async function runOnGateway(
     };
     runBody[AGENT_BRIDGE_RUN_KEY] = extension;
   }
-  const body = JSON.stringify(runBody);
-  let hermesRunId: string | null = null;
-  for (let attempt = 0; hermesRunId === null; attempt += 1) {
-    let res: Response;
-    try {
-      res = await call('/runs', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': runId }, body });
-    } catch (err) {
-      return unreachable(err instanceof Error ? err.name : 'error');
+  const startRemote = async (requestBody: string, key: string): Promise<{ id: string } | { handle: BotRuntimeHandle }> => {
+    let hermesRunId: string | null = null;
+    for (let attempt = 0; hermesRunId === null; attempt += 1) {
+      let res: Response;
+      try {
+        res = await call('/runs', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': key }, body: requestBody });
+      } catch (err) {
+        return { handle: unreachable(err instanceof Error ? err.name : 'error') };
+      }
+      if (res.status === 429) {
+        await res.body?.cancel().catch(() => undefined);
+        const asked = Number(res.headers.get('retry-after'));
+        const pause = Math.min(30, Math.max(Number.isFinite(asked) && asked > 0 ? asked : 1, 2 ** Math.min(attempt, 5)));
+        if ((Date.now() - startedAt) / 1000 + pause > MAX_START_WAIT_SECONDS) return { handle: refusedRun("the bot's Hermes is busy: it is at its limit of runs at once") };
+        scope.log(`runtime-hermes: run ${runId}: the gateway is at its run limit; retrying in ${pause}s`);
+        await sleep(pause * retryUnitMs);
+        continue;
+      }
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        await res.body?.cancel().catch(() => undefined);
+        return { handle: unreachable('the gateway answered that it is not available') };
+      }
+      if (res.status === 401 || res.status === 403) {
+        await res.body?.cancel().catch(() => undefined);
+        return { handle: refusedRun(`the Hermes gateway of connection "${placement.connection}" refused this bot's API key; check the connection's key`) };
+      }
+      if (res.status === 404) {
+        await res.body?.cancel().catch(() => undefined);
+        return { handle: refusedRun(`the Hermes gateway of connection "${placement.connection}" has no profile "${profile}"`) };
+      }
+      if (!res.ok) {
+        // The status only: what a gateway (or whatever sits at a typed address) says in its body is not repeated into messages or logs.
+        await res.body?.cancel().catch(() => undefined);
+        return { handle: refusedRun(`the Hermes gateway did not accept the run (status ${res.status})`) };
+      }
+      const parsed = (await readLimitedJson(res).catch(() => null)) as { run_id?: unknown } | null;
+      if (typeof parsed?.run_id !== 'string' || parsed.run_id === '') return { handle: refusedRun('the Hermes gateway answered a run without an id') };
+      hermesRunId = parsed.run_id;
     }
-    if (res.status === 429) {
-      await res.body?.cancel().catch(() => undefined);
-      const asked = Number(res.headers.get('retry-after'));
-      const pause = Math.min(30, Math.max(Number.isFinite(asked) && asked > 0 ? asked : 1, 2 ** Math.min(attempt, 5)));
-      if ((Date.now() - startedAt) / 1000 + pause > MAX_START_WAIT_SECONDS) return refusedRun("the bot's Hermes is busy: it is at its limit of runs at once");
-      scope.log(`runtime-hermes: run ${runId}: the gateway is at its run limit; retrying in ${pause}s`);
-      await sleep(pause * retryUnitMs);
-      continue;
-    }
-    if (res.status === 502 || res.status === 503 || res.status === 504) {
-      await res.body?.cancel().catch(() => undefined);
-      return unreachable('the gateway answered that it is not available');
-    }
-    if (res.status === 401 || res.status === 403) {
-      await res.body?.cancel().catch(() => undefined);
-      return refusedRun(`the Hermes gateway of connection "${placement.connection}" refused this bot's API key; check the connection's key`);
-    }
-    if (res.status === 404) {
-      await res.body?.cancel().catch(() => undefined);
-      return refusedRun(`the Hermes gateway of connection "${placement.connection}" has no profile "${profile}"`);
-    }
-    if (!res.ok) {
-      // The status only: what a gateway (or whatever sits at a typed address) says in its body is not repeated into messages or logs.
-      await res.body?.cancel().catch(() => undefined);
-      return refusedRun(`the Hermes gateway did not accept the run (status ${res.status})`);
-    }
-    const parsed = (await readLimitedJson(res).catch(() => null)) as { run_id?: unknown } | null;
-    if (typeof parsed?.run_id !== 'string' || parsed.run_id === '') return refusedRun('the Hermes gateway answered a run without an id');
-    hermesRunId = parsed.run_id;
-  }
-  const remoteId = hermesRunId;
+    return { id: hermesRunId };
+  };
+  const first = await startRemote(JSON.stringify(runBody), runId);
+  if ('handle' in first) return first.handle;
+  let remoteId = first.id;
 
   let stopping: Promise<void> | undefined;
   let finished = false;
@@ -340,7 +344,9 @@ export async function runOnGateway(
     const deltas: string[] = [];
     const tools = new Map<string, number>();
     let terminal: Terminal | null = null;
+    let retried = false;
     try {
+      for (;;) {
       for await (const item of terminalAware()) {
         if (item.kind === 'end') {
           terminal = item.terminal;
@@ -359,6 +365,29 @@ export async function runOnGateway(
           const failed = event['error'] === true;
           yield { type: 'tool_result', name: String(event['tool'] ?? 'tool'), ok: !failed, ...(failed ? { reason: 'the tool reported an error' } : {}) };
         }
+      }
+      // A pod evicted mid-run leaves Hermes' record of that execution as "unknown", and the session of the thread is reused, so every later
+      // run of the bot in this thread fails at once with `unknown_execution` (or `revision_conflict`). Before any output, start once more on a
+      // fresh session named after this run (a retry of the same platform run reuses it). The thread's own session id is not remembered: the next
+      // run of the bot in the thread fails once the same way and is retried the same way, one cheap failed start per run, and no storage is added.
+      const stale =
+        !retried &&
+        deltas.length === 0 &&
+        tools.size === 0 &&
+        terminal !== null &&
+        terminal.event === 'run.failed' &&
+        typeof terminal.fields['error'] === 'string' &&
+        /unknown_execution|revision_conflict/.test(terminal.fields['error']) &&
+        !timedOut &&
+        !stopping &&
+        !abort.signal.aborted;
+      if (!stale) break;
+      retried = true;
+      const next = await startRemote(JSON.stringify({ ...runBody, session_id: `${String(runBody['session_id'])}:r${runId}` }), `${runId}:fresh`);
+      if ('handle' in next) break; // the first failure is reported
+      scope.log(`runtime-hermes: run ${runId}: the Hermes session of this thread was stale (unknown_execution); started again on a fresh session`);
+      remoteId = next.id;
+      terminal = null;
       }
     } finally {
       clearTimeout(ceiling);

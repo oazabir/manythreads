@@ -9,7 +9,7 @@ services:
     ports:
       - "55432:5432"
     volumes:
-      - manythreads_pgdata:/var/lib/postgresql
+      - manythreads_pgdata_202610:/var/lib/postgresql
       # Creates the `litellm` database the LLM gateway's proxy stores its virtual keys in (PLAN P5-06, profile `llm`).
       # Runs only on the first init of the volume; an existing volume needs the database created by hand (see the file).
       - ../postgres/init:/docker-entrypoint-initdb.d:ro
@@ -172,5 +172,6 @@ networks:
   memory: {}
 
 volumes:
-  manythreads_pgdata:
+  # A new volume on 2026-10-25: the old one (manythreads_pgdata) was written by a Postgres 19 beta build that no longer exists upstream.
+  manythreads_pgdata_202610:
   manythreads_minio:

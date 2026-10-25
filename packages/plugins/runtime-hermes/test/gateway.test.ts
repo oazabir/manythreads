@@ -288,3 +288,41 @@ describe('a gateway is not trusted to be polite', () => {
     expect(logs.join('\n')).not.toContain('SECRET');
   });
 });
+
+describe('a stale Hermes session of the thread', () => {
+  const posts = () => gw.calls.filter((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs');
+  const run = async () => collect((await runOnGateway(options(), input(), scope, { connection: 'managed' })).events);
+
+  it('starts again once on a fresh session when the first start fails with unknown_execution before any output', async () => {
+    gw.setScript((r) =>
+      r.body['session_id'] === `${BOT_ID}:${THREAD}`
+        ? [{ type: 'fail', error: 'RuntimeStoreError: unknown_execution' }]
+        : [{ type: 'finish', output: 'second answer' }],
+    );
+    const result = resultOf(await run());
+    expect(result).toMatchObject({ ok: true, text: 'second answer' });
+    expect(posts()).toHaveLength(2);
+    expect((posts()[1]!.body as Record<string, unknown>)['session_id']).toBe(`${BOT_ID}:${THREAD}:r${RUN_ID}`);
+    expect(posts()[0]!.idempotencyKey).toBe(RUN_ID);
+    expect(posts()[1]!.idempotencyKey).toBe(`${RUN_ID}:fresh`);
+    expect(logs.filter((l) => l.includes('was stale (unknown_execution)'))).toHaveLength(1);
+  });
+
+  it('does not retry another error', async () => {
+    gw.setScript(() => [{ type: 'fail', error: 'model fell over' }]);
+    expect(resultOf(await run()).ok).toBe(false);
+    expect(posts()).toHaveLength(1);
+  });
+
+  it('does not retry once output has started', async () => {
+    gw.setScript(() => [{ type: 'delta', text: 'Hi' }, { type: 'fail', error: 'unknown_execution' }]);
+    expect(resultOf(await run()).ok).toBe(false);
+    expect(posts()).toHaveLength(1);
+  });
+
+  it('retries only once', async () => {
+    gw.setScript(() => [{ type: 'fail', error: 'unknown_execution' }]);
+    expect(resultOf(await run()).ok).toBe(false);
+    expect(posts()).toHaveLength(2);
+  });
+});
