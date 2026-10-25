@@ -1,0 +1,195 @@
+/* Agents page. Classes are prefixed `ag-` / `agents-`; shared classes (.box, .fld, .btn, .d, .kind) are used, never redefined. */
+.agents-screen {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px 28px;
+  overflow: auto;
+  align-content: start;
+}
+
+.ag-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.ag-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.ag-lede {
+  max-width: 70ch;
+  margin: 3px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.ag-sub {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ag-row {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.ag-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ag-name {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 13.5px;
+}
+
+.ag-kind {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.ag-addr {
+  margin-top: 3px;
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ag-state,
+.ag-bots {
+  margin-top: 5px;
+  font-size: 12.5px;
+}
+
+.ag-st.ok {
+  color: var(--ok);
+}
+
+.ag-st.error {
+  color: var(--alert-ink);
+}
+
+.ag-st.unknown {
+  color: var(--faint);
+}
+
+.ag-err {
+  margin-top: 2px;
+  color: var(--alert-ink);
+  font-size: 12px;
+}
+
+.ag-result {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.ag-result.ok {
+  color: var(--ok);
+}
+
+.ag-result.bad {
+  color: var(--alert-ink);
+}
+
+.ag-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+.ag-confirm {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.ag-edit {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.ag-pick {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.ag-opt {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ag-opt.on {
+  border-color: var(--ink);
+}
+
+.ag-opt .d {
+  display: block;
+  font-size: 12px;
+}
+
+.ag-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ag-how ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ag-code {
+  position: relative;
+  margin: 6px 0 10px;
+}
+
+.ag-code pre {
+  margin: 0;
+  padding: 10px 70px 10px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--ok-wash);
+  color: var(--ink);
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.ag-code .btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.b-head > .ag-roster-link {
+  margin-left: auto;
+}

@@ -1161,6 +1161,18 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  tools/agent-bridge:
+    devDependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../packages/sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      tsx:
+        specifier: ^4
+        version: 4.23.15
+
   tools/bench:
     dependencies:
       '@manythreads/kernel':

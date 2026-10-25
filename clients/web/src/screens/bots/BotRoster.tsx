@@ -75,6 +75,7 @@ export function BotRoster() {
                       : `${bots.length} ${bots.length === 1 ? 'bot' : 'bots'} · ${agents} ${agents === 1 ? 'agent' : 'agents'}, ${automations} ${automations === 1 ? 'automation' : 'automations'}`}
                   </p>
                 </div>
+                <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
               </div>
               {bots.length === 0 ? (
                 <div className="b-empty" data-testid="roster-empty">

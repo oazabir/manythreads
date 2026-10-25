@@ -19,7 +19,12 @@ import {
   bootstrapWorkspaceRoute,
   changePasswordRoute,
   checkBootstrapRoute,
+  createHermesConnectionRoute,
   createInvitationRoute,
+  deleteHermesConnectionRoute,
+  listHermesConnectionsRoute,
+  testHermesConnectionRoute,
+  updateHermesConnectionRoute,
   createOidcProviderRoute,
   createTeamInvitationRoute,
   createTeamRoute,
@@ -624,6 +629,63 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   on(listTeamTagsRoute, ({ params }) => {
     const t = teamOf(params.slug);
     return { tags: [...t.tags.keys()].map((n) => tagBody(t, n)) };
+  });
+  // Hermes connections: the team's own pod is always there; connections made here live in memory.
+  const connections = new Map<string, Array<Record<string, unknown>>>();
+  const connectionsOf = (t: TeamState): Array<Record<string, unknown>> => {
+    let list = connections.get(t.slug);
+    if (!list) {
+      list = [{
+        id: uuid('e', 900 + teams.indexOf(t)), workspaceId: uuid('a', 1), teamId: t.id, name: 'managed', kind: 'managed', agent: 'hermes', baseUrl: null, hasApiKey: false,
+        status: 'ok', lastCheckedAt: NOW, lastError: null, createdBy: null, createdAt: NOW, updatedAt: NOW,
+      }];
+      connections.set(t.slug, list);
+    }
+    return list;
+  };
+  const connectionOf = (t: TeamState, id: string | undefined): Record<string, unknown> => {
+    const c = connectionsOf(t).find((x) => x['id'] === id);
+    if (!c) throw new MockHttpError(404, 'not_found', 'No such connection.');
+    return c;
+  };
+  on(listHermesConnectionsRoute, ({ params }) => ({ items: connectionsOf(teamOf(params.slug)) }));
+  on(createHermesConnectionRoute, ({ params, body }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const list = connectionsOf(t);
+    if (list.some((c) => c['name'] === body.name)) throw new MockHttpError(409, 'conflict', 'A connection with that name already exists.');
+    const c = {
+      id: nextId('e'), workspaceId: uuid('a', 1), teamId: t.id, name: String(body.name), kind: 'external', agent: body.agent ?? 'hermes', baseUrl: String(body.baseUrl), hasApiKey: true,
+      status: 'unknown', lastCheckedAt: null, lastError: null, createdBy: me().id, createdAt: NOW, updatedAt: NOW,
+    };
+    list.push(c);
+    return created({ connection: c });
+  });
+  on(updateHermesConnectionRoute, ({ params, body }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const c = connectionOf(t, params.connectionId);
+    if (c['kind'] === 'managed') throw new MockHttpError(409, 'conflict', "The team's own pod is managed by the platform.");
+    if (body.baseUrl !== undefined) c['baseUrl'] = body.baseUrl;
+    if (body.agent !== undefined) c['agent'] = body.agent;
+    if (body.apiKey !== undefined) c['hasApiKey'] = true;
+    return { connection: c };
+  });
+  on(deleteHermesConnectionRoute, ({ params }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const c = connectionOf(t, params.connectionId);
+    connectionsOf(t).splice(connectionsOf(t).indexOf(c), 1);
+    return { deleted: true };
+  });
+  on(testHermesConnectionRoute, ({ params }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const c = connectionOf(t, params.connectionId);
+    c['status'] = 'ok';
+    c['lastCheckedAt'] = NOW;
+    c['lastError'] = null;
+    return { ok: true, error: null, tools: null, manythreadsTools: null, checkedAt: NOW };
   });
   on(createTeamTagRoute, ({ params, body }) => {
     const t = teamOf(params.slug);
