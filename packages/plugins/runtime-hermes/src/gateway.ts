@@ -1,4 +1,5 @@
 import type { BotRuntimeEvent, BotRuntimeHandle, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
+import { AGENT_BRIDGE_RUN_KEY, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
 import { guardedFetch } from './outbound.ts';
 import { refusedRun } from './refused.ts';
 
@@ -22,6 +23,10 @@ export interface GatewayTarget {
   apiKey: string;
   /** True for an address a team lead typed: every request then goes through the outbound guard (`outbound.ts`). False for the platform's own pod. */
   guarded?: boolean;
+  /** `managed` is the team's own pod, whose profiles already carry the definition's body as SOUL.md; `external` is a gateway the customer runs. */
+  kind: 'managed' | 'external';
+  /** What answers behind the address. `claude-code` and `codex` are the agent bridge, which gets a token for the run; `hermes` never does. */
+  agent: HermesConnectionAgent;
 }
 
 /** The largest single event the stream may carry, and the largest document a gateway may answer a request with. A gateway is not trusted to be polite. */
@@ -181,10 +186,32 @@ export async function runOnGateway(
   };
 
   // Start: the same request is safe to repeat, because the key is the run's id.
-  const body = JSON.stringify({
+  const runBody: Record<string, unknown> = {
     input: input.prompt,
     session_id: sessionIdFor(input.bot.id, input.thread?.threadRootId ?? null, runId),
-  });
+  };
+  // A gateway the customer runs knows nothing of the definition, so its body (what the bot is and how it behaves) goes with every run as
+  // `instructions`, which Hermes adds to its system prompt on each model call. The team's own pod needs no copy: its profiles carry it as SOUL.md.
+  const instructions = input.definition.body.trim();
+  if (target.kind !== 'managed' && instructions !== '') runBody['instructions'] = instructions;
+  // The agent bridge starts a fresh process per run and has no bot credential of its own, so what that process needs travels in the request,
+  // including the token of this one run. A Hermes agent never gets the token: it reaches the platform with its profile's own credential.
+  if (target.agent !== 'hermes') {
+    if (input.endpoint === null) return refusedRun(`bot ${input.bot.slug} has no tools endpoint for this run, which the ${target.agent} agent on "${placement.connection}" needs`);
+    const alias = input.definition.frontmatter.model?.aliases?.[0];
+    const effort = input.definition.frontmatter.model?.effort;
+    const extension: AgentBridgeRunExtension = {
+      bot: input.bot.slug,
+      runId,
+      mcp: { url: input.endpoint.url, token: input.endpoint.token },
+      tools: input.definition.frontmatter.capabilities?.runtime ?? [],
+      ...(alias !== undefined || effort !== undefined ? { model: { ...(alias !== undefined ? { alias } : {}), ...(effort !== undefined ? { effort } : {}) } } : {}),
+      budgetSeconds: input.limits.runBudgetSeconds,
+      maxTurns: input.limits.maxTurns,
+    };
+    runBody[AGENT_BRIDGE_RUN_KEY] = extension;
+  }
+  const body = JSON.stringify(runBody);
   let hermesRunId: string | null = null;
   for (let attempt = 0; hermesRunId === null; attempt += 1) {
     let res: Response;

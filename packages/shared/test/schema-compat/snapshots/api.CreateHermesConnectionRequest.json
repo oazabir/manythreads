@@ -15,6 +15,14 @@
       "type": "string",
       "minLength": 8,
       "maxLength": 500
+    },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "hermes",
+        "claude-code",
+        "codex"
+      ]
     }
   },
   "required": [

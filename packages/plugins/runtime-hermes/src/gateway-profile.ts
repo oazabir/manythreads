@@ -19,7 +19,7 @@ export const GATEWAY_ENV = { mcpToken: 'MANYTHREADS_MCP_TOKEN', llmKey: 'MANYTHR
 
 export interface GatewayProfileInput {
   botSlug: string;
-  /** The bot's stable MCP address, `http://manythreads-server:3000/api/mcp/bots/<botId>` inside the cluster. Carries no credential. */
+  /** The bot's stable MCP address, `http://manythreads-server:3000/mcp` inside the cluster (the same path for every bot; the bot's token says which). Carries no credential. */
   mcpUrl: string;
   /** The `.env` variable holding the bot's token for that address. */
   mcpTokenVar: string;

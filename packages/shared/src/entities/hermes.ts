@@ -9,6 +9,14 @@ import { ActorId, HermesConnectionId, TeamId, WorkspaceId } from '../ids.ts';
 export const HermesConnectionKind = z.enum(['external', 'managed']);
 export type HermesConnectionKind = z.infer<typeof HermesConnectionKind>;
 
+/**
+ * The agent behind a connection. Every kind speaks the same HTTP API (Hermes' run API): `hermes` is a Hermes gateway; `claude-code` and
+ * `codex` are the agent bridge (`tools/agent-bridge`), which serves that API and runs each request with the Claude Code or Codex CLI. The
+ * server sends the bridge kinds a token for the one run (they start a new process per run); a Hermes profile keeps its own bot token.
+ */
+export const HermesConnectionAgent = z.enum(['hermes', 'claude-code', 'codex']);
+export type HermesConnectionAgent = z.infer<typeof HermesConnectionAgent>;
+
 /** What the last check found: `unknown` before the first one. */
 export const HermesConnectionStatus = z.enum(['unknown', 'ok', 'error']);
 export type HermesConnectionStatus = z.infer<typeof HermesConnectionStatus>;
@@ -29,6 +37,8 @@ export const HermesConnection = z.object({
   teamId: TeamId,
   name: HermesConnectionName,
   kind: HermesConnectionKind,
+  /** `managed` connections are always `hermes`. */
+  agent: HermesConnectionAgent,
   baseUrl: z.string().nullable(),
   hasApiKey: z.boolean(),
   status: HermesConnectionStatus,

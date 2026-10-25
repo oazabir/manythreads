@@ -94,8 +94,8 @@ job, never a prompt template's.
   * `model.provider: manythreads` + `model.default: <aliases[0]>`, with a named custom provider pointing at the workspace's
     LiteLLM gateway (`MANYTHREADS_LITELLM_URL`) using the bot's **own virtual key** (`provider.llm`'s `botKey`). Aliases,
     fallbacks, budgets, rate limits and the pre-call DLP hook all live behind that one URL (SPEC §10.1–10.2).
-  * `mcp_servers.manythreads.url` — the **run's own MCP endpoint**, `.../api/mcp/runs/<runId>` (`ctx.runs.open`) — the URL names the
-    run and holds no credential — with the run token in an `Authorization: Bearer` header.
+  * `mcp_servers.manythreads.url` — the platform's one MCP address, `https://<this server>/mcp` — the URL holds no credential — with the **run's own token**
+    (`ctx.runs.open`) in an `Authorization: Bearer` header; the token says which run is calling.
   * `agent.reasoning_effort` when the definition sets `model.effort`.
   * `platform_toolsets.cli` and `agent.disabled_toolsets` — the tools the definition's `capabilities.runtime` grants, and the guarded
     ones it does not (`src/toolsets.ts`; the mapping and the reason an empty list cannot mean "none" are in [runners.md](./runners.md#which-tools-a-bot-gets-capabilitiesruntime)).
@@ -432,14 +432,36 @@ server and keep its tools visible:
 ```yaml
 mcp_servers:
   manythreads:
-    url: https://<this server>/api/mcp/bots/<bot id>
+    url: https://<this server>/mcp
     headers: { Authorization: "Bearer ${MANYTHREADS_MCP_TOKEN}" }
 tools: { tool_search: { enabled: "off" } }   # otherwise Hermes hides MCP tools behind a search tool
 ```
 
+The address is the same for every bot (the older `/api/mcp/bots/<bot id>` still works); the token alone says which bot is calling.
 `MANYTHREADS_MCP_TOKEN` is the bot's token, minted on the bot's page (`POST /api/teams/:slug/bots/:botSlug/pairing-tokens`, shown once) and
 replaced with `POST …/pairing-tokens/rotate`. A profile reads its MCP settings when the gateway starts serving it, so after a rotation restart that
 profile (`hermes -p <profile> gateway restart`). One key per connection: it must be the `API_SERVER_KEY` of the profiles you place on it.
+
+**The bot's definition travels with the run.** A Hermes you run yourself has no copy of the bot's `BOT.md`, so for every connection that is
+not the team's own pod, each run carries the file's prose (its body, trimmed) as `instructions` in the start request. Hermes adds
+`instructions` to its system prompt on every model call, so the bot behaves as its definition says without you copying anything into the
+profile. The team's own pod does not get it: there the same text is already the profile's `SOUL.md` (the profile's identity file), and sending it twice would
+duplicate it.
+
+**Agent kinds.** A connection names the agent behind its address (`agent`, default `hermes`). All three answer the same run API:
+
+| Agent | What answers | What the run request adds |
+|---|---|---|
+| `hermes` | A Hermes gateway (the team's pod is always this) | nothing beyond `input`, `session_id` and (external only) `instructions` |
+| `claude-code`, `codex` | The agent bridge (`tools/agent-bridge`), which starts one Claude Code or Codex command-line process per run | a `manythreads` object (below) |
+
+The bridge keeps no profile and no bot credential: each process lives for one run. So the start request also carries
+`manythreads: { bot, runId, mcp: { url, token }, tools, model: { alias, effort }, budgetSeconds, maxTurns }` — the bot's slug, the run's id, the
+one MCP address with a token that opens **only this run** and outlives the run's budget, the runtime tools the definition allows
+(`capabilities.runtime`), the model and effort it names, and its limits. The shape is `AgentBridgeRunExtension` in `@manythreads/shared`. A Hermes
+agent never receives this object or the run token, and a bridge run for a bot with no tools endpoint is refused with a clear message instead of
+starting without tools. A managed connection cannot be anything but `hermes`; set or change the agent with `agent` on the connection's create and
+update requests.
 
 ### The wire
 
@@ -447,7 +469,7 @@ Measured on Hermes 0.21.5; `tools/fake-hermes-gateway` reproduces it for tests.
 
 | Step | Request |
 |---|---|
-| start | `POST /p/<profile>/v1/runs` with `Authorization: Bearer <key>`, `Idempotency-Key: <our run id>`, body `{input, session_id}` → 202 `{run_id}` |
+| start | `POST /p/<profile>/v1/runs` with `Authorization: Bearer <key>`, `Idempotency-Key: <our run id>`, body `{input, session_id, instructions?, manythreads?}` → 202 `{run_id}` |
 | watch | `GET /p/<profile>/v1/runs/<id>/events` (server-sent events): `tool.started`, `tool.completed`, `message.delta`, then `run.completed` (with `output`, `usage`) or `run.failed` / `run.cancelled` |
 | stop | `POST /p/<profile>/v1/runs/<id>/stop` |
 
@@ -466,7 +488,7 @@ Measured on Hermes 0.21.5; `tools/fake-hermes-gateway` reproduces it for tests.
 ### The bot's stable MCP endpoint
 
 A gateway profile holds **one** MCP address and token and cannot be given a new one per run, so the bot has a fixed endpoint,
-`POST /api/mcp/bots/<bot id>` (`gateway-mcp`), whose credential is the bot's token. Every call is attributed to the bot's **currently open run** — the
+`POST /mcp` (`gateway-mcp`; the older `POST /api/mcp/bots/<bot id>` is the same endpoint), whose credential is the bot's token. Every call is attributed to the bot's **currently open run** — the
 same code as the per-run endpoint, so reads are the asker's, writes are the bot's, approvals and the source log belong to that run. The runtime
 guarantees at most one open run per bot (below). With no run open: `initialize`, `ping` and `tools/list` still work (a client lists tools when it
 connects), and a tool call is answered with the tool error *"No conversation is waiting for this bot"*. A wrong, revoked or another bot's token is

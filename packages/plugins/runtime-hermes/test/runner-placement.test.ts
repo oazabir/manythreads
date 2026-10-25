@@ -48,7 +48,7 @@ describe('the profile of a run placed on a runner', () => {
 
     const onRunner = build('placement: { runner: server-1 }\n');
     expect(onRunner.gateway).toEqual({ baseUrl: `https://threads.example/api/llm/runs/${RUN}`, key: 'run-token-secret' });
-    expect(onRunner.endpoint?.url).toBe(`https://threads.example/api/mcp/runs/${RUN}`);
+    expect(onRunner.endpoint?.url).toBe(`https://threads.example/mcp`);
     const yaml = parseYaml(renderConfig(onRunner)) as { providers: { manythreads: { api: string; api_key: string } }; mcp_servers: { manythreads: { url: string } } };
     expect(yaml.providers.manythreads.api).toBe(`https://threads.example/api/llm/runs/${RUN}/v1`);
     expect(yaml.providers.manythreads.api_key).toBe('run-token-secret');

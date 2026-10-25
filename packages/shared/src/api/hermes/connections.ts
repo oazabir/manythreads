@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HermesConnection, HermesConnectionName } from '../../entities/hermes.ts';
+import { HermesConnection, HermesConnectionAgent, HermesConnectionName } from '../../entities/hermes.ts';
 import { HermesConnectionId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
@@ -31,6 +31,8 @@ export const CreateHermesConnectionRequest = z.strictObject({
   name: HermesConnectionName.refine((n) => n !== 'managed', 'the name "managed" is reserved for the team\'s own Hermes pod'),
   baseUrl: HermesBaseUrl,
   apiKey: z.string().min(8).max(500),
+  /** Omitted: `hermes`. */
+  agent: HermesConnectionAgent.optional(),
 });
 export type CreateHermesConnectionRequest = z.infer<typeof CreateHermesConnectionRequest>;
 export const CreateHermesConnectionResponse = z.object({ connection: HermesConnection });
@@ -40,6 +42,7 @@ export const createHermesConnectionRoute = { method: 'POST', path: '/api/teams/:
 export const UpdateHermesConnectionRequest = z.strictObject({
   baseUrl: HermesBaseUrl.optional(),
   apiKey: z.string().min(8).max(500).optional(),
+  agent: HermesConnectionAgent.optional(),
 });
 export type UpdateHermesConnectionRequest = z.infer<typeof UpdateHermesConnectionRequest>;
 export const UpdateHermesConnectionResponse = z.object({ connection: HermesConnection });

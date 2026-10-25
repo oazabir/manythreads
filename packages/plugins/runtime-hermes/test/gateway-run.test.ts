@@ -82,7 +82,7 @@ async function loadBot(slug: string, placement: string[], profile?: string): Pro
   const minted = await w.call<{ token: string }>(omar, 'POST', `/api/teams/engineering/bots/${slug}/pairing-tokens`, {});
   expect(minted.status, JSON.stringify(minted.body)).toBe(201);
   const token = minted.body.token;
-  if (profile !== undefined) gw.setProfile(profile, { apiKey: API_KEY, mcp: { url: `${w.server.url}/api/mcp/bots/${botId}`, token } });
+  if (profile !== undefined) gw.setProfile(profile, { apiKey: API_KEY, mcp: { url: `${w.server.url}/mcp`, token } });
   return { botId, slug, actorId, token };
 }
 
@@ -154,7 +154,7 @@ describe('Hermes connections (the lead’s routes)', () => {
     const created = await w.call<{ connection: Record<string, unknown> }>(omar, 'POST', '/api/teams/engineering/hermes/connections', { name: 'host', baseUrl: gw.url, apiKey: API_KEY });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     connectionId = created.body.connection['id'] as string;
-    expect(created.body.connection).toMatchObject({ name: 'host', kind: 'external', baseUrl: gw.url, hasApiKey: true, status: 'unknown' });
+    expect(created.body.connection).toMatchObject({ name: 'host', kind: 'external', agent: 'hermes', baseUrl: gw.url, hasApiKey: true, status: 'unknown' });
     expect(JSON.stringify(created.body)).not.toContain(API_KEY);
 
     const listed = await w.call(omar, 'GET', '/api/teams/engineering/hermes/connections');
@@ -175,6 +175,18 @@ describe('Hermes connections (the lead’s routes)', () => {
     expect((await w.call(omar, 'GET', '/api/teams/customer-support/hermes/connections')).status).toBe(200);
     expect(((await w.call(omar, 'GET', '/api/teams/customer-support/hermes/connections')).body as { items: unknown[] }).items).toHaveLength(0);
     expect((await w.call(omar, 'POST', `/api/teams/customer-support/hermes/connections/${connectionId}/test`, {})).status).toBe(404);
+  });
+
+  it('a connection can name the agent behind it, change it later, and refuses an agent that is not one', async () => {
+    const base = '/api/teams/engineering/hermes/connections';
+    const made = await w.call<{ connection: { id: string; agent: string } }>(omar, 'POST', base, { name: 'bridge', baseUrl: gw.url, apiKey: API_KEY, agent: 'claude-code' });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body.connection.agent).toBe('claude-code');
+    const changed = await w.call<{ connection: { agent: string } }>(omar, 'PATCH', `${base}/${made.body.connection.id}`, { agent: 'codex' });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(changed.body.connection.agent).toBe('codex');
+    expect((await w.call(omar, 'POST', base, { name: 'bad-agent', baseUrl: gw.url, apiKey: API_KEY, agent: 'gpt' })).status).toBe(400);
+    expect((await w.call(omar, 'DELETE', `${base}/${made.body.connection.id}`)).status).toBe(200);
   });
 
   it('refuses the reserved name, an address with a credential in it, and a key that is too short', async () => {
@@ -265,7 +277,7 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
     expect(gw.runs.filter((r) => r.profile === 'ext-bot')).toHaveLength(1);
     const call = gw.calls.find((c) => c.profile === 'ext-bot' && c.method === 'POST' && c.path.endsWith('/v1/runs'))!;
     expect(call).toMatchObject({ authorized: true, idempotencyKey: run.id });
-    expect(call.body).toEqual({ input: 'Nadia in #dev:\n\n@ext-bot what changed?', session_id: `${bot.botId}:${rootId}` });
+    expect(call.body).toEqual({ input: 'Nadia in #dev:\n\n@ext-bot what changed?', instructions: '# ext-bot\n\nSoul text.', session_id: `${bot.botId}:${rootId}` });
 
     // The tool call came over HTTP with the bot's token and was posted as the bot, into the run's thread, stamped with THIS run's id.
     expect(observed?.ok, JSON.stringify(observed)).toBe(true);
@@ -462,7 +474,7 @@ describe('mode B: the team’s own pod (profiles for a controller)', () => {
     const [spec] = await provider.profilesForTeam(teamId);
     expect(spec).toMatchObject({ profile: 'mt-pod-bot', botId: bot.botId });
     expect(Object.keys(spec!.files).sort()).toEqual(['.env.template', 'SOUL.md', 'config.yaml']);
-    expect(spec!.files['config.yaml']).toContain(`/api/mcp/bots/${bot.botId}`);
+    expect(spec!.files['config.yaml']).toContain(`http://manythreads-server:3000/mcp`);
     expect(spec!.files['config.yaml']).toContain('"off"');
     expect(spec!.secrets.LLM_KEY).toBe('sk-virtual-key-of-pod-bot');
     expect(spec!.secrets.API_SERVER_KEY).toMatch(/^mtk_/);

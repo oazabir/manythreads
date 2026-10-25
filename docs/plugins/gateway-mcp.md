@@ -18,7 +18,8 @@ this gateway maps that URL back to the run — which is the only way a tool call
 
 ```
 POST /api/mcp/runs                { pairingToken, threadId?, ttlSeconds? }
-   → 201 { runId, botId, url, token, expiresAt }          url = <publicUrl>/api/mcp/runs/<runId>
+   → 201 { runId, botId, url, token, expiresAt }          url = <publicUrl>/mcp
+POST /mcp                          Authorization: Bearer <run token | bot pairing token>   { "jsonrpc": "2.0", ... }
 POST /api/mcp/runs/:runId          Authorization: Bearer <token>   { "jsonrpc": "2.0", "id": 1, "method": "tools/call", ... }
 POST /api/mcp/runs/:runId/close    Authorization: Bearer <token>   { "status": "done" | "failed" | "stopped" }
 ```
@@ -123,6 +124,14 @@ later. What the gateway does **not** log is the query itself or anything a stub 
 use), writes the URL and (as a bearer header) the token into the Hermes profile it generates, and posts the run's reply through `messages.post` in the
 run's bot transaction. The loader compiles a `BOT.md`'s `capabilities.native` into `app.capability_grants` (bots migration
 0005), so the tools a bot is offered come from its own file.
+
+## The one address, `/mcp`
+
+Every URL the platform hands out is `<publicUrl>/mcp` (inside the cluster, `http://manythreads-server:3000/mcp`). The bearer token alone says who is
+calling: it is looked up first as a run token (that run's call, with the asker's authority) and otherwise as a bot's pairing token (the call is
+attributed to the bot's open run, as below). Anything else is one 401, and failed attempts are counted per client address. `/api/mcp/runs/:runId`
+and `/api/mcp/bots/:botId` keep working for profiles written before. Only `POST` is served: the endpoint answers each request with one JSON
+document and offers no event stream.
 
 ## The bot's stable endpoint
 

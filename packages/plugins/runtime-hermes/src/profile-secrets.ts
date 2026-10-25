@@ -3,7 +3,7 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 
 // The credentials the platform generates for a managed bot's profile (mode B), kept as secrets in `app.hermes_profile_secrets` (system-only):
 //
-//  * the MCP token — the bot's pairing token. The profile presents it at the bot's stable MCP endpoint (`/api/mcp/bots/<botId>`).
+//  * the MCP token — the bot's pairing token. The profile presents it at the platform's one MCP address (`/mcp`).
 //  * the API server key — the key that authorises requests to the profile on the pod's gateway (`Authorization: Bearer`).
 //
 // Both are created on first use and then stable, so a controller that asks twice writes the same `.env`. A lead who revokes or rotates the

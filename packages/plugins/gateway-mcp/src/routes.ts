@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { McpRunCloseRequest, McpRunMintRequest, McpRunMintResponse } from '@manythreads/shared';
+import { MCP_PATH, McpRunCloseRequest, McpRunMintRequest, McpRunMintResponse, mcpUrlOf } from '@manythreads/shared';
 import { z } from 'zod';
 import { HttpError } from '@manythreads/sdk';
 import { json, route, unauthenticated } from './http.ts';
@@ -20,7 +20,7 @@ import { handleBotRpc, handleRpc } from './protocol.ts';
 // credential. The run token travels as `Authorization: Bearer <token>`, never in the URL (a path is logged by every proxy
 // and access log); the URL names the run (`/api/mcp/runs/<runId>`) and must agree with the token's run. A revoked pairing
 // token, a forged run token, an expired one, a finished run and a run id that is not the token's all answer the same 401,
-// so a probe cannot tell which it hit.
+// so a probe cannot tell which it hit. `POST /mcp` is the single address handed out everywhere; the two paths above remain for older profiles.
 
 const sha256 = (token: string): Buffer => createHash('sha256').update(token, 'utf8').digest();
 
@@ -71,6 +71,8 @@ const CloseResponse = z.strictObject({ ok: z.literal(true), closed: z.boolean() 
 /** Failed bot-token attempts per client address per minute before further failures answer 429, and calls per bot per minute once authenticated. */
 const BOT_FAILURES_PER_IP_PER_MINUTE = 60;
 const BOT_CALLS_PER_BOT_PER_MINUTE = 600;
+/** Authenticated calls per run per minute on `/mcp` (the older per-run path has the same bound through its route option). */
+const RUN_CALLS_PER_RUN_PER_MINUTE = 600;
 
 /** A sliding window of timestamps per key, in this process; pruned so a flood of distinct keys cannot grow it without bound. */
 function windowed(limit: number, make: () => Error): (key: string) => Error | null {
@@ -92,6 +94,7 @@ export function registerMcpRoutes(ctx: PluginContext): void {
   const countFailure = windowed(BOT_FAILURES_PER_IP_PER_MINUTE, rateLimited);
   const failedBotAuth = (ip: string): Error => countFailure(ip) ?? unauthenticated('A valid bot token is required');
   const countBotCall = windowed(BOT_CALLS_PER_BOT_PER_MINUTE, rateLimited);
+  const countRunCall = windowed(RUN_CALLS_PER_RUN_PER_MINUTE, rateLimited);
   ctx.http.route({
     method: 'POST',
     path: '/api/mcp/runs',
@@ -119,7 +122,7 @@ export function registerMcpRoutes(ctx: PluginContext): void {
         McpRunMintResponse.parse({
           runId: run.runId,
           botId: run.botId,
-          url: `${ctx.runtime.publicUrl}/api/mcp/runs/${run.runId}`,
+          url: mcpUrlOf(ctx.runtime.publicUrl),
           token,
           expiresAt: run.expiresAt,
         }),
@@ -155,6 +158,35 @@ export function registerMcpRoutes(ctx: PluginContext): void {
         throw err;
       });
       return handleBotRpc(ctx, bot, run, req.body);
+    }),
+  });
+
+  // The one address (`/mcp`): the bearer token alone says who calls. A run token is tried first (a run's own call, with the asker's authority),
+  // then a bot pairing token (a profile's stable credential). An unknown token is one 401, counted per client address like the bot route's.
+  ctx.http.route({
+    method: 'POST',
+    path: MCP_PATH,
+    public: true,
+    handler: route(async (req, tx) => {
+      const token = bearerToken(req);
+      if (token === null) throw failedBotAuth(req.ip);
+      const digest = sha256(token);
+      const run = await ctx.runs.resolve(digest);
+      if (run) {
+        const runLimited = countRunCall(run.runId);
+        if (runLimited) throw runLimited;
+        return handleRpc(ctx, run, req.body);
+      }
+      const paired = (await tx.query<PairedBotRow>('SELECT * FROM app.bots_pairing_resolve($1)', [digest])).rows[0];
+      if (!paired) throw failedBotAuth(req.ip);
+      const bot = { botId: paired.bot_id, botActorId: paired.actor_id, teamId: paired.team_id, workspaceId: paired.workspace_id };
+      const limited = countBotCall(bot.botId);
+      if (limited) throw limited;
+      const open = await ctx.runs.openRunOf(bot.botId).catch((err: unknown) => {
+        if (err instanceof Error && err.name === 'AmbiguousRunError') return 'ambiguous' as const;
+        throw err;
+      });
+      return handleBotRpc(ctx, bot, open, req.body);
     }),
   });
 

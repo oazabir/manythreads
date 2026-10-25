@@ -1,4 +1,4 @@
-import { parseBotMd } from '@manythreads/shared';
+import { AgentBridgeRunExtension, parseBotMd } from '@manythreads/shared';
 import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway } from '../../../../tools/fake-hermes-gateway/src/server.ts';
@@ -42,7 +42,7 @@ const input = (over: Partial<BotRuntimeInput> = {}, budget: number | null = 30):
 };
 
 const options = (over: Partial<GatewayRuntimeOptions> = {}, key = KEY): GatewayRuntimeOptions => ({
-  resolve: async () => ({ baseUrl: gw.url, apiKey: key }),
+  resolve: async () => ({ baseUrl: gw.url, apiKey: key, kind: 'managed', agent: 'hermes' }),
   killGraceSeconds: 1,
   retryUnitMs: 10,
   ...over,
@@ -61,6 +61,49 @@ describe('the names a run goes by', () => {
     expect(sessionIdFor(BOT_ID, null, RUN_ID)).toBe(`${BOT_ID}:${RUN_ID}`);
     expect(profileFor('coder', { connection: 'managed' })).toBe('mt-coder');
     expect(profileFor('coder', { connection: 'host', profile: 'custom' })).toBe('custom');
+  });
+});
+
+describe('what a run carries to the gateway', () => {
+  const external = (agent: 'hermes' | 'claude-code' | 'codex') => ({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent }) });
+  const bodyOf = (): Record<string, unknown> => gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!.body as Record<string, unknown>;
+
+  it('sends the definition body as instructions to a gateway the customer runs, and not to the team’s own pod', async () => {
+    await collect((await runOnGateway(options(external('hermes')), input(), scope, { connection: 'host', profile: 'mt-coder' })).events);
+    expect(bodyOf()['instructions']).toBe('soul');
+    gw.calls.length = 0;
+    await collect((await runOnGateway(options(), input(), scope, { connection: 'managed' })).events);
+    expect(bodyOf()).not.toHaveProperty('instructions');
+  });
+
+  it('sends the run extension only to a bridge agent, with the run token', async () => {
+    const parsed = parseBotMd('---\nname: Coder\nrole: r\nkind: agent\nruntime: hermes\nmodel:\n  aliases: [smart]\n  effort: high\ncapabilities:\n  runtime: [web-search]\n---\nsoul\n');
+    if (!parsed.ok) throw new Error('fixture');
+    const withNamedAlias = input({ definition: { frontmatter: parsed.frontmatter, body: parsed.body }, endpoint: { runId: RUN_ID, url: 'https://mt.example/mcp', token: 'run-token-abc' } });
+    await collect((await runOnGateway(options(external('claude-code')), withNamedAlias, scope, { connection: 'host', profile: 'mt-coder' })).events);
+    const ext = AgentBridgeRunExtension.parse(bodyOf()['manythreads']);
+    expect(ext).toEqual({
+      bot: 'coder',
+      runId: RUN_ID,
+      mcp: { url: 'https://mt.example/mcp', token: 'run-token-abc' },
+      tools: ['web-search'],
+      model: { alias: 'smart', effort: 'high' },
+      budgetSeconds: 30,
+      maxTurns: null,
+    });
+  });
+
+  it('never puts the run token in the body of a Hermes agent', async () => {
+    const withToken = input({ endpoint: { runId: RUN_ID, url: 'https://mt.example/mcp', token: 'run-token-abc' } });
+    await collect((await runOnGateway(options(external('hermes')), withToken, scope, { connection: 'host', profile: 'mt-coder' })).events);
+    expect(bodyOf()).not.toHaveProperty('manythreads');
+    expect(JSON.stringify(bodyOf())).not.toContain('run-token-abc');
+  });
+
+  it('refuses a bridge run that has no tools endpoint', async () => {
+    const result = resultOf(await collect((await runOnGateway(options(external('codex')), input({ endpoint: null }), scope, { connection: 'host', profile: 'mt-coder' })).events));
+    expect(result.ok).toBe(false);
+    expect(gw.calls.some((c) => c.method === 'POST')).toBe(false);
   });
 });
 
@@ -153,7 +196,7 @@ describe('a run that cannot start says why, with the right category', () => {
     const dead = await startFakeHermesGateway({ profiles: {} });
     const url = dead.url;
     await dead.close();
-    const handle = await runOnGateway(options({ resolve: async () => ({ baseUrl: url, apiKey: KEY }) }), input(), scope, { connection: 'managed' });
+    const handle = await runOnGateway(options({ resolve: async () => ({ baseUrl: url, apiKey: KEY, kind: 'managed', agent: 'hermes' }) }), input(), scope, { connection: 'managed' });
     expect(resultOf(await collect(handle.events))).toMatchObject({ ok: false, failure: 'hermes_unreachable', error: expect.stringContaining('unreachable') });
   });
 
@@ -180,7 +223,7 @@ describe('a run that cannot start says why, with the right category', () => {
     });
     await new Promise<void>((r) => hop.listen(0, '127.0.0.1', r));
     const port = (hop.address() as { port: number }).port;
-    const result = resultOf(await collect((await runOnGateway(options({ resolve: async () => ({ baseUrl: `http://127.0.0.1:${port}`, apiKey: KEY }) }), input(), scope, { connection: 'managed' })).events));
+    const result = resultOf(await collect((await runOnGateway(options({ resolve: async () => ({ baseUrl: `http://127.0.0.1:${port}`, apiKey: KEY, kind: 'managed', agent: 'hermes' }) }), input(), scope, { connection: 'managed' })).events));
     hop.close();
     expect(result).toMatchObject({ ok: false, failure: 'hermes_unreachable' });
     expect(gw.calls).toHaveLength(0);
@@ -209,7 +252,7 @@ describe('a gateway is not trusted to be polite', () => {
     try {
       plain.setScript(() => [{ type: 'delta', text: 'a' }, { type: 'wait', ms: 150 }, { type: 'delta', text: 'b' }, { type: 'finish', output: 'ab' }]);
       plain.dropNextStreams(1);
-      const handle = await runOnGateway(options({ resolve: async () => ({ baseUrl: plain.url, apiKey: KEY }) }), input(), scope, { connection: 'managed' });
+      const handle = await runOnGateway(options({ resolve: async () => ({ baseUrl: plain.url, apiKey: KEY, kind: 'managed', agent: 'hermes' }) }), input(), scope, { connection: 'managed' });
       const events = await collect(handle.events);
       expect(events.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text)).toEqual(['a', 'b']);
       expect(resultOf(events)).toMatchObject({ ok: true, text: 'ab' });
@@ -238,7 +281,7 @@ describe('a gateway is not trusted to be polite', () => {
     });
     await new Promise<void>((r) => evil.listen(0, '127.0.0.1', r));
     const url = `http://127.0.0.1:${(evil.address() as { port: number }).port}`;
-    const result = resultOf(await collect((await runOnGateway(options({ resolve: async () => ({ baseUrl: url, apiKey: KEY }) }), input(), scope, { connection: 'managed' })).events));
+    const result = resultOf(await collect((await runOnGateway(options({ resolve: async () => ({ baseUrl: url, apiKey: KEY, kind: 'managed', agent: 'hermes' }) }), input(), scope, { connection: 'managed' })).events));
     evil.close();
     expect(result.error).toContain('status 500');
     expect(result.error).not.toContain('SECRET');

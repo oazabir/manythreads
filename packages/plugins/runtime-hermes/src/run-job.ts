@@ -17,6 +17,7 @@ import {
   GUARD_RULE_DLP_APPROVAL,
   LlmAliasName,
   botMdPath,
+  mcpUrlOf,
   parseBotMd,
 } from '@manythreads/shared';
 import { z } from 'zod';
@@ -371,7 +372,7 @@ export function buildScope(input: {
     thread: { channelId: payload.channelId, threadRootId: payload.replyRootId },
     // The URL names the run and carries no credential (a URL is logged by proxies and access logs); the token travels as a
     // bearer header, which the rendered profile sets.
-    endpoint: { runId: run.runId, url: `${ctx.runtime.publicUrl}/api/mcp/runs/${run.runId}`, token },
+    endpoint: { runId: run.runId, url: mcpUrlOf(ctx.runtime.publicUrl), token },
     // A run placed on a runner reaches the models through this server, not through the cluster's LiteLLM address (which the runner's
     // machine cannot resolve) and without the bot's virtual key (which never leaves the server): the run's own token is the credential
     // of the run-scoped proxy `gateway-llm` serves at `/api/llm/runs/<runId>/v1`.

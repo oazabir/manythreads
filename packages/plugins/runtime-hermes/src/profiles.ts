@@ -1,5 +1,5 @@
 import type { GatewayProfileSpec, HermesProfilesProvider, PluginContext, PluginLogger } from '@manythreads/sdk';
-import { MANAGED_CONNECTION_NAME } from '@manythreads/shared';
+import { MANAGED_CONNECTION_NAME, mcpUrlOf } from '@manythreads/shared';
 import { GATEWAY_ENV, renderGatewayProfile } from './gateway-profile.ts';
 import { managedProfileName } from './gateway.ts';
 import { ensureProfileSecrets } from './profile-secrets.ts';
@@ -74,7 +74,7 @@ export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, en
             { frontmatter: definition.frontmatter, body: definition.body },
             {
               botSlug: bot.slug,
-              mcpUrl: `${env.serverUrl}/api/mcp/bots/${bot.id}`,
+              mcpUrl: mcpUrlOf(env.serverUrl),
               mcpTokenVar: GATEWAY_ENV.mcpToken,
               model: { baseUrl: env.llmUrl, apiKeyVar: GATEWAY_ENV.llmKey, alias: definition.alias },
               ...(wantsShell && env.terminal ? { terminal: { backend: 'ssh' as const, ...env.terminal } } : {}),

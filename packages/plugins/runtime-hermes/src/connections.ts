@@ -15,6 +15,7 @@ import {
   CreateHermesConnectionResponse,
   DeleteHermesConnectionResponse,
   HermesConnection,
+  type HermesConnectionAgent,
   ListHermesConnectionsResponse,
   ReenableHermesProfileResponse,
   reenableHermesProfileRoute,
@@ -44,6 +45,7 @@ export interface ConnectionRow extends Record<string, unknown> {
   team_id: string;
   name: string;
   kind: string;
+  agent: string;
   base_url: string | null;
   secret_id: string | null;
   status: string;
@@ -64,6 +66,7 @@ export function toHermesConnection(r: ConnectionRow): HermesConnection {
     teamId: r.team_id,
     name: r.name,
     kind: r.kind,
+    agent: r.agent,
     baseUrl: r.base_url,
     hasApiKey: r.secret_id !== null,
     status: r.status,
@@ -76,7 +79,7 @@ export function toHermesConnection(r: ConnectionRow): HermesConnection {
 }
 
 export const CONNECTION_COLUMNS =
-  'id, workspace_id, team_id, name, kind, base_url, secret_id, status, last_checked_at, last_error, created_by, created_at, updated_at';
+  'id, workspace_id, team_id, name, kind, agent, base_url, secret_id, status, last_checked_at, last_error, created_by, created_at, updated_at';
 
 /**
  * The address and key a run of `botId` should use for the team's connection `name`. An external connection has one key for the whole gateway;
@@ -96,10 +99,10 @@ export async function resolveTarget(
       const bot = (await tx.query<{ id: string; workspace_id: string; team_id: string }>('SELECT id, workspace_id, team_id FROM app.bots WHERE id = $1::uuid AND team_id = $2::uuid', [query.botId, query.teamId])).rows[0];
       if (!bot) return null;
       const secrets = await ensureProfileSecrets(ctx, bot);
-      return 'revoked' in secrets ? null : { baseUrl: row.base_url, apiKey: secrets.apiKey };
+      return 'revoked' in secrets ? null : { baseUrl: row.base_url, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
     }
     if (row.secret_id === null) return null;
-    return { baseUrl: row.base_url, apiKey: await ctx.secrets.get(tx, row.secret_id), guarded: true };
+    return { baseUrl: row.base_url, apiKey: await ctx.secrets.get(tx, row.secret_id), guarded: true, kind: 'external', agent: row.agent as HermesConnectionAgent };
   });
 }
 
@@ -200,13 +203,13 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
       const secretId = await ctx.db.system((sys) => ctx.secrets.put(sys, body.apiKey), { workspaceId: team.workspace_id });
       try {
         const inserted = await tx.query<ConnectionRow>(
-          `INSERT INTO app.hermes_connections (workspace_id, team_id, name, kind, base_url, secret_id, created_by)
-           VALUES ($1::uuid, $2::uuid, $3, 'external', $4, $5::uuid, $6::uuid) RETURNING ${CONNECTION_COLUMNS}`,
-          [team.workspace_id, team.id, body.name, body.baseUrl, secretId, tx.actor.id],
+          `INSERT INTO app.hermes_connections (workspace_id, team_id, name, kind, agent, base_url, secret_id, created_by)
+           VALUES ($1::uuid, $2::uuid, $3, 'external', $7, $4, $5::uuid, $6::uuid) RETURNING ${CONNECTION_COLUMNS}`,
+          [team.workspace_id, team.id, body.name, body.baseUrl, secretId, tx.actor.id, body.agent ?? 'hermes'],
         );
         const row = inserted.rows[0];
         if (!row) throw new Error('the connection insert answered no row');
-        await ctx.audit.emit(tx, { type: 'hermes.connection.created', workspaceId: team.workspace_id, teamId: team.id, connectionId: row.id, name: row.name, kind: 'external', actorId: tx.actor.id, at: at() });
+        await ctx.audit.emit(tx, { type: 'hermes.connection.created', workspaceId: team.workspace_id, teamId: team.id, connectionId: row.id, name: row.name, kind: 'external', agent: body.agent ?? 'hermes', actorId: tx.actor.id, at: at() });
         return json(CreateHermesConnectionResponse.parse({ connection: toHermesConnection(row) }), 201);
       } catch (err) {
         dropSecretAfterCommit(ctx, team.workspace_id, secretId);
@@ -227,7 +230,7 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
       await requireManage(tx, team);
       const current = await requireConnection(tx, team.id, connectionId);
       if (current.kind !== 'external') throw conflict("The team's own Hermes pod is managed by the platform; it cannot be edited here.");
-      if (body.baseUrl === undefined && body.apiKey === undefined) throw invalid('Nothing to change');
+      if (body.baseUrl === undefined && body.apiKey === undefined && body.agent === undefined) throw invalid('Nothing to change');
       if (body.baseUrl !== undefined) await requireAllowedAddress(body.baseUrl);
       let newSecret: string | null = null;
       if (body.apiKey !== undefined) newSecret = await ctx.db.system((sys) => ctx.secrets.put(sys, body.apiKey as string), { workspaceId: team.workspace_id });
@@ -235,10 +238,10 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
         // A changed address or key invalidates the last check: the status goes back to "unknown" until the next test.
         const updated = await tx.query<ConnectionRow>(
           `UPDATE app.hermes_connections SET
-             base_url = coalesce($3, base_url), secret_id = coalesce($4::uuid, secret_id),
+             base_url = coalesce($3, base_url), secret_id = coalesce($4::uuid, secret_id), agent = coalesce($5, agent),
              status = 'unknown', last_error = NULL, last_checked_at = NULL, updated_at = now()
            WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${CONNECTION_COLUMNS}`,
-          [connectionId, team.id, body.baseUrl ?? null, newSecret],
+          [connectionId, team.id, body.baseUrl ?? null, newSecret, body.agent ?? null],
         );
         const row = updated.rows[0];
         if (!row) throw forbidden('You do not have permission to do that');
@@ -250,6 +253,7 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
           name: row.name,
           baseUrlChanged: body.baseUrl !== undefined && body.baseUrl !== current.base_url,
           keyChanged: body.apiKey !== undefined,
+          agent: row.agent as HermesConnectionAgent,
           actorId: tx.actor.id,
           at: at(),
         });
@@ -334,7 +338,7 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
             : await ctx.db.system((sys) => ctx.secrets.get(sys, current.secret_id as string));
       if (key === null) outcome = { ok: false, error: 'This connection has no API key yet.', tools: null, manythreadsTools: null };
       else {
-        outcome = await checkGateway({ baseUrl: current.base_url, apiKey: key, guarded: current.kind === 'external' }, body.profile, options.fetch ? { fetch: options.fetch } : {});
+        outcome = await checkGateway({ baseUrl: current.base_url, apiKey: key, guarded: current.kind === 'external', kind: current.kind === 'managed' ? 'managed' : 'external', agent: current.agent as HermesConnectionAgent }, body.profile, options.fetch ? { fetch: options.fetch } : {});
       }
       await tx.query(
         `UPDATE app.hermes_connections SET status = $3, last_checked_at = now(), last_error = $4, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid`,

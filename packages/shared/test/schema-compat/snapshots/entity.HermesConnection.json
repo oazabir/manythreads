@@ -28,6 +28,14 @@
         "managed"
       ]
     },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "hermes",
+        "claude-code",
+        "codex"
+      ]
+    },
     "baseUrl": {
       "type": [
         "string",
@@ -92,6 +100,7 @@
     "teamId",
     "name",
     "kind",
+    "agent",
     "baseUrl",
     "hasApiKey",
     "status",

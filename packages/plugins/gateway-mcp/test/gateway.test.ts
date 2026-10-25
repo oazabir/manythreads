@@ -142,7 +142,7 @@ describe('gateway-mcp endpoint', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     const minted = McpRunMintResponse.parse(res.body);
     expect(minted.botId).toBe(bot.botId);
-    expect(minted.url).toBe(`http://localhost:3000/api/mcp/runs/${minted.runId}`);
+    expect(minted.url).toBe('http://localhost:3000/mcp');
     expect(minted.url).not.toContain(minted.token);
     const row = await world.system(
       async (tx) =>
@@ -373,6 +373,38 @@ describe('gateway-mcp endpoint', () => {
     });
     const result = (res.body as { result: { content: Array<{ text: string }> } }).result;
     expect(JSON.parse(result.content[0]!.text)).toEqual({ hits: [], reason: 'no bases configured' });
+  });
+
+  it('the one address /mcp: a run token opens that run, a bot token opens the bot, anything else is one 401', async () => {
+    const viaRun = await request('/mcp', run.token, { jsonrpc: '2.0', id: 1, method: 'initialize' });
+    expect(viaRun.status, JSON.stringify(viaRun.body)).toBe(200);
+    expect((viaRun.body as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe('manythreads');
+
+    const viaBot = await request('/mcp', pairingToken, { jsonrpc: '2.0', id: 2, method: 'initialize' });
+    expect(viaBot.status, JSON.stringify(viaBot.body)).toBe(200);
+    expect((viaBot.body as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe('manythreads');
+
+    const forged = await request('/mcp', 'forged-token-0123', { jsonrpc: '2.0', id: 3, method: 'initialize' });
+    expect(forged.status).toBe(401);
+    const none = await request('/mcp', null, { jsonrpc: '2.0', id: 4, method: 'initialize' });
+    expect(none.status).toBe(401);
+  });
+
+  it('/mcp bounds an authenticated run at 600 calls a minute, per run', async () => {
+    const minted = McpRunMintResponse.parse((await mintRun()).body);
+    const other = McpRunMintResponse.parse((await mintRun()).body);
+    const ping = { jsonrpc: '2.0', id: 1, method: 'ping' };
+    let limited = -1;
+    for (let i = 0; i < 601; i++) {
+      const r = await request('/mcp', minted.token, ping);
+      if (r.status === 429) {
+        limited = i;
+        break;
+      }
+    }
+    expect(limited).toBe(600);
+    // Another run is not affected by this one's burst.
+    expect((await request('/mcp', other.token, ping)).status).toBe(200);
   });
 
   it('a forged pairing token cannot open a run', async () => {

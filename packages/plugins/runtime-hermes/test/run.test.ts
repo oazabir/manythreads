@@ -296,7 +296,7 @@ describe('a hermes run, end to end', () => {
     expect(call['argv']).toEqual(['chat', '--query-file', '-', '--oneshot', '--format', 'stream-json']);
     expect(call['soul']).toBe('# HermesTestBot');
     // The URL names the run and holds no credential; the run's token is the Authorization header of the same profile.
-    expect(call['mcpUrl']).toBe(`http://localhost:3000/api/mcp/runs/${run!.id}`);
+    expect(call['mcpUrl']).toBe(`http://localhost:3000/mcp`);
     expect(call['bearer']).toMatch(/^Bearer [A-Za-z0-9_-]{20,}$/);
     expect(call['mcpUrl']).not.toContain(String(call['bearer']).slice('Bearer '.length));
     // The child got an allowlisted environment: the server's canary secret is not in it, HERMES_HOME and the spool var are.

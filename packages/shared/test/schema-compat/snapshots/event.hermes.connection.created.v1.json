@@ -36,6 +36,14 @@
         "managed"
       ]
     },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "hermes",
+        "claude-code",
+        "codex"
+      ]
+    },
     "actorId": {
       "anyOf": [
         {

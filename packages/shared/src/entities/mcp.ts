@@ -118,6 +118,14 @@ export const McpRunMintResponse = z.strictObject({
 });
 export type McpRunMintResponse = z.infer<typeof McpRunMintResponse>;
 
+/**
+ * The one MCP address every bot calls, on the install's public host: `https://<domain>/mcp`. The bearer token alone says who is calling (a
+ * bot's pairing token or one run's token), so a gateway is configured with the same URL for every bot and the install needs no per-bot or
+ * per-team host name. The older paths (`/api/mcp/bots/<botId>`, `/api/mcp/runs/<runId>`) keep working.
+ */
+export const MCP_PATH = '/mcp';
+export const mcpUrlOf = (baseUrl: string): string => `${baseUrl.replace(/\/+$/, '')}${MCP_PATH}`;
+
 /** How a run ended, as the runtime reports it. */
 export const McpRunCloseRequest = z.strictObject({ status: z.enum(['done', 'failed', 'stopped']) });
 export type McpRunCloseRequest = z.infer<typeof McpRunCloseRequest>;
