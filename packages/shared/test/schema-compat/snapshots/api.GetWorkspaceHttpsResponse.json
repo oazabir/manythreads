@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "none",
+        "cloudflare",
+        "letsencrypt"
+      ]
+    },
+    "origin": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "strict",
+            "flexible"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "wildcard": {
+      "type": "boolean"
+    },
+    "acmeServer": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "production",
+            "staging"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "domain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "appsDomain": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "public-url",
+              "wildcard",
+              "client-ip",
+              "proxy-match"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warn",
+              "fail",
+              "skipped"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "detail"
+        ]
+      }
+    },
+    "seenAs": {
+      "type": "object",
+      "properties": {
+        "clientIp": {
+          "type": "string"
+        },
+        "viaCloudflare": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clientIp",
+        "viaCloudflare"
+      ]
+    }
+  },
+  "required": [
+    "mode",
+    "origin",
+    "wildcard",
+    "acmeServer",
+    "domain",
+    "appsDomain",
+    "checks",
+    "seenAs"
+  ]
+}

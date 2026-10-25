@@ -78,6 +78,21 @@ it), roles and role members are admin-write, and the person accepting an invitat
 
 Migration `0004_guest_channel_grants.sql` replaces `teams_invitation_accept` so that accepting also writes the guest's channel grants (`acl_entries` of `resource_type 'channel'`); it reads `app.channels` by name through dynamic SQL guarded by `to_regclass`, so the teams plugin still migrates and runs without the channels plugin.
 
+## Domain & HTTPS status
+
+`GET /api/workspace/https` (workspace admin; 404 for everyone else) reports how the install serves HTTPS and runs live checks, for Settings, Domain & HTTPS and onboarding step 4. It only reads: the mode is chosen when the cluster is deployed (Helm values, `tools/devbox/deploy.sh --tls ...`) and the server has no rights to change it. It reads `MANYTHREADS_TLS_MODE` (`none`, `cloudflare`, `letsencrypt`; absent means `none`), `MANYTHREADS_TLS_ORIGIN` (`strict` or `flexible`, Cloudflare only; missing is reported as strict, the chart always sets it), `MANYTHREADS_TLS_WILDCARD` (`1` or `0`), `MANYTHREADS_TLS_ACME_SERVER` (`production` or `staging`), `MANYTHREADS_PUBLIC_URL` and `MANYTHREADS_HERMES_PODS_APPS_HOST` (the domain app hosts `<app>--<team>.<domain>` live under).
+
+The response (`GetWorkspaceHttpsResponse`) carries the mode, the domain, the apps domain, `seenAs` (the address the server derived for this request and whether Cloudflare headers were present) and four checks, run in parallel with a five second limit each:
+
+| Check | What it does | Result |
+|---|---|---|
+| `public-url` | HTTPS GET `<public url>/healthz` with normal certificate verification | ok on 2xx; fail names the cause (certificate, name lookup, timeout, refused, status); skipped when the public address is not https |
+| `wildcard` | HTTPS GET of a made-up `mt-check-<hex>-probe.<apps domain>`; any HTTP answer proves the certificate is valid for app hosts | ok, fail (with the hint that Cloudflare's free certificate covers one level below the zone), or skipped when wildcard is off or there is no apps domain |
+| `client-ip` | compares the address the server derived (`req.ip`, which honours `MANYTHREADS_TRUST_PROXY`) with `cf-connecting-ip` | warn when Cloudflare headers are present but the two differ (wrong proxy hop count); ok otherwise |
+| `proxy-match` | Cloudflare mode without `cf-ray`, or another mode with it | warn on a mismatch |
+
+The two outbound checks are cached in process memory for 15 s (shared by concurrent callers) because the route holds its request connection while they run; the route is also rate limited. Outbound requests go only to hosts built from server configuration, never from the request, and redirects are not followed, so there is no request-forgery surface. The pure logic is `src/https-checks.ts` (tests with an injected `fetch`: `test/https-checks.test.ts`); the route is `src/routes-https.ts` (`test/https-route.test.ts`).
+
 ## Manifest
 
 | Field | Value |

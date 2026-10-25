@@ -6,10 +6,11 @@ import { QueryView } from '../../components/states';
 import { fetchBots } from '../bots/api';
 
 /*
- * Minimal onboarding for M1 (PLAN P5-22, SPEC §16): steps 0, 1, 2, 5 and 6 only —
+ * Minimal onboarding for M1 (PLAN P5-22, SPEC §16): steps 0, 1, 2, 4, 5 and 6 —
  * bootstrap, one sign-in provider, one model provider, first team from a template,
- * default bots with Brain. Steps 3, 4, 7 and 8 stay on the checklist for the full
- * wizard in phase 10. Admin-only, at the route (nested under AdminOnly) and in the
+ * default bots with Brain. Steps 3, 7 and 8 stay on the checklist for the full
+ * wizard in phase 10. Step 4 (Domain & HTTPS) is optional: a trial on a private network runs fine without it, so it never
+ * holds back "everything is ready" and "Continue setup" skips it. Admin-only, at the route (nested under AdminOnly) and in the
  * settings nav (an admin's Workspace group only). Every step links to the page that
  * already does the work; nothing here writes anything.
  */
@@ -24,14 +25,18 @@ export type OnboardingInput = {
   teams: OnboardingTeams;
   /** Bots of the first team; null while the roster has not loaded (a team exists but its bots are unknown). */
   firstTeamBots: OnboardingBots;
+  /** The page is open over HTTPS (the step has no server data of its own; the settings page runs the real checks). */
+  secure?: boolean;
 };
 
 export type OnboardingStep = {
-  id: 'bootstrap' | 'signin' | 'models' | 'teams' | 'bots';
+  id: 'bootstrap' | 'signin' | 'models' | 'https' | 'teams' | 'bots';
   /** The SPEC §16 step number, kept so the full wizard can extend this list in place. */
-  n: 0 | 1 | 2 | 5 | 6;
+  n: 0 | 1 | 2 | 4 | 5 | 6;
   title: string;
   done: boolean;
+  /** Optional steps never count towards `allDone` and are never offered as the next step. */
+  optional?: boolean;
   to: string;
   hint: string;
 };
@@ -74,6 +79,17 @@ export function onboardingSteps(input: OnboardingInput): OnboardingState {
           : 'Point the workspace at a model provider first — bots cannot answer without one.',
     },
     {
+      id: 'https',
+      n: 4,
+      title: 'Domain & HTTPS',
+      done: input.secure === true,
+      optional: true,
+      to: '/settings/workspace/https',
+      hint: input.secure
+        ? 'This workspace is served over HTTPS. Open the page to run the full checks.'
+        : 'Optional. Serve the workspace over HTTPS, through Cloudflare or with a Let’s Encrypt certificate.',
+    },
+    {
       id: 'teams',
       n: 5,
       title: 'Teams',
@@ -101,7 +117,7 @@ export function onboardingSteps(input: OnboardingInput): OnboardingState {
   ];
   return {
     steps,
-    allDone: steps.every((s) => s.done),
+    allDone: steps.every((s) => s.done || s.optional === true),
     firstTeamSlug: first?.slug ?? null,
     brainChat: first && brain ? `/t/${first.slug}/bots/brain/chat` : null,
   };
@@ -111,7 +127,7 @@ function StepRow({ step, first }: { step: OnboardingStep; first: boolean }) {
   return (
     <div className="mrow" data-step={step.id} data-done={step.done ? 'true' : 'false'}>
       <div>
-        <span className={step.done ? 'status ok' : 'chip no'}>{step.done ? 'done' : `step ${step.n}`}</span>
+        <span className={step.done ? 'status ok' : 'chip no'}>{step.done ? 'done' : step.optional ? 'optional' : `step ${step.n}`}</span>
       </div>
       <div>
         <div>
@@ -144,7 +160,7 @@ export function Onboarding() {
     <div className="onboarding" data-landmark="onboarding">
       <h1 className="pane-title" data-landmark="title" data-copy="title">Finish setting up</h1>
       <p className="lede" data-landmark="lede" data-copy="lede">
-        Five steps to a workspace where you can ask Brain something. Steps 3, 4, 7 and 8 arrive with the full
+        Five steps to a workspace where you can ask Brain something, plus an optional one for HTTPS. Steps 3, 7 and 8 arrive with the full
         wizard — until then, everything below is all there is.
       </p>
       <QueryView q={workspace}>
@@ -163,8 +179,9 @@ export function Onboarding() {
                             llmProviders: lp.length,
                             teams: ts.map((t) => ({ slug: t.slug, name: t.name })),
                             firstTeamBots: firstSlug === null ? [] : bots.status === 'ok' ? list : null,
+                            secure: window.location.protocol === 'https:',
                           });
-                          const next = state.steps.find((s) => !s.done);
+                          const next = state.steps.find((s) => !s.done && !s.optional);
                           return (
                             <>
                               <section className="block" aria-label="Setup steps" data-landmark="steps">

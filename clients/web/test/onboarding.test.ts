@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { onboardingSteps, type OnboardingInput } from '../src/screens/onboarding/Onboarding';
 
 /*
- * PLAN P5-22: the minimal onboarding slice is steps 0, 1, 2, 5 and 6 (SPEC §16 numbers kept,
+ * PLAN P5-22: the minimal onboarding slice is steps 0, 1, 2, 4, 5 and 6 (SPEC §16 numbers kept,
  * so the phase-10 wizard extends the list in place). The derivation is pure, so the gate pins it
  * here; the screen itself is proven in Playwright like every other screen.
  */
@@ -18,7 +18,7 @@ const base: OnboardingInput = {
 describe('the onboarding checklist', () => {
   it('starts with only the bootstrap step done, and points at the page that does each step', () => {
     const s = onboardingSteps(base);
-    expect(s.steps.map((x) => x.n)).toEqual([0, 1, 2, 5, 6]);
+    expect(s.steps.map((x) => x.n)).toEqual([0, 1, 2, 4, 5, 6]);
     expect(s.steps.filter((x) => x.done).map((x) => x.id)).toEqual(['bootstrap']);
     expect(s.allDone).toBe(false);
     expect(s.brainChat).toBeNull();
@@ -27,6 +27,7 @@ describe('the onboarding checklist', () => {
       bootstrap: '/settings/workspace/general',
       signin: '/settings/workspace/sign-in',
       models: '/settings/workspace/llm',
+      https: '/settings/workspace/https',
       teams: '/teams',
       bots: '/teams',
     });
@@ -73,5 +74,14 @@ describe('the onboarding checklist', () => {
     });
     expect(s.steps.find((x) => x.id === 'bots')?.done).toBe(false);
     expect(s.steps.find((x) => x.id === 'bots')?.hint).toContain('Reading');
+  });
+
+  it('treats Domain & HTTPS as optional: it never blocks allDone, and it is done only over HTTPS', () => {
+    const all = { ...base, enabledSignInProviders: 1, llmProviders: 1, teams: [{ slug: 'e', name: 'E' }], firstTeamBots: [{ slug: 'brain' }] };
+    const plain = onboardingSteps(all);
+    const https = plain.steps.find((x) => x.id === 'https');
+    expect(https).toMatchObject({ n: 4, title: 'Domain & HTTPS', done: false, optional: true });
+    expect(plain.allDone).toBe(true);
+    expect(onboardingSteps({ ...all, secure: true }).steps.find((x) => x.id === 'https')?.done).toBe(true);
   });
 });

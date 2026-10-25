@@ -5,6 +5,7 @@ import { registerTagRoutes } from './routes-tags.ts';
 import { registerTeamRoutes } from './routes-teams.ts';
 import { registerTemplateRoutes } from './routes-templates.ts';
 import { registerWorkspaceRoutes } from './routes-workspace.ts';
+import { registerHttpsRoutes } from './routes-https.ts';
 
 /**
  * Teams: templates, teams, roster, team roles, role tags and invitations (SPEC section 5, templates and the teams API).
@@ -49,5 +50,6 @@ export default definePlugin({
     registerTagRoutes(ctx, deps);
     registerInvitationRoutes(ctx, deps);
     registerWorkspaceRoutes(ctx, deps);
+    registerHttpsRoutes(ctx);
   },
 });

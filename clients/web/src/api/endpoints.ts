@@ -90,6 +90,7 @@ import {
   GetSessionResponse,
   GetTeamResponse,
   GetTeamRosterResponse,
+  GetWorkspaceHttpsResponse,
   GetWorkspaceResponse,
   InviteTeamMemberRequest,
   ListOidcMethodsResponse,
@@ -162,6 +163,7 @@ import {
   getSessionRoute,
   getTeamRoute,
   getTeamRosterRoute,
+  getWorkspaceHttpsRoute,
   getWorkspaceRoute,
   listOidcMethodsRoute,
   listOidcProvidersRoute,
@@ -301,6 +303,7 @@ export const createWorkspaceInvitation = (body: CreateInvitationRequest) =>
 // ---- workspace -----------------------------------------------------------------------------------------
 export const fetchWorkspaceMembers = () => call(listWorkspaceMembersRoute, { response: ListWorkspaceMembersResponse });
 export const fetchWorkspace = () => call(getWorkspaceRoute, { response: GetWorkspaceResponse });
+export const fetchWorkspaceHttps = () => call(getWorkspaceHttpsRoute, { response: GetWorkspaceHttpsResponse });
 export const updateWorkspace = (body: UpdateWorkspaceRequest) =>
   call(updateWorkspaceRoute, { request: UpdateWorkspaceRequest, response: UpdateWorkspaceResponse }, body);
 export const updateWorkspaceMember = (personId: string, body: UpdateWorkspaceMemberRequest) =>

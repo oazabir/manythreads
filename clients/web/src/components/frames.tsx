@@ -78,6 +78,7 @@ export function SettingsFrame() {
         { to: '/settings/workspace/members', label: 'Members' },
         { to: '/settings/workspace/roles', label: 'Roles' },
         { to: '/settings/workspace/llm', label: 'LLM' },
+        { to: '/settings/workspace/https', label: 'Domain & HTTPS' },
       ],
     });
   }
