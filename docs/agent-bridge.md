@@ -49,7 +49,8 @@ key it does not start. Every request, including `GET /health`, must carry `Autho
 A **profile** is the name that appears in the bridge's URL (`/p/<profile>/v1`). A bot placed on a connection without a profile name, or with a name
 that is not listed, uses `default`. Per profile: `agent` (`claude-code` or `codex`), `workdir` (created when missing; the tool runs there),
 `model` (passed to the tool), `modelAliases` (the alias a bot's definition names, mapped to the tool's own model name; aliases not listed are ignored),
-`extraAllowedTools` (Claude Code only: extra tools pre-approved for every run of the profile).
+`extraAllowedTools` (Claude Code only: extra tools pre-approved for every run of the profile). `instructions` (a note about this machine, appended after the bot's BOT.md under "Where you run" in every run: where the
+repositories are, what is installed, what the bot must leave alone — the bot's definition says who it is, this says where it runs).
 
 Two more per-profile keys control the tool's environment (see Security): `env` (`{"NAME": "value"}`, set in the tool's environment for every run of the
 profile, for example `KUBECONFIG` for a bot that deploys) and `passEnv` (a list of names of the bridge's own variables to hand on as they are). The names

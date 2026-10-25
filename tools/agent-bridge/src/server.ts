@@ -155,6 +155,19 @@ export async function startBridge(options: BridgeOptions): Promise<Bridge> {
     const path = url.pathname;
     const method = req.method ?? 'GET';
     if (path === '/health' && method === 'GET') return send(res, 200, { status: 'ok', profiles: Object.keys(options.config.profiles) });
+    // The server's connection check asks `/v1/models` (or `/p/<profile>/v1/models`), as it would a Hermes gateway: one model per profile, named by its agent.
+    const models = /^(?:\/p\/([^/]+))?\/v1\/models$/.exec(path);
+    if (models && method === 'GET') {
+      let named: string | undefined;
+      try {
+        named = models[1] === undefined ? undefined : decodeURIComponent(models[1]);
+      } catch {
+        return fail(res, 400, 'bad profile name', 'bad_request');
+      }
+      const chosen = named === undefined ? profileFor(options.config, 'default') : profileFor(options.config, named);
+      if (!chosen) return fail(res, 404, 'no such profile and no default', 'profile_not_found');
+      return send(res, 200, { object: 'list', data: [{ id: chosen.profile.agent, object: 'model', owned_by: 'agent-bridge' }] });
+    }
 
     const m = /^\/p\/([^/]+)\/v1\/runs(?:\/([^/]+)(\/events|\/stop)?)?$/.exec(path);
     if (!m) return fail(res, 404, 'not found', 'not_found');

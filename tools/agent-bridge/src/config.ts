@@ -28,6 +28,11 @@ export interface ProfileConfig {
   env?: Record<string, string> | undefined;
   /** Names of the bridge's own environment variables handed on to the child (beyond the built-in allowlist). */
   passEnv?: string[] | undefined;
+  /**
+   * What this machine is like, appended after the bot's BOT.md in every run: where the repositories are, what is installed, what the bot must
+   * not touch. The bot's definition says who it is; this says where it runs (as a Hermes profile's own SOUL.md would).
+   */
+  instructions?: string | undefined;
 }
 
 export interface BridgeConfig {
@@ -85,6 +90,8 @@ export function parseConfig(raw: unknown): BridgeConfig {
     if (pass !== undefined && (!Array.isArray(pass) || pass.some((x) => typeof x !== 'string' || !ENV_NAME.test(x) || RESERVED_ENV.has(x)))) {
       throw new Error(`config: profile "${name}": passEnv must be a list of variable names (not ${[...RESERVED_ENV].join(' or ')})`);
     }
+    const notes = p['instructions'];
+    if (notes !== undefined && (typeof notes !== 'string' || notes.length > 20_000)) throw new Error(`config: profile "${name}": instructions must be text of at most 20000 characters`);
     profiles[name] = {
       agent: p['agent'],
       workdir: p['workdir'],
@@ -93,6 +100,7 @@ export function parseConfig(raw: unknown): BridgeConfig {
       ...(extra !== undefined ? { extraAllowedTools: extra as string[] } : {}),
       ...(envMap !== undefined ? { env: envMap as Record<string, string> } : {}),
       ...(pass !== undefined ? { passEnv: pass as string[] } : {}),
+      ...(typeof notes === 'string' && notes.trim() !== '' ? { instructions: notes } : {}),
     };
   }
   const binRaw = isRecord(raw['bin']) ? raw['bin'] : {};

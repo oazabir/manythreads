@@ -184,8 +184,9 @@ export class RunManager {
     run.emit(event, fields);
   }
 
-  private async drive(run: Run, profileName: string, profile: BridgeConfig['profiles'][string], request: RunRequest): Promise<void> {
+  private async drive(run: Run, profileName: string, profile: BridgeConfig['profiles'][string], given: RunRequest): Promise<void> {
     const { config } = this.opts;
+    const request = withProfileInstructions(given, profile.instructions);
     const started = Date.now();
     const budgetS = request.manythreads.budgetSeconds ?? config.defaultBudgetSeconds;
     let budgetTimer: NodeJS.Timeout | undefined;
@@ -256,4 +257,11 @@ export class RunManager {
       );
     }
   }
+}
+
+/** The bot's BOT.md (sent by the server) first, then the profile's own note about this machine. */
+export function withProfileInstructions(request: RunRequest, note: string | undefined): RunRequest {
+  if (note === undefined || note.trim() === '') return request;
+  const own = `## Where you run\n\n${note.trim()}`;
+  return { ...request, instructions: request.instructions === null ? own : `${request.instructions.trimEnd()}\n\n${own}` };
 }

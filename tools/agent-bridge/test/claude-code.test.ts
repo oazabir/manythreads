@@ -27,6 +27,15 @@ describe('auth and limits', () => {
     expect((await fetch(`${h.bridge.url}/health`, { headers: auth })).status).toBe(200);
   });
 
+  it("answers the server's connection check (/v1/models), for the bridge and for a profile", async () => {
+    expect((await fetch(`${h.bridge.url}/v1/models`)).status).toBe(401);
+    for (const path of ['/v1/models', '/p/default/v1/models', '/p/mt-coder/v1/models']) {
+      const res = await fetch(`${h.bridge.url}${path}`, { headers: auth });
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { data: Array<{ id: string }> }).data[0]?.id).toBe('claude-code');
+    }
+  });
+
   it('refuses to start without a usable key', async () => {
     const { startBridge } = await import('../src/server.ts');
     await expect(startBridge({ config: h.config, apiKey: '', stateDir: h.dir })).rejects.toThrow(/at least 16/);
@@ -137,6 +146,16 @@ describe('what the CLI is given', () => {
       for (const bad of ['--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--permission-mode', 'bypassPermissions']) expect(argv).not.toContain(bad);
       expect(argv).toEqual(expect.arrayContaining(['-p', '--output-format', 'stream-json', '--verbose', '--restricted', '--strict-mcp-config', '--model', 'sonnet']));
     }
+  });
+
+  it("appends the profile's note about this machine after BOT.md", async () => {
+    const { withProfileInstructions } = await import('../src/runs.ts');
+    const base = { input: 'x', sessionId: null, instructions: 'BOT.md body', manythreads: { tools: [], mcp: null, model: { alias: null, effort: null }, budgetSeconds: null, maxTurns: null } } as never;
+    expect((withProfileInstructions(base, 'Repos are in /srv/repos.') as { instructions: string }).instructions).toBe('BOT.md body\n\n## Where you run\n\nRepos are in /srv/repos.');
+    expect(withProfileInstructions(base, undefined)).toBe(base);
+    expect((withProfileInstructions({ ...(base as object), instructions: null } as never, 'Note.') as { instructions: string }).instructions).toBe('## Where you run\n\nNote.');
+    const { parseConfig } = await import('../src/config.ts');
+    expect(() => parseConfig({ profiles: { default: { agent: 'claude-code', workdir: '/w', instructions: 5 } } } as never)).toThrow(/instructions/);
   });
 
   it('keeps the prompt on stdin and the token out of argv, writing a 0600 mcp file that holds a reference', async () => {
