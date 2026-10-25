@@ -96,7 +96,10 @@ export function registerCapabilities(ctx: PluginContext): void {
       environmentId: body.environmentId ?? null,
       actorId: tx.actor.id,
     });
-    return { ok: true, task };
+    // A card made in a run that answers in a thread of this team belongs to that thread, so its completion can wake the creator there.
+    // The door does nothing when the run has no such thread; the card is read again to carry the link.
+    await tx.query('SELECT app.tasks_link_run_thread($1::uuid)', [task.id]);
+    return { ok: true, task: (await cardOf(tx, task.id)) ?? task };
   });
 
   ctx.capabilities.register('tasks.claim', async (input, tx) => {
