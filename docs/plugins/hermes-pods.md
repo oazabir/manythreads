@@ -13,7 +13,7 @@ values, and the `runtime-hermes` plugin (it renders each bot's profile — the d
  │ hermes.profiles provider,  │  Deployment,       │  hermes gateway run             sshd on 127.0.0.1:2222      │
  │ writes Secret/ConfigMap/   │  Service, PVCs,    │  api_server on :8642            one Unix user per bot       │
  │ Deployment                 │  Secrets,          │  sync loop: Secret → profiles   chromium, git, node, python,│
- └────────────────────────────┘  ConfigMap         │  ssh private keys (here only)   kubectl, /dev/shm 1Gi       │
+ └────────────────────────────┘  ConfigMap         │  ssh private keys (here only)   kubectl, helm, /dev/shm 1Gi       │
         │  runs: POST http://hermes-<team>:8642/p/<profile>/v1/runs   └──── ssh as the bot ─────────▶ commands run
         └───────────────────────────────────────────▶ (Bearer <profile API_SERVER_KEY>)               as that bot
  * root only so sshd and useradd can work; every command a bot runs is that bot's own unprivileged user.
@@ -77,7 +77,7 @@ disturb another's). A bot commits there and `git push origin <branch>`. Pushing 
 git config sets `remote.origin.receivepack`), so the *repo user*, not the bot, writes the repository and its **`update` hook cannot be bypassed from a
 bot's own git settings**. The hook refuses any push to `refs/heads/main` (or `master`) from a bot; deleting branches and forced pushes are refused
 too. Someone with access to the `repo` account (an operator via `kubectl exec`, or the platform) merges into main. A bot may create more repositories:
-`sudo -u repo mt-repo-create.sh <name> [https-origin-url]`. The ConfigMap's list comes from `hermesPods.repos` (`"name"` or `"name=https://…"`).
+`sudo -u repo mt-repo-create.sh <name> [https-origin-url]`. The ConfigMap's list comes from `hermesPods.repos` (`"name"` or `"name=https://…"`) plus the team's [projects](projects.md): each project is added as a repository named after it, cloned from its address, within about thirty seconds of the change. An address is cloned only if it starts with one of the prefixes in `hermesPods.repoOriginAllow`; a project on any other address gets no copy.
 
 ## Namespaces and who may do what
 
@@ -127,6 +127,15 @@ deployer cannot change, because its Role has no rights on `traefik.io` objects, 
 absolute ones from `X-Forwarded-Prefix`; it gets **no cookies** (no sessions of its own: use tokens in the URL fragment or its own API calls); **`localStorage`, `sessionStorage` and IndexedDB are unavailable** in a sandboxed page;
 because the page's origin is opaque, calls to the app's own backend count as cross-origin, so the backend must answer with `Access-Control-Allow-Origin: *` (and cannot use credentials). Top-level navigation out of the page, and the platform's cookies, are not available to it.
 Apps that need real cookies or storage should use `host` routing, which gives every app its own origin.
+
+## Deploy targets: a namespace the deployer fully controls
+
+Beyond its apps namespace, a team's deployer bot can be given whole namespaces to administer, to try a modified copy of the platform (`hermesPods.deployTargets` in the chart, for example
+`{ team: engineering, namespace: test-manythreads, hosts: [test.manythreads.kahf.to] }`). The chart makes the namespace, a `deployer` account whose Role covers that namespace only (workloads, Jobs, Secrets,
+volumes, Ingress, `pods/exec`, the database operator's `Cluster`, cert-manager's `Issuer`/`Certificate`; no RBAC objects, nothing cluster-wide), a quota, network policies and an admission rule that limits Ingress hosts to `hosts`.
+The controller reads each target's `deployer-token` Secret and adds one **context per target** (named after the namespace) to the deployer bot's kubeconfig; the default context does not change, and a target whose token is
+not ready is left out with a warning. The `deployer` bot's workbench image carries `helm` for this. The full story (what is allowed and refused, the in-cluster registry that holds the images, the one host step, sizing and the
+build-and-install checklist) is in `docs/deploy-preview.md` and `deploy/preview/README.md`.
 
 ## The workbench is root: how it is kept safe
 

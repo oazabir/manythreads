@@ -1,0 +1,89 @@
+# A preview install of the platform, run by a team's deployer bot INSIDE one namespace of the live cluster (docs/deploy-preview.md):
+#   helm upgrade --install manythreads ./deploy/helm/manythreads -n test-manythreads \
+#     -f deploy/preview/values-preview.yaml --set imageTag=<tag> --set tls.letsencrypt.email=<address>
+# Everything this renders lives in that one namespace (the release name must stay `manythreads`: the chart's object names are fixed).
+# The images come from the in-cluster registry (the pods pull `registry.local:5000/...`; the build pushes the same path through the Service).
+
+domain: test.manythreads.kahf.to
+publicUrl: ""                 # empty = https://<domain>
+imagePullPolicy: IfNotPresent # postgres comes from the node as it is; the two built images are pulled once per tag
+imageTag: dev                 # always override with the tag the build used (--set imageTag=...)
+
+# HTTPS: a namespaced Issuer + Certificate, proved by a web request on port 80 (HTTP-01). No wildcard, no DNS token. The DNS record for the
+# domain must point at the cluster and be DNS-only (not proxied), or the challenge cannot reach Traefik.
+tls:
+  mode: letsencrypt
+  wildcard: false
+  defaultStore: false         # the live release already owns Traefik's TLSStore `default`; a second one would fight it
+  letsencrypt:
+    email: ""                 # set with --set tls.letsencrypt.email=...
+    server: production        # staging while testing, so Let's Encrypt's rate limit is not used up (browsers do not trust staging certificates)
+
+ingress:
+  enabled: true
+  className: traefik          # the admission rule of a deploy target only accepts this class
+
+postgres:
+  mode: cnpg
+  image: manythreads/postgres:19   # already on the node (IfNotPresent); the node cannot pull it from anywhere
+  instances: 1
+  storage:
+    size: 2Gi
+    storageClass: local-path
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+server:
+  enabled: true
+  image: registry.local:5000/test-manythreads/server
+  replicas: 1
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 2Gi }
+  blobs:
+    persistence: { enabled: true, size: 1Gi, storageClass: local-path, accessMode: ReadWriteOnce, keep: false, mountPath: /data/blobs }
+  repos:
+    persistence: { enabled: true, size: 1Gi, storageClass: local-path, accessMode: ReadWriteOnce, keep: false, mountPath: /data/repos }
+
+web:
+  enabled: true
+  image: registry.local:5000/test-manythreads/web
+  replicas: 1
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+  screenshots: { enabled: false }
+
+# Mail goes to the in-cluster catcher; read it with
+#   kubectl --context test-manythreads port-forward svc/manythreads-mailpit 8025
+mailpit:
+  enabled: true
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 256Mi }
+mail:
+  smtpUrl: ""
+
+# The demo world (workspace, personas, teams, content) so there is something to look at. The passwords are random and unknown: set one for the
+# person you want to sign in as with the admin command (docs/deploy-preview.md, step 6). Never fixedPasswords on a public address.
+seed:
+  demo: true
+  fixedPasswords: false
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+# No model gateway and no memory engine: the server starts without them (the bot-run and memory features answer that they are not configured).
+litellm: { enabled: false }
+hindsight: { enabled: false }
+demo: { enabled: false }
+
+# Never a test sign-in route on a public address.
+testAuth: { enabled: false }
+
+# Not a deploy target of its own, and no bots' pods: those exist only in the live release.
+hermesPods:
+  enabled: false
+  deployTargets: []
+registry: { enabled: false }

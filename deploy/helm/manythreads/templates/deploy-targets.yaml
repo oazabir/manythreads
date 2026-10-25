@@ -1,0 +1,359 @@
+{{- if and .Values.hermesPods.enabled .Values.hermesPods.deployTargets }}
+{{- $hp := .Values.hermesPods }}
+{{- $rel := .Release.Namespace }}
+{{- $cidr := include "manythreads.apiServerCidr" . }}
+{{- $d := $hp.deployTargetDefaults }}
+{{- range $i, $t := $hp.deployTargets }}
+{{- $ns := $t.namespace }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" (toString $ns)) }}{{ fail (printf "hermesPods.deployTargets[%d].namespace %q is not a valid namespace name" $i $ns) }}{{ end }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$" (toString $t.team)) }}{{ fail (printf "hermesPods.deployTargets[%d].team %q is not a valid team slug" $i $t.team) }}{{ end }}
+{{- if not $t.hosts }}{{ fail (printf "hermesPods.deployTargets[%d].hosts needs at least one host name" $i) }}{{ end }}
+{{- range $t.hosts }}{{ if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$" (toString .)) }}{{ fail (printf "hermesPods.deployTargets[%d].hosts: %q is not a plain host name (lowercase, no wildcard, no comma)" $i .) }}{{ end }}{{ end }}
+{{- if or (eq $ns $rel) (eq $ns $hp.namespace) (hasPrefix $hp.apps.prefix $ns) (eq $ns "default") (hasPrefix "kube-" $ns) }}{{ fail (printf "hermesPods.deployTargets[%d].namespace %q collides with a namespace the platform uses" $i $ns) }}{{ end }}
+{{- $pss := $t.podSecurity | default "baseline" }}
+{{- if not (has $pss (list "baseline" "restricted")) }}{{ fail (printf "hermesPods.deployTargets[%d].podSecurity must be baseline or restricted" $i) }}{{ end }}
+---
+# Deploy target {{ $ns }} of team {{ $t.team }} (docs/deploy-preview.md): the team's deployer bot has full control of THIS namespace and nothing else.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: manythreads
+    manythreads.io/deploy-target: "true"
+    manythreads.io/team: {{ $t.team | quote }}
+    pod-security.kubernetes.io/enforce: {{ $pss }}
+    pod-security.kubernetes.io/warn: {{ $pss }}
+    pod-security.kubernetes.io/audit: {{ $pss }}
+  annotations:
+    helm.sh/resource-policy: keep
+    # The host names an Ingress here may use; the admission rule below reads this list from the namespace (the deployer cannot edit a Namespace).
+    manythreads.io/hosts: {{ join "," $t.hosts | quote }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: {{ $ns }}
+automountServiceAccountToken: false
+---
+# A long-lived token for the deployer (the kubelet fills it in). The controller reads it from here and writes it, as one more kubeconfig context,
+# into that team's pod for the deployer bot's Unix user alone.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: deployer-token
+  namespace: {{ $ns }}
+  annotations:
+    kubernetes.io/service-account.name: deployer
+type: kubernetes.io/service-account-token
+---
+# The deployer's whole power: this one namespace. Everything an install of the platform needs (workloads, Jobs, Services, Ingress, volumes, config,
+# Secrets, `helm`'s release storage, which is Secrets), the database operator's Cluster and cert-manager's Issuer/Certificate, a shell in its
+# own pods (the admin command line) and their logs. No RBAC objects, no NetworkPolicy, no Namespace, no ServiceAccount, nothing cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployer
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: ["apps"]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["apps"]
+    resources: [deployments/scale, statefulsets/scale]
+    verbs: [get, update, patch]
+  - apiGroups: ["batch"]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["networking.k8s.io"]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [services, configmaps, secrets, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [endpoints, events, resourcequotas, limitranges]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: [clusters, backups, scheduledbackups, poolers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["cert-manager.io"]
+    resources: [issuers, certificates]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ["cert-manager.io", "acme.cert-manager.io"]
+    resources: [certificaterequests, orders, challenges]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer
+  namespace: {{ $ns }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: deployer }
+subjects:
+  - { kind: ServiceAccount, name: deployer, namespace: {{ $ns }} }
+---
+# The controller reads this one Secret (and nothing else) in the target.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: manythreads-hermes-pods-token-reader
+  namespace: {{ $ns }}
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [deployer-token]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: manythreads-hermes-pods-token-reader
+  namespace: {{ $ns }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: manythreads-hermes-pods-token-reader }
+subjects:
+  - { kind: ServiceAccount, name: manythreads-server, namespace: {{ $rel }} }
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: deploy-target
+  namespace: {{ $ns }}
+spec:
+  hard:
+    {{- toYaml ($t.quota | default $d.quota) | nindent 4 }}
+---
+# No pod of this namespace may run at a system priority (it could preempt the platform's own pods). The admission rule below refuses the
+# priorityClassName itself; this quota is the second wall, counted by the quota system whoever (or whatever controller) creates the pod.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: deploy-target-no-system-priority
+  namespace: {{ $ns }}
+spec:
+  hard:
+    pods: "0"
+  scopeSelector:
+    matchExpressions:
+      - operator: In
+        scopeName: PriorityClass
+        values: [system-node-critical, system-cluster-critical]
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: deploy-target
+  namespace: {{ $ns }}
+spec:
+  limits:
+    - type: Container
+      {{- toYaml ($t.limitRange | default $d.limitRange) | nindent 6 }}
+---
+# Network walls. Default deny both ways; then only what an install and a build need (each policy below says what it opens).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Pods of this namespace talk to each other (server to database, web to server, the build to nothing else).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-within-namespace
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Out: DNS, and the public internet on 80/443 (git clone, package downloads, base images, Let's Encrypt), never a private, link-local or CGNAT address.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-internet
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10]
+      ports:
+        - { port: 443, protocol: TCP }
+        - { port: 80, protocol: TCP }
+---
+# Out to the in-cluster registry, where a build pushes its images (the pods of this namespace pull through the node, not through this policy).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-registry
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $.Values.registry.namespace }} } }
+          podSelector: { matchLabels: { app.kubernetes.io/component: registry } }
+      ports:
+        - { port: 5000, protocol: TCP }
+---
+# Out to the Kubernetes API, for the database pods only: the database operator's agent inside each pod reads and reports its Cluster object there.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-database-api
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: cnpg.io/cluster, operator: Exists }
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: { cidr: {{ $cidr }} }
+      ports:
+        - { port: {{ $hp.apiServer.port }}, protocol: TCP }
+---
+# In: the ingress controller (Traefik: the site, and cert-manager's challenge pod, which Traefik reaches too) and the database operator (it
+# calls every database pod it manages, from the cnpg-system namespace).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller-and-operator
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cnpg-system } }
+      ports:
+        - { port: 8000, protocol: TCP }
+        - { port: 5432, protocol: TCP }
+{{- end }}
+---
+# Admission rules for every deploy target (the namespace label manythreads.io/deploy-target=true). Pod security (baseline) already refuses privileged
+# pods, hostPath, host networking and host ports; this adds what it does not cover. They bind everyone who writes in the namespace, the database operator
+# and cert-manager included, so neither can be used to get round them:
+#  * an Ingress rule must name a host listed in the namespace annotation manythreads.io/hosts (a rule without a host would match every host), and so must each tls section;
+#  * no default backend, no ingress class other than traefik, no router.middlewares annotation (it could name another namespace's middleware chain);
+#  * a Service is ClusterIP (no NodePort, LoadBalancer or ExternalName) with no externalIPs, loadBalancerIP or loadBalancerSourceRanges (externalIPs would let a
+#    deployer capture cluster addresses such as kube-dns or the API server: CVE-2020-8554);
+#  * a PersistentVolumeClaim may not name a volume or a selector when it is created (it could claim someone else's released PersistentVolume), and an update
+#    may not change either, except by the volume controller (kube-controller-manager and the kube-system provisioners), whose bind is exactly such an update;
+#  * no Pod (so no pod of any Deployment, StatefulSet, Job or database Cluster either, whoever creates it) sets a priorityClassName;
+#  * no Ingress carries a traefik.* annotation (middlewares, entrypoints, TLS options could all get round the rules above);
+#  * a Secret of type kubernetes.io/tls is written only by cert-manager (otherwise a deployer could plant a certificate and key for any name);
+#  * a cert-manager Certificate names only hosts of the target (dnsNames, commonName), no IP, URI or e-mail names, and an Issuer in the same namespace;
+#    an Issuer is ACME with the Let's Encrypt production or staging address and http01 solvers only (no CA, selfSigned, Vault, Venafi or DNS solvers).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: manythreads-deploy-target-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector: { matchLabels: { manythreads.io/deploy-target: "true" } }
+    resourceRules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [ingresses]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [services, persistentvolumeclaims, pods, secrets]
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [certificates, issuers]
+  variables:
+    - name: hosts
+      expression: "has(namespaceObject.metadata.annotations) && 'manythreads.io/hosts' in namespaceObject.metadata.annotations ? namespaceObject.metadata.annotations['manythreads.io/hosts'].split(',') : []"
+  validations:
+    - expression: "size(variables.hosts) > 0"
+      message: "this namespace has no manythreads.io/hosts annotation"
+    - expression: "object.kind != 'Ingress' || (has(object.spec.rules) && size(object.spec.rules) > 0 && object.spec.rules.all(r, has(r.host) && r.host in variables.hosts))"
+      message: "every Ingress rule in a deploy target needs a host from the namespace's manythreads.io/hosts list"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.tls) || object.spec.tls.all(t, has(t.hosts) && size(t.hosts) > 0 && t.hosts.all(h, h in variables.hosts))"
+      message: "every Ingress tls section in a deploy target needs hosts, all from the namespace's manythreads.io/hosts list"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.defaultBackend)"
+      message: "an Ingress in a deploy target may not set a default backend"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.ingressClassName) || object.spec.ingressClassName == 'traefik'"
+      message: "an Ingress in a deploy target may only use the traefik ingress class (or none)"
+    - expression: "object.kind != 'Ingress' || !has(object.metadata.annotations) || !('kubernetes.io/ingress.class' in object.metadata.annotations) || object.metadata.annotations['kubernetes.io/ingress.class'] == 'traefik'"
+      message: "an Ingress in a deploy target may not carry a kubernetes.io/ingress.class annotation other than traefik"
+    - expression: "object.kind != 'Ingress' || !has(object.metadata.annotations) || !object.metadata.annotations.exists(k, k.startsWith('traefik.'))"
+      message: "an Ingress in a deploy target may not carry traefik.* annotations"
+    - expression: "object.kind != 'Service' || !has(object.spec.type) || object.spec.type == 'ClusterIP'"
+      message: "a Service in a deploy target must be of type ClusterIP (no NodePort, LoadBalancer or ExternalName)"
+    - expression: "object.kind != 'Service' || ((!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0) && (!has(object.spec.loadBalancerIP) || object.spec.loadBalancerIP == '') && (!has(object.spec.loadBalancerSourceRanges) || size(object.spec.loadBalancerSourceRanges) == 0))"
+      message: "a Service in a deploy target may not set externalIPs, loadBalancerIP or loadBalancerSourceRanges"
+    - expression: "object.kind != 'PersistentVolumeClaim' || request.operation != 'CREATE' || ((!has(object.spec.volumeName) || object.spec.volumeName == '') && !has(object.spec.selector))"
+      message: "a PersistentVolumeClaim in a deploy target may not name a volume or set a selector"
+    - expression: >-
+        object.kind != 'PersistentVolumeClaim' || request.operation != 'UPDATE' || request.userInfo.username == 'system:kube-controller-manager' || request.userInfo.username.startsWith('system:serviceaccount:kube-system:') ||
+        ((has(object.spec.volumeName) ? object.spec.volumeName : '') == (has(oldObject.spec.volumeName) ? oldObject.spec.volumeName : '') &&
+        (has(object.spec.selector) ? (has(oldObject.spec.selector) && object.spec.selector == oldObject.spec.selector) : !has(oldObject.spec.selector)))
+      message: "a PersistentVolumeClaim in a deploy target may not change its volume or selector"
+    - expression: "object.kind != 'Pod' || !has(object.spec.priorityClassName) || object.spec.priorityClassName == ''"
+      message: "a pod in a deploy target may not set a priorityClassName"
+    - expression: "object.kind != 'Secret' || !has(object.type) || object.type != 'kubernetes.io/tls' || request.userInfo.username == 'system:serviceaccount:cert-manager:cert-manager'"
+      message: "only cert-manager may write a kubernetes.io/tls Secret in a deploy target"
+    - expression: >-
+        object.kind != 'Certificate' || (
+        (has(object.spec.dnsNames) && size(object.spec.dnsNames) > 0 || has(object.spec.commonName) && object.spec.commonName != '') &&
+        (!has(object.spec.dnsNames) || object.spec.dnsNames.all(d, d in variables.hosts)) &&
+        (!has(object.spec.commonName) || object.spec.commonName == '' || object.spec.commonName in variables.hosts) &&
+        (!has(object.spec.ipAddresses) || size(object.spec.ipAddresses) == 0) && (!has(object.spec.uris) || size(object.spec.uris) == 0) &&
+        (!has(object.spec.emailAddresses) || size(object.spec.emailAddresses) == 0) && (!has(object.spec.otherNames) || size(object.spec.otherNames) == 0) &&
+        (!has(object.spec.isCA) || !object.spec.isCA))
+      message: "a Certificate in a deploy target may name only hosts from the namespace's manythreads.io/hosts list, no IP, URI or e-mail names, and is no CA"
+    - expression: "object.kind != 'Certificate' || (has(object.spec.issuerRef) && (!has(object.spec.issuerRef.kind) || object.spec.issuerRef.kind in ['', 'Issuer']) && (!has(object.spec.issuerRef.group) || object.spec.issuerRef.group in ['', 'cert-manager.io']))"
+      message: "a Certificate in a deploy target must use an Issuer of cert-manager.io (of its own namespace), not a ClusterIssuer"
+    - expression: >-
+        object.kind != 'Issuer' || (has(object.spec.acme) && !has(object.spec.ca) && !has(object.spec.selfSigned) && !has(object.spec.vault) && !has(object.spec.venafi) &&
+        has(object.spec.acme.server) && object.spec.acme.server in ['https://acme-v02.api.letsencrypt.org/directory', 'https://acme-staging-v02.api.letsencrypt.org/directory'] &&
+        has(object.spec.acme.solvers) && size(object.spec.acme.solvers) > 0 &&
+        object.spec.acme.solvers.all(s, has(s.http01) && !has(s.dns01) && !has(s.http01.gatewayHTTPRoute) && (!has(s.http01.ingress) || !has(s.http01.ingress.ingressTemplate))))
+      message: "an Issuer in a deploy target must be ACME with the Let's Encrypt production or staging address and plain http01 solvers only"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: manythreads-deploy-target-guard
+spec:
+  policyName: manythreads-deploy-target-guard
+  validationActions: [Deny]
+{{- end }}

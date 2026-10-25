@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1
 # The workbench: the shell the managed bots work in (one container of the per-team Hermes pod; docs/plugins/hermes-pods.md).
 # Microsoft's Playwright image brings Chromium and its libraries; this layer adds git, node + pnpm (already in the base node),
-# python, kubectl, sshd and sudo, plus the small reconcile scripts that make one Unix user per bot.
-#   docker build -f deploy/images/workbench/Dockerfile -t manythreads/workbench:1 deploy/images/workbench
+# python, kubectl, helm, sshd and sudo, plus the small reconcile scripts that make one Unix user per bot.
+#   docker build -f deploy/images/workbench/Dockerfile -t manythreads/workbench:2 deploy/images/workbench
 FROM mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
 ARG KUBECTL_VERSION=v1.36.5
 ARG KUBECTL_SHA256=33bc88a24c3b09cf55bfd59e6ca977881b61fc3f25ab65bc80c65b430248648e
+# helm installs the platform into a deploy target (deploy/preview/README.md); the checksum is the one get.helm.sh publishes next to the archive
+ARG HELM_VERSION=v3.22.0
+ARG HELM_SHA256=1e4ab49e429626cf6c6958d914248b78c9730803c2751b87627e171dc800e7bb
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-server sudo git python3 python3-pip python3-venv jq curl ca-certificates rsync \
@@ -15,6 +18,11 @@ RUN apt-get update \
     && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl \
     && echo "${KUBECTL_SHA256}  /usr/local/bin/kubectl" | sha256sum -c - \
     && chmod 0755 /usr/local/bin/kubectl \
+    && curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tgz \
+    && echo "${HELM_SHA256}  /tmp/helm.tgz" | sha256sum -c - \
+    && tar -xzf /tmp/helm.tgz -C /tmp linux-amd64/helm \
+    && install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && rm -rf /tmp/helm.tgz /tmp/linux-amd64 \
     && npm install -g playwright@1.56.1 && corepack enable && corepack prepare pnpm@10.28.0 --activate \
     && mkdir -p /run/sshd /etc/ssh/authorized_keys /etc/workbench \
     && groupadd --gid 3000 bots && groupadd --gid 3001 repo && useradd --uid 3001 --gid 3001 --no-create-home --shell /usr/sbin/nologin repo

@@ -67,8 +67,8 @@ done
 
 # repositories of record (made and hook-installed by `repo`), and each bot's clone of them ---------------------------------------
 jq -c '.repos[]?' "$CONF" | while read -r repo; do
-  name=$(jq -r .name <<<"$repo"); origin=$(jq -r '.origin // ""' <<<"$repo")
-  runuser -u repo -- env MT_ORIGIN_ALLOW="$origin_allow" /usr/local/bin/mt-repo-create.sh "$name" "$origin" >/dev/null 2>&1 || { echo "repo $name: create failed" >&2; continue; }
+  name=$(jq -r .name <<<"$repo"); origin=$(jq -r '.origin // ""' <<<"$repo"); branch=$(jq -r '.branch // ""' <<<"$repo")
+  runuser -u repo -- env MT_ORIGIN_ALLOW="$origin_allow" /usr/local/bin/mt-repo-create.sh "$name" "$origin" "$branch" >/dev/null 2>&1 || { echo "repo $name: create failed" >&2; continue; }
   dir="/workspace/repos/$name.git"
   # keep the protecting hook current, and name this exact path as safe for git's ownership check (no wildcard)
   cmp -s "$HOOK" "$dir/hooks/update" || runuser -u repo -- install -m 0755 "$HOOK" "$dir/hooks/update"

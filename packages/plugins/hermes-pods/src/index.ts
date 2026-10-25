@@ -2,6 +2,7 @@ import { definePlugin, type GatewayProfileSpec, type HermesProfilesProvider, typ
 import { configFrom } from './config.ts';
 import { HttpK8s, type K8s } from './k8s.ts';
 import { Reconciler, type ProfileSource } from './reconcile.ts';
+import type { ProjectRepo } from './project-repos.ts';
 import type { Team } from './render.ts';
 
 export { Reconciler } from './reconcile.ts';
@@ -20,7 +21,7 @@ export default definePlugin({
     kind: 'server',
     extends: [],
     events: { emits: [], consumes: [] },
-    dependsOn: ['teams'],
+    dependsOn: ['teams', 'projects'],
   },
   register(ctx) {
     startController(ctx, process.env);
@@ -39,6 +40,17 @@ async function teamsWithManagedBots(ctx: PluginContext): Promise<Team[]> {
         ORDER BY t.slug`,
     );
     return res.rows;
+  });
+}
+
+/** The team's projects (the projects plugin's table) as repositories of record. */
+async function projectReposOf(ctx: PluginContext, teamId: string): Promise<ProjectRepo[]> {
+  return ctx.db.system(async (tx) => {
+    const res = await tx.query<{ name: string; repo_url: string; default_branch: string }>(
+      'SELECT name, repo_url, default_branch FROM app.projects WHERE team_id = $1::uuid ORDER BY name',
+      [teamId],
+    );
+    return res.rows.map((r) => ({ name: r.name, origin: r.repo_url, branch: r.default_branch }));
   });
 }
 
@@ -94,6 +106,7 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
             if (!p) throw new Error('the hermes.profiles provider is not loaded (runtime-hermes)');
             return p.profilesForTeam(id);
           },
+          reposForTeam: (id) => projectReposOf(ctx, id),
           setManagedGateway: async (id, input) => {
             await provider()?.setManagedGateway(id, input);
           },

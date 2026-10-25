@@ -349,7 +349,8 @@ spec:
 {{- end }}
 #  * a Service must be ClusterIP with no externalIPs, loadBalancerIP or loadBalancerSourceRanges (externalIPs would let a deployer capture
 #    cluster addresses such as kube-dns or the API server: CVE-2020-8554);
-#  * a PersistentVolumeClaim may not name a volume (it could claim someone else's released PersistentVolume).
+#  * a PersistentVolumeClaim may not name a volume or a selector when created (it could claim someone else's released PersistentVolume), and an update may not
+#    change either, except by the volume controller (kube-controller-manager and the kube-system provisioners), whose bind is exactly such an update.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -406,8 +407,13 @@ spec:
       message: "a Service in an apps namespace must be of type ClusterIP"
     - expression: "object.kind != 'Service' || ((!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0) && (!has(object.spec.loadBalancerIP) || object.spec.loadBalancerIP == '') && (!has(object.spec.loadBalancerSourceRanges) || size(object.spec.loadBalancerSourceRanges) == 0))"
       message: "a Service in an apps namespace may not set externalIPs, loadBalancerIP or loadBalancerSourceRanges"
-    - expression: "object.kind != 'PersistentVolumeClaim' || !has(object.spec.volumeName) || object.spec.volumeName == ''"
-      message: "a PersistentVolumeClaim in an apps namespace may not name a volume"
+    - expression: "object.kind != 'PersistentVolumeClaim' || request.operation != 'CREATE' || ((!has(object.spec.volumeName) || object.spec.volumeName == '') && !has(object.spec.selector))"
+      message: "a PersistentVolumeClaim in an apps namespace may not name a volume or set a selector"
+    - expression: >-
+        object.kind != 'PersistentVolumeClaim' || request.operation != 'UPDATE' || request.userInfo.username == 'system:kube-controller-manager' || request.userInfo.username.startsWith('system:serviceaccount:kube-system:') ||
+        ((has(object.spec.volumeName) ? object.spec.volumeName : '') == (has(oldObject.spec.volumeName) ? oldObject.spec.volumeName : '') &&
+        (has(object.spec.selector) ? (has(oldObject.spec.selector) && object.spec.selector == oldObject.spec.selector) : !has(oldObject.spec.selector)))
+      message: "a PersistentVolumeClaim in an apps namespace may not change its volume or selector"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

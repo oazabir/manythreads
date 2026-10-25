@@ -120,6 +120,9 @@ spec:
             - { name: MANYTHREADS_HERMES_PODS_APPS_PREFIX, value: {{ .apps.prefix | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_APPS_ROUTING, value: {{ include "manythreads.appsRouting" $ | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_APPS_HOST, value: {{ include "manythreads.appsHost" $ | quote }} }
+            {{- $dt := list }}
+            {{- range .deployTargets }}{{ $dt = append $dt (dict "team" .team "namespace" .namespace "hosts" (.hosts | default list)) }}{{ end }}
+            - { name: MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS, value: {{ toJson $dt | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_RESOURCES, value: {{ dict "hermes" .hermesResources "workbench" .workbenchResources | toJson | quote }} }
             {{- /* Team pods live in another namespace: a short Service name would not resolve there, so the profiles get full ones. */}}
             - { name: MANYTHREADS_INCLUSTER_URL, value: {{ printf "http://manythreads-server.%s.svc.cluster.local:3000" $.Release.Namespace | quote }} }
@@ -148,13 +151,13 @@ spec:
           {{- if .Values.server.blobs.persistence.enabled }}
           persistentVolumeClaim: { claimName: manythreads-blobs }
           {{- else }}
-          emptyDir: {}
+          emptyDir: { sizeLimit: {{ .Values.server.blobs.persistence.size | default "1Gi" | quote }} }
           {{- end }}
         - name: repos
           {{- if .Values.server.repos.persistence.enabled }}
           persistentVolumeClaim: { claimName: manythreads-repos }
           {{- else }}
-          emptyDir: {}
+          emptyDir: { sizeLimit: {{ .Values.server.repos.persistence.size | default "1Gi" | quote }} }
           {{- end }}
 ---
 apiVersion: v1

@@ -14,6 +14,8 @@ import { appUrlFor, assignUsers, buildDeployerKubeconfig, namesFor, parseRepos, 
 class FakeK8s implements K8s {
   readonly store = new Map<string, K8sObject>();
   applied: string[] = [];
+  /** `kind/ns/name` keys whose read throws (a momentary API error). */
+  failReads = new Set<string>();
   private key(kind: string, ns: string, name: string): string {
     return `${kind}/${ns}/${name}`;
   }
@@ -22,6 +24,7 @@ class FakeK8s implements K8s {
     this.applied.push(`${obj.kind}/${obj.metadata.name}`);
   }
   async get(kind: string, ns: string, name: string): Promise<K8sObject | null> {
+    if (this.failReads.has(this.key(kind, ns, name))) throw new Error('connection reset');
     const o = this.store.get(this.key(kind, ns, name));
     if (!o) return null;
     // the API answers Secrets with base64 `data`, never `stringData`
@@ -165,6 +168,64 @@ describe('reconcileTeam', () => {
     for (const [k, o] of k8s.store) if (!k.includes('deployer')) expect(JSON.stringify(o)).not.toContain('TOKEN-DEPLOYER');
   });
 
+  it('adds one kubeconfig context per deploy target of the team and leaves the current context alone', async () => {
+    const k8s = new FakeK8s();
+    seedDeployerToken(k8s);
+    k8s.store.set('Secret/test-manythreads/deployer-token', {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: 'deployer-token', namespace: 'test-manythreads' },
+      stringData: { token: 'TOKEN-TARGET', 'ca.crt': 'CA' },
+    });
+    const cfg: PodConfig = {
+      ...CFG,
+      deployTargets: [
+        { team: 'engineering', namespace: 'test-manythreads', hosts: ['test.example.test'] },
+        { team: 'marketing', namespace: 'other-target', hosts: [] },
+        { team: 'engineering', namespace: 'not-ready', hosts: [] },
+      ],
+    };
+    const res = await new Reconciler(k8s, cfg, source([spec('deployer')]), LOG, () => 'K').reconcileTeam(TEAM);
+    expect(res.deployer).toBe(true);
+    const kc = (k8s.store.get('Secret/manythreads/hermes-engineering-deployer')!['stringData'] as any)['deployer.kubeconfig'] as string;
+    expect(kc).toContain('current-context: deployer');
+    expect(kc).toContain('- name: "test-manythreads"');
+    expect(kc).toContain('namespace: "test-manythreads"');
+    expect(kc).toContain('"TOKEN-TARGET"');
+    expect(kc).toContain('test.example.test');
+    expect(kc).not.toContain('other-target'); // another team's target
+    expect(kc).not.toContain('not-ready'); // no token yet: left out
+    // the token of a target is in the deployer Secret only
+    for (const [k, o] of k8s.store) if (!k.includes('deployer')) expect(JSON.stringify(o)).not.toContain('TOKEN-TARGET');
+  });
+
+  it('keeps the last kubeconfig when a deploy target token cannot be read for a tick', async () => {
+    const k8s = new FakeK8s();
+    seedDeployerToken(k8s);
+    k8s.store.set('Secret/test-manythreads/deployer-token', {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: 'deployer-token', namespace: 'test-manythreads' },
+      stringData: { token: 'TOKEN-TARGET', 'ca.crt': 'CA' },
+    });
+    const cfg: PodConfig = { ...CFG, deployTargets: [{ team: 'engineering', namespace: 'test-manythreads', hosts: ['test.example.test'] }] };
+    const rec = new Reconciler(k8s, cfg, source([spec('deployer')]), LOG, () => 'K');
+    await rec.reconcileTeam(TEAM);
+    const name = 'Secret/manythreads/hermes-engineering-deployer';
+    const before = (k8s.store.get(name)!['stringData'] as any)['deployer.kubeconfig'] as string;
+    expect(before).toContain('"TOKEN-TARGET"');
+    k8s.applied.length = 0;
+    k8s.failReads.add('Secret/test-manythreads/deployer-token');
+    const res = await rec.reconcileTeam(TEAM);
+    expect(res.deployer).toBe(true);
+    expect(k8s.applied).not.toContain('Secret/hermes-engineering-deployer'); // not rewritten
+    expect((k8s.store.get(name)!['stringData'] as any)['deployer.kubeconfig']).toBe(before);
+    // once the read works again, the Secret is written as usual
+    k8s.failReads.clear();
+    await rec.reconcileTeam(TEAM);
+    expect(k8s.applied).toContain('Secret/hermes-engineering-deployer');
+  });
+
   it('reads each team\'s deployer token from that team\'s own apps namespace', async () => {
     const k8s = new FakeK8s();
     seedDeployerToken(k8s); // only apps-engineering has a token
@@ -224,6 +285,7 @@ describe('helpers', () => {
     expect(assignUsers([spec('b'), spec('a')], { 'bot-b': 20007 }, '').map((u) => [u.user, u.uid])).toEqual([['bot-a', 20000], ['bot-b', 20007]]);
     expect(parseRepos('one, two=https://example.test/x.git,../bad,Bad')).toEqual([{ name: 'one' }, { name: 'two', origin: 'https://example.test/x.git' }]);
     expect(buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'apps' })).toContain('current-context: deployer');
+    expect(buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'apps' })).not.toContain('Deploy targets');
   });
 
   it('routes apps by path by default and by host when asked', () => {
@@ -294,5 +356,18 @@ describe('HttpK8s', () => {
     await expect(k.apply({ apiVersion: 'v1', kind: 'Secret', metadata: { name: 'bad', namespace: 'ns' } })).rejects.toThrow(/403 forbidden: nope/);
     expect(resourcePath('Deployment', 'ns', 'd')).toBe('/apis/apps/v1/namespaces/ns/deployments/d');
     expect(() => resourcePath('Node', 'ns')).toThrow(/unsupported/);
+  });
+});
+
+describe('deploy targets in the settings', () => {
+  it('reads the chart\'s JSON list and drops entries that are not usable', () => {
+    const raw = JSON.stringify([
+      { team: 'engineering', namespace: 'test-manythreads', hosts: ['test.example.test'] },
+      { team: 'engineering', namespace: 'Bad Name', hosts: [] },
+      { namespace: 'no-team' },
+    ]);
+    expect(configFrom({ MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS: raw }).deployTargets).toEqual([{ team: 'engineering', namespace: 'test-manythreads', hosts: ['test.example.test'] }]);
+    expect(configFrom({}).deployTargets).toEqual([]);
+    expect(configFrom({ MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS: '{not json' }).deployTargets).toEqual([]);
   });
 });

@@ -18,6 +18,9 @@ publicUrl: ""
 # then makes the wildcard certificate Traefik's default, so app Ingresses in other namespaces (which cannot read this Secret) get it too.
 tls:
   mode: none            # none | cloudflare | letsencrypt
+  # Render the Traefik TLSStore named `default` (Traefik's default certificate, see the comment above). A second release in the same cluster
+  # (a preview install in a deploy target) must set this false: two stores named `default` fight over the one default certificate.
+  defaultStore: true
   wildcard: true        # also cover *.<domain> (the hosts of apps bots deploy)
   cloudflare:
     origin: strict      # strict | flexible
@@ -195,6 +198,7 @@ seed:
   # browser test can sign in as them. The CI release on the devbox turns it on (values-ci.yaml);
   # never on a public deployment, where a random, unrecoverable password is the rule.
   fixedPasswords: false
+  resources: {}          # of the seed Job's container; a namespace with a LimitRange default may need an explicit memory limit here
 
 web:
   enabled: true
@@ -241,7 +245,7 @@ hermesPods:
   enabled: false
   images:
     hermes: manythreads/hermes-pod:1      # Hermes Agent (official installer) + the profile sync
-    workbench: manythreads/workbench:1    # the bots' shell: Playwright/Chromium, git, node, python, kubectl, sshd
+    workbench: manythreads/workbench:2    # the bots' shell: Playwright/Chromium, git, node, python, kubectl, helm, sshd
   workspaceSize: 10Gi        # /workspace of each team's workbench (repositories of record + every bot's clone)
   homeSize: 2Gi              # the Hermes container's profiles (state.db, sessions) and ssh keys
   storageClass: local-path
@@ -291,3 +295,51 @@ hermesPods:
   apiServer:
     cidr: ""
     port: 6443
+  # Deploy targets: whole namespaces where a team's deployer bot has full control of what runs in them, to try a modified copy of the platform
+  # (docs/deploy-preview.md). Each entry makes: the namespace (pod security `podSecurity`, labelled manythreads.io/deploy-target=true), a
+  # `deployer` account with a Role in that namespace only (workloads, Jobs, Secrets, volumes, Ingress, pods/exec, and the database operator's
+  # and cert-manager's own objects; no RBAC objects, nothing cluster-wide), a quota, default limits, default-deny network policies, and an
+  # admission rule that limits Ingress hosts to `hosts`. The team's deployer bot gets one more kubeconfig context per target (named after the
+  # namespace). Empty (the default) = none. Example:
+  #   - { team: engineering, namespace: test-manythreads, hosts: [test.manythreads.kahf.to], podSecurity: baseline }
+  # `quota` and `limitRange` per entry replace the defaults below for that entry (whole map). `podSecurity` must stay `baseline` for builds
+  # with kaniko (it runs as root inside its container, unprivileged); `restricted` blocks it.
+  deployTargets: []
+  deployTargetDefaults:
+    # Sized for ONE install of the platform (database, server, web, mail catcher, the seed Job) plus ONE image build at a time (kaniko takes up
+    # to 4Gi) with a margin; the node has 15 GB in all, so keep the memory limit below what the live install can spare.
+    quota:
+      pods: "25"
+      requests.cpu: "4"
+      requests.memory: 6Gi
+      limits.memory: 8Gi
+      # Disk the pods write to (not volumes): a build (two kaniko containers one after the other, each capped at 10Gi) plus an install fits. Limits are
+      # ceilings, not reservations, and a build rarely reaches its cap; the node has only ~11 GB free, so keep the sum of limits near that, not above.
+      requests.ephemeral-storage: 8Gi
+      limits.ephemeral-storage: 16Gi
+      persistentvolumeclaims: "6"
+      requests.storage: 12Gi
+      services: "12"
+      count/ingresses.networking.k8s.io: "4"
+      count/jobs.batch: "12"
+      count/secrets: "60"
+      count/configmaps: "40"
+    limitRange:
+      defaultRequest: { cpu: 50m, memory: 64Mi, ephemeral-storage: 128Mi }
+      default: { memory: 512Mi, ephemeral-storage: 2Gi }
+      max: { memory: 6Gi, ephemeral-storage: 10Gi }
+
+# In-cluster image registry (docs/deploy-preview.md): a `registry:2` in its own namespace, where builds inside the cluster (kaniko, in a deploy
+# target) push images and the node's containerd pulls them. The Service `registry` (ClusterIP :5000) is for pushes; the NodePort Service is for the node's
+# own pulls and needs ONE host step (docs/deploy-preview.md "Host step"). There is NO sign-in on it: anyone in a deploy-target namespace can push and
+# pull, and the network policy lets nobody else in (the node itself, for pulls). Off by default.
+registry:
+  enabled: false
+  namespace: manythreads-registry
+  image: registry:2.8.3
+  # Images are large (the server image is over 1 GB): the disk of this node is small, so watch this volume, and delete old tags.
+  size: 10Gi
+  storageClass: local-path
+  nodePort: 30500
+  # Addresses the node's own pulls arrive from after the NodePort translation. Block 30500 from outside on the host firewall too.
+  nodeCidrs: ["10.0.2.15/32"]

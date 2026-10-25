@@ -1,0 +1,139 @@
+# Builds the two images of a modified copy of the platform, INSIDE the cluster, without root on the host (docs/deploy-preview.md, step 3).
+#
+# What the Job does, in order (an init container finishes before the next one starts):
+#   1. fetch        clones the base commit of the public source, applies your patch series from a ConfigMap (`git am`), and refuses to go on
+#                   unless the resulting tree has exactly the tree id you tested (so what is built is what you tested, nothing more or less).
+#                   It then cuts two build folders out of the tree, the same files the repository's own `.dockerignore` files let through.
+#   2. build-server builds deploy/docker/server.Dockerfile with kaniko (an image builder that needs no Docker daemon and no privileges on the
+#                   host) and pushes it to the in-cluster registry.
+#   3. build-web    the same for deploy/docker/web.Dockerfile.
+#   4. done         only there so the Job completes when all three above succeeded.
+#
+# Fill in the placeholders with sed, then apply (the README shows the exact command):
+#   __TAG__             image tag, e.g. the first 12 letters of the tested commit; also part of the Job's name
+#   __BASE_COMMIT__     the commit of origin/main your patches start from (40 hex digits)
+#   __TREE_SHA__        `git rev-parse <tested commit>^{tree}` of your tested commit (40 hex digits)
+#   __PATCH_CONFIGMAP__ name of the ConfigMap holding the `git format-patch` files (kept empty of patches = build the base commit unchanged)
+#   __NAMESPACE__       the deploy target's namespace (it is part of the image path: <registry>/<namespace>/server:<tag>)
+#
+# Both Dockerfiles use only plain Dockerfile steps (COPY, RUN, ENV, USER, multi-stage `COPY --from`): nothing needs BuildKit, which kaniko is not.
+# Their `# syntax=` first line is a comment to kaniko. Memory: the install of this monorepo peaks near 3 GiB, so the build containers may use 4 GiB (the target's quota allows 8 GiB of memory limits in all: one build at a time plus an install).
+# Disk: the images are built in the container's own storage on the node (limit below); the node's disk is small, so run one build at a time.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-__TAG__
+  labels:
+    app.kubernetes.io/name: manythreads-preview-build
+    manythreads.io/build-tag: "__TAG__"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 2400
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: manythreads-preview-build
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      initContainers:
+        - name: fetch
+          image: alpine/git:v2.49.1
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi, ephemeral-storage: 3Gi }
+          env:
+            - { name: BASE_COMMIT, value: "__BASE_COMMIT__" }
+            - { name: EXPECTED_TREE, value: "__TREE_SHA__" }
+            - { name: SOURCE_URL, value: "https://github.com/oazabir/manythreads" }
+            # Only for a source that needs a sign-in: a Secret `build-git-token` with the key `token` (a read-only access token).
+            - name: GIT_TOKEN
+              valueFrom: { secretKeyRef: { name: build-git-token, key: token, optional: true } }
+          command: ["/bin/sh", "-eu", "-c"]
+          args:
+            - |
+              cd /workspace
+              git init -q src
+              cd src
+              git config user.name "preview build"
+              git config user.email "preview-build@invalid"
+              git remote add origin "$SOURCE_URL"
+              if [ -n "${GIT_TOKEN:-}" ]; then
+                AUTH="$(printf 'x-access-token:%s' "$GIT_TOKEN" | base64 | tr -d '\n')"
+                git -c "http.extraHeader=Authorization: Basic $AUTH" fetch -q --depth 1 origin "$BASE_COMMIT"
+              else
+                git fetch -q --depth 1 origin "$BASE_COMMIT"
+              fi
+              git checkout -q FETCH_HEAD
+              [ "$(git rev-parse HEAD)" = "$BASE_COMMIT" ] || { echo "the fetched commit is not $BASE_COMMIT" >&2; exit 1; }
+              if ls /patches/*.patch >/dev/null 2>&1; then
+                git am --3way /patches/*.patch
+              else
+                echo "no patches: building the base commit as it is"
+              fi
+              TREE="$(git rev-parse 'HEAD^{tree}')"
+              if [ "$TREE" != "$EXPECTED_TREE" ]; then
+                echo "tree mismatch: the patched source is $TREE, you said you tested $EXPECTED_TREE" >&2
+                exit 1
+              fi
+              echo "source verified: tree $TREE"
+              # Two build folders. `git archive` writes tracked files only (no .git, no node_modules). The folders each Dockerfile's
+              # .dockerignore leaves out are removed; the Dockerfiles stay outside the folders, so deploy/ can go from the server's.
+              cp deploy/docker/server.Dockerfile /workspace/server.Dockerfile
+              cp deploy/docker/web.Dockerfile /workspace/web.Dockerfile
+              mkdir /workspace/ctx-server /workspace/ctx-web
+              git archive HEAD | tar -x -C /workspace/ctx-server
+              git archive HEAD | tar -x -C /workspace/ctx-web
+              (cd /workspace/ctx-server && rm -rf e2e docs deploy tools)
+              (cd /workspace/ctx-web && rm -rf e2e docs tools)
+              cd /workspace && rm -rf src
+          volumeMounts:
+            - { name: workspace, mountPath: /workspace }
+            - { name: patches, mountPath: /patches, readOnly: true }
+        - name: build-server
+          image: gcr.io/kaniko-project/executor:v1.23.2
+          args:
+            - --context=dir:///workspace/ctx-server
+            - --dockerfile=/workspace/server.Dockerfile
+            - --destination=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/server:__TAG__
+            - --insecure
+            - --insecure-registry=registry.manythreads-registry.svc.cluster.local:5000
+            - --push-retry=3
+            - --image-fs-extract-retry=3
+            - --compressed-caching=false
+            - --cleanup
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 4Gi, ephemeral-storage: 10Gi }
+          volumeMounts:
+            - { name: workspace, mountPath: /workspace }
+        - name: build-web
+          image: gcr.io/kaniko-project/executor:v1.23.2
+          args:
+            - --context=dir:///workspace/ctx-web
+            - --dockerfile=/workspace/web.Dockerfile
+            - --destination=registry.manythreads-registry.svc.cluster.local:5000/__NAMESPACE__/web:__TAG__
+            - --insecure
+            - --insecure-registry=registry.manythreads-registry.svc.cluster.local:5000
+            - --push-retry=3
+            - --image-fs-extract-retry=3
+            - --compressed-caching=false
+            - --cleanup
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits: { memory: 4Gi, ephemeral-storage: 10Gi }
+          volumeMounts:
+            - { name: workspace, mountPath: /workspace }
+      containers:
+        - name: done
+          image: alpine/git:v2.49.1
+          command: ["/bin/sh", "-c", "echo 'images pushed: server:__TAG__ and web:__TAG__'"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+      volumes:
+        - name: workspace
+          emptyDir: { sizeLimit: 3Gi }   # the only emptyDir of this Job; every emptyDir here must carry a sizeLimit
+        - name: patches
+          configMap: { name: __PATCH_CONFIGMAP__ }

@@ -23,3 +23,15 @@ hermesPods:
     host: manythreads.kahf.to   # used only by routing: host
   apiServer:
     cidr: 10.0.2.15/32   # k3s on the devbox: the node IP (kubectl get endpoints kubernetes)
+  # Projects (docs/plugins/projects.md) whose repository starts with one of these are cloned into the team's pod.
+  repoOriginAllow:
+    - https://github.com/oazabir/
+  # The engineering team's deployer bot may run a modified copy of the platform here (docs/deploy-preview.md).
+  deployTargets:
+    - team: engineering
+      namespace: test-manythreads
+      hosts: [test.manythreads.kahf.to]
+      podSecurity: baseline
+# Images built inside the cluster for that copy. Needs the one host step in docs/deploy-preview.md (registries.yaml) before a pod can pull from it.
+registry:
+  enabled: true

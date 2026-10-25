@@ -1,0 +1,121 @@
+{{- if .Values.registry.enabled }}
+{{- $r := .Values.registry }}
+{{- $ns := $r.namespace }}
+{{- /* The name pods use to pull is `registry.local:5000` (docs/deploy-preview.md, "Host step"); builds push to the Service name below. */ -}}
+# The in-cluster image registry (docs/deploy-preview.md). There is NO sign-in: whoever the network policy lets in can push and pull.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    app.kubernetes.io/part-of: manythreads
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/audit: baseline
+  annotations:
+    helm.sh/resource-policy: keep
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  namespace: {{ $ns }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $r.storageClass }}
+  resources:
+    requests:
+      storage: {{ $r.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/component: registry
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/component: registry }
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: registry
+        app.kubernetes.io/component: registry
+    spec:
+      containers:
+        - name: registry
+          image: {{ $r.image }}
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 5000 }]
+          env:
+            - { name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY, value: /var/lib/registry }
+            # lets a tag be deleted (the space comes back after the registry's garbage collection)
+            - { name: REGISTRY_STORAGE_DELETE_ENABLED, value: "true" }
+          readinessProbe:
+            httpGet: { path: /v2/, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /v2/, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/registry }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: registry-data }
+---
+# Pushes: registry.{{ $ns }}.svc.cluster.local:5000
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: {{ $ns }}
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/component: registry }
+  ports:
+    - { name: http, port: 5000, targetPort: http }
+---
+# Pulls by the node's containerd, through 127.0.0.1:{{ $r.nodePort }}. `Local` keeps the caller's real address, so the network policy can tell the node from anyone else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry-node
+  namespace: {{ $ns }}
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector: { app.kubernetes.io/component: registry }
+  ports:
+    - { name: http, port: 5000, targetPort: http, nodePort: {{ $r.nodePort }} }
+---
+# In: the deploy-target namespaces (push and pull) and the node (pull). Nothing else, and the registry itself may call nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: registry
+  namespace: {{ $ns }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { manythreads.io/deploy-target: "true" } }
+      ports:
+        - { port: 5000, protocol: TCP }
+    {{- range $r.nodeCidrs }}
+    - from:
+        - ipBlock: { cidr: {{ . }} }
+      ports:
+        - { port: 5000, protocol: TCP }
+    {{- end }}
+{{- end }}

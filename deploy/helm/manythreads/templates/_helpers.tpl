@@ -84,3 +84,16 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- define "manythreads.appsHost" -}}
 {{- if eq (include "manythreads.appsRouting" .) "path" -}}{{ .Values.domain }}{{- else -}}{{ .Values.hermesPods.apps.host | default .Values.domain }}{{- end -}}
 {{- end }}
+
+{{/*
+  The Kubernetes API address as a pod reaches it (after service NAT), as a CIDR, for network policies that let a pod call the API.
+  hermesPods.apiServer.cidr wins; otherwise it is looked up from the `kubernetes` endpoints, and `helm template` (no cluster) must be given it.
+*/}}
+{{- define "manythreads.apiServerCidr" -}}
+{{- $cidr := .Values.hermesPods.apiServer.cidr -}}
+{{- if not $cidr -}}
+{{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" -}}
+{{- if and $ep $ep.subsets -}}{{ $cidr = printf "%s/32" (index (index $ep.subsets 0).addresses 0).ip }}{{ else }}{{ fail "hermesPods.apiServer.cidr is required: the chart could not look up the Kubernetes API address (helm template has no cluster); set it, e.g. 10.0.2.15/32" }}{{ end -}}
+{{- end -}}
+{{- $cidr -}}
+{{- end }}
