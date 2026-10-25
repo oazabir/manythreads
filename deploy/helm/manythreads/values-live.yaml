@@ -26,9 +26,9 @@ hermesPods:
   # Projects (docs/plugins/projects.md) whose repository starts with one of these are cloned into the team's pod.
   repoOriginAllow:
     - https://github.com/oazabir/
-  # The engineering team's deployer bot may run a modified copy of the platform here (docs/deploy-preview.md).
+  # The Delivery team's deployer bot may run a modified copy of the platform here (docs/deploy-preview.md).
   deployTargets:
-    - team: engineering
+    - team: delivery
       namespace: test-manythreads
       hosts: [test.manythreads.kahf.to]
       podSecurity: baseline

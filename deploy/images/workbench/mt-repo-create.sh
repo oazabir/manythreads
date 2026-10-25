@@ -40,6 +40,10 @@ if [ -d "$dir" ]; then
     if [ -z "$current" ]; then git -C "$dir" remote add origin "$origin"
     elif [ "$current" != "$origin" ]; then git -C "$dir" remote set-url origin "$origin"; echo "$dir origin updated"; fi
   fi
+  # follow the project's branch on its origin: fast-forward only (a non-fast-forward is refused and logged); the bots' own branches are not touched
+  if [ -n "$origin" ] && [ -n "$branch" ]; then
+    git -C "$dir" fetch --quiet origin "refs/heads/$branch:refs/heads/$branch" 2>/dev/null || echo "$dir: $branch did not fast-forward from origin"
+  fi
   echo "$dir exists"; exit 0
 fi
 umask 0022
