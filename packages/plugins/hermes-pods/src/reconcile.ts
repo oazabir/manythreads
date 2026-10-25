@@ -74,8 +74,9 @@ export class Reconciler {
       if (t.team !== team.slug) continue;
       try {
         const tok = await this.k8s.get('Secret', t.namespace, 'deployer-token');
-        const token = b64(((tok?.data ?? {}) as Record<string, string>)['token']);
-        if (token !== '') out.push({ namespace: t.namespace, hosts: t.hosts, token });
+        const data = (tok?.data ?? {}) as Record<string, string>;
+        const token = b64(data['token']);
+        if (token !== '') out.push({ namespace: t.namespace, hosts: t.hosts, token, caPem: b64(data['ca.crt']) });
         else this.log.warn(`hermes-pods: there is no ready deployer token in ${t.namespace}; the deployer bot of ${team.slug} gets no context for it`);
       } catch (err) {
         failed = true;
@@ -127,7 +128,19 @@ export class Reconciler {
         else deployerSecret = buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig({ token, caPem: ca, appsNamespace: appsNs, appsRouting: cfg.appsRouting, appUrlPattern: appUrlPattern(cfg, team), targets }));
         withDeployer = true;
       } else {
-        this.log.warn(`hermes-pods: there is no ready deployer token in ${appsNs} (add the team to hermesPods.appTeams); the deployer bot of ${team.slug} has no kubeconfig`);
+        // No apps namespace (the team is not in hermesPods.appTeams): its deploy targets alone still make a kubeconfig.
+        const { logins: targets, failed } = await this.deployTargetLogins(team);
+        const ca = targets.find((t) => t.caPem)?.caPem ?? '';
+        const previous = failed ? await k8s.get('Secret', cfg.namespace, names.deployer).catch(() => null) : null;
+        if (previous) {
+          this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
+          withDeployer = true;
+        } else if (targets.length > 0 && ca !== '') {
+          deployerSecret = buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig({ token: null, caPem: ca, appsNamespace: appsNs, targets }));
+          withDeployer = true;
+        } else {
+          this.log.warn(`hermes-pods: there is no ready deployer token in ${appsNs} and no deploy target (add the team to hermesPods.appTeams); the deployer bot of ${team.slug} has no kubeconfig`);
+        }
       }
     }
 

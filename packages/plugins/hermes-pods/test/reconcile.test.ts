@@ -199,6 +199,32 @@ describe('reconcileTeam', () => {
     for (const [k, o] of k8s.store) if (!k.includes('deployer')) expect(JSON.stringify(o)).not.toContain('TOKEN-TARGET');
   });
 
+  it('gives a team without an apps namespace a kubeconfig of its deploy targets alone, the first one current', async () => {
+    const k8s = new FakeK8s(); // no apps-engineering token: the team is not in appTeams
+    k8s.store.set('Secret/test-manythreads/deployer-token', {
+      apiVersion: 'v1',
+      kind: 'Secret',
+      metadata: { name: 'deployer-token', namespace: 'test-manythreads' },
+      stringData: { token: 'TOKEN-TARGET', 'ca.crt': 'CA-OF-TARGET' },
+    });
+    const cfg: PodConfig = { ...CFG, deployTargets: [{ team: 'engineering', namespace: 'test-manythreads', hosts: ['test.example.test'] }] };
+    const res = await new Reconciler(k8s, cfg, source([spec('deployer')]), LOG, () => 'K').reconcileTeam(TEAM);
+    expect(res.deployer).toBe(true);
+    const kc = (k8s.store.get('Secret/manythreads/hermes-engineering-deployer')!['stringData'] as any)['deployer.kubeconfig'] as string;
+    expect(kc).toContain('current-context: "test-manythreads"');
+    expect(kc).toContain('"TOKEN-TARGET"');
+    expect(kc).toContain(Buffer.from('CA-OF-TARGET').toString('base64'));
+    expect(kc).not.toContain('apps-engineering'); // no apps context, no apps guide
+    expect(kc).not.toMatch(/^ {2}- name: deployer$/m);
+  });
+
+  it('gives no kubeconfig when the team has neither an apps namespace nor a ready deploy target', async () => {
+    const k8s = new FakeK8s();
+    const res = await new Reconciler(k8s, CFG, source([spec('deployer')]), LOG, () => 'K').reconcileTeam(TEAM);
+    expect(res.deployer).toBe(false);
+    expect(k8s.store.get('Secret/manythreads/hermes-engineering-deployer')).toBeUndefined();
+  });
+
   it('keeps the last kubeconfig when a deploy target token cannot be read for a tick', async () => {
     const k8s = new FakeK8s();
     seedDeployerToken(k8s);

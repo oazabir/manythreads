@@ -214,7 +214,8 @@ export function buildKeySecret(cfg: PodConfig, team: Team, names: Names, apiKey:
 
 /** A kubeconfig that signs in as the `deployer` ServiceAccount of the apps namespace and does nothing else (`token` is that account's own). */
 export function buildDeployerKubeconfig(input: {
-  token: string;
+  /** The apps namespace's deployer token; null when the team has no apps namespace (then only its deploy targets are in the file). */
+  token: string | null;
   caPem: string;
   appsNamespace: string;
   server?: string;
@@ -226,7 +227,9 @@ export function buildDeployerKubeconfig(input: {
   const server = input.server ?? 'https://kubernetes.default.svc';
   const j = (v: string): string => JSON.stringify(v);
   // Comments at the top tell the deployer bot, which reads this file, how its apps are reached and what an Ingress must look like.
-  const guide = input.appUrlPattern
+  const apps = input.token !== null;
+  const targets = input.targets ?? [];
+  const guide = apps && input.appUrlPattern
     ? input.appsRouting === 'host'
       ? [
           `# Apps are reached at ${input.appUrlPattern}: an Ingress with host "<app>--<team>.<domain>", no tls section needed.`,
@@ -241,7 +244,7 @@ export function buildDeployerKubeconfig(input: {
     : [];
   return [
     ...guide,
-    ...targetGuide(input.targets ?? []),
+    ...targetGuide(targets, apps),
     'apiVersion: v1',
     'kind: Config',
     'clusters:',
@@ -250,18 +253,13 @@ export function buildDeployerKubeconfig(input: {
     `      server: ${j(server)}`,
     `      certificate-authority-data: ${j(Buffer.from(input.caPem).toString('base64'))}`,
     'users:',
-    '  - name: deployer',
-    '    user:',
-    `      token: ${j(input.token)}`,
-    ...targetUsers(input.targets ?? []),
+    ...(apps ? ['  - name: deployer', '    user:', `      token: ${j(input.token!)}`] : []),
+    ...targetUsers(targets),
     'contexts:',
-    '  - name: deployer',
-    '    context:',
-    '      cluster: cluster',
-    '      user: deployer',
-    `      namespace: ${j(input.appsNamespace)}`,
-    ...targetContexts(input.targets ?? []),
-    'current-context: deployer',
+    ...(apps ? ['  - name: deployer', '    context:', '      cluster: cluster', '      user: deployer', `      namespace: ${j(input.appsNamespace)}`] : []),
+    ...targetContexts(targets),
+    // Without an apps namespace the first deploy target is the default context.
+    `current-context: ${apps ? 'deployer' : j(targets[0]?.namespace ?? 'deployer')}`,
     '',
   ].join('\n');
 }
@@ -271,6 +269,8 @@ export interface DeployTargetLogin {
   namespace: string;
   hosts: string[];
   token: string;
+  /** The cluster's CA, as that namespace's token Secret carries it (used when the team has no apps namespace to take it from). */
+  caPem?: string;
 }
 
 // The extra kubeconfig lines for deploy targets. Kept apart from the apps context above: the current context never changes.
@@ -289,10 +289,12 @@ function targetContexts(targets: readonly DeployTargetLogin[]): string[] {
 }
 
 /** The comment lines that tell the deployer bot which extra contexts exist (it reads its kubeconfig). */
-function targetGuide(targets: readonly DeployTargetLogin[]): string[] {
+function targetGuide(targets: readonly DeployTargetLogin[], apps: boolean): string[] {
   if (targets.length === 0) return [];
   return [
-    '# Deploy targets: whole namespaces you administer (use `kubectl --context <namespace> ...`; the default context above is unchanged).',
+    apps
+      ? '# Deploy targets: whole namespaces you administer (use `kubectl --context <namespace> ...`; the default context above is unchanged).'
+      : '# Deploy targets: whole namespaces you administer (`kubectl --context <namespace> ...`; the first one is the default context).',
     ...targets.map((t) => `#   ${t.namespace}: Ingress hosts allowed: ${t.hosts.join(', ') || '(none)'}. Build and install recipe: deploy/preview/README.md in the manythreads repository.`),
   ];
 }
