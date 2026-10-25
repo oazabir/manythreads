@@ -274,7 +274,8 @@ spec:
 #    may not change either, except by the volume controller (kube-controller-manager and the kube-system provisioners), whose bind is exactly such an update;
 #  * no Pod (so no pod of any Deployment, StatefulSet, Job or database Cluster either, whoever creates it) sets a priorityClassName;
 #  * no Ingress carries a traefik.* annotation (middlewares, entrypoints, TLS options could all get round the rules above);
-#  * a Secret of type kubernetes.io/tls is written only by cert-manager (otherwise a deployer could plant a certificate and key for any name);
+#  * a Secret of type kubernetes.io/tls is written only by cert-manager or the database operator (otherwise a deployer could plant a certificate and
+#    key for any name), and a database Cluster may not set spec.certificates (extra names or its own CA would make the operator sign one);
 #  * a cert-manager Certificate names only hosts of the target (dnsNames, commonName), no IP, URI or e-mail names, and an Issuer in the same namespace;
 #    an Issuer is ACME with the Let's Encrypt production or staging address and http01 solvers only (no CA, selfSigned, Vault, Venafi or DNS solvers).
 apiVersion: admissionregistration.k8s.io/v1
@@ -298,6 +299,10 @@ spec:
         apiVersions: ["*"]
         operations: [CREATE, UPDATE]
         resources: [certificates, issuers]
+      - apiGroups: ["postgresql.cnpg.io"]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [clusters]
   variables:
     - name: hosts
       expression: "has(namespaceObject.metadata.annotations) && 'manythreads.io/hosts' in namespaceObject.metadata.annotations ? namespaceObject.metadata.annotations['manythreads.io/hosts'].split(',') : []"
@@ -329,8 +334,10 @@ spec:
       message: "a PersistentVolumeClaim in a deploy target may not change its volume or selector"
     - expression: "object.kind != 'Pod' || !has(object.spec.priorityClassName) || object.spec.priorityClassName == ''"
       message: "a pod in a deploy target may not set a priorityClassName"
-    - expression: "object.kind != 'Secret' || !has(object.type) || object.type != 'kubernetes.io/tls' || request.userInfo.username == 'system:serviceaccount:cert-manager:cert-manager'"
-      message: "only cert-manager may write a kubernetes.io/tls Secret in a deploy target"
+    - expression: "object.kind != 'Secret' || !has(object.type) || object.type != 'kubernetes.io/tls' || request.userInfo.username in ['system:serviceaccount:cert-manager:cert-manager', 'system:serviceaccount:cnpg-system:cnpg-cloudnative-pg']"
+      message: "only cert-manager and the database operator may write a kubernetes.io/tls Secret in a deploy target"
+    - expression: "object.kind != 'Cluster' || !has(object.spec.certificates)"
+      message: "a database Cluster in a deploy target may not set spec.certificates (extra certificate names or its own CA would let the operator sign a certificate for another host)"
     - expression: >-
         object.kind != 'Certificate' || (
         (has(object.spec.dnsNames) && size(object.spec.dnsNames) > 0 || has(object.spec.commonName) && object.spec.commonName != '') &&
