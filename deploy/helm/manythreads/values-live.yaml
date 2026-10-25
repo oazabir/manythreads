@@ -23,6 +23,8 @@ hermesPods:
     host: manythreads.kahf.to   # used only by routing: host
   apiServer:
     cidr: 10.0.2.15/32   # k3s on the devbox: the node IP (kubectl get endpoints kubernetes)
+  # Teams whose deployer bot ships apps (apps-<team>); Delivery runs the full-cycle preview (deployTargets below).
+  appTeams: [engineering, marketing, customer-support, delivery]
   # Projects (docs/plugins/projects.md) whose repository starts with one of these are cloned into the team's pod.
   repoOriginAllow:
     - https://github.com/oazabir/
