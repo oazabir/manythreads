@@ -1,6 +1,6 @@
 # A preview install of the platform, run by a team's deployer bot INSIDE one namespace of the live cluster (docs/deploy-preview.md):
 #   helm upgrade --install manythreads ./deploy/helm/manythreads -n test-manythreads \
-#     -f deploy/preview/values-preview.yaml --set imageTag=<tag> --set tls.letsencrypt.email=<address>
+#     -f deploy/preview/values-preview.yaml --set imageTag=<tag>      (chart and this file from origin/main: deploy/preview/README.md)
 # Everything this renders lives in that one namespace (the release name must stay `manythreads`: the chart's object names are fixed).
 # The images come from the in-cluster registry (the pods pull `registry.local:5000/...`; the build pushes the same path through the Service).
 
@@ -16,7 +16,7 @@ tls:
   wildcard: false
   defaultStore: false         # the live release already owns Traefik's TLSStore `default`; a second one would fight it
   letsencrypt:
-    email: ""                 # set with --set tls.letsencrypt.email=...
+    email: ""                 # optional; never a placeholder such as example.org (Let's Encrypt refuses it)
     server: production        # staging while testing, so Let's Encrypt's rate limit is not used up (browsers do not trust staging certificates)
 
 ingress:

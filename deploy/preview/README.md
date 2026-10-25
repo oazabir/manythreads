@@ -57,11 +57,20 @@ One build at a time (disk is small). Delete old build Jobs when done: `$K delete
 
 ## 4. Install
 
+Install with the chart and values of the current `origin/main`, not the ones in your tested commit: the commit decides the code in the
+images, while how the platform is deployed (database image, policies, certificate settings) follows main. A separate worktree keeps your clone
+on the tested commit:
+
 ```sh
-helm --kube-context "$NS" upgrade --install manythreads ./deploy/helm/manythreads -n "$NS" \
-  -f deploy/preview/values-preview.yaml --set imageTag="$TAG" --set tls.letsencrypt.email=you@example.org \
+git fetch origin && git worktree add --force /tmp/preview-main origin/main
+helm --kube-context "$NS" upgrade --install manythreads /tmp/preview-main/deploy/helm/manythreads -n "$NS" \
+  -f /tmp/preview-main/deploy/preview/values-preview.yaml --set imageTag="$TAG" \
   --wait --timeout 20m
+git worktree remove --force /tmp/preview-main
 ```
+
+Do not set a Let's Encrypt contact address: it is optional, and Let's Encrypt refuses placeholder domains such as `example.org` or
+`example.com` (the Issuer then stays not ready and no certificate is issued).
 
 Keep the release name `manythreads` (the chart's object names are fixed). While you are still testing the setup, add
 `--set tls.letsencrypt.server=staging` so Let's Encrypt's weekly limit is not used up (browsers will not trust a staging certificate).
