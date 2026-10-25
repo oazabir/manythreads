@@ -147,7 +147,7 @@ plain('hm-13-memory', '/t/engineering/memory', (p) => p.waitForLoadState('networ
 // The public edge does not route *.apps yet, so the apps are reached through the cluster's Traefik at the node IP.
 const app = (name: string, url: string): void => {
   test(name, async () => {
-    const browser = await chromium.launch({ args: ['--host-resolver-rules=MAP *.apps.manythreads.kahf.to 10.0.2.15'] });
+    const browser = await chromium.launch({ args: ['--host-resolver-rules=MAP *.manythreads.kahf.to 10.0.2.15'] });
     try {
       const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: DESKTOP });
       const page = await context.newPage();
@@ -170,8 +170,8 @@ const app = (name: string, url: string): void => {
     }
   });
 };
-app('hm-14-app-mode-b', 'https://money.engineering.apps.manythreads.kahf.to/');
-app('hm-15-app-mode-a', 'https://money-host.engineering.apps.manythreads.kahf.to/');
+app('hm-14-app-mode-b', 'https://money--engineering.manythreads.kahf.to/');
+app('hm-15-app-mode-a', 'https://money-host--engineering.manythreads.kahf.to/');
 
 test.afterAll(() => {
   mkdirSync(OUT, { recursive: true });

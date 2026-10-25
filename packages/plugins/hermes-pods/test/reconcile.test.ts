@@ -49,7 +49,7 @@ const CFG: PodConfig = {
   repoOriginAllow: [],
   deployerBot: 'deployer',
   appsPrefix: 'apps-',
-  appsHost: 'apps.example.test',
+  appsHost: 'example.test',
   resources: { hermes: { limits: { memory: '3Gi' } }, workbench: { limits: { memory: '4Gi' } } },
 };
 const TEAM = { id: '11111111-1111-4111-8111-111111111111', slug: 'engineering' };

@@ -94,14 +94,17 @@ deployer bot gets a credential**; the controller logs a warning otherwise. The s
 
 **The deployer.** The `deployer` Role in `apps-<team>` is full control of deployments, statefulsets, jobs, cronjobs, ingresses, services, configmaps, secrets and
 volume claims, read of pods, logs and events (and deleting pods), nothing else, no RBAC objects. An admission policy (`manythreads-apps-guard`) adds: an Ingress
-must use a host under `hermesPods.apps.host` and no default backend (a deployer cannot take over the platform's own host), and a Service must be ClusterIP.
+must use a host of the form `<app>--<team>.<hermesPods.apps.host>` (one label; the app part may use single hyphens but never `--`, because `--` separates it from the team, so two teams can never get the same host; at most 63 characters; never a wildcard, never the platform's own host or another team's) and no default backend, and a Service must be ClusterIP.
 The controller turns the team's token into a kubeconfig (server `https://kubernetes.default.svc`, default namespace `apps-<team>`) in the team's `…-deployer`
 Secret; the workbench writes it to `/workspace/bots/bot-deployer/.kube/config`, **mode 0600, written by that bot's own user**, and removes it when the bot stops being the deployer. Team B's deployer
 cannot touch `apps-<teamA>`.
 
-**Where deployed apps are reached.** Wildcard DNS exists for `*.kahf.to` (it resolves to the devbox), so an app is a Deployment + Service + Ingress with host
-`<app>.apps.manythreads.kahf.to` (`hermesPods.apps.host`). Traefik routes by host. Traefik's default certificate is self-signed for that extra
-level of subdomain, so browsers warn until a wildcard certificate (`*.apps.manythreads.kahf.to`, needs a DNS challenge) is installed at the front door.
+**Where deployed apps are reached.** An app is a Deployment + Service + Ingress whose host is `<app>--<team>.<hermesPods.apps.host>`, for example
+`money--engineering.manythreads.kahf.to` (app `money`, team `engineering`). `hermesPods.apps.host` defaults to the install's `domain`. The name is a single
+label under the domain (no dot between app and team), so ONE wildcard certificate for `*.<domain>` covers every app. Traefik routes by host.
+A wildcard DNS name `*.<domain>` must point at the cluster. The certificate comes from the chart's `tls` block (`tls.wildcard: true`): in either HTTPS mode it
+becomes Traefik's default certificate, so app Ingresses in the teams' namespaces need no certificate of their own. See "HTTPS: Cloudflare or Let's Encrypt"
+in `docs/deploy.md`. With `tls.mode: none` Traefik serves its self-signed certificate and browsers warn.
 
 ## The workbench is root: how it is kept safe
 
@@ -137,7 +140,7 @@ Chart values (`values.yaml`, `hermesPods`), passed to the server as `MANYTHREADS
 | `repos` | repositories of record created in every team's workbench |
 | `deployerBot` | slug of the bot that gets the deployer kubeconfig (default `deployer`) |
 | `namespace` | the teams' pods' namespace (`manythreads-bots`) |
-| `appTeams`, `apps.prefix`, `apps.host`, `apps.quota`, `apps.limitRange` | the teams that get an apps namespace, its name prefix, the wildcard host, quota and default limits |
+| `appTeams`, `apps.prefix`, `apps.host`, `apps.quota`, `apps.limitRange` | the teams that get an apps namespace, its name prefix, the host the apps live under (default: the domain), quota and default limits |
 | `apiServer.cidr`, `apiServer.port` | the Kubernetes API address for the network policy (empty: looked up at render time) |
 
 `MANYTHREADS_HERMES_PODS_STATIC` = `{"<team slug>": [<profile specs>]}` stands in for the platform's profiles in tests; the server **refuses it when `NODE_ENV=production`**.

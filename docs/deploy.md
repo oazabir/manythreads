@@ -63,7 +63,7 @@ nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`,
 |---|---|
 | `MANYTHREADS_KMS_KEY` | Secret `manythreads-server-secrets` key `kms-key`: base64 of 32 random bytes, generated once (`lookup`, so upgrades never rotate it) and kept on `helm uninstall` (`helm.sh/resource-policy: keep`). Envelope encryption of provider client secrets; lose it and they must be re-entered. Required in production. |
 | `MANYTHREADS_PUBLIC_URL` | `publicUrl`, default `https://<domain>` (`https://manythreads.kahf.to`). Mail links, OIDC redirect URIs; Secure cookies follow it. |
-| `MANYTHREADS_TRUST_PROXY` | `server.trustProxy`, **2**: Traefik and the web pod's nginx each append to `X-Forwarded-For`, so the client is two hops out (1 would make every visitor look like Traefik: one shared sign-in lockout). Set it to the number of proxies in front of the server pod. |
+| `MANYTHREADS_TRUST_PROXY` | `server.trustProxy`, **2**: Traefik and the web pod's nginx each append to `X-Forwarded-For`, so the client is two hops out (1 would make every visitor look like Traefik: one shared sign-in lockout). Set it to the number of proxies in front of the server pod. With `tls.mode: cloudflare` the chart adds one (Cloudflare is one more hop) unless `server.env` sets it. |
 | `MANYTHREADS_SMTP_URL` | `mail.smtpUrl`, or `smtp://manythreads-mailpit:1025` while `mailpit.enabled` (default). |
 | `MANYTHREADS_MAIL_FROM` | `mail.from`. |
 | `MANYTHREADS_STORAGE` | `server.storage.type`: `local` (default, `storage-local`) or `s3` (`storage-s3`); anything else stops the render (as it stops the server). See "Attachment storage" below. |
@@ -146,6 +146,44 @@ This was chosen over seeding from the server process because the Job stays the o
 is already in the team's history is skipped (a person's later edit is never undone), and an attachment whose bytes are gone (a recreated volume or bucket) gets them put again under the same row. Every persona gets
 a random password that is stored only as an argon2id hash and printed nowhere, so the public site has no known credentials. The first-admin bootstrap link is not offered once the workspace exists.
 Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-repo] [--no-attachment] [--migrate] [--wait <secs>]`.
+
+## HTTPS: Cloudflare or Let's Encrypt
+
+The chart's `tls` block chooses how visitors get HTTPS. There are two supported modes besides `none` (no certificate from the chart; the older
+`ingress.tls.secretName` still works for a Secret you made yourself). `tools/devbox/deploy.sh` takes the choice as flags and remembers it: a deploy
+without `--tls` keeps whatever the release has now.
+
+| Mode | What it is | Flags |
+|---|---|---|
+| `cloudflare` | Cloudflare's proxy sits in front and terminates TLS for visitors. `origin: strict` (recommended): Cloudflare checks the cluster's certificate ("Full (strict)"), a Cloudflare Origin CA certificate for `<domain>` and `*.<domain>` kept in the Secret `manythreads-origin-cert`. `origin: flexible` (not recommended): Cloudflare talks plain HTTP to the cluster, so the hop between Cloudflare and you is unencrypted; the router also answers on port 80. | `--tls cloudflare --cf-origin strict --origin-cert cert.pem --origin-key key.pem` |
+| `letsencrypt` | The cluster is reached directly. cert-manager (a Kubernetes add-on that gets and renews certificates; the script installs it, pinned to chart v1.21.3) asks Let's Encrypt for a certificate for `<domain>` and, with `tls.wildcard`, `*.<domain>`. | `--tls letsencrypt --acme-email you@example.com [--acme-staging] [--dns-token-file token.txt] [--no-wildcard]` |
+
+`tls.wildcard` (default on) also covers `*.<domain>`, where the apps bots deploy live (`<app>--<team>.<domain>`, one label deep: see `docs/plugins/hermes-pods.md`).
+In both modes a Traefik `TLSStore` named `default` then makes that certificate Traefik's default, so app Ingresses in other namespaces, which cannot read the
+Secret, are served with it. The render stops with a message on an unknown mode, `letsencrypt` without an email, or a wildcard `letsencrypt` without `dns01`.
+
+**Cloudflare, step by step.**
+1. DNS: `<domain>` and `*.<domain>` point at the cluster, with the orange cloud (proxied) on.
+2. SSL/TLS, Overview: set the encryption mode to **Full (strict)**. (Flexible only if you pass `--cf-origin flexible`.)
+3. SSL/TLS, Origin Server: create an Origin Certificate for `<domain>, *.<domain>` and save the certificate and key to files on the devbox, then deploy with `--origin-cert` and `--origin-key`. The script stores them in the Secret and never prints them.
+4. The edge certificate: Cloudflare's free Universal SSL covers the zone and ONE level below it (`kahf.to`, `*.kahf.to`). `manythreads.kahf.to` is covered, but `*.manythreads.kahf.to`
+   (the apps) is two levels down, so it needs Advanced Certificate Manager or Total TLS. Without one, the apps' addresses show a certificate error at the edge.
+5. Behind Cloudflare the real visitor is one proxy further out, so the chart sets `MANYTHREADS_TRUST_PROXY` to `server.trustProxy + 1` (unless `server.env` sets it), and in this mode
+   the deploy script gives Traefik Cloudflare's published address ranges (`tls.cloudflare.trustedIPs`) as the proxies whose forwarded headers it believes. That lives in k3s's
+   `HelmChartConfig` named `traefik` in `kube-system`, which is cluster-wide, so the script merges it into any existing one instead of the chart rendering it. Refresh the ranges from https://www.cloudflare.com/ips/ now and then.
+   Switching to any other mode takes those ranges out of the `HelmChartConfig` again (and deletes it if nothing else was in it).
+6. **Close the origin to everyone but Cloudflare.** Traefik believes the forwarded headers of the Cloudflare ranges, but anyone with a Cloudflare account can proxy
+   their own site to your origin address, and so look like Cloudflare. Allow ports 80 and 443 only from Cloudflare's ranges (a firewall rule), or turn on Authenticated Origin Pulls
+   (Cloudflare presents a client certificate that the origin checks).
+
+**Let's Encrypt, step by step.**
+1. Port 80 and 443 must reach Traefik from the internet. Without a wildcard, ownership is proved by a web request on port 80 (HTTP-01, answered through Traefik).
+2. A wildcard certificate cannot use that; it proves ownership with a DNS record (DNS-01). Make a Cloudflare API token that can edit DNS for the zone and pass it with `--dns-token-file`
+   (stored in the Secret `manythreads-cloudflare-dns`, key `api-token`). Only the Cloudflare DNS provider is supported.
+3. Use `--acme-staging` first to test: its certificates are not trusted by browsers but it has no rate limits. Watch with `kubectl -n manythreads describe certificate manythreads-tls`.
+
+The server learns the choice from `MANYTHREADS_TLS_MODE` (`none|cloudflare|letsencrypt`), `MANYTHREADS_TLS_ORIGIN` (`strict|flexible`, Cloudflare only),
+`MANYTHREADS_TLS_WILDCARD` (`1|0`) and `MANYTHREADS_TLS_ACME_SERVER` (`production|staging`, Let's Encrypt only).
 
 ## Screenshots of the live site
 `.github/workflows/screenshots.yml` runs **by hand only** (Actions, screenshots, Run workflow, optional phase) — the owner rule is that

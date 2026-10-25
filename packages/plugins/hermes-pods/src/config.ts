@@ -29,7 +29,7 @@ export function configFrom(env: NodeJS.ProcessEnv): PodConfig {
     repoOriginAllow: get('REPO_ORIGIN_ALLOW', '').split(',').map((x) => x.trim()).filter((x) => x.startsWith('https://')),
     deployerBot: get('DEPLOYER_BOT', 'deployer'),
     appsPrefix: get('APPS_PREFIX', 'apps-'),
-    appsHost: get('APPS_HOST', 'apps.manythreads.kahf.to'),
+    appsHost: get('APPS_HOST', 'manythreads.kahf.to'),
     resources,
   };
 }

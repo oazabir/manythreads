@@ -1,11 +1,17 @@
 {{- if .Values.ingress.enabled }}
+{{- $tlsMode := include "manythreads.tlsMode" . }}
+{{- $tlsSecret := include "manythreads.tlsSecret" . }}
+{{- $flexible := and (eq $tlsMode "cloudflare") (eq .Values.tls.cloudflare.origin "flexible") }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: manythreads
   labels:
     {{- include "manythreads.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $ann := .Values.ingress.annotations | default dict }}
+  {{- /* Cloudflare "Flexible": Cloudflare speaks plain HTTP to us, so the router must answer on the `web` entrypoint (port 80) as well. */}}
+  {{- if $flexible }}{{ $ann = merge (deepCopy $ann) (dict "traefik.ingress.kubernetes.io/router.entrypoints" "web,websecure") }}{{ end }}
+  {{- with $ann }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -13,7 +19,11 @@ spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
-  {{- if .Values.ingress.tls.enabled }}
+  {{- if $tlsSecret }}
+  tls:
+    - hosts: [{{ .Values.domain }}]
+      secretName: {{ $tlsSecret }}
+  {{- else if and (eq $tlsMode "none") .Values.ingress.tls.enabled }}
   tls:
     - hosts: [{{ .Values.domain }}]
       {{- if .Values.ingress.tls.secretName }}

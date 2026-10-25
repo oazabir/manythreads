@@ -40,3 +40,34 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/* The tls block, checked and normalised. Fails the render on a combination that cannot work. */}}
+{{- define "manythreads.tlsMode" -}}
+{{- if not (regexMatch "^[0-9]+$" (toString .Values.server.trustProxy)) -}}{{ fail (printf "server.trustProxy must be a whole number (got %q)" (toString .Values.server.trustProxy)) }}{{- end -}}
+{{- $t := .Values.tls -}}
+{{- if not (has $t.mode (list "none" "cloudflare" "letsencrypt")) -}}{{ fail (printf "tls.mode must be none, cloudflare or letsencrypt (got %q)" (toString $t.mode)) }}{{- end -}}
+{{- if eq $t.mode "cloudflare" -}}
+{{- if not (has $t.cloudflare.origin (list "strict" "flexible")) -}}{{ fail (printf "tls.cloudflare.origin must be strict or flexible (got %q)" (toString $t.cloudflare.origin)) }}{{- end -}}
+{{- if and (eq $t.cloudflare.origin "strict") (not $t.cloudflare.certSecret) -}}{{ fail "tls.cloudflare.certSecret is required for tls.cloudflare.origin=strict (a kubernetes.io/tls Secret with the Cloudflare Origin CA certificate)" }}{{- end -}}
+{{- end -}}
+{{- if eq $t.mode "letsencrypt" -}}
+{{- if not (has $t.letsencrypt.server (list "production" "staging")) -}}{{ fail (printf "tls.letsencrypt.server must be production or staging (got %q)" (toString $t.letsencrypt.server)) }}{{- end -}}
+{{- if and $t.wildcard (not (and $t.letsencrypt.dns01 $t.letsencrypt.dns01.provider)) -}}{{ fail "a wildcard Let's Encrypt certificate needs tls.letsencrypt.dns01 (provider and apiTokenSecret); or set tls.wildcard=false" }}{{- end -}}
+{{- if and $t.wildcard (ne $t.letsencrypt.dns01.provider "cloudflare") -}}{{ fail (printf "tls.letsencrypt.dns01.provider must be cloudflare (got %q)" (toString $t.letsencrypt.dns01.provider)) }}{{- end -}}
+{{- if and $t.wildcard (not $t.letsencrypt.dns01.apiTokenSecret) -}}{{ fail "tls.letsencrypt.dns01.apiTokenSecret is required for a wildcard certificate" }}{{- end -}}
+{{- end -}}
+{{- $t.mode -}}
+{{- end }}
+
+{{/* Name of the Secret that holds the serving certificate ("" when the chart is not responsible for one). */}}
+{{- define "manythreads.tlsSecret" -}}
+{{- $m := include "manythreads.tlsMode" . -}}
+{{- if and (eq $m "cloudflare") (eq .Values.tls.cloudflare.origin "strict") -}}{{ .Values.tls.cloudflare.certSecret }}
+{{- else if eq $m "letsencrypt" -}}manythreads-tls
+{{- end -}}
+{{- end }}
+
+{{/* Host the deployed apps live under: <app>--<team>.<appsHost>. */}}
+{{- define "manythreads.appsHost" -}}
+{{- .Values.hermesPods.apps.host | default .Values.domain -}}
+{{- end }}

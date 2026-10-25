@@ -6,6 +6,55 @@ domain: manythreads.kahf.to
 # Public base URL (links in mails, OIDC redirect URIs; Secure cookies follow it). Empty = https://<domain>.
 publicUrl: ""
 
+# HTTPS, one of three modes (docs/deploy.md "HTTPS: Cloudflare or Let's Encrypt"):
+#   none         no certificate from this chart. `ingress.tls.*` below still lets you name a Secret you made yourself.
+#   cloudflare   Cloudflare's proxy terminates TLS for visitors. `cloudflare.origin: strict` (recommended, SSL/TLS mode "Full (strict)"): the cluster
+#                serves a Cloudflare Origin CA certificate from the kubernetes.io/tls Secret `certSecret` (made by tools/devbox/deploy.sh --origin-cert
+#                --origin-key). `flexible` (not recommended): Cloudflare talks plain HTTP to the cluster, so the router also answers on port 80.
+#   letsencrypt  The cluster is reached directly; cert-manager (installed by deploy.sh in this mode) asks Let's Encrypt for a certificate.
+#                Without `wildcard` it proves ownership by answering a web request on port 80 (HTTP-01, through Traefik). With `wildcard` it must
+#                prove ownership with a DNS record (DNS-01): `dns01` names the DNS provider (only `cloudflare`) and a Secret holding its API token.
+# `wildcard` also covers *.<domain>, the hosts of the apps bots deploy (<app>--<team>.<domain>). In either mode a Traefik TLSStore named `default`
+# then makes the wildcard certificate Traefik's default, so app Ingresses in other namespaces (which cannot read this Secret) get it too.
+tls:
+  mode: none            # none | cloudflare | letsencrypt
+  wildcard: true        # also cover *.<domain> (the hosts of apps bots deploy)
+  cloudflare:
+    origin: strict      # strict | flexible
+    certSecret: manythreads-origin-cert   # kubernetes.io/tls Secret holding the Origin CA certificate for <domain> and *.<domain>
+    # Cloudflare's published ranges (https://www.cloudflare.com/ips/). tools/devbox/deploy.sh gives them to Traefik as the proxies whose
+    # X-Forwarded-* headers it believes (Traefik's HelmChartConfig in kube-system is cluster-wide, so the chart does not render it). Refresh from the page above.
+    trustedIPs:
+      - 173.245.48.0/20
+      - 103.21.244.0/22
+      - 103.22.200.0/22
+      - 103.31.4.0/22
+      - 141.101.64.0/18
+      - 108.162.192.0/18
+      - 190.93.240.0/20
+      - 188.114.96.0/20
+      - 197.234.240.0/22
+      - 198.41.128.0/17
+      - 162.158.0.0/15
+      - 104.16.0.0/13
+      - 104.24.0.0/14
+      - 172.64.0.0/13
+      - 131.0.72.0/22
+      - 2400:cb00::/32
+      - 2606:4700::/32
+      - 2803:f800::/32
+      - 2405:b500::/32
+      - 2405:8100::/32
+      - 2a06:98c0::/29
+      - 2c0f:f248::/32
+  letsencrypt:
+    email: ""           # required: Let's Encrypt writes here about expiring certificates
+    server: production  # production | staging (staging certificates are not trusted by browsers; use it to test without hitting rate limits)
+    dns01:              # required when tls.wildcard is true
+      provider: cloudflare
+      apiTokenSecret: manythreads-cloudflare-dns   # Secret with a Cloudflare API token that may edit DNS for the zone (made by deploy.sh --dns-token-file)
+      apiTokenKey: api-token
+
 ingress:
   enabled: true
   className: ""          # empty = cluster default IngressClass (Traefik)
@@ -216,8 +265,9 @@ hermesPods:
   appTeams: [engineering, marketing, customer-support]
   apps:
     prefix: apps-
-    # Deployed apps are reached at https://<app>.<host> (a wildcard DNS name `*.<host>` must point at the cluster; kahf.to's does).
-    host: apps.manythreads.kahf.to
+    # Deployed apps are reached at https://<app>--<team>.<host>: ONE label under the host, so one wildcard certificate (`*.<host>`, see `tls`)
+    # covers them all. A wildcard DNS name `*.<host>` must point at the cluster. Empty = `domain`.
+    host: ""
     quota:
       pods: "20"
       requests.cpu: "4"

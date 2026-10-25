@@ -265,7 +265,7 @@ spec:
 {{- if $hp.appTeams }}
 ---
 # Admission rules for every apps namespace (the namespace label manythreads.io/team names its team):
-#  * an Ingress host must be <app>.<team>.{{ $hp.apps.host }}: under its own team's name, never a wildcard, never the platform's host or another team's;
+#  * an Ingress host must be <app>--<team>.{{ include "manythreads.appsHost" . }}: one label `<app>--<team>` (the app part has no `--`, so the first `--` splits it uniquely and two teams can never share a host; at most 63 characters), never a wildcard, never the platform's host or another team's;
 #    no default backend; no traefik.* annotation (they could attach middlewares or entrypoints that bypass the rules above);
 #  * a Service must be ClusterIP with no externalIPs, loadBalancerIP or loadBalancerSourceRanges (externalIPs would let a deployer capture
 #    cluster addresses such as kube-dns or the API server: CVE-2020-8554);
@@ -290,18 +290,20 @@ spec:
   variables:
     - name: team
       expression: "has(namespaceObject.metadata.labels) && 'manythreads.io/team' in namespaceObject.metadata.labels ? namespaceObject.metadata.labels['manythreads.io/team'] : ''"
+    - name: appsHost
+      expression: "'{{ include "manythreads.appsHost" . }}'"
   validations:
     - expression: "variables.team != ''"
       message: "this namespace has no manythreads.io/team label"
     - expression: >-
-        object.kind != 'Ingress' || (has(object.spec.rules) && size(object.spec.rules) > 0 && object.spec.rules.all(r, has(r.host) && !r.host.startsWith('*') && r.host.endsWith('.' + variables.team + '.{{ $hp.apps.host }}') && size(r.host) > size('.' + variables.team + '.{{ $hp.apps.host }}')))
-      message: "an Ingress in an apps namespace needs a host <app>.<team>.{{ $hp.apps.host }} for its own team (no wildcard)"
+        object.kind != 'Ingress' || (has(object.spec.rules) && size(object.spec.rules) > 0 && object.spec.rules.all(r, has(r.host) && (r.host.endsWith('.' + variables.appsHost) && size(r.host.substring(0, size(r.host) - size('.' + variables.appsHost))) <= 63 && r.host.substring(0, size(r.host) - size('.' + variables.appsHost)).endsWith('--' + variables.team) && size(r.host.substring(0, size(r.host) - size('.' + variables.appsHost))) > size('--' + variables.team) && r.host.substring(0, size(r.host) - size('.' + variables.appsHost)).substring(0, size(r.host.substring(0, size(r.host) - size('.' + variables.appsHost))) - size('--' + variables.team)).matches('^[a-z0-9]([a-z0-9]|-[a-z0-9])*$'))))
+      message: "an Ingress in an apps namespace needs a host <app>--<team>.{{ include "manythreads.appsHost" . }} for its own team (one label, no wildcard)"
     - expression: "object.kind != 'Ingress' || !has(object.spec.defaultBackend)"
       message: "an Ingress in an apps namespace may not set a default backend"
     - expression: "object.kind != 'Ingress' || !has(object.metadata.annotations) || !object.metadata.annotations.exists(k, k.startsWith('traefik.'))"
       message: "an Ingress in an apps namespace may not carry traefik.* annotations"
-    - expression: "object.kind != 'Ingress' || !has(object.spec.tls) || object.spec.tls.all(t, !has(t.hosts) || t.hosts.all(h, !h.startsWith('*') && h.endsWith('.' + variables.team + '.{{ $hp.apps.host }}')))"
-      message: "an Ingress tls host must be under the team's own host too"
+    - expression: "object.kind != 'Ingress' || !has(object.spec.tls) || object.spec.tls.all(t, !has(t.hosts) || t.hosts.all(h, h.endsWith('.' + variables.appsHost) && size(h.substring(0, size(h) - size('.' + variables.appsHost))) <= 63 && h.substring(0, size(h) - size('.' + variables.appsHost)).endsWith('--' + variables.team) && size(h.substring(0, size(h) - size('.' + variables.appsHost))) > size('--' + variables.team) && h.substring(0, size(h) - size('.' + variables.appsHost)).substring(0, size(h.substring(0, size(h) - size('.' + variables.appsHost))) - size('--' + variables.team)).matches('^[a-z0-9]([a-z0-9]|-[a-z0-9])*$')))"
+      message: "an Ingress tls host must follow the same <app>--<team> rule"
     - expression: "object.kind != 'Service' || !has(object.spec.type) || object.spec.type == 'ClusterIP'"
       message: "a Service in an apps namespace must be of type ClusterIP"
     - expression: "object.kind != 'Service' || ((!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0) && (!has(object.spec.loadBalancerIP) || object.spec.loadBalancerIP == '') && (!has(object.spec.loadBalancerSourceRanges) || size(object.spec.loadBalancerSourceRanges) == 0))"

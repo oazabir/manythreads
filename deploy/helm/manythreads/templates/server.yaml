@@ -55,7 +55,19 @@ spec:
             - name: MANYTHREADS_KMS_KEY
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-key } }
             - { name: MANYTHREADS_PUBLIC_URL, value: {{ .Values.publicUrl | default (printf "https://%s" .Values.domain) | quote }} }
-            - { name: MANYTHREADS_TRUST_PROXY, value: {{ .Values.server.trustProxy | quote }} }
+            {{- /* Behind Cloudflare the client is one proxy hop further out (Cloudflare appends to X-Forwarded-For too). An explicit server.env value wins. */}}
+            {{- $tlsMode := include "manythreads.tlsMode" . }}
+            {{- if not (hasKey .Values.server.env "MANYTHREADS_TRUST_PROXY") }}
+            - { name: MANYTHREADS_TRUST_PROXY, value: {{ if eq $tlsMode "cloudflare" }}{{ add (int .Values.server.trustProxy) 1 | quote }}{{ else }}{{ .Values.server.trustProxy | quote }}{{ end }} }
+            {{- end }}
+            - { name: MANYTHREADS_TLS_MODE, value: {{ $tlsMode | quote }} }
+            - { name: MANYTHREADS_TLS_WILDCARD, value: {{ if and .Values.tls.wildcard (ne $tlsMode "none") }}"1"{{ else }}"0"{{ end }} }
+            {{- if eq $tlsMode "cloudflare" }}
+            - { name: MANYTHREADS_TLS_ORIGIN, value: {{ .Values.tls.cloudflare.origin | quote }} }
+            {{- end }}
+            {{- if eq $tlsMode "letsencrypt" }}
+            - { name: MANYTHREADS_TLS_ACME_SERVER, value: {{ .Values.tls.letsencrypt.server | quote }} }
+            {{- end }}
             - { name: MANYTHREADS_MAIL_FROM, value: {{ .Values.mail.from | quote }} }
             {{- $smtp := .Values.mail.smtpUrl }}
             {{- if and (not $smtp) .Values.mailpit.enabled }}{{ $smtp = "smtp://manythreads-mailpit:1025" }}{{ end }}
@@ -106,7 +118,7 @@ spec:
             - { name: MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW, value: {{ join "," .repoOriginAllow | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_DEPLOYER_BOT, value: {{ .deployerBot | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_APPS_PREFIX, value: {{ .apps.prefix | quote }} }
-            - { name: MANYTHREADS_HERMES_PODS_APPS_HOST, value: {{ .apps.host | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_APPS_HOST, value: {{ include "manythreads.appsHost" $ | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_RESOURCES, value: {{ dict "hermes" .hermesResources "workbench" .workbenchResources | toJson | quote }} }
             {{- /* Team pods live in another namespace: a short Service name would not resolve there, so the profiles get full ones. */}}
             - { name: MANYTHREADS_INCLUSTER_URL, value: {{ printf "http://manythreads-server.%s.svc.cluster.local:3000" $.Release.Namespace | quote }} }
