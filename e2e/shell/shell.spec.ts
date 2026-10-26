@@ -27,7 +27,7 @@ test.describe('Nadia, a member', () => {
     const sidebar = page.locator('[data-landmark="sidebar"]');
     await expect(sidebar).toBeVisible();
     // the rows arrive once the team list has loaded
-    await expect.poll(() => sidebarRows(page)).toEqual(['Files', 'Boards', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
+    await expect.poll(() => sidebarRows(page)).toEqual(['Files', 'Boards', 'Org chart', 'Rhythms', 'Threads', 'Approvals', 'Direct messages', 'Bots']);
     await expect(sidebar).not.toContainText('No files yet');
     // Files and Boards are built screens: their sidebar rows carry no "nothing here" subtitle.
     await expect(sidebar).not.toContainText('No boards yet');

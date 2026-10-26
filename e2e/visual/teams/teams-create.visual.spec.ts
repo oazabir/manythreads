@@ -3,13 +3,18 @@ import { startStack, type Stack } from '../../fixtures/stack.ts';
 import { comparePlate, openPage, type PlateSpec } from '../support/vt.ts';
 
 /*
- * Teams > create from templates vs [proto §01 plate 4 · Step 5 · Teams] (section onboarding, plate 4). Class P.
+ * Teams > create from templates vs [proto §01 plate 4 · Step 5 · Teams] (section onboarding, plate 4). Class P-loose (was P until the Engineering template grew).
  *
  * The plate is the onboarding step: a stepper rail (phase 10) and the pane "Which teams do you want?". The settings screen has
  * its own navigation instead of the rail, so the pane is what is compared (see support/vt.ts): its content box, 640px tall.
  * The plate's state is reproduced: Engineering, Customer support and Marketing ticked, invitees typed for the first two.
  *
- * Measured gap to the plate (residual, accepted within P): ~5% of pixels differ. Causes that are the product, not drift:
+ * Why loose: the Engineering template now carries the whole delivery chain (Browser tester, Deployer, Standup relay, Alert triage), so its bot line wraps to
+ * two lines and its card is 17px taller than the plate's (and Customer support, its grid neighbour, matches it); every row below shifts, which takes the
+ * pixel gap to 6.4%, just over class P's 6%. Order and presence of every region are still checked, with the 12% pixel limit of P-loose; the 6px
+ * position check of class P no longer runs for this screen.
+ *
+ * Measured gap to the plate (before that change) (residual, accepted within P): ~5% of pixels differ. Causes that are the product, not drift:
  *  - the plate's chip rows show connections ("GitHub . kahf", "needs: manuals") that exist from phase 8; the live cards show the
  *    template's board and role tags in the same chip style (one line, extra tags folded into "+N");
  *  - each ticked card has a slug field beside the name pill, and a ticked Marketing card has an Invite field the plate omits,
@@ -64,7 +69,7 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-test('teams create matches the Step 5 · Teams plate (P)', async ({ browser }, testInfo) => {
+test('teams create matches the Step 5 · Teams plate (P-loose)', async ({ browser }, testInfo) => {
   const { page, close } = await openPage(browser, stack, 'omar');
   try {
     await page.goto('/teams');
@@ -75,7 +80,7 @@ test('teams create matches the Step 5 · Teams plate (P)', async ({ browser }, t
     await page.getByLabel('Customer support invite emails').fill('rafi@kahf.io');
     await page.getByLabel('Customer support invite emails').blur();
     await comparePlate(page, browser, testInfo, {
-      cls: 'P',
+      cls: 'P-loose',
       spec: PLATE,
       liveRegion: '[data-landmark="teams"]',
       order: [

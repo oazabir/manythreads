@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type PlaywrightWorkerArgs } from '@playwright/test';
+import { PERSONA_PASSWORD } from '../../support/env.ts';
 import { KAHF_WORKSPACE_ID, PERSONA_EMAILS, TEST_AUTH_TOKEN } from '../support/api.ts';
 
 /**
@@ -94,7 +95,7 @@ test('no GET route returns a secret, hash or token field, for any persona or ano
 
   // The sign-in answers themselves: the session payload and the cookie-bearing responses carry no hash or token keys either.
   const signIn = await playwright.request.newContext({ baseURL: base });
-  const res = await signIn.post('/api/auth/password/sign-in', { data: { email: PERSONA_EMAILS.omar, password: 'correct-horse-battery' } });
+  const res = await signIn.post('/api/auth/password/sign-in', { data: { email: PERSONA_EMAILS.omar, password: PERSONA_PASSWORD } });
   expect(res.status()).toBe(200);
   expect(offendingKeys(await res.json())).toEqual([]);
 });
