@@ -255,10 +255,10 @@ describe('serial keys: one job per key at a time, across workers', () => {
     // two workers on one queue (two server processes), each with room for several jobs
     const workers = ['w1', 'w2'].map((workerId) => startWorker({ queue, workerId, handler, pool, concurrency: 4, serialKey: 'botId', pollMs: 30 }));
     try {
-      await waitFor(() => done === 6);
+      // the handler returns before its worker marks the job done, so wait for the rows, not only the handlers
+      await waitFor(async () => done === 6 && (await states(queue))['done'] === 6);
       expect(violated).toBe(false);
       expect(overallPeak).toBeGreaterThanOrEqual(2);
-      expect((await states(queue))['done']).toBe(6);
     } finally {
       await Promise.all(workers.map((w) => w.stop()));
     }
