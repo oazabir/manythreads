@@ -18,6 +18,8 @@
 #
 # Both Dockerfiles use only plain Dockerfile steps (COPY, RUN, ENV, USER, multi-stage `COPY --from`): nothing needs BuildKit, which kaniko is not.
 # Their `# syntax=` first line is a comment to kaniko. Memory: the install of this monorepo peaks near 3 GiB, so the build containers may use 4 GiB (the target's quota allows 8 GiB of memory limits in all: one build at a time plus an install).
+# Scratch disk: each step asks for its request explicitly. A container that names only a limit is given a request equal to it, and 10 GiB
+# was more than the target's 8 GiB of disk requests. The kaniko steps may grow to 8 GiB, which fits beside a running preview (16 GiB of limits).
 # Disk: the images are built in the container's own storage on the node (limit below); the node's disk is small, so run one build at a time.
 apiVersion: batch/v1
 kind: Job
@@ -41,7 +43,7 @@ spec:
         - name: fetch
           image: alpine/git:v2.49.1
           resources:
-            requests: { cpu: 100m, memory: 128Mi }
+            requests: { cpu: 100m, memory: 128Mi, ephemeral-storage: 256Mi }
             limits: { memory: 512Mi, ephemeral-storage: 3Gi }
           env:
             - { name: BASE_COMMIT, value: "__BASE_COMMIT__" }
@@ -104,8 +106,8 @@ spec:
             - --compressed-caching=false
             - --cleanup
           resources:
-            requests: { cpu: 500m, memory: 1Gi }
-            limits: { memory: 4Gi, ephemeral-storage: 10Gi }
+            requests: { cpu: 500m, memory: 1Gi, ephemeral-storage: 2Gi }
+            limits: { memory: 4Gi, ephemeral-storage: 8Gi }
           volumeMounts:
             - { name: workspace, mountPath: /workspace }
         - name: build-web
@@ -121,8 +123,8 @@ spec:
             - --compressed-caching=false
             - --cleanup
           resources:
-            requests: { cpu: 500m, memory: 1Gi }
-            limits: { memory: 4Gi, ephemeral-storage: 10Gi }
+            requests: { cpu: 500m, memory: 1Gi, ephemeral-storage: 2Gi }
+            limits: { memory: 4Gi, ephemeral-storage: 8Gi }
           volumeMounts:
             - { name: workspace, mountPath: /workspace }
       containers:
