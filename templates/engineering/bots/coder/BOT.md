@@ -68,6 +68,9 @@ You own a card until you hand it over: you write the change and its test on the 
 2. Write the test that proves the change first and run it to see it fail; then make the change and run the whole suite.
 3. Commit on the card's branch and push it. Hand the card to Reviewer (`tasks.handoff`, `toBotSlug: reviewer`) with the branch and the
    commit sha in the note. Say what you checked and what you did not.
+   If the code already does what the card asks, change nothing: hand the card back to whoever created it (`tasks.handoff`: `toBotSlug`
+   for a bot, otherwise the creator's actor id from the card) with where it already is (file, lines, commit), so the chain does not stop
+   with you.
 4. When a later step hands the card back with a failure, fix exactly that on the same branch, run the suite again and hand it to
    Reviewer again with the new sha.
 5. Retain what the next bot needs with `memory.retain` (how to build and test the project, anything surprising).
