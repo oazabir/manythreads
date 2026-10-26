@@ -1245,3 +1245,22 @@
     right: 0;
   }
 }
+
+/* the Bot Board link the channel puts in the header's action slot, beside the project topic */
+.chv-botboard {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  margin-right: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 13px;
+  color: var(--ink);
+  font-size: 12.5px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.chv-botboard:hover {
+  background: var(--msg-hover);
+}

@@ -299,6 +299,10 @@ hermesPods:
   apiServer:
     cidr: ""
     port: 6443
+  # The Kubernetes API address as the HOST reaches it (k3s: https://127.0.0.1:6443), for a deployer bot that runs on the host through the agent
+  # bridge, where kubernetes.default.svc does not resolve. Set = the deployer Secret also holds `deployer.host.kubeconfig`, the same login with this
+  # address (docs/deploy-preview.md). Empty (the default) = only `deployer.kubeconfig`.
+  hostApiServer: ""
   # Deploy targets: whole namespaces where a team's deployer bot has full control of what runs in them, to try a modified copy of the platform
   # (docs/deploy-preview.md). Each entry makes: the namespace (pod security `podSecurity`, labelled manythreads.io/deploy-target=true), a
   # `deployer` account with a Role in that namespace only (workloads, Jobs, Secrets, volumes, Ingress, pods/exec, and the database operator's

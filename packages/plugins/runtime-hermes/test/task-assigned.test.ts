@@ -411,7 +411,7 @@ describe('where the card is announced, and what is on the record when nobody can
     expect(await channelOfRoot(rootId)).toBe(channelId);
   });
 
-  it('an orchestrator message that names the new owner in the card thread wakes it no second time (the handover already did)', async () => {
+  it('an orchestrator message that names the new owner in the card thread wakes it again once its handover run has ended (it owns the card but is idle)', async () => {
     const orch = await loadBot('ta-orch10', botMd({ name: 'TaOrch10', model: 'smart', capabilities: 'messages.post', handover: ['ta-coder10'] }));
     const coder = await loadBot('ta-coder10', botMd({ name: 'TaCoder10', model: 'smart', capabilities: 'messages.post', triggers: ['  - type: mention', '  - type: task_assigned'] }));
     const taskId = await cardOwnedBy(orch, 'Dup card');
@@ -421,11 +421,11 @@ describe('where the card is announced, and what is on the record when nobody can
     await until(async () => (await messagesBy(rootId, coder.actorId, channelId))[0], 30_000, 'the handover run to reply');
     await finished(coder.botId);
 
-    // the orchestrator's prose in the same thread names the coder, who still owns the card
+    // the orchestrator's prose in the same thread names the coder, who still owns the card but is idle: the mention is the only thing that wakes it
+    // (while its handover run is still going the mention starts nothing: the delegation test in run.test.ts)
     const prose = await w.call(asBot(orch), 'POST', `/api/channels/${channelId}/messages`, { channelId, body: 'Tester next: @ta-coder10 please check it', threadRootId: rootId });
     expect(prose.status, JSON.stringify(prose.body)).toBe(201);
-    await new Promise((r) => setTimeout(r, 4000));
-    expect(await runsOf(coder.botId)).toHaveLength(1);
+    await until(async () => ((await runsOf(coder.botId)).length >= 2 ? true : null), 30_000, 'the idle owner to be woken');
   });
 
   describe('a prose @mention of a bot by another bot', () => {

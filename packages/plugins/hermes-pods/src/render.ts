@@ -27,6 +27,12 @@ export interface PodConfig {
   resources: { hermes: Resources; workbench: Resources };
   /** Extra namespaces a team's deployer may administer (the chart's `hermesPods.deployTargets`; docs/deploy-preview.md). Absent or empty = none. */
   deployTargets?: DeployTarget[];
+  /**
+   * The Kubernetes API address as the HOST reaches it (k3s: `https://127.0.0.1:6443`), for a deployer bot that runs outside the cluster through the
+   * agent bridge, where `kubernetes.default.svc` does not resolve. Set = the deployer Secret also holds `deployer.host.kubeconfig`, the same login
+   * with this address. Empty or absent = only the in-cluster file.
+   */
+  hostApiServer?: string;
 }
 
 /** A namespace where one team's deployer bot has full control of what runs in it (a preview install of the platform). */
@@ -299,14 +305,23 @@ function targetGuide(targets: readonly DeployTargetLogin[], apps: boolean): stri
   ];
 }
 
-export function buildDeployerSecret(cfg: PodConfig, team: Team, names: Names, kubeconfig: string): K8sObject {
+export function buildDeployerSecret(cfg: PodConfig, team: Team, names: Names, kubeconfig: string, hostKubeconfig?: string): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'Secret',
     metadata: { name: names.deployer, namespace: cfg.namespace, labels: labelsFor(team) },
     type: 'Opaque',
-    stringData: { 'deployer.kubeconfig': kubeconfig },
+    stringData: { 'deployer.kubeconfig': kubeconfig, ...(hostKubeconfig !== undefined ? { 'deployer.host.kubeconfig': hostKubeconfig } : {}) },
   };
+}
+
+/**
+ * The deployer Secret for one login: the in-cluster kubeconfig, plus (when `cfg.hostApiServer` is set) a second file that differs only in the API
+ * address, for a bot on the host. The CA stays the cluster's own (k3s's API certificate also names 127.0.0.1 and the node's IP).
+ */
+export function buildDeployerSecretFor(cfg: PodConfig, team: Team, names: Names, login: Parameters<typeof buildDeployerKubeconfig>[0]): K8sObject {
+  const host = (cfg.hostApiServer ?? '').trim();
+  return buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig(login), host !== '' ? buildDeployerKubeconfig({ ...login, server: host }) : undefined);
 }
 
 export function buildPvc(cfg: PodConfig, team: Team, name: string, size: string): K8sObject {

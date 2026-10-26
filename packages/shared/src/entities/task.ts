@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
-import { ActorId, BoardId, EnvironmentId, GoalId, HandoffId, RunnerId, TaskClaimId, TaskEventId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
+import { ActorId, BoardId, ChannelId, EnvironmentId, GoalId, HandoffId, RunnerId, TaskClaimId, TaskEventId, TaskId, TeamId, WorkspaceId } from '../ids.ts';
 import { JsonObject } from './kernel.ts';
 
 // Phase 6 task substrate (SPEC §8, PLAN A.6). Every enum here matches a CHECK of the tasks plugin's migration 0001_tasks.sql;
@@ -90,6 +90,8 @@ export const Task = z.object({
   testedSha: z.string().regex(/^[0-9a-f]{7,64}$/).nullable(),
   /** The Environment a deploy of this card goes through, when it has one. */
   environmentId: EnvironmentId.nullable(),
+  /** The channel board the card is filed on, when it has one (a handover never changes it). */
+  boardId: BoardId.nullable(),
   /** The thread the card's conversation lives in. */
   threadRootId: z.uuid().nullable(),
   /** Why the card waits on a person, in words; empty otherwise. */
@@ -182,9 +184,14 @@ export const Board = z.object({
   columns: z.array(BoardColumn).min(1).max(5),
   /** A `ListTasksQuery`-shaped filter (`goalId`, `ownerId`, `kind`), applied on read. */
   filter: JsonObject,
+  /** The channel the board belongs to, or null for a team-level saved view. A channel board shows the cards filed on it, not a filter. */
+  channelId: ChannelId.nullable(),
   createdAt: IsoDateTime,
 });
 export type Board = z.infer<typeof Board>;
+
+/** The name of the board the bots of a channel keep their cards on (capability `boards.ensure`). */
+export const BOT_BOARD_NAME = 'Bot Board';
 
 export const RunnerStatus = z.enum(['online', 'offline']);
 export type RunnerStatus = z.infer<typeof RunnerStatus>;

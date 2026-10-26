@@ -272,6 +272,28 @@ describe('tasks API', () => {
       expect(moved.status, JSON.stringify(moved.body)).toBe(200);
     });
 
+    it('a bot may always hand a card back to the actor that created it, even when mayTag does not name it', async () => {
+      // `worker` may tag only reviewer; the card was created by Nadia (a person) and handed to worker.
+      const worker = await makeBot(`worker-${randomUUID().slice(0, 6)}`, ['reviewer']);
+      const task = await create(nadia);
+      expect((await hand(nadia, task.id, { toActorId: worker.actorId, mode: 'bot' })).status).toBe(200);
+      const back = await hand(asBot(worker), task.id, { toActorId: nadia.actorId, mode: 'person', note: 'done' });
+      expect(back.status, JSON.stringify(back.body)).toBe(200);
+      expect(HandoffTaskResponse.parse(back.body).task).toMatchObject({ ownerId: nadia.actorId, state: 'waiting_on_person' });
+    });
+
+    it('still refuses a hand-over to someone who is neither in mayTag nor the creator, and says the card stayed', async () => {
+      const worker = await makeBot(`worker-${randomUUID().slice(0, 6)}`, ['reviewer']);
+      const task = await create(nadia);
+      await hand(nadia, task.id, { toActorId: worker.actorId, mode: 'bot' });
+      const refused = await hand(asBot(worker), task.id, { toActorId: coder.actorId, mode: 'bot' });
+      expect(refused.status).toBe(403);
+      expect(messageOf(refused.body)).toMatch(/not handed over/);
+      expect(messageOf(refused.body)).toMatch(/still/);
+      const read = await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}`);
+      expect((read.body['task'] as Record<string, unknown>)['ownerId']).toBe(worker.actorId);
+    });
+
     it('a bot creator is still bound by mayTag', async () => {
       const task = await create(asBot(coder));
       const outside = await hand(asBot(coder), task.id, { toBotSlug: 'stranger', mode: 'bot' });

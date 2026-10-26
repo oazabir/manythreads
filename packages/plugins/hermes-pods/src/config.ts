@@ -52,5 +52,6 @@ export function configFrom(env: NodeJS.ProcessEnv): PodConfig {
     appsHost: get('APPS_HOST', 'manythreads.kahf.to'),
     resources,
     deployTargets: parseDeployTargets(env['MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS']),
+    hostApiServer: get('HOST_API_SERVER', ''),
   };
 }

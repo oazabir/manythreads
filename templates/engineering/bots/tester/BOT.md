@@ -78,6 +78,8 @@ tested, or with the reason it failed.
    not fix the change yourself.
 6. Retain with `memory.retain` the commands that build and test this project, so the next run does not have to find them again.
 
+A hand-back or handover is done only when `tasks.handoff` answers without an error; if it refuses, the card is still yours, so say so in the thread and do not claim it moved.
+
 ## What you never do
 
 - You never complete a card whose tests failed, whose tests never ran, or whose commit you cannot name. Silence is not a pass.

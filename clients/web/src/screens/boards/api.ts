@@ -13,6 +13,7 @@ import {
   HandoffTaskRequest,
   HandoffTaskResponse,
   ListBoardsResponse,
+  ListChannelBoardsResponse,
   ListRhythmRunsResponse,
   ListRhythmsResponse,
   ListTaskEventsResponse,
@@ -35,6 +36,7 @@ import {
   getTaskRoute,
   handoffTaskRoute,
   listBoardsRoute,
+  listChannelBoardsRoute,
   listRhythmRunsRoute,
   listRhythmsRoute,
   listTaskEventsRoute,
@@ -56,6 +58,10 @@ import { call } from '../../api/client';
 export type Json = Record<string, unknown>;
 
 export const fetchBoards = (slug: string) => call(listBoardsRoute, { response: ListBoardsResponse }, undefined, { slug });
+
+/** The boards attached to one channel (the header's Bot Board link). */
+export const fetchChannelBoards = (channelId: string) =>
+  call(listChannelBoardsRoute, { response: ListChannelBoardsResponse }, undefined, { channelId });
 
 /** A board and its columns; a column's cards are one filtered task read (`state` + the board's saved filter). */
 export const fetchBoard = (slug: string, boardId: string) =>

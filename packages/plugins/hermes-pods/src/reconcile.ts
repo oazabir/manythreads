@@ -9,8 +9,7 @@ import {
   assignUsers,
   botSlugOf,
   buildBotsConfigMap,
-  buildDeployerKubeconfig,
-  buildDeployerSecret,
+  buildDeployerSecretFor,
   buildDeployment,
   buildKeySecret,
   buildProfilesSecret,
@@ -125,7 +124,7 @@ export class Reconciler {
         // a read error on a deploy target is usually momentary: keep the kubeconfig written last tick (it still has that context) and try again next tick
         const previous = failed ? await k8s.get('Secret', cfg.namespace, names.deployer).catch(() => null) : null;
         if (previous) this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
-        else deployerSecret = buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig({ token, caPem: ca, appsNamespace: appsNs, appsRouting: cfg.appsRouting, appUrlPattern: appUrlPattern(cfg, team), targets }));
+        else deployerSecret = buildDeployerSecretFor(cfg, team, names, { token, caPem: ca, appsNamespace: appsNs, appsRouting: cfg.appsRouting, appUrlPattern: appUrlPattern(cfg, team), targets });
         withDeployer = true;
       } else {
         // No apps namespace (the team is not in hermesPods.appTeams): its deploy targets alone still make a kubeconfig.
@@ -136,7 +135,7 @@ export class Reconciler {
           this.log.warn(`hermes-pods: keeping the last deployer kubeconfig of ${team.slug} (a deploy target could not be read this tick)`);
           withDeployer = true;
         } else if (targets.length > 0 && ca !== '') {
-          deployerSecret = buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig({ token: null, caPem: ca, appsNamespace: appsNs, targets }));
+          deployerSecret = buildDeployerSecretFor(cfg, team, names, { token: null, caPem: ca, appsNamespace: appsNs, targets });
           withDeployer = true;
         } else {
           this.log.warn(`hermes-pods: there is no ready deployer token in ${appsNs} and no deploy target (add the team to hermesPods.appTeams); the deployer bot of ${team.slug} has no kubeconfig`);

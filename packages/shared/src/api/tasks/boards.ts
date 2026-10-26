@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Board, BoardColumn, Task, TaskState } from '../../entities/task.ts';
-import { BoardId, TaskId } from '../../ids.ts';
+import { BoardId, ChannelId, TaskId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
 export const ListBoardsPathParams = z.object({ slug: TeamSlug });
@@ -43,3 +43,10 @@ export type MoveTaskRequest = z.infer<typeof MoveTaskRequest>;
 export const MoveTaskResponse = z.object({ task: Task });
 export type MoveTaskResponse = z.infer<typeof MoveTaskResponse>;
 export const moveTaskRoute = { method: 'POST', path: '/api/teams/:slug/boards/:boardId/move' } as const;
+
+/** The boards attached to a channel the caller can read (a channel they cannot read answers an empty list, which says no more than a channel with no boards). */
+export const ListChannelBoardsPathParams = z.object({ channelId: ChannelId });
+export type ListChannelBoardsPathParams = z.infer<typeof ListChannelBoardsPathParams>;
+export const ListChannelBoardsResponse = z.object({ items: z.array(Board) });
+export type ListChannelBoardsResponse = z.infer<typeof ListChannelBoardsResponse>;
+export const listChannelBoardsRoute = { method: 'GET', path: '/api/channels/:channelId/boards' } as const;

@@ -26,6 +26,7 @@ import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
 import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
 import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
+import { TasksBoardCreatedEvent } from './tasks.board.created.ts';
 import { TasksTaskCreatedEvent } from './tasks.task.created.ts';
 import { TasksTaskUpdatedEvent } from './tasks.task.updated.ts';
 import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
@@ -155,6 +156,7 @@ export const eventRegistry = {
   'workspace.member.role_changed': { 1: WorkspaceMemberRoleChangedEvent },
   'reading.state.changed': { 1: ReadingStateChangedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
+  'tasks.board.created': { 1: TasksBoardCreatedEvent },
   'tasks.task.created': { 1: TasksTaskCreatedEvent },
   'tasks.task.updated': { 1: TasksTaskUpdatedEvent },
   'tasks.task.claimed': { 1: TasksTaskClaimedEvent },

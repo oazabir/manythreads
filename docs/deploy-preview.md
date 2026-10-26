@@ -45,6 +45,13 @@ In `values.yaml` (defaults empty or off; `values-live.yaml` turns on the enginee
 The controller (plugin `hermes-pods`) reads each target's token (env `MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS`, set by the chart) and adds one context per target of the team to the deployer bot's kubeconfig, named after the namespace
 and signed in as that namespace's own account; `current-context` stays the apps one. A target whose token is not ready yet is left out with a warning in the server log.
 
+**A deployer bot that runs on the host (through the agent bridge) cannot use that file as it is:** it names `https://kubernetes.default.svc`, which only resolves inside a pod. Set the chart value
+`hermesPods.hostApiServer` to the address the host reaches the API at (`https://127.0.0.1:6443` on the devbox's k3s, whose API certificate names 127.0.0.1 and the node's IP; the file keeps the cluster's CA). The Secret `deployer` of the
+team then holds a second key, `deployer.host.kubeconfig`: the same logins and contexts, only the server address differs. With the value empty (the default) the second key is not written. The operator copies that key to the
+KUBECONFIG path of the bot's profile on the host and restricts it to its owner, for example
+`kubectl -n manythreads-bots get secret <team's deployer Secret> -o jsonpath='{.data.deployer\.host\.kubeconfig}' | base64 -d > <profile>/kubeconfig && chmod 600 <profile>/kubeconfig`.
+The controller does not write to the host; the copy is repeated after the token changes.
+
 ### What the cluster refuses (admission rule)
 
 It applies to everyone who writes in a deploy target, including CNPG and cert-manager, so neither can be used to get round it. Pod security `baseline` already covers privileged pods, `hostPath`, host networking and host ports; the rule adds:

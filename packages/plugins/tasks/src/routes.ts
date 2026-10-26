@@ -18,6 +18,7 @@ import {
   HandoffTaskRequest,
   HandoffTaskResponse,
   ListBoardsResponse,
+  ListChannelBoardsResponse,
   ListEnvironmentsResponse,
   ListGoalsQuery,
   ListGoalsResponse,
@@ -52,6 +53,7 @@ import {
   getTaskRoute,
   handoffTaskRoute,
   listBoardsRoute,
+  listChannelBoardsRoute,
   listEnvironmentsRoute,
   listGoalsRoute,
   listRunnersRoute,
@@ -72,7 +74,7 @@ import { conflict, forbidden, json, notFound, requireManage, requireTeam, route 
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
 import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
-import { handoverAllowlist, mayHandoffToActor } from './handoff.ts';
+import { handoverAllowlist, isCardCreator, mayHandoffToActor } from './handoff.ts';
 import { TASK_SELECT, actorOf, toBoard, toEnvironment, toGoal, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type GoalRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
 
 /** The card of this team, or 404 (a card of another team and a missing one answer the same). */
@@ -107,6 +109,7 @@ export function registerRoutes(ctx: PluginContext): void {
       if (q.priority) add('t.priority = ?', q.priority);
       if (q.goalId) add('t.goal_id = ?::uuid', q.goalId);
       if (q.ownerId) add('t.owner_id = ?::uuid', q.ownerId);
+      if (q.boardId) add('t.board_id = ?::uuid', q.boardId);
       const filter = where.join(' AND ');
       values.push(q.limit);
       const rows = (
@@ -133,6 +136,11 @@ export function registerRoutes(ctx: PluginContext): void {
         const env = await tx.query('SELECT 1 FROM app.environments WHERE id = $1::uuid AND team_id = $2::uuid', [body.environmentId, team.id]);
         if (env.rows.length === 0) throw notFound('No such environment in this team');
       }
+      // A board of this team; a channel board the caller cannot read is hidden by its policy, so it answers 404 like a missing one.
+      if (body.boardId) {
+        const board = await tx.query('SELECT 1 FROM app.boards WHERE id = $1::uuid AND team_id = $2::uuid', [body.boardId, team.id]);
+        if (board.rows.length === 0) throw notFound('No such board in this team');
+      }
       // One door writes the card and its `created` history (as the system: `task_events` takes no request writes), so the card and its
       // timeline cannot disagree, and the caller cannot create a card in someone else's name. The `tasks.create` tool comes through it too.
       const task = await insertCard(ctx, tx, {
@@ -145,6 +153,7 @@ export function registerRoutes(ctx: PluginContext): void {
         priority: body.priority,
         branch: body.branch,
         environmentId: body.environmentId ?? null,
+        boardId: body.boardId ?? null,
         actorId: tx.actor.id,
       });
       return json(CreateTaskResponse.parse({ task }), 201);
@@ -334,8 +343,8 @@ export function registerRoutes(ctx: PluginContext): void {
       // A bot hands off only to the people and bots its BOT.md `handover.mayTag` names (P6-03): refused before any effect.
       const caller = await actorOf(tx, tx.actor.id);
       const mayTag = await handoverAllowlist(tx, tx.actor.id);
-      if (caller?.kind === 'bot' && !(await mayHandoffToActor(tx, mayTag ?? [], toActorId))) {
-        throw forbidden(`${caller.name} may not hand a card to ${targetName}: the target is not in its handover.mayTag`);
+      if (caller?.kind === 'bot' && !(await mayHandoffToActor(tx, mayTag ?? [], toActorId)) && !(await isCardCreator(tx, taskId, toActorId))) {
+        throw forbidden(`not handed over: ${caller.name} may not hand a card to ${targetName}: the target is not in its handover.mayTag and did not create the card; the card is still ${caller.name}'s`);
       }
 
       if (body.strict) {
@@ -571,6 +580,18 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       const rows = (await tx.query<BoardRow>('SELECT * FROM app.boards WHERE team_id = $1::uuid ORDER BY created_at', [team.id])).rows;
       return json(ListBoardsResponse.parse({ items: rows.map(toBoard) }));
+    }),
+  });
+
+  // The boards of one channel, for its header. A channel the caller cannot read has no readable boards, so the answer is the same empty list
+  // as for a channel without one (the board policy hides them; nothing here confirms the channel exists).
+  ctx.http.route({
+    ...listChannelBoardsRoute,
+    schema: { response: ListChannelBoardsResponse },
+    handler: route(async (req, tx) => {
+      const { channelId } = req.params as { channelId: string };
+      const rows = (await tx.query<BoardRow>('SELECT * FROM app.boards WHERE channel_id = $1::uuid ORDER BY created_at', [channelId])).rows;
+      return json(ListChannelBoardsResponse.parse({ items: rows.map(toBoard) }));
     }),
   });
 

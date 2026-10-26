@@ -31,3 +31,13 @@ export async function handoverAllowlist(tx: PluginTx, actorId: string): Promise<
   const mayTag = grant?.constraints?.mayTag;
   return Array.isArray(mayTag) ? mayTag.filter((t): t is string => typeof t === 'string') : [];
 }
+
+/**
+ * A bot may always hand a card back to the actor that created it, even when its `handover.mayTag` does not name them (live bug: a Deployer was
+ * told to hand its card back to Orchestrator, whose slug was not in its list, so the handover was refused and the card stayed put). Only the
+ * creator is exempt; every other target still has to be in the list, and the database door still decides whether this caller may move the card.
+ */
+export async function isCardCreator(tx: PluginTx, taskId: string, actorId: string): Promise<boolean> {
+  const row = (await tx.query<{ created_by: string }>('SELECT created_by FROM app.tasks WHERE id = $1::uuid', [taskId])).rows[0];
+  return row?.created_by === actorId;
+}

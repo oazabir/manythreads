@@ -4,6 +4,9 @@ import { setTransport, type TransportRequest } from '../src/api/client';
 import {
   branchFor,
   boardFilter,
+  boardLabel,
+  boardPath,
+  botBoardOf,
   cardRequest,
   columnsWithCards,
   dropTargets,
@@ -65,6 +68,7 @@ const board = (over: Record<string, unknown> = {}): Board =>
       { state: 'done', title: 'Done' },
     ],
     filter: {},
+    channelId: null,
     createdAt: AT,
     ...over,
   });
@@ -85,6 +89,7 @@ const task = (over: Record<string, unknown> = {}): Task =>
     baseSha: null,
     testedSha: null,
     environmentId: null,
+    boardId: null,
     threadRootId: null,
     blockerReason: '',
     reworkCount: 0,
@@ -479,5 +484,28 @@ describe('the rhythm endpoints reach the routes the rhythms plugin mounts', () =
 
     await runRhythm('engineering', id);
     expect(last()).toMatchObject({ method: 'POST', url: `/api/teams/engineering/rhythms/${id}/run` });
+  });
+});
+
+describe('a channel board', () => {
+  const CHANNEL = '00000000-0000-7000-8000-0000000000d1';
+
+  it('is read by the cards filed on it, not by a saved filter', () => {
+    expect(boardFilter(board({ channelId: CHANNEL, filter: { kind: 'ops' } }))).toEqual({ boardId: BOARD });
+  });
+
+  it('is labelled with its channel in the picker, and a team board is just its name', () => {
+    const names = new Map([[CHANNEL, 'shipping']]);
+    expect(boardLabel(board({ channelId: CHANNEL, name: 'Bot Board' }), names)).toBe('Bot Board · #shipping');
+    expect(boardLabel(board({ channelId: CHANNEL, name: 'Bot Board' }), new Map())).toBe('Bot Board');
+    expect(boardLabel(board(), names)).toBe('Engineering');
+  });
+
+  it('is the channel header link only when the board is attached and named Bot Board', () => {
+    expect(botBoardOf([])).toBeUndefined();
+    expect(botBoardOf([board({ channelId: CHANNEL, name: 'Sprint' })])).toBeUndefined();
+    expect(botBoardOf([board({ name: 'Bot Board' })])).toBeUndefined();
+    expect(botBoardOf([board({ channelId: CHANNEL, name: 'Bot Board' })])?.id).toBe(BOARD);
+    expect(boardPath('engineering', BOARD)).toBe(`/t/engineering/boards?board=${BOARD}`);
   });
 });

@@ -1145,7 +1145,8 @@ describe('bot-to-bot delegation in team channels', () => {
     // Counted by process home, not the shared spool file: a straggler from another test must not fail this one, and a
     // fifth chain process (the loop the cap exists to stop) may not hide in the total.
     await quiet(6000);
-    const orchRuns = await runsOf(orch.botId);
+    // a run nobody asked at depth 0 is the short one opened only to write the cap notice (when the author's own run had already ended)
+    const orchRuns = (await runsOf(orch.botId)).filter((r) => !(r.asker_id === null && r.delegation_depth === 0));
     expect(orchRuns.map((r) => r.delegation_depth)).toEqual([0, 3]);
     expect(orchRuns.every((r) => r.status === 'done')).toBe(true);
     const coderRuns = await runsOf(coder.botId);
@@ -1153,6 +1154,21 @@ describe('bot-to-bot delegation in team channels', () => {
     const testerRuns = await runsOf(tester.botId);
     expect(testerRuns).toMatchObject([{ status: 'done', asker_id: null, delegation_depth: 2 }]);
     expect(await runsOf(extra.botId)).toEqual([]);
+    // the dropped mention left one line in the thread, written by its author and naming the limit and the target
+    const notices = (await messagesBy(rootId, orch.actorId)).filter((m) => m.body.includes('was not woken'));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.body).toBe(
+      "`@dlg-chain-extra` was not woken by that mention: the bot-to-bot chain in this thread has reached its limit of 3. A person's mention or a card handover will wake it.",
+    );
+    // the same event delivered a second time (the outbox is at-least-once) posts nothing more
+    await w.system((tx) => tx.query(`UPDATE app.outbox SET done_at = NULL, claimed_until = NULL, available_at = now() WHERE event_id = (SELECT id FROM app.events WHERE type = 'channel.message.posted' AND payload ->> 'messageId' = $1)`, [fourth.id]));
+    await until(
+      async () =>
+        (await w.system((tx) => tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.outbox o JOIN app.events e ON e.id = o.event_id WHERE e.payload ->> 'messageId' = $1 AND o.done_at IS NULL`, [fourth.id]))).rows[0]!.n === 0,
+      30_000,
+      'the replayed event to be delivered again',
+    );
+    expect((await messagesBy(rootId, orch.actorId)).filter((m) => m.body.includes('was not woken'))).toHaveLength(1);
     const homes = new Set(
       spoolLines()
         .map((l) => String(l['homeName'] ?? ''))
@@ -1161,6 +1177,48 @@ describe('bot-to-bot delegation in team channels', () => {
     expect(homes).toEqual(
       new Set([`dlg-chain-orch-${orchRuns[0]!.id}`, `dlg-chain-orch-${orchRuns[1]!.id}`, `dlg-chain-coder-${coderRuns[0]!.id}`, `dlg-chain-tester-${testerRuns[0]!.id}`]),
     );
+  });
+
+  /** A card in `thread`, owned by the bot and not done: what a handover leaves behind. */
+  const giveCard = (bot: LoadedBot, thread: string): Promise<void> =>
+    w.system(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.tasks (workspace_id, team_id, title, state, kind, branch, owner_id, created_by, thread_root_id)
+         SELECT b.workspace_id, b.team_id, 'Deploy the change', 'in_progress', 'ops', 'main', $2::uuid, $2::uuid, $3::uuid FROM app.bots b WHERE b.id = $1::uuid`,
+        [bot.botId, bot.actorId, thread],
+      );
+    }).then(() => undefined);
+
+  it('a mention wakes a bot that owns a card in the thread but is idle (its handover run has ended)', async () => {
+    const orch = await loadBot('dlg-idle-orch', botMd({ name: 'DlgIdleOrch', model: 'smart', capabilities: 'messages.post', handover: ['dlg-idle-coder'] }));
+    const coder = await loadBot('dlg-idle-coder', botMd({ name: 'DlgIdleCoder', model: 'smart', capabilities: 'messages.post' }));
+    const rootId = await post('@dlg-idle-orch start chain dlg-idle-coder');
+    await giveCard(coder, rootId);
+    await until(async () => (await messagesBy(rootId, orch.actorId))[0], 30_000, 'the orchestrator to hand off');
+    const reply = await until(async () => (await messagesBy(rootId, coder.actorId))[0], 30_000, 'the idle owner to be woken');
+    expect(reply.body).toContain('@dlg-idle-coder please continue');
+    expect(await finished(coder.botId)).toMatchObject({ status: 'done', trigger_type: 'mention', delegation_depth: 1 });
+  });
+
+  it('a mention starts no second run for a card owner whose handover run is still running', async () => {
+    const orch = await loadBot('dlg-busy-orch', botMd({ name: 'DlgBusyOrch', model: 'smart', capabilities: 'messages.post', handover: ['dlg-busy-coder'] }));
+    const coder = await loadBot('dlg-busy-coder', botMd({ name: 'DlgBusyCoder', model: 'smart', capabilities: 'messages.post' }));
+    const rootId = await post('@dlg-busy-orch start chain dlg-busy-coder');
+    await giveCard(coder, rootId);
+    // the run the handover started, still open in this thread
+    await w.system((tx) =>
+      tx.query(
+        `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, status, reply_root_id)
+         SELECT b.workspace_id, b.id, b.team_id, 'task_assigned', 'running', $2::uuid FROM app.bots b WHERE b.id = $1::uuid`,
+        [coder.botId, rootId],
+      ),
+    );
+    const handoff = await until(async () => (await messagesBy(rootId, orch.actorId))[0], 30_000, 'the orchestrator to hand off');
+    expect((await finished(orch.botId)).status).toBe('done');
+    await quiet(3000);
+    expect(await jobsFor(coder.botId, handoff.id)).toBe(0);
+    expect(await messagesBy(rootId, coder.actorId)).toEqual([]);
+    await w.system((tx) => tx.query(`UPDATE app.bot_runs SET status = 'stopped', ended_at = now() WHERE bot_id = $1::uuid AND ended_at IS NULL`, [coder.botId]));
   });
 
   it('a bot-authored mention inside a 1:1 conversation wakes nobody', async () => {

@@ -17,6 +17,7 @@ export interface TaskRow extends Record<string, unknown> {
   base_sha: string | null;
   tested_sha: string | null;
   environment_id: string | null;
+  board_id: string | null;
   thread_root_id: string | null;
   blocker_reason: string;
   rework_count: number;
@@ -30,7 +31,7 @@ export interface TaskRow extends Record<string, unknown> {
 /** The columns every task read returns, in one place so a new column cannot be forgotten in half the routes. */
 export const TASK_SELECT = `
   SELECT t.id, t.workspace_id, t.team_id, t.goal_id, t.title, t.description, t.state, t.kind, t.priority, t.owner_id,
-         t.branch, t.base_sha, t.tested_sha, t.environment_id, t.thread_root_id, t.blocker_reason, t.rework_count,
+         t.branch, t.base_sha, t.tested_sha, t.environment_id, t.board_id, t.thread_root_id, t.blocker_reason, t.rework_count,
          t.handoff_count, t.created_by, t.created_at, t.updated_at, t.completed_at
     FROM app.tasks t`;
 
@@ -53,6 +54,7 @@ export function toTask(r: TaskRow): Task {
     baseSha: r.base_sha,
     testedSha: r.tested_sha,
     environmentId: r.environment_id,
+    boardId: r.board_id,
     threadRootId: r.thread_root_id,
     blockerReason: r.blocker_reason,
     reworkCount: r.rework_count,
@@ -179,6 +181,7 @@ export interface BoardRow extends Record<string, unknown> {
   name: string;
   columns: Array<{ state: string; title: string }>;
   filter: Record<string, unknown>;
+  channel_id: string | null;
   created_at: Date;
 }
 
@@ -190,6 +193,7 @@ export function toBoard(r: BoardRow): Board {
     name: r.name,
     columns: r.columns ?? [],
     filter: r.filter ?? {},
+    channelId: r.channel_id,
     createdAt: iso(r.created_at),
   });
 }

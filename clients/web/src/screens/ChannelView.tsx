@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { createPortal } from 'react-dom';
+import { Link, useParams, useSearchParams } from 'react-router';
 import type { FileSummary } from '@manythreads/shared';
 import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -15,7 +16,9 @@ import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon } from '../shell/icons';
-import { useHeaderTopic } from '../shell/topic';
+import { useHeaderActionsSlot, useHeaderTopic } from '../shell/topic';
+import { fetchChannelBoards } from './boards/api';
+import { boardPath, botBoardOf } from './boards/board';
 import { fetchProjects } from './projects/api';
 import { headerTopic, projectOfChannel } from './projects/commands';
 import { useRealtimeStatus } from '../realtime';
@@ -60,7 +63,18 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const projects = useQuery(`projects:${teamSlug}`, () => fetchProjects(teamSlug));
   const project = !dm && projects.status === 'ok' ? projectOfChannel(projects.data.items, channelId) : undefined;
   useHeaderTopic(!dm && info.status === 'ok' ? headerTopic(project, info.data.channel.purpose) : null);
+  // The channel's Bot Board (the board its bots keep their cards on), when it has one: a link beside the title. A person without access to
+  // the channel's boards, or a conversation that is not a channel, simply gets none.
+  const boards = useQuery(`channel-boards:${channelId}`, () => (dm ? Promise.resolve({ items: [] }) : fetchChannelBoards(channelId)));
+  const botBoard = boards.status === 'ok' ? botBoardOf(boards.data.items) : undefined;
+  const headerSlot = useHeaderActionsSlot();
   const tl = useTimeline(channelKey(channelId));
+  // The orchestrator makes the board while the channel may already be open: until there is one, look again whenever the channel moves.
+  const reloadBoards = boards.reload;
+  const waitingForBoard = boards.status === 'ok' && botBoard === undefined && !dm;
+  useEffect(() => {
+    if (waitingForBoard) reloadBoards();
+  }, [tl.items, waitingForBoard, reloadBoards]);
   const channelNames = useNames(teamSlug);
   const status = useRealtimeStatus();
   const typing = useTyping(channelKey(channelId));
@@ -220,6 +234,14 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
 
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || undefined}>
+      {botBoard && headerSlot
+        ? createPortal(
+            <Link className="chv-botboard" to={boardPath(teamSlug, botBoard.id)} data-testid="bot-board-link">
+              {botBoard.name}
+            </Link>,
+            headerSlot,
+          )
+        : null}
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}
       <div className="chview-list">
         {tl.status === 'loading' ? (

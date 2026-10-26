@@ -250,8 +250,20 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
         branch: { type: 'string', minLength: 1, maxLength: 200, description: 'The branch of work this card belongs to; one card has one owner at a time.' },
         goalId: { type: 'string', description: 'The goal this card works toward, when the team has one.' },
         environmentId: { type: 'string', description: 'The environment the work ships to, when it is a deploy card.' },
+        boardId: { type: 'string', description: 'The board to file the card on (from boards.ensure). Left out, the card goes on the Bot Board of the channel you are answering in, when it has one.' },
       },
       required: ['title', 'branch'],
+      additionalProperties: false,
+    },
+    kind: 'write',
+  },
+  'boards.ensure': {
+    name: 'boards.ensure',
+    description:
+      'Get the "Bot Board" of a team channel, creating it when the channel has none; every card the bots make for the work in that channel belongs on it. Pass `channelId`, or leave it out for the channel you are answering in. You must be able to post in the channel, and it must be a channel of your own team. Answers the board (its `id` goes into tasks.create as `boardId`). Safe to call again: you get the same board.',
+    inputSchema: {
+      type: 'object',
+      properties: { channelId: { type: 'string', description: 'The channel (default: the one this run answers in).' } },
       additionalProperties: false,
     },
     kind: 'write',

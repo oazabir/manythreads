@@ -123,6 +123,7 @@ spec:
             {{- $dt := list }}
             {{- range .deployTargets }}{{ $dt = append $dt (dict "team" .team "namespace" .namespace "hosts" (.hosts | default list)) }}{{ end }}
             - { name: MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS, value: {{ toJson $dt | quote }} }
+            - { name: MANYTHREADS_HERMES_PODS_HOST_API_SERVER, value: {{ (.hostApiServer | default "") | quote }} }
             - { name: MANYTHREADS_HERMES_PODS_RESOURCES, value: {{ dict "hermes" .hermesResources "workbench" .workbenchResources | toJson | quote }} }
             {{- /* Team pods live in another namespace: a short Service name would not resolve there, so the profiles get full ones. */}}
             - { name: MANYTHREADS_INCLUSTER_URL, value: {{ printf "http://manythreads-server.%s.svc.cluster.local:3000" $.Release.Namespace | quote }} }

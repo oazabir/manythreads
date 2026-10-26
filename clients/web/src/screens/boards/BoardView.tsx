@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import type { Board, Task, TaskState } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { isApiError } from '../../api/client';
 import { Alert } from '../../components/ui';
-import { STATE_LABEL, boardFilter, branchFor, cardRequest, columnsWithCards, emptyCard, moveProblem, ownerLabel, refusalText, type CardDraft, type LoadedColumn } from './board';
+import { STATE_LABEL, boardFilter, boardLabel, branchFor, cardRequest, columnsWithCards, emptyCard, moveProblem, ownerLabel, refusalText, type CardDraft, type LoadedColumn } from './board';
 import { createBoard, createTask, fetchColumnTasks, moveTask } from './api';
 import { useTeamPeople } from './people';
 import { CardPanel } from './CardPanel';
+import { useChannelFeed } from '../../shell/channelFeed';
 
 /*
  * The board itself (SPEC §6.5, PLAN P6-07): a saved view's columns, the cards in each, and a drag that is a task call. A card may only
@@ -28,6 +29,8 @@ const cardCount = (n: number): string => `${n} card${n === 1 ? '' : 's'}`;
 export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
   const [params, setParams] = useSearchParams();
   const people = useTeamPeople(slug);
+  const feed = useChannelFeed(slug);
+  const channelNames = useMemo(() => new Map(feed.groups.flatMap((g) => g.channels.map((c): [string, string] => [c.id, c.name]))), [feed.groups]);
   const [drag, setDrag] = useState<Task | null>(null);
   const [over, setOver] = useState<TaskState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -157,8 +160,8 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
             <span>Board</span>
             <select value={board.id} onChange={(e) => selectBoard(e.target.value)} data-testid="board-select">
               {boards.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
+                <option key={b.id} value={b.id} data-channel-board={b.channelId ?? undefined}>
+                  {boardLabel(b, channelNames)}
                 </option>
               ))}
             </select>

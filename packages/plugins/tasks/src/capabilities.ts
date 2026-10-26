@@ -1,10 +1,10 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { CreateTaskRequest } from '@manythreads/shared';
+import { BOT_BOARD_NAME, CreateTaskRequest, DEFAULT_BOARD_COLUMNS, TasksBoardCreatedEvent } from '@manythreads/shared';
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
 import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
-import { handoverAllowlist, mayHandoffToActor } from './handoff.ts';
-import { TASK_SELECT, toHandoff, toTask, type HandoffRow, type TaskRow } from './rows.ts';
+import { handoverAllowlist, isCardCreator, mayHandoffToActor } from './handoff.ts';
+import { TASK_SELECT, toBoard, toHandoff, toTask, type BoardRow, type HandoffRow, type TaskRow } from './rows.ts';
 
 /**
  * The `tasks.*` tools a bot may be granted (PLAN P6-02). They are the same doors the routes use: the bot's allowlist decides whether the
@@ -38,7 +38,7 @@ export function registerCapabilities(ctx: PluginContext): void {
   ctx.capabilities.register('tasks.read', async (input, tx) => {
     const taskId = typeof input['taskId'] === 'string' ? input['taskId'] : null;
     const rows = await tx.query<{ owner_id: string | null; created_by: string | null }>(
-      `SELECT t.id, t.title, t.state, t.kind, t.priority, t.owner_id, t.created_by, t.branch, t.base_sha, t.tested_sha, t.rework_count, t.handoff_count
+      `SELECT t.id, t.title, t.state, t.kind, t.priority, t.owner_id, t.created_by, t.board_id, t.branch, t.base_sha, t.tested_sha, t.rework_count, t.handoff_count
          FROM app.tasks t
         WHERE t.team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])
           AND ($1::uuid IS NULL OR t.id = $1::uuid)
@@ -84,7 +84,23 @@ export function registerCapabilities(ctx: PluginContext): void {
       const env = await tx.query('SELECT 1 FROM app.environments WHERE id = $1::uuid AND team_id = $2::uuid', [body.environmentId, bot.team_id]);
       if (env.rows.length === 0) return { ok: false, code: 'not_found', message: 'no such environment in this team' };
     }
+    // A card goes on the named board, or else on the Bot Board of the channel this run answers in when that board already exists (it is made
+    // by `boards.ensure`, never here). A named board must be one of this team's (the door also checks the channel is readable).
+    let boardId: string | null = body.boardId ?? null;
+    if (boardId) {
+      const board = await tx.query('SELECT 1 FROM app.boards WHERE id = $1::uuid AND team_id = $2::uuid', [boardId, bot.team_id]);
+      if (board.rows.length === 0) return { ok: false, code: 'not_found', message: 'no such board in this team' };
+    } else {
+      boardId =
+        (
+          await tx.query<{ id: string }>(
+            `SELECT b.id FROM app.boards b WHERE b.channel_id = (SELECT app.tasks_run_channel()) AND b.name = $1 AND b.team_id = $2::uuid`,
+            [BOT_BOARD_NAME, bot.team_id],
+          )
+        ).rows[0]?.id ?? null;
+    }
     const task = await insertCard(ctx, tx, {
+      boardId,
       workspaceId: bot.workspace_id,
       teamId: bot.team_id,
       goalId: body.goalId ?? null,
@@ -100,6 +116,69 @@ export function registerCapabilities(ctx: PluginContext): void {
     // The door does nothing when the run has no such thread; the card is read again to carry the link.
     await tx.query('SELECT app.tasks_link_run_thread($1::uuid)', [task.id]);
     return { ok: true, task: (await cardOf(tx, task.id)) ?? task };
+  });
+
+  // The one board a bot may create: the "Bot Board" of a team channel, where every bot card of that channel lives. Get-or-create in one
+  // statement on the unique index (channel, name), so two runs asking at once end with one board. A board of that name already attached to the
+  // channel counts, whoever made it; a team board of that name that is not attached to the channel does not.
+  ctx.capabilities.register('boards.ensure', async (input, tx) => {
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const asked = input['channelId'];
+    if (asked !== undefined && asked !== null && (typeof asked !== 'string' || !UUID.test(asked))) {
+      return { ok: false, code: 'invalid_input', message: 'channelId must be a channel id (a uuid), or left out for the channel of this run' };
+    }
+    const bot = (
+      await tx.query<{ team_id: string; workspace_id: string }>(
+        `SELECT b.team_id, b.workspace_id FROM app.actors a JOIN app.bots b ON b.id = a.ref_id AND a.kind = 'bot' WHERE a.id = $1::uuid`,
+        [tx.actor.id],
+      )
+    ).rows[0];
+    if (!bot) return { ok: false, code: 'forbidden', message: 'only a bot of a team ensures a board' };
+    const channelId = typeof asked === 'string' ? asked : (await tx.query<{ id: string | null }>('SELECT app.tasks_run_channel() AS id')).rows[0]?.id;
+    if (!channelId) return { ok: false, code: 'invalid_input', message: 'no channel: pass channelId, this run does not answer in a team channel' };
+    // A team channel of the bot's own team, not archived, that the caller may post in (a direct message, a bot conversation or a channel of
+    // another team is refused as "not found", the same words for a channel that does not exist).
+    const channel = (
+      await tx.query<{ id: string }>(
+        `SELECT c.id FROM app.channels c
+          WHERE c.id = $1::uuid AND c.kind = 'channel' AND c.archived_at IS NULL AND c.team_id = $2::uuid
+            AND c.id = ANY ((SELECT app.visible_channel_ids('post'))::uuid[])`,
+        [channelId, bot.team_id],
+      )
+    ).rows[0];
+    if (!channel) return { ok: false, code: 'not_found', message: 'no such team channel that you can post in (not a direct message, not archived, not another team)' };
+    const drawn = (await tx.query<{ id: string }>('SELECT uuidv7() AS id')).rows[0]!.id;
+    const row = await ctx.db.getOneOrCreate<BoardRow>(tx, {
+      table: 'app.boards',
+      values: {
+        id: drawn,
+        workspace_id: bot.workspace_id,
+        team_id: bot.team_id,
+        channel_id: channel.id,
+        name: BOT_BOARD_NAME,
+        columns: JSON.stringify(DEFAULT_BOARD_COLUMNS),
+        created_by: tx.actor.id,
+      },
+      conflict: ['channel_id', 'name'],
+      conflictWhere: 'channel_id IS NOT NULL',
+    });
+    const board = toBoard(row);
+    if (row.id === drawn) {
+      await ctx.audit.emit(
+        tx,
+        TasksBoardCreatedEvent.parse({
+          type: 'tasks.board.created',
+          schemaVersion: 1,
+          workspaceId: board.workspaceId,
+          teamId: board.teamId,
+          boardId: board.id,
+          channelId: board.channelId,
+          name: board.name,
+          creatorId: tx.actor.id,
+        }),
+      );
+    }
+    return { ok: true, created: row.id === drawn, board };
   });
 
   ctx.capabilities.register('tasks.claim', async (input, tx) => {
@@ -153,13 +232,14 @@ export function registerCapabilities(ctx: PluginContext): void {
       if (!target) return { ok: false, code: 'not_found', message: `no active bot "${named}" in your team; pass toBotSlug with the slug of a bot you may hand to` };
       toActorId = target.id;
     }
-    // The same allowlist the board enforces (P6-03): a bot reaches only the people and bots its grant's `mayTag` names.
+    // The same allowlist the board enforces (P6-03): a bot reaches only the people and bots its grant's `mayTag` names, plus the card's creator
+    // (a hand-back is always allowed). The refusal says outright that nothing moved, so a model cannot report a handover that did not happen.
     const mayTag = await handoverAllowlist(tx, tx.actor.id);
-    if (mayTag !== null && !(await mayHandoffToActor(tx, mayTag, toActorId))) {
+    if (mayTag !== null && !(await mayHandoffToActor(tx, mayTag, toActorId)) && !(await isCardCreator(tx, taskId, toActorId))) {
       return {
         ok: false,
         code: 'forbidden',
-        message: `"${named}" is not in your handover.mayTag${mayTag.length ? ` (${mayTag.join(', ')})` : ' (it is empty)'}; hand the card to one of those`,
+        message: `not handed over: "${named}" is not in your handover.mayTag${mayTag.length ? ` (${mayTag.join(', ')})` : ' (it is empty)'} and did not create this card; the card is still yours. Hand it to one of those or to its creator, or say in the thread that you could not`,
       };
     }
     const note = typeof input['note'] === 'string' ? input['note'] : '';

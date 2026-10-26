@@ -1,11 +1,13 @@
 import {
   ActorId,
+  BOT_BOARD_NAME,
   CreateTaskRequest,
   GoalId,
   TASK_TRANSITIONS,
   TaskKind,
   type Board,
   type BoardColumn,
+  type BoardId,
   type BotSummary,
   type RosterMember,
   type Task,
@@ -79,8 +81,12 @@ export function refusalText(err: unknown): string {
   return 'The server refused that move.';
 }
 
-/** A board's saved filter as the task list query the columns are read with (unknown keys are ignored, never sent). */
-export function boardFilter(board: Board): { goalId?: GoalId; ownerId?: ActorId; kind?: TaskKind } {
+/**
+ * What a board's columns are read with. A channel board shows the cards filed on it (`boardId`); a team board applies its saved filter
+ * (unknown keys are ignored, never sent).
+ */
+export function boardFilter(board: Board): { goalId?: GoalId; ownerId?: ActorId; kind?: TaskKind; boardId?: BoardId } {
+  if (board.channelId !== null) return { boardId: board.id };
   const out: { goalId?: GoalId; ownerId?: ActorId; kind?: TaskKind } = {};
   const f = board.filter;
   // The filter is open data (a saved view may grow a key later): a value that is not a valid id is dropped, never sent as a guess.
@@ -92,6 +98,18 @@ export function boardFilter(board: Board): { goalId?: GoalId; ownerId?: ActorId;
   if (kind.success) out.kind = kind.data;
   return out;
 }
+
+/** The picker's words for a board: a channel board carries its `#channel` (when the channel is known), a team board is just its name. */
+export function boardLabel(board: Board, channelNames: ReadonlyMap<string, string>): string {
+  const channel = board.channelId === null ? undefined : channelNames.get(board.channelId);
+  return channel ? `${board.name} · #${channel.replace(/^#/, '')}` : board.name;
+}
+
+/** The channel's Bot Board among the boards attached to it (a person-made board of another name is not it). */
+export const botBoardOf = (boards: readonly Board[]): Board | undefined => boards.find((b) => b.channelId !== null && b.name === BOT_BOARD_NAME);
+
+/** Where a board opens in the web app: the Boards screen with that board selected. */
+export const boardPath = (teamSlug: string, boardId: string): string => `/t/${teamSlug}/boards?board=${boardId}`;
 
 /** Whoever holds a card, by name: a person from the roster, a bot from the roster. An id nobody on the team knows is said as such. */
 export function ownerLabel(ownerId: string | null, roster: readonly RosterMember[], bots: readonly BotSummary[]): string {

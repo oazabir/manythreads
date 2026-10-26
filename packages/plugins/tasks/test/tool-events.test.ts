@@ -19,7 +19,7 @@ const ids = {
 
 const taskRow = (owner: string, state: string) => ({
   id: ids.task, workspace_id: ids.ws, team_id: ids.team, goal_id: null, title: 'Fix the rota', description: '', state, kind: 'other', priority: 'normal',
-  owner_id: owner, branch: 'fix/rota', base_sha: null, tested_sha: null, environment_id: null, thread_root_id: null, blocker_reason: '', rework_count: 0,
+  owner_id: owner, branch: 'fix/rota', base_sha: null, tested_sha: null, environment_id: null, board_id: null, thread_root_id: null, blocker_reason: '', rework_count: 0,
   handoff_count: 0, created_by: ids.from, created_at: new Date(), updated_at: new Date(), completed_at: null,
 });
 

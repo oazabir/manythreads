@@ -68,6 +68,7 @@ export * from './runtime.task.not_woken.ts';
 export * from './approvals.approval.requested.ts';
 export * from './approvals.approval.decided.ts';
 export * from './approvals.approval.resumed.ts';
+export * from './tasks.board.created.ts';
 export * from './tasks.task.created.ts';
 export * from './tasks.task.updated.ts';
 export * from './tasks.task.claimed.ts';

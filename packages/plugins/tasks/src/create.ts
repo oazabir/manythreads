@@ -18,12 +18,14 @@ export interface NewCard {
   priority: string;
   branch: string;
   environmentId: string | null;
+  /** A board of the same team (the door checks it); null files the card on none. */
+  boardId?: string | null;
   actorId: string;
 }
 
 export async function insertCard(ctx: PluginContext, tx: PluginTx, card: NewCard): Promise<Task> {
   const row = (
-    await tx.query<TaskRow>('SELECT * FROM app.tasks_create($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9::uuid, $10::uuid)', [
+    await tx.query<TaskRow>('SELECT * FROM app.tasks_create($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9::uuid, $10::uuid, $11::uuid)', [
       card.workspaceId,
       card.teamId,
       card.goalId,
@@ -34,6 +36,7 @@ export async function insertCard(ctx: PluginContext, tx: PluginTx, card: NewCard
       card.branch,
       card.environmentId,
       card.actorId,
+      card.boardId ?? null,
     ])
   ).rows[0];
   if (!row) throw new Error('app.tasks_create wrote no card');

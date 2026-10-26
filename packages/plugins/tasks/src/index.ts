@@ -24,6 +24,7 @@ export default definePlugin({
     capabilities: [
       { name: 'tasks.read', destructive: false },
       { name: 'tasks.create', destructive: false },
+      { name: 'boards.ensure', destructive: false },
       { name: 'tasks.claim', destructive: false },
       { name: 'tasks.complete', destructive: false },
       { name: 'tasks.handoff', destructive: false },
@@ -31,10 +32,10 @@ export default definePlugin({
       { name: 'tasks.deploy', destructive: false },
     ],
     events: {
-      emits: ['tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
+      emits: ['tasks.board.created', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
       consumes: ['approvals.approval.decided', 'runtime.task.not_woken'],
     },
-    dependsOn: ['approvals'],
+    dependsOn: ['approvals', 'channels'],
     migrations: 'migrations',
   },
   register(ctx) {

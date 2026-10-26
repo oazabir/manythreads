@@ -1,5 +1,7 @@
 import {
+  authorizeContext,
   type ApprovalProvider,
+  type MessageProvider,
   type PluginContext,
   type PluginEvent,
   type PluginTx,
@@ -172,7 +174,7 @@ export function registerRouter(ctx: PluginContext): void {
  *  2. **The author's handover allowlist.** The bots loader compiles `handover.mayTag` into the author's `tasks.handoff`
  *     grant (`constraints: { mayTag: [...] }`); a target it does not name is not woken. No grant, no names, no handoff.
  *  3. **A shallow chain per thread.** Every hop answers in the same thread, so the deepest run hanging off the thread's root
- *     is the chain's length; past `MAX_DELEGATION_DEPTH` the mention is an ordinary message.
+ *     is the chain's length; past `MAX_DELEGATION_DEPTH` the mention wakes nobody and one line in the thread says so.
  *
  * The run has no person asker (`runs.open` refuses a bot as asker): it is a run nobody asked, so reads run as the bot and an
  * approval it raises names the bot itself as the requester. The author's own run already answered the person; this one only
@@ -213,7 +215,6 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
     )
   ).rows[0];
   const depth = (deepest?.max ?? 0) + 1;
-  if (depth > MAX_DELEGATION_DEPTH) return;
   const bots = (
     await tx.query<BotRow>(
       `SELECT id, slug, runtime, triggers FROM app.bots WHERE team_id = $1 AND status = 'active' AND id <> $2 ORDER BY slug`,
@@ -225,7 +226,13 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
   for (const bot of bots) {
     if (!mayTag.has(bot.slug.toLowerCase())) continue;
     if (matchTrigger(bot.triggers ?? [], bot.slug, view) !== 'mention') continue;
-    // A card in this thread was handed to the bot, which woke it already: the prose mention would only wake it a second time.
+    // Past the cap the mention wakes nobody, but it must not vanish: one line in the thread says why (once per message and target).
+    if (depth > MAX_DELEGATION_DEPTH) {
+      await noteDepthCap(ctx, tx, { author, targetSlug: bot.slug, message, replyRootId, workspaceId });
+      continue;
+    }
+    // The bot is already working this thread from a card handed to it: the handover woke it and its run has not ended, so the prose
+    // mention would only start the same work a second time.
     if (await alreadyOnThread(tx, bot.id, replyRootId)) continue;
     await ctx.jobs.enqueue(
       tx,
@@ -249,17 +256,85 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
 }
 
 /**
- * Did a handover already put this thread in `botId`'s hands? True when it owns an unfinished task card whose thread is this one: the handover
- * woke it, so a prose @mention of it after the handover is redundant. A queued or running run is deliberately NOT a reason to skip: such a
- * mention may carry a new instruction, and it gets its own run afterwards. (`routeDelegation` runs in the outbox's system transaction.)
+ * Is this bot already busy with the thread because a handover put it there? True only when BOTH hold: it owns an unfinished task card whose
+ * thread is this one (the handover woke it), and it has a run for the thread that is queued or running right now (the run the handover
+ * started, which is still doing that work). Then a prose @mention is redundant and starts nothing.
+ *
+ * Either half alone is not enough. A card owner whose run has ended is idle, so the mention is the only thing that can wake it (the live
+ * run that stalled had exactly this: the deployer owned the card but was idle). And a bot with a live run but no card here was woken by an
+ * earlier mention, so a new mention may carry a new instruction and gets its own run afterwards. Queued means a ready or running job on the run
+ * queue for this bot and thread; running means a `bot_runs` row of the bot for the thread with no `ended_at`.
+ * (`routeDelegation` runs in the outbox's system transaction.)
  */
 async function alreadyOnThread(tx: PluginTx, botId: string, replyRootId: string): Promise<boolean> {
-  const res = await tx.query(
+  const owns = await tx.query(
     `SELECT 1 FROM app.tasks t JOIN app.actors a ON a.id = t.owner_id AND a.kind = 'bot'
       WHERE a.ref_id = $1::uuid AND t.thread_root_id = $2::uuid AND t.state <> 'done' LIMIT 1`,
     [botId, replyRootId],
   );
-  return res.rows.length > 0;
+  if (owns.rows.length === 0) return false;
+  const live = await tx.query(
+    `SELECT 1 FROM app.bot_runs WHERE bot_id = $1::uuid AND reply_root_id = $2::uuid AND ended_at IS NULL AND status = 'running'
+        AND started_at > now() - interval '2 hours'
+     UNION ALL
+     SELECT 1 FROM app.jobs WHERE queue = $3 AND state IN ('ready', 'running')
+        AND payload ->> 'botId' = $1::text AND payload ->> 'replyRootId' = $2::text
+      LIMIT 1`,
+    [botId, replyRootId, RUN_QUEUE],
+  );
+  return live.rows.length > 0;
+}
+
+/**
+ * Says, once, that a bot's mention did not wake its target because the bot-to-bot chain hit its depth limit. The line is written as the
+ * mention's author (a notice needs a real author: the platform's system actor owns no message), through the message door, in the same
+ * thread. The mention is put in a code span so the notice names nobody to the routers (it would otherwise be a delegation of its own).
+ * Once per (thread, target, message): a durable latch (`outbox_processed`) is taken first, so a replayed event posts nothing. Never throws:
+ * a notice that cannot be posted must not fail the routing of the message.
+ */
+async function noteDepthCap(
+  ctx: PluginContext,
+  tx: PluginTx,
+  input: { author: { id: string; slug: string }; targetSlug: string; message: MessageRow; replyRootId: string; workspaceId: string },
+): Promise<void> {
+  const { author, targetSlug, message, replyRootId } = input;
+  const messages = ctx.providers.get<MessageProvider>('messages');
+  if (!messages || message.channel_team === null) return;
+  const first = await tx.query(
+    `INSERT INTO app.outbox_processed (subscriber, event_id) VALUES ('runtime-hermes:depth_cap', md5($1)::uuid) ON CONFLICT DO NOTHING RETURNING 1 AS ok`,
+    [`${replyRootId}:${targetSlug.toLowerCase()}:${message.id}`],
+  );
+  if (first.rows.length === 0) return;
+  const body = `\`@${targetSlug}\` was not woken by that mention: the bot-to-bot chain in this thread has reached its limit of ${String(MAX_DELEGATION_DEPTH)}. A person's mention or a card handover will wake it.`;
+  try {
+    // The author's own run is usually still open (it wrote the mention a moment ago); when it has ended, a run opened only for this line.
+    let run = await ctx.runs.openRunOf(author.id);
+    let opened = false;
+    if (!run) {
+      run = (
+        await ctx.runs.open({
+          botId: author.id,
+          teamId: message.channel_team,
+          workspaceId: input.workspaceId,
+          trigger: 'mention',
+          channelId: message.channel_id,
+          replyRootId,
+          delegationDepth: 0,
+        })
+      ).run;
+      opened = true;
+    }
+    const live = run;
+    try {
+      const decision = await ctx.runs.authorize(live, 'messages.post', authorizeContext({ channelId: message.channel_id, body, threadRootId: replyRootId }));
+      if (!decision.allowed || decision.needsApproval) return;
+      await ctx.runs.asBot(live, (inner) => messages.post(inner, { channelId: message.channel_id, body, threadRootId: replyRootId }));
+    } finally {
+      if (opened) await ctx.runs.close(live.runId, 'done');
+    }
+  } catch (err) {
+    console.warn(`runtime-hermes: depth-cap notice for ${targetSlug} not posted: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**

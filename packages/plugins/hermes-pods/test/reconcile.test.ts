@@ -6,7 +6,7 @@ import hermesPods, { staticSource, startController } from '../src/index.ts';
 import { HttpK8s, resourcePath, type K8s, type K8sObject } from '../src/k8s.ts';
 import { Reconciler, type ProfileSource } from '../src/reconcile.ts';
 import { configFrom } from '../src/config.ts';
-import { appUrlFor, assignUsers, buildDeployerKubeconfig, namesFor, parseRepos, unixUserFor, type PodConfig } from '../src/render.ts';
+import { appUrlFor, assignUsers, buildDeployerKubeconfig, buildDeployerSecretFor, namesFor, parseRepos, unixUserFor, type PodConfig } from '../src/render.ts';
 
 // The controller against a fake Kubernetes API (an in-memory store with server-side-apply semantics: same object in, same object out) and
 // a stand-in for the platform's `hermes.profiles` provider.
@@ -326,6 +326,22 @@ describe('helpers', () => {
     const host = buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'apps-engineering', appsRouting: 'host', appUrlPattern: 'https://<app>--engineering.example.test/' });
     expect(host).not.toContain('apps-path');
     expect(buildDeployerKubeconfig({ token: 't', caPem: 'ca', appsNamespace: 'a' }).startsWith('apiVersion: v1')).toBe(true);
+  });
+
+  it('writes a host kubeconfig as a second key only when hostApiServer is set, differing from the first in the server address alone', () => {
+    const login = { token: 't', caPem: 'ca', appsNamespace: 'apps-engineering' };
+    const names = namesFor(TEAM);
+    const plain = buildDeployerSecretFor(CFG, TEAM, names, login).stringData as Record<string, string>;
+    expect(Object.keys(plain)).toEqual(['deployer.kubeconfig']);
+    expect(plain['deployer.kubeconfig']).toContain('https://kubernetes.default.svc');
+    expect(Object.keys((buildDeployerSecretFor({ ...CFG, hostApiServer: '  ' }, TEAM, names, login).stringData as Record<string, string>))).toEqual(['deployer.kubeconfig']);
+    const both = buildDeployerSecretFor({ ...CFG, hostApiServer: 'https://127.0.0.1:6443' }, TEAM, names, login).stringData as Record<string, string>;
+    expect(Object.keys(both).sort()).toEqual(['deployer.host.kubeconfig', 'deployer.kubeconfig']);
+    expect(both['deployer.kubeconfig']).toBe(plain['deployer.kubeconfig']);
+    expect(both['deployer.host.kubeconfig']).toContain('server: "https://127.0.0.1:6443"');
+    expect(both['deployer.host.kubeconfig']!.replace('https://127.0.0.1:6443', 'https://kubernetes.default.svc')).toBe(plain['deployer.kubeconfig']);
+    expect(configFrom({ MANYTHREADS_HERMES_PODS_HOST_API_SERVER: 'https://127.0.0.1:6443' }).hostApiServer).toBe('https://127.0.0.1:6443');
+    expect(configFrom({}).hostApiServer).toBe('');
   });
 
   it('reads the static test profiles', async () => {

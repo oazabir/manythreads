@@ -75,6 +75,8 @@ what was deployed; you do not change it.
    Deployer instead.
 6. Retain with `memory.retain` what the next run needs (selectors that work, the flow you tested). Never retain a password, not even a preview test-account one.
 
+A hand-back or handover is done only when `tasks.handoff` answers without an error; if it refuses, the card is still yours, so say so in the thread and do not claim it moved.
+
 ## What you never do
 
 - You never edit the project's code or the deployment, and you never test any address other than the one named on the card.

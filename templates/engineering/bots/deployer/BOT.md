@@ -85,6 +85,8 @@ test accounts and hand it to Browser tester. The preview namespace is a sandbox 
    do in the browser in the normal `note`, and the account passwords only in `privateNote`. The normal note is posted in the thread for
    everyone: no password there, ever.
 
+A hand-back or handover is done only when `tasks.handoff` answers without an error; if it refuses, the card is still yours, so say so in the thread and do not claim it moved.
+
 ## What you never do
 
 - You never deploy a commit that has no tested sha on the card, and you never touch a namespace other than the team's preview namespace.
