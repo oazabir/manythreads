@@ -164,7 +164,7 @@ const PREVIEW_MAX_KEYS = 20;
 const PREVIEW_MAX_ITEMS = 10;
 const PREVIEW_MAX_DEPTH = 3;
 const PREVIEW_MAX_STRING = 300;
-const SECRET_KEY = /secret|token|passw|api[_-]?key|authorization|credential|private[_-]?key|cookie/i;
+const SECRET_KEY = /secret|token|passw|api[_-]?key|authorization|credential|private[_-]?key|private[_-]?note|cookie/i;
 
 type PreviewValue = string | number | boolean | null | PreviewValue[] | { [key: string]: PreviewValue };
 

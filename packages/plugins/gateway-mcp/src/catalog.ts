@@ -311,12 +311,26 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
         toBotSlug: { type: 'string', description: 'The slug of the bot of your team who takes it, e.g. "reviewer" (one your `mayTag` names). Use this or toActorId.' },
         toActorId: { type: 'string', description: 'The actor id of the bot or person who takes it, when you have it (a bot is easier to name by toBotSlug).' },
         mode: { type: 'string', enum: ['bot', 'person'], description: 'Who takes it over (default `bot`).' },
-        note: { type: 'string', maxLength: 4000, description: 'What the next owner needs to know.' },
+        note: { type: 'string', maxLength: 4000, description: 'What the next owner needs to know. It is posted in the card\u2019s thread for everyone to read: never put a password, token or key in it.' },
+        privateNote: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 4000,
+          description:
+            'A secret for the next owner only (a password, a token): stored encrypted, never posted in the thread, never in an event or the card history. Only the bot who takes the card can read it, with `tasks.private_note`.',
+        },
       },
       required: ['taskId'],
       additionalProperties: false,
     },
     kind: 'write',
+  },
+  'tasks.private_note': {
+    name: 'tasks.private_note',
+    description:
+      'Read the private note that came with a card handed to you (a password or token the giver did not want in the thread). It answers only while the card is still yours and only for the handover that gave it to you. The note is SECRET: never repeat it in a message, a card note, memory or a log, and never ask anyone to repost it; use it for the work and nothing else.',
+    inputSchema: { type: 'object', properties: { taskId: { type: 'string', description: 'The card that was handed to you.' } }, required: ['taskId'], additionalProperties: false },
+    kind: 'read',
   },
 };
 

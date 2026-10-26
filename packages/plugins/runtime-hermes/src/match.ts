@@ -118,7 +118,7 @@ export function defang(text: string): string {
  * `event` is `assigned` (the card was handed to this bot) or `done` (a card this bot created was finished by someone else).
  * Pure; lengths are capped so a long text cannot swell a prompt.
  */
-export function buildTaskPrompt(input: { event: 'assigned' | 'done'; fromName: string; channelName: string; card: CardFacts; note: string; self?: { name: string; slug: string } }): string {
+export function buildTaskPrompt(input: { event: 'assigned' | 'done'; fromName: string; channelName: string; card: CardFacts; note: string; self?: { name: string; slug: string }; privateNote?: boolean; privateSecretsOnCard?: boolean }): string {
   const { card } = input;
   // Who the reader is: a bot that sees its own actor id as a card's owner must not take it for someone else's. Platform text, outside the fence.
   const you = input.self ? `You are ${defang(oneLine(input.self.name, 80))} (@${defang(oneLine(input.self.slug, 80))}).` : null;
@@ -149,5 +149,10 @@ export function buildTaskPrompt(input: { event: 'assigned' | 'done'; fromName: s
     `Title: ${defang(oneLine(card.title, 200))}`,
     ...(description === '' ? [] : ['Description:', description]),
     `<<<END TEXT FROM ${marker}>>>`,
+    // Platform text, outside the fence. It never carries the secret: only the instruction to fetch it and keep it.
+    ...(input.event === 'assigned' && input.privateNote === true ? ['', 'A private note came with this card; read it with tasks.private_note. Never repeat it.'] : []),
+    ...(input.event === 'done' && input.privateSecretsOnCard === true
+      ? ['', 'Credentials or other secrets were passed privately between the bots on this card; never ask for them in a thread and never ask anyone to repost them.']
+      : []),
   ].join('\n');
 }

@@ -280,6 +280,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const after = await taskOf(tx, team.id, taskId);
       await emitCompleted(ctx, tx, after);
       await emitUpdated(ctx, tx, before, after);
+      await tx.query('SELECT app.tasks_drop_private_notes($1::uuid)', [taskId]);
       return json(CompleteTaskResponse.parse({ task: after }));
     }),
   });

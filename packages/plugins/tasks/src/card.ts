@@ -84,7 +84,7 @@ async function firstPublicChannel(tx: PluginTx, teamId: string): Promise<string 
 export async function postHandoffCard(
   ctx: PluginContext,
   tx: PluginTx,
-  input: { task: Task; handoffId: string; toActorId: string; note: string; pending: boolean; origin?: HandoffOrigin },
+  input: { task: Task; handoffId: string; toActorId: string; note: string; pending: boolean; origin?: HandoffOrigin; privateNote?: boolean },
 ): Promise<void> {
   const { task } = input;
   const messages = ctx.providers.get<MessageProvider>('messages');
@@ -102,10 +102,12 @@ export async function postHandoffCard(
   const slug = to.kind === 'bot' ? (await tx.query<{ slug: string }>('SELECT slug FROM app.bots WHERE id = $1::uuid', [to.ref_id])).rows[0]?.slug : undefined;
   const note = input.note.trim();
   const target = slug !== undefined && !input.pending ? `@${slug}` : to.name;
+  // The private note's text is never here: the thread only learns that one was passed.
+  const privateMark = input.privateNote === true ? ` (a private note was passed to ${target})` : '';
   const full = input.pending
     ? `${from.name} would like to hand “${task.title}” to ${to.name} (waiting for approval)${note ? `: ${note}` : ''}`
-    : `${from.name} → ${target}: ${note || `“${task.title}”`}`;
-  const short = input.pending ? `${from.name} would like to hand “${task.title}” to ${to.name} (waiting for approval)` : `${from.name} handed “${task.title}” to ${target}`;
+    : `${from.name} → ${target}: ${note || `“${task.title}”`}${privateMark}`;
+  const short = input.pending ? `${from.name} would like to hand “${task.title}” to ${to.name} (waiting for approval)` : `${from.name} handed “${task.title}” to ${target}${privateMark}`;
 
   await tx.query('SAVEPOINT tasks_card');
   try {

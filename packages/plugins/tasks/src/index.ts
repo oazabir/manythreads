@@ -18,7 +18,7 @@ export default definePlugin({
     name: 'tasks',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit', 'event.subscribe', 'job.register'],
+    extends: ['event.emit', 'event.subscribe', 'job.register', 'secret.seal'],
     // Not destructive: every one changes a card's own state, and `destructive` here means "can never be granted to a bot" (files.delete).
     // What a destructive tool would mean elsewhere — a deploy — is bounded by the environment's approval, not by the grant door.
     capabilities: [
@@ -27,6 +27,7 @@ export default definePlugin({
       { name: 'tasks.claim', destructive: false },
       { name: 'tasks.complete', destructive: false },
       { name: 'tasks.handoff', destructive: false },
+      { name: 'tasks.private_note', destructive: false },
       { name: 'tasks.deploy', destructive: false },
     ],
     events: {

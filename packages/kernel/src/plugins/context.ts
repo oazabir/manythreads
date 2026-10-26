@@ -399,7 +399,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     get secrets(): SecretService {
       // The secret service also encrypts a model provider's API key (gateway-llm, PLAN P5-06), so a plugin that
       // extends `provider.llm` may use it too; `docs/plugins/security.md` explains both doors.
-      useOneOf(['provider.identity', 'provider.llm', 'provider.hermes.profiles'], 'ctx.secrets');
+      useOneOf(['provider.identity', 'provider.llm', 'provider.hermes.profiles', 'secret.seal'], 'ctx.secrets');
       if (!deps.secrets) {
         throw new PluginError(`Plugin "${name}": no secret service is wired into the host`, { plugin: name });
       }

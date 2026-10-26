@@ -31,6 +31,6 @@ Purpose: build, ship and run our software.
 - A bot owns one task at a time and works on its own branch.
 - A goal asked in a project channel runs as a chain: Orchestrator plans and keeps one checklist current in the thread, Coder writes the change,
   Reviewer reads it, Tester builds it and runs the project's tests, Deployer puts the tested commit into the team's preview namespace,
-  and Browser tester checks the running site. The bots share what they learn through the team's memory (never passwords; the one exception is the disposable password of a preview test account, which goes only in Deployer's handover note to Browser tester and is destroyed with the preview).
+  and Browser tester checks the running site. The bots share what they learn through the team's memory (never passwords; the one exception is the disposable password of a preview test account, which goes only in the private note of Deployer's handover to Browser tester, never in a thread, and is destroyed with the preview; nobody asks for credentials in a thread).
 - Production deploys and gated topics wait for a person.
 - Incidents are coordinated in #incidents; alerts land in #alerts first.

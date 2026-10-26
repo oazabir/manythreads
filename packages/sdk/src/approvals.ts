@@ -144,6 +144,10 @@ export async function requestToolApproval(
   if (NEVER_APPROVAL_GATED.includes(tool)) return { refused: neverApprovalGatedReason(tool) };
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
   if (!approvals) return null;
+  // The approval row keeps the call's arguments to run it later: a secret handed over with a call must not be filed in it.
+  if (Object.keys(input).some((k) => /^private[_-]?note$/i.test(k))) {
+    return { refused: 'This call carries a private note, which cannot wait in an approval. Make the call without the private note, or have a person do the step.' };
+  }
   const { preview, truncated } = previewArgsDetailed(input);
   try {
     return await ctx.runs.asBot(run, (tx) =>

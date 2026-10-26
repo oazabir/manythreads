@@ -45,14 +45,14 @@ const mintRun = (body: Record<string, unknown> = {}): Promise<{ status: number; 
  * A conversation run for a person, opened the only way that is allowed to name an asker: in-process, through the run service
  * (what the router does with `ctx.runs.open`). Its endpoint is the real server's, because the token's hash is in the database.
  */
-async function openRunFor(askerActorId: string): Promise<McpRunMintResponse> {
+async function openRunFor(askerActorId: string | null, botId: string = bot.botId): Promise<McpRunMintResponse> {
   const appPool = createAppPool(world.server.db.appUrl);
   const systemPool = createSystemPool(world.server.db.systemUrl, 2);
   try {
     const registry = new CapabilityRegistry();
     const broker = new CapabilityBroker({ registry, grants: createDbGrantSource({ pool: systemPool }) });
     const service = createRunService({ pool: appPool, systemPool, registry, broker, handlers: new Map() });
-    const { run, token } = await service.open({ botId: bot.botId, teamId, workspaceId: omar.workspaceId, trigger: 'conversation', askerActorId });
+    const { run, token } = await service.open({ botId, teamId, workspaceId: omar.workspaceId, trigger: askerActorId === null ? 'webhook' : 'conversation', ...(askerActorId === null ? {} : { askerActorId }) });
     return McpRunMintResponse.parse({
       runId: run.runId,
       botId: run.botId,
@@ -286,6 +286,56 @@ describe('gateway-mcp endpoint', () => {
     expect(done.answer.ok).toBe(true);
     const row = await world.system(async (tx) => (await tx.query<{ slug: string }>('SELECT b.slug FROM app.tasks t JOIN app.actors a ON a.id = t.owner_id JOIN app.bots b ON b.id = a.ref_id WHERE t.id = $1::uuid', [id])).rows[0]);
     expect(row?.slug).toBe('reviewer');
+  });
+
+  it('a private note on a handover round-trips through the real host and secret service, and shows up nowhere else', async () => {
+    const SECRET = 'pw-Zk4-very-private-9931';
+    const created = await world.call(omar, 'POST', '/api/teams/engineering/tasks', { title: 'Private note card', branch: 'fix/private-note', kind: 'other', priority: 'normal' });
+    expect(created.status, JSON.stringify(created.body)).toBe(201);
+    const id = (created.body as { task: { id: string } }).task.id;
+    expect((await world.call(omar, 'POST', `/api/teams/engineering/tasks/${id}/handoff`, { toBotSlug: 'mcpgateway', mode: 'bot', note: 'go' })).status).toBe(200);
+    const reviewer = await world.system(async (tx) => {
+      const r = (await tx.query<{ bot_id: string; actor_id: string }>(`SELECT b.id AS bot_id, a.id AS actor_id FROM app.bots b JOIN app.actors a ON a.ref_id = b.id AND a.kind = 'bot' WHERE b.slug = 'reviewer' AND b.team_id = $1`, [teamId])).rows[0]!;
+      await tx.query(`INSERT INTO app.capability_grants (team_id, actor_id, capability, constraints) VALUES ($1, $2, 'tasks.private_note', '{}')`, [teamId, r.actor_id]);
+      return r;
+    });
+    const call = async (target: McpRunMintResponse, name: string, args: Record<string, unknown>) => {
+      const res = await callRunUrl(target, { jsonrpc: '2.0', id: 91, method: 'tools/call', params: { name, arguments: args } });
+      const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+      return { isError: result.isError, answer: JSON.parse(result.content[0]!.text) as Record<string, unknown> };
+    };
+    const handed = await call(run, 'tasks.handoff', { taskId: id, toBotSlug: 'reviewer', note: 'url and emails', privateNote: SECRET });
+    expect(handed.answer, JSON.stringify(handed)).toMatchObject({ ok: true, privateNoteSealed: true });
+    expect(JSON.stringify(handed)).not.toContain(SECRET);
+
+    const reviewerRun = await openRunFor(null, reviewer.bot_id);
+    const read = await call(reviewerRun, 'tasks.private_note', { taskId: id });
+    expect(read.answer, JSON.stringify(read)).toMatchObject({ ok: true, privateNote: SECRET });
+    // The giver no longer owns the card and was never the recipient: nothing.
+    expect((await call(run, 'tasks.private_note', { taskId: id })).isError).toBe(true);
+
+    // The text is in no message, event, history row or handover row; the secret store holds only ciphertext.
+    const leaks = await world.system(async (tx) => {
+      const like = `%${SECRET}%`;
+      const n = async (sql: string) => (await tx.query<{ n: number }>(sql, [like])).rows[0]!.n;
+      return [
+        await n('SELECT count(*)::int AS n FROM app.messages WHERE body ILIKE $1 OR body_plain ILIKE $1'),
+        await n('SELECT count(*)::int AS n FROM app.events WHERE payload::text ILIKE $1'),
+        await n('SELECT count(*)::int AS n FROM app.task_events WHERE data::text ILIKE $1'),
+        await n('SELECT count(*)::int AS n FROM app.handoffs WHERE note ILIKE $1'),
+        await n('SELECT count(*)::int AS n FROM app.secrets WHERE convert_from(ciphertext, \'LATIN1\') ILIKE $1'),
+      ];
+    });
+    expect(leaks).toEqual([0, 0, 0, 0, 0]);
+
+    // Completing the card deletes its private notes.
+    await world.system(async (tx) => {
+      await tx.query(`UPDATE app.tasks SET state = 'done', completed_at = now() WHERE id = $1::uuid`, [id]);
+      await tx.query('SELECT app.tasks_drop_private_notes($1::uuid)', [id]);
+    });
+    const after = await call(reviewerRun, 'tasks.private_note', { taskId: id });
+    expect(after.answer, JSON.stringify(after)).toMatchObject({ ok: false, code: 'no_private_note' });
+    expect(await world.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.handoffs WHERE task_id = $1::uuid AND private_note_secret_id IS NOT NULL', [id])).rows[0]!.n)).toBe(0);
   });
 
   it('a tool with no grant is refused and the denial is audited', async () => {

@@ -26,6 +26,14 @@ describe('ctx.identity', () => {
     expect(() => createPluginContext(plain.manifest, { ...base, secrets }).secrets).toThrow(/ctx\.secrets/);
   });
 
+  it('ctx.secrets opens for secret.seal alone, and a plugin that declares nothing stays out', () => {
+    const secrets = { put: () => Promise.resolve('id'), get: () => Promise.resolve('s'), delete: () => Promise.resolve(true) };
+    const sealer = definePlugin({ manifest: { name: 'sealer', version: '0.1.0', kind: 'server', extends: ['secret.seal'] }, register: () => undefined });
+    expect(createPluginContext(sealer.manifest, { ...base, secrets }).secrets).toBe(secrets);
+    const plain = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
+    expect(() => createPluginContext(plain.manifest, { ...base, secrets }).secrets).toThrow(/secret\.seal/);
+  });
+
   it('mail and runtime are available to every plugin', () => {
     const { manifest } = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
     const ctx = createPluginContext(manifest, base);

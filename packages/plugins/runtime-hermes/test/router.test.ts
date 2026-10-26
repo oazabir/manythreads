@@ -144,6 +144,20 @@ describe('buildTaskPrompt', () => {
     );
   });
 
+  it('says a private note came with the card (assigned), without any note text', () => {
+    const text = buildTaskPrompt({ event: 'assigned', fromName: 'Deployer', channelName: 'dev', card, note: 'url and emails', privateNote: true });
+    expect(text).toContain('A private note came with this card; read it with tasks.private_note. Never repeat it.');
+    expect(buildTaskPrompt({ event: 'assigned', fromName: 'Deployer', channelName: 'dev', card, note: '' })).not.toContain('private note');
+  });
+
+  it('tells a woken creator that secrets were passed privately and must not be asked for (done)', () => {
+    const text = buildTaskPrompt({ event: 'done', fromName: 'Browser tester', channelName: 'dev', card, note: '', privateSecretsOnCard: true });
+    expect(text).toContain('Credentials or other secrets were passed privately between the bots on this card; never ask for them in a thread and never ask anyone to repost them.');
+    expect(buildTaskPrompt({ event: 'done', fromName: 'Browser tester', channelName: 'dev', card, note: '' })).not.toContain('passed privately');
+    // The assigned-side line never shows on a completion wake.
+    expect(buildTaskPrompt({ event: 'done', fromName: 'X', channelName: 'dev', card, note: '', privateNote: true })).not.toContain('tasks.private_note');
+  });
+
   it('tells the bot who it is on the line before the facts, outside the fence, and defangs the name', () => {
     const text = buildTaskPrompt({ event: 'assigned', fromName: 'Coder', channelName: 'dev', card, note: '', self: { name: 'Reviewer', slug: 'reviewer' } });
     const lines = text.split('\n');

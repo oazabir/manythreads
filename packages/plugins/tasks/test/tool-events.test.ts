@@ -87,5 +87,6 @@ describe('tasks.* tools write the route events', () => {
     const h = harness('complete');
     expect(await h.run()).toMatchObject({ ok: true });
     expect(h.emitted.map((e) => e.type)).toEqual(['tasks.task.completed', 'tasks.task.updated']);
+    expect(h.log.some((l) => l.includes('tasks_drop_private_notes'))).toBe(true);
   });
 });

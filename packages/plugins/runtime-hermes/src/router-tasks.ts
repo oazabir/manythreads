@@ -144,6 +144,8 @@ async function enqueueTaskRun(
     fromActorId: string;
     note: string;
     dedupeKey: string;
+    /** The handover that woke the bot (assigned) carried a private note. */
+    privateNote?: boolean;
   },
 ): Promise<void> {
   if (!(await firstDelivery(tx, input.dedupeKey))) return;
@@ -153,6 +155,10 @@ async function enqueueTaskRun(
     return;
   }
   const from = await actorName(tx, input.fromActorId);
+  // Only whether secrets exist is read here (the id column, never the text): the prompt tells the bot where to fetch them, or to stay quiet.
+  const privateSecretsOnCard =
+    input.event === 'done' &&
+    (await tx.query(`SELECT 1 FROM app.handoffs WHERE task_id = $1::uuid AND private_note_secret_id IS NOT NULL LIMIT 1`, [input.card.id])).rows.length > 0;
   const prompt = buildTaskPrompt({
     event: input.event,
     fromName: from.name,
@@ -169,6 +175,8 @@ async function enqueueTaskRun(
     },
     note: input.note,
     self: { name: input.bot.name, slug: input.bot.slug },
+    privateNote: input.privateNote === true,
+    privateSecretsOnCard,
   });
   const payload: RunPayload = {
     workspaceId: input.workspaceId,
@@ -198,8 +206,10 @@ export function registerTaskRouter(ctx: PluginContext): void {
     const card = await loadCard(tx, event.taskId, event.teamId);
     // The card has moved on since the event (handed again, completed): the new owner's own event wakes them, not this one.
     if (!card || card.owner_id !== event.toActorId) return;
+    const privateNote = (await tx.query(`SELECT 1 FROM app.handoffs WHERE id = $1::uuid AND private_note_secret_id IS NOT NULL`, [event.handoffId])).rows.length > 0;
     await enqueueTaskRun(ctx, tx, {
       event: 'assigned',
+      privateNote,
       workspaceId: event.workspaceId,
       teamId: event.teamId,
       bot,

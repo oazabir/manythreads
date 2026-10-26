@@ -130,6 +130,8 @@ export function registerCapabilities(ctx: PluginContext): void {
     const after = (await cardOf(tx, taskId)) ?? before;
     await emitCompleted(ctx, tx, after);
     await emitUpdated(ctx, tx, before, after);
+    // A done card keeps no private notes.
+    await tx.query('SELECT app.tasks_drop_private_notes($1::uuid)', [taskId]);
     return { ok: true, taskId, testedSha };
   });
 
@@ -161,6 +163,11 @@ export function registerCapabilities(ctx: PluginContext): void {
       };
     }
     const note = typeof input['note'] === 'string' ? input['note'] : '';
+    // A private note (a password, a token) travels sealed, never in the visible note: checked before anything moves.
+    const privateNote = input['privateNote'];
+    if (privateNote !== undefined && (typeof privateNote !== 'string' || privateNote.length < 1 || privateNote.length > 4000)) {
+      return { ok: false, code: 'invalid_input', message: 'privateNote must be a string of 1 to 4000 characters' };
+    }
     const before = await cardOf(tx, taskId);
     const res = (
       await tx.query<{ o_outcome: string; o_handoff_id: string | null; o_reason: string }>('SELECT * FROM app.tasks_handoff($1::uuid, $2::uuid, $3, $4, NULL)', [taskId, toActorId, mode, note])
@@ -168,14 +175,44 @@ export function registerCapabilities(ctx: PluginContext): void {
     if (!res || !before) return { ok: false, code: 'not_found', message: 'no such card' };
     if (res.o_outcome !== 'moved' || !res.o_handoff_id) return { ok: false, code: res.o_outcome, message: res.o_reason || res.o_outcome };
     // Same as the route: the events (the second one wakes the new owner), then the visible card message in the card's thread.
+    // Sealed in the platform's secret store (written by the system, like every secret); the handover row keeps only the secret's id. A failure
+    // here throws, which rolls the whole handover back: a note that did not arrive must not look as if it had.
+    let hasPrivateNote = false;
+    if (typeof privateNote === 'string') {
+      // Sealed and ticketed for this caller in one system transaction: only a secret the tasks door sealed for the caller can be attached.
+      const secretId = await ctx.db.system(
+        async (sys) => {
+          const id = await ctx.secrets.put(sys, privateNote);
+          await sys.query('SELECT app.tasks_ticket_private_note($1::uuid, $2::uuid)', [id, tx.actor.id]);
+          return id;
+        },
+        { workspaceId: tx.actor.workspaceId },
+      );
+      const attached = (await tx.query<{ ok: boolean }>('SELECT app.tasks_set_private_note($1::uuid, $2::uuid) AS ok', [res.o_handoff_id, secretId])).rows[0]?.ok === true;
+      if (!attached) throw new Error('the private note could not be attached to the handover');
+      hasPrivateNote = true;
+    }
     const handoffRow = (await tx.query<HandoffRow>('SELECT * FROM app.handoffs WHERE id = $1::uuid', [res.o_handoff_id])).rows[0];
     const after = (await cardOf(tx, taskId)) ?? before;
     if (handoffRow) {
       await emitHandedOff(ctx, tx, after, toHandoff(handoffRow));
       await emitUpdated(ctx, tx, before, after);
-      await postHandoffCard(ctx, tx, { task: after, handoffId: res.o_handoff_id, toActorId, note, pending: false });
+      await postHandoffCard(ctx, tx, { task: after, handoffId: res.o_handoff_id, toActorId, note, pending: false, privateNote: hasPrivateNote });
     }
-    return { ok: true, taskId, handoffId: res.o_handoff_id };
+    return { ok: true, taskId, handoffId: res.o_handoff_id, ...(hasPrivateNote ? { privateNoteSealed: true } : {}) };
+  });
+
+  // The secret half of a handover. Only the bot the latest handover gave the card to, while it still owns it; the database answers the secret's
+  // id for that caller alone and the system decrypts it. The text is returned to the caller and goes nowhere else (no event, no history).
+  ctx.capabilities.register('tasks.private_note', async (input, tx) => {
+    const taskId = String(input['taskId'] ?? '');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(taskId)) return { ok: false, code: 'invalid_input', message: 'taskId must be the card id (a uuid)' };
+    const none = { ok: false, code: 'no_private_note', message: 'no private note was passed to you with this card, or the card is no longer yours' };
+    if (tx.actor.kind !== 'bot') return none;
+    const secretId = (await tx.query<{ id: string | null }>('SELECT app.tasks_private_note_secret($1::uuid) AS id', [taskId])).rows[0]?.id;
+    if (!secretId) return none;
+    const note = await ctx.db.system((sys) => ctx.secrets.get(sys, secretId), { workspaceId: tx.actor.workspaceId });
+    return { ok: true, taskId, privateNote: note, warning: 'Secret. Never repeat it in a message, a card note, memory or a log.' };
   });
 
   ctx.capabilities.register('tasks.deploy', async (input, tx) => {

@@ -1,5 +1,6 @@
 import { NEVER_APPROVAL_GATED, NeverApprovalGatedError, RunEndedError, requestToolApproval, type ApprovalProvider, type BotRunHandle, type PluginContext, type PluginTx } from '@manythreads/sdk';
-import { describe, expect, it } from 'vitest';
+import { previewArgs, fullArgs } from '@manythreads/shared';
+import { describe, expect, it, vi } from 'vitest';
 import { createApprovalProvider } from '../src/provider.ts';
 
 // The open item of the P5-12 re-review: `memory.retain` must be refused by the approvals provider itself, not only by the SDK helper and the
@@ -67,6 +68,22 @@ describe('requestToolApproval turns the provider’s refusal into an answer for 
     // the helper's own list does not name this tool, so the call reaches the provider, which refuses it
     const answer = await requestToolApproval(ctx as never, run, 'pages.write', {});
     expect(answer).toEqual({ refused: expect.stringMatching(/cannot wait for an approval/) });
+  });
+
+  it('a call carrying a private note is refused, and nothing is filed (the approval row would keep the secret)', async () => {
+    const request = vi.fn();
+    const provider = { id: 'approvals', request, pendingForRun: () => Promise.resolve(0), claim: () => Promise.resolve(null) } as unknown as ApprovalProvider;
+    const ctx = { providers: { get: () => provider }, runs: { asBot: (_run: BotRunHandle, fn: (tx: PluginTx) => Promise<unknown>) => fn(neverUsed) } } as unknown as Pick<PluginContext, 'providers' | 'runs'>;
+    for (const key of ['privateNote', 'private_note', 'private-note']) {
+      const answer = await requestToolApproval(ctx as never, run, 'tasks.handoff', { taskId: 't', [key]: 'hunter2' });
+      expect(answer).toEqual({ refused: expect.stringMatching(/private note/) });
+    }
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('the preview of any call hides a private note by name', () => {
+    expect(JSON.stringify(previewArgs({ note: 'ok', privateNote: 'hunter2' }))).not.toContain('hunter2');
+    expect(JSON.stringify(fullArgs({ note: 'ok', privateNote: 'hunter2' }))).not.toContain('hunter2');
   });
 
   it('a run that ended before the request is an answer for the model too, not an exception', async () => {
