@@ -266,7 +266,8 @@ describe('a bot placed on a runner', () => {
     // the profile: the model goes through the server's run proxy on the public address with the run token, not the bot's key or the cluster address
     const config = call['config']!;
     expect(config).toContain(`api: "http://localhost:3000/api/llm/runs/${run.id}/v1"`);
-    expect(config).toContain(`url: "http://localhost:3000/api/mcp/runs/${run.id}"`);
+    // one MCP address for every bot (the run token in the header says which run it is), so no per-run host or path has to be reachable
+    expect(config).toContain('url: "http://localhost:3000/mcp"');
     const bearer = /Authorization: "Bearer ([^"]+)"/.exec(config)![1]!;
     expect(config).toContain(`api_key: "${bearer}"`);
     expect(config).not.toContain(process.env['MANYTHREADS_LITELLM_URL']!);
