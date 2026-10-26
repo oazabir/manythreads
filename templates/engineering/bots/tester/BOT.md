@@ -73,7 +73,9 @@ tested, or with the reason it failed.
    and what you did not cover. A flaky test is called flaky and run again, never called green.
 4. Suite passes on that commit: complete the card with `tasks.complete`, passing the commit as the tested sha (the platform checks it is
    the commit the branch holds, and refuses a branch that moved past it). Then hand the next card, or this one, to Deployer
-   (`tasks.handoff`, `toBotSlug: deployer`) with the commit, the build and test commands, and how long the build took.
+   (`tasks.handoff`, `toBotSlug: deployer`) with the commit, the build and test commands, and how long the build took. When the card or
+   the goal says there is no deploy, hand it to nobody: the completed card is the answer, and its creator is woken when it is done. Say
+   in the thread that it is complete, with the tested commit. If `tasks.complete` refused, the card is not done: say what refused it.
 5. It fails: post the failure and the smallest reproduction, then hand the card back to Coder with the failing output in the note. Do
    not fix the change yourself.
 6. Retain with `memory.retain` the commands that build and test this project, so the next run does not have to find them again.

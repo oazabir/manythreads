@@ -107,7 +107,8 @@ not an HTTP-only rule.
 A board may belong to one channel (`boards.channel_id`). Such a board shows the cards filed on it (`tasks.board_id`) instead of a saved filter,
 and only people who can read the channel can see it (`GET /api/channels/:channelId/boards` lists a channel's boards). The tool `boards.ensure`
 gets or creates the channel's board named "Bot Board" in one statement, so two runs asking at once end with one board; it needs a team channel of
-the bot's own team that the bot may post in, and it is the only board a bot can create. `tasks.create` (tool and route) takes an optional
+the bot's own team that the bot may post in, and it is the only board a bot can create. The answer is `{ ok, created, board, path }`; `path` is the board's address in the web app,
+`/t/<team slug>/boards?board=<board id>`, so a bot can link it without knowing the team's slug. `tasks.create` (tool and route) takes an optional
 `boardId` of the same team; without one, a bot's card goes to the Bot Board of the channel its run answers in, when that board already exists.
 A handover never changes the board. A bot may always hand a card back to the actor that created it, even when its `handover.mayTag` does not
 name that actor; every other target must be in the list, and a refusal says "not handed over ... the card is still yours".

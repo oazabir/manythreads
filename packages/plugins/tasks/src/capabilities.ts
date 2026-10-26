@@ -178,7 +178,10 @@ export function registerCapabilities(ctx: PluginContext): void {
         }),
       );
     }
-    return { ok: true, created: row.id === drawn, board };
+    // Where the board lives in the web app, so a bot can link it without knowing the team's slug.
+    const team = (await tx.query<{ slug: string }>('SELECT slug FROM app.teams WHERE id = $1::uuid', [bot.team_id])).rows[0];
+    if (!team) return { ok: false, code: 'not_found', message: 'the bot\'s team could not be read' };
+    return { ok: true, created: row.id === drawn, board, path: `/t/${team.slug}/boards?board=${board.id}` };
   });
 
   ctx.capabilities.register('tasks.claim', async (input, tx) => {

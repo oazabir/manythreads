@@ -260,7 +260,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
   'boards.ensure': {
     name: 'boards.ensure',
     description:
-      'Get the "Bot Board" of a team channel, creating it when the channel has none; every card the bots make for the work in that channel belongs on it. Pass `channelId`, or leave it out for the channel you are answering in. You must be able to post in the channel, and it must be a channel of your own team. Answers the board (its `id` goes into tasks.create as `boardId`). Safe to call again: you get the same board.',
+      'Get the "Bot Board" of a team channel, creating it when the channel has none; every card the bots make for the work in that channel belongs on it. Pass `channelId`, or leave it out for the channel you are answering in. You must be able to post in the channel, and it must be a channel of your own team. Answers the board (its `id` goes into tasks.create as `boardId`) and its `path` in the web app (`/t/<team slug>/boards?board=<board id>`): link that path, never build one. Safe to call again: you get the same board.',
     inputSchema: {
       type: 'object',
       properties: { channelId: { type: 'string', description: 'The channel (default: the one this run answers in).' } },

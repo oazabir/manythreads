@@ -23,7 +23,7 @@ const asBot = <T>(actor: string, runId: string | null, fn: (tx: Tx) => Promise<T
   withActor({ kind: 'bot', id: actor, workspaceId: WS, ...(runId ? { runId } : {}) } as Actor, fn, { pool: server.pools.app });
 
 /** A tool answer: its fields are read loosely, the assertions name each one. */
-type Out = { ok: boolean; code?: string; created?: boolean; board: { id: string }; task: { boardId: string | null } };
+type Out = { ok: boolean; code?: string; created?: boolean; path?: string; board: { id: string }; task: { boardId: string | null } };
 type Handler = (input: Record<string, unknown>, tx: PluginTx) => Promise<Record<string, unknown>>;
 const handlers = new Map<string, Handler>();
 const events: Array<Record<string, unknown>> = [];
@@ -110,6 +110,8 @@ describe('boards.ensure', () => {
     expect([a['created'], b['created']].filter(Boolean)).toHaveLength(1);
     expect(await boardRows(ch)).toHaveLength(1);
     expect(a['board']).toMatchObject({ name: BOT_BOARD_NAME, channelId: ch, teamId: ENG });
+    expect(a['path']).toMatch(new RegExp(`^/t/[a-z0-9-]+/boards\\?board=${a['board'].id}$`));
+    expect(b['path']).toBe(a['path']);
     // one creation, one event, made by the bot
     const created = events.filter((e) => e['type'] === 'tasks.board.created');
     expect(created).toHaveLength(1);
