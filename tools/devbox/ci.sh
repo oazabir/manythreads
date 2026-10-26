@@ -126,10 +126,13 @@ if [ "$RUN_TESTS" = "1" ]; then
   curl -fsS -o /dev/null "$CI_ORIGIN/readyz" || fail "the CI release did not answer /readyz"
   curl -fsS -o /dev/null "http://127.0.0.1:$CI_API_PORT/openapi.json" || fail "the CI release did not answer /openapi.json"
   # A persona signs in through the real form and sees the seeded world.
+  # The seed's persona password is read from the one place that sets it, so the two cannot drift apart.
+  PERSONA_PASSWORD=$(sed -n "s/^export const PERSONA_PASSWORD = '\(.*\)';$/\1/p" packages/test-utils/src/create-personas.ts)
+  [ -n "$PERSONA_PASSWORD" ] || fail "could not read PERSONA_PASSWORD from packages/test-utils/src/create-personas.ts"
   COOKIE_JAR=$(mktemp)
   curl -fsS -c "$COOKIE_JAR" -o /dev/null -X POST "$CI_ORIGIN/api/auth/password/sign-in" \
     -H "Content-Type: application/json" \
-    --data-binary '{"email":"omar@kahf.example","password":"correct-horse-battery"}' \
+    --data-binary "{\"email\":\"omar@kahf.example\",\"password\":\"$PERSONA_PASSWORD\"}" \
     || fail "no persona could sign in to the CI release"
   curl -fsS -b "$COOKIE_JAR" -o /dev/null "$CI_ORIGIN/api/teams/engineering/channels" \
     || fail "the signed-in persona could not read the channel directory"
