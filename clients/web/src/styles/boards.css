@@ -31,10 +31,15 @@
 
 .bd-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-height: 0;
   flex: 1;
+}
+
+/* The card panel takes its column only while a card is open; without one the columns get the whole width. */
+.bd-body.with-panel {
+  grid-template-columns: minmax(0, 1fr) 340px;
 }
 
 .bd-main {
@@ -652,7 +657,8 @@
 }
 
 @media (width <= 1100px) {
-  .bd-body {
+  .bd-body,
+  .bd-body.with-panel {
     grid-template-columns: minmax(0, 1fr);
   }
 

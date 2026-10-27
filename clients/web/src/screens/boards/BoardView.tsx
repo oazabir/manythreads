@@ -153,7 +153,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
   if (!board) return null;
 
   return (
-    <div className="bd-body" data-testid="board-view" data-board={board.id}>
+    <div className={`bd-body${selectedCard ? ' with-panel' : ''}`} data-testid="board-view" data-board={board.id}>
       <div className="bd-main">
         <div className="bd-toolbar">
           <label className="bd-field inline">
