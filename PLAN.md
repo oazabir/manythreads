@@ -4,17 +4,17 @@ Phase-wise build plan for Claude as orchestrating coding agent. Contract: `SPEC-
 
 ## 1. Purpose
 
-Build the spec in thirteen phases. Phases 1–11 build the product, web first. Phase 12 proves it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong.
+Build the spec in eighteen phases. Phases 1–11 and 14–18 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
 
 ## 2. How to use
 
-1. One phase per block of sessions, in order. Do not start N+1 until the `### 6 · Exit` gate of N is green.
+1. One phase per block of sessions, in the order of §7's Order column (not by number). Do not start the next phase until the `### 6 · Exit` gate of the current one is green.
 2. Inside a phase, do subsections 0 to 6 in order.
 3. The spec wins over this plan, except the four decisions in section 3, which are newer. Say so in the PR when a decision changes a spec detail.
 4. Guide delegation rules apply: the orchestrator plans, decides and verifies (no more than 20 lines of code itself); Sonnet writes code; Haiku runs commands, builds, tests, logs, k8s and searches; a fresh Sonnet reviewer, given only the diff and requirements, passes every change; at most 3 subagents in parallel; set the model explicitly; bash, not zsh; subagents return summaries only.
 5. Task IDs are `P<phase>-<nn>`; use them in commits. The **Agent** column names who does the task; every row also needs a reviewer pass.
 6. Cite `SPEC §n` in PRs and prototype plates as `[proto §NN plate N · title]`.
-7. Never build a non-goal (spec §20). Flag it instead.
+7. Never build a non-goal (spec §20). Flag it instead. D7 moved voice and video out of the non-goals.
 
 ## 3. Decisions (binding)
 
@@ -52,6 +52,20 @@ Spec v1.4.1 §2 already states these; the guide's queue wording is superseded.
 | Inbox | `inbox/` is a Files-storage folder (`files` table, team ACL), never a repo folder. Anyone on the team can drop; outside material (unknown email sender, foreign bundle, DLP hit, oversize) is held and never reaches a model until a lead releases it |
 | Sharing | A share is `routines/shares/<slug>.yaml` (already under the guarded `routines/`). Selection is deterministic from `memory_concepts`. Delivery needs an accepted link; both send and accept go through the one approvals handler with source `grant`. Originals never leave the sender; trust (`verified`) does not travel; a received concept is never re-shared |
 | Names | Events `memory.item.*`, `memory.concept.*`, `memory.digest.*`, `memory.share.*`. Trigger `drop`. Capabilities `memory.write`, `inbox.drop`, `inbox.read`. Not the Threads inbox, the Approvals inbox, or the email `inbox` trigger |
+
+**D7 · Meetings, voice and video, and first-party connectors (owner decision 2026-10-24).** The owner moved voice and video out of the spec §20 non-goals and asked for connectors to the major mail, calendar and work products (Gmail, Outlook and the like). Rules every task in phases 14–18 obeys:
+
+| Area | Rule |
+|---|---|
+| Media | Calls go through LiveKit (Apache-2.0), a self-hosted SFU — a selective forwarding unit, the server that forwards each person's audio and video to the others without mixing it. It is an optional sixth workload (`media`), on by default from phase 15's exit, and works in an air-gapped install. manythreads mints short-lived room tokens; no third-party media service is ever used. No telephone dial-in, no webinars |
+| Transcription | **On-device first** for a room without a note-taker bot (see that row below for a room with one): each person's own device turns their own microphone into text (a Whisper-family speech model in a browser worker; whisper.cpp in the desktop and phone shells); only text leaves the device. The speaker of every line is whoever's device wrote it, so no speaker-separation model is needed. A server fallback (the `transcribe` alias pointed at a self-hosted Whisper server) is off by default, set per team, and needs the speaker's own consent. Model files are served by the manythreads server, never fetched from a CDN at run time |
+| Consent | Turning on transcription or recording is announced to everyone in the room; each person may decline; a declining speaker's audio is never transcribed or recorded and nothing is attributed to them. Audio recording is off by default and needs every participant's yes |
+| Storage | A meeting in a public channel or a team room keeps its transcript and notes as text in the team repo at `meetings/<yyyy>/<mm>/<dd>-<hhmm>-<slug>/` (a guarded path). A meeting in a private channel or a DM call goes to Files storage under that channel's access, never git, because the repo is readable by the whole team. Audio and video are never in git |
+| Memory | A meeting reaches memory only through the team inbox (D6): the platform drops transcript and notes as an item with origin `meeting` and the Archivist files it. A private meeting is never filed unless a participant sends it. A meeting with a note-taker bot is never filed automatically: only its organizer's "Save to team meeting notes" files it |
+| Connectors | First-party only where Activepieces cannot give the depth: a person-scoped grant (`person:*`), a sync into knowledge or memory, a trigger with dedupe, or a link to calendars and meetings. The rest stays an Activepieces piece behind the same MCP gateway |
+| Note-taker bot (owner 2026-10-27) | A person in a room may **add a bot to the meeting**. The bot is a listen-only participant held by the server: it receives each person's audio track and publishes nothing. The server transcribes each track through the `transcribe` alias, so every line still has its speaker without a speaker-separation model. While it listens, the transcript is written to the **organizer's own meeting transcript folder** (My files → Meetings, private to the organizer), not to the team. When the meeting ends, the bot tidies the transcript into notes with the LLM and messages the organizer with where they are. The organizer decides what happens next: share the notes with people, or save them to the team's meeting notes folder and so into team memory (through the inbox, D6). During the meeting the bot hears a question put to it in the transcript and answers it in the room's thread. Video meetings work the same way; the bot takes only the audio. The consent rules above still apply: adding the bot is announced, and a person who declines is never transcribed |
+| Bots in calls (owner 2026-10-27) | **A bot never speaks in a call.** No bot publishes audio or video into a room, ever: a bot answers in the call's chat thread (and as a caption). Phase 17's read-aloud plays an answer on the asker's own device only, never into the call |
+| Still non-goals | End-to-end encryption; a pipeline designer (automations are written in words and become routines); a second agent runtime; a bot that speaks into a call (see the row above) |
 
 Everything else follows the spec: Hermes only, no bot modes, `BOT.md`, one LLM gateway, one MCP gateway, Hindsight bank per team chosen by the gateway with the OKF bundle as its editable mirror, two-stage gate, one `needsApproval`, first-party person connections.
 
@@ -101,21 +115,28 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 
 ## 7. Phase map
 
-| # | Phase | Size | Needs |
-|---|---|---|---|
-| 1 | Foundations | L | — |
-| 2 | Identity, workspace and teams | M | 1 |
-| 3 | Channels, threads and direct messages | XL | 2 |
-| 4 | Files and the team repo | L | 3 |
-| 5 | Bots, gateways, conversations and Brain | XXL | 4 |
-| 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 |
-| 7 | Self-setup and the Workshop | L | 6 |
-| 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 |
-| 9 | Surfaces | M | 8 |
-| 10 | Onboarding, admin and deployment | L | 9 |
-| 11 | Mobile client | L | 10 |
-| 12 | Full persona end-to-end automation and user manual | L | 10, 11 |
-| 13 | Screenshot UI review | M | 12 |
+| Order | # | Phase | Size | Needs |
+|---|---|---|---|---|
+| 1 | 1 | Foundations | L | — |
+| 2 | 2 | Identity, workspace and teams | M | 1 |
+| 3 | 3 | Channels, threads and direct messages | XL | 2 |
+| 4 | 4 | Files and the team repo | L | 3 |
+| 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 |
+| 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 |
+| 7 | 14 | Messaging parity and moving in | XL | 6 |
+| 8 | 7 | Self-setup and the Workshop | L | 14 |
+| 9 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 |
+| 10 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 |
+| 11 | 16 | Connectors to the tools a company already uses | XL | 15 |
+| 12 | 9 | Surfaces | M | 16 |
+| 13 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 |
+| 14 | 18 | Workflow automation and a team that runs itself | XL | 17 |
+| 15 | 10 | Onboarding, admin and deployment | L | 18 |
+| 16 | 11 | Mobile client | L | 10 |
+| 17 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 |
+| 18 | 13 | Screenshot UI review | M | 12 |
+
+**Why the added phases sit where they do (2026-10-24).** Phase 14 comes straight after 6: it needs only channels, files and bots, and the chat is the first thing a person leaving Slack or Mattermost judges. **Voice messages ship in phase 14 (P14-16, P14-17)**, so the on-device speech engine is built and proven on short clips before phase 15 streams live calls through it. Phase 15 comes after 8 because a meeting reaches memory through the team inbox and the Archivist that 8 builds, and its action items use 8's Add to board. Phase 16 follows 15 so calendars can schedule rooms and outside transcripts (Meet, Teams) land in the same `meetings/` folder. Phase 17 needs 9's surfaces for the end-of-meeting review. Phase 18 composes everything before it. Phases 10 and 11 gain the desktop and phone speech engines (P10-15, P11-09), and phase 12's journeys cover the added phases.
 
 **Ordering notes (a dependency forced the choice).** Basic guardrails (`pre_egress`, gateway pre-call, `standard` preset) land in phase 5 because bots first act there and principle 3 says every byte passes guardrails; phase 10 completes them. `Answer` is a fixed component in phase 5 (Brain is M1) and moves onto the OpenUI renderer in 9. Runners and worktrees close phase 6 (Tester's placement needs them). The week-3 `slack-compat` spike opens phase 5. Subscription runtimes and the Tauri build sit in phase 10. **Milestones are time-based, phases dependency-based:** M1 = phases 1–5 plus a minimal onboarding slice in phase 5 (steps 0, 1, 2, 5, 6: sign-in, one provider, first team from a template, default bots) so the guide's M1 demo works; full onboarding stays in phase 10. The append-only audit log is the phase 1 event log; the console and export are phase 10. The eval harness is built in 7 and wired to GitHub pull requests in 8. **Memory (v1.5.0):** the OKF bundle, its writer rule, `memory_concepts` and trust display land in phase 5 beside Hindsight, so no memory code is written twice; the team inbox and memory sharing land in phase 8, because they need what 6 and 8 build (tasks for "Add to board", approvals, text extraction shared with knowledge, the email connection for the email door) and the Archivist needs the Hermes runtime from 5. If phase 8 runs long, the email door (P8-19) and sharing (P8-22 to P8-26) are the two pieces that can slip to a follow-up without breaking the rest.
 
@@ -1130,6 +1151,8 @@ Refactor with tests green; write `docs/retro/phase-10.md`.
 | P10-12 | `seed --phase N`, event contracts, plugin author docs, SDK publication prep | `e2e/fixtures`, `docs` | §18 | Sonnet |
 | P10-13 | **Compose self-host**: five containers (Postgres, LiteLLM, Hindsight, manythreads, Hermes) as a supported install (spec §2), documented in `docs/deploy/compose.md` and tested in CI from a clean checkout | `deploy/compose`, `docs/deploy` | §2, D4 | Sonnet; Haiku |
 | P10-14 | **Abuse review of sensitive endpoints (D5)**: audit every route that grants, recovers or changes a credential or session (sign-in, reset, email verification, bootstrap, invitation accept, OIDC start/callback, change-password, session revoke) for an explicit low per-client-address limit plus the credential lockout; add the limit to any that lack one; publish each limit and window in the Helm notes beside the per-replica caveat; burst each route to prove 429 + `retry-after` | `plugins/identity-*`, `plugins/teams`, `server`, `deploy/helm` | D5, §15 | Sonnet |
+| P10-15 | **Desktop on-device speech engine (D7, phase 15):** a Tauri sidecar running whisper.cpp (Metal on macOS, Vulkan or CUDA where present, CPU otherwise) speaking P15-06's segment protocol and transcribing voice messages (P14-17), chosen automatically when faster than the browser engine; a global mute shortcut; "In a call" in the tray; the model files from the server's `/models/`, hash-checked | `clients/desktop`, `clients/web/src/speech` | D7 | Sonnet |
+| P10-16 | **Bot Board: one board per channel for the bots' cards.** (1) Data: `boards.channel_id` (nullable FK, one board per channel and name, RLS through the visible-channel set) and `tasks.board_id` (nullable FK, `ON DELETE SET NULL`); a board attached to a channel shows the cards filed on it rather than a saved filter. Migration `tasks/0009_channel_boards.sql`; mapper and Zod in one diff. (2) Capability `boards.ensure({ channelId })`: get-or-create the channel's board named **"Bot Board"** through `ctx.db.getOneOrCreate` (a person-made board of that name attached to the channel counts; an unattached team board of that name does not). A bot may create no other board; the board is audited as created by the bot for the asker. (3) `tasks.create` takes `boardId`; without one a bot's card goes to the Bot Board of the run's channel when it has one, so every bot's cards land there, not only the orchestrator's. A handover keeps the board. (4) Orchestrator template: step 1 calls `boards.ensure` for the goal's channel, every card is created on it, and the checklist links the board; Coder, Reviewer, Tester, Deployer and Browser tester read their card there. (5) Web: the channel header shows a **Bot Board** link next to the project chip; the board picker labels a channel board with its `#channel`. (6) Fixes from the full-cycle run (2026-10-26): a hand-back is one call that moves the owner, and the bot's reply says so only when it succeeded; a prose @mention of a bot that owns a card here but has no queued or running run wakes it (today it is skipped as "already on the thread"); a mention dropped by the delegation-depth cap posts one line saying why; a deploy target's kubeconfig handed to a bot on the host bridge names an API address the host can reach | `plugins/tasks`, `plugins/runtime-hermes`, `templates/engineering`, `clients/web/src/screens/boards`, `clients/web/src/channels` | §6.4, §7 | Sonnet; fresh Sonnet review |
 
 ### 2 · UI references
 
@@ -1165,6 +1188,7 @@ Errors: no alias test passed (Continue disabled with reason); k8s check failed w
 7. Killing the primary of 3 CNPG instances recovers within 60 s with earlier writes present; a restored backup passes the RLS harness with equal counts.
 8. `docker compose up` from a clean checkout brings five healthy containers and Brain answers a seeded question (compose self-host, CI). With the air-gapped preset and deny-all egress Brain still answers. The Tauri build opens sign-in and fires a mention notification. Every pen-test item passes or has an accepted exception.
 9. Every sensitive endpoint (D5) refuses a burst inside its window with `429 rate_limited` and `retry-after` — sign-in, reset, email verification, bootstrap, invitation accept, OIDC start/callback, change-password — five wrong passwords lock that address for 15 minutes, and each limit and window is documented in the Helm notes as per replica.
+10. The first goal in a project channel creates one board named "Bot Board" attached to that channel (two orchestrator runs at once still make one); every card the run's bots create is filed on it; a later goal in the channel reuses it; a person can open it from the channel header; a card whose owner said it handed back but did not is visible as still owned, and the orchestrator is told.
 
 ### 4 · Automated end-to-end tests
 
@@ -1179,11 +1203,12 @@ Errors: no alias test passed (Continue disabled with reason); k8s check failed w
 | `e2e/deploy/k3s-install.spec.ts`, `netpol.spec.ts`, `backup-restore.spec.ts` (CI, k3d) | install; curl Hindsight from pod and server; backup, destroy, restore → five workloads, no CRDs; pod refused; counts equal |
 | `e2e/deploy/compose-install.spec.ts` (CI) | clean checkout, `docker compose up`, ask Brain → five healthy containers; answer |
 | `e2e/deploy/ha-failover.spec.ts`, `air-gapped.spec.ts` (nightly), `e2e/desktop/tauri-smoke.spec.ts` | kill primary; deny-all egress; launch shell → under 60 s; answer returned; sign-in and notification |
+| `e2e/api/tasks/bot-board.spec.ts`, `e2e/boards/bot-board.spec.ts` | two orchestrator runs ensure at once → one board; `tasks.create` with no board → the channel's Bot Board; a bot names another board → refused; board deleted → cards keep, next ensure recreates; a hand-back that changes no owner → refused with the reason; a person opens the header link → the board with the run's cards; Lena (guest, no channel) → 404 |
 
 ### 5 · Visual browser tests
 
 - `onboarding/step1`: `[proto §01 plate 1 · Step 1 · Sign-in methods]`; `step2`: plate 2; `step3-4`: plate 3 (P-loose); `step5`: plate 4; `step6`: plate 5; `step8`: plate 6; `admin/llm`: `[proto §01 plate 7 · After onboarding · Workspace → LLM]`. P unless stated.
-- Own baselines, W: `onboarding/step7`, `admin/audit`, `admin/guardrails-subscriptions`, `onboarding/mobile` (390×844: steps 1, 2, 5, 8), `onboarding/errors`.
+- Own baselines, W: `onboarding/step7`, `admin/audit`, `admin/guardrails-subscriptions`, `onboarding/mobile` (390×844: steps 1, 2, 5, 8), `onboarding/errors`, `boards/bot-board` (a run's cards across the columns), `channels/bot-board-link` (the channel header with the link).
 
 (All 1440×900, `e2e/visual/<area>/<name>.visual.spec.ts`.)
 
@@ -1218,6 +1243,8 @@ Refactor with tests green; write `docs/retro/phase-11.md`.
 | P11-06 | Push (APNs, FCM), in-app list, deep links; WebView host with signed single-use hand-off and `embed=1`; offline cache (last 200 messages per channel), send queue with retry | `clients/mobile`, `plugins/notifications` | §3 | Sonnet |
 | P11-07 | Re-run the 5,000-message benchmark on the target mid-range Android (`docs/perf/mobile.md`); Maestro flows and Playwright embed tests; EAS profiles and CI builds (unsigned on PR, signed on release); accessibility (dynamic type, labels, 44 pt targets) | `tools/bench`, `e2e/mobile`, CI | §19, §18 | Sonnet; Haiku |
 | P11-08 | Share-sheet door to the team inbox: share a photo, file, text or link from the phone's share sheet into a chosen team's inbox through the same upload API (offline queue with retry); **Send to memory** on a message in the thread screen | `clients/mobile` | §12.2 | Sonnet |
+| P11-09 | **Calls on the phone (D7, phase 15):** a Capacitor plugin running whisper.cpp on the phone (Core ML on iOS, CPU or NNAPI on Android) speaking P15-06's segment protocol; a native audio session so a call survives a locked screen; CallKit (iOS) and ConnectionService (Android) so an incoming DM call rings like a phone call, with VoIP push; Bluetooth headset routing; native voice messages; battery and heat budget for a 60-minute transcribed call recorded in `docs/perf/mobile.md` | `clients/mobile` | D7 | Sonnet; Haiku |
+| P11-10 | **Bot Board on the phone (P10-16):** the channel header's Bot Board link opens the board embedded (`embed=1`); a push when a bot hands a card to the person, opening the card; the card's thread opens natively | `clients/mobile`, `clients/web/src/screens/boards` | §6.4 | Sonnet |
 
 ### 2 · UI references
 
@@ -1250,6 +1277,7 @@ Approvals: cards, detail with tool, arguments, environment, `[Approve][Decline]`
 5. Brain's answer shows numbered citations, Lineage, Sources reached and Outside scope.
 6. Files from More opens in the WebView with the right session and no sidebar; the hand-off link fails on a second use.
 7. Airplane mode queues a message and sends it once. Lena sees only `#releases`, no More, Bots, Approvals or DMs. Both platform builds are produced on every PR.
+8. In a channel with a Bot Board the header shows its link; the board opens in the WebView with the right session; a card handed to a person pushes them and the tap opens that card.
 
 ### 4 · Automated end-to-end tests
 
@@ -1263,6 +1291,7 @@ Native flows use Maestro; embedded screens use Playwright `mobile-web`.
 | `e2e/mobile/push.yaml`, `offline.yaml` | mention backgrounded; airplane mode send → push opens message; one message, no duplicate |
 | `e2e/mobile/guest-lena.yaml`, `webview-files.yaml` | Lena signs in; More → Files → only `#releases`, no More; loads, Back works, second hand-off fails |
 | `e2e/api/mobile/device-session.spec.ts`, `e2e/mobile/embedded-web.spec.ts` (`mobile-web`) | create, rotate, revoke; `?embed=1` Files, Boards, Workshop → revoked token rejected; no sidebar, no horizontal scroll |
+| `e2e/mobile/bot-board.yaml` | open a project channel → Bot Board link opens the board in the WebView; a card handed to Nadia pushes and opens the card |
 
 ### 5 · Visual browser tests
 
@@ -1315,6 +1344,19 @@ Refactor with tests green; write `docs/retro/phase-12.md`.
 | **Priya** | P1 first day: welcome card (P3-14) and checklist, two teams, team switcher · P2 (B, A) ask Brain how to ship a release, read Coder's release post, follow the thread · P3 edit controls absent, reply works, repeat at 390 px · P4 Threads inbox and notifications. Negatives: approve, change `bots/` through the UI, release a held inbox item or accept a share, open a terminal, see a private channel |
 | **Lena** | L1 accept the guest invite, see only `#releases` · L2 (A, B) read Coder's release post and Nadia's shared Brain answer with the masked citation; search finds only `#releases` · L3 negatives: `#dev` URL no access, Members, `/files`, Boards, Approvals, DMs, `/bots` and `/admin` absent or 404, no Brain and no bot mention, posting impossible (no composer), no Memory screen and the inbox drop API answers 403, repeat at 390 px |
 
+**Journeys added with phases 14–18** (same rules: at least 5 screenshots and an outcome assertion each)
+
+| Persona | Journeys |
+|---|---|
+| **Omar** | O8 Slack export: dry run, import, restart midway, counts match · O9 (A) install the stand-up and incident recipes as proposals, approve · O10 connect Google for the workspace OAuth app, offboard a leaver |
+| **Nadia** | N7 (A, B) voice stand-up in `#dev`: consent, live captions, transcript in `meetings/`, Scribe's notes, an action item to the board, then ask Brain what was decided · N8 schedule a room from a channel with her calendar · N9 status, Do not disturb, save for later, reminder |
+| **Nadia** (Bot Board, P10-16) | N10 (A) asks Orchestrator in the project channel for a small change: the channel header gains a **Bot Board** link, every card the bots make for the run is on it and moves column by column as Coder, Reviewer, Tester, Deployer and Browser tester hand it on; the checklist in the thread links the board; a second request in the same channel lands on the same board |
+| **Rafi** | R5 (A) `/incident`: channel, `@on-call` paged, voice room, postmortem drafted · R6 approve a leave request as delegate from a push · R7 negative: removed from a channel mid-call → dropped |
+| **Sameera** | S6 (A) a Zendesk ticket starts Support responder, customer lookup in the Answer · S7 voice message to a teammate, transcript found by search |
+| **Tariq** | T7 (A) video review with an outside guest admitted from the waiting room, follow-up email through Approvals · T8 Translate a Bangla message |
+| **Priya** | P5 joins a room late: Catch me up; morning brief · P6 negative: opens a private-channel transcript URL → 403; cannot install a recipe |
+| **Lena** | L4 negatives: cannot start a room, mention `@on-call`, or open `meetings/`; a guest link meeting shows her the call only |
+
 **Block C · How the suite is proven to work**
 
 1. **Completeness spec** (`completeness.spec.ts`, runs last): it compares the declared step list and every journey's status with the manifest and files: every declared step has a PNG, no extra PNG, each non-empty and not blank (over 200 distinct colours), every journey passed. Hashes are informational only and never fail the run. **Any missing screenshot fails the run**, naming the step.
@@ -1364,6 +1406,7 @@ Goals: …    You cannot: approve your own …      { id: "N2", persona: "nadia"
 |---|---|
 | `e2e/personas/omar/O1-onboarding.spec.ts` … `O8-memory-sharing.spec.ts` | O1–O8 → first Brain answer cited; team exists; budget blocks; bot in roster; audit row has "withheld"; credentials revoked before first keystroke; secret masked; Nadia and Rafi's DM unreadable; digest approved and delivered to the team that accepted, held mail released and discarded |
 | `e2e/personas/nadia/N1-morning.spec.ts` … `N7-inbox-drop.spec.ts` | N1–N7 and negatives → handover cards; page with three co-authors; approval decided by Rafi; masked citation; dropped PDF filed, cited *unverified*, then *human-reviewed*; tasks created by Nadia |
+| `e2e/personas/nadia/N10-bot-board.spec.ts` | N10 → a Bot Board attached to the project channel, created once; every card of the run on it; the checklist links it; a second request reuses the board |
 | `e2e/personas/rafi/R1-approvals.spec.ts` … `R4-negatives.spec.ts` | R1–R4 → decisions recorded; own request not approvable; Support approvals not offered |
 | `e2e/personas/sameera/S1-support-send.spec.ts` … `S6-received-digest.spec.ts` | S1–S6 → mail sent only after approval; "source changed since"; `#kb-updates` message; forwarded mail filed; Engineering's digest cited "from Engineering · unverified" |
 | `e2e/personas/tariq/T1-post-coedit.spec.ts` … `T6-accept-share.spec.ts` | T1–T6 → page and history; pinned report; saved answer; routine page; image is an attachment; share accepted, next digest received |
@@ -1402,7 +1445,7 @@ Refactor with tests green; write `docs/retro/phase-13.md`.
 
 | ID | Task | Where | Agent |
 |---|---|---|---|
-| P13-01 | States sweep journeys (empty, error, loading, denied) and Tab-walk steps (first 15 stops of each main screen) per persona | `e2e/personas/*/states` | Sonnet |
+| P13-01 | States sweep journeys (empty, error, loading, denied) and Tab-walk steps (first 15 stops of each main screen) per persona; the Bot Board in each state (no board yet, cards in every column, a card handed back, a card the owner left idle) is in the sweep | `e2e/personas/*/states` | Sonnet |
 | P13-02 | Pre-checks on every screenshot run: image valid and not blank; axe-core on the live page at the same step (contrast, labels); computed-style probe against the tokens | `tools/review/precheck.ts` | Sonnet; Haiku |
 | P13-03 | **Haiku subagent** generates contact sheets (ImageMagick montage, 12 thumbnails with file names) per persona per viewport, and per-batch folders of at most 12 full-size images | `tools/review/contact-sheet.sh` | Haiku |
 | P13-04 | Fixed checklist `tools/review/CHECKLIST.md` (below), versioned; reviewers get it verbatim | `tools/review` | Orch |
@@ -1489,6 +1532,434 @@ When judging layout, use the prototype plate named by the step's `plate` field, 
 ### 6 · Exit
 
 A full review of every desktop and mobile-web screenshot by fresh reviewers who pass the canary test leaves no issue of medium severity or above in `ISSUES.md`, and the pre-checks that found them run on every PR.
+
+---
+
+# Phase 14 · Messaging parity and moving in
+
+Goal: a person who comes from Slack or Mattermost finds every everyday habit here (status, reminders, saved messages, scheduled sends, slash commands, polls, link previews, a quick switcher, notifications that reach a closed tab, **voice messages** that the sender's own device transcribes), and a workspace can move its history and its scripts in one evening. Size XL. Spec §6.1, §3, §4, §15; proto §02. **Runs after phase 6, before phase 7** (§7 Order): it needs only phases 3–5, and the people who try the product meet the chat long before they meet the Workshop.
+
+Review of the code so far (2026-10-24) that this phase answers: a channel has messages, threads, reactions, edits, pins, typing, read state, search and in-app notifications, but **presence and typing have routes and no screen**; there are no reminders, saved messages, scheduled sends, user groups, custom status, Do not disturb, slash commands in chat, polls, link previews, browser push or email digests; `slack-compat` is still a spike that writes `app.messages` directly; nothing imports another product's history; and there is no way to send a voice clip.
+
+### 0 · Reflect and refactor
+
+Re-read phases 3–6; list what was awkward, duplicated or slow. Prompts:
+- The message list, the thread panel and the composer each grew their own action menu. Extract **one message-actions registry** (an action declares its label, icon, who may see it and its handler) before this phase adds six actions and phase 8 adds Send to memory.
+- `slack-compat` writes `app.messages` itself (its doc says so). Route it through the channels plugin's post path before P14-14 builds on it.
+- Presence and typing sit in UNLOGGED tables (tables Postgres does not write to its crash log: fast, emptied by a crash). Measure the socket fan-out of a presence change for one person seen by 500 others before P14-01 puts it on screen; batch per second if it costs more than 5 ms of server time.
+- The rhythms job (P6-08) already runs work at a time. Reminders and scheduled sends must be jobs with a run-at time on the same queue, not a second scheduler.
+- The speech engine P14-16 builds for voice messages is the one phase 15's calls will stream through. Put it in `clients/web/src/speech/` behind one interface (`transcribe(audio) → segments` for a finished clip; phase 15 adds the live-stream form), never inside the composer.
+
+Refactor with tests green; write `docs/retro/phase-14.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P14-01 | **Presence and status.** Active or away from the socket heartbeat (UNLOGGED); custom status (emoji, text, clears at); **Do not disturb** with a weekly schedule and "pause notifications for 1 h"; working hours and time zone on the profile card with the person's local time; out-of-office with a return date and a delegate (P18-03 reads it). Status shows beside names in DMs, the member list, the mention picker and message authors. Notifications held during Do not disturb are delivered when it ends | `plugins/presence`, `shared/entities/presence.ts`, `clients/web` | §6.1, §3 | Sonnet |
+| P14-02 | **Composer parity.** Formatting toolbar for the Markdown the renderer already supports (bold, italic, strike, code, code block with language, quote, lists, link); emoji picker with recents and skin tone; **custom emoji** an admin uploads (Files storage, workspace-wide global table on the allowlist); `@here`/`@channel` with a confirmation above 20 people; **drafts saved on the server** per channel and thread so they follow the person across devices; ↑ edits the last own message | `clients/web/src/channels`, `plugins/channels` | §6.1 | Sonnet |
+| P14-03 | **User groups from role tags.** A `TEAM.md` role tag is a mention handle (`role:on-call` → `@on-call`): mentioning it notifies its members, the mention picker lists it with a member count, and a bot's `toPerson: [role:…]` resolves through the same set — one definition, never a second group table | `plugins/teams`, `plugins/channels`, `plugins/notifications` | §5, §6.1 | Sonnet |
+| P14-04 | **Later and reminders.** "Save for later" on any message (with done state) and "Remind me about this" (20 min, 1 h, tomorrow at 9:00 local, custom); `/remind me|@person|#channel <when> <what>` with the time parsed by a deterministic, linear-time parser (no model); each reminder is a job with a run-at time, delivered as a notification and a message from the system sender "Reminders". Later lives as a fourth tab of the Threads inbox (Followed · Unread · Mine · **Later**) — the sidebar contract has no room for a new entry | `plugins/reminders`, `clients/web/src/screens/ThreadsInbox.tsx` | §6.1 | Sonnet |
+| P14-05 | **Scheduled send.** "Send later" on the send button; `scheduled_messages` (RLS on the author); the job posts as the author at the time and re-checks the author may still post there (refused → the draft returns to the author with the reason); the channel shows "2 scheduled" with edit and cancel | `plugins/channels`, `clients/web` | §6.1 | Sonnet |
+| P14-06 | **Slash commands.** One registry in `shared/commands` (name, arguments schema, who may run it); built-ins `/remind`, `/status`, `/dnd`, `/away`, `/poll`, `/invite`, `/leave`, `/mute`, `/topic`, `/shrug`; a bot declares commands in `BOT.md` (`commands: [{ name, description, args }]`) and they arrive as a new `command` trigger with typed arguments; the composer autocompletes; an unknown command is never posted as text | `shared/src/commands`, `plugins/channels`, `plugins/bots`, `runtime-*` | §6.1, §7.2 | Sonnet |
+| P14-07 | **Polls.** `/poll` and a composer action; single or multiple choice, anonymous option, closing time; results update live; `poll_votes` with RLS through `app.visible_channel_ids('read')`; a closed poll's result is a plain message a bot can read | `plugins/channels`, `clients/web` | §6.1 | Sonnet |
+| P14-08 | **Link previews.** For a link in a posted message the server reads the page's title, description and image (Open Graph and oEmbed — the two standard ways a page describes itself for previews) through the egress guard: resolve, then connect only to a public address (no SSRF — a request tricked into reaching an internal address), redirects capped at 3, 1 MB and 3 s bounds, the image proxied; cached per URL for a day; workspace allow and deny lists; the author can remove a preview. Inbox link drops are still never fetched (D6). Rich cards for GitHub, Jira and Google links arrive with their connections (P16-06, P16-03) | `plugins/link-preview`, `guardrails-egress`, `clients/web` | §6.1, §15 | Sonnet |
+| P14-09 | **Notifications that reach people.** Per-channel level (all · mentions · nothing); personal keyword alerts; **browser push** (Web Push with the server's own VAPID keys — the standard signed push a browser accepts with the tab closed — through a service worker); an **email digest** of unread mentions and DMs after a person has been away for a set time (default 1 h), through the system mailer that already sends password resets, with one-click unsubscribe | `plugins/notifications`, `clients/web/src/sw` | §3 | Sonnet |
+| P14-10 | **Quick switcher and keyboard.** Ctrl/Cmd+K jumps to any channel, DM, person, bot, file, page or board card the person may read; Alt+↑/↓ moves through unread channels; Esc marks the channel read; Shift+Esc marks all read; "Jump to first unread"; `?` opens the shortcut sheet | `clients/web/src/app` | §6.1 | Sonnet |
+| P14-11 | **Search parity.** Filters `from:` `in:` `has:file` `has:link` `has:pin` `is:thread` `before:` `after:` as text and as chips; saved searches; one results page across messages, files, pages and (phase 15) transcripts, every hit through the reader's own visibility sets | `plugins/search`, `clients/web/src/search` | §6.1 | Sonnet |
+| P14-12 | **Message actions.** Edit history ("edited" opens the versions); **forward** to another channel or DM as a quote card that shows the original only to those who may read it ("You can't see the original message" otherwise); copy link; "Also send to channel" from a thread reply; "Mark unread from here"; a **bookmarks bar** in the channel header (links, files, pages) beside the pins | `plugins/channels`, `clients/web/src/channels` | §6.1 | Sonnet |
+| P14-13 | **Import from Slack and Mattermost.** An admin uploads a Slack export (zip) or a Mattermost bulk export (JSON lines). A **dry run** writes nothing and reports people matched by email, channels, messages, threads, reactions, files, and what is skipped (apps, huddles, canvases). The real run is a resumable, idempotent job (keyed by the source's ids) that writes through the channels and files plugins — never raw inserts — keeps the original times (`meta.importedFrom`), turns unmatched people into deactivated placeholders that a later sign-in with the same email claims, imports a private channel only with its members, and puts a DM only into the two people's own DM (no admin ever reads it). Streamed upload per MISTAKES; hostile-input tests: zip bomb, path traversal, 2 GB, 40,000-character lines, a malformed JSON line | `plugins/import`, `tools/import` | §4, §15 | Sonnet; Haiku runs |
+| P14-14 | **Incoming webhooks and a Slack-shaped API.** Promote `slack-compat` from spike to product: an incoming-webhook URL per channel that accepts the Slack and Mattermost payload shapes (text, a Block Kit subset turned into Markdown, attachments); outgoing webhooks on a keyword; a small `chat.postMessage` / `chat.update` / `reactions.add` API for existing scripts with a token per integration, rate limits and audit; managed by a lead or admin at channel settings → **Integrations** | `plugins/slack-compat`, `clients/web` | §11, §15 | Sonnet |
+| P14-15 | **A personal sidebar inside the contract.** Star a channel (a **Starred** group at the top of slot 40, the channel groups), mute (no bold for unread), sort by recent or name, hide channels idle for 30 days, reorder personal groups by drag — all inside slot 40; the seven slots and their order never change | `clients/web/src/app/sidebar` | Sidebar contract | Sonnet |
+| P14-16 | **On-device speech in the browser: spike, then the engine** (`docs/spikes/speech.md`, `clients/web/src/speech/`). Spike: Whisper tiny, base and small and their distilled variants in a Web Worker on WebGPU with a WASM fallback; measure the real-time factor (seconds of compute per second of audio), word error rate on three fixture recordings (English, Bangla, accented English), memory and download size on a mid-range laptop and a 390 px phone browser; voice-activity detection — spotting when someone speaks — with Silero VAD to cut silence and split long clips. Decide the default model per device class and the weakest supported device. Then build the engine: `transcribe(audio) → segments` (text, start and end time, language) in the worker; model files served by the manythreads server under `/models/` with hashes pinned in the build (never a CDN at run time, like the fonts) and kept by the service worker; a device check picks the model or says the device is too weak; `MANYTHREADS_FAKE_ASR=1` (test only) turns a known fixture into known text so the e2e suite is deterministic | `docs/spikes`, `clients/web/src/speech`, `packages/server` (static `/models/`) | D7 | Sonnet; Haiku |
+| P14-17 | **Voice messages.** Hold the mic button in the composer (or tap to start and tap to stop) to record up to 5 minutes, with a timer, a level meter, cancel by sliding away, and a preview before sending; the clip (Opus in WebM/Ogg) uploads to Files storage as an attachment of the message through the existing streamed upload; **the sender's own device transcribes it before sending** with P14-16's engine, and the sender can correct the text; the message keeps the transcript, its language and duration in `meta.voice` (no new table); readers see a player (waveform, 1×, 1.5×, 2×, resume where they stopped) with the transcript underneath; search (P14-11) finds the transcript under the message's own access; a device too weak to transcribe sends the clip with "No transcript" and the sender can add one later from a stronger device. Works in channels, threads and DMs; a guest can play clips in the channels they may read but not record; a bot reads the transcript, never the audio | `clients/web/src/channels`, `clients/web/src/speech`, `plugins/channels`, `plugins/files`, `plugins/search` | D7, §6.1 | Sonnet |
+| P14-18 | Seed v14 (statuses, a reminder due, a scheduled message, a poll, a voice message with its transcript, a Slack export fixture of 3 channels and 200 messages), event contracts, docs pages `presence`, `reminders`, `import`, `slack-compat`; benchmark: presence fan-out at 2,000 people online, quick switcher p95 under 100 ms on the 1M-message seed | `e2e/fixtures`, `docs/plugins`, `tools/bench` | guide §6 | Sonnet; Haiku |
+
+### 2 · UI references
+
+No plates. Wireframes (class W):
+
+```
+Profile card                                  Import (dry run)
++--------------------------------------+      +--------------------------------------+
+| Nadia Rahman · Engineer              |      | Slack export · kahf-2026.zip          |
+| (●) Active · 🎧 In a voice room      |      | People   41 matched · 3 placeholders  |
+| 16:42 local · works 09:00–17:00      |      | Channels 28 · private 4 (members only)|
+| Out of office until Mon · ask Rafi   |      | Messages 182,340 · threads 9,112      |
+| [ Message ]  [ Call ]                |      | Skipped  apps 6 · huddles 31          |
++--------------------------------------+      | [ Run import ]  nothing written yet   |
+                                              +--------------------------------------+
+```
+
+Copy: "Pause notifications · 1 hour", "Remind me about this", "Send later", "Transcribed on this device", "No transcript — this device can't transcribe", "You can't see the original message", "Nothing was written. This was a dry run." Mobile: the quick switcher is full-screen; the formatting toolbar collapses behind "Aa".
+
+### 3 · Acceptance criteria
+
+1. Do not disturb holds every notification but an `@here` from nobody; at the end of the window the held ones arrive once, in order.
+2. `@on-call` in `#incidents` notifies exactly the people tagged `role:on-call` in Engineering, and Lena (a guest) cannot mention a group.
+3. A reminder set for "tomorrow 9am" arrives at 9:00 in the person's own time zone; a scheduled message whose author was removed from the channel is not posted and returns as a draft with the reason.
+4. A bot's `/deploy staging` command starts a run with typed arguments; an unknown command is refused in the composer and never posted.
+5. A link to `http://169.254.169.254/` or a host resolving to a private address gets no preview and no request leaves the server.
+6. A closed tab receives a browser push for a DM; a person away for an hour receives one email digest, not one email per message.
+7. A forwarded message from a private channel shows its text only to people who can read that channel.
+8. The Slack fixture's dry run writes no row; the real run, killed halfway and restarted, ends with the same counts as an uninterrupted run and no duplicate; DMs are readable only by their two people.
+9. A Slack-format incoming webhook posts into its channel; a revoked integration token is 401.
+10. The sidebar keeps its seven slots in order with starred and personal groups inside slot 40.
+11. A voice message is transcribed on the sender's device before it is sent (no request carries its audio to a model; the network log shows only the upload to Files storage and model files from `/models/`), plays at three speeds, and search finds its words; Priya, who cannot read the channel, gets 403 on the clip and finds nothing.
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/chat/status-dnd.spec.ts` | Nadia sets DND 1 h, Rafi mentions her → no toast; clock +1 h → one notification |
+| `e2e/chat/reminders.spec.ts`, `scheduled.spec.ts` | remind me in 20 min, Later tab; send later, removed author → draft returned |
+| `e2e/chat/commands-polls.spec.ts` | `/poll`, two votes, close; bot command run; unknown command refused |
+| `e2e/chat/link-preview.spec.ts`, `e2e/api/link-preview/ssrf.spec.ts` | public link previewed; private and metadata addresses refused, no outbound request |
+| `e2e/chat/switcher-keyboard.spec.ts` | Ctrl+K → a card, a page, a DM; Alt+↓ next unread; Shift+Esc |
+| `e2e/chat/forward.spec.ts` | Nadia forwards from a private channel to `#dev` → Priya sees the placeholder |
+| `e2e/api/import/slack.spec.ts`, `mattermost.spec.ts` | dry run writes nothing; kill and resume; counts equal; DM privacy |
+| `e2e/api/webhooks/incoming.spec.ts` | Slack and Mattermost payloads post; revoked token 401 |
+| `e2e/chat/voice-message.spec.ts` | fake microphone records a fixture → transcript shown before send, corrected, sent; Rafi plays at 1.5×; search finds it; Priya 403; no model request carries audio |
+| `e2e/chat/mobile-web.spec.ts` (`mobile-web`) | switcher full-screen, toolbar behind "Aa", hold-to-record voice message, no horizontal scroll |
+
+### 5 · Visual browser tests
+
+Own baselines, W: `chat/profile-card`, `chat/composer-toolbar`, `chat/poll`, `chat/link-preview`, `chat/switcher`, `chat/voice-recording`, `chat/voice-message`, `admin/import-dry-run`, each at 1440 and 390 (the waveform and timer are `data-vt-mask`).
+
+### 6 · Exit
+
+Nadia sets a status, saves a message for later and gets the reminder on time; Rafi sends a voice message his own device transcribed and Nadia finds it by a word in it; a Slack export is imported with a dry run first and no duplicate after a restart; a link to a private address never leaves the server.
+
+---
+
+# Phase 15 · Voice rooms, meeting transcripts and meeting memory
+
+Goal: anyone can open a voice room in a channel or call someone from a DM; **each person's own device turns their own voice into text**, so no audio leaves a device unless its owner allows it; when the room closes the team has a transcript and notes in its `meetings/` folder, the meeting, its decisions and its action items in team memory, and the action items one click from the board. A person may also **add a note-taker bot** to the room: it listens on the server, writes the transcript into the organizer's own folder, tidies it into notes when the room ends, tells the organizer where they are, and answers questions put to it during the call (P15-18 to P15-24); the organizer then decides whether the notes reach the team. Size XL. D7, spec §12.1–§12.2, §5.1, §5.2, §6.1, §15. **Runs after phase 8** (it reuses the team inbox, the Archivist and Add to board) and before phase 16.
+
+**Why on-device and why it is simpler.** In a call every person's microphone is a separate audio track. If each device transcribes only its own track, every line already has its speaker — no speaker-separation model (diarization) is needed — and the server never receives audio. The server only orders the text lines by time.
+
+### 0 · Reflect and refactor
+
+Re-read phases 8 and 14; list what was awkward, duplicated or slow. Prompts:
+- The inbox pipeline (P8-17) gains an origin `meeting`. Origin is a Zod enum and a SQL CHECK: extend both in one triple. Does the Archivist's eval set already have a long transcript? Add a 90-minute, 15,000-word case and check its chunking.
+- Live captions push several lines a second per speaker. Measure `ctx.realtime.pushToPeople` at 20 people and 3 speakers; batch to at most 4 pushes a second per room if needed.
+- The Archivist is a platform bot hidden from the mention picker. If that was special-cased inline, extract one "platform bot" helper before the Scribe (P15-10) copies it.
+- Add `meetings/` to the one guarded-path list (`isGuardedRepoPath`); nothing else may list it.
+- Is presence (P14-01) able to say "in a voice room" without a second presence table?
+
+Refactor with tests green; write `docs/retro/phase-15.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P15-00 | **Spike and decision record** `docs/spikes/voice.md`. (a) LiveKit — a self-hosted SFU, the server that forwards each person's audio to the others without mixing it — in compose (profile `media`) and in the Helm chart: the UDP port range, TURN over TLS on 443 (a relay for networks that block UDP) through the ingress, health check. (b) Re-measure P14-16's speech engine on a **live** microphone for 60 minutes (it was measured on finished clips): real-time factor while the call's audio also runs, heat and memory growth, caption delay. Decide the model for live use per device class and the fallback order | `docs/spikes`, `deploy/compose`, `deploy/helm` | D7 | Sonnet; Haiku |
+| P15-01 | **Schema (triple).** `meetings` (team, channel — a DM call uses the DM's channel —, title, state `live`/`ended`, started_by, organizer (the starter, or the scheduler of a planned meeting), note-taker bot (nullable), started_at, ended_at, `transcription` `on_device`/`server`/`off`, `recording`, transcript location), `meeting_participants` (actor, joined_at, left_at, consent to transcribe and to record, each `yes`/`no`/`unasked`), `meeting_segments` (meeting, speaker, start_ms, end_ms, text, `final`, source `device`/`server`, language; BRIN on `created_at`), UNLOGGED `meeting_presence` (who is in the room, speaking); RLS through `app.visible_channel_ids('read')`; events `meetings.meeting.started/.ended`, `meetings.participant.joined/.left`, `meetings.consent.changed`, `meetings.transcript.written`, `meetings.notes.written` (Appendix A.11) | `plugins/meetings/migrations`, `shared/entities/meeting.ts`, `shared/events` | D7 | Sonnet |
+| P15-02 | **`provider.media` in the SDK** (`createRoom`, `token(actor, room, grants)`, `closeRoom`, `kick`, signed webhooks) with `media-livekit` as the default plugin. A media token lives at most 10 minutes and is renewed over the socket only while the person may still read the channel; `channel.member.removed` or leaving the team kicks the person within 5 s; a guest joins only rooms in channels they are in; **a bot never gets a media token of its own**: the one exception is the note-taker's server participant (P15-18), whose token subscribes to audio only, can never publish, and is minted by the meetings plugin, never handed to a bot run | `packages/sdk`, `packages/kernel`, `plugins/media-livekit` | D7, §15 | Sonnet |
+| P15-03 | **`meetings` plugin.** Start (one live room per channel — get-or-create), join, leave, end (the starter, a lead or an admin; ends itself 2 minutes after the last person leaves), list a team's live rooms; a per-person rate limit on starts; **every call has its own chat thread**, created at start in the room's channel ("Voice room · 14:02"; for a DM call, in the DM) and open for the whole call: the people in the room message each other, share files (the existing streamed upload, stored under the channel's access), react, and @mention bots, and any bot mentioned there answers in the thread under its normal `mention` trigger and rules. The thread uses the channel's own messages, threads and files, never a second chat. It stays after the call as the meeting's home, and the transcript (P15-09), notes and organizer's folder (P15-20) link it. Who may read and post is the channel's members, so a person removed from the channel loses the thread with the call (P15-02) | `plugins/meetings` | D7, §6.1 | Sonnet |
+| P15-04 | **Web: the room.** "Start voice room" in a channel header and "Call" in a DM header; the sidebar shows a live badge with avatars on the channel; a docked call bar (mute, deafen, device picker, push-to-talk, leave, captions, a "Transcribing" chip, **Chat** with an unread count); the meeting's thread (P15-03) opens in the right panel when a person joins and stays beside the call, with the full composer (messages, files, @mentions of people and bots); a speaking ring on avatars; join and leave sounds; reconnect after a network drop; browser echo cancellation and noise suppression on; Ctrl/Cmd+Shift+Space toggles mute; at 390 px the room is a bottom sheet. An incoming DM call rings for 30 s with a browser push (P14-09) and leaves "Missed call" in the DM | `clients/web/src/meetings` | D7 | Sonnet |
+| P15-05 | **Consent.** When transcription is turned on, everyone in the room sees who turned it on and chooses "Transcribe my voice": yes or no (remembered as a personal default the person can change); a late joiner chooses before their microphone opens; the chip stays visible; a speaker who said no appears in the transcript only as "<name> spoke (not transcribed)" with times; `TEAM.md` `meetings.transcribe: on-device \| server \| off` and a workspace switch cap what a room may turn on | `plugins/meetings`, `clients/web/src/meetings` | D7, §15 | Sonnet |
+| P15-06 | **The on-device engine, live**: P14-16's engine (`clients/web/src/speech/`) gains a streaming form that runs on the person's **own** microphone track only; VAD-cut chunks up to 30 s; times on the meeting clock (the server's start time plus the client's steady clock, corrected by the socket's ping); partial text for live captions, final text for the transcript, sent over the socket. Model files, the device check and `MANYTHREADS_FAKE_ASR` are P14-16's; a device too weak for live use says so and offers the server fallback when allowed, or no transcript | `clients/web/src/speech`, `clients/web/src/meetings` | D7 | Sonnet |
+| P15-07 | **Server fallback, off by default.** For a person who chose `server` (and only when the team allows it), the client uploads its own VAD chunks to `POST /api/meetings/:id/audio-chunks`; the server sends them to the `transcribe` alias pointed at a self-hosted Whisper server (compose profile `asr`, Helm value `asr.enabled`) and **keeps no audio** after the call; spend counted against the team's LLM budget; streamed upload per MISTAKES | `plugins/meetings`, `gateway-llm`, `deploy/*` | D7, §10.1 | Sonnet |
+| P15-08 | **Merge and live captions.** The server orders lines by start time across speakers, drops a repeat (same speaker, overlapping window), accepts late lines until 2 minutes after the end, and pushes partial and final lines to the people in the room (at most 4 pushes a second per room); captions over the call bar; a speaker can correct their own line for 24 h, which writes a new transcript commit | `plugins/meetings`, `clients/web/src/meetings` | D7 | Sonnet |
+| P15-09 | **The transcript in the meetings folder.** When the room ends (plus the late window) a job writes `transcript.md` — frontmatter `type: Meeting Transcript`, title, date, start, duration, channel, participants, language, `source: on-device`, and lines `[00:12:04] **Nadia:** …`. A meeting in a **public channel or a team room** goes to the team repo through the repo provider at `meetings/<yyyy>/<mm>/<dd>-<hhmm>-<slug>/transcript.md`, authored by the platform with every speaker as co-author. A meeting in a **private channel or a DM call** goes to Files storage at `channels/<name>/meetings/…` under that channel's access, **never git** (the repo is readable by the whole team). People may edit `notes.md` there; `transcript.md` changes only through a speaker's own correction; bots write nothing there but the Scribe's notes | `plugins/meetings`, `repo-git`, `plugins/files`, `shared` (guarded paths) | D7, §5.1, §5.2 | Sonnet |
+| P15-10 | **The Scribe**, a platform bot in every team template like the Archivist: hidden from the mention picker, trigger `meeting_ended` only, capabilities exactly `meetings.read` (the run's own meeting), `memory.recall` and `meetings.notes.write`. It writes `notes.md` beside the transcript — summary, decisions, action items with owner and due date **as said**, open questions — every line citing transcript times, and posts it into the room's thread. `smart` alias by default, `local` under the `air-gapped` preset. Eval set of 10: a stand-up, a design review, an incident call, a Bangla meeting, a meeting where a non-consenting speaker's words must not be invented, an action item with no owner (must say "no owner", not guess) | `templates/*/bots/scribe`, `plugins/meetings` | D7, §13 | Sonnet |
+| P15-11 | **Into team memory.** When the notes are written the platform drops the transcript and notes into the team inbox as one item with origin `meeting` (P8-14's origin list grows), the speakers as droppers; the Archivist files a `Meeting` concept that links `Decision` and `Action Items` concepts, with `sources` pointing at the transcript path and line times. A room with a guest in it is held under `review: external`. A private-channel or DM meeting is **never** filed automatically: any participant may press **Send to memory** with the P8-15 warning ("everyone in <team> will see this"). `TEAM.md` `meetings.autoMemory: true \| false` | `plugins/meetings`, `plugins/memory-inbox` | D6, D7, §12.2 | Sonnet |
+| P15-12 | **Action items to the board.** The notes' action items carry Add to board (P8-20) with owner and due date; a named owner on the team gets one notification "2 action items from Tuesday's design review" | `plugins/meetings`, `clients/web` | §12.2 | Sonnet |
+| P15-13 | **Finding meetings again.** The Files tree shows `meetings/` with a meeting view (title, date, length, participants, links to transcript, notes, thread and recording); the transcript viewer jumps to a time; the search plugin indexes transcripts and notes under the same access; Brain answers "what did we decide in Tuesday's design review?" with citations that open the transcript at the line | `plugins/search`, `clients/web/src/screens/files`, `answer` | §12, §5.2 | Sonnet |
+| P15-14 | *Moved to P14-17 (2026-10-24): voice messages ship with the chat features, four phases earlier.* Here only: a voice message posted in a room's thread during a call is placed in the transcript at its time | `plugins/meetings` | D7 | Sonnet |
+| P15-15 | **Audio recording, opt-in and off by default.** Audio-only recording through the media provider into Files storage, only while every person in the room said yes to recording; it stops the moment someone without a yes joins; `TEAM.md` `meetings.keepAudioDays` (default 30) through the retention plugin; the transcript links it; never in git | `plugins/meetings`, `media-livekit`, `plugins/retention` | D7, §15 | Sonnet |
+| P15-16 | **Limits and guards.** 25 people per voice room (configurable); idle end; `guardrails-dlp` on the transcript before the Scribe's model call and before memory filing; size bounds on lines and transcripts; hostile-input tests on segment text (40,000-character lines, control characters, right-to-left overrides); audit rows for start, end, consent changes and recording on/off | `plugins/meetings`, `guardrails-dlp` | §15 | Sonnet |
+| P15-17 | Seed v15 (a finished Engineering stand-up with transcript, notes, a `Meeting` concept and two action items, one on the board; a private-channel call with no memory); event contracts; docs pages `meetings.md` and `media-livekit.md`; Helm and compose values for LiveKit and the optional Whisper server; firewall notes in `docs/deploy.md` (UDP range, TURN on 443) | `e2e/fixtures`, `docs`, `deploy` | guide §6 | Sonnet; Haiku |
+
+| P15-18 | **Add a bot to the meeting.** "Add note-taker" in the call bar lists the team's bots whose `BOT.md` has the new trigger `meeting` (the Engineering, Support and General templates gain a **Note-taker** bot; any bot may opt in). Anyone in the room may add one; the organizer or a lead may remove it; at most one note-taker per room. The bot joins as a **server-held, listen-only participant**: the meetings plugin runs one media worker per room (LiveKit's server SDK in a worker thread, or a separate `meeting-agent` deployment once a node runs more than 10 rooms), subscribes to each person's audio track and publishes nothing. Its avatar sits in the room with a "Note-taker · listening" badge. Adding it is announced to everyone, and each person then answers the P15-05 consent prompt; a person who declines has their track left unsubscribed, never decoded and never transcribed. The bot leaves when the room ends or when it is removed | `plugins/meetings`, `media-livekit`, `shared/bot-md` (trigger `meeting`), `templates/*/bots/note-taker`, `clients/web/src/meetings` | D7, §7.2, §15 | Sonnet |
+| P15-19 | **Server transcription by the bot.** The media worker cuts each consenting person's track at silence (VAD) into chunks of up to 30 s and sends them to the `transcribe` alias (P15-07's self-hosted Whisper server). Every line is attributed to the track's owner. Lines go into `meeting_segments` with source `server` and drive the live captions (P15-08). No audio is kept after the call (only P15-15's recording may keep it); spend is counted against the team's LLM budget; the worker falls behind gracefully (captions say "catching up") rather than dropping speech. A room with the bot uses server transcription for the people who consented, even when the team's default is on-device; `TEAM.md` `meetings.noteTaker: on \| off` and a workspace switch can forbid it | `plugins/meetings`, `gateway-llm`, `deploy/*` | D7, §10.1 | Sonnet |
+| P15-20 | **My files and the organizer's meeting transcript folder.** Files gains a person-owned area, **My files**, at the top of the Files tree and visible only to its owner (Files storage, never git; `files.owner_person_id`, RLS `owner_person_id = app.actor_id()`, plus the explicit shares of P15-23). Its `Meetings/` folder is the organizer's meeting transcript folder. While the bot listens, `transcript.md` (P15-09's format, `source: server`) is written to `My files/Meetings/<yyyy>-<mm>-<dd>-<hhmm>-<slug>/` and appended every 30 s, so a crash loses at most 30 s of text. Nothing reaches the team repo, the channel's folder or memory at this point, whatever the channel is | `plugins/files`, `plugins/meetings`, `clients/web/src/screens/files` | D7, §5.2 | Sonnet |
+| P15-21 | **Notes after the meeting, and the organizer is told.** When the room ends (after P15-08's late window), the note-taker runs once with trigger `meeting_ended` and capabilities exactly `meetings.read` (its own meeting), `memory.recall` and `meetings.notes.write` (organizer's folder only). It tidies the transcript into `notes.md` beside it: a clean summary, decisions, action items with owner and due date **as said**, and open questions, every line citing transcript times. The P15-10 Scribe's rules and eval set apply: nothing is attributed to a person who declined, and an action item with no owner says "no owner". The guardrails run first (P15-16). The bot then sends the organizer a DM with the meeting's title, length, the two links and buttons for P15-23. If the run fails, the transcript is still there and the DM says so | `plugins/meetings`, `templates/*/bots/note-taker` | D7, §13 | Sonnet |
+| P15-22 | **Questions to the bot during the meeting.** The bot watches the final transcript lines for a question put to it: the bot's name or "note-taker" spoken in a consenting person's line (a linear text match, with hostile-input timing tests), then one cheap `fast`-alias check on the last 60 s that confirms it is a question to the bot and states it. It then runs with trigger `meeting_question` and capabilities `meetings.read` (the transcript so far), `messages.search`, `knowledge.search`, `memory.recall`. The answer is posted into the room's thread and shown as a caption naming the asker, and the asker may have it read aloud on their own device (P17-08); the bot never speaks into the call. **The answer may use only what every person in the room may read** (the intersection of their visibility sets, reused, never a new check), because everyone sees it. At most one answer at a time and 6 a minute per room. A question from a person who declined is never heard, because their audio was never transcribed. Typing "@note-taker …" in the room's thread works the same way | `plugins/meetings`, `runtime-hermes`, `answer` | D7, §12, §15 | Sonnet |
+| P15-23 | **The organizer decides: share, and save to the team.** In My files and in the DM, the organizer has: **Share** with people or a channel (read access to the transcript and notes for exactly those people, or that channel's members; revocable; an audit row); **Save to team meeting notes**, which copies both files to the team's meeting notes folder (P15-09's `meetings/…` for a public channel or team room, the channel's Files folder for a private one; the platform commits, with the organizer as author) and, unless the organizer unticks "Add to team memory", drops them into the team inbox as an origin `meeting` item for the Archivist (P15-11), with the warning "everyone in <team> will see this". The organizer may edit `notes.md` before saving. Nothing reaches the team without this press. Participants see "Notes are with <organizer>" in the room's thread | `plugins/meetings`, `plugins/files`, `plugins/memory-inbox`, `clients/web` | D6, D7, §5.2, §12.2 | Sonnet |
+| P15-24 | **Note-taker guards and tests.** A bot never gets the media token itself (only the plugin's worker holds it); kicking a person (P15-02) also stops transcribing their track within 5 s; the organizer leaving does not change who owns the folder; a person removed from the team loses shares by the visibility sets; a declined track is never subscribed (asserted on the media worker's subscriptions). The test transcriber (`MANYTHREADS_FAKE_ASR=1`) turns fixture audio into known text on the server. Eval set of 8 for live questions: answered, not addressed to the bot (no answer), asked by a decliner (no answer), asks for something one participant may not read (refused), a Bangla question, two questions in one minute, a question about something said 40 minutes ago, a question that needs memory | `plugins/meetings`, `e2e`, `evals` | D7, §15 | Sonnet; Haiku |
+
+Native on-device engines for the desktop and phone shells are P10-15 and P11-09; they speak the same segment protocol as P15-06 and also transcribe voice messages (P14-17).
+
+### 2 · UI references
+
+No plates. Wireframes (class W):
+
+```
+Call bar (docked, desktop)                               Consent prompt
++--------------------------------------------------+     +--------------------------------------+
+| #dev · Voice room · 00:14:22   (●) Transcribing  |     | Nadia turned on transcription.        |
+| (N)(R)(P) +2      "…so we ship on Thursday" [CC] |     | Your device writes down your own      |
+| [Mic] [Deafen] [Devices]  [Leave]                |     | voice; no audio leaves it.            |
++--------------------------------------------------+     | [ Transcribe my voice ]  [ Not me ]   |
+                                                         +--------------------------------------+
+meetings/2026/10/27-1400-design-review/
++--------------------------------------------------+
+| Design review · 27 Oct · 42 min · 5 people        |
+| transcript.md   notes.md   thread ↗   (no audio)  |
+| Decisions 2 · Action items 3 [Add to board]       |
+| Filed to memory: Meeting · 2 Decisions            |
++--------------------------------------------------+
+```
+
+Note-taker (P15-18 to P15-23)
++--------------------------------------------------+     DM from Note-taker to the organizer
+| #dev · Voice room · 00:31:05  (●) Note-taker      |     +--------------------------------------+
+| (N)(R)(P)(🤖 listening)                           |     | Design review · 42 min · 5 people     |
+| Rafi: "Note-taker, what did we decide on caching?"|     | Transcript and notes are in My files  |
+| 🤖 in thread: "At 00:12 you chose …" [Read aloud] |     | → Meetings/2026-10-27-1400-design-…   |
++--------------------------------------------------+     | [Share]  [Save to team meeting notes] |
+                                                         +--------------------------------------+
+
+Copy: "Your device writes down your own voice; no audio leaves it." "Nadia added Note-taker. It listens on the server and writes notes for Nadia. Transcribe your voice?" "Notes are with Nadia." "Rafi spoke (not transcribed)." "This device is too slow to transcribe. Ask your admin about server transcription, or join without it." Mobile: the room is a bottom sheet over the channel; captions above the composer.
+
+### 3 · Acceptance criteria
+
+1. Two people in a room hear each other; the server receives no audio when both chose on-device (asserted at the media webhook and the HTTP log: no `audio-chunks` request).
+2. Every transcript line carries the speaker whose device wrote it; a speaker who said no has only "(not transcribed)" lines with times, and the Scribe's notes contain nothing attributed to them.
+3. A public-channel meeting's transcript and notes are committed under `meetings/…`; a private-channel meeting's are in Files storage under the channel's access and **not** in the repo, and Priya (not in that channel) gets 403 on both.
+4. Removing Rafi from the channel drops him from its live room within 5 s and his token cannot rejoin.
+5. The Archivist files a `Meeting` concept with `Decision` and `Action Items`, with `sources` pointing to transcript lines; a room with Lena in it is held; a private meeting is not filed until a participant presses Send to memory.
+6. Add to board on an action item creates a card as the person, with the owner and due date from the notes.
+7. Brain's answer to "what did we decide in the design review?" cites the transcript at the line and the citation opens it there.
+8. With server transcription off for the team, the fallback is not offered and `POST …/audio-chunks` is 403.
+9. Recording starts only after every participant said yes and stops when a person without a yes joins.
+10. Model files load from the manythreads server only; no request leaves for a CDN (checked with the network log).
+11. A bot cannot obtain a media token; a guest cannot start a room.
+12. A voice message posted in the room's thread during the call appears in the transcript at the time it was sent.
+13. With a note-taker added, the transcript is written only to the organizer's My files; until the organizer presses Save to team meeting notes, nothing is in the team repo, the channel's folder or memory, and another participant gets 403 on the folder.
+14. When the room ends, the organizer gets one DM linking the transcript and the tidied notes; the notes cite transcript times and attribute nothing to a person who declined.
+15. Share gives exactly the named people read access; Save to team meeting notes commits both files to the team's meeting notes folder and the Archivist files a `Meeting` concept.
+16. A question put to the bot by name in the call is answered in the room's thread within 15 s (fake ASR and fake LLM), using nothing that any person in the room may not read; a decliner's question is never answered.
+17. The bot's media worker never subscribes to a declined track and never publishes a track.
+18. During a call, the meeting's thread is open beside it: Nadia and Rafi message each other there, Rafi shares a file Nadia opens, and a bot @mentioned there answers in the thread; no bot publishes audio or video into the room (asserted on the media server's track list).
+
+### 4 · Automated end-to-end tests
+
+Chromium runs with `--use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<fixture>.wav` and `MANYTHREADS_FAKE_ASR=1`; each person is a separate browser context.
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/meetings/room.spec.ts` | Nadia starts a room in `#dev`, Rafi joins, both speaking rings; no `audio-chunks` request |
+| `e2e/meetings/consent.spec.ts` | Rafi says "Not me" → his lines "(not transcribed)", notes never quote him |
+| `e2e/meetings/transcript-public.spec.ts` | room ends → `meetings/…/transcript.md` committed with both speakers, notes posted in the thread |
+| `e2e/meetings/transcript-private.spec.ts` | private channel → Files storage, not repo; Priya 403 |
+| `e2e/meetings/memory.spec.ts` | `Meeting` concept filed with sources; Add to board → card with owner; guest room held |
+| `e2e/meetings/kick.spec.ts` | Rafi removed from channel mid-call → dropped ≤ 5 s, rejoin refused |
+| `e2e/meetings/brain-recall.spec.ts` | ask Brain → citation opens transcript at the line |
+| `e2e/meetings/voice-message-in-room.spec.ts` | voice message in the room's thread → in the transcript at its time |
+| `e2e/api/meetings/guards.spec.ts` | bot media token refused, guest start refused, fallback 403 when off, recording consent |
+| `e2e/meetings/call-thread.spec.ts` | join → thread open in the right panel; message, file upload and a bot @mention in it → bot answers in the thread; Chat unread count; room's track list has no bot track; the thread stays after the call and the transcript links it |
+| `e2e/meetings/note-taker.spec.ts` | Nadia adds Note-taker, Rafi consents, Priya declines → transcript only in Nadia's My files; room ends → DM to Nadia with links; notes never quote Priya; Rafi 403 on the folder |
+| `e2e/meetings/note-taker-share.spec.ts` | Nadia shares with Rafi → Rafi reads; Save to team meeting notes → `meetings/…` committed and a `Meeting` concept filed |
+| `e2e/meetings/note-taker-question.spec.ts` | Rafi asks the bot by name (fixture audio) → answer in the room's thread with a caption; Priya's question (declined) → no answer |
+| `e2e/api/meetings/note-taker-guards.spec.ts` | a bot run cannot get a media token; declined track unsubscribed; answer refused when it needs a channel one participant cannot read |
+| `e2e/meetings/mobile-web.spec.ts` (`mobile-web`) | room as bottom sheet, captions above composer, no horizontal scroll |
+
+### 5 · Visual browser tests
+
+Own baselines, W: `meetings/call-bar`, `meetings/consent`, `meetings/folder`, `meetings/transcript`, `meetings/notes-card` at 1440 and 390; the speaking ring and the timer are `data-vt-mask`.
+
+### 6 · Exit
+
+Nadia and Rafi hold a stand-up in `#dev` with no audio leaving their devices; the transcript and notes land in `meetings/`, the Archivist files the meeting and its decisions into Engineering's memory, an action item becomes a card, Brain cites the transcript, and the same call in a private channel never reaches the repo or memory unasked. Then Nadia adds the note-taker to a design review: it answers Rafi's question in the thread during the call, Nadia gets the tidied notes in her own folder when it ends, shares them with Tariq, and saves them to Engineering's meeting notes, where they reach memory.
+
+---
+
+# Phase 16 · Connectors to the tools a company already uses
+
+Goal: mail, calendar, documents, tickets, CRM, code and chat products — Google Workspace, Microsoft 365, Jira, Linear, Zendesk, HubSpot, Salesforce, Notion, Confluence, Telegram, WhatsApp and the rest — are reachable by people and bots through the one MCP gateway without a bot holding a credential, their events start work here, and outside meetings land in the same `meetings/` folder. Size XL. D7, spec §11, §12.4, §13, §7.2. **Runs after phase 15**, before phase 9.
+
+**First-party or Activepieces (D7).** A connector is built here only when it needs something Activepieces (the connector service phase 8 starts per team) cannot give: a person-scoped grant (`person:*`), a sync into knowledge or memory, a trigger with dedupe, or a link to calendars and meetings. Everything else is an Activepieces piece in the same gallery.
+
+### 0 · Reflect and refactor
+
+Re-read phases 8 and 15. Prompts:
+- Phase 8 built Google, Microsoft and Notion person connections and the `ToolSource` seam. Is the OAuth flow written once, or once per provider? Extract one helper (authorization code with PKCE — a one-time proof that the sign-in came from this browser — incremental scopes, refresh rotation, revoke) before adding ten providers.
+- Is a connector's tool list data (one catalog entry) or code? Make the catalog the only list the gallery, the broker and the docs read.
+- Provider quotas: does each source have its own in-memory rate limit and back-off, or do all share one?
+
+Refactor with tests green; write `docs/retro/phase-16.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P16-01 | **Connector catalog** `shared/connectors/catalog.ts`: id, provider, auth kind (OAuth, app install, API key), scopes per tool, tools with destructive tags, triggers, sync targets, person or team scope; the **Add connection** screen is one gallery of first-party connectors and Activepieces pieces with search and categories (Mail · Calendar · Files · Tickets · CRM · Code · Chat · Finance · Design) | `shared/src/connectors`, `plugins/connections`, `clients/web` | §11 | Sonnet |
+| P16-02 | **One OAuth helper**: PKCE, incremental scopes, refresh rotation by job, revoke on disconnect, per-workspace OAuth app credentials an admin enters (a self-hosted company uses its own Google and Microsoft apps), connection health and a "Reconnect" prompt in the person's notifications | `plugins/connections/oauth` | §11, D5 | Sonnet |
+| P16-03 | **Google Workspace in depth**: Gmail (search, read, label, draft; send with approval; new mail in a label as a trigger), Calendar (events, free/busy, create and update with approval), Drive (search, read; Docs and Sheets exported as text into a knowledge base), **Meet transcript import** — a Meet recording's transcript lands in `meetings/` through P15-09's writer and reaches memory through P15-11 | `connections/google`, `plugins/meetings` | §11, §12.4, D7 | Sonnet |
+| P16-04 | **Microsoft 365 in depth**: Outlook mail and calendar (same tools and approvals as Google), OneDrive and SharePoint as knowledge sources, **Teams meeting transcript import** into `meetings/` the same way | `connections/microsoft`, `plugins/meetings` | §11, §12.4, D7 | Sonnet |
+| P16-05 | **Calendar and meetings.** "Schedule a room" from a channel creates a calendar event (the person's connected calendar) carrying the manythreads room link, attendees mapped to people by email; 5 minutes before, the attendees get a reminder with the link; the event's description becomes the room's agenda for the Scribe; the channel header shows "Design review at 15:00"; Brain answers "when are Nadia and I both free?" from the person's own grant | `plugins/meetings`, `connections/google`, `connections/microsoft` | D7, §11 | Sonnet |
+| P16-06 | **Work trackers**: Jira, Linear, GitHub Issues, Asana — a board card linked two ways to an outside issue (status and comments mirrored into the card's thread), "Create issue" on a message, rich link previews (P14-08) | `connections/trackers`, `plugins/tasks` | §11, §8 | Sonnet |
+| P16-07 | **Support and CRM**: Zendesk, Freshdesk, Intercom, HubSpot, Salesforce — a new ticket or conversation as a trigger for the support bots (P8-35), customer lookup inside an Answer card, every write behind `needsApproval` | `connections/support`, `connections/crm` | §11, §13 | Sonnet |
+| P16-08 | **Documents as knowledge**: Notion, Confluence, Google Drive, SharePoint, Dropbox, Box as `sources.yaml` entries with incremental sync; a document is indexed into a team base only if everyone on the team may read it at the source, otherwise it stays reachable only through each person's own grant | `plugins/knowledge`, `connections/*` | §12.4, §11 | Sonnet |
+| P16-09 | **Chat bridges (Hermes parity).** Reach a channel and your own assistant (P18-12) from Telegram, WhatsApp Business, Microsoft Teams and Slack (for the move-in period): a two-way bridge per channel (authorship shown as "via Telegram · Name"), and a DM to a bot from a phone number or account linked to a verified person; admin-enabled per workspace, on the egress allowlist, nothing from an unverified sender reaches a model | `plugins/bridges` | §11, §15 | Sonnet |
+| P16-10 | **Triggers from connectors**: provider webhooks verified by each provider's signature, deduped and replay-protected, normalised into the `webhook` trigger and task events; a "What started this run" card on every run they start | `plugins/webhooks`, `connections/*` | §7.2, §13 | Sonnet |
+| P16-11 | **Admin**: connector usage and health, scopes granted per person, and **offboarding** — a person who leaves loses every person connection and their team connections move to a lead | `clients/web/src/screens/admin`, `plugins/connections` | §11, §15 | Sonnet |
+| P16-12 | `tools/fake-saas` (stand-ins for Google, Microsoft, Jira, Zendesk and Telegram APIs over real sockets, like `tools/fake-llm`), seed v16, event contracts, one docs page per first-party connector | `tools/fake-saas`, `e2e/fixtures`, `docs/plugins` | guide §6 | Sonnet; Haiku |
+
+### 2 · UI references
+
+`[proto §10 plate 1 · Team connections]` and `[proto §10 plate 3 · A bot's Access tab]` stay the frame (P-loose); the gallery and the calendar link are W baselines. Copy: "Connected as nadia@kahf.co · Calendar, Mail (read)", "Reconnect Google — access expired", "Imported from Google Meet".
+
+### 3 · Acceptance criteria
+
+1. Connecting Google asks only for the scopes of the tools a person turned on; adding Calendar later asks for Calendar alone.
+2. A bot never sees a token; a revoked connection's next tool call fails closed and the person is asked to reconnect.
+3. A Meet transcript import lands in `meetings/` and is filed by the Archivist exactly like a native room.
+4. "Schedule a room" creates one calendar event with the link; the reminder arrives 5 minutes before.
+5. A Jira issue linked to a card mirrors status both ways without loops (one change gives one event each side).
+6. A Drive document readable by only two people is not in the team base; Brain answers from it only for those two, through their own grants.
+7. A Telegram message from an unlinked account reaches no model and no channel.
+8. Offboarding a person revokes all their person connections in one transaction and audits it.
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/connections/gallery.spec.ts` | search "calendar", connect fake Google, incremental scope |
+| `e2e/connections/meet-import.spec.ts` | fake Meet transcript → `meetings/` → `Meeting` concept |
+| `e2e/connections/schedule-room.spec.ts` | schedule from `#design`, fake calendar event, reminder at T-5 |
+| `e2e/connections/jira-sync.spec.ts`, `zendesk-trigger.spec.ts` | two-way status; ticket starts Support responder |
+| `e2e/api/connections/acl-sync.spec.ts`, `bridges.spec.ts`, `offboarding.spec.ts` | per-person document; unlinked Telegram refused; revoke all |
+
+### 5 · Visual browser tests
+
+Own baselines, W: `connections/gallery`, `connections/health`, `meetings/scheduled-header` at 1440 and 390.
+
+### 6 · Exit
+
+Nadia connects her own calendar and schedules a room from a channel, a Google Meet transcript is filed into memory like a native one, a Zendesk ticket starts the support bot, and offboarding revokes every grant of the person who left.
+
+---
+
+# Phase 17 · Video calls, screen sharing and the meeting assistant
+
+Goal: a voice room can turn on cameras and share a screen, a person outside the workspace can join by link through a waiting room, and the meeting has a helper that answers questions during the call, catches up late joiners and sends the follow-up. Size L. D7. **Runs after phase 9** (it uses surfaces for the review screen) and before phase 18.
+
+### 0 · Reflect and refactor
+
+Re-read phases 15 and 16. Prompts:
+- Video adds tracks, not rooms: does `provider.media` need anything but grants for camera and screen? Do not fork the room model.
+- The late-joiner summary reads the transcript so far: it must be the text that person may see. Reuse the visibility sets, never a new check.
+
+Refactor with tests green; write `docs/retro/phase-17.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P17-01 | **Video**: camera on/off, grid and speaker layouts, pin a person, up to 16 video tiles, simulcast (each camera sent at several qualities so each viewer gets what their connection can carry), picture-in-picture when the tab is left, a low-bandwidth switch to audio only; 390 px layout | `clients/web/src/meetings`, `media-livekit` | D7 | Sonnet |
+| P17-02 | **Screen sharing** with tab audio, one sharer at a time and "Ask to share"; a shared screen is never recorded unless recording is on (P15-15 rules) | `clients/web/src/meetings` | D7 | Sonnet |
+| P17-03 | **On-device video effects**: background blur and replace (a segmentation model in a worker, served from `/models/`), noise suppression; no video leaves the device unprocessed when an effect is on | `clients/web/src/meetings/effects` | D7 | Sonnet |
+| P17-04 | **Guest links and a waiting room**: a link for people outside the workspace; a member admits them; a link guest sees the call only — no channel, thread, transcript or notes; their voice is transcribed only on their own device with their consent; a meeting with a link guest is held for memory (`review: external`) | `plugins/meetings` | D7, §15, D6 | Sonnet |
+| P17-05 | **Scheduled and recurring meetings**: a series keeps one folder `meetings/series/<slug>/`; the agenda is a live page (P6-09) co-edited before the meeting; open action items from the last meeting of the series appear in the next agenda | `plugins/meetings`, `plugins/pages` | D7, §6.4 | Sonnet |
+| P17-06 | **The meeting assistant, live**: an **Ask** side panel (Brain answers from the transcript so far plus memory, posted into the room's thread; with a note-taker in the room the panel asks it, through P15-22's path and rules, rather than a second answerer); **Catch me up** for a late joiner (a summary of what was said before they joined, from text they may read); **Mark action item** captures the last 30 seconds; an end-of-meeting review (a surface, P9-08) where the participants confirm action items and owners before they are sent | `plugins/meetings`, `answer`, `surfaces` | D7, §12, §14 | Sonnet |
+| P17-07 | **Follow-ups**: a follow-up email to outside attendees drafted from the notes (`email.draft`; `email.send` through Approvals), the notes posted to the channel, cards created on confirmation | `plugins/meetings`, `connections/email` | §13, §7.3 | Sonnet |
+| P17-08 | **Read aloud**: answers and messages read aloud by the device's own speech synthesis; no server speech by default | `clients/web` | D7 | Sonnet |
+| P17-09 | **Video recording** (all-consent, Files storage, retention) and a player whose transcript scrolls with it; clicking a line seeks the video | `plugins/meetings`, `clients/web/src/viewers` | D7, §15 | Sonnet |
+| P17-10 | **Call quality**: a pre-join device and network check, a stats panel (bitrate, loss, round trip), TURN fallback proven in e2e, a load check of 50 audio and 16 video participants on one media node with CPU and bandwidth recorded in `docs/perf/meetings.md` | `clients/web`, `tools/bench`, `deploy` | D7 | Sonnet; Haiku |
+| P17-12 | **The note-taker in video meetings**: P15-18 to P15-24 unchanged in a room with cameras or a shared screen. The bot subscribes to audio only, never a camera or screen track, so video adds no load to the media worker. The transcript, the organizer's folder, the notes and DM, live questions and the organizer's share and save all work as in a voice room; the notes record who shared their screen and when. With video recording on (P17-09), the organizer's meeting folder links the recording, and the player's transcript is the bot's | `plugins/meetings`, `media-livekit` | D7 | Sonnet |
+| P17-11 | Seed v17, event contracts, docs updates | `e2e/fixtures`, `docs` | guide §6 | Sonnet |
+
+### 2 · UI references
+
+No plates; W baselines `meetings/video-grid`, `meetings/screen-share`, `meetings/waiting-room`, `meetings/ask-panel`, `meetings/review` at 1440 and 390 (video tiles masked). Copy: "Waiting for someone to let you in", "Catch me up · 12 minutes so far", "Confirm before sending: 3 action items, 1 email".
+
+### 3 · Acceptance criteria
+
+1. A link guest can join only after a member admits them and cannot open the channel, thread, transcript or notes by URL (403).
+2. Catch me up for Priya never contains a line from a person who declined transcription, and no text she may not read.
+3. The follow-up email is never sent without an approval card decided by a person.
+4. Background blur runs with no model request leaving the manythreads server.
+5. 50 audio and 16 video participants stay within the documented CPU and bandwidth budget.
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/meetings/video.spec.ts`, `screen-share.spec.ts` | fake camera tiles; one sharer; "Ask to share" |
+| `e2e/meetings/guest-link.spec.ts` | waiting room, admit, guest 403 on thread and transcript; memory held |
+| `e2e/meetings/assistant.spec.ts` | Ask panel answer in thread; Catch me up; review → cards and an approval for the email |
+| `e2e/meetings/note-taker-video.spec.ts` | video room with a shared screen and the note-taker → worker subscribes to audio tracks only; organizer's DM and notes as in phase 15; a question answered in the thread |
+| `e2e/meetings/turn-fallback.spec.ts` | UDP blocked → call connects over TURN 443 |
+
+### 5 · Visual browser tests
+
+The W baselines above; video and timers masked.
+
+### 6 · Exit
+
+Tariq holds a video design review with an outside guest admitted from the waiting room, Priya joins late and is caught up, and the follow-up email leaves only after Tariq approves it.
+
+---
+
+# Phase 18 · Workflow automation and a team that runs itself
+
+Goal: the repeated work of running a team — requests, approvals, stand-ups, digests, incidents, onboarding, follow-ups — runs through bots and routines a lead **describes in words**, and every person starts the day knowing what needs them. Size XL. Spec §7, §8, §9, §14, §20 (no pipeline designer). **Runs after phase 17**, before phase 10.
+
+**No pipeline designer (spec §20).** Every automation here is a routine (`routines/<slug>.yaml`) and, where needed, a bot or a rules bot (a bot whose steps are fixed and run with no model), proposed by the Workshop from a description, shown as readable steps and saved as a diff a lead approves (P7-01). Nothing is drawn as boxes and arrows.
+
+### 0 · Reflect and refactor
+
+Re-read phases 6, 7, 9 and 15–17. Prompts:
+- Can a routine plus the rules runtime say "when X, do Y, wait for an approval, then Z"? If not, add the missing steps (`wait_for_approval`, `branch_on`) to the rules runtime; never a second engine.
+- Stand-ups, digests and catch-ups all summarise "what this person may read since T". Write that query once, on the visibility sets.
+
+Refactor with tests green; write `docs/retro/phase-18.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P18-01 | **Recipe gallery**: about twenty ready automations, each a routine, a bot or rules bot and an eval set, installed as a proposal a lead approves — request intake, daily stand-up, weekly team digest, incident, new-joiner onboarding, customer escalation, release notes from merged pull requests, meeting prep, follow-up chaser, out-of-office handover, content calendar, invoice approval; "Describe your own" opens the Workshop | `templates/recipes`, `plugins/workshop` | §7, §9 | Sonnet |
+| P18-02 | **Request forms**: a channel form (FormFlow, P9-08) with typed fields; a submission becomes a board card with an owner chosen by rule (round robin over a role tag, or by a field), a service-level timer, and status updates to the requester in the card's thread (IT help, purchase, leave, content request) | `plugins/forms`, `plugins/tasks`, `surfaces` | §8, §14 | Sonnet |
+| P18-03 | **Approval chains**: sequential or parallel steps by role tag, thresholds (amount over N needs a second approver), delegation while out of office (P14-01), reminders and escalation by age, approve from a browser push or from email through a signed one-time link that asks for sign-in again for a destructive action | `plugins/approvals` | §7.3, §15 | Sonnet |
+| P18-04 | **Async stand-ups and check-ins**: a rhythm asks each member in a DM at their own working-hours start, skips people on Do not disturb or out of office, posts one digest to the channel, puts blockers on the board; an anonymous pulse survey option | `templates/recipes/standup`, `plugins/rhythms` | §6.5 | Sonnet |
+| P18-05 | **Catch me up**: a personal morning brief at the start of working hours (mentions, threads waiting on me, my approvals, my cards due, today's meetings with a prep note, my action items from meetings); "Summarise" on a channel or thread (Brain over what the person may read); "What did I miss" after out of office | `plugins/digest`, `answer` | §12 | Sonnet |
+| P18-06 | **Follow-up tracking, opt-in per person**: questions addressed to me with no reply after N hours, action items with my name from meetings, promised dates passing; nudges with snooze; never reads anyone else's DMs | `plugins/digest` | §12, §15 | Sonnet |
+| P18-07 | **Incidents**: `/incident <title>` opens `#inc-<date>-<slug>`, pages `@on-call`, starts a voice room, keeps a timeline from messages and the transcript, posts status updates on a cadence, drafts the postmortem page at close and files its action items on the board | `templates/recipes/incident` | §6, D7 | Sonnet |
+| P18-08 | **Onboarding and offboarding**: a per-team checklist in `TEAM.md`, a buddy, a first-week digest, Brain pinned for questions; offboarding reassigns cards and approvals, moves bot ownership and revokes connections (P16-11) | `plugins/teams`, `templates/recipes` | §5 | Sonnet |
+| P18-09 | **Answered before**: in a channel a lead marks as help, the composer suggests an earlier answer (memory, knowledge, a past thread the asker may read) before the question is posted; nothing is posted for them | `plugins/channels`, `answer` | §12 | Sonnet |
+| P18-10 | **Translation**: a preferred language per person; Translate on any message and transcript line (`fast` alias, or `local` under `air-gapped`); optional auto-translate per channel; right-to-left layout checked for Arabic and Urdu, Bangla script checked | `plugins/translate`, `clients/web` | §10.1 | Sonnet |
+| P18-11 | **Goals**: check-ins on the `goals` from P6-01, progress rolled up from cards, a weekly goal digest; Brain answers "are we on track for the Q4 goal?" with the cards it read | `plugins/tasks`, `answer` | §8 | Sonnet |
+| P18-12 | **Personal assistant (Hermes parity)**: each person may have their own bot in a DM with their own connections (mail, calendar), personal routines written in words ("every Monday at 9 summarise my unread mail"), reachable through bridges (P16-09). Its memory needs **owner decision D8** (below) | `templates/personal`, `plugins/bots` | §7, §11 | Sonnet |
+| P18-13 | **Automation analytics**: per recipe runs, failures, approval wait, declared minutes saved per run × runs, the top repeated questions; pages in the `analytics` plugin | `plugins/analytics` | §10.1 | Sonnet |
+| P18-14 | Seed v18, event contracts, docs per recipe with every YAML tested, eval sets | `e2e/fixtures`, `docs`, `templates` | guide §6 | Sonnet; Haiku |
+
+**D8 · open, needs the owner.** Spec §12 gives memory one bank per team, chosen by the gateway. A personal assistant needs memory that belongs to one person. Proposal: a person bank chosen by the gateway from the run's asker (never by the bot), readable only by that person's runs, never shared, never filed into a team. Until the owner says yes, P18-12 ships without memory of its own (it uses the person's connections and the teams' memory they can already read).
+
+### 2 · UI references
+
+No plates. W baselines: `recipes/gallery`, `forms/request`, `approvals/chain`, `digest/morning`, `incident/channel` at 1440 and 390. Copy: "Installs as a proposal. A lead approves it.", "3 things need you this morning".
+
+### 3 · Acceptance criteria
+
+1. Installing a recipe never changes `routines/` or `bots/` without an approved proposal.
+2. A leave request from Priya reaches the right approver by role tag, escalates after the set age, and goes to the delegate while that approver is out of office.
+3. The stand-up skips a person on Do not disturb and posts one digest; a blocker becomes a card.
+4. A morning brief contains nothing the person may not read (checked against Sameera and Lena).
+5. `/incident` creates the channel, pages exactly `@on-call` and starts a room; closing it drafts the postmortem with the timeline.
+6. Follow-up tracking is off until the person turns it on and never reads another person's DM.
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/recipes/install.spec.ts` | install stand-up → proposal → approve → routine committed |
+| `e2e/recipes/forms-approvals.spec.ts` | leave request → chain → escalation → delegate |
+| `e2e/recipes/standup.spec.ts`, `incident.spec.ts` | DM questions, digest, blocker card; incident channel, room, postmortem |
+| `e2e/recipes/digest.spec.ts` | Nadia's morning brief; Sameera's has no Engineering item |
+| `e2e/recipes/translate.spec.ts`, `answered-before.spec.ts` | Bangla translation; earlier thread suggested |
+
+### 5 · Visual browser tests
+
+The W baselines above.
+
+### 6 · Exit
+
+Omar installs the stand-up and incident recipes as proposals, Rafi runs an incident from `/incident` to postmortem, and every persona's morning brief is correct and contains nothing they may not read.
 
 ---
 
@@ -1662,6 +2133,18 @@ The older `DO UPDATE SET dm_key = EXCLUDED.dm_key` trick writes a dead row versi
 
 `app.deliver_inbox_item(link_id, bundle_manifest)` is the only way a row reaches another team's inbox: SECURITY DEFINER, checks the link is `accepted` and belongs to the caller's sending team with `coalesce(app.lookup_team_role(...), false)`.
 
+## A.11 · Phases 14–15 — chat parity and meetings
+
+| Table | Purpose | Key columns | Indexes | RLS | Persist |
+|---|---|---|---|---|---|
+| `person_status` | custom status, Do not disturb, working hours, out of office | `actor_id u` PK, `emoji t?`, `text t?`, `clears_at tz?`, `dnd_until tz?`, `dnd_schedule jsonb?`, `tz t`, `work_start t`, `work_end t`, `ooo_until tz?`, `delegate_id u?` | PK | workspace members read; owner writes | logged |
+| `reminders`, `saved_items`, `scheduled_messages` | Later, reminders and send later | `actor_id u`, `message_id u?`, `run_at tz`, `state t` CHECK | partial `(run_at) WHERE state = 'pending'`; FKs | owner only (scheduled: author) | logged |
+| `poll_votes` | one vote per person and option | `message_id u`, `actor_id u`, `option t` | PK `(message_id, actor_id, option)` | `app.visible_channel_ids('read')` | logged |
+| `meetings` | one voice or video room | `team_id u`, `channel_id u?`, `title t`, `state t` (`live`,`ended`), `started_by u`, `started_at tz`, `ended_at tz?`, `transcription t` (`on_device`,`server`,`off`), `recording bool`, `transcript_path t?`, `transcript_file_id u?` | partial unique `(channel_id) WHERE state = 'live'`; `(team_id, started_at DESC)` | `app.visible_channel_ids('read')` | logged |
+| `meeting_participants` | who was in it and what they allowed | `meeting_id u`, `actor_id u`, `joined_at tz`, `left_at tz?`, `consent_transcribe t`, `consent_record t` (`yes`,`no`,`unasked`) | `(meeting_id)`, `(actor_id)` | as `meetings` | logged |
+| `meeting_segments` | one line of text a device or the fallback wrote | `meeting_id u`, `speaker_id u`, `start_ms int`, `end_ms int`, `text t`, `final bool`, `source t` (`device`,`server`), `lang t?`, `created_at tz` | `(meeting_id, start_ms)`; BRIN `(created_at)` | as `meetings` | logged; pruned by retention after the transcript is written |
+| `meeting_presence` | who is in a live room now, speaking | `meeting_id u`, `actor_id u`, `speaking bool`, `seen_at tz` | PK `(meeting_id, actor_id)` | as `meetings` | **UNLOGGED** |
+
 ---
 
 # Appendix B · Zod schemas in `packages/shared`
@@ -1806,5 +2289,6 @@ Raised while writing this plan and decided by the coordinator. Spec v1.4.1 alrea
 | 14 | Office preview; failed `BOT.md` | Server-side conversion to PDF by an optional LibreOffice worker (phase 4, optional task P4-12). A `BOT.md` that fails to load shows a red banner and the previous version stays live (phase 5 criterion 2) |
 | 15 | Brain on mail | Opt-in per person (spec §20) |
 | 16 | Team memory format and cross-team sharing (spec v1.5.0) | D6: `memory/` is an OKF v0.2 bundle (writer-validated, platform-stamped provenance); every team has an inbox in Files that anyone on the team can drop into and an Archivist files; a share is `routines/shares/<slug>.yaml` (already guarded, no new guarded path) and sends a digest, itself an OKF bundle, into the destination's inbox after the destination accepts; send and accept use approvals source `grant`; `verified` does not travel; originals never leave; Memory Exchange stays dropped. Phase 5 builds the bundle, phase 8 the inbox and sharing |
+| 17 | Voice, video, meetings and connectors (owner, 2026-10-24) | D7: voice rooms with on-device transcripts filed into team memory through the inbox (phase 15); amended 2026-10-27: a note-taker bot can join a voice or video meeting, transcribe on the server into the organizer's own folder, tidy the notes and tell the organizer, who chooses to share them or save them to the team's notes and memory, and it answers questions put to it during the call (P15-18 to P15-24, P17-12); connectors where Activepieces lacks the depth (16), video and the meeting assistant (17), automations in words (18), chat parity and import (14). Spec §20's "voice/video" non-goal is lifted; the spec text is to be amended in its next version. Open: D8 (a person's own memory bank for the personal assistant) |
 
 ---
