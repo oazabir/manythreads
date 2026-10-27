@@ -5,6 +5,7 @@
 // body and settings in, renames the old chain (orchestrator, reviewer, browser-tester) to engineer, code-reviewer and web-smoke-tester,
 // and commits the lot as a workspace admin. TEAM.md follows the template too (its `dispatch` names the bot that answers first).
 //
+// TEMPLATE_PLACEMENT=1 keeps the template's placement (the team's managed Hermes pod) instead of the team's own.
 //   DEMO_BASE=https://manythreads.kahf.to DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/sync-engineering-bots.mjs <team> [--dry]
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -68,7 +69,9 @@ const note = [];
 const botDirs = readdirSync(join(root, 'bots'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
 const oldOf = Object.fromEntries(Object.entries(RENAMED).map(([o, n]) => [n, o]));
 
-for (const slug of botDirs) {
+/** Only the chain moves; Brain, Alert triage and Standup relay keep the team's own copies. */
+const CHAIN = new Set(['engineer', 'plan-reviewer', 'coder', 'code-reviewer', 'tester', 'deployer', 'web-smoke-tester']);
+for (const slug of botDirs.filter((d) => CHAIN.has(d))) {
   const dir = join(root, 'bots', slug);
   const files = [join('BOT.md')];
   if (existsSync(join(dir, 'evals'))) for (const f of readdirSync(join(dir, 'evals'))) files.push(join('evals', f));
@@ -80,7 +83,7 @@ for (const slug of botDirs) {
       // The team's own placement wins: the template ships the managed pod, a team may run on the host gateway or the Claude bridge.
       const source = current ?? (oldOf[slug] ? await blob(`bots/${oldOf[slug]}/BOT.md`) : null);
       const placement = source ? PLACEMENT.exec(source.content)?.[0] : undefined;
-      if (placement) {
+      if (placement && process.env['TEMPLATE_PLACEMENT'] !== '1') {
         const fixed = oldOf[slug] ? placement.split(`d-${oldOf[slug]}`).join(`d-${slug}`) : placement;
         content = content.replace(PLACEMENT, fixed);
       }

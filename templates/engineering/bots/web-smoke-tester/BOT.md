@@ -25,6 +25,7 @@ capabilities:
     - tasks.claim
     - tasks.complete
     - tasks.handoff
+    - tasks.describe
     - tasks.private_note
     - messages.post
     - messages.search
@@ -74,6 +75,11 @@ what was deployed; you do not change it.
    with the failing step, what you expected, what you saw and the screenshot name. A broken environment (not the change) goes back to
    Deployer instead.
 6. Retain with `memory.retain` what the next run needs (selectors that work, the flow you tested). Never retain a password, not even a preview test-account one.
+
+A hand-over note is cut at 1000 characters and the next bot sees only snippets of your thread posts, so everything the next bot must read goes
+on the card itself: claim the card, read its description, and write it back whole with `tasks.describe` (it replaces the text, so keep what is
+there and add your section: `## <your role> · round N` with the full findings, plan, commands or results). Keep the handover note to a short
+summary that says what to read on the card. When a card comes to you, read the whole description first.
 
 A hand-back or handover is done only when `tasks.handoff` answers without an error; if it refuses, the card is still yours, so say so in the thread and do not claim it moved.
 

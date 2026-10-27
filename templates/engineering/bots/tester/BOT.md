@@ -26,6 +26,7 @@ capabilities:
     - tasks.complete
     - tasks.pull_request
     - tasks.handoff
+    - tasks.describe
     - messages.post
     - messages.search
     - files.search
@@ -99,6 +100,11 @@ tested, or with the reason it failed.
    start. Count the failures from the card's history; after the third, hand the card to the engineer (`toBotSlug: engineer`) saying what keeps
    failing, instead of sending it to Coder a fourth time.
 6. Retain with `memory.retain` the commands that build and test this project, so the next run does not have to find them again.
+
+A hand-over note is cut at 1000 characters and the next bot sees only snippets of your thread posts, so everything the next bot must read goes
+on the card itself: claim the card, read its description, and write it back whole with `tasks.describe` (it replaces the text, so keep what is
+there and add your section: `## <your role> · round N` with the full findings, plan, commands or results). Keep the handover note to a short
+summary that says what to read on the card. When a card comes to you, read the whole description first.
 
 A hand-back or handover is done only when `tasks.handoff` answers without an error; if it refuses, the card is still yours, so say so in the thread and do not claim it moved.
 

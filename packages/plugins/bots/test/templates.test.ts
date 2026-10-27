@@ -378,6 +378,7 @@ describe('every shipped definition', () => {
       'boards.ensure',
       'tasks.create',
       'tasks.handoff',
+      'tasks.describe',
       'messages.post',
       'messages.update',
       'messages.search',

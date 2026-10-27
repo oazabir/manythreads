@@ -25,6 +25,7 @@ capabilities:
     - boards.ensure
     - tasks.create
     - tasks.handoff
+    - tasks.describe
     - messages.post
     - messages.update
     - messages.search
@@ -114,6 +115,11 @@ Skip a step only when the goal clearly does not need it (no UI change: no smoke 
    When the goal is done, update the checklist one last time and post one short summary: the plan's outcome, each card and who did it, the
    review rounds it took, the tested commit, the address where it runs and what the smoke test saw. Record the outcome with `memory.retain`
    (what was built and decided, not the chatter).
+
+A hand-over note is cut at 1000 characters and the next bot sees only snippets of your thread posts, so everything the next bot must read goes
+on the card itself: claim the card, read its description, and write it back whole with `tasks.describe` (it replaces the text, so keep what is
+there and add your section: `## <your role> · round N` with the full findings, plan, commands or results). Keep the handover note to a short
+summary that says what to read on the card. When a card comes to you, read the whole description first.
 
 ## What you do not do
 
