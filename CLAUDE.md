@@ -4,7 +4,7 @@
 (`@manythreads/*`), env vars (`MANYTHREADS_*`), DB roles (`manythreads_*`), docs, UI copy, commits.**
 
 manythreads is a self-hosted team collaboration platform (channels, threads, bots, Brain).
-Build plan: `PLAN.md` (13 phases, binding decisions D1–D4 in its §3).
+Build plan: `PLAN.md` (18 phases run in the order of its §7 Order column, not by number; binding decisions D1–D7 in its §3).
 Contract: `docs/spec/SPEC-FINAL.md` v1.5.0. Operating model: `docs/spec/IMPLEMENTATION-GUIDE.md`.
 Look and copy: `docs/spec/mockups-all.html` (huge — never read it whole; grep the section id:
 onboarding app teams bots botgeneric setup workshop email surfaces connections cabinet brain).
@@ -94,9 +94,13 @@ deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md
 - Commit messages start with the task id, e.g. `P1-03: migration runner`.
 
 ## Forbidden (spec §20 non-goals)
-Pipeline designer; bot "mode" field; a second agent runtime (Hermes only); Kubernetes CRDs of our own;
+Voice and video are no longer forbidden: the owner lifted that non-goal on 2026-10-24 (PLAN.md D7 — on-device transcription first, phases 14–18;
+amended 2026-10-27: a note-taker bot may listen to a call and transcribe on the server, but a bot never speaks in a call).
+Bots run on Hermes (a customer's own gateway, or the team's managed Hermes pod) or, by owner request, on the Claude Code / Codex CLI
+through `tools/agent-bridge`; every bot calls the one MCP address `https://<host>/mcp`. No other agent runtime.
+Pipeline designer; bot "mode" field; any agent runtime beyond the above; Kubernetes CRDs of our own;
 attachments committed to git; a bot choosing its own memory bank; run-time loading of third-party JS
-client plugins; voice/video; E2E encryption; plugin marketplace with payments; browser extension.
+client plugins; E2E encryption; plugin marketplace with payments; browser extension.
 
 ## Commands
 ```
@@ -143,8 +147,8 @@ release. Never install or run Playwright on a GitHub runner: its image has no Ch
 - A plugin doc page opens by saying what the plugin is and what a reader needs in order to use it, not by naming its phase.
 
 ## Sidebar contract (every client, every team)
-Files (10) · Boards (20) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) ·
-Bots (50). The Bots header opens the team's bot roster at `/t/<team>/bots`; a row opens the bot's page
+Files (10) · Boards (20) · Org chart (23) · Rhythms (26) · Threads (30) · Approvals (35) · channel groups (40) ·
+Direct messages (45) · Bots (50) (`clients/web/src/shell/nav.ts`). The Bots header opens the team's bot roster at `/t/<team>/bots`; a row opens the bot's page
 (`/t/:team/bots/:botSlug`, the fourteen SPEC §7.2 tabs). The roster and page read the bots plugin's
 `GET …/bots[/:botSlug]`; the definition is `bots/<slug>/BOT.md` in the team repo (read via `repo/blob`, saved via
 `repo/commit` with `baseBlobSha`) — the team's lead and a workspace admin write an existing bot directly (a non-lead member is offered the file instead of Save); only an admin adds or removes a bot. The repo writer refuses the rest with 403.
@@ -169,6 +173,13 @@ Bots (50). The Bots header opens the team's bot roster at `/t/<team>/bots`; a ro
   Phase exit: merge PR to main, with title "Phase N · <name>" — `release.yml` runs on that merge:
   it tags `phase-N` + `v0.N.0` (the sandbox cannot push tags: 403), and the `ci` workflow of the same push builds,
   tests and deploys it. `ops-*` workflows; `docs/deploy.md`.
-  Read Actions results with GitHub MCP tools (`mcp__github__actions_list`, `get_job_logs`, tail ≤ 150).
+  Read Actions results with GitHub MCP tools (`mcp__github__actions_list`, `get_job_logs`, tail ≤ 150). Every run's full log is also
+  kept on the devbox in `/root/ci-logs/<time>-<sha>.log` (last 20); the run status and step timings are public on the GitHub API.
+- **CI shares the devbox's dev Postgres (55432).** Run no vitest/playwright there while a pipeline runs:
+  `pgrep -fx 'bash tools/devbox/ci.sh.*'` (a plain `pgrep -f tools/devbox/ci.sh` matches its own shell). Overlapping runs fail CI.
+- **Disk is the devbox's tightest resource (77 GB).** At ~90% the kubelet evicts the live database and the team pods and deletes
+  images; deploys drop Docker's copies of images k3s holds. After a deploy check `kubectl get pods -n manythreads-bots`, not only `/readyz`.
+- Team bot definitions (`bots/<slug>/BOT.md`) are copies made from `templates/` when a team is created: a template fix does not reach an
+  existing team until it is copied in by a repo commit (keep the team's own `placement` lines).
 - The devbox has two checkouts: `/root/manythreads` (the Windows dev loop's, `Sync-Up.ps1`) and `/root/ci` (the
   pipeline's scratch copy, rewritten by every CI run). Never rsync over the first while another agent works in it.
