@@ -35,6 +35,19 @@ const input = (over: Partial<GatewayProfileInput> = {}): GatewayProfileInput => 
 });
 
 describe('renderGatewayProfile', () => {
+  it('the config changes when a granted native tool changes, so the pod restarts the gateway that listed its tools once', () => {
+    const base = renderGatewayProfile(definition(), input())['config.yaml'];
+    const parsed = parseBotMd(`---\n${FRONTMATTER.replace('native: [messages.*]', 'native: [messages.*, tasks.describe]')}---\n${BODY}\n`);
+    if (!parsed.ok) throw new Error(parsed.failure.message);
+    const more = renderGatewayProfile({ frontmatter: parsed.frontmatter, body: parsed.body }, input())['config.yaml'];
+    expect(more).not.toBe(base);
+    expect(base).toMatch(/^# manythreads tools: [0-9a-f]{8}$/m);
+    // the same grants in another order are the same file
+    const reordered = parseBotMd(`---\n${FRONTMATTER.replace('native: [messages.*]', 'native: [tasks.describe, messages.*]')}---\n${BODY}\n`);
+    if (!reordered.ok) throw new Error(reordered.failure.message);
+    expect(renderGatewayProfile({ frontmatter: reordered.frontmatter, body: reordered.body }, input())['config.yaml']).toBe(more);
+  });
+
   it('writes the BOT.md body as SOUL.md and lists the .env variables without values', () => {
     const files = renderGatewayProfile(definition(), input());
     expect(files['SOUL.md']).toBe(`${BODY}\n`);
