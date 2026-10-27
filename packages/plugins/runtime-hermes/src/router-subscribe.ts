@@ -14,6 +14,7 @@ import {
   type BotTrigger,
 } from '@manythreads/shared';
 import { buildPrompt, matchTrigger, MAX_DELEGATION_DEPTH, mayTagSlugs, mentionedHandles, type MessageView, type ProjectNote } from './match.ts';
+import { registerRhythmRouter } from './router-rhythms.ts';
 import { registerTaskRouter } from './router-tasks.ts';
 import { RUN_QUEUE, RunPayload } from './run-job.ts';
 
@@ -85,6 +86,7 @@ async function projectOfChannel(tx: PluginTx, channelId: string): Promise<Projec
 /** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
 export function registerRouter(ctx: PluginContext): void {
   registerTaskRouter(ctx);
+  registerRhythmRouter(ctx);
   ctx.events.subscribe('channel.message.posted', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ChannelMessagePostedEvent.parse(raw);
     const message = (

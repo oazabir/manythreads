@@ -9,7 +9,11 @@ export const RoutineContract = z.object({
   name: z.string().min(1).max(80),
   prompt: z.string().min(1).max(20_000).optional(),
   output: z.object({
-    page: z.string().regex(/^pages\//, 'the output page lives under pages/'),
+    page: z
+      .string()
+      .max(300, 'the output page path is at most 300 characters')
+      .regex(/^pages\//, 'the output page lives under pages/')
+      .refine((p) => !p.split('/').some((seg) => seg === '..' || seg === '.' || seg === ''), 'the output page path must not contain empty, . or .. parts'),
     mode: z.enum(['create', 'replace', 'append']).default('replace'),
   }),
 });
@@ -50,7 +54,8 @@ async function routineContract(ctx: PluginContext, tx: PluginTx, rhythm: RhythmR
 
 /**
  * File one run of `rhythm`. A routine is checked against its contract first: a bad one is a `failed` run with the reason (the screen says
- * why) and nothing is queued for a runtime. A `task` rhythm creates its card; a heartbeat just queues. The run row and its event are written
+ * why) and nothing is queued for a runtime. A `task` rhythm creates its card; a heartbeat just queues. A queued run carries what the runtime
+ * needs to start the bot (see `RhythmsRhythmRanEvent`); `runtime-hermes` picks it up from the event. The run row and its event are written
  * in the caller's transaction, so a crash cannot leave a queued run unrecorded.
  */
 export async function startRhythmRun(ctx: PluginContext, tx: PluginTx, rhythm: RhythmRow, now: Date = new Date()): Promise<StartResult> {
@@ -58,10 +63,11 @@ export async function startRhythmRun(ctx: PluginContext, tx: PluginTx, rhythm: R
   let reason = '';
   let outputPath: string | null = rhythm.output_path ?? null;
   let taskId: string | null = null;
+  let contract: RoutineContract | null = null;
 
   if (rhythm.kind === 'routine') {
     try {
-      const contract = await routineContract(ctx, tx, rhythm);
+      contract = await routineContract(ctx, tx, rhythm);
       outputPath = rhythm.output_path ?? contract.output.page;
     } catch (err) {
       status = 'failed';
@@ -97,6 +103,12 @@ export async function startRhythmRun(ctx: PluginContext, tx: PluginTx, rhythm: R
       outputPath,
       taskId,
       reason,
+      rhythmName: rhythm.name,
+      // What the runtime needs to start the bot: the contract's own words and output mode (a failed contract never starts one).
+      prompt: status === 'queued' ? (contract?.prompt ?? '') : '',
+      outputMode: status === 'queued' && contract ? contract.output.mode : null,
+      modelAlias: rhythm.model_alias,
+      effort: rhythm.effort,
     }),
   );
   return { run: row, outPath: outputPath };

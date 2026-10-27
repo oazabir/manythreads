@@ -60,7 +60,7 @@ export async function postFailureNotice(
     await tx.query('SAVEPOINT run_failure_notice');
     const said = await tx.query(
       `SELECT 1 FROM app.messages
-        WHERE channel_id = $1::uuid AND thread_root_id = $2::uuid AND meta ? 'runFailure' AND meta ->> 'runId' = $3::text AND deleted_at IS NULL
+        WHERE channel_id = $1::uuid AND thread_root_id IS NOT DISTINCT FROM $2::uuid AND meta ? 'runFailure' AND meta ->> 'runId' = $3::text AND deleted_at IS NULL
         LIMIT 1`,
       [payload.channelId, payload.replyRootId, run.runId],
     );

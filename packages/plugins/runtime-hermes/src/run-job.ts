@@ -25,6 +25,7 @@ import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, looksLikeRejectedKey, postFailureNotice, type FailureCategory } from './failure-notice.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
+import { rhythmOverrideProblem, applyRhythmOverrides, emitRhythmFinished, emitRhythmStarted, finishRhythmRun } from './rhythm-run.ts';
 
 /** The job queue one run executes in. */
 export const RUN_QUEUE = 'runtime-hermes.run';
@@ -38,10 +39,13 @@ export const RunPayload = z.strictObject({
   botId: z.uuid(),
   teamId: z.uuid(),
   channelId: z.uuid(),
-  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned']),
+  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned', 'routine']),
   askerActorId: z.uuid().nullable(),
-  /** Where the reply goes: the thread root when the message is inside one, else the message itself (the reply opens the thread). */
-  replyRootId: z.uuid(),
+  /**
+   * Where the reply goes: the thread root when the message is inside one, else the message itself (the reply opens the thread). Null for a run
+   * a schedule started: it has no thread, so what it posts goes at the top of `channelId`.
+   */
+  replyRootId: z.uuid().nullable(),
   /** The run's `thread_id`: the thread the message is in, when there is one (`bot_runs.thread_id` references `app.threads`). */
   runThreadId: z.uuid().nullable(),
   prompt: z.string().min(1).max(40_000),
@@ -59,6 +63,20 @@ export const RunPayload = z.strictObject({
    * thread already is. Absent (or 0 on the row) when a person asked.
    */
   delegation: z.strictObject({ fromBotId: z.uuid(), depth: z.number().int().min(1).max(MAX_DELEGATION_DEPTH) }).optional(),
+  /**
+   * Set when this run is the firing of a rhythm (a `routine` trigger, PLAN P6-08): which firing it settles, the page a routine's reply is
+   * written to and how, and the rhythm's own model alias and effort. `rhythms` owns the ledger; the run only reports back with events.
+   */
+  rhythm: z
+    .strictObject({
+      rhythmRunId: z.uuid(),
+      kind: z.enum(['heartbeat', 'routine', 'task']),
+      outputPath: z.string().min(1).max(300).nullable(),
+      outputMode: z.enum(['create', 'replace', 'append']).nullable(),
+      modelAlias: z.string().min(1).max(40).nullable(),
+      effort: z.enum(['low', 'medium', 'high']).nullable(),
+    })
+    .optional(),
   /** Marks the payload stored with a gate hold, so that approving it resumes the run past the gate (not past the DLP check). */
   gateHold: z.literal(true).optional(),
 });
@@ -141,6 +159,8 @@ export async function reportFailure(input: {
       log.warn(`runtime-hermes: run ${run.runId}: the gateway could not be asked to re-check the bot's key: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  // A scheduled run has no one waiting for an answer; the reason lives on its firing in the rhythms ledger.
+  if (payload.rhythm) return;
   // A run that already put a live message into its reply thread did the work; a notice under it would contradict it (a run stopped at its
   // time limit after posting its result, say). Same thread restriction as the reply check in `postReply`.
   if (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId)) {
@@ -449,10 +469,10 @@ export async function postReply(input: {
  * (a failure notice does not count; a post into another thread or channel leaves the asker's thread unanswered). `meta.runId` is written by the platform alone: the `messages` provider and the `messages.post` tool set it
  * from the transaction's own run, and no argument can.
  */
-async function runPostedReply(tx: PluginTx, runId: string, channelId: string, replyRootId: string): Promise<boolean> {
+async function runPostedReply(tx: PluginTx, runId: string, channelId: string, replyRootId: string | null): Promise<boolean> {
   const res = await tx.query(
     `SELECT 1 FROM app.messages
-      WHERE channel_id = $1::uuid AND (thread_root_id = $3::uuid OR id = $3::uuid)
+      WHERE channel_id = $1::uuid AND (thread_root_id IS NOT DISTINCT FROM $3::uuid OR id = $3::uuid)
         AND meta ->> 'runId' = $2::text AND deleted_at IS NULL AND NOT (meta ? 'runFailure')
       LIMIT 1`,
     [channelId, runId, replyRootId],
@@ -520,6 +540,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
       let opened: BotRunHandle | undefined;
       let handle: BotRuntimeHandle | undefined;
       let approvers: readonly string[] = [];
+      let rhythmSettled = false;
       try {
         // 1. Read, open the run, gate, pre-call check (one short transaction).
         const result = await job.transaction(async (tx): Promise<PreparedRun | null> => {
@@ -540,6 +561,15 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           }
           const definition = await loadDefinition(ctx, tx, bot, job.log);
           if (!definition) return null;
+          if (payload.rhythm) {
+            const problem = rhythmOverrideProblem(definition, payload.rhythm);
+            if (problem !== null) {
+              rhythmSettled = true;
+              await emitRhythmFinished(ctx, tx, payload, { runId: null, status: 'failed', reason: problem });
+              return null;
+            }
+            applyRhythmOverrides(definition, payload.rhythm);
+          }
           const { frontmatter, alias, holdOnDetection } = definition;
           approvers = definition.approvers;
 
@@ -570,6 +600,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           }
           const { run, token } = openedRun;
           opened = run;
+          await emitRhythmStarted(ctx, tx, payload, run);
 
           if ((await checkGate({ ctx, tx, log: job.log, provider, definition, payload, run, bot })) === 'stop') return null;
 
@@ -594,7 +625,15 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           });
           return { bot, provider, run, input, scope };
         });
-        if (!result) return;
+        if (!result) {
+          // A scheduled run that never opened (the bot went inactive, its definition moved on, no runtime is loaded) must not leave its firing queued.
+          if (payload.rhythm && !opened && !rhythmSettled) {
+            await job.transaction((tx) =>
+              emitRhythmFinished(ctx, tx, payload, { runId: null, status: 'failed', reason: 'The run could not start: the bot is not active, its definition has changed, or no runtime is loaded for it.' }),
+            );
+          }
+          return;
+        }
         prepared = result;
         const { bot, provider, run, input, scope } = prepared;
 
@@ -624,9 +663,22 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         await handle.stop();
 
         // 3. Post the reply and close the run (one short transaction).
+        if (payload.rhythm) {
+          await job.transaction((tx) => finishRhythmRun({ ctx, tx, log: job.log, run, payload, scope, reply, ok }));
+          return;
+        }
         await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure } }));
       } catch (err) {
-        if (!opened) throw err; // nothing started: let the queue retry
+        if (!opened) {
+          // Nothing started: let the queue retry. A scheduled run that keeps failing before it opens (a missing BOT.md, no repo) settles its firing
+          // on the third attempt, with the reason, instead of leaving it queued.
+          if (payload.rhythm && job.attempt >= 3) {
+            await job
+              .transaction((tx) => emitRhythmFinished(ctx, tx, payload, { runId: null, status: 'failed', reason: `The run could not be set up: ${err instanceof Error ? err.message : 'unknown error'}` }))
+              .catch(() => undefined);
+          }
+          throw err;
+        }
         const run = opened;
         if (err instanceof ApprovalPending) {
           job.log.info(`runtime-hermes: run ${run.runId} stopped: "${err.capability}" is waiting for an approval`);
@@ -638,6 +690,11 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         // letting the job retry (which would re-ask the model and post a second answer).
         job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);
         await handle?.stop().catch(() => undefined);
+        if (payload.rhythm) {
+          await job
+            .transaction((tx) => emitRhythmFinished(ctx, tx, payload, { runId: run.runId, status: 'failed', reason: 'The run stopped with an error before it finished.' }))
+            .catch(() => undefined);
+        }
         await job
           .transaction(async (tx) => {
             const waiting = await ctx.providers.get<ApprovalProvider>('approvals')?.pendingForRun(tx, run.runId).catch(() => 0);

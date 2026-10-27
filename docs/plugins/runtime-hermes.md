@@ -84,6 +84,14 @@ The run's prompt is one line of context and the message: `Nadia in #dev:\n\n@cod
 which has no name, `Nadia:\n\nWhat is blocking the release?`). Behaviour is `SOUL.md`'s
 job, never a prompt template's.
 
+### The `routine` trigger (schedules)
+
+A rhythm's firing (the `rhythms` plugin files it and announces `rhythms.rhythm.ran`) starts the bot through `src/router-rhythms.ts`: one run per
+firing, trigger `routine`, no asker. The bot must be active and list a `routine` trigger; otherwise the firing is settled failed with a plain
+reason. The run has no thread, so its output goes at the top of the team's first public channel the bot may post in; a routine's reply is written
+to the contract's page with `pages.write` and a "wrote <page> · diff" line follows (`src/rhythm-run.ts`). The runtime reports back with
+`runtime.rhythm.started` and `runtime.rhythm.finished`; see [rhythms.md](./rhythms.md).
+
 ## The profile
 
 `render` is pure, so a definition's profile can be asserted in a test instead of inspected in a container. A profile is a

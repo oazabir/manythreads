@@ -73,6 +73,60 @@
     "reason": {
       "type": "string",
       "maxLength": 500
+    },
+    "rhythmName": {
+      "default": "",
+      "type": "string",
+      "maxLength": 80
+    },
+    "prompt": {
+      "default": "",
+      "type": "string",
+      "maxLength": 20000
+    },
+    "outputMode": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "create",
+            "replace",
+            "append"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "modelAlias": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 40
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "effort": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [
@@ -87,7 +141,12 @@
     "status",
     "outputPath",
     "taskId",
-    "reason"
+    "reason",
+    "rhythmName",
+    "prompt",
+    "outputMode",
+    "modelAlias",
+    "effort"
   ],
   "additionalProperties": false
 }

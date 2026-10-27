@@ -51,6 +51,8 @@ import { LlmGuardDecidedEvent } from './llm.guard.decided.ts';
 import { GuardrailsDlpDecidedEvent } from './guardrails.dlp.decided.ts';
 import { GuardrailsEgressDecidedEvent } from './guardrails.egress.decided.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
+import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
+import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
 import { RuntimeTaskNotWokenEvent } from './runtime.task.not_woken.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
@@ -124,6 +126,8 @@ export const eventRegistry = {
   'guardrails.egress.decided': { 1: GuardrailsEgressDecidedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
+  'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },
+  'runtime.rhythm.finished': { 1: RuntimeRhythmFinishedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
