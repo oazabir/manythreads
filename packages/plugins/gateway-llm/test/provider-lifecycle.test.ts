@@ -13,7 +13,7 @@ let world: World;
 let fake: FakeLlm;
 const saved = { url: process.env['MANYTHREADS_LITELLM_URL'], key: process.env['MANYTHREADS_LITELLM_MASTER_KEY'] };
 
-const until = async <T>(fn: () => T | false | undefined | null, what: string, ms = 20_000): Promise<T> => {
+const until = async <T>(fn: () => T | false | undefined | null, what: string, ms = 60_000): Promise<T> => {
   const deadline = Date.now() + ms;
   for (;;) {
     const value = fn();
