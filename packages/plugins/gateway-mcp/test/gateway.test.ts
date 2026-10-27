@@ -323,7 +323,8 @@ describe('gateway-mcp endpoint', () => {
         await n('SELECT count(*)::int AS n FROM app.events WHERE payload::text ILIKE $1'),
         await n('SELECT count(*)::int AS n FROM app.task_events WHERE data::text ILIKE $1'),
         await n('SELECT count(*)::int AS n FROM app.handoffs WHERE note ILIKE $1'),
-        await n('SELECT count(*)::int AS n FROM app.secrets WHERE convert_from(ciphertext, \'LATIN1\') ILIKE $1'),
+        // a byte search: decoding random ciphertext as text fails whenever it holds a 0x00 byte
+        await n('SELECT count(*)::int AS n FROM app.secrets WHERE position(convert_to(trim(both \'%\' from $1), \'UTF8\') in ciphertext) > 0'),
       ];
     });
     expect(leaks).toEqual([0, 0, 0, 0, 0]);

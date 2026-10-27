@@ -40,7 +40,10 @@
         "completed",
         "reworked",
         "deployed",
-        "not_woken"
+        "not_woken",
+        "pull_request_opened",
+        "pull_request_closed",
+        "described"
       ]
     },
     "data": {

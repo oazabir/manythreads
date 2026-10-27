@@ -40,6 +40,11 @@ export const Project = z.object({
   /** The team channel this project is worked on in; null until one is chosen. At most one project per channel. */
   channelId: ChannelId.nullable(),
   createdBy: ActorId.nullable(),
+  /**
+   * When a GitHub token for publishing was set, or null when none is. The token itself is never in a response and never in the database: it lives
+   * in a Kubernetes Secret of the team's pod, readable by one Unix user there.
+   */
+  pushCredentialSetAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

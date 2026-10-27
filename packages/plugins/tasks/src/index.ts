@@ -1,7 +1,9 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerCapabilities } from './capabilities.ts';
+import { registerTurnCapabilities } from './capabilities-turns.ts';
 import { registerApprovalSubscriber, registerNotWokenSubscriber } from './events.ts';
 import { registerJobs } from './jobs.ts';
+import { registerPullRequestSync } from './pull-requests.ts';
 import { registerRoutes } from './routes.ts';
 
 export { CLAIM_SWEEP_QUEUE } from './jobs.ts';
@@ -27,21 +29,26 @@ export default definePlugin({
       { name: 'boards.ensure', destructive: false },
       { name: 'tasks.claim', destructive: false },
       { name: 'tasks.complete', destructive: false },
+      { name: 'tasks.release', destructive: false },
+      { name: 'tasks.describe', destructive: false },
       { name: 'tasks.handoff', destructive: false },
       { name: 'tasks.private_note', destructive: false },
+      { name: 'tasks.pull_request', destructive: false },
       { name: 'tasks.deploy', destructive: false },
     ],
     events: {
       emits: ['tasks.board.created', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
       consumes: ['approvals.approval.decided', 'runtime.task.not_woken'],
     },
-    dependsOn: ['approvals', 'channels'],
+    dependsOn: ['approvals', 'channels', 'projects'],
     migrations: 'migrations',
   },
   register(ctx) {
     registerRoutes(ctx);
     registerCapabilities(ctx);
+    registerTurnCapabilities(ctx);
     registerJobs(ctx);
+    registerPullRequestSync(ctx);
     registerApprovalSubscriber(ctx);
     registerNotWokenSubscriber(ctx);
   },

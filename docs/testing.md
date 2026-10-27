@@ -190,3 +190,21 @@ that already has a workspace (`createPersonas`) prints nothing.
 `s.mailer` is `createMemoryMailer()`: `s.mailer.last('nadia@kahf.example')?.text` holds the reset or verify link
 (`<publicUrl>/reset-password/<token>`, `<publicUrl>/verify-email/<token>`). In development mail goes to mailpit
 (`MANYTHREADS_SMTP_URL=smtp://localhost:1025`, UI on :8025).
+
+## The counting benchmark with real bots (`tools/bench/counting-hermes`)
+
+Twenty bots share one card; each claims it, adds one line to its description and releases it, and the log must read 1 to 20 with no
+gap, duplicate or second owner (spec §8). The version with no model is `packages/plugins/tasks/test/counting.test.ts`
+(`pnpm test:runtime-rules`). The version with real models runs against a live site:
+
+```
+MANYTHREADS_LIVE_PASSWORD=... pnpm --filter @manythreads/tools-bench bench:counting:hermes -- [--dry-run] [--url …] [--alias fast] [--timeout 600] [--keep]
+```
+
+It signs in as a workspace admin (`MANYTHREADS_LIVE_EMAIL`, default omar@kahf.example), creates or reuses the team `counting-bench`, commits
+`bots/counter-01 … counter-20/BOT.md` (managed placement, the `fast` alias, four tools: `tasks.read`, `tasks.claim`, `tasks.describe`,
+`tasks.release`), waits until the team's Hermes pod knows all twenty profiles, makes a fresh card, wakes every bot with one message that
+mentions them all, polls the card, checks the log and the card's history, writes `docs/perf/counting-hermes.md`, and archives the team so
+the pod scales to zero. `--dry-run` signs in and reads only. The live site must already run a build that has `tasks.release` and
+`tasks.describe`. Runs of different bots go side by side only up to `MANYTHREADS_RUN_CONCURRENCY` (6 by default), so with twenty bots the
+wall time is several model rounds long, not the spec's 60 s for the no-model variant.

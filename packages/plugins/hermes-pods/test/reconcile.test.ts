@@ -34,6 +34,9 @@ class FakeK8s implements K8s {
     }
     return structuredClone(o);
   }
+  async delete(kind: string, ns: string, name: string): Promise<void> {
+    this.store.delete(this.key(kind, ns, name));
+  }
   async list(kind: string, ns: string, selector: string): Promise<K8sObject[]> {
     const wanted = selector.split(',').map((s) => s.split('='));
     return [...this.store.values()].filter(
@@ -129,10 +132,18 @@ describe('reconcileTeam', () => {
     expect(Object.keys(profiles.profiles[0].files).sort()).toEqual(['SOUL.md', 'config.yaml']);
     const bots = JSON.parse((k8s.store.get('ConfigMap/manythreads/hermes-engineering-bots')!['data'] as any)['bots.json']);
     expect(bots.bots).toEqual([
-      { user: 'bot-dev', uid: 20000, deployer: false },
-      { user: 'bot-qa', uid: 20001, deployer: false },
+      { user: 'bot-dev', uid: 20000, deployer: false, publisher: false },
+      { user: 'bot-qa', uid: 20001, deployer: false, publisher: false },
     ]);
     expect(bots.repos).toEqual([{ name: 'demo' }]); // an origin outside the allowlist is dropped
+  });
+
+  it('marks as publishers only the bots whose definition grants tasks.pull_request (the workbench puts them in the group that may run mt-publish)', async () => {
+    const k8s = new FakeK8s();
+    const src = { ...source([spec('dev'), spec('qa')]), publishersForTeam: async () => ['qa'] };
+    await new Reconciler(k8s, CFG, src, LOG, () => 'KEY').reconcileTeam(TEAM);
+    const bots = JSON.parse((k8s.store.get('ConfigMap/manythreads/hermes-engineering-bots')!['data'] as any)['bots.json']);
+    expect(bots.bots.map((b: any) => [b.user, b.publisher])).toEqual([['bot-dev', false], ['bot-qa', true]]);
   });
 
   it('keeps uids and the gateway key across passes, and is a no-op in content the second time', async () => {

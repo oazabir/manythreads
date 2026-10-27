@@ -170,6 +170,8 @@
 }
 
 .bd-card-title {
+  /* a long address or branch name in a title wraps inside the card instead of running past its edge */
+  overflow-wrap: anywhere;
   margin: 0 0 4px;
   font-size: 13px;
   font-weight: 500;

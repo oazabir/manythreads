@@ -8,7 +8,7 @@ import { Alert, Field, Notice } from '../../components/ui';
 import { useChannelFeed } from '../../shell/channelFeed';
 import { useHeaderTopic } from '../../shell/topic';
 import { useBotPerms } from '../bots/store';
-import { createProject, deleteProject, fetchProjects, updateProject } from './api';
+import { createProject, deleteProject, fetchProjects, removePushCredential, setPushCredential, updateProject } from './api';
 import { podPath, validateEdit, validateNew, type FormErrors } from './commands';
 
 /*
@@ -121,6 +121,49 @@ function EditForm({ slug, p, channels, onDone }: { slug: string; p: Project; cha
   );
 }
 
+/*
+ * Publishing: with a GitHub token set, the bot that tested a card's branch pushes it to this repository and opens a pull request, and a person
+ * merges it in GitHub. The token goes to the team pod's secret store and is never shown again (not here, not to the bots, not in the database).
+ */
+function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onChanged: () => void }) {
+  const [token, setToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      setToken('');
+      onChanged();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pj-publish" data-testid="projects-publishing">
+      <div className="pj-publish-h">Pull requests</div>
+      {error ? <Alert>{error}</Alert> : null}
+      {p.pushCredentialSetAt ? (
+        <div className="pj-publish-set">
+          <span data-testid="projects-credential-set">A GitHub token is set (since <span data-vt-mask>{new Date(p.pushCredentialSetAt).toLocaleDateString()}</span>). A tested branch is sent to GitHub as a pull request, and a person merges it there.</span>
+          <button type="button" className="btn s danger" disabled={busy} onClick={() => void run(() => removePushCredential(slug, p.id))}>Remove the token</button>
+        </div>
+      ) : (
+        <form className="pj-publish-form" onSubmit={(e) => { e.preventDefault(); void run(() => setPushCredential(slug, p.id, token.trim())); }}>
+          <Field label="GitHub token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" placeholder="github_pat_…"
+            hint="Optional. A token with write access to this one repository (contents and pull requests). Kept in the team pod only; nobody can read it back." />
+          <button type="submit" className="btn s primary" disabled={busy || token.trim().length < 20}>{busy ? 'Saving…' : 'Save token'}</button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function ProjectRow({ slug, p, channels, canManage, onChanged }: { slug: string; p: Project; channels: NavChannel[]; canManage: boolean; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -155,6 +198,7 @@ function ProjectRow({ slug, p, channels, canManage, onChanged }: { slug: string;
         </div>
         {error ? <Alert>{error}</Alert> : null}
         {editing ? <EditForm slug={slug} p={p} channels={channels} onDone={() => { setEditing(false); onChanged(); }} /> : null}
+        {canManage ? <PublishingBox slug={slug} p={p} onChanged={onChanged} /> : p.pushCredentialSetAt ? <div className="pj-meta d">Tested branches are sent to GitHub as pull requests.</div> : null}
       </div>
       {canManage ? (
         <div className="pj-act">

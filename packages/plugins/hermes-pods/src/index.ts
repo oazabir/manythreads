@@ -3,11 +3,13 @@ import { configFrom } from './config.ts';
 import { HttpK8s, type K8s } from './k8s.ts';
 import { Reconciler, type ProfileSource } from './reconcile.ts';
 import type { ProjectRepo } from './project-repos.ts';
+import { PushCredentials } from './push-credentials.ts';
 import type { Team } from './render.ts';
 
 export { Reconciler } from './reconcile.ts';
 export { HttpK8s } from './k8s.ts';
 export { configFrom } from './config.ts';
+export { PushCredentials } from './push-credentials.ts';
 
 /**
  * hermes-pods: the controller that gives every team with managed bots its own Hermes pod (`hermes-<team>`) in this namespace. It reads the
@@ -19,14 +21,43 @@ export default definePlugin({
     name: 'hermes-pods',
     version: '0.1.0',
     kind: 'server',
-    extends: [],
+    extends: ['provider.project.credentials'],
     events: { emits: [], consumes: [] },
     dependsOn: ['teams', 'projects'],
   },
   register(ctx) {
+    registerPushCredentials(ctx, process.env);
     startController(ctx, process.env);
   },
 });
+
+/**
+ * The projects' GitHub tokens live in a Secret of the team's pod namespace, so the provider exists only where the controller does (the chart turned
+ * it on, in a cluster). Elsewhere `ctx.providers.get('project.credentials')` is undefined and the projects routes say so.
+ */
+export function registerPushCredentials(ctx: PluginContext, env: NodeJS.ProcessEnv, k8sOverride?: K8s): void {
+  // Test seam: with NODE_ENV=test, MANYTHREADS_HERMES_PODS_TEST_K8S_URL points the provider at a local double of the Kubernetes API (secrets only), so a
+  // server test can follow a token into "the Secret" without a cluster. Ignored everywhere else; it starts no controller.
+  const testUrl = env['NODE_ENV'] === 'test' ? (env['MANYTHREADS_HERMES_PODS_TEST_K8S_URL'] ?? '').trim() : '';
+  const controllerOn = env['MANYTHREADS_HERMES_PODS'] === '1' && !env['MANYTHREADS_HERMES_PODS_STATIC'];
+  if (!controllerOn && testUrl === '') return;
+  const cfg = configFrom(env);
+  let k8s: K8s | null = k8sOverride ?? null;
+  const client = (): K8s => (k8s ??= testUrl !== '' ? new HttpK8s({ baseUrl: testUrl, token: 'test' }) : HttpK8s.inCluster(env));
+  const creds = new PushCredentials(client, cfg);
+  ctx.providers.register('project.credentials', creds);
+  if (!controllerOn) return;
+  // A token whose project row never got the "token set" flag (the request that wrote the Secret failed to commit) is removed within a minute or two.
+  setInterval(() => {
+    void (async () => {
+      const teams = await ctx.db.system(async (tx) => (await tx.query<{ id: string; slug: string }>('SELECT id, slug FROM app.teams WHERE archived_at IS NULL')).rows);
+      for (const team of teams) {
+        const keep = await ctx.db.system(async (tx) => new Set((await tx.query<{ name: string }>('SELECT name FROM app.projects WHERE team_id = $1::uuid AND push_credential_set_at IS NOT NULL', [team.id])).rows.map((r) => r.name)));
+        await creds.prune(team, keep);
+      }
+    })().catch((err: unknown) => console.warn(`hermes-pods: token cleanup: ${err instanceof Error ? err.name : 'error'}`));
+  }, 60_000).unref();
+}
 
 const FIRST_PASS_DELAY_MS = 20_000;
 
@@ -51,6 +82,21 @@ async function projectReposOf(ctx: PluginContext, teamId: string): Promise<Proje
       [teamId],
     );
     return res.rows.map((r) => ({ name: r.name, origin: r.repo_url, branch: r.default_branch }));
+  });
+}
+
+/** Slugs of the team's bots that hold a `tasks.pull_request` grant: only they get the right to run `mt-publish.sh` in the pod. */
+async function publisherSlugsOf(ctx: PluginContext, teamId: string): Promise<string[]> {
+  return ctx.db.system(async (tx) => {
+    const res = await tx.query<{ slug: string }>(
+      `SELECT DISTINCT b.slug
+         FROM app.capability_grants g
+         JOIN app.actors a ON a.id = g.actor_id AND a.kind = 'bot'
+         JOIN app.bots b ON b.id = a.ref_id AND b.team_id = g.team_id AND b.status = 'active'
+        WHERE g.team_id = $1::uuid AND g.capability = 'tasks.pull_request'`,
+      [teamId],
+    );
+    return res.rows.map((r) => r.slug);
   });
 }
 
@@ -107,6 +153,7 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
             return p.profilesForTeam(id);
           },
           reposForTeam: (id) => projectReposOf(ctx, id),
+          publishersForTeam: (id) => publisherSlugsOf(ctx, id),
           setManagedGateway: async (id, input) => {
             await provider()?.setManagedGateway(id, input);
           },

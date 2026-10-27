@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPlainRepoUrl, isRepoOriginAllowed, parseRepoOriginAllow, ProjectRepoUrl } from '../src/index.ts';
+import { isPlainRepoUrl, parseGithubRepo, isRepoOriginAllowed, parseRepoOriginAllow, ProjectRepoUrl } from '../src/index.ts';
 
 const GOOD = ['https://github.com/a/b', 'https://github.com/a/b.git', 'https://github.com/a/b/', 'https://host:8443/x/y', 'https://github.com/a/...', 'https://github.com/a/.hidden'];
 const BAD = [
@@ -61,5 +61,38 @@ describe('the origin allowlist', () => {
     expect(isRepoOriginAllowed('https://github.com/oazabir-evil/x', allow)).toBe(false);
     expect(isRepoOriginAllowed('https://github.com/oazabir/../evil/x', allow)).toBe(false);
     expect(isRepoOriginAllowed('https://github.com/oazabir/%2e%2e/evil/x', allow)).toBe(false);
+  });
+});
+
+describe('parseGithubRepo', () => {
+  it('names the owner, the repository and the API of github.com and of an enterprise host', () => {
+    expect(parseGithubRepo('https://github.com/acme/widgets')).toEqual({ host: 'github.com', owner: 'acme', repo: 'widgets', apiBase: 'https://api.github.com' });
+    expect(parseGithubRepo('https://github.com/acme/widgets.git/')).toMatchObject({ owner: 'acme', repo: 'widgets' });
+    expect(parseGithubRepo('https://GitHub.com/acme/my.repo_1-x')).toMatchObject({ host: 'github.com', repo: 'my.repo_1-x' });
+    expect(parseGithubRepo('https://git.corp.example/acme/widgets')).toEqual({ host: 'git.corp.example', owner: 'acme', repo: 'widgets', apiBase: 'https://git.corp.example/api/v3' });
+  });
+
+  it('refuses everything that is not exactly host/owner/repo, and anything that is not a plain address', () => {
+    for (const bad of [
+      'https://github.com',
+      'https://github.com/acme',
+      'https://github.com/acme/widgets/tree/main',
+      'https://github.com/acme/..',
+      'https://github.com/-acme/widgets',
+      'https://github.com/acme/wid gets',
+      'https://user@github.com/acme/widgets',
+      'http://github.com/acme/widgets',
+      'https://github.com/acme/widgets?x=1',
+      'https://github.com/acme//widgets',
+      'git@github.com:acme/widgets.git',
+    ])
+      expect(parseGithubRepo(bad), bad).toBeNull();
+  });
+
+  it('is linear on a long hostile path', () => {
+    const t = Date.now();
+    parseGithubRepo(`https://github.com/${'a'.repeat(20000)}/${'.'.repeat(20000)}`);
+    parseGithubRepo(`https://github.com/acme/${'a.git'.repeat(8000)}x/y`);
+    expect(Date.now() - t).toBeLessThan(200);
   });
 });

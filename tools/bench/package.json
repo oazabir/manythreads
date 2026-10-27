@@ -11,7 +11,8 @@
     "bench:server": "tsx src/server.ts",
     "bench:rls": "tsx src/rls.ts",
     "bench:list": "tsx src/list.ts",
-    "bench:search": "tsx src/search.ts"
+    "bench:search": "tsx src/search.ts",
+    "bench:counting:hermes": "tsx counting-hermes/run.ts"
   },
   "dependencies": {
     "pg": "^8",

@@ -64,6 +64,8 @@ export interface Names {
   profiles: string;
   key: string;
   deployer: string;
+  /** The Secret holding the projects' GitHub tokens (one key per project name); only `repo` can read them inside the pod. */
+  push: string;
   bots: string;
   workspace: string;
   home: string;
@@ -99,6 +101,7 @@ export function namesFor(team: Team, disambiguate = false): Names {
     profiles: `${base}-profiles`,
     key: `${base}-key`,
     deployer: `${base}-deployer`,
+    push: `${base}-push`,
     bots: `${base}-bots`,
     workspace: `${base}-workspace`,
     home: `${base}-home`,
@@ -134,11 +137,13 @@ export interface BotUser {
   user: string;
   uid: number;
   deployer: boolean;
+  /** May run `mt-publish.sh` (its definition grants `tasks.pull_request`): the Unix group `publishers`. */
+  publisher: boolean;
   profile: string;
 }
 
 /** Assigns each profile a stable uid: the ones already in the pod's ConfigMap keep theirs, new ones take the next free number. */
-export function assignUsers(profiles: readonly GatewayProfileSpec[], existing: Readonly<Record<string, number>>, deployerBot: string): BotUser[] {
+export function assignUsers(profiles: readonly GatewayProfileSpec[], existing: Readonly<Record<string, number>>, deployerBot: string, publishers: ReadonlySet<string> = new Set()): BotUser[] {
   const taken = new Set(Object.values(existing));
   let next = FIRST_BOT_UID;
   const out: BotUser[] = [];
@@ -153,7 +158,7 @@ export function assignUsers(profiles: readonly GatewayProfileSpec[], existing: R
       uid = next;
       taken.add(uid);
     }
-    out.push({ user, uid, deployer: deployerBot !== '' && botSlugOf(spec.profile) === deployerBot, profile: spec.profile });
+    out.push({ user, uid, deployer: deployerBot !== '' && botSlugOf(spec.profile) === deployerBot, publisher: publishers.has(botSlugOf(spec.profile)), profile: spec.profile });
   }
   return out;
 }
@@ -174,7 +179,7 @@ export function parseRepos(spec: string): { name: string; origin?: string }[] {
 
 export function buildBotsConfigMap(cfg: PodConfig, team: Team, names: Names, users: readonly BotUser[]): K8sObject {
   const doc = {
-    bots: users.map((u) => ({ user: u.user, uid: u.uid, deployer: u.deployer })),
+    bots: users.map((u) => ({ user: u.user, uid: u.uid, deployer: u.deployer, publisher: u.publisher })),
     repos: cfg.repos.filter((r) => !r.origin || isRepoOriginAllowed(r.origin, cfg.repoOriginAllow)),
     originAllow: cfg.repoOriginAllow,
   };
@@ -417,6 +422,10 @@ export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: 
                 { name: 'workspace', mountPath: '/workspace' },
                 ro('bots-config', '/etc/workbench'),
                 ...(opts.withDeployer ? [ro('deployer', '/etc/workbench-secret')] : []),
+                // the projects' GitHub tokens: root-only here; mt-reconcile.sh hands each to the `repo` user alone (see mt-publish.sh)
+                ro('push', '/etc/workbench-push'),
+                // where the `repo` user's copies live: a memory volume that only root writes (mt-push-sync.sh makes it root's, 0755)
+                { name: 'push-run', mountPath: '/run/mt-push' },
                 ro('keys', '/keys'),
                 { name: 'shm', mountPath: '/dev/shm' },
               ],
@@ -429,6 +438,9 @@ export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: 
             { name: 'workspace', persistentVolumeClaim: { claimName: names.workspace } },
             { name: 'bots-config', configMap: { name: names.bots } },
             ...(opts.withDeployer ? [{ name: 'deployer', secret: { secretName: names.deployer, defaultMode: 0o400 } }] : []),
+            // optional: the Secret exists only once a team lead has set a token; the volume fills when it appears
+            { name: 'push', secret: { secretName: names.push, defaultMode: 0o400, optional: true } },
+            { name: 'push-run', emptyDir: { medium: 'Memory', sizeLimit: '1Mi' } },
             { name: 'keys', emptyDir: { sizeLimit: '1Mi' } },
             { name: 'shm', emptyDir: { medium: 'Memory', sizeLimit: '1Gi' } },
           ],

@@ -41,6 +41,10 @@ rules:
   - apiGroups: [""]
     resources: [services, secrets, configmaps, persistentvolumeclaims]
     verbs: [get, list, create, patch, update]
+  # a project's GitHub token is removed with its Secret (the last token of a team's pod): nothing else is ever deleted by the controller
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [delete]
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]

@@ -408,6 +408,15 @@ describe('every shipped definition', () => {
     expect(tester.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'deployer', 'orchestrator']);
     expect(tester.fm.limits?.timeoutSeconds).toBe(2400);
     expect(tester.body).toContain('tested sha');
+    // After the tests pass, a project with a push credential gets a pull request that a person merges; any other project is completed as before.
+    expect(tester.fm.capabilities?.native).toContain('tasks.pull_request');
+    expect(tester.body).toContain('mt-publish.sh check');
+    expect(tester.body).toContain('mt-publish.sh publish');
+    expect(tester.body).toContain('tasks.pull_request');
+    expect(tester.body).toContain('Not ready: complete as before');
+    expect(tester.body).toContain('never see the credential');
+    // only the tester publishes: no other shipped bot is granted the tool
+    for (const s of shipped.filter((x) => x.slug !== 'tester')) expect(s.fm.capabilities?.native ?? [], s.slug).not.toContain('tasks.pull_request');
   });
 
   it('the engineering chain runs on the team’s pod: every agent bot is placed on the managed gateway, and the preview chain is wired', () => {

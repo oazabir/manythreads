@@ -5,6 +5,7 @@
 #   /etc/workbench/bots.json        the bots (one Unix user each) and the repositories of record; a ConfigMap of the pod
 #   /keys/<user>.pub               the public key the Hermes container made for that bot (the private half never leaves Hermes)
 #   /etc/workbench-secret/deployer.kubeconfig   the namespace-scoped deployer credential, given to the deployer bot only
+#   /etc/workbench-push/<project>  a project's GitHub token (a Secret of the pod); mt-push-sync.sh hands it to the `repo` user only
 set -uo pipefail
 CONF=/etc/workbench/bots.json
 [ -s "$CONF" ] || exit 0
@@ -12,6 +13,8 @@ SECRET_KUBECONFIG=/etc/workbench-secret/deployer.kubeconfig
 HOOK=/usr/local/share/workbench/hooks/update
 
 /usr/local/bin/mt-lockdown.sh || exit 1
+# the projects' GitHub tokens: root-only in the pod's Secret mount, copied for the `repo` user alone (what mt-publish.sh reads)
+/usr/local/bin/mt-push-sync.sh || echo "push credentials: sync failed" >&2
 
 # One-time scrub for a volume that predates the lockdown: ownership and modes inside each bot's home, done by the bot's own user
 # (so no symlink can lead root or another user anywhere), and group-write / setgid bits removed.
@@ -42,6 +45,9 @@ jq -c '.bots[]' "$CONF" | while read -r bot; do
   [ -d "$home" ] || mkdir -- "$home"
   chown -h "$user:bots" "$home"; chmod 0700 "$home"
   runuser -u "$user" -- bash -c '[ -f "$HOME/.gitconfig" ] || { git config --global user.name "$(id -un)"; git config --global user.email "$(id -un)@bots.manythreads.local"; }'
+  # publishing: only a bot whose definition grants tasks.pull_request is in the `publishers` group (the one sudo lets run mt-publish.sh)
+  if [ "$(jq -r '.publisher // false' <<<"$bot")" = "true" ]; then usermod -aG publishers "$user" >/dev/null 2>&1 || true
+  else gpasswd -d "$user" publishers >/dev/null 2>&1 || true; fi
   # ssh: the key Hermes made; root owns the file, so a bot cannot add a key of its own
   pub="/keys/$user.pub"
   if [ -s "$pub" ] && head -c 12 "$pub" | grep -q '^ssh-ed25519 '; then
@@ -60,6 +66,7 @@ done
 for u in $(getent group bots | cut -d: -f4 | tr ',' ' '); do
   if ! grep -qx "$u" <<<"$wanted"; then
     usermod --shell /usr/sbin/nologin "$u" >/dev/null 2>&1 || true
+    gpasswd -d "$u" publishers >/dev/null 2>&1 || true
     rm -f "/etc/ssh/authorized_keys/$u"
     runuser -u "$u" -- bash -c 'rm -f "$HOME/.kube/config"' 2>/dev/null || true
   fi

@@ -96,6 +96,19 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
         <dd className="mono">{task.baseSha ?? '—'}</dd>
         <dt>Tested commit</dt>
         <dd className="mono">{task.testedSha ?? '—'}</dd>
+        {task.pullRequest ? (
+          <>
+            <dt>Pull request</dt>
+            <dd data-testid="card-pull-request">
+              {/^https:\/\//.test(task.pullRequest.url) ? (
+                <a href={task.pullRequest.url} target="_blank" rel="noopener noreferrer">#{task.pullRequest.number}</a>
+              ) : (
+                <>#{task.pullRequest.number}</>
+              )}{' '}
+              {task.pullRequest.state === 'open' ? 'waits for a person to merge it' : task.pullRequest.state === 'merged' ? 'merged' : 'closed without a merge'}
+            </dd>
+          </>
+        ) : null}
         <dt>Bounds</dt>
         <dd>
           {task.reworkCount} rework{task.reworkCount === 1 ? '' : 's'} · {task.handoffCount} handoff{task.handoffCount === 1 ? '' : 's'}

@@ -81,6 +81,8 @@ what a call does beyond asking the broker:
 | `tasks.create` | write | creates a card as the bot, in the bot's own team (a tool never names a team); the card and its `created` history go through the same door as `POST /tasks`, and assignment stays a handover, not a create |
 | `tasks.claim` | write | claims a card: one live claim per card, a second claim answers `already_owned`; the claim expires after `ttlSeconds` |
 | `tasks.complete` | write | completes a card the run owns; a `code` card needs `testedSha`, and a branch head beyond `base_sha` is refused `stale_base` |
+| `tasks.release` | write | gives back a card the run owns, so the next claimer can take it (the release route's door) |
+| `tasks.describe` | write | replaces the description of a card the run owns; where a bot keeps a card's working state, such as a running count |
 | `tasks.handoff` | write | moves a card to another bot or person in one transaction; a bot reaches only the targets its `tasks.handoff` grant's `mayTag` names (the same allowlist the board enforces), and a `dispatch: strict` handover can wait in Approvals |
 | `tasks.deploy` | write | asks for a release to one of the team's environments; the environment decides (a protected one waits for a person who is not the requester, a change window or the daily cap can refuse), and the answer carries the outcome rather than a promise |
 | `knowledge.search` | stub | answers `{ hits: [], reason: "no bases configured" }` — never invented content |

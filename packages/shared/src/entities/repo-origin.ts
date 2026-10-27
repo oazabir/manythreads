@@ -33,3 +33,26 @@ export function parseRepoOriginAllow(raw: string | undefined): string[] {
 export function isRepoOriginAllowed(origin: string, allow: readonly string[]): boolean {
   return isPlainRepoUrl(origin) && allow.some((p) => origin.startsWith(p));
 }
+
+/** A GitHub repository as a project's address names it: `https://<host>/<owner>/<repo>[.git]`, and the REST API that serves it. */
+export interface GithubRepo {
+  host: string;
+  owner: string;
+  repo: string;
+  /** `https://api.github.com` for github.com, `https://<host>/api/v3` for a GitHub Enterprise host. */
+  apiBase: string;
+}
+
+const GITHUB_PATH = /^\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/;
+
+/** The owner and repository of a plain https address with exactly two path segments, or null (nested paths and other shapes are not pull-request targets). */
+export function parseGithubRepo(value: string): GithubRepo | null {
+  if (!isPlainRepoUrl(value)) return null;
+  const rest = value.slice('https://'.length);
+  const slash = rest.indexOf('/');
+  if (slash <= 0) return null;
+  const host = rest.slice(0, slash).toLowerCase();
+  const m = GITHUB_PATH.exec(rest.slice(slash));
+  if (!m || m[2] === '.' || m[2] === '..') return null;
+  return { host, owner: m[1]!, repo: m[2]!, apiBase: host === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3` };
+}

@@ -85,6 +85,32 @@
   margin-top: 10px;
 }
 
+.pj-publish {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  font-size: 12.5px;
+}
+
+.pj-publish-h {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.pj-publish-set {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pj-publish-form {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  max-width: 460px;
+}
+
 .pj-select {
   width: 100%;
   max-width: 360px;

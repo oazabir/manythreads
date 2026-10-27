@@ -17,6 +17,8 @@ export interface K8s {
   /** The object, or null when it does not exist. */
   get(kind: string, namespace: string, name: string): Promise<K8sObject | null>;
   list(kind: string, namespace: string, labelSelector: string): Promise<K8sObject[]>;
+  /** Delete the object; one that does not exist is not an error. */
+  delete(kind: string, namespace: string, name: string): Promise<void>;
 }
 
 const PATHS: Record<string, { prefix: string; plural: string }> = {
@@ -109,6 +111,11 @@ export class HttpK8s implements K8s {
     if (res.status === 404) return null;
     if (res.status !== 200) throw new K8sError(res.status, `get ${kind}/${name}: ${res.status} ${statusMessage(res.text)}`);
     return JSON.parse(res.text) as K8sObject;
+  }
+
+  async delete(kind: string, namespace: string, name: string): Promise<void> {
+    const res = await this.call('DELETE', resourcePath(kind, namespace, name));
+    if (res.status !== 404 && (res.status < 200 || res.status >= 300)) throw new K8sError(res.status, `delete ${kind}/${name}: ${res.status} ${statusMessage(res.text)}`);
   }
 
   async list(kind: string, namespace: string, labelSelector: string): Promise<K8sObject[]> {

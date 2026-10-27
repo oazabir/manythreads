@@ -1,8 +1,9 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { BOT_BOARD_NAME, CreateTaskRequest, DEFAULT_BOARD_COLUMNS, TasksBoardCreatedEvent } from '@manythreads/shared';
+import { BOT_BOARD_NAME, CreateTaskRequest, DEFAULT_BOARD_COLUMNS, RecordPullRequestInput, TasksBoardCreatedEvent } from '@manythreads/shared';
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
 import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
+import { verifyPullRequest, pullRequestDeps } from './pull-requests.ts';
 import { handoverAllowlist, isCardCreator, mayHandoffToActor } from './handoff.ts';
 import { TASK_SELECT, toBoard, toHandoff, toTask, type BoardRow, type HandoffRow, type TaskRow } from './rows.ts';
 
@@ -38,7 +39,7 @@ export function registerCapabilities(ctx: PluginContext): void {
   ctx.capabilities.register('tasks.read', async (input, tx) => {
     const taskId = typeof input['taskId'] === 'string' ? input['taskId'] : null;
     const rows = await tx.query<{ owner_id: string | null; created_by: string | null }>(
-      `SELECT t.id, t.title, t.state, t.kind, t.priority, t.owner_id, t.created_by, t.board_id, t.branch, t.base_sha, t.tested_sha, t.rework_count, t.handoff_count
+      `SELECT t.id, t.title, t.description, t.state, t.kind, t.priority, t.owner_id, t.created_by, t.board_id, t.branch, t.base_sha, t.tested_sha, t.rework_count, t.handoff_count
          FROM app.tasks t
         WHERE t.team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])
           AND ($1::uuid IS NULL OR t.id = $1::uuid)
@@ -215,6 +216,37 @@ export function registerCapabilities(ctx: PluginContext): void {
     // A done card keeps no private notes.
     await tx.query('SELECT app.tasks_drop_private_notes($1::uuid)', [taskId]);
     return { ok: true, taskId, testedSha };
+  });
+
+  // The pull request a bot opened with `mt-publish`. The bot names only the project and the number: the server asks GitHub (with the project's own
+  // token) whether that pull request is open, comes from this card's branch at the tested commit and is aimed at the project's repository, and builds the
+  // address itself (`verifyPullRequest`). Only then does the door (`app.tasks_record_pull_request`) make the card wait; it checks the caller owns the card.
+  // A refusal is an answer, never a throw, so nothing is half-written.
+  ctx.capabilities.register('tasks.pull_request', async (input, tx) => {
+    const parsed = RecordPullRequestInput.safeParse(input);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const field = issue?.path.map(String).join('.') || 'input';
+      return { ok: false, code: 'invalid_input', message: `${field}: ${issue?.message ?? 'invalid'}` };
+    }
+    const { taskId, project, testedSha, number } = parsed.data;
+    const before = await cardOf(tx, taskId);
+    if (!before) return { ok: false, code: 'not_found', message: 'no such card' };
+    if (before.ownerId !== tx.actor.id) return { ok: false, code: 'not_owner', message: 'only the owner can record a pull request on this card' };
+    const slug = (await tx.query<{ slug: string }>('SELECT slug FROM app.teams WHERE id = $1::uuid', [before.teamId])).rows[0]?.slug;
+    if (!slug) return { ok: false, code: 'not_found', message: 'no such card' };
+    const checked = await verifyPullRequest(pullRequestDeps(ctx), { team: { id: before.teamId, slug }, taskId, project, testedSha, number });
+    if (!checked.ok) return { ok: false, code: checked.code, message: checked.message };
+    const res = (
+      await tx.query<{ o_outcome: string; o_reason: string }>('SELECT * FROM app.tasks_record_pull_request($1::uuid, $2, $3, $4::integer, $5, $6, $7, $8, $9)', [
+        taskId, testedSha, project, number, checked.url, checked.origin, checked.headRef, checked.headSha, checked.baseRef,
+      ])
+    ).rows[0];
+    if (!res) return { ok: false, code: 'not_found', message: 'no such card' };
+    if (res.o_outcome !== 'recorded') return { ok: false, code: res.o_outcome, message: res.o_reason || res.o_outcome };
+    const after = (await cardOf(tx, taskId)) ?? before;
+    await emitUpdated(ctx, tx, before, after);
+    return { ok: true, taskId, number, state: after.state, blockerReason: after.blockerReason };
   });
 
   ctx.capabilities.register('tasks.handoff', async (input, tx) => {

@@ -50,6 +50,8 @@ export const PROVIDER_KINDS = [
   'runner',
   /** The managed Hermes pod's profile specs (runtime-hermes): `HermesProfilesProvider` in ./hermes-profiles.ts. */
   'hermes.profiles',
+  /** Where a project's GitHub push token lives (hermes-pods): `ProjectCredentialsProvider` in ./project-credentials.ts. */
+  'project.credentials',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

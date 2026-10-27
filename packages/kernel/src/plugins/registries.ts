@@ -67,6 +67,7 @@ export class ExtensionRegistries {
     messages: new ExtensionRegistry(),
     runner: new ExtensionRegistry(),
     'hermes.profiles': new ExtensionRegistry(),
+    'project.credentials': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

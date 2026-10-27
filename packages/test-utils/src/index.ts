@@ -12,3 +12,5 @@ export { seedGuard, seedGateBotMd, SEED_GUARD, type SeedGuardResult } from './se
 export { seedWork, SEED_WORK, type SeedWorkOptions, type SeedWorkResult } from './seed-work.ts';
 export { openSeedStorage, putSeedAttachment, type SeedStorageOptions, type SeedStorageKind } from './seed-storage.ts';
 export type { SeedAuthor, SeedLine } from './seed-data.ts';
+export { startFakeGithub, type FakeGithub, type FakeGithubCall, type FakePull } from './fake-github.ts';
+export { startFakeK8s, type FakeK8s } from './fake-k8s.ts';

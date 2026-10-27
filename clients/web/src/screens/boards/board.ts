@@ -183,9 +183,15 @@ export function eventLine(e: TaskEvent, nameOf: (id: string | null) => string): 
       return `handed it to ${target}${mode ? ` (${mode})` : ''}`;
     }
     case 'completed':
+      if (text(d, 'mergeSha')) return `pull request #${String(d['pullRequest'] ?? '')} was merged (merge commit ${text(d, 'mergeSha')}), so the card is done`;
+      if (d['pullRequest'] !== undefined) return `pull request #${String(d['pullRequest'])} was merged, so the card is done`;
       return text(d, 'testedSha') ? `completed it, tested at ${text(d, 'testedSha')}` : 'moved it to Done';
     case 'reworked':
       return text(d, 'reason') ? `sent it back: ${text(d, 'reason')}` : 'sent it back';
+    case 'pull_request_opened':
+      return `opened pull request #${String(d['number'] ?? '')}; it waits for a person to merge it`;
+    case 'pull_request_closed':
+      return text(d, 'reason') ? `pull request #${String(d['pullRequest'] ?? '')} was closed: ${text(d, 'reason')}` : `pull request #${String(d['pullRequest'] ?? '')} was closed`;
     case 'deployed':
       return `deployed to ${text(d, 'environment') ?? 'an environment'}`;
     default:

@@ -28,6 +28,8 @@ export interface ProfileSource {
   profilesForTeam(teamId: string): Promise<GatewayProfileSpec[]>;
   /** The team's projects as repositories of record (name and https address); absent in the test-only static mode. */
   reposForTeam?(teamId: string): Promise<ProjectRepo[]>;
+  /** Slugs of the team's bots whose definition grants `tasks.pull_request` (they may run `mt-publish.sh`); absent in the test-only static mode. */
+  publishersForTeam?(teamId: string): Promise<string[]>;
   /** Absent in the test-only static mode. */
   setManagedGateway?(teamId: string, input: { baseUrl: string }): Promise<void>;
 }
@@ -38,6 +40,14 @@ export interface TeamResult {
   profiles: number;
   deployer: boolean;
   gatewayUrl: string;
+}
+
+/** The names for a team: plain `hermes-<slug>` unless another team's pod already holds that name. */
+export async function resolvePodNames(k8s: K8s, cfg: Pick<PodConfig, 'namespace'>, team: Team): Promise<Names> {
+  const plain = namesFor(team);
+  const existing = await k8s.get('Deployment', cfg.namespace, plain.base);
+  const owner = existing?.metadata.labels?.['manythreads.io/team-id'];
+  return existing && owner !== undefined && owner !== team.id ? namesFor(team, true) : plain;
 }
 
 const b64 = (s: string | undefined): string => (s ? Buffer.from(s, 'base64').toString('utf8') : '');
@@ -55,11 +65,8 @@ export class Reconciler {
   ) {}
 
   /** The names for a team: plain `hermes-<slug>` unless another team's pod already holds that name. */
-  private async resolveNames(team: Team): Promise<Names> {
-    const plain = namesFor(team);
-    const existing = await this.k8s.get('Deployment', this.cfg.namespace, plain.base);
-    const owner = existing?.metadata.labels?.['manythreads.io/team-id'];
-    return existing && owner !== undefined && owner !== team.id ? namesFor(team, true) : plain;
+  private resolveNames(team: Team): Promise<Names> {
+    return resolvePodNames(this.k8s, this.cfg, team);
   }
 
   /**
@@ -102,7 +109,8 @@ export class Reconciler {
     const prevKey = await k8s.get('Secret', cfg.namespace, names.key);
     const apiKey = b64((prevKey?.data as Record<string, string> | undefined)?.['api-key']) || this.newKey();
 
-    const users = assignUsers(profiles, existingUids, cfg.deployerBot);
+    const publishers = new Set((await this.source.publishersForTeam?.(team.id)) ?? []);
+    const users = assignUsers(profiles, existingUids, cfg.deployerBot, publishers);
     const projectRepos = (await this.source.reposForTeam?.(team.id)) ?? [];
 
     // the deployer credential, for the deployer bot only

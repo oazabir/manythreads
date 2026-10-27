@@ -9,6 +9,7 @@ import {
   route,
   type PluginContext,
   type PluginTx,
+  type ProjectCredentialsProvider,
 } from '@manythreads/sdk';
 import {
   CreateProjectRequest,
@@ -16,11 +17,19 @@ import {
   DeleteProjectResponse,
   ListProjectsResponse,
   Project,
+  RemovePushCredentialResponse,
+  SetPushCredentialRequest,
+  SetPushCredentialResponse,
   UpdateProjectRequest,
   UpdateProjectResponse,
   createProjectRoute,
   deleteProjectRoute,
+  isRepoOriginAllowed,
   listProjectsRoute,
+  parseGithubRepo,
+  parseRepoOriginAllow,
+  removePushCredentialRoute,
+  setPushCredentialRoute,
   updateProjectRoute,
 } from '@manythreads/shared';
 
@@ -35,11 +44,12 @@ interface ProjectRow extends Record<string, unknown> {
   default_branch: string;
   channel_id: string | null;
   created_by: string | null;
+  push_credential_set_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
 
-const COLUMNS = 'id, workspace_id, team_id, name, repo_url, default_branch, channel_id, created_by, created_at, updated_at';
+const COLUMNS = 'id, workspace_id, team_id, name, repo_url, default_branch, channel_id, created_by, push_credential_set_at, created_at, updated_at';
 
 /** The one mapper of `app.projects`: a row to the shared type. */
 export function toProject(r: ProjectRow): Project {
@@ -52,6 +62,7 @@ export function toProject(r: ProjectRow): Project {
     defaultBranch: r.default_branch,
     channelId: r.channel_id,
     createdBy: r.created_by,
+    pushCredentialSetAt: r.push_credential_set_at ? r.push_credential_set_at.toISOString() : null,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
   });
@@ -74,6 +85,7 @@ async function requireFreeChannel(tx: PluginTx, channelId: string, exceptProject
 }
 
 export function registerProjectRoutes(ctx: PluginContext): void {
+  const credentialsProvider = (): ProjectCredentialsProvider | undefined => ctx.providers.get<ProjectCredentialsProvider>('project.credentials');
   ctx.http.route({
     method: listProjectsRoute.method,
     path: listProjectsRoute.path,
@@ -101,6 +113,15 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       if (channelId !== null) {
         await requireTeamChannel(tx, team.id, channelId);
         await requireFreeChannel(tx, channelId, null);
+      }
+      // A new project starts with no token: one left under this name by an earlier project (a removal that never reached the pod) is removed first.
+      const leftover = credentialsProvider();
+      if (leftover) {
+        try {
+          await leftover.remove({ id: team.id, slug }, body.name);
+        } catch {
+          throw conflict('The team pod could not be reached to clear an old token of that name; try again in a moment');
+        }
       }
       const inserted = await tx.query<ProjectRow>(
         `INSERT INTO app.projects (workspace_id, team_id, name, repo_url, default_branch, channel_id, created_by)
@@ -142,12 +163,23 @@ export function registerProjectRoutes(ctx: PluginContext): void {
         await requireFreeChannel(tx, body.channelId, projectId);
       }
       const channelGiven = body.channelId !== undefined;
+      // A token is for one repository and its main branch: pointing the project at another address or branch drops it (set it again for the new one).
+      const addressChanged = (body.repoUrl !== undefined && body.repoUrl !== current.repo_url) || (body.defaultBranch !== undefined && body.defaultBranch !== current.default_branch);
+      const dropToken = addressChanged && current.push_credential_set_at !== null;
+      if (dropToken) {
+        try {
+          await credentialsProvider()?.remove({ id: team.id, slug }, current.name);
+        } catch {
+          throw conflict('The project\'s token could not be removed from the team pod, so its address was not changed; try again in a moment');
+        }
+      }
       const updated = await tx.query<ProjectRow>(
         `UPDATE app.projects SET
            repo_url = coalesce($3, repo_url), default_branch = coalesce($4, default_branch),
-           channel_id = CASE WHEN $5::boolean THEN $6::uuid ELSE channel_id END, updated_at = now()
+           channel_id = CASE WHEN $5::boolean THEN $6::uuid ELSE channel_id END,
+           push_credential_set_at = CASE WHEN $7::boolean THEN NULL ELSE push_credential_set_at END, updated_at = now()
          WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
-        [projectId, team.id, body.repoUrl ?? null, body.defaultBranch ?? null, channelGiven, body.channelId ?? null],
+        [projectId, team.id, body.repoUrl ?? null, body.defaultBranch ?? null, channelGiven, body.channelId ?? null, dropToken],
       );
       const row = updated.rows[0];
       if (!row) throw forbidden('You do not have permission to do that');
@@ -174,11 +206,113 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       const { slug, projectId } = req.params as { slug: string; projectId: string };
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
-      const gone = await tx.query<{ name: string }>('DELETE FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid RETURNING name', [projectId, team.id]);
+      const gone = await tx.query<{ name: string; push_credential_set_at: Date | null }>(
+        'DELETE FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid RETURNING name, push_credential_set_at',
+        [projectId, team.id],
+      );
       const row = gone.rows[0];
       if (!row) throw notFound('No such project');
+      // A removed project leaves no token behind: if the token cannot be removed the project is not removed either (the request is rolled back).
+      if (row.push_credential_set_at) {
+        try {
+          await credentialsProvider()?.remove({ id: team.id, slug }, row.name);
+        } catch {
+          throw conflict('The project\'s token could not be removed from the team pod, so the project was not removed; try again in a moment');
+        }
+      }
       await ctx.audit.emit(tx, { type: 'project.project.deleted', workspaceId: team.workspace_id, teamId: team.id, projectId, name: row.name });
       return json(DeleteProjectResponse.parse({ deleted: true }));
+    }),
+  });
+
+  // The push credential: a team lead or admin sets a GitHub token the team's pod uses to publish a tested branch as a pull request. The token goes
+  // to the pod's Secret through the `project.credentials` provider and nowhere else; the row only learns that one is set, and when. No route returns it.
+  ctx.http.route({
+    method: setPushCredentialRoute.method,
+    path: setPushCredentialRoute.path,
+    rateLimit: { limit: 20, windowMs: 60_000 },
+    schema: { body: SetPushCredentialRequest, response: SetPushCredentialResponse },
+    handler: route(async (req, tx) => {
+      const { slug, projectId } = req.params as { slug: string; projectId: string };
+      const body = SetPushCredentialRequest.parse(req.body);
+      const team = await requireTeam(tx, slug);
+      await requireManage(tx, team);
+      const current = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid`, [projectId, team.id])).rows[0];
+      if (!current) throw notFound('No such project');
+      // Publishing needs a GitHub address this server may call (the same allowlist that limits what a pod clones).
+      const allow = parseRepoOriginAllow(process.env['MANYTHREADS_HERMES_PODS_REPO_ORIGIN_ALLOW']);
+      if (!parseGithubRepo(current.repo_url) || !isRepoOriginAllowed(current.repo_url, allow)) {
+        throw invalid('Publishing needs a GitHub repository address (https://<host>/<owner>/<repo>) that this server is allowed to use');
+      }
+      const provider = credentialsProvider();
+      if (!provider) throw conflict('This server keeps no team pods, so it has nowhere to keep a token');
+      // The row first, the pod's Secret last: the Secret is the final step before the request commits, so a failure anywhere earlier leaves no token behind.
+      const updated = (
+        await tx.query<ProjectRow>(
+          `UPDATE app.projects SET push_credential_set_at = now(), updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
+          [projectId, team.id],
+        )
+      ).rows[0];
+      if (!updated) throw forbidden('You do not have permission to do that');
+      await ctx.audit.emit(tx, {
+        type: 'project.project.updated',
+        workspaceId: team.workspace_id,
+        teamId: team.id,
+        projectId,
+        name: updated.name,
+        repoUrl: updated.repo_url,
+        defaultBranch: updated.default_branch,
+        channelId: updated.channel_id,
+      });
+      try {
+        await provider.put({ id: team.id, slug }, current.name, body.token, current.repo_url, current.default_branch);
+      } catch {
+        // the reason is not echoed: it could name the Secret, and must never hold the token; throwing rolls the row back
+        throw conflict('The token could not be stored in the team pod; try again in a moment');
+      }
+      return json(SetPushCredentialResponse.parse({ project: toProject(updated) }));
+    }),
+  });
+
+  ctx.http.route({
+    method: removePushCredentialRoute.method,
+    path: removePushCredentialRoute.path,
+    rateLimit: { limit: 20, windowMs: 60_000 },
+    schema: { response: RemovePushCredentialResponse },
+    handler: route(async (req, tx) => {
+      const { slug, projectId } = req.params as { slug: string; projectId: string };
+      const team = await requireTeam(tx, slug);
+      await requireManage(tx, team);
+      const current = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid`, [projectId, team.id])).rows[0];
+      if (!current) throw notFound('No such project');
+      const provider = credentialsProvider();
+      if (provider) {
+        try {
+          await provider.remove({ id: team.id, slug }, current.name);
+        } catch {
+          throw conflict('The token could not be removed from the team pod; try again in a moment');
+        }
+      } else if (current.push_credential_set_at) {
+        throw conflict('This server keeps no team pods, so it cannot remove the token');
+      }
+      const updated = (
+        await tx.query<ProjectRow>(
+          `UPDATE app.projects SET push_credential_set_at = NULL, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
+          [projectId, team.id],
+        )
+      ).rows[0];
+      if (!updated) throw forbidden('You do not have permission to do that');
+      await ctx.audit.emit(tx, {
+        type: 'project.project.updated',
+        workspaceId: team.workspace_id,
+        teamId: team.id,
+        projectId,
+        name: updated.name,
+        repoUrl: updated.repo_url,
+        defaultBranch: updated.default_branch,
+        channelId: updated.channel_id,
+      });
+      return json(RemovePushCredentialResponse.parse({ project: toProject(updated) }));
     }),
   });
 }

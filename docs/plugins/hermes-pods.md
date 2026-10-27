@@ -79,6 +79,34 @@ bot's own git settings**. The hook refuses any push to `refs/heads/main` (or `ma
 too. Someone with access to the `repo` account (an operator via `kubectl exec`, or the platform) merges into main. A bot may create more repositories:
 `sudo -u repo mt-repo-create.sh <name> [https-origin-url]`. The ConfigMap's list comes from `hermesPods.repos` (`"name"` or `"name=https://…"`) plus the team's [projects](projects.md): each project is added as a repository named after it, cloned from its address, within about thirty seconds of the change. An address is cloned only if it starts with one of the prefixes in `hermesPods.repoOriginAllow`; a project on any other address gets no copy.
 
+## Publishing a tested branch as a pull request
+
+When a project has a GitHub token (set by a team lead on the Projects page, see [projects](projects.md)), the tester bot can publish a card's tested
+branch to the project's origin and open a pull request there; a person merges it in GitHub, and that is the approval.
+
+- **The token's journey.** The server writes it into the Secret `hermes-<team>-push` (one key per project name) through the `project.credentials`
+  provider this plugin registers, using the same Kubernetes client as the rest of the controller (the controller's role also needs `delete` on secrets, so
+  the last token's Secret can be removed). The workbench mounts the Secret read-only at `/etc/workbench-push`, readable by root only. Every few seconds
+  `mt-push-sync.sh` (run by the reconcile loop as root) copies each entry (a JSON document: the token, the repository address and the main branch it was issued for, and when it was set) to
+  `/run/mt-push/<project>`: mode 0400, owned by the `repo` user, in a directory only root can write (0755, on a memory volume), so neither `repo` nor a bot
+  can plant a link or swap a file there; copies whose key has left the Secret are deleted. The Secret volume is optional, so a team with no token has no Secret and the pod runs as before.
+- **Who may publish.** Only bots whose definition grants `tasks.pull_request` (the engineering Tester): the controller marks them `publisher` in the bots
+  ConfigMap and the reconcile loop keeps exactly them in the Unix group `publishers`, the only group sudo lets run `mt-publish.sh`. Other bots cannot push
+  branches or open pull requests.
+- **`mt-publish.sh`**, run as `sudo -u repo /usr/local/bin/mt-publish.sh …` (the sudoers file names exactly these two shapes), so a bot never reads the token:
+  - `check <project>` prints `ready` (exit 0) when the project has a plain https GitHub origin and a token issued for that very origin, and exits 3 otherwise.
+  - `publish <project> <card id> <tested commit> <title>` (the pull request's text on standard input) refuses unless the branch `card-<first 8 characters
+    of the card id>` of the repository of record is at exactly that commit (exit 4), pushes that one branch to the origin (a plain push of the exact
+    commit: never the main line, never forced, so an origin branch that holds other work refuses it, exit 5), opens the pull request against the project's main branch (as the token was issued for it) (or finds the open one for that branch, so running it twice is safe; an open one that is not at the tested commit is refused, exit 4) and prints `pull_request_number=`, `pull_request_url=` and
+    `head_sha=`. Exit 6 means GitHub refused or did not answer.
+  - The token reaches git through `GIT_ASKPASS` (`mt-askpass.sh`, which reads the token file) and reaches curl as a header read from standard input, never
+    in a command line (other users of the pod can read command lines from `/proc`). Everything the script prints is masked for the token.
+- The controller removes, every minute, a token whose project row never got the "token set" flag (a request that failed to commit after writing the Secret) once it is two minutes old.
+- Changes to a team's Secret are serialised inside the server process only: the server runs as one replica (the blob volume requires it). Two replicas would need a cluster-side lock.
+- The bot then records the pull request on the card with the `tasks.pull_request` tool ([tasks](tasks.md)), and the platform follows it.
+- **After changing these scripts**, rebuild the workbench image (the deploy tags it by the content of `deploy/images/workbench`, so a deploy does it).
+  The first rollout restarts each team's pod once, because the pod gains the optional Secret volume.
+
 ## Namespaces and who may do what
 
 | Namespace | Holds | Walls |

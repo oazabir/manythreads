@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProjectName } from '../../entities/project.ts';
 import { Handoff, Task, TaskEvent, TaskKind, TaskPriority, TaskState } from '../../entities/task.ts';
 import { ActorId, BoardId, EnvironmentId, GoalId, TaskId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
@@ -64,6 +65,20 @@ export type UpdateTaskRequest = z.infer<typeof UpdateTaskRequest>;
 export const UpdateTaskResponse = z.object({ task: Task });
 export type UpdateTaskResponse = z.infer<typeof UpdateTaskResponse>;
 export const updateTaskRoute = { method: 'PATCH', path: '/api/teams/:slug/tasks/:taskId' } as const;
+
+/**
+ * What the `tasks.pull_request` tool takes: the pull request a bot opened with `mt-publish` for its card. `testedSha` is the commit it published,
+ * `project` the project's name and `number` the pull request number (`mt-publish`'s output). Nothing else comes from the bot: the platform asks GitHub
+ * (with the project's own token) whether that pull request is open, comes from this card's branch at that commit and is aimed at the project's
+ * repository, and makes the address itself.
+ */
+export const RecordPullRequestInput = z.strictObject({
+  taskId: TaskId,
+  project: ProjectName,
+  testedSha: z.string().regex(/^[0-9a-f]{7,64}$/),
+  number: z.number().int().positive(),
+});
+export type RecordPullRequestInput = z.infer<typeof RecordPullRequestInput>;
 
 /** One claim per card: the second caller answers 409 `already_owned` and changes nothing. */
 export const ClaimTaskResponse = z.object({ task: Task, expiresAt: z.string() });

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 61
+    },
+    "number": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "open",
+        "merged",
+        "closed",
+        "withdrawn"
+      ]
+    },
+    "mergeSha": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "number",
+    "url",
+    "state",
+    "mergeSha"
+  ],
+  "additionalProperties": false
+}

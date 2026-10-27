@@ -91,6 +91,7 @@ const task = (over: Record<string, unknown> = {}): Task =>
     environmentId: null,
     boardId: null,
     threadRootId: null,
+    pullRequest: null,
     blockerReason: '',
     reworkCount: 0,
     handoffCount: 0,

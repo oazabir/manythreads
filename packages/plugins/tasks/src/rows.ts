@@ -26,13 +26,19 @@ export interface TaskRow extends Record<string, unknown> {
   created_at: Date;
   updated_at: Date;
   completed_at: Date | null;
+  pull_request_project: string | null;
+  pull_request_number: number | null;
+  pull_request_url: string | null;
+  pull_request_state: string | null;
+  pull_request_merge_sha: string | null;
 }
 
 /** The columns every task read returns, in one place so a new column cannot be forgotten in half the routes. */
 export const TASK_SELECT = `
   SELECT t.id, t.workspace_id, t.team_id, t.goal_id, t.title, t.description, t.state, t.kind, t.priority, t.owner_id,
          t.branch, t.base_sha, t.tested_sha, t.environment_id, t.board_id, t.thread_root_id, t.blocker_reason, t.rework_count,
-         t.handoff_count, t.created_by, t.created_at, t.updated_at, t.completed_at
+         t.handoff_count, t.created_by, t.created_at, t.updated_at, t.completed_at,
+         t.pull_request_project, t.pull_request_number, t.pull_request_url, t.pull_request_state, t.pull_request_merge_sha
     FROM app.tasks t`;
 
 const iso = (d: Date | string | null): string | null => (d === null ? null : d instanceof Date ? d.toISOString() : new Date(d).toISOString());
@@ -56,6 +62,10 @@ export function toTask(r: TaskRow): Task {
     environmentId: r.environment_id,
     boardId: r.board_id,
     threadRootId: r.thread_root_id,
+    pullRequest:
+      r.pull_request_state === null || r.pull_request_state === undefined
+        ? null
+        : { project: r.pull_request_project, number: r.pull_request_number, url: r.pull_request_url, state: r.pull_request_state, mergeSha: r.pull_request_merge_sha ?? null },
     blockerReason: r.blocker_reason,
     reworkCount: r.rework_count,
     handoffCount: r.handoff_count,

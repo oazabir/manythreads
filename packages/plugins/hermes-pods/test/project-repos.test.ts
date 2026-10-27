@@ -40,6 +40,7 @@ class Store implements K8s {
   async list(): Promise<K8sObject[]> {
     return [];
   }
+  async delete(): Promise<void> {}
 }
 
 describe('withProjectRepos', () => {

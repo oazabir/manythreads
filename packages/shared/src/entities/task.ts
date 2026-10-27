@@ -36,6 +36,12 @@ export const TaskEventType = z.enum([
   'deployed',
   /** The new owner of a card could not be woken (`data.reason` says why); the card was handed over all the same. */
   'not_woken',
+  /** A pull request was opened for the card (`data` has its number, address and the tested commit); the card waits for a person to merge it. */
+  'pull_request_opened',
+  /** The pull request was closed without a merge (`data.reason`); the card went back to its owner. A merge is a `completed` line with `data.mergeSha`. */
+  'pull_request_closed',
+  /** The owner rewrote the card's description (`data` has the lengths before and after and a sha256 of the new text, never the text). */
+  'described',
 ]);
 export type TaskEventType = z.infer<typeof TaskEventType>;
 
@@ -69,6 +75,23 @@ export const TaskClaim = z.object({
 });
 export type TaskClaim = z.infer<typeof TaskClaim>;
 
+/** Where a card's pull request stands on the project's origin. Matches the CHECK of tasks migration 0010_pull_request.sql. */
+/** `withdrawn`: the card moved on by another door (finished, handed over, moved on the board), so the pull request is no longer followed. */
+export const TaskPullRequestState = z.enum(['open', 'merged', 'closed', 'withdrawn']);
+export type TaskPullRequestState = z.infer<typeof TaskPullRequestState>;
+
+/** The pull request a card waits on: a person merges it in GitHub, and that merge is the approval. */
+export const TaskPullRequest = z.object({
+  /** The name of the project (repository) it was opened against. */
+  project: z.string().min(1).max(61),
+  number: z.number().int().positive(),
+  url: z.string().max(300),
+  state: TaskPullRequestState,
+  /** The commit the merge made; null until merged. */
+  mergeSha: z.string().regex(/^[0-9a-f]{7,64}$/).nullable(),
+});
+export type TaskPullRequest = z.infer<typeof TaskPullRequest>;
+
 /** One card. `ownerId` is null until somebody claims it; `baseSha` and `testedSha` are the freshness facts. */
 export const Task = z.object({
   id: TaskId,
@@ -94,6 +117,8 @@ export const Task = z.object({
   boardId: BoardId.nullable(),
   /** The thread the card's conversation lives in. */
   threadRootId: z.uuid().nullable(),
+  /** The pull request the card waits on, once the tested branch was published; null for a card with none. */
+  pullRequest: TaskPullRequest.nullable(),
   /** Why the card waits on a person, in words; empty otherwise. */
   blockerReason: z.string().max(500),
   /** How many times the work was sent back (bounded by `MAX_REWORKS`). */

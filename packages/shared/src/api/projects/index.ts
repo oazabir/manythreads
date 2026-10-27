@@ -38,3 +38,22 @@ export const updateProjectRoute = { method: 'PATCH', path: '/api/teams/:slug/pro
 export const DeleteProjectResponse = z.object({ deleted: z.literal(true) });
 export type DeleteProjectResponse = z.infer<typeof DeleteProjectResponse>;
 export const deleteProjectRoute = { method: 'DELETE', path: '/api/teams/:slug/projects/:projectId' } as const;
+
+/**
+ * A GitHub token the team's pod uses to push a tested branch and open a pull request (a fine-grained token with contents and pull request write
+ * access to this one repository). Write-only: no response ever carries it.
+ */
+export const PushCredentialToken = z
+  .string()
+  .min(20)
+  .max(255)
+  .regex(/^[A-Za-z0-9_\-.]+$/, 'letters, digits, "_", "-" and "." only');
+export const SetPushCredentialRequest = z.strictObject({ token: PushCredentialToken });
+export type SetPushCredentialRequest = z.infer<typeof SetPushCredentialRequest>;
+export const SetPushCredentialResponse = z.object({ project: Project });
+export type SetPushCredentialResponse = z.infer<typeof SetPushCredentialResponse>;
+export const setPushCredentialRoute = { method: 'PUT', path: '/api/teams/:slug/projects/:projectId/push-credential' } as const;
+
+export const RemovePushCredentialResponse = z.object({ project: Project });
+export type RemovePushCredentialResponse = z.infer<typeof RemovePushCredentialResponse>;
+export const removePushCredentialRoute = { method: 'DELETE', path: '/api/teams/:slug/projects/:projectId/push-credential' } as const;

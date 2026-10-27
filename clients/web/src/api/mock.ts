@@ -23,6 +23,8 @@ import {
   createProjectRoute,
   deleteProjectRoute,
   listProjectsRoute,
+  removePushCredentialRoute,
+  setPushCredentialRoute,
   updateProjectRoute,
   createInvitationRoute,
   deleteHermesConnectionRoute,
@@ -717,7 +719,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     freeChannel(t, body.channelId, null);
     const pr = {
       id: nextId('f'), workspaceId: uuid('a', 1), teamId: t.id, name: String(body.name), repoUrl: String(body.repoUrl), defaultBranch: body.defaultBranch ?? 'main',
-      channelId: body.channelId ?? null, createdBy: me().id, createdAt: NOW, updatedAt: NOW,
+      channelId: body.channelId ?? null, createdBy: me().id, pushCredentialSetAt: null, createdAt: NOW, updatedAt: NOW,
     };
     list.push(pr);
     return created({ project: pr });
@@ -729,6 +731,21 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     if (body.channelId !== undefined) freeChannel(t, body.channelId, pr['id']);
     for (const k of ['repoUrl', 'defaultBranch', 'channelId'] as const) if (body[k] !== undefined) pr[k] = body[k];
     pr['updatedAt'] = NOW;
+    return { project: pr };
+  });
+  // The mock never keeps the token: it answers that one is set, like the server.
+  on(setPushCredentialRoute, ({ params }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const pr = projectOf(t, params.projectId);
+    pr['pushCredentialSetAt'] = NOW;
+    return { project: pr };
+  });
+  on(removePushCredentialRoute, ({ params }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const pr = projectOf(t, params.projectId);
+    pr['pushCredentialSetAt'] = null;
     return { project: pr };
   });
   on(deleteProjectRoute, ({ params }) => {
