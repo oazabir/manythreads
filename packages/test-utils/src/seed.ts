@@ -6,6 +6,7 @@ import type { TestDatabase } from './db.ts';
 import { KAHF_WORKSPACE_ID, TEAM_IDS, type TeamName } from './personas.ts';
 import { seedContent, type SeedContentOptions, type SeedContentResult } from './seed-content.ts';
 import { seedGuard, type SeedGuardResult } from './seed-guard.ts';
+import { seedWork, type SeedWorkOptions, type SeedWorkResult } from './seed-work.ts';
 import { seedRepo, type SeedRepoOptions, type SeedRepoResult } from './seed-repo.ts';
 
 /** Team template each seeded team was created from (folder names under `templates/`). */
@@ -54,6 +55,14 @@ export interface SeedOptions {
    * `MANYTHREADS_STACK_SEED=guard`. Needs the gateway-llm tables: without them `SeedResult.guard.skipped` says so.
    */
   guard?: boolean;
+  /**
+   * Seed v6 (seed-work.ts): the Engineering team's work for the phase 6 screens — a board with cards in the five columns, a Bot Board in #dev, a
+   * disabled heartbeat and routine with two past runs, the routine's contract and output page in the team repo, and a protected `production`
+   * environment. Default false; the CLI takes `--work` (on by default with the content and repositories), the e2e stack `MANYTHREADS_STACK_SEED=work`.
+   * Needs seed v3 and v4: without the tables `SeedResult.work.skipped` says so.
+   */
+  work?: boolean;
+  workOptions?: Omit<SeedWorkOptions, 'log'>;
   /** One line per step; the CLI prints them. */
   log?: (line: string) => void;
 }
@@ -71,6 +80,8 @@ export interface SeedResult {
   repo: SeedRepoResult | null;
   /** What seed v5 wrote (null when `guard` was not asked for or the database was skipped). */
   guard: SeedGuardResult | null;
+  /** What seed v6 wrote (null when `work` was not asked for or the database was skipped). */
+  work: SeedWorkResult | null;
   passwordMode: 'fixed' | 'random';
 }
 
@@ -84,7 +95,7 @@ const defaultTemplatesDir = (): string =>
  * argon2id passwords, and a verified `person_emails` row for each persona's address (Tariq also has `tariq@kahf.co`, his
  * Google Workspace login) so OIDC can link identities. All ids are fixed (personas.ts), so screenshots are stable.
  *
- * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist, and with `repo: true` seed v4 (seed-repo.ts) and with `guard: true` seed v5 (seed-guard.ts).
+ * With `content: true` it also writes seed v3 (see seed-content.ts) once the plugin tables exist, and with `repo: true` seed v4 (seed-repo.ts) with `guard: true` seed v5 (seed-guard.ts) and with `work: true` seed v6 (seed-work.ts).
  *
  * Idempotent: a second run inserts nothing new and never replaces an existing password, so a demo site keeps the random
  * passwords of its first seeding. When the database already holds a different workspace the seed does nothing.
@@ -107,7 +118,7 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
   if (foreign.length > 0) {
     const reason = 'this database already has another workspace (first-admin bootstrap was used); seed left it alone';
     log(`skipped: ${reason}`);
-    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, repo: null, guard: null, passwordMode };
+    return { workspaceId: KAHF_WORKSPACE_ID, created: false, skipped: reason, personas: null, content: null, repo: null, guard: null, work: null, passwordMode };
   }
   const created = existing.length === 0;
 
@@ -148,5 +159,7 @@ export async function seedWorld(db: Pick<TestDatabase, 'systemUrl'>, options: Se
     ? await seedRepo(db, { ...options.repoOptions, attachments: options.content ? (options.repoOptions?.attachments ?? options.contentOptions?.attachment) : false, log })
     : null;
   const guard = options.guard ? await seedGuard(db, { log }) : null;
-  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, repo, guard, passwordMode };
+  // Seed v6 hangs its cards on the #dev channel (v3) and the coder bot placeholder (v4).
+  const work = options.work ? await seedWork(db, { ...options.workOptions, repoDir: options.workOptions?.repoDir ?? options.repoOptions?.repoDir, log }) : null;
+  return { workspaceId: KAHF_WORKSPACE_ID, created, skipped: null, personas, content, repo, guard, work, passwordMode };
 }

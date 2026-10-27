@@ -131,6 +131,7 @@ pnpm seed --demo              # random passwords, hashed and printed nowhere (pu
 pnpm seed --no-content        # workspace, teams and people only
 pnpm seed --migrate --no-content --wait 60   # apply kernel migrations first / wait for the server's migrations
 pnpm seed --guard             # add seed v5 (below)
+pnpm seed --no-work           # leave out seed v6 (on by default with the content and the repositories)
 ```
 
 ### Seed v5: the guard state (`--guard`, `seedWorld(db, { guard: true })`, `MANYTHREADS_STACK_SEED=guard`)
@@ -140,6 +141,16 @@ empty allowlist (`llm_settings`) and the `local` alias bound to a provider on th
 the `air-gapped` preset work in a seeded world. An admin's own preset, provider or `local` binding is never replaced, a second run writes nothing, and without the gateway-llm tables `SeedResult.guard.skipped` says
 so. `SEED_GUARD` names the strings a spec feeds the guardrails (a made-up API key, the published test card number, a bearer token, a gate-list message by its words, one by its meaning, a clean one) and `seedGateBotMd(name)`
 is a BOT.md whose `guard.gate` is the spec's example list; bots stay files in a team repo, so a spec commits that file instead of the seed inventing a bot.
+
+### Seed v6: the Engineering team's work (`--work`, on by default; `--no-work` leaves it out; `seedWorld(db, { work: true })`, `MANYTHREADS_STACK_SEED=work`)
+
+`packages/test-utils/src/seed-work.ts`, after seeds v3 and v4 (it hangs cards on `#dev` and on the `coder` bot placeholder). The deployed seed Job and the CI candidate check run `pnpm seed` with its defaults, so the live and CI worlds carry it.
+It writes in two parts, each **once**. Two commits in the team's repository history are the markers (history survives anything people delete), so a card, board, environment or rhythm a person deletes, and a card they move, is **never put back or reset** by a later seed (every release runs it). Fixed ids in `SEED_WORK`, dates from Monday 2026-03-16 09:00 UTC. An environment named `production`, or a "Bot Board" on `#dev`, that a person made first is used as it is (matched by name), not duplicated.
+
+- **Core part** (marker: the commit "Add the deploy health report"): the `production` environment of Engineering, protected and needing approval (deploy cap 3 a day); a goal "Ship v2.14"; the team board "Engineering board"; six cards (open; two in progress owned by Rafi and Nadia; one in verify; a finished code card with its `tested_sha` and the production environment; a finished content card), each with the history the tasks functions write (created, claimed, legal moves, completed) and a claim row; and the page `pages/reports/deploy-health.md`, committed as Omar. The pages plugin reads the page from git and makes its `page_docs` row when someone opens it, so none is seeded.
+- **Bot part** (marker: the commit "Add the weekly deploy health routine"): the channel **Bot Board** of `#dev` with one card, two more cards owned by the `coder` bot (in progress; waiting on a person with its blocker), a heartbeat and the weekly routine "Weekly deploy health" for `coder`, **both disabled with no next slot** (a seeded site never wakes a bot on a timer), two past runs of the routine (one done, one failed with its reason), and the routine's contract `routines/weekly-deploy-health.yaml`. Seeded claims expire in 2100 so the claim sweep leaves the cards alone.
+
+The bot's row is made by the running server from `bots/coder/BOT.md`; the seed waits up to 20 s for it (`workOptions.botWaitMs`). If the bot or `#dev` is missing, only the bot part is left out, `SeedResult.work.notes` says so, and the next run does it.
 
 ## Isolated stacks for api specs, and ports
 

@@ -134,7 +134,7 @@ server is ready: workspace Kahf Software, seven personas, three teams with their
 thread with its attachment `deploy-plan-v2.14.pdf`, a private channel, a DM, a 5,000-message `#load-test`, Lena's read grant on `#releases`, reactions and mentions) and **seed v4**: the content of each team's
 repository (`pages/runbook.md` with two commits by two people, `pages/reports/signups.csv`, a digest, a changelog, a Mermaid diagram, the embedded app `apps/release-checklist/`, `memory/facts/` and
 `memory/journal/`, a bot placeholder under `bots/`, `TEAM.md` from the template), committed through the repo writer as the people who would have written them, and a PNG, an MP4 and an Office file next to the PDF
-in `#dev` ([plugins/repo-git.md](./plugins/repo-git.md), "Seed v4"). The Job writes where the server reads:
+in `#dev` ([plugins/repo-git.md](./plugins/repo-git.md), "Seed v4"), then **seed v6** (the Engineering team's work: a board with cards in all five columns, a Bot Board in `#dev`, a heartbeat and a routine that are switched off with two past runs, the routine's contract and output page in the repository, and a protected `production` environment; [testing.md](./testing.md), "Seed v6"). The Job writes where the server reads:
 
 - **Repositories:** it mounts the same PVC `manythreads-repos` at `/data/repos` with the same `MANYTHREADS_REPO_DIR`, and the server image it runs carries `git` (the repo writer drives the `git` CLI). Without
   the repository volume (`server.repos.persistence.enabled=false`) it passes `--no-repo`: a repository made in the Job's own disk would be a different one from the server's.
@@ -145,7 +145,7 @@ in `#dev` ([plugins/repo-git.md](./plugins/repo-git.md), "Seed v4"). The Job wri
 This was chosen over seeding from the server process because the Job stays the only thing that writes seed data and the server needs no demo code or flag. A re-run is idempotent: a repository step whose commit message
 is already in the team's history is skipped (a person's later edit is never undone), and an attachment whose bytes are gone (a recreated volume or bucket) gets them put again under the same row. Every persona gets
 a random password that is stored only as an argon2id hash and printed nowhere, so the public site has no known credentials. The first-admin bootstrap link is not offered once the workspace exists.
-Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-repo] [--no-attachment] [--migrate] [--wait <secs>]`.
+Run it by hand against any database: `DATABASE_URL=postgres://... pnpm seed [--demo] [--no-content] [--no-repo] [--no-work] [--no-attachment] [--migrate] [--wait <secs>]`.
 
 ## HTTPS: Cloudflare or Let's Encrypt
 

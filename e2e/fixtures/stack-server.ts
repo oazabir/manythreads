@@ -8,7 +8,9 @@
 //                                (seed v3 on top: channels, messages, a thread, a DM, a 5,000-message channel, Lena's grant), `repo` (seed v4
 //                                on top of that: each team repo's pages, CSV, diagram, app, memory and bot placeholder, and a PDF, PNG, MP4
 //                                and Office file in #dev), `guard` (seed v5 on top of that: the `standard` preset and the `local` alias bound to a model
-//                                on this machine, so the gate's classifier has an alias to ask), `personas`
+//                                on this machine, so the gate's classifier has an alias to ask), `work` (seed v4 plus seed v6: the Engineering board and
+//                                Bot Board, a heartbeat and a routine that are switched off, the routine's output page, the protected `production`
+//                                environment), `personas`
 //                                (only the people, like the shared api server) or `none` (empty: the first-admin link is printed)
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
@@ -98,7 +100,7 @@ await new Promise<void>((ok) => front.listen(0, '127.0.0.1', ok));
 const origin = `http://127.0.0.1:${(front.address() as AddressInfo).port}`;
 
 const seedMode = process.env['MANYTHREADS_STACK_SEED'] ?? 'world';
-if (!['none', 'world', 'content', 'repo', 'guard', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
+if (!['none', 'world', 'content', 'repo', 'guard', 'work', 'personas'].includes(seedMode)) throw new Error(`MANYTHREADS_STACK_SEED: unknown mode "${seedMode}"`);
 // Attachments (storage-local) go to a directory of this stack, removed on exit, never into the working tree.
 const storageDir = process.env['MANYTHREADS_STORAGE_DIR'] ?? mkdtempSync(join(tmpdir(), 'manythreads-stack-blobs-'));
 process.env['MANYTHREADS_STORAGE_DIR'] = storageDir;
@@ -138,6 +140,8 @@ const server = await startServer({
 if (seedMode === 'content') await seedWorld(db, { content: true });
 else if (seedMode === 'repo') await seedWorld(db, { content: true, repo: true });
 else if (seedMode === 'guard') await seedWorld(db, { content: true, repo: true, guard: true });
+// `work` is seed v6 on top of v4: the Engineering board, rhythms (off), routine page and the protected `production` environment.
+else if (seedMode === 'work') await seedWorld(db, { content: true, repo: true, work: true });
 apiPort = server.port;
 console.log(`MANYTHREADS_STACK ${JSON.stringify({ origin, ownerUrl: db.ownerUrl, database: db.name, testAuthToken: token, bootstrapToken: parseBootstrapToken(logs) ?? null })}`);
 

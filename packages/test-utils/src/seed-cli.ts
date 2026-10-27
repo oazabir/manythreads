@@ -11,7 +11,9 @@ DATABASE_URL, with its conversations: channels from the team templates, about 40
 channel, a direct message, a 5,000-message channel, Lena's grant on #releases, reactions, mentions and the attachment of the Deploy plan
 (seed v3), then the content of each team's repository (seed v4: pages with history, a CSV, a Mermaid diagram, an embedded app, memory, a bot
 placeholder; written to MANYTHREADS_REPO_DIR, default ./data/repos, through the repo writer, so git must be installed) and a PNG, an MP4 and
-an Office file next to the PDF in #dev. Attachments go through the storage provider named by MANYTHREADS_STORAGE (local, in
+an Office file next to the PDF in #dev. Then seed v6, the work of Engineering: a board with cards in all five columns, a Bot Board in #dev,
+a heartbeat and a routine (both switched off) with two past runs, the routine's contract and output page in the repository, and a protected
+"production" environment. Attachments go through the storage provider named by MANYTHREADS_STORAGE (local, in
 MANYTHREADS_STORAGE_DIR, default ./data/blobs; or s3, with the MANYTHREADS_S3_* variables of the server). Safe to run again: nothing is
 duplicated and existing passwords are kept.
 Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
@@ -21,6 +23,7 @@ Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
                     sign in (the CI release on the devbox; never a public deployment)
   --no-content     only the workspace, teams and people (no channels or messages)
   --no-repo        leave out seed v4 (the repositories and the three extra attachments)
+  --no-work        leave out seed v6 (the Engineering board, rhythms, page and production environment)
   --guard          add seed v5: the standard guard preset and the local alias bound to a model on this machine (needs the gateway-llm tables)
   --no-attachment  leave out the attachments (when this process cannot reach the server's store, e.g. a Job without the blob volume)
   --migrate        apply the kernel migrations first (a fresh dev database); the server does this itself at start
@@ -28,13 +31,14 @@ Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
   -h, --help       this text
 `;
 
-function parseArgs(argv: string[]): { demo: boolean; fixedPasswords: boolean; migrate: boolean; wait: number; content: boolean; attachment: boolean; repo: boolean; guard: boolean } | null {
+function parseArgs(argv: string[]): { demo: boolean; fixedPasswords: boolean; migrate: boolean; wait: number; content: boolean; attachment: boolean; repo: boolean; guard: boolean; work: boolean } | null {
   let demo = false;
   let fixedPasswords = false;
   let content = true;
   let repo = true;
   let attachment = true;
   let guard = false;
+  let work = true;
   let migrate = false;
   let wait = 0;
   for (let i = 0; i < argv.length; i += 1) {
@@ -45,6 +49,8 @@ function parseArgs(argv: string[]): { demo: boolean; fixedPasswords: boolean; mi
     else if (a === '--no-content') content = false;
     else if (a === '--no-repo') repo = false;
     else if (a === '--guard') guard = true;
+    else if (a === '--no-work') work = false;
+    else if (a === '--work') work = true;
     else if (a === '--no-attachment') attachment = false;
     else if (a === '--wait') wait = Number(argv[(i += 1)]);
     else if (a?.startsWith('--wait=')) wait = Number(a.slice(7));
@@ -52,7 +58,7 @@ function parseArgs(argv: string[]): { demo: boolean; fixedPasswords: boolean; mi
     else throw new Error(`unknown argument "${a}"\n\n${USAGE}`);
   }
   if (!Number.isFinite(wait) || wait < 0) throw new Error('--wait takes a number of seconds');
-  return { demo, fixedPasswords, migrate, wait, content, attachment, repo, guard };
+  return { demo, fixedPasswords, migrate, wait, content, attachment, repo, guard, work };
 }
 
 const env = process.env;
@@ -118,7 +124,7 @@ while (!(await migrated(url, args.content, args.repo))) {
   await sleep(2000);
 }
 
-const result = await seedWorld({ systemUrl: url }, { demo: args.demo, passwordMode: args.fixedPasswords ? 'fixed' : undefined, content: args.content, repo: args.content && args.repo, guard: args.guard, contentOptions: { attachment: args.attachment }, log: (line) => console.log(`seed: ${line}`) });
+const result = await seedWorld({ systemUrl: url }, { demo: args.demo, passwordMode: args.fixedPasswords ? 'fixed' : undefined, content: args.content, repo: args.content && args.repo, guard: args.guard, work: args.content && args.repo && args.work, contentOptions: { attachment: args.attachment }, log: (line) => console.log(`seed: ${line}`) });
 // Nothing below prints a credential: in demo mode the passwords never leave seedWorld.
 console.log(
   result.skipped
