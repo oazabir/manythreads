@@ -973,3 +973,24 @@ were updated by repo commit (no template-to-team update exists yet).
 
 **Open.** Disk on the devbox ~84%; no database backups; the bridge runs as root; the `test-manythreads` preview is still installed; two in-progress cards from
 earlier test goals sit on the Bot Board; the board's columns are clipped below ~1060 px wide.
+
+## Phase 6, closing work (2026-10-27)
+
+- **Rhythms run (P6-08, `12bcacc`):** a fired rhythm starts its bot (trigger `routine`), the run ledger follows the run, a routine writes its
+  page through `pages.write` and posts "wrote <page> · diff"; stuck firings are failed by the tick. Live: Engineering's "Weekly deploy health"
+  wrote `pages/reports/deploy-health.md`.
+- **Seed v6 (P6-11, `d254138`):** Engineering's board, a Bot Board on #dev, two switched-off rhythms, a page and a protected `production`.
+- **Board layout (P6-07):** the columns share the width and the card panel takes a column only while a card is open.
+- **Pull requests (P6-05, owner decision 2026-10-27, `f84a8fd`):** a tested card is published by the Tester (`mt-publish` in the team pod) as a
+  pull request against the project's main branch; the token lives only in a pod Secret bound to origin and branch; the server verifies the
+  pull request with GitHub; a merge finishes the card, a close sends it back. Needs a GitHub token set on the project to run for real.
+- **Counting benchmark, Hermes (P6-10):** **PASS** on the live site, 20 managed-pod bots on the `fast` alias, 886 s wake to twenty lines, log
+  1..20, never two owners (`docs/perf/counting-hermes.md`). The 60 s spec target is for the rules variant (which passes per commit).
+- **Pipeline:** `ci.sh` keeps each run's log in `/root/ci-logs/`; tests on the devbox while CI runs make CI fail (they share the dev
+  database). **Disk:** a deploy at 90% disk evicted the live database and the team pods (`MISTAKES.md`); deploys now drop Docker's copies
+  of images k3s holds.
+- **Superseded rows:** P6-06's runner exists (`packages/runner`) but bots now run on a Hermes gateway or the agent bridge; P6-00's
+  controller is the `hermes-pods` reconciler. `nodeSelector` placement (acceptance 9) applies to legacy `node`/`runner` placement only.
+- **Open:** archiving a team does not stop its runs in progress (they hold run slots until they time out); a card sent back by a closed pull
+  request does not wake its bot; the Deployer is not in the pull-request flow; the Engineering coder came from an older template.
+

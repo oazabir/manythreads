@@ -22,6 +22,7 @@ capabilities:
     - tasks.claim
     - tasks.describe
     - tasks.release
+    - messages.post
 placement:
   gateway:
     connection: managed

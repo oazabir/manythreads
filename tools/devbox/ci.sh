@@ -90,6 +90,8 @@ stage "import the images into k3s"
 for img in "manythreads/server:$TAG" "manythreads/web:$TAG"; do
   echo "importing $img"
   docker save "$img" | k3s ctr -n k8s.io images import - | tail -n 2
+  # k3s now holds its own copy; deploy.sh (--no-build) finds it there, so Docker's duplicate is dropped (see deploy.sh's import).
+  docker rmi "$img" >/dev/null 2>&1 || true
 done
 
 # --- 3 · a fresh CI release ---------------------------------------------------

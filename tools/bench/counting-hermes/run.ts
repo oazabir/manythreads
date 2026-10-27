@@ -7,7 +7,7 @@
  *   MANYTHREADS_LIVE_PASSWORD=... pnpm --filter @manythreads/tools-bench bench:counting:hermes [-- --url https://… --dry-run]
  *
  * Flags: --url (default https://manythreads.kahf.to) · --alias (default: the cheapest bound alias, `fast` first) · --timeout seconds
- * (default 600) · --out (default docs/perf/counting-hermes.md) · --dry-run (sign in and read, change nothing) · --keep (leave the team running).
+ * (default 1200) · --out (default docs/perf/counting-hermes.md) · --dry-run (sign in and read, change nothing) · --keep (leave the team running).
  * Re-running reuses the team and the bots and makes a fresh card; the team is archived at the end so no pod keeps running.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -28,7 +28,7 @@ const flag = (name: string): boolean => process.argv.includes(`--${name}`);
 const BASE = arg('url', 'https://manythreads.kahf.to').replace(/\/+$/, '');
 const EMAIL = process.env['MANYTHREADS_LIVE_EMAIL'] ?? 'omar@kahf.example';
 const PASSWORD = process.env['MANYTHREADS_LIVE_PASSWORD'] ?? '';
-const TIMEOUT_MS = Number(arg('timeout', '600')) * 1000;
+const TIMEOUT_MS = Number(arg('timeout', '1200')) * 1000;
 const OUT = resolve(arg('out', resolve(import.meta.dirname, '../../../docs/perf/counting-hermes.md')));
 const DRY = flag('dry-run');
 const KEEP = flag('keep');
@@ -39,7 +39,8 @@ const say = (m: string): void => console.log(`[${new Date().toISOString().slice(
 // A tiny session: cookies by hand, and the CSRF cookie's value as the header every write carries.
 const jar = new Map<string, string>();
 async function api<T = Record<string, unknown>>(method: string, path: string, body?: unknown, okStatuses: number[] = []): Promise<{ status: number; body: T }> {
-  const csrf = jar.get('manythreads_csrf') ?? jar.get('__Host-manythreads_csrf');
+  // The server clears the plain cookie (an empty value) when it sets the `__Host-` one, so an empty value never counts.
+  const csrf = [jar.get('__Host-manythreads_csrf'), jar.get('manythreads_csrf')].find((v) => v !== undefined && v !== '');
   const headers: Record<string, string> = { cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; '), origin: BASE };
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (method !== 'GET' && csrf) headers['x-csrf-token'] = csrf;
@@ -150,12 +151,29 @@ async function waitReady(): Promise<void> {
     const conns = (await api<{ items: { id: string; kind: string; status: string }[] }>('GET', `/api/teams/${TEAM_SLUG}/hermes/connections`)).body.items;
     const managed = conns.find((c) => c.kind === 'managed');
     if (managed) {
+      // The connection check is rate limited (20 a minute per person): ask about the first profile until the pod answers, then about
+      // all twenty at a pace under the limit, and wait out a 429 instead of failing.
+      const test = async (i: number): Promise<{ ok: boolean; error: string }> => {
+        const t = await api<{ ok?: boolean; error?: string | null }>('POST', `/api/teams/${TEAM_SLUG}/hermes/connections/${managed.id}/test`, { profile: `mt-${slugOf(i)}` }, [429]);
+        if (t.status === 429) {
+          await sleep(60_000);
+          return { ok: false, error: 'rate limited; waited a minute' };
+        }
+        return { ok: t.body.ok === true, error: t.body.error ?? '' };
+      };
       let known = 0;
       let lastError = '';
-      for (let i = 1; i <= BOT_COUNT; i++) {
-        const t = await api<{ ok: boolean; error: string | null }>('POST', `/api/teams/${TEAM_SLUG}/hermes/connections/${managed.id}/test`, { profile: `mt-${slugOf(i)}` });
-        if (t.body.ok) known++;
-        else lastError = t.body.error ?? '';
+      const first = await test(1);
+      if (first.ok) {
+        known = 1;
+        for (let i = 2; i <= BOT_COUNT; i++) {
+          await sleep(3200);
+          const r = await test(i);
+          if (r.ok) known++;
+          else lastError = r.error;
+        }
+      } else {
+        lastError = first.error;
       }
       const line = `${String(known)}/${String(BOT_COUNT)} profiles known${lastError ? ` (${lastError.slice(0, 100)})` : ''}`;
       if (line !== podLine) say(line);
@@ -204,10 +222,25 @@ async function main(): Promise<void> {
     const taskId = created.body.task.id;
     say(`counter card ${taskId}`);
 
+    // Archiving the team does not stop runs already under way, and an earlier timed-out bench leaves some running: they hold the
+    // server's run slots (6 at a time) and would delay this race by minutes. Wait until none of the bench bots has a run going.
+    const quietBy = Date.now() + 30 * 60_000;
+    for (;;) {
+      let running = 0;
+      for (const b of bots) {
+        const r = await api<{ runs: { status: string }[] }>('GET', `/api/teams/${TEAM_SLUG}/bots/${b.slug}`);
+        running += r.body.runs.filter((x) => x.status === 'running').length;
+      }
+      if (running === 0) break;
+      if (Date.now() > quietBy) throw new Error(`${String(running)} earlier bench runs are still going after 30 minutes`);
+      say(`${String(running)} earlier bench runs still going; waiting`);
+      await sleep(30_000);
+    }
+
     // One message names all twenty, so they all wake at once and race for the card.
     const wakeAt = Date.now();
     const mentions = bots.map((b) => `@${b.slug}`).join(' ');
-    await api('POST', `/api/channels/${channelId}/messages`, { channelId, body: `${mentions} counter card ${taskId}: take your turn.` });
+    await api('POST', `/api/channels/${channelId}/messages`, { channelId, threadRootId: null, body: `${mentions} counter card ${taskId}: take your turn.` });
     say('woke all twenty');
 
     let card = await getCard(taskId);

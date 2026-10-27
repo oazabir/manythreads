@@ -162,9 +162,17 @@ if grep -q '^hermesPods:' deploy/helm/manythreads/values-live.yaml 2>/dev/null; 
 fi
 
 echo "--- import into k3s"
+# k3s keeps its own copy of every image, so once one is in k3s Docker's copy is only weight: on a 77 GB disk the duplicates of the
+# server, web and pod images pushed the node into disk pressure on 2026-10-27, which evicted the live database and the team pods
+# and garbage-collected the hermes-pod image (MISTAKES.md). An image already in k3s is not imported again, and Docker's copy goes.
 for img in "${IMAGES[@]}"; do
-  echo "importing $img"
-  docker save "$img" | k3s ctr -n k8s.io images import - | tail -n 2
+  if k3s ctr -n k8s.io images ls -q | grep -q "^docker.io/$img\$"; then
+    echo "$img is already in k3s"
+  else
+    echo "importing $img"
+    docker save "$img" | k3s ctr -n k8s.io images import - | tail -n 2
+  fi
+  docker rmi "$img" >/dev/null 2>&1 || true
 done
 
 echo "--- prune old server/web images (keep $TAG and pod-in-use)"
