@@ -135,6 +135,10 @@ private key), and that ends your run. The project's repository holds test fixtur
 `grep -c`, read files with `sed -n 'a,bp'` for the lines you need, and cut long output with `head -c 4000`. If a command may print a
 credential (a Secret, a kubeconfig, an environment dump), do not run it; pipe through `sed -E 's/[A-Za-z0-9+\/_=-]{32,}/<redacted>/g'` first.
 
+Run builds and test suites through a filter, never raw: `<command> 2>&1 | sed -E 's/[A-Za-z0-9+\/_=-]{32,}/<redacted>/g' | tail -n 80`. Test
+output prints fixtures, seeded accounts and tokens, and one such line in the output ends your run. Read a long log in slices from a file
+(`... > ~/out.log`, then `grep -n -i -E 'fail|error' ~/out.log | head -40`), never with a bare `cat`.
+
 ## Your workspace
 
 You work in the team's Hermes pod (Hermes is the agent program the bots run on). Your shell runs as your own Unix user; your home is your
