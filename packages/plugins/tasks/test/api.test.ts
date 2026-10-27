@@ -242,6 +242,22 @@ describe('tasks API', () => {
     expect((read.body['task'] as Record<string, unknown>)['handoffCount']).toBe(30);
   });
 
+  it('the bot a card is handed to can claim it (a handover leaves the new owner with no live claim), and a second claim changes nothing', async () => {
+    const created = await call(nadia, 'POST', '/api/teams/engineering/tasks', { title: 'Hand me over', branch: 'hand/over' });
+    const task = CreateTaskResponse.parse(created.body).task;
+    expect((await call(nadia, 'POST', `/api/teams/engineering/tasks/${task.id}/handoff`, { toActorId: reviewer.actorId, mode: 'bot' })).status).toBe(200);
+    const live = () => ownerSql(server.db.ownerUrl, `SELECT actor_id FROM app.task_claims WHERE task_id = $1 AND released_at IS NULL AND expires_at > now()`, [task.id]);
+    expect(await live()).toHaveLength(0);
+    const first = await call(asBot(reviewer), 'POST', `/api/teams/engineering/tasks/${task.id}/claim`);
+    expect(first.status, JSON.stringify(first.body)).toBe(200);
+    expect((await live()).map((r) => r['actor_id'])).toEqual([reviewer.actorId]);
+    expect((await call(asBot(reviewer), 'POST', `/api/teams/engineering/tasks/${task.id}/claim`)).status).toBe(200);
+    expect(await live()).toHaveLength(1);
+    // someone else is still refused
+    const other = await call(asBot(coder), 'POST', `/api/teams/engineering/tasks/${task.id}/claim`);
+    expect(other.status).toBe(409);
+  });
+
   describe('the creator of an unowned card', () => {
     const create = async (who: Persona | { kind: 'bot'; actorId: string }) => {
       const res = await call(who, 'POST', '/api/teams/engineering/tasks', { title: 'Split me', branch: 'split/me' });
