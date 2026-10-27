@@ -87,7 +87,9 @@
 }
 
 .bd-col {
-  flex: 0 0 236px;
+  /* The five columns share the width; below 200 px each the row scrolls sideways instead of squeezing the cards. */
+  flex: 1 1 236px;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
   gap: 8px;
