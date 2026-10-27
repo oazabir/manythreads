@@ -1,7 +1,7 @@
-# Orchestrator's scenario set: what a planner must do, and the three things it must never do. Each case is checkable against the calls the
+# Engineer's scenario set: what a planner must do, and the three things it must never do. Each case is checkable against the calls the
 # run made and the message it posted, so a score is a count rather than an opinion.
 schema: 1
-set: orchestrator
+set: engineer
 cases:
   - id: splits-a-goal-into-owned-cards
     question: Get the upload retry into production this week.

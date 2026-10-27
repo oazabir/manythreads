@@ -24,7 +24,7 @@ describe('shipped templates', () => {
     expect(eng?.channels.map((c) => c.name)).toEqual(['#general', '#dev', '#releases', '#incidents', '#alerts', '#standup']);
     expect(eng?.board.name).toBeTruthy();
     expect(eng?.bots.map((b) => b.name)).toEqual(
-      expect.arrayContaining(['Brain', 'Orchestrator', 'Coder', 'Reviewer', 'Tester', 'Deployer', 'Browser tester', 'Standup relay', 'Alert triage']),
+      expect.arrayContaining(['Brain', 'Engineer', 'Plan reviewer', 'Coder', 'Code reviewer', 'Tester', 'Deployer', 'Web smoke tester', 'Standup relay', 'Alert triage']),
     );
     expect(eng?.roleTags).toContain('role:on-call');
   });
@@ -40,13 +40,14 @@ describe('shipped templates', () => {
       engineering: [
         'bots/alert-triage/BOT.md',
         'bots/brain/BOT.md',
-        'bots/browser-tester/BOT.md',
+        'bots/code-reviewer/BOT.md',
         'bots/coder/BOT.md',
         'bots/deployer/BOT.md',
-        'bots/orchestrator/BOT.md',
-        'bots/reviewer/BOT.md',
+        'bots/engineer/BOT.md',
+        'bots/plan-reviewer/BOT.md',
         'bots/standup-relay/BOT.md',
         'bots/tester/BOT.md',
+        'bots/web-smoke-tester/BOT.md',
       ],
       marketing: ['bots/brain/BOT.md', 'bots/content-drafter/BOT.md'],
       'product-design': ['bots/brain/BOT.md'],

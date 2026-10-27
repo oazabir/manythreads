@@ -25,24 +25,26 @@ afterAll(async () => {
   await w?.close();
 });
 
-/** The engineering template's bot definitions and scenario sets (P6-12: nine bots, one pipeline). */
+/** The engineering template's bot definitions and scenario sets (P6-12: ten bots, one pipeline). */
 const ENGINEERING_BOT_FILES = [
   'bots/alert-triage/BOT.md',
   'bots/alert-triage/evals/alert-triage.yaml',
   'bots/brain/BOT.md',
   'bots/brain/evals/brain.yaml',
-  'bots/browser-tester/BOT.md',
+  'bots/code-reviewer/BOT.md',
+  'bots/code-reviewer/evals/code-reviewer.yaml',
   'bots/coder/BOT.md',
   'bots/deployer/BOT.md',
   'bots/deployer/evals/deployer.yaml',
-  'bots/orchestrator/BOT.md',
-  'bots/orchestrator/evals/orchestrator.yaml',
-  'bots/reviewer/BOT.md',
-  'bots/reviewer/evals/reviewer.yaml',
+  'bots/engineer/BOT.md',
+  'bots/engineer/evals/engineer.yaml',
+  'bots/plan-reviewer/BOT.md',
+  'bots/plan-reviewer/evals/plan-reviewer.yaml',
   'bots/standup-relay/BOT.md',
   'bots/standup-relay/evals/standup-relay.yaml',
   'bots/tester/BOT.md',
   'bots/tester/evals/tester.yaml',
+  'bots/web-smoke-tester/BOT.md',
 ];
 
 const ok = <T>(res: { status: number; body: unknown }, status = 200): T => {

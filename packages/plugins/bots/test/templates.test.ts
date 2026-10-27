@@ -231,13 +231,14 @@ describe('every shipped definition', () => {
         'customer-support/support-responder',
         'engineering/alert-triage',
         'engineering/brain',
-        'engineering/browser-tester',
+        'engineering/code-reviewer',
         'engineering/coder',
         'engineering/deployer',
-        'engineering/orchestrator',
-        'engineering/reviewer',
+        'engineering/engineer',
+        'engineering/plan-reviewer',
         'engineering/standup-relay',
         'engineering/tester',
+        'engineering/web-smoke-tester',
         'marketing/brain',
         'marketing/content-drafter',
         'product-design/brain',
@@ -365,11 +366,11 @@ describe('every shipped definition', () => {
     const coder = shipped.find((x) => x.slug === 'coder')!;
     expect(coder.fm.capabilities?.native).not.toContain('files.write');
     expect(coder.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
-    expect(coder.fm.handover?.mayTag).toEqual(['reviewer', 'tester', 'orchestrator']);
+    expect(coder.fm.handover?.mayTag).toEqual(['code-reviewer', 'tester', 'engineer']);
   });
 
-  it('the engineering pipeline: Orchestrator plans and hands over, and has no tool that writes, tests or ships', () => {
-    const orchestrator = shipped.find((s) => s.slug === 'orchestrator')!;
+  it('the engineering pipeline: Engineer plans and hands over, and has no tool that writes, tests or ships', () => {
+    const orchestrator = shipped.find((s) => s.slug === 'engineer')!;
     expect(orchestrator.template.id).toBe('engineering');
     expect(orchestrator.fm.kind).toBe('agent');
     expect(orchestrator.fm.capabilities?.native).toEqual([
@@ -389,12 +390,12 @@ describe('every shipped definition', () => {
     for (const forbidden of ['files.write', 'pages.write', 'tasks.deploy', 'tasks.complete']) {
       expect(orchestrator.fm.capabilities?.native, forbidden).not.toContain(forbidden);
     }
-    expect(orchestrator.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'tester', 'deployer', 'browser-tester', 'brain', 'alert-triage']);
-    expect(orchestrator.fm.evals).toEqual({ set: 'orchestrator', minScore: 0.9 });
+    expect(orchestrator.fm.handover?.mayTag).toEqual(['plan-reviewer', 'coder', 'code-reviewer', 'tester', 'deployer', 'web-smoke-tester', 'brain', 'alert-triage']);
+    expect(orchestrator.fm.evals).toEqual({ set: 'engineer', minScore: 0.9 });
   });
 
-  it('Reviewer and Tester move a card on with the evidence, and neither edits the change', () => {
-    const reviewer = shipped.find((s) => s.slug === 'reviewer')!;
+  it('Code reviewer and Tester move a card on with the evidence, and neither edits the change', () => {
+    const reviewer = shipped.find((s) => s.slug === 'code-reviewer')!;
     const tester = shipped.find((s) => s.slug === 'tester')!;
     for (const s of [reviewer, tester]) {
       expect(s.fm.capabilities?.native, s.slug).toEqual(expect.arrayContaining(['tasks.read', 'tasks.claim', 'tasks.complete', 'tasks.handoff']));
@@ -404,8 +405,8 @@ describe('every shipped definition', () => {
     // Both run the project's tests in the pod's shell; the tester is the one that records a tested commit and passes the build on to Deployer.
     expect(reviewer.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
     expect(tester.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
-    expect(reviewer.fm.handover?.mayTag).toEqual(['coder', 'tester', 'orchestrator']);
-    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'reviewer', 'deployer', 'orchestrator']);
+    expect(reviewer.fm.handover?.mayTag).toEqual(['coder', 'tester', 'engineer']);
+    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'code-reviewer', 'deployer', 'engineer']);
     expect(tester.fm.limits?.timeoutSeconds).toBe(2400);
     expect(tester.body).toContain('tested sha');
     // After the tests pass, a project with a push credential gets a pull request that a person merges; any other project is completed as before.
@@ -427,19 +428,25 @@ describe('every shipped definition', () => {
     expect(deployer.fm.capabilities?.native).not.toContain('tasks.deploy');
     expect(deployer.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
     expect(deployer.fm.limits?.timeoutSeconds).toBe(2400);
-    expect(deployer.fm.handover?.mayTag).toEqual(['browser-tester', 'tester', 'coder', 'orchestrator']);
+    expect(deployer.fm.handover?.mayTag).toEqual(['web-smoke-tester', 'tester', 'coder', 'engineer']);
     expect(deployer.fm.evals).toEqual({ set: 'deployer', minScore: 0.9 });
     expect(deployer.body).toContain('deploy/preview/README.md');
     expect(deployer.body).toContain('test.manythreads.kahf.to');
-    const browser = shipped.find((s) => s.slug === 'browser-tester')!;
+    const browser = shipped.find((s) => s.slug === 'web-smoke-tester')!;
     expect(browser.fm.capabilities?.runtime).toEqual(['shell', 'files', 'browser']);
-    expect(browser.fm.handover?.mayTag).toEqual(['deployer', 'coder', 'orchestrator']);
+    expect(browser.fm.handover?.mayTag).toEqual(['deployer', 'coder', 'engineer']);
     expect(browser.fm.triggers?.map((t) => t.type)).toEqual(['task_assigned', 'mention', 'conversation']);
     for (const slug of ['coder', 'tester', 'deployer']) {
       expect(shipped.find((s) => s.slug === slug)!.fm.limits?.timeoutSeconds, slug).toBeGreaterThanOrEqual(1800);
     }
-    // the Orchestrator keeps one checklist current by editing its own message
-    expect(shipped.find((s) => s.slug === 'orchestrator')!.body).toContain('messages.update');
+    // the Engineer keeps one checklist current by editing its own message
+    expect(shipped.find((s) => s.slug === 'engineer')!.body).toContain('messages.update');
+    // the plan is reviewed before any code: Plan reviewer holds no write tool and answers only to the Engineer
+    const planReviewer = shipped.find((s) => s.slug === 'plan-reviewer')!;
+    expect(planReviewer.fm.handover?.mayTag).toEqual(['engineer']);
+    expect(planReviewer.fm.capabilities?.native).toEqual(expect.arrayContaining(['tasks.claim', 'tasks.complete', 'tasks.handoff']));
+    for (const forbidden of ['files.write', 'pages.write', 'tasks.create', 'tasks.deploy']) expect(planReviewer.fm.capabilities?.native, forbidden).not.toContain(forbidden);
+    expect(planReviewer.fm.evals).toEqual({ set: 'plan-reviewer', minScore: 0.9 });
   });
 
   it('Alert triage turns a batch into an owned card, and Standup relay is the automation that posts the summary', () => {

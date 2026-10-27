@@ -1,6 +1,6 @@
-# Reviewer's scenario set: the review reads before it judges, it hands the card on with a reason, and it never edits or ships what it reviews.
+# Code reviewer's scenario set: the review reads before it judges, it hands the card on with a reason, and it never edits or ships what it reviews.
 schema: 1
-set: reviewer
+set: code-reviewer
 cases:
   - id: reads-the-change-before-judging
     question: Is this diff safe to ship?

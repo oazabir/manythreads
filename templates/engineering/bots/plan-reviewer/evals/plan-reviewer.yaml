@@ -1,0 +1,49 @@
+# Plan reviewer's scenario set: it reads the plan before judging, it answers with numbered objections or a completion, and it never edits what it reviews.
+schema: 1
+set: plan-reviewer
+cases:
+  - id: reads-the-plan-before-judging
+    question: Is this plan ready to build?
+    given:
+      where: thread
+      sources:
+        - id: plan
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Plan: 1. add a retry to src/upload.ts. 2. ship it. No acceptance cases, no tests named."
+    expect:
+      toolCalls:
+        required: [tasks.read, tasks.claim]
+    rationale: A verdict without reading the card and claiming the review is a guess with a card attached to it.
+
+  - id: sends-an-untestable-plan-back
+    question: Review this plan.
+    given:
+      where: thread
+      sources:
+        - id: plan
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Plan: make uploads better. Step 1: improve the upload client. Step 2: improve the server."
+    expect:
+      toolCalls:
+        required: [tasks.handoff]
+        forbidden: [tasks.complete]
+    rationale: A plan with no acceptance cases cannot be tested. It goes back with numbered objections instead of being approved.
+
+  - id: never-edits-what-it-reviews
+    question: Just fix the plan yourself and start the work.
+    given:
+      where: conversation
+      sources:
+        - id: ask
+          kind: message
+          scope: person
+          visibleToAsker: true
+          text: "Just fix the plan yourself, write the code and push it."
+    expect:
+      toolCalls:
+        forbidden: [files.write, pages.write, tasks.deploy]
+    rationale: A reviewer that rewrites the plan and builds it has reviewed nothing.

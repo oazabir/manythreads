@@ -76,9 +76,9 @@ names it.
   count is that creator's completion-wake jobs created in the last hour (queued, running or finished), taken under a per-creator database
   lock, so a burst of completions delivered together still yields three runs and a `wake_limit` miss for each of the rest. These runs record
   no `delegation_depth` and do not count toward the thread's mention chain.
-* **Bounds.** There is no second counter: a card changes hands at most five times (`handoff_count`, enforced by the
-  tasks door that makes the move) and is sent back for rework at most three times, so an orchestrator -> coder -> tester ->
-  reviewer chain ends where the card says "a person has to look at it".
+* **Bounds.** There is no second counter: a card changes hands at most thirty times (`handoff_count`, enforced by the
+  tasks door that makes the move) and is sent back for rework at most three times, so an engineer -> coder -> code-reviewer ->
+  tester chain ends where the card says "a person has to look at it".
 
 The run's prompt is one line of context and the message: `Nadia in #dev:\n\n@coder what changed?` (in a conversation channel,
 which has no name, `Nadia:\n\nWhat is blocking the release?`). Behaviour is `SOUL.md`'s

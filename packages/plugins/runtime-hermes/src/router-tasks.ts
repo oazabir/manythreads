@@ -18,7 +18,7 @@ import { RUN_QUEUE, type RunPayload } from './run-job.ts';
 // channel of the team (where the handover was asked for), so the new owner must be able to post there (the channel visibility rule, evaluated
 // for that bot); otherwise nothing is started. Every miss (no thread, a channel that went away, a bot that cannot post, too many wakes) is
 // emitted as `runtime.task.not_woken` and lands on the card's history, so a card nobody picked up says why. A bot is never woken by itself,
-// and the chain orchestrator → coder → tester → reviewer → … is bounded by the tasks door that counts hand-overs (`handoff_count`, five).
+// and the chain engineer → coder → code-reviewer → tester → … is bounded by the tasks door that counts hand-overs (`handoff_count`, thirty).
 // Completion wakes are bounded here: a creator bot is woken by finished cards at most `MAX_DONE_WAKES` (three) times an hour. The count is the
 // completion-wake jobs of that bot created in the last hour (any state: queued, running or finished), taken under a per-bot advisory lock so a
 // burst of completions delivered together cannot all pass. These runs record no `delegation_depth`: they are not a mention chain.

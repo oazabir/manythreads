@@ -42,7 +42,7 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 
 | Template | Definitions | Scenario sets |
 |---|---|---|
-| Engineering | Brain, Orchestrator, Coder, Reviewer, Tester, Deployer, Browser tester, Alert triage, Standup relay | `brain`, `orchestrator`, `reviewer`, `tester`, `deployer`, `alert-triage`, `standup-relay` |
+| Engineering | Brain, Engineer, Plan reviewer, Coder, Code reviewer, Tester, Deployer, Web smoke tester, Alert triage, Standup relay | `brain`, `engineer`, `plan-reviewer`, `code-reviewer`, `tester`, `deployer`, `web-smoke-tester`, `alert-triage`, `standup-relay` |
 | Customer support | Brain, Support responder | `brain` |
 | Marketing | Brain, Content drafter | `brain` |
 | Research | Brain | `brain` |
@@ -193,21 +193,27 @@ The comparison table above describes the first version of the pipeline. The Engi
 pod (Hermes is the agent program the bots run on): every agent bot is placed on the managed gateway (`placement.gateway.connection: managed`),
 so a team made from the template needs no gateway of its own. The flow, asked in a project channel:
 
-1. **Orchestrator** creates the cards (`tasks.create`), posts one checklist message in the thread (each step, owner, status) and keeps it
+0. **Engineer** writes the plan, posts it, and hands a `Plan review: <goal>` card (the plan is its description) to **Plan reviewer**, who
+   completes the card to approve it or hands it back with numbered objections; up to three rounds, then the Engineer goes on with the
+   open objections written at the top of the checklist (or asks a person when one is about safety, data or credentials).
+1. **Engineer** creates the work cards (`tasks.create`), posts one checklist message in the thread (each step, owner, status) and keeps it
    current with `messages.update` whenever a card is done or handed back (an edit wakes nobody, so it hands cards over with `tasks.handoff`).
-   It records decisions with `memory.retain` and ends with a summary. It may hand to every bot of the team.
+   It records decisions with `memory.retain` and ends with a summary. It may hand to every bot of the team. A card comes back to it only when
+   a limit is reached (three review rounds, three test failures); it decides or asks a person.
 2. **Coder** writes the change and its test on the card's branch in `~/<project>` (the pod's repository of record is
-   `/workspace/repos/<project>.git`) and hands to **Reviewer**, who reads the diff and runs the tests, then to **Tester**, who builds the
-   project and runs its own test suite at the exact commit and states the commands and results. Tester's `tasks.complete` records the tested sha.
+   `/workspace/repos/<project>.git`) and hands to **Code reviewer**, who reads the diff and sends must-fixes back to Coder (three rounds at
+   most), then to **Tester**, who writes the automated tests for the acceptance cases, builds the project and runs its whole suite at the
+   exact commit and states the commands and results. A failure goes to Coder, through Code reviewer again, and back to Tester (three
+   failures at most). Tester's `tasks.complete` records the tested sha. A card may change hands thirty times (the tasks door's bound).
 3. **Deployer** takes the tested commit and follows `deploy/preview/README.md` of the project's repository: images are built in the
    cluster, the chart is installed into the team's preview namespace, the rollout and `/healthz` are checked, the ingress for
    `test.manythreads.kahf.to` is set, test accounts are created with the admin command line, and the URL and account emails (never
-   passwords) are retained in memory. It hands to **Browser tester** with the URL and credentials in the handoff note.
-4. **Browser tester** (runtime tools `shell`, `files`, `browser`) recalls the address and accounts, writes a Playwright test for headless
+   passwords) are retained in memory. It hands to **Web smoke tester** with the URL and credentials in the handoff note.
+4. **Web smoke tester** (runtime tools `shell`, `files`, `browser`) recalls the address and accounts, writes a Playwright test for headless
    Chromium that signs in and exercises the changed feature, posts what it saw with screenshot file names, then completes the card or
    hands it back to Coder (or to Deployer when the environment, not the change, is broken).
 
-Time limits are generous for the slow steps: Coder 1800 s, Tester and Deployer 2400 s, Browser tester 1800 s. Every bot recalls from and
+Time limits are generous for the slow steps: Coder 1800 s, Tester and Deployer 2400 s, Web smoke tester 1800 s, Plan reviewer 1200 s. Every bot recalls from and
 retains to the team's shared memory. Deployer holds no `tasks.deploy`: the preview namespace is a test sandbox, and production releases are
 not part of this template's flow.
 

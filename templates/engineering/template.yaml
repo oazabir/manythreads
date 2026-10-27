@@ -1,7 +1,7 @@
 # Source: SPEC-FINAL §13 (Engineering row), §5.3; prototype #onboarding Step 5 · Teams.
 id: engineering
 name: Engineering
-description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that code, review, test, deploy to a preview and test the running site in a browser.
+description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that plan, code, review, test, deploy to a preview and smoke test the running site in a browser.
 version: 1
 channels:
   - name: "#general"
@@ -23,24 +23,27 @@ bots:
   - slug: brain
     name: Brain
     role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
-  - slug: orchestrator
-    name: Orchestrator
-    role: "Breaks a goal into tasks and hands them to the right bot."
+  - slug: engineer
+    name: Engineer
+    role: "Plans a goal, has the plan reviewed, then runs the bots that code, review, test, deploy and smoke test it."
+  - slug: plan-reviewer
+    name: Plan reviewer
+    role: "Reads a plan before any code is written and approves it or sends it back."
   - slug: coder
     name: Coder
     role: "Owns a task's branch and writes the change."
-  - slug: reviewer
-    name: Reviewer
-    role: "Reviews pull requests and flags risk."
+  - slug: code-reviewer
+    name: Code reviewer
+    role: "Reviews the code of a change and sends it back to Coder up to three times."
   - slug: tester
     name: Tester
-    role: "Writes and runs tests, verifies a change before it moves to Done."
+    role: "Writes automated tests for a reviewed change, runs the whole suite, and sends failures back to Coder."
   - slug: deployer
     name: Deployer
-    role: "Deploys a tested commit into the team's preview namespace in k3s and gets it ready for browser testing."
-  - slug: browser-tester
-    name: Browser tester
-    role: "Tests the deployed site in a real headless browser and reports what it saw."
+    role: "Deploys a tested commit into the team's preview namespace in k3s and gets it ready for the smoke test."
+  - slug: web-smoke-tester
+    name: Web smoke tester
+    role: "Smoke tests the deployed site with Playwright and headless Chromium and reports what it saw."
   - slug: standup-relay
     name: Standup relay
     role: "Collects updates and posts the daily standup."

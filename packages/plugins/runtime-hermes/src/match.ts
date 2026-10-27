@@ -1,7 +1,7 @@
 import { parseMarkup, type BotTrigger } from '@manythreads/shared';
 
 /**
- * How many bot-to-bot hops one thread may hold. Orchestrator → coder → tester → orchestrator is three; past that a mention
+ * How many bot-to-bot hops one thread may hold. Engineer → coder → tester → engineer is three; past that a mention
  * between bots is an ordinary message. Every hop still needs an explicit @mention and the author's `tasks.handoff` grant
  * naming the target, so this is the backstop, not the permission.
  */

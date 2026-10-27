@@ -219,6 +219,29 @@ describe('tasks API', () => {
     expect(inside.status, JSON.stringify(inside.body)).toBe(200);
   });
 
+  it('a card may change hands thirty times (a plan, review and test loop is longer than a line) and the thirty-first is refused', async () => {
+    const suffix = randomUUID().slice(0, 6);
+    const ping = await makeBot(`ping-${suffix}`, [`pong-${suffix}`]);
+    const pong = await makeBot(`pong-${suffix}`, [`ping-${suffix}`]);
+    const task = await (async () => {
+      const res = await call(asBot(ping), 'POST', '/api/teams/engineering/tasks', { title: 'Loop me', branch: 'loop/me' });
+      return CreateTaskResponse.parse(res.body).task;
+    })();
+    // the creator starts it (1), then the two bots hand it back and forth (2..30)
+    let from = ping;
+    let to = pong;
+    for (let i = 0; i < 30; i++) {
+      const moved = await call(asBot(from), 'POST', `/api/teams/engineering/tasks/${task.id}/handoff`, { toActorId: to.actorId, mode: 'bot' });
+      expect(moved.status, `hand-over ${i + 1}: ${JSON.stringify(moved.body)}`).toBe(200);
+      [from, to] = [to, from];
+    }
+    const refused = await call(asBot(from), 'POST', `/api/teams/engineering/tasks/${task.id}/handoff`, { toActorId: to.actorId, mode: 'bot' });
+    expect([403, 409]).toContain(refused.status);
+    expect(messageOf(refused.body)).toMatch(/thirty times/);
+    const read = await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}`);
+    expect((read.body['task'] as Record<string, unknown>)['handoffCount']).toBe(30);
+  });
+
   describe('the creator of an unowned card', () => {
     const create = async (who: Persona | { kind: 'bot'; actorId: string }) => {
       const res = await call(who, 'POST', '/api/teams/engineering/tasks', { title: 'Split me', branch: 'split/me' });

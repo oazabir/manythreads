@@ -250,7 +250,7 @@ export const TASK_STATES: readonly TaskState[] = ['open', 'in_progress', 'verify
 
 /** Rework and handoff bounds (PLAN P6-04): past these, a card needs a person, not another loop. */
 export const MAX_REWORKS = 3;
-export const MAX_HANDOFFS = 5;
+export const MAX_HANDOFFS = 30;
 
 /** The defaults of a new board: the five states, in pipeline order. */
 export const DEFAULT_BOARD_COLUMNS: readonly BoardColumn[] = [
