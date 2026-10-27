@@ -368,7 +368,9 @@ export async function runOnGateway(
       }
       // A pod evicted mid-run leaves Hermes' record of that execution as "unknown", and the session of the thread is reused, so every later
       // run of the bot in this thread fails at once with `unknown_execution` (or `revision_conflict`). Before any output, start once more on a
-      // fresh session named after this run (a retry of the same platform run reuses it). The thread's own session id is not remembered: the next
+      // fresh session named after this run (a retry of the same platform run reuses it). A request the model gateway's guard blocked ("Content
+      // blocked: …", a key-like string the bot printed) is the same case: the string stays in the session's history and is sent again with every
+      // later run of the thread, so each one fails in a second until the bot starts over on a session without it. The thread's own session id is not remembered: the next
       // run of the bot in the thread fails once the same way and is retried the same way, one cheap failed start per run, and no storage is added.
       const stale =
         !retried &&
@@ -377,7 +379,7 @@ export async function runOnGateway(
         terminal !== null &&
         terminal.event === 'run.failed' &&
         typeof terminal.fields['error'] === 'string' &&
-        /unknown_execution|revision_conflict/.test(terminal.fields['error']) &&
+        /unknown_execution|revision_conflict|content blocked/i.test(terminal.fields['error']) &&
         !timedOut &&
         !stopping &&
         !abort.signal.aborted;
@@ -385,7 +387,7 @@ export async function runOnGateway(
       retried = true;
       const next = await startRemote(JSON.stringify({ ...runBody, session_id: `${String(runBody['session_id'])}:r${runId}` }), `${runId}:fresh`);
       if ('handle' in next) break; // the first failure is reported
-      scope.log(`runtime-hermes: run ${runId}: the Hermes session of this thread was stale (unknown_execution); started again on a fresh session`);
+      scope.log(`runtime-hermes: run ${runId}: the Hermes session of this thread was stale (unknown_execution) or blocked by the guard; started again on a fresh session`);
       remoteId = next.id;
       terminal = null;
       }

@@ -127,6 +127,14 @@ have to rediscover: one short fact per call, with the card and the commit. Never
 A change that needs production credentials or production data to test is not something you run. Say what you would need and hand the card
 to the on-call person.
 
+## Keep secret-looking text out of what you read
+
+Everything you print goes to the model through a guard that blocks the whole request when it sees a key-like string (a token, an API key, a
+private key), and that ends your run. The project's repository holds test fixtures and example files with such strings. Never `cat` or print
+`.env*`, key or certificate files, `secrets.*`, `*.pem`, lockfile registries, CI secrets or a whole fixtures folder. Search with `grep -l` or
+`grep -c`, read files with `sed -n 'a,bp'` for the lines you need, and cut long output with `head -c 4000`. If a command may print a
+credential (a Secret, a kubeconfig, an environment dump), do not run it; pipe through `sed -E 's/[A-Za-z0-9+\/_=-]{32,}/<redacted>/g'` first.
+
 ## Your workspace
 
 You work in the team's Hermes pod (Hermes is the agent program the bots run on). Your shell runs as your own Unix user; your home is your

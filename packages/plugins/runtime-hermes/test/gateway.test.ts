@@ -308,6 +308,16 @@ describe('a stale Hermes session of the thread', () => {
     expect(logs.filter((l) => l.includes('was stale (unknown_execution)'))).toHaveLength(1);
   });
 
+  it('starts again on a fresh session when the guard blocked the request before any output (the blocked string is in the session)', async () => {
+    gw.setScript((r) =>
+      r.body['session_id'] === `${BOT_ID}:${THREAD}`
+        ? [{ type: 'fail', error: 'BadRequestError: litellm.BadRequestError: OpenAIException - Content blocked: generic_secret_key pattern detected' }]
+        : [{ type: 'finish', output: 'second answer' }],
+    );
+    expect(resultOf(await run())).toMatchObject({ ok: true, text: 'second answer' });
+    expect((posts()[1]!.body as Record<string, unknown>)['session_id']).toBe(`${BOT_ID}:${THREAD}:r${RUN_ID}`);
+  });
+
   it('does not retry another error', async () => {
     gw.setScript(() => [{ type: 'fail', error: 'model fell over' }]);
     expect(resultOf(await run()).ok).toBe(false);
