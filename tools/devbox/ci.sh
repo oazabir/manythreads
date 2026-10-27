@@ -36,7 +36,8 @@ CI_LOG_DIR="${CI_LOG_DIR:-/root/ci-logs}"
 mkdir -p "$CI_LOG_DIR"
 CI_LOG="$CI_LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown).log"
 exec > >(tee -a "$CI_LOG") 2>&1
-ls -1t "$CI_LOG_DIR"/*.log 2>/dev/null | tail -n +21 | xargs -r rm -f --
+# Pruning old logs never stops a run (the first run finds no log yet, and `ls` of an unmatched glob fails).
+ls -1t "$CI_LOG_DIR"/*.log 2>/dev/null | tail -n +21 | xargs -r rm -f -- || true
 echo "log: $CI_LOG"
 
 CI_NAMESPACE="${CI_NAMESPACE:-manythreads-ci}"
