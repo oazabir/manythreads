@@ -30,6 +30,15 @@ export PATH="$PATH:/usr/local/bin"
 # repository it does not own.
 git config --global --add safe.directory /root/ci 2>/dev/null || true
 
+# Keep this run's whole output on the devbox as well: the GitHub job log needs a signed-in reader, and a red run is
+# only fixable from the step that failed. The last 20 runs are kept (/root/ci is rewritten by every run, so not there).
+CI_LOG_DIR="${CI_LOG_DIR:-/root/ci-logs}"
+mkdir -p "$CI_LOG_DIR"
+CI_LOG="$CI_LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown).log"
+exec > >(tee -a "$CI_LOG") 2>&1
+ls -1t "$CI_LOG_DIR"/*.log 2>/dev/null | tail -n +21 | xargs -r rm -f --
+echo "log: $CI_LOG"
+
 CI_NAMESPACE="${CI_NAMESPACE:-manythreads-ci}"
 LIVE_NAMESPACE="${LIVE_NAMESPACE:-manythreads}"
 CI_WEB_PORT="${CI_WEB_PORT:-18080}"
