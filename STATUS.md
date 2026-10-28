@@ -974,6 +974,25 @@ were updated by repo commit (no template-to-team update exists yet).
 **Open.** Disk on the devbox ~84%; no database backups; the bridge runs as root; the `test-manythreads` preview is still installed; two in-progress cards from
 earlier test goals sit on the Bot Board; the board's columns are clipped below ~1060 px wide.
 
+## Engineering chain run live on the managed Hermes pod (2026-10-28)
+
+The Engineering template's chain is **engineer → plan-reviewer → coder → code-reviewer → tester → deployer → web-smoke-tester** (ENG-01; the old
+orchestrator, reviewer and browser-tester are renamed, plan-reviewer is new). Plan review runs up to three rounds, code review up to three, the tester
+sends failures back through code review, and a card may change hands thirty times (tasks 0012). Live Engineering and Delivery teams were synced with
+`tools/devbox/sync-engineering-bots.mjs`; Engineering's chain runs on the team's managed Hermes pod.
+
+**Run:** goal "P14-10 quick switcher, slice 1" asked of `@engineer` in #dev (project `manythreads`). Plan approved in round 2, code approved in round 2,
+the tester ran lint, typecheck, build and the 321 web unit tests (the e2e spec could not run: no database in the pod), the deployer built the images in
+the cluster and installed commit `1e21ae2` into `test-manythreads` at https://test.manythreads.kahf.to, and the web smoke tester passed all six browser
+checks in headless Chromium (Ctrl+K, narrowing, arrows and Enter, Esc, `?` sheet, `?` in the composer). The branch `feat/quick-switcher-slice-1` lives only in the
+team pod's repository; the project has no push credential, so no pull request was opened.
+
+**Fixes the run needed (all live):** cards carry plans and findings (`tasks.describe`); the owner of a handed-over card can claim it (tasks 0013);
+a profile restarts when its tools change; a guard-blocked run restarts on a fresh session; the test deploy target is Engineering's. See `MISTAKES.md`.
+
+**Open:** the e2e spec of the quick switcher has not run (CI runs it after a merge); Delivery lost the `test-manythreads` target; the engineer left three
+placeholder cards on the Bot Board from before `tasks.describe` worked; `isQuickSwitcherKey` ignores Ctrl+K with Caps Lock on (the smoke tester's note).
+
 ## Phase 6, closing work (2026-10-27)
 
 - **Rhythms run (P6-08, `12bcacc`):** a fired rhythm starts its bot (trigger `routine`), the run ledger follows the run, a routine writes its
