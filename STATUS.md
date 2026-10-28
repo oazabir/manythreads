@@ -2,6 +2,24 @@
 
 Current phase: **6 · Tasks, boards, orchestration, rhythms and pages — nearly closed (2026-10-27).** Live on https://manythreads.kahf.to at `b56cff9` (promoted by the `ci` pipeline 2026-10-26 22:27). Bots run for real: on a customer's own Hermes (mode A), on one Hermes pod per team in k3s (mode B), or on the Claude Code / Codex CLI through the agent bridge; the Engineering template's orchestrator, coder, reviewer, tester, deployer and browser-tester ran a full delivery cycle on the cloned manythreads repo into the `test-manythreads` preview, and the Bot Board (P10-16) is verified live. Left in phase 6: the controller half of P6-00, the shared-repo half of P6-05 (per-bot worktrees, branch push tokens, smart-HTTP, merge behind approval), the rhythm run starter (a queued rhythm run never starts), P6-10's Hermes variant, P6-11's seed v6, then the phase exit (merge, tag `phase-6`). Details: the section "Phase 6 and the bots, live (2026-10-24 to 2026-10-27)" at the end.
 
+## Loop plan: ready for a real engineering team (set 2026-10-28, `/loop`)
+
+Owner instruction 2026-10-28: build the rest of PLAN.md in the order that makes the product useful, with a Sonnet agent coding and an independent Sonnet
+agent reviewing and fixing; stop when the essential phases are done and a real engineering team can use it. **This order overrides §7 for this loop only.**
+Each item ships the usual way (build, test, deploy, look at it live, commit with the task id). Tick an item when it is live.
+
+**Essential, in order**
+- [ ] 1 Run it safely: P10-09 database and blob backups with a restore drill; P10-10 metrics, logs and alerts (disk, outbox lag, job age, run slots)
+- [ ] 2 Daily chat: finish P14-10 (quick switcher e2e, Caps Lock); P14-01 presence and Do not disturb; P14-02 composer toolbar, emoji; P14-09 notifications (levels, keywords, browser push); P14-11 search filters and saved searches; P14-12 message actions (edit history, forward, copy link); P14-04 later and reminders; P14-06 slash commands
+- [ ] 3 The engineering loop: P14-14 incoming webhooks (CI, GitHub, alerts into a channel); GitHub connection (P8-03 GitHub App slice, P16-06 issue/PR mirror slice); P8-05 eval check on a pull request
+- [ ] 4 Trust the bots: P7-01 proposals for `bots/`/`TEAM.md`/`skills/` changes; P7-08 eval harness; P7-11 the bot page's Test action
+- [ ] 5 Knowledge: P8-07, P8-08, P8-31, P8-33 (a team base from docs and runbooks, cited answers)
+- [ ] 6 Admin and onboarding: P10-05 audit console and export; P10-14 abuse review; P10-04 DLP and egress complete; P10-01 onboarding wizard
+- [ ] 7 Proof and manual: P12 persona journeys for the shipped features, `USER_JOURNEYS.md`, `docs/deploy` for a self-hoster
+
+**Deferred (not needed for a first real team)**: 15 voice rooms, 17 video, 18 automations in words, 11 mobile, 9 surfaces, 16 beyond GitHub, P14-16/17 voice messages,
+P14-13 Slack import (first if a team is moving in), P8 inbox/email/sharing, P10-11 Tauri, P10-13 compose.
+
 Owner instruction (2026-10-02, later the same day): phase 4's stop instruction is fulfilled — **continue building per PLAN.md, updating STATUS.md as work lands.** Also: avoid the entries in `MISTAKES.md` and append anything new there.
 
 Owner standing instruction (2026-10-03): after every task that is deployed and verified on the devbox, take
