@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,16 @@ describe('shipped templates', () => {
       expect.arrayContaining(['Brain', 'Engineer', 'Plan reviewer', 'Coder', 'Code reviewer', 'Tester', 'Deployer', 'Web smoke tester', 'Standup relay', 'Alert triage']),
     );
     expect(eng?.roleTags).toContain('role:on-call');
+  });
+
+  it('Engineering ships the whole chain of bots, and the server image carries the templates folder', async () => {
+    const eng = (await loadTemplates(templatesDir)).find((t) => t.id === 'engineering')!;
+    expect(eng.bots.map((b) => b.slug).sort()).toEqual(
+      ['alert-triage', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'plan-reviewer', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
+    );
+    // a fresh install reads `templates/` from the image: the server's docker ignore list must never drop it
+    const ignored = (await readFile(path.resolve(templatesDir, '../deploy/docker/server.Dockerfile.dockerignore'), 'utf8')).split('\n').map((l) => l.trim());
+    expect(ignored.filter((l) => l === 'templates' || l === 'templates/' || l === '/templates')).toEqual([]);
   });
 
   it('ships Brain and its scenario set in every template, and the three minimal bots in their own teams', async () => {
