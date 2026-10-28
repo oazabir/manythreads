@@ -52,6 +52,12 @@ export default tseslint.config(
     rules: { '@typescript-eslint/no-floating-promises': 'error' },
   },
   {
+    // The diagram frame's script is plain browser JavaScript served as is (no build step), written in the older `var` style.
+    files: ['clients/web/public/*.js'],
+    languageOptions: { globals: { ...globals.browser, mermaid: 'readonly' } },
+    rules: { 'no-useless-escape': 'off', '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }] },
+  },
+  {
     files: ['clients/web/**/*.{ts,tsx}'],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks },
