@@ -74,6 +74,16 @@ export const CloseIcon = () => (
     <path d="m3.5 3.5 9 9M12.5 3.5l-9 9" />
   </Svg>
 );
+export const ExpandIcon = () => (
+  <Svg>
+    <path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9" />
+  </Svg>
+);
+export const RestoreIcon = () => (
+  <Svg>
+    <path d="M13 6.5H9.5V3M3 9.5h3.5V13M9.5 6.5 14 2M6.5 9.5 2 14" />
+  </Svg>
+);
 export const BackIcon = () => (
   <Svg size={14}>
     <path d="m9.5 3-5 5 5 5" />
