@@ -25,14 +25,15 @@ hermesPods:
     cidr: 10.0.2.15/32   # k3s on the devbox: the node IP (kubectl get endpoints kubernetes)
   # The devbox's host bots (agent bridge) reach the k3s API here; k3s's certificate names 127.0.0.1.
   hostApiServer: https://127.0.0.1:6443
-  # Teams whose deployer bot ships apps (apps-<team>); Delivery runs the full-cycle preview (deployTargets below).
+  # Teams whose deployer bot ships apps (apps-<team>); Engineering runs the full-cycle preview (deployTargets below).
   appTeams: [engineering, marketing, customer-support, delivery]
   # Projects (docs/plugins/projects.md) whose repository starts with one of these are cloned into the team's pod.
   repoOriginAllow:
     - https://github.com/oazabir/
-  # The Delivery team's deployer bot may run a modified copy of the platform here (docs/deploy-preview.md).
+  # The Engineering team's deployer bot (on the team's managed Hermes pod) may run a modified copy of the platform here (docs/deploy-preview.md).
+  # A target belongs to one team; it was Delivery's while that team's bots ran on the agent bridge.
   deployTargets:
-    - team: delivery
+    - team: engineering
       namespace: test-manythreads
       hosts: [test.manythreads.kahf.to]
       podSecurity: baseline
