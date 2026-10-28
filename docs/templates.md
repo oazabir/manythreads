@@ -202,7 +202,7 @@ so a team made from the template needs no gateway of its own. The flow, asked in
    a limit is reached (three review rounds, three test failures); it decides or asks a person.
 2. **Coder** writes the change and its test on the card's branch in `~/<project>` (the pod's repository of record is
    `/workspace/repos/<project>.git`) and hands to **Code reviewer**, who reads the diff and sends must-fixes back to Coder (three rounds at
-   most), then to **Tester**, who writes the automated tests for the acceptance cases, builds the project and runs its whole suite at the
+   most), then to **Tester**, who writes the automated tests for the acceptance cases, builds the project and runs the checks and tests that cover the change at the
    exact commit and states the commands and results. A failure goes to Coder, through Code reviewer again, and back to Tester (three
    failures at most). Tester's `tasks.complete` records the tested sha. A card may change hands thirty times (the tasks door's bound).
 3. **Deployer** takes the tested commit and follows `deploy/preview/README.md` of the project's repository: images are built in the

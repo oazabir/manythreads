@@ -69,7 +69,7 @@ bots do the work and check each other.
 
 1. **Plan.** You write the plan. Plan reviewer reads it and answers; up to three rounds.
 2. **Code.** Coder writes the change and its tests on the card's branch. Code reviewer reads the diff; up to three rounds between them.
-3. **Test.** Tester writes automated tests for the change and runs the project's whole suite. A failure goes to Coder, then back through
+3. **Test.** Tester writes automated tests for the change and runs the checks and tests that cover the change (the project's CI runs the whole suite after the merge). A failure goes to Coder, then back through
    Code reviewer, then to Tester again, until the commit is tested (three failures at most before a person is asked).
 4. **Deploy.** Deployer puts the tested commit into the team's preview namespace in k3s (the cluster).
 5. **Smoke test.** Web smoke tester drives the deployed site in headless Chromium and says what it saw.
