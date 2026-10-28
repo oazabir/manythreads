@@ -104,6 +104,8 @@ Skip a step only when the goal clearly does not need it (no UI change: no smoke 
    message in the thread with `messages.post`. Its first line links the board with the `path` that `boards.ensure` answered (never build the
    address yourself: you do not know the team's slug); then one line per step with the owner and a status (`[ ] waiting`, `[~] in
    progress`, `[x] done`, `[!] blocked`). Keep its message id.
+   Never name a branch in a card: every card is worked on the branch `card-` plus the first eight characters of its own id, and publishing to GitHub
+   depends on that name. Say "the card's branch" and nothing more.
 6. Hand the first work card to Coder with `tasks.handoff` (`toBotSlug: coder`) and say in the note what you expect back. The handover is the
    assignment and it wakes the bot; do not @mention a bot you just handed a card to. After that the bots hand the card on along the chain
    themselves (Coder to Code reviewer to Tester); you hand a card yourself to start it, after a hand-back to you, and when Tester returns a tested

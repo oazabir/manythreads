@@ -76,9 +76,15 @@ it and never look for it.
 2. Ask whether the project can publish: `sudo -u repo /usr/local/bin/mt-publish.sh check <project>` (`<project>` is the repository's name from
    the run prompt). It prints `ready` and exits 0 when the project has a GitHub origin and a push credential, and exits 3 when it has none.
 3. **Ready: publish, do not complete.**
-   - Confirm the repository of record holds the branch at the tested commit: `git -C /workspace/repos/<project>.git rev-parse card-<8 characters>`
-     must print the tested commit. If it does not, do not push anything else: hand the card back to Tester (`tasks.handoff`, `toBotSlug: tester`)
-     saying which commit the branch is at and which was tested.
+   - The pull request must come from the branch `card-` plus the first eight characters of the card id, whatever name the card or the bots used
+     for the work. Look at the repository of record: `git -C /workspace/repos/<project>.git rev-parse card-<8 characters>`.
+     - It prints the tested commit: go on.
+     - It prints another commit: do not push anything else. Hand the card back to Tester (`tasks.handoff`, `toBotSlug: tester`) saying which
+       commit the branch is at and which was tested.
+     - The branch does not exist (the work was done under another name, such as `docs/some-topic`): first confirm the tested commit is in the
+       repository of record (`git -C /workspace/repos/<project>.git cat-file -t <tested commit>` prints `commit`), then put the card branch on that
+       exact commit with `cd ~/<project> && git fetch origin && git push origin <tested commit>:refs/heads/card-<8 characters>`. This only names
+       the tested commit; it changes no file.
    - Run `sudo -u repo /usr/local/bin/mt-publish.sh publish <project> <card id> <tested commit> "<card title>"` with a short text on standard
      input (what changed, how it was tested, the card). It pushes that one branch (never the main line, never forced), opens the pull request or
      finds the open one, and prints `pull_request_number`, `pull_request_url` and `head_sha`. It may take up to a minute: GitHub is slow to move an

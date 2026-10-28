@@ -70,7 +70,7 @@ const botDirs = readdirSync(join(root, 'bots'), { withFileTypes: true }).filter(
 const oldOf = Object.fromEntries(Object.entries(RENAMED).map(([o, n]) => [n, o]));
 
 /** Only the chain moves; Brain, Alert triage and Standup relay keep the team's own copies. */
-const CHAIN = new Set(['engineer', 'plan-reviewer', 'coder', 'code-reviewer', 'tester', 'deployer', 'web-smoke-tester']);
+const CHAIN = new Set(['engineer', 'plan-reviewer', 'coder', 'code-reviewer', 'tester', 'committer', 'deployer', 'web-smoke-tester']);
 for (const slug of botDirs.filter((d) => CHAIN.has(d))) {
   const dir = join(root, 'bots', slug);
   const files = [join('BOT.md')];
@@ -122,7 +122,7 @@ if (teamMd) {
 console.log(`${team}: ${changes.length} change(s)\n  ${note.join('\n  ')}`);
 if (dry || changes.length === 0) process.exit(0);
 const r = await api('POST', `/api/teams/${team}/repo/commit`, {
-  message: 'Engineering chain: engineer, plan-reviewer, code-reviewer, tester, deployer, web-smoke-tester (synced from the template)',
+  message: 'Engineering chain: engineer, plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester (synced from the template)',
   changes,
 });
 console.log(`commit: HTTP ${r.status} ${JSON.stringify(r.json)?.slice(0, 400)}`);
