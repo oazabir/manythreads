@@ -1,32 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-// The browser build of Mermaid is a file of this build (an asset of our origin); it is read as text and handed to the sandbox.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// The browser build of Mermaid is a file of this build (an asset of our origin); the sandbox page loads it by this address.
 import bundleUrl from 'mermaid/dist/mermaid.min.js?url';
 import type { ViewerProps } from '../kernel/viewers';
 import { ViewerBar } from './common';
-import { RENDER_TIMEOUT_MS, buildSandboxDoc, parseSandboxMessage, reduceMermaid, type MermaidState, MERMAID_CHANNEL } from './mermaid/sandbox';
-
-let sandboxDoc: Promise<string> | undefined;
-/** The srcdoc, built once per page load (the bundle is several MB: fetch it once, from our own origin). */
-const loadSandboxDoc = (): Promise<string> => {
-  sandboxDoc ??= fetch(bundleUrl, { credentials: 'same-origin' })
-    .then((r) => {
-      if (!r.ok) throw new Error(`renderer ${r.status}`);
-      return r.text();
-    })
-    .then(buildSandboxDoc)
-    .catch((err: unknown) => {
-      sandboxDoc = undefined;
-      throw err;
-    });
-  return sandboxDoc;
-};
+import { RENDER_TIMEOUT_MS, parseSandboxMessage, reduceMermaid, type MermaidState, MERMAID_CHANNEL, sandboxUrl } from './mermaid/sandbox';
 
 /**
  * Mermaid diagram in a sandboxed frame, with a Source toggle. A syntax error never throws: the message and the source are shown
  * (PLAN criterion 8).
  */
 export default function MermaidViewer({ path, text = '' }: ViewerProps) {
-  const [doc, setDoc] = useState<string | null>(null);
   const [state, setState] = useState<MermaidState>({ status: 'loading' });
   const [showSource, setShowSource] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -34,16 +17,7 @@ export default function MermaidViewer({ path, text = '' }: ViewerProps) {
   const ready = useRef(false);
   const timer = useRef<number | undefined>(undefined);
 
-  useEffect(() => {
-    let alive = true;
-    loadSandboxDoc().then(
-      (d) => alive && setDoc(d),
-      () => alive && setState({ status: 'error', message: 'The diagram renderer could not be loaded.' }),
-    );
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const src = useMemo(() => sandboxUrl(bundleUrl), []);
 
   const render = useCallback(() => {
     const win = frame.current?.contentWindow;
@@ -96,17 +70,15 @@ export default function MermaidViewer({ path, text = '' }: ViewerProps) {
         </div>
       ) : null}
       <div className="mm-stage" data-off={failed || showSource ? '' : undefined} aria-busy={state.status === 'loading'}>
-        {doc ? (
-          <iframe
-            ref={frame}
-            className="mm-frame"
-            title={`Diagram ${path}`}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-            srcDoc={doc}
-            style={{ height: state.status === 'ready' ? state.height : 160 }}
-          />
-        ) : null}
+        <iframe
+          ref={frame}
+          className="mm-frame"
+          title={`Diagram ${path}`}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          src={src}
+          style={{ height: state.status === 'ready' ? state.height : 160 }}
+        />
       </div>
       {showSource || failed ? (
         <pre className="mm-source" data-testid="mermaid-source" aria-label="Diagram source">{text}</pre>

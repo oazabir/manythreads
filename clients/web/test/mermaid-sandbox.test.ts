@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MERMAID_CHANNEL, SANDBOX_CSP, buildSandboxDoc, parseSandboxMessage, reduceMermaid, type MermaidState } from '../src/viewers/mermaid/sandbox';
+import { MERMAID_CHANNEL, SANDBOX_CSP, SANDBOX_PAGE, parseSandboxMessage, reduceMermaid, sandboxUrl, type MermaidState } from '../src/viewers/mermaid/sandbox';
 
 const msg = (m: Record<string, unknown>) => parseSandboxMessage({ channel: MERMAID_CHANNEL, ...m });
 
@@ -60,24 +61,29 @@ describe('mermaid error path (PLAN criterion 8)', () => {
 });
 
 describe('mermaid sandbox page', () => {
-  it('forbids every network request and loads nothing', () => {
+  const nginx = readFileSync(new URL('../../../deploy/docker/nginx.conf', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../public/mermaid-sandbox.html', import.meta.url), 'utf8');
+  const runtime = readFileSync(new URL('../public/mermaid-sandbox.js', import.meta.url), 'utf8');
+
+  it('forbids every network request, inline script and framing by another site', () => {
     expect(SANDBOX_CSP).toContain("default-src 'none'");
-    expect(SANDBOX_CSP).not.toMatch(/connect-src|https?:|\*/);
-    const doc = buildSandboxDoc('window.mermaid = {};');
-    expect(doc).toContain(`content="${SANDBOX_CSP}"`);
-    expect(doc).not.toMatch(/<script[^>]+src=/);
-    expect(doc).not.toContain('allow-same-origin');
+    expect(SANDBOX_CSP).toContain("script-src 'self'");
+    expect(SANDBOX_CSP).not.toMatch(/connect-src|https?:|\*|unsafe-eval|script-src[^;]*unsafe-inline/);
   });
 
-  it('the bundle cannot close its own script element', () => {
-    const bundle = 'var a = "</script><img src=x onerror=alert(1)>"; var b = "<!-- x";';
-    const doc = buildSandboxDoc(bundle);
-    expect(doc.match(/<\/script>/g)).toHaveLength(2);
-    expect(doc).not.toContain('<!--');
+  it('the web server sends exactly that policy with the page, and the page has no inline script', () => {
+    expect(nginx).toContain(`location = ${SANDBOX_PAGE}`);
+    expect(nginx).toContain(`add_header Content-Security-Policy "${SANDBOX_CSP}" always;`);
+    expect(page).not.toMatch(/<script(?![^>]*\ssrc=)/i);
+    expect(page).not.toMatch(/\son[a-z]+=/i);
+    expect(page).not.toContain('allow-same-origin');
   });
 
-  it('closing tags in any case are neutralised', () => {
-    const doc = buildSandboxDoc('x = "</ScRiPt>";');
-    expect(doc.match(/<\/script>/gi)).toHaveLength(2);
+  it('the frame only takes the address of a script of this site', () => {
+    expect(sandboxUrl('/assets/mermaid.min-AbC123.js')).toBe('/sandbox'.replace('/sandbox', SANDBOX_PAGE) + '?bundle=%2Fassets%2Fmermaid.min-AbC123.js');
+    for (const bad of ['https://evil.example/x.js', '//evil.example/x.js', '/a/../b.js', '/x.js?y=1', 'javascript:alert(1)', '/x.html', '']) expect(() => sandboxUrl(bad), bad).toThrow();
+    // the page's own script checks the same shape before it adds the bundle
+    expect(runtime).toContain("[A-Za-z0-9_.@\\/-]+\\.js$");
+    expect(runtime).toContain("indexOf('//')");
   });
 });
