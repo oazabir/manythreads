@@ -15,11 +15,6 @@
   grid-template-columns: 248px minmax(0, 1fr) auto;
 }
 
-/* An expanded thread takes the whole window except the rail. The channel stays mounted (its scroll position and draft are kept), only hidden. */
-.frame:has(.right-panel[data-expanded]) {
-  grid-template-columns: 248px 0 minmax(0, 1fr);
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -431,10 +426,20 @@ a.sec:hover {
   display: none;
 }
 
+/*
+ * An expanded thread covers the whole window except the rail. It lies over the channel instead of squeezing it: the channel keeps its width, so its
+ * message list is not measured again (a list squeezed to nothing and back made it loop), and its scroll position and draft are kept as they were.
+ * `visibility: hidden` keeps the channel out of the tab order while it is covered.
+ */
+.right-panel[data-expanded] {
+  position: fixed;
+  inset: 0 0 0 248px;
+  z-index: 20;
+  width: auto;
+}
+
 .frame:has(.right-panel[data-expanded]) > .center {
   visibility: hidden;
-  overflow: hidden;
-  min-width: 0;
 }
 
 .center .content {
