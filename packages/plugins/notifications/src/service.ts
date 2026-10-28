@@ -1,12 +1,8 @@
-import type { PluginContext, PluginTx, RealtimePush } from '@manythreads/sdk';
-import {
-  NotificationCreatedPush,
-  NotificationsNotificationCreatedEvent,
-  notificationCreatedPushType,
-  type NotificationKind,
-} from '@manythreads/shared';
+import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import type { NotificationKind } from '@manythreads/shared';
+import { announce } from './announce.ts';
+import { quietPeople } from './hold.ts';
 import { normalizePrefs, wantsInApp } from './prefs.ts';
-import { NOTIFICATION_COLUMNS, toNotification, type NotificationRow } from './rows.ts';
 
 const PREVIEW_MAX = 140;
 
@@ -85,7 +81,8 @@ const RANK = "(CASE %K WHEN 'mention' THEN 3 WHEN 'reply' THEN 2 ELSE 1 END)";
  * a muted channel in their settings). Everyone else gets one row per message: the insert is an upsert on (person, message) that only
  * writes when the row is new or the new kind is stronger than the stored one (mention > reply > dm), so a redelivered event or the
  * second event of the same message writes nothing, and writes nothing is announced nowhere. Each row written is pushed to the person's
- * sockets (`notification.created`) and announced as `notifications.notification.created`.
+ * sockets (`notification.created`) and announced as `notifications.notification.created` (`announce`) -- except for a person who has Do not
+ * disturb on: their row is written held and announced when it ends.
  */
 export async function deliver(ctx: PluginContext, tx: PluginTx, message: MessageFacts, kind: NotificationKind, personIds: readonly string[]): Promise<void> {
   const candidates = [...new Set(personIds)].filter((id) => id !== message.authorPersonId);
@@ -112,12 +109,16 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
   }
   if (wanted.length === 0) return;
 
-  const written = await tx.query<{ id: string; person_id: string }>(
-    `INSERT INTO app.notifications AS n (workspace_id, person_id, kind, ref_type, ref_id, channel_id, thread_root_id, actor_id, actor_name, preview)
-     SELECT $1::uuid, w.person_id, $2, 'message', $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8 FROM unnest($9::uuid[]) AS w(person_id)
+  // Who is on Do not disturb right now: their rows are written all the same, held, and announced when it ends (hold.ts).
+  const quiet = await quietPeople(tx, wanted, ctx.runtime.now());
+
+  const written = await tx.query<{ id: string; person_id: string; held_at: Date | null }>(
+    `INSERT INTO app.notifications AS n (workspace_id, person_id, kind, ref_type, ref_id, channel_id, thread_root_id, actor_id, actor_name, preview, held_at)
+     SELECT $1::uuid, w.person_id, $2, 'message', $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8, CASE WHEN w.person_id = ANY ($10::uuid[]) THEN now() END
+       FROM unnest($9::uuid[]) AS w(person_id)
      ON CONFLICT (person_id, ref_type, ref_id) DO UPDATE SET kind = EXCLUDED.kind
        WHERE ${RANK.replace('%K', 'EXCLUDED.kind')} > ${RANK.replace('%K', 'n.kind')}
-     RETURNING n.id, n.person_id`,
+     RETURNING n.id, n.person_id, n.held_at`,
     [
       message.workspaceId,
       kind,
@@ -128,46 +129,9 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
       message.authorName,
       previewOf(message.bodyPlain),
       wanted,
+      [...quiet],
     ],
   );
-  if (written.rows.length === 0) return;
-
-  const ids = written.rows.map((r) => r.id);
-  const rows = await tx.query<NotificationRow>(
-    `SELECT ${NOTIFICATION_COLUMNS} FROM app.notifications n JOIN app.channels c ON c.id = n.channel_id WHERE n.id = ANY ($1::uuid[])`,
-    [ids],
-  );
-  const byId = new Map(rows.rows.map((r) => [r.id, r]));
-
-  // Each person's card differs (their own row and browser preference), so the pushes are batched, not broadcast: one statement for all.
-  const pushes: RealtimePush[] = [];
-  for (const w of written.rows) {
-    const row = byId.get(w.id);
-    if (!row) continue;
-    const notification = toNotification(row);
-    pushes.push({
-      personId: w.person_id,
-      type: notificationCreatedPushType,
-      payload: NotificationCreatedPush.parse({
-        notification,
-        browser: prefsOf.get(w.person_id)?.[notification.kind].browser ?? false,
-      }),
-    });
-    await ctx.audit.emit(
-      tx,
-      NotificationsNotificationCreatedEvent.parse({
-        type: 'notifications.notification.created',
-        schemaVersion: 1,
-        workspaceId: message.workspaceId,
-        notificationId: notification.id,
-        personId: w.person_id,
-        kind: notification.kind,
-        refType: notification.refType,
-        refId: notification.refId,
-        channelId: notification.channelId,
-        actorId: notification.actorId,
-      }),
-    );
-  }
-  await ctx.realtime.pushMany(tx, pushes);
+  // A row that is held (new, or a stronger kind raising a row that was already held) is announced when it is released, not now.
+  await announce(ctx, tx, message.workspaceId, written.rows.filter((r) => r.held_at === null), prefsOf);
 }

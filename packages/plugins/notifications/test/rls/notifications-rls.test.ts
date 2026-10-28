@@ -214,3 +214,18 @@ describe('notification_prefs', () => {
     expect(await code(as(rafi, (tx) => tx.query('DELETE FROM app.notification_prefs WHERE person_id = $1', [rafi.personId])))).toBe('42501');
   });
 });
+
+describe('held notifications (Do not disturb, migration 0002)', () => {
+  it('a held row is invisible to its person and cannot be read-marked by them; the system sees it and can release it', async () => {
+    await notify('held-rafi', rafi, general);
+    await sys((tx) => tx.query('UPDATE app.notifications SET held_at = now() WHERE id = $1', [note['held-rafi']]));
+    expect((await q<{ id: string }>(rafi, 'SELECT id FROM app.notifications')).map((r) => r.id)).not.toContain(note['held-rafi']);
+    expect(await as(rafi, async (tx) => (await tx.query('UPDATE app.notifications SET read_at = now() WHERE id = $1', [note['held-rafi']])).rowCount)).toBe(0);
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.notifications WHERE id = $1 AND held_at IS NOT NULL AND read_at IS NULL', [note['held-rafi']])).rows.length)).toBe(1);
+    // the person cannot release it themselves either
+    expect(await code(as(rafi, (tx) => tx.query('UPDATE app.notifications SET held_at = NULL WHERE id = $1', [note['held-rafi']])))).toBeUndefined();
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.notifications WHERE id = $1 AND held_at IS NOT NULL', [note['held-rafi']])).rows.length)).toBe(1);
+    await sys((tx) => tx.query('UPDATE app.notifications SET held_at = NULL WHERE id = $1', [note['held-rafi']]));
+    expect((await q<{ id: string }>(rafi, 'SELECT id FROM app.notifications')).map((r) => r.id)).toContain(note['held-rafi']);
+  });
+});

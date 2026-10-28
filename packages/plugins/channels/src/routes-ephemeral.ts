@@ -1,18 +1,12 @@
 import { HttpError } from '@manythreads/sdk';
 import {
-  HeartbeatRequest,
-  HeartbeatResponse,
-  ListPresenceResponse,
   ListTypingResponse,
-  PRESENCE_TTL_SECONDS,
   TYPING_TTL_SECONDS,
   TypingPathParams,
   TypingRequest,
   TypingResponse,
   TypingStartedPush,
   WS_TYPING_STARTED,
-  heartbeatRoute,
-  listPresenceRoute,
   listTypingRoute,
   typingRoute,
 } from '@manythreads/shared';
@@ -26,50 +20,16 @@ const iso = (d: Date): string => d.toISOString();
 
 async function requirePerson(tx: Parameters<typeof myPersonId>[0]): Promise<string> {
   const id = await myPersonId(tx);
-  if (!id) throw new HttpError(403, 'forbidden', 'Presence and typing belong to people');
+  if (!id) throw new HttpError(403, 'forbidden', 'Typing belongs to people');
   return id;
 }
 
 /**
- * Presence and typing (PLAN A.3): two UNLOGGED tables (migration 0003) that expire by themselves. Presence is read by polling;
- * typing is also pushed over the socket to the channel's audience, as `typing.started`.
+ * Typing (PLAN A.3): an UNLOGGED table (migration 0003) that expires by itself, also pushed over the socket to the channel's audience as
+ * `typing.started`. The heartbeat table `presence` is created by the same migration, but its routes moved to the presence plugin (P14-01).
  */
 export function registerEphemeralRoutes(deps: Deps): void {
   const { ctx } = deps;
-
-  ctx.http.route({
-    ...heartbeatRoute,
-    schema: { body: HeartbeatRequest, response: HeartbeatResponse },
-    // A heartbeat every 30 s per open tab; a few tabs and some retries stay far below this.
-    rateLimit: { limit: 120, windowMs: 60_000 },
-    handler: route(async (req, tx) => {
-      const { status = 'online' } = HeartbeatRequest.parse(req.body ?? {});
-      await requirePerson(tx);
-      const res = await tx.query<{ status: 'online' | 'away'; seen_at: Date }>(
-        `INSERT INTO app.presence AS p (person_id, workspace_id, status, seen_at) VALUES (app.person_id(), app.workspace_id(), $1, now())
-         ON CONFLICT (person_id) DO UPDATE SET status = EXCLUDED.status, seen_at = EXCLUDED.seen_at
-         RETURNING p.status, p.seen_at`,
-        [status],
-      );
-      const row = res.rows[0]!;
-      return json(
-        HeartbeatResponse.parse({ status: row.status, seenAt: iso(row.seen_at), expiresAt: iso(new Date(row.seen_at.getTime() + PRESENCE_TTL_SECONDS * 1000)) }),
-      );
-    }),
-  });
-
-  ctx.http.route({
-    ...listPresenceRoute,
-    schema: { response: ListPresenceResponse },
-    handler: route(async (_req, tx) => {
-      const res = await tx.query<{ person_id: string; status: string; seen_at: Date }>(
-        `SELECT person_id, status, seen_at FROM app.presence
-          WHERE workspace_id = app.workspace_id() AND seen_at > now() - make_interval(secs => $1) ORDER BY seen_at DESC LIMIT 1000`,
-        [PRESENCE_TTL_SECONDS],
-      );
-      return json(ListPresenceResponse.parse({ people: res.rows.map((r) => ({ personId: r.person_id, status: r.status, seenAt: iso(r.seen_at) })) }));
-    }),
-  });
 
   ctx.http.route({
     ...typingRoute,

@@ -11,6 +11,8 @@ export * from './channel.ts';
 export * from './message-thread.ts';
 export * from './file.ts';
 export * from './notification.ts';
+export * from './presence.ts';
+export * from './presence-time.ts';
 export * from './repo.ts';
 export * from './repo-paths.ts';
 export * from './bot.ts';

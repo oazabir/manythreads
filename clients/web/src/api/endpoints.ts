@@ -1,4 +1,15 @@
 import {
+  HeartbeatRequest,
+  HeartbeatResponse,
+  ListPresenceCardsResponse,
+  MyPresence,
+  UpdateDndRequest,
+  UpdateMyPresenceRequest,
+  getMyPresenceRoute,
+  heartbeatRoute,
+  listPresenceCardsRoute,
+  updateDndRoute,
+  updateMyPresenceRoute,
   ListLinksRequest,
   ListLinksResponse,
   listLinksRoute,
@@ -515,3 +526,12 @@ export const fetchLlmSpend = (query: LlmSpendQuery = {}) =>
   call(listLlmSpendRoute, { request: LlmSpendQuery, response: LlmSpendResponse }, query as LlmSpendQuery);
 
 export type { LlmSpendQuery, LlmProviderPathParams, LlmAliasPathParams, LlmLimitPathParams };
+
+// ---- presence and status (PLAN P14-01) --------------------------------------------------------------------
+/** "I am here" (`online`) or "I am here but idle" (`away`); sent every 30 seconds while the app is open. */
+export const sendHeartbeat = (status: 'online' | 'away') => call(heartbeatRoute, { request: HeartbeatRequest, response: HeartbeatResponse }, { status });
+/** Who is online or away, and the status, time zone, hours and out-of-office note of everyone the caller may see. */
+export const fetchPresenceCards = () => call(listPresenceCardsRoute, { response: ListPresenceCardsResponse });
+export const fetchMyPresence = () => call(getMyPresenceRoute, { response: MyPresence });
+export const saveMyPresence = (body: UpdateMyPresenceRequest) => call(updateMyPresenceRoute, { request: UpdateMyPresenceRequest, response: MyPresence }, body);
+export const saveDnd = (body: UpdateDndRequest) => call(updateDndRoute, { request: UpdateDndRequest, response: MyPresence }, body);

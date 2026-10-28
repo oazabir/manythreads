@@ -10,6 +10,7 @@ import { ChannelMemberAddedEvent } from './channel.member.added.ts';
 import { ChannelMemberRemovedEvent } from './channel.member.removed.ts';
 import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
 import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
+import { PresenceDndChangedEvent } from './presence.dnd.changed.ts';
 import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
 import { FilesFileDeletedEvent } from './files.file.deleted.ts';
 import { RepoRepoCommittedEvent } from './repo.repo.committed.ts';
@@ -102,6 +103,7 @@ export const eventRegistry = {
   'channel.member.removed': { 1: ChannelMemberRemovedEvent },
   'channel.mention.created': { 1: ChannelMentionCreatedEvent },
   'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
+  'presence.dnd.changed': { 1: PresenceDndChangedEvent },
   'files.file.uploaded': { 1: FilesFileUploadedEvent },
   'files.file.deleted': { 1: FilesFileDeletedEvent },
   'repo.repo.committed': { 1: RepoRepoCommittedEvent },

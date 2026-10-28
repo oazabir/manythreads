@@ -1,5 +1,6 @@
 import type { PluginContext, PluginEvent } from '@manythreads/sdk';
-import { ChannelMemberRemovedEvent, ChannelMentionCreatedEvent, ChannelMessageDeletedEvent, ChannelMessagePostedEvent } from '@manythreads/shared';
+import { ChannelMemberRemovedEvent, ChannelMentionCreatedEvent, ChannelMessageDeletedEvent, ChannelMessagePostedEvent, PresenceDndChangedEvent } from '@manythreads/shared';
+import { releaseHeld } from './hold.ts';
 import { deliver, loadMessage } from './service.ts';
 
 /**
@@ -14,6 +15,8 @@ import { deliver, loadMessage } from './service.ts';
  * - `channel.member.removed`: a person who can no longer read the channel (a private channel or a direct message) loses what it notified
  *   them of; leaving a channel everyone on the team can read changes nothing. (The inbox policy already hides such rows; this keeps
  *   them from being counted or kept.)
+ * - `presence.dnd.changed`: when it says Do not disturb is off, what was held for that person is released (a pause or schedule that ends by the
+ *   clock is released by the `notifications.release_held` job, see index.ts).
  */
 export function registerConsumers(ctx: PluginContext): void {
   ctx.events.subscribe('channel.mention.created', async (raw: PluginEvent, tx) => {
@@ -47,5 +50,10 @@ export function registerConsumers(ctx: PluginContext): void {
     const audience = await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_audience($1::uuid)', [event.channelId]);
     if (audience.rows.some((r) => r.person_id === event.personId)) return;
     await tx.query('DELETE FROM app.notifications WHERE person_id = $1::uuid AND channel_id = $2::uuid', [event.personId, event.channelId]);
+  });
+
+  ctx.events.subscribe('presence.dnd.changed', async (raw: PluginEvent, tx) => {
+    const event = PresenceDndChangedEvent.parse(raw);
+    if (!event.active) await releaseHeld(ctx, tx, [event.personId]);
   });
 }
