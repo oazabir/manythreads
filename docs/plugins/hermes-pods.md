@@ -97,7 +97,7 @@ branch to the project's origin and open a pull request there; a person merges it
   - `check <project>` prints `ready` (exit 0) when the project has a plain https GitHub origin and a token issued for that very origin, and exits 3 otherwise.
   - `publish <project> <card id> <tested commit> <title>` (the pull request's text on standard input) refuses unless the branch `card-<first 8 characters
     of the card id>` of the repository of record is at exactly that commit (exit 4), pushes that one branch to the origin (a plain push of the exact
-    commit: never the main line, never forced, so an origin branch that holds other work refuses it, exit 5), opens the pull request against the project's main branch (as the token was issued for it) (or finds the open one for that branch, so running it twice is safe; an open one that is not at the tested commit is refused, exit 4) and prints `pull_request_number=`, `pull_request_url=` and
+    commit: never the main line, never forced, so an origin branch that holds other work refuses it, exit 5), opens the pull request against the project's main branch (as the token was issued for it) (or finds the open one for that branch, so running it twice is safe; an open one that is not at the tested commit is refused, exit 4, after waiting up to a minute for GitHub to move it to the pushed commit) and prints `pull_request_number=`, `pull_request_url=` and
     `head_sha=`. Exit 6 means GitHub refused or did not answer.
   - The token reaches git through `GIT_ASKPASS` (`mt-askpass.sh`, which reads the token file) and reaches curl as a header read from standard input, never
     in a command line (other users of the pod can read command lines from `/proc`). Everything the script prints is masked for the token.

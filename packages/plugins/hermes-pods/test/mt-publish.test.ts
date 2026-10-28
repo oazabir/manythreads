@@ -205,9 +205,19 @@ describe('mt-publish.sh publish', () => {
     const first = await publish();
     const n = Number(/pull_request_number=(\d+)/.exec(first.out)![1]);
     gh.pulls.get(n)!.headSha = mainSha; // GitHub says the pull request is somewhere else
-    const again = await publish();
+    const again = await run(PUBLISH, ['publish', 'widgets', CARD, headSha, 't'], { input: 'x', env: { MT_PR_TRIES: '2', MT_PR_WAIT: '0' } });
     expect(again.code).toBe(4);
     expect(again.err).toContain('not at the tested commit');
+  });
+
+  it('waits for GitHub to move the open pull request to the pushed commit', async () => {
+    const first = await publish();
+    const n = Number(/pull_request_number=(\d+)/.exec(first.out)![1]);
+    gh.pulls.get(n)!.headSha = mainSha; // GitHub has not caught up yet
+    setTimeout(() => (gh.pulls.get(n)!.headSha = headSha), 700);
+    const again = await run(PUBLISH, ['publish', 'widgets', CARD, headSha, 't'], { input: 'x', env: { MT_PR_TRIES: '20', MT_PR_WAIT: '0.2' } });
+    expect(again.code).toBe(0);
+    expect(again.out).toContain(`pull_request_number=${n}`);
   });
 
   it('refuses a token file that is a symlink, or that another user owns', async () => {

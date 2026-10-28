@@ -92,15 +92,21 @@ gh() {  # gh <method> <url> [data file]: the token goes in a header read from st
   printf 'Authorization: Bearer %s\n' "$token" | curl "${args[@]}" "$url"
 }
 
-existing="$(gh GET "$repo_api?head=$oowner:$branch&base=$base&state=open" 2>&1 || true)"
-status="${existing##*$'\n'}"; json="${existing%$'\n'*}"
-[ "$status" = 200 ] || { printf '%s\n' "GitHub answered $status when listing pull requests: $(jq -r '.message? // empty' <<<"$json" 2>/dev/null | head -c 300)" | mask >&2; die 6 "GitHub refused the request"; }
-number="$(jq -r '.[0].number // empty' <<<"$json")"; url="$(jq -r '.[0].html_url // empty' <<<"$json")"
-# an open pull request for this branch must be at the tested commit (the push above moved it there, or it already was)
-if [ -n "$number" ]; then
+# GitHub moves an open pull request to a freshly pushed head a moment after the push is accepted, so a head that is not yet ours is asked for again
+# (up to thirty times, two seconds apart; MT_PR_TRIES and MT_PR_WAIT are test hooks) before it counts as a pull request at another commit.
+tries="${MT_PR_TRIES:-30}"
+while :; do
+  existing="$(gh GET "$repo_api?head=$oowner:$branch&base=$base&state=open" 2>&1 || true)"
+  status="${existing##*$'\n'}"; json="${existing%$'\n'*}"
+  [ "$status" = 200 ] || { printf '%s\n' "GitHub answered $status when listing pull requests: $(jq -r '.message? // empty' <<<"$json" 2>/dev/null | head -c 300)" | mask >&2; die 6 "GitHub refused the request"; }
+  number="$(jq -r '.[0].number // empty' <<<"$json")"; url="$(jq -r '.[0].html_url // empty' <<<"$json")"
   prhead="$(jq -r '.[0].head.sha // empty' <<<"$json")"
-  [ "$prhead" = "$head" ] || die 4 "the open pull request #$number is at ${prhead:0:12}, not at the tested commit ${head:0:12}"
-fi
+  # an open pull request for this branch must be at the tested commit (the push above moved it there, or it already was)
+  { [ -z "$number" ] || [ "$prhead" = "$head" ]; } && break
+  tries=$((tries - 1))
+  [ "$tries" -gt 0 ] || die 4 "the open pull request #$number is at ${prhead:0:12}, not at the tested commit ${head:0:12}"
+  sleep "${MT_PR_WAIT:-2}"
+done
 
 if [ -z "$number" ]; then
   body="$(head -c 8000 || true)"
