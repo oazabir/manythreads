@@ -161,6 +161,17 @@
   opacity: 0.5;
 }
 
+.md {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.md-linkhost {
+  color: var(--alert-ink);
+  font-size: 0.9em;
+}
+
 .md p {
   margin: 0;
 }

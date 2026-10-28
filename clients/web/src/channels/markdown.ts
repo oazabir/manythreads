@@ -31,6 +31,10 @@ export type Block =
   | { t: 'list'; ordered: boolean; items: Inline[][]; checks?: (boolean | null)[] };
 
 const MAX_SPAN = 500;
+/** The most text, blocks and list items one message draws. A larger message is cut here and says so, so no text can make the page build an endless tree. */
+export const MAX_RENDER_CHARS = 100_000;
+const MAX_BLOCKS = 600;
+const MAX_ITEMS = 400;
 const MAX_PARAGRAPH = 4_000;
 const MAX_DEPTH = 4;
 
@@ -184,7 +188,19 @@ const HEADING = /^ {0,3}(#{1,6}) +(.*?)\s*#*\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const TASK = /^\[([ xX])\] +(.*)$/;
 
+/**
+ * The text as it may be drawn: no control characters (except newline and tab), no bidirectional overrides or isolates (they reorder what a reader sees:
+ * `txt.exe` shown as `exe.txt`), no line or paragraph separators, no byte-order mark. The joiners emoji and some scripts need stay.
+ */
+// eslint-disable-next-line no-control-regex
+const UNSAFE_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff\ufff9-\ufffb]/g;
+export const cleanText = (text: string): string => text.replace(UNSAFE_CHARS, '');
+
 export function parseMarkdown(source: string, depth = 0): Block[] {
+  if (depth === 0) {
+    source = cleanText(source);
+    if (source.length > MAX_RENDER_CHARS) source = source.slice(0, MAX_RENDER_CHARS);
+  }
   const lines = source.replace(/\r\n?/g, '\n').split('\n');
   const blocks: Block[] = [];
   let para: string[] = [];
@@ -195,6 +211,10 @@ export function parseMarkdown(source: string, depth = 0): Block[] {
     blocks.push({ t: 'p', c: parseInline(text) });
   };
   for (let i = 0; i < lines.length; i += 1) {
+    if (blocks.length >= MAX_BLOCKS) {
+      blocks.push({ t: 'p', c: [{ t: 'text', v: '… (the rest of this message is not shown)' }] });
+      return blocks;
+    }
     const line = lines[i] ?? '';
     const fence = FENCE.exec(line);
     if (fence?.[1]) {
@@ -239,7 +259,7 @@ export function parseMarkdown(source: string, depth = 0): Block[] {
       const pattern = ordered ? NUMBERED : BULLET;
       const items: Inline[][] = [];
       const checks: (boolean | null)[] = [];
-      while (i < lines.length) {
+      while (i < lines.length && items.length < MAX_ITEMS) {
         const m = pattern.exec(lines[i] ?? '');
         if (!m) break;
         const box = ordered ? null : TASK.exec(m[1] ?? '');

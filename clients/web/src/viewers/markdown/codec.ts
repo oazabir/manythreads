@@ -2,7 +2,7 @@ import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
-import { flattenExtensions, resolveExtensions, sortExtensions, type AnyExtension, type JSONContent } from '@tiptap/core';
+import { mergeAttributes, flattenExtensions, resolveExtensions, sortExtensions, type AnyExtension, type JSONContent } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
 import { splitFrontmatter } from '../frontmatter';
 
@@ -14,10 +14,25 @@ import { splitFrontmatter } from '../frontmatter';
  *  - after an edit the whole body is serialised once, then tidied (runs of blank lines collapsed outside code fences).
  */
 
+/**
+ * An image in a page may come from this site only (a relative address or a path of this origin). A remote address would make every reader's browser
+ * ask an outside server for it, which tells that server who read the page and when; `javascript:` and `data:` addresses are no images at all.
+ */
+export const isOwnImage = (src: unknown): boolean =>
+  // eslint-disable-next-line no-control-regex
+  typeof src === 'string' && src.length > 0 && src.length <= 2_048 && !/[\u0000-\u001f\u007f\s\\]/.test(src) && !/^[a-z][a-z0-9+.-]*:/i.test(src) && !src.startsWith('//');
+
+const OwnImage = Image.extend({
+  renderHTML({ HTMLAttributes }) {
+    if (isOwnImage(HTMLAttributes['src'])) return ['img', mergeAttributes(HTMLAttributes, { referrerpolicy: 'no-referrer' })];
+    return ['span', { class: 'md-image-blocked' }, `[image not shown: ${String(HTMLAttributes['alt'] ?? '').slice(0, 80) || 'outside address'}]`];
+  },
+});
+
 /** The content extensions (schema); the editor adds the Markdown extension and the slash menu on top. */
 export const contentExtensions = (): AnyExtension[] => [
   StarterKit.configure({ link: { openOnClick: false, autolink: false } }),
-  Image.configure({ inline: true, allowBase64: false }),
+  OwnImage.configure({ inline: true, allowBase64: false }),
   Table.configure({ resizable: false }),
   TableRow,
   TableHeader,

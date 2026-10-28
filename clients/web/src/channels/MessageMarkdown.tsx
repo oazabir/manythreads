@@ -39,6 +39,23 @@ function withMarkers(text: string, marker: CitationMarker, key: string, cited: R
   return out;
 }
 
+/** The host of an http(s) address, lower case, without `www.`; null for anything else. */
+const hostOf = (href: string): string | null => {
+  try {
+    const u = new URL(href);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.hostname.toLowerCase().replace(/^www\./, '') : null;
+  } catch {
+    return null;
+  }
+};
+/** The text of a label, with the formatting taken off. */
+const plain = (nodes: Inline[]): string => nodes.map((n) => (n.t === 'text' || n.t === 'code' ? n.v : n.t === 'br' ? ' ' : 'c' in n ? plain(n.c) : '')).join('');
+/** The host a label says it points to ("https://bank.example/login", "bank.example"), or null when the label is not an address. */
+const hostClaimedBy = (label: string): string | null => {
+  const m = /^\s*(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?::\d+)?(?:[/?#]\S*)?\s*$/i.exec(label);
+  return m?.[1] ? m[1].toLowerCase().replace(/^www\./, '') : null;
+};
+
 /** Draws what `markdown.ts` read. Only React elements: message text never becomes HTML. External links open safely. */
 function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: CitationMarker, cited: ReadonlySet<number> = NONE): ReactNode[] {
   return nodes.map((n, i) => {
@@ -58,10 +75,16 @@ function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: Cit
         return <del key={k}>{inline(n.c, teamSlug, `${k}.`, marker, cited)}</del>;
       case 'link': {
         const local = n.href.startsWith('/');
-        return local ? (
-          <Link key={k} to={n.href}>{inline(n.c, teamSlug, `${k}.`, marker, cited)}</Link>
-        ) : (
-          <a key={k} href={n.href} target="_blank" rel="noopener noreferrer nofollow">{inline(n.c, teamSlug, `${k}.`, marker, cited)}</a>
+        if (local) return <Link key={k} to={n.href}>{inline(n.c, teamSlug, `${k}.`, marker, cited)}</Link>;
+        // A label that reads like an address of another place ("https://bank.example") over a link to somewhere else shows where the link goes.
+        const real = hostOf(n.href);
+        const claimed = hostClaimedBy(plain(n.c));
+        const spoof = claimed !== null && real !== null && claimed !== real && !claimed.endsWith(`.${real}`) && !real.endsWith(`.${claimed}`);
+        return (
+          <a key={k} href={n.href} title={n.href} target="_blank" rel="noopener noreferrer nofollow" referrerPolicy="no-referrer" data-spoof={spoof ? 'true' : undefined}>
+            {inline(n.c, teamSlug, `${k}.`, marker, cited)}
+            {spoof ? <span className="md-linkhost"> ({real})</span> : null}
+          </a>
         );
       }
       case 'mention':

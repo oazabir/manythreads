@@ -75,3 +75,13 @@ describe('what the Projects page says about a token', () => {
     expect(describeToken({ pushUsername: 'octocat', pushCredentialExpiresAt: null, pushCredentialStatus: 'needs_replacing' }, NOW)).toMatchObject({ tone: 'bad' });
   });
 });
+
+describe('images in pages come from this site only', () => {
+  it('accepts a relative address or a path of this origin and nothing else', async () => {
+    const { isOwnImage } = await import('../src/viewers/markdown/codec');
+    for (const ok of ['/api/files/abc/content', 'img/a.png', './a.png', '../a.png']) expect(isOwnImage(ok), ok).toBe(true);
+    for (const bad of ['https://evil.example/p.gif', 'http://x/p.gif', '//evil.example/p.gif', 'javascript:alert(1)', 'data:image/png;base64,AAAA', 'JaVa\tScript:x', '\\\\evil\\a.png', 'blob:https://x/1', '', null, 5]) {
+      expect(isOwnImage(bad), String(bad)).toBe(false);
+    }
+  });
+});
