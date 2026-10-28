@@ -233,6 +233,7 @@ describe('every shipped definition', () => {
         'engineering/brain',
         'engineering/code-reviewer',
         'engineering/coder',
+        'engineering/committer',
         'engineering/deployer',
         'engineering/engineer',
         'engineering/plan-reviewer',
@@ -391,7 +392,7 @@ describe('every shipped definition', () => {
     for (const forbidden of ['files.write', 'pages.write', 'tasks.deploy', 'tasks.complete']) {
       expect(orchestrator.fm.capabilities?.native, forbidden).not.toContain(forbidden);
     }
-    expect(orchestrator.fm.handover?.mayTag).toEqual(['plan-reviewer', 'coder', 'code-reviewer', 'tester', 'deployer', 'web-smoke-tester', 'brain', 'alert-triage']);
+    expect(orchestrator.fm.handover?.mayTag).toEqual(['plan-reviewer', 'coder', 'code-reviewer', 'tester', 'committer', 'deployer', 'web-smoke-tester', 'brain', 'alert-triage']);
     expect(orchestrator.fm.evals).toEqual({ set: 'engineer', minScore: 0.9 });
   });
 
@@ -407,18 +408,31 @@ describe('every shipped definition', () => {
     expect(reviewer.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
     expect(tester.fm.capabilities?.runtime).toEqual(['shell', 'files', 'git']);
     expect(reviewer.fm.handover?.mayTag).toEqual(['coder', 'tester', 'engineer']);
-    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'code-reviewer', 'deployer', 'engineer']);
+    expect(tester.fm.handover?.mayTag).toEqual(['coder', 'code-reviewer', 'engineer']);
     expect(tester.fm.limits?.timeoutSeconds).toBe(2400);
-    expect(tester.body).toContain('tested sha');
-    // After the tests pass, a project with a push credential gets a pull request that a person merges; any other project is completed as before.
-    expect(tester.fm.capabilities?.native).toContain('tasks.pull_request');
-    expect(tester.body).toContain('mt-publish.sh check');
-    expect(tester.body).toContain('mt-publish.sh publish');
-    expect(tester.body).toContain('tasks.pull_request');
-    expect(tester.body).toContain('Not ready: complete as before');
-    expect(tester.body).toContain('never see the credential');
-    // only the tester publishes: no other shipped bot is granted the tool
-    for (const s of shipped.filter((x) => x.slug !== 'tester')) expect(s.fm.capabilities?.native ?? [], s.slug).not.toContain('tasks.pull_request');
+    expect(tester.body).toContain('the commit you tested');
+    // The tester proves a commit and returns the card to the engineer; it never publishes.
+    expect(tester.fm.capabilities?.native).not.toContain('tasks.pull_request');
+    expect(tester.body).not.toContain('mt-publish.sh');
+    expect(tester.body).toContain('toBotSlug: engineer');
+    // Only the committer publishes: a project with a push credential gets a pull request that a person merges; any other project is completed as before.
+    for (const s of shipped.filter((x) => x.slug !== 'committer')) expect(s.fm.capabilities?.native ?? [], s.slug).not.toContain('tasks.pull_request');
+  });
+
+  it('Committer is the one bot that publishes, never sees the credential and never edits the change', () => {
+    const committer = shipped.find((s) => s.slug === 'committer')!;
+    expect(committer.fm.capabilities?.native).toEqual(expect.arrayContaining(['tasks.read', 'tasks.claim', 'tasks.complete', 'tasks.pull_request', 'tasks.handoff']));
+    for (const forbidden of ['files.write', 'pages.write', 'tasks.deploy']) expect(committer.fm.capabilities?.native, forbidden).not.toContain(forbidden);
+    expect(committer.fm.handover?.mayTag).toEqual(['tester', 'coder', 'deployer', 'engineer']);
+    expect(committer.fm.placement?.gateway).toEqual({ connection: 'managed' });
+    expect(committer.fm.evals).toEqual({ set: 'committer', minScore: 0.9 });
+    expect(committer.body).toContain('mt-publish.sh check');
+    expect(committer.body).toContain('mt-publish.sh publish');
+    expect(committer.body).toContain('tasks.pull_request');
+    expect(committer.body).toContain('Not ready');
+    expect(committer.body).toContain('never see');
+    // Engineer is the one that tags it
+    expect(shipped.find((s) => s.slug === 'engineer')!.body).toContain('toBotSlug: committer');
   });
 
   it('the engineering chain runs on the team’s pod: every agent bot is placed on the managed gateway, and the preview chain is wired', () => {

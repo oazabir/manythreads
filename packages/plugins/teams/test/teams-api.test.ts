@@ -34,6 +34,8 @@ const ENGINEERING_BOT_FILES = [
   'bots/code-reviewer/BOT.md',
   'bots/code-reviewer/evals/code-reviewer.yaml',
   'bots/coder/BOT.md',
+  'bots/committer/BOT.md',
+  'bots/committer/evals/committer.yaml',
   'bots/deployer/BOT.md',
   'bots/deployer/evals/deployer.yaml',
   'bots/engineer/BOT.md',

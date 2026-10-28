@@ -21,7 +21,7 @@ wants the team's agent pod to hold a copy. You need a team, a channel to tie the
 A project can also hold a **GitHub token** so that finished work reaches GitHub for a person to approve. With a token set, the bot that tested a card's
 branch pushes that branch to the project's address and opens a **pull request**; a person merges it in GitHub, and that merge is the approval. The card
 links the pull request and follows it: merged means done, closed without a merge means it goes back to its owner (see [tasks](tasks.md)). A project
-without a token behaves as before: the tester completes the card and nothing leaves the pod.
+without a token behaves as before: the committer completes the card and nothing leaves the pod.
 
 - **Setting the token.** On the Projects page, a lead or admin enters the GitHub username and pastes a token into the project's "Pull requests" box (or
   calls `PUT /api/teams/:slug/projects/:projectId/push-credential` with `{ "username": "…", "token": "…" }`). Use a fine-grained token limited to that one

@@ -42,7 +42,7 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 
 | Template | Definitions | Scenario sets |
 |---|---|---|
-| Engineering | Brain, Engineer, Plan reviewer, Coder, Code reviewer, Tester, Deployer, Web smoke tester, Alert triage, Standup relay | `brain`, `engineer`, `plan-reviewer`, `code-reviewer`, `tester`, `deployer`, `web-smoke-tester`, `alert-triage`, `standup-relay` |
+| Engineering | Brain, Engineer, Plan reviewer, Coder, Code reviewer, Tester, Committer, Deployer, Web smoke tester, Alert triage, Standup relay | `brain`, `engineer`, `plan-reviewer`, `code-reviewer`, `tester`, `committer`, `deployer`, `web-smoke-tester`, `alert-triage`, `standup-relay` |
 | Customer support | Brain, Support responder | `brain` |
 | Marketing | Brain, Content drafter | `brain` |
 | Research | Brain | `brain` |

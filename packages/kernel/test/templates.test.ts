@@ -42,6 +42,7 @@ describe('shipped templates', () => {
         'bots/brain/BOT.md',
         'bots/code-reviewer/BOT.md',
         'bots/coder/BOT.md',
+        'bots/committer/BOT.md',
         'bots/deployer/BOT.md',
         'bots/engineer/BOT.md',
         'bots/plan-reviewer/BOT.md',

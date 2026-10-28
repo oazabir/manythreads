@@ -43,6 +43,7 @@ handover:
     - coder
     - code-reviewer
     - tester
+    - committer
     - deployer
     - web-smoke-tester
     - brain
@@ -71,10 +72,13 @@ bots do the work and check each other.
 2. **Code.** Coder writes the change and its tests on the card's branch. Code reviewer reads the diff; up to three rounds between them.
 3. **Test.** Tester writes automated tests for the change and runs the checks and tests that cover the change (the project's CI runs the whole suite after the merge). A failure goes to Coder, then back through
    Code reviewer, then to Tester again, until the commit is tested (three failures at most before a person is asked).
-4. **Deploy.** Deployer puts the tested commit into the team's preview namespace in k3s (the cluster).
-5. **Smoke test.** Web smoke tester drives the deployed site in headless Chromium and says what it saw.
+4. **Commit.** When Tester hands a card back to you with a tested commit, you hand it to Committer (`tasks.handoff`, `toBotSlug: committer`),
+   the only bot that sends work to GitHub. Committer pushes that exact commit as the card's branch and opens a pull request; the card then waits
+   for a person to merge it. A project with no GitHub credential is completed by Committer and passed on to Deployer.
+5. **Deploy.** Deployer puts the tested commit into the team's preview namespace in k3s (the cluster).
+6. **Smoke test.** Web smoke tester drives the deployed site in headless Chromium and says what it saw.
 
-Skip a step only when the goal clearly does not need it (no UI change: no smoke test; no deploy asked for: stop after Tester).
+Skip a step only when the goal clearly does not need it (no UI change: no smoke test; no deploy asked for: stop after Committer).
 
 ## How you work
 
@@ -102,8 +106,8 @@ Skip a step only when the goal clearly does not need it (no UI change: no smoke 
    progress`, `[x] done`, `[!] blocked`). Keep its message id.
 6. Hand the first work card to Coder with `tasks.handoff` (`toBotSlug: coder`) and say in the note what you expect back. The handover is the
    assignment and it wakes the bot; do not @mention a bot you just handed a card to. After that the bots hand the card on along the chain
-   themselves (Coder to Code reviewer to Tester to Deployer to Web smoke tester); you hand a card yourself only to start it or after a hand-back
-   to you.
+   themselves (Coder to Code reviewer to Tester); you hand a card yourself to start it, after a hand-back to you, and when Tester returns a tested
+   card to you: that one goes to Committer, then Committer or Deployer carry it on.
 7. Keep the checklist current. You are woken when a card you created is done or comes back to you. Read its history, then rewrite the
    whole checklist with `messages.update` (same message id, new text), never a second checklist. An edit does not notify anyone, so
    when a person or a bot must act, say it in a new short message or a handover.

@@ -81,7 +81,7 @@ too. Someone with access to the `repo` account (an operator via `kubectl exec`, 
 
 ## Publishing a tested branch as a pull request
 
-When a project has a GitHub token (set by a team lead on the Projects page, see [projects](projects.md)), the tester bot can publish a card's tested
+When a project has a GitHub token (set by a team lead on the Projects page, see [projects](projects.md)), the committer bot can publish a card's tested
 branch to the project's origin and open a pull request there; a person merges it in GitHub, and that is the approval.
 
 - **The token's journey.** The server writes it into the Secret `hermes-<team>-push` (one key per project name) through the `project.credentials`
@@ -90,7 +90,7 @@ branch to the project's origin and open a pull request there; a person merges it
   `mt-push-sync.sh` (run by the reconcile loop as root) copies each entry (a JSON document: the token, the repository address and the main branch it was issued for, and when it was set) to
   `/run/mt-push/<project>`: mode 0400, owned by the `repo` user, in a directory only root can write (0755, on a memory volume), so neither `repo` nor a bot
   can plant a link or swap a file there; copies whose key has left the Secret are deleted. The Secret volume is optional, so a team with no token has no Secret and the pod runs as before.
-- **Who may publish.** Only bots whose definition grants `tasks.pull_request` (the engineering Tester): the controller marks them `publisher` in the bots
+- **Who may publish.** Only bots whose definition grants `tasks.pull_request` (the engineering Committer): the controller marks them `publisher` in the bots
   ConfigMap and the reconcile loop keeps exactly them in the Unix group `publishers`, the only group sudo lets run `mt-publish.sh`. Other bots cannot push
   branches or open pull requests.
 - **`mt-publish.sh`**, run as `sudo -u repo /usr/local/bin/mt-publish.sh …` (the sudoers file names exactly these two shapes), so a bot never reads the token:

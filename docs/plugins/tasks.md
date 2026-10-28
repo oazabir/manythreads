@@ -67,7 +67,7 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 - **Protected deploys wait.** `app.tasks_deploy_request` checks the environment's windows and daily cap first, then — for a `protected` or
   `needs_approval` environment — files an `environment` approval and records a `deploy_requests` row. Approving it runs
   `app.tasks_apply_deploy` exactly once; the requester can never approve their own deploy (the approvals plugin's own rule).
-- **Waiting on a pull request.** When the project has a GitHub token, the tester does not complete a card: it publishes the branch and calls
+- **Waiting on a pull request.** When the project has a GitHub token, the committer (the one bot that publishes; Engineer hands it a tested card) does not complete a card: it publishes the branch and calls
   `tasks.pull_request` with the project, the commit and the pull request number (nothing else comes from the bot). The **server** reads the project's
   token and the address it was issued for from the pod's Secret, asks GitHub for that pull request and requires it to be open, to come from the card's own
   branch (`card-<first 8 characters of the card id>`) of that very repository, to be at the commit the bot says it tested, and to be aimed at the project's main branch (kept in the Secret next to the token) of the same

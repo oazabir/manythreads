@@ -1,7 +1,7 @@
 # Source: SPEC-FINAL §13 (Engineering row), §5.3; prototype #onboarding Step 5 · Teams.
 id: engineering
 name: Engineering
-description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that plan, code, review, test, deploy to a preview and smoke test the running site in a browser.
+description: Ship and run software. Dev chat, releases, incidents, alerts and a daily standup, with bots that plan, code, review, test, push to GitHub, deploy to a preview and smoke test the running site in a browser.
 version: 1
 channels:
   - name: "#general"
@@ -38,6 +38,9 @@ bots:
   - slug: tester
     name: Tester
     role: "Writes automated tests for a reviewed change, runs the tests that cover it, and sends failures back to Coder."
+  - slug: committer
+    name: Committer
+    role: "Pushes a tested commit to GitHub as a pull request without ever seeing the credential."
   - slug: deployer
     name: Deployer
     role: "Deploys a tested commit into the team's preview namespace in k3s and gets it ready for the smoke test."
