@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IsoDateTime } from '../../common/time.ts';
 import { Project, ProjectBranch, ProjectName, ProjectRepoUrl } from '../../entities/project.ts';
 import { ChannelId, ProjectId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
@@ -48,7 +49,9 @@ export const PushCredentialToken = z
   .min(20)
   .max(255)
   .regex(/^[A-Za-z0-9_\-.]+$/, 'letters, digits, "_", "-" and "." only');
-export const SetPushCredentialRequest = z.strictObject({ token: PushCredentialToken });
+/** A GitHub login: letters, digits and single hyphens, up to 39 characters, not starting with a hyphen. */
+export const GithubUsername = z.string().trim().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, 'a GitHub username: letters, digits and "-", up to 39 characters');
+export const SetPushCredentialRequest = z.strictObject({ username: GithubUsername, token: PushCredentialToken });
 export type SetPushCredentialRequest = z.infer<typeof SetPushCredentialRequest>;
 export const SetPushCredentialResponse = z.object({ project: Project });
 export type SetPushCredentialResponse = z.infer<typeof SetPushCredentialResponse>;
@@ -56,4 +59,12 @@ export const setPushCredentialRoute = { method: 'PUT', path: '/api/teams/:slug/p
 
 export const RemovePushCredentialResponse = z.object({ project: Project });
 export type RemovePushCredentialResponse = z.infer<typeof RemovePushCredentialResponse>;
+/** Why a check of the token failed; each has its own plain message on the page. */
+export const PushCredentialProblem = z.enum(['rejected', 'wrong_owner', 'no_write', 'unreachable']);
+export type PushCredentialProblem = z.infer<typeof PushCredentialProblem>;
+/** The result of asking GitHub about the stored token: who it belongs to and when it expires. */
+export const TestPushCredentialResponse = z.object({ project: Project, ok: z.boolean(), login: z.string().nullable(), expiresAt: IsoDateTime.nullable(), message: z.string().nullable() });
+export type TestPushCredentialResponse = z.infer<typeof TestPushCredentialResponse>;
+export const testPushCredentialRoute = { method: 'POST', path: '/api/teams/:slug/projects/:projectId/push-credential/test' } as const;
+
 export const removePushCredentialRoute = { method: 'DELETE', path: '/api/teams/:slug/projects/:projectId/push-credential' } as const;

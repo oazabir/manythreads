@@ -20,6 +20,7 @@ import {
   RemovePushCredentialResponse,
   SetPushCredentialRequest,
   SetPushCredentialResponse,
+  TestPushCredentialResponse,
   UpdateProjectRequest,
   UpdateProjectResponse,
   createProjectRoute,
@@ -30,8 +31,11 @@ import {
   parseRepoOriginAllow,
   removePushCredentialRoute,
   setPushCredentialRoute,
+  testPushCredentialRoute,
   updateProjectRoute,
 } from '@manythreads/shared';
+
+import { PROBLEM_MESSAGE, checkGithubToken } from './github-check.ts';
 
 // Projects: a team's git repositories, each tied to at most one channel of the team. The team reads; a lead or workspace admin writes.
 
@@ -45,11 +49,14 @@ interface ProjectRow extends Record<string, unknown> {
   channel_id: string | null;
   created_by: string | null;
   push_credential_set_at: Date | null;
+  push_username: string | null;
+  push_credential_expires_at: Date | null;
+  push_credential_status: 'ok' | 'needs_replacing' | null;
   created_at: Date;
   updated_at: Date;
 }
 
-const COLUMNS = 'id, workspace_id, team_id, name, repo_url, default_branch, channel_id, created_by, push_credential_set_at, created_at, updated_at';
+const COLUMNS = 'id, workspace_id, team_id, name, repo_url, default_branch, channel_id, created_by, push_credential_set_at, push_username, push_credential_expires_at, push_credential_status, created_at, updated_at';
 
 /** The one mapper of `app.projects`: a row to the shared type. */
 export function toProject(r: ProjectRow): Project {
@@ -63,6 +70,9 @@ export function toProject(r: ProjectRow): Project {
     channelId: r.channel_id,
     createdBy: r.created_by,
     pushCredentialSetAt: r.push_credential_set_at ? r.push_credential_set_at.toISOString() : null,
+    pushUsername: r.push_username,
+    pushCredentialExpiresAt: r.push_credential_expires_at ? r.push_credential_expires_at.toISOString() : null,
+    pushCredentialStatus: r.push_credential_status,
     createdAt: r.created_at.toISOString(),
     updatedAt: r.updated_at.toISOString(),
   });
@@ -83,6 +93,9 @@ async function requireFreeChannel(tx: PluginTx, channelId: string, exceptProject
   const other = res.rows[0];
   if (other) throw conflict(`That channel already belongs to the project ${other.name}`);
 }
+
+/** Tests point GitHub at a local double; nothing else ever changes where the check goes. */
+const apiBaseFor = (real: string): string => (process.env['NODE_ENV'] === 'test' && process.env['MANYTHREADS_TEST_GITHUB_API']) || real;
 
 export function registerProjectRoutes(ctx: PluginContext): void {
   const credentialsProvider = (): ProjectCredentialsProvider | undefined => ctx.providers.get<ProjectCredentialsProvider>('project.credentials');
@@ -177,7 +190,10 @@ export function registerProjectRoutes(ctx: PluginContext): void {
         `UPDATE app.projects SET
            repo_url = coalesce($3, repo_url), default_branch = coalesce($4, default_branch),
            channel_id = CASE WHEN $5::boolean THEN $6::uuid ELSE channel_id END,
-           push_credential_set_at = CASE WHEN $7::boolean THEN NULL ELSE push_credential_set_at END, updated_at = now()
+           push_credential_set_at = CASE WHEN $7::boolean THEN NULL ELSE push_credential_set_at END,
+           push_username = CASE WHEN $7::boolean THEN NULL ELSE push_username END,
+           push_credential_expires_at = CASE WHEN $7::boolean THEN NULL ELSE push_credential_expires_at END,
+           push_credential_status = CASE WHEN $7::boolean THEN NULL ELSE push_credential_status END, updated_at = now()
          WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
         [projectId, team.id, body.repoUrl ?? null, body.defaultBranch ?? null, channelGiven, body.channelId ?? null, dropToken],
       );
@@ -246,11 +262,16 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       }
       const provider = credentialsProvider();
       if (!provider) throw conflict('This server keeps no team pods, so it has nowhere to keep a token');
+      // GitHub is asked before anything is kept: a token of another account, one that cannot write here and one GitHub refuses are each told apart.
+      const github = parseGithubRepo(current.repo_url)!;
+      const checked = await checkGithubToken({ apiBase: apiBaseFor(github.apiBase), token: body.token, username: body.username, owner: github.owner, repo: github.repo });
+      if (!checked.ok) throw checked.problem === 'unreachable' ? conflict(PROBLEM_MESSAGE.unreachable) : invalid(PROBLEM_MESSAGE[checked.problem]);
       // The row first, the pod's Secret last: the Secret is the final step before the request commits, so a failure anywhere earlier leaves no token behind.
       const updated = (
         await tx.query<ProjectRow>(
-          `UPDATE app.projects SET push_credential_set_at = now(), updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
-          [projectId, team.id],
+          `UPDATE app.projects SET push_credential_set_at = now(), push_username = $3, push_credential_expires_at = $4::timestamptz, push_credential_status = 'ok', updated_at = now()
+           WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
+          [projectId, team.id, checked.login, checked.expiresAt],
         )
       ).rows[0];
       if (!updated) throw forbidden('You do not have permission to do that');
@@ -271,6 +292,39 @@ export function registerProjectRoutes(ctx: PluginContext): void {
         throw conflict('The token could not be stored in the team pod; try again in a moment');
       }
       return json(SetPushCredentialResponse.parse({ project: toProject(updated) }));
+    }),
+  });
+
+  // Ask GitHub again about the stored token (who it belongs to, whether it still writes here, when it expires). A refusal marks the project
+  // `needs_replacing`; a GitHub that cannot be reached changes nothing.
+  ctx.http.route({
+    method: testPushCredentialRoute.method,
+    path: testPushCredentialRoute.path,
+    rateLimit: { limit: 20, windowMs: 60_000 },
+    schema: { response: TestPushCredentialResponse },
+    handler: route(async (req, tx) => {
+      const { slug, projectId } = req.params as { slug: string; projectId: string };
+      const team = await requireTeam(tx, slug);
+      await requireManage(tx, team);
+      const current = (await tx.query<ProjectRow>(`SELECT ${COLUMNS} FROM app.projects WHERE id = $1::uuid AND team_id = $2::uuid`, [projectId, team.id])).rows[0];
+      if (!current) throw notFound('No such project');
+      const provider = credentialsProvider();
+      const github = parseGithubRepo(current.repo_url);
+      if (!provider || !github || !current.push_credential_set_at || !current.push_username) throw conflict('This project has no token to test');
+      const cred = await provider.read({ id: team.id, slug }, current.name).catch(() => null);
+      if (!cred) throw conflict('The token could not be read from the team pod; save it again');
+      const checked = await checkGithubToken({ apiBase: apiBaseFor(github.apiBase), token: cred.token, username: current.push_username, owner: github.owner, repo: github.repo });
+      if (!checked.ok && checked.problem === 'unreachable') throw conflict(PROBLEM_MESSAGE.unreachable);
+      const updated = (
+        await tx.query<ProjectRow>(
+          `UPDATE app.projects SET push_credential_status = $3, push_credential_expires_at = COALESCE($4::timestamptz, push_credential_expires_at), updated_at = now()
+           WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
+          [projectId, team.id, checked.ok ? 'ok' : 'needs_replacing', checked.ok ? checked.expiresAt : null],
+        )
+      ).rows[0];
+      if (!updated) throw forbidden('You do not have permission to do that');
+      // Answered 200 either way: a refusal has to be kept (the status above), which a thrown error would roll back.
+      return json(TestPushCredentialResponse.parse({ project: toProject(updated), ok: checked.ok, login: checked.ok ? checked.login : null, expiresAt: checked.ok ? checked.expiresAt : updated.push_credential_expires_at?.toISOString() ?? null, message: checked.ok ? null : PROBLEM_MESSAGE[checked.problem] }));
     }),
   });
 
@@ -297,7 +351,7 @@ export function registerProjectRoutes(ctx: PluginContext): void {
       }
       const updated = (
         await tx.query<ProjectRow>(
-          `UPDATE app.projects SET push_credential_set_at = NULL, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
+          `UPDATE app.projects SET push_credential_set_at = NULL, push_username = NULL, push_credential_expires_at = NULL, push_credential_status = NULL, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${COLUMNS}`,
           [projectId, team.id],
         )
       ).rows[0];

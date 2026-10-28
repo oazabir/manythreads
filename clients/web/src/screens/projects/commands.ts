@@ -57,3 +57,18 @@ export const headerTopic = (project: Pick<Project, 'name'> | undefined, purpose:
 
 /** Where the repository lives on the team's pod, for the list. */
 export const podPath = (name: string): string => `/workspace/repos/${name}.git`;
+
+const EXPIRY_WARN_DAYS = 14;
+
+/** "Connected as octocat · expires 15 Jan 2027", and a warning from 14 days before the date. */
+export function describeToken(p: Pick<Project, 'pushUsername' | 'pushCredentialExpiresAt' | 'pushCredentialStatus'>, now = Date.now()): { line: string; tone: 'ok' | 'warn' | 'bad' } {
+  if (p.pushCredentialStatus === 'needs_replacing') return { line: 'GitHub no longer accepts this token. Save a new one to publish again.', tone: 'bad' };
+  const who = p.pushUsername ? `Connected as ${p.pushUsername}` : 'A GitHub token is set';
+  if (!p.pushCredentialExpiresAt) return { line: `${who} · no expiry date`, tone: 'ok' };
+  const at = Date.parse(p.pushCredentialExpiresAt);
+  const days = Math.ceil((at - now) / 86_400_000);
+  const date = new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  if (days <= 0) return { line: `${who} · expired ${date}`, tone: 'bad' };
+  return { line: `${who} · expires ${date}`, tone: days <= EXPIRY_WARN_DAYS ? 'warn' : 'ok' };
+}
+

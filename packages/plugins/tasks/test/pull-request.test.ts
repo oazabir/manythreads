@@ -148,10 +148,10 @@ const dbText = async (): Promise<string> =>
 
 describe('the push credential of a project', () => {
   it('is set by a lead into the pod’s Secret, and is in no response, no row, no event and no log', async () => {
-    expect((await call(person(nadia), 'PUT', credPath(), { token: TOKEN })).status).toBe(403);
+    expect((await call(person(nadia), 'PUT', credPath(), { username: 'octocat', token: TOKEN })).status).toBe(403);
     expect(k8s.secrets.size).toBe(0);
 
-    const set = await call(person(omar), 'PUT', credPath(), { token: TOKEN });
+    const set = await call(person(omar), 'PUT', credPath(), { username: 'octocat', token: TOKEN });
     expect(set.status, set.text).toBe(200);
     const project = Project.parse((set.body as { project: unknown }).project);
     expect(project.pushCredentialSetAt).not.toBeNull();
@@ -171,21 +171,63 @@ describe('the push credential of a project', () => {
     expect(server.logs.join('\n')).not.toContain(TOKEN);
   });
 
+  it('asks GitHub before keeping a token: another account, no write access and a rejected token are each refused and store nothing', async () => {
+    const put = (body: Record<string, unknown>) => call(person(omar), 'PUT', credPath(), body);
+    // the tests of this file share one team: start from no token, and leave the good one set for the next test
+    expect((await call(person(omar), 'DELETE', credPath())).status).toBe(200);
+    const wrongOwner = await put({ username: 'someone-else', token: TOKEN });
+    expect(wrongOwner.status).toBe(400);
+    expect(wrongOwner.text).toContain('different GitHub account');
+    const rejected = await put({ username: 'octocat', token: TOKEN + 'x' });
+    expect(rejected.status).toBe(400);
+    expect(rejected.text).toContain('refused this token');
+    for (const r of [wrongOwner, rejected]) expect(r.text).not.toContain(TOKEN);
+    expect(k8s.secrets.size).toBe(0);
+    expect(ListProjectsResponse.parse((await call(person(omar), 'GET', '/api/teams/engineering/projects')).body).items[0]!.pushCredentialSetAt).toBeNull();
+    expect((await put({ username: 'octocat', token: TOKEN })).status).toBe(200);
+    gh.calls.length = 0; // later tests count what the pull request sync asked, with the project's token only
+  });
+
+  it('shows who a good token belongs to and when it expires, tests it again on request, and marks it when GitHub later refuses it', async () => {
+    const set = await call(person(omar), 'PUT', credPath(), { username: 'OctoCat', token: TOKEN });
+    expect(set.status, set.text).toBe(200);
+    const project = Project.parse((set.body as { project: unknown }).project);
+    expect(project.pushUsername).toBe('octocat');
+    expect(project.pushCredentialStatus).toBe('ok');
+    const good = await call(person(omar), 'POST', `${credPath()}/test`);
+    expect(good.status, good.text).toBe(200);
+    expect(good.body).toMatchObject({ ok: true, login: 'octocat', message: null });
+    expect((await call(person(nadia), 'POST', `${credPath()}/test`)).status).toBe(403);
+    // GitHub stops accepting the token: the answer is a 200 that says so, and the project keeps the mark
+    gh.failNext(401, {}, 1);
+    const refused = await call(person(omar), 'POST', `${credPath()}/test`);
+    expect(refused.status, refused.text).toBe(200);
+    expect(refused.body).toMatchObject({ ok: false, message: expect.stringContaining('refused this token') });
+    const after = ListProjectsResponse.parse((await call(person(omar), 'GET', '/api/teams/engineering/projects')).body).items[0]!;
+    expect(after.pushCredentialStatus).toBe('needs_replacing');
+    expect(refused.text).not.toContain(TOKEN);
+    // removing the token clears the identity with it
+    const removed = Project.parse(((await call(person(omar), 'DELETE', credPath())).body as { project: unknown }).project);
+    expect(removed).toMatchObject({ pushUsername: null, pushCredentialExpiresAt: null, pushCredentialStatus: null });
+    expect((await call(person(omar), 'PUT', credPath(), { username: 'octocat', token: TOKEN })).status).toBe(200);
+    gh.calls.length = 0;
+  });
+
   it('refuses a token of the wrong shape, extra fields and an unknown project', async () => {
-    for (const bad of [{ token: 'short' }, { token: 'has a space in it 0123456789' }, { token: TOKEN, extra: 1 }, {}, { token: 'x'.repeat(300) }]) {
+    for (const bad of [{ username: 'octocat', token: 'short' }, { username: 'octocat', token: 'has a space in it 0123456789' }, { username: 'octocat', token: TOKEN, extra: 1 }, { token: TOKEN }, { username: '-bad-', token: TOKEN }, {}, { username: 'octocat', token: 'x'.repeat(300) }]) {
       expect((await call(person(omar), 'PUT', credPath(), bad)).status, JSON.stringify(bad).slice(0, 40)).toBe(400);
     }
-    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${randomUUID()}/push-credential`, { token: TOKEN })).status).toBe(404);
+    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${randomUUID()}/push-credential`, { username: 'octocat', token: TOKEN })).status).toBe(404);
   });
 
   it('does not accept an address this server may not call, and a failing cluster is a 409 that says nothing about the token', async () => {
     const odd = await call(person(omar), 'POST', '/api/teams/engineering/projects', { name: 'elsewhere', repoUrl: 'https://gitlab.example/acme/widgets' });
     const oddId = (odd.body['project'] as { id: string }).id;
-    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${oddId}/push-credential`, { token: TOKEN })).status).toBe(400);
+    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${oddId}/push-credential`, { username: 'octocat', token: TOKEN })).status).toBe(400);
     expect(k8s.secrets.get(SECRET_KEY)?.data).not.toHaveProperty('elsewhere');
 
     k8s.failNext(10);
-    const failed = await call(person(omar), 'PUT', credPath(), { token: TOKEN + 'x' });
+    const failed = await call(person(omar), 'PUT', credPath(), { username: 'octocat', token: TOKEN });
     k8s.failNext(0);
     expect(failed.status).toBe(409);
     expect(failed.text).not.toContain(TOKEN);
@@ -198,12 +240,12 @@ describe('the push credential of a project', () => {
   it('is dropped when the project points at another address, and removed with the project', async () => {
     const mk = await call(person(omar), 'POST', '/api/teams/engineering/projects', { name: 'gadgets', repoUrl: 'https://github.com/acme/gadgets' });
     const id = (mk.body['project'] as { id: string }).id;
-    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${id}/push-credential`, { token: TOKEN })).status).toBe(200);
+    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${id}/push-credential`, { username: 'octocat', token: TOKEN })).status).toBe(200);
     expect(Object.keys(k8s.secrets.get(SECRET_KEY)!.data!).sort()).toEqual(['gadgets', 'widgets']);
     const moved = await call(person(omar), 'PATCH', `/api/teams/engineering/projects/${id}`, { repoUrl: 'https://github.com/acme/gadgets-2' });
     expect(Project.parse((moved.body as { project: unknown }).project).pushCredentialSetAt).toBeNull();
     expect(Object.keys(k8s.secrets.get(SECRET_KEY)!.data!)).toEqual(['widgets']);
-    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${id}/push-credential`, { token: TOKEN })).status).toBe(200);
+    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${id}/push-credential`, { username: 'octocat', token: TOKEN })).status).toBe(200);
     expect((await call(person(omar), 'DELETE', `/api/teams/engineering/projects/${id}`)).status).toBe(200);
     expect(Object.keys(k8s.secrets.get(SECRET_KEY)!.data!)).toEqual(['widgets']);
   });
@@ -216,7 +258,7 @@ describe('a token never outlives or outruns its project', () => {
     expect(made.status, made.text).toBe(201);
     expect(k8s.secrets.get(SECRET_KEY)!.data).not.toHaveProperty('leftover');
     const id = (made.body['project'] as { id: string }).id;
-    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${id}/push-credential`, { token: TOKEN })).status).toBe(200);
+    expect((await call(person(omar), 'PUT', `/api/teams/engineering/projects/${id}/push-credential`, { username: 'octocat', token: TOKEN })).status).toBe(200);
     k8s.failNext(10);
     const refused = await call(person(omar), 'DELETE', `/api/teams/engineering/projects/${id}`);
     k8s.failNext(0);

@@ -45,6 +45,12 @@ export const Project = z.object({
    * in a Kubernetes Secret of the team's pod, readable by one Unix user there.
    */
   pushCredentialSetAt: IsoDateTime.nullable(),
+  /** The GitHub login the token was checked against when it was saved (not a secret); null when no token is set. */
+  pushUsername: z.string().nullable(),
+  /** When GitHub says the token expires; null when it has no expiry or none was reported. */
+  pushCredentialExpiresAt: IsoDateTime.nullable(),
+  /** `ok`, or `needs_replacing` once GitHub refused the token; null when no token is set. */
+  pushCredentialStatus: z.enum(['ok', 'needs_replacing']).nullable(),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

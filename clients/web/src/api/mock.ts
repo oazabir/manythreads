@@ -25,6 +25,7 @@ import {
   listProjectsRoute,
   removePushCredentialRoute,
   setPushCredentialRoute,
+  testPushCredentialRoute,
   updateProjectRoute,
   createInvitationRoute,
   deleteHermesConnectionRoute,
@@ -719,7 +720,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     freeChannel(t, body.channelId, null);
     const pr = {
       id: nextId('f'), workspaceId: uuid('a', 1), teamId: t.id, name: String(body.name), repoUrl: String(body.repoUrl), defaultBranch: body.defaultBranch ?? 'main',
-      channelId: body.channelId ?? null, createdBy: me().id, pushCredentialSetAt: null, createdAt: NOW, updatedAt: NOW,
+      channelId: body.channelId ?? null, createdBy: me().id, pushCredentialSetAt: null, pushUsername: null, pushCredentialExpiresAt: null, pushCredentialStatus: null, createdAt: NOW, updatedAt: NOW,
     };
     list.push(pr);
     return created({ project: pr });
@@ -734,18 +735,30 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     return { project: pr };
   });
   // The mock never keeps the token: it answers that one is set, like the server.
-  on(setPushCredentialRoute, ({ params }) => {
+  on(setPushCredentialRoute, ({ params, body }) => {
     const t = teamOf(params.slug);
     manage(t);
     const pr = projectOf(t, params.projectId);
     pr['pushCredentialSetAt'] = NOW;
+    pr['pushUsername'] = body.username;
+    pr['pushCredentialExpiresAt'] = '2027-01-15T00:00:00.000Z';
+    pr['pushCredentialStatus'] = 'ok';
     return { project: pr };
+  });
+  on(testPushCredentialRoute, ({ params }) => {
+    const t = teamOf(params.slug);
+    manage(t);
+    const pr = projectOf(t, params.projectId);
+    return { project: pr, ok: true, login: pr['pushUsername'] ?? null, expiresAt: pr['pushCredentialExpiresAt'] ?? null, message: null };
   });
   on(removePushCredentialRoute, ({ params }) => {
     const t = teamOf(params.slug);
     manage(t);
     const pr = projectOf(t, params.projectId);
     pr['pushCredentialSetAt'] = null;
+    pr['pushUsername'] = null;
+    pr['pushCredentialExpiresAt'] = null;
+    pr['pushCredentialStatus'] = null;
     return { project: pr };
   });
   on(deleteProjectRoute, ({ params }) => {

@@ -23,9 +23,13 @@ branch pushes that branch to the project's address and opens a **pull request**;
 links the pull request and follows it: merged means done, closed without a merge means it goes back to its owner (see [tasks](tasks.md)). A project
 without a token behaves as before: the tester completes the card and nothing leaves the pod.
 
-- **Setting the token.** On the Projects page, a lead or admin pastes a token into the project's "Pull requests" box (or calls
-  `PUT /api/teams/:slug/projects/:projectId/push-credential` with `{ "token": "…" }`). Use a fine-grained token limited to that one repository, with
-  write access to contents and pull requests. Removing it (`DELETE` on the same path) takes it away at once.
+- **Setting the token.** On the Projects page, a lead or admin enters the GitHub username and pastes a token into the project's "Pull requests" box (or
+  calls `PUT /api/teams/:slug/projects/:projectId/push-credential` with `{ "username": "…", "token": "…" }`). Use a fine-grained token limited to that one
+  repository, with write access to contents and pull requests. **GitHub is asked before anything is kept** (`GET /user`, then the repository): a token that
+  belongs to another account than the username, one that cannot write to the repository and one GitHub refuses are each refused with their own message and
+  store nothing. The page then reads "Connected as `<login>` · expires `<date>`" (the date is GitHub's own, and warns 14 days ahead).
+  `POST …/push-credential/test` asks GitHub again ("Test connection"); an answer of 401 marks the project `needs_replacing`, and the form comes back.
+  Removing the token (`DELETE` on the same path) takes it away at once, with the username and expiry.
 - **Where the token lives.** Only in a Kubernetes Secret in the team's pod namespace (`hermes-<team>-push`, one entry per project). The database
   records only that a token is set and when (`push_credential_set_at`); no route, event, log line or error ever carries the token, and the page cannot
   show it again. Inside the pod, the Secret is readable by the root user only, and the pod's reconcile loop hands each token to the `repo` Unix user
