@@ -5,7 +5,7 @@ litellm:
   enabled: true
   resources:
     requests: { cpu: 100m, memory: 512Mi }
-    limits: { memory: 2Gi }
+    limits: { memory: 1536Mi }   # peak 958Mi, steady ~760Mi (cgroup memory.peak, 2026-10-28)
 hindsight:
   enabled: true
   # The live workspace binds `fast` to a real model (Workspace → LLM), so Hindsight's startup check of it stays on.
@@ -13,11 +13,33 @@ hindsight:
   resources:
     requests: { cpu: 100m, memory: 1Gi }
     limits: { memory: 4Gi }
+# Memory limits for the rest of the install (2026-10-28: the host ran out of memory and rebooted; these pods had no limit at all, so a runaway one
+# could take the node down with it. Measured use: server ~240Mi, Postgres ~100Mi, web and mailpit well under 100Mi).
+postgres:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 2Gi }
+server:
+  resources:
+    requests: { cpu: 100m, memory: 512Mi }
+    limits: { memory: 2Gi }
+mailpit:
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { memory: 256Mi }
 web:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
   screenshots:
     enabled: true
 hermesPods:
   enabled: true
+  # The Hermes container peaked at ~420Mi (cgroup memory.peak, 2026-10-28); the chart default of 3Gi was far above that. The workbench (builds,
+  # browsers) keeps the default: it was idle when measured.
+  hermesResources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 1536Mi }
   apps:
     routing: path        # apps at https://manythreads.kahf.to/apps/<team>/<app>/: the main certificate covers them, no wildcard
     host: manythreads.kahf.to   # used only by routing: host

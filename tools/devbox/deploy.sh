@@ -318,13 +318,18 @@ if [ "$TLS_MODE" = letsencrypt ]; then
   helm repo add jetstack https://charts.jetstack.io >/dev/null 2>&1 || true
   helm repo update jetstack >/dev/null
   helm upgrade --install cert-manager jetstack/cert-manager --version v1.21.3 -n cert-manager --create-namespace \
-    --set crds.enabled=true --wait --timeout 5m
+    --set crds.enabled=true \
+    --set resources.requests.memory=64Mi --set resources.limits.memory=256Mi \
+    --set webhook.resources.requests.memory=32Mi --set webhook.resources.limits.memory=128Mi \
+    --set cainjector.resources.requests.memory=64Mi --set cainjector.resources.limits.memory=256Mi \
+    --wait --timeout 5m
 fi
 
 echo "--- ensure CNPG operator"
 helm repo add cnpg https://cloudnative-pg.github.io/charts >/dev/null 2>&1 || true
 helm repo update cnpg >/dev/null
-helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace --wait --timeout 5m
+helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace \
+  --set resources.requests.memory=64Mi --set resources.limits.memory=256Mi --wait --timeout 5m
 
 # The live install runs a real LiteLLM gateway and Hindsight memory engine (values-live.yaml); --demo overrides that with stand-ins.
 HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${TLS_ARGS[@]}")
