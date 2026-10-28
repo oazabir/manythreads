@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { parseMarkdown, type Block, type Inline } from './markdown';
 
@@ -76,7 +76,37 @@ function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: Cit
   });
 }
 
-function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker, cited: ReadonlySet<number> = NONE): ReactNode[] {
+/** A code block: the language label, a Copy button, and the code in monospace that scrolls sideways instead of wrapping. */
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = (): void => {
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(code);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1_500);
+      } catch {
+        // the clipboard may be blocked; the text stays selectable in the block
+      }
+    })();
+  };
+  return (
+    <div className="md-codeblock" data-testid="md-codeblock">
+      <div className="md-codebar">
+        <span className="md-codelang">{lang || 'text'}</span>
+        <button type="button" className="md-copy" onClick={copy} aria-label="Copy code" data-testid="md-copy">{copied ? 'Copied' : 'Copy'}</button>
+      </div>
+      <pre className="md-code" data-lang={lang || undefined} tabIndex={0}>
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+/** What a tick does when the text may be edited: the number of the box among all the boxes of the text, and the new state. */
+export type TaskToggle = (nth: number, checked: boolean) => void;
+
+function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker, cited: ReadonlySet<number> = NONE, toggle?: TaskToggle, counter: { n: number } = { n: 0 }): ReactNode[] {
   return list.map((b, i) => {
     switch (b.t) {
       case 'p':
@@ -84,14 +114,33 @@ function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker,
       case 'heading':
         return <p key={i} className="md-heading" data-level={b.level}>{inline(b.c, teamSlug, '', marker, cited)}</p>;
       case 'code':
-        return (
-          <pre key={i} className="md-code" data-lang={b.lang || undefined} tabIndex={0}>
-            <code>{b.v}</code>
-          </pre>
-        );
+        return <CodeBlock key={i} lang={b.lang} code={b.v} />;
       case 'quote':
-        return <blockquote key={i}>{blocks(b.c, teamSlug, marker, cited)}</blockquote>;
+        return <blockquote key={i}>{blocks(b.c, teamSlug, marker, cited, toggle, counter)}</blockquote>;
       case 'list': {
+        if (b.checks) {
+          const done = b.checks.filter((c) => c === true).length;
+          const total = b.checks.filter((c) => c !== null).length;
+          return (
+            <div key={i} className="md-tasklist" data-testid="md-tasklist">
+              <p className="md-taskcount">{done} of {total} done</p>
+              <ul className="md-tasks">
+                {b.items.map((it, j) => {
+                  const box = b.checks?.[j] ?? null;
+                  const nth = box === null ? -1 : counter.n++;
+                  return (
+                    <li key={j} className={box === true ? 'md-task done' : 'md-task'} data-checked={box === null ? undefined : String(box)}>
+                      {box === null ? null : (
+                        <input type="checkbox" className="md-task-box" checked={box} disabled={!toggle} onChange={(e) => toggle?.(nth, e.target.checked)} aria-label={box ? 'Done' : 'Not done'} />
+                      )}
+                      <span className="md-task-text">{inline(it, teamSlug, '', marker, cited)}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        }
         const items = b.items.map((it, j) => <li key={j}>{inline(it, teamSlug, '', marker, cited)}</li>);
         return b.ordered ? <ol key={i}>{items}</ol> : <ul key={i}>{items}</ul>;
       }
@@ -99,6 +148,6 @@ function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker,
   });
 }
 
-export const Markdown = memo(function Markdown({ source, teamSlug = null, marker, cited }: { source: string; teamSlug?: string | null; marker?: CitationMarker; /** The citation numbers a `[n]` may become; none when absent. */ cited?: ReadonlySet<number> }) {
-  return <div className="md">{blocks(read(source), teamSlug, marker, cited)}</div>;
+export const Markdown = memo(function Markdown({ source, teamSlug = null, marker, cited, toggle }: { source: string; teamSlug?: string | null; marker?: CitationMarker; /** The citation numbers a `[n]` may become; none when absent. */ cited?: ReadonlySet<number>; /** When given, the boxes of a task list can be ticked; each tick calls it. Absent: the boxes are shown, not changeable. */ toggle?: TaskToggle }) {
+  return <div className="md">{blocks(read(source), teamSlug, marker, cited, toggle)}</div>;
 });

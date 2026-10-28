@@ -195,19 +195,92 @@
 }
 
 .md pre.md-code {
-  margin: 6px 0;
+  margin: 0;
   padding: 8px 10px;
   overflow-x: auto;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
+  border: 0;
+  border-radius: 0 0 6px 6px;
   background: var(--shell);
   white-space: pre;
 }
 
-.md pre.md-code code {
+/* a code block: a thin bar with the language and Copy above the code, one border round both */
+.md-codeblock {
+  margin: 6px 0;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--shell);
+  overflow: hidden;
+}
+
+.md-codebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px 3px 10px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--table-head);
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.md-codelang {
+  font-family: var(--mono);
+  letter-spacing: 0.02em;
+}
+
+.md-copy {
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--mute);
+  font: inherit;
+  cursor: pointer;
+}
+
+.md-copy:hover,
+.md-copy:focus-visible {
+  color: var(--ink);
+  border-color: var(--human);
+}
+
+/* a task list: real boxes, a count above, a done item struck out lightly */
+.md-tasklist {
+  margin: 6px 0;
+}
+
+.md-taskcount {
+  margin: 0 0 2px;
+  color: var(--mute);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.md-tasks {
+  margin: 0;
   padding: 0;
-  background: none;
-  font-size: 12px;
+  list-style: none;
+}
+
+.md-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.md-task-box {
+  flex: none;
+  margin: 3px 0 0;
+  accent-color: var(--ok);
+}
+
+.md-task.done .md-task-text {
+  color: var(--mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--rule);
 }
 
 .md .md-heading {

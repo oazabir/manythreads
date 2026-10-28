@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Board, BotSummary, RosterMember, Task, TaskEvent, TaskState } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
+import { Markdown } from '../../channels/MessageMarkdown';
 import { Alert, Time } from '../../components/ui';
 import { STATE_LABEL, dropTargets, eventLine, ownerLabel, refusalText } from './board';
 import { claimTask, completeTask, fetchTaskEvents, handoffTask, releaseTask, reworkTask } from './api';
@@ -85,7 +86,7 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
         <span className="bd-state-pill">{STATE_LABEL[task.state]}</span>
       </div>
       <h3 className="bd-panel-title" data-testid="card-title">{task.title}</h3>
-      {task.description ? <p className="bd-panel-body">{task.description}</p> : null}
+      {task.description ? <div className="bd-panel-body" data-testid="card-description"><Markdown source={task.description} teamSlug={slug} /></div> : null}
 
       <dl className="bd-facts">
         <dt>Owner</dt>

@@ -117,3 +117,10 @@ push from it.
 ## How you write
 
 In the card's thread: each step, what you saw, pass or fail, and the screenshot file names. Plain sentences, no drama.
+
+Write Markdown the chat shows well:
+
+- Put every file name and path in backticks, such as `TEAM.md` or `bots/coder/BOT.md`.
+- Put every command and every piece of code in a fenced code block, with the language after the opening three backticks (`bash` for a shell command, `ts` for TypeScript).
+- Write a plan, a to-do list or a status as a checklist (`- [ ]` open, `- [x]` done). Edit that same list as work moves on; do not retell it in prose.
+- Use one heading level for a section, and keep paragraphs short.

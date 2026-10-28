@@ -2,11 +2,14 @@
  * A small, safe markdown reader for messages (PLAN P3-13). It turns text into a tree of plain data; `MessageMarkdown.tsx` draws the
  * tree with React elements, so nothing here or there ever produces HTML from message text: `<script>` stays the visible
  * characters `<script>`. Supported: paragraphs (a single newline is a line break, as in chat), fenced and inline code,
- * **bold**, *italic*, ~~strike~~, links, bare http(s) addresses, bullet and numbered lists, quotes, headings, @mentions and #channels.
+ * **bold**, *italic*, ~~strike~~, task lists (`- [ ]`, `- [x]`), file names and paths (drawn as code even when the author did not
+ * write the backticks), links, bare http(s) addresses, bullet and numbered lists, quotes, headings, @mentions and #channels.
  * Link targets are http, https, mailto or a same-site path; anything else (`javascript:`, `data:`) is shown as text.
  * Every scan is bounded (a closing mark must be within 500 characters; a paragraph over 4,000 characters is read as plain
  * text) so hostile input cannot make it slow (see test/markdown.test.ts).
  */
+
+import { pathTokenLength } from '@manythreads/shared';
 
 export type Inline =
   | { t: 'text'; v: string }
@@ -24,7 +27,8 @@ export type Block =
   | { t: 'heading'; level: number; c: Inline[] }
   | { t: 'code'; lang: string; v: string }
   | { t: 'quote'; c: Block[] }
-  | { t: 'list'; ordered: boolean; items: Inline[][] };
+  /** `checks[i]` is the box of item i for a task list (`- [ ]` false, `- [x]` true, null for an item without a box); absent for an ordinary list. */
+  | { t: 'list'; ordered: boolean; items: Inline[][]; checks?: (boolean | null)[] };
 
 const MAX_SPAN = 500;
 const MAX_PARAGRAPH = 4_000;
@@ -139,6 +143,15 @@ export function parseInline(text: string, depth = 0): Inline[] {
         }
       }
     }
+    if (depth < MAX_DEPTH && /[\w./~]/.test(ch) && !WORD.test(prev)) {
+      const len = pathTokenLength(text.slice(i, i + MAX_SPAN), 0);
+      if (len > 0 && (i === 0 || !/[\w/.:@#~<-]/.test(prev))) {
+        flush();
+        out.push({ t: 'code', v: text.slice(i, i + len) });
+        i += len;
+        continue;
+      }
+    }
     if (ch === '@' && !WORD.test(prev) && prev !== '@') {
       const m = MENTION.exec(rest);
       if (m?.[1]) {
@@ -169,6 +182,7 @@ const BULLET = /^ {0,3}[-*+] +(.*)$/;
 const NUMBERED = /^ {0,3}\d{1,9}[.)] +(.*)$/;
 const HEADING = /^ {0,3}(#{1,6}) +(.*?)\s*#*\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
+const TASK = /^\[([ xX])\] +(.*)$/;
 
 export function parseMarkdown(source: string, depth = 0): Block[] {
   const lines = source.replace(/\r\n?/g, '\n').split('\n');
@@ -224,18 +238,49 @@ export function parseMarkdown(source: string, depth = 0): Block[] {
       const ordered = numbered !== null;
       const pattern = ordered ? NUMBERED : BULLET;
       const items: Inline[][] = [];
+      const checks: (boolean | null)[] = [];
       while (i < lines.length) {
         const m = pattern.exec(lines[i] ?? '');
         if (!m) break;
-        items.push(parseInline(m[1] ?? ''));
+        const box = ordered ? null : TASK.exec(m[1] ?? '');
+        checks.push(box ? box[1] !== ' ' : null);
+        items.push(parseInline(box ? (box[2] ?? '') : (m[1] ?? '')));
         i += 1;
       }
       i -= 1;
-      blocks.push({ t: 'list', ordered, items });
+      blocks.push({ t: 'list', ordered, items, ...(checks.some((c) => c !== null) ? { checks } : {}) });
       continue;
     }
     para.push(line);
   }
   flushPara();
   return blocks;
+}
+
+/**
+ * The text with the box of the `nth` task item (counted over the whole text, outside code blocks) set to `checked`; the text unchanged when there is no
+ * such item. Only the one character between the brackets changes, so a person's tick is a one-character edit with a history entry.
+ */
+export function setTaskChecked(source: string, nth: number, checked: boolean): string {
+  const lines = source.split('\n');
+  let seen = 0;
+  let fence: string | null = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    const f = FENCE.exec(line);
+    if (f?.[1]) {
+      if (fence === null) fence = f[1];
+      else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+    const m = /^( {0,3}[-*+] +\[)([ xX])(\] +)/.exec(line);
+    if (!m) continue;
+    if (seen === nth) {
+      lines[i] = `${m[1] ?? ''}${checked ? 'x' : ' '}${line.slice((m[1] ?? '').length + 1)}`;
+      return lines.join('\n');
+    }
+    seen += 1;
+  }
+  return source;
 }

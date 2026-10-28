@@ -344,7 +344,7 @@
   margin: 0;
   color: var(--txt);
   font-size: 12.5px;
-  white-space: pre-wrap;
+  white-space: normal;
 }
 
 .bd-facts {

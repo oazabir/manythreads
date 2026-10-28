@@ -1,5 +1,5 @@
 import type { MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
-import { AnswerPayload, isSubsequence } from '@manythreads/shared';
+import { AnswerPayload, isSubsequence, repairBotMarkdown } from '@manythreads/shared';
 import { z } from 'zod';
 import { forbidden, invalid } from './http.ts';
 import { editChannelMessage, postChannelMessage, type Deps } from './service.ts';
@@ -68,9 +68,11 @@ export function registerMessageCapabilities(deps: Deps): void {
     // Inside a run that answers in a thread, a post to that same channel with no thread belongs in that thread (an explicit thread, or another
     // channel, is left alone). The message names its run, which is how the runtime knows the run already spoke and posts no second reply.
     const threadRootId = parsed.threadRootId ?? (place !== null && place.channelId === channelId ? place.replyRootId : null);
+    // A bot's text goes through the Markdown repair: a bare file name or path becomes code, and a fence it left open is closed.
+    const fixed = repairBotMarkdown(parsed.body);
     const posted = await postChannelMessage(deps, tx, {
       channelId,
-      body: parsed.body,
+      body: fixed.text,
       threadRootId,
       ...(place === null ? {} : { meta: { runId: place.runId } }),
     });
@@ -82,7 +84,7 @@ export function registerMessageCapabilities(deps: Deps): void {
     const parsed = UpdateMessageInput.parse(input);
     const channelId = parsed.channelId ?? (await runReplyPlace(tx))?.channelId;
     if (channelId === undefined) throw invalid('channelId: name the channel the message is in');
-    const edited = await editChannelMessage(deps, tx, { channelId, messageId: parsed.messageId, body: parsed.body, syncRefs: false });
+    const edited = await editChannelMessage(deps, tx, { channelId, messageId: parsed.messageId, body: repairBotMarkdown(parsed.body).text, syncRefs: false });
     return { ok: true, messageId: edited.id, channelId: edited.channelId, threadRootId: edited.threadRootId };
   });
 }
