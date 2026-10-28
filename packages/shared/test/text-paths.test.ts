@@ -41,6 +41,10 @@ describe('repairBotMarkdown', () => {
     expect(r.text).toBe(['Changed `TEAM.md` and `bots/x/BOT.md`.', 'See [the doc](docs/plan.md) and https://example.com/a/b.html.', '```', 'cat TEAM.md', '```'].join('\n'));
     expect(r).toMatchObject({ paths: 1, fences: 0 });
   });
+  it('leaves a whole link alone, label and target', () => {
+    const src = 'wrote [pages/reports/rh-week.md](/t/engineering/files?open=pages%2Freports%2Frh-week.md) · [diff](/t/x)';
+    expect(repairBotMarkdown(src)).toEqual({ text: src, paths: 0, fences: 0 });
+  });
   it('closes a fence that was left open', () => {
     const r = repairBotMarkdown('Run:\n```bash\npnpm lint');
     expect(r.text).toBe('Run:\n```bash\npnpm lint\n```');

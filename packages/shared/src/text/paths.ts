@@ -64,7 +64,7 @@ export function repairBotMarkdown(text: string): { text: string; paths: number; 
     }
     if (open !== null) return line;
     // inline code and link targets stay as they are; only the prose between them is read
-    const keep = /`[^`\n]*`|\]\([^)\n]*\)|<[^>\n]*>|https?:\/\/[^\s<>`)]+/g;
+    const keep = /`[^`\n]*`|\[[^\]\n]*\]\([^)\n]*\)|<[^>\n]*>|https?:\/\/[^\s<>`)]+/g;
     let out = '';
     let from = 0;
     const prose = (s: string): string => {
