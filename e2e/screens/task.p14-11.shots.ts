@@ -61,7 +61,7 @@ async function search(page: Page, q: string, phone: boolean, keepScroll = false)
 async function panelTop(page: Page, log = false): Promise<void> {
   const where = await page.getByTestId('search-results').evaluate((el) => {
     let top = 0;
-    for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+    for (let n: Element | null = el; n; n = n.parentElement) {
       top = Math.max(top, n.scrollTop);
       n.scrollTop = 0;
     }
