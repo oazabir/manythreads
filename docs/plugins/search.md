@@ -1,6 +1,6 @@
 # search
 
-Search over messages, thread titles and file names: `GET /api/search` and the capabilities `messages.search` and `files.search` (SPEC section 12, PLAN P3-10, criterion 6).
+Search over messages, thread titles, file names and pages, with filters you can type or click, and searches you can save: `GET /api/search`, `/api/search/saved` and the capabilities `messages.search` and `files.search` (SPEC section 12, PLAN P3-10, P14-11).
 Code: `packages/plugins/search`. Schemas: `packages/shared/src/api/search`. There is no search service and no index of its own: the GIN trigram indexes of `messages.body_plain`,
 `threads.title` and `files.name` already exist, the plugin adds three SQL functions and one planner fact (below). Semantic search is the knowledge plugin's job (phase 5).
 
@@ -15,10 +15,53 @@ would compare the query with the whole text and miss both.
 | messages | `body_plain` (the markdown with its marks removed, `''` once deleted) | 0.5 for one or two words, 0.6 for three or more | a phrase has many trigrams; 0.5 makes the index return a tenth of the table |
 | threads | `title` (the first 120 characters of the root message; a thread exists once it has a reply) | 0.5 | |
 | files | `name` | 0.4 | names are short |
+| pages | `repo_entries.text_plain` and `path` | 0.5 | only paths under `pages/` |
 
 Hits come best score first, newest first among equal scores. Each kind has its own list (`messages`, `threads`, `files`), each at most `limit` (1 to 50, default 20); a scope that leaves a
 kind out gives an empty list. Query: 2 to 200 characters after trimming, whitespace collapsed (`q`), `scope` `messages|threads|files|all`, optional `teamId` (only channels of that team).
 Wildcards, quotes and backslashes are plain characters: the text is a bound parameter of a trigram operator, never a pattern or SQL. 120 requests per minute per caller.
+
+## Filters (P14-11)
+
+The search box takes plain words and filter words together. The same function, `parseSearchText` in `packages/shared/src/api/search/syntax.ts`, reads them in the browser (to draw chips) and on
+the server (to search), so a typed word and a chip are the same thing. A filter word that is not valid stays in the text and is searched as text.
+
+| Word | Meaning |
+|---|---|
+| `from:nadia`, `from:"Nadia Hamdan"`, `from:me` | the person who wrote the message, uploaded the file, or last saved the page. A name matches the start of the display name or of any later word of it, case-insensitively. Bots have no display name in the database and are not found by name. |
+| `in:dev`, `in:#dev` | the channel (by name, among the channels the person can read). Files with no channel and pages are left out. |
+| `has:file`, `has:link` | a message with an attachment, or with a web address (`http://` or `https://`). Only messages (and, for `has:file`, files) are listed. |
+| `is:thread` | a message that belongs to a thread (a reply, or a root with replies). Messages and threads are listed. |
+| `before:2026-10-01`, `after:2026-10-01` | a day, year-month-day, read as UTC, from 0001-01-01 to 9998-12-31 (the database has no year 0000; a day outside that range stays plain text). `before:` is up to the start of that day, `after:` is from the day after it. |
+
+At most five names after `from:` and five after `in:`. **`has:pin` is not supported**: pins do not exist yet (PLAN P9-09), so the word stays plain text until the pins table does.
+A box holding only filter words is a search too (`from:nadia in:dev`): newest first, no ranking (score 0), by recency slices (one day, 16 days, all) like the text search.
+
+**Names are resolved as the reader.** `from:` goes through `app.search_resolve_people` (a definer function that checks the caller with `lookup_workspace_role`): an owner, admin or member resolves
+anyone in the workspace (the same set `people_select` shows), a guest only themself. `in:` reads `app.channels` through its policy, so a private channel the person is not in is "not found" exactly
+as a channel that does not exist (`unmatched`); a name that matches nothing finds nothing (it is not turned into text). Filters only narrow: `p_in` is intersected with the reader's
+readable channel set, never added to it.
+
+**Cost.** A filter is one more condition on the plans above, so `from:`, `in:`, `before:`/`after:` and `is:thread` with a word cost what the word costs (`bench:search`, 300,000 messages: 40 to 60 ms median). A filter that
+removes almost every hit of a common word pushes the search past the newest slices to the whole history (`has:link` on a corpus with no link at all: 360 ms at 300,000 messages, about 1 s expected at 1,000,000,
+capped by `gin_fuzzy_search_limit`); with a realistic share of messages holding a link it is 70 ms. `bench:search` has six filter cases and puts a web address in one message in twenty.
+
+**Counts.** Every list is built from rows the policies let the reader see, and `more.<kind>` only says that list went past `limit` (the functions are asked for `limit + 1` and the extra row is
+dropped). No number counts anything before the policy has run, so a hit count cannot show a hidden hit; `test/search-filters.test.ts` checks that an outsider gets byte-for-byte the answer for a word
+nobody wrote, even when 25 hidden messages match.
+
+## Pages
+
+Pages are the Markdown files under `pages/` of a team's repository. They are searched in `repo_entries` (repo-git; a trigram index on `text_plain` and on `path`), through the team read policy,
+matched on the text and the name, scored by the better of the two. `from:` is the author of the commit that last changed the page, `before:`/`after:` its commit time. `GET /api/search?scope=pages` or
+`all`. The hit carries `teamId`, `path`, `name`, `snippet` (the start of the text), `updatedAt`; the web opens it in Files (`/t/<team>/files?open=<path>`). `text_plain` is bounded to 1 MiB and
+`path` to 1024 characters by constraint, so the LEAKPROOF mark of the trigram operators stays honest for this table too.
+
+## Saved searches
+
+`GET /api/search/saved`, `POST /api/search/saved` `{ name, query }`, `DELETE /api/search/saved/:id`. A saved search is a name (1 to 80 characters, one per person whatever the case) and the text of the
+box (2 to 200); at most 50 per person. The table `app.saved_searches` has `owner_id`-only policies (not even an admin reads another person's list). It stores no result: the text runs again, as the
+person who opens it, every time. The web client keeps the list under "Saved searches" in the results panel.
 
 ## Who finds what (no rule of its own)
 
@@ -65,9 +108,9 @@ transaction of the asking actor, so the same policies decide what comes back; th
 | Field | Value |
 |---|---|
 | name / version / kind | `search` / `0.1.0` / `server` |
-| dependsOn | `channels`, `files` (the functions read their tables) |
+| dependsOn | `channels`, `files`, `repo-git` (the functions read their tables) |
 | capabilities | `messages.search`, `files.search` |
-| migrations | `migrations` (`0001_search.sql`: the pg_trgm LEAKPROOF marks, type `app.search_message_hit`, functions `app.search_messages`, `app.search_threads`, `app.search_files`; `0002_leakproof_bounds.sql`: the length CHECKs that make LEAKPROOF true; `0003_phrase_plan.sql`: phrases scan the index once) |
+| migrations | `migrations` (`0001_search.sql`: the pg_trgm LEAKPROOF marks, type `app.search_message_hit`, functions `app.search_messages`, `app.search_threads`, `app.search_files`; `0002_leakproof_bounds.sql`: the length CHECKs that make LEAKPROOF true; `0003_phrase_plan.sql`: phrases scan the index once; `0004_filters_pages.sql`: the three functions take filter arguments, `app.search_pages`, `app.search_resolve_people`; `0005_saved_searches.sql`: the table) |
 
 ## Benchmark
 
@@ -77,10 +120,9 @@ a third) and Lena (guest, one channel), checking p95 under 300 ms per persona (e
 
 ## Not here
 
-Highlighting on the server (the snippet is the start of the text; the web client marks the words close to the query with the same trigram measure, `clients/web/src/search/highlight.ts`), pagination of results (a `limit` of 50 at most), page text and repo files (phase 4 adds `repo_entries` to the same
-functions), semantic search, a search for people and channels (the quick switcher), stemming and stop words (trigrams need neither).
+Highlighting on the server (the snippet is the start of the text; the web client marks the words close to the query with the same trigram measure, `clients/web/src/search/highlight.ts`), pagination of results (a `limit` of 50 at most; `more` says a list went on), transcripts (phase 15 adds them to the same page), `has:pin` (no pins table yet), bots by name in `from:`, semantic search, a search for people and channels (the quick switcher), stemming and stop words (trigrams need neither).
 
 ## Tests
 
-`test/search-api.test.ts` (typos, markdown, long messages, private channel, DM, other team, guest grant and revoke, edit and delete, ranking, slices on the small and the large plan with 6,500 filler
+`test/search-filters.test.ts` (filters, filters-only searches, pages, saved searches, and the hidden-hit rules checked with a second person), `packages/shared/test/search-syntax.test.ts` (the parser, including hostile input), `test/search-api.test.ts` (typos, markdown, long messages, private channel, DM, other team, guest grant and revoke, edit and delete, ranking, slices on the small and the large plan with 6,500 filler
 messages, threads, files, validation, hostile text), `test/rls/search-rls.test.ts` (`pnpm test:rls`), `e2e/api/search/trigram.spec.ts` (`pnpm e2e --project=api`).

@@ -5,6 +5,82 @@
     "query": {
       "type": "string"
     },
+    "filters": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "from": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "in": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "has": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "file",
+              "link"
+            ]
+          }
+        },
+        "is": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "thread"
+            ]
+          }
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "text",
+        "from",
+        "in",
+        "has",
+        "is",
+        "before",
+        "after"
+      ]
+    },
+    "unmatched": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "messages": {
       "type": "array",
       "items": {
@@ -269,12 +345,77 @@
           "createdAt"
         ]
       }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "teamId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "path": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "score": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "teamId",
+          "path",
+          "name",
+          "snippet",
+          "score",
+          "updatedAt"
+        ]
+      }
+    },
+    "more": {
+      "type": "object",
+      "properties": {
+        "messages": {
+          "type": "boolean"
+        },
+        "threads": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "boolean"
+        },
+        "pages": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "messages",
+        "threads",
+        "files",
+        "pages"
+      ]
     }
   },
   "required": [
     "query",
+    "filters",
+    "unmatched",
     "messages",
     "threads",
-    "files"
+    "files",
+    "pages",
+    "more"
   ]
 }

@@ -24,6 +24,7 @@ import {
   dropTestDatabase,
   filesMigrationSource,
   personaActor,
+  repoGitMigrationSource,
   searchMigrationSource,
   seedWorld,
   teamsMigrationSource,
@@ -67,6 +68,13 @@ const CASES: Case[] = [
   { label: 'rare word (zebrafish)', q: 'zebrafish' },
   { label: 'typo of a rare word (zebrafsh)', q: 'zebrafsh' },
   { label: 'a phrase from the text', q: 'looks good to merge' },
+  // P14-11 filters: a person and a word, a channel and a word, a link, only filters (newest first, no trigram), and a date range
+  { label: 'from: a person and a common word (from:nadia deploy)', q: 'from:nadia deploy' },
+  { label: 'in: a channel and a common word (in:eng-5 release)', q: 'in:eng-5 release' },
+  { label: 'has:link and a typo (has:link rolback)', q: 'has:link rolback' },
+  { label: 'only filters (from:nadia is:thread)', q: 'from:nadia is:thread' },
+  { label: 'only a channel (in:eng-5)', q: 'in:eng-5' },
+  { label: 'a date range and a word (after:2000-01-01 deploy)', q: 'after:2000-01-01 deploy' },
 ];
 const PEOPLE: { who: Persona; label: string }[] = [
   { who: NADIA, label: 'Nadia (Engineering member)' },
@@ -87,7 +95,7 @@ async function main(): Promise<void> {
         applied: 0,
       }
     : await createTestDatabase({
-        sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, searchMigrationSource],
+        sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, repoGitMigrationSource, searchMigrationSource],
       });
   const owner = new pg.Client({ connectionString: db.ownerUrl });
   await owner.connect();
@@ -151,6 +159,10 @@ async function main(): Promise<void> {
       // A rare word in about 1 message in 2,000.
       await owner.query(
         `UPDATE app.messages SET body = body || ' zebrafish', body_plain = body_plain || ' zebrafish' WHERE (hashtext(id::text) & 2047) = 0`,
+      );
+      // One message in twenty carries a web address (the has:link filter of P14-11 is measured against a realistic share, not zero).
+      await owner.query(
+        `UPDATE app.messages SET body = body || ' https://example.com/x', body_plain = body_plain || ' example.com' WHERE (hashtext(id::text) % 20) = 1`,
       );
       // One in twenty messages is a thread root (50,000 for 1M): the thread row a reply would have made.
       await owner.query(

@@ -1,4 +1,11 @@
 import {
+  DeleteSavedSearchResponse,
+  ListSavedSearchesResponse,
+  SaveSearchRequest,
+  SaveSearchResponse,
+  deleteSavedSearchRoute,
+  listSavedSearchesRoute,
+  saveSearchRoute,
   HeartbeatRequest,
   HeartbeatResponse,
   ListPresenceCardsResponse,
@@ -563,9 +570,14 @@ export function uploadChannelFile(
 }
 
 // ---- search, notifications, direct messages ---------------------------------------------------------------
-/** Messages, threads and files the caller can read (the server filters by what they can see; a guest only inside a grant). */
+/** Messages, threads, files and pages the caller can read (the server filters by what they can see; a guest only inside a grant). `q` may hold filter words (`from:` `in:` `has:` `is:` `before:` `after:`). */
 export const searchEverything = (q: string, opts: { scope?: SearchQuery['scope']; teamId?: string; limit?: number } = {}) =>
   call(searchRoute, { request: SearchQuery, response: SearchResponse }, { q, scope: opts.scope ?? 'all', limit: opts.limit ?? 20, ...(opts.teamId ? { teamId: opts.teamId } : {}) } as SearchQuery);
+
+/** The person's own saved searches (a name and the text of the search box). */
+export const fetchSavedSearches = () => call(listSavedSearchesRoute, { response: ListSavedSearchesResponse });
+export const saveSearch = (body: SaveSearchRequest) => call(saveSearchRoute, { request: SaveSearchRequest, response: SaveSearchResponse }, body);
+export const deleteSavedSearch = (savedSearchId: string) => call(deleteSavedSearchRoute, { response: DeleteSavedSearchResponse }, undefined, { savedSearchId });
 
 export const fetchNotifications = (query: { cursor?: string; limit?: number; unread?: boolean } = {}) =>
   call(

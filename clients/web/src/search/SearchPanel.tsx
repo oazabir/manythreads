@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import type { SearchFileHit, SearchMessageHit, SearchThreadHit } from '@manythreads/shared';
+import { parseSearchText, type SearchFileHit, type SearchMessageHit, type SearchPageHit, type SearchThreadHit } from '@manythreads/shared';
+import { useNavigate } from 'react-router';
 import { fileContentUrl, searchEverything } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { ago, fileKind, fileSize } from '../channels/format';
@@ -8,15 +9,19 @@ import type { PanelEntry } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { useOpenMessage, type MessageTarget } from '../shell/messageLink';
 import { Highlight } from './SearchHighlight';
+import { SearchFilterBar } from './SearchFilterBar';
 import { parseSearchEntry, searchEntry } from './searchEntry';
 
 type HitChannel = SearchMessageHit['channel'];
+const moreNote = 'There are more. Add a filter or a word to narrow the search.';
 const where = (c: HitChannel | null): string => (c === null ? 'File' : c.kind === 'channel' ? `#${(c.name ?? '').replace(/^#/, '')}` : c.kind === 'dm' ? 'Direct message' : 'Bot conversation');
 
 /** Search results (PLAN P3-16 wireframe): Messages, Threads, Files with counts; a click lands on the message, the thread or the file. */
 export function SearchPanel({ entry }: { entry: PanelEntry }) {
   const { q, channelId } = parseSearchEntry(entry.id);
-  const { team, guest } = useShell();
+  const { team, teams, guest } = useShell();
+  const navigate = useNavigate();
+  const filters = useMemo(() => parseSearchText(q), [q]);
   const people = usePeople();
   const open = useOpenMessage();
   // The sidebar box searches the team it names; a conversation's own box searches everything and keeps that conversation's hits.
@@ -28,7 +33,7 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
   const data = useMemo(() => {
     if (res.status !== 'ok' || res.data === null) return null;
     const keep = <T extends { channel: HitChannel | null }>(hits: T[]): T[] => (channelId ? hits.filter((h) => h.channel?.id === channelId) : hits);
-    return { messages: keep(res.data.messages), threads: keep(res.data.threads), files: keep(res.data.files) };
+    return { messages: keep(res.data.messages), threads: keep(res.data.threads), files: keep(res.data.files), pages: channelId ? [] : res.data.pages, more: res.data.more, words: res.data.query, unmatched: res.data.unmatched };
   }, [res, channelId]);
 
   const target = (c: HitChannel, messageId: string, threadRootId: string | null): MessageTarget => ({
@@ -51,10 +56,27 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
         </div>
       );
     }
-    const total = data.messages.length + data.threads.length + data.files.length;
-    if (total === 0) return <p className="search-empty" data-testid="search-empty">No results in what you can see.</p>;
+    const total = data.messages.length + data.threads.length + data.files.length + data.pages.length;
+    const missing = data.unmatched.map((u) => (u.startsWith('from:') ? `No person called “${u.slice(5)}” that you can see.` : `No channel called “${u.slice(3)}” that you can see.`));
+    const notes = missing.length > 0 ? (
+      <ul className="sf-notes" role="status" data-testid="search-unmatched">
+        {missing.map((m) => (
+          <li key={m} className="search-note">{m}</li>
+        ))}
+      </ul>
+    ) : null;
+    if (total === 0) {
+      return (
+        <>
+          {notes}
+          <p className="search-empty" data-testid="search-empty">No results in what you can see.</p>
+        </>
+      );
+    }
+    const words = data.words;
     return (
       <>
+        {notes}
         <section className="sr-group" aria-label="Messages" data-testid="search-messages">
           <h3>{`Messages (${data.messages.length})`}</h3>
           <ul>
@@ -66,11 +88,12 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
                     <span>{people.byActor(h.authorId)?.name ?? ''}</span>
                     <span data-vt-mask>{ago(h.createdAt)}</span>
                   </span>
-                  <span className="hit-snip"><Highlight text={h.snippet} query={q} /></span>
+                  <span className="hit-snip"><Highlight text={h.snippet} query={words} /></span>
                 </button>
               </li>
             ))}
           </ul>
+          {data.more.messages ? <p className="search-note" data-testid="search-more">{moreNote}</p> : null}
         </section>
         <section className="sr-group" aria-label="Threads" data-testid="search-threads">
           <h3>{`Threads (${data.threads.length})`}</h3>
@@ -83,11 +106,12 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
                     <span>{h.replyCount === 1 ? '1 reply' : `${h.replyCount} replies`}</span>
                     <span data-vt-mask>{ago(h.lastReplyAt)}</span>
                   </span>
-                  <span className="hit-snip"><Highlight text={h.title} query={q} /></span>
+                  <span className="hit-snip"><Highlight text={h.title} query={words} /></span>
                 </button>
               </li>
             ))}
           </ul>
+          {data.more.threads ? <p className="search-note" data-testid="search-more">{moreNote}</p> : null}
         </section>
         <section className="sr-group" aria-label="Files" data-testid="search-files">
           <h3>{`Files (${data.files.length})`}</h3>
@@ -99,7 +123,7 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
                   <a className="hit hit-file" data-testid="search-hit" href={fileContentUrl(h.id)} download={h.name}>
                     <span className={`ic ${kind.tone}`}>{kind.label}</span>
                     <span className="hit-text">
-                      <span className="hit-snip"><Highlight text={h.name} query={q} /></span>
+                      <span className="hit-snip"><Highlight text={h.name} query={words} /></span>
                       <span className="hit-where">
                         <span className="hit-ch">{where(h.channel)}</span>
                         <span>{fileSize(h.size)}</span>
@@ -110,6 +134,34 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
               );
             })}
           </ul>
+          {data.more.files ? <p className="search-note" data-testid="search-more">{moreNote}</p> : null}
+        </section>
+        <section className="sr-group" aria-label="Pages" data-testid="search-pages">
+          <h3>{`Pages (${data.pages.length})`}</h3>
+          <ul>
+            {data.pages.map((h: SearchPageHit) => {
+              const slug = teams.find((t) => t.id === h.teamId)?.slug ?? (team?.id === h.teamId ? team.slug : undefined);
+              return (
+                <li key={`${h.teamId}:${h.path}`}>
+                  <button
+                    type="button"
+                    className="hit"
+                    data-testid="search-hit"
+                    disabled={!slug}
+                    onClick={() => slug && navigate(`/t/${encodeURIComponent(slug)}/files?open=${encodeURIComponent(h.path)}`)}
+                  >
+                    <span className="hit-where">
+                      <span className="hit-ch">Page</span>
+                      <span>{h.path}</span>
+                      <span data-vt-mask>{ago(h.updatedAt)}</span>
+                    </span>
+                    <span className="hit-snip"><Highlight text={h.snippet || h.name} query={words} /></span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {data.more.pages ? <p className="search-note" data-testid="search-more">{moreNote}</p> : null}
         </section>
       </>
     );
@@ -121,6 +173,7 @@ export function SearchPanel({ entry }: { entry: PanelEntry }) {
         <b>{q}</b>
         {channelId ? <span className="search-scope"> in this conversation</span> : null}
       </p>
+      <SearchFilterBar filters={filters} channelId={channelId} />
       {body()}
     </div>
   );

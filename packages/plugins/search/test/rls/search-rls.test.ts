@@ -7,6 +7,7 @@ import {
   filesMigrationSource,
   personaActor,
   personas,
+  repoGitMigrationSource,
   searchMigrationSource,
   teamsMigrationSource,
   testKernelMigrationSource,
@@ -45,7 +46,7 @@ const hits = async (p: Persona, q: string, team: string | null = null): Promise<
   as(p, async (tx) => (await tx.query<{ channel_id: string; snippet: string }>('SELECT channel_id, snippet FROM app.search_messages($1, $2, 20)', [q, team])).rows);
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, searchMigrationSource] });
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, repoGitMigrationSource, searchMigrationSource] });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);
   sysPool = createSystemPool(db.systemUrl, 2);
@@ -121,11 +122,106 @@ describe('search runs as the caller', () => {
   it('the functions are security invoker: the same rows come from a plain SELECT under the policies', async () => {
     const info = await sys(async (tx) =>
       (await tx.query<{ proname: string; prosecdef: boolean }>(
-        `SELECT proname, prosecdef FROM pg_proc WHERE pronamespace = 'app'::regnamespace AND proname IN ('search_messages', 'search_threads', 'search_files')`,
+        `SELECT proname, prosecdef FROM pg_proc WHERE pronamespace = 'app'::regnamespace AND proname IN ('search_messages', 'search_threads', 'search_files', 'search_pages')`,
       )).rows,
     );
-    expect(info.map((r) => r.proname).sort()).toEqual(['search_files', 'search_messages', 'search_threads']);
+    expect(info.map((r) => r.proname).sort()).toEqual(['search_files', 'search_messages', 'search_pages', 'search_threads']);
     expect(info.every((r) => r.prosecdef === false)).toBe(true);
+  });
+});
+
+describe('filters only narrow (P14-11)', () => {
+  const everyChannel = (): string[] => Object.values(ch);
+  const filtered = (p: Persona, q: string, from: string[] | null, inn: string[] | null): Promise<{ channel_id: string; author_id: string }[]> =>
+    as(p, async (tx) => (await tx.query<{ channel_id: string; author_id: string }>('SELECT channel_id, author_id FROM app.search_messages($1, NULL, 20, $2, $3)', [q, from, inn])).rows);
+
+  it('naming every channel, hidden ones included, still finds only the readable ones, with and without text', async () => {
+    for (const p of ALL) {
+      const visible = await as(p, async (tx) => (await tx.query<{ ids: string[] }>("SELECT app.visible_channel_ids('read') AS ids")).rows[0]!.ids);
+      for (const q of ['rollback', '']) {
+        const got = await filtered(p, q, null, everyChannel());
+        expect(got.every((h) => visible.includes(h.channel_id)), `${p.key} "${q}"`).toBe(true);
+        const same = (await hits(p, q === '' ? 'rollback' : q)).map((h) => h.channel_id).sort();
+        if (q !== '') expect(got.map((h) => h.channel_id).sort(), p.key).toEqual(same);
+      }
+    }
+  });
+
+  it('naming only a hidden channel finds nothing (not an error, not a different answer from a made-up id)', async () => {
+    for (const p of [nadia, priya, sameera, lena]) {
+      expect(await filtered(p, 'rolback', null, [ch['eng-leads']!]), p.key).toEqual([]);
+      expect(await filtered(p, '', null, [ch['eng-leads']!]), p.key).toEqual([]);
+      expect(await filtered(p, 'rolback', null, ['00000000-0000-0000-0000-000000000000']), p.key).toEqual([]);
+    }
+    expect((await filtered(rafi, 'rolback', null, [ch['eng-leads']!])).map((h) => h.channel_id)).toEqual([ch['eng-leads']]);
+  });
+
+  it('from: narrows by author and an empty list means nobody', async () => {
+    expect((await filtered(omar, 'rolback', [rafi.actorId], null)).map((h) => h.channel_id)).toEqual([ch['eng-leads']]);
+    expect(await filtered(omar, 'rolback', [], null)).toEqual([]);
+    expect(await filtered(omar, '', [], null)).toEqual([]);
+  });
+
+  it('the pages, files and threads functions keep the same rule', async () => {
+    const pages = (p: Persona, team: string | null): Promise<{ team_id: string; path: string }[]> =>
+      as(p, async (tx) => (await tx.query<{ team_id: string; path: string }>('SELECT team_id, path FROM app.search_pages($1, $2, 20)', ['zephyr runbook', team])).rows);
+    for (const [team, path] of [[TEAM_IDS.Engineering, 'pages/zephyr-runbook.md'], [TEAM_IDS.Marketing, 'pages/zephyr-runbook.md'], [TEAM_IDS.Engineering, 'memory/zephyr-runbook.md']] as const) {
+      const sha = `${Math.random().toString(16).slice(2)}${'0'.repeat(40)}`.slice(0, 40);
+      await sys(async (tx) => {
+        await tx.query("INSERT INTO app.repo_commits (team_id, sha, author_id, message, committed_at, paths) VALUES ($1, $2, $3, 'write', now(), ARRAY[$4]::text[])", [team, sha, nadia.actorId, path]);
+        await tx.query('INSERT INTO app.repo_entries (team_id, path, blob_sha, size, last_commit_sha, text_plain) VALUES ($1, $2, $3, 10, $4, $5)', [team, path, sha, sha, 'the zephyr runbook']);
+      });
+    }
+    expect((await pages(nadia, null)).map((r) => `${r.team_id}:${r.path}`)).toEqual([`${TEAM_IDS.Engineering}:pages/zephyr-runbook.md`]);
+    expect((await pages(tariq, null)).map((r) => r.team_id)).toEqual([TEAM_IDS.Marketing]);
+    expect((await pages(priya, null)).map((r) => r.team_id).sort()).toEqual([TEAM_IDS.Engineering, TEAM_IDS.Marketing].sort());
+    expect(await pages(sameera, null)).toEqual([]);
+    expect(await pages(lena, null)).toEqual([]);
+    expect(await pages(nadia, TEAM_IDS.Marketing)).toEqual([]);
+    expect(await pages(omar, null)).toHaveLength(2);
+  });
+});
+
+describe('who a name means', () => {
+  const resolve = (p: Persona, names: string[]): Promise<{ name_key: string; actor_id: string }[]> =>
+    as(p, async (tx) => (await tx.query<{ name_key: string; actor_id: string }>('SELECT * FROM app.search_resolve_people($1::text[])', [names])).rows);
+
+  it('a member resolves people of the workspace by the start of any word of the name; me is the caller', async () => {
+    const name = await sys(async (tx) => (await tx.query<{ display_name: string }>('SELECT display_name FROM app.people WHERE id = $1', [rafi.personId])).rows[0]!.display_name);
+    const first = name.split(' ')[0]!.toLowerCase();
+    expect((await resolve(nadia, [first])).map((r) => r.actor_id)).toContain(rafi.actorId);
+    expect((await resolve(nadia, [name.toUpperCase()])).map((r) => r.actor_id)).toContain(rafi.actorId);
+    expect(await resolve(nadia, ['me'])).toEqual([{ name_key: 'me', actor_id: nadia.actorId }]);
+    expect(await resolve(nadia, ['%'])).toEqual([]);
+    expect(await resolve(nadia, ['zzzzz'])).toEqual([]);
+  });
+
+  it('a guest resolves only themself, whatever they type', async () => {
+    const own = await sys(async (tx) => (await tx.query<{ display_name: string }>('SELECT display_name FROM app.people WHERE id = $1', [lena.personId])).rows[0]!.display_name);
+    const rafiName = await sys(async (tx) => (await tx.query<{ display_name: string }>('SELECT display_name FROM app.people WHERE id = $1', [rafi.personId])).rows[0]!.display_name);
+    expect(await resolve(lena, [rafiName])).toEqual([]);
+    expect((await resolve(lena, [own.split(' ')[0]!])).map((r) => r.actor_id)).toEqual([lena.actorId]);
+    expect(await resolve(lena, ['me'])).toEqual([{ name_key: 'me', actor_id: lena.actorId }]);
+  });
+
+  it('is a definer function owned by the system role, not callable by PUBLIC, and answers nobody for a request with no actor', async () => {
+    const info = await sys(async (tx) => (await tx.query<{ prosecdef: boolean; owner: string }>("SELECT prosecdef, pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE proname = 'search_resolve_people'")).rows[0]!);
+    expect(info).toEqual({ prosecdef: true, owner: 'manythreads_system' });
+    const none = await withActor({ kind: 'person', id: '00000000-0000-0000-0000-000000000000' as never, workspaceId: omar.workspaceId }, async (tx) => (await tx.query('SELECT * FROM app.search_resolve_people($1::text[])', [['rafi']])).rows, { pool: appPool });
+    expect(none).toEqual([]);
+  });
+});
+
+describe('saved searches belong to their owner', () => {
+  it('nobody else reads, changes or removes them, an admin included', async () => {
+    const id = await as(nadia, async (tx) => (await tx.query<{ id: string }>("INSERT INTO app.saved_searches (workspace_id, owner_id, name, query) VALUES (app.workspace_id(), app.actor(), 'mine', 'from:rafi') RETURNING id")).rows[0]!.id);
+    for (const p of [rafi, omar, priya, sameera, lena]) {
+      expect(await as(p, async (tx) => (await tx.query('SELECT 1 FROM app.saved_searches WHERE id = $1', [id])).rows), p.key).toEqual([]);
+      expect(await as(p, async (tx) => (await tx.query('DELETE FROM app.saved_searches WHERE id = $1 RETURNING id', [id])).rows), p.key).toEqual([]);
+      await expect(as(p, (tx) => tx.query("INSERT INTO app.saved_searches (workspace_id, owner_id, name, query) VALUES (app.workspace_id(), $1, 'forged', 'x y')", [nadia.actorId]))).rejects.toMatchObject({ code: '42501' });
+    }
+    expect(await as(nadia, async (tx) => (await tx.query('SELECT 1 FROM app.saved_searches WHERE id = $1', [id])).rows)).toHaveLength(1);
+    expect(await as(nadia, async (tx) => (await tx.query('DELETE FROM app.saved_searches WHERE id = $1 RETURNING id', [id])).rows)).toHaveLength(1);
   });
 });
 
@@ -159,6 +255,34 @@ describe('the trigram indexes are usable under row level security', () => {
     });
     expect(plan).toContain(index);
   });
+
+  it('as a member, a page search by trigram uses both GIN indexes of repo_entries on a table of 60,000 files, and the function answers it quickly', async () => {
+    // MISTAKES P4-04: on a few thousand rows a primary key scan is cheaper than the index even with sequential scans off; prove it on a real size.
+    await sys(async (tx) => {
+      await tx.query(
+        `INSERT INTO app.repo_entries (team_id, path, blob_sha, size, last_commit_sha, text_plain)
+         SELECT $1, 'pages/bulk/p' || g || '.md', repeat('a', 40), 10, repeat('a', 40),
+                md5(g::text) || ' ' || md5((g * 7)::text) || ' ' || md5((g * 13)::text) || ' notes of the week ' || g
+           FROM generate_series(1, 60000) g`,
+        [TEAM_IDS.Engineering],
+      );
+      await tx.query('ANALYZE app.repo_entries');
+    });
+    const plan = await as(nadia, async (tx) => {
+      await tx.query('SET LOCAL pg_trgm.word_similarity_threshold = 0.5');
+      await tx.query('SET LOCAL enable_seqscan = off');
+      return (await tx.query<{ 'QUERY PLAN': string }>("EXPLAIN (COSTS OFF) SELECT 1 FROM app.repo_entries e WHERE starts_with(e.path, 'pages/') AND (e.text_plain %> 'zephyrx' OR e.path %> 'zephyrx')")).rows.map((r) => r['QUERY PLAN']).join('\n');
+    });
+    expect(plan).toContain('repo_entries_text_trgm');
+    expect(plan).toContain('repo_entries_path_trgm');
+    // the function itself (it switches sequential scans off, because the planner cannot estimate `%>`): a rare word among 60,000 files
+    const started = performance.now();
+    const found = await as(nadia, async (tx) => (await tx.query('SELECT * FROM app.search_pages($1, NULL, 20)', ['qwxjvkzh'])).rows);
+    const ms = performance.now() - started;
+    expect(found).toEqual([]);
+    console.log(`search_pages over 60,000 files: ${ms.toFixed(0)} ms`);
+    expect(ms).toBeLessThan(1500);
+  }, 120_000);
 });
 
 describe('LEAKPROOF is only safe on bounded text, and a deleted root leaves thread search', () => {
