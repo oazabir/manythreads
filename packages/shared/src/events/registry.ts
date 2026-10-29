@@ -24,6 +24,7 @@ import { AnswerAnswerSharedEvent } from './answer.answer.shared.ts';
 import { ConversationsConversationStartedEvent } from './conversations.conversation.started.ts';
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
+import { OpsHealthChangedEvent } from './ops.health.changed.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
 import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
 import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
@@ -117,6 +118,7 @@ export const eventRegistry = {
   'answer.answer.shared': { 1: AnswerAnswerSharedEvent },
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
   'retention.settings.changed': { 1: RetentionSettingsChangedEvent },
+  'ops.health.changed': { 1: OpsHealthChangedEvent },
   'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },
   'approvals.approval.decided': { 1: ApprovalsApprovalDecidedEvent },
   'approvals.approval.resumed': { 1: ApprovalsApprovalResumedEvent },

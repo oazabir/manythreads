@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "takenAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "outbox": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "backlog": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "retrying": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "oldestAgeSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "backlog",
+                "retrying",
+                "oldestAgeSeconds"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jobs": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ready": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "running": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "dead": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "oldestReadyAgeSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "queues": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "queue": {
+                        "type": "string"
+                      },
+                      "ready": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "oldestAgeSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "queue",
+                      "ready",
+                      "oldestAgeSeconds"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "ready",
+                "running",
+                "dead",
+                "oldestReadyAgeSeconds",
+                "queues"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runs": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "slotsUsed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "slotsLimit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "queued": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "oldestQueuedAgeSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "slotsUsed",
+                "slotsLimit",
+                "queued",
+                "oldestQueuedAgeSeconds"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approvals": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "pending": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "oldestPendingAgeSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "pending",
+                "oldestPendingAgeSeconds"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "budgets": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "nearLimit": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "exhausted": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "maxBurnPercent": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "limits",
+                "nearLimit",
+                "exhausted",
+                "maxBurnPercent"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "database": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "connectionsUsed": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "connectionsMax": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "connectionsUsed",
+                "connectionsMax"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "process": {
+          "type": "object",
+          "properties": {
+            "residentBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "heapUsedBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "eventLoopLagP99Seconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "uptimeSeconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "residentBytes",
+            "heapUsedBytes",
+            "eventLoopLagP99Seconds",
+            "uptimeSeconds"
+          ]
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "totalBytes": {
+                "type": "number",
+                "minimum": 0
+              },
+              "freeBytes": {
+                "type": "number",
+                "minimum": 0
+              },
+              "usedPercent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "name",
+              "totalBytes",
+              "freeBytes",
+              "usedPercent"
+            ]
+          }
+        }
+      },
+      "required": [
+        "takenAt",
+        "outbox",
+        "jobs",
+        "runs",
+        "approvals",
+        "budgets",
+        "database",
+        "process",
+        "volumes"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "percent",
+              "seconds"
+            ]
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": "number",
+            "minimum": 0
+          },
+          "breached": {
+            "type": "boolean"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "unit",
+          "value",
+          "threshold",
+          "breached",
+          "since"
+        ]
+      }
+    }
+  },
+  "required": [
+    "snapshot",
+    "checks"
+  ]
+}

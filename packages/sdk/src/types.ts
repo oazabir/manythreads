@@ -618,7 +618,8 @@ export interface PluginLogger {
 export type MailTemplateMessage =
   | { template: 'verify'; to: string; name: string; url: string }
   | { template: 'reset'; to: string; name: string; url: string }
-  | { template: 'invite'; to: string; inviterName: string; workspaceName: string; teamName: string | null; url: string };
+  | { template: 'invite'; to: string; inviterName: string; workspaceName: string; teamName: string | null; url: string }
+  | { template: 'ops_alert'; to: string; workspaceName: string; state: 'breached' | 'recovered'; title: string; detail: string; url: string };
 
 export interface MailService {
   /** Sends one templated mail. Rejects when delivery fails; callers that must not leak that should catch it. */

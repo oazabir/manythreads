@@ -1,0 +1,40 @@
+/* System health page. Classes are prefixed `health-`; shared classes (.box, .kv, .btn, .d) are used, never redefined. */
+.health-row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.health-row:last-child {
+  border-bottom: 0;
+}
+
+.health-st {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.health-st.ok {
+  color: var(--ok);
+}
+
+.health-st.fail {
+  color: var(--alert-ink);
+}
+
+.health-st.skipped {
+  color: var(--faint);
+}
+
+.health-pct {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.health-kvs {
+  padding: 4px 15px 10px;
+}

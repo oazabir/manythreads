@@ -212,6 +212,9 @@ token is read and `testAuth.enabled` is not needed.
 | ops-rollback | `revision` (digits, optional) | `helm rollback manythreads [rev]` |
 | ops-logs | `component`, `lines` (1-2000) | logs (+previous) and describe of non-ready pods |
 
+## Monitoring
+A token-gated `/metrics` page for Prometheus, a built-in watcher that mails the workspace admins when disk, outbox, jobs, bot slots, approvals, budgets or database connections go wrong, and example alert rules: [deploy/monitoring.md](./deploy/monitoring.md).
+
 ## Backups and restore
 Daily backups of the databases, the attachment store and the team repositories, a tested restore and a drill: [deploy/backup.md](./deploy/backup.md).
 

@@ -74,10 +74,25 @@ export function inviteMail(input: {
   });
 }
 
+/** Sent to workspace owners and admins when a health check of the server trips or clears (ops-health). */
+export function opsAlertMail(input: { workspaceName: string; state: 'breached' | 'recovered'; title: string; detail: string; url: string }): RenderedMail {
+  const tag = input.state === 'breached' ? 'Needs attention' : 'Back to normal';
+  return render(`[${input.workspaceName}] ${input.title}`, {
+    heading: `${tag}: ${input.title}`,
+    paragraphs: [
+      input.detail,
+      `This is one of the checks manythreads runs on itself every minute for ${input.workspaceName}. You get one mail when a check trips and one when it clears.`,
+    ],
+    action: { label: 'Open System health', url: input.url },
+    footer: 'Workspace owners and admins get these. The limits are set in the server environment (docs/deploy/monitoring.md).',
+  });
+}
+
 export type MailTemplateInput =
   | { template: 'verify'; to: string; name: string; url: string }
   | { template: 'reset'; to: string; name: string; url: string }
-  | { template: 'invite'; to: string; inviterName: string; workspaceName: string; teamName: string | null; url: string };
+  | { template: 'invite'; to: string; inviterName: string; workspaceName: string; teamName: string | null; url: string }
+  | { template: 'ops_alert'; to: string; workspaceName: string; state: 'breached' | 'recovered'; title: string; detail: string; url: string };
 
 /** Renders a template into a complete `MailMessage` for `to`. */
 export function renderMail(input: MailTemplateInput): MailMessage {
@@ -88,5 +103,7 @@ export function renderMail(input: MailTemplateInput): MailMessage {
       return { to: input.to, ...resetPasswordMail(input) };
     case 'invite':
       return { to: input.to, ...inviteMail(input) };
+    case 'ops_alert':
+      return { to: input.to, ...opsAlertMail(input) };
   }
 }

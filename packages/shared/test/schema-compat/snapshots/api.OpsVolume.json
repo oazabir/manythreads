@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "totalBytes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "freeBytes": {
+      "type": "number",
+      "minimum": 0
+    },
+    "usedPercent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "required": [
+    "name",
+    "totalBytes",
+    "freeBytes",
+    "usedPercent"
+  ]
+}

@@ -6,10 +6,32 @@ import {
   createUnconfiguredMailer,
   inviteMail,
   mailerFromEnv,
+  opsAlertMail,
   renderMail,
   resetPasswordMail,
   verifyEmailMail,
 } from '../src/index.ts';
+
+describe('ops alert mail', () => {
+  const url = 'https://manythreads.example/settings/workspace/health';
+
+  it('names the check, carries the link in text and HTML, and tells a breach from a recovery', () => {
+    const breached = opsAlertMail({ workspaceName: 'Kahf Software', state: 'breached', title: 'Outbox lag: 95 s', detail: 'It has waited 95 s (limit 60 s).', url });
+    expect(breached.subject).toBe('[Kahf Software] Outbox lag: 95 s');
+    expect(breached.text).toContain('Needs attention');
+    expect(breached.text).toContain(url);
+    expect(breached.html).toContain(`href="${url}"`);
+    const fixed = opsAlertMail({ workspaceName: 'Kahf Software', state: 'recovered', title: 'Outbox lag: back to normal', detail: 'It is fine.', url });
+    expect(fixed.text).toContain('Back to normal');
+  });
+
+  it('is rendered by renderMail and escapes what it was given', () => {
+    const mail = renderMail({ template: 'ops_alert', to: 'ops@example.com', workspaceName: 'A <b>', state: 'breached', title: 'T', detail: '<script>', url });
+    expect(mail.to).toBe('ops@example.com');
+    expect(mail.html).not.toContain('<script>');
+    expect(mail.html).toContain('&lt;script&gt;');
+  });
+});
 
 describe('mail templates', () => {
   const url = 'https://manythreads.example/reset-password/abc_DEF-123';

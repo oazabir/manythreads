@@ -86,6 +86,9 @@ spec:
             - { name: MANYTHREADS_BLOB_GC_ALLOW_EMPTY, value: "1" }
             {{- end }}
             - { name: MANYTHREADS_REPO_DIR, value: {{ .Values.server.repos.persistence.mountPath | quote }} }
+            # The bearer token for GET /metrics (docs/deploy/monitoring.md). Without it the route answers 404.
+            - name: MANYTHREADS_METRICS_TOKEN
+              valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: metrics-token, optional: true } }
             - name: MANYTHREADS_KMS_PREVIOUS_KEYS
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-previous-keys, optional: true } }
             {{- if .Values.testAuth.enabled }}

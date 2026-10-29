@@ -20,6 +20,7 @@ export * from './llm/index.ts';
 export * from './approvals/index.ts';
 export * from './memory/index.ts';
 export * from './retention/index.ts';
+export * from './ops/index.ts';
 export * from './tasks/index.ts';
 export * from './runners/index.ts';
 export * from './hermes/index.ts';
