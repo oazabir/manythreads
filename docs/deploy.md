@@ -212,6 +212,9 @@ token is read and `testAuth.enabled` is not needed.
 | ops-rollback | `revision` (digits, optional) | `helm rollback manythreads [rev]` |
 | ops-logs | `component`, `lines` (1-2000) | logs (+previous) and describe of non-ready pods |
 
+## Backups and restore
+Daily backups of the databases, the attachment store and the team repositories, a tested restore and a drill: [deploy/backup.md](./deploy/backup.md).
+
 ## Rollback
 Run `ops-rollback` (empty revision = previous). Images in use by running pods stay on the node, so the previous revision normally still has its images.
 

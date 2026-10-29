@@ -9,7 +9,7 @@ agent reviewing and fixing; stop when the essential phases are done and a real e
 Each item ships the usual way (build, test, deploy, look at it live, commit with the task id). Tick an item when it is live.
 
 **Essential, in order**
-- [ ] 1 Run it safely: P10-09 database and blob backups with a restore drill; P10-10 metrics, logs and alerts (disk, outbox lag, job age, run slots)
+- [ ] 1 Run it safely: ~~P10-09 database and blob backups with a restore drill~~ (live 2026-10-29: nightly CronJob `manythreads-backup` 02:17 UTC, 7 sets on the `manythreads-backups` volume, `tools/backup/{restore,drill,pull}.sh`, `docs/deploy/backup.md`; drill PASS, RTO 17 s; copy off the box with `pull.sh` is still manual; the first deploy of the chart waits on the unbound backups volume until a job is created from the CronJob); P10-10 metrics, logs and alerts (disk, outbox lag, job age, run slots)
 - [ ] 2 Daily chat: finish P14-10 (quick switcher e2e, Caps Lock); P14-01 presence and Do not disturb; P14-02 composer toolbar, emoji; P14-09 notifications (levels, keywords, browser push); P14-11 search filters and saved searches; P14-12 message actions (edit history, forward, copy link); P14-04 later and reminders; P14-06 slash commands
 - [ ] 3 The engineering loop: P14-14 incoming webhooks (CI, GitHub, alerts into a channel); GitHub connection (P8-03 GitHub App slice, P16-06 issue/PR mirror slice); P8-05 eval check on a pull request
 - [ ] 4 Trust the bots: P7-01 proposals for `bots/`/`TEAM.md`/`skills/` changes; P7-08 eval harness; P7-11 the bot page's Test action

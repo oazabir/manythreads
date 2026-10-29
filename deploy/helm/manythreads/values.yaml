@@ -155,6 +155,28 @@ server:
       keep: true
       mountPath: /data/repos
 
+# Backups (docs/deploy/backup.md). Off by default: a self-hoster turns it on with `--set backup.enabled=true`. When on, a CronJob writes one set a day
+# (schedule is UTC cron) into its own volume: a pg_dump of each database in `databases`, a tar of the attachment store (local store only; with the S3
+# store protect the bucket instead) and a tar of the team repositories, plus a manifest with sizes, checksums and row counts. The newest `retention`
+# sets are kept. The volume is on the same disk as the data unless storageClass says otherwise: copy sets off the box (tools/backup/pull.sh).
+# Size the volume to hold `retention` + 1 sets (the new set is written before the oldest is removed): about that many x (database dump + blob
+# volume used + repository volume used).
+# The volume is a WaitForFirstConsumer claim that only the backup Job mounts, so on a cluster that binds on first use `helm --wait` sees it Pending
+# until the first run: on the first rollout either run without --wait, or start a run by hand (`kubectl create job --from=cronjob/manythreads-backup`).
+backup:
+  enabled: false
+  schedule: "17 2 * * *"
+  retention: 7
+  databases: [manythreads]    # add hindsight when the memory engine runs in this release
+  activeDeadlineSeconds: 3600
+  storage:
+    size: 10Gi
+    storageClass: local-path
+    keep: true                # leave the volume (and every set) behind on helm uninstall
+  resources:                  # pg_dump and tar stream; the node has no spare memory to lend (MISTAKES.md, 2026-10-28)
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
 # Mail. The server sends sign-in, reset and invitation mail over SMTP (MANYTHREADS_SMTP_URL).
 mail:
   from: "manythreads <no-reply@manythreads.kahf.to>"

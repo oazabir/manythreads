@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# A stand-in for kubectl for the backup tool tests: records every call in $FAKE_LOG and answers the few questions the scripts ask.
+# Knobs (environment): FAKE_FIXTURES (dir with manifest.txt), FAKE_SET, FAKE_BAD_SUMS=1 (sha256sum -c fails), FAKE_BAD_ARRIVAL=1 (a staged
+# file arrives with the wrong checksum), FAKE_WRONG_ROWS=1 (restored tables are empty), FAKE_NO_DEPLOY=1 (no server Deployment), FAKE_PG_RESTORE_FAIL=1 (pg_restore exits 1).
+set -u
+echo "kubectl $*" >>"$FAKE_LOG"
+if [ "${1:-}" = "-n" ]; then shift 2; fi
+sub=${1:-}
+shift || true
+manifest="$FAKE_FIXTURES/manifest.txt"
+mfv() { sed -n "s/^$1=//p" "$manifest" | head -n 1; }
+case $sub in
+  get)
+    case "$*" in
+      *"cronjob manythreads-backup"*) printf 'fake/postgres:19' ;;
+      "namespace -l"*) [ -f "$FAKE_LOG.ns" ] && echo "namespace/$(cat "$FAKE_LOG.ns")" ;;
+      "deployment manythreads-server -o"*) [ -z "${FAKE_NO_DEPLOY:-}" ] && printf '1' || exit 1 ;;
+      "deployment manythreads-server"*) [ -z "${FAKE_NO_DEPLOY:-}" ] || exit 1 ;;
+      "secret manythreads-s3"*) exit 1 ;;
+      *"-o yaml"*) echo "kind: Secret" ;;
+    esac
+    exit 0
+    ;;
+  create)
+    if [ "${1:-}" = "namespace" ]; then echo "$2" >"$FAKE_LOG.ns"; fi
+    exit 0
+    ;;
+  apply)
+    cat >>"$FAKE_LOG.applied"
+    exit 0
+    ;;
+  label | scale | delete | wait) exit 0 ;;
+  exec)
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do shift; done
+    shift
+    case "$1" in
+      cat)
+        case "$2" in
+          */sha256sums.txt) echo "$(echo 'fake file content' | sha256sum | cut -d' ' -f1)  db-manythreads.dump" ;;
+          */manifest.txt) cat "$manifest" ;;
+          *) echo "fake file content" ;;
+        esac
+        ;;
+      sha256sum)
+        f=${2##*/}
+        case "$2" in
+          /work/*)
+            if [ -n "${FAKE_BAD_ARRIVAL:-}" ]; then echo "0000  $2"; else echo "$(mfv "file.$f.sha256")  $2"; fi
+            ;;
+          *) echo "deadbeef  $2" ;;
+        esac
+        ;;
+      pg_restore) [ -z "${FAKE_PG_RESTORE_FAIL:-}" ] || { echo 'pg_restore: error' >&2; exit 1; } ;;
+      psql)
+        for a in "$@"; do last=$a; done
+        case "$last" in
+          "SELECT count(*) FROM app."*)
+            t=${last#SELECT count(*) FROM app.}
+            if [ -n "${FAKE_WRONG_ROWS:-}" ]; then echo 0; else mfv "rows.$t"; fi
+            ;;
+        esac
+        ;;
+      sh)
+        script=$3
+        case "$script" in
+          *"ls -1 /backups | grep"*) echo "$FAKE_SET" ;;
+          *"manifest.txt"*) cat "$manifest" ;;
+          *"sha256sum -c"*) if [ -n "${FAKE_BAD_SUMS:-}" ]; then echo "db-manythreads.dump: FAILED"; exit 1; fi; echo "all OK" ;;
+          "cat > "*) cat >/dev/null ;;
+          *"ls -1"*) printf 'manifest.txt\nsha256sums.txt\ndb-manythreads.dump\n' ;;
+          *"tar -tvf"*) echo 2 ;;
+          *"find /data/blobs"*"wc -l"*) echo 2 ;;
+          *"find /data/blobs"*"head -n 1"*) echo /data/blobs/ab/abcdef ;;
+          *"tar -xOf"*) echo "deadbeef  -" ;;
+          *"tar -tf"*) echo 1 ;;
+          *"ls -d /data/repos"*) echo 1 ;;
+          *"for r in"*) echo 0 ;;
+        esac
+        ;;
+    esac
+    exit 0
+    ;;
+esac
+exit 0

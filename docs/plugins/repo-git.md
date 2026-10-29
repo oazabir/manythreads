@@ -8,7 +8,7 @@ the tables are an index that is rebuilt from git when it falls behind. Attachmen
 
 `${MANYTHREADS_REPO_DIR}/<team id>.git` (default `./data/repos`). In the cluster that is the PVC `manythreads-repos` mounted at `/data/repos` (Helm `server.repos.persistence`,
 ReadWriteOnce like the blob volume: one server replica); the server image carries the `git` binary. Dev, tests and e2e use a temporary directory per server.
-Backups: the repositories are history, back the directory up together with the database (a plain `tar` of a quiet directory is a valid backup: git writes objects first and moves
+Backups: the chart's backup job does this every day, with a tested restore ([deploy/backup.md](../deploy/backup.md)). The repositories are history, back the directory up together with the database (a plain `tar` of a quiet directory is a valid backup: git writes objects first and moves
 the branch last). Loose objects pile up with writes; a periodic `git gc` over the directory is safe while the server runs and is a later maintenance job.
 
 ## The layout of a new team's repo (SPEC section 5.1, criterion 1)

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# A stand-in for psql (and pg_dump, by its own name) for the backup.sh test. psql with no -c reads stdin: a session ("BEGIN ...") answers
+# the snapshot and count queries line by line; anything else is the role-settings query.
+set -u
+case "$(basename "$0")" in
+  pg_dump)
+    echo "pg_dump $*" >>"$FAKE_LOG"
+    [ -z "${FAKE_PG_DUMP_FAIL:-}" ] || { echo "pg_dump: error" >&2; exit 1; }
+    for a in "$@"; do case "$a" in --file=*) printf 'PGDMP fake dump\n' >"${a#--file=}" ;; esac; done
+    ;;
+  psql)
+    cmd=""
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "-c" ]; then cmd=$a; fi
+      prev=$a
+    done
+    case "$cmd" in
+      *pg_get_userbyid*) echo manythreads_owner; exit 0 ;;
+      *string_agg*) echo "manythreads_app manythreads_owner manythreads_system"; exit 0 ;;
+      *server_version*) echo "19beta4"; exit 0 ;;
+    esac
+    IFS= read -r first || exit 0
+    case "$first" in
+      BEGIN*)
+        while IFS= read -r line; do
+          case "$line" in
+            *pg_export_snapshot*) echo "00000003-1" ;;
+            *"count(*)"*) echo 7 ;;
+          esac
+        done
+        ;;
+      *) echo "ALTER ROLE manythreads_app IN DATABASE manythreads SET search_path=app, public;" ;;
+    esac
+    ;;
+esac

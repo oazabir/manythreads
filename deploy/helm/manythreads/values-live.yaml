@@ -62,3 +62,11 @@ hermesPods:
 # Images built inside the cluster for that copy. Needs the one host step in docs/deploy-preview.md (registries.yaml) before a pod can pull from it.
 registry:
   enabled: true
+# Daily backups with a tested restore (docs/deploy/backup.md; tools/backup/drill.sh proves the latest set restores). Hindsight's database is in the set
+# because its memory is rebuilt slowly from the log otherwise. Sets sit on the same disk as the data: pull them off the box (tools/backup/pull.sh).
+backup:
+  enabled: true
+  databases: [manythreads, hindsight]
+  retention: 7
+  storage:
+    size: 10Gi

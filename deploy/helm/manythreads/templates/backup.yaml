@@ -1,0 +1,148 @@
+{{- if .Values.backup.enabled }}
+{{- /*
+  Backups (docs/deploy/backup.md). A CronJob writes one set per run into the claim `manythreads-backups`: a pg_dump of each database in
+  backup.databases, a tar of the attachment store (local store only) and a tar of the team repositories, with a manifest of sizes,
+  checksums and row counts; the newest backup.retention sets are kept. The script is files/backup.sh, mounted from a ConfigMap.
+  The dump connects as the owner role: it is the only login that reads every row (the app and system roles are subject to row-level
+  security and cannot be given a bypass without a superuser step of their own), and the Secret is mounted in this one pod only.
+  The blob and repository claims are ReadWriteOnce, so the pod is placed on the server pod's node and mounts them read-only.
+  A set on the same disk as the data is not a disaster backup: copy sets off the box (tools/backup/pull.sh).
+*/ -}}
+{{- $b := .Values.backup }}
+{{- if not (regexMatch "^[0-9]+$" (toString $b.retention)) }}{{ fail "backup.retention must be a whole number of sets to keep" }}{{ end }}
+{{- if lt (int $b.retention) 1 }}{{ fail "backup.retention must be at least 1" }}{{ end }}
+{{- if not $b.databases }}{{ fail "backup.databases must name at least one database" }}{{ end }}
+{{- $localBlobs := and .Values.server.enabled (eq .Values.server.storage.type "local") .Values.server.blobs.persistence.enabled }}
+{{- $repos := and .Values.server.enabled .Values.server.repos.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: manythreads-backups
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  {{- if $b.storage.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with $b.storage.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $b.storage.size }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: manythreads-backup-script
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+data:
+  backup.sh: |
+{{ .Files.Get "files/backup.sh" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: manythreads-backup
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ $b.schedule | quote }}
+  timeZone: "Etc/UTC"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ $b.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "manythreads.labels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000    # the server's user: it owns the files in the blob and repository volumes
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          {{- if or $localBlobs $repos }}
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/component: server
+          {{- end }}
+          containers:
+            - name: backup
+              image: {{ .Values.postgres.image }}   # the database image: pg_dump of the same major version as the server
+              imagePullPolicy: {{ .Values.imagePullPolicy }}
+              command: ["bash", "/scripts/backup.sh"]
+              {{- with $b.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: PGHOST, value: {{ include "manythreads.pgHost" . | quote }} }
+                - { name: PGUSER, value: {{ .Values.postgres.owner | quote }} }
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: manythreads-db-owner, key: password } }
+                - { name: PGCONNECT_TIMEOUT, value: "30" }
+                - { name: BACKUP_DIR, value: /backups }
+                - { name: BACKUP_DATABASES, value: {{ join " " $b.databases | quote }} }
+                - { name: BACKUP_MAIN_DB, value: {{ .Values.postgres.database | quote }} }
+                - { name: BACKUP_RETENTION, value: {{ $b.retention | quote }} }
+                - { name: BACKUP_STORAGE_TYPE, value: {{ .Values.server.storage.type | quote }} }
+                - { name: BACKUP_APP_VERSION, value: {{ .Values.imageTag | quote }} }
+                - name: BACKUP_NAMESPACE
+                  valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+                {{- if $localBlobs }}
+                - { name: BACKUP_BLOBS_DIR, value: {{ .Values.server.blobs.persistence.mountPath | quote }} }
+                {{- end }}
+                {{- if $repos }}
+                - { name: BACKUP_REPOS_DIR, value: {{ .Values.server.repos.persistence.mountPath | quote }} }
+                {{- end }}
+              volumeMounts:
+                - { name: script, mountPath: /scripts, readOnly: true }
+                - { name: backups, mountPath: /backups }
+                - { name: tmp, mountPath: /tmp }
+                {{- if $localBlobs }}
+                - { name: blobs, mountPath: {{ .Values.server.blobs.persistence.mountPath | quote }}, readOnly: true }
+                {{- end }}
+                {{- if $repos }}
+                - { name: repos, mountPath: {{ .Values.server.repos.persistence.mountPath | quote }}, readOnly: true }
+                {{- end }}
+          volumes:
+            - name: script
+              configMap: { name: manythreads-backup-script, defaultMode: 0555 }
+            - name: backups
+              persistentVolumeClaim: { claimName: manythreads-backups }
+            - name: tmp
+              emptyDir: {}
+            {{- if $localBlobs }}
+            - name: blobs
+              persistentVolumeClaim: { claimName: manythreads-blobs, readOnly: true }
+            {{- end }}
+            {{- if $repos }}
+            - name: repos
+              persistentVolumeClaim: { claimName: manythreads-repos, readOnly: true }
+            {{- end }}
+{{- end }}
