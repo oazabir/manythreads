@@ -19,6 +19,7 @@ import './styles/boards.css';
 import './styles/https.css';
 import './styles/health.css';
 import './styles/notify.css';
+import './styles/webhooks.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
 

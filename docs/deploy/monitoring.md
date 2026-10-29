@@ -13,7 +13,7 @@ manythreads watches itself in two ways: a **`/metrics` page** for a monitoring s
   kubectl -n <namespace> get secret manythreads-server-secrets -o jsonpath='{.data.metrics-token}' | base64 -d
   ```
 
-- **Where it is reachable.** Only inside the cluster: the web pod's nginx passes `/api`, `/healthz`, `/readyz`, `/ws` and `/mcp` to the server and nothing else, so `/metrics` is not on the public address. Scrape the server service directly: `manythreads-server.<namespace>.svc.cluster.local:3000`.
+- **Where it is reachable.** Only inside the cluster: the web pod's nginx passes `/api`, `/hooks/` (incoming webhooks), `/healthz`, `/readyz`, `/ws` and `/mcp` to the server and nothing else, so `/metrics` is not on the public address. Scrape the server service directly: `manythreads-server.<namespace>.svc.cluster.local:3000`.
 - **It is cheap.** The numbers are taken from the database at most once every five seconds, however many scrapers ask. Rate limit: 120 requests a minute.
 
 Example scrape job (a Prometheus that reads the token from a file):

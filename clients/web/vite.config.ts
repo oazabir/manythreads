@@ -7,6 +7,7 @@ const api = process.env['MANYTHREADS_API_ORIGIN'] ?? 'http://localhost:3000';
 
 const proxy = {
   '/api': api,
+  '/hooks': api,
   '/healthz': api,
   '/readyz': api,
   '/ws': { target: api, ws: true },

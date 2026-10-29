@@ -47,7 +47,7 @@ const TYPES: Record<string, string> = {
 
 let apiPort = 0;
 // `/mcp` is the one address every bot calls; like deploy/docker/nginx.conf (`location = /mcp`), only that exact path goes to the server.
-const isApi = (url: string): boolean => /^\/(api|healthz|readyz|ws)(\/|\?|$)/.test(url) || /^\/mcp(\?|$)/.test(url);
+const isApi = (url: string): boolean => /^\/(api|healthz|readyz|ws|hooks)(\/|\?|$)/.test(url) || /^\/mcp(\?|$)/.test(url);
 
 function proxy(req: IncomingMessage, res: ServerResponse): void {
   const upstream = httpRequest(

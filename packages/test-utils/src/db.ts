@@ -39,6 +39,12 @@ export const botsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/bots/migrations/', import.meta.url)),
 };
 
+/** Migrations of the webhooks plugin (`webhooks`, `webhook_secrets`, the make/rotate/revoke functions); pass it in `sources` after `channelsMigrationSource` and `botsMigrationSource` (it replaces `app.message_authors`). */
+export const webhooksMigrationSource: MigrationSource = {
+  namespace: 'webhooks',
+  dir: fileURLToPath(new URL('../../plugins/webhooks/migrations/', import.meta.url)),
+};
+
 /** Migrations of the gateway-llm plugin (`llm_providers`, `llm_aliases`, `llm_keys`); pass it in `sources` after the kernel's. */
 export const gatewayLlmMigrationSource: MigrationSource = {
   namespace: 'gateway-llm',

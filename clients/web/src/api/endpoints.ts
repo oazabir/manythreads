@@ -261,6 +261,22 @@ import {
   updateLlmProviderRoute,
   type AuthenticatedSession,
 } from '@manythreads/shared';
+import {
+  ClearSigningResponse,
+  CreateWebhookRequest,
+  ListWebhooksResponse,
+  RevokeWebhookResponse,
+  SigningSecretResponse,
+  TestWebhookResponse,
+  WebhookWithUrl,
+  clearWebhookSigningRoute,
+  createWebhookRoute,
+  listWebhooksRoute,
+  revokeWebhookRoute,
+  rotateWebhookRoute,
+  setWebhookSigningRoute,
+  testWebhookRoute,
+} from '@manythreads/shared';
 import { CSRF_HEADER, ApiError, buildPath, call, readCsrfCookie } from './client';
 
 /*
@@ -576,3 +592,14 @@ export const fetchPushState = () => call(getPushStateRoute, { response: GetPushS
 export const subscribePush = (body: SubscribePushRequest) => call(subscribePushRoute, { request: SubscribePushRequest, response: SubscribePushResponse }, body);
 export const unsubscribePush = (endpoint: string) =>
   call(unsubscribePushRoute, { request: UnsubscribePushRequest, response: UnsubscribePushResponse }, { endpoint });
+
+// ---- incoming webhooks of a channel (PLAN P14-14) --------------------------------------------------------------
+export const fetchWebhooks = (channelId: string) => call(listWebhooksRoute, { response: ListWebhooksResponse }, undefined, { channelId });
+/** Makes a webhook; the answer carries its secret address, which is shown once and never again. */
+export const createWebhook = (channelId: string, body: CreateWebhookRequest) =>
+  call(createWebhookRoute, { request: CreateWebhookRequest, response: WebhookWithUrl }, body, { channelId });
+export const rotateWebhook = (webhookId: string) => call(rotateWebhookRoute, { response: WebhookWithUrl }, undefined, { webhookId });
+export const revokeWebhook = (webhookId: string) => call(revokeWebhookRoute, { response: RevokeWebhookResponse }, undefined, { webhookId });
+export const setWebhookSigningSecret = (webhookId: string) => call(setWebhookSigningRoute, { response: SigningSecretResponse }, undefined, { webhookId });
+export const clearWebhookSigningSecret = (webhookId: string) => call(clearWebhookSigningRoute, { response: ClearSigningResponse }, undefined, { webhookId });
+export const sendWebhookTest = (webhookId: string) => call(testWebhookRoute, { response: TestWebhookResponse }, undefined, { webhookId });

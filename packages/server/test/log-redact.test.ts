@@ -1,6 +1,6 @@
 import { expectLinear } from '@manythreads/test-utils/linear';
 import { describe, expect, it } from 'vitest';
-import { redactUrl, withRedactedLogs } from '../src/log-redact.ts';
+import { redactUrl, serializeRequest, withRedactedLogs } from '../src/log-redact.ts';
 
 describe('log redaction (L4)', () => {
   it('replaces the app token segment wherever it is, and nothing else', () => {
@@ -19,9 +19,19 @@ describe('log redaction (L4)', () => {
     expect(redactUrl('/api/mcp/runs')).toBe('/api/mcp/runs');
   });
 
+  it('redacts the secret of an incoming webhook address and keeps its id', () => {
+    const id = '01968f3a-7d52-7a11-9c3e-4f1a2b3c4d5e';
+    expect(redactUrl(`/hooks/${id}/mtwh_AbC-_123456789012345678901234567890`)).toBe(`/hooks/${id}/[redacted]`);
+    expect(redactUrl(`/hooks/${id}/mtwh_secret?x=1`)).toBe(`/hooks/${id}/[redacted]?x=1`);
+    expect(redactUrl(`/hooks/${id}/mtwh_secret/extra`)).toBe(`/hooks/${id}/[redacted]/extra`);
+    expect(redactUrl('/api/hooks/x/y')).toBe('/api/hooks/x/y');
+    const line = JSON.stringify(serializeRequest({ method: 'POST', url: `/hooks/${id}/mtwh_topsecret`, headers: {}, host: 'h', ip: '1.2.3.4', socket: { remotePort: 1 } } as never));
+    expect(line).not.toContain('mtwh_topsecret');
+  });
+
   it('is linear on hostile input', () => {
     expectLinear(
-      (n) => [`/${'~mta.'.repeat(n)}`, `/~mta.${'a'.repeat(5 * n)}`, `/api/mcp/runs/${'/api/mcp/runs/'.repeat(n / 2)}`, `/api/mcp/runs/${'a'.repeat(5 * n)}`],
+      (n) => [`/${'~mta.'.repeat(n)}`, `/~mta.${'a'.repeat(5 * n)}`, `/api/mcp/runs/${'/api/mcp/runs/'.repeat(n / 2)}`, `/api/mcp/runs/${'a'.repeat(5 * n)}`, `/hooks/${'/'.repeat(n)}`, `/hooks/${'a/'.repeat(n)}`],
       (urls) => urls.forEach((url) => redactUrl(url)),
       { n: 60_000, label: 'a hostile URL' },
     );

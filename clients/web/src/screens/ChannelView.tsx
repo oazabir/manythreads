@@ -15,6 +15,7 @@ import { VirtualList, type VirtualListApi } from '../channels/VirtualList';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
 import { ChannelBell } from '../notifications/ChannelBell';
+import { WebhooksButton } from '../webhooks/WebhooksDialog';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon } from '../shell/icons';
 import { useHeaderActionsSlot, useHeaderTopic } from '../shell/topic';
@@ -237,6 +238,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || undefined}>
       {headerSlot
         ? createPortal(<ChannelBell channel={{ channelId, channelName: dm ? null : name, channelKind: dm ? 'dm' : 'channel' }} />, headerSlot)
+        : null}
+      {headerSlot && !dm && info.status === 'ok' && info.data.canManage
+        ? createPortal(<WebhooksButton channelId={channelId} channelName={name} />, headerSlot)
         : null}
       {botBoard && headerSlot
         ? createPortal(

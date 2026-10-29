@@ -46,6 +46,11 @@ import { RunnersRunnerConnectedEvent } from './runners.runner.connected.ts';
 import { RunnersRunnerDisconnectedEvent } from './runners.runner.disconnected.ts';
 import { RunnersTokenMintedEvent } from './runners.token.minted.ts';
 import { RunnersTokenRevokedEvent } from './runners.token.revoked.ts';
+import { WebhooksHookCreatedEvent } from './webhooks.hook.created.ts';
+import { WebhooksHookRotatedEvent } from './webhooks.hook.rotated.ts';
+import { WebhooksHookRevokedEvent } from './webhooks.hook.revoked.ts';
+import { WebhooksHookSigningChangedEvent } from './webhooks.hook.signing_changed.ts';
+import { WebhooksHookUseFailedEvent } from './webhooks.hook.use_failed.ts';
 import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
@@ -176,6 +181,11 @@ export const eventRegistry = {
   'runners.job.refused': { 1: RunnersJobRefusedEvent },
   'runners.token.minted': { 1: RunnersTokenMintedEvent },
   'runners.token.revoked': { 1: RunnersTokenRevokedEvent },
+  'webhooks.hook.created': { 1: WebhooksHookCreatedEvent },
+  'webhooks.hook.rotated': { 1: WebhooksHookRotatedEvent },
+  'webhooks.hook.revoked': { 1: WebhooksHookRevokedEvent },
+  'webhooks.hook.signing_changed': { 1: WebhooksHookSigningChangedEvent },
+  'webhooks.hook.use_failed': { 1: WebhooksHookUseFailedEvent },
   'hermes.connection.created': { 1: HermesConnectionCreatedEvent },
   'hermes.connection.updated': { 1: HermesConnectionUpdatedEvent },
   'hermes.connection.deleted': { 1: HermesConnectionDeletedEvent },

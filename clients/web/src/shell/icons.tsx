@@ -138,6 +138,14 @@ export const ArrowDownIcon = () => (
 );
 
 /** The bell with a stroke through it: a channel set to "Nothing". */
+/** Two chain links: an address that joins two programs (the channel's incoming webhooks). */
+export const HookIcon = () => (
+  <Svg>
+    <path d="M6.6 9.4l2.8-2.8" />
+    <path d="M8.4 4.8l.9-.9a2.2 2.2 0 0 1 3.1 3.1l-.9.9" />
+    <path d="M7.6 11.2l-.9.9a2.2 2.2 0 0 1-3.1-3.1l.9-.9" />
+  </Svg>
+);
 export const BellOffIcon = () => (
   <Svg size={16}>
     <path d="M3.6 11.2V7.4a4.4 4.4 0 0 1 8.8 0v3.8l1 1.4H2.6Z" />

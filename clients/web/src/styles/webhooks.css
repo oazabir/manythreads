@@ -1,0 +1,243 @@
+/* The webhooks dialog of a channel (`wh-`) -- PLAN P14-14. Uses the shared .dlg, .btn and .chip; only the parts that are its own are here. */
+
+.wh-open {
+  margin-right: 8px;
+}
+
+/* in the header band the button is as tall as its icon neighbours (the band is 28 px of content): a taller one would grow the band of every channel it appears in */
+.chead-tools .wh-open {
+  height: 26px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+}
+
+/* on a phone the band has no room for a word: the chain-link icon stands for it (the button keeps its name for a screen reader) */
+.wh-open-icon {
+  display: none;
+}
+
+@media (width <= 600px) {
+  .chead-tools .wh-open {
+    margin-right: 0;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .wh-open-icon {
+    display: flex;
+  }
+
+  .wh-open-label {
+    display: none;
+  }
+}
+
+.wh-lead {
+  margin: 0 0 12px;
+  color: var(--mute);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.wh-h {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.wh-hint {
+  margin: 6px 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.wh-note {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--ok-border);
+  border-radius: 6px;
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  font-size: 13px;
+}
+
+.wh-mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.wh-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  background: var(--warn-wash);
+}
+
+.wh-reveal-title {
+  margin: 0;
+  color: var(--warn-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wh-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.wh-copy-value {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.wh-pre {
+  width: 100%;
+  margin: 4px 0;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--table-head);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.wh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wh-row {
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.wh-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.wh-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wh-use,
+.wh-addr {
+  margin: 4px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.wh-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.wh-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.wh-danger {
+  border-color: var(--alert);
+  background: var(--alert);
+  color: var(--surface);
+}
+
+.wh-danger-text {
+  color: var(--alert-ink);
+}
+
+.wh-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.wh-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.wh-field-name {
+  flex: 1 1 200px;
+}
+
+.wh-field-emoji {
+  flex: 0 1 140px;
+}
+
+.wh-help {
+  margin-top: 16px;
+  color: var(--txt);
+  font-size: 13px;
+}
+
+.wh-help summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.wh-points {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.wh-points li {
+  margin: 4px 0;
+}
+
+@media (width <= 640px) {
+  .wh-copy {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* The mark beside a webhook's name on a message. */
+.wh-mark {
+  padding: 0 5px;
+  border: 1px solid var(--agent-border);
+  border-radius: 4px;
+  background: var(--agent-wash);
+  color: var(--agent-ink);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+}

@@ -135,10 +135,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           ) : null}
         </div>
       )}
-      <Avatar name={name} kind={m.author?.kind === 'bot' ? 'agent' : 'person'} />
+      <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} />
       <div className="msg-main">
         <div className="who">
           <b>{name}</b>
+          {m.author?.kind === 'system' ? <span className="wh-mark" title="Posted by an incoming webhook, not by a person">Webhook</span> : null}
           <time dateTime={m.createdAt} data-vt-mask>{clock(m.createdAt)}</time>
           {m.editedAt && !deleted ? <span className="edited">(edited)</span> : null}
         </div>

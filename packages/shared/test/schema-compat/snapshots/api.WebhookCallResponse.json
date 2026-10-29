@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "const": true
+    },
+    "messageId": {
+      "type": "string"
+    },
+    "ignored": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok"
+  ]
+}
