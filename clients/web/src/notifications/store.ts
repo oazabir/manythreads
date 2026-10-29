@@ -50,10 +50,11 @@ export function browserAlerts(): BrowserAlerts {
 }
 
 /** The line a notification makes in the popover and in an operating-system alert. */
-export function notificationTitle(n: Pick<InboxItem, 'kind' | 'actorName' | 'channelName'>): string {
+export function notificationTitle(n: Pick<InboxItem, 'kind' | 'actorName' | 'channelName'> & { keyword?: string | null }): string {
   const where = n.channelName ? ` in #${n.channelName.replace(/^#/, '')}` : '';
-  if (n.kind === 'mention') return `${n.actorName} mentioned you${where}`;
+  if (n.kind === 'mention') return n.keyword ? `${n.actorName} wrote “${n.keyword}”${where}` : `${n.actorName} mentioned you${where}`;
   if (n.kind === 'reply') return `${n.actorName} replied in a thread${where}`;
+  if (n.kind === 'message') return `${n.actorName}${where}`;
   return `${n.actorName} sent you a message`;
 }
 
@@ -170,6 +171,20 @@ export class NotificationStore {
       this.set({ prefs: await fetchNotificationPrefs() });
     } catch {
       /* the popover then does not offer the alerts row */
+    }
+  }
+
+  /** Turn the in-app notification of one kind on or off (the Notifications settings). */
+  async setInApp(kind: 'mention' | 'reply' | 'dm', on: boolean): Promise<void> {
+    if (!this.snap.prefs) await this.loadPrefs();
+    const cur = this.snap.prefs ?? DEFAULT_NOTIFICATION_PREFS;
+    const next: NotificationPrefs = { ...cur, [kind]: { ...cur[kind], inApp: on } };
+    this.set({ prefs: next });
+    try {
+      this.set({ prefs: await saveNotificationPrefs(next) });
+    } catch {
+      this.set({ prefs: cur });
+      throw new Error('Could not save the setting');
     }
   }
 

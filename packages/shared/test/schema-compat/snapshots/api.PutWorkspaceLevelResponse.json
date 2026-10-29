@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "workspaceDefault": {
+      "type": "string",
+      "enum": [
+        "all",
+        "mentions",
+        "nothing"
+      ]
+    }
+  },
+  "required": [
+    "workspaceDefault"
+  ]
+}

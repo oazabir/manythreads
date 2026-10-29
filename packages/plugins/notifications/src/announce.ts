@@ -5,6 +5,8 @@ import {
   notificationCreatedPushType,
   type NotificationPrefs,
 } from '@manythreads/shared';
+import { prefKey } from './prefs.ts';
+import { PUSH_QUEUE } from './push.ts';
 import { NOTIFICATION_COLUMNS, toNotification, type NotificationRow } from './rows.ts';
 
 /**
@@ -38,7 +40,7 @@ export async function announce(
       type: notificationCreatedPushType,
       payload: NotificationCreatedPush.parse({
         notification,
-        browser: prefsOf.get(w.person_id)?.[notification.kind].browser ?? false,
+        browser: prefsOf.get(w.person_id)?.[prefKey(notification.kind)].browser ?? false,
       }),
     });
     await ctx.audit.emit(
@@ -58,4 +60,14 @@ export async function announce(
     );
   }
   await ctx.realtime.pushMany(tx, pushes);
+
+  // Browser push: a person who signed a browser up gets one job per notification, sent outside this transaction (a push service can be slow).
+  const subscribed = await tx.query<{ person_id: string }>('SELECT DISTINCT person_id FROM app.push_subscriptions WHERE person_id = ANY ($1::uuid[])', [
+    [...new Set(written.map((w) => w.person_id))],
+  ]);
+  const withPush = new Set(subscribed.rows.map((r) => r.person_id));
+  for (const w of written) {
+    if (!withPush.has(w.person_id) || !byId.has(w.id)) continue;
+    await ctx.jobs.enqueue(tx, PUSH_QUEUE, { workspaceId, notificationId: w.id, personId: w.person_id }, { dedupeKey: `push:${w.id}` });
+  }
 }

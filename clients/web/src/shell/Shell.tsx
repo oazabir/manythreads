@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
 import { dmParticipants, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
+import { PushBridge } from '../notifications/OpenLink';
 import { SearchBox } from '../search/SearchBox';
 import { fetchTeams } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -122,6 +123,7 @@ export function Shell() {
           </header>
           )}
           <section className="region content" data-landmark="content" aria-busy={teamsLoading || undefined}>
+            <PushBridge />
             <Outlet />
           </section>
         </main>

@@ -14,6 +14,7 @@ import { isApiError } from '../api/client';
 import { VirtualList, type VirtualListApi } from '../channels/VirtualList';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
+import { ChannelBell } from '../notifications/ChannelBell';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon } from '../shell/icons';
 import { useHeaderActionsSlot, useHeaderTopic } from '../shell/topic';
@@ -234,6 +235,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
 
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || undefined}>
+      {headerSlot
+        ? createPortal(<ChannelBell channel={{ channelId, channelName: dm ? null : name, channelKind: dm ? 'dm' : 'channel' }} />, headerSlot)
+        : null}
       {botBoard && headerSlot
         ? createPortal(
             <Link className="chv-botboard" to={boardPath(teamSlug, botBoard.id)} data-testid="bot-board-link">

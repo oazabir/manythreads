@@ -1,12 +1,14 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerConsumers } from './consumers.ts';
 import { RELEASE_HELD_CRON, RELEASE_HELD_QUEUE, releaseDue } from './hold.ts';
+import { PUSH_QUEUE, runPushJob } from './push.ts';
 import { registerRoutes } from './routes.ts';
+import { registerPreferenceRoutes } from './routes-prefs.ts';
 
 /**
  * Notifications: the inbox behind the bell (SPEC section 3, PLAN P3-09). Mentions, replies in followed threads and direct messages become
- * one notification per message and person, pushed live to the person's sockets; during Do not disturb they are held and delivered when it
- * ends. docs/plugins/notifications.md lists the rules, routes, pushes and the event.
+ * one notification per message and person, pushed live to the person's sockets and, for browsers signed up for it, as a browser push; a channel's
+ * level (all, mentions, nothing) and a person's keywords decide who is told; during Do not disturb they are held and delivered when it ends. docs/plugins/notifications.md lists the rules, routes, pushes and the event.
  */
 export default definePlugin({
   manifest: {
@@ -24,6 +26,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerRoutes(ctx);
+    registerPreferenceRoutes(ctx);
     registerConsumers(ctx);
     // Every minute: release what was held for people whose Do not disturb has ended by the clock (a pause ran out, a schedule closed).
     ctx.jobs.register(
@@ -34,5 +37,7 @@ export default definePlugin({
       },
       { cron: RELEASE_HELD_CRON, maxAttempts: 1 },
     );
+    // Browser push, one job per notification and person; it talks to the browsers' push services, so it holds no transaction while it waits.
+    ctx.jobs.register(PUSH_QUEUE, async (payload, _unusable, job) => runPushJob(ctx, payload, job), { detached: true, maxAttempts: 4, concurrency: 4 });
   },
 });

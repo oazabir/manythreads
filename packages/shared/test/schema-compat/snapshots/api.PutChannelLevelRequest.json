@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "level": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "all",
+            "mentions",
+            "nothing"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "level"
+  ],
+  "additionalProperties": false
+}

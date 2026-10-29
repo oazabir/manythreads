@@ -12,7 +12,8 @@
       "enum": [
         "mention",
         "reply",
-        "dm"
+        "dm",
+        "message"
       ]
     },
     "refType": {
@@ -69,6 +70,18 @@
       "type": "string",
       "maxLength": 280
     },
+    "keyword": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 80
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "readAt": {
       "anyOf": [
         {
@@ -99,6 +112,7 @@
     "actorId",
     "actorName",
     "preview",
+    "keyword",
     "readAt",
     "createdAt"
   ],

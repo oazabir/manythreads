@@ -1,3 +1,4 @@
+import { OpenRoute } from './notifications/OpenLink';
 import { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router';
 import { RequireSession, SessionProvider } from './app/session';
@@ -63,6 +64,7 @@ function AppRoutes() {
         <Route element={<RequireSession />}>
           <Route element={<Shell />}>
             <Route path="/" element={<HomeView />} />
+            <Route path="/open" element={<OpenRoute />} />
             <Route path="/t/:team" element={<TeamHome />} />
             <Route path="/t/:team/threads" element={<RequireTeam><ThreadsInbox /></RequireTeam>} />
             <Route path="/t/:team/files" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><FilesScreen /></Suspense></RequireTeam>} />

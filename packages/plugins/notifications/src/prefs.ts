@@ -17,7 +17,12 @@ export function normalizePrefs(raw: unknown): NotificationPrefs {
   return merged;
 }
 
+/** Which of the three settings rows governs a kind: a message from a channel set to "all messages" is treated like a direct message. */
+export function prefKey(kind: NotificationKind): 'mention' | 'reply' | 'dm' {
+  return kind === 'message' ? 'dm' : kind;
+}
+
 /** Does a person with these settings want `kind` for a message in `channelId`, in the app? */
 export function wantsInApp(prefs: NotificationPrefs, kind: NotificationKind, channelId: string): boolean {
-  return prefs[kind].inApp && !prefs.mutedChannels.some((id) => id === channelId);
+  return prefs[prefKey(kind)].inApp && !prefs.mutedChannels.some((id) => id === channelId);
 }

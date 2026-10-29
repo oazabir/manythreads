@@ -1,7 +1,8 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import type { NotificationKind } from '@manythreads/shared';
+import { NotificationLevel, effectiveLevel, levelAllows, type NotificationKind } from '@manythreads/shared';
 import { announce } from './announce.ts';
 import { quietPeople } from './hold.ts';
+import { workspaceDefaultLevel } from './levels.ts';
 import { normalizePrefs, wantsInApp } from './prefs.ts';
 
 const PREVIEW_MAX = 140;
@@ -73,18 +74,34 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
   };
 }
 
-const RANK = "(CASE %K WHEN 'mention' THEN 3 WHEN 'reply' THEN 2 ELSE 1 END)";
+// How strong a notification is: its kind, and within a kind being named beats a keyword (so a person named in a message that also holds their
+// keyword is told they were named). Equal strength writes nothing, which is what makes a redelivered event a no-op.
+const RANK = "((CASE %K WHEN 'mention' THEN 6 WHEN 'reply' THEN 4 WHEN 'dm' THEN 2 ELSE 0 END) + (CASE WHEN %W IS NULL THEN 1 ELSE 0 END))";
+const rankOf = (kind: string, keyword: string): string => RANK.replace('%K', kind).replace('%W', keyword);
+
+export interface DeliverOptions {
+  /** For a `mention` made by a keyword: the keyword that matched, by person. A person not in the map was named. */
+  keywords?: ReadonlyMap<string, string>;
+}
 
 /**
  * Makes the notifications of one message for `personIds`, as the system actor (the consumer's transaction). Who is left out: the author,
  * anyone who cannot read the channel, anyone who turned that kind off in the app, anyone who muted the channel (a muted membership or
- * a muted channel in their settings). Everyone else gets one row per message: the insert is an upsert on (person, message) that only
+ * a muted channel in their settings), and anyone whose level for this channel does not allow the kind (`levelAllows`: "nothing" allows none, "mentions" allows
+ * mentions, keywords and followed threads, "all" allows everything; a channel with no choice of theirs follows the workspace default, a direct message "all"). Everyone else gets one row per message: the insert is an upsert on (person, message) that only
  * writes when the row is new or the new kind is stronger than the stored one (mention > reply > dm), so a redelivered event or the
  * second event of the same message writes nothing, and writes nothing is announced nowhere. Each row written is pushed to the person's
  * sockets (`notification.created`) and announced as `notifications.notification.created` (`announce`) -- except for a person who has Do not
  * disturb on: their row is written held and announced when it ends.
  */
-export async function deliver(ctx: PluginContext, tx: PluginTx, message: MessageFacts, kind: NotificationKind, personIds: readonly string[]): Promise<void> {
+export async function deliver(
+  ctx: PluginContext,
+  tx: PluginTx,
+  message: MessageFacts,
+  kind: NotificationKind,
+  personIds: readonly string[],
+  options: DeliverOptions = {},
+): Promise<void> {
   const candidates = [...new Set(personIds)].filter((id) => id !== message.authorPersonId);
   if (candidates.length === 0) return;
 
@@ -93,19 +110,23 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
   const readers = candidates.filter((id) => canRead.has(id));
   if (readers.length === 0) return;
 
-  const settings = await tx.query<{ person_id: string; prefs: unknown; muted: boolean }>(
-    `SELECT w.person_id, np.prefs, coalesce(cm.muted, false) AS muted
+  const settings = await tx.query<{ person_id: string; prefs: unknown; muted: boolean; level: string | null }>(
+    `SELECT w.person_id, np.prefs, coalesce(cm.muted, false) AS muted, nl.level
        FROM unnest($1::uuid[]) AS w(person_id)
        LEFT JOIN app.notification_prefs np ON np.person_id = w.person_id
-       LEFT JOIN app.channel_members cm ON cm.channel_id = $2::uuid AND cm.person_id = w.person_id`,
+       LEFT JOIN app.channel_members cm ON cm.channel_id = $2::uuid AND cm.person_id = w.person_id
+       LEFT JOIN app.notification_levels nl ON nl.channel_id = $2::uuid AND nl.person_id = w.person_id`,
     [readers, message.channelId],
   );
+  const workspaceDefault = await workspaceDefaultLevel(tx, message.workspaceId);
   const prefsOf = new Map<string, ReturnType<typeof normalizePrefs>>();
   const wanted: string[] = [];
   for (const s of settings.rows) {
     const prefs = normalizePrefs(s.prefs);
     prefsOf.set(s.person_id, prefs);
-    if (!s.muted && wantsInApp(prefs, kind, message.channelId)) wanted.push(s.person_id);
+    const own = NotificationLevel.safeParse(s.level);
+    const level = effectiveLevel(own.success ? own.data : null, message.channelKind, workspaceDefault);
+    if (!s.muted && levelAllows(level, kind) && wantsInApp(prefs, kind, message.channelId)) wanted.push(s.person_id);
   }
   if (wanted.length === 0) return;
 
@@ -113,11 +134,11 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
   const quiet = await quietPeople(tx, wanted, ctx.runtime.now());
 
   const written = await tx.query<{ id: string; person_id: string; held_at: Date | null }>(
-    `INSERT INTO app.notifications AS n (workspace_id, person_id, kind, ref_type, ref_id, channel_id, thread_root_id, actor_id, actor_name, preview, held_at)
-     SELECT $1::uuid, w.person_id, $2, 'message', $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8, CASE WHEN w.person_id = ANY ($10::uuid[]) THEN now() END
-       FROM unnest($9::uuid[]) AS w(person_id)
-     ON CONFLICT (person_id, ref_type, ref_id) DO UPDATE SET kind = EXCLUDED.kind
-       WHERE ${RANK.replace('%K', 'EXCLUDED.kind')} > ${RANK.replace('%K', 'n.kind')}
+    `INSERT INTO app.notifications AS n (workspace_id, person_id, kind, ref_type, ref_id, channel_id, thread_root_id, actor_id, actor_name, preview, keyword, held_at)
+     SELECT $1::uuid, w.person_id, $2, 'message', $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8, w.keyword, CASE WHEN w.person_id = ANY ($10::uuid[]) THEN now() END
+       FROM unnest($9::uuid[], $11::text[]) AS w(person_id, keyword)
+     ON CONFLICT (person_id, ref_type, ref_id) DO UPDATE SET kind = EXCLUDED.kind, keyword = EXCLUDED.keyword
+       WHERE ${rankOf('EXCLUDED.kind', 'EXCLUDED.keyword')} > ${rankOf('n.kind', 'n.keyword')}
      RETURNING n.id, n.person_id, n.held_at`,
     [
       message.workspaceId,
@@ -130,6 +151,7 @@ export async function deliver(ctx: PluginContext, tx: PluginTx, message: Message
       previewOf(message.bodyPlain),
       wanted,
       [...quiet],
+      wanted.map((id) => options.keywords?.get(id) ?? null),
     ],
   );
   // A row that is held (new, or a stronger kind raising a row that was already held) is announced when it is released, not now.

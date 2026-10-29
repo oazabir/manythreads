@@ -4,6 +4,7 @@
   "enum": [
     "mention",
     "reply",
-    "dm"
+    "dm",
+    "message"
   ]
 }

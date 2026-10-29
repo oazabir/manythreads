@@ -89,6 +89,9 @@ spec:
             # The bearer token for GET /metrics (docs/deploy/monitoring.md). Without it the route answers 404.
             - name: MANYTHREADS_METRICS_TOKEN
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: metrics-token, optional: true } }
+            # The server's own signing key for browser push (generated once into the secret). Without it push is reported as unavailable.
+            - name: MANYTHREADS_VAPID_PRIVATE_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: vapid-private-key, optional: true } }
             - name: MANYTHREADS_KMS_PREVIOUS_KEYS
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-previous-keys, optional: true } }
             {{- if .Values.testAuth.enabled }}

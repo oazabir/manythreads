@@ -7,6 +7,8 @@ import { useQuery } from '../app/useQuery';
 import { PlainFrame } from '../components/frames';
 import { QueryView } from '../components/states';
 import { Alert, Field, Notice, PasswordField, Time } from '../components/ui';
+import { NotificationSettings } from '../notifications/NotificationSettings';
+import { disablePush } from '../notifications/push';
 import { PASSWORD_MIN_LENGTH } from '@manythreads/shared';
 
 export function Account() {
@@ -129,6 +131,8 @@ export function Account() {
         </div>
       </section>
 
+      <NotificationSettings />
+
       <section className="block" aria-labelledby="acc-sessions" data-landmark="sessions">
         <h2 className="bh" id="acc-sessions">Sessions</h2>
         <QueryView q={sessions}>
@@ -145,7 +149,7 @@ export function Account() {
                       type="button"
                       className="btn"
                       aria-label={`Sign out ${s.label}${s.current ? ' (this browser)' : ''}`}
-                      onClick={() => run(async () => { if (s.current) await signOut(); else await revokeSession(s.id); }, () => { if (s.current) leave(); else sessions.reload(); })}
+                      onClick={() => run(async () => { if (s.current) { await disablePush(); await signOut(); } else await revokeSession(s.id); }, () => { if (s.current) leave(); else sessions.reload(); })}
                     >
                       Sign out
                     </button>

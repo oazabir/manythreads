@@ -81,7 +81,7 @@ describe('the notifications tables pass the RLS harness', () => {
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);
-      for (const table of ['notifications', 'notification_prefs']) {
+      for (const table of ['notifications', 'notification_prefs', 'notification_levels', 'notification_workspace_settings', 'notification_keywords', 'push_subscriptions']) {
         expect(await findPerRowPolicyCalls(admin, table), `${table} calls a helper per row`).toEqual([]);
       }
       const plan = await admin.query("SELECT relrowsecurity AS on, relforcerowsecurity AS forced FROM pg_class WHERE oid = 'app.notifications'::regclass");
@@ -227,5 +227,80 @@ describe('held notifications (Do not disturb, migration 0002)', () => {
     expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.notifications WHERE id = $1 AND held_at IS NOT NULL', [note['held-rafi']])).rows.length)).toBe(1);
     await sys((tx) => tx.query('UPDATE app.notifications SET held_at = NULL WHERE id = $1', [note['held-rafi']]));
     expect((await q<{ id: string }>(rafi, 'SELECT id FROM app.notifications')).map((r) => r.id)).toContain(note['held-rafi']);
+  });
+});
+
+describe('levels, keywords and push subscriptions (migration 0003)', () => {
+  const setLevel = (p: Persona, channelId: string, level = 'nothing'): Promise<unknown> =>
+    as(p, (tx) =>
+      tx.query(
+        `INSERT INTO app.notification_levels (person_id, channel_id, workspace_id, level) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (person_id, channel_id) DO UPDATE SET level = EXCLUDED.level`,
+        [p.personId, channelId, p.workspaceId, level],
+      ),
+    );
+  const keyword = (p: Persona, word: string): Promise<unknown> =>
+    as(p, (tx) => tx.query('INSERT INTO app.notification_keywords (person_id, keyword, first_word, workspace_id) VALUES ($1, $2, $2, $3)', [p.personId, word, p.workspaceId]));
+  const KEY = 'B'.repeat(87);
+  const AUTH = 'A'.repeat(22);
+
+  it('a level is the person\'s own, and only for a channel they can read', async () => {
+    await setLevel(rafi, general, 'all');
+    expect(await code(setLevel(rafi, general, 'sometimes'))).toBe('23514');
+    // priya is not a member of the private #leads: she cannot set a level for it, nor see rafi's
+    expect(await code(setLevel(priya, leads))).toBe('42501');
+    expect(await code(as(rafi, (tx) => tx.query('INSERT INTO app.notification_levels (person_id, channel_id, workspace_id, level) VALUES ($1, $2, $3, $4)', [nadia.personId, general, nadia.workspaceId, 'nothing'])))).toBe('42501');
+    await setLevel(rafi, leads, 'nothing');
+    expect((await q<{ channel_id: string }>(rafi, 'SELECT channel_id FROM app.notification_levels')).map((r) => r.channel_id).sort()).toEqual([general, leads].sort());
+    expect(await q(nadia, 'SELECT 1 FROM app.notification_levels')).toEqual([]);
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.notification_levels')).rows.length)).toBe(2);
+  });
+
+  it('the workspace default is read by every member and written by owners and admins only', async () => {
+    const write = (p: Persona, level: string): Promise<unknown> =>
+      as(p, (tx) =>
+        tx.query(
+          `INSERT INTO app.notification_workspace_settings (workspace_id, default_level, updated_by) VALUES ($1, $2, $3)
+           ON CONFLICT (workspace_id) DO UPDATE SET default_level = EXCLUDED.default_level`,
+          [p.workspaceId, level, p.actorId],
+        ),
+      );
+    expect(await code(write(rafi, 'all'))).toBe('42501');
+    await write(omar, 'all');
+    expect(await code(write(omar, 'sometimes'))).toBe('23514');
+    expect((await q<{ default_level: string }>(rafi, 'SELECT default_level FROM app.notification_workspace_settings')).map((r) => r.default_level)).toEqual(['all']);
+    // a member's update changes nothing
+    expect(await as(rafi, async (tx) => (await tx.query(`UPDATE app.notification_workspace_settings SET default_level = 'nothing'`)).rowCount)).toBe(0);
+  });
+
+  it('keywords are private to the person; the system reads them to match', async () => {
+    await keyword(rafi, 'outage');
+    await keyword(nadia, 'deploy');
+    expect((await q<{ keyword: string }>(rafi, 'SELECT keyword FROM app.notification_keywords')).map((r) => r.keyword)).toEqual(['outage']);
+    expect(await q(omar, 'SELECT 1 FROM app.notification_keywords')).toEqual([]);
+    expect(await code(keyword(rafi, 'outage'))).toBe('23505');
+    expect(await code(as(rafi, (tx) => tx.query('INSERT INTO app.notification_keywords (person_id, keyword, first_word, workspace_id) VALUES ($1, $2, $2, $3)', [nadia.personId, 'x', nadia.workspaceId])))).toBe('42501');
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.notification_keywords')).rows.length)).toBe(2);
+    expect(await as(rafi, async (tx) => (await tx.query('DELETE FROM app.notification_keywords WHERE person_id = $1', [nadia.personId])).rowCount)).toBe(0);
+    await as(rafi, (tx) => tx.query('DELETE FROM app.notification_keywords WHERE person_id = $1', [rafi.personId]));
+    expect(await q(rafi, 'SELECT 1 FROM app.notification_keywords')).toEqual([]);
+  });
+
+  it('a person signs a browser up only through the function, sees only their own, and the browser moves to the next person who signs it up', async () => {
+    const subscribe = (p: Persona, endpoint: string): Promise<number> =>
+      as(p, async (tx) => (await tx.query<{ n: number }>('SELECT app.notifications_push_subscribe($1, $2, $3, $4) AS n', [endpoint, KEY, AUTH, 'Chrome'])).rows[0]!.n);
+    const url = 'https://fcm.googleapis.com/fcm/send/shared-browser';
+    expect(await code(as(rafi, (tx) => tx.query('INSERT INTO app.push_subscriptions (workspace_id, person_id, endpoint, p256dh, auth) VALUES ($1, $2, $3, $4, $5)', [rafi.workspaceId, rafi.personId, url, KEY, AUTH])))).toBe('42501');
+    expect(await subscribe(rafi, url)).toBe(1);
+    expect(await subscribe(rafi, `${url}-2`)).toBe(2);
+    expect(await q(nadia, 'SELECT 1 FROM app.push_subscriptions')).toEqual([]);
+    expect(await subscribe(nadia, url)).toBe(1);
+    expect((await q<{ endpoint: string }>(rafi, 'SELECT endpoint FROM app.push_subscriptions')).map((r) => r.endpoint)).toEqual([`${url}-2`]);
+    expect((await q<{ endpoint: string }>(nadia, 'SELECT endpoint FROM app.push_subscriptions')).map((r) => r.endpoint)).toEqual([url]);
+    // the app role cannot update a subscription (no one swaps keys by hand), and cannot delete another person's
+    expect(await code(as(rafi, (tx) => tx.query(`UPDATE app.push_subscriptions SET auth = 'x'`)))).toBe('42501');
+    expect(await as(rafi, async (tx) => (await tx.query('DELETE FROM app.push_subscriptions WHERE person_id = $1', [nadia.personId])).rowCount)).toBe(0);
+    expect(await as(rafi, async (tx) => (await tx.query('DELETE FROM app.push_subscriptions WHERE person_id = $1', [rafi.personId])).rowCount)).toBe(1);
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.push_subscriptions')).rows.length)).toBe(1);
   });
 });

@@ -5,8 +5,11 @@ import { ChannelKind } from './channel.ts';
 
 // Phase 3 notifications (PLAN.md A.3 `notifications`, `notification_prefs`; plugin `notifications`, P3-09).
 
-/** Why a person is told: named in a message, a reply in a thread they follow, or a direct message. Matches the SQL CHECK exactly. */
-export const NotificationKind = z.enum(['mention', 'reply', 'dm']);
+/**
+ * Why a person is told: named in a message (or a keyword of theirs is in it), a reply in a thread they follow, a direct message, or any message
+ * in a channel they asked to hear everything from (`message`, P14-09). Matches the SQL CHECK exactly.
+ */
+export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message']);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 /** What `refId` points at. Messages today; the column is generic so later kinds (approvals, tasks) need no migration. */
@@ -31,6 +34,8 @@ export const Notification = z.object({
   actorId: ActorId,
   actorName: z.string(),
   preview: z.string().max(280),
+  /** The person's own keyword that made this a `mention` (P14-09); null when they were named, or for any other kind. Optional on the wire (null when absent), so a push from an older server still reads. */
+  keyword: z.string().max(80).nullable().default(null),
   readAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
 });

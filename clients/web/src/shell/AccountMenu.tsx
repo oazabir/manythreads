@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { signOut } from '../api/endpoints';
 import { isAdmin, useSession, useSessionState } from '../app/session';
+import { disablePush } from '../notifications/push';
 import { useShell } from './context';
 import { GearIcon } from './icons';
 import { useDismiss } from './useDismiss';
@@ -19,6 +20,7 @@ export function AccountMenu() {
   const leave = async (): Promise<void> => {
     setOpen(false);
     try {
+      await disablePush();
       await signOut();
     } finally {
       setSession(null);

@@ -13,7 +13,28 @@ import {
   ListLinksRequest,
   ListLinksResponse,
   listLinksRoute,
+  GetNotificationKeywordsResponse,
+  GetNotificationLevelsResponse,
   GetNotificationPrefsResponse,
+  GetPushStateResponse,
+  PutChannelLevelRequest,
+  PutChannelLevelResponse,
+  PutNotificationKeywordsRequest,
+  PutNotificationKeywordsResponse,
+  PutWorkspaceLevelRequest,
+  PutWorkspaceLevelResponse,
+  SubscribePushRequest,
+  SubscribePushResponse,
+  UnsubscribePushRequest,
+  UnsubscribePushResponse,
+  getNotificationKeywordsRoute,
+  getNotificationLevelsRoute,
+  getPushStateRoute,
+  putChannelLevelRoute,
+  putNotificationKeywordsRoute,
+  putWorkspaceLevelRoute,
+  subscribePushRoute,
+  unsubscribePushRoute,
   GetNotificationSummaryResponse,
   ListDmsQuery,
   ListDmsResponse,
@@ -538,3 +559,20 @@ export const fetchPresenceCards = () => call(listPresenceCardsRoute, { response:
 export const fetchMyPresence = () => call(getMyPresenceRoute, { response: MyPresence });
 export const saveMyPresence = (body: UpdateMyPresenceRequest) => call(updateMyPresenceRoute, { request: UpdateMyPresenceRequest, response: MyPresence }, body);
 export const saveDnd = (body: UpdateDndRequest) => call(updateDndRoute, { request: UpdateDndRequest, response: MyPresence }, body);
+
+// ---- notification levels, keywords and browser push (PLAN P14-09) ---------------------------------------------
+/** The person's own level per channel and the workspace default. */
+export const fetchNotificationLevels = () => call(getNotificationLevelsRoute, { response: GetNotificationLevelsResponse });
+/** Sets this channel's level for the caller; `null` takes the choice away so the channel follows the default again. */
+export const saveChannelLevel = (channelId: string, level: PutChannelLevelRequest['level']) =>
+  call(putChannelLevelRoute, { request: PutChannelLevelRequest, response: PutChannelLevelResponse }, { level }, { channelId });
+/** A workspace admin sets the level team channels start with. */
+export const saveWorkspaceLevel = (body: PutWorkspaceLevelRequest) =>
+  call(putWorkspaceLevelRoute, { request: PutWorkspaceLevelRequest, response: PutWorkspaceLevelResponse }, body);
+export const fetchNotificationKeywords = () => call(getNotificationKeywordsRoute, { response: GetNotificationKeywordsResponse });
+export const saveNotificationKeywords = (keywords: string[]) =>
+  call(putNotificationKeywordsRoute, { request: PutNotificationKeywordsRequest, response: PutNotificationKeywordsResponse }, { keywords });
+export const fetchPushState = () => call(getPushStateRoute, { response: GetPushStateResponse });
+export const subscribePush = (body: SubscribePushRequest) => call(subscribePushRoute, { request: SubscribePushRequest, response: SubscribePushResponse }, body);
+export const unsubscribePush = (endpoint: string) =>
+  call(unsubscribePushRoute, { request: UnsubscribePushRequest, response: UnsubscribePushResponse }, { endpoint });

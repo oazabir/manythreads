@@ -54,7 +54,7 @@ export default tseslint.config(
   {
     // The diagram frame's script is plain browser JavaScript served as is (no build step), written in the older `var` style.
     files: ['clients/web/public/*.js'],
-    languageOptions: { globals: { ...globals.browser, mermaid: 'readonly' } },
+    languageOptions: { globals: { ...globals.browser, ...globals.serviceworker, mermaid: 'readonly' } },
     rules: { 'no-useless-escape': 'off', '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }] },
   },
   {
