@@ -3,6 +3,9 @@ import type { FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { sendTyping, uploadChannelFile } from '../api/endpoints';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
+import { useDismiss } from '../shell/useDismiss';
+import { CODE_LANGUAGES, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
+import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
 import { MAX_UPLOAD_BYTES, TOO_LARGE, filesOf, useFilesSupport } from './files';
 import { handleFor, type People } from './hooks';
@@ -69,9 +72,11 @@ export type ComposerProps = {
   onSend: (body: string, attachments: FileSummary[]) => void;
   /** Focus the box when it appears (the thread panel). */
   autoFocus?: boolean;
+  /** The Up arrow in an empty box: open the reader's last message of their own for editing (absent where there is nothing to edit). */
+  onEditLast?: () => void;
 };
 
-export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false }: ComposerProps) {
+export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false, onEditLast }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const [text, setText] = useState(() => readDraft(draftKey));
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -79,6 +84,17 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const [pick, setPick] = useState(0);
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [drag, setDrag] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  // the toolbar is one stop of the Tab key; the arrows move inside it (roving focus)
+  const [toolAt, setToolAt] = useState(0);
+  const tools = useRef<HTMLDivElement>(null);
+  const emojiButton = useRef<HTMLButtonElement>(null);
+  const emojiPop = useRef<HTMLDivElement>(null);
+  // a press on the Emoji button or inside the picker is "inside" for dismissing; anywhere else closes it
+  const emojiInside = useMemo(
+    () => ({ get current() { return { contains: (n: Node | null) => (emojiButton.current?.contains(n) ?? false) || (emojiPop.current?.contains(n) ?? false) } as unknown as HTMLElement; } }),
+    [],
+  );
   const area = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const nextId = useRef(1);
@@ -163,28 +179,19 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     area.current?.focus();
   }, []);
 
-  const wrap = (before: string, after: string, fallback: string): void => {
+  /** Runs one of the pure text edits on the box's current text and selection, and puts the caret where it says. */
+  const apply = (fn: (t: string, a: number, b: number) => Edit): void => {
     const el = area.current;
     if (!el) return;
-    const [a, b] = [el.selectionStart, el.selectionEnd];
-    const sel = text.slice(a, b) || fallback;
-    edit(`${text.slice(0, a)}${before}${sel}${after}${text.slice(b)}`, a + before.length, a + before.length + sel.length);
+    const r = fn(text, el.selectionStart, el.selectionEnd);
+    edit(r.text, r.from, r.to);
   };
-  const code = (): void => {
-    const el = area.current;
-    if (!el) return;
-    const sel = text.slice(el.selectionStart, el.selectionEnd);
-    if (sel.includes('\n')) wrap('```\n', '\n```', 'code');
-    else wrap('`', '`', 'code');
-  };
-  const list = (): void => {
-    const el = area.current;
-    if (!el) return;
-    const a = text.lastIndexOf('\n', el.selectionStart - 1) + 1;
-    const b = el.selectionEnd;
-    const block = text.slice(a, b) || '';
-    const next = (block === '' ? '- ' : block.split('\n').map((l) => (l.startsWith('- ') ? l : `- ${l}`)).join('\n'));
-    edit(`${text.slice(0, a)}${next}${text.slice(b)}`, a + next.length);
+  const wrap = (before: string, after: string, fallback: string): void => apply((t, a, b) => wrapSelection(t, a, b, before, after, fallback));
+  const lines = (kind: LineKind): void => apply((t, a, b) => prefixLines(t, a, b, kind));
+  const block = (lang: string): void => apply((t, a, b) => codeBlock(t, a, b, lang));
+  const putEmoji = (char: string): void => {
+    setEmojiOpen(false);
+    apply((t, a, b) => insertText(t, a, b, char));
   };
   const mark = (char: '@' | '#'): void => {
     const el = area.current;
@@ -273,12 +280,37 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
       send();
-    } else if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'i')) {
+    } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key.toLowerCase() === 'b' || e.key.toLowerCase() === 'i')) {
       e.preventDefault();
-      if (e.key === 'b') wrap('**', '**', 'bold');
+      if (e.key.toLowerCase() === 'b') wrap('**', '**', 'bold');
       else wrap('*', '*', 'italic');
+    } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'x') {
+      e.preventDefault();
+      wrap('~~', '~~', 'strike');
+    } else if (e.key === 'ArrowUp' && onEditLast && text === '' && uploads.length === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      onEditLast();
     }
   };
+
+  // ---- the toolbar: one tab stop, the arrows move along it ---------------------------------------------------
+  const toolControls = (): HTMLElement[] => [...(tools.current?.querySelectorAll<HTMLElement>('button.ctool, select.ctool') ?? [])];
+  const onToolsKey = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+    if (!keys.includes(e.key) || e.target instanceof HTMLSelectElement) return;
+    const list = toolControls();
+    const at = list.indexOf(document.activeElement as HTMLElement);
+    if (at < 0 || list.length === 0) return;
+    e.preventDefault();
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? list.length - 1 : (at + (e.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length;
+    setToolAt(to);
+    list[to]?.focus();
+  };
+  const tab = (i: number): { tabIndex: number; onFocus: () => void } => ({ tabIndex: i === toolAt ? 0 : -1, onFocus: () => setToolAt(i) });
+  useDismiss(emojiOpen, () => {
+    setEmojiOpen(false);
+    area.current?.focus();
+  }, emojiInside);
 
   const onChange = (value: string, at: number): void => {
     setText(value);
@@ -325,14 +357,52 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       onDrop={onDrop}
     >
       <div className="cbox">
-        <div className="ctools" role="toolbar" aria-label="Formatting">
-          <button type="button" className="ctool" aria-label="Bold" title="Bold (Ctrl+B)" onClick={() => wrap('**', '**', 'bold')}><b>B</b></button>
-          <button type="button" className="ctool" aria-label="Italic" title="Italic (Ctrl+I)" onClick={() => wrap('*', '*', 'italic')}><i>I</i></button>
-          <button type="button" className="ctool mono" aria-label="Code" title="Code" onClick={code}>{'</>'}</button>
-          <button type="button" className="ctool" aria-label="Bulleted list" title="List" onClick={list}>≡</button>
-          <button type="button" className="ctool" aria-label="Mention a person" title="Mention" onClick={() => mark('@')}>@</button>
-          <button type="button" className="ctool" aria-label="Link a channel" title="Channel" onClick={() => mark('#')}>#</button>
+        <div className="ctools" role="toolbar" aria-label="Formatting" ref={tools} onKeyDown={onToolsKey}>
+          <button type="button" className="ctool" aria-label="Bold" title="Bold (Ctrl+B)" onClick={() => wrap('**', '**', 'bold')} {...tab(0)}><b>B</b></button>
+          <button type="button" className="ctool" aria-label="Italic" title="Italic (Ctrl+I)" onClick={() => wrap('*', '*', 'italic')} {...tab(1)}><i>I</i></button>
+          <button type="button" className="ctool" aria-label="Strikethrough" title="Strikethrough (Ctrl+Shift+X)" onClick={() => wrap('~~', '~~', 'strike')} {...tab(2)}><s>S</s></button>
+          <button type="button" className="ctool mono" aria-label="Code" title="Code" onClick={() => apply((t, a, b) => codeSpan(t, a, b))} {...tab(3)}>{'</>'}</button>
+          <select
+            className="ctool ctool-select"
+            aria-label="Insert a code block"
+            title="Code block"
+            value=""
+            onChange={(e) => {
+              block(e.target.value === '-' ? '' : e.target.value);
+              e.target.value = '';
+            }}
+            {...tab(4)}
+          >
+            <option value="" disabled>Code block</option>
+            {CODE_LANGUAGES.map((l) => (
+              <option key={l.label} value={l.lang === '' ? '-' : l.lang}>{l.label}</option>
+            ))}
+          </select>
+          <button type="button" className="ctool" aria-label="Quote" title="Quote" onClick={() => lines('quote')} {...tab(5)}>&gt;</button>
+          <button type="button" className="ctool" aria-label="Bulleted list" title="Bulleted list" onClick={() => lines('bullet')} {...tab(6)}>≡</button>
+          <button type="button" className="ctool" aria-label="Numbered list" title="Numbered list" onClick={() => lines('number')} {...tab(7)}>1.</button>
+          <button type="button" className="ctool" aria-label="Link" title="Link" onClick={() => apply(linkSelection)} {...tab(8)}>↗</button>
+          <button type="button" className="ctool" aria-label="Mention a person" title="Mention" onClick={() => mark('@')} {...tab(9)}>@</button>
+          <button type="button" className="ctool" aria-label="Link a channel" title="Channel" onClick={() => mark('#')} {...tab(10)}>#</button>
+          <button
+            ref={emojiButton}
+            type="button"
+            className="ctool"
+            aria-label="Emoji"
+            title="Emoji"
+            aria-haspopup="dialog"
+            aria-expanded={emojiOpen}
+            onClick={() => setEmojiOpen((o) => !o)}
+            {...tab(11)}
+          >
+            <span aria-hidden="true">☺</span>
+          </button>
         </div>
+        {emojiOpen ? (
+          <div ref={emojiPop} className="emp-pop">
+            <EmojiPicker onPick={putEmoji} onClose={() => { setEmojiOpen(false); area.current?.focus(); }} />
+          </div>
+        ) : null}
         {uploads.length > 0 ? (
           <ul className="cfiles" aria-label="Attachments">
             {uploads.map((u) => (

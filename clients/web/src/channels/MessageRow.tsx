@@ -3,6 +3,7 @@ import type { ChannelMessage, FileSummary } from '@manythreads/shared';
 import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
+import { EmojiPicker } from './EmojiPicker';
 import { useDismiss } from '../shell/useDismiss';
 import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
@@ -46,6 +47,8 @@ function RowMenu({ className, label, children }: { className: string; label: str
 /** The one row that shows "Marked unread from here": a second mark, anywhere in this tab, takes it from the first. */
 const MARKED_UNREAD = 'Marked unread from here';
 const MARK_EVENT = 'mt:marked-unread';
+/** Sent by the composer's Up arrow (PLAN P14-02): the row of that message opens its editor. */
+export const EDIT_EVENT = 'mt:edit-message';
 
 export type RowActions = {
   openThread?: (rootId: string) => void;
@@ -80,7 +83,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [tapped, setTapped] = useState(false);
   // the toolbar exists only while the row is under the pointer or has focus: 5,000 rows do not each carry three buttons
   const [hot, setHot] = useState(false);
-  const [menu, setMenu] = useState<null | 'react' | 'more'>(null);
+  const [menu, setMenu] = useState<null | 'react' | 'more' | 'emoji'>(null);
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +111,14 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // a message that carries an Answer is deleted and shared again, never edited (the server answers 409): its text is the payload's body
   const canEdit = own && !deleted && m.meta.answer === undefined;
   const canDelete = !deleted && (own || people.canModerate);
+  useEffect(() => {
+    if (!canEdit) return;
+    const onEdit = (e: Event): void => {
+      if ((e as CustomEvent<string>).detail === m.id) setEditing(m.body);
+    };
+    window.addEventListener(EDIT_EVENT, onEdit);
+    return () => window.removeEventListener(EDIT_EVENT, onEdit);
+  }, [canEdit, m.id, m.body]);
   // an image is drawn as a picture, not as a file card; a message may carry both kinds at once
   const attached = splitAttachments(m.attachments);
   const markUnread = async (): Promise<void> => {
@@ -169,6 +180,12 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               {QUICK_EMOJI.map((e) => (
                 <button key={e} type="button" role="menuitem" className="emoji" aria-label={`React with ${e}`} onClick={() => { setMenu(null); actions.react(m.id, e); }}>{e}</button>
               ))}
+              <button type="button" role="menuitem" className="emoji emoji-more" aria-label="More emoji" title="More emoji" onClick={() => setMenu('emoji')}>…</button>
+            </RowMenu>
+          ) : null}
+          {menu === 'emoji' ? (
+            <RowMenu className="emoji-menu emoji-menu-full" label="All emoji">
+              <EmojiPicker label="React with an emoji" onPick={(c) => { setMenu(null); actions.react(m.id, c); }} onClose={() => setMenu(null)} />
             </RowMenu>
           ) : null}
           {menu === 'more' ? (

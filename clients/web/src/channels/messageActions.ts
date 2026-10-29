@@ -62,3 +62,16 @@ export function filterTargets(targets: readonly ForwardTarget[], query: string):
   if (q === '') return [...targets];
   return targets.filter((t) => t.label.toLowerCase().replace(/^#/, '').includes(q) || t.hint.toLowerCase().includes(q));
 }
+
+/** The newest message of the reader's own that the Up arrow in an empty composer may open for editing: not deleted, not a bot's Answer. */
+export function lastEditableOwn(
+  items: readonly { id: string; authorId: string; deletedAt: string | null; meta: { answer?: unknown } }[],
+  selfActor: string | null,
+): string | null {
+  if (selfActor === null) return null;
+  for (let i = items.length - 1; i >= 0; i--) {
+    const m = items[i];
+    if (m && m.authorId === selfActor && m.deletedAt === null && m.meta.answer === undefined) return m.id;
+  }
+  return null;
+}

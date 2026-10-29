@@ -4,6 +4,7 @@ import { fetchSession } from '../api/endpoints';
 import { onSessionExpired } from '../api/client';
 import type { AuthenticatedSession } from '@manythreads/shared';
 import { FullPageMessage } from '../components/states';
+import { QuickSwitcher } from './QuickSwitcher';
 import { dropPersonData } from './caches';
 import { signInUrl } from './paths';
 
@@ -87,5 +88,11 @@ export function RequireSession() {
       </FullPageMessage>
     );
   }
-  return <Outlet />;
+  // The quick switcher and its `?` sheet: keyboard shortcuts of the signed-in app (PLAN P14-10), above every screen.
+  return (
+    <>
+      <QuickSwitcher />
+      <Outlet />
+    </>
+  );
 }

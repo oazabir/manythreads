@@ -115,6 +115,18 @@ Because the card depends on the reader, a forwarding message is pushed live **wi
 
 `app.channel_bookmarks` (migration `0010`) holds up to 20 entries per channel under the channel header: a `link` (an http or https address with no user name or password), a `file` (the id of a file uploaded to this channel) or a `page` (a Markdown path under `pages/`; team channels only, a direct message has no team). A bookmark stores a reference and a title (80 characters; left out, a link is named by its host, a file by its name, a page by its file name), never content: opening a file or a page is checked again when it is opened. Whoever can read the channel lists them (`GET`); whoever can post adds (`POST`, 201; 400 for an address or path that is not allowed, 409 for a duplicate, the 21st, or an archived channel) and removes (`DELETE`, answers `removed`). The table's policies say the same (read set for `SELECT`, post set for `INSERT` and `DELETE`). The bar draws links and files in a new tab and a page in the team's Files screen. It is read when the channel opens and after your own change; another person's change shows the next time the channel opens (nothing is pushed). The pinned items of a channel (P9-09) will sit beside it in the same row.
 
+## Composer and keyboard (P14-02, P14-10; web client only, no route or table)
+
+**Formatting toolbar.** When the box is focused the composer shows a toolbar (`role="toolbar"`, one tab stop, arrow keys, Home and End move inside it) for the Markdown the renderer already shows: bold, italic, strikethrough, code, a code block (a list picks the language), quote, bulleted and numbered lists, link, mention, channel and emoji. A button wraps the selected text, and pressing it again on text already wrapped takes the marks off; with nothing selected it puts the marks around the caret. Lists and quotes act on every selected line. Ctrl/Cmd+B and Ctrl/Cmd+I work as usual, Ctrl/Cmd+Shift+X is strikethrough. The edits are pure functions in `clients/web/src/channels/composerFormat.ts`. On a phone the toolbar scrolls sideways in one row.
+
+**Emoji picker.** Opens from the toolbar and from "More emoji" in a message's reaction menu. It has a search box, the groups, a "Recently used" row (the last 16, kept in this browser) and a skin tone choice that applies to the hands and people; arrow keys walk the grid and Esc closes it. The set is built in (`clients/web/src/channels/emoji.ts`).
+
+**Up arrow.** In an empty box (also in a thread), the up arrow opens your latest editable message for editing.
+
+**Keyboard.** Ctrl/Cmd+K opens the quick switcher: channels, direct messages, people, bots, files, pages, boards and board cards the person may read (the lists are the ones the screens already load; files use the search route, so the reader's rights apply). Alt+Down and Alt+Up go to the next or previous conversation with unread messages. Esc, with no text box focused and nothing else open, marks the open conversation read; Shift+Esc marks everything read (the unread summary plus the unread thread inbox, using the existing read-state routes). An open channel with unread messages offers "Jump to first unread". `?` opens the list of shortcuts. The code is `clients/web/src/app/QuickSwitcher.tsx`, `quick-switcher.ts` and `readAll.ts`.
+
+**Not built yet.** Custom emoji an admin uploads, `@here` and `@channel` with a confirmation above 20 people, and drafts saved on the server (drafts still stay in this browser) each need a table or server rule of their own.
+
 ## Author names (`ChannelMessage.author`)
 
 `people` and `actors` show a caller only their own row and a guest has no roster, so a client could not name the author of a message (it showed "Someone"). Every `ChannelMessage` the

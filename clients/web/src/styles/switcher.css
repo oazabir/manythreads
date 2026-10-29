@@ -1,0 +1,109 @@
+/* The quick switcher, the shortcut sheet and the "marked read" note (`qs-`) -- PLAN P14-10. Uses the shared .dlg and .dlg-input. */
+.qs-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  max-height: min(52vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.qs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--txt);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.qs-row[aria-selected='true'] {
+  background: var(--human-wash);
+}
+
+.qs-mark {
+  display: inline-flex;
+  flex: none;
+  min-width: 14px;
+  justify-content: center;
+  color: var(--faint);
+}
+
+.qs-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qs-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  margin-left: auto;
+  padding-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.qs-sheet {
+  display: grid;
+  gap: 8px;
+  color: var(--txt);
+  font-size: 13.5px;
+}
+
+.qs-sheet dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  align-items: center;
+  margin: 0;
+}
+
+.qs-sheet dt,
+.qs-sheet dd {
+  margin: 0;
+}
+
+.qs-sheet h3 {
+  margin: 6px 0 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.qs-kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--shell);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.qs-note {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  z-index: 70;
+  max-width: calc(100vw - 32px);
+  padding: 7px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  color: var(--ink);
+  font-size: 12.5px;
+  transform: translateX(-50%);
+}

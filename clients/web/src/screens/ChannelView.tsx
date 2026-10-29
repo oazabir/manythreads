@@ -7,7 +7,8 @@ import { useQuery } from '../app/useQuery';
 import { BookmarksBar } from '../channels/BookmarksBar';
 import { Composer } from '../channels/Composer';
 import { estimateItem, buildListItems, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
-import { PendingRow, MessageRow, type RowActions } from '../channels/MessageRow';
+import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
+import { lastEditableOwn } from '../channels/messageActions';
 import { usePeople, useTimeline, useTyping } from '../channels/hooks';
 import { channelKey, channelStore } from '../channels/store';
 import { firstUnreadIndex } from '../channels/timeline';
@@ -18,7 +19,7 @@ import { useShell } from '../shell/context';
 import { ChannelBell } from '../notifications/ChannelBell';
 import { WebhooksButton } from '../webhooks/WebhooksDialog';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
-import { ArrowDownIcon } from '../shell/icons';
+import { ArrowDownIcon, ArrowUpIcon } from '../shell/icons';
 import { useHeaderActionsSlot, useHeaderTopic } from '../shell/topic';
 import { fetchChannelBoards } from './boards/api';
 import { boardPath, botBoardOf } from './boards/board';
@@ -89,6 +90,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const [hadUnread, setHadUnread] = useState<boolean | null>(null);
   const [seenUpTo, setSeenUpTo] = useState<string | null>(null);
   const scrolledToUnread = useRef(false);
+  // "Jump to first unread" was used (or the reader came to the line on their own): the button goes until another channel opens.
+  const [unreadSeen, setUnreadSeen] = useState(false);
   const targetMessage = params.get('message');
 
   useEffect(() => {
@@ -288,6 +291,20 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             apiRef={api}
           />
         )}
+        {unreadShown && hadUnread && !unreadSeen && tl.status === 'ready' ? (
+          <button
+            type="button"
+            className="jump jump-top"
+            data-testid="jump-first-unread"
+            onClick={() => {
+              api.current?.scrollToKey(UNREAD_KEY);
+              setUnreadSeen(true);
+            }}
+          >
+            <ArrowUpIcon />
+            <span>Jump to first unread</span>
+          </button>
+        ) : null}
         {!atBottom && tl.status === 'ready' && tl.items.length > 0 ? (
           <button type="button" className="jump" onClick={() => api.current?.scrollToBottom()}>
             <ArrowDownIcon />
@@ -305,6 +322,16 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           people={people}
           channelNames={channelNames}
           onSend={send}
+          onEditLast={() => {
+            const id = lastEditableOwn(tl.items, self);
+            if (!id) return;
+            // the list draws only the rows near the window: a message far above is brought into view first, so its row exists to answer
+            const farAway = document.querySelector(`[data-key="${messageKey(id)}"]`) === null;
+            if (farAway) api.current?.scrollToKey(messageKey(id));
+            const send = (): void => void window.dispatchEvent(new CustomEvent(EDIT_EVENT, { detail: id }));
+            if (farAway) requestAnimationFrame(() => requestAnimationFrame(send));
+            else send();
+          }}
         />
       ) : info.status === 'ok' ? (
         <p className="read-only" data-testid="read-only">

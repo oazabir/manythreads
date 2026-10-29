@@ -212,6 +212,9 @@ import {
   getSessionRoute,
   getTeamRoute,
   getTeamRosterRoute,
+  getFilesTreeRoute,
+  GetFilesTreeQuery,
+  GetFilesTreeResponse,
   getOpsHealthRoute,
   getWorkspaceHttpsRoute,
   getWorkspaceRoute,
@@ -389,6 +392,9 @@ export const renameTeam = (slug: string, name: string) =>
 export const archiveTeam = (slug: string) => call(archiveTeamRoute, { response: ArchiveTeamResponse }, undefined, { slug });
 export const unarchiveTeam = (slug: string) => call(unarchiveTeamRoute, { response: UnarchiveTeamResponse }, undefined, { slug });
 
+/** The files directly under a team's `pages/` folder (the quick switcher's page list); a team without pages answers an empty list. */
+export const fetchPageEntries = (slug: string) =>
+  call(getFilesTreeRoute, { request: GetFilesTreeQuery, response: GetFilesTreeResponse }, GetFilesTreeQuery.parse({ path: 'pages' }), { slug });
 export const fetchRoster = (slug: string) => call(getTeamRosterRoute, { response: GetTeamRosterResponse }, undefined, { slug });
 export const addTeamMember = (slug: string, body: AddTeamMemberRequest) =>
   call(addTeamMemberRoute, { request: AddTeamMemberRequest, response: AddTeamMemberResponse }, body, { slug });

@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { ThreadInboxItem } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchThreadInbox } from '../api/endpoints';
+import { typingIn } from '../app/quick-switcher';
 import { useQuery } from '../app/useQuery';
 import { useSession } from '../app/session';
 import { ThreadBody } from '../channels/ThreadPanel';
@@ -28,9 +29,6 @@ const EMPTY: Record<Tab, { title: string; body: string }> = {
 };
 
 const tabOf = (raw: string | null): Tab => (raw === 'unread' || raw === 'mine' ? raw : 'followed');
-
-/** Whether the focus is somewhere the letter keys mean typing. */
-const typingIn = (el: EventTarget | null): boolean => el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
 /** The Threads inbox (SPEC 6.1): Followed · Unread · Mine on the left, the selected thread on the right. j and k move, e marks it read. */
 export function ThreadsInbox() {

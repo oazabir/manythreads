@@ -1,0 +1,130 @@
+/* The emoji picker of the composer (`emp-`) -- PLAN P14-02. It opens above the composer box; the box is its positioning parent. */
+.emp-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 12;
+  width: min(344px, 100%);
+}
+
+.emp {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(360px, 52vh);
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.emp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.emp-search {
+  flex: 1 1 140px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.emp-tones {
+  display: flex;
+  gap: 1px;
+}
+
+.emp-tone {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.emp-tone.on {
+  border-color: var(--human);
+  background: var(--human-wash);
+}
+
+.emp-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.emp-body h3 {
+  margin: 6px 2px 2px;
+  color: var(--faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.emp-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 1px;
+}
+
+.emp-cell {
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emp-cell:hover,
+.emp-cell:focus-visible {
+  background: var(--nav-on);
+  outline: 0;
+}
+
+.emp-cell:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--human);
+}
+
+.emp-empty {
+  margin: 12px 4px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.emp-tabs {
+  display: flex;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+
+.emp-tab {
+  flex: 1;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.emp-tab:hover {
+  background: var(--nav-on);
+}

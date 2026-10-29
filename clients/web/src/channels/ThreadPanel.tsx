@@ -13,7 +13,8 @@ import { FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
-import { MessageRow, PendingRow, type RowActions } from './MessageRow';
+import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
+import { lastEditableOwn } from './messageActions';
 import { channelStore, threadKey } from './store';
 
 /** The right-panel entry `thread:<root message id>`. */
@@ -247,6 +248,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             channelNames={names}
             onSend={send}
             autoFocus={variant === 'panel'}
+            onEditLast={() => {
+              const id = lastEditableOwn(tl.items, self);
+              if (id) window.dispatchEvent(new CustomEvent(EDIT_EVENT, { detail: id }));
+            }}
           />
         </div>
       ) : null}
