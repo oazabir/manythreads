@@ -114,7 +114,8 @@ You work in the team's Hermes pod (Hermes is the agent program the bots run on).
 working directory and only you can write it. The run prompt names the project, its repository and your clone: the repository of record is
 `/workspace/repos/<name>.git` and your own clone is `~/<name>`. Node 22, pnpm, python 3, git and Playwright with Chromium are installed.
 
-- Every card is worked on its own branch, named `card-` plus the first eight characters of the card id.
+- Every card is worked on its own branch, named `card-` plus the first eight characters of the card id. If a card or a hand-over note names another
+  branch (such as `docs/some-topic`), use the `card-` name anyway: publishing to GitHub only accepts that one.
 - Start from the main line: `cd ~/<name> && git fetch origin && git switch -c card-1a2b3c4d origin/main`.
 - Share work by pushing the branch: `git push origin card-1a2b3c4d`. Pushing to `main`, deleting a branch or force-pushing is refused:
   merging into `main` is a person's decision.

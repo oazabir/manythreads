@@ -39,6 +39,13 @@ describe('shipped templates', () => {
     expect(ignored.filter((l) => l === 'templates' || l === 'templates/' || l === '/templates')).toEqual([]);
   });
 
+  it('the card branch is `card-<8>` for every bot: the Engineer never names one, the Coder ignores another, the Committer can name it', async () => {
+    const bot = async (slug: string): Promise<string> => (await readFile(path.join(templatesDir, 'engineering/bots', slug, 'BOT.md'), 'utf8')).replace(/\s+/g, ' ');
+    expect(await bot('engineer')).toContain('Never name a branch in a card');
+    expect(await bot('coder')).toContain('use the `card-` name anyway');
+    expect(await bot('committer')).toContain('<tested commit>:refs/heads/card-<8 characters>');
+  });
+
   it('ships Brain and its scenario set in every template, and the three minimal bots in their own teams', async () => {
     const all = await loadTemplates(templatesDir);
     for (const t of all) {
