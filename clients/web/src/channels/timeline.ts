@@ -6,7 +6,7 @@ import type { ChannelMessage, FileSummary, ReactionSummary, ThreadChannelRef, Th
  * so id order is time order.
  */
 
-export type PendingSend = { localId: string; body: string; attachments: FileSummary[]; status: 'sending' | 'failed'; createdAt: string };
+export type PendingSend = { localId: string; body: string; attachments: FileSummary[]; status: 'sending' | 'failed'; createdAt: string; alsoToChannel?: boolean };
 
 export type Timeline = {
   /** Oldest first. */

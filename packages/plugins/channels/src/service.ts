@@ -1,8 +1,10 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   ChannelMessage,
+  FORWARD_EXCERPT_CHARS,
   type ChannelCreatedPush,
   type FileSummary,
+  type ForwardedMessage,
   type MessageAuthor,
   type MessageDeletedPush,
   type MessagePostedPush,
@@ -130,6 +132,81 @@ export async function attachmentsFor(
   return out;
 }
 
+/** What a forwarding message stores in `meta.forward`: where the original lives. Never its text. */
+export interface ForwardRef {
+  channelId: string;
+  messageId: string;
+  threadRootId: string | null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function forwardRefOf(meta: Record<string, unknown>): ForwardRef | undefined {
+  const f = meta['forward'];
+  if (typeof f !== 'object' || f === null) return undefined;
+  const { channelId, messageId, threadRootId } = f as Record<string, unknown>;
+  if (typeof channelId !== 'string' || !UUID_RE.test(channelId) || typeof messageId !== 'string' || !UUID_RE.test(messageId)) return undefined;
+  return { channelId, messageId, threadRootId: typeof threadRootId === 'string' && UUID_RE.test(threadRootId) ? threadRootId : null };
+}
+
+/**
+ * The quote cards of forwarding messages, by the forwarding message's id, **as the caller may see the original** (P14-12): the original is read
+ * under the caller's own row level security, so a reader who cannot read its channel gets `hidden` and nothing of its text, author or place.
+ */
+export async function forwardsFor(
+  tx: PluginTx,
+  messages: readonly { id: string; meta: Record<string, unknown>; deleted_at: Date | null }[],
+): Promise<Map<string, ForwardedMessage>> {
+  const out = new Map<string, ForwardedMessage>();
+  const wanted = new Map<string, ForwardRef>();
+  for (const m of messages) {
+    if (m.deleted_at) continue;
+    const ref = forwardRefOf(m.meta);
+    if (ref) wanted.set(m.id, ref);
+  }
+  if (wanted.size === 0) return out;
+  const res = await tx.query<{
+    id: string;
+    channel_id: string;
+    author_id: string;
+    body_plain: string;
+    created_at: Date;
+    deleted_at: Date | null;
+    thread_root_id: string | null;
+    name: string;
+    kind: 'channel' | 'dm' | 'bot_conversation';
+    team_id: string | null;
+  }>(
+    `SELECT m.id, m.channel_id, m.author_id, m.body_plain, m.created_at, m.deleted_at, m.thread_root_id, c.name, c.kind, c.team_id
+       FROM app.messages m JOIN app.channels c ON c.id = m.channel_id
+      WHERE m.id = ANY ($1::uuid[])`,
+    [[...new Set([...wanted.values()].map((r) => r.messageId))]],
+  );
+  const originals = new Map(res.rows.map((r) => [r.id, r]));
+  const authors = await authorsFor(tx, res.rows.filter((r) => !r.deleted_at).map((r) => r.id));
+  for (const [id, ref] of wanted) {
+    const o = originals.get(ref.messageId);
+    if (!o || o.channel_id !== ref.channelId) out.set(id, { state: 'hidden' });
+    else if (o.deleted_at) out.set(id, { state: 'deleted' });
+    else {
+      const text = o.body_plain.trim();
+      const author = authors.get(o.author_id);
+      out.set(id, {
+        state: 'visible',
+        channelId: o.channel_id,
+        channelKind: o.kind,
+        channelName: o.kind === 'channel' ? o.name : null,
+        teamId: o.team_id,
+        messageId: o.id,
+        threadRootId: o.thread_root_id,
+        ...(author ? { author } : {}),
+        createdAt: o.created_at.toISOString(),
+        excerpt: text.length > FORWARD_EXCERPT_CHARS ? `${text.slice(0, FORWARD_EXCERPT_CHARS)}…` : text,
+      } as ForwardedMessage);
+    }
+  }
+  return out;
+}
+
 /** One message of a channel with its reactions and thread counters; undefined when it is not there for this caller. */
 export async function findChannelMessage(tx: PluginTx, channelId: string, messageId: string): Promise<ChannelMessage | undefined> {
   const res = await tx.query<MessageWithThreadRow>(
@@ -143,7 +220,8 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   const reactions = await reactionsFor(tx, [row.id]);
   const attachments = await attachmentsFor(tx, [row]);
   const authors = await authorsFor(tx, [row.id]);
-  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id));
+  const forwards = await forwardsFor(tx, [row]);
+  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id), forwards.get(row.id));
 }
 
 /** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. One statement for any audience size. */
@@ -166,7 +244,8 @@ export async function pushMessage(
   message: ChannelMessage,
 ): Promise<void> {
   const full: MessagePostedPush = { channelId: message.channelId, messageId: message.id, threadRootId: message.threadRootId, message };
-  const small = JSON.stringify(full).length <= MAX_PUSH_BYTES;
+  // a forwarding message's card depends on who reads it: one push goes to everybody, so it carries no message and each client fetches its own
+  const small = message.forward === undefined && JSON.stringify(full).length <= MAX_PUSH_BYTES;
   const payload: MessagePostedPush = small ? full : { channelId: message.channelId, messageId: message.id, threadRootId: message.threadRootId };
   await pushToPeople(deps, tx, people, type, payload);
 }
@@ -197,6 +276,8 @@ export interface PostMessageInput {
   attachmentIds?: readonly string[];
   /** Extra `meta` for the row (the run that wrote it, an integration's own bookkeeping). */
   meta?: Record<string, unknown>;
+  /** Do not record mentions and links (the copy made by "Also send to channel": the reply it copies has already notified everybody named). */
+  skipRefs?: boolean;
 }
 
 export interface PostedMessage {
@@ -274,6 +355,8 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
     [],
     cards,
     (await authorsFor(tx, [row.id])).get(row.author_id),
+    // a forwarding message is pushed without its body (see pushMessage): the placeholder only marks it, no reader is shown this card
+    forwardRefOf(meta) ? { state: 'hidden' } : undefined,
   );
   await pushMessage(deps, tx, readers, 'message.posted', push);
   // Unread: a channel message counts for every reader, a reply for the followers of its thread (the replier and the root's author
@@ -287,7 +370,7 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
   });
   // Sending ends the author's "typing" signal, and what the body names (people, channels, entities) is recorded.
   await tx.query('DELETE FROM app.typing WHERE channel_id = $1 AND person_id = app.person_id()', [input.channelId]);
-  await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
+  if (!input.skipRefs) await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
   return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push };
 }
 

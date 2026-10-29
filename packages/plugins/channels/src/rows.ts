@@ -5,6 +5,7 @@ import {
   ChannelMessage,
   Mention,
   Message,
+  type ForwardedMessage,
   type MessageAuthor,
   Reaction,
   Thread,
@@ -109,21 +110,35 @@ const messageFields = (r: MessageRow) => ({
 });
 export const toMessage = (r: MessageRow): Message => Message.parse(messageFields(r));
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The thread a channel message was also sent from (`meta.alsoSentFrom.threadRootId`), if it is such a copy. */
+export const alsoSentFromThreadOf = (meta: Record<string, unknown>): string | undefined => {
+  const f = meta['alsoSentFrom'];
+  if (typeof f !== 'object' || f === null) return undefined;
+  const id = (f as Record<string, unknown>)['threadRootId'];
+  return typeof id === 'string' && UUID.test(id) ? id : undefined;
+};
+
 export type MessageWithThreadRow = MessageRow & { reply_count: number | null; last_reply_at: Date | null };
 export const toChannelMessage = (
   r: MessageWithThreadRow,
   reactions: readonly ReactionSummary[],
   attachments: readonly FileSummary[] = [],
   author?: MessageAuthor,
-): ChannelMessage =>
-  ChannelMessage.parse({
+  forward?: ForwardedMessage,
+): ChannelMessage => {
+  const alsoSentFromThread = r.deleted_at ? undefined : alsoSentFromThreadOf(r.meta);
+  return ChannelMessage.parse({
     ...messageFields(r),
     ...(author ? { author } : {}),
+    ...(forward ? { forward } : {}),
+    ...(alsoSentFromThread ? { alsoSentFromThread } : {}),
     reactions,
     attachments: r.deleted_at ? [] : attachments,   // a deleted message shows no cards
     replyCount: r.reply_count ?? 0,
     lastReplyAt: iso(r.last_reply_at),
   });
+};
 
 export type ReactionRow = { message_id: string; actor_id: string; emoji: string; created_at: Date };
 export const toReaction = (r: ReactionRow): Reaction =>

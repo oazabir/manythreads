@@ -93,6 +93,9 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
     return () => clearTimeout(t);
   }, [threadState, newestReply, rootId]);
 
+  // leaving the thread: a "Mark unread from here" stops holding it unread
+  useEffect(() => () => channelStore.releaseUnreadHold('thread', rootId), [rootId]);
+
   // Stay at the newest reply while the reader is there.
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -117,18 +120,24 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             react: (id, emoji) => void channelStore.toggleReaction(channelId, rootId, id, emoji),
             edit: (id, body) => channelStore.edit(channelId, rootId, id, body),
             remove: (id) => channelStore.remove(channelId, rootId, id),
+            markUnread: async (id) => void (await channelStore.markUnread(channelId, id, rootId)),
           }
         : null,
     [channelId, rootId],
   );
+  // "Also send to channel": for the next reply only, and not in a conversation with a bot (its replies are answers, not channel talk)
+  const [also, setAlso] = useState(false);
   const send = useCallback(
     (body: string, attachments: FileSummary[]) => {
       if (!channelId) return;
       stuck.current = true;
-      void channelStore.send(channelId, rootId, body, attachments);
+      void channelStore.send(channelId, rootId, body, attachments, also);
+      setAlso(false);
     },
-    [channelId, rootId],
+    [channelId, rootId, also],
   );
+  const channelKind = info.status === 'ok' && info.data ? info.data.channel.kind : null;
+  const alsoLabel = channelKind === 'channel' ? `Also send to #${channelName}` : channelKind === 'dm' ? 'Also send to the conversation' : null;
 
   if (tl.status === 'error' && !root) {
     return (
@@ -222,6 +231,12 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>
       ) : canReply ? (
         <div className="rpf">
+          {alsoLabel && !answerTools ? (
+            <label className="also-row">
+              <input type="checkbox" checked={also} onChange={(e) => setAlso(e.target.checked)} data-testid="also-to-channel" />
+              <span>{alsoLabel}</span>
+            </label>
+          ) : null}
           <Composer
             draftKey={`thread:${rootId}`}
             placeholder={variant === 'main' ? 'Reply in thread…' : 'Reply…'}

@@ -60,6 +60,12 @@ export interface PluginReadState {
     upToMessageId: string,
     options?: { remaining?: number },
   ): Promise<ReadStateEntry>;
+  /**
+   * "Mark unread from here": `personId` has read `target` only up to `lastReadId` (`null` = nothing), **even when that moves the position
+   * back**. `unread_count` is recomputed with the counter registered for the target type, under the same row lock as `markRead`. Emits
+   * `reading.state.changed` (reason `read`) and pushes the new state to the person's sockets when something changed. `tx` must be that person.
+   */
+  markUnread(tx: PluginTx, personId: string, target: ReadTarget, lastReadId: string | null): Promise<ReadStateEntry>;
   /** Follow or unfollow `target` (the `followed` flag the Threads inbox filters on). Emits and pushes only when it changed. */
   setFollowed(tx: PluginTx, personId: string, target: ReadTarget, followed: boolean): Promise<ReadStateEntry>;
   /** One entry per requested target, in order; a target the person never received anything for is all zeros. At most 500 targets. */

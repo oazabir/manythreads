@@ -22,6 +22,7 @@ import {
   fetchReadStates,
   fetchThread,
   fetchUnreadSummary,
+  markMessageUnread,
   markRead,
   postMessage,
   removeReaction,
@@ -416,8 +417,40 @@ export class ChannelStore {
     }
   }
 
+  /** Channels and threads the person marked unread on purpose: opening and watching them does not read them again until the view is left. */
+  private readonly held = new Set<string>();
+
+  /** The view of this channel or thread was left: it may be read automatically again. */
+  releaseUnreadHold(targetType: 'channel' | 'thread', targetId: string): void {
+    this.held.delete(`${targetType}:${targetId}`);
+  }
+
+  /**
+   * "Mark unread from here" on a message: the read position goes back to just before it (the server decides where), the badge counts again, and
+   * the view stays unread while it is open. Resolves to the new position, so the open view can draw its "New" line there.
+   */
+  async markUnread(channelId: string, messageId: string, rootId: string | null): Promise<ReadStateEntry> {
+    const targetType = rootId ? 'thread' : 'channel';
+    const targetId = rootId ?? channelId;
+    this.held.add(`${targetType}:${targetId}`);
+    try {
+      const entry = await markMessageUnread(channelId, messageId);
+      this.readStates.set(`${targetType}:${targetId}`, entry);
+      if (targetType === 'channel') this.setUnread(targetId, entry.unreadCount);
+      else {
+        this.put(threadKey(targetId), (t) => (t.thread ? { ...t, thread: { ...t.thread, unreadCount: entry.unreadCount, lastReadId: entry.lastReadId } } : t));
+        this.refreshSummarySoon();
+      }
+      return entry;
+    } catch (e) {
+      this.held.delete(`${targetType}:${targetId}`);
+      throw e;
+    }
+  }
+
   /** The person has seen everything up to `upTo` in this channel or thread. */
   async markRead(targetType: 'channel' | 'thread', targetId: string, upTo: string): Promise<void> {
+    if (this.held.has(`${targetType}:${targetId}`)) return;
     const had = this.readStates.get(`${targetType}:${targetId}`);
     if (had?.lastReadId && had.lastReadId >= upTo) return;
     try {
@@ -435,9 +468,9 @@ export class ChannelStore {
 
   // ---- writes ------------------------------------------------------------------------------------------------
   /** Optimistic send: the message shows at once as "sending"; on failure it stays with "Not sent · Retry". */
-  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = []): Promise<void> {
+  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false): Promise<void> {
     const key = rootId ? threadKey(rootId) : channelKey(channelId);
-    const item: PendingSend = { localId: idOf(), body, attachments, status: 'sending', createdAt: new Date().toISOString() };
+    const item: PendingSend = { localId: idOf(), body, attachments, status: 'sending', createdAt: new Date().toISOString(), ...(alsoToChannel && rootId ? { alsoToChannel: true } : {}) };
     this.put(key, (t) => ({ ...t, pending: [...t.pending, item] }));
     await this.deliver(key, channelId, rootId, item);
   }
@@ -457,7 +490,7 @@ export class ChannelStore {
 
   private async deliver(key: string, channelId: string, rootId: string | null, item: PendingSend): Promise<void> {
     try {
-      const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id));
+      const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true);
       this.applyPosted(asChannelMessage(m, item.attachments), item.localId);
       // the push may have come first and already removed the pending copy; either way it is gone now
       this.put(key, (t) => ({ ...t, pending: t.pending.filter((p) => p.localId !== item.localId) }));

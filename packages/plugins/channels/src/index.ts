@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerMessageCapabilities, registerMessageProvider } from './capabilities.ts';
 import { registerCohesion } from './cohesion.ts';
+import { registerBookmarkRoutes } from './routes-bookmarks.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
 import { registerMessageRoutes } from './routes-messages.ts';
@@ -45,6 +46,7 @@ export default definePlugin({
     const deps = { ctx };
     registerChannelRoutes(deps);
     registerMessageRoutes(deps);
+    registerBookmarkRoutes(deps);
     registerEphemeralRoutes(deps);
     registerTemplateConsumer(ctx);
     registerCohesion(ctx);

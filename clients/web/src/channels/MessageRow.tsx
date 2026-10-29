@@ -1,10 +1,14 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ChannelMessage, FileSummary } from '@manythreads/shared';
 import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
+import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
+import { ForwardDialog } from './ForwardDialog';
+import { EditedMark, ForwardCard } from './MessageExtras';
+import { copyText, messageLinkUrl } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize } from './format';
 import { splitAttachments } from './images';
@@ -28,11 +32,28 @@ export function AttachmentCard({ file }: { file: FileSummary }) {
   );
 }
 
+/** A menu under the row's toolbar; it opens upward when it would not fit above the end of the list (the newest messages sit at the composer). */
+function RowMenu({ className, label, children }: { className: string; label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const above = usePopoverAbove(ref);
+  return (
+    <div ref={ref} className={`menu ${className} ${above ? 'menu-up' : ''}`} role="menu" aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
+/** The one row that shows "Marked unread from here": a second mark, anywhere in this tab, takes it from the first. */
+const MARKED_UNREAD = 'Marked unread from here';
+const MARK_EVENT = 'mt:marked-unread';
+
 export type RowActions = {
   openThread?: (rootId: string) => void;
   react: (messageId: string, emoji: string) => void;
   edit: (messageId: string, body: string) => Promise<void>;
   remove: (messageId: string) => Promise<void>;
+  /** "Mark unread from here": the reader's position goes back to just before the message. Absent where the view has no read position of its own. */
+  markUnread?: (messageId: string) => Promise<void>;
 };
 
 type Props = {
@@ -63,6 +84,22 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [forwarding, setForwarding] = useState(false);
+  // a short line in the header of the row after an action that has no other sign ("Link copied")
+  const [done, setDone] = useState<string | null>(null);
+  useEffect(() => {
+    if (done === null) return;
+    const t = setTimeout(() => setDone(null), 2_500);
+    return () => clearTimeout(t);
+  }, [done]);
+  // another row was marked unread after this one: only the latest mark says so
+  useEffect(() => {
+    const onMark = (e: Event): void => {
+      if ((e as CustomEvent<string>).detail !== m.id) setDone((d) => (d === MARKED_UNREAD ? null : d));
+    };
+    window.addEventListener(MARK_EVENT, onMark);
+    return () => window.removeEventListener(MARK_EVENT, onMark);
+  }, [m.id]);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(menu !== null, () => {
     setMenu(null);
@@ -73,6 +110,19 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const canDelete = !deleted && (own || people.canModerate);
   // an image is drawn as a picture, not as a file card; a message may carry both kinds at once
   const attached = splitAttachments(m.attachments);
+  const markUnread = async (): Promise<void> => {
+    try {
+      await actions.markUnread?.(m.id);
+      window.dispatchEvent(new CustomEvent(MARK_EVENT, { detail: m.id }));
+      setDone(MARKED_UNREAD);
+    } catch {
+      setDone('Could not mark it unread');
+    }
+  };
+  const copyLink = async (): Promise<void> => {
+    const ok = await copyText(messageLinkUrl(window.location.origin, { channelId: m.channelId, messageId: m.id, threadRootId: m.threadRootId }));
+    setDone(ok ? 'Link copied' : 'Could not copy the link');
+  };
 
   const save = async (): Promise<void> => {
     const body = (editing ?? '').trim();
@@ -99,7 +149,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         if (!e.currentTarget.contains(e.relatedTarget)) setHot(false);
       }}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest('a,button,textarea,.acts')) return;
+        if ((e.target as HTMLElement).closest('a,button,textarea,.acts,.dlg-scrim,.vpop')) return;
         setTapped((t) => !t);
       }}
     >
@@ -111,18 +161,23 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           {canPost ? (
             <button type="button" className="act" aria-label="Add reaction" aria-expanded={menu === 'react'} aria-haspopup="menu" title="Add reaction" onClick={() => setMenu((x) => (x === 'react' ? null : 'react'))}><SmileIcon /></button>
           ) : null}
-          {canEdit || canDelete ? (
+          {!deleted ? (
             <button type="button" className="act" aria-label="More actions" aria-expanded={menu === 'more'} aria-haspopup="menu" title="More" onClick={() => setMenu((x) => (x === 'more' ? null : 'more'))}><MoreIcon /></button>
           ) : null}
           {menu === 'react' ? (
-            <div className="menu emoji-menu" role="menu" aria-label="Reactions">
+            <RowMenu className="emoji-menu" label="Reactions">
               {QUICK_EMOJI.map((e) => (
                 <button key={e} type="button" role="menuitem" className="emoji" aria-label={`React with ${e}`} onClick={() => { setMenu(null); actions.react(m.id, e); }}>{e}</button>
               ))}
-            </div>
+            </RowMenu>
           ) : null}
           {menu === 'more' ? (
-            <div className="menu more-menu" role="menu" aria-label="Message">
+            <RowMenu className="more-menu" label="Message">
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyLink(); }}>Copy link</button>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setForwarding(true); }}>Forward…</button>
+              {actions.markUnread ? (
+                <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
+              ) : null}
               {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit</button> : null}
               {canDelete ? (
                 confirm ? (
@@ -131,7 +186,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                   <button type="button" role="menuitem" className="menu-item" onClick={() => setConfirm(true)}>Delete…</button>
                 )
               ) : null}
-            </div>
+            </RowMenu>
           ) : null}
         </div>
       )}
@@ -141,7 +196,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           <b>{name}</b>
           {m.author?.kind === 'system' ? <span className="wh-mark" title="Posted by an incoming webhook, not by a person">Webhook</span> : null}
           <time dateTime={m.createdAt} data-vt-mask>{clock(m.createdAt)}</time>
-          {m.editedAt && !deleted ? <span className="edited">(edited)</span> : null}
+          {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
+          {done ? <span className="row-done" role="status">{done}</span> : null}
         </div>
         {deleted ? (
           <div className="txt tomb">This message was deleted.</div>
@@ -181,6 +237,12 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : (
           <div className="txt"><Markdown source={m.body} teamSlug={teamSlug} /></div>
         )}
+        {!deleted && m.forward ? <ForwardCard card={m.forward} /> : null}
+        {!deleted && m.alsoSentFromThread ? (
+          <button type="button" className="link-btn also-from" data-testid="also-from-thread" onClick={() => actions.openThread?.(m.alsoSentFromThread!)}>
+            Also sent from a thread · View thread
+          </button>
+        ) : null}
         {deleted ? null : <MessageImages files={attached.images} />}
         {!deleted && attached.files.length > 0 ? (
           <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
@@ -209,6 +271,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           </button>
         ) : null}
       </div>
+      {forwarding ? <ForwardDialog message={m} selfPersonId={people.me?.personId ?? null} onClose={() => setForwarding(false)} onDone={(label) => setDone(`Forwarded to ${label}`)} /> : null}
     </div>
   );
 });

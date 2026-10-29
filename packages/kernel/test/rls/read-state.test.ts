@@ -129,6 +129,20 @@ describe('markRead', () => {
     expect(m3 > m2).toBe(true);
   });
 
+  it('markUnread moves the position back (to a message or to nothing), recounts, and a later markRead moves it forward again', async () => {
+    const ch = randomUUID();
+    const [m1, m2, m3] = [await post(ch, RAFI, [NADIA]), await post(ch, RAFI, [NADIA]), await post(ch, RAFI, [NADIA])] as [string, string, string];
+    const target = { targetType: 'channel' as const, targetId: ch };
+    await w.as(NADIA, (t) => svc.markRead(tx(t), NADIA.personId, target, m3));
+    const back = await w.as(NADIA, (t) => svc.markUnread(tx(t), NADIA.personId, target, m1));
+    expect(back).toMatchObject({ lastReadId: m1, unreadCount: 2 });
+    expect(await stateOf(NADIA, ch)).toMatchObject({ lastReadId: m1, unreadCount: 2 });
+    const none = await w.as(NADIA, (t) => svc.markUnread(tx(t), NADIA.personId, target, null));
+    expect(none).toMatchObject({ lastReadId: null, unreadCount: 3 });
+    const forward = await w.as(NADIA, (t) => svc.markRead(tx(t), NADIA.personId, target, m2));
+    expect(forward).toMatchObject({ lastReadId: m2, unreadCount: 1 });
+  });
+
   it('creates the row for a person who never received a post, and takes `remaining` over the counter', async () => {
     const ch = randomUUID();
     const m1 = await post(ch, RAFI, []);

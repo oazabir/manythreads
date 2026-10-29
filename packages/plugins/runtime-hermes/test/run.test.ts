@@ -309,6 +309,29 @@ describe('a hermes run, end to end', () => {
     expect(existsSync(join(profilesDir, `hermes-test-bot-${run!.id}`))).toBe(false);
   });
 
+  it('a reply sent "also to the channel" wakes the bot it names once: the copy in the channel starts no second run', async () => {
+    const bot = await loadBot('also-copy-bot', botMd({ name: 'AlsoCopyBot', model: 'smart', capabilities: 'messages.post' }));
+    const rootId = await post('a thread about the deploy');
+    const replied = await w.call(nadia, 'POST', `/api/channels/${channelId}/messages`, {
+      channelId,
+      body: '@also-copy-bot please summarise this',
+      threadRootId: rootId,
+      alsoToChannel: true,
+    });
+    expect(replied.status, JSON.stringify(replied.body)).toBe(201);
+    const replyId = (replied.body as { id: string }).id;
+    // the reply in the thread wakes the bot (the positive control: the router has decided about this message and its copy)
+    await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the bot to answer in the thread');
+    expect(await jobsFor(bot.botId, replyId)).toBe(1);
+    const copy = ListMessagesResponse.parse((await w.call(nadia, 'GET', `/api/channels/${channelId}/messages?limit=20`)).body).items.find(
+      (m) => m.alsoSentFromThread === rootId,
+    );
+    expect(copy?.body).toBe('@also-copy-bot please summarise this');
+    await quiet(3000);
+    expect(await jobsFor(bot.botId, copy!.id)).toBe(0);
+    expect((await runsOf(bot.botId)).length).toBe(1);
+  });
+
   it('a definition that never asked for messages.post runs, and its reply is refused', async () => {
     const bot = await loadBot('hermes-no-grant', botMd({ name: 'HermesNoGrant', model: 'smart' }));
 

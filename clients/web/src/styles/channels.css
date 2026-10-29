@@ -36,6 +36,13 @@
   contain: layout style;
 }
 
+/* a row's open menu (reactions, more actions) or earlier-versions popover reaches over the rows around it: raise that row, which is a stacking context of its own */
+.vrow:has(.vpop),
+.vrow:has(.acts .menu) {
+  position: relative;
+  z-index: 3;
+}
+
 .start {
   min-height: 34px;
   padding: 0 0 14px;
@@ -607,6 +614,11 @@
   left: auto;
   width: max-content;
   min-width: 140px;
+}
+
+.acts .menu.menu-up {
+  top: auto;
+  bottom: calc(100% + 4px);
 }
 
 .acts .emoji-menu {
@@ -1347,4 +1359,328 @@
 
 .chv-botboard:hover {
   background: var(--msg-hover);
+}
+
+/* "(edited)" opens the earlier versions (PLAN P14-12) */
+.edited-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.who .edited-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.who .edited-btn:hover,
+.who .edited-btn[aria-expanded="true"] {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.vpop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 15;
+  width: min(360px, 80vw);
+  max-height: 320px;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  font-size: 13px;
+}
+
+.vpop.vpop-up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.vpop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.vpop-note {
+  margin: 4px 0;
+  color: var(--mute);
+}
+
+.vpop-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vpop-item {
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.vpop-item time {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.vpop-body {
+  color: var(--txt);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.vpop-foot {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+}
+
+.who .row-done {
+  color: var(--ok-ink);
+  font-size: 11px;
+}
+
+/* the card of a forwarded message: the original as this reader may see it */
+.fwd {
+  max-width: 560px;
+  margin: 4px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--human-border);
+  border-radius: 6px;
+  background: var(--human-wash);
+  font-size: 13px;
+}
+
+.fwd.off {
+  border-left-color: var(--rule);
+  background: var(--table-head);
+  color: var(--mute);
+  font-style: italic;
+}
+
+.fwd-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.fwd-head time,
+.fwd-where {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.fwd-text {
+  margin: 2px 0 4px;
+  color: var(--txt);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* the forward dialog */
+.fwd-help {
+  margin: 0 0 10px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.fwd-label {
+  display: block;
+  margin: 8px 0 4px;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fwd-filter,
+.fwd-note {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.fwd-places {
+  max-height: 200px;
+  margin: 6px 0 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  list-style: none;
+}
+
+.fwd-place {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fwd-place small {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.fwd-place:hover {
+  background: var(--nav-on);
+}
+
+.fwd-place.on {
+  background: var(--human-wash);
+  font-weight: 600;
+}
+
+.fwd-none {
+  padding: 8px 10px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.fwd-error {
+  margin: 8px 0 0;
+  color: var(--alert);
+  font-size: 12.5px;
+}
+
+/* "Also sent from a thread" under a channel copy of a reply (PLAN P14-12) */
+.also-from {
+  display: block;
+  margin: 2px 0 0;
+  padding: 0;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.also-from:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+/* focus moving to the "also send" box must not fold the composer's toolbar: the box would slide away from under the pointer mid-click */
+.thread .rpf:focus-within .composer.resting .ctools {
+  display: flex;
+}
+
+.also-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+/* the bookmarks bar under the channel header (PLAN P14-12) */
+.bmbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+}
+
+.bm-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bm {
+  display: inline-flex;
+  align-items: center;
+  max-width: 240px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.bm-link {
+  padding: 2px 8px;
+  overflow: hidden;
+  color: var(--ink);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bm-link:hover {
+  text-decoration: underline;
+}
+
+.bm-link.off {
+  color: var(--mute);
+}
+
+.bm-open {
+  margin-right: 4px;
+}
+
+.bm-x {
+  padding: 2px 8px 2px 0;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  cursor: pointer;
+}
+
+.bm-x:hover {
+  color: var(--ink);
+}
+
+.bm-error {
+  color: var(--alert-ink);
+}
+
+.bm-kinds {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.bm-kind {
+  padding: 3px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.bm-kind.on {
+  border-color: var(--human-border);
+  background: var(--human-wash);
 }

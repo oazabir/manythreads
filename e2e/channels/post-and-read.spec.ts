@@ -94,9 +94,13 @@ test('edit and delete your own message, live for the other reader; empty channel
     await expect(mine).toContainText('(edited)');
     await expect(messages(nadia.page).first()).toContainText('fixed here', { timeout: 1_000 });
 
-    // Nadia may not edit or delete Rafi's message (she is not a lead)
+    // Nadia may not edit or delete Rafi's message (she is not a lead): her menu offers the link and forwarding, and neither Edit nor Delete
     await messages(nadia.page).first().hover();
-    await expect(messages(nadia.page).first().getByRole('button', { name: 'More actions' })).toHaveCount(0);
+    await messages(nadia.page).first().getByRole('button', { name: 'More actions' }).click();
+    await expect(nadia.page.getByRole('menuitem', { name: 'Copy link' })).toBeVisible();
+    await expect(nadia.page.getByRole('menuitem', { name: 'Edit' })).toHaveCount(0);
+    await expect(nadia.page.getByRole('menuitem', { name: 'Delete…' })).toHaveCount(0);
+    await nadia.page.keyboard.press('Escape');
 
     await mine.hover();
     await mine.getByRole('button', { name: 'More actions' }).click();

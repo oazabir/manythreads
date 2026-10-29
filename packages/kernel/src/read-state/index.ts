@@ -14,6 +14,8 @@ export const READ_STATE_PUSH_TYPE = 'reading.state.changed';
 
 const Uuid = z.uuid();
 const MAX_TARGETS = 500;
+/** The position of someone who has read nothing: sorts before every uuid v7. */
+const NOTHING_READ = '00000000-0000-0000-0000-000000000000';
 
 type ChangedRow = Pick<ReadStateRow, 'person_id' | 'last_read_id' | 'unread_count' | 'followed'>;
 
@@ -119,6 +121,39 @@ export function createReadStateService(deps: { counters: UnreadCounters; plugin?
          WHERE person_id = $1 AND target_type = $2 AND target_id = $3
          RETURNING person_id, target_type, target_id, last_read_id, unread_count, followed`,
         [person, target.targetType, target.targetId, upTo, remaining],
+      );
+      const row = res.rows[0] as ChangedRow & { target_type: string; target_id: string };
+      if (cur.last_read_id !== row.last_read_id || cur.unread_count !== row.unread_count) await announce(tx, target, 'read', [row]);
+      return entryOf(row);
+    },
+
+    async markUnread(txIn, personId, targetIn, lastReadId) {
+      const tx = txIn as unknown as Tx;
+      const person = Uuid.parse(personId);
+      const target = ReadTarget.parse(targetIn);
+      const position = lastReadId === null ? null : Uuid.parse(lastReadId);
+      const registered = deps.counters.get(target.targetType);
+      if (!registered) throw new UnreadCounterMissingError(target.targetType);
+      await tx.query(
+        `INSERT INTO app.read_state (person_id, target_type, target_id) VALUES ($1, $2, $3) ON CONFLICT (person_id, target_type, target_id) DO NOTHING`,
+        [person, target.targetType, target.targetId],
+      );
+      // lock the row first, so a post racing with this call is counted exactly once (as in markRead)
+      const cur = (
+        await tx.query<ChangedRow & { target_type: string; target_id: string }>(
+          `SELECT person_id, target_type, target_id, last_read_id, unread_count, followed
+           FROM app.read_state WHERE person_id = $1 AND target_type = $2 AND target_id = $3 FOR UPDATE`,
+          [person, target.targetType, target.targetId],
+        )
+      ).rows[0];
+      if (!cur) throw new Error('read_state row vanished while locked');
+      // the counter takes a position; "nothing read" is the smallest uuid, older than every message
+      const remaining = await registered.counter(txIn, target, position ?? NOTHING_READ);
+      const res = await tx.query<ChangedRow & { target_type: string; target_id: string }>(
+        `UPDATE app.read_state SET last_read_id = $4, unread_count = $5, updated_at = now()
+         WHERE person_id = $1 AND target_type = $2 AND target_id = $3
+         RETURNING person_id, target_type, target_id, last_read_id, unread_count, followed`,
+        [person, target.targetType, target.targetId, position, remaining],
       );
       const row = res.rows[0] as ChangedRow & { target_type: string; target_id: string };
       if (cur.last_read_id !== row.last_read_id || cur.unread_count !== row.unread_count) await announce(tx, target, 'read', [row]);

@@ -58,6 +58,7 @@ interface MessageRow {
   carries_answer: boolean;
   /** The message announces a card handover (`meta.handoff`, written by the tasks plugin): it starts no run. */
   is_handoff_card: boolean;
+  is_channel_copy: boolean;
   [key: string]: unknown;
 }
 
@@ -95,7 +96,7 @@ export function registerRouter(ctx: PluginContext): void {
                 c.name AS channel_name, c.team_id AS channel_team, c.private AS channel_private,
                 c.archived_at AS channel_archived, c.bot_id AS channel_bot_id, c.kind AS channel_kind,
                 a.kind AS author_kind, coalesce(p.display_name, b.name, 'someone') AS author_name,
-                (m.meta ? 'answer') AS carries_answer, (m.meta ? 'handoff') AS is_handoff_card
+                (m.meta ? 'answer') AS carries_answer, (m.meta ? 'handoff') AS is_handoff_card, (m.meta ? 'alsoSentFrom') AS is_channel_copy
            FROM app.messages m
            JOIN app.channels c ON c.id = m.channel_id
            JOIN app.actors a ON a.id = m.author_id
@@ -110,6 +111,9 @@ export function registerRouter(ctx: PluginContext): void {
     // door. It is not a request of its own: the assignment's event (router-tasks.ts) wakes the new owner, so this message starts nothing,
     // whoever wrote it.
     if (message.is_handoff_card) return;
+    // "Also send to channel" posts the reply a second time as a message of the channel (`meta.alsoSentFrom`, set by the channels plugin only).
+    // The reply in the thread already woke whoever it names; the copy is the same words, so it wakes nobody a second time.
+    if (message.is_channel_copy) return;
     // A bot answering a bot is a delegation (below): an explicit @mention in a public team channel, mayTag-gated and
     // depth-capped. Anything else that is not a person — a gone author included — starts nothing.
     if (message.author_kind === 'bot') {

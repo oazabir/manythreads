@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ALL = [omar, nadia, rafi, sameera, tariq, priya, lena] as const;
-const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'channel_template_syncs', 'presence', 'typing'];
+const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing'];
 
 let db: TestDatabase;
 let appPool: pg.Pool;
@@ -527,5 +527,46 @@ describe('security review fixes (migration 0004)', () => {
     expect(await title()).toBe('the launch is scheduled');
     await as(nadia, (tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [root]));
     expect(await title()).toBe('[deleted]');
+  });
+});
+
+describe('message_versions: earlier texts of an edited message (migration 0009)', () => {
+  const versionsOf = (p: Persona, id: string): Promise<string[]> =>
+    q<{ body: string }>(p, 'SELECT body FROM app.message_versions WHERE message_id = $1 ORDER BY id', [id]).then((r) => r.map((x) => x.body));
+  const make = (channel: string, author: Persona, text: string): Promise<string> =>
+    sys(async (tx) => (await tx.query<{ id: string }>(
+      `INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+      [omar.workspaceId, channel, author.actorId, text])).rows[0]!.id);
+  const editAs = (p: Persona, id: string, text: string): Promise<unknown> =>
+    as(p, (tx) => tx.query('UPDATE app.messages SET body = $2, body_plain = $2, edited_at = now() WHERE id = $1', [id, text]));
+
+  it('an edit by the author keeps the old text, readable exactly by the people who read the message', async () => {
+    const id = await make(ch['eng-general']!, nadia, 'old text');
+    await editAs(nadia, id, 'new text');
+    expect(await versionsOf(rafi, id)).toEqual(['old text']);
+    expect(await versionsOf(priya, id)).toEqual(['old text']);
+    expect(await versionsOf(sameera, id)).toEqual([]);       // another team
+    expect(await versionsOf(lena, id)).toEqual([]);          // a guest whose grant is #eng-releases only
+    const priv = await make(ch['eng-leads']!, rafi, 'private old');
+    await editAs(rafi, priv, 'private new');
+    expect(await versionsOf(rafi, priv)).toEqual(['private old']);
+    expect(await versionsOf(nadia, priv)).toEqual([]);       // a channel she is not in
+  });
+
+  it('a caller never writes or deletes a version; only the author clears them, and deleting the message drops them', async () => {
+    const id = await make(ch['eng-general']!, nadia, 'one');
+    await editAs(nadia, id, 'two');
+    expect(await code(as(nadia, (tx) => tx.query("INSERT INTO app.message_versions (message_id, channel_id, body, written_at) VALUES ($1, $2, 'forged', now())", [id, ch['eng-general']])))).toBe('42501');
+    expect(await code(as(nadia, (tx) => tx.query('DELETE FROM app.message_versions WHERE message_id = $1', [id])))).toBe('42501');
+    const clear = (p: Persona): Promise<number> => as(p, async (tx) => (await tx.query<{ n: number }>('SELECT app.message_versions_clear($1) AS n', [id])).rows[0]!.n);
+    expect(await clear(rafi)).toBe(0);
+    expect(await clear(sameera)).toBe(0);
+    expect(await versionsOf(nadia, id)).toEqual(['one']);
+    expect(await clear(nadia)).toBe(1);
+    expect(await versionsOf(nadia, id)).toEqual([]);
+    await editAs(nadia, id, 'three');
+    expect(await versionsOf(nadia, id)).toEqual(['two']);
+    await as(nadia, (tx) => tx.query("UPDATE app.messages SET deleted_at = now(), body_plain = '' WHERE id = $1", [id]));
+    expect(await versionsOf(nadia, id)).toEqual([]);
   });
 });

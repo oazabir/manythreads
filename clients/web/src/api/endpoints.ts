@@ -88,7 +88,20 @@ import {
   typingRoute,
   unfollowThreadRoute,
   uploadFileRoute,
+  AddBookmarkRequest,
+  AddBookmarkResponse,
+  ClearMessageVersionsResponse,
+  ListBookmarksResponse,
+  MarkMessageUnreadResponse,
+  RemoveBookmarkResponse,
+  addBookmarkRoute,
+  listBookmarksRoute,
+  markMessageUnreadRoute,
+  removeBookmarkRoute,
   EditMessageRequest,
+  ForwardMessageRequest,
+  ForwardMessageResponse,
+  ListMessageVersionsResponse,
   EditMessageResponse,
   GetChannelResponse,
   GetMessageResponse,
@@ -169,8 +182,11 @@ import {
   archiveTeamRoute,
   assignTeamTagRoute,
   bootstrapWorkspaceRoute,
+  clearMessageVersionsRoute,
   deleteMessageRoute,
   editMessageRoute,
+  forwardMessageRoute,
+  listMessageVersionsRoute,
   getChannelRoute,
   getMessageRoute,
   getReadStateRoute,
@@ -410,15 +426,44 @@ export const fetchMessages = (channelId: string, query: { before?: string; limit
   call(listMessagesRoute, { request: ListMessagesQuery, response: ListMessagesResponse }, { limit: 50, ...query } as ListMessagesQuery, { channelId });
 export const fetchMessage = (channelId: string, messageId: string) =>
   call(getMessageRoute, { response: GetMessageResponse }, undefined, { channelId, messageId });
-export const postMessage = (channelId: string, body: string, threadRootId: string | null = null, attachments: readonly string[] = []) =>
+export const postMessage = (
+  channelId: string,
+  body: string,
+  threadRootId: string | null = null,
+  attachments: readonly string[] = [],
+  alsoToChannel = false,
+) =>
   call(
     postMessageRoute,
     { request: PostMessageRequest, response: PostMessageResponse },
-    { channelId, body, threadRootId, ...(attachments.length > 0 ? { attachments } : {}) } as PostMessageRequest,
+    { channelId, body, threadRootId, ...(attachments.length > 0 ? { attachments } : {}), ...(alsoToChannel && threadRootId ? { alsoToChannel: true } : {}) } as PostMessageRequest,
     { channelId },
   );
 export const editMessage = (channelId: string, messageId: string, body: string) =>
   call(editMessageRoute, { request: EditMessageRequest, response: EditMessageResponse }, { body }, { channelId, messageId });
+/** The earlier texts of an edited message, oldest first (the current text is not among them). */
+export const fetchMessageVersions = (channelId: string, messageId: string) =>
+  call(listMessageVersionsRoute, { response: ListMessageVersionsResponse }, undefined, { channelId, messageId });
+/** The author removes the earlier texts of their own message. */
+export const clearMessageVersions = (channelId: string, messageId: string) =>
+  call(clearMessageVersionsRoute, { response: ClearMessageVersionsResponse }, undefined, { channelId, messageId });
+/** Post a message of your own into another channel or direct message, holding a card that points at this one. */
+export const forwardMessage = (channelId: string, messageId: string, targetChannelId: string, note: string) =>
+  call(
+    forwardMessageRoute,
+    { request: ForwardMessageRequest, response: ForwardMessageResponse },
+    { targetChannelId, ...(note.trim() === '' ? {} : { note }) } as ForwardMessageRequest,
+    { channelId, messageId },
+  );
+/** "Mark unread from here": the caller's read position goes back to just before this message. */
+export const markMessageUnread = (channelId: string, messageId: string) =>
+  call(markMessageUnreadRoute, { response: MarkMessageUnreadResponse }, undefined, { channelId, messageId });
+/** The bookmarks bar of a channel. */
+export const fetchBookmarks = (channelId: string) => call(listBookmarksRoute, { response: ListBookmarksResponse }, undefined, { channelId });
+export const addBookmark = (channelId: string, body: AddBookmarkRequest) =>
+  call(addBookmarkRoute, { request: AddBookmarkRequest, response: AddBookmarkResponse }, body, { channelId });
+export const removeBookmark = (channelId: string, bookmarkId: string) =>
+  call(removeBookmarkRoute, { response: RemoveBookmarkResponse }, undefined, { channelId, bookmarkId });
 export const deleteMessage = (channelId: string, messageId: string) =>
   call(deleteMessageRoute, { response: DeleteMessageResponse }, undefined, { channelId, messageId });
 export const addReaction = (channelId: string, messageId: string, emoji: string) =>
@@ -454,6 +499,10 @@ export const sendTyping = (channelId: string, threadRootId: string | null) =>
 /** Does this server store attachments? The files plugin answers its list route; a server without it answers 404 (the clip button then stays hidden). */
 export const probeFiles = (channelId: string) =>
   call(listChannelFilesRoute, { request: ListChannelFilesQuery, response: ListChannelFilesResponse }, { limit: 1 } as ListChannelFilesQuery, { channelId });
+
+/** The newest files of a channel (the bookmarks bar offers them to pin). */
+export const fetchChannelFiles = (channelId: string) =>
+  call(listChannelFilesRoute, { request: ListChannelFilesQuery, response: ListChannelFilesResponse }, { limit: 100 } as ListChannelFilesQuery, { channelId });
 
 /** The uploader, or a lead of the channel's team, removes an attachment (the row and its bytes). */
 export const deleteAttachment = (fileId: string) => call(deleteFileRoute, { response: DeleteFileResponse }, undefined, { fileId });

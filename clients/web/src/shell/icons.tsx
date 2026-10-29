@@ -154,6 +154,11 @@ export const BellOffIcon = () => (
   </Svg>
 );
 
+export const BookmarkIcon = () => (
+  <Svg size={16}>
+    <path d="M4.4 2.6h7.2v10.8L8 10.9l-3.6 2.5Z" />
+  </Svg>
+);
 export const BellIcon = () => (
   <Svg size={16}>
     <path d="M3.6 11.2V7.4a4.4 4.4 0 0 1 8.8 0v3.8l1 1.4H2.6Z" />

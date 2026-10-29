@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from 'react-router';
 import type { FileSummary } from '@manythreads/shared';
 import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
+import { BookmarksBar } from '../channels/BookmarksBar';
 import { Composer } from '../channels/Composer';
 import { estimateItem, buildListItems, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
 import { PendingRow, MessageRow, type RowActions } from '../channels/MessageRow';
@@ -96,6 +97,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     void channelStore.loadReadState('channel', channelId).then((r) => live && setReadAtOpen({ known: true, lastReadId: r?.lastReadId ?? null }));
     return () => {
       live = false;
+      // leaving the channel: a "Mark unread from here" stops holding the channel unread
+      channelStore.releaseUnreadHold('channel', channelId);
     };
   }, [channelId]);
   useEffect(() => {
@@ -166,6 +169,13 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
       react: (id, emoji) => void channelStore.toggleReaction(channelId, null, id, emoji),
       edit: (id, body) => channelStore.edit(channelId, null, id, body),
       remove: (id) => channelStore.remove(channelId, null, id),
+      markUnread: async (id) => {
+        const entry = await channelStore.markUnread(channelId, id, null);
+        // the "New" line moves to where the reader asked, and the view does not jump to it
+        scrolledToUnread.current = true;
+        setReadAtOpen({ known: true, lastReadId: entry.lastReadId });
+        setHadUnread(true);
+      },
     }),
     [channelId, panel],
   );
@@ -251,6 +261,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           )
         : null}
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}
+      <BookmarksBar channelId={channelId} teamSlug={teamSlug} dm={dm !== undefined} canEdit={canPost} slot={headerSlot} />
       <div className="chview-list">
         {tl.status === 'loading' ? (
           <div className="loading-rows" aria-hidden="true">
