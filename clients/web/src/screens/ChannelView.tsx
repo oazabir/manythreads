@@ -111,6 +111,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   }, []);
 
   const self = people.me?.actorId ?? null;
+  const peopleSettled = people.settled || guest;
   const newest = tl.items.at(-1)?.id ?? null;
   // The "New" line sits after what was read when the channel opened. Opened with nothing unread, it only marks what arrived while
   // the reader was away from the bottom: watching the bottom, nothing is new.
@@ -122,11 +123,12 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   );
   const unreadShown = items.some((i) => i.kind === 'unread');
   useEffect(() => {
-    if (hadUnread === null && tl.status === 'ready' && readAtOpen.known) {
+    // not before the roster has answered: with `self` still unknown, every message of the reader's own counts as unread, and the list opens at the top
+    if (hadUnread === null && tl.status === 'ready' && readAtOpen.known && peopleSettled) {
       setHadUnread(firstUnreadIndex(tl.items, readAtOpen.lastReadId, self, tl.cursor === null) >= 0);
       setSeenUpTo(readAtOpen.lastReadId);
     }
-  }, [hadUnread, tl.status, tl.items, tl.cursor, readAtOpen, self]);
+  }, [hadUnread, tl.status, tl.items, tl.cursor, readAtOpen, self, peopleSettled]);
   useEffect(() => {
     if (atBottom && newest) setSeenUpTo(newest);
   }, [atBottom, newest]);

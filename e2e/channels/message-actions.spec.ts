@@ -1,4 +1,5 @@
 import { expect, test, type Locator } from '@playwright/test';
+import { WEB, authState } from '../support/env.ts';
 import { apiAs, bulkMessages, createChannel, messages, openAs, postMessage } from './support.ts';
 
 // the desktop layout (hover actions); the phone layout has its own spec (mobile-web)
@@ -95,10 +96,20 @@ test('menu and earlier versions stay reachable at the end of the list', async ({
   const last = await postMessage(omar, id, 'newest wording');
   await omar.ctx.patch(`/api/channels/${id}/messages/${last.id}`, { data: { body: 'newest, final wording' }, headers: await omar.headers() });
   await postMessage(omar, id, 'the very last note');
-  const me = await openAs(browser, 'omar', `/t/engineering/c/${name}`);
+  // The roster answers after the messages (it does, under load): the reader is not yet known as the author of the whole channel, and the
+  // list must still open at the newest message, with no "New" line, instead of at the top as if all 40 messages were someone else's.
+  const context = await browser.newContext({ baseURL: WEB, viewport: { width: 1440, height: 900 }, storageState: authState('omar') });
+  const me = { page: await context.newPage(), context };
+  await me.page.route('**/api/teams/engineering/roster', async (route) => {
+    await new Promise((done) => setTimeout(done, 1_500));
+    await route.continue();
+  });
+  await me.page.goto(`/t/engineering/c/${name}`);
   try {
     const page = me.page;
     await expect(messages(page).filter({ hasText: 'the very last note' })).toBeVisible();
+    await expect(page.getByTestId('unread-divider')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Jump to latest' })).toHaveCount(0);
     const list = page.getByRole('log');
     const inside = async (box: Locator): Promise<void> => {
       const l = (await list.boundingBox())!;

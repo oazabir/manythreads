@@ -17,6 +17,8 @@ export function useUnread(): Snapshot {
 export type Person = { personId: string; actorId: string; name: string; email: string; role: RosterMember['role'] };
 export type People = {
   loaded: boolean;
+  /** The roster of this team has answered (or failed): until then `me` is unknown, not absent. False without a team (a guest has no roster). */
+  settled: boolean;
   list: Person[];
   byActor(actorId: string): Person | undefined;
   byPerson(personId: string): Person | undefined;
@@ -28,7 +30,7 @@ export type People = {
 
 export const PeopleContext = createContext<People | null>(null);
 
-const NOBODY: People = { loaded: false, list: [], byActor: () => undefined, byPerson: () => undefined, me: undefined, canModerate: false };
+const NOBODY: People = { loaded: false, settled: false, list: [], byActor: () => undefined, byPerson: () => undefined, me: undefined, canModerate: false };
 
 /** The team's people as the shell loaded them (outside the shell: nobody). */
 export function usePeople(): People {
@@ -38,16 +40,20 @@ export function usePeople(): People {
 /** Loads the team's roster once for the shell: names, avatars, the @ picker and "mine". A person who cannot read the roster (a guest) sees names as "Someone". */
 export function useLoadPeople(teamSlug: string | null): People {
   const session = useSession();
-  const q = useQuery(`people:${teamSlug ?? ''}`, () => (teamSlug ? fetchRoster(teamSlug) : Promise.resolve({ members: [] })));
+  // `useQuery` keeps the last answer while a new key loads, so the answer says which team it is for
+  const q = useQuery<{ slug: string | null; members: RosterMember[] }>(`people:${teamSlug ?? ''}`, () =>
+    teamSlug ? fetchRoster(teamSlug).then((r) => ({ slug: teamSlug, members: r.members })) : Promise.resolve({ slug: null, members: [] }),
+  );
   const members = q.status === 'ok' ? q.data.members : undefined;
+  const settled = q.status === 'error' || (q.status === 'ok' && teamSlug !== null && q.data.slug === teamSlug);
   const value = useMemo<People>(() => {
     const list: Person[] = (members ?? []).map((m) => ({ personId: m.personId, actorId: m.actorId, name: m.displayName, email: m.email, role: m.role }));
     const byActor = new Map(list.map((p) => [p.actorId, p]));
     const byPerson = new Map(list.map((p) => [p.personId, p]));
     const me = byPerson.get(session.person.id);
     const admin = session.role === 'owner' || session.role === 'admin';
-    return { loaded: members !== undefined, list, byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), me, canModerate: admin || me?.role === 'lead' };
-  }, [members, session.person.id, session.role]);
+    return { loaded: members !== undefined, settled, list, byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), me, canModerate: admin || me?.role === 'lead' };
+  }, [members, settled, session.person.id, session.role]);
   useEffect(() => {
     channelStore.setSelf(value.me?.actorId ?? null);
   }, [value.me?.actorId]);
