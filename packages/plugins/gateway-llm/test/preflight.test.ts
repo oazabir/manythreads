@@ -8,6 +8,8 @@ import {
   createTestDatabase,
   dropTestDatabase,
   gatewayLlmMigrationSource,
+  guardrailsDlpMigrationSource,
+  guardrailsEgressMigrationSource,
   personas,
   TEAM_IDS,
   teamsMigrationSource,
@@ -65,7 +67,7 @@ const check = (request: LlmCallRequest): Promise<LlmCallDecision> => sys((tx) =>
 beforeAll(async () => {
   delete process.env['MANYTHREADS_LITELLM_URL'];
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, gatewayLlmMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, guardrailsDlpMigrationSource, guardrailsEgressMigrationSource],
   });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);

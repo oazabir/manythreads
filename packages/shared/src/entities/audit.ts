@@ -115,6 +115,7 @@ export const AUDIT_ACTIONS = {
   'guard.egress_blocked': { category: 'guardrails', label: 'Blocked an outgoing request' },
   'guard.model_decided': { category: 'guardrails', label: 'Model guard acted on text' },
   'guard.budget_refused': { category: 'guardrails', label: 'Refused a model call over its limit' },
+  'guard.policy_changed': { category: 'guardrails', label: 'Changed the data-protection policy' },
   'guard.gate_held': { category: 'guardrails', label: 'Held a command for approval' },
   'answer.sources_held_back': { category: 'guardrails', label: 'Answer posted with sources held back' },
   'answer.shared': { category: 'guardrails', label: 'Shared an answer' },

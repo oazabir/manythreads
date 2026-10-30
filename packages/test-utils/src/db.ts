@@ -123,6 +123,18 @@ export const memoryGitMirrorMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/memory-git-mirror/migrations/', import.meta.url)),
 };
 
+/** Migrations of the guardrails-dlp plugin (`dlp_detectors`, `dlp_custom_rules`); they read only the kernel's workspaces and actors. */
+export const guardrailsDlpMigrationSource: MigrationSource = {
+  namespace: 'guardrails-dlp',
+  dir: fileURLToPath(new URL('../../plugins/guardrails-dlp/migrations/', import.meta.url)),
+};
+
+/** Migrations of the guardrails-egress plugin (`team_egress`); they read the kernel's teams, workspaces and actors. */
+export const guardrailsEgressMigrationSource: MigrationSource = {
+  namespace: 'guardrails-egress',
+  dir: fileURLToPath(new URL('../../plugins/guardrails-egress/migrations/', import.meta.url)),
+};
+
 /** Migrations of the retention plugin (`retention_settings`, the DELETE policies on the run logs); pass it in `sources` after `botsMigrationSource` and `memoryMigrationSource`. */
 export const retentionMigrationSource: MigrationSource = {
   namespace: 'retention',

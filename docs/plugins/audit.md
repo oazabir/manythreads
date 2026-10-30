@@ -55,6 +55,10 @@ A filter bar (who, group, did what, team, outcome, from, to, Clear filters), a t
 
 All subscribers of one event run in one database transaction. The audit subscriber therefore never builds a value the table would refuse: every text is cut to its column's limit without splitting a character, and the mappings only produce enum words, ids and codes. A write that fails anyway rolls the event back for every subscriber, and the outbox retries it, so nothing is silently dropped, but the failure is shared; fix the mapping rather than catching the error.
 
+## Policy changes (P10-04)
+
+`guardrails.policy.updated` becomes `guard.policy_changed` (category guardrails): who changed the data-loss policy or a team's host list, the kind (`dlp_policy` or `egress_policy`), the detector, rule or team code as the target label and a fixed reason ("rule added (data-loss check)"). The matched text is never involved; the event only carries names. The data-loss and egress decision events also carry the team now.
+
 ## Left out on purpose
 
 Message posted and edited, reactions, reading state, presence, notifications, tasks and boards, rhythms, run starts and ends, conversations starting, `ops.health.changed`, and `repo.committed` (the guarded paths are covered by proposals) are not audited: they are volume or content, not decisions. Also not built: a CSV export, a bot filter in the screen (the Who list holds people; the API takes a bot id), team-lead access, and rows for the inbox and digest withheld items (those features do not exist yet).

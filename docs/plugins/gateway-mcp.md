@@ -62,6 +62,17 @@ The run service still checks that an in-process asker is a `person` actor of the
 
 `ctx.runs` is declared by the manifest (`extends: ['tool.invoke']`) and documented in `docs/plugins/security.md`.
 
+## The data-loss check (P10-04)
+
+A tool call is a way for text to leave a run, and what a read tool answers is a way for a secret to walk into a model. So `tools/call` runs the `pre_egress` chain (see [guardrails-dlp](./guardrails-dlp.md)) twice around the tool, in `src/guard.ts`:
+
+1. **Before the tool**, over every text value in the arguments and over the field names (read together as one text; a finding in a name refuses the call, since a name cannot be redacted without changing the call; UUID-shaped values are skipped). `block` refuses the call (`blocked_by_guardrail`, a message that names the kind of thing found, never the thing); `redact` runs the call with each finding replaced by a marker such as `[redacted:api-key]`; `require_approval` on a write
+   sends it to the Approvals inbox with the **redacted** arguments (a secret is never stored in an approval), and on a read counts as a refusal because nobody can be asked.
+2. **After a read tool**, over the answer before the bot sees it: `redact` hands back the redacted copy, `block` or `require_approval` withholds it (`withheld_by_guardrail`). A write's answer is not scanned.
+
+The gateway judges under the `standard` preset because the workspace's own preset lives in settings only an admin can read; the admin's per-detector choices and custom rules (Settings → Workspace → Data protection) are what decide. It fails closed: if no guardrail answered, or the arguments are too deep (20 levels), hold more than 20,000 pieces of text or more than 8 million characters, the call is refused unread; if the check itself throws, the call is refused (`blocked_by_guardrail`) and the real error goes to the server log. Not covered: encodings (base64, hex, URL escapes), text split across several values or calls, look-alike letters, and a bot's final reply or rules-runtime steps, which invoke capabilities without passing the gateway.
+One `guardrails.dlp.decided` event is written per call (`destination` `mcp` or `mcp_result`), naming the rules and never the text. The manifest gained `hook.pre_egress` and `event.emit` in `extends`, and `dependsOn: ['bots', 'guardrails-dlp']`. Test: `test/guard.test.ts`.
+
 ## The tools
 
 `tools/list` offers every capability with an implementation **that the broker would allow** — no grant, no tool. The

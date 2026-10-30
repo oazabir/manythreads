@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../common/time.ts';
 import { LlmGuardOutcome, LlmGuardPreset } from '../entities/llm-limits.ts';
-import { BotId, WorkspaceId } from '../ids.ts';
+import { BotId, TeamId, WorkspaceId } from '../ids.ts';
 
 /**
  * guardrails-dlp decided something about text that was about to leave (SPEC §15, PLAN P5-21). Written for every destination whose caller
@@ -15,6 +15,8 @@ export const GuardrailsDlpDecidedEvent = z.object({
   /** Where the text was going: `channel`, `email`, `mcp`, ... */
   destination: z.string().min(1),
   botId: BotId.nullable(),
+  /** The team of the bot the text left from, when it was a bot's. Optional so an older event still reads. */
+  teamId: TeamId.nullable().optional(),
   preset: LlmGuardPreset,
   outcome: LlmGuardOutcome.exclude(['allow']),
   rules: z.array(z.string()).min(1),

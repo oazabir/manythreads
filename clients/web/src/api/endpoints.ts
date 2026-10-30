@@ -1,5 +1,24 @@
 import {
   AuditSigningKey,
+  CreateDlpRuleRequest,
+  DeleteDlpRuleResponse,
+  DlpPolicy,
+  DlpRuleResponse,
+  ListTeamEgressResponse,
+  SetDlpDetectorRequest,
+  SetTeamEgressRequest,
+  SetTeamEgressResponse,
+  TestDlpRequest,
+  TestDlpResponse,
+  UpdateDlpRuleRequest,
+  createDlpRuleRoute,
+  deleteDlpRuleRoute,
+  getDlpPolicyRoute,
+  listTeamEgressRoute,
+  setDlpDetectorRoute,
+  setTeamEgressRoute,
+  testDlpRoute,
+  updateDlpRuleRoute,
   ErrorEnvelope,
   ExportAuditRequest,
   ListAuditQuery,
@@ -721,3 +740,13 @@ export const revokeWebhook = (webhookId: string) => call(revokeWebhookRoute, { r
 export const setWebhookSigningSecret = (webhookId: string) => call(setWebhookSigningRoute, { response: SigningSecretResponse }, undefined, { webhookId });
 export const clearWebhookSigningSecret = (webhookId: string) => call(clearWebhookSigningRoute, { response: ClearSigningResponse }, undefined, { webhookId });
 export const sendWebhookTest = (webhookId: string) => call(testWebhookRoute, { response: TestWebhookResponse }, undefined, { webhookId });
+
+// ---- data protection: the data-loss policy and each team's reachable hosts (workspace admins) -----------------
+export const fetchDlpPolicy = () => call(getDlpPolicyRoute, { response: DlpPolicy });
+export const saveDlpDetector = (name: string, body: SetDlpDetectorRequest) => call(setDlpDetectorRoute, { request: SetDlpDetectorRequest, response: DlpPolicy }, body, { name });
+export const addDlpRule = (body: CreateDlpRuleRequest) => call(createDlpRuleRoute, { request: CreateDlpRuleRequest, response: DlpRuleResponse }, body);
+export const changeDlpRule = (ruleId: string, body: UpdateDlpRuleRequest) => call(updateDlpRuleRoute, { request: UpdateDlpRuleRequest, response: DlpRuleResponse }, body, { ruleId });
+export const removeDlpRule = (ruleId: string) => call(deleteDlpRuleRoute, { response: DeleteDlpRuleResponse }, undefined, { ruleId });
+export const testDlp = (body: TestDlpRequest) => call(testDlpRoute, { request: TestDlpRequest, response: TestDlpResponse }, body);
+export const fetchTeamEgress = () => call(listTeamEgressRoute, { response: ListTeamEgressResponse });
+export const saveTeamEgress = (teamId: string, body: SetTeamEgressRequest) => call(setTeamEgressRoute, { request: SetTeamEgressRequest, response: SetTeamEgressResponse }, body, { teamId });

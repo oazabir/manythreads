@@ -63,3 +63,35 @@ export const presetOf = (name: string): LlmGuardPreset => {
   const parsed = LlmGuardPreset.safeParse(name);
   return parsed.success ? parsed.data : 'standard';
 };
+
+/**
+ * A team's own list, for a destination that is not a model call. `enforce` off means the list adds no restriction. On, every target that is not the
+ * machine itself must be a host on the team's list or the workspace's list; a target whose host cannot be told is refused (it cannot be shown to be on the
+ * list). Hosts that are model providers' domains on the team's list are ignored here too (`providerHosts` is the caller's test), so an old row or a hand-made
+ * one cannot open a way to a hosted model past the model guard. Pure.
+ */
+export function judgeTeamHosts(
+  enforce: boolean,
+  teamHosts: readonly string[],
+  workspaceHosts: readonly string[],
+  targets: readonly EgressTarget[],
+  isProvider: (host: string) => boolean,
+): EgressRefusal | null {
+  if (!enforce) return null;
+  const allowed = new Set<string>();
+  for (const host of workspaceHosts) allowed.add(host.toLowerCase());
+  for (const host of teamHosts) if (!isProvider(host)) allowed.add(host.toLowerCase());
+  for (const link of targets) {
+    if (link.local) continue;
+    const host = link.host?.toLowerCase() ?? null;
+    if (host !== null && allowed.has(host)) continue;
+    return {
+      target: link.name,
+      host,
+      message: host
+        ? `This team's bots may not reach ${host}; an admin can add it to the team's list under Settings > Workspace > Data protection.`
+        : `This team's bots may reach only the hosts on the team's list, and where ${link.name} goes cannot be told.`,
+    };
+  }
+  return null;
+}

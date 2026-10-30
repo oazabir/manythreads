@@ -1,0 +1,122 @@
+/* Data protection page. Classes are prefixed `gr-`; shared classes (.block, .bh, .rows, .srow, .fld, .btn, .d) are used, never redefined. */
+.gr-page {
+  display: grid;
+  gap: 18px;
+}
+
+.gr-group {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.gr-h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.gr-row {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.gr-row select {
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.gr-rule-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gr-rule-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gr-pattern {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+
+.gr-off {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.gr-new {
+  display: grid;
+  gap: 10px;
+  max-width: 460px;
+}
+
+.gr-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.gr-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gr-result {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.gr-result[data-outcome='block'] {
+  border-color: var(--alert-border);
+}
+
+.gr-preview {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--shell);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gr-team {
+  display: grid;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.gr-team:first-child {
+  border-top: 0;
+}
+
+@media (width <= 600px) {
+  .gr-row {
+    flex-direction: column;
+  }
+
+  .gr-rule-side {
+    justify-content: flex-start;
+  }
+}

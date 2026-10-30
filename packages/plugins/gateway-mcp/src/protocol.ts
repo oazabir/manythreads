@@ -15,6 +15,7 @@ import {
 import { z } from 'zod';
 import { askForApproval } from './approval.ts';
 import { authorizeContext, definitionOf, withRunTeam } from './catalog.ts';
+import { describeFinding, guardValue } from './guard.ts';
 import { json } from './http.ts';
 
 // The JSON-RPC 2.0 face of the run endpoint (MCP revision 2024-11-05). Three methods matter — `initialize`,
@@ -72,10 +73,24 @@ async function listTools(ctx: PluginContext, run: BotRunHandle): Promise<McpTool
   return offered;
 }
 
+/**
+ * The data-loss check, failing closed: if reading the value throws (the policy tables are missing, the database is down), the value counts as unread and
+ * the caller refuses it, rather than the check turning into an error page or, worse, being skipped. A run that ended under the check is control flow.
+ */
+async function guarded(ctx: PluginContext, run: BotRunHandle, value: unknown, where: 'mcp' | 'mcp_result'): ReturnType<typeof guardValue> {
+  try {
+    return await guardValue(ctx, run, value, where);
+  } catch (err) {
+    if (err instanceof RunEndedError) throw err;
+    faultLog(`gateway-mcp: the data-loss check threw: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
+    return { outcome: 'block', value, rules: [], unchecked: true };
+  }
+}
+
 /** Runs one `tools/call`, from the grant check to the source log. */
 async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams): Promise<McpToolResult> {
   const definition = definitionOf(params.name);
-  const input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
+  let input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
   const decision = await ctx.runs.authorize(run, params.name, authorizeContext(input));
@@ -85,7 +100,24 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
     return toolResult({ ok: false, code: 'unknown_tool', message: `Nothing implements “${params.name}”.` }, true);
   }
 
-  if (decision.needsApproval) {
+  // The data-loss check (PLAN P10-04): what the call carries out is read before anything runs. A stub sends nothing anywhere, so it is not read.
+  let holdForPerson = false;
+  if (definition.kind !== 'stub') {
+    const checked = await guarded(ctx, run, input, 'mcp');
+    if (checked.unchecked) {
+      return toolResult({ ok: false, code: 'blocked_by_guardrail', message: 'This call was not made: the data-loss check could not read it (too large, too deeply nested, or the check is not working).' }, true);
+    }
+    if (checked.outcome === 'block') {
+      return toolResult({ ok: false, code: 'blocked_by_guardrail', message: `This call was not made: it carries ${describeFinding(checked.rules)}. Take it out and try again.` }, true);
+    }
+    if (checked.outcome === 'redact' || checked.outcome === 'require_approval') input = checked.value as Record<string, unknown>;
+    holdForPerson = checked.outcome === 'require_approval';
+    if (holdForPerson && definition.kind === 'read') {
+      return toolResult({ ok: false, code: 'blocked_by_guardrail', message: `This call was not made: it carries ${describeFinding(checked.rules)}, and a read cannot wait for a person.` }, true);
+    }
+  }
+
+  if (decision.needsApproval || holdForPerson) {
     // The grant says a person must approve this call: it becomes a pending approval (the approvals plugin's one handler) and the model is
     // told. Without that plugin the call is refused outright — running it anyway is the one thing the flag exists to stop.
     return toolResult(await askForApproval(ctx, run, params.name, definition.kind, input), true);
@@ -101,7 +133,12 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
       for (const source of definition.sourcesFrom?.(result) ?? []) await ctx.runs.logSource(tx, source);
       return result;
     });
-    return toolResult(answer);
+    // What a read answers with is checked before the bot sees it: a secret that sits in a page or a file stays out of the model's context.
+    const shown = await guarded(ctx, run, answer, 'mcp_result');
+    if (shown.unchecked || shown.outcome === 'block' || shown.outcome === 'require_approval') {
+      return toolResult({ ok: false, code: 'withheld_by_guardrail', message: `The answer was held back: it carries ${describeFinding(shown.rules)}, which the data-loss policy does not let through.` }, true);
+    }
+    return toolResult(shown.outcome === 'redact' ? shown.value : answer);
   }
   try {
     const answer = await ctx.runs.asBot(run, (tx) => ctx.runs.invoke(tx, params.name, input));

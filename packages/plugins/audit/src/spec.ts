@@ -369,14 +369,22 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
   'guardrails.dlp.decided': (e) => ({
     action: 'guard.dlp_decided',
     who: bot(e['botId']),
+    teamId: team(e['teamId']),
     target: of('destination', code(e['destination'])),
     outcome: 'withheld',
     reason: `${LLM_OUTCOME[String(e['outcome'])] ?? 'Held'} by the data-loss check${ruleList(e['rules'])}`,
   }),
   'guardrails.egress.decided': (e) => {
     const host = typeof e['host'] === 'string' && /^[a-z0-9.-]{1,80}$/i.test(e['host']) ? e['host'] : null;
-    return { action: 'guard.egress_blocked', who: bot(e['botId']), target: of('host', host), outcome: 'denied', reason: 'Blocked by the outgoing-request policy' };
+    return { action: 'guard.egress_blocked', who: bot(e['botId']), teamId: team(e['teamId']), target: of('host', host), outcome: 'denied', reason: 'Blocked by the outgoing-request policy' };
   },
+  'guardrails.policy.updated': (e) => ({
+    action: 'guard.policy_changed',
+    who: actor(e['changedBy']),
+    teamId: team(e['teamId']),
+    target: of(e['kind'] === 'egress' ? 'egress_policy' : 'dlp_policy', code(e['subject'])),
+    reason: `${words(e['change']) ?? 'changed'}${e['kind'] === 'egress' ? ' (reachable hosts)' : ' (data-loss check)'}`,
+  }),
   'llm.guard.decided': (e) =>
     e['outcome'] === 'allow'
       ? null

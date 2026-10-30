@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "rule": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "default": "test",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 190
+        },
+        "ignoreCase": {
+          "default": false,
+          "type": "boolean"
+        },
+        "action": {
+          "default": "redact",
+          "type": "string",
+          "enum": [
+            "preset",
+            "redact",
+            "require_approval",
+            "block"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "pattern",
+        "ignoreCase",
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "preset": {
+      "default": "standard",
+      "type": "string",
+      "enum": [
+        "standard",
+        "strict-egress",
+        "air-gapped",
+        "customer-facing"
+      ]
+    }
+  },
+  "required": [
+    "text",
+    "preset"
+  ],
+  "additionalProperties": false
+}

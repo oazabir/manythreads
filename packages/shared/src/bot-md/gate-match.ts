@@ -38,6 +38,22 @@ export function parseGateEntry(source: string): GateEntryResult {
   return { ok: true, entry: { kind: 'phrase', source: text, words } };
 }
 
+export type SpanPatternResult = { ok: true; program: GateProgram } | { ok: false; reason: string };
+
+/**
+ * A pattern written without the slashes, compiled by the same linear-time engine as a gate pattern, for finding where it matches (`findSpans`).
+ * Refused, with a reason written for the person who typed it, when the pattern is outside the supported subset, too large, or matches the empty text
+ * (a pattern that matches nothing in particular would "find" something everywhere).
+ */
+export function compileSpanPattern(body: string, ignoreCase: boolean): SpanPatternResult {
+  if (body.trim() === '') return { ok: false, reason: 'an empty pattern matches everything' };
+  const parsed = parseGateEntry(`/${body}/${ignoreCase ? 'i' : ''}`);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  if (parsed.entry.kind !== 'pattern') return { ok: false, reason: 'not a pattern' };
+  if (runProgram(parsed.entry.program, new Uint32Array(0))) return { ok: false, reason: 'this pattern also matches empty text; it must need at least one character' };
+  return { ok: true, program: parsed.entry.program };
+}
+
 /** A gate list ready to match against messages. */
 export interface CompiledGate {
   readonly entries: readonly GateEntry[];

@@ -65,6 +65,7 @@ export * from './llm.budget.exceeded.ts';
 export * from './llm.guard.decided.ts';
 export * from './guardrails.dlp.decided.ts';
 export * from './guardrails.egress.decided.ts';
+export * from './guardrails.policy.updated.ts';
 export * from './runtime.gate.held.ts';
 export * from './runtime.rhythm.finished.ts';
 export * from './runtime.rhythm.started.ts';

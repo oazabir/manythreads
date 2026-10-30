@@ -62,6 +62,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'webhooks.hook.signing_changed': { teamId: id(20), channelId: id(40), webhookId: id(72), actorId: id(13), enabled: true, at: AT },
   'kernel.capability.denied': { actorId: id(60), actorKind: 'bot', runId: null, capability: 'files.write', reason: 'not_granted', path: 'bots/helper/BOT.md', trigger: `mention ${C}` },
   'guardrails.dlp.decided': { destination: 'llm', botId: id(60), preset: 'standard', outcome: 'redact', rules: ['aws_access_key'], at: AT },
+  'guardrails.policy.updated': { kind: 'dlp', change: 'rule_added', subject: 'office-wifi', teamId: null, changedBy: id(13), at: AT },
   'guardrails.egress.decided': { destination: 'http', botId: id(60), preset: 'standard', outcome: 'block', target: `https://evil.example/?token=${C}`, host: 'evil.example', at: AT },
   'llm.guard.decided': { botId: id(60), alias: 'smart', preset: 'standard', outcome: 'block', rules: ['private_key'], reason: 'dlp', at: AT },
   'llm.budget.exceeded': { scope: 'bot', teamId: id(20), botId: id(60), sessionId: null, reason: 'budget', window: 'day', limitUsd: 5, requestsPerMinute: null, spentUsd: 5.1, retryAfterMs: null, alias: 'smart', at: AT },

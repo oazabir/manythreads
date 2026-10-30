@@ -8,7 +8,7 @@ import guardrailsDlp from '../src/index.ts';
 
 // P5-21: guardrails-dlp as a link of the `pre_egress` chain, with the real kernel chain around it (no database: the hook is string work).
 
-const tx = { actor: { kind: 'system', id: randomUUID(), workspaceId: randomUUID() }, query: () => Promise.reject(new Error('no db')) } as unknown as PluginTx;
+const tx = { actor: { kind: 'system', id: randomUUID(), workspaceId: randomUUID() }, query: () => Promise.resolve({ rows: [] }) } as unknown as PluginTx;
 const KEY = `sk-${'ab3dEf6hIj'.repeat(3)}`;
 
 async function world(): Promise<{ run(over: Partial<EgressInput>): ReturnType<PluginContext['hooks']['runPreEgress']>; events: PluginEvent[] }> {

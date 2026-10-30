@@ -33,3 +33,4 @@ export * from './repo-origin.ts';
 export * from './proposal.ts';
 export * from './eval.ts';
 export * from './audit.ts';
+export * from './guardrails.ts';

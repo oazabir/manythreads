@@ -472,6 +472,18 @@ importers:
       '@manythreads/kernel':
         specifier: workspace:*
         version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
 
   packages/plugins/guardrails-egress:
     dependencies:
@@ -488,6 +500,18 @@ importers:
       '@manythreads/kernel':
         specifier: workspace:*
         version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
 
   packages/plugins/hermes-pods:
     dependencies:

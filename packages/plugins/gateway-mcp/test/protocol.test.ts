@@ -36,6 +36,8 @@ function fakeContext(options: {
   answer?: (name: string, input: Record<string, unknown>) => unknown;
   /** The approvals plugin's handler, when the deployment has it. */
   approvals?: { request: (tx: PluginTx, input: Record<string, unknown>) => Promise<{ approvalId: string; created: boolean }> };
+  /** The `pre_egress` chain as the call sees it; the default is the data-loss plugin answering "nothing found" for every piece of text. */
+  guard?: (input: { text: string; destination: string }) => { outcome: 'allow' | 'redact' | 'require_approval' | 'block'; text: string; rules: string[]; hooks: number; ran: string[]; message?: string };
 }) {
   const invoked: Array<{ name: string; input: Record<string, unknown>; as: 'bot' | 'reader' }> = [];
   const logged: Array<{ sourceType: string; sourceRef: string; scope: string }> = [];
@@ -70,8 +72,12 @@ function fakeContext(options: {
   const providers = { get: (kind: string) => (kind === 'approvals' ? options.approvals : undefined) };
   const warned: string[] = [];
   setFaultLog((m) => void warned.push(m));
-  const ctx = { manifest: { version: '0.1.0' }, runs, providers } as unknown as PluginContext;
-  return { ctx, invoked, logged, authorized, warned };
+  const emitted: Array<Record<string, unknown>> = [];
+  const guard = options.guard ?? ((input: { text: string }) => ({ outcome: 'allow' as const, text: input.text, rules: [], hooks: 1, ran: ['guardrails-dlp'] }));
+  const hooks = { runPreEgress: (_tx: PluginTx, input: { text: string; destination: string }) => Promise.resolve(guard(input)) };
+  const audit = { emit: (_tx: PluginTx, event: Record<string, unknown>) => Promise.resolve(void emitted.push(event)) };
+  const ctx = { manifest: { version: '0.1.0' }, runs, providers, hooks, audit, runtime: { now: () => new Date('2026-10-30T09:00:00.000Z') } } as unknown as PluginContext;
+  return { ctx, invoked, logged, authorized, warned, emitted };
 }
 
 const body = async (res: { body?: unknown }): Promise<Record<string, unknown>> => res.body as Record<string, unknown>;
@@ -139,6 +145,88 @@ describe('gateway-mcp protocol', () => {
     expect(invoked.map((c) => c.name)).toEqual(['messages.search']);
     expect(invoked[0]!.input).not.toHaveProperty('_meta');
     expect(invoked[0]!.input['query']).toBe('deploy');
+  });
+
+  it('a call that carries a finding the workspace blocks never reaches the handler, and the answer names no text', async () => {
+    const { ctx, invoked } = fakeContext({
+      tools: [WRITE_TOOL],
+      decisions: { 'pages.write': ALLOWED },
+      guard: (input) => ({ outcome: 'block', text: input.text, rules: ['api-key'], hooks: 1, ran: ['guardrails-dlp'], message: 'blocked' }),
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'pages.write', arguments: { mode: 'create', path: 'pages/x.md', content: 'sk-abcdefghijklmnopqrstuvwxyz' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'blocked_by_guardrail' });
+    expect(result.content[0]!.text).not.toContain('sk-abcdef');
+    expect(invoked).toEqual([]);
+  });
+
+  it('a call is refused unread when no data-loss guard answered', async () => {
+    const { ctx, invoked } = fakeContext({
+      tools: [SEARCH_TOOL],
+      decisions: { 'messages.search': ALLOWED },
+      guard: (input) => ({ outcome: 'allow', text: input.text, rules: [], hooks: 0, ran: [] }),
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 22, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'deploy' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'blocked_by_guardrail' });
+    expect(invoked).toEqual([]);
+  });
+
+  it('a redacted call runs with the redacted copy', async () => {
+    const { ctx, invoked, emitted } = fakeContext({
+      tools: [SEARCH_TOOL],
+      decisions: { 'messages.search': ALLOWED },
+      guard: (input) => (input.destination === 'mcp' && input.text.includes('SECRET') ? { outcome: 'redact', text: input.text.replace('SECRET', '[redacted:api-key]'), rules: ['api-key'], hooks: 1, ran: ['guardrails-dlp'] } : { outcome: 'allow', text: input.text, rules: [], hooks: 1, ran: ['guardrails-dlp'] }),
+    });
+    await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'find SECRET now' } } });
+    expect(invoked[0]!.input['query']).toBe('find [redacted:api-key] now');
+    expect(JSON.stringify(emitted)).not.toContain('SECRET');
+  });
+
+  it('a finding in a field name refuses the call (a name cannot be redacted), and the name is not echoed', async () => {
+    const { ctx, invoked } = fakeContext({
+      tools: [SEARCH_TOOL],
+      decisions: { 'messages.search': ALLOWED },
+      guard: (input) => (input.text.includes('SECRET') ? { outcome: 'redact', text: input.text.replace('SECRET', '[redacted:api-key]'), rules: ['api-key'], hooks: 1, ran: ['guardrails-dlp'] } : { outcome: 'allow', text: input.text, rules: [], hooks: 1, ran: ['guardrails-dlp'] }),
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'deploy', SECRET_NAME: 1 } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'blocked_by_guardrail' });
+    expect(result.content[0]!.text).not.toContain('SECRET');
+    expect(invoked).toEqual([]);
+  });
+
+  it('a check that throws refuses the call and logs the real error, instead of an error page or a call that runs unchecked', async () => {
+    const { ctx, invoked, warned } = fakeContext({
+      tools: [SEARCH_TOOL],
+      decisions: { 'messages.search': ALLOWED },
+      guard: () => {
+        throw new Error('relation "app.dlp_detectors" does not exist');
+      },
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 25, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'deploy' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'blocked_by_guardrail' });
+    expect(result.content[0]!.text).not.toContain('dlp_detectors');
+    expect(warned.join(' ')).toContain('dlp_detectors');
+    expect(invoked).toEqual([]);
+  });
+
+  it('a result read back is held when the check on it cannot run', async () => {
+    const { ctx } = fakeContext({
+      tools: [SEARCH_TOOL],
+      decisions: { 'messages.search': ALLOWED },
+      guard: (input) => {
+        if (input.destination === 'mcp_result') throw new Error('boom');
+        return { outcome: 'allow', text: input.text, rules: [], hooks: 1, ran: ['guardrails-dlp'] };
+      },
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 26, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'deploy' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'withheld_by_guardrail' });
   });
 
   it('a grant that needs approval stops before the handler runs', async () => {

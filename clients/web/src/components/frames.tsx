@@ -80,6 +80,7 @@ export function SettingsFrame() {
         { to: '/settings/workspace/llm', label: 'LLM' },
         { to: '/settings/workspace/https', label: 'Domain & HTTPS' },
         { to: '/settings/workspace/health', label: 'System health' },
+        { to: '/settings/workspace/guardrails', label: 'Data protection' },
         { to: '/settings/workspace/audit', label: 'Audit' },
       ],
     });

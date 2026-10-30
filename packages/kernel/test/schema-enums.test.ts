@@ -18,6 +18,8 @@ import {
   MemorySourceKind,
   MemoryStore,
   AuditActorKind,
+  DlpDetectorSetting,
+  DlpRuleSetting,
   AuditCategory,
   AuditOutcome,
   AuditSource,
@@ -76,6 +78,7 @@ import {
   memoryMigrationSource,
   proposalsMigrationSource,
   auditMigrationSource,
+  guardrailsDlpMigrationSource,
   rhythmsMigrationSource,
   runtimeHermesMigrationSource,
   tasksMigrationSource,
@@ -160,6 +163,8 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'audit_events.category': AuditCategory,
   'audit_events.outcome': AuditOutcome,
   'audit_events.source': AuditSource,
+  'dlp_detectors.action': DlpDetectorSetting,
+  'dlp_custom_rules.action': DlpRuleSetting,
   'bot_eval_runs.trigger': EvalTrigger,
   'bot_eval_runs.mode': EvalMode,
   'bot_eval_runs.status': EvalRunStatus,
@@ -180,7 +185,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

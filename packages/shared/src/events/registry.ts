@@ -62,6 +62,7 @@ import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
 import { LlmGuardDecidedEvent } from './llm.guard.decided.ts';
 import { GuardrailsDlpDecidedEvent } from './guardrails.dlp.decided.ts';
 import { GuardrailsEgressDecidedEvent } from './guardrails.egress.decided.ts';
+import { GuardrailsPolicyUpdatedEvent } from './guardrails.policy.updated.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
 import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
 import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
@@ -139,6 +140,7 @@ export const eventRegistry = {
   'llm.guard.decided': { 1: LlmGuardDecidedEvent },
   'guardrails.dlp.decided': { 1: GuardrailsDlpDecidedEvent },
   'guardrails.egress.decided': { 1: GuardrailsEgressDecidedEvent },
+  'guardrails.policy.updated': { 1: GuardrailsPolicyUpdatedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
   'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "preset",
+        "allow",
+        "redact",
+        "require_approval",
+        "block"
+      ]
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "additionalProperties": false
+}

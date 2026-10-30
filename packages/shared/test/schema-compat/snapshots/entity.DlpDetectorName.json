@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "private-key",
+    "api-key",
+    "bearer-token",
+    "credential-url",
+    "secret-assignment",
+    "card-number",
+    "email-address",
+    "phone-number",
+    "iban"
+  ]
+}

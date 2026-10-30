@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "group": {
+      "type": "string",
+      "enum": [
+        "secrets",
+        "personal"
+      ]
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "preset",
+        "allow",
+        "redact",
+        "require_approval",
+        "block"
+      ]
+    },
+    "custom": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "label",
+    "description",
+    "group",
+    "action",
+    "custom"
+  ],
+  "additionalProperties": false
+}

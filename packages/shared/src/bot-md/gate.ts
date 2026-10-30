@@ -32,7 +32,9 @@ export {
   GATE_RUN_MIN_JOINED,
 } from './gate-parse.ts';
 export type { GateProgram } from './gate-compile.ts';
-export { matchPattern } from './gate-run.ts';
+export { findSpans, matchPattern, prepareText } from './gate-run.ts';
+export type { PreparedText, SpanBudget, TextSpan } from './gate-run.ts';
 export { gateSpellings } from './gate-spell.ts';
-export { compileGate, matchGate, parseGateEntry } from './gate-match.ts';
+export { compileGate, compileSpanPattern, matchGate, parseGateEntry } from './gate-match.ts';
+export type { SpanPatternResult } from './gate-match.ts';
 export type { CompiledGate, CompileGateResult, GateEntry, GateEntryResult, GateMatch } from './gate-match.ts';

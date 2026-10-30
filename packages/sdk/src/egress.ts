@@ -47,6 +47,8 @@ export interface EgressInput {
   mode?: EgressMode;
   /** The bot or person on whose behalf it leaves, for the audit trail. */
   botId?: string | null;
+  /** The team the bot belongs to, when it is a bot's: the per-team host list and the audit trail read it. */
+  teamId?: string | null;
   /**
    * True when the caller writes its own decision event (the LLM gateway's `llm.guard.decided`, which knows the alias and the budget). The
    * guardrails plugins then do not write theirs, so one decision is not recorded twice.

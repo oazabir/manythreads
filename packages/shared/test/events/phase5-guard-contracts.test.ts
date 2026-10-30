@@ -102,3 +102,38 @@ describe('runtime.task.not_woken', () => {
     expect(failsAt({ ...valid, note: 'card text' })).not.toBe('');
   });
 });
+
+describe('guardrails.dlp.decided and guardrails.egress.decided: the team (P10-04)', () => {
+  it('carry the team of the bot when there is one, and still read without it', () => {
+    const dlp = { type: 'guardrails.dlp.decided', schemaVersion: 1, workspaceId: uuid(1), destination: 'mcp', botId: uuid(2), teamId: uuid(3), preset: 'standard', outcome: 'block', rules: ['api-key'], at };
+    expect(parseEvent(dlp)).toEqual(dlp);
+    expect(parseEvent({ ...dlp, teamId: null })).toMatchObject({ teamId: null });
+    const older: Record<string, unknown> = { ...dlp };
+    delete older['teamId'];
+    expect(parseEvent(older)).toEqual(older);
+    expect(failsAt({ ...dlp, teamId: 'eng' })).toContain('teamId');
+    const egress = { type: 'guardrails.egress.decided', schemaVersion: 1, workspaceId: uuid(1), destination: 'mcp', botId: uuid(2), teamId: uuid(3), preset: 'standard', outcome: 'block', target: 'web', host: 'evil.example', at };
+    expect(parseEvent(egress)).toEqual(egress);
+  });
+});
+
+describe('guardrails.policy.updated', () => {
+  const valid = { type: 'guardrails.policy.updated', schemaVersion: 1, workspaceId: uuid(1), kind: 'dlp', change: 'rule_added', subject: 'customer-id', teamId: null, changedBy: uuid(2), at };
+
+  it('is registered at version 1 and names what changed by a short code, never a pattern or a host', () => {
+    expect(Object.keys(eventRegistry['guardrails.policy.updated'])).toEqual(['1']);
+    expect(parseEvent(valid)).toEqual(valid);
+    expect(parseEvent({ ...valid, kind: 'egress', change: 'team_list', subject: null, teamId: uuid(3) })).toMatchObject({ kind: 'egress', teamId: uuid(3) });
+  });
+
+  it.each([
+    ['kind', { kind: 'models' }],
+    ['change', { change: 'edited' }],
+    ['subject', { subject: 'x'.repeat(61) }],
+    ['changedBy', { changedBy: 'omar' }],
+    ['teamId', { teamId: 'eng' }],
+    ['at', { at: 'today' }],
+  ])('refuses a bad %s', (field, over) => {
+    expect(failsAt({ ...valid, ...over })).toContain(field);
+  });
+});

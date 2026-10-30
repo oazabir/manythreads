@@ -24,10 +24,12 @@ export default definePlugin({
     name: 'gateway-mcp',
     version: '0.1.0',
     kind: 'server',
-    extends: ['tool.invoke'],
+    extends: ['tool.invoke', 'hook.pre_egress', 'event.emit'],
+    events: { emits: ['guardrails.dlp.decided'], consumes: [] },
     capabilities: STUB_CAPABILITIES.map((name) => ({ name, destructive: false })),
     // app.mcp_run_tokens references app.bot_runs and app.bots: this plugin's migration needs the bots namespace first.
-    dependsOn: ['bots'],
+    // guardrails-dlp reads what a call carries (the pre_egress chain); without it every call that carries text is refused.
+    dependsOn: ['bots', 'guardrails-dlp'],
     migrations: 'migrations',
   },
   register(ctx) {

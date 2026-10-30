@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+    },
+    "pattern": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 190
+    },
+    "ignoreCase": {
+      "default": false,
+      "type": "boolean"
+    },
+    "action": {
+      "default": "redact",
+      "type": "string",
+      "enum": [
+        "preset",
+        "redact",
+        "require_approval",
+        "block"
+      ]
+    },
+    "enabled": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "pattern",
+    "ignoreCase",
+    "action",
+    "enabled"
+  ],
+  "additionalProperties": false
+}

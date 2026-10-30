@@ -142,3 +142,7 @@ export type ProjectId = z.infer<typeof ProjectId>;
 /** One row of the audit console. It is the id of the event (or memory log line) the row was made from, so a row can be traced back to its source. */
 export const AuditEventId = z.uuid().brand<'AuditEventId'>();
 export type AuditEventId = z.infer<typeof AuditEventId>;
+
+/** A custom data-loss rule an admin wrote (guardrails-dlp). */
+export const DlpRuleId = z.uuid().brand<'DlpRuleId'>();
+export type DlpRuleId = z.infer<typeof DlpRuleId>;
