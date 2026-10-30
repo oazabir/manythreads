@@ -154,6 +154,11 @@ async function begin(ctx: PluginContext, tx: PluginTx, p: JobPayload): Promise<S
     if (p.trigger === 'on_commit') throw new Error(`bots: no bot "${p.botSlug}" loaded yet`);
     return { kind: 'skip' };
   }
+  const repo = ctx.providers.get<RepoProvider>('repo');
+  if (!repo) throw new Error('the repo provider is not registered');
+  // A commit's run reads the files as they are on main now: a job that waited (the bot was not loaded yet, a retry) must not judge an older tree than the
+  // run of the commit that came after it, or the stale run would sit as the latest one (a BOT.md applied first, its set file a moment later).
+  const commit = p.trigger === 'on_commit' && p.commitSha !== null ? (await repo.tree(tx, p.teamId, '', 'main')).commitSha : p.commitSha;
   let row: { id: string; status: string } | undefined;
   if (p.runId !== null) {
     row = (await tx.query<{ id: string; status: string }>('SELECT id, status FROM app.bot_eval_runs WHERE id = $1 AND bot_id = $2', [p.runId, bot.id])).rows[0];
@@ -162,7 +167,7 @@ async function begin(ctx: PluginContext, tx: PluginTx, p: JobPayload): Promise<S
     row = (
       await tx.query<{ id: string; status: string }>(
         `SELECT id, status FROM app.bot_eval_runs WHERE bot_id = $1 AND trigger = 'on_commit' AND commit_sha = $2 ORDER BY id DESC LIMIT 1`,
-        [bot.id, p.commitSha],
+        [bot.id, commit],
       )
     ).rows[0];
     if (row && row.status !== 'running') return { kind: 'skip' };
@@ -175,9 +180,7 @@ async function begin(ctx: PluginContext, tx: PluginTx, p: JobPayload): Promise<S
     ).rows[0];
   }
 
-  const repo = ctx.providers.get<RepoProvider>('repo');
-  if (!repo) throw new Error('the repo provider is not registered');
-  const ref = p.commitSha ?? (await repo.tree(tx, p.teamId, '', 'main')).commitSha;
+  const ref = commit ?? (await repo.tree(tx, p.teamId, '', 'main')).commitSha;
   const loaded = await loadBotEval(p.botSlug, (path) => readFileAt(repo, tx, p.teamId, path, ref));
 
   // A commit or the night finds nothing to run for a bot without a set, or at a commit where its BOT.md is not there yet (the set file landed first): that is not worth a row.
