@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { DEFAULT_CONVERSATION_PROMPTS, MAX_CONVERSATION_PROMPTS, type BotFrontmatter, type BotRun, type BotSummary } from '@manythreads/shared';
 import { Time } from '../../components/ui';
 import { ChipsField, NumberField, SelectField, SwitchRow, TextField } from './fields';
+import { EvalRunPanel } from './evals';
 import { Block, Mono, NotSet, Row } from './parts';
 import type { DefinitionDraft } from './store';
 
@@ -568,18 +569,18 @@ export function ContractTab({ draft, canEdit }: TabProps) {
 }
 
 // ---- Evals --------------------------------------------------------------------------------------------------------------
-export function EvalsTab({ draft, canEdit }: TabProps) {
+export function EvalsTab({ draft, canEdit, slug, bot }: TabProps) {
   const e = fm(draft).evals;
   const [set, setSet] = useState('');
   const canAdd = SLUG_RE.test(set.trim());
   return (
-    <Block title="Evals" count="run on demand and on a pull request">
+    <Block title="Evals" count="run on demand, on every applied change and nightly">
       {!e ? <NotSet>No scenario set: this bot's prompt is not replayed against recorded cases yet.</NotSet> : null}
       {e ? (
         <>
-          <Row label="Scenario set" hint="Recorded scenarios replayed against this BOT.md on every PR to it, not on every save."><Mono>{e.set}</Mono></Row>
+          <Row label="Scenario set" hint="Recorded scenarios run against this BOT.md whenever a change to it is applied, every night, and when a lead asks."><Mono>{e.set}</Mono></Row>
           <div className="b-rowline">
-            <div className="b-lab">Minimum score<div className="d">Below this, the pull request is flagged.</div></div>
+            <div className="b-lab">Minimum score<div className="d">Below this, the run is flagged on this page.</div></div>
             <div className="b-val">
               <input
                 type="number"
@@ -598,6 +599,7 @@ export function EvalsTab({ draft, canEdit }: TabProps) {
             </div>
           </div>
           {canEdit ? <button type="button" className="btn s" onClick={() => draft.patch((d) => ({ ...d, evals: undefined }))}>Remove the eval set</button> : null}
+          <EvalRunPanel slug={slug} botSlug={bot.slug} />
         </>
       ) : null}
       {canEdit && !e ? (

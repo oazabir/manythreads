@@ -7,6 +7,7 @@ The commands that build, lint and test manythreads, and the rules every coding a
 pnpm install            pnpm lint     pnpm typecheck     pnpm build
 pnpm test               # vitest, all packages (needs DB: pnpm db:up)
 pnpm test:rls  pnpm test:events  pnpm test:schema-compat  pnpm test:memory-cross-team  (later: test:runtime-rules)
+pnpm test:evals -- --bot=<slug>   # a bot's scenario set from files on disk, free mode, non-zero below minScore (docs/plugins/bots.md#evals-p7-08)
 pnpm memory:up / memory:down   # Hindsight (compose profile `memory`, port 8888); docs/plugins/memory-hindsight.md
 pnpm s3:up              # MinIO for storage-s3 tests (MANYTHREADS_TEST_S3=1)
 pnpm db:up / db:down    # dev Postgres 19 via deploy/compose (port 55432, user manythreads_owner)

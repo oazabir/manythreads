@@ -1,12 +1,17 @@
 import {
+  GetBotEvalsResponse,
   GetBotResponse,
   GetRepoBlobQuery,
   GetRepoBlobResponse,
   ListBotsResponse,
+  RunEvalsRequest,
+  RunEvalsResponse,
   botMdPath,
+  getBotEvalsRoute,
   getBotRoute,
   getRepoBlobRoute,
   listBotsRoute,
+  runEvalsRoute,
 } from '@manythreads/shared';
 import { call } from '../../api/client';
 import { createProposal } from '../proposals/api';
@@ -50,3 +55,10 @@ export async function proposeDefinition(
 export { botMdPath };
 
 /** Why there is no Talk button on a bot whose definition has no `conversation` trigger: the router answers a conversation only for that trigger. */
+
+/** A bot's evals: the newest runs and whether the signed-in person may start one (PLAN P7-08). */
+export const fetchEvals = (slug: string, botSlug: string) => call(getBotEvalsRoute, { response: GetBotEvalsResponse }, undefined, { slug, botSlug });
+
+/** Start a run of the bot's scenario set. `static` is free; `model` costs tokens. The answer is the run, still `running`. */
+export const startEvals = (slug: string, botSlug: string, mode: 'static' | 'model') =>
+  call(runEvalsRoute, { request: RunEvalsRequest, response: RunEvalsResponse }, RunEvalsRequest.parse({ mode }), { slug, botSlug });

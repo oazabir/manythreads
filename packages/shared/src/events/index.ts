@@ -98,3 +98,4 @@ export * from './bots.pairing.rotated.ts';
 export * from './proposals.proposal.created.ts';
 export * from './proposals.proposal.applied.ts';
 export * from './proposals.proposal.rejected.ts';
+export * from './bots.eval.run.finished.ts';

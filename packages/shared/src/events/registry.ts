@@ -41,6 +41,7 @@ import { HermesConnectionDeletedEvent } from './hermes.connection.deleted.ts';
 import { HermesConnectionTestedEvent } from './hermes.connection.tested.ts';
 import { HermesProfilesChangedEvent } from './hermes.profiles.changed.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
+import { BotsEvalRunFinishedEvent } from './bots.eval.run.finished.ts';
 import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
 import { RunnersRunnerConnectedEvent } from './runners.runner.connected.ts';
 import { RunnersRunnerDisconnectedEvent } from './runners.runner.disconnected.ts';
@@ -198,6 +199,7 @@ export const eventRegistry = {
   'hermes.connection.tested': { 1: HermesConnectionTestedEvent },
   'hermes.profiles.changed': { 1: HermesProfilesChangedEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
+  'bots.eval.run.finished': { 1: BotsEvalRunFinishedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 

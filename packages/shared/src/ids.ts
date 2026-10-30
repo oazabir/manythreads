@@ -121,6 +121,9 @@ export type WebhookId = z.infer<typeof WebhookId>;
 
 export const ProposalId = z.uuid().brand<'ProposalId'>();
 export type ProposalId = z.infer<typeof ProposalId>;
+/** One run of a bot's scenario set (`bot_eval_runs`, PLAN P7-08). */
+export const BotEvalRunId = z.uuid().brand<'BotEvalRunId'>();
+export type BotEvalRunId = z.infer<typeof BotEvalRunId>;
 
 export const HermesConnectionId = z.uuid().brand<'HermesConnectionId'>();
 export type HermesConnectionId = z.infer<typeof HermesConnectionId>;

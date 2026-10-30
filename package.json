@@ -22,6 +22,7 @@
     "memory:up": "bash deploy/compose/memory-up.sh",
     "memory:down": "docker compose -f deploy/compose/docker-compose.dev.yml --profile memory stop hindsight",
     "test:memory-cross-team": "vitest run --project memory-cross-team",
+    "test:evals": "tsx tools/evals/src/cli.ts",
     "e2e": "pnpm -C e2e exec playwright test -c playwright.config.ts",
     "vt": "tsx tools/plates/src/cli.ts",
     "vt:update": "tsx tools/plates/src/cli.ts --update"

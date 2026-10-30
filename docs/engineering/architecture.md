@@ -27,7 +27,7 @@ packages/server        @manythreads/server  — Fastify host, loads plugins, HTT
 packages/test-utils    @manythreads/test-utils — persona presets, readAs, captureEvent, test DB helpers
 packages/plugins/<n>   one plugin per package (manifest + server code + migrations/ + docs page)
 clients/web            React web client (Tauri wraps it in phase 10); clients/mobile in phase 11
-tools/plates tools/bench tools/fake-llm    plate comparison, benchmarks, fake OpenAI-compatible LLM
+tools/plates tools/bench tools/fake-llm tools/evals    plate comparison, benchmarks, fake OpenAI-compatible LLM, bot eval command (`pnpm test:evals`)
 e2e/                   Playwright: api/<area>, <area>, visual/<area>, personas/<p>, __baselines__, fixtures
 deploy/compose deploy/helm deploy/postgres  docs/ (plugin docs, retro/phase-N.md, spec/)
 ```

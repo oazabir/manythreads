@@ -31,3 +31,4 @@ export * from './hermes.ts';
 export * from './project.ts';
 export * from './repo-origin.ts';
 export * from './proposal.ts';
+export * from './eval.ts';

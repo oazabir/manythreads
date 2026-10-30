@@ -49,6 +49,9 @@ import {
   JobState,
   PersonStatus,
   ReadTargetType,
+  EvalMode,
+  EvalRunStatus,
+  EvalTrigger,
   ProposalAuthorKind,
   ProposalOp,
   ProposalStatus,
@@ -148,6 +151,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'proposals.author_kind': ProposalAuthorKind,
   'proposals.op': ProposalOp,
   'proposals.status': ProposalStatus,
+  'bot_eval_runs.trigger': EvalTrigger,
+  'bot_eval_runs.mode': EvalMode,
+  'bot_eval_runs.status': EvalRunStatus,
 };
 
 /**

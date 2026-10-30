@@ -88,6 +88,7 @@ in `packages/shared/src/events/registry.ts`.
 | `bots` | one loaded bot, rebuilt from its `BOT.md` | `team_id`, `slug`, `kind` (`agent` \| `automation`), `runtime` (`hermes` \| `rules`), `visibility` (`team` \| `workspace`), `definition_sha` (sha256 of the file it came from), `status` (`active` \| `disabled` \| `invalid`), `placement` (jsonb), `triggers` and `native` (jsonb; the loader's own projections, migration 0005), `invalid_reason` (jsonb, null while the file loads) | UNIQUE `(team_id, slug)`; UNIQUE `(id, team_id)`; `(team_id)` |
 | `bot_pairing_tokens` | a pairing credential: **sha256 only**, never the token | `bot_id`, `token_hash`, `revoked_at?` | partial UNIQUE `(token_hash) WHERE revoked_at IS NULL`; `(bot_id)` |
 | `bot_runs` | one run | `bot_id`, `team_id`, `trigger_type` (the BOT.md trigger that fired it), `asker_id?`, `thread_id?`, `status` (`running` \| `done` \| `failed` \| `stopped`), `started_at`, `ended_at?` | `(bot_id, id DESC)`; partial `(bot_id) WHERE ended_at IS NULL`; `(team_id, id DESC)`; `(thread_id)` |
+| `bot_eval_runs` | one run of a bot's scenario set (P7-08, migration 0016) | `bot_id`, `bot_slug`, `set_name`, `commit_sha?`, `trigger` (`on_demand` \| `on_commit` \| `nightly`), `mode` (`static` \| `model`), `status` (`running` \| `finished` \| `failed`), `min_score`, `total` / `judged` / `passed`, `score?`, `ok?`, `cost_tokens`, `error?`, `results` (jsonb, at most 100 verdicts), `requested_by?` | `(bot_id, id DESC)`; `(workspace_id)`; `(team_id)`; partial `(started_at) WHERE status = 'running'` |
 | `run_source_log` | what a run read: the evidence behind "Sources reached" | `run_id`, `seq`, `source_type` (open set: `message`, `page`, `file`, `memory`, ...), `source_ref`, `scope` (`team` \| `channel` \| `person`) | PK `(run_id, seq)` |
 
 `bot_runs` has a composite foreign key `(bot_id, team_id) → bots (id, team_id)`, so a run cannot name a bot of another team, and
@@ -124,6 +125,35 @@ kernel's `schema-enums` test fails if SQL and Zod ever list different values.
 Read plans are hoisted: `bots`, `bot_runs` and `run_source_log` are checked by
 `findPerRowPolicyCalls` in `test/rls/bots.test.ts`, which fails the moment a policy calls a per-row helper.
 
+## Evals (P7-08)
+
+A bot's **evals** are the scenario set its BOT.md names (`evals: { set, minScore }`): the file `bots/<slug>/evals/<set>.yaml` in the team repo, a list of questions with what a good answer must and must not do (schema `BotEvalSet`, `packages/shared/src/bot-md/evals.ts`). Running them tells a lead whether a change to the bot's prompt or permissions made it worse. A run gives every case a verdict, and the set a score (cases passed out of cases that could be checked). The score is compared with `minScore`: below it, the run is flagged (`ok: false`) on the bot's Evals tab and in the event.
+
+**Two modes**, because a model costs money and a commit should not:
+
+- `static` (free, the default): no model is asked. Only what the definition itself decides can be judged: a case that *requires* a call (`toolCalls.required`) cannot pass if BOT.md does not grant that capability. Having a capability does not mean the bot will call it, so the cases that forbid a call, and every case about words (citations, "mentions", hand-offs, the list of what could not be reached), are shown as **not checked** and are left out of the score. They are never counted as passed.
+- `model`: the bot's own prompt (the BOT.md body) goes to the first model alias the definition names, together with the case's world (the sources the asker may open; a source they may not open is never shown, it is only reported as out of reach). The model replies with a small JSON object (its answer, the sources it cites, the capabilities it would call); the reply is judged on every assertion. It goes through the gateway's pre-call check and spend ledger like any other call (`provider.llm.evalComplete`, [gateway-llm.md](./gateway-llm.md)), costs tokens, and is only run when a lead asks for it.
+
+The judge is one function (`runEvalScenario` / `runEvalSet`, `packages/shared/src/bot-md/eval-run.ts`) that the server job, the command line and the tests all call; the loader (`loadBotEval`, `eval-load.ts`) reads the definition and the set and refuses, in plain words, a bot with no definition, a definition that does not load, no `evals` block, a missing set file, a set that fails its schema, and a set whose `set:` differs from the name in BOT.md.
+
+**What starts a run**
+
+| Trigger | When | Mode |
+|---|---|---|
+| `on_demand` | `POST /api/teams/:slug/bots/:botSlug/evals/run` by a lead or workspace admin (a member gets 403; 409 while a run started in the last ten minutes is still open; the check runs under a per-bot advisory lock, so two requests at once start one run; at most 20 requests a minute per client). Body `{ "mode": "static" \| "model" }`, default `static`. Answers 202 with the run in state `running`. | either |
+| `on_commit` | `proposals.proposal.applied` for `bots/<slug>/BOT.md` or a file in `bots/<slug>/evals/` (a deleted BOT.md is ignored). The subscriber only enqueues the job (`bots.eval-run`, one per commit and bot); the job reads the files **at that commit**. A bot with no set makes no row. | `static` |
+| `nightly` | `bots.eval-nightly` (cron `27 3 * * *`): one job per active bot, the same job; a bot with no set makes no row. | `static` |
+
+The job (`bots.eval-run`, `detached`, one at a time per bot) reads the files in one short system transaction, judges the cases outside any transaction, and writes the verdict once in another. A run that cannot be made (no set file, a model refused, no model alias, a model run that would send more than 2 000 000 characters of prompt in all: the prompt once per case plus 8 000 for a case's world) ends `failed` with a plain sentence in `error`; so does an on-demand run whose job runs out of attempts before it could read the files. `bots.eval-reap` (hourly) ends a run still `running` after an hour. A commit that changes BOT.md before its set file exists shows one failed run saying so; the next commit, once the file is there, shows the real score.
+
+**Reading**: `GET /api/teams/:slug/bots/:botSlug/evals` returns the set and minimum of the newest run, the newest finished run with every case (`latest`), the last ten runs without cases (`recent`) and whether the caller may run them (`canRun`). Everyone who can read the team reads it (RLS: `bot_eval_runs` is team-readable; a lead or admin may insert the first state of an `on_demand` run; every later change is the system role).
+
+**The web**: the bot page's **Evals** tab shows the set, the minimum and the newest verdict as "Eval 17 of 20 passed · minimum 0.90 · view failures", a red flag when the score is below the minimum, a count of cases that passed on the calls they require while their other assertions were not checked ("only partly checked"), each failing case with its reasons, the cases that were not checked, earlier runs, and (for a lead or admin) "Run evals" and "Run with the model".
+
+**The command line**: `pnpm test:evals -- --bot=<slug>` (`tools/evals`) runs the free mode against a bot folder on disk (the working folder, or a template under `templates/`; `--root=<folder>` names a checkout of a team repo; `--verbose` lists every case). Exit 0 at or above the minimum, 1 below it, 2 when the files cannot be used.
+
+**Open items**: a lead is not notified when a run is below the minimum (notifications are tied to a message; the flag is the run and the event `bots.eval.run.finished`). The nightly pass is free-mode only; nobody has asked to spend tokens every night. The live model call has been exercised against the fake gateway only.
+
 ## The stale-run reaper
 
 `bots.reap-runs` (hourly, `maxAttempts: 1`): a run still `running` past its bot's `bots.run_timeout_seconds` (BOT.md `limits.timeoutSeconds` as written, migration 0010, filled by the loader on every load and, for a bot loaded before the column, by the daily `backfillRunTimeouts` which re-reads BOT.md at `main` when it is the file the row was loaded from; `run_timeout_known` says it was read) plus ten minutes — six hours when the definition names none — is a run whose worker died. It is closed `failed` through the run service (`ctx.runs.close`: the manifest extends `run.close`, the close-only door of [security.md](./security.md), not the whole run door), so `bots.run.closed` is emitted and its endpoint token is revoked; at most 200 per pass. A worker that still holds the reaped run's handle can do nothing more with it. Nothing else ever ended such a run, and everything that waits for runs to end (the memory feed holds a bot's output back while one of its runs is open) waited with it.
@@ -131,7 +161,7 @@ Read plans are hoisted: `bots`, `bot_runs` and `run_source_log` are checked by
 ## Events
 
 Emitted: `bots.bot.loaded`, `bots.bot.invalid`, `bots.bot.removed` (the loader above; payload in
-`packages/shared/src/events/bots.bot.*.ts`). `bots.run.closed` (v1: workspace, team, bot, run, trigger, status `done`/`failed`/`stopped`) is written by the run service (`ctx.runs.close`, kernel) in the transaction that moves a run out of `running` — once per run, nothing for a repeated close — and is what the `memory` plugin feeds a run summary from ([memory.md](./memory.md)).
+`packages/shared/src/events/bots.bot.*.ts`). `bots.eval.run.finished` (v1: workspace, team, bot, run, set, trigger, mode, status, commit, total / judged / passed, score, minScore, `ok`; counts only, never a case's answer) is written once when an eval run ends, whoever started it. Consumed: `repo.repo.committed` (the loader) and `proposals.proposal.applied` (the eval trigger above). `bots.run.closed` (v1: workspace, team, bot, run, trigger, status `done`/`failed`/`stopped`) is written by the run service (`ctx.runs.close`, kernel) in the transaction that moves a run out of `running` — once per run, nothing for a repeated close — and is what the `memory` plugin feeds a run summary from ([memory.md](./memory.md)).
 
 ## Tests
 
@@ -159,6 +189,8 @@ resolves to the bot's ids + actor; forged/unknown tokens resolve to null; member
 401, unknown slugs 404 and no refusal writes; the definer functions refuse a member and an outsider with **42501**,
 refuse a short hash (22000) and a random bot id (02000), while the system role mints and revokes past the caller
 check; revoke turns every live token off (`{ revoked: 2 }` → `{ revoked: 0 }`) and a new mint works again.
+
+`test/evals.test.ts` (needs the DB): a lead runs a set and a member gets 403; a definition missing a required call scores 0 and `ok: false`; a second run while one is open is 409; the hourly pass ends a dead run; a bot with no set fails in plain words and a missing set file is named; the model mode through a fake answerer (counts, tokens, a failing case's reason) and without a model binding (the run fails with a sentence); an applied proposal for BOT.md starts an `on_commit` run at that commit and the worse definition is flagged, the event says so, and a change to `TEAM.md` or to a bot with no set starts nothing; the nightly pass. `test/evals-answerer.test.ts`: how a model reply becomes an answer. `test/rls/bots.test.ts` covers `bot_eval_runs`. The judge and loader are `packages/shared/test/bot-eval-run.test.ts`; the command line is `tools/evals/test/cli.test.ts`; the browser path is `e2e/evals/on-commit.spec.ts`.
 
 ## Definitions a template ships (P5-19)
 

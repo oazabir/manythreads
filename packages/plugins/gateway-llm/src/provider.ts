@@ -1,6 +1,7 @@
 import type { PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
 import { requestKeyCheck } from './keys.ts';
 import { classify, type LlmClassifyRequest, type LlmClassifyResult } from './complete.ts';
+import { evalComplete, type LlmEvalRequest, type LlmEvalResult } from './eval-complete.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
 // The `provider.llm` contract (SPEC §10.2, PLAN P5-06 and P5-07). A bot's runtime does not reach LiteLLM itself; it is
@@ -29,6 +30,11 @@ export interface LlmProviderServices extends ProviderImpl {
    * Neither is a flag the caller sets. Never throws for an unavailable model; the answer says why there is none, and the caller decides what that means.
    */
   classify(tx: PluginTx, request: LlmClassifyRequest): Promise<LlmClassifyResult>;
+  /**
+   * One completion for the bots plugin's eval harness (PLAN P7-08): a bot's prompt and one scenario's world on the bot's first alias, through the pre-call
+   * check, the master key and the spend ledger. Not a hit on the bot's rate limit, still counted against its budgets. Never throws for an unavailable model.
+   */
+  evalComplete(tx: PluginTx, request: LlmEvalRequest): Promise<LlmEvalResult>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
@@ -49,6 +55,7 @@ export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
     preflight: (tx, request) => preflight(ctx, tx, window.hit, request),
     recordSpend: (tx, record) => recordSpend(tx, record),
     classify: (tx, request) => classify(ctx, tx, window.hit, request),
+    evalComplete: (tx, request) => evalComplete(ctx, tx, request),
   };
   ctx.providers.register('llm', impl);
   return impl;

@@ -46,3 +46,5 @@ Every proposal carries `checks` (name, ok, message). For `bots/<slug>/BOT.md` th
 - Nobody is notified when a proposal waits (the Proposals link on the Bots roster shows the count).
 - The bot templates do not grant `proposals.propose`; add it to a bot's `capabilities.native`.
 - One proposal changes one file.
+
+**Who listens to `proposals.proposal.applied`.** The bots plugin: an applied change to `bots/<slug>/BOT.md` or to a file in `bots/<slug>/evals/` starts a free run of that bot's scenario set at the new commit, and a score below the BOT.md's `minScore` is flagged on the bot's Evals tab ([bots.md](./bots.md#evals-p7-08)).

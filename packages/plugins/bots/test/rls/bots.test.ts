@@ -377,3 +377,56 @@ describe('bots, bot_pairing_tokens, bot_runs and run_source_log (P5-03)', () => 
     expect(entry).toMatchObject({ sourceType: 'message', sourceRef: 'm-1', scope: 'channel', seq: 0 });
   });
 });
+
+describe('bot_eval_runs (P7-08)', () => {
+  // the bot's id is read as the system role: a persona who cannot read the bot would otherwise insert nothing and see no error
+  const insertRun = async (p: Persona, team: string, botSlug: string, over: Record<string, string> = {}) => {
+    const botId = (await sys(async (tx) => (await tx.query<{ id: string }>('SELECT id FROM app.bots WHERE slug = $1', [botSlug])).rows[0]!.id));
+    return as(p, (tx) =>
+      tx.query(
+        `INSERT INTO app.bot_eval_runs (workspace_id, team_id, bot_id, bot_slug, set_name, trigger, mode, requested_by)
+         VALUES ($1, $2, $3, $4, 'qa', $5, 'static', app.actor())`,
+        [p.workspaceId, team, botId, botSlug, over['trigger'] ?? 'on_demand'],
+      ),
+    );
+  };
+  const runsSeen = (p: Persona): Promise<number> => as(p, async (tx) => (await tx.query('SELECT id FROM app.bot_eval_runs')).rows.length);
+
+  it('passes the RLS harness and reads without a per-row policy helper', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      expect(await explainRlsViolations(admin)).toEqual([]);
+      expect(await findPerRowPolicyCalls(admin, 'bot_eval_runs')).toEqual([]);
+    } finally {
+      await admin.end();
+    }
+  });
+
+  it('a lead starts an on-demand run for a bot of the team; a member, a lead of another team and a forged trigger are refused', async () => {
+    // Omar leads Engineering (and is a workspace admin)
+    expect(await code(insertRun(omar, ENG, 'release-bot'))).toBeUndefined();
+    expect(await code(insertRun(nadia, ENG, 'release-bot'))).toBe('42501');
+    // Tariq leads Marketing and may not manage Engineering
+    expect(await code(insertRun(tariq, ENG, 'release-bot'))).toBe('42501');
+    // only the job (system) writes the other triggers
+    expect(await code(insertRun(omar, ENG, 'release-bot', { trigger: 'on_commit' }))).toBe('42501');
+    // a bot of another team cannot be named under this team
+    expect(await code(insertRun(omar, ENG, 'campaign-bot'))).toBe('42501');
+  });
+
+  it('whoever reads the team reads its runs, nobody else does; no request role changes or deletes one', async () => {
+    expect(await runsSeen(omar)).toBe(1);
+    expect(await runsSeen(nadia)).toBe(1);
+    expect(await runsSeen(rafi)).toBe(1);
+    expect(await runsSeen(sameera)).toBe(0);
+    expect(await code(as(omar, (tx) => tx.query("UPDATE app.bot_eval_runs SET status = 'finished', finished_at = now(), ok = true")))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('DELETE FROM app.bot_eval_runs')))).toBe('42501');
+    await sys(async (tx) => {
+      const done = await tx.query("UPDATE app.bot_eval_runs SET status = 'finished', finished_at = now(), total = 2, judged = 2, passed = 1, score = 0.5, ok = false RETURNING id");
+      expect(done.rows).toHaveLength(1);
+    });
+    // the counts hold together: a row that passes more than it judged is refused even to the system role
+    expect(await code(sys((tx) => tx.query('UPDATE app.bot_eval_runs SET passed = 3')))).toBe('23514');
+  });
+});
