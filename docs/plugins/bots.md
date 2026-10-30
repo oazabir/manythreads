@@ -87,8 +87,10 @@ in `packages/shared/src/events/registry.ts`.
 |---|---|---|---|
 | `bots` | one loaded bot, rebuilt from its `BOT.md` | `team_id`, `slug`, `kind` (`agent` \| `automation`), `runtime` (`hermes` \| `rules`), `visibility` (`team` \| `workspace`), `definition_sha` (sha256 of the file it came from), `status` (`active` \| `disabled` \| `invalid`), `placement` (jsonb), `triggers` and `native` (jsonb; the loader's own projections, migration 0005), `invalid_reason` (jsonb, null while the file loads), `knowledge` (jsonb, migration 0017: BOT.md's `knowledge:` list as `[{ base, answer_only_from }]`; NULL for a bot loaded before the column, which the knowledge tool reads as no list) | UNIQUE `(team_id, slug)`; UNIQUE `(id, team_id)`; `(team_id)` |
 | `bot_pairing_tokens` | a pairing credential: **sha256 only**, never the token | `bot_id`, `token_hash`, `revoked_at?` | partial UNIQUE `(token_hash) WHERE revoked_at IS NULL`; `(bot_id)` |
-| `bot_runs` | one run | `bot_id`, `team_id`, `trigger_type` (the BOT.md trigger that fired it), `asker_id?`, `thread_id?`, `status` (`running` \| `done` \| `failed` \| `stopped`), `started_at`, `ended_at?` | `(bot_id, id DESC)`; partial `(bot_id) WHERE ended_at IS NULL`; `(team_id, id DESC)`; `(thread_id)` |
+| `bot_runs` | one run | `bot_id`, `team_id`, `trigger_type` (the BOT.md trigger that fired it), `asker_id?`, `thread_id?`, `status` (`running` \| `done` \| `failed` \| `stopped`), `rehearsal` (boolean, migration 0018: the run is a rehearsal, see The Test action), `started_at`, `ended_at?` | `(bot_id, id DESC)`; partial `(bot_id) WHERE ended_at IS NULL`; `(team_id, id DESC)`; `(thread_id)` |
 | `bot_eval_runs` | one run of a bot's scenario set (P7-08, migration 0016) | `bot_id`, `bot_slug`, `set_name`, `commit_sha?`, `trigger` (`on_demand` \| `on_commit` \| `nightly`), `mode` (`static` \| `model`), `status` (`running` \| `finished` \| `failed`), `min_score`, `total` / `judged` / `passed`, `score?`, `ok?`, `cost_tokens`, `error?`, `results` (jsonb, at most 100 verdicts), `requested_by?` | `(bot_id, id DESC)`; `(workspace_id)`; `(team_id)`; partial `(started_at) WHERE status = 'running'` |
+| `rehearsal_questions` | the one message a lead or admin asked as a rehearsal (P7-11, migration 0018) | `message_id` (PK, the question), `team_id`, `bot_id`, `asked_by` | `(bot_id, asked_by, created_at DESC)`; `(workspace_id)`; `(team_id)`; `(asked_by)` |
+| `rehearsal_intercepts` | one line per write a rehearsal run tried and the gateway held back: the tool name and where it aimed, **never the text** (P7-11, migration 0018) | PK `(run_id, seq)`, `capability`, `target?`, `would_wait` | PK |
 | `run_source_log` | what a run read: the evidence behind "Sources reached" | `run_id`, `seq`, `source_type` (open set: `message`, `page`, `file`, `memory`, ...), `source_ref`, `scope` (`team` \| `channel` \| `person`) | PK `(run_id, seq)` |
 
 `bot_runs` has a composite foreign key `(bot_id, team_id) → bots (id, team_id)`, so a run cannot name a bot of another team, and
@@ -153,6 +155,59 @@ The job (`bots.eval-run`, `detached`, one at a time per bot) reads the files in 
 **The command line**: `pnpm test:evals -- --bot=<slug>` (`tools/evals`) runs the free mode against a bot folder on disk (the working folder, or a template under `templates/`; `--root=<folder>` names a checkout of a team repo; `--verbose` lists every case). Exit 0 at or above the minimum, 1 below it, 2 when the files cannot be used.
 
 **Open items**: a lead is not notified when a run is below the minimum (notifications are tied to a message; the flag is the run and the event `bots.eval.run.finished`). The nightly pass is free-mode only; nobody has asked to spend tokens every night. The live model call has been exercised against the fake gateway only.
+
+## The Test action (P7-11)
+
+On a bot's page a team lead or workspace admin presses **Test**, types one question and reads the bot's answer in the panel. The bot runs for real: its prompt, its
+knowledge, its read tools, the data-loss check, the gate and the budgets all apply. The one difference is that **every write it tries over the platform's tool door is held
+back** and listed as "not done — rehearsal". Nothing is built as a new plugin: the data is `bots` migration 0018, the two routes are in `conversations`
+(`src/rehearsal.ts`), the hold-back is in `gateway-mcp` and the router and run job are in `runtime-hermes`. (PLAN names `plugins/workshop` for the larger P7 workshop; it is not
+needed for this.)
+
+**How a run becomes a rehearsal.** Never from anything the client sends. `POST /api/teams/:slug/bots/:botSlug/test` takes `{ question }` and nothing else (a strict body: no
+flag, channel or asker). In one transaction it opens the caller's own conversation with the bot (`app.conversations_open`), posts the question there as an ordinary message
+(through the `messages` provider) and files it in `rehearsal_questions` (the row's RLS: the asker only, a team they manage, a message they wrote, a bot of that team). The
+router (`runtime-hermes`) reads that table when the message's event arrives, and queues the run with `rehearsal: true`; the run job writes it into `bot_runs.rehearsal`.
+The gateway reads the flag back from the **run's own row** on every call (the run is found from its token), so no argument of a tool call can switch it on or off. Only a
+`conversation` run can be a rehearsal (CHECK). Only that one question is a rehearsal: if the person keeps typing in the conversation, the next message is an ordinary run.
+
+**Who may.** `manage` on the bot's team (a lead of that team or a workspace admin): 403 otherwise; an unknown bot is 404; a bot that is not `active`, is not `hermes`, or has no
+`conversation` trigger is 409 (`bot_has_no_conversation_trigger` for the last). One test at a time per person and bot (409 while the earlier one is running; a question counts as running from the moment it is filed, for up to five minutes before its run opens, and two presses at the same instant take turns on an advisory lock), at most 10 a minute per client
+(the same rate-limit door every route has). The question lives in the caller's private conversation channel and nowhere else; it is not posted to a team channel and the
+result route is the asker's alone (RLS on `rehearsal_questions`).
+
+**What is held back** (`docs/plugins/gateway-mcp.md`, "Rehearsal runs"): a tool whose kind is not `read` or `stub`, except the reply itself (`answer.post`). A tool the catalog
+does not describe counts as a write. A grant that needs approval files **no** approval in a rehearsal; the line says `would_wait`. A call the broker refuses (no grant, a
+forbidden path, the data-loss check) is refused exactly as before and is not listed as held back.
+
+**What cannot be held back, so the test is refused (409).** A bot whose BOT.md grants `capabilities.runtime` (`shell`, `files`, `browser`, ...) has tools in its own Hermes
+process that never pass through the gateway. On a gateway or pod placement those are per profile, not per run, so a rehearsal cannot turn them off. The route reads the
+definition from the repo (the same file the loader used, checked by sha) and refuses, naming what is granted; if it cannot read the definition it refuses too (it cannot say what the bot may do).
+The run job checks again and ends the run `stopped` with a notice if the definition changed in between.
+
+**What the model is told.** `runtime-hermes/src/rehearsal.ts` puts a short note in front of the prompt: this is a test, writes are held back, never say one happened, and say
+plainly if there is no knowledge base. The hold-back does not depend on the model obeying it; the note only keeps the reply honest.
+
+**The result.** `GET /api/teams/:slug/bots/:botSlug/test/:messageId` answers `{ messageId, channelId, status, intercepted[], interceptedMore, knowledge }`. `status` is `waiting`
+(no run yet, or still running), `answered` (the run is done and the thread holds the bot's reply), `stopped` (ended without a reply on purpose: held, refused, or blocked) or
+`failed`. `intercepted` is the first 50 lines (200 are kept per run; past that the call is still held back and `interceptedMore` is true). `knowledge` is `none` (no indexed
+document in any base the bot may use: it answers from what it has, and the panel says so), `used` (the run read at least one passage) or `not_used`. The answer itself is the
+reply in the thread (an `Answer` with its numbered sources when the bot used `answer.post`), which the panel reads with the thread route.
+
+**Tables and door.** `bot_runs.rehearsal` (+ CHECK), `rehearsal_questions` and `rehearsal_intercepts` (RLS ENABLE+FORCE, indexed foreign keys). The only way to write an intercept line is
+`app.rehearsal_intercept_append(capability, target, would_wait)`, a definer function owned by `manythreads_system` with a pinned `search_path`: it takes the run from `app.run_id()`,
+refuses a run that is not a live rehearsal (so a normal run cannot record "not done"), takes an advisory lock for the position and keeps at most 200 lines. `ctx.runs.logIntercept` is the
+SDK door to it (refused in the restricted `run.close` and `run.resolve` contexts, like `logSource`).
+
+**Not built / limits.** No audit event or entry is written for starting a test beyond the ordinary message and run rows. Continuing the conversation in the thread is not a
+rehearsal and is not badged. The model's closing text is posted by the runtime as the reply (not a tool call), so it is the only "write" a rehearsal makes, and it lands in
+the asker's private thread. A runtime other than `hermes` (rules bots) cannot be tested here.
+
+**Tests.** `packages/plugins/gateway-mcp/test/rehearsal.test.ts` (a write in a rehearsal changes nothing and is answered "not done", one line kept without the text, an approval is not filed, reads and `answer.post`
+still work, the same write on a normal run happens, a tool argument cannot flip the flag, the 200-line cap, a normal run cannot write a line);
+`packages/plugins/conversations/test/rehearsal.test.ts` (the whole path with a stand-in Hermes: who may, strict body, 404/409 cases, the run is a rehearsal for the asker, the prompt carries the note, the
+next message is a normal run, the result is the asker's alone, one at a time); `packages/plugins/runtime-hermes/test/rehearsal.test.ts` (the note and the runtime-grant refusal);
+`test/rls/bots.test.ts` ("rehearsal runs"); web `clients/web/test/bot-test-run.test.ts`; browser `e2e/bots/test-action.spec.ts` (desktop and phone); live-only `e2e/screens/task.p7-11.shots.ts`.
 
 ## The stale-run reaper
 

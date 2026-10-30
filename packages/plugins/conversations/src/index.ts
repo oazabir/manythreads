@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerAnswerShareRoutes } from './answer-share.ts';
 import { registerIndexer } from './indexer.ts';
+import { registerRehearsalRoutes } from './rehearsal.ts';
 import { registerRoutes } from './routes.ts';
 
 /**
@@ -9,7 +10,8 @@ import { registerRoutes } from './routes.ts';
  * there is the root of a thread and fires the bot's `conversation` trigger (runtime-hermes' router). This plugin owns the one door that
  * makes the channel (migration 0001), the index of conversations with their visibility, the event that announces a new one, and the two
  * routes the conversation view reads: open, and the lists Mine · Shared · Channel mentions; and (P5-17) what a person does with an answer of their
- * own conversation: the share preview, share to a channel with masking, hand to another bot. docs/plugins/conversations.md.
+ * own conversation: the share preview, share to a channel with masking, hand to another bot; and (P7-11) the bot page's Test action: one question
+ * from a team lead or workspace admin, run as a rehearsal (the gateway holds back every write). docs/plugins/conversations.md.
  */
 export default definePlugin({
   manifest: {
@@ -30,5 +32,6 @@ export default definePlugin({
     registerIndexer(ctx);
     registerRoutes(ctx);
     registerAnswerShareRoutes(ctx);
+    registerRehearsalRoutes(ctx);
   },
 });

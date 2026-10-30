@@ -68,6 +68,8 @@ request's transaction, so the list may trail the send by the outbox's latency; t
 |---|---|
 | `POST /api/teams/:slug/bots/:botSlug/conversation` | Opens (get-or-create) the caller's channel with the bot: `{ botId, botName, botRole, channelId, created, prompts, promptSource }`; 201 when this call made it, 200 when it existed. 403 for a person who may not talk to the bot, 404 for an unknown bot, 409 for a bot that is turned off or invalid, and 409 with code `bot_has_no_conversation_trigger` for one whose definition has no `conversation` trigger. |
 | `GET /api/teams/:slug/bots/:botSlug/conversations?scope=mine\|shared\|mentions&limit=&cursor=` | One of the three lists, newest activity first (`last_reply_at`, else the root's time; the cursor is `<microseconds>:<thread id>`, at most 16 digits: anything else, including a number past a bigint, is a 400 rather than a failed cast). The lists stay readable for a bot that cannot answer (turned off, invalid, no trigger). The web view's "Show older" follows `nextCursor`. |
+| `POST /api/teams/:slug/bots/:botSlug/test` | The bot page's Test action (P7-11, `src/rehearsal.ts`): `{ question }` (strict, 1 to 2000 characters after trimming) posts the question into the caller's own conversation with the bot and files it as a rehearsal question; answers 201 `{ botName, channelId, messageId }`. Only a lead of the team or a workspace admin (403 otherwise); 404 unknown bot; 409 for a bot that is not active, not `hermes`, without a `conversation` trigger, with `capabilities.runtime` granted, or with a test still running; 10 a minute per client. The run is a rehearsal: every write the bot tries is held back (see [bots](./bots.md)). |
+| `GET /api/teams/:slug/bots/:botSlug/test/:messageId` | Where that test stands: `{ messageId, channelId, status, intercepted[], interceptedMore, knowledge }`. The asker's alone (404 for anyone else). |
 
 The three lists:
 
@@ -166,7 +168,7 @@ sees in a run, the index policies and constraints), `test/conversation.test.ts` 
 open, send, the run's trigger and asker, the reply, the three lists, privacy, paging), `test/events/conversations-events.test.ts`
 (`pnpm test:events`: no `team_id` on either event), `packages/plugins/runtime-hermes/test/router.test.ts` (the trigger rule), `packages/plugins/memory/test/feed.test.ts`
 (a conversation is never fed), `e2e/conversations/conversation.spec.ts` (`pnpm e2e conversations`: the empty state and chips on both layouts,
-send starts a thread and the reply appears, private by default, Shared, Channel mentions); `test/share.test.ts` (sharing through the server: who may
+send starts a thread and the reply appears, private by default, Shared, Channel mentions); `test/rehearsal.test.ts` (the Test action, P7-11: who may, the strict body, the run is a rehearsal for the asker, the note in the prompt, the result is the asker's alone), `test/share.test.ts` (sharing through the server: who may
 touch an answer, preview, share, replay, masking per audience, removal, the event, Save as page, Hand to a bot), `test/rls/conversations.test.ts`
 (`app.conversations_mark_shared`), `e2e/conversations/share.spec.ts` (desktop and mobile-web: share with a masked citation, remove a claim, save as
 page, hand to a bot, follow-up).

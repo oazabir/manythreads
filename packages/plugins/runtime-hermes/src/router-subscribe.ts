@@ -84,6 +84,12 @@ async function projectOfChannel(tx: PluginTx, channelId: string): Promise<Projec
   return { name: row.name, repoUrl: row.repo_url, defaultBranch: row.default_branch, cloned: isRepoOriginAllowed(row.repo_url, allow) };
 }
 
+/** Did the bot page's Test action file this message as its rehearsal question (bots migration 0018)? */
+async function isRehearsalQuestion(tx: PluginTx, messageId: string): Promise<boolean> {
+  const res = await tx.query('SELECT 1 FROM app.rehearsal_questions WHERE message_id = $1::uuid', [messageId]);
+  return res.rows.length > 0;
+}
+
 /** The one subscription: decide, then enqueue one run per bot that the message fires. Runs in the outbox's system transaction. */
 export function registerRouter(ctx: PluginContext): void {
   registerTaskRouter(ctx);
@@ -144,6 +150,9 @@ export function registerRouter(ctx: PluginContext): void {
       )
     ).rows;
     const project = await projectOfChannel(tx, message.channel_id);
+    // A question the bot page's Test action filed is a rehearsal (the row is written by the Test route in the transaction that posted the message,
+    // so it is there before this event is delivered). Only a bot conversation has one.
+    const rehearsal = conversation && (await isRehearsalQuestion(tx, message.id));
     for (const bot of bots) {
       const trigger = matchTrigger(bot.triggers ?? [], bot.slug, {
         ...view,
@@ -161,6 +170,7 @@ export function registerRouter(ctx: PluginContext): void {
         runThreadId: message.thread_root_id,
         prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
         text: message.body.slice(0, 40_000),
+        ...(rehearsal && trigger === 'conversation' ? { rehearsal: true as const } : {}),
       };
       await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
     }

@@ -14,7 +14,7 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { askForApproval } from './approval.ts';
-import { authorizeContext, definitionOf, withRunTeam } from './catalog.ts';
+import { authorizeContext, definitionOf, interceptTarget, withRunTeam } from './catalog.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { json } from './http.ts';
 
@@ -117,6 +117,21 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
     }
   }
 
+  // A rehearsal (the bot page's Test action) makes no change: a write is held back HERE, at the one door every tool call passes, after the grant and the
+  // data-loss check have judged it (a call the bot could not make is still refused for the real reason) and before anything that has an effect — the
+  // approval inbox included, so a rehearsal never leaves a card for a person. The run's own row says it is a rehearsal (resolved from the token, never
+  // from the request). A tool that is not a known read, and not the reply itself, counts as a write, so a tool added later is held back until someone says otherwise.
+  // The reply itself (`rehearsalSafe`) goes through only when it would go straight out: a reply that would wait for a person would file a card in the
+  // Approvals inbox, so it is held back like any write (the closing text of the run then carries the answer).
+  if (
+    run.rehearsal === true &&
+    definition.kind !== 'read' &&
+    definition.kind !== 'stub' &&
+    (definition.rehearsalSafe !== true || decision.needsApproval || holdForPerson)
+  ) {
+    return await holdBack(ctx, run, params.name, input, decision.needsApproval || holdForPerson);
+  }
+
   if (decision.needsApproval || holdForPerson) {
     // The grant says a person must approve this call: it becomes a pending approval (the approvals plugin's one handler) and the model is
     // told. Without that plugin the call is refused outright — running it anyway is the one thing the flag exists to stop.
@@ -148,6 +163,28 @@ async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCa
     if (err instanceof RunEndedError) throw err;
     return toolResult(thrownAnswer(params.name, err), true);
   }
+}
+
+/**
+ * A write a rehearsal run tried: nothing is done, one line is kept (the tool and where it aimed, no content), and the model is told in so many words that
+ * nothing happened so it does not report the work as finished. The answer is `ok: true` so the model carries on to its reply instead of retrying.
+ */
+async function holdBack(ctx: PluginContext, run: BotRunHandle, tool: string, input: Record<string, unknown>, wouldWait: boolean): Promise<McpToolResult> {
+  const target = interceptTarget(input);
+  try {
+    await ctx.runs.asBot(run, (tx) => ctx.runs.logIntercept(tx, { capability: tool, target, wouldWait }));
+  } catch (err) {
+    if (err instanceof RunEndedError) throw err;
+    // The line could not be kept, so the page could not list the call: the call is still not made, and the model is told it failed rather than that it was held.
+    faultLog(`gateway-mcp: a rehearsal could not record a held-back ${tool}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
+    return toolResult({ ok: false, code: 'failed', message: 'the call was not made' }, true);
+  }
+  return toolResult({
+    ok: true,
+    rehearsal: true,
+    done: false,
+    message: `Rehearsal: “${tool}” was NOT done. Nothing changed and nothing was sent. In your reply say what you would have done, and do not say it happened.`,
+  });
 }
 
 /** Where the real text of an unexpected error goes (the server's stderr); tests replace it. The plugin SDK has no request logger. */

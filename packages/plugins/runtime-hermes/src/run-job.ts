@@ -25,6 +25,7 @@ import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, looksLikeRejectedKey, postFailureNotice, type FailureCategory } from './failure-notice.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
+import { rehearsalBlocker, withRehearsalNote } from './rehearsal.ts';
 import { rhythmOverrideProblem, applyRhythmOverrides, emitRhythmFinished, emitRhythmStarted, finishRhythmRun } from './rhythm-run.ts';
 
 /** The job queue one run executes in. */
@@ -79,6 +80,11 @@ export const RunPayload = z.strictObject({
     .optional(),
   /** Marks the payload stored with a gate hold, so that approving it resumes the run past the gate (not past the DLP check). */
   gateHold: z.literal(true).optional(),
+  /**
+   * Set by the router, from a question the Test route filed (`app.rehearsal_questions`), never from anything a caller sent: the run is a rehearsal, so
+   * the gateway holds back every write it tries and lists it as "not done" (PLAN P7-11, docs/plugins/gateway-mcp.md). Only a conversation run has it.
+   */
+  rehearsal: z.literal(true).optional(),
 });
 export type RunPayload = z.infer<typeof RunPayload>;
 
@@ -408,6 +414,9 @@ export function buildScope(input: {
 
   const scope: BotRuntimeScope = {
     async invoke(capability, args) {
+      // The runtime's own door has one use in a conversation: the reply. A rehearsal run (which holds every write back at the gateway) never makes any
+      // other call here, so a runtime that tried would be stopped rather than allowed to bypass the hold.
+      if (run.rehearsal === true && capability !== 'messages.post') throw new Error(`the run is a rehearsal and may not call "${capability}"`);
       const decision = await ctx.runs.authorize(run, capability, authorizeContext(args));
       if (!decision.allowed) throw new Error(`the run may not call "${capability}": ${decision.reason}`);
       // A grant that waits for a person becomes a pending approval (the approvals plugin's one handler) and the run stops: the call is not
@@ -533,7 +542,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
   ctx.jobs.register(
     RUN_QUEUE,
     async (raw, _unusable, job) => {
-      const payload = RunPayload.parse(raw);
+      const payload = withRehearsalNote(RunPayload.parse(raw));
       if (await settleEarlierAttempt(ctx, job.log, job, payload)) return;
 
       let prepared: PreparedRun | undefined;
@@ -591,6 +600,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
               channelId: payload.channelId,
               replyRootId: payload.replyRootId,
               ttlSeconds,
+              ...(payload.rehearsal === true ? { rehearsal: true } : {}),
             });
           } catch (err) {
             // A run that cannot be opened (an asker no longer on the team, a bot that moved) will not open on a retry either: say so
@@ -601,6 +611,15 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           const { run, token } = openedRun;
           opened = run;
           await emitRhythmStarted(ctx, tx, payload, run);
+
+          // A rehearsal holds back what goes through the tool door; a definition that also lets the bot's own process change things (a shell, files, a
+          // browser) cannot be held back there, so the run says why it did not start and ends here, before anything is sent to a model.
+          const blocker = payload.rehearsal === true ? rehearsalBlocker(definition.frontmatter.capabilities?.runtime) : null;
+          if (blocker !== null) {
+            await postNotice(ctx, run, payload, blocker, (line) => job.log.warn(line));
+            await ctx.runs.close(run.runId, 'stopped');
+            return null;
+          }
 
           if ((await checkGate({ ctx, tx, log: job.log, provider, definition, payload, run, bot })) === 'stop') return null;
 

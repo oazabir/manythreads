@@ -78,7 +78,7 @@ describe('ctx.identity', () => {
     const ctx = createPluginContext(reaper.manifest, { ...base, runs });
     await expect(ctx.runs.close('run-1', 'failed')).resolves.toBe(true);
     expect(closed).toEqual([['run-1', 'failed']]);
-    for (const member of ['open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'inheritSources'] as const) {
+    for (const member of ['open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'logIntercept', 'inheritSources'] as const) {
       expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.close.*tool\.invoke/);
     }
     const plain = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
@@ -102,7 +102,7 @@ describe('ctx.identity', () => {
     const ctx = createPluginContext(proxy.manifest, { ...base, runs });
     await expect(ctx.runs.resolve(Buffer.from('ab', 'hex'))).resolves.toEqual({ runId: 'run-1' });
     expect(seen).toEqual(['ab']);
-    for (const member of ['close', 'open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'inheritSources'] as const) {
+    for (const member of ['close', 'open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'logIntercept', 'inheritSources'] as const) {
       expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.resolve.*tool\.invoke/);
     }
   });

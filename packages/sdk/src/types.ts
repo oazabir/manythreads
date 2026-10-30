@@ -287,6 +287,11 @@ export interface BotRunHandle {
   askerActorId: string | null;
   /** When the run's endpoint stops working (ISO 8601). */
   expiresAt: string;
+  /**
+   * A rehearsal (the bot page's Test action): the run reads for real but every write is held back by the gateway and listed as "not done".
+   * Read from the run's row on every resolve, never from a caller; absent means a normal run.
+   */
+  rehearsal?: boolean;
 }
 
 /** What `ctx.runs.open` needs: the bot (resolved from its pairing token by the caller) and why the run happens. */
@@ -307,6 +312,8 @@ export interface OpenRunInput {
   delegationDepth?: number | null;
   /** The queue job that opens this run (`JobInfo.jobId`): recorded on the run, so a retried job can tell its own earlier run from another job's. */
   jobId?: string | null;
+  /** The run is a rehearsal (see `BotRunHandle.rehearsal`). Only the runtime router sets it, from a question the Test route recorded. */
+  rehearsal?: boolean;
   /** How long the run's endpoint stays usable (seconds); the service's default applies when omitted. */
   ttlSeconds?: number;
 }
@@ -368,6 +375,11 @@ export interface PluginRuns {
   invoke(tx: PluginTx, capability: string, input: Record<string, unknown>): Promise<unknown>;
   /** Records what the run read (`run_source_log`); must be called inside `asBot`/`asReader`. Answers the seq. */
   logSource(tx: PluginTx, source: { sourceType: string; sourceRef: string; scope: 'team' | 'channel' | 'person' }): Promise<number>;
+  /**
+   * Records one write a rehearsal run tried and the gateway held back (`rehearsal_intercepts`); must be called inside `asBot`. Content-blind: the tool's
+   * name and, when the call named one, the path or id it targeted. Refused for a run that is not a rehearsal. Answers the seq.
+   */
+  logIntercept(tx: PluginTx, intercept: { capability: string; target: string | null; wouldWait: boolean }): Promise<number>;
   /**
    * Gives `run` the source log of `fromRunId` (a run of the same bot and team): every distinct line the stopped run had logged, in one set-based
    * statement, with no cap — a rule that reads a run's history must never see a truncated one. For the re-run of an approved call (a new run with an

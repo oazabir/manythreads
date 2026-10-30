@@ -7,6 +7,8 @@ import { useHeaderTopic } from '../../shell/topic';
 import { botMdPath } from './api';
 import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { TabPanel } from './tabs';
+import { BotTestPanel } from './test-panel';
+import { canOfferTest } from './test-run';
 
 /*
  * One bot's page (SPEC §7.2/§7.5, PLAN P5-05, `[proto §05]`): the same fourteen tabs for every bot in the workspace, reached from the
@@ -82,6 +84,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
 }) {
   const draft = useDefinition(slug, path, revision);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   const doSave = async (applyNow: boolean): Promise<void> => {
     if (!draft.frontmatter || busy || draft.issues.length > 0) return;
@@ -125,6 +128,10 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           {bot.status === 'active' && bot.conversational ? (
             <Link className="btn s primary" to={`/t/${slug}/bots/${bot.slug}/chat`} data-testid="open-conversation">Talk to {bot.name}</Link>
           ) : null}
+          {/* the Test action (P7-11): a rehearsal for someone who may manage the bot; the server checks again and holds back every write */}
+          {canOfferTest({ canEdit, status: bot.status, conversational: bot.conversational, runtime: bot.runtime }) ? (
+            <button type="button" className="btn s" aria-expanded={testing} onClick={() => setTesting((v) => !v)} data-testid="open-test">Test</button>
+          ) : null}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
           <Link className="btn s" to={`/t/${slug}/proposals`} data-testid="bot-proposals">Proposals</Link>
@@ -141,6 +148,8 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           </div>
         </div>
       ) : null}
+
+      {testing ? <BotTestPanel slug={slug} botSlug={bot.slug} botName={bot.name} onClose={() => setTesting(false)} /> : null}
 
       {save?.kind === 'ok' ? (
         <Notice>

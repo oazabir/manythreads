@@ -50,6 +50,7 @@ interface RunRow {
   trigger_type: string;
   asker_id: string | null;
   expires_at: Date;
+  rehearsal: boolean;
   [key: string]: unknown;
 }
 
@@ -105,8 +106,8 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
         }
         const inserted = (
           await tx.query<{ id: string }>(
-            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, job_id, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'running') RETURNING id`,
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, job_id, rehearsal, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'running') RETURNING id`,
             [
               input.workspaceId,
               input.botId,
@@ -118,6 +119,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
               input.replyRootId ?? null,
               Math.max(0, Math.floor(input.delegationDepth ?? 0)),
               input.jobId ?? null,
+              input.rehearsal === true,
             ],
           )
         ).rows[0];
@@ -139,6 +141,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
           trigger: input.trigger,
           askerActorId: input.askerActorId ?? null,
           expiresAt: minted.expires_at.toISOString(),
+          ...(input.rehearsal === true ? { rehearsal: true } : {}),
         };
         return handle;
       }, system);
@@ -149,7 +152,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       return withSystem(async (tx) => {
         const row = (
           await tx.query<RunRow>(
-            `SELECT t.run_id, t.bot_id, t.expires_at, r.team_id, r.workspace_id, r.trigger_type, r.asker_id,
+            `SELECT t.run_id, t.bot_id, t.expires_at, r.team_id, r.workspace_id, r.trigger_type, r.asker_id, r.rehearsal,
                     a.id AS bot_actor_id
                FROM app.mcp_run_tokens t
                JOIN app.bot_runs r ON r.id = t.run_id
@@ -168,6 +171,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
           trigger: row.trigger_type,
           askerActorId: row.asker_id,
           expiresAt: row.expires_at.toISOString(),
+          ...(row.rehearsal ? { rehearsal: true } : {}),
         } satisfies BotRunHandle;
       }, system);
     },
@@ -176,7 +180,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       return withSystem(async (tx) => {
         const rows = (
           await tx.query<RunRow>(
-            `SELECT r.id AS run_id, r.bot_id, t.expires_at, r.team_id, r.workspace_id, r.trigger_type, r.asker_id, a.id AS bot_actor_id
+            `SELECT r.id AS run_id, r.bot_id, t.expires_at, r.team_id, r.workspace_id, r.trigger_type, r.asker_id, r.rehearsal, a.id AS bot_actor_id
                FROM app.bot_runs r
                JOIN app.mcp_run_tokens t ON t.run_id = r.id AND t.revoked_at IS NULL AND t.expires_at > now()
                JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = r.bot_id
@@ -201,6 +205,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
           trigger: row.trigger_type,
           askerActorId: row.asker_id,
           expiresAt: row.expires_at.toISOString(),
+          ...(row.rehearsal ? { rehearsal: true } : {}),
         } satisfies BotRunHandle;
       }, system);
     },
@@ -307,6 +312,19 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
         );
         return copied.rowCount ?? 0;
       }, system);
+    },
+
+    async logIntercept(tx: PluginTx, intercept: { capability: string; target: string | null; wouldWait: boolean }): Promise<number> {
+      // The same shape as `logSource`: one definer statement that takes the run from `app.run_id()` (a caller cannot name another run) and refuses a run
+      // that is not a rehearsal, so a normal run can never write a line that says "not done".
+      const res = await tx.query<{ seq: number }>('SELECT app.rehearsal_intercept_append($1, $2, $3) AS seq', [
+        intercept.capability,
+        intercept.target,
+        intercept.wouldWait,
+      ]);
+      const seq = res.rows[0]?.seq;
+      if (seq === undefined) throw new Error('the rehearsal intercept append answered no row');
+      return seq;
     },
 
     async logSource(tx: PluginTx, source: { sourceType: string; sourceRef: string; scope: 'team' | 'channel' | 'person' }): Promise<number> {

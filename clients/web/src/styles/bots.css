@@ -680,3 +680,139 @@
     padding: 8px;
   }
 }
+
+/* ---- the Test action (P7-11) ---- */
+.b-test {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.b-test > * + * {
+  margin-top: 10px;
+}
+
+.b-test-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.b-test-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.b-test-intro {
+  max-width: 70ch;
+}
+
+.b-test-lab {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.b-test-q {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+.b-test-q:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.b-test-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.b-test-problem {
+  color: var(--alert-ink);
+  font-size: 13px;
+}
+
+.b-test-answer > * + * {
+  margin-top: 8px;
+}
+
+.b-test-reply {
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.b-test-note {
+  padding: 7px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.b-test-result > * + * {
+  margin-top: 10px;
+}
+
+.b-test-held {
+  padding: 8px 10px;
+  border: 1px solid var(--alert-border);
+  border-radius: 6px;
+  background: var(--alert-wash);
+}
+
+.b-test-held-h {
+  margin: 0 0 2px;
+  color: var(--alert-ink);
+  font-size: 13px;
+}
+
+.b-test-held-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.b-test-held-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.b-test-badge {
+  padding: 1px 7px;
+  border: 1px solid var(--alert-border);
+  border-radius: 999px;
+  color: var(--alert-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.b-test-held-tool,
+.b-test-held-target {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+@media (width <= 480px) {
+  .b-test {
+    padding: 10px;
+  }
+}

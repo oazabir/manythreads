@@ -430,3 +430,140 @@ describe('bot_eval_runs (P7-08)', () => {
     expect(await code(sys((tx) => tx.query('UPDATE app.bot_eval_runs SET passed = 3')))).toBe('23514');
   });
 });
+
+describe('rehearsal runs (P7-11)', () => {
+  let devChannel = '';
+  let omarMessage = '';
+  let nadiaMessage = '';
+  let botId = '';
+  let otherBotId = '';
+  let rehearsalRunId = '';
+
+  beforeAll(async () => {
+    await sys(async (tx) => {
+      botId = (await tx.query<{ id: string }>("SELECT id FROM app.bots WHERE slug = 'release-bot'")).rows[0]!.id;
+      otherBotId = (await tx.query<{ id: string }>("SELECT id FROM app.bots WHERE slug = 'campaign-bot'")).rows[0]!.id;
+      devChannel = (
+        await tx.query<{ id: string }>(
+          "INSERT INTO app.channels (workspace_id, team_id, name, kind, private) VALUES ($1, $2, 'rehearsal-dev', 'channel', false) RETURNING id",
+          [omar.workspaceId, ENG],
+        )
+      ).rows[0]!.id;
+      const post = async (author: string, body: string) =>
+        (await tx.query<{ id: string }>('INSERT INTO app.messages (workspace_id, channel_id, author_id, body, body_plain) VALUES ($1, $2, $3, $4, $4) RETURNING id', [omar.workspaceId, devChannel, author, body]))
+          .rows[0]!.id;
+      omarMessage = await post(omar.actorId, 'omar question');
+      nadiaMessage = await post(nadia.actorId, 'nadia question');
+      rehearsalRunId = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, rehearsal)
+           VALUES ($1, $2, $3, 'conversation', $4, 'running', true) RETURNING id`,
+          [omar.workspaceId, botId, ENG, omar.actorId],
+        )
+      ).rows[0]!.id;
+    });
+  });
+
+  const file = (p: Persona, message: string, bot: string, askedBy: string = p.actorId) =>
+    as(p, (tx) =>
+      tx.query('INSERT INTO app.rehearsal_questions (message_id, workspace_id, team_id, bot_id, asked_by) VALUES ($1, $2, $3, $4, $5)', [message, p.workspaceId, ENG, bot, askedBy]),
+    );
+  const botActor = (runId: string) => ({ kind: 'bot' as const, id: ActorId.parse(randomUUID()), workspaceId: omar.workspaceId, runId: runId as RunId });
+  const append = (runId: string, capability = 'messages.post', target: string | null = null) =>
+    withActor(botActor(runId), async (tx) => (await tx.query<{ seq: number }>('SELECT app.rehearsal_intercept_append($1, $2, false) AS seq', [capability, target])).rows[0]!.seq, { pool: appPool });
+
+  it('passes the RLS harness and reads without a per-row policy helper', async () => {
+    const admin = testClient({ connectionString: db.ownerUrl });
+    await admin.connect();
+    try {
+      expect(await explainRlsViolations(admin)).toEqual([]);
+      expect(await findPerRowPolicyCalls(admin, 'rehearsal_questions')).toEqual([]);
+      expect(await findPerRowPolicyCalls(admin, 'rehearsal_intercepts')).toEqual([]);
+    } finally {
+      await admin.end();
+    }
+  });
+
+  it('a lead or admin files their own question for a bot of a team they manage; nobody files for another person, another team’s bot, or a message that is not theirs', async () => {
+    expect(await code(file(omar, omarMessage, botId))).toBeUndefined();
+    // a plain member does not manage the team
+    expect(await code(file(nadia, nadiaMessage, botId))).toBe('42501');
+    // somebody else's message, somebody else named as the asker, a bot of another team
+    expect(await code(file(omar, nadiaMessage, botId))).toBe('42501');
+    expect(await code(file(omar, omarMessage, botId, nadia.actorId))).toBe('42501');
+    expect(await code(file(omar, omarMessage, otherBotId))).toBe('42501');
+  });
+
+  it('only the asker reads a question; no request role changes or deletes one', async () => {
+    const seen = (p: Persona) => as(p, async (tx) => (await tx.query('SELECT message_id FROM app.rehearsal_questions')).rows.length);
+    expect(await seen(omar)).toBe(1);
+    expect(await seen(nadia)).toBe(0);
+    expect(await seen(sameera)).toBe(0);
+    expect(await code(as(omar, (tx) => tx.query("UPDATE app.rehearsal_questions SET created_at = now()")))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('DELETE FROM app.rehearsal_questions')))).toBe('42501');
+  });
+
+  it('only a conversation run can be a rehearsal', async () => {
+    const forged = sys((tx) =>
+      tx.query(
+        `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, rehearsal) VALUES ($1, $2, $3, 'mention', $4, 'running', true)`,
+        [omar.workspaceId, botId, ENG, omar.actorId],
+      ),
+    );
+    expect(await code(forged)).toBe('23514');
+  });
+
+  it('the run itself appends a held-back write, with consecutive positions, and nobody else can write a line', async () => {
+    expect(await append(rehearsalRunId, 'messages.post', 'channel-1')).toBe(0);
+    expect(await append(rehearsalRunId, 'pages.write', 'pages/x.md')).toBe(1);
+    expect(await code(as(omar, (tx) => tx.query("INSERT INTO app.rehearsal_intercepts (run_id, seq, capability) VALUES ($1, 9, 'messages.post')", [rehearsalRunId])))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('DELETE FROM app.rehearsal_intercepts')))).toBe('42501');
+    // a person's transaction has no run on it, so the door refuses
+    expect(await code(as(omar, (tx) => tx.query("SELECT app.rehearsal_intercept_append('messages.post', NULL, false)")))).toBe('P0001');
+  });
+
+  it('a run that is not a live rehearsal cannot write one: a normal run, and a rehearsal that has ended', async () => {
+    expect(await code(append(engRunId))).toBe('P0001');
+    const ended = (
+      await sys((tx) =>
+        tx.query<{ id: string }>(
+          `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, rehearsal, started_at, ended_at)
+           VALUES ($1, $2, $3, 'conversation', $4, 'done', true, now() - interval '1 minute', now()) RETURNING id`,
+          [omar.workspaceId, botId, ENG, omar.actorId],
+        ),
+      )
+    ).rows[0]!.id;
+    expect(await code(append(ended))).toBe('P0001');
+  });
+
+  it('lines are read with the run: the asker sees them, nobody else does', async () => {
+    const seen = (p: Persona) => as(p, async (tx) => (await tx.query('SELECT seq FROM app.rehearsal_intercepts WHERE run_id = $1', [rehearsalRunId])).rows.length);
+    expect(await seen(omar)).toBe(2);
+    expect(await seen(nadia)).toBe(0);
+    expect(await seen(sameera)).toBe(0);
+  });
+
+  it('keeps at most 200 lines of a run and still answers a position past them', async () => {
+    let last = 0;
+    for (let i = 0; i < 205; i += 1) last = await append(rehearsalRunId);
+    // 2 lines were kept already; past the 200th nothing more is kept and the position stays the next free one
+    expect(last).toBe(200);
+    const kept = await sys(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.rehearsal_intercepts WHERE run_id = $1', [rehearsalRunId])).rows[0]!.n);
+    expect(kept).toBe(200);
+  });
+
+  it('the door is a definer function owned by the system role, with a pinned search path, callable by the app role only', async () => {
+    const row = await sys(async (tx) =>
+      (
+        await tx.query<{ owner: string; secdef: boolean; config: string[] | null; public_exec: boolean; app_exec: boolean }>(
+          `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS secdef, p.proconfig AS config,
+                  has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec,
+                  has_function_privilege('manythreads_app', p.oid, 'EXECUTE') AS app_exec
+             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'app' AND p.proname = 'rehearsal_intercept_append'`,
+        )
+      ).rows[0],
+    );
+    expect(row).toMatchObject({ owner: 'manythreads_system', secdef: true, public_exec: false, app_exec: true });
+    expect(row?.config?.join(',')).toContain('search_path=pg_catalog, app, pg_temp');
+  });
+});

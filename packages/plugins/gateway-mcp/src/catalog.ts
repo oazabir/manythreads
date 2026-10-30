@@ -35,6 +35,11 @@ export interface ToolDefinition {
   answer?: Record<string, unknown>;
   /** What the call's answer proves the run read; only for `kind: 'read'`. */
   sourcesFrom?: (result: unknown) => ToolSource[];
+  /**
+   * A write that a rehearsal run (the bot page's Test action) may still make for real, because it IS the answer being rehearsed: it only posts the bot's
+   * reply into the asker's own conversation thread. Every other write is held back in a rehearsal; a tool with no entry here counts as a write that is not safe.
+   */
+  rehearsalSafe?: boolean;
 }
 
 const SEARCH_SCHEMA = {
@@ -228,6 +233,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
       'Finish your reply with an Answer: the text, the sources it rests on, and what to suggest next. Cite what you read in this run by id (a message, a thread, a page, a file, a run) and refer to each in the text as [1], [2], ... in the order you list them. A source this run did not read is removed and only counted. The platform re-checks every citation as the person who asked: one they cannot open is removed from the answer and only counted, and the Answer says who it was for. It is posted in the thread you were asked in as your reply; call it once, as the last step, and do not post the same text again.',
     inputSchema: ANSWER_POST_SCHEMA,
     kind: 'write',
+    rehearsalSafe: true,
   },
   'pages.write': {
     name: 'pages.write',
@@ -440,6 +446,18 @@ export function definitionOf(name: string): ToolDefinition {
       kind: 'write',
     }
   );
+}
+
+/**
+ * What a rehearsal records of a held-back call: the one place the call named, never the text it would have written. A path, a channel, a card or a
+ * team the arguments name, as a short string; null when it names none. (The data-loss check has already run, so a secret in the value is a marker.)
+ */
+export function interceptTarget(input: Record<string, unknown>): string | null {
+  for (const key of ['path', 'channelId', 'taskId', 'messageId', 'toBotSlug', 'team'] as const) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim() !== '') return value.trim().slice(0, 300);
+  }
+  return null;
 }
 
 /**

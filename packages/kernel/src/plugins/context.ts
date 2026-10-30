@@ -288,6 +288,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           catalog: refuse('catalog'),
           invoke: refuse('invoke'),
           logSource: refuse('logSource'),
+          logIntercept: refuse('logIntercept'),
           inheritSources: refuse('inheritSources'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);
@@ -314,6 +315,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           catalog: refuse('catalog'),
           invoke: refuse('invoke'),
           logSource: refuse('logSource'),
+          logIntercept: refuse('logIntercept'),
           inheritSources: refuse('inheritSources'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);

@@ -73,6 +73,16 @@ A tool call is a way for text to leave a run, and what a read tool answers is a 
 The gateway judges under the `standard` preset because the workspace's own preset lives in settings only an admin can read; the admin's per-detector choices and custom rules (Settings → Workspace → Data protection) are what decide. It fails closed: if no guardrail answered, or the arguments are too deep (20 levels), hold more than 20,000 pieces of text or more than 8 million characters, the call is refused unread; if the check itself throws, the call is refused (`blocked_by_guardrail`) and the real error goes to the server log. Not covered: encodings (base64, hex, URL escapes), text split across several values or calls, look-alike letters, and a bot's final reply or rules-runtime steps, which invoke capabilities without passing the gateway.
 One `guardrails.dlp.decided` event is written per call (`destination` `mcp` or `mcp_result`), naming the rules and never the text. The manifest gained `hook.pre_egress` and `event.emit` in `extends`, and `dependsOn: ['bots', 'guardrails-dlp']`. Test: `test/guard.test.ts`.
 
+## Rehearsal runs (P7-11)
+
+A run whose row says `rehearsal` (set by the router for a question filed by the bot page's Test action, see [bots](./bots.md)) makes no write. In `callTool`, after the data-loss check on
+the arguments and before the approval branch, a tool whose kind is not `read` or `stub` and that is not marked `rehearsalSafe` is **not called**: the gateway records one line
+(`ctx.runs.logIntercept`: the tool name, the first path, channel, card, message, bot or team the arguments name, clipped to 300 characters, and whether a real call would have waited for
+approval; never the text of the call) and answers `{ ok: true, rehearsal: true, done: false, message: "Rehearsal: “<tool>” was NOT done. ..." }` so the model carries on to its reply and does not
+say it happened. The flag is read from the run's row (resolved from the bearer token), so no argument can change it. Only `answer.post`, the reply itself, is `rehearsalSafe`, and only while the call would go straight out: a reply whose grant needs a person's approval (or that the data-loss check holds for one) is held back like a write, so no card reaches the Approvals inbox, and the run's closing text carries the answer. A tool the
+catalog does not describe has no kind and counts as a write, so a tool added later is held back until someone says otherwise. If the line cannot be written the call is still not made and
+the model is told it failed. Approvals are never created in a rehearsal. Test: `test/rehearsal.test.ts`.
+
 ## The tools
 
 `tools/list` offers every capability with an implementation **that the broker would allow** — no grant, no tool. The

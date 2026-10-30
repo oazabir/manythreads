@@ -324,6 +324,15 @@ pins the argv, the `SOUL.md` it read, the run's MCP URL and the prompt it got on
 a definition that never asked for `messages.post` has its reply **refused** (`failed`, nothing posted, though the process ran),
 and a definition with no model alias fails without starting a process at all.
 
+## Rehearsal runs (P7-11)
+
+The router looks the question message up in `app.rehearsal_questions` (the table the bot page's Test route files it in) when a `conversation` message arrives, and puts `rehearsal: true` on the
+`RunPayload`; nothing in the message itself can do that. The run job passes it to `ctx.runs.open`, so `bot_runs.rehearsal` is set, and the gateway then holds back every write of the run
+([gateway-mcp](./gateway-mcp.md), [bots](./bots.md)). Three more things differ for a rehearsal: `src/rehearsal.ts` puts a note in front of the prompt (this is a test, writes are not done, never claim
+they were, say so if there is no knowledge base); a bot whose BOT.md grants `capabilities.runtime` ends the run `stopped` with a notice, because those tools run inside the Hermes process and the
+gateway cannot hold them back; and the provider scope's `invoke` refuses every capability except `messages.post` (the reply). Everything else, preflight, gate, DLP and budgets included, is
+the same. Test: `test/rehearsal.test.ts`; the whole path is `conversations/test/rehearsal.test.ts`.
+
 ## A run that waits for a person (P5-20)
 
 * **A grant flagged `needsApproval`** — over the MCP endpoint (the gateway answers `approval_pending`) or through the provider's own scope
