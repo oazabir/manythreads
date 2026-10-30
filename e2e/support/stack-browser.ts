@@ -89,3 +89,36 @@ export async function postAs(api: StackApi, channelId: string, body: string, thr
 export async function noSidewaysScroll(page: Page): Promise<boolean> {
   return page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth);
 }
+
+/**
+ * A change to bots/, TEAM.md, skills/ or routines/ as the caller (PLAN P7-01): these places take no direct commit, so the change goes in as a proposal
+ * applied in the same step, which is what a lead or admin's "Propose and apply" does. Answers the response so a spec can assert a refusal; `content: null`
+ * removes the file.
+ */
+export async function applyGuarded(
+  api: StackApi,
+  path: string,
+  content: string | null,
+  title: string,
+  options: { team?: string; baseBlobSha?: string | null } = {},
+): Promise<{ status: number; text: string; sha: string | null }> {
+  const res = await api.ctx.post(`/api/teams/${options.team ?? 'engineering'}/proposals`, {
+    data: {
+      path,
+      op: content === null ? 'delete' : 'put',
+      ...(content === null ? {} : { content }),
+      ...(options.baseBlobSha !== undefined ? { baseBlobSha: options.baseBlobSha } : {}),
+      title,
+      applyNow: true,
+    },
+    headers: await api.headers(),
+  });
+  const text = await res.text();
+  let sha: string | null = null;
+  try {
+    sha = (JSON.parse(text) as { proposal?: { proposal?: { appliedCommitSha?: string | null } } }).proposal?.proposal?.appliedCommitSha ?? null;
+  } catch {
+    sha = null;
+  }
+  return { status: res.status(), text, sha };
+}

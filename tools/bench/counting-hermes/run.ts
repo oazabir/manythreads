@@ -126,7 +126,10 @@ async function ensureBots(alias: string): Promise<void> {
     else if (cur.body.content !== content) changes.push({ op: 'put', path, content, baseBlobSha: cur.body.blobSha });
   }
   if (changes.length === 0) return say('all twenty definitions are already in the repo');
-  await api('POST', `/api/teams/${TEAM_SLUG}/repo/commit`, { changes, message: `Counting bench: ${String(changes.length)} counter definitions (model alias ${alias})` });
+  // P7-01: bots/ takes no direct commit; each definition is a proposal the bench's admin applies in the same step.
+  for (const c of changes as Array<{ op: 'put'; path: string; content: string; baseBlobSha: string | null }>) {
+    await api('POST', `/api/teams/${TEAM_SLUG}/proposals`, { path: c.path, op: 'put', content: c.content, baseBlobSha: c.baseBlobSha, title: `Counting bench: ${c.path} (model alias ${alias})`, applyNow: true });
+  }
   say(`committed ${String(changes.length)} definitions`);
 }
 

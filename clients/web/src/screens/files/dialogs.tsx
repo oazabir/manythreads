@@ -2,11 +2,13 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { FilesError } from './backend';
 import { baseName, joinPath, nameProblem, parentOf, type FileRow } from './model';
+import { ProposeDialog } from '../proposals/ProposeDialog';
+import { useProposalPerms } from '../proposals/store';
 import { bumpFiles, type TeamFiles } from './store';
 
 /*
  * The dialogs of the Files screen: new page, new folder, rename, move, delete. Each one asks, does one thing through the store, tells every
- * screen that files changed, and says what a refusal means in words (a conflict, a pull-request-only path, a name that is taken).
+ * screen that files changed, and says what a refusal means in words (a conflict, a path that changes by proposal, a name that is taken).
  */
 
 const messageOf = (err: unknown): string => (err instanceof FilesError ? err.message : err instanceof Error && err.message ? err.message : 'That did not work. Try again.');
@@ -206,19 +208,8 @@ export function DeleteDialog({ files, row, onClose, onDone }: { files: TeamFiles
   );
 }
 
-/** The one thing a person who does not lead the team can do with bots/, skills/, routines/ and TEAM.md. */
-export function PullRequestDialog({ path, onClose }: { path: string; onClose: () => void }) {
-  return (
-    <Dialog
-      title="Change by pull request"
-      onClose={onClose}
-      testId="dialog-pull-request"
-      footer={<button type="button" className="btn primary" onClick={onClose}>Close</button>}
-    >
-      <p className="dlg-text">
-        <span className="mono">{path}</span> is changed by a pull request to the team repo, not from this screen. It takes effect when the request is merged.
-        Team leads and workspace admins can change it here.
-      </p>
-    </Dialog>
-  );
+/** The one way to change bots/, skills/, routines/ and TEAM.md from Files (PLAN P7-01): a proposal that a team lead or workspace admin applies. */
+export function ProposeChangeDialog({ path, onClose, initialText, title }: { path: string; onClose: () => void; initialText?: string; title?: string }) {
+  const { slug, canApply } = useProposalPerms();
+  return <ProposeDialog slug={slug} path={path} mode="edit" canApply={canApply} onClose={() => { bumpFiles(); onClose(); }} {...(initialText !== undefined ? { initialText } : {})} {...(title ? { initialTitle: title } : {})} />;
 }

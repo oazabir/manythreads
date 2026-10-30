@@ -427,9 +427,15 @@ export function createRepoService(deps: RepoServiceDeps) {
         if (decision.needsApproval) throw repoForbidden(`Writing "${c.path}" needs a person's approval`);
         // Defence in depth (L3): the broker's path guard only knows the capability names it knows (and is asked first, so its denial is audited); whatever
         // `options.capability` a calling plugin chose, a bot never writes a guarded path through this writer.
-        if (isGuardedRepoPath(c.path)) throw repoForbidden(`Bots do not change "${c.path}" directly: bots/, TEAM.md, skills/ and routines/ change by pull request`);
+        if (isGuardedRepoPath(c.path)) throw repoForbidden(`Bots do not change "${c.path}" directly: bots/, TEAM.md, skills/ and routines/ change only through a proposal a person applies`);
       }
       return;
+    }
+    // P7-01: the four guarded places change only through a proposal. The proposals plugin applies one as the approver and says so with
+    // `options.proposalId`; a person's direct write (the HTTP commit route, a restore) is refused whoever they are. The rules below still apply to
+    // the approver, so the writer, not the proposals plugin, is what keeps "a lead edits a bot, an admin adds or removes one".
+    if (options.proposalId === undefined && prepared.some((c) => isGuardedRepoPath(c.path))) {
+      throw repoForbidden('Propose the change: bots/, TEAM.md, skills/ and routines/ change through a proposal that a team lead or workspace admin applies');
     }
     // `bots/` is its own rule (SPEC section 3 as this workspace set it): a member does not change a bot at all, a team lead edits a bot
     // that already exists, and adding or removing one is a workspace admin's — so a lead may rewrite a definition but a path that is not yet
@@ -437,7 +443,7 @@ export function createRepoService(deps: RepoServiceDeps) {
     // Files screen cannot offer a write the writer would refuse.
     const botPaths = prepared.filter((c) => isBotDefinitionPath(c.path));
     if (botPaths.length > 0) {
-      if (row.manage !== true) throw repoForbidden('Change by pull request: bots/ is changed directly only by team leads and workspace admins');
+      if (row.manage !== true) throw repoForbidden('Only a team lead or a workspace admin can apply a change to bots/');
       const admin = await tx.query<{ admin: boolean }>('SELECT app.is_workspace_admin() AS admin');
       if (admin.rows[0]?.admin !== true) {
         const paths = [...new Set(botPaths.map((c) => c.path))];
@@ -445,14 +451,12 @@ export function createRepoService(deps: RepoServiceDeps) {
           (await tx.query<{ path: string }>('SELECT path FROM app.repo_entries WHERE team_id = $1 AND path = ANY($2::text[])', [t.id, paths])).rows.map((r) => r.path),
         );
         if (botPaths.some((c) => c.op === 'delete' || !existing.has(c.path))) {
-          throw repoForbidden("Change by pull request: a team lead edits a bot that already exists; adding or removing one is a workspace admin's");
+          throw repoForbidden("A team lead edits a bot that already exists; adding or removing one is a workspace admin's");
         }
       }
     }
     if (row.manage !== true && prepared.some((c) => isGuardedRepoPath(c.path))) {
-      throw repoForbidden(
-        'Change by pull request: TEAM.md, skills/ and routines/ are changed directly only by team leads and workspace admins',
-      );
+      throw repoForbidden('Only a team lead or a workspace admin can apply a change to TEAM.md, skills/ or routines/');
     }
   }
 

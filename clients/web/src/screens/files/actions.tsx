@@ -2,8 +2,8 @@ import { useRef, useState, type ReactNode } from 'react';
 import { usePanel } from '../../kernel/panel';
 import { MoreIcon } from '../../shell/icons';
 import { useDismiss } from '../../shell/useDismiss';
-import { DeleteDialog, MoveDialog, PullRequestDialog, RenameDialog } from './dialogs';
-import { READ_ONLY_COPY, type FileRow } from './model';
+import { DeleteDialog, MoveDialog, ProposeChangeDialog, RenameDialog } from './dialogs';
+import type { FileRow } from './model';
 import type { TeamFiles } from './store';
 
 export type RowAction = 'rename' | 'move' | 'delete' | 'pull-request';
@@ -20,7 +20,7 @@ export function useRowActions(files: TeamFiles | null, opts: { folders?: () => s
     if (action === 'rename') dialog = <RenameDialog files={files} row={row} onClose={close} onDone={(to) => { close(); opts.onDone?.({ action: 'rename', from: row.path, to }); }} />;
     else if (action === 'move') dialog = <MoveDialog files={files} row={row} folders={opts.folders?.() ?? []} onClose={close} onDone={(to) => { close(); opts.onDone?.({ action: 'move', from: row.path, to }); }} />;
     else if (action === 'delete') dialog = <DeleteDialog files={files} row={row} onClose={close} onDone={() => { close(); opts.onDone?.({ action: 'delete', from: row.path }); }} />;
-    else dialog = <PullRequestDialog path={row.path} onClose={close} />;
+    else dialog = <ProposeChangeDialog path={row.path} onClose={close} />;
   }
   return { start: (action, row) => setState({ action, row }), dialog };
 }
@@ -52,7 +52,7 @@ export function RowMenu({ row, start, label }: { row: FileRow; start: (action: R
           ) : null}
           {git && !row.readOnly ? item('Rename', () => start('rename', row), 'rename') : null}
           {git && !row.readOnly ? item('Move', () => start('move', row), 'move') : null}
-          {pr ? item(READ_ONLY_COPY, () => start('pull-request', row), 'pull-request') : null}
+          {pr ? item('Propose a change', () => start('pull-request', row), 'pull-request') : null}
           {(git && !row.readOnly) || !git ? <div className="menu-sep" role="separator" /> : null}
           {(git && !row.readOnly) || !git ? item('Delete', () => start('delete', row), 'delete') : null}
         </div>

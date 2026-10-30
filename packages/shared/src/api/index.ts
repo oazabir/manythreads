@@ -26,3 +26,4 @@ export * from './runners/index.ts';
 export * from './hermes/index.ts';
 export * from './projects/index.ts';
 export * from './webhooks/index.ts';
+export * from './proposals/index.ts';

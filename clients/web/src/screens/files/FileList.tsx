@@ -117,7 +117,7 @@ export function FileList({ teamName, folder, info, state, selected, filters, onF
       ) : null}
       {info?.readOnlyReason === 'change_by_pull_request' ? (
         <p className="fnote" data-testid="read-only-note" role="note">
-          <b>{READ_ONLY_COPY}.</b> Files here are changed by a pull request to the team repo, not from this screen.
+          <b>{READ_ONLY_COPY}.</b> Files here are changed by a proposal: open a file and choose “Propose a change”. A team lead or workspace admin applies it.
         </p>
       ) : null}
       {isAppFolder(all.map((r) => r.name)) ? (

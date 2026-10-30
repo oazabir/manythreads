@@ -69,3 +69,5 @@ export const botMdPath = (slug: string): string => `bots/${slug}/BOT.md`;
 
 /** The folder name a bot may live under — the row's own CHECK, and what the roster's slug field validates. */
 export const BOT_SLUG_RE = /^[a-z0-9][a-z0-9._-]*$/;
+/** What the loader (and a proposal's BOT.md check) says about a bot folder whose name does not fit `BOT_SLUG_RE`. */
+export const botSlugProblem = (slug: string): string => `folder "${slug}": a bot lives in a folder named with a lowercase slug (letters, digits, ".", "_", "-")`;

@@ -1,0 +1,235 @@
+/* The Proposals screens and the "Propose a change" dialog (PLAN P7-01). Every class here is prefixed `pp-` so nothing collides with a shared class;
+ * the diff itself reuses `.diff` of the Files screen. Colours come from tokens.css only. */
+
+.pp-screen {
+  padding: 18px 20px 28px;
+  overflow: auto;
+}
+
+.pp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pp-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pp-sub {
+  margin: 3px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.pp-back {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+}
+
+.pp-list {
+  margin-top: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.pp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rule);
+  color: inherit;
+  text-decoration: none;
+}
+
+.pp-row:hover,
+.pp-row:focus-visible {
+  background: var(--msg-hover);
+}
+
+.pp-list > div:last-child .pp-row {
+  border-bottom: 0;
+}
+
+.pp-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.pp-row-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.pp-row-meta {
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.pp-row-side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.pp-delta {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.pp-delta .add {
+  color: var(--ok-ink);
+}
+
+.pp-delta .del {
+  color: var(--alert-ink);
+}
+
+.pp-pill {
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.pp-pill.open {
+  border-color: var(--human);
+  color: var(--human);
+}
+
+.pp-pill.applied {
+  background: var(--ok-wash);
+  border-color: var(--ok-ink);
+  color: var(--ok-ink);
+}
+
+.pp-pill.rejected {
+  background: var(--alert-wash);
+  border-color: var(--alert-border);
+  color: var(--alert-ink);
+}
+
+.pp-pill.withdrawn {
+  color: var(--mute);
+}
+
+.pp-h {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pp-note,
+.pp-outcome {
+  margin: 8px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.pp-checks {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.pp-checks li {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.pp-checks li.ok .pp-check-mark {
+  color: var(--ok-ink);
+}
+
+.pp-checks li.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.pp-check-msg {
+  color: inherit;
+}
+
+.pp-decide {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  max-width: 560px;
+}
+
+.pp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pp-why {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.pp-why.bad {
+  color: var(--alert-ink);
+}
+
+.pp-field {
+  display: grid;
+  gap: 4px;
+}
+
+.pp-text {
+  min-height: 160px;
+  resize: vertical;
+  font-size: 12.5px;
+}
+
+.pp-count {
+  margin: 0 0 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.pp-diff {
+  max-height: 320px;
+}
+
+@media (width <= 600px) {
+  .pp-screen {
+    padding: 14px 16px 24px;
+  }
+
+  .pp-head {
+    flex-direction: column;
+  }
+
+  .pp-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .pp-actions .btn {
+    flex: 1 1 100%;
+  }
+}

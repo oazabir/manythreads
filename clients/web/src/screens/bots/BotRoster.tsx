@@ -3,6 +3,8 @@ import type { BotSummary } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
+import { useQuery } from '../../app/useQuery';
+import { fetchProposals } from '../proposals/api';
 import { useBots } from './store';
 
 /*
@@ -55,6 +57,17 @@ function Row({ bot, slug }: { bot: BotSummary; slug: string }) {
   );
 }
 
+/** The way into the team's proposals, with how many wait: changes to bots/ and the other guarded places go through them. */
+function ProposalsLink({ slug }: { slug: string }) {
+  const q = useQuery(`proposals-count:${slug}`, () => fetchProposals(slug, 'open'));
+  const n = q.status === 'ok' ? q.data.openCount : null;
+  return (
+    <Link className="btn s ag-roster-link" to={`/t/${slug}/proposals`} data-testid="roster-proposals">
+      Proposals{n !== null && n > 0 ? ` (${n} waiting)` : ''}
+    </Link>
+  );
+}
+
 export function BotRoster() {
   const { slug, q } = useBots();
   useHeaderTopic('Bots');
@@ -75,14 +88,17 @@ export function BotRoster() {
                       : `${bots.length} ${bots.length === 1 ? 'bot' : 'bots'} · ${agents} ${agents === 1 ? 'agent' : 'agents'}, ${automations} ${automations === 1 ? 'automation' : 'automations'}`}
                   </p>
                 </div>
-                <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
+                <div className="b-head-act">
+                  <ProposalsLink slug={slug} />
+                  <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
+                </div>
               </div>
               {bots.length === 0 ? (
                 <div className="b-empty" data-testid="roster-empty">
                   <p className="b-empty-title">No bots yet</p>
                   <p className="b-empty-body">
-                    A bot is a folder in the team repo: <span className="mono">bots/&lt;slug&gt;/BOT.md</span>. Add one from a team template, or write the file
-                    in Files — a valid definition appears here within seconds.
+                    A bot is a folder in the team repo: <span className="mono">bots/&lt;slug&gt;/BOT.md</span>. Add one from a team template, or propose the file
+                    in Files — once a workspace admin applies it, a valid definition appears here within seconds.
                   </p>
                   <Link className="btn primary" to={`/t/${slug}/files?path=bots`}>Open bots/ in Files</Link>
                 </div>

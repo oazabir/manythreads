@@ -153,7 +153,7 @@ minutes by hand or with a cron job.
 | `channels/<name>/x` | none: attachment folders are flat | 404 |
 
 - **Criterion 6**: Lena (guest, in no team) is 403 on `#dev` attachments and on the team's tree (the team is not hers to read); Nadia is 403 on Marketing's tree; a team member sees `channels/` without the private channels she is not in.
-- **Read-only** (`readOnly` + `readOnlyReason`): `change_by_pull_request` for `bots/`, `skills/`, `routines/` and `TEAM.md` for a member who is not a lead or admin (a direct write is 403; criterion 9: Priya), `attachment` for every attachment row and the
+- **Read-only** (`readOnly` + `readOnlyReason`): `change_by_pull_request` (the wire value is kept; the screens say "Change by proposal") for `bots/`, `skills/`, `routines/` and `TEAM.md` for **everyone** who can post, a lead and admin included (P7-01: a direct write is 403; the change goes through [proposals](proposals.md)), `attachment` for every attachment row and the
   `channels` folder (an upload never changes in place), `no_write_access` for a reader who cannot post (also the channel folders). `managedBy: 'team_memory'` marks `memory/` and everything below it (the journal is written by
   the team's memory; facts stay editable, so it is a note, not `readOnly`).
 - Files of a team that belong to no channel (`files.channel_id IS NULL`) have no upload route yet and are not listed.

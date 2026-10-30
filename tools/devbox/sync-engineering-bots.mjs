@@ -55,6 +55,24 @@ const blob = async (path) => {
   return r.status === 200 ? r.json : null;
 };
 
+/** P7-01: bots/, TEAM.md, skills/ and routines/ take no direct commit; each change goes in as a proposal applied in the same step (one file each). */
+async function applyAll(team, changes, message) {
+  let failed = 0;
+  for (const c of changes) {
+    const r = await api('POST', `/api/teams/${team}/proposals`, {
+      path: c.path,
+      op: c.op,
+      ...(c.op === 'put' ? { content: c.content } : {}),
+      ...(c.baseBlobSha !== undefined ? { baseBlobSha: c.baseBlobSha } : {}),
+      title: message.slice(0, 200),
+      applyNow: true,
+    });
+    console.log(`  ${c.op} ${c.path}: HTTP ${r.status}${r.status === 201 ? '' : ` ${JSON.stringify(r.json)?.slice(0, 300)}`}`);
+    if (r.status !== 201) failed += 1;
+  }
+  return failed;
+}
+
 const PLACEMENT = /^placement:\n(?:[ \t]+.*\n)+/m;
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates', 'engineering');
 
@@ -121,9 +139,9 @@ if (teamMd) {
 
 console.log(`${team}: ${changes.length} change(s)\n  ${note.join('\n  ')}`);
 if (dry || changes.length === 0) process.exit(0);
-const r = await api('POST', `/api/teams/${team}/repo/commit`, {
-  message: 'Engineering chain: engineer, plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester (synced from the template)',
+const failed = await applyAll(
+  team,
   changes,
-});
-console.log(`commit: HTTP ${r.status} ${JSON.stringify(r.json)?.slice(0, 400)}`);
-process.exit(r.status === 201 || r.status === 200 ? 0 : 1);
+  'Engineering chain: engineer, plan-reviewer, coder, code-reviewer, tester, committer, deployer, web-smoke-tester (synced from the template)',
+);
+process.exit(failed === 0 ? 0 : 1);

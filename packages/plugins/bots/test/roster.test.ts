@@ -123,7 +123,7 @@ describe('the bot roster and bot page', () => {
   it('a broken definition surfaces its field path and message on the page, while the row keeps its last-good definition sha', async () => {
     const goodSha = (await getBot(omar, 'p505-zed')).body.bot.definitionSha;
     const broken = validMd('Zed', 'Answers the roster tests', []).replace('capabilities:', 'capabilties:');
-    expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p505-zed/BOT.md', content: broken }], 'Break Zed')).status).toBe(201);
+    expect((await w.commitRaw(omar, engSlug, [{ op: 'put', path: 'bots/p505-zed/BOT.md', content: broken }], 'Break Zed')).status).toBe(201);
 
     const bot = await until(async () => {
       const b = (await getBot(omar, 'p505-zed')).body.bot;
@@ -142,7 +142,7 @@ describe('the bot roster and bot page', () => {
 
   it('a repaired definition drops the red banner: the reason follows the last load, not the newest alert', async () => {
     const fixed = validMd('Zed', 'Answers the roster tests, repaired', []);
-    expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p505-zed/BOT.md', content: fixed }], 'Fix Zed')).status).toBe(201);
+    expect((await w.commitRaw(omar, engSlug, [{ op: 'put', path: 'bots/p505-zed/BOT.md', content: fixed }], 'Fix Zed')).status).toBe(201);
 
     const bot = await until(async () => {
       const b = (await getBot(omar, 'p505-zed')).body.bot;

@@ -12,7 +12,7 @@ import { createRhythm, fetchRhythmRuns, fetchRhythms, runRhythm, updateRhythm } 
  * Rhythms (SPEC §6.5, PLAN P6-08): what the team has on a timer, with its own sidebar entry. A heartbeat is a scheduled prompt, a
  * routine is a contract under `routines/` with a page it writes, a task opens a card. Each row shows the schedule and the next run the
  * server computed, its ledger, and "Run now", which takes the exact path a tick takes — a contract that would fail at 09:00 fails here
- * too. A lead (or a workspace admin) creates and enables one; a member proposes it by pull request, which is what the copy says.
+ * too. A lead (or a workspace admin) creates and enables one; a member proposes it (a proposal a lead applies, P7-01), which is what the copy says.
  */
 
 const KINDS: readonly RhythmKind[] = ['heartbeat', 'routine', 'task'];
@@ -100,7 +100,7 @@ export function RhythmsView({ slug, canManage }: { slug: string; canManage: bool
     <div className="bd-rhythms" data-testid="rhythms">
       <div className="bd-toolbar">
         <p className="bd-hint">
-          Rhythms run as a bot on a schedule. {canManage ? 'As a lead you can add one here.' : 'A lead saves a new one; a member proposes it in a pull request to routines/.'}
+          Rhythms run as a bot on a schedule. {canManage ? 'As a lead you can add one here.' : 'A lead saves a new one; a member proposes it in Files, under routines/, and a lead applies it.'}
         </p>
         {canManage ? (
           <div className="bd-toolbar-act">

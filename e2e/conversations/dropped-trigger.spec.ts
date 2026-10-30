@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { postAs } from '../support/stack-browser.ts';
+import { applyGuarded, postAs } from '../support/stack-browser.ts';
 import { addBot, apiOn, channelOf, conversationStackEnv, openChat } from './support.ts';
 
 /*
@@ -64,11 +64,8 @@ test.beforeAll(async ({ playwright }) => {
     }
 
     // its definition drops the trigger; the loader makes the roster say so
-    const res = await omar.ctx.post('/api/teams/engineering/repo/commit', {
-      data: { changes: [{ op: 'put', path: 'bots/drift/BOT.md', content: driftMd(false) }], message: 'Drift stops taking conversations' },
-      headers: await omar.headers(),
-    });
-    expect(res.status(), await res.text()).toBe(201);
+    const res = await applyGuarded(omar, 'bots/drift/BOT.md', driftMd(false), 'Drift stops taking conversations');
+    expect(res.status, res.text).toBe(201);
     await expect
       .poll(
         async () => (await omar.get<{ bots: Array<{ slug: string; conversational: boolean }> }>('/api/teams/engineering/bots')).bots.find((b) => b.slug === 'drift')?.conversational,

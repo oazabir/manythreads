@@ -108,6 +108,7 @@ beforeAll(async () => {
   await grant('messages.search', false);
   await grant('knowledge.search', false);
   await grant('pages.write', true);
+  await grant('proposals.propose', false);
   await grant('tasks.create', false);
   await world.system((tx) =>
     tx.query(
@@ -413,6 +414,23 @@ describe('gateway-mcp endpoint', () => {
     const answer = JSON.parse(result.content[0]!.text) as { ok: boolean; code: string; message: string };
     expect(answer).toMatchObject({ ok: false, code: 'forbidden' });
     expect(answer.message).toContain('not bot-writable');
+  });
+
+  it('proposals.propose is how a bot reaches a guarded path: it files a proposal as the bot, and nothing is committed', async () => {
+    const list = await callRunUrl(run, { jsonrpc: '2.0', id: 8, method: 'tools/list' });
+    expect((list.body as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name)).toContain('proposals.propose');
+    const res = await callRunUrl(run, {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'proposals.propose', arguments: { path: 'TEAM.md', content: '---\nname: Engineering\n---\n\nA bot suggests this.\n', title: 'A bot suggests a purpose' } },
+    });
+    const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+    const answer = JSON.parse(result.content[0]!.text) as { ok: boolean; proposal?: { id: string; status: string } };
+    expect(result.isError, result.content[0]!.text).not.toBe(true);
+    expect(answer).toMatchObject({ ok: true, proposal: { status: 'open' } });
+    const row = await world.system(async (tx) => (await tx.query<{ author_id: string; author_kind: string }>('SELECT author_id, author_kind FROM app.proposals WHERE id = $1', [answer.proposal!.id])).rows[0]);
+    expect(row).toMatchObject({ author_id: bot.actorId, author_kind: 'bot' });
   });
 
   it('knowledge.search answers an empty result and the reason, never invented content', async () => {

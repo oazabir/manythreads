@@ -51,6 +51,9 @@ import { WebhooksHookRotatedEvent } from './webhooks.hook.rotated.ts';
 import { WebhooksHookRevokedEvent } from './webhooks.hook.revoked.ts';
 import { WebhooksHookSigningChangedEvent } from './webhooks.hook.signing_changed.ts';
 import { WebhooksHookUseFailedEvent } from './webhooks.hook.use_failed.ts';
+import { ProposalsProposalCreatedEvent } from './proposals.proposal.created.ts';
+import { ProposalsProposalAppliedEvent } from './proposals.proposal.applied.ts';
+import { ProposalsProposalRejectedEvent } from './proposals.proposal.rejected.ts';
 import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
@@ -186,6 +189,9 @@ export const eventRegistry = {
   'webhooks.hook.revoked': { 1: WebhooksHookRevokedEvent },
   'webhooks.hook.signing_changed': { 1: WebhooksHookSigningChangedEvent },
   'webhooks.hook.use_failed': { 1: WebhooksHookUseFailedEvent },
+  'proposals.proposal.created': { 1: ProposalsProposalCreatedEvent },
+  'proposals.proposal.applied': { 1: ProposalsProposalAppliedEvent },
+  'proposals.proposal.rejected': { 1: ProposalsProposalRejectedEvent },
   'hermes.connection.created': { 1: HermesConnectionCreatedEvent },
   'hermes.connection.updated': { 1: HermesConnectionUpdatedEvent },
   'hermes.connection.deleted': { 1: HermesConnectionDeletedEvent },

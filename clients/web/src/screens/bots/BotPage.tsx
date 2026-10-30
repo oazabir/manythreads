@@ -5,7 +5,7 @@ import { QueryView } from '../../components/states';
 import { Alert, Avatar, Notice } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
 import { botMdPath } from './api';
-import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, writeDefinition, type SaveFailure } from './store';
+import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { TabPanel } from './tabs';
 
 /*
@@ -16,12 +16,13 @@ import { TabPanel } from './tabs';
  * Three things the page owes a reader:
  *  - a definition that failed to load shows the red banner with the field path, and the previous version stays live (the reason comes
  *    from the row's `invalid_reason`, cleared by the loader once the file loads again);
- *  - a member who is not a lead reads every tab and is offered the file (and therefore a pull request) instead of Save, which is the
+ *  - a member who is not a lead reads every tab and is offered the file (to propose a change there) instead of Save, which is the
  *    same rule the repo writer enforces with 403;
- *  - Save is one commit as the signed-in person, and a file someone else changed meanwhile is refused rather than overwritten.
+ *  - bots/ is never committed directly (PLAN P7-01): "Save as proposal" leaves a proposal, "Propose and apply" (lead or admin) records one and
+ *    applies it in the same step as the signed-in person; a file someone else changed meanwhile is refused rather than overwritten.
  */
 
-type SaveState = { kind: 'ok'; message: string } | { kind: 'bad'; failure: SaveFailure } | null;
+type SaveState = { kind: 'ok'; message: string; proposalId?: string } | { kind: 'bad'; failure: SaveFailure } | null;
 
 /** The tab of the URL, or Identity: an unknown value falls back rather than rendering an empty page.
  */
@@ -82,13 +83,19 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
   const draft = useDefinition(slug, path, revision);
   const [busy, setBusy] = useState(false);
 
-  const doSave = async (): Promise<void> => {
+  const doSave = async (applyNow: boolean): Promise<void> => {
     if (!draft.frontmatter || busy || draft.issues.length > 0) return;
     setBusy(true);
     onSave(null);
     try {
-      const res = await writeDefinition(slug, path, draft.text(), draft.baseBlobSha, saveMessage(bot.slug, bot.name));
-      onSave({ kind: 'ok', message: res.noop ? 'Nothing to commit: the file already held that definition.' : 'Saved. A commit by you was made; the loader picks it up on the next commit.' });
+      const res = await proposeDefinition(slug, path, draft.text(), draft.baseBlobSha, saveMessage(bot.slug, bot.name), applyNow);
+      onSave({
+        kind: 'ok',
+        proposalId: res.proposalId,
+        message: res.applied
+          ? 'Saved. A commit by you was made and is kept on record as a proposal; the loader picks the new definition up on the next commit.'
+          : 'Proposal saved. A team lead or workspace admin can now see which lines change and apply them. Nothing changes until then.',
+      });
       onSaved();
     } catch (err) {
       // The draft stays on screen, so nothing typed is lost when the write is refused.
@@ -120,6 +127,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           ) : null}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
+          <Link className="btn s" to={`/t/${slug}/proposals`} data-testid="bot-proposals">Proposals</Link>
         </div>
       </header>
 
@@ -134,7 +142,12 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
         </div>
       ) : null}
 
-      {save?.kind === 'ok' ? <Notice>{save.message}</Notice> : null}
+      {save?.kind === 'ok' ? (
+        <Notice>
+          <span data-testid="save-notice">{save.message}</span>
+          {save.proposalId ? <> <Link to={`/t/${slug}/proposals/${save.proposalId}`} data-testid="open-proposal">Open the proposal</Link></> : null}
+        </Notice>
+      ) : null}
       {save?.kind === 'bad' ? <Alert>{save.failure.message}</Alert> : null}
 
       <nav className="b-tabs" aria-label="Bot sections" data-landmark="bot-tabs">
@@ -173,8 +186,11 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
         <footer className="b-foot" data-testid="bot-foot">
           {canEdit ? (
             <>
-              <button type="button" className="btn primary" data-testid="save-bot" disabled={!draft.dirty || busy || draft.issues.length > 0} onClick={() => void doSave()}>
-                {busy ? 'Saving…' : 'Save'}
+              <button type="button" className="btn primary" data-testid="save-bot" disabled={!draft.dirty || busy || draft.issues.length > 0} onClick={() => void doSave(true)}>
+                {busy ? 'Applying…' : 'Propose and apply'}
+              </button>
+              <button type="button" className="btn" data-testid="propose-bot" disabled={!draft.dirty || busy || draft.issues.length > 0} onClick={() => void doSave(false)}>
+                Save as proposal
               </button>
               <button type="button" className="btn" data-testid="reset-bot" disabled={!draft.dirty || busy} onClick={draft.reset}>Discard changes</button>
               <span className="b-hint" data-testid="dirty-state">{draft.dirty ? 'Unsaved changes' : 'No changes'}</span>
@@ -187,7 +203,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
             </>
           ) : (
             <>
-              <span className="b-hint" data-testid="read-only-note">You can read this definition but not change it. Changes to bots/ go by pull request.</span>
+              <span className="b-hint" data-testid="read-only-note">You can read this definition but not change it. To change it, propose a change in Files; a team lead or workspace admin applies it.</span>
               <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-readonly">Open in Files</Link>
             </>
           )}

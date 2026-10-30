@@ -123,6 +123,8 @@ export async function seedRepo(db: Pick<TestDatabase, 'systemUrl'>, options: See
             step.files.map((f) => ({ path: f.path, op: 'put' as const, content: f.content })),
             step.message,
             (step.coAuthors ?? []).map((who) => ({ actorId: personas[who].actorId, name: personas[who].name })),
+            // the seed stands for a proposal a lead applied (P7-01): it is the one caller besides the proposals plugin allowed to write the guarded places
+            { proposalId: 'seed' },
           ),
         );
         if (!written.noop) result.commits += 1;

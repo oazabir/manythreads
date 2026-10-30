@@ -175,9 +175,14 @@ async function defineBot(slug, options) {
   if (options.gate) lines.push('guard:', `  gate: [${options.gate.map((g) => `'${g}'`).join(', ')}]`);
   lines.push('limits:', '  timeoutSeconds: 240', '---', '', `# ${options.name}`, '', options.soul.trim(), '');
   const omar = await as('omar');
-  await omar.post('/api/teams/engineering/repo/commit', {
-    message: `bots/${slug}: ${options.name}`,
-    changes: [{ op: 'put', path: `bots/${slug}/BOT.md`, content: lines.join('\n'), encoding: 'utf8', baseBlobSha: null }],
+  // P7-01: bots/ takes no direct commit; a new bot is a proposal Omar (a workspace admin) applies in the same step.
+  await omar.post('/api/teams/engineering/proposals', {
+    title: `bots/${slug}: ${options.name}`.slice(0, 200),
+    path: `bots/${slug}/BOT.md`,
+    op: 'put',
+    content: lines.join('\n'),
+    baseBlobSha: null,
+    applyNow: true,
   });
   const rows = await waitForRow(
     `SELECT id, status, model_aliases, invalid_reason, runtime FROM app.bots WHERE slug = $1 ORDER BY created_at DESC`,

@@ -163,7 +163,7 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
     const committed = (message: string): Promise<boolean> =>
       run(systemActor(), async (tx) => (await tx.query('SELECT 1 FROM app.repo_commits WHERE team_id = $1 AND message = $2 LIMIT 1', [team, message])).rows.length > 0);
     const commit = async (message: string, path: string, content: string): Promise<number> => {
-      const written = await run(omarActor(), (tx) => repo.write(tx, team, { id: tx.actor.id, kind: tx.actor.kind }, [{ path, op: 'put' as const, content }], message, []));
+      const written = await run(omarActor(), (tx) => repo.write(tx, team, { id: tx.actor.id, kind: tx.actor.kind }, [{ path, op: 'put' as const, content }], message, [], { proposalId: 'seed' }));
       return written.noop ? 0 : 1;
     };
     // The two commits are the markers that say a part was seeded once, and they stay in the team's history whatever people later delete.

@@ -10,8 +10,7 @@ const iso = useIsolatedStack();
 /**
  * PLAN P5-23 criterion 13 over HTTP: a bot's own `files.write` to `bots/<slug>/lessons.md` and
  * `bots/<slug>/people/<id>.md` is denied (each denial an audit event, nothing committed), while the same
- * files stay writable through the writer's own rules — a lead commits them as herself, which is the path the
- * platform's system-actor writes take (proven end to end in `packages/plugins/memory/test/platform.test.ts`).
+ * files stay writable by a lead as a proposal she applies (P7-01: no direct commit), and by the platform's system-actor writes (proven end to end in `packages/plugins/memory/test/platform.test.ts`).
  */
 
 const { omar, nadia } = personas;
@@ -54,9 +53,12 @@ test('a bot is denied its lessons and people files (each denial audited); a lead
     expect(got.status(), path).toBe(404);
   }
 
-  // the writer's own rules still let a lead commit the same files as herself (the platform's path)
+  // since P7-01 a lead no longer commits bots/ directly (403); she applies the same files as a proposal, and the commit is hers. The platform's own
+  // writes (the system actor) are not a person's commit and stay as they were.
   for (const path of PATHS) {
-    const res = await commit(request, as(omar), path, `platform note: ${path}\n`);
+    const direct = await commit(request, as(omar), path, `platform note: ${path}\n`);
+    expect(direct.status(), path).toBe(403);
+    const res = await request.post('/api/teams/engineering/proposals', { headers: as(omar), data: { path, content: `platform note: ${path}\n`, title: `Note ${path}`, applyNow: true } });
     expect(res.status(), `${path}: ${await res.text()}`).toBe(201);
   }
   const got = await request.get(`/api/teams/engineering/repo/blob?path=${encodeURIComponent(PATHS[0]!)}`, { headers: as(nadia) });

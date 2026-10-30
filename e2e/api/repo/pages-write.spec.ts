@@ -63,7 +63,7 @@ test('the four guarded paths are 403 for a bot (each denial audited) and for peo
     expect((await write(request, asBot(botId), 'replace', path, 'x')).status(), `bot ${path}`).toBe(403);
     const person = await write(request, as(priya), 'replace', path, 'x');
     expect(person.status(), `priya ${path}`).toBe(403);
-    expect(((await person.json()) as { error: { message: string } }).error.message).toMatch(/pull request/i);
+    expect(((await person.json()) as { error: { message: string } }).error.message).toMatch(/propos/i);
   }
   const ok = await write(request, asBot(botId), 'create', 'pages/answers/saved.md', 'A saved answer.\n');
   expect(ok.status(), await ok.text()).toBe(201);

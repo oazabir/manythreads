@@ -137,22 +137,24 @@ describe('one tree over both stores', () => {
   });
 });
 
-describe('read-only for a member on the four guarded paths (criterion 9)', () => {
-  it('Priya (member) sees bots/, skills/, routines/ and TEAM.md as change by pull request; Omar (lead) sees them editable', async () => {
+describe('the four guarded paths are read-only for everyone (they change through a proposal, P7-01)', () => {
+  it('Priya (member) and Omar (lead) both see bots/, skills/, routines/ and TEAM.md as a change by proposal', async () => {
     const asPriya = ok(await tree(priya, 'engineering'));
     for (const name of ['bots', 'skills', 'routines', 'TEAM.md']) {
       expect(row(asPriya, name), name).toMatchObject({ readOnly: true, readOnlyReason: 'change_by_pull_request' });
     }
     for (const name of ['pages', 'knowledge', 'memory']) expect(row(asPriya, name), name).toMatchObject({ readOnly: false, readOnlyReason: null });
     const asOmar = ok(await tree(omar, 'engineering'));
-    for (const name of ['bots', 'skills', 'routines', 'TEAM.md']) expect(row(asOmar, name), name).toMatchObject({ readOnly: false, readOnlyReason: null });
+    for (const name of ['bots', 'skills', 'routines', 'TEAM.md']) expect(row(asOmar, name), name).toMatchObject({ readOnly: true, readOnlyReason: 'change_by_pull_request' });
     // inside the folder, and the folder's own flag
     const bots = ok(await tree(priya, 'engineering', 'bots'));
     expect(bots.folder).toMatchObject({ path: 'bots', readOnly: true, readOnlyReason: 'change_by_pull_request' });
-    expect(ok(await tree(omar, 'engineering', 'bots')).folder).toMatchObject({ readOnly: false });
-    // and a write to them is 403 (the writer, not this tree, decides)
-    const res = await w.call(priya, 'POST', '/api/teams/engineering/repo/commit', { changes: [{ op: 'put', path: 'TEAM.md', content: 'x' }], message: 'x' });
-    expect(res.status).toBe(403);
+    expect(ok(await tree(omar, 'engineering', 'bots')).folder).toMatchObject({ readOnly: true, readOnlyReason: 'change_by_pull_request' });
+    // and a direct write to them is 403 for the member and for the lead alike (the writer, not this tree, decides)
+    for (const who of [priya, omar]) {
+      const res = await w.call(who, 'POST', '/api/teams/engineering/repo/commit', { changes: [{ op: 'put', path: 'TEAM.md', content: 'x' }], message: 'x' });
+      expect(res.status).toBe(403);
+    }
   });
 });
 

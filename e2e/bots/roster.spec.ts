@@ -1,21 +1,51 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { openOn } from '../support/stack-browser.ts';
+import { applyGuarded, openOn } from '../support/stack-browser.ts';
 import { actorOf } from '../files/support.ts';
 import { BOTS_STACK_ENV, BOT_MD, apiOn, commitDefinition, definitionOf, rosterRow } from './support.ts';
 
 /*
  * The bot roster and a bot page as a reader (PLAN P5-05, SPEC §7.5): the Bots entry in the sidebar, the roster the loader fills from
  * `bots/<slug>/BOT.md`, the fourteen tabs of one bot, and the red banner a definition that fails to load raises. Nadia is a member of
- * Engineering who does not lead it, so the roster and the page are read-only to her and the change on offer is the file (a pull request);
+ * Engineering who does not lead it, so the roster and the page are read-only to her and the change on offer is the file (a proposal);
  * promoted to a lead she edits an existing bot, while adding or removing one stays the admins'. Runs on its own stack because it commits.
  */
 test.skip(({ isMobile }) => isMobile, 'desktop layout');
 test.describe.configure({ mode: 'serial' });
 
 let stack: Stack;
+const REPO_DIR = mkdtempSync(join(tmpdir(), 'manythreads-roster-repos-'));
+
+/**
+ * A file that reached the team repo without the writer (a push from outside). A change through the proposals never breaks a definition: its BOT.md check
+ * refuses a file the loader would refuse. So the red banner is exercised on a file written straight into the bare repo, with the row marked the way the
+ * loader marks a definition it cannot load (the catch-up of the index deliberately does not announce guarded paths, see repo-git.md).
+ */
+async function pushOutsideTheWriter(path: string, content: string, reason: { fieldPath: string; message: string }): Promise<void> {
+  const [team] = await stack.sql<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'");
+  const git = (args: string[], input?: string, env: Record<string, string> = {}): string =>
+    execFileSync('git', args, { input, encoding: 'utf8', env: { ...process.env, GIT_DIR: join(REPO_DIR, `${team!.id}.git`), ...env } }).trim();
+  const index = join(REPO_DIR, `index-${Date.now()}`);
+  const blob = git(['hash-object', '-w', '--stdin'], content);
+  const head = git(['rev-parse', 'refs/heads/main']);
+  git(['read-tree', head], undefined, { GIT_INDEX_FILE: index });
+  git(['update-index', '--add', '--cacheinfo', `100644,${blob},${path}`], undefined, { GIT_INDEX_FILE: index });
+  const tree = git(['write-tree'], undefined, { GIT_INDEX_FILE: index });
+  const ident = { GIT_AUTHOR_NAME: 'outside', GIT_AUTHOR_EMAIL: 'outside@example.test', GIT_COMMITTER_NAME: 'outside', GIT_COMMITTER_EMAIL: 'outside@example.test' };
+  const commit = git(['commit-tree', tree, '-p', head, '-m', 'Pushed from outside'], undefined, ident);
+  git(['update-ref', 'refs/heads/main', commit, head]);
+  await stack.sql(
+    `UPDATE app.bots SET status = 'invalid', invalid_reason = $2::jsonb WHERE slug = 'coder' AND team_id = $1`,
+    [(await stack.sql<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'"))[0]!.id, JSON.stringify({ ...reason, at: new Date().toISOString(), definitionSha: blob })],
+  );
+}
+
 test.beforeAll(async () => {
-  stack = await startStack({ ...BOTS_STACK_ENV });
+  stack = await startStack({ ...BOTS_STACK_ENV, MANYTHREADS_REPO_DIR: REPO_DIR });
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -61,7 +91,7 @@ test('a member who does not lead the team reads every tab of one bot, with no Sa
 
     // every section of SPEC §7.2 is one tab (Identity … Audit)
     await expect(page.locator('[data-landmark="bot-tabs"] button')).toHaveCount(14);
-    await expect(page.getByTestId('bot-foot').getByTestId('read-only-note')).toContainText('go by pull request');
+    await expect(page.getByTestId('bot-foot').getByTestId('read-only-note')).toContainText('propose a change in Files');
     await expect(page.getByTestId('save-bot')).toHaveCount(0);
     await expect(page.getByTestId('open-readonly')).toHaveAttribute('href', /bots%2Fcoder%2FBOT.md/);
 
@@ -105,16 +135,10 @@ test('a team lead who is not a workspace admin edits an existing bot, but cannot
     const def = await definitionOf(api);
     await commitDefinition(api, `${def.content.trimEnd()}\nA lead edits an existing bot.\n`, 'A lead edits the Coder definition', def.blobSha);
     // adding a bot and removing one are refused, so hiding the button is not the rule
-    const added = await api.ctx.post('/api/teams/engineering/repo/commit', {
-      data: { changes: [{ op: 'put', path: 'bots/nadia-bot/BOT.md', content: '---\nname: Nadia bot\n---\n' }], message: 'a lead adds a bot' },
-      headers: await api.headers(),
-    });
-    expect(added.status()).toBe(403);
-    const removed = await api.ctx.post('/api/teams/engineering/repo/commit', {
-      data: { changes: [{ op: 'delete', path: BOT_MD }], message: 'a lead removes a bot' },
-      headers: await api.headers(),
-    });
-    expect(removed.status()).toBe(403);
+    const added = await applyGuarded(api, 'bots/nadia-bot/BOT.md', def.content, 'a lead adds a bot');
+    expect(added.status, added.text).toBe(403);
+    const removed = await applyGuarded(api, BOT_MD, null, 'a lead removes a bot');
+    expect(removed.status, removed.text).toBe(403);
     // Files still offers bots/ read-only to a lead: a bot's own page is where a lead edits a definition
     const tree = await api.get<{ entries: { path: string; readOnly: boolean; readOnlyReason: string | null }[] }>(
       '/api/teams/engineering/files/tree?path=bots/coder',
@@ -133,7 +157,9 @@ test('a definition that fails to load is the red banner on the page and the rost
   const good = await definitionOf(omar);
   const broken = good.content.replace(/^role: .*$/m, 'role:');
   expect(broken).not.toBe(good.content);
-  await commitDefinition(omar, broken, 'Break the Coder definition', good.blobSha);
+  // the proposal flow itself refuses this text
+  expect((await applyGuarded(omar, BOT_MD, broken, 'Break the Coder definition')).status).toBe(422);
+  await pushOutsideTheWriter(BOT_MD, broken, { fieldPath: 'role', message: 'role: Invalid input: expected string, received null' });
 
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots');
   try {

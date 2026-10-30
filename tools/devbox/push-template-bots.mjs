@@ -4,6 +4,9 @@
 // plugin (which loads a bot when a commit touches bots/<slug>/BOT.md) never saw a commit for them. Committing the same file again
 // as a workspace admin is what makes the roster and the conversations real for the personas of those teams.
 //
+// Since P7-01 the commit is a proposal the admin applies in the same step; a file that is already in git with the same text is "no change" (HTTP 400), the bots
+// plugin's backfill then loads it.
+//
 //   $env:DEMO_BASE='https://manythreads.kahf.to'
 //   $env:DEMO_EMAIL='omar@kahf.example'; $env:DEMO_PASSWORD='...'
 //   node tools/devbox/push-template-bots.mjs customer-support support-responder
@@ -63,6 +66,24 @@ if (signin.status !== 200) {
   process.exit(1);
 }
 
+/** P7-01: bots/, TEAM.md, skills/ and routines/ take no direct commit; each change goes in as a proposal applied in the same step (one file each). */
+async function applyAll(team, changes, message) {
+  let failed = 0;
+  for (const c of changes) {
+    const r = await api('POST', `/api/teams/${team}/proposals`, {
+      path: c.path,
+      op: c.op,
+      ...(c.op === 'put' ? { content: c.content } : {}),
+      ...(c.baseBlobSha !== undefined ? { baseBlobSha: c.baseBlobSha } : {}),
+      title: message.slice(0, 200),
+      applyNow: true,
+    });
+    console.log(`  ${c.op} ${c.path}: HTTP ${r.status}${r.status === 201 ? '' : ` ${JSON.stringify(r.json)?.slice(0, 300)}`}`);
+    if (r.status !== 201) failed += 1;
+  }
+  return failed;
+}
+
 for (const slug of slugs) {
   const path = join(repoRoot, 'templates', team, 'bots', slug, 'BOT.md');
   if (!existsSync(path)) {
@@ -70,9 +91,5 @@ for (const slug of slugs) {
     continue;
   }
   const content = readFileSync(path, 'utf8');
-  const r = await api('POST', `/api/teams/${team}/repo/commit`, {
-    message: `Add the ${slug} bot to the ${team} team`,
-    changes: [{ op: 'put', path: `bots/${slug}/BOT.md`, content }],
-  });
-  console.log(`${team}/${slug}: HTTP ${r.status} ${JSON.stringify(r.json)?.slice(0, 300)}`);
+  await applyAll(team, [{ op: 'put', path: `bots/${slug}/BOT.md`, content }], `Add the ${slug} bot to the ${team} team`);
 }

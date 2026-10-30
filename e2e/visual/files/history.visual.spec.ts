@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../../fixtures/stack.ts';
-import { apiOn } from '../../support/stack-browser.ts';
+import { apiOn, applyGuarded } from '../../support/stack-browser.ts';
 import { DESKTOP, comparePlate, openPage, type PlateSpec } from '../support/vt.ts';
 
 /*
@@ -29,7 +29,7 @@ const PLATE: PlateSpec = {
   masks: ['.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.ftree', '.fvb', '.fvh .m', '.t2', '.rph .sub', '.chead .topic', '.commit .who2 b'],
 };
 
-// what happened to the bot, oldest first: the plate's five commits (all Omar's here: only a team lead changes bots/)
+// what happened to the bot, oldest first: the plate's five commits (all Omar's here: a team lead applies each change to bots/)
 const EDITS = [
   'widen visibility to workspace',
   'triggers: add task_assigned',
@@ -46,11 +46,8 @@ test.beforeAll(async ({ playwright }) => {
   const path = 'bots/coder/BOT.md';
   for (const message of EDITS) {
     const blob = await omar.get<{ content: string; blobSha: string }>(`/api/teams/engineering/repo/blob?path=${encodeURIComponent(path)}`);
-    const res = await omar.ctx.post('/api/teams/engineering/repo/commit', {
-      data: { changes: [{ op: 'put', path, content: `${blob.content.trimEnd()}\n\n${message}.\n`, encoding: 'utf8', baseBlobSha: blob.blobSha }], message },
-      headers: await omar.headers(),
-    });
-    expect(res.status(), await res.text()).toBe(201);
+    const res = await applyGuarded(omar, path, `${blob.content.trimEnd()}\n\n${message}.\n`, message, { baseBlobSha: blob.blobSha });
+    expect(res.status, res.text).toBe(201);
   }
   await omar.ctx.dispose();
 });

@@ -138,11 +138,12 @@ const cmds = {
         }
       }
     }
-    const r = await api('POST', `/api/teams/${team}/repo/commit`, {
-      message: 'Demo personabots: orchestrator, coder, tester, brain, sentinel',
-      changes,
-    });
-    show('pushbots', r);
+    // P7-01: bots/ takes no direct commit; each file is a proposal the signed-in admin applies in the same step.
+    const results = [];
+    for (const c of changes) {
+      results.push(await api('POST', `/api/teams/${team}/proposals`, { title: `Demo personabot: ${c.path}`.slice(0, 200), path: c.path, op: 'put', content: c.content, applyNow: true }));
+    }
+    show('pushbots', results);
   },
   async llmProviders() {
     await cmds.signinSilent();

@@ -22,6 +22,22 @@ const asBot = (actorId: string): Record<string, string> => ({
 });
 const commit = (request: APIRequestContext, headers: Record<string, string>, path: string, content = 'x\n') =>
   request.post('/api/teams/engineering/repo/commit', { headers, data: { changes: [{ op: 'put', path, content }], message: `write ${path}` } });
+const BOT_MD_TEXT = `---
+schema: 1
+name: Coder
+role: Writes the code
+kind: agent
+runtime: hermes
+triggers:
+  - type: mention
+capabilities:
+  native: [messages.post]
+---
+
+# Coder
+
+Soul text.
+`;
 const GUARDED = ['bots/coder/BOT.md', 'TEAM.md', 'skills/triage/SKILL.md', 'routines/nightly.yaml'];
 
 test('a bot is denied the four guarded paths (each denial audited) and may write pages/x.md', async ({ request }) => {
@@ -54,17 +70,23 @@ test('a bot is denied the four guarded paths (each denial audited) and may write
   expect(botMd.status()).toBe(404);
 });
 
-test('Priya (a member, not a lead) gets 403 "change by pull request"; Omar commits the same paths as Omar', async ({ request }) => {
-  for (const path of GUARDED) {
-    const res = await commit(request, as(priya), path);
-    expect(res.status(), path).toBe(403);
-    expect(((await res.json()) as { error: { code: string; message: string } }).error).toMatchObject({ code: 'forbidden', message: expect.stringMatching(/pull request/i) });
+test('nobody commits the four guarded paths directly (Priya and Omar get 403 "propose the change"); Omar applies a proposal and the commit is his', async ({ request }) => {
+  for (const who of [priya, omar]) {
+    for (const path of GUARDED) {
+      const res = await commit(request, as(who), path);
+      expect(res.status(), path).toBe(403);
+      expect(((await res.json()) as { error: { code: string; message: string } }).error).toMatchObject({ code: 'forbidden', message: expect.stringMatching(/propos/i) });
+    }
   }
   expect((await commit(request, as(priya), 'pages/priya.md', 'hello\n')).status()).toBe(201);
   for (const path of GUARDED) {
-    const res = await commit(request, as(omar), path, `by omar: ${path}\n`);
+    // a BOT.md must load: the proposal carries the file as it is plus a line
+    const content = path.endsWith('BOT.md') ? BOT_MD_TEXT : `by omar: ${path}\n`;
+    const res = await request.post('/api/teams/engineering/proposals', {
+      headers: as(omar),
+      data: { path, content, title: `Change ${path}`, applyNow: true },
+    });
     expect(res.status(), `${path}: ${await res.text()}`).toBe(201);
-    expect(CommitRepoResponse.parse(await res.json()).authorId).toBe(omar.actorId);
   }
   const stack = await iso.start();
   const authors = await stack.sql<{ author_id: string; paths: string[] }>(

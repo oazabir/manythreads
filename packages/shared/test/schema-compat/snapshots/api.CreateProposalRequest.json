@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "op": {
+      "default": "put",
+      "type": "string",
+      "enum": [
+        "put",
+        "delete"
+      ]
+    },
+    "content": {
+      "type": "string",
+      "maxLength": 262144
+    },
+    "baseBlobSha": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "applyNow": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "additionalProperties": false
+}

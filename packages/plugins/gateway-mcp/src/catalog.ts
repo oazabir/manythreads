@@ -84,6 +84,20 @@ const PAGES_WRITE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const PROPOSALS_PROPOSE_SCHEMA = {
+  type: 'object',
+  properties: {
+    team: { type: 'string', description: 'The team slug or id. Defaults to the team the run belongs to.' },
+    path: { type: 'string', description: 'The one file to change: bots/<slug>/BOT.md (or another file under bots/), TEAM.md, a file under skills/ or routines/.' },
+    op: { type: 'string', enum: ['put', 'delete'], description: 'put writes the whole new text of the file (default); delete proposes removing it.' },
+    content: { type: 'string', maxLength: 262_144, description: 'The whole new text of the file. Leave it out for delete.' },
+    title: { type: 'string', maxLength: 200, description: 'One line that says what the change does.' },
+    note: { type: 'string', maxLength: 4000, description: 'Why you propose it, for the lead who reads the diff.' },
+  },
+  required: ['path'],
+  additionalProperties: false,
+} as const;
+
 // The memory tools take no bank, team or workspace argument, on purpose: the platform derives the bank from the run (memory-hindsight, SPEC 12.1).
 const MEMORY_RECALL_SCHEMA = {
   type: 'object',
@@ -219,6 +233,13 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     name: 'pages.write',
     description: 'Create, replace or append a page under pages/ of the team’s repo; the commit is yours.',
     inputSchema: PAGES_WRITE_SCHEMA,
+    kind: 'write',
+  },
+  'proposals.propose': {
+    name: 'proposals.propose',
+    description:
+      'Propose a change to a protected file of the team’s repo: a bot definition under bots/, TEAM.md, a file under skills/ or routines/. You can only propose; nothing changes until a team lead or workspace admin reads the diff and applies it. Send the whole new text of the file. A BOT.md is checked with the same reader the loader uses and the answer carries the checks.',
+    inputSchema: PROPOSALS_PROPOSE_SCHEMA,
     kind: 'write',
   },
   'knowledge.search': {
@@ -419,7 +440,7 @@ export function authorizeContext(input: Record<string, unknown>): CapabilityAuth
  * team, so a tool never reaches across teams even when the model asks for it by omission.
  */
 export function withRunTeam(name: string, input: Record<string, unknown>, teamId: string): Record<string, unknown> {
-  if (name === 'pages.write' && typeof input['team'] !== 'string') return { ...input, team: teamId };
+  if ((name === 'pages.write' || name === 'proposals.propose') && typeof input['team'] !== 'string') return { ...input, team: teamId };
   if ((name === 'messages.search' || name === 'files.search' || name === 'knowledge.search') && typeof input['teamId'] !== 'string') {
     return { ...input, teamId };
   }

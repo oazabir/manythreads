@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Browser, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
-import { PHONE, apiOn, openOn, type StackApi } from '../support/stack-browser.ts';
+import { PHONE, apiOn, applyGuarded, openOn, type StackApi } from '../support/stack-browser.ts';
 import type { PersonaKey } from '../support/env.ts';
 
 /*
@@ -69,11 +69,8 @@ export const answeringBrainMd = (): string => brainMd(['What is blocking the rel
  * exists, which is what a run needs.
  */
 export async function addBot(stack: Stack, admin: StackApi, slug: string, md: string): Promise<{ botId: string }> {
-  const res = await admin.ctx.post('/api/teams/engineering/repo/commit', {
-    data: { changes: [{ op: 'put', path: `bots/${slug}/BOT.md`, content: md }], message: `Add ${slug}` },
-    headers: await admin.headers(),
-  });
-  expect(res.status(), `commit ${slug}: ${await res.text()}`).toBe(201);
+  const res = await applyGuarded(admin, `bots/${slug}/BOT.md`, md, `Add ${slug}`);
+  expect(res.status, `apply ${slug}: ${res.text}`).toBe(201);
   let botId = '';
   for (let i = 0; i < 150 && botId === ''; i += 1) {
     const row = (

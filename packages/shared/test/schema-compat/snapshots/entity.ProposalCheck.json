@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 1200
+    }
+  },
+  "required": [
+    "name",
+    "ok",
+    "message"
+  ],
+  "additionalProperties": false
+}

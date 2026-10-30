@@ -52,8 +52,9 @@ const eventsOf = <T extends { type: string }>(type: string): Promise<T[]> =>
 const invalidEventFor = (slug: string) =>
   until(async () => (await eventsOf<BotsBotInvalidEvent>('bots.bot.invalid')).find((event) => event.slug === slug) ?? null, 10_000);
 
+// The loader reads whatever is in the repository, including a file no proposal would let in: these commits go straight through the writer.
 const commit = (path: string, content: string, message: string) =>
-  w.commit(omar, 'engineering', [{ op: 'put', path, content }], message);
+  w.commitRaw(omar, 'engineering', [{ op: 'put', path, content }], message);
 
 const validMd = (name: string, mayTag: readonly string[]): string => `---
 schema: 1

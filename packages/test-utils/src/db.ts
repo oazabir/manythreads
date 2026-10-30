@@ -45,6 +45,12 @@ export const webhooksMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/webhooks/migrations/', import.meta.url)),
 };
 
+/** Migrations of the proposals plugin (`proposals` and its create/decide/why-not functions); pass it in `sources` after `teamsMigrationSource` and `botsMigrationSource`. */
+export const proposalsMigrationSource: MigrationSource = {
+  namespace: 'proposals',
+  dir: fileURLToPath(new URL('../../plugins/proposals/migrations/', import.meta.url)),
+};
+
 /** Migrations of the gateway-llm plugin (`llm_providers`, `llm_aliases`, `llm_keys`); pass it in `sources` after the kernel's. */
 export const gatewayLlmMigrationSource: MigrationSource = {
   namespace: 'gateway-llm',

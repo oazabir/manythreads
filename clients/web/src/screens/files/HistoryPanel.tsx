@@ -6,8 +6,8 @@ import { ForbiddenBody } from '../../components/states';
 import { isApiError } from '../../api/client';
 import { usePanelSub } from '../../kernel/panel/sub';
 import { FilesError } from './backend';
-import { PullRequestDialog } from './dialogs';
-import { READ_ONLY_COPY, baseName, isPage, type Commit, type FileDiff } from './model';
+import { ProposeChangeDialog } from './dialogs';
+import { baseName, isPage, type Commit, type FileDiff } from './model';
 import { bumpFiles, useFilesVersion, useTeamFiles, type TeamFiles } from './store';
 import { useFileRow } from './useFileRow';
 
@@ -151,7 +151,7 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
   const list = useLoad(files ? `${files.slug}:${path}:${version}` : '', async () => (files ? files.backend.history(path) : []), [files, version]);
   const [picked, setPicked] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<Commit | null>(null);
-  const [pr, setPr] = useState(false);
+  const [pr, setPr] = useState<{ text?: string; title?: string } | null>(null);
   const [done, setDone] = useState(false);
 
   if (!files || list.status === 'loading') return <div className="vw-loading" role="status" aria-busy="true">Loading…</div>;
@@ -196,7 +196,19 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
       <div className="hist-foot">
         {done ? <p className="vw-saved" role="status">Restored. A new commit was made.</p> : null}
         {readOnly ? (
-          <button type="button" className="btn s" data-testid="change-by-pr" onClick={() => setPr(true)}>{READ_ONLY_COPY}</button>
+          <>
+            <button type="button" className="btn s" data-testid="change-by-pr" onClick={() => setPr({})}>Propose a change</button>
+            <button
+              type="button"
+              className="btn s"
+              data-testid="propose-version"
+              disabled={!canRestore || missing}
+              title={newest ? 'This is the current version.' : undefined}
+              onClick={() => void files.backend.version(path, selected.sha).then((text) => text !== null && setPr({ text, title: `Restore ${baseName(path)} to ${dayTime(selected.committedAt)}` }), () => undefined)}
+            >
+              Propose this version
+            </button>
+          </>
         ) : (
           <button type="button" className="btn primary s" data-testid="restore-version" disabled={!canRestore || missing} title={newest ? 'This is the current version.' : undefined} onClick={() => setRestoring(selected)}>
             Restore this version
@@ -204,7 +216,7 @@ export function HistoryPanel({ entry }: { entry: { type: string; id: string } })
         )}
       </div>
       {restoring ? <RestoreDialog files={files} path={path} commit={restoring} onClose={() => setRestoring(null)} onDone={() => { setRestoring(null); setPicked(null); setDone(true); }} /> : null}
-      {pr ? <PullRequestDialog path={path} onClose={() => setPr(false)} /> : null}
+      {pr ? <ProposeChangeDialog path={path} onClose={() => setPr(null)} {...(pr.text !== undefined ? { initialText: pr.text } : {})} {...(pr.title ? { title: pr.title } : {})} /> : null}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import './styles/https.css';
 import './styles/health.css';
 import './styles/notify.css';
 import './styles/webhooks.css';
+import './styles/proposals.css';
 import './styles/switcher.css';
 import './styles/emoji.css';
 import { configureApi } from './api/setup';

@@ -68,8 +68,8 @@ client plugins; E2E encryption; plugin marketplace with payments; browser extens
 Files (10) · Boards (20) · Org chart (23) · Rhythms (26) · Threads (30) · Approvals (35) · channel groups (40) ·
 Direct messages (45) · Bots (50) (`clients/web/src/shell/nav.ts`). The Bots header opens the team's bot roster at `/t/<team>/bots`; a row opens the bot's page
 (`/t/:team/bots/:botSlug`, the fourteen SPEC §7.2 tabs). The roster and page read the bots plugin's
-`GET …/bots[/:botSlug]`; the definition is `bots/<slug>/BOT.md` in the team repo (read via `repo/blob`, saved via
-`repo/commit` with `baseBlobSha`) — the team's lead and a workspace admin write an existing bot directly (a non-lead member is offered the file instead of Save); only an admin adds or removes a bot. The repo writer refuses the rest with 403.
+`GET …/bots[/:botSlug]`; the definition is `bots/<slug>/BOT.md` in the team repo (read via `repo/blob`, saved as a
+proposal (`POST …/proposals` with `baseBlobSha`; P7-01, docs/plugins/proposals.md) — the team's lead and a workspace admin may "Propose and apply" an existing bot in one step (a non-lead member is offered the file instead of Save and proposes from Files); only an admin adds or removes a bot. Nobody commits `bots/`, `TEAM.md`, `skills/` or `routines/` directly: the repo writer refuses it with 403, and a bot can only propose.
 
 ## Owner decisions (durable)
 - Approved: the orchestrator merges its own phase PRs into `main` without asking.

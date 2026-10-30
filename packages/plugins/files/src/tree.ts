@@ -9,7 +9,6 @@ import {
   GetFilesTreeQuery,
   GetFilesTreeResponse,
   getFilesTreeRoute,
-  isBotDefinitionPath,
   isGuardedRepoPath,
   repoMimeOf,
   type FilesReadOnlyReason,
@@ -64,12 +63,10 @@ export function registerTreeRoute(ctx: PluginContext): void {
       const q = GetFilesTreeQuery.parse(req.query);
       const team = await requireTeam(tx, slug);
       const segments = q.path === '' ? [] : q.path.split('/');
-      // `bots/` (SPEC section 3 as this workspace set it): a bot's definition is edited on its own Bots page, by a team lead or an admin, so
-      // the Files tree offers it read-only to everyone but an admin (the writer allows a lead to edit an existing bot and refuses the rest).
-      // `TEAM.md`, `skills/` and `routines/` stay lead-or-admin here.
+      // P7-01: `bots/`, `TEAM.md`, `skills/` and `routines/` change only through a proposal, for everyone (a lead or an admin included), so the tree
+      // offers them read-only with the reason the screen answers with a "Propose a change" button. Who may then apply it is the proposals plugin's rule.
       const repoReason = (path: string): Reason => {
-        if (isBotDefinitionPath(path)) return !team.can_admin ? 'change_by_pull_request' : team.can_post ? null : 'no_write_access';
-        if (isGuardedRepoPath(path) && !team.can_manage) return 'change_by_pull_request';
+        if (isGuardedRepoPath(path)) return team.can_post ? 'change_by_pull_request' : 'no_write_access';
         return team.can_post ? null : 'no_write_access';
       };
 

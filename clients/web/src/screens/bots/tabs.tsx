@@ -92,7 +92,7 @@ export function BehaviourTab({ draft, canEdit }: TabProps) {
       <p className="b-hint">
         {canEdit
           ? 'This text is what the bot is. Everything the platform enforces regardless of it — budgets, approvals, who it may tag — is applied by the platform, not by the prompt.'
-          : 'You can read this definition but not change it. Changes to bots/ go by pull request.'}
+          : 'You can read this definition but not change it. Changes to bots/ go through a proposal.'}
       </p>
     </Block>
   );

@@ -24,6 +24,7 @@ import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
 import { AgentsScreen } from './screens/agents/AgentsScreen';
 import { ProjectsScreen } from './screens/projects/ProjectsScreen';
 import { BotRoster } from './screens/bots/BotRoster';
+import { ProposalPage, ProposalsList } from './screens/proposals/ProposalsScreen';
 import { BoardsScreen } from './screens/boards/BoardsScreen';
 import { OrgScreen } from './screens/boards/OrgScreen';
 import { RhythmsScreen } from './screens/boards/RhythmsScreen';
@@ -77,6 +78,8 @@ function AppRoutes() {
             <Route path="/t/:team/agents" element={<RequireTeam><AgentsScreen /></RequireTeam>} />
             <Route path="/t/:team/projects" element={<RequireTeam><ProjectsScreen /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />
+            <Route path="/t/:team/proposals" element={<RequireTeam><ProposalsList /></RequireTeam>} />
+            <Route path="/t/:team/proposals/:proposalId" element={<RequireTeam><ProposalPage /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug/chat" element={<RequireTeam><ConversationView /></RequireTeam>} />
             <Route path="/t/:team/chat/:channelId" element={<RequireTeam><ConversationRedirect /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />

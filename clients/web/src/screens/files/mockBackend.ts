@@ -143,7 +143,7 @@ export function mockBackend(slug: string, perms: Perms): FilesBackend {
       size: kind === 'file' ? new TextEncoder().encode(v?.text ?? '').length : null,
       mime: null, modifiedAt: v ? new Date(v.at).toISOString() : null, by: v?.by ?? null, where: null,
       fileId: null, channelId: null, blobSha: v ? v.sha : null, contentUrl: null,
-      ...repoRowFlags(path, perms),
+      ...repoRowFlags(path),
     };
   };
   const attRow = (a: Attachment): FileRow => ({
@@ -185,7 +185,7 @@ export function mockBackend(slug: string, perms: Perms): FilesBackend {
     return v.sha;
   };
   const guard = (path: string): void => {
-    if (repoRowFlags(path, perms).readOnly) throw new FilesError('forbidden', 'You cannot change this here. Changes to it go by pull request.');
+    if (repoRowFlags(path).readOnly) throw new FilesError('forbidden', 'You cannot change this here. Changes to bots/, TEAM.md, skills/ and routines/ go through a proposal.');
   };
 
   return {
@@ -193,7 +193,7 @@ export function mockBackend(slug: string, perms: Perms): FilesBackend {
       await pause();
       const chan = channelNameOf(folder);
       const info: FolderInfo = {
-        path: folder, store: folder === 'channels' || chan ? 'attachments' : 'git', ...repoRowFlags(folder, perms),
+        path: folder, store: folder === 'channels' || chan ? 'attachments' : 'git', ...repoRowFlags(folder),
         channelId: chan && folder === `channels/${chan}` ? `mock-channel-${chan}` : null,
         ...(folder === 'channels' || chan ? { readOnly: false, readOnlyReason: null, managedBy: null } : {}),
       };

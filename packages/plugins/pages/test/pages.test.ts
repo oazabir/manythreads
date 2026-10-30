@@ -107,12 +107,12 @@ describe('where and what', () => {
     expect((await read(omar, 'pages/bin.md')).status).toBe(404);
   });
 
-  it('the four guarded paths are 403 for everyone, pages.write is not the way to change them (Priya: by pull request; Omar too)', async () => {
+  it('the four guarded paths are 403 for everyone, pages.write is not the way to change them (Priya: by proposal; Omar too)', async () => {
     for (const path of ['bots/coder/BOT.md', 'TEAM.md', 'skills/triage/SKILL.md', 'routines/nightly.yaml']) {
       for (const who of [priya, omar, nadia]) {
         const res = await write(who, page(path, 'replace', 'x'));
         expect(res.status, `${who.name} ${path}`).toBe(403);
-        expect((res.body as { error: { message: string } }).error.message).toMatch(/pull request/i);
+        expect((res.body as { error: { message: string } }).error.message).toMatch(/propos/i);
       }
     }
     expect((await read(omar, 'bots/coder/BOT.md')).status).toBe(404);

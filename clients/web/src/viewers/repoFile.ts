@@ -60,7 +60,7 @@ export function repoFile(slug: string, path: string): RepoFile {
       if (written) blobSha = written.blobSha;
     } catch (err) {
       if (isApiError(err) && err.code === 'conflict') throw new Error('Someone changed this file while you were editing. Reload it to see their version; nothing was overwritten.');
-      if (isApiError(err) && err.code === 'forbidden') throw new Error('You cannot change this file here. Changes to it go by pull request.');
+      if (isApiError(err) && err.code === 'forbidden') throw new Error('You cannot change this file here. Changes to bots/, TEAM.md, skills/ and routines/ go through a proposal.');
       throw err;
     }
   };

@@ -119,6 +119,9 @@ export type RunnerId = z.infer<typeof RunnerId>;
 export const WebhookId = z.uuid().brand<'WebhookId'>();
 export type WebhookId = z.infer<typeof WebhookId>;
 
+export const ProposalId = z.uuid().brand<'ProposalId'>();
+export type ProposalId = z.infer<typeof ProposalId>;
+
 export const HermesConnectionId = z.uuid().brand<'HermesConnectionId'>();
 export type HermesConnectionId = z.infer<typeof HermesConnectionId>;
 

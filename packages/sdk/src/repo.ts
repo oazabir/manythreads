@@ -47,6 +47,12 @@ export interface RepoWriteResult {
  */
 export interface RepoWriteOptions {
   capability?: 'files.write' | 'pages.write' | 'memory.write';
+  /**
+   * The id of the proposal this write applies (PLAN P7-01). The writer refuses a person's write to `bots/`, `TEAM.md`, `skills/` or `routines/` unless it
+   * carries this: those four places change only through the proposals plugin's apply step, which commits as the person who approved. The person's own
+   * rights (lead of the team, admin for adding or removing a bot) are still checked by the writer. Only the proposals plugin sets it; the HTTP routes never do.
+   */
+  proposalId?: string;
 }
 
 export interface RepoBlob {

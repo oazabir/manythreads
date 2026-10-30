@@ -16,8 +16,8 @@ export const FilesTreeSource = z.enum(['repo', 'attachment']);
 export type FilesTreeSource = z.infer<typeof FilesTreeSource>;
 
 /**
- * Why a row cannot be edited by the caller here. `change_by_pull_request`: `bots/`, `TEAM.md`, `skills/`, `routines/` for a member who is not a lead or
- * admin (the UI offers a pull request, a direct write is 403). `attachment`: an uploaded file never changes in place (replace it by uploading again).
+ * Why a row cannot be edited by the caller here. `change_by_pull_request`: `bots/`, `TEAM.md`, `skills/`, `routines/` for everyone who can post in the
+ * team (since P7-01 these change only through a proposal a lead or admin applies; the value keeps its old name so the wire format does not change). `attachment`: an uploaded file never changes in place (replace it by uploading again).
  * `no_write_access`: the caller may read but not post in the team.
  */
 export const FilesReadOnlyReason = z.enum(['change_by_pull_request', 'attachment', 'no_write_access']);

@@ -1,12 +1,12 @@
 import { expect, type Browser, type Locator, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
 import type { Stack } from '../fixtures/stack.ts';
-import { apiOn, openOn, type StackApi } from '../support/stack-browser.ts';
+import { apiOn, applyGuarded, openOn, type StackApi } from '../support/stack-browser.ts';
 import type { PersonaKey } from '../support/env.ts';
 
 /*
  * Helpers of the Bots specs (PLAN P5-05). Each spec starts a stack seeded with `repo`, so the real seed commits have already put
  * `bots/coder/BOT.md` in the team repo and the loader (the outbox consumer) has made the roster row. The definition is a file of the
- * team repo, so a commit through `repo/commit` is exactly how the loader and the editor both change it.
+ * team repo, so a proposal applied at once is how the editor changes it, and the loader reads it from the commit.
  */
 
 export const BOTS_STACK_ENV = { MANYTHREADS_STACK_SEED: 'repo' } as const;
@@ -17,13 +17,10 @@ export async function definitionOf(api: StackApi, path = BOT_MD): Promise<{ cont
   return api.get(`/api/teams/engineering/repo/blob?path=${encodeURIComponent(path)}`);
 }
 
-/** A commit of the definition as the caller (a lead may write `bots/` directly); 201 or the test fails with the answer. */
+/** A change of the definition as the caller (a lead proposes and applies it at once; P7-01); 201 or the test fails with the answer. */
 export async function commitDefinition(api: StackApi, content: string, message: string, baseBlobSha: string | undefined): Promise<void> {
-  const res = await api.ctx.post('/api/teams/engineering/repo/commit', {
-    data: { changes: [{ op: 'put', path: BOT_MD, content, baseBlobSha }], message },
-    headers: await api.headers(),
-  });
-  expect(res.status(), `commit ${message}: ${await res.text()}`).toBe(201);
+  const res = await applyGuarded(api, BOT_MD, content, message, baseBlobSha === undefined ? {} : { baseBlobSha });
+  expect(res.status, `apply ${message}: ${res.text}`).toBe(201);
 }
 
 export const rosterRow = (page: Page, slug: string): Locator => page.locator(`[data-testid="bot-row"][data-bot="${slug}"]`);

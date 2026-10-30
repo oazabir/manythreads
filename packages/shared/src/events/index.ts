@@ -95,3 +95,6 @@ export * from './hermes.connection.deleted.ts';
 export * from './hermes.connection.tested.ts';
 export * from './hermes.profiles.changed.ts';
 export * from './bots.pairing.rotated.ts';
+export * from './proposals.proposal.created.ts';
+export * from './proposals.proposal.applied.ts';
+export * from './proposals.proposal.rejected.ts';

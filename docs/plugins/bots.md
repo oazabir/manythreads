@@ -103,7 +103,7 @@ kernel's `schema-enums` test fails if SQL and Zod ever list different values.
 1. **`bots` — `rls: team`.** Readable by every caller whose `app.readable_team_ids('read')` contains the row's team
    (a member, or a workspace owner/admin; a guest gets none), plus, for `visibility: 'workspace'`, every **non-guest**
    member of the workspace — the same line `scoped_kv` uses. Writes are the **system role only**: the loader runs in
-   the outbox consumer, and a person edits a bot by committing `BOT.md`, never by UPDATE (42501).
+   the outbox consumer, and a person edits a bot by proposing a change to `BOT.md` that a lead or admin applies (P7-01, [proposals](proposals.md)), never by UPDATE (42501).
 2. **`bot_pairing_tokens` — `rls: system`, no `GRANT` at all.** The request role cannot SELECT it, exactly like
    `app.session_tokens`: the gateway resolves a presented token as the system role (`ctx.identity.runAsSystem`),
    comparing hashes and revoking through `revoked_at`. Nothing that carries a token reads it through a request.

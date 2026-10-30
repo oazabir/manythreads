@@ -8,7 +8,7 @@ useIsolatedStack();
 
 /**
  * The Files tree over HTTP (PLAN P4-06; criteria 6 and 9): repo entries and `channels/<name>/` attachments in one listing with identical rows; Lena (guest)
- * gets 403 on #dev attachments, Nadia 403 on Marketing's tree, a member sees bots/ and TEAM.md read-only "change by pull request" while a lead does not.
+ * gets 403 on #dev attachments, Nadia 403 on Marketing's tree, a member sees bots/ and TEAM.md read-only "change by proposal" and so does a lead (every change to them is a proposal).
  */
 
 const { omar, nadia, priya, lena, sameera } = personas;
@@ -72,14 +72,16 @@ test('Lena gets 403 on #dev attachments, Nadia on Marketing’s tree, Sameera on
   expect((await tree(request, nadia, 'engineering', 'channels/no-such-channel')).status()).toBe(403);
 });
 
-test('Priya (member, not a lead) sees bots/ and TEAM.md read-only, change by pull request; her direct write is 403; Omar’s are editable', async ({ request }) => {
+test('everybody sees bots/, skills/, routines/ and TEAM.md read-only (they change by proposal); a direct write is 403, even Omar’s', async ({ request }) => {
   const asPriya = await parsed(await tree(request, priya, 'engineering'));
   for (const name of ['bots', 'skills', 'routines', 'TEAM.md']) {
     expect(asPriya.entries.find((e) => e.name === name), name).toMatchObject({ readOnly: true, readOnlyReason: 'change_by_pull_request' });
   }
   expect(asPriya.entries.find((e) => e.name === 'pages')).toMatchObject({ readOnly: false, readOnlyReason: null });
   const asOmar = await parsed(await tree(request, omar, 'engineering'));
-  expect(asOmar.entries.filter((e) => ['bots', 'skills', 'routines', 'TEAM.md'].includes(e.name)).every((e) => !e.readOnly)).toBe(true);
+  expect(asOmar.entries.filter((e) => ['bots', 'skills', 'routines', 'TEAM.md'].includes(e.name)).every((e) => e.readOnly && e.readOnlyReason === 'change_by_pull_request')).toBe(true);
+  const direct = await request.post('/api/teams/engineering/repo/commit', { headers: as(omar), data: { changes: [{ op: 'put', path: 'TEAM.md', content: 'x' }], message: 'x' } });
+  expect(direct.status()).toBe(403);
   const write = await request.post('/api/teams/engineering/repo/commit', { headers: as(priya), data: { changes: [{ op: 'put', path: 'TEAM.md', content: 'x' }], message: 'x' } });
   expect(write.status()).toBe(403);
 });

@@ -125,7 +125,7 @@ export function sortRows(rows: readonly FileRow[], order: 'recent' | 'name'): Fi
 /** Files of a folder as the tree shows them: git files yes, a channel's attachments no (they would drown the tree). */
 export const treeShows = (row: FileRow): boolean => row.kind === 'folder' || row.store === 'git';
 
-export const READ_ONLY_COPY = 'Change by pull request';
+export const READ_ONLY_COPY = 'Change by proposal';
 export const GIT_TEXT_ONLY_COPY = 'This folder is stored in git, which holds text only. Upload attachments to a channel folder.';
 export const MEMORY_COPY = 'OKF memory bundle';
 

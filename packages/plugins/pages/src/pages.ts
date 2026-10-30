@@ -7,7 +7,7 @@ import { applyLiveWrite } from './live.ts';
 //
 // Who may: a person who may post in the team (the writer checks the team role); a bot only with a `pages.write` grant, and never on `bots/`, `TEAM.md`,
 // `skills/` or `routines/` (the broker's path guard, audited as `kernel.capability.denied`). Those four paths are refused for everybody here: pages.write
-// writes pages, and a change to the team's configuration goes through the commit route (leads and admins) or a pull request.
+// writes pages, and a change to the team's configuration goes through the commit route (leads and admins) or a proposal that a lead or admin applies.
 
 export type PageRefusal = {
   ok: false;
@@ -70,7 +70,7 @@ export async function writePage(ctx: PluginContext, tx: PluginTx, input: WritePa
   if (!decision.allowed) return refuse(403, 'forbidden', decision.reason);
   if (decision.needsApproval) return refuse(403, 'forbidden', `Writing "${path}" needs a person's approval`);
   if (isGuardedRepoPath(path)) {
-    return refuse(403, 'forbidden', 'Change by pull request: pages.write does not change bots/, TEAM.md, skills/ or routines/');
+    return refuse(403, 'forbidden', 'Propose the change: pages.write does not change bots/, TEAM.md, skills/ or routines/; use proposals.propose');
   }
   if (!path.startsWith(`${PAGES_DIR}/`)) return refuse(400, 'validation_failed', `pages.write writes under ${PAGES_DIR}/ (for example pages/reports/week-37.md)`);
 

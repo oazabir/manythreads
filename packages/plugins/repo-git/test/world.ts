@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { createAppPool, createSystemPool, emit, withActor, withSystem, type Actor, type Tx } from '@manythreads/kernel';
 import type { PluginTx } from '@manythreads/sdk';
-import type { ActorId, WorkspaceId } from '@manythreads/shared';
+import { isGuardedRepoPath, type ActorId, type WorkspaceId } from '@manythreads/shared';
 import { personaActor, personas, seedWorld, startTestServer, TEAM_IDS, type Persona, type TestServer } from '@manythreads/test-utils';
 import type pg from 'pg';
-import { createGitLayer, createRepoService, type RepoService } from '../src/index.ts';
+import { createGitLayer, createRepoService, type RepoService, type RepoWriteChange } from '../src/index.ts';
 import type { RepoServiceDeps } from '../src/repo.ts';
 
 export { personas, TEAM_IDS };
@@ -41,6 +41,11 @@ export interface RepoWorld {
   /** A bot on the roster of the team with the grants given (default: `files.write`). */
   makeBot(teamId: string, grants?: string[]): Promise<Bot>;
   commit(who: Who | null, slug: string, changes: unknown[], message: string): Promise<ApiResult<{ sha: string; parentSha: string | null }>>;
+  /**
+   * A commit straight through the repo writer as `who`, marked as the apply step of a proposal (so the guarded places are allowed) and with no check run on it.
+   * For tests whose subject is something else that reads the repository (the BOT.md loader on a broken file, a hand-made change): not the proposals door.
+   */
+  commitRaw(who: Who, slug: string, changes: unknown[], message: string): Promise<ApiResult<{ sha: string; parentSha: string | null }>>;
   close(): Promise<void>;
 }
 
@@ -60,6 +65,14 @@ export async function createRepoWorld(): Promise<RepoWorld> {
     const text = await res.text();
     return { status: res.status, body: (text ? JSON.parse(text) : null) as never };
   };
+  const raw = createRepoService({
+    repoDir,
+    git: createGitLayer(),
+    authorize: () => Promise.resolve({ allowed: true, reason: 'test', needsApproval: false }),
+    emit: async (tx, event) => {
+      await emit(tx as unknown as Tx, { schemaVersion: 1, workspaceId: tx.actor.workspaceId, ...event });
+    },
+  });
   const world: RepoWorld = {
     server,
     repoDir,
@@ -94,7 +107,43 @@ export async function createRepoWorld(): Promise<RepoWorld> {
       });
       return { kind: 'bot', actorId: id, workspaceId: personas.omar.workspaceId };
     },
-    commit: (who, slug, changes, message) => call(who, 'POST', `/api/teams/${slug}/repo/commit`, { changes, message }),
+    // P7-01: bots/, TEAM.md, skills/ and routines/ no longer take a direct commit. The tests that set those files up say so through the same door a lead
+    // uses for a quick edit: a proposal applied at once (`applyNow`), so the commit is the caller's and the same rules refuse the same people.
+    async commit(who, slug, changes, message) {
+      const direct = (rest: unknown[]) => call<{ sha: string; parentSha: string | null }>(who, 'POST', `/api/teams/${slug}/repo/commit`, { changes: rest, message });
+      const guarded = changes.filter((c) => isGuardedRepoPath((c as { path: string }).path));
+      // a bot only ever proposes, and it has no `applyNow`: its direct write is what the kernel broker and the writer must keep refusing, so it stays direct
+      if (who === null || who.kind === 'bot' || guarded.length === 0) return direct(changes);
+      const rest = changes.filter((c) => !guarded.includes(c));
+      if (rest.length > 0) {
+        const first = await direct(rest);
+        if (first.status >= 300) return first;
+      }
+      let last: ApiResult<{ sha: string; parentSha: string | null }> = { status: 201, body: { sha: '', parentSha: null } };
+      for (const c of guarded as Array<{ op: string; path: string; content?: string }>) {
+        const res = await call<{ proposal: { appliedCommitSha: string | null } }>(who, 'POST', `/api/teams/${slug}/proposals`, {
+          path: c.path,
+          op: c.op,
+          ...(c.op === 'put' ? { content: c.content } : {}),
+          title: message.slice(0, 200),
+          applyNow: true,
+        });
+        if (res.status >= 300) return res as unknown as ApiResult<{ sha: string; parentSha: string | null }>;
+        last = { status: 201, body: { sha: res.body.proposal.appliedCommitSha ?? '', parentSha: null } };
+      }
+      return last;
+    },
+    async commitRaw(who, slug, changes, message) {
+      const teamId = (await world.system((tx) => tx.query<{ id: string }>('SELECT id FROM app.teams WHERE slug = $1', [slug]))).rows[0]!.id;
+      try {
+        const res = await world.as(who, (tx) =>
+          raw.write(tx, teamId, { id: tx.actor.id, kind: tx.actor.kind }, changes as RepoWriteChange[], message, [], { proposalId: 'test' }),
+        );
+        return { status: 201, body: { sha: res.sha, parentSha: res.parentSha } };
+      } catch (err) {
+        return { status: (err as { status?: number }).status ?? 500, body: { error: { message: (err as Error).message } } as never };
+      }
+    },
     async close() {
       await systemPool.end();
       await appPool.end();

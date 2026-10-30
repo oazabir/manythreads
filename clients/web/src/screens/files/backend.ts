@@ -20,7 +20,6 @@ import {
   getRepoHistoryRoute,
   restoreRepoFileRoute,
   writePageRoute,
-  isBotDefinitionPath,
   isGuardedRepoPath,
   type FilesTreeEntry,
   type RepoChange,
@@ -97,9 +96,9 @@ const KEEP = '.gitkeep';
 const sha7 = (sha: string): string => sha.slice(0, 7);
 
 /** The flags every row of the team repo carries, computed the way the server does (the mock and the fallback use it). */
-export function repoRowFlags(path: string, perms: Pick<Perms, 'leadsTeam' | 'isAdmin'>): Pick<FileRow, 'readOnly' | 'readOnlyReason' | 'managedBy'> {
-  // In Files, `bots/` is admin-only — a lead edits a bot on its own Bots page, not here; the other guarded paths a team lead's too.
-  const guarded = isGuardedRepoPath(path) && !(isBotDefinitionPath(path) ? perms.isAdmin : perms.leadsTeam);
+export function repoRowFlags(path: string): Pick<FileRow, 'readOnly' | 'readOnlyReason' | 'managedBy'> {
+  // P7-01: nobody commits bots/, TEAM.md, skills/ or routines/ from Files; every change is a proposal (the dialog behind "Propose a change").
+  const guarded = isGuardedRepoPath(path);
   return {
     readOnly: guarded,
     readOnlyReason: guarded ? 'change_by_pull_request' : null,
@@ -115,7 +114,7 @@ function refuse(err: unknown, exists = false): never {
         ? new FilesError('exists', 'Something with that name is already here.')
         : new FilesError('conflict', 'Someone changed this while you were working. Reload it to see their version; nothing was overwritten.');
     }
-    if (err.code === 'forbidden' || err.status === 403) throw new FilesError('forbidden', 'You cannot change this here. Changes to it go by pull request.');
+    if (err.code === 'forbidden' || err.status === 403) throw new FilesError('forbidden', 'You cannot change this here. Changes to bots/, TEAM.md, skills/ and routines/ go through a proposal.');
     throw new FilesError('other', err.message);
   }
   throw err;

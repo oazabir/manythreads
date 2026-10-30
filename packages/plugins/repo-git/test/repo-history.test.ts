@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { CommitRepoResponse, GetRepoDiffResponse, GetRepoHistoryResponse, RestoreRepoFileResponse } from '@manythreads/shared';
+import { GetRepoDiffResponse, GetRepoHistoryResponse, RestoreRepoFileResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from './world.ts';
 
@@ -26,7 +26,8 @@ const restore = (who: typeof omar | null, path: string, sha: string, extra: Reco
 const mustCommit = async (who: typeof omar, changes: unknown[], message: string): Promise<string> => {
   const res = await w.commit(who, 'engineering', changes, message);
   expect(res.status, JSON.stringify(res.body)).toBe(201);
-  return CommitRepoResponse.parse(res.body).sha;
+  // a guarded path goes in as a proposal applied at once, which answers with the sha only
+  return (res.body as { sha: string }).sha;
 };
 const raw = async (who: typeof omar | null, slug: string, query: string) => {
   const res = await fetch(`${w.server.url}/api/teams/${slug}/repo/content?${query}`, {
@@ -163,19 +164,18 @@ describe('restore is a new commit (criterion 7)', () => {
     expect(latest.subject).toBe('Take the runbook out again');
   });
 
-  it('the writer rules apply: Priya cannot restore bots/ or TEAM.md (403, change by pull request); Omar can; outsiders 403; unknown commit 404', async () => {
+  it('the writer rules apply: nobody restores bots/ or TEAM.md directly (403, propose it instead); outsiders 403; unknown commit 404', async () => {
     const teamMdAtStart = GetRepoHistoryResponse.parse((await history(omar, 'TEAM.md')).body).commits.at(-1)!.sha;
-    await mustCommit(omar, [put('TEAM.md', '---\nname: Engineering\n---\nchanged\n')], 'Lead edits TEAM.md');
+    await mustCommit(omar, [put('TEAM.md', '---\nname: Engineering\n---\nchanged\n')], 'Lead edits TEAM.md'); // through a proposal applied at once
     const denied = await restore(priya, 'TEAM.md', teamMdAtStart);
     expect(denied.status).toBe(403);
-    expect((denied.body as { error: { message: string } }).error.message).toMatch(/pull request/i);
+    expect((denied.body as { error: { message: string } }).error.message).toMatch(/proposal/i);
     expect((await restore(sameera, 'TEAM.md', teamMdAtStart)).status).toBe(403);
     expect((await restore(lena, PAGE, c1)).status).toBe(403);
     expect((await restore(null, PAGE, c1)).status).toBe(401);
     expect((await restore(omar, PAGE, '0'.repeat(40))).status).toBe(404);
-    const ok = await restore(omar, 'TEAM.md', teamMdAtStart);
-    expect(ok.status).toBe(201);
-    expect(RestoreRepoFileResponse.parse(ok.body).authorId).toBe(omar.actorId);
+    // a lead cannot restore it directly either: the old text goes in as a proposal
+    expect((await restore(omar, 'TEAM.md', teamMdAtStart)).status).toBe(403);
     // strict body
     expect((await restore(omar, PAGE, c1, { extra: true })).status).toBe(400);
     expect((await restore(omar, PAGE, 'main')).status).toBe(400);

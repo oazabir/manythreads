@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginEvent, PluginTx, RepoProvider } from '@manythreads/sdk';
-import { BOT_SLUG_RE, RepoRepoCommittedEvent, parseBotMd } from '@manythreads/shared';
+import { BOT_SLUG_RE, RepoRepoCommittedEvent, botSlugProblem, parseBotMd } from '@manythreads/shared';
 import { modelAliasesOf } from './backfill.ts';
 
 // The loader (PLAN P5-04, extended by P5-10): a `repo.repo.committed` subscription that rebuilds a team's bot from `bots/<slug>/BOT.md`, in the
@@ -102,7 +102,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       path,
       definitionSha,
       fieldPath: 'slug',
-      message: `folder "${slug}": a bot lives in a folder named with a lowercase slug (letters, digits, ".", "_", "-")`,
+      message: botSlugProblem(slug),
     });
     return;
   }

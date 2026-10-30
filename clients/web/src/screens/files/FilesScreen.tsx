@@ -8,6 +8,8 @@ import { useHeaderTopic, useHeaderActionsSlot } from '../../shell/topic';
 import { useNarrow } from '../../shell/useNarrow';
 import { useRowActions, type RowAction } from './actions';
 import { FilesError } from './backend';
+import { ProposeDialog } from '../proposals/ProposeDialog';
+import { useProposalPerms } from '../proposals/store';
 import { NewFileDialog, NewFolderDialog } from './dialogs';
 import { FileList, rowId, type Filters } from './FileList';
 import { FileView } from './FileView';
@@ -38,7 +40,8 @@ export function FilesScreen() {
   const folders = useFolders(files);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [filters, setFilters] = useState<Filters>({ type: 'all', source: 'any', order: 'recent' });
-  const [dialog, setDialog] = useState<'page' | 'folder' | 'sheet' | null>(null);
+  const [dialog, setDialog] = useState<'page' | 'folder' | 'sheet' | 'propose' | null>(null);
+  const proposals = useProposalPerms();
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [textOnly, setTextOnly] = useState<string[]>([]);
   const [dropping, setDropping] = useState(false);
@@ -157,7 +160,10 @@ export function FilesScreen() {
 
   const actions = (
     <div className="fhead-actions" data-testid="files-actions">
-      <button type="button" className="btn s" data-testid="new-page" disabled={!canCreate} title={attachments ? 'Pages live in git folders such as pages/.' : writable ? NEW_PAGE_TITLE : 'Change by pull request'} onClick={() => setDialog('page')}>New page</button>
+      <button type="button" className="btn s" data-testid="new-page" disabled={!canCreate} title={attachments ? 'Pages live in git folders such as pages/.' : writable ? NEW_PAGE_TITLE : 'This folder changes by proposal'} onClick={() => setDialog('page')}>New page</button>
+      {info?.readOnlyReason === 'change_by_pull_request' ? (
+        <button type="button" className="btn s" data-testid="propose-new-file" title="Propose a new file in this folder" onClick={() => setDialog('propose')}>Propose a file</button>
+      ) : null}
       <button type="button" className="btn s" data-testid="new-folder" disabled={!canCreate} title={attachments ? 'Channel folders come with their channels.' : undefined} onClick={() => setDialog('folder')}>New folder</button>
       <button type="button" className="btn s p" data-testid="upload" disabled={!canUpload} title={folder === 'channels' ? 'Open a channel folder to upload there.' : undefined} onClick={() => picker.current?.click()}>Upload</button>
       <input ref={picker} type="file" multiple hidden data-testid="upload-input" aria-label="Choose files to upload" onChange={(e) => onPick(e.target.files)} />
@@ -262,6 +268,7 @@ export function FilesScreen() {
           />
         )}
       </div>
+      {dialog === 'propose' ? <ProposeDialog slug={proposals.slug} path={folder === '' ? '' : `${folder}/`} mode="new" canApply={proposals.canApply} onClose={() => { setDialog(null); bumpFiles(); }} /> : null}
       {dialog === 'page' ? <NewFileDialog files={files} folder={folder} onClose={() => setDialog(null)} onDone={(path) => { setDialog(null); go({ open: path }); }} /> : null}
       {dialog === 'folder' ? <NewFolderDialog files={files} folder={folder} onClose={() => setDialog(null)} onDone={(path) => { setDialog(null); enterFolder(path); }} /> : null}
       {dialog === 'sheet' ? (

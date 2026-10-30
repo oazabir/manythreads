@@ -121,43 +121,53 @@ describe('who may write (criteria 3 and 9)', () => {
     expect(commits[0]).toMatchObject({ sha: out.sha, subject: 'Add the runbook', author: { name: 'Nadia', email: `${nadia.actorId}@actors.manythreads.invalid` } });
   });
 
-  it('Priya (a member, not a lead) gets 403 "change by pull request" on bots/, TEAM.md, skills/ and routines/, and nothing is committed', async () => {
+  // P7-01: the four guarded places take no direct commit from anybody; a proposal is how they change (the proposals plugin's own tests cover that door).
+  const direct = (who: typeof priya | null, slug: string, changes: unknown[], message: string) => w.call(who, 'POST', `/api/teams/${slug}/repo/commit`, { changes, message });
+  const propose = (who: typeof priya, slug: string, path: string, content: string, applyNow = true) =>
+    w.call<{ proposal: { proposal: { status: string; appliedCommitSha: string | null } } }>(who, 'POST', `/api/teams/${slug}/proposals`, { path, content, title: `Change ${path}`, applyNow });
+  const botMd = (name: string, extra = ''): string => `---\nschema: 1\nname: ${name}\nrole: Answers in the writer tests\nkind: agent\nruntime: hermes\ntriggers:\n  - type: mention\n---\n${extra}`;
+
+  it('nobody commits bots/, TEAM.md, skills/ and routines/ directly: 403 "propose the change", and nothing is committed', async () => {
     const before = await head(eng);
-    for (const path of ['bots/coder/BOT.md', 'TEAM.md', 'skills/x/SKILL.md', 'routines/nightly.yaml']) {
-      const res = await w.commit(priya, 'engineering', [put(path, 'x\n')], 'sneaky');
-      expect(res.status, path).toBe(403);
-      expect(JSON.stringify(res.body)).toMatch(/pull request/i);
+    for (const who of [priya, omar]) {
+      for (const path of ['bots/coder/BOT.md', 'TEAM.md', 'skills/x/SKILL.md', 'routines/nightly.yaml']) {
+        const res = await direct(who, 'engineering', [put(path, 'x\n')], 'sneaky');
+        expect(res.status, path).toBe(403);
+        expect(JSON.stringify(res.body)).toMatch(/proposal/i);
+      }
     }
     expect(await head(eng)).toBe(before);
     // she can write a page
     expect((await w.commit(priya, 'engineering', [put('pages/priya.md', 'hello\n')], 'Priya page')).status).toBe(201);
     // a guarded path in a mixed commit refuses the whole commit
-    const mixed = await w.commit(priya, 'engineering', [put('pages/ok.md', 'ok\n'), put('TEAM.md', 'x\n')], 'mixed');
+    const mixed = await direct(priya, 'engineering', [put('pages/ok.md', 'ok\n'), put('TEAM.md', 'x\n')], 'mixed');
     expect(mixed.status).toBe(403);
     expect((await blob(priya, 'engineering', 'pages/ok.md')).status).toBe(404);
   });
 
-  it('Omar (a lead and admin) commits bots/ and TEAM.md directly, as Omar', async () => {
-    const res = await w.commit(omar, 'engineering', [put('bots/coder/BOT.md', '---\nname: Coder\n---\n'), put('TEAM.md', '---\nname: Engineering\n---\n\nNew purpose.\n')], 'Configure Coder');
+  it('a member cannot apply a proposal; Omar (a lead and admin) applies one, and the commit is Omar\'s', async () => {
+    const denied = await propose(priya, 'engineering', 'TEAM.md', '---\nname: Engineering\n---\n\nNo.\n');
+    expect(denied.status).toBe(403);
+    const res = await propose(omar, 'engineering', 'TEAM.md', '---\nname: Engineering\n---\n\nNew purpose.\n');
     expect(res.status, JSON.stringify(res.body)).toBe(201);
-    const out = CommitRepoResponse.parse(res.body);
-    expect(out.authorId).toBe(omar.actorId);
+    expect(res.body.proposal.proposal.status).toBe('applied');
     const [c] = await history(eng);
+    expect(c?.sha).toBe(res.body.proposal.proposal.appliedCommitSha);
     expect(c?.author).toEqual({ name: 'Omar', email: `${omar.actorId}@actors.manythreads.invalid` });
   });
 
-  it('a team lead who is not a workspace admin edits a bot that exists, but cannot add or remove one', async () => {
+  it('a team lead who is not a workspace admin applies an edit to a bot that exists, but cannot add or remove one', async () => {
     // Tariq leads Marketing and is only a member of the workspace: an existing bot is his to edit (SPEC section 3 as this workspace set it),
     // while adding a bot, removing one, and TEAM.md stay a lead's — the first two are a workspace admin's alone.
-    expect((await w.commit(omar, 'marketing', [put('bots/x/BOT.md', '---\nname: X\n---\n')], 'an admin adds a bot')).status).toBe(201);
-    const edited = await w.commit(tariq, 'marketing', [put('bots/x/BOT.md', '---\nname: X\n---\n\nA lead edits an existing bot.\n')], 'a lead edits a bot');
+    expect((await propose(omar, 'marketing', 'bots/x/BOT.md', botMd('X'))).status).toBe(201);
+    const edited = await propose(tariq, 'marketing', 'bots/x/BOT.md', botMd('X', '\nA lead edits an existing bot.\n'));
     expect(edited.status, JSON.stringify(edited.body)).toBe(201);
-    const added = await w.commit(tariq, 'marketing', [put('bots/y/BOT.md', '---\nname: Y\n---\n')], 'a lead adds a bot');
+    const added = await propose(tariq, 'marketing', 'bots/y/BOT.md', botMd('Y'));
     expect(added.status, JSON.stringify(added.body)).toBe(403);
-    expect(JSON.stringify(added.body)).toMatch(/pull request/i);
-    const removed = await w.commit(tariq, 'marketing', [{ op: 'delete', path: 'bots/x/BOT.md' }], 'a lead removes a bot');
+    expect(JSON.stringify(added.body)).toMatch(/admin/i);
+    const removed = await w.call(tariq, 'POST', '/api/teams/marketing/proposals', { path: 'bots/x/BOT.md', op: 'delete', title: 'Remove X', applyNow: true });
     expect(removed.status, JSON.stringify(removed.body)).toBe(403);
-    const allowed = await w.commit(tariq, 'marketing', [put('TEAM.md', '---\nname: Marketing\n---\n\nA lead may still write this.\n')], 'a lead writes TEAM.md');
+    const allowed = await propose(tariq, 'marketing', 'TEAM.md', '---\nname: Marketing\n---\n\nA lead may still write this.\n');
     expect(allowed.status, JSON.stringify(allowed.body)).toBe(201);
   });
 

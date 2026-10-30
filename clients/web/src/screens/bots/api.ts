@@ -1,23 +1,20 @@
 import {
-  CommitRepoRequest,
-  CommitRepoResponse,
   GetBotResponse,
   GetRepoBlobQuery,
   GetRepoBlobResponse,
   ListBotsResponse,
   botMdPath,
-  commitRepoRoute,
   getBotRoute,
   getRepoBlobRoute,
   listBotsRoute,
 } from '@manythreads/shared';
 import { call } from '../../api/client';
+import { createProposal } from '../proposals/api';
 
 /*
  * What the Bots screens ask of the server (PLAN P5-05). Two reads over the bots plugin — the roster and one bot — plus the definition
- * itself, which is a file of the team repo: read through `repo/blob`, written through `repo/commit` with the blob that was read
- * (`baseBlobSha`). That is deliberate: the editor inherits the repo writer's own rules, so a team lead or a workspace admin commits an
- * existing `bots/` file directly and a member's save is refused with 403 — the page then offers a pull request, exactly as the Files screen does.
+ * itself, which is a file of the team repo: read through `repo/blob`, saved as a proposal with the blob that was read (`baseBlobSha`). The repo
+ * writer's own rules still decide who may apply it: a team lead edits a bot that exists, a workspace admin adds or removes one.
  */
 
 export const fetchBots = (slug: string) => call(listBotsRoute, { response: ListBotsResponse }, undefined, { slug });
@@ -33,17 +30,21 @@ export async function readDefinition(slug: string, path: string): Promise<Defini
 }
 
 /**
- * One commit with the whole file, as the signed-in person. `baseBlobSha` is the blob the page read: a file someone else changed in the
- * meantime is refused with 409 and nothing is overwritten. `noop` means the bytes were already there (no commit, no event).
+ * The whole file as a proposal (PLAN P7-01): bots/ is never committed directly. With `applyNow` a team lead or workspace admin proposes and applies in
+ * one step (the commit is theirs, a proposal stays on record); without it the proposal waits for a lead or admin. `baseBlobSha` is the blob the page
+ * read: a file someone else changed in the meantime is refused with 409 and nothing is overwritten. A BOT.md that does not load is refused with 422 and
+ * the loader's own words.
  */
-export async function writeDefinition(slug: string, path: string, content: string, baseBlobSha: string | null, message: string): Promise<{ sha: string; noop: boolean; blobSha: string | null }> {
-  const res = await call(
-    commitRepoRoute,
-    { request: CommitRepoRequest, response: CommitRepoResponse },
-    CommitRepoRequest.parse({ changes: [{ op: 'put', path, content, encoding: 'utf8', baseBlobSha }], message }),
-    { slug },
-  );
-  return { sha: res.sha, noop: res.noop, blobSha: res.paths.find((p) => p.path === path)?.blobSha ?? null };
+export async function proposeDefinition(
+  slug: string,
+  path: string,
+  content: string,
+  baseBlobSha: string | null,
+  title: string,
+  applyNow: boolean,
+): Promise<{ proposalId: string; applied: boolean; noop: boolean }> {
+  const res = await createProposal(slug, { path, op: 'put', content, baseBlobSha, title, ...(applyNow ? { applyNow: true } : {}) });
+  return { proposalId: res.proposal.proposal.id, applied: res.proposal.proposal.status === 'applied', noop: false };
 }
 
 export { botMdPath };

@@ -4,7 +4,7 @@ import { isApiError } from '../../api/client';
 import { useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { useShell } from '../../shell/context';
-import { fetchBot, fetchBots, readDefinition, writeDefinition, type DefinitionFile } from './api';
+import { fetchBot, fetchBots, proposeDefinition, readDefinition, type DefinitionFile } from './api';
 
 /*
  * The Bots screens' state (PLAN P5-05): the roster for the current team, and — on a bot page — the definition being edited, held as
@@ -170,20 +170,21 @@ export function useDefinition(slug: string, path: string, revision: number): Def
   };
 }
 
-/** The commit message a save makes: the file is the bot, so it says which bot and what changed in one line. */
+/** The title of the proposal a save makes: the file is the bot, so it says which bot and what changed in one line. */
 export const saveMessage = (slug: string, name: string): string => `Update ${slug} (${name})`;
 
-/** A save's failure as the page words it (403 offers a pull request, 409 offers a reload, 404 means the file is gone). */
+/** A save's failure as the page words it (403 says who can apply it, 409 offers a reload, 422 shows the loader's words, 404 means the file is gone). */
 export type SaveFailure = { kind: 'forbidden' | 'conflict' | 'missing' | 'other'; message: string };
 
 export function saveFailureOf(err: unknown): SaveFailure {
   if (isApiError(err)) {
-    if (err.status === 403 || err.code === 'forbidden') return { kind: 'forbidden', message: 'You cannot change this definition directly. Changes to bots/ go by pull request, or ask a workspace admin.' };
+    if (err.status === 403 || err.code === 'forbidden') return { kind: 'forbidden', message: 'You cannot change this definition. A team lead edits a bot that exists; adding or removing one is a workspace admin\'s.' };
     if (err.status === 409 || err.code === 'conflict') return { kind: 'conflict', message: 'Someone changed this definition while you were editing. Reload it to see their version; nothing was overwritten.' };
+    if (err.status === 422) return { kind: 'other', message: err.message };
     if (err.status === 404) return { kind: 'missing', message: 'This definition no longer exists in the team repo.' };
     return { kind: 'other', message: err.message };
   }
   return { kind: 'other', message: err instanceof Error ? err.message : 'Could not save the definition.' };
 }
 
-export { writeDefinition };
+export { proposeDefinition };

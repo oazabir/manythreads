@@ -49,6 +49,9 @@ import {
   JobState,
   PersonStatus,
   ReadTargetType,
+  ProposalAuthorKind,
+  ProposalOp,
+  ProposalStatus,
   RunSourceScope,
   ScopedKvScopeType,
   TeamRole,
@@ -64,6 +67,7 @@ import {
   filesMigrationSource,
   gatewayLlmMigrationSource,
   memoryMigrationSource,
+  proposalsMigrationSource,
   rhythmsMigrationSource,
   runtimeHermesMigrationSource,
   tasksMigrationSource,
@@ -141,6 +145,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'rhythms.kind': RhythmKind,
   'rhythms.effort': RhythmEffort,
   'rhythm_runs.status': RhythmRunStatus,
+  'proposals.author_kind': ProposalAuthorKind,
+  'proposals.op': ProposalOp,
+  'proposals.status': ProposalStatus,
 };
 
 /**
@@ -158,7 +165,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();
