@@ -41,18 +41,17 @@ export function returnText(isoDate: string): string {
   return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-/** Choices for "Clear after". `today` and `week` end at the device's local midnight. */
+/** Choices for "Clear after". `today` ends at the device's local midnight. */
 export const CLEAR_CHOICES = [
   { id: 'never', label: "Don't clear" },
   { id: '30m', label: '30 minutes' },
   { id: '1h', label: '1 hour' },
   { id: '4h', label: '4 hours' },
   { id: 'today', label: 'Today' },
-  { id: 'week', label: 'This week' },
 ] as const;
 export type ClearChoice = (typeof CLEAR_CHOICES)[number]['id'];
 
-/** The moment a "Clear after" choice means, counted from `now` on this device's clock. */
+/** The moment a "Clear after" choice means, counted from `now` on this device's clock. `today` ends at this device's next midnight. */
 export function clearsAtFor(choice: ClearChoice, now: Date): string | null {
   if (choice === 'never') return null;
   if (choice === '30m') return new Date(now.getTime() + 30 * 60_000).toISOString();
@@ -60,11 +59,6 @@ export function clearsAtFor(choice: ClearChoice, now: Date): string | null {
   if (choice === '4h') return new Date(now.getTime() + 4 * 60 * 60_000).toISOString();
   const end = new Date(now);
   end.setHours(24, 0, 0, 0);
-  if (choice === 'week') {
-    // the coming Sunday midnight (a Sunday ends that same day's week at the next midnight a week away)
-    const toSunday = (7 - end.getDay()) % 7;
-    end.setDate(end.getDate() + toSunday);
-  }
   return end.toISOString();
 }
 

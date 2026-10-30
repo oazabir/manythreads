@@ -1,0 +1,458 @@
+/*
+ * Status and Do not disturb (PLAN P14-01): the paused marks on the bell and in the sidebar (`bell-moon`, `ntf-paused`, `dnd-strip`, `foot-status`) and the
+ * "Status and Do not disturb" section of the account settings (`pr-`). Shared classes (.btn, .chip, .tog, .block, .dlg-*, .link-btn) are used, never redefined.
+ */
+
+/* ---- the bell while paused ---- */
+.bell-moon {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.bell-moon svg {
+  width: 9px;
+  height: 9px;
+}
+
+.ntf-paused {
+  padding: 8px 14px 0;
+}
+
+/* ---- the sidebar line above the account row ---- */
+.dnd-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--rule);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 12.5px;
+}
+
+.dnd-strip-ic {
+  display: inline-grid;
+  place-items: center;
+}
+
+.dnd-strip-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dnd-strip .link-btn {
+  margin-left: auto;
+  color: var(--warn-ink);
+}
+
+.dnd-strip-error {
+  flex-basis: 100%;
+  color: var(--alert-ink);
+}
+
+.foot-status {
+  flex: none;
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* ---- the paused note (bell, account section, dialog) ---- */
+.pr-help {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pr-paused {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 13px;
+}
+
+.pr-paused-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.pr-paused-ic {
+  display: inline-grid;
+  place-items: center;
+}
+
+.pr-paused-text {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pr-paused .btn {
+  margin-left: auto;
+}
+
+.pr-paused .pr-help {
+  color: var(--warn-ink);
+}
+
+/* ---- the account section ---- */
+.pr {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pr-part {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+.pr-h {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pr-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pr-error {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--alert-border);
+  border-radius: 5px;
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+.pr-ok {
+  margin: 0;
+  color: var(--ok-ink);
+  font-size: 12.5px;
+}
+
+.pr-label {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.pr-input {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.pr-input:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.pr-input:disabled {
+  color: var(--faint);
+  opacity: 0.6;
+}
+
+.pr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pr-grow {
+  flex: 1 1 200px;
+}
+
+.pr-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
+.pr-emoji-field {
+  width: 96px;
+}
+
+.pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pr-now {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.pr-now small {
+  color: var(--mute);
+}
+
+.pr-quick,
+.pr-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pr-quick-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pr-quick-btn:hover {
+  background: var(--nav-on);
+}
+
+.pr-preset {
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.pr-preset:hover {
+  background: var(--nav-on);
+}
+
+.pr-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.pr-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pr-choice small {
+  color: var(--mute);
+  font-size: 11.5px;
+}
+
+.pr-choice:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pr-choice:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.pr-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pr-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+}
+
+.pr .tog {
+  position: relative;
+}
+
+/* a wider touch area than the 34 x 19 switch itself */
+.pr .tog::before {
+  content: "";
+  position: absolute;
+  inset: -9px -6px;
+}
+
+.pr-days {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pr-day {
+  display: grid;
+  grid-template-columns: 72px auto auto 1fr;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.pr-day[data-on="false"] {
+  color: var(--faint);
+}
+
+.pr-day-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.pr-day-name input,
+.pr-daychip input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--human);
+}
+
+.pr-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pr-time-l {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.pr-day-hint {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.pr-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pr-daychips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.pr-daychip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.pr-daychip.on {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+}
+
+/* ---- phone: touch targets of at least 36 px ---- */
+@media (width <= 760px) {
+  .pr .btn,
+  .pr-input,
+  .pr-choice,
+  .pr-daychip,
+  .dlg .btn,
+  .dlg .pr-input {
+    min-height: 40px;
+  }
+
+  .pr-quick-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .pr-switch-row {
+    min-height: 44px;
+  }
+
+  .pr-day {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pr-day-name {
+    grid-column: 1 / -1;
+    min-height: 40px;
+  }
+
+  .pr-day-hint {
+    grid-column: 1 / -1;
+  }
+
+  .pr-choices {
+    grid-template-columns: 1fr;
+  }
+
+  .pr-emoji-field {
+    width: 80px;
+  }
+
+  .rail .foot .menu-item,
+  .dnd-strip .link-btn,
+  .ntf-paused .btn {
+    min-height: 40px;
+  }
+
+  .rail .foot .menu-item {
+    display: flex;
+    align-items: center;
+  }
+
+  .dnd-strip .link-btn {
+    display: inline-flex;
+    align-items: center;
+  }
+}

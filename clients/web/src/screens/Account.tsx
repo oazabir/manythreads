@@ -9,6 +9,7 @@ import { QueryView } from '../components/states';
 import { Alert, Field, Notice, PasswordField, Time } from '../components/ui';
 import { NotificationSettings } from '../notifications/NotificationSettings';
 import { disablePush } from '../notifications/push';
+import { PresenceSettings } from '../presence/PresenceSettings';
 import { PASSWORD_MIN_LENGTH } from '@manythreads/shared';
 
 export function Account() {
@@ -132,6 +133,8 @@ export function Account() {
       </section>
 
       <NotificationSettings />
+
+      <PresenceSettings />
 
       <section className="block" aria-labelledby="acc-sessions" data-landmark="sessions">
         <h2 className="bh" id="acc-sessions">Sessions</h2>

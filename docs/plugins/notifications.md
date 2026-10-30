@@ -87,6 +87,7 @@ a default for team channels (`mentions` until an admin changes it); a direct mes
 
 The consumer reads the levels in the same transaction as it writes the rows, so a change applies from the next message. The held-by-Do-not-disturb path (P14-01) is unchanged: a row a level allows is
 held while DnD is on and announced on release; a row a level refuses is never made.
+The screens that set Do not disturb (pause, schedule, status) and the paused mark on the bell are the presence plugin's: [presence.md](./presence.md).
 
 **New kind `message`**: any message in a channel the person has joined, only at level `all`. It follows the `dm` entry of the settings document (`prefKey`), so the three switches are unchanged. It is the
 weakest kind in the upsert rank, so a mention, a reply or a keyword on the same message replaces it.

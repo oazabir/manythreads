@@ -22,6 +22,7 @@ import './styles/health.css';
 import './styles/audit.css';
 import './styles/guardrails.css';
 import './styles/notify.css';
+import './styles/presence.css';
 import './styles/webhooks.css';
 import './styles/proposals.css';
 import './styles/switcher.css';

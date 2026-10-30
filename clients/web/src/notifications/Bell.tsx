@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Link } from 'react-router';
 import type { Notification as InboxItem } from '@manythreads/shared';
 import { useOpenMessage } from '../shell/messageLink';
-import { BellIcon } from '../shell/icons';
+import { BellIcon, MoonIcon } from '../shell/icons';
+import { useMyDnd } from '../presence/hooks';
+import { PausedNote, resumeNow, useSaver } from '../presence/PresencePanels';
+import { bellLabel } from '../presence/settingsModel';
 import { useDismiss } from '../shell/useDismiss';
 import { browserAlerts, notificationStore, notificationTitle } from './store';
 import { ago } from '../channels/format';
@@ -62,6 +66,8 @@ function AlertsRow({ prefsOn, prefsKnown }: { prefsOn: boolean; prefsKnown: bool
 export function Bell() {
   const snap = useNotifications();
   const openMessage = useOpenMessage();
+  const dnd = useMyDnd();
+  const resume = useSaver();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
@@ -86,13 +92,15 @@ export function Bell() {
       <button
         type="button"
         className="icon-btn bell-btn"
-        aria-label={snap.unread > 0 ? `Notifications, ${snap.unread} unread` : 'Notifications'}
+        aria-label={bellLabel(snap.unread, dnd.banner)}
         aria-haspopup="dialog"
         aria-expanded={open}
         data-testid="bell"
+        data-paused={dnd.banner ? dnd.banner.reason : undefined}
         onClick={() => setOpen((o) => !o)}
       >
         <BellIcon />
+        {dnd.banner ? <span className="bell-moon" data-testid="bell-paused" aria-hidden="true"><MoonIcon /></span> : null}
         {snap.unread > 0 ? <span className="bell-badge" data-testid="bell-count" data-vt-mask>{snap.unread > 99 ? '99+' : snap.unread}</span> : null}
       </button>
       {open ? (
@@ -101,6 +109,13 @@ export function Bell() {
             <b>Notifications</b>
             <button type="button" className="link-btn" disabled={snap.unread === 0} onClick={() => void notificationStore.markRead()}>Mark all</button>
           </header>
+          {dnd.banner ? (
+            <div className="ntf-paused">
+              <PausedNote banner={dnd.banner} onResume={() => void resume.run(resumeNow)} busy={resume.busy} error={resume.error}>
+                {dnd.banner.canResume ? null : <Link className="link-btn" to="/account#status-and-dnd" onClick={() => setOpen(false)}>Change</Link>}
+              </PausedNote>
+            </div>
+          ) : null}
           {snap.itemsStatus === 'loading' || snap.itemsStatus === 'idle' ? (
             <p className="ntf-note" aria-busy="true">Loading…</p>
           ) : snap.itemsStatus === 'error' ? (

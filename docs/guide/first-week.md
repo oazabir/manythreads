@@ -57,7 +57,10 @@ A member's Threads home shows a "Welcome" card with three first moves: join #gen
 
 Not built yet: custom emoji, a confirmation before an `@here` or `@channel`, drafts saved on the server (a draft stays in the browser it was typed in), Ctrl+Z after a toolbar edit,
 the email digest, and a tidy channel title on a 390 px phone. "Save for later" and reminders are planned and not built.
-The server stores presence and Do not disturb settings, but the web app has no screen to set them.
+Do not disturb has its own screen (details: [presence.md](../plugins/presence.md)). Open the gear at the foot of the sidebar: "Pause notifications…" pauses for 30 minutes, 1 hour, until tomorrow morning, until you
+turn it off, or until a time you pick; "Set status…" sets an emoji and words that clear after a time you choose. The bell shows a small moon while you are paused, and its popover says "Paused until …" with
+"Resume now". Notifications that arrive while you are paused wait and are delivered together when it ends. "Do not disturb settings" (Account → Status and Do not disturb) adds a weekly schedule of
+quiet hours per weekday, your time zone and your working hours. Not built yet: out-of-office, and status or active/away dots beside names.
 
 ## Day 2. Bots and BOT.md
 

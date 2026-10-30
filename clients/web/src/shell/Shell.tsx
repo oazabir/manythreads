@@ -3,6 +3,8 @@ import { Outlet, useLocation, useMatch } from 'react-router';
 import { dmParticipants, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
 import { PushBridge } from '../notifications/OpenLink';
+import { DndLive } from '../presence/DndIndicators';
+import { useWatchMyPresence } from '../presence/hooks';
 import { SearchBox } from '../search/SearchBox';
 import { fetchTeams } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -43,6 +45,7 @@ export function Shell() {
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
 
   useRealtime();
+  useWatchMyPresence(session.person.id);
   const teamsData = q.status === 'ok' ? q.data.teams : undefined;
   const teams = useMemo(() => teamsData ?? [], [teamsData]);
   const teamsLoading = q.status === 'loading';
@@ -103,6 +106,7 @@ export function Shell() {
           <AccountMenu />
         </aside>
         {drawerOpen ? <button type="button" className="scrim" aria-label="Close menu" onClick={() => setOpenedAt(null)} /> : null}
+        <DndLive />
         <main className="center">
           {inboxOwnsHeader ? null : (
           <header className="region header chead" data-landmark="header">
