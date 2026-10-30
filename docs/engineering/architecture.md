@@ -14,7 +14,7 @@ What manythreads is built from and where each part lives. The full contract is `
 - **Mobile (owner decision, replaces React Native): the same web app wrapped in Capacitor** (`clients/mobile`,
   phase 11). Desktop: the same web app in Tauri 2 (phase 10). One UI codebase for all clients.
 - Lint: ESLint 9 flat config + typescript-eslint; Stylelint for CSS. `pnpm lint` and `pnpm typecheck` must pass.
-- Deploy: docker compose (`deploy/compose`) for dev/CI/self-host; Helm chart (`deploy/helm`) on k3s with
+- Deploy: docker compose (`deploy/compose`) for dev and tests only (a self-host compose file is not built, P10-13); Helm chart (`deploy/helm`) on k3s with
   CloudNativePG (D4). Five default workloads: Postgres, LiteLLM, Hindsight, manythreads server(+web), Hermes.
 
 ## Repo layout

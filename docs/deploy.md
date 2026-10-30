@@ -1,5 +1,7 @@
 # Deploying manythreads (k3s at manythreads.kahf.to)
 
+Installing it for your own team on your own machine: [deploy/self-host.md](deploy/self-host.md). This page describes the project's own pipeline and host.
+
 Single-node k3s (65.109.71.84, SSH port 44033), which is also the **devbox** — the box the
 Windows dev loop and the test suites run on. The sandbox cannot reach SSH; only GitHub
 Actions can, using the repo secret `ROOT_PASSWORD` (via `sshpass -e`, never echoed).
@@ -163,7 +165,7 @@ With the default `routing: path` the apps live at `https://<domain>/apps/<team>/
 certificate, no DNS token (the wildcard setting is then ignored). The deployed apps are fenced in by middlewares (the platform's cookies never reach them and their pages run in a sandbox); the consequences for app authors are in `docs/plugins/hermes-pods.md`.
 `tools/devbox/deploy.sh --apps-routing path|host` chooses (and remembers) the mode. Switching to `host` needs a wildcard DNS record `*.<domain>` and a wildcard certificate, and, with Let's Encrypt, `--dns-token-file`.
 In both modes a Traefik `TLSStore` named `default` makes the chart's certificate Traefik's default, so Ingresses in other namespaces, which cannot read the
-Secret, are served with it. The render stops with a message on an unknown mode, `letsencrypt` without an email, or a wildcard `letsencrypt` (host routing) without `dns01`.
+Secret, are served with it. The render stops with a message on an unknown mode, or a wildcard `letsencrypt` (host routing) without `dns01`.
 
 **Cloudflare, step by step.**
 1. DNS: `<domain>` points at the cluster, with the orange cloud (proxied) on (and `*.<domain>` too, with `--apps-routing host`).
