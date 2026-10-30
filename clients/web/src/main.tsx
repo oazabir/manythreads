@@ -25,6 +25,7 @@ import './styles/webhooks.css';
 import './styles/proposals.css';
 import './styles/switcher.css';
 import './styles/emoji.css';
+import './styles/onboarding.css';
 import { configureApi } from './api/setup';
 import { App } from './App';
 

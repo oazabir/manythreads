@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createPersonas, createTestDatabase, dropTestDatabase, withClusterLock } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, seedFinishedSetup, withClusterLock } from '@manythreads/test-utils';
 import { startServer } from '@manythreads/server';
 
 const port = Number(process.env['MANYTHREADS_API_PORT'] ?? 3100);
@@ -27,6 +27,8 @@ const server = await startServer({
   devAuth: true,
   testAuthToken: process.env['MANYTHREADS_TEST_AUTH_TOKEN'] ?? 'e2e-test-auth-token',
 });
+// the plugins have migrated now: the seeded workspace starts with its setup checklist already put away (see seedFinishedSetup)
+await seedFinishedSetup(db);
 console.log(`manythreads api test server on ${server.url} (database ${db.name})`);
 
 let closing = false;

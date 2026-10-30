@@ -74,6 +74,8 @@ Workspace-admin only, mounted under `/api/workspace/llm`:
 | DELETE | `/limits/:limitId` |
 | GET/PUT | `/settings` |
 | GET | `/spend` |
+| POST | `/aliases/:alias/test` |
+| GET | `/alias-tests` |
 
 Every write commits the row and enqueues `gateway-llm.apply-config` in the same transaction (deduped while one is ready or running; the job fingerprints its rows before and after the push and queues one follow-up when they changed meanwhile, so an edit made mid-push is not lost); the job reads the rows back,
 decrypts the keys (a system transaction — `ctx.secrets.get` refuses any other) and pushes the document. The response says
@@ -81,6 +83,26 @@ whether a provider has a stored secret, never the secret.
 
 The web page (`screens/admin/llm`) and the onboarding step that first fills this in are P5-08/P5-22; the plate is
 `docs/spec/mockups-all.html` §01 plate 7.
+
+## Testing an alias (P10-01)
+
+A saved key is not a working key, so `POST /aliases/:alias/test` (workspace admin, 20 a minute) sends one small real question through the alias the
+way a bot's call goes: the pre-call check first (a refusal by the guard preset is a result, not an error), then the proxy with the alias's own
+fallbacks switched off (so the result is about this alias, not about whichever one rescued it), then the spend ledger. The reply is a stored result
+(`app.llm_alias_tests`, migration `0005`, one row per alias) with `outcome` (`ok` or `failed`), a `cause` when it failed, one plain sentence in
+`message`, the model, the time it took, and `current`.
+
+- Causes: `no_gateway` (no proxy address is set), `unbound` (no model, or its provider is switched off), `refused` (the guard preset), `auth` (the
+  provider rejected the key), `model_not_found`, `rate_limited`, `provider_error`, `timeout`, `unreachable`, `empty_answer`, `other`. Each has its
+  own sentence (`causeMessage` in `src/alias-test.ts`); the provider's own text is never repeated.
+- `current` is false once the alias or its provider changed after the test started, so an edit makes a green result stale instead of leaving it green.
+- `GET /alias-tests` returns every stored result and the aliases that have no text test (`embed`, `image`, `transcribe`); testing one of those is `409`.
+- The call waits 20 seconds at most (`MANYTHREADS_LLM_TEST_TIMEOUT_MS` changes it). The result is written by short system transactions around the
+  call, but the request's own transaction stays open while it waits, which is why the route is limited to 20 a minute.
+- Saving an alias or provider pushes the change to the proxy in a background job. A test started in the first ten seconds after a save would reach
+  the proxy's old settings and could pass for a setup that is no longer the saved one, so the route answers `409` ("saved a moment ago, wait about ten
+  seconds") and sends nothing. This is a delay, not proof the push finished: a push that takes longer can still be tested too early.
+- Emits `llm.alias.tested` (audit: `model_alias.tested`). The screens: a Test button on Workspace, LLM, Aliases, and step 2 of Setup ([onboarding.md](./onboarding.md)).
 
 ## Keys: minted with the bot, deleted with it
 

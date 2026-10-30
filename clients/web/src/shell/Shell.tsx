@@ -16,6 +16,7 @@ import { useNavCounts } from './counts';
 import { MenuIcon, SearchIcon } from './icons';
 import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
+import { SetupCard } from './SetupCard';
 import { Sidebar } from './Sidebar';
 import { HeaderActionsContext, HeaderTopicContext } from './topic';
 import { TeamSwitch } from './TeamSwitch';
@@ -98,6 +99,7 @@ export function Shell() {
           <nav className="region sidebar" data-landmark="sidebar" aria-label="Sidebar">
             <Sidebar />
           </nav>
+          <SetupCard />
           <AccountMenu />
         </aside>
         {drawerOpen ? <button type="button" className="scrim" aria-label="Close menu" onClick={() => setOpenedAt(null)} /> : null}

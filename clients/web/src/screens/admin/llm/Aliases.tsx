@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { LLM_ALIASES, type LlmAlias, type LlmAliasName, type LlmProvider } from '@manythreads/shared';
+import { LLM_ALIASES, LLM_TESTABLE_ALIASES, type LlmAlias, type LlmAliasName, type LlmAliasTest, type LlmProvider } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
-import { deleteLlmAlias, setLlmAlias } from '../../../api/endpoints';
+import { deleteLlmAlias, fetchLlmAliasTests, setLlmAlias } from '../../../api/endpoints';
+import { useQuery } from '../../../app/useQuery';
+import { announceOnboardingChange } from '../../onboarding/useOnboarding';
+import { AliasTestButton, AliasTestStatus } from '../../../components/AliasTest';
 import { Alert, Notice, Toggle } from '../../../components/ui';
 
 /*
@@ -19,15 +22,23 @@ import { Alert, Notice, Toggle } from '../../../components/ui';
 
 const MAX_FALLBACKS = 3;
 
+/** Only the chat models have a text test; an embedding, image or speech alias answers in another shape. */
+const isTestable = (alias: LlmAliasName): boolean => (LLM_TESTABLE_ALIASES as readonly string[]).includes(alias);
+
 function AliasRow({
   alias,
   bound,
   providers,
+  test,
+  onTested,
   onSaved,
   onError,
 }: {
   alias: LlmAliasName;
   bound: LlmAlias | undefined;
+  /** The newest test call of this alias, if it was ever tested. */
+  test: LlmAliasTest | undefined;
+  onTested: () => void;
   providers: LlmProvider[];
   onSaved: (message: string) => void;
   onError: (err: unknown) => void;
@@ -109,10 +120,12 @@ function AliasRow({
       </td>
       <td data-label="State">
         {bound ? <span className="kind h">bound</span> : <span className="kind ru">unbound</span>}
+        {bound && isTestable(alias) ? <AliasTestStatus test={test} /> : null}
       </td>
       <td data-label="Actions" className="d-cell">
         <button type="button" className="btn primary" disabled={busy || model.trim() === '' || !dirty} onClick={() => void save()}>Save</button>
         {bound ? <button type="button" className="btn" disabled={busy} onClick={() => void unbind()}>Unbind</button> : null}
+        {bound && isTestable(alias) && !dirty ? <AliasTestButton alias={alias} onResult={onTested} /> : null}
       </td>
     </tr>
   );
@@ -122,6 +135,8 @@ export function AliasesSection({ providers, aliases, reload }: { providers: LlmP
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const byAlias = new Map(aliases.map((a) => [a.alias, a]));
+  const tests = useQuery('llm-alias-tests', fetchLlmAliasTests);
+  const testOf = new Map((tests.status === 'ok' ? tests.data.tests : []).map((t) => [t.alias as string, t]));
 
   return (
     <section className="block" aria-labelledby="llm-aliases">
@@ -152,10 +167,17 @@ export function AliasesSection({ providers, aliases, reload }: { providers: LlmP
                   alias={alias}
                   bound={byAlias.get(alias)}
                   providers={providers}
+                  test={testOf.get(alias)}
+                  onTested={() => {
+                    tests.reload();
+                    announceOnboardingChange();
+                  }}
                   onSaved={(m) => {
                     setError(null);
                     setNote(m);
                     reload();
+                    tests.reload();
+                    announceOnboardingChange();
                   }}
                   onError={(err) => {
                     setNote(null);

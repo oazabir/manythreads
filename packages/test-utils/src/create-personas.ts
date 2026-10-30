@@ -6,6 +6,7 @@ import {
   allPersonas,
   KAHF_WORKSPACE_ID,
   TEAM_IDS,
+  personas as namedPersonas,
   type Persona,
   type TeamName,
   type WorkspaceRole,
@@ -13,6 +14,9 @@ import {
 
 /** Every persona's password (8+ characters, SPEC §4). */
 export const PERSONA_PASSWORD = 'manythreadspassword';
+
+/** The conversation the seeded "already launched" setup state points at: a fixed id, since the seeded world needs no real first goal. */
+const SEEDED_LAUNCH_CHANNEL_ID = '00000000-0000-4000-8000-0000000000a1';
 
 export const KAHF_WORKSPACE = { id: KAHF_WORKSPACE_ID, slug: 'kahf-software', name: 'Kahf Software' } as const;
 
@@ -46,6 +50,32 @@ export interface CreatedPersonas {
   personas: readonly Persona[];
   /** The shared password, or null when the passwords are random (nobody knows them). */
   password: string | null;
+}
+
+/**
+ * Marks the seeded workspace's setup checklist (PLAN P10-01) as already put away, so it does not sit in the sidebar of every signed-in admin and move
+ * every screen of the visual baselines. Only the e2e test servers call it (`e2e/api/support/start-server.ts`, `e2e/fixtures/stack-server.ts`), after
+ * `startServer` has migrated the plugins. It is deliberately NOT part of `createPersonas`: `pnpm seed --demo` runs the same code on the live demo
+ * site, where the checklist has to show the truth. A database without the onboarding table is skipped. Idempotent.
+ */
+export async function seedFinishedSetup(db: Pick<TestDatabase, 'systemUrl'>): Promise<void> {
+  const pool = createSystemPool(db.systemUrl, 1);
+  try {
+    await withSystem(
+      async (tx) => {
+        const present = (await tx.query<{ t: string | null }>(`SELECT to_regclass('app.onboarding_state')::text AS t`)).rows[0]?.t != null;
+        if (!present) return;
+        await tx.query(
+          `INSERT INTO app.onboarding_state (workspace_id, launched_at, launched_by, launch_team_id, launch_channel_id, dismissed_at, dismissed_by)
+           VALUES ($1, now(), $2, $3, $4, now(), $2) ON CONFLICT DO NOTHING`,
+          [KAHF_WORKSPACE_ID, namedPersonas.omar.actorId, TEAM_IDS['Engineering'], SEEDED_LAUNCH_CHANNEL_ID],
+        );
+      },
+      { pool, workspaceId: KAHF_WORKSPACE_ID },
+    );
+  } finally {
+    await pool.end();
+  }
 }
 
 const workspaceRoleOf = (roles: readonly WorkspaceRole[]): WorkspaceRole =>

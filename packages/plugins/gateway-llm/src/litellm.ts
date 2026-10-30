@@ -76,6 +76,8 @@ export interface LiteLlmCompletion {
   /** Attribution the proxy records with the call (workspace, bot, purpose). */
   metadata: Record<string, string>;
   timeoutMs?: number;
+  /** Ask the proxy not to fall back to another model if this one fails: a test of one alias must report that alias, not the one behind it. */
+  noFallbacks?: boolean;
 }
 
 export interface LiteLlmClientOptions {
@@ -277,6 +279,7 @@ export function createLiteLlmClient(options: LiteLlmClientOptions): LlmGateway {
             temperature: 0,
             stream: false,
             metadata: input.metadata,
+            ...(input.noFallbacks ? { fallbacks: [] } : {}),
           },
           input.timeoutMs === undefined ? undefined : { timeoutMs: input.timeoutMs },
         ),

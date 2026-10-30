@@ -39,7 +39,7 @@ export default definePlugin({
     // (run-proxy.ts). It opens no run and enters no transaction as a bot.
     extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.llm', 'hook.pre_egress', 'run.resolve'],
     events: {
-      emits: ['llm.config.applied', 'llm.key.changed', 'llm.budget.exceeded', 'llm.guard.decided'],
+      emits: ['llm.config.applied', 'llm.key.changed', 'llm.budget.exceeded', 'llm.guard.decided', 'llm.alias.tested'],
       consumes: ['bots.bot.loaded', 'bots.bot.removed'],
     },
     // The guardrails (P5-21) are what the pre-call check runs: where a call may go (egress, first) and what it may carry (dlp).

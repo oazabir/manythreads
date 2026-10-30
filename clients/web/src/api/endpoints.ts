@@ -1,4 +1,18 @@
 import {
+  ListRunnersResponse,
+  listRunnersRoute,
+  LaunchOnboardingRequest,
+  ListLlmAliasTestsResponse,
+  OnboardingStateResponse,
+  SetOnboardingMarkRequest,
+  TestLlmAliasResponse,
+  clearOnboardingMarkRoute,
+  dismissOnboardingRoute,
+  getOnboardingRoute,
+  launchOnboardingRoute,
+  listLlmAliasTestsRoute,
+  setOnboardingMarkRoute,
+  testLlmAliasRoute,
   AuditSigningKey,
   CreateDlpRuleRequest,
   DeleteDlpRuleResponse,
@@ -667,6 +681,8 @@ export const fetchDms = () => call(listDmsRoute, { request: ListDmsQuery, respon
 export const openDm = (personIds: readonly string[]) =>
   call(openDmRoute, { request: OpenDmRequest, response: OpenDmResponse }, { personIds } as OpenDmRequest);
 
+type SetOnboardingStep = 'signin' | 'code' | 'infrastructure' | 'servers';
+
 // ---- Workspace → LLM (PLAN P5-06 and P5-07, SPEC §10.1) ---------------------------------------------------
 /*
  * The admin page's data. Every route is admin-only, so a member who reaches this code gets 404 (the workspace-settings
@@ -687,6 +703,23 @@ export const fetchLlmAliases = () => call(listLlmAliasesRoute, { response: ListL
 export const setLlmAlias = (alias: string, body: SetLlmAliasRequest) =>
   call(setLlmAliasRoute, { request: SetLlmAliasRequest, response: LlmAliasResponse }, body, { alias });
 export const deleteLlmAlias = (alias: string) => call(deleteLlmAliasRoute, { response: DeleteLlmAliasResponse }, undefined, { alias });
+
+/** The newest test call of each alias, with whether it still counts (the alias or its provider changed since = not current). */
+export const fetchLlmAliasTests = () => call(listLlmAliasTestsRoute, { response: ListLlmAliasTestsResponse });
+/** Send one small real question through an alias and get the plain-language result back (a failed test is a 200 with a cause). */
+export const testLlmAlias = (alias: string) => call(testLlmAliasRoute, { response: TestLlmAliasResponse }, undefined, { alias });
+
+// ---- Workspace → Setup (PLAN P10-01) ---------------------------------------------------------------------
+/** The first admin's checklist state: what was set aside, whether the first goal was sent, whether it was put away. Admins only. */
+export const fetchOnboarding = () => call(getOnboardingRoute, { response: OnboardingStateResponse });
+export const setOnboardingMark = (step: SetOnboardingStep, kind: SetOnboardingMarkRequest['kind']) =>
+  call(setOnboardingMarkRoute, { request: SetOnboardingMarkRequest, response: OnboardingStateResponse }, { kind }, { step });
+export const clearOnboardingMark = (step: SetOnboardingStep) => call(clearOnboardingMarkRoute, { response: OnboardingStateResponse }, undefined, { step });
+export const launchOnboarding = (body: LaunchOnboardingRequest) =>
+  call(launchOnboardingRoute, { request: LaunchOnboardingRequest, response: OnboardingStateResponse }, body);
+/** The runners (programs on the team's own servers) registered for a team: the setup checklist only needs to know whether there is one. */
+export const fetchRunners = (slug: string) => call(listRunnersRoute, { response: ListRunnersResponse }, undefined, { slug });
+export const dismissOnboarding = () => call(dismissOnboardingRoute, { response: OnboardingStateResponse });
 
 export const fetchLlmLimits = () => call(listLlmLimitsRoute, { response: ListLlmLimitsResponse });
 /** Set the limit of one target: the row is upserted on (scope, target), so this changes an existing limit rather than adding one. */

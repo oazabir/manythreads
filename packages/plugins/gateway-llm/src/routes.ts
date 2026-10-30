@@ -31,6 +31,7 @@ import {
   type ProviderRow,
 } from './rows.ts';
 import { registerLimitRoutes } from './routes-limits.ts';
+import { registerAliasTestRoutes } from './routes-tests.ts';
 
 // Workspace → LLM → Providers & aliases (SPEC §10.1, PLAN P5-06). Admins write the rows; every write ends by enqueuing the
 // apply-config job, so the proxy is brought in line in the same transaction the change commits in (the job runs after it).
@@ -50,6 +51,7 @@ const pushConfig = (ctx: PluginContext, tx: PluginTx): Promise<string> =>
 
 export function registerLlmRoutes(ctx: PluginContext): void {
   registerLimitRoutes(ctx);
+  registerAliasTestRoutes(ctx);
   ctx.http.route({
     method: listLlmProvidersRoute.method,
     path: listLlmProvidersRoute.path,
@@ -92,10 +94,8 @@ export function registerLlmRoutes(ctx: PluginContext): void {
 
       // An empty string clears the stored secret; a missing field leaves it alone.
       let secretId = before.secret_id;
-      if (body.apiKey !== undefined) {
-        if (before.secret_id) await ctx.secrets.delete(tx, before.secret_id);
-        secretId = body.apiKey === '' ? null : await ctx.secrets.put(tx, body.apiKey);
-      }
+      const replacesSecret = body.apiKey !== undefined;
+      if (body.apiKey !== undefined) secretId = body.apiKey === '' ? null : await ctx.secrets.put(tx, body.apiKey);
       const updated = await tx.query<ProviderRow>(
         `UPDATE app.llm_providers SET name = $2, api_base = $3, api_version = $4, secret_id = $5, enabled = $6, local = $7, updated_at = now()
           WHERE id = $1 RETURNING ${PROVIDER_COLUMNS}`,
@@ -109,6 +109,8 @@ export function registerLlmRoutes(ctx: PluginContext): void {
           nextLocal(before, body),
         ],
       );
+      // The old secret goes only after the row stopped pointing at it (a foreign key); deleting it first refused every key change with a 409.
+      if (replacesSecret && before.secret_id) await ctx.secrets.delete(tx, before.secret_id);
       await pushConfig(ctx, tx);
       return json({ provider: toLlmProvider(updated.rows[0] as ProviderRow) });
     }),

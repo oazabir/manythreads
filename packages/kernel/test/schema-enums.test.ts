@@ -14,6 +14,8 @@ import {
   BotVisibility,
   ChannelKind,
   ConversationVisibility,
+  LlmAliasTestCause,
+  LlmAliasTestOutcome,
   MemoryRetainOutcome,
   MemorySourceKind,
   MemoryStore,
@@ -58,6 +60,8 @@ import {
   EvalMode,
   EvalRunStatus,
   EvalTrigger,
+  OnboardingMarkKind,
+  OnboardingMarkStep,
   ProposalAuthorKind,
   ProposalOp,
   ProposalStatus,
@@ -76,6 +80,7 @@ import {
   filesMigrationSource,
   gatewayLlmMigrationSource,
   memoryMigrationSource,
+  onboardingMigrationSource,
   proposalsMigrationSource,
   auditMigrationSource,
   guardrailsDlpMigrationSource,
@@ -131,6 +136,11 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'llm_limits.budget_window': LlmBudgetWindow,
   'llm_settings.preset': LlmGuardPreset,
   'llm_spend.alias': LlmAliasName,
+  'llm_alias_tests.alias': LlmAliasName,
+  'llm_alias_tests.outcome': LlmAliasTestOutcome,
+  'llm_alias_tests.cause': LlmAliasTestCause,
+  'onboarding_marks.step': OnboardingMarkStep,
+  'onboarding_marks.kind': OnboardingMarkKind,
   'approvals.source': ApprovalSource,
   'approvals.status': ApprovalStatus,
   'approvals.outcome': ApprovalOutcome,
@@ -185,7 +195,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

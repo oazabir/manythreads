@@ -446,3 +446,9 @@ export const projectsMigrationSource: MigrationSource = {
   namespace: 'projects',
   dir: fileURLToPath(new URL('../../plugins/projects/migrations/', import.meta.url)),
 };
+
+/** Migrations of the onboarding plugin (`onboarding_state`, `onboarding_marks`, the setup checklist); needs only the kernel's. */
+export const onboardingMigrationSource: MigrationSource = {
+  namespace: 'onboarding',
+  dir: fileURLToPath(new URL('../../plugins/onboarding/migrations/', import.meta.url)),
+};

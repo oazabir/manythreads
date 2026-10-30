@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "bootstrap",
+    "signin",
+    "models",
+    "code",
+    "infrastructure",
+    "teams",
+    "bots",
+    "servers",
+    "launch"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "no_gateway",
+    "unbound",
+    "refused",
+    "auth",
+    "model_not_found",
+    "rate_limited",
+    "provider_error",
+    "timeout",
+    "unreachable",
+    "empty_answer",
+    "other"
+  ]
+}

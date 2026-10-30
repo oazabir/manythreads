@@ -60,6 +60,10 @@ import { LlmConfigAppliedEvent } from './llm.config.applied.ts';
 import { LlmKeyChangedEvent } from './llm.key.changed.ts';
 import { LlmBudgetExceededEvent } from './llm.budget.exceeded.ts';
 import { LlmGuardDecidedEvent } from './llm.guard.decided.ts';
+import { LlmAliasTestedEvent } from './llm.alias.tested.ts';
+import { OnboardingStepMarkedEvent } from './onboarding.step.marked.ts';
+import { OnboardingGoalLaunchedEvent } from './onboarding.goal.launched.ts';
+import { OnboardingChecklistDismissedEvent } from './onboarding.checklist.dismissed.ts';
 import { GuardrailsDlpDecidedEvent } from './guardrails.dlp.decided.ts';
 import { GuardrailsEgressDecidedEvent } from './guardrails.egress.decided.ts';
 import { GuardrailsPolicyUpdatedEvent } from './guardrails.policy.updated.ts';
@@ -138,6 +142,10 @@ export const eventRegistry = {
   'llm.key.changed': { 1: LlmKeyChangedEvent },
   'llm.budget.exceeded': { 1: LlmBudgetExceededEvent },
   'llm.guard.decided': { 1: LlmGuardDecidedEvent },
+  'llm.alias.tested': { 1: LlmAliasTestedEvent },
+  'onboarding.step.marked': { 1: OnboardingStepMarkedEvent },
+  'onboarding.goal.launched': { 1: OnboardingGoalLaunchedEvent },
+  'onboarding.checklist.dismissed': { 1: OnboardingChecklistDismissedEvent },
   'guardrails.dlp.decided': { 1: GuardrailsDlpDecidedEvent },
   'guardrails.egress.decided': { 1: GuardrailsEgressDecidedEvent },
   'guardrails.policy.updated': { 1: GuardrailsPolicyUpdatedEvent },

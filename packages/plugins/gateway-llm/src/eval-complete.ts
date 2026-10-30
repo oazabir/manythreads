@@ -34,7 +34,7 @@ export type LlmEvalResult =
   /** The alias is not one this deployment knows (`unbound`), or the proxy could not answer (`unavailable`). */
   | { ok: false; reason: 'unbound' | 'unavailable'; detail: string };
 
-const allowRate: RateHit = () => ({ allowed: true, retryAfterMs: 0 });
+export const allowRate: RateHit = () => ({ allowed: true, retryAfterMs: 0 });
 
 export async function evalComplete(ctx: PluginContext, tx: PluginTx, request: LlmEvalRequest): Promise<LlmEvalResult> {
   const named = LlmAliasName.safeParse(request.alias);

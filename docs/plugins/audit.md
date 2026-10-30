@@ -59,6 +59,10 @@ All subscribers of one event run in one database transaction. The audit subscrib
 
 `guardrails.policy.updated` becomes `guard.policy_changed` (category guardrails): who changed the data-loss policy or a team's host list, the kind (`dlp_policy` or `egress_policy`), the detector, rule or team code as the target label and a fixed reason ("rule added (data-loss check)"). The matched text is never involved; the event only carries names. The data-loss and egress decision events also carry the team now.
 
+## Setup and model tests (P10-01)
+
+`llm.alias.tested` becomes `model_alias.tested` (the alias as the label, the outcome and the cause code as the reason), `onboarding.step.marked` becomes `setup.step_marked`, `onboarding.goal.launched` becomes `setup.goal_launched` and `onboarding.checklist.dismissed` becomes `setup.checklist_dismissed` (all category settings). The question a person asks Brain in their first goal is never in an event.
+
 ## Left out on purpose
 
 Message posted and edited, reactions, reading state, presence, notifications, tasks and boards, rhythms, run starts and ends, conversations starting, `ops.health.changed`, and `repo.committed` (the guarded paths are covered by proposals) are not audited: they are volume or content, not decisions. Also not built: a CSV export, a bot filter in the screen (the Who list holds people; the API takes a bot id), team-lead access, and rows for the inbox and digest withheld items (those features do not exist yet).

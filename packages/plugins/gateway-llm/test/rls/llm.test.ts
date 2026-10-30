@@ -255,3 +255,51 @@ describe('the limits, settings and spend tables follow the RLS rules', () => {
     ).toBe('23505');
   });
 });
+
+// P10-01: the newest test call of each alias. Admins read it; only the system role writes it; the pairing of outcome and cause is a database rule.
+
+describe('llm_alias_tests follows the RLS rules', () => {
+  const insertTest = (outcome: string, cause: string | null, alias = 'smart'): Promise<unknown> =>
+    sys((tx) =>
+      tx.query(
+        `INSERT INTO app.llm_alias_tests (workspace_id, alias, outcome, cause, message, latency_ms) VALUES ($1, $2, $3, $4, 'plain words', 120)
+         ON CONFLICT (workspace_id, alias) DO UPDATE SET outcome = EXCLUDED.outcome, cause = EXCLUDED.cause`,
+        [omar.workspaceId, alias, outcome, cause],
+      ),
+    );
+
+  it('passes the harness and reads without a per-row policy helper', async () => {
+    const client = testClient({ connectionString: db.ownerUrl });
+    await client.connect();
+    try {
+      expect(await explainRlsViolations(client)).toEqual([]);
+      expect(await findPerRowPolicyCalls(client, 'llm_alias_tests')).toEqual([]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it('the system role writes a result, an admin reads it, a member and a guest see nothing', async () => {
+    await insertTest('ok', null);
+    expect(await count(omar, 'llm_alias_tests')).toBe(1);
+    for (const person of [nadia, lena]) expect(await count(person, 'llm_alias_tests'), person.name).toBe(0);
+  });
+
+  it('no request role writes a result, not even an admin', async () => {
+    const insert = (p: Persona): Promise<unknown> =>
+      as(p, (tx) =>
+        tx.query(`INSERT INTO app.llm_alias_tests (workspace_id, alias, outcome, message, latency_ms) VALUES ($1, 'fast', 'ok', 'forged', 1)`, [omar.workspaceId]),
+      );
+    expect(await code(insert(omar))).toBe('42501');
+    expect(await code(insert(nadia))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.llm_alias_tests SET message = 'edited'`)))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('DELETE FROM app.llm_alias_tests')))).toBe('42501');
+  });
+
+  it('a passing result has no cause and a failed one always has one', async () => {
+    expect(await code(insertTest('ok', 'auth', 'fast'))).toBe('23514');
+    expect(await code(insertTest('failed', null, 'fast'))).toBe('23514');
+    expect(await code(insertTest('failed', 'invented_cause', 'fast'))).toBe('23514');
+    expect(await code(insertTest('failed', 'auth', 'fast'))).toBeUndefined();
+  });
+});

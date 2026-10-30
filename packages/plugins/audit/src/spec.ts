@@ -438,6 +438,30 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('model_config', null),
     reason: `${plural(num(e['providers']), 'provider')}, ${plural(num(e['aliases']), 'alias', 'aliases')}`,
   }),
+  'llm.alias.tested': (e) => ({
+    action: 'model_alias.tested',
+    who: actor(e['testedBy']),
+    target: of('model_alias', code(e['alias'])),
+    outcome: e['outcome'] === 'ok' ? 'ok' : 'failed',
+    reason: e['outcome'] === 'ok' ? 'The model answered' : `Did not answer${words(e['cause']) ? `: ${words(e['cause'])}` : ''}`,
+  }),
+  'onboarding.step.marked': (e) => ({
+    action: 'setup.step_marked',
+    who: actor(e['markedBy']),
+    target: of('setup_step', code(e['step'])),
+    reason: e['kind'] === 'acknowledged' ? 'Confirmed password-only sign-in' : e['kind'] === 'skipped' ? 'Set aside' : 'Taken back',
+  }),
+  'onboarding.goal.launched': (e) => ({
+    action: 'setup.goal_launched',
+    who: actor(e['launchedBy']),
+    teamId: team(e['teamId']),
+    target: of('conversation', uuid(e['channelId'])),
+  }),
+  'onboarding.checklist.dismissed': (e) => ({
+    action: 'setup.checklist_dismissed',
+    who: actor(e['dismissedBy']),
+    target: of('setup_checklist', null),
+  }),
   'retention.settings.changed': (e) => {
     const win = (v: unknown): string => {
       const o = v && typeof v === 'object' ? (v as Fields) : {};

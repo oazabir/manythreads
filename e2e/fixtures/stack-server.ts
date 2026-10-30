@@ -23,7 +23,7 @@ import type { AddressInfo, Socket } from 'node:net';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '@manythreads/server';
-import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, withClusterLock } from '@manythreads/test-utils';
+import { createPersonas, createTestDatabase, dropTestDatabase, parseBootstrapToken, seedFinishedSetup, withClusterLock } from '@manythreads/test-utils';
 import { seedWorld } from './seed.ts';
 
 const dist = resolve(fileURLToPath(new URL('../../clients/web/dist', import.meta.url)));
@@ -142,6 +142,8 @@ else if (seedMode === 'repo') await seedWorld(db, { content: true, repo: true })
 else if (seedMode === 'guard') await seedWorld(db, { content: true, repo: true, guard: true });
 // `work` is seed v6 on top of v4: the Engineering board, rhythms (off), routine page and the protected `production` environment.
 else if (seedMode === 'work') await seedWorld(db, { content: true, repo: true, work: true });
+// The plugins have migrated: a seeded workspace starts with its setup checklist already put away (an empty stack, `none`, is a fresh install and keeps it).
+if (seedMode !== 'none') await seedFinishedSetup(db);
 apiPort = server.port;
 console.log(`MANYTHREADS_STACK ${JSON.stringify({ origin, ownerUrl: db.ownerUrl, database: db.name, testAuthToken: token, bootstrapToken: parseBootstrapToken(logs) ?? null })}`);
 
