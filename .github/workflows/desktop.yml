@@ -1,0 +1,60 @@
+name: desktop
+# Builds the unsigned desktop shell (clients/desktop) for Windows, macOS and Linux and keeps the installers as run artifacts.
+# Started by hand or by a tag named desktop-v*. It is not part of the ci workflow: Actions minutes are scarce
+# (STATUS.md, "Pipeline"), and the shell needs no server to build.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['desktop-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows, os: windows-latest }
+          - { name: macos, os: macos-latest }
+          - { name: linux, os: ubuntu-22.04 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: clients/desktop/src-tauri
+      - name: Linux libraries for the web view
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev
+      - run: pnpm install --frozen-lockfile --filter @manythreads/desktop...
+      - name: Unit tests
+        run: pnpm -C clients/desktop test
+      - name: Build (unsigned)
+        run: pnpm -C clients/desktop bundle
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manythreads-desktop-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            clients/desktop/src-tauri/target/release/bundle/**/*.msi
+            clients/desktop/src-tauri/target/release/bundle/**/*.exe
+            clients/desktop/src-tauri/target/release/bundle/**/*.dmg
+            clients/desktop/src-tauri/target/release/bundle/**/*.deb
+            clients/desktop/src-tauri/target/release/bundle/**/*.rpm
+            clients/desktop/src-tauri/target/release/bundle/**/*.AppImage

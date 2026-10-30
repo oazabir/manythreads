@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "picker",
+  "description": "The bundled first screen (choose a server). Local pages only; the live server never gets these.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-default-server", "allow-connect-server"]
+}

@@ -18,7 +18,21 @@ Each item ships the usual way (build, test, deploy, look at it live, commit with
 - [ ] 7 Proof and manual: ~~self-host guide, first-week guide, README~~ (2026-10-30: `docs/deploy/self-host.md` (Helm on one k3s machine, CloudNativePG, env-var table, upgrade and rollback, troubleshooting), `docs/guide/first-week.md` (what is shipped and an honest "not ready yet" list), `README.md`; every command, env var, button name and link checked against the repo by an independent reviewer, `helm template` renders for the documented value sets; left: no install run on a clean machine, arm64 and the smallest machine size unmeasured, plain-Helm version of the Cloudflare trusted-ranges step and Traefik `externalTrafficPolicy: Local` untested, `litellm-salt-key` is not in `pull.sh --with-secrets`; real gaps the review confirmed: no New channel button in the web app, drafts only in the browser); P12 persona journeys for the shipped features, `USER_JOURNEYS.md`
 
 **Deferred (not needed for a first real team)**: 15 voice rooms, 17 video, 18 automations in words, 11 mobile, 9 surfaces, 16 beyond GitHub, P14-16/17 voice messages,
-P14-13 Slack import (first if a team is moving in), P8 inbox/email/sharing, P10-11 Tauri, P10-13 compose.
+P14-13 Slack import (first if a team is moving in), P8 inbox/email/sharing, P10-13 compose.
+
+**P10-11 desktop app, Tauri half (2026-10-30, owner `/loop`; built and tested on Windows against the live site):** `clients/desktop` (Tauri 2.12)
+opens the server as a remote page (default https://manythreads.kahf.to; first-run picker checks `/healthz`, https only except localhost, saved in
+the app config dir, `MANYTHREADS_SERVER_URL` overrides, menu "Change server…"); the web app's `Notification` calls become system alerts
+(remote page granted only `notify`/`request_permission`/`is_permission_granted`; runtime capability for a custom server); `manythreads:///path`
+deep links go to the running window (single instance), other hosts refused; other sites open in the system browser except during an OIDC sign-in
+started at `/api/auth/oidc/<id>/start`; window size remembered; downloads handled on macOS/Linux. Web: `inDesktopApp()` turns browser push off
+inside the app. CI `.github/workflows/desktop.yml` (manual or `desktop-v*` tag) builds unsigned Windows/macOS/Linux bundles. Docs
+`docs/clients/desktop.md`. Tests: cargo 12 passed, clippy clean, `pnpm e2e:desktop` (`e2e/desktop/tauri-smoke.spec.ts`, Windows only, live
+site, anonymous) **6 passed**: sign-in page, native alert, page cannot call shell commands, deep links, navigation guard, picker. Left: the HA
+chaos check half of P10-11; macOS/Linux builds and `desktop.yml` never run; signed-in use, OIDC in the app and a mention notification from a real
+message not checked; clicking an alert does not focus the window; unsigned, no auto-update, placeholder icon; the picker test writes the real
+`%APPDATA%` config (Tauri ignores an overridden `APPDATA`). Pre-existing, not from this change: `pnpm -C clients/web typecheck` fails on Windows
+because `src/shell/NewChannel.tsx` and `newChannel.ts` differ only in case.
 
 Owner instruction (2026-10-02, later the same day): phase 4's stop instruction is fulfilled — **continue building per PLAN.md, updating STATUS.md as work lands.** Also: avoid the entries in `MISTAKES.md` and append anything new there.
 

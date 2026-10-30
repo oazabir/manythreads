@@ -1,6 +1,6 @@
 export default {
   extends: ['stylelint-config-standard'],
-  ignoreFiles: ['**/node_modules/**', '**/dist/**', '**/coverage/**', 'docs/spec/**', '**/playwright-report/**', '**/test-results/**'],
+  ignoreFiles: ['**/node_modules/**', '**/dist/**', '**/coverage/**', 'docs/spec/**', 'clients/desktop/src-tauri/target/**', 'clients/desktop/src-tauri/gen/**', '**/playwright-report/**', '**/test-results/**'],
   rules: {
     'color-no-hex': true,
     'selector-class-pattern': null,

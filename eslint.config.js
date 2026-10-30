@@ -31,6 +31,8 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/coverage/**',
       'docs/spec/**',
+      'clients/desktop/src-tauri/target/**',
+      'clients/desktop/src-tauri/gen/**',
       '**/playwright-report/**',
       '**/test-results/**',
     ],
@@ -56,6 +58,11 @@ export default tseslint.config(
     files: ['clients/web/public/*.js'],
     languageOptions: { globals: { ...globals.browser, ...globals.serviceworker, mermaid: 'readonly' } },
     rules: { 'no-useless-escape': 'off', '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }] },
+  },
+  {
+    // The desktop shell's first screen is plain browser JavaScript served as is (no build step).
+    files: ['clients/desktop/ui/*.js'],
+    languageOptions: { globals: { ...globals.browser } },
   },
   {
     files: ['clients/web/**/*.{ts,tsx}'],

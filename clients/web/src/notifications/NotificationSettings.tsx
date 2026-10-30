@@ -5,10 +5,13 @@ import { isApiError } from '../api/client';
 import { isAdmin, useSession } from '../app/session';
 import { Alert, Toggle } from '../components/ui';
 import { levelsStore } from './levelsStore';
-import { disablePush, enablePush, readPushStatus, registerWorker, type PushStatus } from './push';
+import { disablePush, enablePush, inDesktopApp, readPushStatus, registerWorker, type PushStatus } from './push';
 import { LEVEL_HELP, LEVEL_ORDER, PUSH_SUPPORT_TEXT, addKeyword, channelTitle } from './settingsModel';
 import { browserAlerts, notificationStore } from './store';
 import { useNotifications } from './Bell';
+
+/** Shown instead of the browser push note inside the desktop app, which raises system alerts itself while it is open. */
+const DESKTOP_PUSH_TEXT = 'The desktop app shows alerts while it is open. It does not send alerts after you close it.';
 
 const KINDS = [
   { kind: 'mention', label: 'Mentions and keywords', help: 'Someone names you, or writes one of your keywords.' },
@@ -202,7 +205,7 @@ function BrowserBlock() {
       refresh();
     }
   };
-  const pushNote = status && status.support !== 'ready' ? PUSH_SUPPORT_TEXT[status.support] : null;
+  const pushNote = status && status.support !== 'ready' ? (inDesktopApp() ? DESKTOP_PUSH_TEXT : PUSH_SUPPORT_TEXT[status.support]) : null;
   return (
     <div className="nset-group" data-testid="notification-browser">
       <h3 className="nset-h">This browser</h3>

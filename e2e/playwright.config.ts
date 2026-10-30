@@ -12,6 +12,8 @@ import { E2E_POOL_ENV } from './support/pools.ts';
 
 /** Specs that gate on frame time (the `perf` project). */
 const PERF_SPECS = '**/perf-*.spec.ts';
+/** The desktop shell smoke test: needs Windows, a Rust build and the live site; it has its own config (desktop/desktop.config.ts). */
+const DESKTOP_SHELL = '**/desktop/**';
 
 const external = process.env.MANYTHREADS_URL;
 const baseURL = external ?? `http://localhost:${WEB_PORT}`;
@@ -83,13 +85,13 @@ export default defineConfig({
     },
     {
       name: 'desktop',
-      testIgnore: ['**/api/**', PERF_SPECS],
+      testIgnore: ['**/api/**', DESKTOP_SHELL, PERF_SPECS],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile-web',
       // Visual specs (plate comparison) run on desktop only.
-      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', PERF_SPECS],
+      testIgnore: ['**/visual/**', '**/api/**', '**/identity/**', '**/teams/**', DESKTOP_SHELL, PERF_SPECS],
       use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
     },
     {

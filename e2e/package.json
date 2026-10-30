@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "desktop": "playwright test -c desktop/desktop.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

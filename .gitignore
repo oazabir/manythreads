@@ -11,3 +11,5 @@ data/repos/
 temp/
 .freebuff/
 .codegraph/
+clients/desktop/src-tauri/target/
+clients/desktop/src-tauri/gen/

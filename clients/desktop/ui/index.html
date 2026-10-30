@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>manythreads</title>
+    <link rel="stylesheet" href="picker.css" />
+  </head>
+  <body>
+    <main>
+      <h1>manythreads</h1>
+      <p class="lead">Type the address of your manythreads server.</p>
+      <form id="form" novalidate>
+        <label for="url">Server address</label>
+        <input id="url" name="url" type="url" autocomplete="off" spellcheck="false" autofocus />
+        <p id="notice" class="notice" role="alert" hidden></p>
+        <button id="connect" type="submit">Connect</button>
+      </form>
+      <p class="hint">Use the address you open in your browser. It starts with https://.</p>
+    </main>
+    <script src="picker.js"></script>
+  </body>
+</html>

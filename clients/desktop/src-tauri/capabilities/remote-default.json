@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-default",
+  "description": "The default live server may raise native notifications. A server the person typed in gets the same through a capability built at run time (src/server.rs).",
+  "local": false,
+  "windows": ["main"],
+  "remote": { "urls": ["https://manythreads.kahf.to/*"] },
+  "permissions": ["notification:allow-is-permission-granted", "notification:allow-request-permission", "notification:allow-notify"]
+}

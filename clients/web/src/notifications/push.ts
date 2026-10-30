@@ -7,7 +7,10 @@ import { browserLabel, keyBytes, pushSupport, type PushSupport } from './setting
  * browser has no such feature: it answers "unsupported" instead of throwing.
  */
 
-const hasFeatures = (): boolean => typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof PushManager !== 'undefined';
+/** True inside the desktop app (clients/desktop): it raises its own system alerts and has no push service, so browser push is left off there. */
+export const inDesktopApp = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+const hasFeatures = (): boolean => !inDesktopApp() && typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof PushManager !== 'undefined';
 
 function permission(): NotificationPermission | 'unsupported' {
   try {
