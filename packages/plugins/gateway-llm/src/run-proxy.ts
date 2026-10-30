@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { HttpError, type HttpRequest, type HttpResponse, type PluginContext } from '@manythreads/sdk';
+import { addressKey } from '@manythreads/shared';
 import type { LlmProviderServices } from './provider.ts';
 
 // The run-scoped model proxy (SPEC §10.1, PLAN P6-06). An agent that runs on a runner — a machine outside the cluster — cannot resolve the
@@ -65,7 +66,8 @@ export function runProxyHandlers(deps: RunProxyDeps): {
   // 401 flood is slowed without an honest run behind the same address losing its own bucket.
   const failureLimit = deps.failuresPerIpPerMinute ?? 60;
   const failures = new Map<string, number[]>();
-  const failed = (ip: string): HttpError => {
+  const failed = (address: string): HttpError => {
+    const ip = addressKey(address);
     const at = now();
     const recent = (failures.get(ip) ?? []).filter((t) => at - t < 60_000);
     recent.push(at);

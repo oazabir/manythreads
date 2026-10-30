@@ -15,6 +15,7 @@ export * from './runner.ts';
 export * from './hermes-profiles.ts';
 export * from './project-credentials.ts';
 export * from './http.ts';
+export * from './lockout.ts';
 
 /**
  * Declare a plugin. The manifest is validated immediately (a bad field throws a ZodError naming it), so a

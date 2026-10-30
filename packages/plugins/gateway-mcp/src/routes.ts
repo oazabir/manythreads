@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { MCP_PATH, McpRunCloseRequest, McpRunMintRequest, McpRunMintResponse, mcpUrlOf } from '@manythreads/shared';
+import { MCP_PATH, McpRunCloseRequest, McpRunMintRequest, McpRunMintResponse, abuseLimit, addressKey, mcpUrlOf } from '@manythreads/shared';
 import { z } from 'zod';
 import { HttpError } from '@manythreads/sdk';
 import { json, route, unauthenticated } from './http.ts';
@@ -41,12 +41,18 @@ const bearerToken = (req: { headers: Record<string, string | undefined> }): stri
   return match?.[1] ?? null;
 };
 
+const RUN_GONE = 'This run endpoint is not valid any more';
+
 /** The run the request's bearer token opens, and only when the URL names that same run. */
-async function resolveRun(ctx: PluginContext, req: { headers: Record<string, string | undefined>; params: Record<string, string> }) {
+async function resolveRun(
+  ctx: PluginContext,
+  req: { headers: Record<string, string | undefined>; params: Record<string, string>; ip: string },
+  failed: (ip: string, message?: string) => Error,
+) {
   const token = bearerToken(req);
-  if (token === null) throw unauthenticated('This run endpoint is not valid any more');
+  if (token === null) throw failed(req.ip, RUN_GONE);
   const run = await ctx.runs.resolve(sha256(token));
-  if (!run || run.runId !== req.params['runId']) throw unauthenticated('This run endpoint is not valid any more');
+  if (!run || run.runId !== req.params['runId']) throw failed(req.ip, RUN_GONE);
   return run;
 }
 
@@ -92,19 +98,20 @@ export function registerMcpRoutes(ctx: PluginContext): void {
   // failures count per client address (a token-guessing flood is slowed), authenticated calls per bot.
   const rateLimited = (): Error => new HttpError(429, 'rate_limited', 'Too many requests; slow down', { 'retry-after': '30' });
   const countFailure = windowed(BOT_FAILURES_PER_IP_PER_MINUTE, rateLimited);
-  const failedBotAuth = (ip: string): Error => countFailure(ip) ?? unauthenticated('A valid bot token is required');
+  const failedBotAuth = (ip: string, message = 'A valid bot token is required'): Error => countFailure(addressKey(ip)) ?? unauthenticated(message);
   const countBotCall = windowed(BOT_CALLS_PER_BOT_PER_MINUTE, rateLimited);
   const countRunCall = windowed(RUN_CALLS_PER_RUN_PER_MINUTE, rateLimited);
   ctx.http.route({
     method: 'POST',
     path: '/api/mcp/runs',
     public: true,
-    rateLimit: { limit: 60, windowMs: 60_000 },
+    rateLimit: abuseLimit('POST', '/api/mcp/runs'),
+    rateLimitBy: 'address',
     schema: { body: McpRunMintRequest, response: McpRunMintResponse },
     handler: route(async (req, tx) => {
       const body = McpRunMintRequest.parse(req.body);
       const paired = (await tx.query<PairedBotRow>('SELECT * FROM app.bots_pairing_resolve($1)', [sha256(body.pairingToken)])).rows[0];
-      if (!paired) throw unauthenticated('A valid pairing token is required');
+      if (!paired) throw failedBotAuth(req.ip, 'A valid pairing token is required');
       const { run, token } = await ctx.runs
         .open({
           botId: paired.bot_id,
@@ -138,7 +145,7 @@ export function registerMcpRoutes(ctx: PluginContext): void {
     // A run makes many calls in a burst (list, then one call per tool use); the per-run token bounds who can spend them.
     rateLimit: { limit: 600, windowMs: 60_000 },
     handler: route(async (req) => {
-      const run = await resolveRun(ctx, req);
+      const run = await resolveRun(ctx, req, failedBotAuth);
       return handleRpc(ctx, run, req.body);
     }),
   });
@@ -197,7 +204,7 @@ export function registerMcpRoutes(ctx: PluginContext): void {
     rateLimit: { limit: 60, windowMs: 60_000 },
     schema: { body: McpRunCloseRequest, response: CloseResponse },
     handler: route(async (req) => {
-      const run = await resolveRun(ctx, req);
+      const run = await resolveRun(ctx, req, failedBotAuth);
       const body = McpRunCloseRequest.parse(req.body);
       const closed = await ctx.runs.close(run.runId, body.status);
       return json(CloseResponse.parse({ ok: true, closed }));

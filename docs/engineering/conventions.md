@@ -26,6 +26,11 @@ The binding rules every change follows: how data, events, plugins and screens ar
   `INSERT … ON CONFLICT … DO SELECT RETURNING` through the one helper.
 - Audit rows are content-blind and built only by the `audit` plugin from the event log (docs/plugins/audit.md): a new audited event type is a `MAPPERS` entry there, never message text, file content or a secret in `reason`/`label`.
 - Rate limits in process memory (sliding window), per replica. Never in the DB.
+- **Credential and session routes (D5):** every route that grants, recovers or changes a credential or a session has an explicit, low limit listed in
+  `docs/deploy/rate-limits.md` and in `ABUSE_ROUTES` (`packages/shared/src/common/abuse-limits.ts`) in the change that adds the route. The route reads its number
+  with `abuseLimit(method, path)`, sets `rateLimitBy: 'address'` when nobody is signed in (a session cookie must not buy a second counter), and, where a secret is
+  guessed, adds a temporary lockout with `createLockout` / `guardRedemption` from `@manythreads/sdk` (never a lock without an expiry). The client address is
+  `req.ip`, which trusts `X-Forwarded-For` only for `MANYTHREADS_TRUST_PROXY` hops (or `MANYTHREADS_CLIENT_IP_HEADER`); never read the header yourself, and key a lock on `addressKey(req.ip)` (IPv6 counts by /64). `packages/server/test/abuse.test.ts` bursts every listed route to a 429 with `retry-after`.
 - **Visibility sets (RLS performance):** policies never call per-row functions for reads; hoist a uuid[] once per
   statement: `team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])`, channels via
   `app.visible_channel_ids('read'|'post')`. The RLS harness fails on per-row policy calls (`findPerRowPolicyCalls`).

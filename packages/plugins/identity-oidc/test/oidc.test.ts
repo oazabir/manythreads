@@ -10,6 +10,7 @@ import {
 import {
   createApiClient,
   createPersonas,
+  relaxedRateLimiter,
   startFakeOidc,
   startTestServer,
   NADIA,
@@ -129,7 +130,7 @@ beforeAll(async () => {
   fake.addClient('any', { clientId: 'any-client', clientSecret: SECRETS.any });
   fake.addClient('broken', { clientId: 'broken-client', clientSecret: 'x' });
 
-  s = await startTestServer({ testAuthToken: TEST_AUTH_TOKEN });
+  s = await startTestServer({ testAuthToken: TEST_AUTH_TOKEN, limiter: relaxedRateLimiter() });
   await createPersonas(s.db);
   admin = createApiClient(s.url);
   expect((await admin.testSignIn(OMAR.email, TEST_AUTH_TOKEN)).status).toBe(200);

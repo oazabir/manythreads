@@ -1,0 +1,25 @@
+manythreads {{ .Chart.AppVersion | default .Chart.Version }} is installed in namespace {{ .Release.Namespace }}.
+
+Rate limits and lockouts on sign-in and other credential routes (full table: docs/deploy/rate-limits.md)
+-------------------------------------------------------------------------------------------------------
+Over a limit the server answers 429 rate_limited with a retry-after header.
+PER REPLICA: every counter and every lock lives in the memory of one server process, never in the database. With N server
+replicas each one counts alone (the effective limit is N times the number below), and a restart clears them all.
+The client address is taken from X-Forwarded-For only for {{ .Values.server.trustProxy }} proxy hop(s) (server.trustProxy;
+MANYTHREADS_TRUST_PROXY){{ if eq (toString .Values.tls.mode) "cloudflare" }}, plus one for Cloudflare{{ end }}: set it to the number of proxies in front of
+the server pod, or every visitor shares one counter. On k3s the Traefik Service must keep the visitor's address (externalTrafficPolicy:
+Local) unless Cloudflare is in front: then the chart also reads CF-Connecting-IP (MANYTHREADS_CLIENT_IP_HEADER) and the origin must accept Cloudflare only. Keep the server Service unreachable from untrusted pods: a caller that
+skips the proxies can choose its own address.
+
+Per client address, per 60 seconds:
+  sign-in 30 | password reset request 5 | password reset 5 | email verification 10 | first-admin setup link 10 check, 5 submit
+  invitation lookup 10 | invitation accept 10 | single sign-on (OIDC) start 30 | OIDC callback 30 | runner socket 60
+  webhook calls /hooks 600 | bot pairing mint /api/mcp/runs 60
+  wrong bot or run tokens (/mcp, /api/mcp/bots, /api/llm/runs) 60 failures a minute, then 429
+Per signed-in person, per 60 seconds:
+  change password 5 | email verification request 5 | sign out 30 | sign out everywhere 10 | list sessions 60 | revoke a session 30
+  team and workspace invitation create 30 | bot pairing token mint 10 / rotate 10 / revoke 30 | runner token mint 30 | webhook create / rotate / revoke 30 | app token 120
+Lockouts (temporary, in memory): 5 wrong passwords for one email from one address lock that pair 15 minutes; 25 for one email from
+any address lock the account 15 minutes (a completed password reset lifts it); 5 wrong current passwords lock a password change
+15 minutes; 10 refused reset, verification, setup or invitation links from one address lock that address 15 minutes; 30 calls to
+/hooks with no live webhook or a wrong secret lock the address 5 minutes for failing calls (a right secret still posts).

@@ -60,6 +60,12 @@ spec:
             {{- if not (hasKey .Values.server.env "MANYTHREADS_TRUST_PROXY") }}
             - { name: MANYTHREADS_TRUST_PROXY, value: {{ if eq $tlsMode "cloudflare" }}{{ add (int .Values.server.trustProxy) 1 | quote }}{{ else }}{{ .Values.server.trustProxy | quote }}{{ end }} }
             {{- end }}
+            {{- /* Behind Cloudflare the visitor's address is also in `CF-Connecting-IP`, which Cloudflare sets itself. On a k3s node whose Traefik Service keeps
+                   `externalTrafficPolicy: Cluster` the load balancer rewrites the source address, so the forwarded chain names only the cluster's own hops
+                   (every visitor became 10.42.0.1) and the chain cannot be trusted to tell visitors apart: the header is. Close the origin to Cloudflare (docs/deploy.md). */}}
+            {{- if and (eq $tlsMode "cloudflare") (not (hasKey .Values.server.env "MANYTHREADS_CLIENT_IP_HEADER")) }}
+            - { name: MANYTHREADS_CLIENT_IP_HEADER, value: "cf-connecting-ip" }
+            {{- end }}
             - { name: MANYTHREADS_TLS_MODE, value: {{ $tlsMode | quote }} }
             - { name: MANYTHREADS_TLS_WILDCARD, value: {{ if and (include "manythreads.wildcard" .) (ne $tlsMode "none") }}"1"{{ else }}"0"{{ end }} }
             {{- if eq $tlsMode "cloudflare" }}

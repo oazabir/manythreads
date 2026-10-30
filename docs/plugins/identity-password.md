@@ -10,7 +10,7 @@ Schemas: `packages/shared/src/api/auth/`. The cookie, rotation and expiry belong
 | Route | What it does |
 |---|---|
 | `GET /api/bootstrap/:token`, `POST /api/bootstrap/:token` | First-admin bootstrap. An empty database prints a one-time URL; the POST creates the workspace, the owner and a password. Used, expired or unknown tokens are 410. |
-| `POST /api/auth/password/sign-in` | Email and password. Minimum 8 characters at every place a password is set. Unknown email and wrong password give the same 401; five failures per email and address lock it for 15 minutes (in-memory, per replica). |
+| `POST /api/auth/password/sign-in` | Email and password. Minimum 8 characters at every place a password is set. Unknown email and wrong password give the same 401; five failures per email and address lock that pair for 15 minutes, and 25 failures per email from any address lock the account for 15 minutes (a completed password reset lifts it); 30 requests a minute per address. All in memory, per replica; every credential route's limit is in [docs/deploy/rate-limits.md](../deploy/rate-limits.md). |
 | `POST /api/auth/sign-out`, `POST /api/auth/sign-out-everywhere`, `GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id` | Session management; writes need the CSRF header. |
 | `GET /api/session` | Public. Anonymous: the sign-in methods. Signed in: person, workspace, role, teams and methods. |
 | `POST /api/auth/password/change` | Needs the current password; ends every other session. |

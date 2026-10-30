@@ -5,6 +5,8 @@ import type { RequestSession } from './session/authenticate.ts';
 export interface ManythreadsRouteConfig {
   /** Sliding-window limit per key (actor id, else client IP) on this route; in process memory, per replica. */
   rateLimit?: RateLimit;
+  /** `'address'`: count `rateLimit` per client address even for a signed-in caller (default: the actor, else the address). */
+  rateLimitBy?: 'address';
   /** Callable without an actor. Everything else answers 401 until a request carries an actor. */
   public?: boolean;
   /** Skip the double-submit CSRF check for cookie-authenticated unsafe requests (default: checked). */

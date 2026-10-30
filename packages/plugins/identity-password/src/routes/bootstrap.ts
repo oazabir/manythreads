@@ -1,9 +1,11 @@
 import type { HttpResponse, PluginTx } from '@manythreads/sdk';
-import { HttpError } from '@manythreads/sdk';
+import { HttpError, guardRedemption, type Lockout } from '@manythreads/sdk';
 import {
   BootstrapWorkspaceRequest,
   BootstrapWorkspaceResponse,
   CheckBootstrapResponse,
+  abuseLimit,
+  addressKey,
   bootstrapWorkspaceRoute,
   checkBootstrapRoute,
 } from '@manythreads/shared';
@@ -42,7 +44,7 @@ async function tokenIsOpen(tx: PluginTx, token: string): Promise<boolean> {
  * 410 otherwise) and posting the form (POST) creates the workspace, its owner, their password and a session, then the
  * token is spent: reuse is 410. Once any workspace exists the link is dead whatever the token table says.
  */
-export function registerBootstrap(ctx: Ctx): void {
+export function registerBootstrap(ctx: Ctx, tokens: Lockout): void {
   ctx.identity.onStart(async (tx, log) => {
     if ((await workspaceCount(tx)) > 0) return;
     // Older unused links of earlier starts stop working: only the line printed now is valid.
@@ -59,13 +61,16 @@ export function registerBootstrap(ctx: Ctx): void {
     method: checkBootstrapRoute.method,
     path: checkBootstrapRoute.path,
     public: true,
-    rateLimit: { limit: 30, windowMs: 60_000 },
+    rateLimit: abuseLimit(checkBootstrapRoute.method, checkBootstrapRoute.path),
+    rateLimitBy: 'address',
     schema: { response: CheckBootstrapResponse },
     handler: async (req): Promise<HttpResponse> => {
       const token = req.params['token'] ?? '';
-      const valid = await ctx.identity.runAsSystem(async (tx) => (await workspaceCount(tx)) === 0 && (await tokenIsOpen(tx, token)));
-      if (!valid) throw new HttpError(410, 'gone', GONE);
-      return { body: { valid: true } };
+      return guardRedemption(tokens, `bootstrap\n${addressKey(req.ip)}`, 'attempts with a setup link', async () => {
+        const valid = await ctx.identity.runAsSystem(async (tx) => (await workspaceCount(tx)) === 0 && (await tokenIsOpen(tx, token)));
+        if (!valid) throw new HttpError(410, 'gone', GONE);
+        return { body: { valid: true } };
+      });
     },
   });
 
@@ -73,7 +78,8 @@ export function registerBootstrap(ctx: Ctx): void {
     method: bootstrapWorkspaceRoute.method,
     path: bootstrapWorkspaceRoute.path,
     public: true,
-    rateLimit: { limit: 10, windowMs: 60_000 },
+    rateLimit: abuseLimit(bootstrapWorkspaceRoute.method, bootstrapWorkspaceRoute.path),
+    rateLimitBy: 'address',
     schema: { body: BootstrapWorkspaceRequest, response: BootstrapWorkspaceResponse },
     handler: async (req): Promise<HttpResponse> => {
       const token = req.params['token'] ?? '';
@@ -81,7 +87,7 @@ export function registerBootstrap(ctx: Ctx): void {
       const email = normalizeEmail(body.email);
       const passwordHash = await ctx.identity.hashPassword(body.password);
 
-      const result = await ctx.identity.runAsSystem(async (tx) => {
+      const result = await guardRedemption(tokens, `bootstrap\n${addressKey(req.ip)}`, 'attempts with a setup link', () => ctx.identity.runAsSystem(async (tx) => {
         await tx.query(BOOTSTRAP_LOCK);
         if ((await workspaceCount(tx)) > 0 || !(await tokenIsOpen(tx, token))) throw new HttpError(410, 'gone', GONE);
         const now = ctx.runtime.now();
@@ -144,7 +150,7 @@ export function registerBootstrap(ctx: Ctx): void {
           ip: req.ip,
         });
         return { issued, view: await loadAuthenticated(tx, personId, issued.expiresAt) };
-      });
+      }));
       if (!result.view) throw new Error('bootstrap produced no session view');
       return { body: result.view, setSession: result.issued };
     },

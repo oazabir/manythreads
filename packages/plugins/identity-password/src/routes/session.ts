@@ -7,6 +7,7 @@ import {
   SessionId,
   SignOutEverywhereResponse,
   SignOutResponse,
+  abuseLimit,
   getSessionRoute,
   listSessionsRoute,
   revokeSessionRoute,
@@ -45,6 +46,7 @@ export function registerSessionRoutes(ctx: Ctx): void {
   ctx.http.route({
     method: signOutRoute.method,
     path: signOutRoute.path,
+    rateLimit: abuseLimit(signOutRoute.method, signOutRoute.path),
     schema: { response: SignOutResponse },
     handler: async (req): Promise<HttpResponse> => {
       const me = requireSession(req);
@@ -69,6 +71,7 @@ export function registerSessionRoutes(ctx: Ctx): void {
   ctx.http.route({
     method: signOutEverywhereRoute.method,
     path: signOutEverywhereRoute.path,
+    rateLimit: abuseLimit(signOutEverywhereRoute.method, signOutEverywhereRoute.path),
     schema: { response: SignOutEverywhereResponse },
     handler: async (req): Promise<HttpResponse> => {
       const me = requireSession(req);
@@ -94,6 +97,7 @@ export function registerSessionRoutes(ctx: Ctx): void {
   ctx.http.route({
     method: listSessionsRoute.method,
     path: listSessionsRoute.path,
+    rateLimit: abuseLimit(listSessionsRoute.method, listSessionsRoute.path),
     schema: { response: ListSessionsResponse },
     handler: async (req): Promise<HttpResponse> => {
       const me = requireSession(req);
@@ -107,6 +111,7 @@ export function registerSessionRoutes(ctx: Ctx): void {
   ctx.http.route({
     method: revokeSessionRoute.method,
     path: revokeSessionRoute.path,
+    rateLimit: abuseLimit(revokeSessionRoute.method, revokeSessionRoute.path),
     schema: { response: RevokeSessionResponse },
     handler: async (req): Promise<HttpResponse> => {
       const me = requireSession(req);

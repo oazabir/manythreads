@@ -1,5 +1,5 @@
 import type { HttpResponse, PluginTx } from '@manythreads/sdk';
-import { HttpError } from '@manythreads/sdk';
+import { HttpError, guardRedemption, type Lockout } from '@manythreads/sdk';
 import {
   RequestEmailVerificationResponse,
   RequestPasswordResetRequest,
@@ -8,6 +8,8 @@ import {
   ResetPasswordResponse,
   VerifyEmailRequest,
   VerifyEmailResponse,
+  abuseLimit,
+  addressKey,
   requestEmailVerificationRoute,
   requestPasswordResetRoute,
   resetPasswordRoute,
@@ -20,6 +22,8 @@ import { hashLinkToken, newLinkToken } from '../tokens.ts';
 const RESET_TTL_MS = 60 * 60_000;
 const VERIFY_TTL_MS = 24 * 60 * 60_000;
 const GONE = 'This link has expired or was already used.';
+/** One mail per account per minute for a reset request: a stranger cannot fill someone's inbox, whatever the address he comes from. */
+const RESET_MAIL_COOLDOWN_MS = 60_000;
 
 /** Stores a fresh one-time token for a person (older unused ones of the same purpose stop working) and returns it. */
 async function issueToken(
@@ -61,12 +65,13 @@ async function claimToken(
 }
 
 /** Password reset by mailed link, and email verification by mailed link. Tokens are single-use, expire, stored hashed. */
-export function registerResetRoutes(ctx: Ctx): void {
+export function registerResetRoutes(ctx: Ctx, locks: { tokens: Lockout; account: Lockout }): void {
   ctx.http.route({
     method: requestPasswordResetRoute.method,
     path: requestPasswordResetRoute.path,
     public: true,
-    rateLimit: { limit: 10, windowMs: 60_000 },
+    rateLimit: abuseLimit(requestPasswordResetRoute.method, requestPasswordResetRoute.path),
+    rateLimitBy: 'address',
     schema: { body: RequestPasswordResetRequest, response: RequestPasswordResetResponse },
     handler: async (req): Promise<HttpResponse> => {
       const body = RequestPasswordResetRequest.parse(req.body);
@@ -79,6 +84,12 @@ export function registerResetRoutes(ctx: Ctx): void {
         );
         const person = found.rows[0];
         if (!person) return null;
+        // A reset link issued less than a minute ago is still good: answer the same, send nothing new.
+        const recent = await tx.query(
+          `SELECT 1 FROM app.email_verifications WHERE person_id = $1 AND purpose = 'reset_password' AND used_at IS NULL AND created_at > $2`,
+          [person.id, new Date(ctx.runtime.now().getTime() - RESET_MAIL_COOLDOWN_MS)],
+        );
+        if (recent.rows.length > 0) return null;
         const token = await issueToken(ctx, tx, {
           workspaceId: person.workspace_id,
           personId: person.id,
@@ -107,12 +118,13 @@ export function registerResetRoutes(ctx: Ctx): void {
     method: resetPasswordRoute.method,
     path: resetPasswordRoute.path,
     public: true,
-    rateLimit: { limit: 20, windowMs: 60_000 },
+    rateLimit: abuseLimit(resetPasswordRoute.method, resetPasswordRoute.path),
+    rateLimitBy: 'address',
     schema: { body: ResetPasswordRequest, response: ResetPasswordResponse },
     handler: async (req): Promise<HttpResponse> => {
       const body = ResetPasswordRequest.parse(req.body);
       const hash = await ctx.identity.hashPassword(body.password);
-      await ctx.identity.runAsSystem(async (tx) => {
+      await guardRedemption(locks.tokens, `reset\n${addressKey(req.ip)}`, 'attempts with a link', () => ctx.identity.runAsSystem(async (tx) => {
         const claim = await claimToken(ctx, tx, body.token, 'reset_password');
         if (!claim) throw new HttpError(410, 'gone', GONE);
         const person = await tx.query<{ status: string }>('SELECT status FROM app.people WHERE id = $1', [claim.personId]);
@@ -130,7 +142,11 @@ export function registerResetRoutes(ctx: Ctx): void {
         );
         await ctx.identity.sessions.revokeAll(tx, { personId: claim.personId });
         await emitAudit(ctx, tx, { type: 'identity.password.reset', workspaceId: claim.workspaceId, personId: claim.personId });
-      });
+        // Whoever holds the mailbox owns the account: a reset also lifts the account's sign-in lock (the way back for a locked-out owner).
+        const email = await tx.query<{ primary_email: string }>('SELECT primary_email FROM app.people WHERE id = $1', [claim.personId]);
+        const primary = email.rows[0]?.primary_email;
+        if (primary) locks.account.reset(normalizeEmail(primary));
+      }));
       return { body: { ok: true } };
     },
   });
@@ -138,7 +154,7 @@ export function registerResetRoutes(ctx: Ctx): void {
   ctx.http.route({
     method: requestEmailVerificationRoute.method,
     path: requestEmailVerificationRoute.path,
-    rateLimit: { limit: 5, windowMs: 60_000 },
+    rateLimit: abuseLimit(requestEmailVerificationRoute.method, requestEmailVerificationRoute.path),
     schema: { response: RequestEmailVerificationResponse },
     handler: async (req): Promise<HttpResponse> => {
       const me = requireSession(req);
@@ -179,11 +195,12 @@ export function registerResetRoutes(ctx: Ctx): void {
     method: verifyEmailRoute.method,
     path: verifyEmailRoute.path,
     public: true,
-    rateLimit: { limit: 20, windowMs: 60_000 },
+    rateLimit: abuseLimit(verifyEmailRoute.method, verifyEmailRoute.path),
+    rateLimitBy: 'address',
     schema: { body: VerifyEmailRequest, response: VerifyEmailResponse },
     handler: async (req): Promise<HttpResponse> => {
       const body = VerifyEmailRequest.parse(req.body);
-      const email = await ctx.identity.runAsSystem(async (tx) => {
+      const email = await guardRedemption(locks.tokens, `verify\n${addressKey(req.ip)}`, 'attempts with a link', () => ctx.identity.runAsSystem(async (tx) => {
         const claim = await claimToken(ctx, tx, body.token, 'verify_email');
         if (!claim?.email) throw new HttpError(410, 'gone', GONE);
         const now = ctx.runtime.now();
@@ -206,7 +223,7 @@ export function registerResetRoutes(ctx: Ctx): void {
           email: claim.email,
         });
         return claim.email;
-      });
+      }));
       return { body: { ok: true, email } };
     },
   });

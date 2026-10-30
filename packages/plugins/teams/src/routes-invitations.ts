@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import { createLockout, guardRedemption, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
   AcceptInvitationRequest,
   AcceptInvitationResponse,
@@ -9,13 +9,16 @@ import {
   GetInvitationResponse,
   InviteTeamMemberRequest,
   ListTeamInvitationsResponse,
+  TOKEN_FAILURE_LOCK,
+  abuseLimit,
+  addressKey,
   acceptInvitationRoute,
   createInvitationRoute,
   createTeamInvitationRoute,
   getInvitationRoute,
   listTeamInvitationsRoute,
 } from '@manythreads/shared';
-import { conflict, forbidden, gone, json, notFound, route, SlugParam, TokenParam } from './http.ts';
+import { conflict, forbidden, gone, HttpError as TeamsHttpError, json, notFound, route, SlugParam, TokenParam } from './http.ts';
 import { rosterRows } from './routes-roster.ts';
 import { INVITATION_COLUMNS, toInvitation, type InvitationRow } from './rows.ts';
 import {
@@ -75,8 +78,17 @@ async function sendInviteMail(ctx: PluginContext, tx: PluginTx, input: { email: 
 }
 
 export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): void {
+  // Public from the invitation routes on: the token is the credential. A token the server refuses (unknown, expired, used) counts against the
+  // client address; ten in 15 minutes lock the address for 15 minutes (429 with `retry-after`). In memory, per replica.
+  const refusals = createLockout({ now: ctx.runtime.now, ...TOKEN_FAILURE_LOCK });
+  const redeem = <T extends { status?: number }>(req: { ip: string }, fn: () => Promise<T>): Promise<T> =>
+    guardRedemption(refusals, `invitation\n${addressKey(req.ip)}`, 'attempts with an invitation link', fn, ({ result, error }) =>
+      error instanceof TeamsHttpError ? error.statusCode === 404 : result?.status === 410,
+    );
+
   ctx.http.route({
     ...createTeamInvitationRoute,
+    rateLimit: abuseLimit(createTeamInvitationRoute.method, createTeamInvitationRoute.path),
     schema: { body: InviteTeamMemberRequest, response: CreateTeamInvitationResponse },
     handler: route(async (req, tx) => {
       const { slug } = SlugParam.parse(req.params);
@@ -124,6 +136,7 @@ export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): vo
   // Workspace-level invitations (admins): another admin, a member without a team, or a guest with pending channel grants.
   ctx.http.route({
     ...createInvitationRoute,
+    rateLimit: abuseLimit(createInvitationRoute.method, createInvitationRoute.path),
     schema: { body: CreateInvitationRequest, response: CreateInvitationResponse },
     handler: route(async (req, tx) => {
       const body = CreateInvitationRequest.parse(req.body);
@@ -160,13 +173,13 @@ export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): vo
     }),
   });
 
-  // Public from here: the token is the credential. Both are rate limited per client address.
   ctx.http.route({
     ...getInvitationRoute,
     public: true,
-    rateLimit: { limit: 30, windowMs: 60_000 },
+    rateLimit: abuseLimit(getInvitationRoute.method, getInvitationRoute.path),
+    rateLimitBy: 'address',
     schema: { response: GetInvitationResponse },
-    handler: route(async (req, tx) => {
+    handler: route((req, tx) => redeem(req, async () => {
       const { token } = TokenParam.parse(req.params);
       const res = await tx.query<{ info: { outcome: string } & Record<string, unknown> }>(
         'SELECT app.teams_invitation_info($1) AS info',
@@ -176,15 +189,16 @@ export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): vo
       if (!info || info.outcome === 'not_found') throw notFound('This invitation link is not valid');
       if (info.outcome === 'gone') return gone('This invitation has expired or was already used');
       return json(GetInvitationResponse.parse(info));
-    }),
+    })),
   });
 
   ctx.http.route({
     ...acceptInvitationRoute,
     public: true,
-    rateLimit: { limit: 10, windowMs: 60_000 },
+    rateLimit: abuseLimit(acceptInvitationRoute.method, acceptInvitationRoute.path),
+    rateLimitBy: 'address',
     schema: { body: AcceptInvitationRequest, response: AcceptInvitationResponse },
-    handler: route(async (req, tx) => {
+    handler: route((req, tx) => redeem(req, async () => {
       const { token } = TokenParam.parse(req.params);
       const body = AcceptInvitationRequest.parse(req.body ?? {});
       const res = await tx.query<{ result: { outcome: string } & Record<string, unknown> }>(
@@ -197,6 +211,6 @@ export function registerInvitationRoutes(ctx: PluginContext, { emit }: Deps): vo
       if (result.outcome === 'forbidden') throw forbidden('This account is suspended');
       if (result.outcome === 'needs_admin') throw forbidden('A workspace admin has to invite this person');
       return json(AcceptInvitationResponse.parse(result));
-    }),
+    })),
   });
 }

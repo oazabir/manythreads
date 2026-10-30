@@ -13,6 +13,7 @@ import {
   createKmsRewrapHandler,
   createEventAuditSink,
   createRealtime,
+  type RateLimiter,
   discoverPlugins,
   emit,
   ensureActor,
@@ -140,6 +141,10 @@ export interface StartServerOptions {
   logger?: boolean | object;
   /** Behind a reverse proxy that appends to x-forwarded-for (default from `MANYTHREADS_TRUST_PROXY`, see `trustProxyFromEnv`). */
   trustProxy?: boolean | number | string | string[];
+  /** Header with the real client address, written by an edge you trust (default from `MANYTHREADS_CLIENT_IP_HEADER`, e.g. `cf-connecting-ip`; see `BuildServerOptions`). */
+  clientAddressHeader?: string;
+  /** Replace the in-memory rate limiter (tests: one that reads the test's clock). Default: each server builds its own. */
+  limiter?: RateLimiter;
   /** Public base URL (`MANYTHREADS_PUBLIC_URL`) used for links in mails and the bootstrap line. Default http://localhost:<port>. */
   publicUrl?: string;
   /** Delivers mail (default: SMTP from `MANYTHREADS_SMTP_URL`, otherwise it logs that nothing was sent). */
@@ -286,6 +291,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
   const realtime = createRealtime();
   await realtime.start(appPool);
 
+  const clientAddressHeader = (options.clientAddressHeader ?? process.env['MANYTHREADS_CLIENT_IP_HEADER'] ?? '').trim();
   const app = await buildServer({
     host,
     realtime,
@@ -294,6 +300,8 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     expectedMigrations,
     sessions,
     trustProxy: options.trustProxy ?? trustProxyFromEnv(process.env['MANYTHREADS_TRUST_PROXY']),
+    ...(clientAddressHeader ? { clientAddressHeader } : {}),
+    ...(options.limiter ? { limiter: options.limiter } : {}),
     testAuthToken,
     appTokens: { now: clock },
     ...(options.devAuth !== undefined ? { devAuth: options.devAuth } : {}),

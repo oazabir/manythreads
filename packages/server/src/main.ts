@@ -13,6 +13,8 @@ import { startServer } from './start.ts';
  *   MANYTHREADS_PUBLIC_URL         public base URL (links in mails, the first-admin bootstrap line); default http://localhost:PORT
  *   MANYTHREADS_TRUST_PROXY=1      believe x-forwarded-for from ONE proxy hop (the ingress, which must append to it); N = N hops,
  *                                  or a list of proxy CIDRs. The sign-in lockout and rate limits key on the client address
+ *   MANYTHREADS_CLIENT_IP_HEADER=cf-connecting-ip   a header with the real client address, written by an edge you trust (Cloudflare); wins over
+ *                                  x-forwarded-for when it is one valid address. For a cluster whose load balancer hides the visitor
  *   MANYTHREADS_OIDC_ALLOW_PRIVATE_ISSUERS=1   production only: let OIDC discovery reach private/loopback hosts (in-cluster IdP)
  *   MANYTHREADS_SMTP_URL           smtp://user:pass@host:587 (dev mailpit: smtp://localhost:1025); unset = mail is not sent
  *   MANYTHREADS_MAIL_FROM          From address of outgoing mail

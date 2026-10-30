@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { withSystem } from '@manythreads/kernel';
-import { CreateTestSessionRequest, CreateTestSessionResponse, ErrorEnvelope, createTestSessionRoute } from '@manythreads/shared';
+import { createLockout } from '@manythreads/sdk';
+import { CreateTestSessionRequest, CreateTestSessionResponse, ErrorEnvelope, TOKEN_FAILURE_LOCK, addressKey, createTestSessionRoute } from '@manythreads/shared';
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type pg from 'pg';
@@ -32,13 +33,25 @@ export function mountTestAuth(
 ): void {
   const typed = app.withTypeProvider<ZodTypeProvider>();
   const notFound = envelope('not_found', `Route ${createTestSessionRoute.method} ${createTestSessionRoute.path} not found`);
+  // The shared secret is the only credential here, so wrong guesses are counted per client address: ten in 15 minutes lock the address for 15
+  // minutes (429 with `retry-after`, whatever token it sends next). Only wrong tokens count, so the real runner is never locked by itself.
+  const guesses = createLockout({ now: () => new Date(), ...TOKEN_FAILURE_LOCK });
   typed.post(
     createTestSessionRoute.path,
     {
       config: { public: true, csrfExempt: true },
-      schema: { body: CreateTestSessionRequest, response: { 200: CreateTestSessionResponse, 404: ErrorEnvelope }, hide: true },
+      schema: { body: CreateTestSessionRequest, response: { 200: CreateTestSessionResponse, 404: ErrorEnvelope, 429: ErrorEnvelope }, hide: true },
       preValidation: (req, reply, done) => {
+        const barred = guesses.check(addressKey(req.ip));
+        if (barred.locked) {
+          void reply
+            .header('retry-after', String(Math.max(1, Math.ceil(barred.retryAfterMs / 1000))))
+            .status(429)
+            .send(envelope('rate_limited', 'Too many wrong tokens. Try again later.'));
+          return undefined;
+        }
         if (tokensMatch(req.headers[TEST_AUTH_HEADER], deps.token)) return done();
+        guesses.fail(addressKey(req.ip));
         void reply.status(404).send(notFound);
         return undefined;
       },

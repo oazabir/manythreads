@@ -3,6 +3,7 @@ import { ErrorEnvelope, GetSessionResponse, ListSessionsResponse } from '@manyth
 import {
   createApiClient,
   createPersonas,
+  relaxedRateLimiter,
   startTestServer,
   NADIA,
   OMAR,
@@ -129,7 +130,7 @@ describe('password sign-in, sessions, CSRF, break-glass', () => {
   const clock = fakeClock();
   let s: TestServer;
   beforeAll(async () => {
-    s = await startTestServer({ now: clock.now, testAuthToken: TEST_AUTH_TOKEN, publicUrl: 'https://manythreads.example' });
+    s = await startTestServer({ now: clock.now, testAuthToken: TEST_AUTH_TOKEN, publicUrl: 'https://manythreads.example', limiter: relaxedRateLimiter() });
     await createPersonas(s.db);
   }, 120_000);
   afterAll(async () => {
@@ -471,7 +472,7 @@ describe('password reset and email verification', () => {
   const clock = fakeClock();
   let s: TestServer;
   beforeAll(async () => {
-    s = await startTestServer({ now: clock.now, publicUrl: 'https://manythreads.example' });
+    s = await startTestServer({ now: clock.now, publicUrl: 'https://manythreads.example', limiter: relaxedRateLimiter() });
     await createPersonas(s.db);
   }, 120_000);
   afterAll(async () => {
@@ -541,6 +542,7 @@ describe('password reset and email verification', () => {
     const c = createApiClient(s.url);
     await c.post('/api/auth/password/reset-request', { email: RAFI.email });
     const first = tokenFrom(RAFI.email);
+    clock.advance(MINUTE + 1_000); // one mail per account per minute (P10-14): a second request inside the minute sends nothing
     await c.post('/api/auth/password/reset-request', { email: RAFI.email });
     const second = tokenFrom(RAFI.email);
     expect(second).not.toBe(first);

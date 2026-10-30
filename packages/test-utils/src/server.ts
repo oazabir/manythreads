@@ -1,9 +1,18 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMemoryMailer, type MemoryMailer } from '@manythreads/kernel';
+import { createMemoryMailer, createRateLimiter, type MemoryMailer, type RateLimiter } from '@manythreads/kernel';
 import { startServer, type RunningServer, type StartServerOptions } from '@manythreads/server';
 import { createTestDatabase, dropTestDatabase, withClusterLock, type TestDatabase } from './db.ts';
+
+/**
+ * A limiter that never limits: its clock jumps a window on every call. For test files that sign in many times from the one test address
+ * and are not about limits (the limits are proven in `packages/server/test/abuse.test.ts`).
+ */
+export function relaxedRateLimiter(): RateLimiter {
+  let t = 0;
+  return createRateLimiter({ now: () => (t += 3_600_000) });
+}
 
 export interface TestServer extends RunningServer {
   db: TestDatabase;
@@ -16,7 +25,7 @@ export interface TestServer extends RunningServer {
 }
 
 export type StartTestServerOptions = Partial<
-  Pick<StartServerOptions, 'testPlugins' | 'devAuth' | 'logger' | 'port' | 'now' | 'session' | 'testAuthToken' | 'publicUrl' | 'jobWorkers' | 'jobPollMs' | 'storage'>
+  Pick<StartServerOptions, 'testPlugins' | 'devAuth' | 'logger' | 'port' | 'now' | 'session' | 'testAuthToken' | 'publicUrl' | 'jobWorkers' | 'jobPollMs' | 'storage' | 'trustProxy' | 'limiter' | 'clientAddressHeader'>
 >;
 
 /** Pulls the token out of the `first-admin setup: open <url>/bootstrap/<token> ...` log line. */
@@ -56,6 +65,10 @@ export async function startTestServer(options: StartTestServerOptions = {}): Pro
       testAuthToken: options.testAuthToken ?? null,
       publicUrl: options.publicUrl ?? 'http://localhost:3000',
       ...(options.now ? { now: options.now } : {}),
+      // The environment must not decide this either: no proxy unless a test asks for one.
+      trustProxy: options.trustProxy ?? false,
+      clientAddressHeader: options.clientAddressHeader ?? '',
+      ...(options.limiter ? { limiter: options.limiter } : {}),
       ...(options.jobWorkers !== undefined ? { jobWorkers: options.jobWorkers } : {}),
       // Poll fast so a test does not wait out the production interval (NOTIFY wakes the worker anyway).
       jobPollMs: options.jobPollMs ?? 200,

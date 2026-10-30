@@ -1,6 +1,6 @@
-import { definePlugin } from '@manythreads/sdk';
+import { createLockout, definePlugin } from '@manythreads/sdk';
+import { PASSWORD_ACCOUNT_LOCK, PASSWORD_ADDRESS_LOCK, TOKEN_FAILURE_LOCK, CHANGE_PASSWORD_LOCK } from '@manythreads/shared';
 import { AUDIT_EVENTS } from './audit.ts';
-import { createLockout } from './lockout.ts';
 import { registerAccountRoutes } from './routes/account.ts';
 import { registerBootstrap } from './routes/bootstrap.ts';
 import { registerResetRoutes } from './routes/reset.ts';
@@ -23,11 +23,15 @@ export default definePlugin({
   },
   register(ctx) {
     ctx.providers.register('identity', { id: 'password' });
-    const lockout = createLockout({ now: ctx.runtime.now });
-    registerSignIn(ctx, lockout);
+    const now = ctx.runtime.now;
+    // Per replica, in memory (PLAN D3). The numbers are listed in docs/deploy/rate-limits.md.
+    const address = createLockout({ now, ...PASSWORD_ADDRESS_LOCK });
+    const account = createLockout({ now, ...PASSWORD_ACCOUNT_LOCK });
+    const tokens = createLockout({ now, ...TOKEN_FAILURE_LOCK });
+    registerSignIn(ctx, { address, account });
     registerSessionRoutes(ctx);
-    registerResetRoutes(ctx);
-    registerAccountRoutes(ctx);
-    registerBootstrap(ctx);
+    registerResetRoutes(ctx, { tokens, account });
+    registerAccountRoutes(ctx, createLockout({ now, ...CHANGE_PASSWORD_LOCK }));
+    registerBootstrap(ctx, tokens);
   },
 });

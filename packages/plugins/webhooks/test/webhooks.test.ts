@@ -325,3 +325,24 @@ describe('the test message', () => {
     expect((await w.call(nadia, 'POST', `/api/webhooks/${m.id}/test`)).status).not.toBe(200);
   });
 });
+
+describe('the stranger lock (PLAN D5)', () => {
+  it('30 calls with no live webhook lock the address for failing calls only; a call with the right secret still posts', async () => {
+    const good = await make('Shared sender');
+    const stale = await make('Rotated away');
+    expect((await w.call(omar, 'DELETE', `/api/webhooks/${stale.id}`)).status).toBe(200);
+    // a busy sender still posting to a revoked address (30 in a row), from the address a good sender shares
+    // (earlier tests in this file already counted a few strangers from the same test address)
+    const refused: number[] = [];
+    for (let i = 0; i < 30; i++) refused.push((await hit(stale.path, { text: `stale ${i}` })).status);
+    expect(refused[0]).toBe(404);
+    expect(refused).toContain(429);
+    const locked = await hit(stale.path, { text: 'stale again' });
+    expect(locked.status).toBe(429);
+    expect(Number(locked.headers.get('retry-after'))).toBeGreaterThan(4 * 60);
+    // the good webhook on the same address is not shut out
+    const ok = await hit(good.path, { text: 'still works' });
+    expect(ok.status, ok.body).toBe(200);
+    expect((await messages()).some((m) => m.body.includes('still works'))).toBe(true);
+  });
+});

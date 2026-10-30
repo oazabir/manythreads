@@ -24,6 +24,7 @@ import {
   healthRoute,
   readyRoute,
   WsEnvelope,
+  addressKey,
 } from '@manythreads/shared';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
@@ -33,6 +34,7 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { HttpError, type HttpRequest, type PluginSocket } from '@manythreads/sdk';
+import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
 import type pg from 'pg';
 import { z } from 'zod';
@@ -89,6 +91,13 @@ export interface BuildServerOptions {
    */
   trustProxy?: boolean | number | string | string[];
   /**
+   * A request header that carries the real client address, written by an edge the operator trusts (Cloudflare: `cf-connecting-ip`). It wins over
+   * `x-forwarded-for` when it holds a valid address. For a cluster whose ingress cannot see the visitor (the load balancer rewrites the source
+   * address, so the forwarded chain only names the cluster's own hops), where every visitor would otherwise share one rate-limit counter and one
+   * lockout. Only set it when the origin accepts requests from that edge alone: anyone who can reach the server directly can write the header.
+   */
+  clientAddressHeader?: string;
+  /**
    * Live pushes (`ctx.realtime`, read-state changes): sockets of signed-in people register here. The caller starts it
    * (`realtime.start(pool)`) so pushes from every replica arrive; default: a registry nobody feeds.
    */
@@ -120,7 +129,15 @@ function trustProxySetting(value: BuildServerOptions['trustProxy']): boolean | s
   return typeof hops === 'number' ? (_address: string, hop: number): boolean => hop < hops : hops;
 }
 
-const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.actor.id}` : `ip:${req.ip}`);
+const clientKey = (req: FastifyRequest): string =>
+  req.actor && req.routeOptions.config.rateLimitBy !== 'address' ? `actor:${req.actor.id}` : `ip:${addressKey(req.ip)}`;
+
+/** The address in a header value, or null when it is not exactly one IP address (a made-up value never becomes a counter key). */
+export function addressFromHeader(value: string | string[] | undefined): string | null {
+  const one = (Array.isArray(value) ? value[0] : value)?.trim();
+  if (!one || one.includes(',') || isIP(one) === 0) return null;
+  return one;
+}
 
 /**
  * Fastify host: Zod validator and serializer on every route, one error envelope, in-memory rate limits per replica,
@@ -128,6 +145,14 @@ const clientKey = (req: FastifyRequest): string => (req.actor ? `actor:${req.act
  */
 export async function buildServer(options: BuildServerOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: withRedactedLogs(options.logger), trustProxy: trustProxySetting(options.trustProxy) });
+  const addressHeader = options.clientAddressHeader?.trim().toLowerCase();
+  if (addressHeader) {
+    // First hook of all, so every later hook, route and log line sees the same `req.ip`.
+    app.addHook('onRequest', async (req) => {
+      const address = addressFromHeader(req.headers[addressHeader]);
+      if (address) Object.defineProperty(req, 'ip', { value: address, configurable: true, enumerable: true });
+    });
+  }
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.setErrorHandler(errorHandler);
@@ -180,7 +205,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
         void reply.header('retry-after', String(Math.ceil(res.retryAfterMs / 1000)));
         return reply
           .status(429)
-          .send(envelope('rate_limited', `Rate limit of ${rule.limit} per ${Math.round(rule.windowMs / 1000)}s exceeded`));
+          .send(envelope('rate_limited', `Too many requests. Try again in ${Math.max(1, Math.ceil(res.retryAfterMs / 1000))} seconds.`));
       }
     }
     return undefined;
@@ -391,6 +416,7 @@ async function mountPluginRoutes(
   });
   const routeConfig = (def: MountedRoute): Record<string, unknown> => ({
     ...(def.rateLimit ? { rateLimit: def.rateLimit } : {}),
+    ...(def.rateLimitBy ? { rateLimitBy: def.rateLimitBy } : {}),
     ...(def.public ? { public: true } : {}),
     ...(def.csrfExempt ? { csrfExempt: true } : {}),
   });

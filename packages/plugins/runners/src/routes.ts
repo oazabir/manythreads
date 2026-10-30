@@ -57,6 +57,7 @@ export function registerRunnerRoutes(ctx: PluginContext, registry: ConnectionReg
     path: runnerConnectRoute.path,
     public: true,
     rateLimit: { limit: 60, windowMs: 60_000 },
+    rateLimitBy: 'address',
     ws: (socket, request) => serveRunnerSocket(ctx, registry, socket, request),
   });
 }

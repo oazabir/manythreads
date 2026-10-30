@@ -195,8 +195,14 @@ export interface HttpRouteDefinition {
     /** Shape of a 200 response; a handler that returns something else is a 500 (a bug), never sent to the client. */
     response?: ZodType;
   };
-  /** Per-key limit for this route, counted in the server process (per replica). Keyed by actor, else client IP. */
+  /** Per-key limit for this route, counted in the server process (per replica). Keyed by actor, else client IP (see `rateLimitBy`). */
   rateLimit?: { limit: number; windowMs: number };
+  /**
+   * What `rateLimit` counts per. Default: the signed-in actor, else the client address. `'address'` always counts per client address, even
+   * when the request carries a valid session cookie: a route that grants or recovers a credential for someone who is not signed in (sign-in,
+   * reset, invitation, OIDC) must not let an attacker who holds one real session get a second bucket (PLAN D5).
+   */
+  rateLimitBy?: 'address';
   /**
    * Reachable without an actor (sign-in, health-like or test routes). Default false: the route answers 401 unless the
    * request carries a valid session cookie (or, only under NODE_ENV=test, a dev-header actor).

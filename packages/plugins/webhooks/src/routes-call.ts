@@ -1,5 +1,5 @@
-import { HttpError, json, type HttpRequest, type PluginContext } from '@manythreads/sdk';
-import { MAX_WEBHOOK_BODY_BYTES, WebhookCallResponse, webhookCallRoute } from '@manythreads/shared';
+import { HttpError, createLockout, json, lockedError, type HttpRequest, type PluginContext } from '@manythreads/sdk';
+import { MAX_WEBHOOK_BODY_BYTES, WEBHOOK_FAILURE_LOCK, WebhookCallResponse, addressKey, webhookCallRoute } from '@manythreads/shared';
 import { adapt, parseBody } from './adapters/index.ts';
 import { postAsWebhook, recordUse, statusOf } from './deliver.ts';
 import { loadHook, type HookWithSecrets } from './hooks.ts';
@@ -47,6 +47,9 @@ export function registerCallRoute(ctx: PluginContext, deps: CallDeps = {}): void
   const limiter = deps.limiter ?? createWindowLimiter();
   const perMinute = deps.perMinute ?? perMinuteFromEnv();
   const onceAMinute = createOncePer(60_000);
+  // Calls that name no live webhook or carry a wrong secret, per client address: 30 in 5 minutes lock the address for 5 minutes, and a locked address
+  // gets 429 with `retry-after` instead of 404 for its failing calls. A call with a right secret is never refused by the lock, and only failures count.
+  const strangers = createLockout({ now: ctx.runtime.now, ...WEBHOOK_FAILURE_LOCK });
 
   type Reason = 'bad_secret' | 'revoked' | 'bad_signature' | 'too_large' | 'rate_limited' | 'bad_payload' | 'channel_unavailable';
   /** One audit line per webhook and reason per minute; a failure to write it never changes the answer. */
@@ -67,22 +70,32 @@ export function registerCallRoute(ctx: PluginContext, deps: CallDeps = {}): void
     // csrf is for cookie sessions; a call carries none, and a browser form could not guess the secret address
     csrfExempt: true,
     rawBody: true,
-    // a coarse per-address limit against floods and guessing; each webhook also has its own limit below
+    // a coarse per-address limit against floods and guessing (listed in docs/deploy/rate-limits.md); each webhook also has its own limit below
     rateLimit: { limit: 600, windowMs: 60_000 },
+    rateLimitBy: 'address',
     handler: async (req) => {
       const { webhookId, secret } = req.params as { webhookId: string; secret: string };
-      if (!ID_SHAPE.test(webhookId) || !SECRET_SHAPE.test(secret)) throw NOT_FOUND();
+      const strangerKey = `hook\n${addressKey(req.ip)}`;
+      // The lock only changes the answer for a call that would fail anyway. A good call from a locked address still goes through: senders share
+      // addresses (GitHub's, a company's CI), and one of them posting to a rotated or revoked address must not silence the others' good webhooks.
+      const barred = strangers.check(strangerKey);
+      const stranger = (): HttpError => {
+        if (barred.locked) return lockedError(barred, 'webhook calls');
+        strangers.fail(strangerKey);
+        return NOT_FOUND();
+      };
+      if (!ID_SHAPE.test(webhookId) || !SECRET_SHAPE.test(secret)) throw stranger();
       const hook = await ctx.db.system((sys) => loadHook(sys, webhookId));
       // one comparison whether or not the webhook exists, so the time does not say
       const matches = secretMatches(secret, hook?.secret_hash ?? null);
-      if (!hook) throw NOT_FOUND();
+      if (!hook) throw stranger();
       if (hook.revoked_at !== null) {
         await refused(hook, 'revoked');
-        throw NOT_FOUND();
+        throw stranger();
       }
       if (!matches) {
         await refused(hook, 'bad_secret');
-        throw NOT_FOUND();
+        throw stranger();
       }
 
       const slot = limiter.hit(hook.id, perMinute, 60_000);

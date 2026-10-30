@@ -4,6 +4,7 @@ import {
   ListOidcMethodsQuery,
   ListOidcMethodsResponse,
   OidcStartQuery,
+  abuseLimit,
   listOidcMethodsRoute,
   oidcCallbackRoute,
   oidcStartRoute,
@@ -34,7 +35,6 @@ import { evaluateClaims, safeReturnTo } from './rules.ts';
 /** HttpOnly cookie that ties a callback to the browser that started the flow (the value is the `state`). */
 export const FLOW_COOKIE = 'manythreads_oidc';
 const FLOW_TTL_MS = 10 * 60_000;
-const RATE = { limit: 120, windowMs: 60_000 } as const;
 
 interface LoadedProvider {
   row: ProviderRow;
@@ -144,7 +144,9 @@ export function registerSignIn(ctx: PluginContext): void {
     method: oidcStartRoute.method,
     path: oidcStartRoute.path,
     public: true,
-    rateLimit: RATE,
+    // Each start writes a flow row and calls the provider's discovery document: a low limit per client address (docs/deploy/rate-limits.md).
+    rateLimit: abuseLimit(oidcStartRoute.method, oidcStartRoute.path),
+    rateLimitBy: 'address',
     schema: { query: OidcStartQuery },
     handler: async (req): Promise<HttpResponse> => {
       const providerId = AuthProviderId.safeParse(req.params['providerId']);
@@ -200,7 +202,8 @@ export function registerSignIn(ctx: PluginContext): void {
     method: oidcCallbackRoute.method,
     path: oidcCallbackRoute.path,
     public: true,
-    rateLimit: RATE,
+    rateLimit: abuseLimit(oidcCallbackRoute.method, oidcCallbackRoute.path),
+    rateLimitBy: 'address',
     schema: { query: CallbackQuery },
     handler: async (req): Promise<HttpResponse> => {
       const query = CallbackQuery.parse(req.query);

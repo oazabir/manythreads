@@ -1,7 +1,11 @@
+import { HttpError } from './types.ts';
+
 /**
- * In-memory sign-in lockout (per replica, like every rate limit; PLAN D3): after `max` failures inside `windowMs` for
- * one key (email + client address) the key is refused for `lockMs`. Unknown emails count exactly like known ones, so
- * the lock reveals nothing about which accounts exist.
+ * In-memory credential lockout (per replica, like every rate limit; PLAN D3, D5): after `max` failures inside `windowMs`
+ * for one key (for example email + client address, or a client address alone for a mailed link) the key is refused for
+ * `lockMs`. The lock is temporary and is not extended by attempts made while it holds. Unknown emails count exactly like
+ * known ones, so the lock reveals nothing about which accounts exist. Plugins share this one implementation
+ * (docs/deploy/rate-limits.md lists every key and number).
  */
 export interface LockoutOptions {
   max?: number;
@@ -100,4 +104,44 @@ export function createLockout(options: LockoutOptions): Lockout {
       entries.delete(key);
     },
   };
+}
+
+/**
+ * The answer for a locked key: `429 rate_limited` with `retry-after` (whole seconds, at least 1) and a plain message.
+ * Throw it from a route; it rolls the route's transaction back, which is right for a refusal that wrote nothing.
+ */
+export function lockedError(state: LockState, subject = 'attempts'): HttpError {
+  const seconds = Math.max(1, Math.ceil(state.retryAfterMs / 1000));
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return new HttpError(429, 'rate_limited', `Too many failed ${subject}. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`, {
+    'retry-after': String(seconds),
+  });
+}
+
+/**
+ * Runs `redeem` (a route's use of a secret that arrived in the request: a mailed link, a setup or invitation token) behind a
+ * failure lock on `key`. A locked key answers 429 at once and never reaches the database; an attempt the secret did not pass
+ * counts as a failure (`refused` says which outcomes those are; by default a thrown 404 or 410). Parallel guesses are counted
+ * while in flight (`begin` / `end`), so a burst cannot all slip past the limit.
+ */
+export async function guardRedemption<T>(
+  lock: Lockout,
+  key: string,
+  subject: string,
+  redeem: () => Promise<T>,
+  refused: (outcome: { result?: T; error?: unknown }) => boolean = ({ error }) =>
+    error instanceof HttpError && (error.status === 404 || error.status === 410),
+): Promise<T> {
+  const state = lock.begin(key);
+  if (state.locked) throw lockedError(state, subject);
+  try {
+    const result = await redeem();
+    if (refused({ result })) lock.fail(key);
+    return result;
+  } catch (err) {
+    if (refused({ error: err })) lock.fail(key);
+    throw err;
+  } finally {
+    lock.end(key);
+  }
 }
