@@ -18,6 +18,7 @@ import './styles/memory.css';
 import './styles/boards.css';
 import './styles/https.css';
 import './styles/health.css';
+import './styles/audit.css';
 import './styles/notify.css';
 import './styles/webhooks.css';
 import './styles/proposals.css';

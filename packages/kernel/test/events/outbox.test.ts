@@ -55,6 +55,31 @@ const pending = async (subscriber: string): Promise<number> =>
   );
 
 describe('outbox consumers', () => {
+  it('hands the handler the event row\'s own time, actor and team, never a lookalike from the payload', async () => {
+    const team = randomUUID();
+    const ev = await owner.query<{ id: string; occurred_at: Date }>(
+      `INSERT INTO app.events (workspace_id, actor_id, team_id, type, schema_version, payload, occurred_at)
+       VALUES ($1, $2, $3, 'kernel.test.pinged', 1, jsonb_build_object('note', 'meta', 'actorId', $4::text, 'teamId', $4::text, 'occurredAt', '1999-01-01T00:00:00Z'), '2026-01-02T03:04:05.678Z')
+       RETURNING id, occurred_at`,
+      [workspaceId, actorId, team, randomUUID()],
+    );
+    await owner.query('INSERT INTO app.outbox (event_id, subscriber) VALUES ($1, $2)', [ev.rows[0]!.id, 'meta']);
+    await owner.query(
+      `INSERT INTO app.events (workspace_id, actor_id, type, schema_version, payload) VALUES ($1, $2, 'kernel.test.pinged', 1, '{"note":"unrelated"}')`,
+      [workspaceId, actorId],
+    );
+    const got: Array<{ id: string; actorId: string; teamId: string | null; at: string; attempts: number }> = [];
+    const c = startConsumer({
+      subscriber: 'meta',
+      pool,
+      pollMs: 30,
+      handler: (_e, meta) => void got.push({ id: meta.eventId, actorId: meta.actorId, teamId: meta.teamId, at: meta.occurredAt.toISOString(), attempts: meta.attempts }),
+    });
+    await waitFor(() => got.length >= 1);
+    await c.stop();
+    expect(got).toEqual([{ id: ev.rows[0]!.id, actorId, teamId: team, at: '2026-01-02T03:04:05.678Z', attempts: 1 }]);
+  });
+
   it('10,000 rows, 4 concurrent consumers: every row delivered at least once, none lost', async () => {
     await seed('bulk', 10_000);
     const seen = new Map<string, number>();

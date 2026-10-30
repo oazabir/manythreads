@@ -19,7 +19,18 @@ export interface PluginEvent {
   [field: string]: unknown;
 }
 
-export type EventHandler = (event: PluginEvent, tx: PluginTx) => void | Promise<void>;
+/**
+ * What the event log knows about a delivered event beyond its fields: the event row's id, when it was written, which actor wrote it and for which
+ * team. Passed to a subscriber as a third argument (a subscriber that does not need it ignores it).
+ */
+export interface EventMeta {
+  eventId: string;
+  occurredAt: Date;
+  actorId: string;
+  teamId: string | null;
+}
+
+export type EventHandler = (event: PluginEvent, tx: PluginTx, meta?: EventMeta) => void | Promise<void>;
 
 /** The kernel's `emit(tx, event)`, as plugins see it. Validation against the event registry happens there. */
 export type EmitEvent = (tx: PluginTx, event: PluginEvent) => Promise<unknown>;

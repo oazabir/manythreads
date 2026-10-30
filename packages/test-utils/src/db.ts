@@ -45,6 +45,12 @@ export const webhooksMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/webhooks/migrations/', import.meta.url)),
 };
 
+/** Migrations of the audit plugin (`audit_events`, `audit_progress`, `audit_signing_keys`); they read only kernel tables, so they can be passed in `sources` anywhere. */
+export const auditMigrationSource: MigrationSource = {
+  namespace: 'audit',
+  dir: fileURLToPath(new URL('../../plugins/audit/migrations/', import.meta.url)),
+};
+
 /** Migrations of the proposals plugin (`proposals` and its create/decide/why-not functions); pass it in `sources` after `teamsMigrationSource` and `botsMigrationSource`. */
 export const proposalsMigrationSource: MigrationSource = {
   namespace: 'proposals',

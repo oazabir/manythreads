@@ -24,6 +24,7 @@ The binding rules every change follows: how data, events, plugins and screens ar
   SECURITY` + a policy. Global tables must be in `global_tables` allowlist with a migration comment.
   Migrations: plain SQL, numbered, forward-only, never edit an applied file. Get-or-create via
   `INSERT … ON CONFLICT … DO SELECT RETURNING` through the one helper.
+- Audit rows are content-blind and built only by the `audit` plugin from the event log (docs/plugins/audit.md): a new audited event type is a `MAPPERS` entry there, never message text, file content or a secret in `reason`/`label`.
 - Rate limits in process memory (sliding window), per replica. Never in the DB.
 - **Visibility sets (RLS performance):** policies never call per-row functions for reads; hoist a uuid[] once per
   statement: `team_id = ANY ((SELECT app.readable_team_ids('read'))::uuid[])`, channels via

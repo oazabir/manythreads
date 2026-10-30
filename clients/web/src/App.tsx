@@ -17,6 +17,7 @@ import { SignInMethods } from './screens/SignInMethods';
 import { Shell } from './shell/Shell';
 import { WorkspaceHttps } from './screens/https/WorkspaceHttps';
 import { SystemHealth } from './screens/health/SystemHealth';
+import { Audit } from './screens/audit/Audit';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
 import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
@@ -102,6 +103,7 @@ function AppRoutes() {
               <Route path="llm" element={<LlmSettings />} />
               <Route path="https" element={<WorkspaceHttps />} />
               <Route path="health" element={<SystemHealth />} />
+              <Route path="audit" element={<Audit />} />
             </Route>
             <Route path="/settings/team/:slug">
               <Route index element={<Navigate to="roster" replace />} />

@@ -1,0 +1,282 @@
+/* Audit page. Classes are prefixed `audit-`; shared classes (.box, .btn, .chip, .d, .fld-hint) are used, never redefined. */
+.audit-filters {
+  padding: 14px 15px;
+}
+
+.audit-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+
+.audit-f {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.audit-f select,
+.audit-f input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.audit-filter-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.audit-filter-actions .push {
+  flex: 1;
+}
+
+.audit-export {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  justify-items: end;
+}
+
+.audit-export-done {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  max-width: 460px;
+}
+
+.audit-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.audit-verify summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--human);
+}
+
+.audit-code {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--table-head);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre;
+}
+
+.audit-results {
+  margin-top: 14px;
+  overflow: hidden;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.audit-table th {
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--table-head);
+  color: var(--mute);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.audit-table td {
+  padding: 10px 15px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+.audit-table td:first-child {
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.audit-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.audit-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.audit-cell {
+  min-width: 0;
+}
+
+.audit-who {
+  font-weight: 500;
+}
+
+.audit-kind {
+  margin-left: 6px;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  color: var(--mute);
+  font-size: 10px;
+}
+
+.audit-what {
+  display: block;
+}
+
+.audit-reason {
+  display: block;
+  margin-top: 2px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.audit-out {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.audit-out.ok {
+  color: var(--ok-ink);
+}
+
+.audit-out.denied,
+.audit-out.failed {
+  color: var(--alert-ink);
+}
+
+.audit-out.withheld {
+  color: var(--warn-ink);
+}
+
+.audit-badge {
+  display: inline-block;
+  white-space: nowrap;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 10px;
+}
+
+.audit-row[data-outcome='withheld'] {
+  background: var(--warn-wash);
+}
+
+.audit-empty {
+  padding: 28px 15px;
+  text-align: center;
+}
+
+.audit-empty-h {
+  margin: 0 0 4px;
+  font-weight: 500;
+}
+
+.audit-more {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.audit-end {
+  margin: 0;
+  padding: 10px 15px;
+  text-align: center;
+}
+
+@media (width <= 1100px) {
+  .audit-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* A phone: the filters stack and each table row becomes a card, so nothing scrolls sideways. */
+@media (width <= 720px) {
+  .audit-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .audit-filter-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .audit-filter-actions .push {
+    display: none;
+  }
+
+  .audit-export {
+    justify-items: stretch;
+  }
+
+  .audit-table,
+  .audit-table tbody,
+  .audit-table tr,
+  .audit-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .audit-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .audit-table tr {
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .audit-table td {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 10px;
+    padding: 3px 0;
+    border-bottom: 0;
+  }
+
+  .audit-table td::before {
+    content: attr(data-label);
+    color: var(--faint);
+    font-size: 11px;
+  }
+
+  .audit-table td:first-child {
+    white-space: normal;
+  }
+}

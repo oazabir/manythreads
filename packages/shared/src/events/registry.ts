@@ -25,6 +25,7 @@ import { ConversationsConversationStartedEvent } from './conversations.conversat
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
 import { OpsHealthChangedEvent } from './ops.health.changed.ts';
+import { AuditExportCreatedEvent } from './audit.export.created.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
 import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
 import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
@@ -128,6 +129,7 @@ export const eventRegistry = {
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
   'retention.settings.changed': { 1: RetentionSettingsChangedEvent },
   'ops.health.changed': { 1: OpsHealthChangedEvent },
+  'audit.export.created': { 1: AuditExportCreatedEvent },
   'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },
   'approvals.approval.decided': { 1: ApprovalsApprovalDecidedEvent },
   'approvals.approval.resumed': { 1: ApprovalsApprovalResumedEvent },
@@ -259,6 +261,7 @@ export type AnyEvent =
   | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
+  | z.infer<typeof AuditExportCreatedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
   | z.infer<typeof ApprovalsApprovalRequestedEvent>
   | z.infer<typeof ApprovalsApprovalDecidedEvent>
@@ -330,6 +333,7 @@ export type LatestEvent =
   | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
+  | z.infer<typeof AuditExportCreatedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
   | z.infer<typeof ApprovalsApprovalRequestedEvent>
   | z.infer<typeof ApprovalsApprovalDecidedEvent>

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "maxLength": 80,
+  "pattern": "^[a-z_]+(\\.[a-z_]+){1,3}$"
+}

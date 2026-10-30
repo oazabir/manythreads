@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "sign_in",
+    "people",
+    "content",
+    "bots",
+    "approvals",
+    "guardrails",
+    "memory",
+    "access",
+    "settings",
+    "system"
+  ]
+}

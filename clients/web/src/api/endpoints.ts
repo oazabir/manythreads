@@ -1,4 +1,14 @@
 import {
+  AuditSigningKey,
+  ErrorEnvelope,
+  ExportAuditRequest,
+  ListAuditQuery,
+  ListAuditResponse,
+  AUDIT_KEY_ID_HEADER,
+  AUDIT_SIGNATURE_HEADER,
+  exportAuditRoute,
+  getAuditSigningKeyRoute,
+  listAuditRoute,
   DeleteSavedSearchResponse,
   ListSavedSearchesResponse,
   SaveSearchRequest,
@@ -381,6 +391,47 @@ export const fetchWorkspaceMembers = () => call(listWorkspaceMembersRoute, { res
 export const fetchWorkspace = () => call(getWorkspaceRoute, { response: GetWorkspaceResponse });
 export const fetchWorkspaceHttps = () => call(getWorkspaceHttpsRoute, { response: GetWorkspaceHttpsResponse });
 export const fetchOpsHealth = () => call(getOpsHealthRoute, { response: OpsHealthResponse });
+
+// ---- audit console (workspace admins) ---------------------------------------------------------------------
+export const fetchAudit = (query: Partial<ListAuditQuery>) => call(listAuditRoute, { request: ListAuditQuery, response: ListAuditResponse }, ListAuditQuery.parse(query));
+export const fetchAuditSigningKey = () => call(getAuditSigningKeyRoute, { response: AuditSigningKey });
+
+/** A downloaded audit export: the file's text, the signature that goes with it (base64) and the key that signed it. */
+export interface AuditExportFile {
+  text: string;
+  signature: string;
+  keyId: string;
+}
+
+/**
+ * The signed export. The answer is a file, not JSON, so this is the one audit call that does not go through `call`: it sends the same request
+ * (cookie, CSRF header), reads the body as text and takes the signature from the response headers.
+ */
+export async function exportAudit(body: ExportAuditRequest): Promise<AuditExportFile> {
+  const parsed = ExportAuditRequest.parse(body);
+  const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/x-ndjson' };
+  const csrf = readCsrfCookie(document.cookie);
+  if (csrf) headers[CSRF_HEADER] = csrf;
+  let res: Response;
+  try {
+    res = await fetch(exportAuditRoute.path, { method: exportAuditRoute.method, headers, credentials: 'include', body: JSON.stringify(parsed) });
+  } catch (e) {
+    throw new ApiError({ code: 'network', status: 0, message: e instanceof Error ? e.message : 'Network error' });
+  }
+  const text = await res.text();
+  if (!res.ok) {
+    let env: ReturnType<typeof ErrorEnvelope.safeParse> | null = null;
+    try {
+      env = ErrorEnvelope.safeParse(JSON.parse(text));
+    } catch {
+      env = null;
+    }
+    throw new ApiError(
+      env?.success ? { code: env.data.error.code, message: env.data.error.message, status: res.status } : { code: 'internal', message: `Request failed (${res.status})`, status: res.status },
+    );
+  }
+  return { text, signature: res.headers.get(AUDIT_SIGNATURE_HEADER) ?? '', keyId: res.headers.get(AUDIT_KEY_ID_HEADER) ?? '' };
+}
 export const updateWorkspace = (body: UpdateWorkspaceRequest) =>
   call(updateWorkspaceRoute, { request: UpdateWorkspaceRequest, response: UpdateWorkspaceResponse }, body);
 export const updateWorkspaceMember = (personId: string, body: UpdateWorkspaceMemberRequest) =>

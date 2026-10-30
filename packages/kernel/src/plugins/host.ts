@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type {
   EmitEvent,
+  EventMeta,
   IdentityServices,
   MailService,
   PluginDefinition,
@@ -93,7 +94,7 @@ export interface PluginHost {
   readonly registries: ExtensionRegistries;
   readonly capabilities: CapabilityRegistry;
   /** Run every subscriber of `event.type`, in load order. Used by the outbox consumer. */
-  dispatch(event: PluginEvent, tx: PluginTx): Promise<void>;
+  dispatch(event: PluginEvent, tx: PluginTx, meta?: EventMeta): Promise<void>;
 }
 
 interface PackageJsonmanythreads {
@@ -337,9 +338,9 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
     plugins: ordered,
     registries,
     capabilities,
-    async dispatch(event, tx) {
+    async dispatch(event, tx, meta) {
       for (const { value } of registries.eventSubscriptions.list()) {
-        if (value.type === event.type) await value.handler(event, tx);
+        if (value.type === event.type) await value.handler(event, tx, meta);
       }
     },
   };

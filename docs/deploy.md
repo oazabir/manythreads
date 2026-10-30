@@ -215,6 +215,9 @@ token is read and `testAuth.enabled` is not needed.
 ## Monitoring
 A token-gated `/metrics` page for Prometheus, a built-in watcher that mails the workspace admins when disk, outbox, jobs, bot slots, approvals, budgets or database connections go wrong, and example alert rules: [deploy/monitoring.md](./deploy/monitoring.md).
 
+## Audit console and export
+Workspace admins read and export the audit log at **Settings → Workspace → Audit**. The export is a file signed with a per-workspace ed25519 key, and `MANYTHREADS_AUDIT_EXPORT_MAX_ROWS` can lower its row cap (default and maximum 20,000). To check a downloaded export offline, save the public key as `audit-key.pem` and the signature as `audit.ndjson.sig`, then run `base64 -d < audit.ndjson.sig > audit.ndjson.sig.bin` and `openssl pkeyutl -verify -pubin -inkey audit-key.pem -rawin -in audit.ndjson -sigfile audit.ndjson.sig.bin` (it prints "Signature Verified Successfully"). Rows, privacy rule and the Node way to verify: [plugins/audit.md](./plugins/audit.md). The signing key lives in the secrets store sealed by `MANYTHREADS_KMS_KEY`: keep a copy of the public key beside exports you archive, because a database restored without that key cannot sign new files with the same key.
+
 ## Backups and restore
 Daily backups of the databases, the attachment store and the team repositories, a tested restore and a drill: [deploy/backup.md](./deploy/backup.md).
 

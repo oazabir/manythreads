@@ -173,7 +173,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
             { plugin: name },
           );
         }
-        registries.eventSubscriptions.add(name, { type, handler: (event, tx) => handler(event, guardPluginTx(tx)) });
+        registries.eventSubscriptions.add(name, { type, handler: (event, tx, meta) => handler(event, guardPluginTx(tx), meta) });
       },
       emit: emitChecked,
     },

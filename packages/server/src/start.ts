@@ -323,7 +323,8 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
           await withSystem(
             async (tx) => {
               if (!(await processedOnce(tx, OUTBOX_SUBSCRIBER, meta.eventId))) return;
-              await host.dispatch(event as never, tx as never);
+              // frozen: every subscriber of the event gets the same meta, and none may change what the next one reads
+              await host.dispatch(event as never, tx as never, Object.freeze({ eventId: meta.eventId, occurredAt: new Date(meta.occurredAt), actorId: meta.actorId, teamId: meta.teamId }));
             },
             { pool: systemPool, workspaceId: (event as { workspaceId: WorkspaceId }).workspaceId },
           );

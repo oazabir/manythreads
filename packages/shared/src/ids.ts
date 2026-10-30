@@ -136,3 +136,9 @@ export type RhythmRunId = z.infer<typeof RhythmRunId>;
 
 export const ProjectId = z.uuid().brand<'ProjectId'>();
 export type ProjectId = z.infer<typeof ProjectId>;
+
+// Phase 10: the audit console.
+
+/** One row of the audit console. It is the id of the event (or memory log line) the row was made from, so a row can be traced back to its source. */
+export const AuditEventId = z.uuid().brand<'AuditEventId'>();
+export type AuditEventId = z.infer<typeof AuditEventId>;

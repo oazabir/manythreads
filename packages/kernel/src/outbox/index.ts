@@ -11,6 +11,10 @@ export interface OutboxMeta {
   subscriber: string;
   /** 1 on the first delivery. */
   attempts: number;
+  /** The event row's own columns, which the rebuilt event object does not carry: when it was written, by which actor, for which team. */
+  occurredAt: Date;
+  actorId: string;
+  teamId: string | null;
 }
 
 export type OutboxHandler = (event: LatestEvent, meta: OutboxMeta) => Promise<void> | void;
@@ -121,8 +125,8 @@ export function startConsumer(options: ConsumerOptions): Consumer {
   const processRound = async (rows: ClaimedRow[]): Promise<void> => {
     const events = await withSystem(
       (tx) =>
-        tx.query<{ id: string; type: string; schema_version: number; workspace_id: string; payload: unknown }>(
-          'SELECT id, type, schema_version, workspace_id, payload FROM app.events WHERE id = ANY($1)',
+        tx.query<{ id: string; type: string; schema_version: number; workspace_id: string; payload: unknown; occurred_at: Date; actor_id: string; team_id: string | null }>(
+          'SELECT id, type, schema_version, workspace_id, payload, occurred_at, actor_id, team_id FROM app.events WHERE id = ANY($1)',
           [rows.map((r) => r.event_id)],
         ),
       poolOpt,
@@ -140,6 +144,9 @@ export function startConsumer(options: ConsumerOptions): Consumer {
             deliveryId: row.id,
             subscriber,
             attempts: row.attempts,
+            occurredAt: ev.occurred_at,
+            actorId: ev.actor_id,
+            teamId: ev.team_id,
           });
           ok.push(row.id);
         } catch (err) {
