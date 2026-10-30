@@ -433,15 +433,84 @@ describe('gateway-mcp endpoint', () => {
     expect(row).toMatchObject({ author_id: bot.actorId, author_kind: 'bot' });
   });
 
-  it('knowledge.search answers an empty result and the reason, never invented content', async () => {
+  it('knowledge.search is the knowledge plugin’s tool: with nothing indexed it answers no passages and tells the bot not to guess', async () => {
     const res = await callRunUrl(run, {
       jsonrpc: '2.0',
       id: 6,
       method: 'tools/call',
       params: { name: 'knowledge.search', arguments: { query: 'cache' } },
     });
-    const result = (res.body as { result: { content: Array<{ text: string }> } }).result;
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ hits: [], reason: 'no bases configured' });
+    const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+    expect(result.isError, result.content[0]!.text).not.toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: true, mode: 'lexical', hits: [], answerOnlyFromKnowledge: false, note: expect.stringContaining('Nothing in the knowledge bases matched') });
+  });
+
+  it('knowledge.search finds passages with their citation, only in the bases the bot lists, and says plainly when the bot answers only from them', async () => {
+    // Two bases with one indexed document each; the bot lists only the first, strictly. Written as the system (the plugin's own tests upload through the API).
+    await world.system(async (tx) => {
+      for (const [slug, docName, text] of [
+        ['handbook', 'Refund policy.pdf', 'Refunds are paid within 14 days of the request.'],
+        ['salaries', 'Pay bands.csv', 'Refunds of expenses are paid with the monthly salary.'],
+      ] as const) {
+        const base = (await tx.query<{ id: string }>(`INSERT INTO app.knowledge_bases (workspace_id, team_id, slug, name) VALUES ($1, $2, $3, $3) RETURNING id`, [omar.workspaceId, teamId, slug])).rows[0]!.id;
+        const source = (await tx.query<{ id: string }>(`INSERT INTO app.knowledge_sources (base_id, team_id, kind) VALUES ($1, $2, 'upload') RETURNING id`, [base, teamId])).rows[0]!.id;
+        const doc = (await tx.query<{ id: string }>(
+          `INSERT INTO app.knowledge_documents (base_id, team_id, source_id, name, slug, kind, size, sha256, version, status, repo_path, chunk_count)
+           VALUES ($1, $2, $3, $4, $5, 'text', 10, repeat('a', 64), 2, 'indexed', $6, 1) RETURNING id`,
+          [base, teamId, source, docName, docName.toLowerCase().replace(/[^a-z]+/g, '-'), `knowledge/${slug}/${docName.toLowerCase().replace(/[^a-z]+/g, '-')}.md`],
+        )).rows[0]!.id;
+        await tx.query(`INSERT INTO app.knowledge_chunks (document_id, base_id, team_id, ordinal, version, text, section, char_start, char_end) VALUES ($1, $2, $3, 0, 2, $4, 'Money', 0, $5)`, [doc, base, teamId, text, text.length]);
+        // an older version of the first document's passage, kept for citations: never searched
+        if (slug === 'handbook') await tx.query(`INSERT INTO app.knowledge_chunks (document_id, base_id, team_id, ordinal, version, text, section, char_start, char_end) VALUES ($1, $2, $3, 0, 1, 'Refunds are paid within 7 days.', 'Money', 0, 30)`, [doc, base, teamId]);
+      }
+    });
+    const search = async (target: McpRunMintResponse, args: Record<string, unknown>) => {
+      const res = await callRunUrl(target, { jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'knowledge.search', arguments: args } });
+      const result = (res.body as { result: { content: Array<{ text: string }>; isError?: boolean } }).result;
+      expect(result.isError, result.content[0]!.text).not.toBe(true);
+      return JSON.parse(result.content[0]!.text) as { ok: boolean; answerOnlyFromKnowledge: boolean; note: string; hits: Array<{ base: string; document: string; version: number; citation: string; text: string; file: string }> };
+    };
+
+    // no list on the bot: every base of its team
+    const open = await openRunFor(nadia.actorId);
+    const all = await search(open, { query: 'refunds paid' });
+    expect(all.hits.map((h) => h.base).sort()).toEqual(['handbook', 'salaries']);
+    expect(all.answerOnlyFromKnowledge).toBe(false);
+    const handbook = all.hits.find((h) => h.base === 'handbook')!;
+    expect(handbook).toMatchObject({ document: 'Refund policy.pdf', version: 2, citation: 'Refund policy.pdf, version 2, Money', file: 'knowledge/handbook/refund-policy-pdf.md' });
+    expect(handbook.text).toContain('14 days');
+
+    // the bot lists one base, strictly (what the loader writes from BOT.md)
+    await world.system((tx) => tx.query(`UPDATE app.bots SET knowledge = '[{"base":"handbook","answer_only_from":true}]'::jsonb WHERE id = $1`, [bot.botId]));
+    const scoped = await openRunFor(nadia.actorId);
+    const mine = await search(scoped, { query: 'refunds paid' });
+    expect(mine.hits.map((h) => h.base)).toEqual(['handbook']);
+    expect(mine.answerOnlyFromKnowledge).toBe(true);
+    expect(mine.note).toContain('only from these passages');
+    // asking for another base, or another team, does not widen it
+    expect((await search(scoped, { query: 'refunds paid', base: 'salaries' })).hits).toEqual([]);
+    const none = await search(scoped, { query: 'weather in Lisbon' });
+    expect(none.hits).toEqual([]);
+    expect(none.note).toContain('say plainly that you cannot answer');
+    const wrongTeam = await search(scoped, { query: 'refunds', teamId: '00000000-0000-7000-8000-000000000001' });
+    expect(wrongTeam).toMatchObject({ ok: false, code: 'other_team' });
+
+    // the run's log names the document and version, and the converted page a citation can open
+    const logged = await world.system(async (tx) =>
+      (await tx.query<{ source_type: string; source_ref: string }>('SELECT source_type, source_ref FROM app.run_source_log WHERE run_id = $1 ORDER BY seq', [scoped.runId])).rows,
+    );
+    expect(logged).toEqual(expect.arrayContaining([{ source_type: 'knowledge', source_ref: 'handbook/Refund policy.pdf v2' }, { source_type: 'page', source_ref: 'knowledge/handbook/refund-policy-pdf.md' }]));
+    expect(JSON.stringify(logged)).not.toContain('salaries');
+
+    // the gate on posting, as the answer plugin asks the database: strict and nothing read from the bases yet, then strict and a base was read
+    const gateOf = (runId: string) =>
+      world.system(async (tx) => {
+        await tx.query(`SELECT set_config('app.run_id', $1, true), set_config('app.actor_id', $2, true)`, [runId, bot.actorId]);
+        return (await tx.query<{ g: unknown }>('SELECT app.answer_knowledge_gate() AS g')).rows[0]!.g;
+      });
+    expect(await gateOf(scoped.runId)).toMatchObject({ strict: true, used: true });
+    expect(await gateOf((await openRunFor(nadia.actorId)).runId)).toMatchObject({ strict: true, used: false });
+    await world.system((tx) => tx.query(`UPDATE app.bots SET knowledge = NULL WHERE id = $1`, [bot.botId]));
   });
 
   it('the one address /mcp: a run token opens that run, a bot token opens the bot, anything else is one 401', async () => {

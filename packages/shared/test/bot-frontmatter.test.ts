@@ -74,6 +74,14 @@ describe('BotFrontmatter', () => {
     expect(BotFrontmatter.safeParse({ ...coder, model: { subscription: 'claude-code' } }).success).toBe(true);
   });
 
+  it('lists at most 50 knowledge bases, and says so in plain words (the database holds no more per bot)', () => {
+    const many = (n: number) => ({ ...coder, knowledge: Array.from({ length: n }, (_, i) => ({ base: `base-${String(i)}` })) });
+    expect(BotFrontmatter.safeParse(many(50)).success).toBe(true);
+    const over = BotFrontmatter.safeParse(many(51));
+    expect(over.success).toBe(false);
+    expect(over.error?.issues[0]?.message).toBe('A bot can list at most 50 knowledge bases.');
+  });
+
   it('allows at most one team-bank grant', () => {
     const grants = [
       { bank: 'team:engineering', access: 'read' },

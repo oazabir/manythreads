@@ -234,7 +234,7 @@ export const BotFrontmatter = z.strictObject({
   triggers: z.array(BotTrigger).optional(),
   conversation: BotConversation.optional(),
   capabilities: BotCapabilities.optional(),
-  knowledge: z.array(BotKnowledgeEntry).optional(),
+  knowledge: z.array(BotKnowledgeEntry).max(50, 'A bot can list at most 50 knowledge bases.').optional(),
   memory: BotMemory.optional(),
   skills: z.array(Slug).optional(),
   guard: BotGuard.optional(),

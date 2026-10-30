@@ -81,3 +81,29 @@ describe('what the tool says when a long log cut what the run read', () => {
     expect(out).toEqual({ ok: true, messageId: uuid(50), citationsKept: 0, citationsRemoved: 0, message: 'Posted as your reply. Do not post it again.' });
   });
 });
+
+describe('a bot that answers only from its knowledge bases (P8-08)', () => {
+  const gated = (gate: unknown, view: Record<string, unknown>) => {
+    const h = harness(view);
+    const tx = { query: async (sql: string) => ({ rows: [sql.includes('answer_knowledge_gate') ? { g: gate } : { v: view }] }) } as unknown as PluginTx;
+    return { ...h, tx };
+  };
+  const view = { run: run(), citations: [], sources: [], bots: [] };
+
+  it('refuses to post an Answer before any passage was read, and says what to do instead', async () => {
+    const h = gated({ strict: true, used: false }, view);
+    const out = await postAnswer(h.ctx, h.tx, { body: 'Refunds take 14 days.' });
+    expect(out).toMatchObject({ ok: false, code: 'answer_only_from_knowledge' });
+    if (out.ok) throw new Error('expected a refusal');
+    expect(out.message).toContain('knowledge.search');
+    expect(out.message).toContain('reply in plain text');
+    expect(h.posted).toHaveLength(0);
+  });
+
+  it('posts once a passage was read, and posts for a bot that has no such list', async () => {
+    for (const gate of [{ strict: true, used: true }, { strict: false, used: false }, null]) {
+      const h = gated(gate, view);
+      expect((await postAnswer(h.ctx, h.tx, { body: 'Refunds take 14 days.' })).ok, JSON.stringify(gate)).toBe(true);
+    }
+  });
+});

@@ -25,7 +25,7 @@ packages/kernel        @manythreads/kernel  — db (pool, withActor, migrate, ma
 packages/sdk           @manythreads/sdk     — public plugin SDK surface (the ONLY thing plugins import from kernel)
 packages/server        @manythreads/server  — Fastify host, loads plugins, HTTP/WS, /healthz /readyz
 packages/test-utils    @manythreads/test-utils — persona presets, readAs, captureEvent, test DB helpers
-packages/plugins/<n>   one plugin per package (manifest + server code + migrations/ + docs page); `audit` projects the event log into the admin Audit console (docs/plugins/audit.md); `onboarding` keeps the first admin's setup decisions behind the sidebar checklist and the Setup wizard (docs/plugins/onboarding.md)
+packages/plugins/<n>   one plugin per package (manifest + server code + migrations/ + docs page); `audit` projects the event log into the admin Audit console (docs/plugins/audit.md); `onboarding` keeps the first admin's setup decisions behind the sidebar checklist and the Setup wizard (docs/plugins/onboarding.md); `knowledge` keeps a team's knowledge bases (uploaded documents read into passages that bots search and cite; docs/plugins/knowledge.md)
 clients/web            React web client (Tauri wraps it in phase 10); clients/mobile in phase 11
 tools/plates tools/bench tools/fake-llm tools/evals    plate comparison, benchmarks, fake OpenAI-compatible LLM, bot eval command (`pnpm test:evals`)
 e2e/                   Playwright: api/<area>, <area>, visual/<area>, personas/<p>, __baselines__, fixtures

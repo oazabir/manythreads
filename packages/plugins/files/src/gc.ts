@@ -160,6 +160,7 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
   const graceCutoff = now.getTime() - options.graceMs;
   let emptyDatabase: boolean | undefined;
   let markerRefusal: string | null | undefined;
+  let hasKnowledge: boolean | undefined;
   let after = options.cursor;
   for (;;) {
     const page = await storage.list({ ...(after !== undefined ? { after } : {}), limit: pageSize });
@@ -168,6 +169,11 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
     if (items.length > 0) {
       const known = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.files WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
       const referenced = new Set(known.rows.map((r) => r.blob_key));
+      // The originals of knowledge documents (the knowledge plugin) are stored in the same blob store: they are referenced too.
+      if ((hasKnowledge ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.knowledge_documents') IS NOT NULL AS found")).rows[0]?.found === true)) {
+        const docs = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.knowledge_documents WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
+        for (const r of docs.rows) referenced.add(r.blob_key);
+      }
       report.referenced += referenced.size;
       const doomed = [];
       for (const item of items) {

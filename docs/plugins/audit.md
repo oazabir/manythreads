@@ -63,6 +63,10 @@ All subscribers of one event run in one database transaction. The audit subscrib
 
 `llm.alias.tested` becomes `model_alias.tested` (the alias as the label, the outcome and the cause code as the reason), `onboarding.step.marked` becomes `setup.step_marked`, `onboarding.goal.launched` becomes `setup.goal_launched` and `onboarding.checklist.dismissed` becomes `setup.checklist_dismissed` (all category settings). The question a person asks Brain in their first goal is never in an event.
 
+## Knowledge (P8-07)
+
+`knowledge.base.created`, `.base.deleted`, `.document.added`, `.document.removed` and `.base.resynced` become `knowledge.base_created`, `knowledge.base_deleted`, `knowledge.document_added`, `knowledge.document_removed` and `knowledge.base_resynced`. The target is the base (with its slug as the label) or the document (id only: a document name is not in the event); the reason is a fixed phrase with counts ("New version 2, 4 passages", "3 documents checked, 1 updated, ..."). A document that could not be read shows as a failed outcome.
+
 ## Left out on purpose
 
 Message posted and edited, reactions, reading state, presence, notifications, tasks and boards, rhythms, run starts and ends, conversations starting, `ops.health.changed`, and `repo.committed` (the guarded paths are covered by proposals) are not audited: they are volume or content, not decisions. Also not built: a CSV export, a bot filter in the screen (the Who list holds people; the API takes a bot id), team-lead access, and rows for the inbox and digest withheld items (those features do not exist yet).

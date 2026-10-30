@@ -4,6 +4,7 @@ import { DEFAULT_CONVERSATION_PROMPTS, MAX_CONVERSATION_PROMPTS, type BotFrontma
 import { Time } from '../../components/ui';
 import { ChipsField, NumberField, SelectField, SwitchRow, TextField } from './fields';
 import { EvalRunPanel } from './evals';
+import { KnowledgeBasePanel } from './knowledge';
 import { Block, Mono, NotSet, Row } from './parts';
 import type { DefinitionDraft } from './store';
 
@@ -248,7 +249,7 @@ export function CapabilitiesTab({ draft, canEdit }: TabProps) {
 }
 
 // ---- Knowledge ----------------------------------------------------------------------------------------------------------
-export function KnowledgeTab({ draft, canEdit }: TabProps) {
+export function KnowledgeTab({ draft, canEdit, slug }: TabProps) {
   const bases = fm(draft).knowledge ?? [];
   const set = (next: NonNullable<BotFrontmatter['knowledge']>): void => draft.patch((d) => ({ ...d, knowledge: next.length > 0 ? next : undefined }));
   const [base, setBase] = useState('');
@@ -268,6 +269,7 @@ export function KnowledgeTab({ draft, canEdit }: TabProps) {
               onChange={(on) => set(bases.map((x, j) => (j === i ? (on ? { ...x, answer_only_from: true } : { base: x.base }) : x)))}
             />
             {canEdit ? <button type="button" className="btn s" onClick={() => set(bases.filter((_x, j) => j !== i))}>Remove base</button> : null}
+            <KnowledgeBasePanel team={slug} base={k.base} canEdit={canEdit} />
           </div>
         </div>
       ))}

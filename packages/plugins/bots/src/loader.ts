@@ -114,14 +114,16 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   const fm = parsed.frontmatter;
   const native = fm.capabilities?.native ?? [];
   const triggers = fm.triggers ?? [];
+  // the bases the bot may search, and which of them it answers only from (the knowledge tool reads this projection)
+  const knowledge = (fm.knowledge ?? []).map((k) => ({ base: k.base, answer_only_from: k.answer_only_from === true }));
   // What the previous load compiled: the grants this one has to resync. Read after the parse, so an invalid file changes nothing.
   const previousNative = (
     await tx.query<{ native: string[] }>('SELECT native FROM app.bots WHERE team_id = $1 AND slug = $2', [commit.teamId, slug])
   ).rows[0]?.native ?? [];
 
   const row = await tx.query<{ id: string }>(
-    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds, run_timeout_known)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16, true)
+    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds, run_timeout_known, knowledge)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16, true, $17::jsonb)
      ON CONFLICT (team_id, slug) DO UPDATE SET
        -- the display fields follow the definition (PLAN P5-05): the roster draws the row, never the file
        name           = EXCLUDED.name,
@@ -141,6 +143,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
        approvers      = EXCLUDED.approvers,
        run_timeout_seconds = EXCLUDED.run_timeout_seconds,
        run_timeout_known = true,
+       knowledge      = EXCLUDED.knowledge,
        updated_at     = now()
      RETURNING id`,
     [
@@ -163,6 +166,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       fm.approvals?.approvers ?? [],
       // BOT.md `limits.timeoutSeconds`: what the stale-run reaper measures a run against
       fm.limits?.timeoutSeconds === undefined ? null : Math.min(fm.limits.timeoutSeconds, 604_800),
+      JSON.stringify(knowledge),
     ],
   );
   const botId = row.rows[0]!.id;

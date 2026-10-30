@@ -148,6 +148,22 @@ describe('the BOT.md loader', () => {
     expect(loaded).toMatchObject({ botId: row['id'], path, definitionSha: row['definition_sha'], mayTag: ['reviewer'] });
   });
 
+  it('the knowledge list in BOT.md is projected onto the row, and dropping it clears the projection (P8-08)', async () => {
+    const withList = validMd('Reader', []).replace('capabilities:', 'knowledge:\n  - base: manuals\n    answer_only_from: true\n  - base: faq\ncapabilities:');
+    expect((await commit('bots/p808-reader/BOT.md', withList, 'A bot that reads the manuals')).status).toBe(201);
+    const row = await until(() => botRow('p808-reader'), 10_000);
+    expect(row['knowledge']).toEqual([
+      { base: 'manuals', answer_only_from: true },
+      { base: 'faq', answer_only_from: false },
+    ]);
+    expect((await commit('bots/p808-reader/BOT.md', validMd('Reader', []), 'No more lists')).status).toBe(201);
+    const cleared = await until(async () => {
+      const r = await botRow('p808-reader');
+      return Array.isArray(r?.['knowledge']) && (r['knowledge'] as unknown[]).length === 0 ? r : null;
+    }, 10_000);
+    expect(cleared['knowledge']).toEqual([]);
+  });
+
   it('an unknown key fails with the field path and creates no row', async () => {
     const content = '---\nname: Broken\nrole: Never loads\nkind: agent\nruntime: hermes\ncapabilties:\n  native: [messages.post]\n---\n\n# Broken\n';
     expect((await commit('bots/p504-broken/BOT.md', content, 'Add a broken bot')).status).toBe(201);

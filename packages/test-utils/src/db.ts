@@ -452,3 +452,9 @@ export const onboardingMigrationSource: MigrationSource = {
   namespace: 'onboarding',
   dir: fileURLToPath(new URL('../../plugins/onboarding/migrations/', import.meta.url)),
 };
+
+/** Migrations of the knowledge plugin (`knowledge_bases`, `knowledge_sources`, `knowledge_documents`, `knowledge_chunks`); needs the kernel's and the teams plugin's. */
+export const knowledgeMigrationSource: MigrationSource = {
+  namespace: 'knowledge',
+  dir: fileURLToPath(new URL('../../plugins/knowledge/migrations/', import.meta.url)),
+};

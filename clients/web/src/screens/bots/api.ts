@@ -1,5 +1,19 @@
 import {
+  CreateKnowledgeBaseRequest,
   GetBotEvalsResponse,
+  GetKnowledgeBaseResponse,
+  KnowledgeBaseResponse,
+  ResyncKnowledgeBaseResponse,
+  SearchKnowledgeQuery,
+  SearchKnowledgeResponse,
+  UploadKnowledgeDocumentResponse,
+  createKnowledgeBaseRoute,
+  deleteKnowledgeDocumentRoute,
+  getKnowledgeBaseRoute,
+  resyncKnowledgeBaseRoute,
+  searchKnowledgeRoute,
+  uploadKnowledgeDocumentRoute,
+  DeleteKnowledgeDocumentResponse,
   GetBotResponse,
   GetRepoBlobQuery,
   GetRepoBlobResponse,
@@ -13,7 +27,7 @@ import {
   listBotsRoute,
   runEvalsRoute,
 } from '@manythreads/shared';
-import { call } from '../../api/client';
+import { ApiError, CSRF_HEADER, buildPath, call, readCsrfCookie } from '../../api/client';
 import { createProposal } from '../proposals/api';
 
 /*
@@ -62,3 +76,52 @@ export const fetchEvals = (slug: string, botSlug: string) => call(getBotEvalsRou
 /** Start a run of the bot's scenario set. `static` is free; `model` costs tokens. The answer is the run, still `running`. */
 export const startEvals = (slug: string, botSlug: string, mode: 'static' | 'model') =>
   call(runEvalsRoute, { request: RunEvalsRequest, response: RunEvalsResponse }, RunEvalsRequest.parse({ mode }), { slug, botSlug });
+
+// ---- knowledge (PLAN P8-33) --------------------------------------------------------------------------------------------
+export const fetchKnowledgeBase = (slug: string, base: string) => call(getKnowledgeBaseRoute, { response: GetKnowledgeBaseResponse }, undefined, { slug, base });
+
+export const createKnowledgeBase = (slug: string, body: CreateKnowledgeBaseRequest) =>
+  call(createKnowledgeBaseRoute, { request: CreateKnowledgeBaseRequest, response: KnowledgeBaseResponse }, body, { slug });
+
+export const resyncKnowledgeBase = (slug: string, base: string) => call(resyncKnowledgeBaseRoute, { response: ResyncKnowledgeBaseResponse }, undefined, { slug, base });
+
+export const deleteKnowledgeDocument = (slug: string, base: string, documentId: string) =>
+  call(deleteKnowledgeDocumentRoute, { response: DeleteKnowledgeDocumentResponse }, undefined, { slug, base, documentId });
+
+export const askKnowledgeBase = (slug: string, base: string, q: string) =>
+  call(searchKnowledgeRoute, { request: SearchKnowledgeQuery, response: SearchKnowledgeResponse }, { q, limit: 5 } as SearchKnowledgeQuery, { slug, base });
+
+/** Upload one file to a base as raw bytes (XHR, so a big file can show progress). A refusal comes back as the same `ApiError` as every other call. */
+export function uploadKnowledgeDocument(slug: string, base: string, file: File, onProgress: (fraction: number) => void): Promise<UploadKnowledgeDocumentResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(uploadKnowledgeDocumentRoute.method, buildPath(uploadKnowledgeDocumentRoute.path, { slug, base }));
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('accept', 'application/json');
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('x-file-name', encodeURIComponent(file.name));
+    const csrf = readCsrfCookie(document.cookie);
+    if (csrf) xhr.setRequestHeader(CSRF_HEADER, csrf);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError({ code: 'network', status: 0, message: 'Network error' }));
+    xhr.onload = () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const parsed = UploadKnowledgeDocumentResponse.safeParse(body);
+        if (parsed.success) resolve(parsed.data);
+        else reject(new ApiError({ code: 'bad_response', status: xhr.status, message: 'The server sent a response this app does not understand.' }));
+        return;
+      }
+      const message = typeof (body as { error?: { message?: unknown } } | undefined)?.error?.message === 'string' ? (body as { error: { message: string } }).error.message : `Upload failed (${String(xhr.status)})`;
+      reject(new ApiError({ code: xhr.status === 413 || xhr.status === 415 ? 'validation_failed' : 'internal', status: xhr.status, message }));
+    };
+    xhr.send(file);
+  });
+}

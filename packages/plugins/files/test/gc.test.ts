@@ -393,3 +393,25 @@ describe('orphan marking races with a new attachment', () => {
     }
   });
 });
+
+describe('the original of a knowledge document is not an orphan (P8-07)', () => {
+  it('a blob only a knowledge document points at survives the collection; once the document is gone it is collected', async () => {
+    await upload(nadia, 'gc-anchor.txt'); // the database has a files row, so the collector does not take the store for a fresh one
+    const key = await putStray('the original of a runbook', 3 * DAY);
+    await sys(async (tx) => {
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      const base = (await tx.query<{ id: string }>(`INSERT INTO app.knowledge_bases (workspace_id, team_id, slug, name) VALUES ($1, $2, 'gc-base', 'gc') RETURNING id`, [omar.workspaceId, team])).rows[0]!.id;
+      const source = (await tx.query<{ id: string }>(`INSERT INTO app.knowledge_sources (base_id, team_id, kind) VALUES ($1, $2, 'upload') RETURNING id`, [base, team])).rows[0]!.id;
+      await tx.query(
+        `INSERT INTO app.knowledge_documents (base_id, team_id, source_id, name, slug, kind, size, sha256, status, blob_key) VALUES ($1, $2, $3, 'Runbook.md', 'runbook', 'markdown', 25, repeat('b', 64), 'indexed', $4)`,
+        [base, team, source, key],
+      );
+    });
+    const first = await gc();
+    expect(first.refused ?? null).toBeNull();
+    expect(await store.head(key)).not.toBeNull();
+    await sys((tx) => tx.query("DELETE FROM app.knowledge_bases WHERE slug = 'gc-base'"));
+    await gc();
+    expect(await store.head(key)).toBeNull();
+  });
+});

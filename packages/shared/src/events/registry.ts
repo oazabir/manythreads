@@ -67,6 +67,11 @@ import { OnboardingChecklistDismissedEvent } from './onboarding.checklist.dismis
 import { GuardrailsDlpDecidedEvent } from './guardrails.dlp.decided.ts';
 import { GuardrailsEgressDecidedEvent } from './guardrails.egress.decided.ts';
 import { GuardrailsPolicyUpdatedEvent } from './guardrails.policy.updated.ts';
+import { KnowledgeBaseCreatedEvent } from './knowledge.base.created.ts';
+import { KnowledgeBaseDeletedEvent } from './knowledge.base.deleted.ts';
+import { KnowledgeDocumentAddedEvent } from './knowledge.document.added.ts';
+import { KnowledgeDocumentRemovedEvent } from './knowledge.document.removed.ts';
+import { KnowledgeBaseResyncedEvent } from './knowledge.base.resynced.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
 import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
 import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
@@ -149,6 +154,11 @@ export const eventRegistry = {
   'guardrails.dlp.decided': { 1: GuardrailsDlpDecidedEvent },
   'guardrails.egress.decided': { 1: GuardrailsEgressDecidedEvent },
   'guardrails.policy.updated': { 1: GuardrailsPolicyUpdatedEvent },
+  'knowledge.base.created': { 1: KnowledgeBaseCreatedEvent },
+  'knowledge.base.deleted': { 1: KnowledgeBaseDeletedEvent },
+  'knowledge.document.added': { 1: KnowledgeDocumentAddedEvent },
+  'knowledge.document.removed': { 1: KnowledgeDocumentRemovedEvent },
+  'knowledge.base.resynced': { 1: KnowledgeBaseResyncedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
   'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },

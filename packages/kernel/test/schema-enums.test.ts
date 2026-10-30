@@ -26,6 +26,9 @@ import {
   AuditOutcome,
   AuditSource,
   GoalStatus,
+  KnowledgeDocumentKind,
+  KnowledgeDocumentStatus,
+  KnowledgeSourceKind,
   HermesConnectionAgent,
   HermesConnectionKind,
   HermesConnectionStatus,
@@ -79,6 +82,7 @@ import {
   conversationsMigrationSource,
   filesMigrationSource,
   gatewayLlmMigrationSource,
+  knowledgeMigrationSource,
   memoryMigrationSource,
   onboardingMigrationSource,
   proposalsMigrationSource,
@@ -139,6 +143,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'llm_alias_tests.alias': LlmAliasName,
   'llm_alias_tests.outcome': LlmAliasTestOutcome,
   'llm_alias_tests.cause': LlmAliasTestCause,
+  'knowledge_documents.kind': KnowledgeDocumentKind,
+  'knowledge_documents.status': KnowledgeDocumentStatus,
+  'knowledge_sources.kind': KnowledgeSourceKind,
   'onboarding_marks.step': OnboardingMarkStep,
   'onboarding_marks.kind': OnboardingMarkKind,
   'approvals.source': ApprovalSource,
@@ -195,7 +202,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

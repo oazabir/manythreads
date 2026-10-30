@@ -100,7 +100,7 @@ for ever contradicts why it was deleted) and not "delete with the message" (a le
 
 ## Blob garbage collection (`files.blob-gc`)
 
-A blob is garbage when **no `files` row has its key**. Rows go away through the delete route (which removes the bytes itself), through the 30-day purge above, through a channel or
+A blob is garbage when **no `files` row has its key** and no knowledge document holds it as its original (the [knowledge](./knowledge.md) plugin's `knowledge_documents.blob_key`, checked only when that table exists). Rows go away through the delete route (which removes the bytes itself), through the 30-day purge above, through a channel or
 team cascade, and by an upload that stored its bytes and then failed to commit its row. The job `files.blob-gc` (a `ctx.jobs.register` queue with `cron: '17 3 * * *'`: **daily at 03:17 UTC**, stored by the server at start,
 one run however many replicas) cleans all of them up:
 

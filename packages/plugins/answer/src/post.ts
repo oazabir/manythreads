@@ -37,6 +37,15 @@ export async function postAnswer(ctx: PluginContext, tx: PluginTx, input: Record
   }
   const answer = parsed.data;
 
+  // A bot that answers only from its knowledge bases posts an Answer only after it searched them (PLAN P8-08). Nothing found is a plain-text reply.
+  const gate = (await tx.query<{ g: { strict?: boolean; used?: boolean } | null }>('SELECT app.answer_knowledge_gate() AS g')).rows[0]?.g;
+  if (gate?.strict === true && gate.used !== true) {
+    return refuse(
+      'answer_only_from_knowledge',
+      'You answer only from your knowledge bases and no passage from them was read in this run. Call knowledge.search first. If nothing in it supports the question, reply in plain text that you cannot answer it from the knowledge base.',
+    );
+  }
+
   const slugs = answer.chips.flatMap((chip) => (chip.kind === 'handoff' ? [chip.botSlug] : []));
   const cites = answer.citations.map((c) => citationRef(c));
   const res = await tx.query<{ v: unknown }>('SELECT app.answer_view($1::jsonb, $2::text[]) AS v', [JSON.stringify(cites), slugs]);

@@ -96,11 +96,9 @@ what a call does beyond asking the broker:
 | `tasks.describe` | write | replaces the description of a card the run owns; where a bot keeps a card's working state, such as a running count |
 | `tasks.handoff` | write | moves a card to another bot or person in one transaction; a bot reaches only the targets its `tasks.handoff` grant's `mayTag` names (the same allowlist the board enforces), and a `dispatch: strict` handover can wait in Approvals |
 | `tasks.deploy` | write | asks for a release to one of the team's environments; the environment decides (a protected one waits for a person who is not the requester, a change window or the daily cap can refuse), and the answer carries the outcome rather than a promise |
-| `knowledge.search` | stub | answers `{ hits: [], reason: "no bases configured" }` — never invented content |
+| `knowledge.search` | read | the `knowledge` plugin's passages from the bases the bot lists (all of its team's when it lists none), ranked, each with document, version, section and place; runs as the asker; logs a `knowledge` and a `page` source per hit ([knowledge.md](./knowledge.md)) |
 
-`knowledge.search` is declared by this plugin because the plugin that will own it does not exist yet (knowledge bases come
-with connections). When it lands it declares the capability and this declaration goes — a
-duplicate name is a load-time error in the capability registry, so the handover cannot be forgotten silently.
+`knowledge.search` is owned by the [knowledge](./knowledge.md) plugin, which registers the capability; this plugin only declares the tool (its description, input schema and the `sourcesFrom` that fills the run's source log).
 
 Three shapes of refusal, all answers a model can read and act on rather than transport errors: no grant, or a mutation
 naming a path the bot may never write → `{ ok: false, code: 'forbidden' }` with the broker's reason; a grant with

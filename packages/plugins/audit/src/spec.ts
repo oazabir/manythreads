@@ -462,6 +462,44 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     who: actor(e['dismissedBy']),
     target: of('setup_checklist', null),
   }),
+  'knowledge.base.created': (e) => ({
+    action: 'knowledge.base_created',
+    who: actor(e['createdBy']),
+    teamId: team(e['teamId']),
+    target: of('knowledge_base', uuid(e['baseId']), code(e['slug'])),
+  }),
+  'knowledge.base.deleted': (e) => ({
+    action: 'knowledge.base_deleted',
+    who: actor(e['deletedBy']),
+    teamId: team(e['teamId']),
+    target: of('knowledge_base', uuid(e['baseId']), code(e['slug'])),
+    reason: plural(num(e['documents']), 'document'),
+  }),
+  'knowledge.document.added': (e) => ({
+    action: 'knowledge.document_added',
+    who: actor(e['addedBy']),
+    teamId: team(e['teamId']),
+    target: of('knowledge_document', uuid(e['documentId'])),
+    outcome: e['status'] === 'failed' ? 'failed' : 'ok',
+    reason:
+      e['status'] === 'failed'
+        ? 'The file could not be read'
+        : `${e['replaced'] === true ? 'New version' : 'Version'} ${Math.max(1, num(e['version']))}, ${plural(num(e['chunks']), 'passage')}`,
+  }),
+  'knowledge.document.removed': (e) => ({
+    action: 'knowledge.document_removed',
+    who: actor(e['removedBy']),
+    teamId: team(e['teamId']),
+    target: of('knowledge_document', uuid(e['documentId'])),
+  }),
+  'knowledge.base.resynced': (e) => ({
+    action: 'knowledge.base_resynced',
+    who: actor(e['resyncedBy']),
+    teamId: team(e['teamId']),
+    target: of('knowledge_base', uuid(e['baseId'])),
+    outcome: num(e['failed']) > 0 ? 'failed' : 'ok',
+    reason: `${plural(num(e['checked']), 'document')} checked, ${num(e['updated'])} updated, ${num(e['added'])} added, ${num(e['removed'])} removed, ${num(e['failed'])} unreadable`,
+  }),
   'retention.settings.changed': (e) => {
     const win = (v: unknown): string => {
       const o = v && typeof v === 'object' ? (v as Fields) : {};

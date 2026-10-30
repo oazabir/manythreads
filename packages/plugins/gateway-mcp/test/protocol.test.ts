@@ -286,12 +286,27 @@ describe('gateway-mcp protocol', () => {
     expect(invoked).toEqual([]);
   });
 
-  it('a stub answers what it knows and never invents content', async () => {
-    const { ctx, invoked } = fakeContext({ tools: [KNOWLEDGE_TOOL], decisions: { 'knowledge.search': ALLOWED } });
-    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'knowledge.search', arguments: { query: 'cache' } } });
-    const { result } = (await body(res)) as { result: { content: Array<{ text: string }> } };
-    expect(JSON.parse(result.content[0]!.text)).toEqual({ hits: [], reason: 'no bases configured' });
-    expect(invoked).toEqual([]);
+  it('knowledge.search is a read: it runs as the asker, and the run’s log names the document and version and the page a citation can open', async () => {
+    const { ctx, invoked, logged } = fakeContext({
+      tools: [KNOWLEDGE_TOOL],
+      decisions: { 'knowledge.search': ALLOWED },
+      answer: () => ({
+        ok: true,
+        hits: [
+          { base: 'handbook', document: 'Refund policy.pdf', version: 2, file: 'knowledge/handbook/refund-policy.md', text: 'Refunds are paid within 14 days.' },
+          { base: 'handbook', document: 'Notes.csv', version: 1, file: null, text: 'x' },
+        ],
+      }),
+    });
+    const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'knowledge.search', arguments: { query: 'refund' } } });
+    const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+    expect(result.isError).not.toBe(true);
+    expect(invoked.map((i) => [i.name, i.as])).toEqual([['knowledge.search', 'reader']]);
+    expect(logged).toEqual([
+      { sourceType: 'knowledge', sourceRef: 'handbook/Refund policy.pdf v2', scope: 'team' },
+      { sourceType: 'page', sourceRef: 'knowledge/handbook/refund-policy.md', scope: 'team' },
+      { sourceType: 'knowledge', sourceRef: 'handbook/Notes.csv v1', scope: 'team' },
+    ]);
   });
 
   it('a read runs in the reader transaction, is confined to the run’s team, and logs every hit', async () => {
