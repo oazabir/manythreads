@@ -156,6 +156,7 @@ describe('running a bot\'s evals on demand', () => {
 
   it('the same commit delivered twice makes one run', async () => {
     await addBot('p708-twice', 'answer.post', 'qa');
+    await jobsIdle(); // the first delivery must be finished before it is counted (under load the run row lands after addBot returns)
     const rowsOf = () => w.system(async (tx) => (await tx.query<{ commit_sha: string }>("SELECT commit_sha FROM app.bot_eval_runs WHERE bot_slug = 'p708-twice' AND trigger = 'on_commit'")).rows);
     const first = await rowsOf();
     expect(new Set(first.map((r) => r.commit_sha)).size, JSON.stringify(first)).toBe(first.length);
