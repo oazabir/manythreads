@@ -7,14 +7,15 @@ thread follows, and its inbox policy probes the channel visibility set). The bro
 
 ## What makes a notification
 
-Three kinds, each made by a subscription of the plugin's outbox consumer (it runs as the system actor, once per event, in one transaction with its effects):
+Four kinds, each made by a subscription of the plugin's outbox consumer (it runs as the system actor, once per event, in one transaction with its effects):
 
 | Event | Kind | Who is told |
 |---|---|---|
 | `channel.mention.created` | `mention` | the mentioned person (people only, not bots) |
 | `channel.message.posted` in a **direct message** (or group conversation) | `dm` | every other member |
 | `channel.message.posted` as a **reply** in a team channel's thread | `reply` | the followers of the thread (`app.thread_follower_ids`) |
-| `channel.message.deleted` | | the message's notifications are deleted |
+| `reminders.reminder.due` | `reminder` | the person who asked to be reminded (see below) |
+| `channel.message.deleted` | | the message's notifications are deleted (`message` and `reminder` rows) |
 | `channel.member.removed` | | if the person can no longer read the channel (private channel, DM), what it notified them of is deleted |
 
 A plain channel message notifies nobody unless the person chose **All messages** for that channel or the message holds one of their **keywords** (next section). Bot conversations notify nobody yet.
@@ -132,10 +133,19 @@ keywords, and this browser (alerts while open, push). In a channel, the bell in 
 **Not done.** The email digest (this plugin sends no mail yet), the sidebar's unread dots following the level (P14-15), and a delivery check against a real push service (only the encryption and the request are
 tested here).
 
+## Reminders (P14-04, migration `0004`)
+
+The reminders plugin ([reminders.md](./reminders.md)) emits `reminders.reminder.due` when a person's saved message is due; this plugin turns it into a notification of kind **`reminder`**
+(`deliverReminder` in `src/service.ts`). Because the person asked for it, a reminder is **not** held back by the channel's level (even "nothing"), the per-kind switch or a muted channel, and the author
+is not excluded (you can remind yourself of your own message). It still needs the person to be able to read the channel (checked again against `app.channel_audience`) and it is **held by Do not
+disturb** like the rest, then released when it ends. Its `ref_type` is `reminder` (migration `0004` widens the kind and ref-type checks) with `ref_id` the message, so a mention and a reminder on one
+message are two rows. The row is re-armed (unread, new time) only if the earlier reminder was read; an event delivered twice announces nothing the second time. The browser-alert flag follows the
+mention setting; the push title is "Reminder" plus the place. Tests: `packages/plugins/reminders/test/later-api.test.ts`.
+
 ## Manifest
 
 `notifications` / `0.1.0` / `server`, `dependsOn: ['channels']`, `extends: ['event.emit', 'event.subscribe']` (and the detached job `notifications.push`), emits `notifications.notification.created`, consumes `channel.mention.created`,
-`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`.
+`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `reminders.reminder.due`.
 
 ## Tests
 

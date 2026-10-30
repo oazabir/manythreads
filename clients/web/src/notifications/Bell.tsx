@@ -10,7 +10,7 @@ export function useNotifications() {
   return useSyncExternalStore(notificationStore.subscribe, notificationStore.snapshot);
 }
 
-const GLYPH: Record<InboxItem['kind'], string> = { mention: '@', reply: '↳', dm: '✉', message: '#' };
+const GLYPH: Record<InboxItem['kind'], string> = { mention: '@', reply: '↳', dm: '✉', message: '#', reminder: '⏰' };
 
 function Item({ n, onOpen }: { n: InboxItem; onOpen: (n: InboxItem) => void }) {
   const unread = n.readAt === null;

@@ -1,4 +1,14 @@
 import {
+  LaterItem,
+  ListLaterQuery,
+  ListLaterResponse,
+  RemoveLaterResponse,
+  SaveLaterRequest,
+  UpdateLaterRequest,
+  listLaterRoute,
+  removeLaterRoute,
+  saveLaterRoute,
+  updateLaterRoute,
   ListRunnersResponse,
   listRunnersRoute,
   LaunchOnboardingRequest,
@@ -593,6 +603,15 @@ export const followThread = (rootId: string) => call(followThreadRoute, { respon
 export const unfollowThread = (rootId: string) => call(unfollowThreadRoute, { response: FollowThreadResponse }, undefined, { rootId });
 export const fetchThreadInbox = (slug: string, tab: 'followed' | 'unread' | 'mine', cursor?: string) =>
   call(listThreadsRoute, { request: ListThreadsQuery, response: ListThreadsResponse }, { tab, limit: 30, ...(cursor ? { cursor } : {}) } as ListThreadsQuery, { slug });
+
+// ---- later and reminders (P14-04) ----------------------------------------------------------------------
+export const fetchLater = (state: 'open' | 'done') => call(listLaterRoute, { request: ListLaterQuery, response: ListLaterResponse }, { state });
+/** Save a message for later; `remindAt` (an ISO time) sets a reminder, `null` clears one, leaving it out keeps what is there. */
+export const saveLater = (messageId: string, remindAt?: string | null) =>
+  call(saveLaterRoute, { request: SaveLaterRequest, response: LaterItem }, remindAt === undefined ? {} : { remindAt }, { messageId });
+export const setLaterState = (itemId: string, state: 'open' | 'done') =>
+  call(updateLaterRoute, { request: UpdateLaterRequest, response: LaterItem }, { state }, { itemId });
+export const removeLater = (itemId: string) => call(removeLaterRoute, { response: RemoveLaterResponse }, undefined, { itemId });
 
 /** "I am typing here": best effort, repeated every few seconds while the person types. */
 export const sendTyping = (channelId: string, threadRootId: string | null) =>

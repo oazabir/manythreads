@@ -1,0 +1,152 @@
+/* Later and reminders (PLAN P14-04): the Later tab of the Threads inbox and the "Remind me" menu of a message. Classes are prefixed `lt-`; the inbox
+   layout (`.inbox`, `.inl`, `.inh`, `.tabs2`, `.trow`, `.inr`) belongs to channels.css and is never redefined here. */
+
+.lt-views {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.lt-view {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lt-view.on {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+.lt-section {
+  padding: 8px 16px 4px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lt-row.due {
+  box-shadow: inset 3px 0 0 var(--warn);
+  background: var(--warn-wash);
+}
+
+.lt-row.due.on {
+  background: var(--human-wash);
+}
+
+.lt-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px;
+  overflow: auto;
+}
+
+.lt-where {
+  margin: 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.lt-msg {
+  display: flex;
+  gap: 10px;
+}
+
+.lt-msg-main {
+  min-width: 0;
+}
+
+.lt-text {
+  margin: 0;
+  color: var(--txt);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.lt-when-line {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.lt-when-line.due {
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+
+.lt-actions,
+.lt-snooze {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lt-snooze {
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.lt-snooze-label {
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.lt-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.lt-gone {
+  padding: 4px 0;
+}
+
+.lt-menu-head {
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.remind-menu .menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lt-when {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+@media (width <= 760px) {
+  .remind-menu .menu-item {
+    min-height: 36px;
+  }
+
+  .lt-detail {
+    padding: 16px 14px;
+  }
+
+  .lt-snooze .btn,
+  .lt-actions .btn {
+    flex: 1 1 auto;
+  }
+}

@@ -38,6 +38,9 @@ Who follows when:
 
 ### The inbox tabs (criterion 4)
 
+The web inbox has a fourth tab, **Later** (P14-04): the person's saved messages and reminders. It is not served by this plugin; it reads `GET /api/later` from the reminders plugin
+([reminders.md](./reminders.md)) and is hidden on a server without that plugin.
+
 | Tab | Lists |
 |---|---|
 | `followed` | rows of `thread_follows` of the caller |

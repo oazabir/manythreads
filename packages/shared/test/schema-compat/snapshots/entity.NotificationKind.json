@@ -5,6 +5,7 @@
     "mention",
     "reply",
     "dm",
-    "message"
+    "message",
+    "reminder"
   ]
 }

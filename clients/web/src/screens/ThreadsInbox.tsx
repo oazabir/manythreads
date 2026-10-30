@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { ThreadInboxItem } from '@manythreads/shared';
+import { LaterTab, type LaterView } from '../later/LaterPanes';
+import { useLater } from '../later/RemindMenu';
+import { laterStore } from '../later/store';
 import { isApiError } from '../api/client';
 import { fetchThreadInbox } from '../api/endpoints';
 import { typingIn } from '../app/quick-switcher';
@@ -16,21 +19,24 @@ import { Bell } from '../notifications/Bell';
 import { BackIcon } from '../shell/icons';
 import { WelcomeCard } from '../welcome/WelcomeCard';
 
-type Tab = 'followed' | 'unread' | 'mine';
+type Tab = 'followed' | 'unread' | 'mine' | 'later';
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'followed', label: 'Followed' },
   { id: 'unread', label: 'Unread' },
   { id: 'mine', label: 'Mine' },
+  { id: 'later', label: 'Later' },
 ];
 const EMPTY: Record<Tab, { title: string; body: string }> = {
   followed: { title: 'No threads yet', body: 'Threads you follow or start show up here.' },
   unread: { title: 'You are all caught up', body: 'Replies you have not read show up here.' },
   mine: { title: 'No threads of yours yet', body: 'Threads you start show up here.' },
+  later: { title: 'Nothing saved for later', body: 'Messages you save or ask to be reminded of show up here.' },
 };
+const NO_THREADS = { items: [] as ThreadInboxItem[], nextCursor: null };
 
-const tabOf = (raw: string | null): Tab => (raw === 'unread' || raw === 'mine' ? raw : 'followed');
+const tabOf = (raw: string | null): Tab => (raw === 'unread' || raw === 'mine' || raw === 'later' ? raw : 'followed');
 
-/** The Threads inbox (SPEC 6.1): Followed · Unread · Mine on the left, the selected thread on the right. j and k move, e marks it read. */
+/** The Threads inbox (SPEC 6.1): Followed · Unread · Mine · Later (saved messages and reminders, PLAN P14-04) on the left, the selected thread on the right. j and k move, e marks it read. */
 export function ThreadsInbox() {
   const { team } = useShell();
   const session = useSession();
@@ -39,10 +45,18 @@ export function ThreadsInbox() {
   const navigate = useNavigate();
   const path = useLocation().pathname;
   const narrow = useNarrow();
-  const tab = tabOf(params.get('tab'));
-  const selected = params.get('thread');
+  const later = useLater();
+  // a server without the reminders plugin has no Later tab: a link to it shows the first tab
+  const tabAsked = tabOf(params.get('tab'));
+  const tab: Tab = tabAsked === 'later' && !later.supported ? 'followed' : tabAsked;
+  // on the Later tab the selection is a saved item (`?item=`), on the others a thread (`?thread=`)
+  const selected = params.get(tab === 'later' ? 'item' : 'thread');
+  const laterView: LaterView = params.get('view') === 'done' ? 'done' : 'open';
   const { threadsUnread } = useUnread();
-  const q = useQuery(`inbox:${slug}:${tab}:${threadsUnread}`, () => fetchThreadInbox(slug, tab));
+  const q = useQuery(`inbox:${slug}:${tab}:${threadsUnread}`, () => (tab === 'later' ? Promise.resolve(NO_THREADS) : fetchThreadInbox(slug, tab)));
+  useEffect(() => {
+    void laterStore.load(true);
+  }, [tab]);
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -66,17 +80,20 @@ export function ThreadsInbox() {
   const open = useCallback(
     (rootId: string | null, replace = false): void => {
       const next = new URLSearchParams(params);
-      if (rootId) next.set('thread', rootId);
-      else next.delete('thread');
+      const key = tab === 'later' ? 'item' : 'thread';
+      if (rootId) next.set(key, rootId);
+      else next.delete(key);
       setParams(next, { replace });
     },
-    [params, setParams],
+    [params, setParams, tab],
   );
   const setTab = (t: Tab): void => {
     const next = new URLSearchParams(params);
     if (t === 'followed') next.delete('tab');
     else next.set('tab', t);
     next.delete('thread');
+    next.delete('item');
+    next.delete('view');
     setParams(next);
   };
 
@@ -108,7 +125,7 @@ export function ThreadsInbox() {
   // between (j, j, k, e one after the other, on a loaded machine) acted on the thread selected two renders ago.
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
+      if (tab === 'later' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || typingIn(e.target)) return;
       const i = items.findIndex((x) => x.rootMessageId === selected);
       if (e.key === 'j' || e.key === 'k') {
         const next = items[e.key === 'j' ? Math.min(items.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1)];
@@ -132,23 +149,51 @@ export function ThreadsInbox() {
   // with no thread open the right band still carries the bell, which the shell's own band would have held
   const emptyBand = !narrow && !selected ? <div className="chead thread-head" /> : null;
   const showList = !narrow || selected === null;
+  // the tabs, shared by the thread tabs and Later; Later's badge counts the reminders that are due
+  const header = (
+    <header className="inh" data-landmark={narrow ? undefined : 'header'}>
+      {narrow ? null : <h1 className="inh-title"><span className="sr-only">{`${session.workspace.name}: `}</span>Threads</h1>}
+      <div className="tabs2" role="tablist" aria-label="Threads">
+        {TABS.filter((t) => t.id !== 'later' || later.supported).map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} data-testid={`tab-${t.id}`}>
+            {t.label}
+            {t.id === 'unread' && threadsUnread > 0 ? <span data-vt-mask>{` · ${threadsUnread}`}</span> : null}
+            {t.id === 'later' && later.dueCount > 0 ? <span data-vt-mask data-testid="later-due-count">{` · ${later.dueCount}`}</span> : null}
+          </button>
+        ))}
+      </div>
+    </header>
+  );
+  if (tab === 'later' && later.supported) {
+    return (
+      <div className="threads-home">
+        <WelcomeCard slug={slug} />
+        <LaterTab
+          header={header}
+          narrow={narrow}
+          view={laterView}
+          setView={(v) => {
+            const next = new URLSearchParams(params);
+            if (v === 'done') next.set('view', 'done');
+            else next.delete('view');
+            next.delete('item');
+            setParams(next);
+          }}
+          selected={selected}
+          onSelect={(id) => open(id)}
+          bell={narrow ? null : <div className="inr-bell"><Bell /></div>}
+          backLabel="Threads"
+        />
+      </div>
+    );
+  }
   return (
     <div className="threads-home">
     <WelcomeCard slug={slug} />
     <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="threads-inbox">
       {showList ? (
         <div className="inl" data-landmark="thread-list">
-          <header className="inh" data-landmark={narrow ? undefined : 'header'}>
-            {narrow ? null : <h1 className="inh-title"><span className="sr-only">{`${session.workspace.name}: `}</span>Threads</h1>}
-            <div className="tabs2" role="tablist" aria-label="Threads">
-              {TABS.map((t) => (
-                <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-                  {t.label}
-                  {t.id === 'unread' && threadsUnread > 0 ? <span data-vt-mask>{` · ${threadsUnread}`}</span> : null}
-                </button>
-              ))}
-            </div>
-          </header>
+          {header}
           {q.status === 'loading' ? (
             <p className="loading" aria-busy="true">Loading…</p>
           ) : absent || (q.status === 'ok' && items.length === 0) ? (

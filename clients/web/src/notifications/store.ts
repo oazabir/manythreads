@@ -15,6 +15,7 @@ import {
   saveNotificationPrefs,
 } from '../api/endpoints';
 import { onPersonChange } from '../app/caches';
+import { laterStore } from '../later/store';
 import type { Push, RealtimeClient } from '../realtime/socket';
 
 /*
@@ -55,6 +56,7 @@ export function notificationTitle(n: Pick<InboxItem, 'kind' | 'actorName' | 'cha
   if (n.kind === 'mention') return n.keyword ? `${n.actorName} wrote “${n.keyword}”${where}` : `${n.actorName} mentioned you${where}`;
   if (n.kind === 'reply') return `${n.actorName} replied in a thread${where}`;
   if (n.kind === 'message') return `${n.actorName}${where}`;
+  if (n.kind === 'reminder') return `Reminder: ${n.actorName}${where}`;
   return `${n.actorName} sent you a message`;
 }
 
@@ -111,6 +113,8 @@ export class NotificationStore {
         unread: known || notification.readAt !== null ? this.snap.unread : this.snap.unread + 1,
       });
       if (!known && browser) raiseAlert(notification);
+      // a reminder falling due moves its item to the top of Later
+      if (!known && notification.kind === 'reminder') void laterStore.load(true);
       // the push is a hint, the summary the count: settle any drift a moment later
       if (this.settle) clearTimeout(this.settle);
       this.settle = setTimeout(() => void this.refreshSummary(), 1_500);

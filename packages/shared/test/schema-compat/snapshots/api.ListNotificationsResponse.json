@@ -18,13 +18,15 @@
               "mention",
               "reply",
               "dm",
-              "message"
+              "message",
+              "reminder"
             ]
           },
           "refType": {
             "type": "string",
             "enum": [
-              "message"
+              "message",
+              "reminder"
             ]
           },
           "refId": {

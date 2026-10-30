@@ -18,11 +18,11 @@ import {
 // P14-09: what each notification level lets through, and what counts as a keyword in a message.
 
 describe('levelAllows', () => {
-  const kinds: NotificationKind[] = ['mention', 'reply', 'dm', 'message'];
+  const kinds: NotificationKind[] = ['mention', 'reply', 'dm', 'message', 'reminder'];
   const table: Record<NotificationLevel, Record<NotificationKind, boolean>> = {
-    all: { mention: true, reply: true, dm: true, message: true },
-    mentions: { mention: true, reply: true, dm: false, message: false },
-    nothing: { mention: false, reply: false, dm: false, message: false },
+    all: { mention: true, reply: true, dm: true, message: true, reminder: true },
+    mentions: { mention: true, reply: true, dm: false, message: false, reminder: true },
+    nothing: { mention: false, reply: false, dm: false, message: false, reminder: true },   // a reminder is the person's own doing: no level silences it
   };
   for (const level of Object.keys(table) as NotificationLevel[]) {
     it(`level ${level}`, () => {

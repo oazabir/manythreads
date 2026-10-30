@@ -7,13 +7,16 @@ import { ChannelKind } from './channel.ts';
 
 /**
  * Why a person is told: named in a message (or a keyword of theirs is in it), a reply in a thread they follow, a direct message, or any message
- * in a channel they asked to hear everything from (`message`, P14-09). Matches the SQL CHECK exactly.
+ * in a channel they asked to hear everything from (`message`, P14-09), or a reminder they set themself (`reminder`, P14-04). Matches the SQL CHECK exactly.
  */
-export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message']);
+export const NotificationKind = z.enum(['mention', 'reply', 'dm', 'message', 'reminder']);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
-/** What `refId` points at. Messages today; the column is generic so later kinds (approvals, tasks) need no migration. */
-export const NotificationRefType = z.enum(['message']);
+/**
+ * What `refId` points at: a message either way. `reminder` keeps a reminder's row apart from the notification the same message may already have
+ * made for the person (one row per person and reference), so a mention and a reminder on one message are two rows.
+ */
+export const NotificationRefType = z.enum(['message', 'reminder']);
 export type NotificationRefType = z.infer<typeof NotificationRefType>;
 
 /**

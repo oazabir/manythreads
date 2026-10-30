@@ -168,3 +168,30 @@ export async function deliver(
   // A row that is held (new, or a stronger kind raising a row that was already held) is announced when it is released, not now.
   await announce(ctx, tx, message.workspaceId, written.rows.filter((r) => r.held_at === null), prefsOf);
 }
+
+/**
+ * Makes the notification of one fired reminder for the person who set it, as the system actor. Unlike `deliver` it does not leave out the author
+ * of the message (people remind themselves of their own messages) and it ignores the channel's level, a muted channel and the per-kind switches,
+ * because the person asked for this one; it still needs the person to be able to read the channel, and Do not disturb still holds it. The row has
+ * its own reference type (`reminder`), so a mention the same message made earlier stays as it is. A second row for the same person and message
+ * (the reminder was set again later) is raised only when the first was already read, so an event delivered twice announces nothing the second time.
+ */
+export async function deliverReminder(ctx: PluginContext, tx: PluginTx, message: MessageFacts, personId: string): Promise<void> {
+  const audience = await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_audience($1::uuid) WHERE person_id = $2::uuid', [message.channelId, personId]);
+  if (audience.rows.length === 0) return;
+  const quiet = await quietPeople(tx, [personId], ctx.runtime.now());
+  const held = quiet.has(personId);
+  const written = await tx.query<{ id: string; person_id: string; held_at: Date | null }>(
+    `INSERT INTO app.notifications AS n (workspace_id, person_id, kind, ref_type, ref_id, channel_id, thread_root_id, actor_id, actor_name, preview, held_at)
+     VALUES ($1::uuid, $2::uuid, 'reminder', 'reminder', $3::uuid, $4::uuid, $5::uuid, $6::uuid, $7, $8, CASE WHEN $9::boolean THEN now() END)
+     ON CONFLICT (person_id, ref_type, ref_id) DO UPDATE
+       SET read_at = NULL, created_at = now(), preview = EXCLUDED.preview, actor_id = EXCLUDED.actor_id, actor_name = EXCLUDED.actor_name,
+           thread_root_id = EXCLUDED.thread_root_id, held_at = EXCLUDED.held_at
+       WHERE n.read_at IS NOT NULL
+     RETURNING n.id, n.person_id, n.held_at`,
+    [message.workspaceId, personId, message.id, message.channelId, message.threadRootId, message.authorActorId, message.authorName, previewOf(message.bodyPlain), held],
+  );
+  const prefs = await tx.query<{ person_id: string; prefs: unknown }>('SELECT person_id, prefs FROM app.notification_prefs WHERE person_id = $1::uuid', [personId]);
+  const prefsOf = new Map(prefs.rows.map((r) => [r.person_id, normalizePrefs(r.prefs)]));
+  await announce(ctx, tx, message.workspaceId, written.rows.filter((r) => r.held_at === null), prefsOf);
+}

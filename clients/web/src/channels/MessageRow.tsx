@@ -8,6 +8,7 @@ import { useDismiss } from '../shell/useDismiss';
 import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
 import { ForwardDialog } from './ForwardDialog';
+import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
 import { copyText, messageLinkUrl } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
@@ -83,11 +84,12 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [tapped, setTapped] = useState(false);
   // the toolbar exists only while the row is under the pointer or has focus: 5,000 rows do not each carry three buttons
   const [hot, setHot] = useState(false);
-  const [menu, setMenu] = useState<null | 'react' | 'more' | 'emoji'>(null);
+  const [menu, setMenu] = useState<null | 'react' | 'more' | 'emoji' | 'remind'>(null);
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [forwarding, setForwarding] = useState(false);
+  const [reminding, setReminding] = useState(false);
   // a short line in the header of the row after an action that has no other sign ("Link copied")
   const [done, setDone] = useState<string | null>(null);
   useEffect(() => {
@@ -188,6 +190,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               <EmojiPicker label="React with an emoji" onPick={(c) => { setMenu(null); actions.react(m.id, c); }} onClose={() => setMenu(null)} />
             </RowMenu>
           ) : null}
+          {menu === 'remind' ? (
+            <RowMenu className="more-menu remind-menu" label="Remind me">
+              <RemindChoices messageId={m.id} say={setDone} close={() => setMenu(null)} onCustom={() => { setMenu(null); setReminding(true); }} />
+            </RowMenu>
+          ) : null}
           {menu === 'more' ? (
             <RowMenu className="more-menu" label="Message">
               <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyLink(); }}>Copy link</button>
@@ -195,6 +202,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               {actions.markUnread ? (
                 <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
               ) : null}
+              <LaterMenuItems messageId={m.id} say={setDone} close={() => setMenu(null)} onRemind={() => setMenu('remind')} />
               {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit</button> : null}
               {canDelete ? (
                 confirm ? (
@@ -288,6 +296,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           </button>
         ) : null}
       </div>
+      {reminding ? <RemindDialog messageId={m.id} say={setDone} onClose={() => setReminding(false)} /> : null}
       {forwarding ? <ForwardDialog message={m} selfPersonId={people.me?.personId ?? null} onClose={() => setForwarding(false)} onDone={(label) => setDone(`Forwarded to ${label}`)} /> : null}
     </div>
   );

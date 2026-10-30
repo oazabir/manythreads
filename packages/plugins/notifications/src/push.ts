@@ -14,7 +14,7 @@ const TITLE_MAX = 160;
 /** What a notification is, as far as its push is concerned. */
 export interface PushFacts {
   notificationId: string;
-  kind: 'mention' | 'reply' | 'dm' | 'message';
+  kind: 'mention' | 'reply' | 'dm' | 'message' | 'reminder';
   keyword: string | null;
   actorName: string;
   preview: string;
@@ -42,7 +42,8 @@ export function buildPushPayload(f: PushFacts): PushPayload {
   const open = f.channelKind === 'channel' && !f.channelPrivate;
   const where = open && f.channelName !== '' ? ` in #${clip(f.channelName.replace(/^#/, ''), 60)}` : '';
   let title: string;
-  if (f.kind === 'dm') title = `${sender} sent you a message`;
+  if (f.kind === 'reminder') title = `Reminder${where}`;
+  else if (f.kind === 'dm') title = `${sender} sent you a message`;
   else if (f.kind === 'reply') title = `${sender} replied in a thread${where}`;
   else if (f.kind === 'message') title = where !== '' ? `${sender}${where}` : `${sender} sent you a message`;
   else if (f.keyword !== null) title = `${sender} wrote “${clip(f.keyword, 40)}”${where}`;

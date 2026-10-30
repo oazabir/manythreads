@@ -88,6 +88,10 @@ export type ChannelGroupId = z.infer<typeof ChannelGroupId>;
 export const NotificationId = z.uuid().brand<'NotificationId'>();
 export type NotificationId = z.infer<typeof NotificationId>;
 
+/** One saved-for-later item of one person (P14-04). */
+export const LaterItemId = z.uuid().brand<'LaterItemId'>();
+export type LaterItemId = z.infer<typeof LaterItemId>;
+
 // Phase 5: approvals.
 
 export const ApprovalId = z.uuid().brand<'ApprovalId'>();
