@@ -17,3 +17,4 @@ export * from './surfaces/viewer.ts';
 export * from './surfaces/app-token.ts';
 export * from './answer/index.ts';
 export * from './text/index.ts';
+export * from './commands/index.ts';

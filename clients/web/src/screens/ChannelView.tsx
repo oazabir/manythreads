@@ -324,6 +324,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           people={people}
           channelNames={channelNames}
           onSend={send}
+          slash={{ teamSlug, origin: dm ? 'a direct message' : `#${name}` }}
           onEditLast={() => {
             const id = lastEditableOwn(tl.items, self);
             if (!id) return;

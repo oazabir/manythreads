@@ -247,6 +247,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             people={people}
             channelNames={names}
             onSend={send}
+            slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
             autoFocus={variant === 'panel'}
             onEditLast={() => {
               const id = lastEditableOwn(tl.items, self);

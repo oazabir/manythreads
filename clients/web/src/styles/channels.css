@@ -933,6 +933,108 @@
   font-size: 11px;
 }
 
+/* the slash-command menu: the same list as the @ picker, with a name above its plain sentence and rows tall enough for a thumb */
+.picker.slash {
+  width: min(400px, calc(100% - 16px));
+}
+
+.picker.slash li {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-height: 44px;
+}
+
+.picker.slash .pk-name {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.picker.slash .pk-hint {
+  margin-left: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.picker li.off {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.picker li.off.on {
+  color: var(--mute);
+}
+
+/* the reason a command is off is the useful part of that row: keep it readable */
+.picker.slash li.off .pk-hint {
+  color: var(--mute);
+}
+
+/* the one line a command answers with: what to fix, or the card that was made */
+.cnotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 6px 8px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.cnotice.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.cnotice.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.cnotice .cnotice-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.shelp {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shelp .shelp-row {
+  display: grid;
+  gap: 2px;
+}
+
+.shelp code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.shelp .shelp-what {
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.shelp .shelp-row.off code {
+  color: var(--faint);
+}
+
+.shelp-why {
+  color: var(--alert-ink);
+  font-size: 12px;
+}
+
 .cfiles {
   display: grid;
   gap: 4px;

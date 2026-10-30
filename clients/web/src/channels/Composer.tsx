@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import type { FileSummary } from '@manythreads/shared';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { Link } from 'react-router';
+import { CreateTaskRequest, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { sendTyping, uploadChannelFile } from '../api/endpoints';
+import { createTask, fetchChannelBoards } from '../screens/boards/api';
+import { botBoardOf, branchFor } from '../screens/boards/board';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
+import { SlashHelp } from './SlashHelp';
+import { availability, planSlash, taskFailureText } from './slash';
+import { useSlashWho } from './useSlash';
 import { CODE_LANGUAGES, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
 import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
@@ -74,9 +80,20 @@ export type ComposerProps = {
   autoFocus?: boolean;
   /** The Up arrow in an empty box: open the reader's last message of their own for editing (absent where there is nothing to edit). */
   onEditLast?: () => void;
+  /**
+   * Slash commands (`/ask`, `/task`, `/shrug`…): the team the conversation belongs to, and where a card made from here says it came from
+   * ("#dev", "a thread in #dev", "a direct message"). Absent where a command makes no sense (a conversation with a bot): the text is then
+   * posted as typed, `//` included.
+   */
+  slash?: { teamSlug: string; origin: string };
 };
 
-export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false, onEditLast }: ComposerProps) {
+/** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
+type PickItem = { key: string; label: string; hint: string; insert: string; from: number; to: number; disabled?: string };
+
+type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
+
+export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false, onEditLast, slash }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const [text, setText] = useState(() => readDraft(draftKey));
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -85,6 +102,11 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const [dismissed, setDismissed] = useState<number | null>(null);
   const [drag, setDrag] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [slashSeen, setSlashSeen] = useState(false);
+  const makingCard = useRef(false);
+  const listId = useId();
   // the toolbar is one stop of the Tab key; the arrows move inside it (roving focus)
   const [toolAt, setToolAt] = useState(0);
   const tools = useRef<HTMLDivElement>(null);
@@ -108,6 +130,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     if (draftFor.current === draftKey) return;
     draftFor.current = draftKey;
     setText(readDraft(draftKey));
+    setNotice(null);
+    setDismissed(null);
     setUploads((list) => {
       list.forEach((u) => {
         u.abort?.abort();
@@ -154,23 +178,58 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     }
   });
 
-  const trigger = useMemo(() => detectTrigger(text, caret), [text, caret]);
-  const items = useMemo(() => {
-    if (!trigger || dismissed === trigger.start) return [];
+  // ---- slash commands: a first word that starts with `/`, and the bot named after /ask ----------------------------
+  const slashOn = slash !== undefined;
+  useEffect(() => {
+    if (slashOn && text.startsWith('/')) setSlashSeen(true);
+  }, [slashOn, text]);
+  const who = useSlashWho(slash?.teamSlug ?? null, slashOn && (slashSeen || text.startsWith('/')), people.me?.name ?? null);
+  const slashContext = useMemo(() => (slashOn ? slashMenuContext(text, caret) : null), [slashOn, text, caret]);
+
+  const trigger = useMemo(() => (slashContext ? null : detectTrigger(text, caret)), [slashContext, text, caret]);
+  // what Esc closed is remembered by where the word starts, so the menu stays shut until that word changes
+  const anchor = slashContext ? (slashContext.stage === 'command' ? 0 : slashContext.from) : (trigger?.start ?? null);
+  const items = useMemo<PickItem[]>(() => {
+    if (anchor === null || dismissed === anchor) return [];
+    if (slashContext?.stage === 'command') {
+      return matchSlashCommands(slashContext.query).map((command) => {
+        const can = availability(command, who);
+        const next = text[slashContext.to] === ' ' ? '' : ' ';
+        return {
+          key: command.name,
+          label: command.usage,
+          hint: can.ok ? command.summary : can.reason,
+          insert: `/${command.name}${next}`,
+          from: 0,
+          to: slashContext.to,
+          ...(can.ok ? {} : { disabled: can.reason }),
+        };
+      });
+    }
+    if (slashContext?.stage === 'bot') {
+      const q = slashContext.query.toLowerCase();
+      const next = text[slashContext.to] === ' ' ? '' : ' ';
+      return (who.bots ?? [])
+        .filter((b) => q === '' || b.slug.toLowerCase().startsWith(q) || b.name.toLowerCase().includes(q))
+        .slice(0, 6)
+        .map((b) => ({ key: b.slug, label: b.name, hint: b.slug, insert: `${b.slug}${next}`, from: slashContext.from, to: slashContext.to }));
+    }
+    if (!trigger) return [];
     const q = trigger.query.toLowerCase();
     if (trigger.char === '@') {
       return people.list
         .filter((p) => q === '' || p.name.toLowerCase().includes(q) || handleFor(p, people.list).startsWith(q))
         .slice(0, 6)
-        .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} ` }));
+        .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} `, from: trigger.start, to: caret }));
     }
     return channelNames
       .filter((n) => q === '' || n.toLowerCase().includes(q))
       .slice(0, 6)
-      .map((n) => ({ key: n, label: `#${n}`, hint: '', insert: `#${n} ` }));
-  }, [trigger, dismissed, people, channelNames]);
+      .map((n) => ({ key: n, label: `#${n}`, hint: '', insert: `#${n} `, from: trigger.start, to: caret }));
+  }, [anchor, slashContext, trigger, dismissed, people, channelNames, who, text, caret]);
   const open = items.length > 0;
   const active = Math.min(pick, Math.max(0, items.length - 1));
+  const menuLabel = slashContext?.stage === 'command' ? 'Commands' : slashContext?.stage === 'bot' ? 'Bots' : trigger?.char === '@' ? 'People' : 'Channels';
 
   const edit = useCallback((next: string, from: number, to = from): void => {
     setText(next);
@@ -202,9 +261,14 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   };
   const choose = (i: number): void => {
     const it = items[i];
-    if (!it || !trigger) return;
-    const next = `${text.slice(0, trigger.start)}${it.insert}${text.slice(caret)}`;
-    edit(next, trigger.start + it.insert.length);
+    if (!it) return;
+    if (it.disabled) {
+      // a command this person cannot use: the menu says why and leaves the text alone
+      setNotice({ tone: 'bad', text: it.disabled });
+      return;
+    }
+    const next = `${text.slice(0, it.from)}${it.insert}${text.slice(it.to)}`;
+    edit(next, it.from + it.insert.length);
     setPick(0);
   };
 
@@ -243,18 +307,84 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const ready = uploads.flatMap((u) => (u.status === 'done' && u.file ? [u.file] : []));
   const canSend = !uploading && (text.trim() !== '' || ready.length > 0);
 
-  const send = (): void => {
-    if (!canSend) return;
-    // a message of only files has no text of its own: the server wants one character, so it carries the file names
-    const body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
-    onSend(body, ready);
+  /** Empties the box after a message or a command went out. */
+  const clearBox = (): void => {
     uploads.forEach((u) => {
       if (u.preview) URL.revokeObjectURL(u.preview);
     });
     setText('');
     setUploads([]);
     setCaret(0);
+    setDismissed(null);
     writeDraft(draftFor.current, '');
+  };
+
+  /** `/task`: a card on the channel's own board when it has one, else the team's default board; the box is emptied only once the card exists. */
+  const makeCard = async (title: string): Promise<void> => {
+    if (!slash || makingCard.current) return;
+    makingCard.current = true;
+    // the box may change under the request: another conversation opened, or more typing. Only the text that made the card is cleared.
+    const key = draftFor.current;
+    const sent = area.current?.value ?? '';
+    const here = (): boolean => draftFor.current === key && area.current !== null;
+    try {
+      const boards = await fetchChannelBoards(channelId).catch(() => null);
+      const boardId = boards ? botBoardOf(boards.items)?.id : undefined;
+      const built = CreateTaskRequest.safeParse({
+        title,
+        description: `Created from ${slash.origin} with /task.`,
+        // a chat card is not a code change: "other" has no branch to test before it can be done
+        kind: 'other',
+        branch: branchFor(title),
+        ...(boardId ? { boardId } : {}),
+      });
+      if (!built.success) {
+        if (here()) setNotice({ tone: 'bad', text: built.error.issues[0]?.message ?? 'The card is not complete.' });
+        return;
+      }
+      const res = await createTask(slash.teamSlug, built.data);
+      if (!here()) {
+        // another conversation (or none) is showing: the old draft goes, the new box and its notice are not touched
+        writeDraft(key, '');
+        return;
+      }
+      // typing added while the card was made stays; only the command that made the card is cleared
+      if ((area.current?.value ?? '') === sent) clearBox();
+      const href = `/t/${slash.teamSlug}/boards?${res.task.boardId ? `board=${res.task.boardId}&` : ''}card=${res.task.id}`;
+      setNotice({ tone: 'ok', text: `Card created: “${res.task.title}”.`, href, linkText: 'Open the card' });
+    } catch (err) {
+      if (here()) setNotice({ tone: 'bad', text: isApiError(err) ? taskFailureText(err.status, err.message) : taskFailureText(undefined, undefined) });
+    } finally {
+      makingCard.current = false;
+    }
+  };
+
+  const send = (): void => {
+    if (!canSend || makingCard.current) return;
+    // a message of only files has no text of its own: the server wants one character, so it carries the file names
+    let body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
+    if (slash && text.trim() !== '') {
+      const plan = planSlash(text, who, ready.length > 0);
+      if (plan.do === 'say') {
+        setNotice({ tone: 'bad', text: plan.message });
+        return;
+      }
+      if (plan.do === 'help') {
+        clearBox();
+        setNotice(null);
+        setHelpOpen(true);
+        return;
+      }
+      if (plan.do === 'task') {
+        setNotice(null);
+        void makeCard(plan.title);
+        return;
+      }
+      body = plan.body;
+    }
+    setNotice(null);
+    onSend(body, ready);
+    clearBox();
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -265,7 +395,17 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         setPick((active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
         return;
       }
-      if (e.key === 'Enter' || e.key === 'Tab') {
+      // a word typed in full leaves nothing to pick: "/help" and Enter runs it, "/ask coder" and Enter says what is missing (a command that
+      // needs words is still completed first, so "/task" and Enter only fills in "/task ")
+      const picked = items[active];
+      const atEnd = caret === text.length;
+      const complete =
+        e.key === 'Enter' &&
+        picked !== undefined &&
+        !picked.disabled &&
+        ((slashContext?.stage === 'command' && text.trim() === `/${picked.key}` && findSlashCommand(picked.key)?.args !== 'required') ||
+          (slashContext?.stage === 'bot' && atEnd && slashContext.query.toLowerCase() === picked.key.toLowerCase()));
+      if ((e.key === 'Enter' || e.key === 'Tab') && !complete) {
         e.preventDefault();
         choose(active);
         return;
@@ -273,7 +413,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        setDismissed(trigger?.start ?? null);
+        setDismissed(anchor);
         return;
       }
     }
@@ -316,6 +456,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     setText(value);
     setCaret(at);
     setPick(0);
+    setNotice(null);
+    if (!value.startsWith('/')) setDismissed((d) => (d === 0 ? null : d));
     const now = Date.now();
     if (value.trim() !== '' && !typingOff.current && now - lastTyping.current > 3_000) {
       lastTyping.current = now;
@@ -422,13 +564,28 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
             ))}
           </ul>
         ) : null}
+        {notice ? (
+          <p className={`cnotice ${notice.tone}`} role={notice.tone === 'bad' ? 'alert' : 'status'} data-testid="slash-notice">
+            <span>{notice.text}</span>
+            {notice.href ? <Link className="cnotice-link" to={notice.href} data-testid="slash-notice-link">{notice.linkText ?? 'Open'}</Link> : null}
+          </p>
+        ) : null}
         <div className="cinput">
           {open ? (
-            <ul className="picker" role="listbox" aria-label={trigger?.char === '@' ? 'People' : 'Channels'}>
+            <ul className={`picker ${slashContext ? 'slash' : ''}`} id={listId} role="listbox" aria-label={menuLabel} data-testid={slashContext ? 'slash-menu' : undefined}>
               {items.map((it, i) => (
-                <li key={it.key} role="option" aria-selected={i === active} className={i === active ? 'on' : ''} onMouseDown={(e) => { e.preventDefault(); choose(i); }}>
-                  <span>{it.label}</span>
-                  {it.hint ? <small>{it.hint}</small> : null}
+                <li
+                  key={it.key}
+                  id={`${listId}-${i}`}
+                  role="option"
+                  aria-selected={i === active}
+                  aria-disabled={it.disabled ? true : undefined}
+                  className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''}`}
+                  data-command={slashContext?.stage === 'command' ? it.key : undefined}
+                  onMouseDown={(e) => { e.preventDefault(); choose(i); }}
+                >
+                  <span className="pk-name">{it.label}</span>
+                  {it.hint ? <small className="pk-hint">{it.hint}</small> : null}
                 </li>
               ))}
             </ul>
@@ -441,6 +598,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
             aria-label={label}
             aria-autocomplete="list"
             aria-expanded={open}
+            aria-controls={open ? listId : undefined}
+            aria-activedescendant={open ? `${listId}-${active}` : undefined}
             onChange={(e) => onChange(e.target.value, e.target.selectionStart)}
             onSelect={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart)}
             onKeyDown={onKeyDown}
@@ -455,6 +614,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
           <button type="button" className="btn primary send" aria-label="Send" disabled={!canSend} onClick={send}><SendIcon /><span>Send</span></button>
         </div>
       </div>
+      {helpOpen ? <SlashHelp who={who} onClose={() => { setHelpOpen(false); area.current?.focus(); }} /> : null}
     </div>
   );
 }
