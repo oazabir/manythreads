@@ -159,6 +159,9 @@ import {
   GetReadStateResponse,
   GetUnreadSummaryResponse,
   JoinChannelResponse,
+  CreateChannelRequest,
+  CreateChannelResponse,
+  createChannelRoute,
   ListMessagesQuery,
   ListMessagesResponse,
   MarkReadRequest,
@@ -516,6 +519,9 @@ export const fetchNavChannels = (slug: string) => call(navChannelDirectoryRoute,
 
 // ---- channels, messages, read state ------------------------------------------------------------------------
 export const fetchChannel = (channelId: string) => call(getChannelRoute, { response: GetChannelResponse }, undefined, { channelId });
+/** Creates a channel in a team (team lead or workspace admin). The name may carry a leading `#`; `purpose` is the topic line. */
+export const createChannel = (slug: string, body: CreateChannelRequest) =>
+  call(createChannelRoute, { request: CreateChannelRequest, response: CreateChannelResponse }, body, { slug });
 export const joinChannel = (channelId: string) => call(joinChannelRoute, { response: JoinChannelResponse }, undefined, { channelId });
 
 /** Newest first; `before` is the id of the oldest message held (the previous page's `nextCursor`). */

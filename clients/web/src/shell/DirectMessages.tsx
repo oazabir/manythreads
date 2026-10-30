@@ -1,12 +1,14 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router';
 import type { NavContribution } from '@manythreads/shared';
 import { useSession } from '../app/session';
 import { useUnread, usePeople } from '../channels/hooks';
 import { Avatar } from '../components/ui';
+import { levelsStore } from '../notifications/levelsStore';
 import { dmLabel, openConversation, useDms } from '../dms/store';
 import { navHref } from './nav';
 import { useDismiss } from './useDismiss';
+import { badgeText, unreadLook } from './unreadLook';
 
 const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
 
@@ -72,6 +74,10 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
   const session = useSession();
   const feed = useDms();
   const { unread } = useUnread();
+  const levels = useSyncExternalStore(levelsStore.subscribe, levelsStore.snapshot).levels;
+  useEffect(() => {
+    void levelsStore.load();
+  }, []);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
@@ -84,11 +90,12 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
       {feed.items.map((d) => {
         const n = unread[d.channel.id] ?? d.unreadCount;
         const label = dmLabel(d, session.person.id);
+        const look = unreadLook(n, levels, d.channel.id, 'dm');
         return (
-          <NavLink key={d.channel.id} to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${n > 0 ? 'unread' : ''}`}>
-            <span className="h"><span className={`dot ${n > 0 ? 'on' : ''}`} aria-hidden="true" /></span>
+          <NavLink key={d.channel.id} to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''}`} data-unread={n > 0 ? n : undefined}>
+            <span className="h"><span className={`dot ${look.bold ? 'on' : ''}`} aria-hidden="true" /></span>
             <span className="it-label">{label}</span>
-            {n > 0 ? <span className="pill" data-vt-mask>{n}</span> : null}
+            {look.badge ? <span className={`pill ${look.badge === 'quiet' ? 'g' : ''}`} data-vt-mask>{badgeText(n)}</span> : null}
           </NavLink>
         );
       })}

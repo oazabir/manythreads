@@ -18,11 +18,17 @@ const LOADING: ChannelFeed = { status: 'loading', groups: [] };
 const ABSENT: ChannelFeed = { status: 'absent', groups: [] };
 const feeds = new Map<string, ChannelFeed>();
 const inflight = new Set<string>();
+/** Directories asked for again while a fetch was under way: that fetch may have started before the change, so one more runs when it ends. */
+const again = new Set<string>();
 const listeners = new Set<() => void>();
 const emit = (): void => listeners.forEach((l) => l());
 
 export async function refreshDirectory(slug: string): Promise<void> {
-  if (supported === false || inflight.has(slug)) return;
+  if (supported === false) return;
+  if (inflight.has(slug)) {
+    again.add(slug);
+    return;
+  }
   inflight.add(slug);
   try {
     const dir = await fetchNavChannels(slug);
@@ -35,6 +41,7 @@ export async function refreshDirectory(slug: string): Promise<void> {
   } finally {
     inflight.delete(slug);
     emit();
+    if (again.delete(slug)) void refreshDirectory(slug);
   }
 }
 

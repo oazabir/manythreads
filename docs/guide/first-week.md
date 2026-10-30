@@ -35,7 +35,7 @@ The other templates have Brain and, where defined, one or two more bots. Details
 Good to know:
 
 - A team made earlier does not receive later fixes to a template. The team has its own copy.
-- The web app has no "New channel" button yet. Channels come from the template. (Settings, the team, "Channels" is a read-only list. The server can create one through its API: `POST /api/teams/:slug/channels`.)
+- A team lead or a workspace admin adds a channel with "+ New channel" under the channel list in the sidebar: a name, an optional topic, and whether everyone on the team or only the people they add can see it. A plain member does not see that button. Channels also come from the template. (Settings, the team, "Channels" is a read-only list.)
 
 ## Day 1. Add people
 

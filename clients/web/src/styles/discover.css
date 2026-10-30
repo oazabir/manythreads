@@ -532,6 +532,80 @@
   background: var(--nav-on);
 }
 
+/* "New channel" row under the channel groups (leads and admins only), and its dialog */
+.nc-row {
+  margin-top: 2px;
+}
+
+.nc-btn {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nc-btn:hover {
+  background: var(--nav-on);
+}
+
+.nc-form {
+  display: grid;
+  gap: 12px;
+}
+
+.nc-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nc-name .dlg-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.nc-hash {
+  color: var(--faint);
+  font-weight: 500;
+}
+
+.dlg-hint.nc-bad {
+  color: var(--alert-ink);
+}
+
+.nc-who {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.nc-who legend {
+  padding: 0;
+  margin-bottom: 2px;
+}
+
+.nc-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.nc-opt input {
+  margin-top: 3px;
+}
+
+.nc-opt > span {
+  display: grid;
+  gap: 1px;
+}
+
 .menu.dm-picker {
   top: 100%;
   right: 0;

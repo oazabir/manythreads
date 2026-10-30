@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import type { NavContribution } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
 import { useUnread } from '../channels/hooks';
+import { levelsStore } from '../notifications/levelsStore';
 import { BotsSection } from './BotsSection';
 import { useShell } from './context';
 import { useChannelFeed } from './channelFeed';
@@ -10,9 +11,12 @@ import { DirectMessages } from './DirectMessages';
 import { CaretIcon, LockIcon, NAV_ICONS } from './icons';
 import { GUEST_SLUG } from './messageLink';
 import { CORE_NAV, channelPath, navCount, navHref, visibleNav } from './nav';
+import { NewChannelDialog } from './NewChannel';
+import { canCreateChannel } from './newChannel';
+import { badgeText, unreadLook } from './unreadLook';
 
 function Pill({ n, tone }: { n: number; tone: 'unread' | 'quiet' }) {
-  return <span className={`pill ${tone === 'quiet' ? 'g' : ''}`} data-vt-mask>{n}</span>;
+  return <span className={`pill ${tone === 'quiet' ? 'g' : ''}`} data-vt-mask>{badgeText(n)}</span>;
 }
 
 /** A row of the contract: opens its page, shows its count, or its empty state while there is nothing to count. */
@@ -53,6 +57,17 @@ function NavHeader({ item, slug }: { item: NavContribution; slug: string }) {
 function ChannelGroups({ slug, guest }: { slug: string; guest: boolean }) {
   const feed = useChannelFeed(slug);
   const { unread } = useUnread();
+  const session = useSession();
+  const { team } = useShell();
+  const levels = useSyncExternalStore(levelsStore.subscribe, levelsStore.snapshot).levels;
+  // The team the dialog was opened for: if the person moves to another team meanwhile, the dialog is gone rather than creating in the wrong one.
+  const [creatingIn, setCreatingIn] = useState<string | null>(null);
+  useEffect(() => setCreatingIn(null), [slug]);
+  const mayCreate = !guest && canCreateChannel(team, isAdmin(session));
+  // The person's notification levels decide how loudly an unread conversation shows (a muted one keeps a grey count, no bold label).
+  useEffect(() => {
+    if (!guest) void levelsStore.load();
+  }, [guest]);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const toggle = (id: string): void =>
     setCollapsed((c) => {
@@ -74,11 +89,12 @@ function ChannelGroups({ slug, guest }: { slug: string; guest: boolean }) {
             {open
               ? g.channels.map((c) => {
                   const n = unread[c.id] ?? c.unread;
+                  const look = unreadLook(n, levels, c.id, 'channel');
                   return (
-                    <NavLink key={c.id} to={channelPath(slug, c.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${n > 0 ? 'unread' : ''}`}>
+                    <NavLink key={c.id} to={channelPath(slug, c.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''}`} data-unread={n > 0 ? n : undefined}>
                       <span className="h">{c.isPrivate ? <LockIcon /> : '#'}</span>
                       <span className="it-label">{c.name.replace(/^#/, '')}</span>
-                      {n > 0 ? <Pill n={n} tone="unread" /> : null}
+                      {look.badge ? <Pill n={n} tone={look.badge} /> : null}
                     </NavLink>
                   );
                 })
@@ -86,6 +102,15 @@ function ChannelGroups({ slug, guest }: { slug: string; guest: boolean }) {
           </div>
         );
       })}
+      {mayCreate ? (
+        <div className="nc-row">
+          <button type="button" className="it nc-btn" aria-haspopup="dialog" data-testid="new-channel" onClick={() => setCreatingIn(slug)}>
+            <span className="h" aria-hidden="true">+</span>
+            <span className="it-label">New channel</span>
+          </button>
+        </div>
+      ) : null}
+      {creatingIn === slug ? <NewChannelDialog slug={slug} onClose={() => setCreatingIn(null)} /> : null}
     </div>
   );
 }
