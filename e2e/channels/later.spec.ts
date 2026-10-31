@@ -70,7 +70,7 @@ test.describe('desktop', () => {
       await more(page, 'hour', 'Remind me…');
       for (const label of ['In 20 minutes', 'In 1 hour', 'Tomorrow morning', 'Next week', 'Pick a date and time…']) await expect(page.getByRole('menuitem', { name: label })).toBeVisible();
       await page.getByRole('menuitem', { name: 'In 1 hour' }).click();
-      await expect(row(page, 'hour').getByRole('status')).toContainText('Reminder set for Today at', T);
+      await expect(row(page, 'hour').getByRole('status')).toContainText(/Reminder set for (Today|Tomorrow) at/, T);
 
       await more(page, 'custom', 'Remind me…');
       await page.getByRole('menuitem', { name: 'Pick a date and time…' }).click();

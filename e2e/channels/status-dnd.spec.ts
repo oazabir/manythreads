@@ -74,10 +74,10 @@ test.describe('desktop', () => {
 
       // the bell, the sidebar line and the spoken note all say it, with the same end time
       await expect(page.getByTestId('bell-paused')).toBeVisible(T);
-      await expect(page.getByTestId('bell')).toHaveAttribute('aria-label', /Notifications, paused until \d\d:\d\d/);
+      await expect(page.getByTestId('bell')).toHaveAttribute('aria-label', /Notifications, paused until (tomorrow )?\d\d:\d\d/);
       const strip = page.getByTestId('dnd-strip');
-      await expect(strip).toContainText(/Paused until \d\d:\d\d/);
-      await expect(page.getByTestId('dnd-live')).toHaveText(/Paused until \d\d:\d\d/);
+      await expect(strip).toContainText(/Paused until (tomorrow )?\d\d:\d\d/);
+      await expect(page.getByTestId('dnd-live')).toHaveText(/Paused until (tomorrow )?\d\d:\d\d/);
       expect(await page.getByTestId('dnd-live').getAttribute('role')).toBe('status');
       const state = (await meOf(nadia)).dndState;
       expect(state).toMatchObject({ active: true, reason: 'paused' });
@@ -96,7 +96,7 @@ test.describe('desktop', () => {
       // the popover says what is happening and what will happen
       await page.getByTestId('bell').click();
       const pop = page.getByTestId('notifications-popover');
-      await expect(pop.getByTestId('paused-note')).toContainText(/Paused until \d\d:\d\d/);
+      await expect(pop.getByTestId('paused-note')).toContainText(/Paused until (tomorrow )?\d\d:\d\d/);
       await expect(pop.getByTestId('paused-note')).toContainText('delivered together when it ends');
       await expect(pop.getByTestId('notification')).toHaveCount(0);
 
@@ -206,7 +206,7 @@ test.describe('desktop', () => {
       await gear(page).click();
       await page.getByRole('menuitem', { name: 'Set status…' }).click();
       await expect(page.getByTestId('status-now')).toContainText('Heads down until lunch');
-      await expect(page.getByTestId('status-now')).toContainText(/Clears \d\d:\d\d/);
+      await expect(page.getByTestId('status-now')).toContainText(/Clears (at midnight|(tomorrow )?\d\d:\d\d)/);
       await page.getByTestId('status-clear-now').click();
       await expect(page.getByTestId('status-dialog')).toHaveCount(0, T);
       await expect(page.getByTestId('foot-status')).toHaveCount(0);
@@ -321,7 +321,7 @@ test.describe('phone', () => {
       await page.keyboard.press('Escape'); // closes the drawer
 
       await expect(page.getByTestId('bell-paused')).toBeVisible(T);
-      await expect(page.getByTestId('bell')).toHaveAttribute('aria-label', /paused until \d\d:\d\d/);
+      await expect(page.getByTestId('bell')).toHaveAttribute('aria-label', /paused until (tomorrow )?\d\d:\d\d/);
       expect(await noSidewaysScroll(page)).toBe(true);
       await page.getByTestId('bell').click();
       await expect(page.getByTestId('notifications-popover').getByTestId('paused-note')).toBeVisible();

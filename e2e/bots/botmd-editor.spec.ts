@@ -31,7 +31,7 @@ test('a lead edits the definition in the page: one commit by him, and the loader
     await expect(role).toHaveValue('Reviews the Engineering team’s code changes');
     await expect(page.getByTestId('dirty-state')).toContainText('Unsaved changes');
     await page.getByTestId('save-bot').click();
-    await expect(page.getByRole('status')).toContainText('Saved');
+    await expect(page.getByTestId('bot-page').getByRole('status')).toContainText('Saved');
     await expect(page.getByTestId('dirty-state')).toContainText('No changes');
     const omar = await apiOn(playwright, stack, 'omar');
     const { content } = await definitionOf(omar);
@@ -69,7 +69,7 @@ test('the capabilities tab edits the one allowlist and the file it writes is the
     await expect(native.locator('.b-chip.on')).toContainText('messages.post');
     await expect(page.getByTestId('dirty-state')).toContainText('Unsaved changes');
     await page.getByTestId('save-bot').click();
-    await expect(page.getByRole('status')).toContainText('Saved');
+    await expect(page.getByTestId('bot-page').getByRole('status')).toContainText('Saved');
   } finally {
     await close();
   }
