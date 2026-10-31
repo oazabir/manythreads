@@ -36,9 +36,14 @@ deep links go to the running window (single instance), other hosts refused; othe
 started at `/api/auth/oidc/<id>/start`; window size remembered; downloads handled on macOS/Linux. Web: `inDesktopApp()` turns browser push off
 inside the app. CI `.github/workflows/desktop.yml` (manual or `desktop-v*` tag) builds unsigned Windows/macOS/Linux bundles. Docs
 `docs/clients/desktop.md`. Tests: cargo 12 passed, clippy clean, `pnpm e2e:desktop` (`e2e/desktop/tauri-smoke.spec.ts`, Windows only, live
-site, anonymous) **6 passed**: sign-in page, native alert, page cannot call shell commands, deep links, navigation guard, picker. Left: the HA
-chaos check half of P10-11; macOS/Linux builds and `desktop.yml` never run; signed-in use, OIDC in the app and a mention notification from a real
-message not checked; clicking an alert does not focus the window; unsigned, no auto-update, placeholder icon; the picker test writes the real
+site, anonymous) **6 passed**: sign-in page, native alert, page cannot call shell commands, deep links, navigation guard, picker. Signed in
+(2026-10-31): `pnpm e2e:desktop:signin` (`e2e/desktop/tauri-signin.spec.ts`, credentials from env only, traces/video off) **4 passed**, three
+runs, against a local seeded server (`e2e/fixtures/stack-server.ts`): sign-in form, session survives a restart, a mention DM from Nadia raises a
+system alert while the real window is minimised (Win32), sign-out. Fixed on the way: WebView2 keeps `visibilityState` "visible" and `hasFocus()`
+true when minimised, so the app never alerted; the shell now sets `window.__manythreadsDesktopFocused` from focus/resize/page-load and
+`raiseAlert` prefers it. Left: the HA chaos check half of P10-11; macOS/Linux builds and `desktop.yml` never run; the signed-in spec not run
+against the live site (only the owner may, with the devbox password file); OIDC in the app not checked; "another app in front, not minimised"
+not tested on its own; clicking an alert does not focus the window; unsigned, no auto-update, placeholder icon; the picker test writes the real
 `%APPDATA%` config (Tauri ignores an overridden `APPDATA`). Pre-existing, not from this change: `pnpm -C clients/web typecheck` fails on Windows
 because `src/shell/NewChannel.tsx` and `newChannel.ts` differ only in case.
 

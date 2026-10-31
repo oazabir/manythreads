@@ -17,6 +17,7 @@ import {
 import { onPersonChange } from '../app/caches';
 import { laterStore } from '../later/store';
 import type { Push, RealtimeClient } from '../realtime/socket';
+import { inDesktopApp } from './push';
 
 /*
  * The bell's data (PLAN P3-16, docs/plugins/notifications.md): the unread count from `GET /api/notifications/summary` kept live by
@@ -211,11 +212,23 @@ export class NotificationStore {
   }
 }
 
+/**
+ * Whether the person is looking at the app. Inside the desktop app the shell reports the real window focus, because WebView2 keeps
+ * saying "visible" and focused after the window is minimised or another app is in front.
+ */
+function lookingAtApp(): boolean {
+  if (inDesktopApp()) {
+    const focused = (window as unknown as { __manythreadsDesktopFocused?: unknown }).__manythreadsDesktopFocused;
+    if (typeof focused === 'boolean') return focused;
+  }
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
+
 /** The operating-system alert for a live notification, only when the person allowed them and is looking elsewhere. */
 function raiseAlert(n: InboxItem): void {
   try {
     if (browserAlerts() !== 'granted') return;
-    if (document.visibilityState === 'visible' && document.hasFocus()) return;
+    if (lookingAtApp()) return;
     new Notification(notificationTitle(n), { body: n.preview, tag: n.id });
   } catch {
     /* some WebViews have the constructor but refuse it: the in-app badge still shows */

@@ -30,6 +30,8 @@ On Windows permission is always given; on macOS the system asks the first time.
 
 Browser push (alerts while the app is closed) is not used in the app. The settings page says so instead of offering a switch that cannot work.
 
+The page raises an alert only when the person is looking elsewhere. WebView2 keeps saying the page is visible and focused when the window is minimised, so the shell tells the page the real window focus (`window.__manythreadsDesktopFocused`, set on every focus change and after each page load) and the web client uses that inside the app.
+
 A system alert does not bring the window to the front when pressed: the notification plugin gives no click event on desktop yet.
 
 ## Links
@@ -71,6 +73,14 @@ pnpm -C clients/desktop bundle        # installers for release, in src-tauri/tar
 ```
 
 Smoke test (Windows only, needs the debug exe and the internet): `pnpm -C clients/desktop bundle:debug` then `pnpm e2e:desktop`. It starts the built `manythreads-desktop.exe` with a WebView2 DevTools port, drives it with Playwright over CDP against https://manythreads.kahf.to (anonymous only, no sign-in) and checks the sign-in page, notifications, that the page cannot call the first-screen commands, `manythreads://` links, the navigation guard and the first-run screen. It skips itself when the exe is missing (`MANYTHREADS_DESKTOP_EXE` points it elsewhere) and is not part of `pnpm e2e` or the devbox CI. A copy of the app must not be running; the first-run case writes and then removes `config.json`.
+
+Signed-in smoke test (Windows only, needs the debug exe and the live server): `pnpm e2e:desktop:signin`. It runs `e2e/desktop/tauri-signin.spec.ts` and reads the sign-in details only from the environment (`MANYTHREADS_URL`, default https://manythreads.kahf.to; `OMAR_EMAIL` and `OMAR_PASSWORD` for the owner; `NADIA_EMAIL` and `NADIA_PASSWORD` for a member). In Git Bash:
+
+```
+set -a; source <(ssh devbox cat '~/manythreads.passwords.env'); set +a; pnpm e2e:desktop:signin
+```
+
+It signs in through the app's own form, restarts the app and checks the session is still there, then signs out through the account menu. Every case skips with a message when `OMAR_*` is missing (the mention case also needs `NADIA_*`). The mention case posts one direct message from Nadia to Omar that names him, waits for the system alert the app raises (the window is really minimised, by Win32 `ShowWindow`, so the shell reports it as not focused), and then deletes the message. It also turns Omar's "system alert on mentions" switch on for the run if it is off, and puts it back. The app runs with a throw-away profile (`WEBVIEW2_USER_DATA_FOLDER` in a temporary folder), so your own desktop session is untouched, and the test records no trace, video or screenshot because the password is typed. `pnpm e2e:desktop` stays anonymous only.
 
 The script is called `bundle`, not `build`, on purpose: `pnpm build` at the repository root runs every package's `build`, and that must not need Rust.
 

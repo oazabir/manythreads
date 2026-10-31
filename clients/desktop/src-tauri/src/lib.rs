@@ -14,8 +14,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    webview::NewWindowResponse,
-    AppHandle, Manager, State, Url, WebviewUrl, WebviewWindowBuilder,
+    webview::{NewWindowResponse, PageLoadEvent},
+    AppHandle, Manager, State, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 #[cfg(not(windows))]
 use tauri::webview::DownloadEvent;
@@ -109,6 +109,15 @@ fn focus_main(app: &AppHandle) {
     }
 }
 
+/// Tells the page whether the real window has the person's attention. WebView2 keeps reporting `visibilityState` "visible" and
+/// `hasFocus()` true after the window is minimised or another app is in front, so the web client reads this instead
+/// (`raiseAlert` in `clients/web/src/notifications/store.ts`).
+fn tell_focus(app: &AppHandle, focused: bool) {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let _ = window.eval(format!("window.__manythreadsDesktopFocused = {focused};"));
+    }
+}
+
 fn open_outside(app: &AppHandle, url: &Url) {
     if server::may_open_outside(url) {
         let _ = app.opener().open_url(url.as_str(), None::<&str>);
@@ -142,6 +151,16 @@ fn open_main(app: &AppHandle, target: Option<&Url>) -> tauri::Result<()> {
         .title("manythreads")
         .inner_size(1280.0, 820.0)
         .min_inner_size(900.0, 600.0)
+        // A page that has just loaded (a reload, a navigation) starts from the window's current state.
+        .on_page_load(|webview, payload| {
+            if payload.event() == PageLoadEvent::Finished && webview.label() == MAIN {
+                let app = webview.app_handle();
+                // On an error nothing is sent, so the web client falls back to its own check of the page.
+                if let Some(focused) = app.get_webview_window(MAIN).and_then(|w| w.is_focused().ok()) {
+                    tell_focus(app, focused);
+                }
+            }
+        })
         .on_navigation(move |url| {
             let server = current_server(&on_navigate);
             let shell = on_navigate.state::<Shell>();
@@ -291,6 +310,22 @@ pub fn run() {
         .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(Shell::default())
+        .on_window_event(|window, event| {
+            if window.label() != MAIN {
+                return;
+            }
+            match event {
+                WindowEvent::Focused(focused) => tell_focus(window.app_handle(), *focused),
+                // Once the page itself has been clicked, WebView2 holds the focus and minimising the window sends no `Focused(false)`;
+                // the resize that comes with minimising and restoring is the signal then.
+                WindowEvent::Resized(_) => match window.is_minimized() {
+                    Ok(true) => tell_focus(window.app_handle(), false),
+                    Ok(false) if window.is_focused().unwrap_or(false) => tell_focus(window.app_handle(), true),
+                    _ => {}
+                },
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![default_server, connect_server])
         .setup(|app| {
             let handle = app.handle().clone();

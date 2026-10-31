@@ -25,6 +25,7 @@
     "test:evals": "tsx tools/evals/src/cli.ts",
     "e2e": "pnpm -C e2e exec playwright test -c playwright.config.ts",
     "e2e:desktop": "pnpm -C e2e exec playwright test -c desktop/desktop.config.ts",
+    "e2e:desktop:signin": "pnpm -C e2e exec playwright test -c desktop/signin.config.ts",
     "vt": "tsx tools/plates/src/cli.ts",
     "vt:update": "tsx tools/plates/src/cli.ts --update"
   },

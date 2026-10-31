@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
-    "desktop": "playwright test -c desktop/desktop.config.ts"
+    "desktop": "playwright test -c desktop/desktop.config.ts",
+    "desktop:signin": "playwright test -c desktop/signin.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

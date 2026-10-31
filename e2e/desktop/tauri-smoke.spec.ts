@@ -1,121 +1,21 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
+import { dirname, join } from 'node:path';
+import { expect, test } from '@playwright/test';
+import { EXE, IDENTIFIER, ROOT, exeMissing, launch, secondLaunch, sleep, stop, type Shell, type TauriWindow } from './shell.ts';
 
 // Smoke test of the Tauri desktop shell (PLAN P10-11): the real built debug exe, driven over CDP (WebView2 opens a DevTools port when
 // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS carries --remote-debugging-port), against the LIVE site. Anonymous only: it never signs in.
 //   pnpm -C clients/desktop bundle:debug && pnpm e2e:desktop
-// Windows only. Not part of `pnpm e2e` (see desktop.config.ts).
+// Windows only. Not part of `pnpm e2e` (see desktop.config.ts). The signed-in counterpart is tauri-signin.spec.ts.
 
 const SERVER = 'https://manythreads.kahf.to';
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, '../..');
-const EXE = process.env['MANYTHREADS_DESKTOP_EXE'] ?? join(ROOT, 'clients/desktop/src-tauri/target/debug/manythreads-desktop.exe');
-const IDENTIFIER = 'to.kahf.manythreads';
 const SHOT = join(ROOT, 'temp/screenshots/desktop-sign-in.png');
 
 test.skip(process.platform !== 'win32', 'The desktop shell smoke test drives WebView2 and runs on Windows only.');
-test.skip(process.platform === 'win32' && !existsSync(EXE), `The debug exe is missing (${EXE}); build it first: pnpm -C clients/desktop bundle:debug`);
+test.skip(exeMissing, `The debug exe is missing (${EXE}); build it first: pnpm -C clients/desktop bundle:debug`);
 
 test.describe.configure({ mode: 'serial' });
-
-const freePort = () =>
-  new Promise<number>((ok, fail) => {
-    const s = createServer();
-    s.once('error', fail);
-    s.listen(0, '127.0.0.1', () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => ok(port));
-    });
-  });
-
-/** What the page sees of the shell (the browser side of the evaluate callbacks). */
-interface TauriWindow {
-  __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Kills the process and every child (the WebView2 helpers) by process tree. */
-const killTree = (child: ChildProcess | undefined) => {
-  if (child?.pid) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
-};
-
-interface Shell {
-  child: ChildProcess;
-  browser: Browser;
-  env: NodeJS.ProcessEnv;
-  /** The window's page (the first one that is not about:blank). */
-  page: () => Page;
-}
-
-async function launch(env: NodeJS.ProcessEnv): Promise<Shell> {
-  const port = await freePort();
-  const full = { ...process.env, ...env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
-  const child = spawn(EXE, [], { env: full, stdio: 'ignore' });
-  const deadline = Date.now() + 60_000;
-  let browser: Browser | undefined;
-  while (!browser) {
-    if (child.exitCode !== null) throw new Error(`The shell exited early with code ${child.exitCode}`);
-    try {
-      browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { timeout: 3000 });
-    } catch (e) {
-      if (Date.now() > deadline) {
-        killTree(child);
-        throw new Error(`No DevTools port after 60 s: ${String(e)}`);
-      }
-      await sleep(500);
-    }
-  }
-  const page = () => {
-    const real = browser!
-      .contexts()
-      .flatMap((c) => c.pages())
-      .find((p) => p.url() !== 'about:blank');
-    if (!real) throw new Error('The shell has no page yet');
-    return real;
-  };
-  // The window may open about:blank first; wait for a real page.
-  while (
-    !browser
-      .contexts()
-      .flatMap((c) => c.pages())
-      .some((p) => p.url() !== 'about:blank')
-  ) {
-    if (Date.now() > deadline) {
-      killTree(child);
-      throw new Error('The window never showed a page');
-    }
-    await sleep(300);
-  }
-  return { child, browser, env: full, page };
-}
-
-/** Runs the exe a second time (a link click does that); the single-instance plugin hands the argument to the first copy. */
-function secondLaunch(shell: Shell, arg: string): Promise<number | null> {
-  return new Promise((ok, fail) => {
-    const second = spawn(EXE, [arg], { env: shell.env, stdio: 'ignore' });
-    const timer = setTimeout(() => {
-      killTree(second);
-      fail(new Error('The second launch did not exit within 30 s'));
-    }, 30_000);
-    second.once('exit', (code) => {
-      clearTimeout(timer);
-      ok(code);
-    });
-  });
-}
-
-async function stop(shell: Shell | undefined) {
-  if (!shell) return;
-  await shell.browser.close().catch(() => undefined);
-  killTree(shell.child);
-  await sleep(1000);
-}
 
 test.describe('server window (live site, anonymous)', () => {
   let shell: Shell | undefined;

@@ -7,7 +7,7 @@ import { defineConfig } from '@playwright/test';
 // the Linux devbox CI has none of them. No web server and no global setup.
 export default defineConfig({
   testDir: '.',
-  testMatch: '**/*.spec.ts',
+  testMatch: 'tauri-smoke.spec.ts', // the signed-in spec has its own config (signin.config.ts)
   outputDir: '../test-results/desktop',
   reporter: [['list']],
   workers: 1,
