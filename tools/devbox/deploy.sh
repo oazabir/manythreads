@@ -126,6 +126,25 @@ fi
 # (registry.local:5000 -> the registry's node port) so the node can pull it again after an image clean-up. Built and pushed only when the
 # registry does not have it; the chart pins its digest. --rebuild-postgres also rebuilds the old local manythreads/postgres:19 (compose).
 PG_REF=platform/postgres-cnpg:19beta4-202609281634-u999
+# First install on an empty cluster: the registry is part of the chart, but the database image has to be in it BEFORE the chart is installed. So start
+# the registry alone from the chart's own template, and mark its objects as the release's so that the install below adopts them instead of
+# refusing ("exists and cannot be imported into the current release"). A cluster that already has the registry skips this.
+if ! curl -sf -o /dev/null "http://127.0.0.1:30500/v2/"; then
+  echo "--- registry is not running (first install): starting it from the chart"
+  REG_NS=$(helm template manythreads ./deploy/helm/manythreads -n manythreads -f deploy/helm/manythreads/values-live.yaml --set registry.enabled=true \
+    -s templates/registry.yaml | tee /tmp/manythreads-registry.yaml | python3 -c 'import sys,yaml; print(next(d["metadata"]["name"] for d in yaml.safe_load_all(sys.stdin) if d and d["kind"]=="Namespace"))')
+  kubectl apply -f /tmp/manythreads-registry.yaml
+  for o in "namespace/$REG_NS" $(kubectl get -n "$REG_NS" networkpolicy,persistentvolumeclaim,service,deployment -o name); do
+    if [ "${o%%/*}" = namespace ]; then
+      kubectl label "$o" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null
+      kubectl annotate "$o" meta.helm.sh/release-name=manythreads meta.helm.sh/release-namespace=manythreads --overwrite >/dev/null
+    else
+      kubectl label -n "$REG_NS" "$o" app.kubernetes.io/managed-by=Helm --overwrite >/dev/null
+      kubectl annotate -n "$REG_NS" "$o" meta.helm.sh/release-name=manythreads meta.helm.sh/release-namespace=manythreads --overwrite >/dev/null
+    fi
+  done
+  kubectl -n "$REG_NS" rollout status deploy/registry --timeout=180s
+fi
 if ! curl -sf -o /dev/null -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json' "http://127.0.0.1:30500/v2/${PG_REF%%:*}/manifests/${PG_REF##*:}"; then
   echo "--- build and push the database image ($PG_REF)"
   docker build -f deploy/postgres/cnpg.Dockerfile -t "127.0.0.1:30500/$PG_REF" deploy/postgres
@@ -335,12 +354,23 @@ helm upgrade --install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespac
 HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${PODS_ARGS[@]}" "${TLS_ARGS[@]}")
 [ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
 echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
+# `--wait` also waits for every claim to be Bound, and the backups claim (a WaitForFirstConsumer volume) is not until the first nightly job runs, so on a
+# first install --wait ran to its timeout and the post-install seed hook never started. The first install therefore waits for the deployments instead
+# (the seed hook itself blocks until the server has migrated).
+WAIT_ARGS=(--wait)
+[ -n "$RELEASES" ] || WAIT_ARGS=()
 if ! helm upgrade --install manythreads ./deploy/helm/manythreads -n manythreads \
-  "${HELM_ARGS[@]}" --wait --timeout 10m; then
+  "${HELM_ARGS[@]}" "${WAIT_ARGS[@]}" --timeout 10m; then
   echo "WARNING: helm --wait failed; checking web + postgres readiness"
   kubectl get pods -n manythreads
   kubectl rollout status deploy/manythreads-web -n manythreads --timeout=60s
   kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts manythreads-pg -n manythreads
+fi
+
+if [ -z "$RELEASES" ]; then
+  echo "--- first install: waiting for the server and web"
+  kubectl -n manythreads rollout status deploy/manythreads-server --timeout=10m
+  kubectl -n manythreads rollout status deploy/manythreads-web --timeout=5m
 fi
 
 echo "--- smoke test"

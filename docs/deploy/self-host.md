@@ -333,6 +333,7 @@ If every visitor shares one counter, `MANYTHREADS_TRUST_PROXY` is wrong for your
 | No `first-admin setup` line in the logs | A workspace already exists, usually because `seed.demo` was `true`. Reinstall with an empty database and `seed.demo: false`. |
 | Sign-in appears to work, then you are signed out | Plain HTTP with the default public URL. Set `publicUrl: http://<host>`, or use HTTPS. |
 | Pods stuck in `ImagePullBackOff` | An image was not imported into k3s. Run the `docker save ... \| k3s ctr -n k8s.io images import -` step again, with the exact tag. |
+| `helm upgrade --install --wait` ends with "context deadline exceeded" on a first install and no first-admin line appears | `--wait` also waits for the `manythreads-backups` claim, which stays Pending until the first nightly backup runs (`backup.enabled: true`). Install without `--wait` (as step 5 does) and watch the pods. The seed and first-admin steps run after the resources are created. |
 | Database pod never starts, event names `registry.local:5000` | `postgres.image` still has the default. Set it as in step 5. |
 | `/readyz` 503 "Migrations pending" | The server is still migrating, or a migration failed. Run `kubectl -n manythreads logs deploy/manythreads-server`. |
 | Server will not start: "was edited after it was applied (checksum changed)" | A migration file differs from the applied one. Use the original file from the release you ran. |
