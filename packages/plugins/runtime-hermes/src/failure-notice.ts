@@ -6,7 +6,7 @@ import type { RunPayload } from './run-job.ts';
 // never the error text (it can carry a key's first characters, a hash, an address or a stack trace), never the model's half answer.
 
 /** The causes a notice can name. `limit` and `approval` are raised by the run job where it knows them; the rest are read off a failed run. */
-export type FailureCategory = 'gateway' | 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'limit' | 'approval' | 'other';
+export type FailureCategory = 'gateway' | 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'limit' | 'approval' | 'not_allowed' | 'other';
 
 /** The whole text a person sees, per category. Fixed strings: nothing from the failure is ever put into them. */
 export const FAILURE_NOTICE: Record<FailureCategory, string> = {
@@ -16,8 +16,19 @@ export const FAILURE_NOTICE: Record<FailureCategory, string> = {
   timeout: "I couldn't answer: I ran out of time before I finished. A shorter or narrower question may fit.",
   limit: "I couldn't answer: a budget, rate limit or safety rule stopped the call before anything was sent to a model.",
   approval: "I couldn't answer: this was held for approval, and nobody here can approve it.",
+  not_allowed: "I couldn't answer: this bot is not set up to post messages. Tell a lead of this team to check its definition.",
   other: "I couldn't answer: something went wrong on our side. Try again; if it keeps happening, tell a workspace admin.",
 };
+
+/**
+ * Did a person address this run, so that someone is waiting for an answer in the thread? A conversation or a mention, and a card handed to the bot
+ * (`task_assigned`) when it has a thread to answer in. A watched channel (`channel_message`) and a scheduled firing (`rhythm`) are not: nobody asked,
+ * so a bot that was deliberately given no `messages.post` stays quiet there, and the notice keeps going through the grant like any bot's post.
+ */
+export function personAddressed(payload: RunPayload): boolean {
+  if (payload.rhythm) return false;
+  return payload.trigger === 'conversation' || payload.trigger === 'mention' || (payload.trigger === 'task_assigned' && payload.replyRootId !== null);
+}
 
 /** The proxy refusing the bot's own key (LiteLLM answers 401 "Invalid proxy server token" when it has lost the key). */
 export function looksLikeRejectedKey(error: string | undefined): boolean {
@@ -38,10 +49,12 @@ export function classifyFailure(error: string | undefined, failure?: 'runner_off
 }
 
 /**
- * Say, once, in the thread the run answers in, why there is no answer. Posted as the bot through the same door as its reply — the broker is
- * asked for `messages.post` first, so a bot that was never granted it stays silent (and the log says so). The run id and the category go in the
- * message's `meta`, which is also how a second call for the same run (a retried job) finds the first and posts nothing. Never throws: a notice
- * that cannot be posted must not stop the run from closing.
+ * Say, once, in the thread the run answers in, why there is no answer. For a run a person addressed (`personAddressed`) it is posted as the bot but not
+ * through the broker: a `messages.post` grant limits what the bot's MODEL may choose to call, and this line is the platform's own fixed text. A bot whose
+ * loaded definition lacks the grant (the reason its reply was refused in the first place) must not be silenced twice, so that person always hears
+ * something. For any other run the broker is asked first, so a bot deliberately given no `messages.post` stays quiet. The channel's own rule for who may
+ * post applies either way; when that refuses too, the log says so. The run id and the category go in the message's `meta`, which is also how a second call
+ * for the same run (a retried job) finds the first and posts nothing. Never throws: a notice that cannot be posted must not stop the run from closing.
  */
 export async function postFailureNotice(
   ctx: PluginContext,
@@ -51,6 +64,7 @@ export async function postFailureNotice(
   category: FailureCategory,
   log: (line: string) => void,
 ): Promise<boolean> {
+  if (payload.rhythm) return false; // a scheduled firing has no one waiting; its reason lives on the firing in the rhythms ledger
   const messages = ctx.providers.get<MessageProvider>('messages');
   if (!messages) {
     log(`runtime-hermes: run ${run.runId}: no failure notice posted (no message door)`);
@@ -69,11 +83,13 @@ export async function postFailureNotice(
       return false;
     }
     const body = FAILURE_NOTICE[category];
-    const decision = await ctx.runs.authorize(run, 'messages.post', authorizeContext({ channelId: payload.channelId, body, threadRootId: payload.replyRootId }));
-    if (!decision.allowed || decision.needsApproval) {
-      log(`runtime-hermes: run ${run.runId}: no failure notice posted (${decision.allowed ? 'posting needs approval' : decision.reason})`);
-      await tx.query('RELEASE SAVEPOINT run_failure_notice');
-      return false;
+    if (!personAddressed(payload)) {
+      const decision = await ctx.runs.authorize(run, 'messages.post', authorizeContext({ channelId: payload.channelId, body, threadRootId: payload.replyRootId }));
+      if (!decision.allowed || decision.needsApproval) {
+        log(`runtime-hermes: run ${run.runId}: no failure notice posted (${decision.allowed ? 'posting needs approval' : decision.reason})`);
+        await tx.query('RELEASE SAVEPOINT run_failure_notice');
+        return false;
+      }
     }
     await ctx.runs.asBot(run, (inner) =>
       messages.post(inner, { channelId: payload.channelId, body, threadRootId: payload.replyRootId, meta: { runId: run.runId, runFailure: category } }),

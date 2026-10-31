@@ -271,6 +271,21 @@ export class RunEndedError extends Error {
 }
 
 /**
+ * Thrown when the broker refuses a call a runtime makes for a run (`BotRuntimeScope.invoke`): the bot's allowlist has no grant, or a path or scope
+ * rule says no. It carries the capability so a caller can tell "the reply was refused" from any other failure without reading the message.
+ */
+export class CapabilityRefusedError extends Error {
+  readonly capability: string;
+  readonly reason: string;
+  constructor(capability: string, reason: string) {
+    super(`the run may not call "${capability}": ${reason}`);
+    this.name = 'CapabilityRefusedError';
+    this.capability = capability;
+    this.reason = reason;
+  }
+}
+
+/**
  * One bot run, as the MCP gateway works with it (SPEC §6.2, PLAN P5-09, decision in `docs/spikes/per-run-scoping.md`):
  * a row in `bot_runs` plus the bot actor the broker checks, and the person who asked when there is one.
  */

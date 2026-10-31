@@ -2,10 +2,12 @@ import {
   authorizeContext,
   NoEligibleApproverError,
   type ApprovalProvider,
+  type MessageProvider,
   type PluginContext,
   type PluginTx,
 } from '@manythreads/sdk';
 import type { GateVerdict } from './gate.ts';
+import { personAddressed } from './failure-notice.ts';
 import type { RunPayload } from './run-job.ts';
 import { clip } from '@manythreads/shared';
 
@@ -54,8 +56,10 @@ export async function previewText(ctx: PluginContext, tx: PluginTx, workspaceId:
 /**
  * A short, visible reply in the thread when the gate stopped a run and no approval card will explain it (a budget or rate limit, the approvals plugin
  * absent, nobody but the asker able to decide in a private conversation): without it the asker sees a bot that never answers. It says what happened and
- * nothing about why — no gate entry, no limit figures, none of the message. Posted as the bot, through the same broker door as its reply, so a bot that was
- * never granted `messages.post` stays silent (and the log says so).
+ * nothing about why — no gate entry, no limit figures, none of the message. For a run a person addressed it is posted as the bot but not through the
+ * broker (the platform's fixed line is not a call the model chose), so a bot whose definition lacks `messages.post` is still heard. A run nobody addressed
+ * (a watched channel, a scheduled firing) says nothing, and for the first of those the broker is asked as before, so a bot deliberately given no
+ * `messages.post` stays quiet. The channel's own posting rule applies either way, and a refusal is logged.
  */
 export async function postNotice(
   ctx: PluginContext,
@@ -65,13 +69,21 @@ export async function postNotice(
   log: (line: string) => void,
 ): Promise<void> {
   try {
+    if (payload.rhythm) return; // a scheduled firing has no one waiting; its reason lives on the firing in the rhythms ledger
     const args = { channelId: payload.channelId, body, threadRootId: payload.replyRootId };
-    const decision = await ctx.runs.authorize(run, 'messages.post', authorizeContext(args));
-    if (!decision.allowed) {
-      log(`runtime-hermes: run ${run.runId}: no notice posted (${decision.reason})`);
+    if (!personAddressed(payload)) {
+      const decision = await ctx.runs.authorize(run, 'messages.post', authorizeContext(args));
+      if (!decision.allowed || decision.needsApproval) {
+        log(`runtime-hermes: run ${run.runId}: no notice posted (${decision.allowed ? 'posting needs approval' : decision.reason})`);
+        return;
+      }
+    }
+    const messages = ctx.providers.get<MessageProvider>('messages');
+    if (!messages) {
+      log(`runtime-hermes: run ${run.runId}: no notice posted (no message door)`);
       return;
     }
-    await ctx.runs.asBot(run, (inner) => ctx.runs.invoke(inner, 'messages.post', args));
+    await ctx.runs.asBot(run, (inner) => messages.post(inner, args));
   } catch (err) {
     log(`runtime-hermes: run ${run.runId}: the notice could not be posted: ${err instanceof Error ? err.message : String(err)}`);
   }

@@ -182,6 +182,18 @@ const messagesBy = async (rootId: string, authorId: string, channel: string = ch
   return ListMessagesResponse.parse(res.body).items.filter((m) => m.authorId === authorId);
 };
 
+/** The meta of every message the bot wrote in the thread: where the run id and the category are kept. */
+const metaOf = (botActorId: string, rootId: string): Promise<Record<string, unknown>[]> =>
+  w.system(async (tx) =>
+    (await tx.query<{ meta: Record<string, unknown> }>(`SELECT meta FROM app.messages WHERE author_id = $1 AND thread_root_id = $2 ORDER BY id`, [botActorId, rootId])).rows.map((r) => r.meta),
+  );
+
+/** Take a bot off the roster's active list, so a watching (`channel_message`) bot does not wake on the messages of every later test. */
+const retire = (botId: string): Promise<void> =>
+  w.system(async (tx) => {
+    await tx.query(`UPDATE app.bots SET status = 'disabled' WHERE id = $1`, [botId]);
+  });
+
 /** Prove a negative by waiting: a sleep is a nap, so negatives below wait on the reply that proves the router decided. */
 const quiet = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -332,7 +344,7 @@ describe('a hermes run, end to end', () => {
     expect((await runsOf(bot.botId)).length).toBe(1);
   });
 
-  it('a definition that never asked for messages.post runs, and its reply is refused', async () => {
+  it('a definition that never asked for messages.post runs and its reply is refused: the model text is not posted, the asker gets the one not_allowed line', async () => {
     const bot = await loadBot('hermes-no-grant', botMd({ name: 'HermesNoGrant', model: 'smart' }));
 
     const rootId = await post('@hermes-no-grant what changed in the deploy?');
@@ -341,11 +353,17 @@ describe('a hermes run, end to end', () => {
       return row && row.status !== 'running' ? row : null;
     }, 30_000, 'the refused run row');
 
-    // The process ran and answered; the platform refused the one call that would have made it visible, so the run failed
-    // and the channel holds no message from the bot. This is the broker's allowlist doing its job at the runtime's door.
+    // The process ran and answered; the platform refused the one call that would have made it visible, so the run failed. This is the broker's
+    // allowlist doing its job at the runtime's door. The line that follows is the platform's own, not a call the model chose, so the missing grant
+    // does not silence it (the live failure: bots whose loaded definition lacked messages.post answered with nothing at all).
     expect(run.status).toBe('failed');
     expect(callsOf('hermes-no-grant', run.id)).toHaveLength(1);
-    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, bot.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.not_allowed]);
+    expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id, runFailure: 'not_allowed' }]);
   });
 
   it('a definition that names no model fails the run and starts no process', async () => {
@@ -516,11 +534,6 @@ describe('a run that ends without an answer tells the asker why (a category, nev
       const row = await runOf(botId);
       return row && row.status !== 'running' ? row : null;
     }, 60_000, 'the run to end');
-  /** The meta of every message the bot wrote in the thread: where the run id and the category are kept. */
-  const metaOf = (botActorId: string, rootId: string): Promise<Record<string, unknown>[]> =>
-    w.system(async (tx) =>
-      (await tx.query<{ meta: Record<string, unknown> }>(`SELECT meta FROM app.messages WHERE author_id = $1 AND thread_root_id = $2 ORDER BY id`, [botActorId, rootId])).rows.map((r) => r.meta),
-    );
 
   it('a refused model call says the gateway refused it, hides the key, hash and address, names the run only in meta, and asks the gateway to re-check the key', async () => {
     const bot = await loadBot('notice-gateway', botMd({ name: 'NoticeGateway', model: 'smart', capabilities: 'messages.post' }));
@@ -596,11 +609,66 @@ describe('a run that ends without an answer tells the asker why (a category, nev
     expect(spoolLines()).toHaveLength(before);
   });
 
-  it('a bot never granted messages.post stays silent, failed run or not', async () => {
-    const bot = await loadBot('notice-silent', botMd({ name: 'NoticeSilent', model: 'smart' }));
-    const rootId = await post('@notice-silent FAIL-GATEWAY');
+  it('a mention run of a bot with no messages.post that fails for another reason still gets that reason posted: the notice is the platform\'s, never silence', async () => {
+    const bot = await loadBot('notice-no-grant-gateway', botMd({ name: 'NoticeNoGrantGateway', model: 'smart' }));
+    const rootId = await post('@notice-no-grant-gateway FAIL-GATEWAY');
     expect((await finishedRun(bot.botId)).status).toBe('failed');
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, bot.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.gateway]);
+  });
+
+  it('a bot with no messages.post that a watched channel woke (nobody asked it) stays quiet when the run fails', async () => {
+    const bot = await loadBot('notice-watch-quiet', botMd({ name: 'NoticeWatchQuiet', model: 'smart', triggers: ['  - type: channel_message'] }));
+    const rootId = await post('@notice-watch-quiet-not FAIL-GATEWAY plain channel talk');
+    const run = await finishedRun(bot.botId);
+    expect(run).toMatchObject({ status: 'failed', trigger_type: 'channel_message' });
     await quiet(500);
+    expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
+    await retire(bot.botId);
+  });
+
+  it('a bot with no messages.post is heard about a spent budget when a person mentioned it, and quiet when a watched channel woke it', async () => {
+    const asked = await loadBot('notice-limit-asked', botMd({ name: 'NoticeLimitAsked', model: 'smart' }));
+    const watching = await loadBot('notice-limit-watch', botMd({ name: 'NoticeLimitWatch', model: 'smart', triggers: ['  - type: channel_message'] }));
+    await w.system(async (tx) => {
+      for (const id of [asked.botId, watching.botId]) {
+        await tx.query(`INSERT INTO app.llm_limits (workspace_id, scope, bot_id, limit_usd) VALUES ($1, 'bot', $2, 0)`, [personas.omar.workspaceId, id]);
+      }
+    });
+    const rootId = await post('@notice-limit-asked what changed?');
+    expect((await finishedRun(asked.botId)).status).toBe('stopped');
+    const said = await until(async () => {
+      const rows = await messagesBy(rootId, asked.actorId);
+      return rows.length > 0 ? rows : null;
+    }, 30_000, 'the notice');
+    expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.limit]);
+    // the same message woke the watching bot through its channel_message trigger; nobody asked it, and it was given no way to post
+    expect((await finishedRun(watching.botId)).trigger_type).toBe('channel_message');
+    await quiet(500);
+    expect(await messagesBy(rootId, watching.actorId)).toEqual([]);
+    await retire(watching.botId);
+  });
+
+  it('a reply that cannot be posted at all (the channel went read-only) writes nothing, and the run still closes', async () => {
+    const bot = await loadBot('notice-archived', botMd({ name: 'NoticeArchived', model: 'smart', capabilities: 'messages.post', extra: ['limits:', '  timeoutSeconds: 1'] }));
+    const rootId = await post('@notice-archived SLEEP-FOREVER');
+    const setArchived = (on: boolean) =>
+      w.system(async (tx) => {
+        await tx.query(`UPDATE app.channels SET archived_at = ${on ? 'now()' : 'NULL'} WHERE id = $1`, [channelId]);
+      });
+    // the channel goes read-only once the run is under way (a post into an archived channel is refused, and so is the router's wake-up)
+    await until(() => runOf(bot.botId), 15_000, 'the run to open');
+    await setArchived(true);
+    try {
+      const run = await finishedRun(bot.botId);
+      expect(run.status).toBe('failed');
+      await quiet(500);
+    } finally {
+      await setArchived(false);
+    }
     expect(await messagesBy(rootId, bot.actorId)).toEqual([]);
   });
 
@@ -985,6 +1053,27 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the notice in the thread');
       expect(notice.body).toMatch(/budget or rate limit/);
       expect(notice.body).not.toMatch(/\$|credential/); // no figures, no gate entry
+    });
+
+    it('a spent budget at the gate: a bot with no messages.post says so to the person who mentioned it, and stays quiet when a watched channel woke it', async () => {
+      const gateMd = (name: string, trigger: string) =>
+        botMd({ name, model: 'smart', triggers: [`  - type: ${trigger}`], extra: ['guard:', "  gate: ['credential rotation']"] });
+      const asked = await loadBot('gate-nogrant-asked', gateMd('GateNograntAsked', 'mention'));
+      const watching = await loadBot('gate-nogrant-watch', gateMd('GateNograntWatch', 'channel_message'));
+      await w.system(async (tx) => {
+        for (const id of [asked.botId, watching.botId]) {
+          await tx.query(`INSERT INTO app.llm_limits (workspace_id, scope, bot_id, limit_usd) VALUES ($1, 'bot', $2, 0)`, [personas.omar.workspaceId, id]);
+        }
+      });
+      classifierSays = () => 'NO';
+      const rootId = await post('@gate-nogrant-asked what is on the roadmap?');
+      expect((await finished(asked.botId)).status).toBe('stopped');
+      const notice = await until(async () => (await messagesBy(rootId, asked.actorId))[0], 30_000, 'the notice in the thread');
+      expect(notice.body).toMatch(/budget or rate limit/);
+      expect((await finished(watching.botId)).status).toBe('stopped');
+      await quiet(500);
+      expect(await messagesBy(rootId, watching.actorId)).toEqual([]);
+      await retire(watching.botId);
     });
 
     it('a hold nobody in the conversation could decide stops the run and says so in the thread, instead of failing it', async () => {

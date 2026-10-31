@@ -236,9 +236,10 @@ can carry a key's first characters, a hash, an address or a stack trace; that te
 | `timeout` | the run hit its time limit and was stopped | it ran out of time |
 | `limit` | a budget, rate limit or safety rule refused the call before anything was sent | a limit stopped it |
 | `approval` | the call was held for approval but nobody could be asked | held for approval, nobody here can approve |
+| `not_allowed` | the bot's own allowlist refused its reply (its loaded definition has no `messages.post`) | this bot is not set up to post messages; tell a lead to check its definition |
 | `other` | anything else | something went wrong on our side |
 
-The line is posted through the same door as the reply — the broker is asked for `messages.post` first, so a bot never granted it stays silent (the log says so). The run id and
+For a run a person addressed (a `conversation` or `mention` run, or a `task_assigned` run with a thread) the line is posted as the bot but not through the broker — a `messages.post` grant limits what the model may choose to call, and this is the platform's own fixed text — so a bot whose definition lacks the grant is still heard, never silent. For every other run (a watched channel's `channel_message`, nobody asked) the broker is asked first, so a bot deliberately given no `messages.post` stays quiet; a scheduled firing posts no line at all (its reason is on the firing in the rhythms ledger). The channel's own posting rule applies either way; a refusal (an archived channel, say) is logged and the run still closes. The `not_allowed` category comes from a typed error (`CapabilityRefusedError`, thrown by the runtime's door when the broker refuses `messages.post`), not from reading text. The run id and
 the category are in the message's `meta` (`runId`, `runFailure`), not its body; before posting, the runtime looks for a message with that `runId` and `runFailure`, so a run is
 announced at most once. A run that is waiting on a person (an approval card, or the gate's own notice) gets no second line: the card or notice is the explanation, and the
 gate's refusals and "nobody could decide" notices are posted where they happen. A run that finishes `ok` with no text posts nothing new. When the error is the proxy's 401, the runtime
@@ -321,7 +322,7 @@ for the Hermes CLI (`MANYTHREADS_HERMES_BIN`/`_PREFIX` point at a script that be
 stream-json`). A person's `@mention` in `#dev` loads a definition, the router enqueues, the job opens a run, one process
 starts in the rendered profile, and the answer arrives in the thread as the bot — the spool file the stand-in writes is what
 pins the argv, the `SOUL.md` it read, the run's MCP URL and the prompt it got on stdin. Three cases: the answer lands (`done`),
-a definition that never asked for `messages.post` has its reply **refused** (`failed`, nothing posted, though the process ran),
+a definition that never asked for `messages.post` has its reply **refused** (`failed`, the model's text not posted though the process ran; the asker gets the one-line `not_allowed` notice),
 and a definition with no model alias fails without starting a process at all.
 
 ## Rehearsal runs (P7-11)
@@ -382,8 +383,9 @@ gate: the DLP check still runs). `runtime.gate.held` is the audit event (`stage`
 approvals plugin is not loaded, or nobody but the asker could decide it in that private conversation).
 
 **When no card explains it** (a budget or rate limit; the approvals plugin absent; nobody but the asker able to decide in a private conversation) the bot posts a short notice in the thread — "Held: …" or
-"Couldn't check this message: …" — instead of staying silent. It names no gate entry, no figure and none of the message, and it is posted through the same broker door as a reply, so a bot without `messages.post`
-stays silent (the log says so).
+"Couldn't check this message: …" — instead of staying silent. It names no gate entry, no figure and none of the message, and in a run a person addressed it is posted as the bot but not through the broker, so a bot without `messages.post`
+is still heard; in a run nobody addressed (`channel_message`) the broker is asked first and such a bot stays quiet, and a scheduled firing posts nothing. The channel's own posting
+rule applies; a refusal is logged. The one notice that still goes through the broker is the delegation depth cap's (`router-subscribe.ts`): a bot without `messages.post` stays silent there (the log says so).
 
 **Connection.** The run job holds its database transaction while the classifier answers (at most 60 s in all), exactly as it already does for the whole model run: a job handler gets the kernel's transaction and a
 plugin cannot give it back. Freeing it would be a kernel change (jobs that run without one); recorded as open.

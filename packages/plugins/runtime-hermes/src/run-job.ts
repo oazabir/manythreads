@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   authorizeContext,
+  CapabilityRefusedError,
   requestToolApproval,
   type ApprovalProvider,
   type BotRunHandle,
@@ -418,7 +419,7 @@ export function buildScope(input: {
       // other call here, so a runtime that tried would be stopped rather than allowed to bypass the hold.
       if (run.rehearsal === true && capability !== 'messages.post') throw new Error(`the run is a rehearsal and may not call "${capability}"`);
       const decision = await ctx.runs.authorize(run, capability, authorizeContext(args));
-      if (!decision.allowed) throw new Error(`the run may not call "${capability}": ${decision.reason}`);
+      if (!decision.allowed) throw new CapabilityRefusedError(capability, decision.reason);
       // A grant that waits for a person becomes a pending approval (the approvals plugin's one handler) and the run stops: the call is not
       // made now, and approving it later makes it once, as the bot. Without that plugin it fails closed — running it anyway is the one
       // thing the flag exists to stop.
@@ -708,6 +709,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         // A model call is not something to replay blindly: the run is closed as failed and the reason is logged, rather than
         // letting the job retry (which would re-ask the model and post a second answer).
         job.log.warn(`runtime-hermes: run ${run.runId} threw: ${err instanceof Error ? err.message : String(err)}`);
+        // the reply itself refused by the bot's allowlist: a typed error, so the notice names the cause without reading any text
+        const refusedReply = err instanceof CapabilityRefusedError && err.capability === 'messages.post';
         await handle?.stop().catch(() => undefined);
         if (payload.rhythm) {
           await job
@@ -717,7 +720,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         await job
           .transaction(async (tx) => {
             const waiting = await ctx.providers.get<ApprovalProvider>('approvals')?.pendingForRun(tx, run.runId).catch(() => 0);
-            if (!waiting) await reportFailure({ ctx, tx, log: job.log, run, payload, botId: payload.botId, error: err instanceof Error ? err.message : String(err) });
+            if (!waiting) await reportFailure({ ctx, tx, log: job.log, run, payload, botId: payload.botId, error: err instanceof Error ? err.message : String(err), ...(refusedReply ? { category: 'not_allowed' as const } : {}) });
           })
           .catch(() => undefined);
         await ctx.runs.close(run.runId, 'failed');
