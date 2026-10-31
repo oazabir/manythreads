@@ -709,6 +709,24 @@ a.btn.primary {
   background: var(--dot-off);
 }
 
+/* bot state dots (`botAvailability`): ready is green, not checked is an open ring, warn is amber, bad is the alert colour */
+.dot.ready {
+  background: var(--ok);
+}
+
+.dot.unchecked {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--dot-off);
+}
+
+.dot.warn {
+  background: var(--warn);
+}
+
+.dot.bad {
+  background: var(--alert);
+}
+
 /* ---- tables ---- */
 .table-wrap {
   overflow-x: auto;

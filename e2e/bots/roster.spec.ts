@@ -74,6 +74,10 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     await expect(coder).toContainText('agent');
     await expect(coder).toContainText('Hermes');
     await expect(coder).toContainText('this team');
+    // nothing here checks that an agent can run the bot, so the state never claims it: "active" with an open ring, not "idle" or "ready"
+    await expect(coder.getByTestId('bot-state')).toHaveAttribute('data-state', 'unchecked');
+    await expect(coder.getByTestId('bot-state')).toContainText('active');
+    await expect(coder.getByTestId('bot-state')).not.toContainText(/idle|ready/);
     await expect(coder.getByTestId('bot-open')).toHaveAttribute('href', '/t/engineering/bots/coder');
     await expect(coder.getByTestId('bot-configure')).toHaveAttribute('href', '/t/engineering/bots/coder?tab=identity');
   } finally {

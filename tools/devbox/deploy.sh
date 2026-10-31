@@ -355,10 +355,14 @@ HELM_ARGS=(--set imageTag="$TAG" -f deploy/helm/manythreads/values-live.yaml "${
 [ "$DEMO" = true ] && HELM_ARGS+=(-f deploy/helm/manythreads/values-demo.yaml)
 echo "--- helm upgrade manythreads (imageTag=$TAG demo=$DEMO)"
 # `--wait` also waits for every claim to be Bound, and the backups claim (a WaitForFirstConsumer volume) is not until the first nightly job runs, so on a
-# first install --wait ran to its timeout and the post-install seed hook never started. The first install therefore waits for the deployments instead
-# (the seed hook itself blocks until the server has migrated).
+# first install --wait ran to its timeout and the post-install seed hook never started, and every upgrade before that first night timed out and left the
+# release marked failed. Until that claim is Bound the deploy therefore waits for the deployments itself instead (the seed hook itself blocks until the
+# server has migrated).
+OWN_WAIT=false
+[ -n "$RELEASES" ] || OWN_WAIT=true
+[ "$(kubectl get pvc manythreads-backups -n manythreads -o jsonpath='{.status.phase}' 2>/dev/null)" != Pending ] || OWN_WAIT=true
 WAIT_ARGS=(--wait)
-[ -n "$RELEASES" ] || WAIT_ARGS=()
+[ "$OWN_WAIT" = false ] || WAIT_ARGS=()
 if ! helm upgrade --install manythreads ./deploy/helm/manythreads -n manythreads \
   "${HELM_ARGS[@]}" "${WAIT_ARGS[@]}" --timeout 10m; then
   echo "WARNING: helm --wait failed; checking web + postgres readiness"
@@ -367,8 +371,8 @@ if ! helm upgrade --install manythreads ./deploy/helm/manythreads -n manythreads
   kubectl get cluster -n manythreads 2>/dev/null || kubectl get sts manythreads-pg -n manythreads
 fi
 
-if [ -z "$RELEASES" ]; then
-  echo "--- first install: waiting for the server and web"
+if [ "$OWN_WAIT" = true ]; then
+  echo "--- no helm --wait (first install, or the backups claim is not bound yet): waiting for the server and web"
   kubectl -n manythreads rollout status deploy/manythreads-server --timeout=10m
   kubectl -n manythreads rollout status deploy/manythreads-web --timeout=5m
 fi

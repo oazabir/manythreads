@@ -1,10 +1,11 @@
 import { Link } from 'react-router';
-import type { BotSummary } from '@manythreads/shared';
+import type { BotSummary, HermesConnection } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
 import { useQuery } from '../../app/useQuery';
 import { fetchProposals } from '../proposals/api';
+import { botAvailability, useAgentConnections } from './availability';
 import { useBots } from './store';
 
 /*
@@ -25,14 +26,17 @@ const placeOf = (bot: BotSummary): string => {
   return 'any node';
 };
 
-/** The state dot of the prototype: busy is a bot with a live run (phase 5 runs arrive with the gateway); idle and off are the rest. */
-function State({ bot }: { bot: BotSummary }) {
-  if (bot.status === 'invalid') return <span className="b-state bad"><span className="dot bad" aria-hidden="true" />needs a fix</span>;
-  if (bot.status === 'disabled') return <span className="b-state off"><span className="dot off" aria-hidden="true" />off</span>;
-  return <span className="b-state"><span className="dot up" aria-hidden="true" />idle</span>;
+/** The state dot of the prototype, from `botAvailability`: green only when the bot's agent passed its last check; "active" with an open ring when the page cannot tell. */
+function State({ bot, connections }: { bot: BotSummary; connections: ReadonlyArray<HermesConnection> | null }) {
+  const a = botAvailability(bot, connections);
+  return (
+    <span className={`b-state ${a.tone}`} title={a.hint} data-testid="bot-state" data-state={a.tone}>
+      <span className={`dot ${a.tone}`} aria-hidden="true" />{a.label}
+    </span>
+  );
 }
 
-function Row({ bot, slug }: { bot: BotSummary; slug: string }) {
+function Row({ bot, slug, connections }: { bot: BotSummary; slug: string; connections: ReadonlyArray<HermesConnection> | null }) {
   return (
     <div className="b-row" data-testid="bot-row" data-bot={bot.slug}>
       <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} />
@@ -45,7 +49,7 @@ function Row({ bot, slug }: { bot: BotSummary; slug: string }) {
       <div><span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span></div>
       <div className="mono b-where">{bot.runtime === 'hermes' ? `Hermes · ${placeOf(bot)}` : `Rules · ${placeOf(bot)}`}</div>
       <div className="b-vis">{bot.visibility === 'workspace' ? 'shared with the workspace' : 'this team'}</div>
-      <div><State bot={bot} /></div>
+      <div><State bot={bot} connections={connections} /></div>
       <div className="b-act">
         {/* a bot with no conversation trigger has no 1:1 chat: the button is not drawn at all (the API refuses it too) */}
         {bot.status === 'active' && bot.conversational ? (
@@ -70,6 +74,7 @@ function ProposalsLink({ slug }: { slug: string }) {
 
 export function BotRoster() {
   const { slug, q } = useBots();
+  const connections = useAgentConnections();
   useHeaderTopic('Bots');
   return (
     <div className="bots-screen" data-testid="bots-roster">
@@ -104,7 +109,7 @@ export function BotRoster() {
                 </div>
               ) : (
                 <div className="b-list" data-landmark="bot-roster">
-                  {bots.map((b) => <Row key={b.id} bot={b} slug={slug} />)}
+                  {bots.map((b) => <Row key={b.id} bot={b} slug={slug} connections={connections} />)}
                 </div>
               )}
             </>

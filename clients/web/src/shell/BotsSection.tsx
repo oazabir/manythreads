@@ -2,6 +2,7 @@ import { Link, NavLink } from 'react-router';
 import type { NavContribution } from '@manythreads/shared';
 import { useQuery } from '../app/useQuery';
 import { fetchBots } from '../screens/bots/api';
+import { botAvailability, useAgentConnections } from '../screens/bots/availability';
 import { navHref } from './nav';
 
 /**
@@ -11,6 +12,7 @@ import { navHref } from './nav';
  */
 export function BotsSection({ item, slug }: { item: NavContribution; slug: string }) {
   const q = useQuery(`sidebar-bots:${slug}`, () => fetchBots(slug));
+  const connections = useAgentConnections();
   const bots = q.status === 'ok' ? q.data.bots : [];
   const href = navHref(item, slug);
   const empty = q.status !== 'loading' && bots.length === 0;
@@ -25,18 +27,21 @@ export function BotsSection({ item, slug }: { item: NavContribution; slug: strin
       {href ? <Link className="sec sec-link" to={href}>{heading}</Link> : <div className="sec">{heading}</div>}
       {bots.length > 0 ? (
         <div className="bot-list" data-slot="bots">
-          {bots.map((b) => (
-            <NavLink
-              key={b.id}
-              to={`/t/${slug}/bots/${b.slug}`}
-              className={({ isActive }) => `it ${isActive ? 'on' : ''}`}
-              data-testid="sidebar-bot"
-              data-bot={b.slug}
-            >
-              <span className="h"><span className={`dot ${b.status === 'active' ? 'up' : 'off'}`} aria-hidden="true" /></span>
-              <span className="it-label">{b.name}</span>
-            </NavLink>
-          ))}
+          {bots.map((b) => {
+            const a = botAvailability(b, connections);
+            return (
+              <NavLink
+                key={b.id}
+                to={`/t/${slug}/bots/${b.slug}`}
+                className={({ isActive }) => `it ${isActive ? 'on' : ''}`}
+                data-testid="sidebar-bot"
+                data-bot={b.slug}
+              >
+                <span className="h"><span className={`dot ${a.tone}`} aria-hidden="true" title={`${a.label}. ${a.hint}`} /></span>
+                <span className="it-label">{b.name}</span>
+              </NavLink>
+            );
+          })}
         </div>
       ) : null}
     </>

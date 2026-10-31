@@ -121,6 +121,15 @@
   background: var(--ok);
 }
 
+.b-state .dot.warn {
+  background: var(--warn);
+}
+
+.b-state .dot.unchecked {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--dot-off);
+}
+
 .b-state .dot.bad {
   background: var(--alert);
 }
