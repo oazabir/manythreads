@@ -115,30 +115,431 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 
 ## 7. Phase map
 
-| Order | # | Phase | Size | Needs |
-|---|---|---|---|---|
-| 1 | 1 | Foundations | L | — |
-| 2 | 2 | Identity, workspace and teams | M | 1 |
-| 3 | 3 | Channels, threads and direct messages | XL | 2 |
-| 4 | 4 | Files and the team repo | L | 3 |
-| 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 |
-| 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 |
-| 7 | 14 | Messaging parity and moving in | XL | 6 |
-| 8 | 7 | Self-setup and the Workshop | L | 14 |
-| 9 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 |
-| 10 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 |
-| 11 | 16 | Connectors to the tools a company already uses | XL | 15 |
-| 12 | 9 | Surfaces | M | 16 |
-| 13 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 |
-| 14 | 18 | Workflow automation and a team that runs itself | XL | 17 |
-| 15 | 10 | Onboarding, admin and deployment | L | 18 |
-| 16 | 11 | Mobile client | L | 10 |
-| 17 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 |
-| 18 | 13 | Screenshot UI review | M | 12 |
+| Order | # | Phase | Size | Needs | Built (code, 2026-10-31) |
+|---|---|---|---|---|---|
+| 1 | 1 | Foundations | L | — | 12 of 13 built, 1 partly |
+| 2 | 2 | Identity, workspace and teams | M | 1 | 10 of 11 built, 1 partly |
+| 3 | 3 | Channels, threads and direct messages | XL | 2 | 16 of 16 built |
+| 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
+| 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
+| 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 4 of 22 built, 11 partly |
+| 8 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
+| 9 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
+| 10 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
+| 11 | 16 | Connectors to the tools a company already uses | XL | 15 | 0 of 12 built |
+| 12 | 9 | Surfaces | M | 16 | 0 of 9 built |
+| 13 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 | 0 of 12 built |
+| 14 | 18 | Workflow automation and a team that runs itself | XL | 17 | 0 of 14 built |
+| 15 | 10 | Onboarding, admin and deployment | L | 18 | 3 of 16 built, 11 partly |
+| 16 | 11 | Mobile client | L | 10 | 0 of 10 built |
+| 17 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 0 of 8 built |
+| 18 | 13 | Screenshot UI review | M | 12 | 0 of 11 built |
+
+The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
 **Why the added phases sit where they do (2026-10-24).** Phase 14 comes straight after 6: it needs only channels, files and bots, and the chat is the first thing a person leaving Slack or Mattermost judges. **Voice messages ship in phase 14 (P14-16, P14-17)**, so the on-device speech engine is built and proven on short clips before phase 15 streams live calls through it. Phase 15 comes after 8 because a meeting reaches memory through the team inbox and the Archivist that 8 builds, and its action items use 8's Add to board. Phase 16 follows 15 so calendars can schedule rooms and outside transcripts (Meet, Teams) land in the same `meetings/` folder. Phase 17 needs 9's surfaces for the end-of-meeting review. Phase 18 composes everything before it. Phases 10 and 11 gain the desktop and phone speech engines (P10-15, P11-09), and phase 12's journeys cover the added phases.
 
 **Ordering notes (a dependency forced the choice).** Basic guardrails (`pre_egress`, gateway pre-call, `standard` preset) land in phase 5 because bots first act there and principle 3 says every byte passes guardrails; phase 10 completes them. `Answer` is a fixed component in phase 5 (Brain is M1) and moves onto the OpenUI renderer in 9. Runners and worktrees close phase 6 (Tester's placement needs them). The week-3 `slack-compat` spike opens phase 5. Subscription runtimes and the Tauri build sit in phase 10. **Milestones are time-based, phases dependency-based:** M1 = phases 1–5 plus a minimal onboarding slice in phase 5 (steps 0, 1, 2, 5, 6: sign-in, one provider, first team from a template, default bots) so the guide's M1 demo works; full onboarding stays in phase 10. The append-only audit log is the phase 1 event log; the console and export are phase 10. The eval harness is built in 7 and wired to GitHub pull requests in 8. **Memory (v1.5.0):** the OKF bundle, its writer rule, `memory_concepts` and trust display land in phase 5 beside Hindsight, so no memory code is written twice; the team inbox and memory sharing land in phase 8, because they need what 6 and 8 build (tasks for "Add to board", approvals, text extraction shared with knowledge, the email connection for the email door) and the Archivist needs the Hermes runtime from 5. If phase 8 runs long, the email door (P8-19) and sharing (P8-22 to P8-26) are the two pieces that can slip to a follow-up without breaking the rest.
+
+---
+
+## 8. Build ledger (synced with the code, 2026-10-31)
+
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **96 of 280 tasks (the 279 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 146 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+
+How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
+
+| Phase | Built | Partly | Not built | Other |
+|---|---|---|---|---|
+| 1 · Foundations | 12 | 1 | 0 | 0 |
+| 2 · Identity, workspace and teams | 10 | 1 | 0 | 0 |
+| 3 · Channels, threads and direct messages | 16 | 0 | 0 | 0 |
+| 4 · Files and the team repo | 12 | 0 | 1 | 0 |
+| 5 · Bots, gateways, conversations and Brain | 27 | 1 | 0 | 0 |
+| 6 · Tasks, boards, orchestration, rhythms and pages | 7 | 6 | 0 | 0 |
+| 7 · Self-setup and the Workshop | 3 | 0 | 8 | 0 |
+| 8 · Connections, knowledge, email bots, team inbox and memory sharing | 2 | 6 | 28 | 0 |
+| 9 · Surfaces | 0 | 0 | 9 | 0 |
+| 10 · Onboarding, admin and deployment | 3 | 11 | 2 | 0 |
+| 11 · Mobile client | 0 | 0 | 10 | 0 |
+| 12 · Full persona end-to-end automation and user manual | 0 | 0 | 7 | 1 |
+| 13 · Screenshot UI review | 0 | 0 | 11 | 0 |
+| 14 · Messaging parity and moving in | 4 | 11 | 7 | 0 |
+| 15 · Voice rooms, meeting transcripts and meeting memory | 0 | 0 | 25 | 0 |
+| 16 · Connectors to the tools a company already uses | 0 | 0 | 12 | 0 |
+| 17 · Video calls, screen sharing and the meeting assistant | 0 | 0 | 12 | 0 |
+| 18 · Workflow automation and a team that runs itself | 0 | 0 | 14 | 0 |
+
+### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P1-01 | Monorepo scaffold (pnpm, tsconfig, ESLint with raw-hex rule, *Dto ban … | Built | eslint.config.js (hex, Dto, pool.query bans); packages/server/test/lint-rules.test.ts; CLAUDE.md |  |
+| P1-02 | packages/shared skeleton (ids, error envelope, event registry … | Built | packages/shared/src/bot-md/{frontmatter,json-schema}.ts; shared/test/schema-compat/; shared/src/events/registry.ts (upcast) |  |
+| P1-03 | Migration runner (numbered files, advisory lock, checksums, rejects … | Built | packages/kernel/src/db/migrate.ts (advisory lock, checksum); kernel/migrations/0001_kernel.sql; kernel/test/migrate.test.ts |  |
+| P1-04 | withActor(actor, fn) (SET LOCAL app.actor_id/workspace_id/run_id; the … | Built | packages/kernel/src/db/with-actor.ts; kernel/test/rls/harness.test.ts; vitest project rls |  |
+| P1-05 | Kernel identity (Actor: person, bot, system); event log (emit … | Built | packages/kernel/src/identity, events/index.ts; migration 0002_events_outbox_jobs.sql; kernel/test/events/emit.test.ts |  |
+| P1-06 | Outbox publisher (SKIP LOCKED, LISTEN/NOTIFY, at-least-once … | Built | packages/kernel/src/outbox/{index,listen}.ts; jobs/{index,cron}.ts; kernel/test/jobs.test.ts |  |
+| P1-07 | Plugin host (PluginManifest, loader, ordering, all §3 extension … | Built | packages/kernel/src/plugins/{host,registries,context}.ts; packages/sdk; kernel/test/plugins/host.test.ts |  |
+| P1-08 | Capability broker: names, destructive tag, allowlists, path guard … | Built | packages/kernel/src/capabilities/{broker,path-guard}.ts; kernel/test/broker.test.ts |  |
+| P1-09 | Transport (HTTP, WebSocket, schema-checked envelopes, in-memory … | Built | packages/kernel/src/transport/{rate-limiter,ws-hub}.ts; packages/server/src/build-server.ts (Zod compilers, /openapi.json) |  |
+| P1-10 | Plate comparison harness (section 5) with pnpm vt and vt:update | Built | tools/plates/src/{cli,compare,render}.ts; root package.json vt / vt:update; tools/plates/test |  |
+| P1-11 | Week-1 benchmarks: RN 5,000-message list on a mid-range Android … | Partly built | tools/bench/src/server.ts (1M msgs under RLS, outbox); tools/bench/src/list.ts | RN 5,000-msg list on a real Android is not done; only a Chromium CPU-throttled web proxy (list.ts says deferred to phase 11) |
+| P1-12 | Postgres 19 probe test: uuidv7(), DO SELECT, pg_trgm, vector … | Built | packages/kernel/test/pg19-probe.test.ts (uuidv7, DO SELECT, pg_trgm, vector, UNLOGGED) | crash-restart half of UNLOGGED is covered in jobs tests, not the probe |
+| P1-13 | @manythreads/test-utils (persona presets, readAs, captureEvent); web … | Built | packages/test-utils/src/{actors,personas}.ts (readAs, captureEvent); clients/web (/dev/tokens, app-frame); .github/workflows/ci.yml … |  |
+
+### Phase 2 · Identity, workspace and teams — 10 built, 1 partly, 0 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P2-01 | Schema: workspaces, people, person_emails, workspace_members … | Built | packages/kernel/migrations/0004_identity.sql (workspaces, people, person_emails, workspace_members) |  |
+| P2-02 | Schema: auth_providers, identities, secrets (envelope-encrypted … | Built | 0004_identity.sql (auth_providers, identities, secrets); packages/kernel/src/kms/{kms,secrets}.ts createPostgresKms |  |
+| P2-03 | Schema: password_credentials (argon2id), sessions, UNLOGGED … | Built | migration 0005_sessions.sql (password_credentials, sessions, UNLOGGED session_cache, invitations, email_verifications); kernel/src/mail/smtp.ts |  |
+| P2-04 | identity-password: sign-in, minimum 12, verification, self-signup off … | Partly built | packages/plugins/identity-password (accounts, routes/{sign-in,reset,bootstrap}, lockout test); shared/src/api/auth/password.ts | minimum password length is 8 (PASSWORD_MIN_LENGTH; SPEC-FINAL says min 8) but PLAN row says 12; rest built |
+| P2-05 | identity-oidc: discovery, code + PKCE, state, nonce, token checks … | Built | packages/plugins/identity-oidc/src/{protocol,sign-in,rules,admin}.ts (PKCE S256, state, nonce, google hd, microsoft tenant) |  |
+| P2-06 | Session service: HttpOnly cookie, rotation, idle and absolute expiry … | Built | packages/server/src/session/{service,cookies,tokens,authenticate}.ts; server/test/session.test.ts |  |
+| P2-07 | Schema: teams, team_members (lead/member), role tags mirrored from … | Built | migration 0006_teams_acl.sql (teams, team_members, roles, role_members, acl_entries, app.can) … |  |
+| P2-08 | Team templates as data (templates/<team>/TEAM.md + template.yaml … | Built | templates/{engineering,marketing,customer-support,product-design,research}/ (TEAM.md, template.yaml, brain bot); kernel/src/templates … |  |
+| P2-09 | Teams API (create, rename, archive, roster, roles, tags, invitations … | Built | packages/plugins/teams/src/routes-{teams,roster,tags,invitations}.ts; teams/migrations; teams/test/rls |  |
+| P2-10 | Web: router, session bootstrap, typed API client from shared schemas … | Built | clients/web/src/App.tsx routes; screens/{SignIn,Bootstrap,Invite,Teams,Roster,Account,WorkspaceSettings}.tsx; components/ErrorBoundary.tsx … |  |
+| P2-11 | Seed v2, persona auth fixtures, mock OIDC container | Built | e2e/fixtures/seed.ts; packages/test-utils/src/{seed,personas}.ts; tools/mock-oidc/config.json; e2e/identity/*.spec.ts |  |
+
+### Phase 3 · Channels, threads and direct messages — 16 built, 0 partly, 0 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P3-01 | Schema: channel_groups, channels (channel/dm/bot_conversation … | Built | packages/plugins/channels/migrations/0001_channels.sql (channel_groups, channels, channel_members); shared/src/entities/channel.ts | file lives in plugin migrations, not 0010 in kernel |
+| P3-02 | Schema: messages (markdown body, body_plain, thread_root_id) … | Built | channels/migrations/0002_messages.sql (messages, message_reactions, message_mentions, threads, thread_follows, trgm idx) |  |
+| P3-03 | Read-state service (kernel): per person per thread and channel … | Built | packages/kernel/src/read-state/index.ts; kernel migration 0013 (partial index read_state_unread); event reading.state.changed | event is named reading.state.changed, not read_state.changed |
+| P3-04 | Entity-link service: create, resolve, list links among messages … | Built | packages/kernel/src/entity-links/index.ts; migration 0013; kernel/test/rls/entity-links.test.ts |  |
+| P3-05 | channels plugin: CRUD, post, edit, delete, react, cursor pagination … | Built | packages/plugins/channels/src/{routes-channels,routes-messages,templates}.ts (team.template.applied consumer) |  |
+| P3-06 | threads plugin (open, reply, follow, Threads inbox query Followed · … | Built | packages/plugins/threads/src/inbox.ts (followed/unread/mine); direct-messages/src/routes.ts + migration 0001_dms.sql (ON CONFLICT DO SELECT) |  |
+| P3-07 | Mentions and entity links in a shared composer parser (@person, @bot … | Built | packages/shared/src/markup/{parse,handles}.ts; channels/migrations/0003 (UNLOGGED presence, typing); channels/src/routes-ephemeral.ts |  |
+| P3-08 | storage-local blob plugin and files table for attachments … | Built | packages/plugins/storage-local/src/local-storage.ts; plugins/files (migration 0001_files.sql, routes.ts upload/download) |  |
+| P3-09 | notifications plugin (mention, reply on followed thread, DM; WS push … | Built | packages/plugins/notifications/src/{consumers,service,push}.ts; clients/web/src/notifications/Bell.tsx (requestPermission) |  |
+| P3-10 | search plugin: pg_trgm GIN on messages.body_plain, threads.title … | Built | packages/plugins/search/src/service.ts; trgm GIN indexes in channels 0002 / files 0001; tools/bench/src/search.ts (EXPLAIN as Nadia, Lena) |  |
+| P3-11 | Right panel with back stack (panel.push/back/close, URL … | Built | clients/web/src/kernel/panel/{controller,stack,RightPanel}.tsx; test/panel.test.ts |  |
+| P3-12 | App shell and sidebar contract Files (10) · Boards (20) · Threads … | Built | clients/web/src/shell/{nav,Sidebar,Shell}.tsx; shared/src/surfaces/nav.ts | sidebar order is a static CORE_NAV list typed as NavContribution (also Org chart 23, Rhythms 26); no plugin calls ctx.surfaces.nav |
+| P3-13 | Channel view (virtualised list, row, reactions, replies), thread … | Built | clients/web/src/screens/{ChannelView,ThreadsInbox}.tsx; channels/{Composer,VirtualList,ThreadPanel,MessageRow}.tsx |  |
+| P3-14 | Welcome card for members (first-day checklist: join channels, follow … | Built | clients/web/src/welcome/WelcomeCard.tsx; shell/Shell.tsx (guest, drawer); e2e/channels/{welcome-card,guest-lena,mobile-web}.spec.ts |  |
+| P3-15 | Seed v3 (40 messages per channel, 12-reply thread, private channel … | Built | packages/test-utils/src/seed-content.ts (v3 content); shared/test/events/phase3-contracts.test.ts; shared/src/events |  |
+| P3-16 | Screens built with no prototype plate: search results panel … | Built | clients/web/src/search/SearchPanel.tsx; notifications/Bell.tsx; shell/DirectMessages.tsx; teams migration 0004_guest_channel_grants.sql |  |
+
+### Phase 4 · Files and the team repo — 12 built, 0 partly, 1 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P4-01 | repo-git: bare repo per team (repos/<team>.git); first commit writes … | Built | packages/plugins/repo-git/src/{repo.ts,layout.ts}; shared/entities/repo-paths.ts REPO_LAYOUT_DIRS (memory/journal, memory/facts); registered in … |  |
+| P4-02 | One writer per team: per-team queue plus pg_advisory_xact_lock(team) … | Built | repo-git/src/{queue.ts,repo.ts:152 pg_advisory_xact_lock}; provider.repo write(); repo-api.test.ts '20 concurrent writes' |  |
+| P4-03 | Git layer on the git CLI in a worker: tree, blob, log, diff, show … | Built | packages/plugins/repo-git/src/git/{exec.ts,ops.ts}; test/git.test.ts |  |
+| P4-04 | Schema: repos, repo_entries (path, blob sha, size, text_plain) … | Built | repo-git/migrations/0001_repo.sql (repos, repo_entries, repo_commits BRIN, trigram GIN path+text_plain); updated by the writer/index | migration is repo-git 0001, not 0020_repo.sql (per-plugin numbering) |
+| P4-05 | Writer rules: binary (NUL or over 1 MB) rejected … | Built | repo-git/src/{rules.ts,repo.ts:430-460}; kernel/capabilities/path-guard.ts; e2e/files/{binary-rejected,member-readonly-bots}.spec.ts | later extended by proposals (P7-01) as intended |
+| P4-06 | files tree API merging repo entries and attachment rows; same list … | Built | packages/plugins/files/src/tree.ts (repo entries + channels/<name>/ attachments, per-folder ACL); files/test/files-tree.test.ts |  |
+| P4-07 | pages.write (create/replace/append, broker-guarded, emits … | Built | packages/plugins/pages/src/pages.ts (create/replace/append, emits pages.page.written); pages/test/pages.test.ts |  |
+| P4-08 | History: commits per path, diff (text and rendered Markdown), restore … | Built | repo-git/src/routes.ts (history, diff, restore routes); clients/web/src/screens/files/{HistoryPanel,RenderedDiff}.tsx … |  |
+| P4-09 | provider.viewer registry; viewers: Markdown (Tiptap, slash commands … | Built | clients/web/src/viewers/builtins.ts + kernel/viewers/registry.ts (markdown Tiptap+slash+raw, csv, pdf, image/video/audio, code, mermaid, office … | Mermaid runs in a sandboxed iframe, not a worker (deliberate, documented) |
+| P4-10 | Embedded apps: index.html without index.md renders in … | Built | clients/web/src/viewers/app/AppViewer.tsx (sandbox allow-scripts, bridge); repo-git/src/app-routes.ts (server CSP/sandbox headers) … |  |
+| P4-11 | Files screen: tree, breadcrumb, list, preview panel, upload, new … | Built | clients/web/src/screens/files/{FilesScreen,Tree,FileList,FilePreview,dialogs,HistoryPanel}.tsx; route /t/:team/files in App.tsx; MEMORY_COPY in … | memory note now reads "OKF memory bundle" (P5-28) |
+| P4-12 | Optional: LibreOffice worker converting Office files to PDF … | Not built | - (no packages/plugins/files/office-worker; OfficeViewer.tsx only uses props.renditionUrl else download card) | no LibreOffice container/worker; docs/retro/phase-4.md lists it as deferred |
+| P4-13 | storage-s3 behind the blob interface (MinIO in tests); writer … | Built | packages/plugins/storage-s3/src/s3-storage.ts + test (MinIO gated MANYTHREADS_TEST_S3=1); repo-api.test.ts concurrency … |  |
+
+### Phase 5 · Bots, gateways, conversations and Brain — 27 built, 1 partly, 0 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P5-01 | Spike: slack-compat endpoint plus one Hermes profile replying in a … | Built | packages/plugins/slack-compat/src/{routes,deliver}.ts; docs/spikes/slack-compat.md |  |
+| P5-02 | Spike: per-run tool scoping with two concurrent conversation runs for … | Built | docs/spikes/per-run-scoping.md; gateway-mcp per-run token migration 0001_run_tokens.sql |  |
+| P5-03 | Schema: bots, bot_pairing_tokens (hashed), bot_runs, run_source_log | Built | bots/migrations/0001_bots.sql (bots, bot_pairing_tokens, bot_runs, run_source_log); shared/entities/bot.ts | migration is bots 0001, not 0030_bots.sql |
+| P5-04 | bots plugin: load bots/<slug>/BOT.md on repo.committed, validate … | Built | packages/plugins/bots/src/{loader.ts,pairing.ts}; consumes repo.repo.committed; bots.bot.invalid alert; migration 0002_pairing |  |
+| P5-05 | Web: BOT.md editor with tabs Identity · Behaviour · Triggers · … | Built | clients/web/src/screens/bots/{BotPage,BotRoster,tabs,store}.tsx (BOT_TABS all 13 + Contract); routes /t/:team/bots, /bots/:botSlug … |  |
+| P5-06 | LiteLLM in compose env (Helm in P6-00/P10-07); config from the DB … | Built | packages/plugins/gateway-llm/src/{litellm,keys,config}.ts; deploy/compose/litellm.yaml; migration 0001_llm.sql (aliases + fallbacks); revokeBotKey |  |
+| P5-07 | Budgets workspace → team → bot → session and rate limits enforced … | Built | gateway-llm/src/{budget,limits,rate-limit}.ts; migration 0002_limits.sql (llm_limits, llm_settings presets, llm_spend); pre_egress chain (dlp/egress) |  |
+| P5-08 | Web: Workspace → LLM page; fake LLM for tests | Built | clients/web/src/screens/admin/llm (LlmSettings, route settings/workspace/llm); tools/fake-llm |  |
+| P5-09 | mcp-server plugin (package gateway-mcp): one endpoint per bot, token … | Built | packages/plugins/gateway-mcp/src/{catalog,protocol,guard,routes}.ts (messages.*, memory.*, files.search, pages.write, knowledge.search, tasks.* … | knowledge.search and tasks.* are now real (knowledge/tasks plugins), not stubs |
+| P5-10 | runtime-hermes: render profile from BOT.md (body is SOUL.md), start … | Built | packages/plugins/runtime-hermes/src/{profile,router,match,stream,run-job}.ts (SOUL.md from body); packages/plugins/runtime-rules/src/index.ts + … |  |
+| P5-11 | Gate, two stages before any model call: exact or regex on the gate … | Built | packages/plugins/runtime-hermes/src/gate.ts (list/regex stage, then local-alias classifier seeing only the message, fail closed); test/gate.test.ts |  |
+| P5-12 | Hindsight in compose (Helm in P6-00/P10-07) (its own database, a … | Built | deploy/compose/docker-compose.dev.yml hindsight service; packages/plugins/memory-hindsight/src/provider.ts (bank team:<ws>:<team> from DB slug, bank … | bank name includes workspace slug (team:<ws>:<team>), a deliberate extension |
+| P5-13 | memory plugin feeds the bank from team-visible messages, threads … | Built | packages/plugins/memory/src/{consumers,feed,sources/*}.ts (message/thread/run/approval/page; public channels only; narrowest-source verdict from … | handovers have no source kind of their own (only as thread messages) |
+| P5-14 | memory-git-mirror as the OKF bundle's mirror: first use of a team … | Built | packages/plugins/memory-git-mirror/src/{bundle,concept,drain}.ts (okf_version 0.2, journal, forget on deprecated) … |  |
+| P5-15 | pnpm test:memory-cross-team per PR: team A bot gets nothing from team … | Built | packages/plugins/memory-hindsight/test/cross-team/cross-team.test.ts; root package.json script test:memory-cross-team |  |
+| P5-16 | conversations: per-bot channel unlisted in the sidebar; send starts a … | Built | packages/plugins/conversations/src/{routes,indexer,prompts}.ts; clients/web/src/screens/conversations/ConversationView.tsx (Mine/Shared/Channel … |  |
+| P5-17 | Share to #channel with masking (team citations kept; person-scoped … | Built | conversations/src/answer-share.ts (preview, share, handoff, remove claim); pages/src/answer-page.ts; web channels/AnswerShare.tsx … | person-scoped fake source is in test fixtures, not in seed v5 |
+| P5-18 | answer plugin: native answer tool, AnswerPayload schema, Answer … | Built | packages/plugins/answer/src/{build,post,view}.ts; shared/entities/answer.ts; clients/web/src/channels/Answer.tsx |  |
+| P5-19 | Brain BOT.md in every template (capabilities exactly §12; mail opt-in … | Built | templates/{engineering,customer-support,marketing,product-design,research}/bots/brain/{BOT.md,evals/brain.yaml (13 cases)}; coder; support-responder … |  |
+| P5-20 | approvals: schema, one handler for needsApproval, whose four sources … | Built | packages/plugins/approvals (0001_approvals.sql, src/*); web screens/approvals (ApprovalsScreen, ThreadApprovals, count.ts) … |  |
+| P5-21 | Basic guardrails-dlp and guardrails-egress at pre_egress (allow … | Built | packages/plugins/guardrails-dlp/src/dlp.ts; guardrails-egress/src/egress.ts (both hook.pre_egress); packages/test-utils/src/seed-guard.ts (seed v5) |  |
+| P5-22 | Minimal onboarding slice for M1 (steps 0, 1, 2, 5, 6 only: bootstrap … | Built | clients/web/src/screens/onboarding/{Onboarding,panels,steps}.tsx; packages/plugins/onboarding (0001_onboarding.sql) | full wizard (P10-01) superseded the minimal slice |
+| P5-23 | Platform writes: memory.retain, lessons.md and people/<id>.md are … | Built | packages/plugins/memory/src/platform.ts (lessonPath, personNotePath via the one writer, system actor); kernel/capabilities/path-guard.ts denies bot … |  |
+| P5-24 | OKF in packages/shared (D6): pure, linear-time … | Built | packages/shared/src/okf/{concept,bundle}.ts (parseConcept, trustTier, isStale, 64 KB cap); shared/entities/memory.ts … |  |
+| P5-25 | Writer, broker, index. repo-git writer validates every memory/ file … | Built | repo-git/src/{errors.ts okf_invalid,repo.ts index/log regen, channels/ & inbox/ refused}; memory/migrations/0003_concepts.sql; path-guard.ts | migration is memory 0003, not 0033_memory_concepts.sql |
+| P5-26 | memory.write and recall. Native tool memory.write (registered by … | Built | packages/plugins/memory/src/write.ts; gateway-mcp/src/catalog.ts (memory.write, memory.recall with includeDeprecated) |  |
+| P5-27 | Memory in answers. Citation gains kind memory with conceptPath, type … | Built | shared/entities/answer.ts memory citation (trustTier, stale, deprecated, fromTeam); answer migrations 0004,0005; Answer.tsx badges; Brain BOT.md + 3 … |  |
+| P5-28 | Web: Memory screen, Memory tab at /t/:team/memory: concept tree … | Partly built | clients/web/src/screens/memory/MemoryScreen.tsx (100 lines; route /t/:team/memory); memory/src/routes.ts confirm/deprecate; screens/files/model.ts … | flat list; no sources, links/backlinks, history, edit, or okf_invalid error display |
+
+### Phase 6 · Tasks, boards, orchestration, rhythms and pages — 7 built, 6 partly, 0 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P6-00 | Helm and controller skeleton: the chart renders, the controller reads … | Partly built | deploy/helm/manythreads/templates (chart renders); packages/plugins/hermes-pods/src/reconcile.ts (reads DB, creates Deployments) | no packages/controller (reconciler is the hermes-pods plugin); no nodeSelector placement |
+| P6-01 | Schema: goals, tasks (open/in_progress/verify/waiting_on_person/done … | Built | packages/plugins/tasks/migrations/0001_tasks.sql (goals, tasks, task_events BRIN, task_claims_live partial unique, handoffs) … | - (numbered 0001 in plugin, not 0040) |
+| P6-02 | tasks plugin: create, assign, claim, complete, handoff; claim … | Built | packages/plugins/tasks/src/capabilities.ts, jobs.ts (tasks.claim-timeout cron); gateway-mcp/src/catalog.ts; events.ts (runtime.task.not_woken) |  |
+| P6-03 | Handover: handoff_task moves ownership in one transaction, posts the … | Built | packages/plugins/tasks/src/handoff.ts, capabilities.ts (mayTag check before attempt); approvals/src/index.ts (4 sources); tasks events.ts |  |
+| P6-04 | Freshness (stale base_sha or tested_sha blocks publish and merge with … | Built | tasks migration 0001 tasks_complete (base_sha vs head, tested_sha_required), 0012_handoff_bound.sql; tasks/src/pull-requests.ts (merge at tested head) |  |
+| P6-05 | Environments: schema, protected sets needsApproval on tagged tools … | Partly built | tasks migration 0001 environments/deploy_requests (protected -> approval); tasks/src/pull-requests.ts; projects plugin push_credential | no team bare mirror, per-bot worktrees, branch-scoped push tokens or git smart-HTTP (pods use full clones; docs/plugins/tasks.md "Not built yet") |
+| P6-06 | Runner: one binary, one outbound connection, advertises capabilities … | Partly built | packages/runner/src (capabilities.ts, client.ts, main.ts); packages/plugins/runners (token, WS channel, migration 0001) | no in-cluster nodeSelector placement (docs/plugins/runners.md says belongs to controller); placement.requires not matched at dispatch |
+| P6-07 | boards plugin and screen: five columns over tasks, card thread … | Partly built | clients/web/src/screens/boards (BoardView drag, CardPanel, OrgChart w/ mayTag); App.tsx routes; boards table+routes live in tasks plugin | no separate boards plugin (inside tasks); no "follow card = follow thread" found |
+| P6-08 | rhythms: schema, heartbeat, routine (routines/<slug>.yaml with … | Built | packages/plugins/rhythms (migrations 0001/0002, scheduler.ts RoutineContract output {page,mode}, model_alias/effort); screens/boards/RhythmsScreen.tsx | non-lead "propose" is explanatory text pointing to Files, not a proposing form |
+| P6-09 | Yjs pages: server-held doc on the Fastify WS; page_docs, page_updates … | Partly built | packages/plugins/pages/src/live.ts (Yjs room, page_docs/page_updates BRIN/UNLOGGED page_awareness, co-authors, 60s idle, pages.write via … | web editor LivePageEditor.tsx is a markdown textarea with cursors, no Tiptap bindings |
+| P6-10 | Counting benchmark: spec §8 workload: twenty bots, one counter task … | Partly built | packages/plugins/tasks/test/counting.test.ts (20 rules bots); tools/bench/counting-hermes (Hermes variant); plugins/runtime-rules | no root `pnpm test:runtime-rules` script; no CI/nightly/release wiring of Hermes variant found; bench not in runtime-rules/bench |
+| P6-11 | Seed v6 (board, rhythms, page, production); event contracts | Built | packages/test-utils/src/seed-cli.ts (seed v6 work: board, rhythms, page, production); shared/src/events tasks.*, rhythms.rhythm.ran | seed lives in test-utils, not e2e/fixtures |
+| P6-12 | Engineering template bots: Orchestrator, Reviewer, Tester, Deploy … | Built | templates/engineering/bots/{engineer,code-reviewer,tester,deployer,alert-triage,standup-relay}/BOT.md with evals/*.yaml | roles renamed (Orchestrator=engineer, Reviewer=code-reviewer, Deploy=deployer); no separate setup prompt found |
+
+### Phase 7 · Self-setup and the Workshop — 3 built, 0 partly, 8 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P7-01 | Schema: Proposal (target path, diff, base sha, author, status … | Built | packages/plugins/proposals (migration 0001, service.ts apply commits as approver); shared/entities/proposal.ts; BotPage.tsx save-as-proposal; kernel … |  |
+| P7-02 | Setup profile with a tiny toolset only: describe_self, read-only … | Not built |  | no templates/_setup, no plugins/workshop, no describe_self/propose_config/ask_clarification tools |
+| P7-03 | Requirement grading Grade enum (covered · grantable · missing · … | Not built |  | no Grade enum, no requirement grading, no propose_config |
+| P7-04 | Web: Add a bot flow (brief, discovery with grades, proposal with … | Not built | clients/web/src/screens/bots/BotRoster.tsx (no add-bot flow); no screens/setup | no Add a bot flow (brief, discovery, diff proposal, approve creates bot) |
+| P7-05 | Workshop tab (Build · Rehearse · Live) in the conversation view … | Not built |  | no Workshop tab (Build/Rehearse/Live), no plugins/workshop, no test.write; only the Test action of P7-11 exists |
+| P7-06 | Learning loop: correction files a lesson to lessons.md (proposal) … | Not built | packages/plugins/memory/src/platform.ts (lessons.md path helper only) | no correction-to-lesson, eval-case, rule proposal or compaction proposal |
+| P7-07 | Record and replay of guard and gate decisions only (free); full model … | Not built |  | no record/replay of guard and gate decisions, no re-assessment |
+| P7-08 | Eval harness: EvalCase and EvalResult schemas, scenarios in … | Built | tools/evals/src/cli.ts (pnpm test:evals); shared/entities/eval.ts; bots migration 0016_eval_runs, bots/src/evals.ts (on_demand/on_commit/nightly) … |  |
+| P7-09 | Terminal into a sandbox: admin-only, never on production placements … | Not built |  | no sandbox terminal, no PTY over WS |
+| P7-10 | Seed v7 (brief for Content drafter, failing eval, repeated lesson) … | Not built | packages/test-utils/src/seed-repo-content.ts (content-drafter bot, lessons.md "None yet") | no seed v7 brief, failing eval or repeated lesson |
+| P7-11 | The bot page's Test action: one question in the bot's own … | Built | clients/web/src/screens/bots/test-panel.tsx, test-run.ts; bots migration 0018_rehearsal.sql (rehearsal_intercepts); e2e/bots/test-action.spec.ts | lives in bots plugin, no workshop plugin |
+
+### Phase 8 · Connections, knowledge, email bots, team inbox and memory sharing — 2 built, 6 partly, 28 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P8-01 | Schema: connections (scope team/person/workspace, owner, expiry … | Not built | - (no connections plugin, no 0060 migration; only the BOT.md `capabilities.connections` schema field in packages/shared/src/bot-md/frontmatter.ts) | no tables, no SDK/kernel ToolSource seam (gateway-mcp ToolSource is an unrelated citation type), no CI lint |
+| P8-02 | Person connections held by manythreads: Google (Drive, Gmail … | Not built | - (identity-oidc scope is 'openid email profile'; broker only carries a `person:*` scope string) | no person connections, Google/Microsoft/Notion scopes, mail opt-in |
+| P8-03 | Team connections: Activepieces started by the controller skeleton … | Not built | - (no activepieces/GitHub App/GitLab service user code; projects 0003 push token is a different, project-only thing) | all of it |
+| P8-04 | SSH broker (step-ca or Teleport, cert per task ≤ 1 h) and Kubernetes … | Not built | - (packages/plugins/gateway-mcp has no brokers/ dir; packages/test-utils/src/fake-k8s.ts is only a test fake) | SSH and Kubernetes brokers absent |
+| P8-05 | Eval harness on pull request: GitHub check for any PR touching a … | Partly built | packages/plugins/bots/src/evals.ts, evals-routes.ts; migration bots 0016_eval_runs | eval harness exists; no GitHub check on a PR touching BOT.md, no merge-reloads-bot via connections/github |
+| P8-06 | Web: Team connections, Add connection (incl. Kubernetes), bot Access … | Partly built | clients/web/src/screens/bots/tabs.tsx (Access tab edits capabilities.connections, person:*) | no Team connections page, no Add connection (Kubernetes), no account Connections page / mail opt-in |
+| P8-07 | Schema: knowledge_bases, knowledge_sources, knowledge_documents … | Partly built | packages/plugins/knowledge/migrations/0001_knowledge.sql; knowledge/src/ingest.ts (sources.yaml); src/chunk.ts | embedding column never filled (no `embed`), no HNSW (gin tsv+trigram only); sources only upload+repo, no PDF-from-Drive/SharePoint/docs sites/Notion |
+| P8-08 | Sync rhythm per source, hash change detection, bump chunk version … | Partly built | knowledge/src/search.ts (sourceChanged, versions); answer migration 0006_answer_knowledge_gate; answer/src/post.ts | re-sync is manual only (no rhythm per source); no routing to #kb-updates; no "source changed since" shown in web Answer |
+| P8-09 | Email connections (IMAP, Gmail, Outlook) as tool sources … | Not built | - (webhooks plugin is P14-14 incoming channel hooks; `inbox`/`webhook` exist only as BOT.md trigger enum values in shared/src/bot-md/frontmatter.ts) | no email connections, no inbox-watch plugin, no webhook trigger runtime |
+| P8-10 | Templates: Support responder (manuals base, customer-facing, gate … | Partly built | templates/customer-support/bots/support-responder/BOT.md (manuals, customer-facing, gate list, email.send needsApproval); templates.test.ts | no evals/setup prompt for it; no Enquiry bot dir (listed in template.yaml only); Coder/Content drafter grants not finished |
+| P8-11 | analytics plugin: analytics_events monthly partitions + BRIN … | Not built | - (no plugins/analytics, no 0062 migration, no analytics_events anywhere) | everything |
+| P8-12 | Seed v8 (mock Google and GitHub, product-manuals, mailbox of 5 … | Not built | - (e2e/fixtures and packages/test-utils/src have no seed v8, product-manuals, support-mail; only fake-github.ts from earlier) | seed v8 and its event contracts |
+| P8-13 | Remaining template bots: Marketing (Content drafter, Social … | Not built | templates/marketing/template.yaml and others list the bots, but only marketing/content-drafter dirs exist | Social scheduler, Analytics digest, Brand reviewer, all Research, Product design, Escalation router, KB gardener missing; no evals; no email.send Rehearse |
+| P8-14 | Inbox foundation. memory-inbox plugin; memory_inbox_items (state: … | Not built | - (no plugins/memory-inbox, no 0063, no InboxItem in shared; BOT.md triggers have no `drop`) | everything |
+| P8-15 | Drop doors 1 to 3. POST /api/teams/:id/inbox/items (streamed upload … | Not built |  | no inbox items route, Files drop into inbox/, New note, Send to memory action |
+| P8-16 | Extractors, one interface shared with knowledge (reflect prompt … | Not built | - (only the knowledge extractor: knowledge/src/extract, md/text/csv/pdf) | no docx/pptx/xlsx/eml/image/audio extractors, no memory-inbox/extract |
+| P8-17 | Pipeline. The job chain receive → hold check → extract → distil → … | Not built |  | no hold/distil/validate/commit pipeline, release/discard, keepOriginals |
+| P8-18 | Archivist. BOT.md in every team template: trigger drop only … | Not built | - (Archivist appears only in shared/src/entities/memory.ts, okf/concept.ts as an author name; no templates/*/bots/archivist) | no Archivist bot, no eval set |
+| P8-19 | Email door. A team inbox address on a workspace email connection … | Not built |  | no email door, SPF/DKIM hold, .eml drop |
+| P8-20 | Action items to the board. An Action Items concept's item card offers … | Not built |  | no Add to board on Action Items |
+| P8-21 | Web: Memory screen Inbox tab: drop zone and New note, the team's … | Not built | clients/web/src/screens/memory/MemoryScreen.tsx has no Inbox tab | whole Inbox tab |
+| P8-22 | Shares: definition and selection. ShareDefinition Zod; loader for … | Not built | - (no memory-share plugin, no 0064, no ShareDefinition) | everything |
+| P8-23 | Digest builder and send. Build the OKF bundle (index.md with only … | Not built |  | no digest builder/send, no memory.digest.send approval |
+| P8-24 | Accept and deliver. Naming a destination opens a requested link and … | Not built |  | no accept/deliver, no app.deliver_inbox_item, no Memory sharing switch |
+| P8-25 | Receive and import. The no-model fast path: validate the bundle (path … | Not built |  | no receive/import path |
+| P8-26 | Web: Memory screen Sharing tab: outgoing shares (destinations with … | Not built | clients/web/src/screens/memory/MemoryScreen.tsx has no Sharing tab; screens/admin has only llm | Sharing tab, approval card, workspace switch |
+| P8-27 | Seed v8 additions (inbox items: PDF, photo, .eml, meeting notes … | Not built | - (no docs/plugins/memory-inbox.md or memory-share.md; test:memory-cross-team exists in package.json from earlier phase) | seed v8 additions, sharing cases, docs pages |
+| P8-28 | The connections slice, wired (P8-01's tables and interface, end to … | Not built | - (frontmatter schema has capabilities.connections; bots/src/loader.ts does not compile it; no ctx.toolSources) | connections plugin, ToolSource dispatch in gateway tools/list+call, native/connections overlap refusal |
+| P8-29 | The dummy mail transport — the test's "dummy email connector": the … | Not built | - (no EmailTransport; only name email.send in templates and web labels) | dummy transport, email.read/draft/send, platform-owned recipient |
+| P8-30 | The inbox trigger in the runtime: the run payload takes inbox (the … | Not built | - (runtime-hermes/src has no inbox trigger case) | inbox run payload, watch job, mail-thread link, dedupe |
+| P8-31 | A knowledge base is a folder in the team repo: knowledge/<base>/ … | Built | packages/plugins/knowledge/src/ingest.ts (knowledge/<base>/sources.yaml + <slug>.md with title, source_sha256, version via repo writer); src/sync.ts | frontmatter lacks explicit source name field; Drive/SharePoint/docs sites "later" per row |
+| P8-32 | One extractor interface, used by knowledge now and by the inbox later … | Built | packages/plugins/knowledge/src/extract/{core,worker,index}.ts; test/extract.test.ts (hostile PDF/CSV/time-limit cases) |  |
+| P8-33 | The bot page's Knowledge tab (P8-08's Knowledge bases surface): per … | Partly built | clients/web/src/screens/bots/knowledge.tsx (documents, hash, version, reason, Upload, Re-read, Open in Files); e2e/knowledge/knowledge.spec.ts | no base-level state shown (no knowledge_bases.status column) |
+| P8-34 | The Deploy action: one action that commits the definition through the … | Not built | - (no Deploy action in clients/web/src/screens/bots) | no combined commit+activate+enable action |
+| P8-35 | The two mail bots of the support journey: support-email (the inbox … | Not built | templates/customer-support has only brain and support-responder; no support-email / customer-support bots, no #support-inbox in template.yaml | both bots, evals, channel |
+| P8-36 | The support journey, proven and shot: the e2e spec that tells the … | Not built | - (no e2e/email dir; e2e/knowledge/knowledge.spec.ts is a knowledge-only spec) | journey spec, scripted Hermes stand-in, screenshot journey |
+
+### Phase 9 · Surfaces — 0 built, 0 partly, 9 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P9-01 | Schema: surfaces (bot, run, thread, OpenUI source, version, pinned … | Not built |  | no surfaces/surface_events tables or 0070 migration (shared/src/surfaces is client nav/app-token, unrelated) |
+| P9-02 | Component registry in shared: name plus Zod props schema, read by … | Not built |  | no component registry |
+| P9-03 | OpenUI renderer (MIT): streams OpenUI Lang, validates each node … | Not built |  | no OpenUI renderer; no openui reference in code |
+| P9-04 | surface.render/update/event at the MCP gateway; update patches by … | Not built |  | no plugins/surfaces, no surface.render/update/event tools |
+| P9-05 | Primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart … | Not built |  | no primitives or manythreads components |
+| P9-06 | Data binding: a node declares a registered read tool; the call runs … | Not built |  | no data binding |
+| P9-07 | Answer re-implemented as a registered component on the same … | Not built | clients/web/src/channels/Answer.tsx (plain component, answer plugin) | Answer is not a registered surface component |
+| P9-08 | App components: FormFlow (schema-validated, one payload to the bot) … | Not built |  | no FormFlow, ReportBuilder, ImageGenerator |
+| P9-09 | Export to pages by default (images stay in Files storage), pin to … | Not built |  | no surface export/pin, no seed v9 |
+
+### Phase 10 · Onboarding, admin and deployment — 3 built, 11 partly, 2 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P10-01 | Onboarding state (onboarding_state), sidebar checklist until done … | Partly built | packages/plugins/onboarding (migration 0001_onboarding.sql, routes.ts); clients/web/src/screens/onboarding; shell/SetupCard.tsx | step 4 is Domain & HTTPS, not generated k8s manifest + sshd_config line; step 7 has no install curl/token/waiting; migration is plugin-local 0001, not 0080 |
+| P10-02 | Workspace → LLM complete: providers, aliases and fallbacks, budgets … | Partly built | clients/web/src/screens/admin/llm (Providers, Aliases, Limits, Guard, Spend); gateway-llm migrations 0001-0005, src/budget.ts … | no Subscriptions section; observability is only the Spend report |
+| P10-03 | Subscription runtimes behind a workspace flag, off by default; owner … | Partly built | tools/agent-bridge (runs Claude Code / Codex CLI as a bot runtime); docs/agent-bridge.md | no workspace subscription flag, owner terms, "subscription - bypasses gateway guard" label, one-person binding or routine/heartbeat/inbox refusal; spend not shown separately |
+| P10-04 | guardrails-dlp complete (secrets, keys, personal data, custom regex … | Built | packages/plugins/guardrails-dlp/src/dlp.ts (preEgress hook, require_approval); guardrails-egress migrations 0001/0002 (per-team hosts, proxy_url) … | team proxy_url only stored (no controller enforcing it) |
+| P10-05 | audit: console and export over the append-only phase 1 event log plus … | Partly built | packages/plugins/audit (migration 0001_audit.sql, export.ts, signing.ts ed25519); clients/web/src/screens/audit/Audit.tsx; e2e/audit/audit.spec.ts | table not partitioned monthly (deliberate, per migration comment); no admin console overview page |
+| P10-06 | provider.kms with OpenBao and cloud KMS beside the Postgres default … | Partly built | packages/kernel/src/kms/kms.ts (provider.kms interface + Postgres/env-key default) | no OpenBao or cloud KMS implementation; no tools/pen, no pnpm test:pen |
+| P10-07 | Complete the Helm chart (skeleton from P6-00): five workloads … | Partly built | deploy/helm/manythreads (postgres-cnpg.yaml Cluster w/ vector+pg_trgm, server, web, litellm, hindsight; NOTES.txt per-replica rate limits) | CNPG has no scheduled backup/WAL archive to object store (backup is a pg_dump CronJob), hindsight DB made by a job; no UNLOGGED/failover note; extra workloads |
+| P10-08 | Complete the controller (skeleton from P6-00; NetworkPolicy checks … | Partly built | packages/plugins/hermes-pods (render.ts, reconcile.ts); deploy/helm/manythreads/templates/hermes-pods.yaml NetworkPolicies | no packages/controller; no per-team egress proxies, runner placement labels, Activepieces on first use, per-team namespace option or gVisor |
+| P10-09 | Docs and drills: docs/deploy/k3s.md (every command tested on fresh … | Partly built | docs/deploy/backup.md (restore, drill), tools/backup/{drill,restore}.sh; docs/deploy/self-host.md | no docs/deploy/k3s.md CI-tested, no air-gapped.md, RPO/RTO not stated; commit P10-09 was first-install fix on empty cluster |
+| P10-10 | Observability: metrics, structured logs, OpenTelemetry across server … | Partly built | packages/plugins/ops-health (prometheus.ts, evaluate.ts, /metrics); docs/deploy/monitoring.md (alerts: outbox lag, job age, approval, budget) … | no OpenTelemetry, no dashboards/deploy/helm/monitoring, no replica-lag alert |
+| P10-11 | Tauri 2 shell for macOS, Windows, Linux (deep links, native … | Partly built | clients/desktop/src-tauri (Tauri 2, deep links, notifications); .github/workflows/desktop.yml; e2e/desktop/tauri-smoke.spec.ts | no HA chaos check (tools/chaos absent, no e2e/deploy/ha-failover) |
+| P10-12 | seed --phase N, event contracts, plugin author docs, SDK publication … | Partly built | packages/test-utils/src/seed-cli.ts (seed versions v3-v6, flags); docs/plugins/README.md (plugin author guide); docs/kernel/*.md | no `seed --phase N`; no event-contracts doc; SDK still private 0.0.0, no publication prep |
+| P10-13 | Compose self-host: five containers (Postgres, LiteLLM, Hindsight … | Not built | deploy/compose has only docker-compose.dev.yml (dev/test, per self-host.md) | no five-container supported compose install, no docs/deploy/compose.md, no CI test |
+| P10-14 | Abuse review of sensitive endpoints (D5): audit every route that … | Built | packages/shared/src/common/abuse-limits.ts; packages/server/test/abuse.test.ts; docs/deploy/rate-limits.md; helm NOTES.txt | named e2e/api/security/abuse.spec.ts absent (unit-level burst test instead) |
+| P10-15 | Desktop on-device speech engine (D7, phase 15): a Tauri sidecar … | Not built |  | no whisper.cpp sidecar, mute shortcut or tray call state in clients/desktop; no clients/web/src/speech |
+| P10-16 | Bot Board: one board per channel for the bots' cards. (1) Data: … | Built | packages/plugins/tasks/migrations/0009_channel_boards.sql, src/capabilities.ts (boards.ensure); clients/web/src/screens/ChannelView.tsx (Bot Board … | named e2e specs (e2e/api/tasks/bot-board, e2e/boards/bot-board) absent; item 6 fixes only spot-checked |
+
+### Phase 11 · Mobile client — 0 built, 0 partly, 10 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P11-01 | Extract packages/client-core (API and WS clients, stores for … | Not built |  | packages/client-core does not exist |
+| P11-02 | Server: device-token sessions (rotate, revoke), push_tokens table | Not built | packages/server/src/session/device.ts is only a user-agent label helper | no device-token sessions, rotate/revoke, push_tokens table, 0090_mobile.sql |
+| P11-03 | React Native app (Expo dev client): navigation, shared tokens, secure … | Not built |  | clients/mobile does not exist |
+| P11-04 | Channels list and channel (virtualised list tuned by the benchmark … | Not built |  | no mobile channels/threads screens |
+| P11-05 | Conversations with native Answer from AnswerPayload; approvals inbox … | Not built |  | no mobile conversations/approvals/native surfaces |
+| P11-06 | Push (APNs, FCM), in-app list, deep links; WebView host with signed … | Not built | packages/plugins/notifications/src/webpush.ts (web push only) | no APNs/FCM, mobile deep links, WebView hand-off, embed=1, offline cache or send queue |
+| P11-07 | Re-run the 5,000-message benchmark on the target mid-range Android … | Not built | e2e/mobile/identity.spec.ts is a phase-2 mobile-web spec only | no mobile benchmark/docs/perf/mobile.md, Maestro flows, EAS profiles |
+| P11-08 | Share-sheet door to the team inbox: share a photo, file, text or link … | Not built |  | no share-sheet door or Send to memory on mobile |
+| P11-09 | Calls on the phone (D7, phase 15): a Capacitor plugin running … | Not built |  | no Capacitor/whisper plugin, CallKit/ConnectionService |
+| P11-10 | Bot Board on the phone (P10-16): the channel header's Bot Board link … | Not built |  | no mobile Bot Board embed or handoff push (web Bot Board exists, P10-16) |
+
+### Phase 12 · Full persona end-to-end automation and user manual — 0 built, 0 partly, 7 not built, 1 other
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P12-01 | Harness: loginAs(persona); journey declaration { id, persona, goal … | Different | commit 2ddb374 "P12-01: self-host guide" -> docs/deploy/self-host.md, docs/guide/first-week.md | PLAN row needs persona harness (loginAs, journey declarations, shot(), manifest) in e2e/personas/harness; none exists |
+| P12-02 | Page objects from phases 2–10; seed snapshots day-1 and week-2 … | Not built | e2e/support, e2e/fixtures only | no e2e/pages page objects, tools/seed snapshots day-1/week-2, personas-desktop/mobile-web projects |
+| P12-03 | The journeys of block B, each with at least 5 screenshots and a final … | Not built |  | e2e/personas does not exist; no journeys |
+| P12-04 | Proof the suite works (block C below) | Not built |  | no completeness spec, canary (MANYTHREADS_CANARY), determinism job or run-log.json |
+| P12-05 | Captions: one sentence per step in docs/journeys/captions.yaml (at … | Not built |  | no docs/journeys, captions.yaml |
+| P12-06 | Generator scripts/gen-user-journeys.ts builds USER_JOURNEYS.md: a … | Not built |  | no scripts/gen-user-journeys.ts or USER_JOURNEYS.md |
+| P12-07 | Simulate the persona loop and docs/journeys/ux-findings.md (below) | Not built |  | no persona simulation loop or docs/journeys/ux-findings.md |
+| P12-08 | Phone chapter: Maestro screenshots into … | Not built |  | no Maestro screenshots (no mobile client) |
+
+### Phase 13 · Screenshot UI review — 0 built, 0 partly, 11 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P13-01 | States sweep journeys (empty, error, loading, denied) and Tab-walk … | Not built |  | no e2e/personas/*/states or Tab-walk steps |
+| P13-02 | Pre-checks on every screenshot run: image valid and not blank … | Not built |  | tools/review absent; no axe-core dependency |
+| P13-03 | Haiku subagent generates contact sheets (ImageMagick montage, 12 … | Not built |  | no tools/review/contact-sheet.sh |
+| P13-04 | Fixed checklist tools/review/CHECKLIST.md (below), versioned … | Not built |  | no tools/review/CHECKLIST.md |
+| P13-05 | Sonnet reviewers, at most 12 screenshots each, at most 3 in parallel … | Not built |  | no review rounds or reviewer batches |
+| P13-06 | Merge and de-duplicate by a Sonnet subagent: one component seen on … | Not built |  | no ISSUES.md |
+| P13-07 | Review-quality proof: canary pass with 12 injected defects (flag … | Not built |  | no MANYTHREADS_REVIEW_CANARY flag or tools/review/canary |
+| P13-08 | Fix loop in severity order (Sonnet writes, fresh Sonnet reviews the … | Not built |  | no review-driven fix loop (depends on P13-05..07) |
+| P13-09 | Repeat P13-05 to P13-08 with fresh reviewers until a full pass yields … | Not built |  | no repeated review passes |
+| P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI … | Not built |  | no pre-check/contrast/Tab-walk CI jobs; USER_JOURNEYS.md not generated |
+| P13-11 | Build the /dev/components gallery (Button, Chip, Card, Table row … | Not built | clients/web/src/pages/DevTokens.tsx (/dev/tokens), DevViewers; eslint.config.js raw-hex ban; stylelint.config.js color-no-hex | no /dev/components gallery, no 4px spacing lint |
+
+### Phase 14 · Messaging parity and moving in — 4 built, 11 partly, 7 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P14-01 | Presence and status. Active or away from the socket heartbeat … | Partly built | packages/plugins/presence (migration 0001, heartbeat.ts, routes.ts); notifications/src/hold.ts; clients/web/src/presence/ | no status/active dot beside names (members, mention picker, authors, DMs), no profile card with local time, no OOO screen |
+| P14-01b | (not a row of the plan; built as a follow-up) | Built | clients/web/src/presence/PresencePanels.tsx, PresenceSettings.tsx, DndIndicators.tsx; commit 47e30d0 | - (id not in PLAN table; commit-only follow-up of P14-01: status dialog, DND pause, schedule, hours editors) |
+| P14-02 | Composer parity. Formatting toolbar for the Markdown the renderer … | Partly built | clients/web/src/channels/Composer.tsx (toolbar, up-arrow edit-last, localStorage drafts), EmojiPicker.tsx, emoji.ts | no custom emoji, no @here/@channel confirm, drafts only in browser (not server); docs/plugins/channels.md:128 agrees |
+| P14-03 | User groups from role tags. A TEAM.md role tag is a mention handle … | Not built | - (role tags exist only for approvals, plugins/bots/src/loader.ts) | no role-tag mention handle, no picker entry with count, no toPerson role resolution |
+| P14-04 | Later and reminders. "Save for later" on any message (with done … | Partly built | packages/plugins/reminders (migration 0001 later_items, fire.ts job, routes.ts); clients/web/src/later/; ThreadsInbox.tsx Later tab | no /remind command or time parser, no "Reminders" system-sender message (notification only) |
+| P14-05 | Scheduled send. "Send later" on the send button; scheduled_messages … | Not built |  | no scheduled_messages table, job, Send later UI (grep hits are bot rhythms only) |
+| P14-06 | Slash commands. One registry in shared/commands (name, arguments … | Partly built | packages/shared/src/commands/index.ts (ask, task, me, shrug, help); clients/web/src/channels/slash.ts, useSlash.ts | no remind/status/dnd/away/poll/invite/leave/mute/topic; no BOT.md commands or command trigger (docs/plugins/channels.md:144) |
+| P14-07 | Polls. /poll and a composer action; single or multiple choice … | Not built |  | no poll_votes, /poll or poll UI |
+| P14-08 | Link previews. For a link in a posted message the server reads the … | Not built | - (no packages/plugins/link-preview; guardrails-egress has only egress.ts/routes.ts) | no OG/oEmbed fetch, cache, image proxy, allow/deny lists |
+| P14-09 | Notifications that reach people. Per-channel level (all · mentions · … | Partly built | notifications migration 0003 (notification_levels, keywords, push_subscriptions), src/webpush.ts, push.ts; clients/web/public/sw.js | no email digest and no one-click unsubscribe (docs/plugins/notifications.md:134) |
+| P14-10 | Quick switcher and keyboard. Ctrl/Cmd+K jumps to any channel, DM … | Built | clients/web/src/app/QuickSwitcher.tsx, quick-switcher.ts, readAll.ts; ChannelView.tsx jump-first-unread; e2e/shell/quick-switcher.spec.ts |  |
+| P14-11 | Search parity. Filters from: in: has:file has:link has:pin is:thread … | Partly built | packages/plugins/search (migrations 0004 filters_pages, 0005 saved_searches; saved.ts); packages/shared/src/api/search/syntax.ts … | has:pin not supported (pins absent); transcripts are phase 15 |
+| P14-12 | Message actions. Edit history ("edited" opens the versions); forward … | Built | channels migrations 0009 message_versions, 0010 channel_bookmarks; routes-bookmarks.ts; web ForwardDialog.tsx, BookmarksBar.tsx, MessageExtras.tsx | - (bookmarks sit beside pins, which do not exist) |
+| P14-13 | Import from Slack and Mattermost. An admin uploads a Slack export … | Not built | - (no plugins/import, no tools/import) | no Slack/Mattermost importer, dry run, job or hostile-input tests |
+| P14-14 | Incoming webhooks and a Slack-shaped API. Promote slack-compat from … | Partly built | packages/plugins/webhooks (incoming URL per channel, Slack/Mattermost payloads, adapters/); clients/web/src/webhooks/WebhooksDialog.tsx | slack-compat still spike (only chat.postMessage); no outgoing webhooks, chat.update, reactions.add, per-integration API token |
+| P14-15 | A personal sidebar inside the contract. Star a channel (a Starred … | Partly built | clients/web/src/shell/unreadLook.ts (muted look follows level), shell/NewChannel.tsx; docs/plugins/channels.md:146 | no Starred group, sort, hide idle 30 days, drag-reorder groups; New channel button is not in the row |
+| P14-16 | On-device speech in the browser: spike, then the engine … | Not built | - (no clients/web/src/speech, no docs/spikes/speech.md, no /models/ route) | no spike, engine, FAKE_ASR |
+| P14-17 | Voice messages. Hold the mic button in the composer (or tap to start … | Not built |  | no recorder, meta.voice, player or transcript flow |
+| P14-18 | Seed v14 (statuses, a reminder due, a scheduled message, a poll, a … | Partly built | docs/plugins/presence.md, reminders.md, slack-compat.md; packages/shared/src/events/presence.dnd.changed.ts, reminders.reminder.due.ts | no seed v14, no import docs page, no benchmarks in tools/bench, no Slack fixture |
+| P14-19 | Readable Markdown, from people and from every bot (added 2026-10-28 … | Partly built | clients/web/src/channels/MessageMarkdown.tsx (code blocks, Copy, checklists "N of M done"); packages/shared/src/text/paths.ts … | style added per template not by runtime; no markdown.repaired record; no tick-to-write-back in cards/pages |
+| P14-20 | A thread view that can grow (added 2026-10-28; built right after … | Built | clients/web/src/kernel/panel/RightPanel.tsx (separator, aria-value*, dblclick reset, Expand thread/Restore, Esc), panelSize.ts | expand shortcut not listed in ? sheet (minor) |
+| P14-21 | GitHub username and token, so a bot's tested branch reaches GitHub … | Partly built | packages/plugins/projects/src/github-check.ts; clients/web/src/screens/projects/ProjectsScreen.tsx, commands.ts (expiry warn 14d) … | no one-token-per-owner checkbox, no later-401 status/message, no Connect GitHub onboarding step in TEAM.md |
+
+### Phase 15 · Voice rooms, meeting transcripts and meeting memory — 0 built, 0 partly, 25 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P15-00 | Spike and decision record docs/spikes/voice.md. (a) LiveKit — a … | Not built | docs/spikes has no voice.md; no livekit in deploy/compose/chart | no code: no packages/plugins/meetings or media-livekit, no clients/web/src/meetings or speech, no 'livekit' string outside PLAN |
+| P15-01 | Schema (triple). meetings (team, channel — a DM call uses the DM's … | Not built |  | no meetings/meeting_participants/meeting_segments tables in any migration |
+| P15-02 | provider.media in the SDK (createRoom, token(actor, room, grants) … | Not built |  | nothing exists for this row |
+| P15-03 | meetings plugin. Start (one live room per channel — get-or-create) … | Not built |  | nothing exists for this row |
+| P15-04 | Web: the room. "Start voice room" in a channel header and "Call" in a … | Not built |  | nothing exists for this row |
+| P15-05 | Consent. When transcription is turned on, everyone in the room sees … | Not built |  | nothing exists for this row |
+| P15-06 | The on-device engine, live: P14-16's engine (clients/web/src/speech/) … | Not built |  | nothing exists for this row |
+| P15-07 | Server fallback, off by default. For a person who chose server (and … | Not built |  | nothing exists for this row |
+| P15-08 | Merge and live captions. The server orders lines by start time across … | Not built |  | nothing exists for this row |
+| P15-09 | The transcript in the meetings folder. When the room ends (plus the … | Not built |  | nothing exists for this row |
+| P15-10 | The Scribe, a platform bot in every team template like the Archivist: … | Not built |  | nothing exists for this row |
+| P15-11 | Into team memory. When the notes are written the platform drops the … | Not built |  | nothing exists for this row |
+| P15-12 | Action items to the board. The notes' action items carry Add to board … | Not built |  | nothing exists for this row |
+| P15-13 | Finding meetings again. The Files tree shows meetings/ with a meeting … | Not built |  | nothing exists for this row |
+| P15-14 | *Moved to P14-17 (2026-10-24): voice messages ship with the chat … | Not built |  | row is a moved note (voice messages are P14-17); the meetings-transcript placement part has no code |
+| P15-15 | Audio recording, opt-in and off by default. Audio-only recording … | Not built |  | nothing exists for this row |
+| P15-16 | Limits and guards. 25 people per voice room (configurable); idle end … | Not built |  | nothing exists for this row |
+| P15-17 | Seed v15 (a finished Engineering stand-up with transcript, notes, a … | Not built |  | nothing exists for this row |
+| P15-18 | Add a bot to the meeting. "Add note-taker" in the call bar lists the … | Not built |  | nothing exists for this row |
+| P15-19 | Server transcription by the bot. The media worker cuts each … | Not built |  | nothing exists for this row |
+| P15-20 | My files and the organizer's meeting transcript folder. Files gains a … | Not built |  | nothing exists for this row |
+| P15-21 | Notes after the meeting, and the organizer is told. When the room … | Not built |  | nothing exists for this row |
+| P15-22 | Questions to the bot during the meeting. The bot watches the final … | Not built |  | nothing exists for this row |
+| P15-23 | The organizer decides: share, and save to the team. In My files and … | Not built |  | nothing exists for this row |
+| P15-24 | Note-taker guards and tests. A bot never gets the media token itself … | Not built |  | nothing exists for this row |
+
+### Phase 16 · Connectors to the tools a company already uses — 0 built, 0 partly, 12 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P16-01 | Connector catalog shared/connectors/catalog.ts: id, provider, auth … | Not built |  | no packages/plugins/connections, no shared/connectors/catalog, no Add connection gallery; only an unrelated 'connections' key in bot-md schema |
+| P16-02 | One OAuth helper: PKCE, incremental scopes, refresh rotation by job … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-03 | Google Workspace in depth: Gmail (search, read, label, draft; send … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-04 | Microsoft 365 in depth: Outlook mail and calendar (same tools and … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-05 | Calendar and meetings. "Schedule a room" from a channel creates a … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-06 | Work trackers: Jira, Linear, GitHub Issues, Asana — a board card … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-07 | Support and CRM: Zendesk, Freshdesk, Intercom, HubSpot, Salesforce — … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-08 | Documents as knowledge: Notion, Confluence, Google Drive, SharePoint … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-09 | Chat bridges (Hermes parity). Reach a channel and your own assistant … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-10 | Triggers from connectors: provider webhooks verified by each … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-11 | Admin: connector usage and health, scopes granted per person, and … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+| P16-12 | tools/fake-saas (stand-ins for Google, Microsoft, Jira, Zendesk and … | Not built |  | no connections plugin, no shared/connectors/catalog, no tools/fake-saas, no OAuth helper, no connectors code |
+
+### Phase 17 · Video calls, screen sharing and the meeting assistant — 0 built, 0 partly, 12 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P17-01 | Video: camera on/off, grid and speaker layouts, pin a person, up to … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-02 | Screen sharing with tab audio, one sharer at a time and "Ask to … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-03 | On-device video effects: background blur and replace (a segmentation … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-04 | Guest links and a waiting room: a link for people outside the … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-05 | Scheduled and recurring meetings: a series keeps one folder … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-06 | The meeting assistant, live: an Ask side panel (Brain answers from … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-07 | Follow-ups: a follow-up email to outside attendees drafted from the … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-08 | Read aloud: answers and messages read aloud by the device's own … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-09 | Video recording (all-consent, Files storage, retention) and a player … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-10 | Call quality: a pre-join device and network check, a stats panel … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-11 | Seed v17, event contracts, docs updates | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+| P17-12 | The note-taker in video meetings: P15-18 to P15-24 unchanged in a … | Not built |  | depends on phase 15 meetings/media which do not exist; no clients/web/src/meetings |
+
+### Phase 18 · Workflow automation and a team that runs itself — 0 built, 0 partly, 14 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P18-01 | Recipe gallery: about twenty ready automations, each a routine, a bot … | Not built |  | templates/recipes does not exist; no recipe gallery, no proposal-installed recipes |
+| P18-02 | Request forms: a channel form (FormFlow, P9-08) with typed fields; a … | Not built |  | no plugins/forms (FormFlow P9-08 also absent); no request-form to board-card flow |
+| P18-03 | Approval chains: sequential or parallel steps by role tag, thresholds … | Not built | packages/plugins/approvals (single-step approvals only) | no chains/parallel steps/thresholds/delegation/escalation/email or push approve links; approvals plugin has migrations 0001-0004, none for chains |
+| P18-04 | Async stand-ups and check-ins: a rhythm asks each member in a DM at … | Not built | templates/engineering/bots/standup-relay/BOT.md (precursor only) | only a single routine bot in the engineering template; no DM per member, DND/out-of-office skip, blockers to board, pulse survey, templates/recipes absent |
+| P18-05 | Catch me up: a personal morning brief at the start of working hours … | Not built |  | no plugins/digest; no morning brief or Summarise |
+| P18-06 | Follow-up tracking, opt-in per person: questions addressed to me with … | Not built |  | no plugins/digest; no follow-up tracking |
+| P18-07 | Incidents: /incident <title> opens #inc-<date>-<slug>, pages … | Not built |  | nothing exists for this row |
+| P18-08 | Onboarding and offboarding: a per-team checklist in TEAM.md, a buddy … | Not built |  | nothing exists for this row |
+| P18-09 | Answered before: in a channel a lead marks as help, the composer … | Not built |  | nothing exists for this row |
+| P18-10 | Translation: a preferred language per person; Translate on any … | Not built |  | no plugins/translate, no preferred-language setting or Translate action |
+| P18-11 | Goals: check-ins on the goals from P6-01, progress rolled up from … | Not built | packages/shared/src/api/tasks/goals.ts, packages/plugins/tasks (goals from P6-01) | no check-ins, progress roll-up, weekly goal digest or Brain goal answers; only the goals entity/API |
+| P18-12 | Personal assistant (Hermes parity): each person may have their own … | Not built |  | no templates/personal, no per-person bot flow; bridges (P16-09) absent too |
+| P18-13 | Automation analytics: per recipe runs, failures, approval wait … | Not built |  | no plugins/analytics plugin |
+| P18-14 | Seed v18, event contracts, docs per recipe with every YAML tested … | Not built |  | nothing exists for this row |
 
 ---
 
