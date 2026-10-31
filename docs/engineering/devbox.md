@@ -22,3 +22,14 @@ Where code is built, tested and deployed, and the machine facts that break a pip
   existing team until it is copied in by a repo commit (keep the team's own `placement` lines).
 - The devbox has two checkouts: `/root/manythreads` (the Windows dev loop's, `Sync-Up.ps1`) and `/root/ci` (the
   pipeline's scratch copy, rewritten by every CI run). Never rsync over the first while another agent works in it.
+- **Every bot of a team on this host's Hermes gateway (mode A).** Run `DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/provision-host-bots.mjs engineering customer-support marketing [--dry] [--force]`.
+  The caller is a workspace admin, and each team needs a Hermes connection named `host` (override with `HERMES_CONNECTION`).
+  It adds the template bots the repo lacks, sets each bot's `placement` to `host` with profile `mt-<team>-<bot>`, and writes `$HERMES_HOME/profiles/mt-<team>-<bot>/`.
+  A profile is a directory with `config.yaml` and `.env` (dir 0700, files 0600); the gateway key and model key are copied from `$HERMES_HOME/.env`, and shell bots get cwd `/srv/hostdev`.
+  An existing bot gets its profile before its placement is committed. A new bot is added first, because a token can only be minted for a bot that exists.
+  The profile's tools follow the bot's `capabilities.runtime` through `packages/plugins/runtime-hermes/src/toolsets.ts`: no `shell` means no terminal, no `files` means no file tools.
+  A re-run keeps the other lines of `.env` and leaves a hand-edited `config.yaml` alone (`--force` replaces it and keeps a `.bak`).
+  A kept token is checked at the MCP server with an `initialize` call, and only this probe checks it there. A token the server refuses (HTTP 401) is replaced by a new one.
+  A new token whose files cannot be written is revoked again. The revoke turns off every live token of that bot, because the route has no finer grain.
+  The script ends with a test of every profile through the connection. `--dry` changes nothing.
+  Run `sync-engineering-bots.mjs` first with `TEMPLATE_PLACEMENT=1` for the chain bots' own text. The host gateway serves a new profile with no restart.
