@@ -18,6 +18,8 @@ import { Markdown } from './MessageMarkdown';
 import { MessageImages } from './MessageImages';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import type { People } from './hooks';
+import { PresenceDot } from '../presence/PresenceDot';
+import { PersonLink } from '../presence/ProfileCard';
 
 export const QUICK_EMOJI = ['👍', '✅', '🎉', '❤️', '👀', '🚀', '😄', '🙏'] as const;
 
@@ -80,6 +82,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
   const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
+  // a person's name opens their profile card and carries their presence dot; a bot or a webhook has neither (the roster lists people only)
+  const authorPerson = m.author?.kind === 'bot' || m.author?.kind === 'system' ? undefined : people.byActor(m.authorId);
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
   const [tapped, setTapped] = useState(false);
   // the toolbar exists only while the row is under the pointer or has focus: 5,000 rows do not each carry three buttons
@@ -162,7 +166,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         if (!e.currentTarget.contains(e.relatedTarget)) setHot(false);
       }}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest('a,button,textarea,.acts,.dlg-scrim,.vpop')) return;
+        if ((e.target as HTMLElement).closest('a,button,textarea,.acts,.dlg-scrim,.vpop,.pcard-avatar')) return;
         setTapped((t) => !t);
       }}
     >
@@ -215,10 +219,15 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           ) : null}
         </div>
       )}
-      <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} />
+      {authorPerson ? (
+        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} /></PersonLink>
+      ) : (
+        <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} />
+      )}
       <div className="msg-main">
         <div className="who">
-          <b>{name}</b>
+          <b>{authorPerson ? <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} /> : name}</b>
+          {authorPerson ? <PresenceDot personId={authorPerson.personId} status /> : null}
           {m.author?.kind === 'system' ? <span className="wh-mark" title="Posted by an incoming webhook, not by a person">Webhook</span> : null}
           <time dateTime={m.createdAt} data-vt-mask>{clock(m.createdAt)}</time>
           {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}

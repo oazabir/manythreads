@@ -4,6 +4,7 @@ import { fetchTeams } from '../api/endpoints';
 import type { TeamSummary } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
 import { useQuery } from '../app/useQuery';
+import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { Brand } from './ui';
 
 /** Centred card for sign-in, bootstrap and invite screens. */
@@ -54,6 +55,9 @@ type NavGroup = { heading: string; to?: string; items: NavItem[]; empty?: string
 
 export function SettingsFrame() {
   const session = useSession();
+  // the roster and other settings pages show presence dots too; they sit outside the shell, so they keep the heartbeat and the cards themselves
+  useWatchMyPresence(session.person.id);
+  useHeartbeat(session.person.id);
   const loc = useLocation();
   const navigate = useNavigate();
   const q = useQuery('settings-teams', fetchTeams);

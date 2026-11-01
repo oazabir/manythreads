@@ -268,7 +268,7 @@ describe('the client copy of the person\'s own settings', () => {
     expect(api.sendHeartbeat).not.toHaveBeenCalled();
     expect(api.fetchPresenceCards).not.toHaveBeenCalled();
   });
-  it('a server without the plugin (404) or an actor without presence (403) is absent, and is not asked again', async () => {
+  it('a server without the plugin (404) is absent, and is not asked again at once', async () => {
     api.fetchMyPresence.mockRejectedValue(new ApiError({ status: 404, code: 'not_found', message: 'No such route' }));
     const store = new PresenceStore();
     await store.loadMe();

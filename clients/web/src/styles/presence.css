@@ -399,6 +399,168 @@
   background: var(--human-wash);
 }
 
+/* ---- the dot beside a name (PresenceDot) ---- */
+.pdot-wrap {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.pdot {
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--presence-ring);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* three shapes, so the states do not rest on colour alone: active is a filled dot, away is half filled, offline is an empty ring (rings reach 3:1 on the surface) */
+.pdot-wrap[data-presence="online"] .pdot {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.pdot-wrap[data-presence="away"] .pdot {
+  border-color: var(--warn-ink);
+  background: linear-gradient(90deg, var(--warn-ink) 50%, transparent 50%);
+}
+
+/* one picture beside a name, never more: a long string is clipped */
+.pdot-emoji {
+  display: inline-block;
+  max-width: 1.6em;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ---- the name that opens a profile card ---- */
+.pcard-open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.pcard-open:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.pcard-open:hover {
+  text-decoration: underline;
+}
+
+.who .pdot-wrap {
+  margin-left: -3px;
+}
+
+.pcard-open + .pdot-wrap,
+.panel-member-name > .pdot-wrap {
+  margin-left: 6px;
+}
+
+/* an avatar that opens the card: a plain wrapper, and a cell of the message grid (the 34 px column; the avatar inside is 32 px) */
+.pcard-avatar {
+  display: block;
+  cursor: pointer;
+}
+
+.msg > .pcard-avatar {
+  place-self: start;
+}
+
+/* ---- the profile card (dialog) ---- */
+.pcard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.pcard-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pcard-id {
+  min-width: 0;
+}
+
+.pcard-presence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.pcard-you {
+  color: var(--mute);
+  font-weight: 400;
+}
+
+.pcard-line {
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.pcard-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.pcard-fact {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.pcard-k {
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.pcard-v {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+
+.pcard-ooo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pcard-sub {
+  display: block;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.pcard-empty {
+  margin: 0;
+  color: var(--mute);
+  font-size: 13px;
+}
+
 /* ---- phone: touch targets of at least 36 px ---- */
 @media (width <= 760px) {
   .pr .btn,
@@ -438,6 +600,11 @@
 
   .pr-emoji-field {
     width: 80px;
+  }
+
+  .pcard-fact {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 
   .rail .foot .menu-item,

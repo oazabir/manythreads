@@ -10,10 +10,14 @@ import { Alert, Field, Notice, PasswordField, Time } from '../components/ui';
 import { NotificationSettings } from '../notifications/NotificationSettings';
 import { disablePush } from '../notifications/push';
 import { PresenceSettings } from '../presence/PresenceSettings';
+import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { PASSWORD_MIN_LENGTH } from '@manythreads/shared';
 
 export function Account() {
   const session = useSession();
+  // the account page sits outside the shell: it keeps the heartbeat and the cards (shared with the shell's, started once) while it is open
+  useWatchMyPresence(session.person.id);
+  useHeartbeat(session.person.id);
   const { setSession } = useSessionState();
   const navigate = useNavigate();
   const sessions = useQuery('account-sessions', fetchSessions);

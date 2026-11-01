@@ -22,6 +22,8 @@ import { isAdmin, useSession } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { QueryView } from '../components/states';
 import { Alert, Avatar, Field, Notice, Time } from '../components/ui';
+import { PresenceDot } from '../presence/PresenceDot';
+import { PersonLink } from '../presence/ProfileCard';
 
 /** /teams/:slug is the roster. */
 export function TeamRedirect() {
@@ -70,7 +72,7 @@ function PersonRow({ m, slug, canManage, tagNames, act }: { m: RosterMember; slu
   return (
     <div className="mrow person-row" data-person={m.email}>
       <Avatar name={m.displayName} />
-      <div><div>{m.displayName}<div className="d">{m.email}</div></div></div>
+      <div><div><PersonLink personId={m.personId} name={m.displayName} email={m.email} /><PresenceDot personId={m.personId} status /><div className="d">{m.email}</div></div></div>
       <div><span className="kind h">person</span></div>
       <div className="roster-cell">
         {canManage ? (

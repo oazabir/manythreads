@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router';
 import { Alert } from '../components/ui';
 import { useMyDnd } from './hooks';
+import { OutOfOfficeEditor } from './OutOfOfficeEditor';
 import { HoursEditor, PauseControls, PausedNote, ScheduleEditor, StatusEditor, resumeNow, useSaver } from './PresencePanels';
 import { presenceStore } from './store';
 
@@ -53,6 +54,10 @@ export function PresenceSettings() {
             <div className="pr-part">
               <h3 className="pr-h">Time zone and working hours</h3>
               <HoursEditor me={me} />
+            </div>
+            <div className="pr-part">
+              <h3 className="pr-h">Out of office</h3>
+              <OutOfOfficeEditor me={me} />
             </div>
           </>
         )}

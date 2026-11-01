@@ -2,16 +2,36 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { dndState, liveStatus, type CustomStatus, type DndState, type MyPresence, type PresenceCard } from '@manythreads/shared';
 import { isMockMode } from '../api/setup';
 import { dndBanner, type DndBanner } from './settingsModel';
-import { presenceStore, type MeStatus, type PresenceSnapshot } from './store';
+import { useSession } from '../app/session';
+import { mayShowPresence } from './profileModel';
+import { beatFor } from './tabLease';
+import { cardsAreLive, presenceStore, type MeStatus, type PresenceSnapshot } from './store';
 
 export function usePresence(): PresenceSnapshot {
   return useSyncExternalStore(presenceStore.subscribe, presenceStore.snapshot);
 }
 
-/** The card of one person, or undefined when the server has none (nothing to show, or no presence plugin). */
+/**
+ * The card of one person, or undefined when the server has none (nothing to show, or no presence plugin). It reads only that card, so a row beside a
+ * name draws again when its own person changes, not on every refresh of everybody's.
+ */
 export function usePresenceCard(personId: string | null | undefined): PresenceCard | undefined {
-  const snap = usePresence();
-  return personId ? snap.cards.get(personId) : undefined;
+  return useSyncExternalStore(presenceStore.subscribe, () => (personId ? presenceStore.snapshot().cards.get(personId) : undefined));
+}
+
+/** The server has the presence plugin and has answered with the cards of the people the reader may see (dots and profile cards are drawn only then). */
+export function usePresenceSupported(): boolean {
+  return useSyncExternalStore(presenceStore.subscribe, () => presenceStore.snapshot().supported);
+}
+
+/**
+ * Whether a dot or profile card for this person may be drawn: the cards have arrived and the last rounds did not fail (an unknown answer is not "Offline"),
+ * and the reader can be shown that person at all -- a guest is served only their own card, so for anybody else nothing is drawn.
+ */
+export function useCanShowPresence(personId: string | null | undefined): boolean {
+  const session = useSession();
+  const live = useSyncExternalStore(presenceStore.subscribe, () => cardsAreLive(presenceStore.snapshot()));
+  return mayShowPresence(live, session.role, session.person.id, personId);
 }
 
 /** The current time, refreshed every `everyMs`, so "their time" and a status that clears do not stay stale. */
@@ -28,8 +48,10 @@ export function useNow(everyMs = 30_000): Date {
 export const IDLE_AFTER_MS = 5 * 60_000;
 
 /**
- * Keep the heartbeat while the shell is on screen: `online` while the person is using the tab, `away` when the tab is hidden or nothing
- * has been touched for five minutes. Mock mode has no server, so no heartbeat.
+ * Keep the heartbeat while the shell, a settings page or the account page is on screen (the loop is shared and runs once, see `PresenceStore.acquire`): `online` while the person is using the tab, `away` when the tab is hidden or nothing
+ * has been touched for five minutes. Only one tab of a browser may say `away` while another is in use (see `tabLease.ts`). A hidden tab sends only the
+ * beat; a visible tab also reads everyone's card and the person's own settings, which keeps a pause made on another device fresh. Mock mode has no
+ * server, so no heartbeat.
  */
 export function useHeartbeat(personId: string): void {
   useEffect(() => {
@@ -41,44 +63,34 @@ export function useHeartbeat(personId: string): void {
     };
     const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
     events.forEach((e) => window.addEventListener(e, touch, { passive: true }));
-    const state = (): 'online' | 'away' => (document.visibilityState === 'hidden' || Date.now() - lastInput > IDLE_AFTER_MS ? 'away' : 'online');
-    presenceStore.start(state);
+    const hidden = (): boolean => document.visibilityState === 'hidden';
+    const state = (): 'online' | 'away' | null => beatFor(hidden() || Date.now() - lastInput > IDLE_AFTER_MS ? 'away' : 'online');
+    const release = presenceStore.acquire(state, hidden);
     // coming back to the tab beats at once instead of waiting out the interval
     const wake = (): void => {
       if (document.visibilityState === 'visible') {
         touch();
-        void presenceStore.tick('online');
+        void presenceStore.tick(beatFor('online'));
       }
     };
     document.addEventListener('visibilitychange', wake);
     return () => {
       events.forEach((e) => window.removeEventListener(e, touch));
       document.removeEventListener('visibilitychange', wake);
-      presenceStore.stop();
+      release();
     };
   }, [personId]);
 }
 
-/** How often the person's own settings are read again while the shell is open (a pause made on another device shows up within this time). */
-export const MY_PRESENCE_REFRESH_MS = 60_000;
-
 /**
- * Keep the person's own presence settings (status, time zone, Do not disturb) fresh while the shell is on screen: read at once, every minute and
- * when the tab is shown again. It sends no heartbeat and fetches nobody's card. Mock mode and a server without the plugin read nothing.
+ * Read the person's own presence settings (status, time zone, Do not disturb) once when the shell opens, before the first round of the heartbeat has
+ * answered. After that `useHeartbeat` keeps them fresh (it reads them with each round of a visible tab), so there is no second timer. It sends no
+ * heartbeat and fetches nobody's card. Mock mode and a server without the plugin read nothing.
  */
 export function useWatchMyPresence(personId: string): void {
   useEffect(() => {
     presenceStore.ownId = personId;
     void presenceStore.loadMe();
-    const id = setInterval(() => void presenceStore.loadMe(), MY_PRESENCE_REFRESH_MS);
-    const wake = (): void => {
-      if (document.visibilityState === 'visible') void presenceStore.loadMe();
-    };
-    document.addEventListener('visibilitychange', wake);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', wake);
-    };
   }, [personId]);
 }
 

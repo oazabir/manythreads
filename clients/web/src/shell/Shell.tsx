@@ -4,7 +4,7 @@ import { dmParticipants, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
 import { PushBridge } from '../notifications/OpenLink';
 import { DndLive } from '../presence/DndIndicators';
-import { useWatchMyPresence } from '../presence/hooks';
+import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { SearchBox } from '../search/SearchBox';
 import { fetchTeams } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
@@ -46,6 +46,7 @@ export function Shell() {
 
   useRealtime();
   useWatchMyPresence(session.person.id);
+  useHeartbeat(session.person.id);
   const teamsData = q.status === 'ok' ? q.data.teams : undefined;
   const teams = useMemo(() => teamsData ?? [], [teamsData]);
   const teamsLoading = q.status === 'loading';

@@ -9,6 +9,7 @@ import { dmLabel, openConversation, useDms } from '../dms/store';
 import { navHref } from './nav';
 import { useDismiss } from './useDismiss';
 import { badgeText, unreadLook } from './unreadLook';
+import { PresenceDot } from '../presence/PresenceDot';
 
 const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
 
@@ -54,6 +55,7 @@ function NewConversation({ slug, onDone }: { slug: string; onDone: () => void })
               <input type="checkbox" checked={picked.has(p.personId)} onChange={() => toggle(p.personId)} />
               <Avatar name={p.name} />
               <span>{p.name}</span>
+              <PresenceDot personId={p.personId} />
             </label>
           </li>
         ))}
@@ -91,10 +93,14 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
         const n = unread[d.channel.id] ?? d.unreadCount;
         const label = dmLabel(d, session.person.id);
         const look = unreadLook(n, levels, d.channel.id, 'dm');
+        // a one-to-one conversation shows the other person's dot (participants are always people); a group or notes-to-self shows none
+        const others = d.participants.filter((p) => p.personId !== session.person.id);
+        const peer = others.length === 1 ? others[0] : undefined;
         return (
           <NavLink key={d.channel.id} to={dmPath(slug, d.channel.id)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''}`} data-unread={n > 0 ? n : undefined}>
             <span className="h"><span className={`dot ${look.bold ? 'on' : ''}`} aria-hidden="true" /></span>
             <span className="it-label">{label}</span>
+            {peer ? <PresenceDot personId={peer.personId} status /> : null}
             {look.badge ? <span className={`pill ${look.badge === 'quiet' ? 'g' : ''}`} data-vt-mask>{badgeText(n)}</span> : null}
           </NavLink>
         );

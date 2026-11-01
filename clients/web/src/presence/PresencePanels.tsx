@@ -9,6 +9,7 @@ import {
   DEFAULT_HOURS,
   HELD_NOTE,
   HOLD_REQUEST,
+  VISIBLE_NOTE,
   PAUSE_PRESETS,
   QUICK_EMOJI,
   RESUME_REQUEST,
@@ -182,6 +183,7 @@ export function StatusEditor({ me, onDone, autoFocus }: { me: MyPresence; onDone
           {when ? <small data-vt-mask> · {when}</small> : null}
         </p>
       ) : null}
+      <p className="pr-help" data-testid="status-visible">{VISIBLE_NOTE}</p>
       <div className="pr-inline pr-status-row">
         <div className="pr-field pr-emoji-field">
           <label className="pr-label" htmlFor={`${id}-emoji`}>Emoji</label>
@@ -340,7 +342,7 @@ export function HoursEditor({ me }: { me: MyPresence }) {
       <div className="pr-switch-row">
         <div>
           <div id={`${id}-hrs`}>Working hours</div>
-          <p className="pr-help">Shown on your profile card with your local time, so people know when to expect an answer.</p>
+          <p className="pr-help">{VISIBLE_NOTE} Working hours show on your profile card with your local time, so people know when to expect an answer.</p>
         </div>
         <button type="button" role="switch" aria-checked={hours.on} aria-labelledby={`${id}-hrs`} className={`tog ${hours.on ? 'on' : ''}`} onClick={() => change(() => setHours((h) => ({ ...h, on: !h.on, days: h.days.length ? h.days : [...DEFAULT_HOURS.days] })))} data-testid="hours-switch" />
       </div>

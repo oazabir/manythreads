@@ -4,6 +4,7 @@ import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useShell } from '../../shell/context';
+import { PresenceDot } from '../../presence/PresenceDot';
 import { ThreadPanel } from '../../channels/ThreadPanel';
 import { SearchPanel } from '../../search/SearchPanel';
 import { registerPanelType } from './registry';
@@ -37,7 +38,7 @@ function MemberPanel({ entry }: { entry: PanelEntry }) {
           <div className="panel-member">
             <Avatar name={m.displayName} />
             <div>
-              <p className="panel-member-name">{m.displayName}</p>
+              <p className="panel-member-name">{m.displayName}<PresenceDot personId={m.personId} status /></p>
               <p className="panel-member-line">{m.email}</p>
               <p className="panel-member-line">{m.role === 'lead' ? 'Team lead' : 'Member'}</p>
               {m.tags.length > 0 ? (

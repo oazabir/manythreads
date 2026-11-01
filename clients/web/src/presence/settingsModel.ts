@@ -23,6 +23,9 @@ import { WEEK_ORDER, clearsAtFor, dayName, type ClearChoice } from './format';
  * the screen, the menu and the tests agree. The server stays the authority: it checks every request again.
  */
 
+/** Said beside everything a person writes into their profile: the server shows it to every member of the workspace (a guest sees only their own). */
+export const VISIBLE_NOTE = 'Everyone in the workspace can see this.';
+
 // ---- pausing ---------------------------------------------------------------------------------------------------------------------
 
 export const PAUSE_PRESETS = [

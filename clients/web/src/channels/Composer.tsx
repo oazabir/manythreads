@@ -15,6 +15,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
 import { MAX_UPLOAD_BYTES, TOO_LARGE, filesOf, useFilesSupport } from './files';
 import { handleFor, type People } from './hooks';
+import { PresenceDot } from '../presence/PresenceDot';
 
 /*
  * The shared composer (channel, thread, later DMs): markdown toolbar, Enter to send and Shift+Enter for a new line, a draft kept per
@@ -89,7 +90,7 @@ export type ComposerProps = {
 };
 
 /** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
-type PickItem = { key: string; label: string; hint: string; insert: string; from: number; to: number; disabled?: string };
+type PickItem = { key: string; label: string; hint: string; insert: string; from: number; to: number; disabled?: string; /** A person offered by the @ picker: their presence dot is drawn beside the name. */ personId?: string };
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
@@ -220,7 +221,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       return people.list
         .filter((p) => q === '' || p.name.toLowerCase().includes(q) || handleFor(p, people.list).startsWith(q))
         .slice(0, 6)
-        .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} `, from: trigger.start, to: caret }));
+        .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} `, from: trigger.start, to: caret, personId: p.personId }));
     }
     return channelNames
       .filter((n) => q === '' || n.toLowerCase().includes(q))
@@ -585,6 +586,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
                   onMouseDown={(e) => { e.preventDefault(); choose(i); }}
                 >
                   <span className="pk-name">{it.label}</span>
+                  {it.personId ? <PresenceDot personId={it.personId} status /> : null}
                   {it.hint ? <small className="pk-hint">{it.hint}</small> : null}
                 </li>
               ))}

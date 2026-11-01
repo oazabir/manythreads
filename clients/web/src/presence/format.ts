@@ -1,4 +1,4 @@
-import { liveOutOfOffice, liveStatus, type CustomStatus, type OutOfOffice, type PresenceCard, type WorkingHours } from '@manythreads/shared';
+import { isValidTimeZone, liveOutOfOffice, liveStatus, type CustomStatus, type OutOfOffice, type PresenceCard, type WorkingHours } from '@manythreads/shared';
 
 /** The words beside a presence dot. */
 export function presenceWord(card: Pick<PresenceCard, 'presence'> | undefined): 'Active' | 'Away' | 'Offline' {
@@ -8,7 +8,9 @@ export function presenceWord(card: Pick<PresenceCard, 'presence'> | undefined): 
 
 /** The status to show right now (`null` once its clear time has passed, even if the list was fetched before that). */
 export const statusNow = (card: PresenceCard | undefined, now: Date): CustomStatus | null => (card ? liveStatus(card.status, now) : null);
-export const oooNow = (card: PresenceCard | undefined, now: Date): OutOfOffice | null => (card ? liveOutOfOffice(card.outOfOffice, card.timeZone, now) : null);
+/** The out-of-office note to show now. A zone the runtime does not know (a name written by a newer server) reads as UTC instead of throwing. */
+export const oooNow = (card: PresenceCard | undefined, now: Date): OutOfOffice | null =>
+  card ? liveOutOfOffice(card.outOfOffice, card.timeZone !== null && isValidTimeZone(card.timeZone) ? card.timeZone : null, now) : null;
 
 /** `🍽️ Lunch`, or whichever of the two there is. */
 export const statusText = (s: CustomStatus): string => [s.emoji, s.text].filter((x) => x !== null && x !== '').join(' ');
@@ -34,7 +36,7 @@ export function daysText(days: readonly number[]): string {
 
 export const hoursText = (h: WorkingHours): string => `${daysText(h.days)}, ${h.start} to ${h.end}`;
 
-/** "Back on Mon 15 Jun" from `2026-06-15` (read as a calendar date, not shifted by any time zone). */
+/** "Mon 15 Jun" from `2026-06-15` (read as a calendar date, not shifted by any time zone); the caller adds "Back". */
 export function returnText(isoDate: string): string {
   const [y, m, d] = isoDate.split('-').map(Number);
   const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1));

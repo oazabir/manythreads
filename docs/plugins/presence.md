@@ -32,9 +32,28 @@ All of it is in the web client; a server without this plugin answers 404 and the
   saved as one period); and **Time zone and working hours** (a zone list that starts from this device's zone and shows the local time there, working days as chips, *From*, *To*). The schedule is read in the saved
   time zone. If none is saved, saving the schedule first saves this device's zone, so the hours mean what the screen says (the server would otherwise read a schedule in UTC).
 
-Not built: out-of-office (the routes store it; no screen yet), status and active/away dots beside names in the member list, mention picker and message authors (the web client does not send the
-heartbeat yet), a `/status` or `/dnd` slash command, calendar sync. A schedule that was written through the API with two periods on one day is shown with one period per day (the first) and a note
-says so before it is saved over.
+- **Dots beside names** (P14-01c). A dot says *Active* (filled green), *Away* (half-filled amber) or *Offline* (an empty grey ring), so the three differ by shape as well as colour (the ring and marks reach 3:1
+  on the page and on the selected sidebar row; the app has no dark theme yet). A custom status adds its emoji: the first picture of it only, and nothing when the emoji field holds text. The tooltip and
+  accessible name say it in words (*Active, In a meeting*, plus *Out of office*), so a list option that contains a dot has them in its name. It shows beside a person's name in the team roster (*People*), the
+  member panel, the @ mention picker, the author of a message and the row of a one-to-one conversation in the sidebar. **Never beside a bot or a webhook**: the roster lists people only, a bot has no
+  heartbeat, and a bot's availability keeps its own look. `PresenceDot` (`clients/web/src/presence/PresenceDot.tsx`) reads only its own person's card; the shell, the settings pages and the account page share one heartbeat loop and fetches every card in
+  one request every 30 seconds (`useHeartbeat`), so a row never asks the server. **Nothing is drawn until the cards have arrived** (`cardsLoaded`: an unknown answer is not "Offline"), none while the last
+  three rounds failed (the old cards are kept but not shown as live), none on a server without the plugin, and **for a guest none beside anybody but themself** (the server serves a guest only their own
+  card). Who can be seen is the server's rule (`GET /api/presence/people`): a member sees the people of the workspace, so everything a person writes into their profile is visible to the whole workspace, and the
+  screens say so (*Everyone in the workspace can see this.*).
+- **Rounds and tabs.** A visible tab sends the beat and reads the cards and the person's own settings every 30 seconds (that is what keeps a pause made on another device fresh; there is no second timer). A
+  hidden tab sends only the beat. Only one tab of a browser may say *away* while another is in use: a tab in use takes a lease in `localStorage` (75 s) on each beat and the others stay quiet
+  (`tabLease.ts`; without storage each tab beats for itself). A 404 from the presence routes means "no plugin" and is asked again after five minutes; a 403, a 500 or a dropped connection is just a failed
+  round. Only the newest round's answer is applied, and none after another person signs in (`reset`).
+- **Profile card.** Pressing a person's name or avatar (message author, roster) opens their card: Active / Away / Offline, status, **local time** in their zone (*Karachi (UTC+5)*) and how it compares with
+  yours (*5 h ahead of you*), working hours with *Working hours now* or *Outside working hours now*, and, while they are away, *Out of office* with the day they are back, the note and *Ask <delegate>
+  meanwhile* (the delegate's name is shown when the reader's team list has it, else *Ask a colleague meanwhile*). The words come from `src/presence/profileModel.ts` (pure, tested). A person who shared nothing gets a line that says so.
+- **Account → Out of office** (in `/account#status-and-dnd`): a switch, *First day back* (after today in the person's own zone), *Ask meanwhile* (the people of your teams) and a note of up to 200 characters.
+  The form says which zone the day is read in and, when none is saved, saves this device's zone first (like the hours editor); it shows a note saved elsewhere until something is typed. Saving sends `outOfOffice` through `PATCH /api/presence/me` (`src/presence/oooModel.ts` builds and checks the request); switching it off clears the whole note; the server ends it by itself on the return day.
+
+Not built: a `/status` or `/dnd` slash command, calendar sync, a dot beside the sidebar's channel members or a "who is here" list in a channel (there is no channel member list in the app yet), a dot in the
+workspace-members settings page, a *Message* button on the profile card, out-of-office shown beside names in the DM picker, and the approvals routing that reads the delegate (P18-03). A schedule that was
+written through the API with two periods on one day is shown with one period per day (the first) and a note says so before it is saved over.
 
 ## Tables
 
@@ -66,5 +85,5 @@ Errors come from the closed set: 400 `validation_failed` (the reason is a plain 
 ## Tests
 
 `packages/plugins/presence/test/presence-api.test.ts`, `test/rls/presence-rls.test.ts`, `test/events/presence-events.test.ts`; `packages/shared/test/presence.test.ts` (clock rules) and
-`test/events/phase14-presence-contracts.test.ts`; `clients/web/test/presence-settings.test.ts` (pauses and their ends, the paused words, the schedule rows against the server's own reading, status,
+`test/events/phase14-presence-contracts.test.ts`; `clients/web/test/presence-profile.test.ts` (dot words, unknown zones, emoji, zone label, tab lease, colour contrast, local time and offset, profile facts, the out-of-office form, card identity across refreshes) and `test/presence-store.test.ts` (known vs unknown cards, failed rounds, 403 and 404, overlapping rounds, reset, hidden tab); `clients/web/test/presence-settings.test.ts` (pauses and their ends, the paused words, the schedule rows against the server's own reading, status,
 zone and hours, the client copy of the settings); `e2e/channels/status-dnd.spec.ts` (desktop and phone). Live screenshots: `e2e/screens/task.p14-01b.shots.ts` (not part of `pnpm e2e`).
