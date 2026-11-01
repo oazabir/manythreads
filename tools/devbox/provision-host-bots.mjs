@@ -25,6 +25,7 @@
 //     route can only turn off ALL live tokens of the bot) and the bot is reported FAILED.
 //
 //   DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/provision-host-bots.mjs engineering customer-support marketing [--dry] [--force]
+//   node tools/devbox/provision-host-bots.mjs --reserve engineering [--dry]   serve the team's profiles again (no login; assumes a multiplexing host gateway; see below)
 // Env: DEMO_BASE (default https://manythreads.kahf.to), HERMES_HOME (/root/.hermes), HERMES_CONNECTION (host),
 //      HERMES_SHELL_CWD (/srv/hostdev, else /root/manythreads) for bots whose capabilities.runtime holds `shell`.
 import {
@@ -42,8 +43,66 @@ const args = process.argv.slice(2);
 const dry = args.includes('--dry');
 const force = args.includes('--force');
 const teams = args.filter((a) => !a.startsWith('--'));
+
+// The host profile of a team's bot: one name, used by the provisioning below and by --reserve.
+const profileOf = (team, slug) => `mt-${team}-${slug}`;
+
+// --reserve (PLAN P14-22): serve a profile again, for a host Hermes that did not take the tools push (an older Hermes, or a stream cut by a proxy). It is
+// `hermes -p <profile> gateway restart`: under a multiplexing gateway that unserves and serves that one profile through the gateway's control socket
+// (about two seconds; a run that is mid-answer finishes; no other profile is touched). It ASSUMES the host gateway multiplexes profiles: it refuses a profile
+// that `hermes gateway list` does not show as "served by the default multiplexer" (a restart of any other kind would restart a whole gateway).
+// Needs no login. Each name is an exact profile (`mt-engineering-engineer`) or a team slug: the profiles of the bots in `templates/<team>/bots/`, by the same
+// naming as the provisioning (`mt-<team>-<bot>`), never by a name prefix (team `eng` must not catch `mt-eng-ops-*`). A bot a team added that is not in its
+// template is named by its exact profile. `--dry` prints what it would do. Env: HERMES_HOME, HERMES_BIN (default `hermes`).
+if (args.includes('--reserve')) {
+  const { execFileSync } = await import('node:child_process');
+  const home = process.env['HERMES_HOME'] ?? '/root/.hermes';
+  const bin = process.env['HERMES_BIN'] ?? 'hermes';
+  const hermesEnv = { ...process.env, HERMES_HOME: home };
+  const root = join(home, 'profiles');
+  const present = existsSync(root) ? readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory() && /^[a-z0-9][a-z0-9-]{0,60}$/.test(e.name)).map((e) => e.name) : [];
+  const repoDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const teamProfiles = (team) => {
+    const dir = join(repoDir, 'templates', team, 'bots');
+    return existsSync(dir) ? readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => profileOf(team, d.name)) : [];
+  };
+  const wanted = [...new Set(teams.flatMap((name) => (present.includes(name) ? [name] : teamProfiles(name).filter((p) => present.includes(p)))))];
+  if (teams.length === 0 || wanted.length === 0) {
+    console.error(`usage: node provision-host-bots.mjs --reserve <profile|team>... [--dry]   (no profile found under ${root} for: ${teams.join(' ') || 'nothing named'})`);
+    process.exit(2);
+  }
+  let listing = '';
+  try {
+    listing = execFileSync(bin, ['gateway', 'list'], { env: hermesEnv, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 });
+  } catch (e) {
+    console.error(`cannot run \`${bin} gateway list\`: ${String(e.stderr ?? e.message).slice(0, 200)}`);
+    process.exit(2);
+  }
+  const multiplexed = new Set(listing.split('\n').flatMap((line) => (/served by the default multiplexer/.test(line) ? [line.replace(/^[^A-Za-z0-9]+/, '').split(/\s+/)[0]] : [])));
+  let bad = 0;
+  for (const profile of wanted) {
+    if (!multiplexed.has(profile)) {
+      bad += 1;
+      console.error(`REFUSED ${profile}: \`${bin} gateway list\` does not show it as "served by the default multiplexer" (--reserve assumes a multiplexing host gateway)`);
+      continue;
+    }
+    if (args.includes('--dry')) {
+      console.log(`would run: ${bin} -p ${profile} gateway restart`);
+      continue;
+    }
+    try {
+      execFileSync(bin, ['-p', profile, 'gateway', 'restart'], { env: hermesEnv, stdio: 'pipe', timeout: 60_000 });
+      console.log(`served again: ${profile}`);
+    } catch (e) {
+      bad += 1;
+      console.error(`FAILED ${profile}: ${String(e.stderr ?? e.message).slice(0, 200)}`);
+    }
+  }
+  process.exit(bad === 0 ? 0 : 1);
+}
+
 if (!EMAIL || !PASSWORD || teams.length === 0) {
-  console.error('usage: DEMO_EMAIL=... DEMO_PASSWORD=... node provision-host-bots.mjs <team>... [--dry] [--force]');
+  console.error('usage: DEMO_EMAIL=... DEMO_PASSWORD=... node provision-host-bots.mjs <team>... [--dry] [--force]   |   node provision-host-bots.mjs --reserve <profile|team>... [--dry]');
   process.exit(2);
 }
 
@@ -353,7 +412,7 @@ async function doTeam(team) {
   // Plan: what the repo needs, per bot. One broken file fails that bot only.
   const infos = [];
   for (const slug of slugs) {
-    const info = { team, slug, profile: `mt-${team}-${slug}`, placement: 'ok', token: '-', files: '-', test: '-', changes: [], isNew: false, failed: null };
+    const info = { team, slug, profile: profileOf(team, slug), placement: 'ok', token: '-', files: '-', test: '-', changes: [], isNew: false, failed: null };
     infos.push(info);
     try {
       const path = `bots/${slug}/BOT.md`;

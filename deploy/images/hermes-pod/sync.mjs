@@ -99,7 +99,8 @@ export function syncOnce() {
     const files = { ...p.files };
     files['config.yaml'] = withoutTerminalBlock(files['config.yaml'] ?? '') + terminalBlock(p, keyPath);
     files['.env'] = envFile(p.secrets ?? {});
-    // restart-relevant: everything that Hermes reads only when a profile is served (config, env). Prompts and skills are re-read every turn.
+    // restart-relevant: everything that Hermes reads only when a profile is served (config, env). `SOUL.md` is NOT re-read: Hermes freezes it per session, so it
+    // carries only a fixed identity line and the bot's `BOT.md` body travels as `instructions` on every run. Tool changes arrive by the MCP stream (list_changed).
     const hash = sha(files['config.yaml'] + '\0' + files['.env']);
     const hashFile = join(dir, '.manythreads-hash');
     const previous = existsSync(hashFile) ? readFileSync(hashFile, 'utf8') : '';

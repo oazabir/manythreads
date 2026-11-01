@@ -11,6 +11,6 @@ RUN pnpm install --frozen-lockfile --filter @manythreads/web... \
 
 FROM nginx:alpine
 COPY deploy/docker/nginx.conf /etc/nginx/templates/default.conf.template
-ENV MANYTHREADS_SERVER_HOST=manythreads-server MANYTHREADS_SERVER_PORT=3000
+ENV MANYTHREADS_SERVER_HOST=manythreads-server MANYTHREADS_SERVER_PORT=3000 MANYTHREADS_MCP_STREAM_TIMEOUT=1900s
 COPY --from=build /app/clients/web/dist /usr/share/nginx/html
 EXPOSE 80

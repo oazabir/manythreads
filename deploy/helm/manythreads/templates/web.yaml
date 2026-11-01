@@ -47,6 +47,7 @@ spec:
           env:
             - { name: MANYTHREADS_SERVER_HOST, value: manythreads-server }
             - { name: MANYTHREADS_SERVER_PORT, value: {{ .Values.server.port | quote }} }
+            - { name: MANYTHREADS_MCP_STREAM_TIMEOUT, value: {{ .Values.web.mcpStreamTimeout | quote }} }
           ports: [{ name: http, containerPort: 80 }]
           readinessProbe:
             httpGet: { path: /, port: http }

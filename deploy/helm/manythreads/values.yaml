@@ -231,6 +231,10 @@ web:
   image: manythreads/web
   replicas: 1
   resources: {}
+  # How long the web pod's nginx waits for a byte on `/mcp`. A bot's tools stream (GET /mcp, PLAN P14-22) lives up to 30 minutes and sends a keepalive
+  # every 25 s, so this must stay over 30 minutes (1800s). The ingress in front (Traefik) buffers nothing and has no response timeout by default; if
+  # you put another proxy in front, give it `proxy-buffering off` and a read timeout over 30 minutes for `/mcp` too.
+  mcpStreamTimeout: 1900s
   # Public screenshot gallery at /screenshots/ (a volume the nginx serves; filled by tools/devbox/publish-screenshots.sh). Off here,
   # on in values-live.yaml. The pictures are public by design: never put anything in it that is not meant for anyone with the link.
   screenshots:
