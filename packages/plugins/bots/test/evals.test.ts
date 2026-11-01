@@ -168,7 +168,9 @@ describe('running a bot\'s evals on demand', () => {
       ]);
     });
     await jobsIdle();
-    expect(await rowsOf()).toHaveLength(first.length);
+    // a run reads main as it is now, so a commit that landed meanwhile (a loader write) may add a row for a newer sha: the sha delivered twice still has the one
+    const sha = first[first.length - 1]!.commit_sha;
+    expect((await rowsOf()).filter((r) => r.commit_sha === sha), 'rows of the delivered sha').toHaveLength(first.filter((r) => r.commit_sha === sha).length);
   });
 
   it('a bot with no set: an on-demand run fails in plain words, a commit makes no row', async () => {
