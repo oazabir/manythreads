@@ -12,7 +12,7 @@ export function Block({ title, count, action, children }: { title: string; count
       <h3 className="bh">
         {title}
         {count !== undefined ? <span className="cnt">{count}</span> : null}
-        {action ? <span className="act">{action}</span> : null}
+        {action ? <span className="bh-act">{action}</span> : null}
       </h3>
       <div className="b-block-body">{children}</div>
     </section>

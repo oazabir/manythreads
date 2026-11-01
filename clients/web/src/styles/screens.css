@@ -471,7 +471,8 @@ a.btn.primary {
 .bh {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   margin: 0;
   padding: 11px 15px;
   border-bottom: 1px solid var(--rule);
@@ -487,8 +488,19 @@ a.btn.primary {
   font-weight: 400;
 }
 
-.bh .act {
+/* The buttons of a block header. Not `.act`: that is the 26x24 icon button of a message's hover toolbar (channels.css) and cut these to 26px,
+   so the block's overflow clip showed "Oper". The group takes the room its buttons need, sits at the right and wraps under the title when the row is narrow. */
+.bh .bh-act {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 8px;
+  min-width: 0;
   margin-left: auto;
+}
+
+.bh .bh-act .btn {
+  white-space: nowrap;
 }
 
 .block-body {
@@ -1148,6 +1160,11 @@ a.btn.primary {
     grid-column: 2 / -1;
   }
 
+  /* the five-column desktop grid of a person kept its width here (it is more specific than `.mrow`), so the tags and Remove ran 640px wide under the card's clip */
+  .mrow.person-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
   .mrow.tpl-row {
     grid-template-columns: 1fr;
   }
@@ -1240,6 +1257,8 @@ a.btn.primary {
 
 .tag-add {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 6px;
 }
 

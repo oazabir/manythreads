@@ -50,7 +50,7 @@ function TemplatePanel({ team, t }: { team: TeamDetail; t: TemplateDefinition })
       <h2 className="bh" id="tpl-def">
         Template definition
         <span className="cnt">{t.id} · v{t.version}</span>
-        <span className="act"><Link className="btn" to={`/settings/team/${team.slug}/template`}>Open</Link></span>
+        <span className="bh-act"><Link className="btn" to={`/settings/team/${team.slug}/template`}>Open</Link></span>
       </h2>
       <div className="mrow tpl-row"><div className="k">Channels</div><div className="mono-list">{t.channels.map((c) => <span key={c.name}>{c.name}</span>)}</div></div>
       <div className="mrow tpl-row"><div className="k">Board</div><div>{t.board.name}<div className="d">{t.board.columns.join(' · ')}</div></div></div>
@@ -183,7 +183,7 @@ export function Roster() {
             <section className="block" aria-labelledby="people" data-landmark="people">
               <h2 className="bh" id="people">People <span className="cnt">{members.length}</span>
                 {canManage ? (
-                  <span className="act">
+                  <span className="bh-act">
                     {admin ? <button type="button" className="btn" aria-expanded={panel === 'add'} onClick={() => setPanel(panel === 'add' ? null : 'add')}>Add person</button> : null}
                     <button type="button" className="btn" aria-expanded={panel === 'invite'} onClick={() => setPanel(panel === 'invite' ? null : 'invite')}>Invite</button>
                   </span>
