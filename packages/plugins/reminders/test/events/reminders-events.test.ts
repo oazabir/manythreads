@@ -38,10 +38,11 @@ const due = (): Promise<EventRow[]> =>
   );
 
 describe('reminders events', () => {
-  it('registers the event at schema version 1, and the manifest lists it', async () => {
+  it('registers the events at schema version 1, and the manifest lists them', async () => {
     expect(Object.keys(eventRegistry['reminders.reminder.due'])).toEqual(['1']);
     const plugin = (await import('../../src/index.ts')).default;
-    expect([...plugin.manifest.events.emits]).toEqual(['reminders.reminder.due']);
+    expect(Object.keys(eventRegistry['reminders.reminder.changed'])).toEqual(['1']);
+    expect([...plugin.manifest.events.emits]).toEqual(['reminders.reminder.due', 'reminders.reminder.changed']);
   });
 
   it('one event for the item although the job ran twice, parsing against its schema, with no team and no text', async () => {

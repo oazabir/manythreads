@@ -28,6 +28,7 @@ import { fetchProjects } from './projects/api';
 import { headerTopic, projectOfChannel } from './projects/commands';
 import { useRealtimeStatus } from '../realtime';
 import { ScheduledStrip } from '../channels/ScheduledStrip';
+import { useChannelChanged } from '../channels/useSlash';
 
 export function NoChannelAccess() {
   return (
@@ -67,6 +68,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const panel = usePanel();
   const [params] = useSearchParams();
   const info = useQuery(`channel:${channelId}`, () => fetchChannel(channelId));
+  useChannelChanged(channelId, info.reload); // a /topic typed in the composer
   // A channel tied to a project says so beside its title. A person who cannot read the team's projects (a guest) simply sees no chip.
   const projects = useQuery(`projects:${teamSlug}`, () => fetchProjects(teamSlug));
   const project = !dm && projects.status === 'ok' ? projectOfChannel(projects.data.items, channelId) : undefined;

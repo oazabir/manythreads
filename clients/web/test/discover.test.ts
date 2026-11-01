@@ -71,10 +71,12 @@ describe('where a message opens', () => {
 });
 
 describe('direct message labels', () => {
-  const dm = { participants: [{ personId: uuid(1), displayName: 'Nadia' }, { personId: uuid(2), displayName: 'Rafi' }] } as never;
+  const dm = { channel: { dmKey: null }, participants: [{ personId: uuid(1), displayName: 'Nadia' }, { personId: uuid(2), displayName: 'Rafi' }] } as never;
   it('names the other people, or notes to self', () => {
     expect(dmLabel(dm, uuid(1))).toBe('Rafi');
-    expect(dmLabel({ participants: [{ personId: uuid(1), displayName: 'Nadia' }] } as never, uuid(1))).toBe('Notes to self');
+    expect(dmLabel({ channel: { dmKey: null }, participants: [{ personId: uuid(1), displayName: 'Nadia' }] } as never, uuid(1))).toBe('Notes to self');
+    // the person's own Reminders conversation has one member but is not notes to self
+    expect(dmLabel({ channel: { dmKey: `reminders:${uuid(1)}` }, participants: [{ personId: uuid(1), displayName: 'Nadia' }] } as never, uuid(1))).toBe('Reminders');
   });
 });
 

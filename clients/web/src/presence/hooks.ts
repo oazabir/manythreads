@@ -5,6 +5,7 @@ import { dndBanner, type DndBanner } from './settingsModel';
 import { useSession } from '../app/session';
 import { mayShowPresence } from './profileModel';
 import { beatFor } from './tabLease';
+import { chosenBeat } from './manualAway';
 import { cardsAreLive, presenceStore, type MeStatus, type PresenceSnapshot } from './store';
 
 export function usePresence(): PresenceSnapshot {
@@ -64,13 +65,14 @@ export function useHeartbeat(personId: string): void {
     const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
     events.forEach((e) => window.addEventListener(e, touch, { passive: true }));
     const hidden = (): boolean => document.visibilityState === 'hidden';
-    const state = (): 'online' | 'away' | null => beatFor(hidden() || Date.now() - lastInput > IDLE_AFTER_MS ? 'away' : 'online');
+    // `/away` (manualAway.ts) wins over what the tab's own activity says
+    const state = (): 'online' | 'away' | null => chosenBeat(beatFor(hidden() || Date.now() - lastInput > IDLE_AFTER_MS ? 'away' : 'online'));
     const release = presenceStore.acquire(state, hidden);
     // coming back to the tab beats at once instead of waiting out the interval
     const wake = (): void => {
       if (document.visibilityState === 'visible') {
         touch();
-        void presenceStore.tick(beatFor('online'));
+        void presenceStore.tick(chosenBeat(beatFor('online')));
       }
     };
     document.addEventListener('visibilitychange', wake);

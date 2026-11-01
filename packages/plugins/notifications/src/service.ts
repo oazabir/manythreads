@@ -13,6 +13,8 @@ export interface MessageFacts {
   workspaceId: string;
   channelId: string;
   channelKind: string;
+  /** The key of a direct message (`reminders:<person id>` for a person's Reminders conversation); null for any other channel. */
+  dmKey: string | null;
   threadRootId: string | null;
   authorActorId: string;
   /** The author's `people.id`; null for a bot. */
@@ -30,12 +32,23 @@ export function previewOf(plain: string): string {
   return chars.length > PREVIEW_MAX ? `${chars.slice(0, PREVIEW_MAX - 1).join('')}…` : line;
 }
 
-/** The name of an incoming webhook that wrote a message (its author is an actor of its own), or null when the author is not one or the webhooks plugin is absent. */
-async function webhookName(tx: PluginTx, actorId: string): Promise<string | null> {
-  const present = (await tx.query<{ ok: boolean }>("SELECT to_regclass('app.webhooks') IS NOT NULL AS ok")).rows[0]?.ok === true;
-  if (!present) return null;
-  const row = (await tx.query<{ name: string }>('SELECT w.name FROM app.webhooks w WHERE w.actor_id = $1::uuid', [actorId])).rows[0];
-  return row?.name ?? null;
+/**
+ * The name of a system author: an incoming webhook (its author is an actor of its own) or the workspace's "Reminders" sender. Null when the author is
+ * neither, or when the plugin that owns the table is absent.
+ */
+async function systemAuthorName(tx: PluginTx, actorId: string): Promise<string | null> {
+  const present = (
+    await tx.query<{ hooks: boolean; senders: boolean }>("SELECT to_regclass('app.webhooks') IS NOT NULL AS hooks, to_regclass('app.reminder_senders') IS NOT NULL AS senders")
+  ).rows[0];
+  if (present?.hooks) {
+    const row = (await tx.query<{ name: string }>('SELECT w.name FROM app.webhooks w WHERE w.actor_id = $1::uuid', [actorId])).rows[0];
+    if (row) return row.name;
+  }
+  if (present?.senders) {
+    const row = (await tx.query<{ ok: boolean }>('SELECT true AS ok FROM app.reminder_senders s WHERE s.actor_id = $1::uuid', [actorId])).rows[0];
+    if (row) return 'Reminders';
+  }
+  return null;
 }
 
 export async function loadMessage(tx: PluginTx, messageId: string): Promise<MessageFacts | null> {
@@ -44,6 +57,7 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
     workspace_id: string;
     channel_id: string;
     channel_kind: string;
+    dm_key: string | null;
     thread_root_id: string | null;
     author_id: string;
     author_kind: string | null;
@@ -56,7 +70,7 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
   }>(
     // The author is a person or a bot, so both are looked up: a person's display name, and a bot's own name from the bots plugin's row
     // (its actor's `ref_id` is the bot row). A bot of no row (deleted, or the bots plugin absent) keeps the old generic label.
-    `SELECT m.id, m.workspace_id, m.channel_id, c.kind AS channel_kind, m.thread_root_id, m.author_id, m.body_plain, m.deleted_at,
+    `SELECT m.id, m.workspace_id, m.channel_id, c.kind AS channel_kind, c.dm_key, m.thread_root_id, m.author_id, m.body_plain, m.deleted_at,
             (SELECT aa.kind FROM app.actors aa WHERE aa.id = m.author_id) AS author_kind,
             pa.ref_id AS author_person_id, p.display_name AS person_name, b.name AS bot_name, b.slug AS bot_slug
        FROM app.messages m
@@ -70,12 +84,13 @@ export async function loadMessage(tx: PluginTx, messageId: string): Promise<Mess
   );
   const r = res.rows[0];
   if (!r) return null;
-  const hookName = r.author_kind === 'system' ? await webhookName(tx, r.author_id) : null;
+  const hookName = r.author_kind === 'system' ? await systemAuthorName(tx, r.author_id) : null;
   return {
     id: r.id,
     workspaceId: r.workspace_id,
     channelId: r.channel_id,
     channelKind: r.channel_kind,
+    dmKey: r.dm_key,
     threadRootId: r.thread_root_id,
     authorActorId: r.author_id,
     authorPersonId: r.author_person_id,

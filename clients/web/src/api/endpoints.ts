@@ -392,6 +392,24 @@ import {
   setWebhookSigningRoute,
   testWebhookRoute,
 } from '@manythreads/shared';
+import {
+  AddChannelMemberRequest,
+  AddChannelMemberResponse,
+  CancelReminderResponse,
+  CreateReminderRequest,
+  LeaveChannelResponse,
+  ListRemindersQuery,
+  ListRemindersResponse,
+  Reminder,
+  UpdateChannelRequest,
+  UpdateChannelResponse,
+  addChannelMemberRoute,
+  cancelReminderRoute,
+  createReminderRoute,
+  leaveChannelRoute,
+  listRemindersRoute,
+  updateChannelRoute,
+} from '@manythreads/shared';
 import { CSRF_HEADER, ApiError, buildPath, call, readCsrfCookie } from './client';
 
 /*
@@ -573,6 +591,18 @@ export const fetchChannel = (channelId: string) => call(getChannelRoute, { respo
 export const createChannel = (slug: string, body: CreateChannelRequest) =>
   call(createChannelRoute, { request: CreateChannelRequest, response: CreateChannelResponse }, body, { slug });
 export const joinChannel = (channelId: string) => call(joinChannelRoute, { response: JoinChannelResponse }, undefined, { channelId });
+export const leaveChannel = (channelId: string) => call(leaveChannelRoute, { response: LeaveChannelResponse }, undefined, { channelId });
+/** Adds a person to a channel (a team lead or a workspace admin; the person must be on the channel's team). */
+export const addChannelMember = (channelId: string, personId: string) =>
+  call(addChannelMemberRoute, { request: AddChannelMemberRequest, response: AddChannelMemberResponse }, { personId }, { channelId });
+/** Changes a channel's topic (its purpose line); an empty string clears it. */
+export const saveChannelTopic = (channelId: string, purpose: string) =>
+  call(updateChannelRoute, { request: UpdateChannelRequest, response: UpdateChannelResponse }, { purpose }, { channelId });
+
+// ---- /remind (P14-04): the reminders a person asked for with the command ------------------------------------
+export const fetchReminders = (state: 'pending' | 'history') => call(listRemindersRoute, { request: ListRemindersQuery, response: ListRemindersResponse }, { state });
+export const createReminder = (body: CreateReminderRequest) => call(createReminderRoute, { request: CreateReminderRequest, response: Reminder }, body);
+export const cancelReminder = (reminderId: string) => call(cancelReminderRoute, { response: CancelReminderResponse }, undefined, { reminderId });
 
 /** Newest first; `before` is the id of the oldest message held (the previous page's `nextCursor`). */
 export const fetchMessages = (channelId: string, query: { before?: string; limit?: number; threadRootId?: string } = {}) =>

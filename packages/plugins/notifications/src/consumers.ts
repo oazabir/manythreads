@@ -1,5 +1,13 @@
 import type { PluginContext, PluginEvent } from '@manythreads/sdk';
-import { ChannelMemberRemovedEvent, ChannelMentionCreatedEvent, ChannelMessageDeletedEvent, ChannelMessagePostedEvent, PresenceDndChangedEvent, RemindersReminderDueEvent } from '@manythreads/shared';
+import {
+  ChannelMemberRemovedEvent,
+  ChannelMentionCreatedEvent,
+  ChannelMessageDeletedEvent,
+  ChannelMessagePostedEvent,
+  PresenceDndChangedEvent,
+  REMINDERS_DM_KEY_PREFIX,
+  RemindersReminderDueEvent,
+} from '@manythreads/shared';
 import { releaseHeld } from './hold.ts';
 import { keywordMatches, membersHearingAll, workspaceDefaultLevel } from './levels.ts';
 import { deliver, deliverReminder, loadMessage } from './service.ts';
@@ -36,6 +44,9 @@ export function registerConsumers(ctx: PluginContext): void {
     const event = ChannelMessagePostedEvent.parse(raw);
     const message = await loadMessage(tx, event.messageId);
     if (!message || message.deleted) return;
+    // A person's Reminders conversation (P14-04): the reminder is announced by `reminders.reminder.due` (which ignores the conversation's mute and
+    // level, as a reminder must), so the message itself notifies nobody a second time, and its text is not read for keywords.
+    if (message.channelKind === 'dm' && message.dmKey?.startsWith(REMINDERS_DM_KEY_PREFIX)) return;
     // Keywords first: a keyword hit is stronger than a dm or a reply, so the later delivers write nothing for that person instead of raising the
     // row and announcing it a second time.
     if (message.channelKind === 'channel' || message.channelKind === 'dm') {

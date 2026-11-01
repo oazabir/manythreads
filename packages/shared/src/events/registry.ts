@@ -16,6 +16,7 @@ import { ChannelPollClosedEvent } from './channel.poll.closed.ts';
 import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
 import { PresenceDndChangedEvent } from './presence.dnd.changed.ts';
 import { RemindersReminderDueEvent } from './reminders.reminder.due.ts';
+import { RemindersReminderChangedEvent } from './reminders.reminder.changed.ts';
 import { FilesFileUploadedEvent } from './files.file.uploaded.ts';
 import { FilesFileDeletedEvent } from './files.file.deleted.ts';
 import { RepoRepoCommittedEvent } from './repo.repo.committed.ts';
@@ -137,6 +138,7 @@ export const eventRegistry = {
   'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
   'presence.dnd.changed': { 1: PresenceDndChangedEvent },
   'reminders.reminder.due': { 1: RemindersReminderDueEvent },
+  'reminders.reminder.changed': { 1: RemindersReminderChangedEvent },
   'files.file.uploaded': { 1: FilesFileUploadedEvent },
   'files.file.deleted': { 1: FilesFileDeletedEvent },
   'repo.repo.committed': { 1: RepoRepoCommittedEvent },

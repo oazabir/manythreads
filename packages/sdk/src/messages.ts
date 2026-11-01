@@ -30,6 +30,11 @@ export interface MessagePostInput {
    * is stored on the copy. 403 for an answer that is not the caller's, 400 for a copy that is not one.
    */
   copyOf?: string;
+  /**
+   * Do not record what the text names (people, channels, links), so nobody is notified and nothing is linked because of it. For text a plugin
+   * writes from something a person typed that must not ping anyone (a reminder's text). Plugin code only: the provider is not reachable by a bot.
+   */
+  skipRefs?: boolean;
 }
 
 export interface MessagePosted {

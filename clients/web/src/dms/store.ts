@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import type { DirectMessageSummary } from '@manythreads/shared';
+import { REMINDERS_DM_KEY_PREFIX, type DirectMessageSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fetchDms, openDm } from '../api/endpoints';
 import { onPersonChange } from '../app/caches';
@@ -74,6 +74,8 @@ export function useDms(enabled = true): DmFeed {
 
 /** Names of the other people in a conversation (the sidebar row); a conversation with only yourself is "Notes to self". */
 export function dmLabel(dm: DirectMessageSummary, selfPersonId: string): string {
+  // the person's own Reminders conversation (docs/plugins/reminders.md): the reminders plugin posts into it as "Reminders"
+  if (dm.channel.dmKey?.startsWith(REMINDERS_DM_KEY_PREFIX)) return 'Reminders';
   const others = dm.participants.filter((p) => p.personId !== selfPersonId).map((p) => p.displayName);
   return others.length > 0 ? others.join(', ') : 'Notes to self';
 }

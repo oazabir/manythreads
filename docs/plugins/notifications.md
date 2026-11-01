@@ -143,6 +143,12 @@ disturb** like the rest, then released when it ends. Its `ref_type` is `reminder
 message are two rows. The row is re-armed (unread, new time) only if the earlier reminder was read; an event delivered twice announces nothing the second time. The browser-alert flag follows the
 mention setting; the push title is "Reminder" plus the place. Tests: `packages/plugins/reminders/test/later-api.test.ts`.
 
+**`/remind` (P14-04).** A written reminder that comes due for a person is delivered as a message from the *Reminders* sender in the person's own Reminders conversation (a direct message with the key
+`reminders:<person id>`), and the reminders plugin emits the same `reminders.reminder.due` event with that message as the anchor, so the notification above is the only one: **the normal new-message path
+ignores a message in a `reminders:` conversation** (`consumers.ts`: it would otherwise notify a second time, honour the conversation's mute and read the text for keywords). The notification names the author
+*Reminders* (`systemAuthorName` in `service.ts` knows the webhook names and the Reminders sender). A reminder for a channel is an ordinary message there, with no mention and no link, notified by the channel's
+own rules. See [reminders.md](./reminders.md).
+
 ## Manifest
 
 `notifications` / `0.1.0` / `server`, `dependsOn: ['channels']`, `extends: ['event.emit', 'event.subscribe']` (and the detached job `notifications.push`), emits `notifications.notification.created`, consumes `channel.mention.created`,

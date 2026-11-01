@@ -14,7 +14,7 @@ export function SlashHelp({ who, onClose }: { who: SlashWho; onClose: () => void
         </button>
       }
     >
-      <p className="dlg-hint">Type a slash at the start of a message to pick one. Anything else that starts with a slash is posted as you typed it.</p>
+      <p className="dlg-hint">Type a slash at the start of a message to pick one. A word after a slash that is not on this list is not sent: you are told instead.</p>
       <ul className="shelp" aria-label="Commands">
         {commandChoices(who).map(({ command, availability }) => (
           <li key={command.name} className={`shelp-row ${availability.ok ? '' : 'off'}`} data-command={command.name}>

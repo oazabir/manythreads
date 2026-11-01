@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { CreateTaskRequest, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { sendTyping, uploadChannelFile } from '../api/endpoints';
@@ -8,11 +8,15 @@ import { botBoardOf, branchFor } from '../screens/boards/board';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
 import { SlashHelp } from './SlashHelp';
+import { RemindersDialog } from '../later/RemindersDialog';
+import { refreshDirectory } from '../shell/channelFeed';
 import { PollDialog } from './PollDialog';
 import { formFromPrefill, pollFailureText, type PollForm } from './polls';
 import { channelStore } from './store';
-import { availability, planSlash, taskFailureText } from './slash';
-import { useSlashWho } from './useSlash';
+import { availability, isActionPlan, planSlash, taskFailureText, type ActionPlan } from './slash';
+import { announceChannelChanged, slashDeps } from './slashDeps';
+import { runSlashAction } from './slashRun';
+import { useSlashEnv, useSlashWho } from './useSlash';
 import { CODE_LANGUAGES, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
 import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
@@ -129,6 +133,9 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // `/remind list`: the reminders this person set
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const navigate = useNavigate();
   // the poll dialog (the Poll tool, or /poll with nothing after it)
   const [pollOpen, setPollOpen] = useState(false);
   // a half-typed /poll (a question, fewer than two options) opens the form with those pieces in it
@@ -216,7 +223,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   useEffect(() => {
     if (slashOn && text.startsWith('/')) setSlashSeen(true);
   }, [slashOn, text]);
-  const who = useSlashWho(slash?.teamSlug ?? null, slashOn && (slashSeen || text.startsWith('/')), people.me?.name ?? null);
+  const who = useSlashWho(slash?.teamSlug ?? null, channelId, slashOn && (slashSeen || text.startsWith('/')), people.me?.name ?? null);
+  const slashEnv = useSlashEnv(slash?.teamSlug ?? null, people);
   const slashContext = useMemo(() => (slashOn ? slashMenuContext(text, caret) : null), [slashOn, text, caret]);
 
   const trigger = useMemo(() => (slashContext ? null : detectTrigger(text, caret)), [slashContext, text, caret]);
@@ -269,6 +277,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   }, [anchor, slashContext, trigger, dismissed, people, groups, channelNames, who, text, caret]);
   const open = items.length > 0;
   const active = Math.min(pick, Math.max(0, items.length - 1));
+  // the menu is a scrolling list when it is long (the commands are many): keep the highlighted row in view
+  useEffect(() => {
+    if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [open, active, listId]);
   const menuLabel = slashContext?.stage === 'command' ? 'Commands' : slashContext?.stage === 'bot' ? 'Bots' : trigger?.char === '@' ? 'People' : 'Channels';
 
   const edit = useCallback((next: string, from: number, to = from): void => {
@@ -420,12 +432,43 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     }
   };
 
+  /**
+   * `/remind`, `/status`, `/dnd`, `/away`, `/invite`, `/leave`, `/mute`, `/topic`: each asks the route of the plugin that owns the thing (slashRun.ts).
+   * The box is emptied only once it worked; when it did not, the text stays and a sentence says why.
+   */
+  const runAction = async (plan: ActionPlan): Promise<void> => {
+    if (!slash || makingCard.current) return;
+    makingCard.current = true;
+    const key = draftFor.current;
+    const sent = area.current?.value ?? '';
+    const here = (): boolean => draftFor.current === key && area.current !== null;
+    try {
+      const name = slashEnv().channels.find((c) => c.id === channelId)?.name;
+      const result = await runSlashAction(plan, { channelId, channelLabel: name ? `#${name}` : 'this conversation', whenText: (iso) => remindWhen(iso) }, slashDeps);
+      if (result.tone === 'ok') {
+        if (plan.do === 'topic' || plan.do === 'leave') announceChannelChanged(channelId);
+        if (result.left) {
+          void refreshDirectory(slash.teamSlug);
+          navigate(`/t/${slash.teamSlug}`);
+        }
+      }
+      if (!here()) {
+        if (result.tone === 'ok') writeDraft(key, '');
+        return;
+      }
+      if (result.tone === 'ok' && (area.current?.value ?? '') === sent) clearBox();
+      setNotice({ tone: result.tone, text: result.text });
+    } finally {
+      makingCard.current = false;
+    }
+  };
+
   const send = (): void => {
     if (!canSend || makingCard.current || scheduling.current) return;
     // a message of only files has no text of its own: the server wants one character, so it carries the file names
     let body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
     if (slash && text.trim() !== '') {
-      const plan = planSlash(text, who, ready.length > 0);
+      const plan = planSlash(text, who, ready.length > 0, slashEnv());
       if (plan.do === 'say') {
         setNotice({ tone: 'bad', text: plan.message });
         return;
@@ -450,6 +493,17 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         void makeCard(plan.title);
         return;
       }
+      if (plan.do === 'remind-list') {
+        clearBox();
+        setNotice(null);
+        setRemindersOpen(true);
+        return;
+      }
+      if (isActionPlan(plan)) {
+        setNotice(null);
+        void runAction(plan);
+        return;
+      }
       body = plan.body;
     }
     setNotice(null);
@@ -467,7 +521,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     let body = text.trim();
     if (body === '') return;
     if (slash) {
-      const plan = planSlash(text, who, false);
+      const plan = planSlash(text, who, false, slashEnv());
       if (plan.do === 'say') {
         setNotice({ tone: 'bad', text: plan.message });
         return;
@@ -761,6 +815,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       </div>
       {pollOpen ? <PollDialog channelId={channelId} threadRootId={threadRootId} {...(pollInitial ? { initial: pollInitial } : {})} onClose={() => { setPollOpen(false); area.current?.focus(); }} onDone={() => { setPollOpen(false); area.current?.focus(); }} /> : null}
       {helpOpen ? <SlashHelp who={who} onClose={() => { setHelpOpen(false); area.current?.focus(); }} /> : null}
+      {remindersOpen ? <RemindersDialog onClose={() => { setRemindersOpen(false); area.current?.focus(); }} /> : null}
     </div>
   );
 }

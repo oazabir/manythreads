@@ -53,6 +53,7 @@ export * from './channel.poll.closed.ts';
 export * from './notifications.notification.created.ts';
 export * from './presence.dnd.changed.ts';
 export * from './reminders.reminder.due.ts';
+export * from './reminders.reminder.changed.ts';
 export * from './repo.repo.committed.ts';
 export * from './pages.page.written.ts';
 export * from './bots.bot.loaded.ts';

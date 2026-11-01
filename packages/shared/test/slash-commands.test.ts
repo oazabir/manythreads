@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { SLASH_COMMANDS, findSlashCommand, matchSlashCommands, parseSlash, slashMenuContext } from '../src/index.ts';
 
 describe('parseSlash', () => {
+  it('reads the new commands with their words', () => {
+    expect(parseSlash('/remind me in 20 minutes call the bank')).toMatchObject({ kind: 'command', args: 'me in 20 minutes call the bank' });
+    expect(parseSlash('/status 🌴 on holiday')).toMatchObject({ kind: 'command', args: '🌴 on holiday' });
+    expect(parseSlash('/DND 2h')).toMatchObject({ kind: 'command', args: '2h' });
+    expect(parseSlash('/away')).toMatchObject({ kind: 'command', args: '' });
+    expect(parseSlash('/invite @priya')).toMatchObject({ kind: 'command', args: '@priya' });
+    expect(parseSlash('/topic Release planning')).toMatchObject({ kind: 'command', args: 'Release planning' });
+    // a near miss is an unknown command: refused, never posted as text and never run as the command it resembles
+    expect(parseSlash('/reminder me tomorrow x')).toEqual({ kind: 'unknown', name: 'reminder' });
+    expect(parseSlash('/muted')).toEqual({ kind: 'unknown', name: 'muted' });
+  });
+
   it('reads a known command at the very start, with its words', () => {
     expect(parseSlash('/ask coder how do I run the tests?')).toMatchObject({ kind: 'command', args: 'coder how do I run the tests?' });
     expect(parseSlash('/task Fix the login redirect')).toMatchObject({ kind: 'command', args: 'Fix the login redirect' });
@@ -16,12 +28,14 @@ describe('parseSlash', () => {
     expect(bare.kind === 'command' && bare.args).toBe('more');
   });
 
-  it('posts an unknown command, a path and a lone slash as the text typed, never swallowed', () => {
-    expect(parseSlash('/xyz do a thing')).toEqual({ kind: 'text', body: '/xyz do a thing' });
+  it('never posts an unknown command as text; a path and a lone slash are still the text typed', () => {
+    expect(parseSlash('/xyz do a thing')).toEqual({ kind: 'unknown', name: 'xyz' });
+    expect(parseSlash('/xyz')).toEqual({ kind: 'unknown', name: 'xyz' });
+    expect(parseSlash('/ask-me-later now')).toEqual({ kind: 'unknown', name: 'ask-me-later' });
+    expect(parseSlash('/shrugged')).toEqual({ kind: 'unknown', name: 'shrugged' });
     expect(parseSlash('/etc/hosts is wrong')).toEqual({ kind: 'text', body: '/etc/hosts is wrong' });
     expect(parseSlash('/')).toEqual({ kind: 'text', body: '/' });
-    expect(parseSlash('/ask-me-later now')).toEqual({ kind: 'text', body: '/ask-me-later now' });
-    expect(parseSlash('/shrugged')).toEqual({ kind: 'text', body: '/shrugged' });
+    expect(parseSlash('/12 things')).toEqual({ kind: 'text', body: '/12 things' });
   });
 
   it('is not a command anywhere but the first character', () => {
@@ -40,7 +54,7 @@ describe('parseSlash', () => {
   it('reads hostile input in linear time', () => {
     const long = `/${'a'.repeat(200_000)}`;
     const t0 = performance.now();
-    expect(parseSlash(long).kind).toBe('text');
+    expect(parseSlash(long).kind).toBe('text'); // a name of 200 000 letters is no command word: ordinary text
     expect(parseSlash(`/ask ${' '.repeat(200_000)}x`).kind).toBe('command');
     expect(performance.now() - t0).toBeLessThan(200);
   });
@@ -55,13 +69,44 @@ describe('the list', () => {
       expect(c.usage.startsWith(`/${c.name}`)).toBe(true);
       expect(findSlashCommand(c.name.toUpperCase())).toBe(c);
     }
-    expect(findSlashCommand('remind')).toBeUndefined();
+    expect(findSlashCommand('nonesuch')).toBeUndefined();
+  });
+
+  it('has every built-in command, each from the platform and with a hint of its words', () => {
+    expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
+      'ask', 'task', 'remind', 'status', 'dnd', 'away', 'invite', 'leave', 'mute', 'topic', 'me', 'shrug', 'poll', 'help',
+    ]);
+    for (const c of SLASH_COMMANDS) {
+      expect(c.source).toBe('builtin');
+      expect(c.summary.length).toBeGreaterThan(10);
+      // a command that takes words shows them in its usage line, one that takes none shows only its name
+      if (c.args === 'none') expect(c.usage).toBe(`/${c.name}`);
+      else expect(c.usage.length).toBeGreaterThan(c.name.length + 1);
+    }
+  });
+
+  it('says who may run each command, as the registry and nowhere else', () => {
+    const needs = Object.fromEntries(SLASH_COMMANDS.map((c) => [c.name, c.needs]));
+    expect(needs).toMatchObject({
+      invite: 'channel_manager',
+      topic: 'channel_manager',
+      leave: 'channel_member',
+      remind: 'anyone',
+      status: 'anyone',
+      dnd: 'anyone',
+      away: 'anyone',
+      mute: 'anyone',
+      ask: 'team_member',
+      task: 'team_member',
+    });
   });
 
   it('matches by the start of the name', () => {
     expect(matchSlashCommands('').length).toBe(SLASH_COMMANDS.length);
-    expect(matchSlashCommands('s').map((c) => c.name)).toEqual(['shrug']);
-    expect(matchSlashCommands('T').map((c) => c.name)).toEqual(['task']);
+    expect(matchSlashCommands('s').map((c) => c.name)).toEqual(['status', 'shrug']);
+    expect(matchSlashCommands('T').map((c) => c.name)).toEqual(['task', 'topic']);
+    expect(matchSlashCommands('re').map((c) => c.name)).toEqual(['remind']);
+    expect(matchSlashCommands('d').map((c) => c.name)).toEqual(['dnd']);
     expect(matchSlashCommands('zzz')).toEqual([]);
   });
 });
@@ -88,6 +133,8 @@ describe('slashMenuContext', () => {
   it('closes once the command word is finished, except for the bot after /ask', () => {
     expect(slashMenuContext('/shrug ', 7)).toBeNull();
     expect(slashMenuContext('/task fix', 9)).toBeNull();
+    expect(slashMenuContext('/remind me in 20 minutes', 24)).toBeNull();
+    expect(slashMenuContext('/status ', 8)).toBeNull();
     expect(slashMenuContext('/ask ', 5)).toMatchObject({ stage: 'bot', query: '', from: 5, to: 5 });
     expect(slashMenuContext('/ask co', 7)).toMatchObject({ stage: 'bot', query: 'co', from: 5, to: 7 });
     expect(slashMenuContext('/ask @co', 8)).toMatchObject({ stage: 'bot', query: 'co', from: 5, to: 8 });

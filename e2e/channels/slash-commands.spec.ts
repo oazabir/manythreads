@@ -5,8 +5,10 @@ import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, postAs, type StackA
 /**
  * Slash commands in the message box (PLAN P14-06), on a stack of its own (the spec posts messages and creates cards). Omar leads Engineering and
  * writes in #dev, which has a Bot Board and the `coder` bot (seed v6): `/ask coder …` posts a message that mentions the bot, `/task …` makes a
- * card on the channel's own board and says so with a link, `//ask` posts a literal `/ask`, an unknown `/xyz` is posted as typed, `/help` lists
- * the commands. The menu is driven by the keyboard only. Lena is a guest with a read grant on #releases: she gets no message box at all,
+ * card on the channel's own board and says so with a link, `//ask` posts a literal `/ask`, an unknown `/xyz` is refused with a sentence and never
+ * posted, `/help` lists the commands. `/topic`, `/invite`, `/mute`, `/leave`, `/status`, `/dnd` and `/away` (PLAN P14-06) each change what the
+ * route of the plugin that owns the thing changes, and the plain member is refused the two that need a lead. (`/remind` has its own spec,
+ * reminders.spec.ts.) The menu is driven by the keyboard only. Lena is a guest with a read grant on #releases: she gets no message box at all,
  * and the server refuses her a card.
  */
 test.use({ actionTimeout: 10_000 });
@@ -49,7 +51,7 @@ test('the menu opens on a slash at the start, is driven by the keyboard, and nev
     const list = menu(page);
     await expect(list).toBeVisible();
     await expect(list).toHaveAttribute('role', 'listbox');
-    await expect(list.getByRole('option')).toHaveCount(6);
+    await expect(list.getByRole('option')).toHaveCount(14);
     await expect(list.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
     await expect(input).toHaveAttribute('aria-expanded', 'true');
 
@@ -169,21 +171,31 @@ test('/task makes a card on the channel board and links to it; in a thread it sa
   }
 });
 
-test('//ask posts a literal slash, an unknown /xyz is posted as typed, /shrug and /me post their lines', async ({ browser, playwright }) => {
+test('//ask posts a literal slash, an unknown /xyz is refused and never posted, /shrug and /me post their lines', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
     const input = box(page);
     await input.click();
-    for (const typed of ['//ask coder this is not a command', '/xyz stays exactly as typed']) {
-      await input.pressSequentially(typed);
-      await page.keyboard.press('Enter');
-      await expect(input).toHaveValue('');
-    }
+    await input.pressSequentially('//ask coder this is not a command');
+    await page.keyboard.press('Enter');
+    await expect(input).toHaveValue('');
     await expect(page.getByTestId('message').filter({ hasText: 'this is not a command' })).toHaveCount(1);
-    await expect(page.getByTestId('message').filter({ hasText: 'stays exactly as typed' })).toHaveCount(1);
+    // a word that looks like a command but is none is not posted: one sentence, and the text stays
+    await input.pressSequentially('/xyz stays in the box');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('slash-notice')).toContainText('There is no command called /xyz. Type /help to see the commands.');
+    await expect(page.getByTestId('slash-notice')).toContainText('//xyz');
+    await expect(input).toHaveValue('/xyz stays in the box');
+    await input.fill('');
+    // a path is not shaped like a command word: it is an ordinary message
+    await input.pressSequentially('/etc/hosts is the file');
+    await page.keyboard.press('Enter');
+    await expect(input).toHaveValue('');
+    await expect(page.getByTestId('message').filter({ hasText: 'is the file' })).toHaveCount(1);
     const seen = await bodies(dev);
     expect(seen).toContain('/ask coder this is not a command');
-    expect(seen).toContain('/xyz stays exactly as typed');
+    expect(seen).toContain('/etc/hosts is the file');
+    expect(seen).not.toContain('/xyz stays in the box');
     // the bot was not mentioned by the escaped text
     expect(seen).not.toContain('@coder this is not a command');
 
@@ -211,7 +223,22 @@ test('/help lists the commands in a dialog that Esc closes', async ({ browser, p
     await page.keyboard.press('Enter');
     const dlg = page.getByTestId('slash-help');
     await expect(dlg).toBeVisible();
-    for (const usage of ['/ask <bot> <question>', '/task <title>', '/me <what you are doing>', '/shrug [message]', '/poll "Question" "Option 1" "Option 2" …', '/help']) {
+    for (const usage of [
+      '/ask <bot> <question>',
+      '/task <title>',
+      '/remind me|@person|#channel <when> <what>',
+      '/status [emoji] <text>',
+      '/dnd <time>|off',
+      '/away',
+      '/invite @person',
+      '/leave',
+      '/mute [off]',
+      '/topic <text>',
+      '/me <what you are doing>',
+      '/shrug [message]',
+      '/poll "Question" "Option 1" "Option 2" …',
+      '/help',
+    ]) {
       await expect(dlg.getByText(usage, { exact: true })).toBeVisible();
     }
     await expect(dlg).toContainText('//ask');
@@ -221,6 +248,161 @@ test('/help lists the commands in a dialog that Esc closes', async ({ browser, p
     await expect(input).toHaveValue('');
   } finally {
     await context.close();
+  }
+});
+
+test('/topic, /invite and /mute change the channel through its own routes; /topic clear empties the topic', async ({ browser, playwright }) => {
+  const made = await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'cmds-room' });
+  const room = made.channel.id;
+  const priya = await apiOn(playwright, stack, 'priya');
+  const priyaId = (await priya.get<{ person: { id: string } }>('/api/session')).person.id;
+  await priya.ctx.dispose();
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/c/cmds-room');
+  try {
+    const input = page.getByRole('textbox', { name: 'Message #cmds-room' });
+    const notice = page.getByTestId('slash-notice');
+    await input.click();
+
+    // the box reads the channel's facts once a slash is typed: wait until the menu stops saying it is loading, as a person reading the menu would
+    await input.pressSequentially('/');
+    await expect(menu(page).getByRole('option', { name: /\/topic/ })).not.toContainText('still loading');
+    await input.pressSequentially('topic Release planning');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('The topic is changed.');
+    await expect(input).toHaveValue('');
+    expect((await omar.get<{ channel: { purpose: string | null } }>(`/api/channels/${room}`)).channel.purpose).toBe('Release planning');
+    // nothing was posted as a message
+    expect((await bodies(room)).filter((b) => b.startsWith('/'))).toEqual([]);
+
+    await input.pressSequentially('/topic clear');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('The topic is cleared.');
+    expect((await omar.get<{ channel: { purpose: string | null } }>(`/api/channels/${room}`)).channel.purpose ?? '').toBe('');
+
+    // a person of the team who is not in the channel is added; the same name again says so
+    // a name typed last opens the people menu, where Enter would pick the person: Esc closes it, then Enter runs the command
+    await input.pressSequentially('/invite @priya');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('was added to #cmds-room.');
+    expect(JSON.stringify(await omar.get(`/api/channels/${room}/members`))).toContain(priyaId);
+    await input.pressSequentially('/invite @priya');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('is already in #cmds-room.');
+    await input.pressSequentially('/invite @nobody');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('I could not find @nobody on this team.');
+    await expect(input).toHaveValue('/invite @nobody');
+    await input.fill('');
+
+    // mute and unmute: the person's own level, which the bell of the channel shows
+    await input.pressSequentially('/mute');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('#cmds-room is muted for you.');
+    await input.pressSequentially('/mute 1h');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Muting for a set time is not available yet.');
+    await input.fill('');
+    await input.pressSequentially('/mute off');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('follows your notification settings again.');
+    expect((await bodies(room)).filter((b) => b.startsWith('/'))).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a plain member is refused /topic and /invite with the reason, and /leave takes them out of the channel', async ({ browser, playwright }) => {
+  const made = await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'cmds-leave' });
+  const room = made.channel.id;
+  const rafi = await apiOn(playwright, stack, 'rafi');
+  const rafiId = (await rafi.get<{ person: { id: string } }>('/api/session')).person.id;
+  await omar.post(`/api/channels/${room}/members`, { personId: rafiId });
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/c/cmds-leave');
+  try {
+    const input = page.getByRole('textbox', { name: 'Message #cmds-leave' });
+    const notice = page.getByTestId('slash-notice');
+    await input.click();
+    // the menu says why, beside the commands this person cannot run
+    await input.pressSequentially('/');
+    await expect(menu(page).getByRole('option', { name: /\/topic/ })).toContainText('Only a team lead or a workspace admin');
+    await input.fill('');
+
+    await input.pressSequentially('/topic Mine now');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Only a team lead or a workspace admin can do that in this channel.');
+    await expect(input).toHaveValue('/topic Mine now');
+    await input.fill('');
+    await input.pressSequentially('/invite @priya');
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Only a team lead or a workspace admin can do that in this channel.');
+    await input.fill('');
+
+    await input.pressSequentially('/leave');
+    await page.keyboard.press('Enter');
+    // the team's home (which itself lands on the team's first screen, e.g. its threads)
+    await expect(page).toHaveURL(/\/t\/engineering(\/|$|\?)(?!c\/)/);
+    expect(JSON.stringify(await omar.get(`/api/channels/${room}/members`))).not.toContain(rafiId);
+  } finally {
+    await context.close();
+    await rafi.ctx.dispose();
+  }
+});
+
+test('/status, /dnd and /away change the person\'s own presence through its routes', async ({ browser, playwright }) => {
+  const nadia = await apiOn(playwright, stack, 'nadia');
+  const nadiaId = (await nadia.get<{ person: { id: string } }>('/api/session')).person.id;
+  const made = await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'cmds-presence' });
+  const room = made.channel.id;
+  await omar.post(`/api/channels/${room}/members`, { personId: nadiaId });
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/c/cmds-presence');
+  try {
+    const input = page.getByRole('textbox', { name: 'Message #cmds-presence' });
+    const notice = page.getByTestId('slash-notice');
+    await input.click();
+    const mine = () => nadia.get<{ status: { emoji: string | null; text: string } | null; dndState: { active: boolean } }>('/api/presence/me');
+
+    await input.pressSequentially('/status 🌴 on holiday');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Your status is set.');
+    expect((await mine()).status).toMatchObject({ emoji: '🌴', text: 'on holiday' });
+    await input.pressSequentially('/status clear');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Your status is cleared.');
+    expect((await mine()).status).toBeNull();
+
+    await input.pressSequentially('/dnd 30m');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Notifications are paused for 30 minutes.');
+    expect((await mine()).dndState.active).toBe(true);
+    await input.pressSequentially('/dnd off');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Do not disturb is off for now.');
+    expect((await mine()).dndState.active).toBe(false);
+    await input.pressSequentially('/dnd soon');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('Say for how long');
+    await input.fill('');
+
+    // /away is kept by this browser and sent as the person's presence; typing it again undoes it
+    await input.pressSequentially('/away');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('You are shown as away until you type /away again.');
+    // the stored value is the id of the person who chose it, so it is never carried over to someone else
+    const awayOwner = await page.evaluate(() => window.localStorage.getItem('mt:presence:manual-away'));
+    expect(awayOwner).toMatch(/^[0-9a-f-]{36}$/);
+    await input.pressSequentially('/away');
+    await page.keyboard.press('Enter');
+    await expect(notice).toContainText('You are shown as online again.');
+    expect(await page.evaluate(() => window.localStorage.getItem('mt:presence:manual-away'))).toBeNull();
+
+    // none of it was posted as a message
+    expect((await bodies(room)).filter((b) => b.startsWith('/'))).toEqual([]);
+  } finally {
+    await context.close();
+    await nadia.ctx.dispose();
   }
 });
 

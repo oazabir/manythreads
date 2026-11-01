@@ -92,6 +92,10 @@ export type NotificationId = z.infer<typeof NotificationId>;
 export const LaterItemId = z.uuid().brand<'LaterItemId'>();
 export type LaterItemId = z.infer<typeof LaterItemId>;
 
+/** One reminder made with `/remind` (P14-04): for the person themself, for someone else, or for a channel. */
+export const ReminderId = z.uuid().brand<'ReminderId'>();
+export type ReminderId = z.infer<typeof ReminderId>;
+
 /** One message a person scheduled to be sent later (P14-05). */
 export const ScheduledMessageId = z.uuid().brand<'ScheduledMessageId'>();
 export type ScheduledMessageId = z.infer<typeof ScheduledMessageId>;

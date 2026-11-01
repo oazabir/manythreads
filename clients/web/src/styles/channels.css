@@ -1121,6 +1121,8 @@
 /* the slash-command menu: the same list as the @ picker, with a name above its plain sentence and rows tall enough for a thumb */
 .picker.slash {
   width: min(400px, calc(100% - 16px));
+  max-height: min(60vh, 440px);
+  overflow-y: auto;
 }
 
 .picker.slash li {
@@ -1218,6 +1220,61 @@
 .shelp-why {
   color: var(--alert-ink);
   font-size: 12px;
+}
+
+/* /remind list: the reminders a person set (later/RemindersDialog.tsx) */
+.rmd-head {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rmd-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rmd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rmd-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rmd-text {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.rmd-meta {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.rmd-row.rmd-cancelled .rmd-text {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.rmd-row.rmd-refused .rmd-meta,
+.rmd-bad {
+  color: var(--alert-ink);
+}
+
+@media (width <= 600px) {
+  .rmd-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .cfiles {

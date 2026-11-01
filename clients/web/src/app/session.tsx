@@ -6,6 +6,7 @@ import type { AuthenticatedSession } from '@manythreads/shared';
 import { FullPageMessage } from '../components/states';
 import { QuickSwitcher } from './QuickSwitcher';
 import { dropPersonData } from './caches';
+import { setAwayOwner } from '../presence/manualAway';
 import { signInUrl } from './paths';
 
 export type SessionState =
@@ -31,7 +32,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let live = true;
     fetchSession().then(
-      (s) => live && setState(s.authenticated ? { status: 'ready', session: s } : { status: 'anonymous' }),
+      (s) => {
+        // before the page draws as this person, so the first heartbeat already knows whether they chose /away
+        if (live) setAwayOwner(s.authenticated ? s.person.id : null);
+        if (live) setState(s.authenticated ? { status: 'ready', session: s } : { status: 'anonymous' });
+      },
       (e: unknown) => live && setState({ status: 'error', message: e instanceof Error ? e.message : 'Could not reach the server.' }),
     );
     return () => {
@@ -44,6 +49,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (state.status === 'loading' || state.status === 'error') return;
     const id = state.status === 'ready' ? state.session.person.id : null;
+    setAwayOwner(id); // a hand-set /away belongs to this person only (presence/manualAway.ts)
     if (who.current !== undefined && who.current !== id) dropPersonData();
     who.current = id;
   }, [state]);
@@ -51,7 +57,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // A 401 anywhere means the session expired: RequireSession then redirects to /sign-in?return=<path>.
   useEffect(() => onSessionExpired(() => setState({ status: 'anonymous' })), []);
 
-  const setSession = useCallback((s: AuthenticatedSession | null) => setState(s ? { status: 'ready', session: s } : { status: 'anonymous', signedOut: true }), []);
+  const setSession = useCallback((s: AuthenticatedSession | null) => {
+    setAwayOwner(s ? s.person.id : null);
+    setState(s ? { status: 'ready', session: s } : { status: 'anonymous', signedOut: true });
+  }, []);
   const refresh = useCallback(() => {
     setState({ status: 'loading' });
     setTick((t) => t + 1);
