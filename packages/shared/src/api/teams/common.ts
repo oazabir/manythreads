@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Team, TeamRole } from '../../entities/team.ts';
+import { reservedTagReason } from '../../markup/role-handles.ts';
 
 /** A team's URL slug (`engineering`); the same rule as the `teams.slug` CHECK. */
 export const TeamSlug = Team.shape.slug;
@@ -8,6 +9,15 @@ export type TeamSlug = z.infer<typeof TeamSlug>;
 /** A role tag with its prefix, e.g. `role:on-call`. */
 export const RoleTagName = z.string().regex(/^role:[a-z][a-z0-9-]*$/, "role tag like 'role:on-call'");
 export type RoleTagName = z.infer<typeof RoleTagName>;
+
+/**
+ * A role tag a team may newly define: `RoleTagName` without the reserved words (`role:admin`, `role:here`, ...; `reservedTagReason` is the one list). Used where a
+ * tag is created; reading, assigning-by-name of existing tags and deleting keep `RoleTagName`, so an old tag with such a word can still be cleaned up.
+ */
+export const DefinableRoleTagName = RoleTagName.superRefine((tag, ctx) => {
+  const reason = reservedTagReason(tag);
+  if (reason !== null) ctx.addIssue({ code: 'custom', message: reason });
+});
 
 /** A channel a guest invitation will grant, by team and name (applied when the invitation is accepted, if the channel exists). */
 export const GuestChannelGrant = z.strictObject({

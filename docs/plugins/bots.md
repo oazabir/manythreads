@@ -28,8 +28,8 @@ Every commit that touches `bots/<slug>/BOT.md` is read in the outbox consumer's 
     consulted — and `approvals.needsApproval` sets `needs_approval` on the grants it names (such a call waits in the
     [approvals](./approvals.md) inbox). Entries the previous load compiled and this one dropped are deleted;
   * projects `approvals.approvers` onto `bots.approvers` (bots 0009), which the approvals plugin reads for a call that has no definition at hand;
-  * compiles `handover.mayTag` into the bot's `tasks.handoff` grant (upserted while the key is in the file, **deleted when it
-    leaves** — the loader owns this grant, and it wins over a `tasks.handoff` in `native`);
+  * compiles `handover.mayTag` and `handover.toPerson` into the bot's `tasks.handoff` grant (`constraints: { mayTag, toPerson }`, upserted while either key is in the file, **deleted when both
+    leave** — the loader owns this grant, and it wins over a `tasks.handoff` in `native`); a `role:<tag>` in `toPerson` is resolved by the tasks plugin through the team's role groups (see [teams](./teams.md), "Role groups");
   then `bots.bot.loaded` is emitted with `definitionSha` and `mayTag`, never the content.
 * **invalid frontmatter** (unknown key, missing key, bad YAML, a folder that is not a lowercase slug) → the previous
   row, if any, stays live with `status = 'invalid'` (last-good definition keeps running; the loader never overwrites

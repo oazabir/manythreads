@@ -236,3 +236,11 @@ describe('buildTaskPrompt', () => {
     expect(performance.now() - started).toBeLessThan(500);
   });
 });
+
+describe('a role group mention (P14-03) never wakes a bot', () => {
+  it('@on-call names a team role, not a bot: no trigger fires for a bot whose slug is another word', () => {
+    const v = view({ mentions: mentionedHandles('paging @on-call about the deploy') });
+    expect(matchTrigger(triggers('{ type: mention }'), 'coder', v)).toBeNull();
+    expect(matchTrigger(triggers('{ type: mention }'), 'on-call-helper', v)).toBeNull();
+  });
+});

@@ -96,6 +96,7 @@ import { TeamMemberAddedEvent } from './team.member.added.ts';
 import { TeamMemberRemovedEvent } from './team.member.removed.ts';
 import { TeamRoleChangedEvent } from './team.role.changed.ts';
 import { TeamTagCreatedEvent } from './team.tag.created.ts';
+import { TeamTagHandleClosedEvent } from './team.tag.handle_closed.ts';
 import { TeamTagDeletedEvent } from './team.tag.deleted.ts';
 import { TeamTagAssignedEvent } from './team.tag.assigned.ts';
 import { TeamTagRemovedEvent } from './team.tag.removed.ts';
@@ -184,6 +185,7 @@ export const eventRegistry = {
   'team.member.removed': { 1: TeamMemberRemovedEvent },
   'team.role.changed': { 1: TeamRoleChangedEvent },
   'team.tag.created': { 1: TeamTagCreatedEvent },
+  'team.tag.handle_closed': { 1: TeamTagHandleClosedEvent },
   'team.tag.deleted': { 1: TeamTagDeletedEvent },
   'team.tag.assigned': { 1: TeamTagAssignedEvent },
   'team.tag.removed': { 1: TeamTagRemovedEvent },
@@ -250,6 +252,7 @@ export type AnyEvent =
   | z.infer<typeof TeamMemberRemovedEvent>
   | z.infer<typeof TeamRoleChangedEvent>
   | z.infer<typeof TeamTagCreatedEvent>
+  | z.infer<typeof TeamTagHandleClosedEvent>
   | z.infer<typeof TeamTagDeletedEvent>
   | z.infer<typeof TeamTagAssignedEvent>
   | z.infer<typeof TeamTagRemovedEvent>
@@ -321,6 +324,7 @@ export type LatestEvent =
   | z.infer<typeof TeamMemberRemovedEvent>
   | z.infer<typeof TeamRoleChangedEvent>
   | z.infer<typeof TeamTagCreatedEvent>
+  | z.infer<typeof TeamTagHandleClosedEvent>
   | z.infer<typeof TeamTagDeletedEvent>
   | z.infer<typeof TeamTagAssignedEvent>
   | z.infer<typeof TeamTagRemovedEvent>

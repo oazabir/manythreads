@@ -30,6 +30,8 @@ export const EXTENSION_POINTS = [
   // The managed Hermes pod's profile specs and its change notice (runtime-hermes): what a pod controller reads to keep the pod in step with the team's bots.
   'provider.hermes.profiles',
   'provider.project.credentials',
+  // A team's role tags as mention groups (P14-03): registered by the teams plugin, read by channels (mentions, the picker) and tasks (handover.toPerson).
+  'provider.role.groups',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

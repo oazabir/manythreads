@@ -35,6 +35,9 @@ export type EventHandler = (event: PluginEvent, tx: PluginTx, meta?: EventMeta) 
 /** The kernel's `emit(tx, event)`, as plugins see it. Validation against the event registry happens there. */
 export type EmitEvent = (tx: PluginTx, event: PluginEvent) => Promise<unknown>;
 
+/** `EmitEvent` for many events at once: one validation pass and a fixed number of statements, whatever the count. */
+export type EmitManyEvents = (tx: PluginTx, events: readonly PluginEvent[]) => Promise<unknown>;
+
 export interface HookInput {
   /** The event type being persisted. (`pre_egress` hooks take an `EgressInput`, see ./egress.ts.) */
   subject: string;
@@ -63,6 +66,8 @@ export const PROVIDER_KINDS = [
   'hermes.profiles',
   /** Where a project's GitHub push token lives (hermes-pods): `ProjectCredentialsProvider` in ./project-credentials.ts. */
   'project.credentials',
+  /** A team's role tags as mention groups (teams plugin): `RoleGroupProvider` in ./role-groups.ts. */
+  'role.groups',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {
@@ -536,6 +541,8 @@ export interface AuditEvent {
 export interface PluginAudit {
   /** Validated against the event registry and written with the outbox rows in `tx`, like `ctx.events.emit`. */
   emit(tx: PluginTx, event: AuditEvent): Promise<void>;
+  /** Many events of one transaction in a fixed number of statements (a role-group mention is up to 500 of them); same checks as `emit` for each. */
+  emitMany(tx: PluginTx, events: readonly AuditEvent[]): Promise<void>;
 }
 
 export interface PluginTemplates {

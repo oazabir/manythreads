@@ -1,4 +1,4 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import type { PluginContext, PluginTx, RoleGroupProvider } from '@manythreads/sdk';
 import {
   ClaimTaskResponse,
   CompleteTaskRequest,
@@ -74,7 +74,7 @@ import { conflict, forbidden, json, notFound, requireManage, requireTeam, route 
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
 import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
-import { handoverAllowlist, isCardCreator, mayHandoffToActor } from './handoff.ts';
+import { handoverAllowlist, handoverPeople, isCardCreator, mayHandoffToActor } from './handoff.ts';
 import { TASK_SELECT, actorOf, toBoard, toEnvironment, toGoal, toHandoff, toRunner, toTask, toTaskEvent, type BoardRow, type EnvironmentRow, type GoalRow, type HandoffRow, type RunnerRow, type TaskEventRow, type TaskRow } from './rows.ts';
 
 /** The card of this team, or 404 (a card of another team and a missing one answer the same). */
@@ -340,11 +340,11 @@ export function registerRoutes(ctx: PluginContext): void {
         targetName = target.name;
       }
 
-      // A bot hands off only to the people and bots its BOT.md `handover.mayTag` names (P6-03): refused before any effect.
+      // A bot hands off only to the bots its BOT.md `handover.mayTag` names and the people `handover.toPerson` names (P6-03, P14-03): refused before any effect.
       const caller = await actorOf(tx, tx.actor.id);
       const mayTag = await handoverAllowlist(tx, tx.actor.id);
-      if (caller?.kind === 'bot' && !(await mayHandoffToActor(tx, mayTag ?? [], toActorId)) && !(await isCardCreator(tx, taskId, toActorId))) {
-        throw forbidden(`not handed over: ${caller.name} may not hand a card to ${targetName}: the target is not in its handover.mayTag and did not create the card; the card is still ${caller.name}'s`);
+      if (caller?.kind === 'bot' && !(await mayHandoffToActor(tx, mayTag ?? [], toActorId, { toPerson: await handoverPeople(tx, tx.actor.id), groups: ctx.providers.get<RoleGroupProvider>('role.groups') })) && !(await isCardCreator(tx, taskId, toActorId))) {
+        throw forbidden(`not handed over: ${caller.name} may not hand a card to ${targetName}: the target is not in its handover.mayTag or handover.toPerson and did not create the card; the card is still ${caller.name}'s`);
       }
 
       if (body.strict) {

@@ -6,6 +6,8 @@ import {
   DeleteTeamTagResponse,
   ListTeamTagsResponse,
   RoleTagName,
+  DefinableRoleTagName,
+  roleGroups,
   TeamTag,
   UnassignTeamTagResponse,
   assignTeamTagRoute,
@@ -15,8 +17,16 @@ import {
   unassignTeamTagRoute,
 } from '@manythreads/shared';
 import { HttpError, json, notFound, route, SlugParam, TeamPersonTagParams, TeamTagParams } from './http.ts';
+import { teamBotSlugs } from './role-groups.ts';
 import { rosterRows } from './routes-roster.ts';
 import { requireActive, requireManage, requireTeam, type Deps } from './teams.ts';
+
+/** A tag being given to someone may also define it, so a reserved word is refused here with the plain sentence (`reservedTagReason`). */
+const definableTagName = (raw: string): string => {
+  const parsed = DefinableRoleTagName.safeParse(raw);
+  if (!parsed.success) throw new HttpError(400, parsed.error.issues[0]?.message ?? "tag: role tag like 'role:on-call'");
+  return parsed.data;
+};
 
 const tagName = (raw: string): string => {
   const parsed = RoleTagName.safeParse(raw);
@@ -32,13 +42,29 @@ async function teamTags(tx: PluginTx, teamId: string): Promise<TeamTag[]> {
     [teamId],
   );
   const roster = await rosterRows(tx, teamId);
+  // Whether `@word` is open for each tag, and if not why (a lead reads it here); a caller who cannot read the team has an empty roster and sees no `closedBy`.
+  const groups = new Map(
+    roleGroups({
+      tags: defined.rows.map((t) => ({ tag: t.name, personIds: roster.filter((m) => m.tags.includes(t.name)).map((m) => m.person_id) })),
+      people: roster.map((m) => ({ displayName: m.display_name, email: m.email })),
+      botSlugs: roster.length === 0 ? [] : await teamBotSlugs(tx, teamId),
+    }).map((g) => [g.tag, g]),
+  );
   return defined.rows.map((t) =>
     TeamTag.parse({
       name: t.name,
       roleId: t.role_id,
       holders: roster.filter((m) => m.tags.includes(t.name)).map((m) => m.person_id),
+      mentionable: groups.get(t.name)?.mentionable ?? true,
+      closedBy: groups.get(t.name)?.closedBy ?? null,
     }),
   );
+}
+
+/** Writes the audit row when a newly defined tag cannot be used as `@handle` (see the event's comment). */
+async function auditClosedHandle(tx: PluginTx, emit: Deps['emit'], teamId: string, tag: TeamTag): Promise<void> {
+  if (tag.mentionable !== false || !tag.closedBy) return;
+  await emit(tx, { type: 'team.tag.handle_closed', teamId, tag: tag.name, handle: tag.name.slice('role:'.length), reason: tag.closedBy });
 }
 
 async function oneTag(tx: PluginTx, teamId: string, name: string): Promise<TeamTag> {
@@ -70,7 +96,9 @@ export function registerTagRoutes(ctx: PluginContext, { emit }: Deps): void {
       const row = res.rows[0];
       if (!row) throw new Error('teams_tag_define returned nothing');
       if (row.created) await emit(tx, { type: 'team.tag.created', teamId: team.id, tag: name, roleId: row.role_id });
-      return json(CreateTeamTagResponse.parse({ tag: await oneTag(tx, team.id, name), created: row.created }), row.created ? 201 : 200);
+      const tag = await oneTag(tx, team.id, name);
+      if (row.created) await auditClosedHandle(tx, emit, team.id, tag);
+      return json(CreateTeamTagResponse.parse({ tag, created: row.created }), row.created ? 201 : 200);
     }),
   });
 
@@ -96,7 +124,7 @@ export function registerTagRoutes(ctx: PluginContext, { emit }: Deps): void {
     schema: { response: AssignTeamTagResponse },
     handler: route(async (req, tx) => {
       const params = TeamPersonTagParams.parse(req.params);
-      const name = tagName(params.tag);
+      const name = definableTagName(params.tag);
       const team = await requireTeam(tx, params.slug);
       await requireManage(tx, team);
       requireActive(team);
@@ -108,7 +136,9 @@ export function registerTagRoutes(ctx: PluginContext, { emit }: Deps): void {
       if (!row) throw new Error('teams_tag_assign returned nothing');
       if (row.defined) await emit(tx, { type: 'team.tag.created', teamId: team.id, tag: name, roleId: row.role_id });
       if (row.assigned) await emit(tx, { type: 'team.tag.assigned', teamId: team.id, personId: params.personId, tag: name });
-      return json(AssignTeamTagResponse.parse({ tag: await oneTag(tx, team.id, name), assigned: row.assigned }));
+      const tag = await oneTag(tx, team.id, name);
+      if (row.defined) await auditClosedHandle(tx, emit, team.id, tag);
+      return json(AssignTeamTagResponse.parse({ tag, assigned: row.assigned }));
     }),
   });
 

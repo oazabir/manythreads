@@ -30,7 +30,7 @@ let coder: { botId: string; actorId: string };
 let reviewer: { botId: string; actorId: string };
 
 /** A bot with its actor and team membership, as the loader would leave it (a direct insert: the loader itself is tested elsewhere). */
-async function makeBot(slug: string, mayTag: string[] = []): Promise<{ botId: string; actorId: string }> {
+async function makeBot(slug: string, mayTag: string[] = [], toPerson: string[] = []): Promise<{ botId: string; actorId: string }> {
   const botId = randomUUID();
   const actorId = randomUUID();
   await ownerSql(
@@ -41,11 +41,11 @@ async function makeBot(slug: string, mayTag: string[] = []): Promise<{ botId: st
   );
   await ownerSql(server.db.ownerUrl, `INSERT INTO app.actors (id, kind, workspace_id, ref_id) VALUES ($1, 'bot', $2, $3)`, [actorId, KAHF_WORKSPACE_ID, botId]);
   await ownerSql(server.db.ownerUrl, `INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')`, [TEAM, actorId, KAHF_WORKSPACE_ID]);
-  if (mayTag.length > 0) {
+  if (mayTag.length > 0 || toPerson.length > 0) {
     await ownerSql(
       server.db.ownerUrl,
       `INSERT INTO app.capability_grants (team_id, actor_id, capability, constraints) VALUES ($1, $2, 'tasks.handoff', $3::jsonb)`,
-      [TEAM, actorId, JSON.stringify({ mayTag })],
+      [TEAM, actorId, JSON.stringify({ mayTag, toPerson })],
     );
   }
   return { botId, actorId };
@@ -340,6 +340,71 @@ describe('tasks API', () => {
       expect(messageOf(outside.body)).toMatch(/mayTag/);
       const read = await call(nadia, 'GET', `/api/teams/engineering/tasks/${task.id}`);
       expect((read.body['task'] as Record<string, unknown>)['ownerId']).toBeNull();
+    });
+  });
+
+  describe('handover.toPerson names people, and a role tag is resolved through the same role groups as @mentions (P14-03)', () => {
+    const tagPath = (personId: string, tag: string): string => `/api/teams/engineering/members/${personId}/tags/${encodeURIComponent(tag)}`;
+    const create = async (who: Persona | { kind: 'bot'; actorId: string }) => {
+      const res = await call(who, 'POST', '/api/teams/engineering/tasks', { title: 'Page someone', branch: 'page/someone' });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      return CreateTaskResponse.parse(res.body).task;
+    };
+    const handTo = (who: { kind: 'bot'; actorId: string }, id: string, to: Persona) =>
+      call(who, 'POST', `/api/teams/engineering/tasks/${id}/handoff`, { toActorId: to.actorId, mode: 'person', note: 'over to you' });
+    const owner = async (id: string) => ((await call(nadia, 'GET', `/api/teams/engineering/tasks/${id}`)).body['task'] as Record<string, unknown>)['ownerId'];
+
+    beforeAll(async () => {
+      expect((await call(omar, 'POST', '/api/teams/engineering/tags', { name: 'role:on-call' })).status).toBeLessThan(300);
+      expect((await call(omar, 'PUT', tagPath(rafi.personId, 'role:on-call'))).status).toBe(200);
+    });
+
+    it('a bot hands a card to a person who holds a listed role tag on its team', async () => {
+      const bot = await makeBot(`pager-${randomUUID().slice(0, 6)}`, [], ['role:on-call']);
+      const task = await create(asBot(bot));
+      const moved = await handTo(asBot(bot), task.id, rafi);
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+      expect(await owner(task.id)).toBe(rafi.actorId);
+    });
+
+    it('refuses a person who does not hold the tag, and the sentence names toPerson; the card stays', async () => {
+      const bot = await makeBot(`pager-${randomUUID().slice(0, 6)}`, [], ['role:on-call']);
+      const task = await create(asBot(bot));
+      const refused = await handTo(asBot(bot), task.id, priya);
+      expect(refused.status).toBe(403);
+      expect(messageOf(refused.body)).toMatch(/toPerson/);
+      expect(await owner(task.id)).toBeNull();
+    });
+
+    it('a bot that lists no toPerson cannot hand to the on-call person, whoever holds the tag', async () => {
+      const bot = await makeBot(`quiet-${randomUUID().slice(0, 6)}`, ['reviewer']);
+      const task = await create(nadia);
+      await call(nadia, 'POST', `/api/teams/engineering/tasks/${task.id}/handoff`, { toActorId: bot.actorId, mode: 'bot' });
+      expect((await handTo(asBot(bot), task.id, rafi)).status).toBe(403);
+    });
+
+    it('a tag held in another team does not reach into this one: Sameera holds support-agent in Customer support only', async () => {
+      const bot = await makeBot(`reach-${randomUUID().slice(0, 6)}`, [], ['role:support-agent']);
+      const task = await create(nadia);
+      await call(nadia, 'POST', `/api/teams/engineering/tasks/${task.id}/handoff`, { toActorId: bot.actorId, mode: 'bot' });
+      expect((await handTo(asBot(bot), task.id, sameera)).status).toBe(403);
+    });
+
+    it('a person named by id is allowed without any tag', async () => {
+      const bot = await makeBot(`named-${randomUUID().slice(0, 6)}`, [], [`person:${priya.personId}`]);
+      const task = await create(asBot(bot));
+      const moved = await handTo(asBot(bot), task.id, priya);
+      expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    });
+
+    it('taking the tag away takes the permission away', async () => {
+      const bot = await makeBot(`pager-${randomUUID().slice(0, 6)}`, [], ['role:on-call']);
+      expect((await call(omar, 'PUT', tagPath(priya.personId, 'role:on-call'))).status).toBe(200);
+      const first = await create(asBot(bot));
+      expect((await handTo(asBot(bot), first.id, priya)).status).toBe(200);
+      expect((await call(omar, 'DELETE', tagPath(priya.personId, 'role:on-call'))).status).toBe(200);
+      const second = await create(asBot(bot));
+      expect((await handTo(asBot(bot), second.id, priya)).status).toBe(403);
     });
   });
 

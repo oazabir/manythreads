@@ -33,6 +33,8 @@ describe('TeamTemplate', () => {
     expect(TeamTemplate.safeParse({ ...ok, channels: [{ name: 'general', purpose: 'p' }] }).success).toBe(false);
     expect(TeamTemplate.safeParse({ ...ok, channels: [{ name: '#General', purpose: 'p' }] }).success).toBe(false);
     expect(TeamTemplate.safeParse({ ...ok, roleTags: ['on-call'] }).success).toBe(false);
+    expect(TeamTemplate.safeParse({ ...ok, roleTags: ['role:admin'] }).success).toBe(false);
+    expect(TeamTemplate.safeParse({ ...ok, roleTags: ['role:admin-group'] }).success).toBe(true);
     expect(TeamTemplate.safeParse({ ...ok, channels: [ok.channels[0], ok.channels[0]] }).success).toBe(false);
     expect(TeamTemplate.safeParse({ ...ok, version: 0 }).success).toBe(false);
   });

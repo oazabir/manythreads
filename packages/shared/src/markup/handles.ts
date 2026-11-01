@@ -34,11 +34,15 @@ export function handlePrefix(handle: string): string {
   return handle.normalize('NFC').toLowerCase().split(/[-._]/)[0] ?? '';
 }
 
-/** The id of the one person `handle` means among `candidates`, or null (nobody, or ambiguous). `handle` has no `@`. */
-export function matchHandle(handle: string, candidates: readonly HandleSubject[]): string | null {
+/**
+ * The id of the one person `handle` means among `candidates`, or null (nobody, or ambiguous). `handle` has no `@`. `exactOnly` leaves the first-name
+ * convenience out: used for a word a role tag also has, so that a first name never takes a team's tag away (see role-handles.ts).
+ */
+export function matchHandle(handle: string, candidates: readonly HandleSubject[], options: { exactOnly?: boolean } = {}): string | null {
   const h = handle.normalize('NFC').toLowerCase();
   const exact = candidates.filter((c) => personHandles(c).exact.includes(h));
   if (exact.length > 0) return exact.length === 1 ? (exact[0]?.id ?? null) : null;
+  if (options.exactOnly) return null;
   const first = candidates.filter((c) => personHandles(c).first === h);
   return first.length === 1 ? (first[0]?.id ?? null) : null;
 }

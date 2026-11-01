@@ -81,6 +81,17 @@ and call with arguments of its own, and a payload the platform vouches for (whom
 something a model can write. `messages.post` takes no `meta`. Using the provider needs no `extends` entry; the posting still runs as the
 transaction's actor under the channel's own `post` rule.
 
+## The role groups: `provider.role.groups`
+
+The teams plugin registers `ctx.providers.get<RoleGroupProvider>('role.groups')` (extension point `provider.role.groups`): `list(tx, teamId, { handles? })` answers a team's role tags with the people who hold them,
+as the transaction's actor. It reads through the roster door (`app.teams_roster`), which answers nothing to a caller who may not read the team, so a plugin cannot use the provider to learn a team's
+membership; the callers narrow it further (channels to the people who can read the channel, with `app.channel_role_audience`, which refuses a guest). It is read-only and takes no `extends` to use.
+
+Abuse limits of a group mention (channels): at most 500 people notified per group per message, and per author and team 5 group mentions a minute and 1,000 people an hour, in process memory (`mention-budget.ts`); over the budget the
+post is refused with a 429 and nothing is written. The first-name rule and the reserved words (`role-handles.ts`) keep a person from taking a team's tag by joining with a name, and keep tags such as `admin` or `security` from looking like an
+authority. `mention-groups` is rate limited (120 a minute) and answers only for a channel the caller can read. `ctx.audit.emitMany` is the batch form of `ctx.audit.emit` (the same event checks for each event, then three statements
+whatever their number).
+
 ## The token checker's door: `run.resolve`
 
 A plugin that extends `run.resolve` (and not `tool.invoke`) gets a `ctx.runs` of which one member works: `resolve(sha256)`, which turns a presented run token into the run it opens (or null for an unknown, revoked, expired or finished one). Every other member throws, naming `tool.invoke`. It exists for an endpoint that takes a run's token as its credential without acting for the run: `gateway-llm`'s run-scoped model proxy (`/api/llm/runs/<runId>/v1`, [runners.md](./runners.md)) authenticates an agent on a runner this way, then calls the model with the bot's own key as the system. It cannot open a run, enter a transaction as the bot, or call a tool.

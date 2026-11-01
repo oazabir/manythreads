@@ -21,6 +21,7 @@ export * from './team.member.added.ts';
 export * from './team.member.removed.ts';
 export * from './team.role.changed.ts';
 export * from './team.tag.created.ts';
+export * from './team.tag.handle_closed.ts';
 export * from './team.tag.deleted.ts';
 export * from './team.tag.assigned.ts';
 export * from './team.tag.removed.ts';

@@ -92,7 +92,7 @@ export function registerMessageRoutes(deps: Deps): void {
           skipRefs: true,
         });
       }
-      return json(PostMessageResponse.parse(toMessage(posted.row)), 201);
+      return json(PostMessageResponse.parse({ ...toMessage(posted.row), ...(posted.groupNotices.length > 0 ? { groupNotices: posted.groupNotices } : {}) }), 201);
     }),
   });
 

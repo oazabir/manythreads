@@ -13,7 +13,7 @@ import {
   toPlainText,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, notFound } from './http.ts';
-import { syncMessageRefs } from './mentions.ts';
+import { syncMessageRefs, type GroupNotice } from './mentions.ts';
 import {
   CHANNEL_COLUMNS,
   MESSAGE_COLUMNS,
@@ -288,6 +288,8 @@ export interface PostedMessage {
   row: MessageRow;
   /** The message the push carries (a fresh row: no replies, no reactions, its files' cards). */
   push: ChannelMessage;
+  /** Role groups the message named whose mention was cut at the per-group limit (the author is told); empty almost always. */
+  groupNotices: GroupNotice[];
 }
 
 /**
@@ -370,8 +372,8 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
   });
   // Sending ends the author's "typing" signal, and what the body names (people, channels, entities) is recorded.
   await tx.query('DELETE FROM app.typing WHERE channel_id = $1 AND person_id = app.person_id()', [input.channelId]);
-  if (!input.skipRefs) await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
-  return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push };
+  const groupNotices = input.skipRefs ? [] : await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
+  return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push, groupNotices };
 }
 
 /** What editing one message needs. */
@@ -420,7 +422,7 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
   const edited = (await findChannelMessage(tx, channelId, messageId))!;
   await pushMessage(deps, tx, await audience(tx, channelId), 'message.edited', edited);
   if (input.syncRefs) {
-    await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId }, 'edit');
+    await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId, previousBody: current.body }, 'edit');
   }
   return edited;
 }

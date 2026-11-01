@@ -34,8 +34,11 @@ scoped by team slug, so an id from another team is a 404, never a cross-team lea
 - **Handover is atomic (P6-03).** `app.tasks_handoff` locks the card, releases the old claim, sets the new owner and state, writes the
   handoff row and the `handed_off` event in one transaction. A bot may only hand to the targets its `tasks.handoff` grant's
   `constraints.mayTag` names — compiled by the bots loader from `BOT.md` `handover.mayTag`; the check is `mayHandoffToActor`, used by the
-  route and the tool alike, so a tool call cannot reach a target the board refuses. A target is a bot slug, `person:<person id>` or a role
-  name.
+  route and the tool alike, so a tool call cannot reach a target the board refuses. A bot target is named by slug (`mayTag`). A person target is named by `handover.toPerson`
+  (P14-03), which the loader compiles into the same grant's `constraints.toPerson`: `person:<person id>`, or `role:<tag>`, which allows any person who holds that tag **on the bot's team**. The tag is
+  resolved by the teams plugin's `role.groups` provider, the same set `@on-call` notifies, so there is one definition of who holds a tag (without that provider a role names nobody). A bot that lists
+  neither `mayTag` nor `toPerson` has no `tasks.handoff` grant. The refusal names `handover.toPerson` when the bot has one. Still not built: a tool that picks the on-call person for the bot (the
+  bot names the person's actor id; it has no call that lists who holds a tag).
 - **The card's thread and the announcement.** A handover (route or tool) posts a message written as the sender: "Orchestrator → @coder: <note>".
   It goes **where the handover was asked for**: the channel and thread a route request names (`channelId`, `threadRootId` in the body), or the
   one the calling bot run answers in (`bot_runs.channel_id/reply_root_id`, read through `app.run_id()`), as a reply in that thread. That place

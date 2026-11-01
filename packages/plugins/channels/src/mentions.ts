@@ -1,5 +1,6 @@
-import type { PluginTx } from '@manythreads/sdk';
-import { handlePrefix, matchHandle, parseMarkup, type HandleSubject } from '@manythreads/shared';
+import type { PluginTx, RoleGroupProvider } from '@manythreads/sdk';
+import { handlePrefix, matchHandle, parseMarkup, type HandleSubject, type RoleGroup } from '@manythreads/shared';
+import { mentionBudget } from './mention-budget.ts';
 import type { ChannelRow } from './rows.ts';
 import type { Deps } from './service.ts';
 
@@ -9,6 +10,8 @@ import type { Deps } from './service.ts';
 
 /** At most this many distinct `@handles`, `#channels` and `[[entities]]` of one message are looked at (the rest are plain text). */
 const MAX_REFS = 50;
+/** At most this many people are notified by one role group in one message (the first by person id); the author is told when a group was cut. */
+export const MAX_ROLE_REACH = 500;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Entity references that can be links today: they need a uuid. `[[page:path]]` and `[[task:id]]` follow when those ids are uuids. */
@@ -20,6 +23,8 @@ export interface MessageRefs {
   /** The author's actor id. */
   authorId: string;
   threadRootId: string | null;
+  /** On an edit: the text before it, so a group named then is not announced to its members a second time (a member who joined since stays unannounced). */
+  previousBody?: string;
 }
 
 type PersonRow = {
@@ -38,6 +43,8 @@ async function resolvePeople(
   tx: PluginTx,
   channelId: string,
   handles: readonly string[],
+  /** Words a role group also has: they find a person by exact handle only, so a first name never takes a team's tag away. */
+  exactOnly: ReadonlySet<string> = new Set(),
 ): Promise<Map<string, { personId: string; actorId: string }>> {
   const out = new Map<string, { personId: string; actorId: string }>();
   if (handles.length === 0) return out;
@@ -53,7 +60,7 @@ async function resolvePeople(
     email: r.primary_email,
   }));
   for (const handle of handles) {
-    const id = matchHandle(handle, subjects);
+    const id = matchHandle(handle, subjects, { exactOnly: exactOnly.has(handle) });
     const hit = id === null ? undefined : subjects.find((s) => s.id === id);
     if (hit) out.set(handle, { personId: hit.id, actorId: hit.actorId });
   }
@@ -61,28 +68,111 @@ async function resolvePeople(
 }
 
 /**
+ * The role groups of the team that `handles` name (`'all'`: every group, for the picker) and that a mention may use: not closed by a person, a bot or a
+ * reserved word (the teams plugin marks those not mentionable, see `roleGroups` in `@manythreads/shared`) and held by at least one person. Only a channel of a
+ * team has groups; a caller who cannot read the team gets none. The provider skips the roster when the team has no role tag or every handle is a bot's.
+ */
+export async function listMentionableGroups({ ctx }: Deps, tx: PluginTx, channel: ChannelRow, handles: readonly string[] | 'all'): Promise<RoleGroup[]> {
+  if (handles !== 'all' && handles.length === 0) return [];
+  if (channel.team_id === null) return [];
+  const provider = ctx.providers.get<RoleGroupProvider>('role.groups');
+  if (!provider) return [];
+  const listed = await provider.list(tx, channel.team_id, handles === 'all' ? {} : { handles });
+  return listed.filter((g) => g.mentionable && (handles === 'all' || handles.includes(g.handle)) && g.personIds.length > 0);
+}
+
+/** One group with the people it reaches in this conversation: holders who can read the channel (`app.channel_role_audience`), every one of them. */
+export interface ReachedGroup {
+  group: RoleGroup;
+  people: Array<{ personId: string; actorId: string }>;
+}
+
+/** Narrows each group to the holders who can read `channel`. A group nobody there holds is dropped; a guest or a caller outside the channel reaches nobody. */
+export async function narrowToReaders(tx: PluginTx, channel: ChannelRow, groups: readonly RoleGroup[]): Promise<ReachedGroup[]> {
+  if (groups.length === 0) return [];
+  const wanted = [...new Set(groups.flatMap((g) => g.personIds))].sort();
+  const rows = await tx.query<{ person_id: string; actor_id: string }>('SELECT person_id, actor_id FROM app.channel_role_audience($1, $2::uuid[])', [channel.id, wanted]);
+  const actorOf = new Map(rows.rows.map((r) => [r.person_id, r.actor_id]));
+  return groups
+    .map((group) => ({
+      group,
+      people: group.personIds.flatMap((personId) => {
+        const actorId = actorOf.get(personId);
+        return actorId === undefined ? [] : [{ personId, actorId }];
+      }),
+    }))
+    .filter((g) => g.people.length > 0);
+}
+
+/** `listMentionableGroups` then `narrowToReaders`: the picker's list, with the full count of each group (never capped). */
+export async function resolveRoleGroups(deps: Deps, tx: PluginTx, channel: ChannelRow, handles: readonly string[] | 'all'): Promise<ReachedGroup[]> {
+  return narrowToReaders(tx, channel, await listMentionableGroups(deps, tx, channel, handles));
+}
+
+/** A group whose mention reached fewer people than hold it, because one message notifies at most `MAX_ROLE_REACH` people per group. */
+export interface GroupNotice {
+  handle: string;
+  reached: number;
+  notified: number;
+}
+
+const handlesOf = (body: string): string[] => [...new Set(parseMarkup(body).mentions.map((m) => m.handle.toLowerCase()))].slice(0, MAX_REFS);
+
+/**
  * Brings the mentions and links of one message in line with its body: inserts what is new, removes what an edit dropped, announces
  * each newly mentioned person once (`channel.mention.created`) and links the message to the entities it names.
+ *
+ * Role groups: a handle that is not a person may be a group of the team. A first name never beats a tag (only an exact person handle does), so the groups
+ * are looked up first and a word that has one is resolved to people by exact handle only. A group is notified only when it is new in the text (a post, or
+ * an edit that adds it): the rows and events go to its holders who can read the channel, at most `MAX_ROLE_REACH` per group, and the author's group budget
+ * is charged first (`mention-budget.ts`; over it the post is refused with a 429 and nothing is written). An edit keeps the rows it has; it adds rows only
+ * for what it newly names and removes only the rows of people it stopped naming (a direct `@person`, or a group whose handle was deleted); someone who left the
+ * tag since stays recorded while the handle stays in the text. Returns the groups that were cut short.
  */
 export async function syncMessageRefs(
-  { ctx }: Deps,
+  deps: Deps,
   tx: PluginTx,
   channel: ChannelRow,
   message: MessageRefs,
   mode: 'post' | 'edit',
-): Promise<void> {
+): Promise<GroupNotice[]> {
+  const { ctx } = deps;
   const parsed = parseMarkup(message.body);
-  const handles = [...new Set(parsed.mentions.map((m) => m.handle.toLowerCase()))].slice(0, MAX_REFS);
+  const handles = handlesOf(message.body);
   const channelNames = [...new Set(parsed.channels.map((c) => c.name.toLowerCase()))].slice(0, MAX_REFS);
   const entities = [...new Map(parsed.entityRefs.filter((r) => LINKABLE.has(r.type) && UUID.test(r.id)).map((r) => [`${r.type}:${r.id}`, r])).values()].slice(0, MAX_REFS);
+  const earlierHandles = mode === 'edit' && message.previousBody !== undefined ? handlesOf(message.previousBody) : [];
+  const earlier = new Set(earlierHandles);
+  const allHandles = [...new Set([...handles, ...earlierHandles])];
 
-  // 1. Who and what is named.
-  const people = await resolvePeople(tx, channel.id, handles);
-  const named = new Map<string, { kind: 'person'; id: string; personId: string }>();
-  for (const { personId, actorId } of people.values()) {
-    if (actorId !== message.authorId) named.set(`person:${actorId}`, { kind: 'person', id: actorId, personId });
+  // 1. Who and what is named. The groups first (their words are matched to people by exact handle only), then the people, then each group's readers.
+  const groups = await listMentionableGroups(deps, tx, channel, allHandles);
+  const people = await resolvePeople(tx, channel.id, allHandles, new Set(groups.map((g) => g.handle)));
+  const reachedAll = await narrowToReaders(tx, channel, groups.filter((g) => !people.has(g.handle)));
+  const notAuthor = <T extends { actorId: string }>(list: T[]): T[] => list.filter((p) => p.actorId !== message.authorId);
+
+  const direct = new Map<string, { personId: string; actorId: string }>();
+  for (const h of handles) {
+    const hit = people.get(h);
+    if (hit && hit.actorId !== message.authorId) direct.set(hit.actorId, hit);
   }
-  const mentioned: Array<{ kind: 'person' | 'channel'; id: string; personId: string | null }> = [...named.values()];
+  const current = reachedAll.filter((g) => handles.includes(g.group.handle));
+  const added = current.filter((g) => !earlier.has(g.group.handle));
+  const notices: GroupNotice[] = [];
+  const named = new Map<string, { personId: string; actorId: string }>(direct);
+  let reachedByGroups = 0;
+  for (const g of added) {
+    const everyone = notAuthor(g.people).sort((a, b) => (a.personId < b.personId ? -1 : a.personId > b.personId ? 1 : 0));
+    const notified = everyone.slice(0, MAX_ROLE_REACH);
+    if (notified.length < everyone.length) notices.push({ handle: g.group.handle, reached: everyone.length, notified: notified.length });
+    reachedByGroups += notified.length;
+    for (const p of notified) named.set(p.actorId, p);
+  }
+  // The budget is charged before anything is written. It counts per acting actor, so a webhook (a system-kind actor of its own) has a budget of its own too.
+  if (added.length > 0 && reachedByGroups > 0) mentionBudget.take(`${tx.actor.id}:${channel.team_id}`, added.length, reachedByGroups);
+
+  const mentioned: Array<{ kind: 'person' | 'channel'; id: string; personId: string | null }> = [...named.values()].map((p) => ({ kind: 'person' as const, id: p.actorId, personId: p.personId }));
+  const wantPeople = new Set([...direct.keys(), ...current.flatMap((g) => notAuthor(g.people).map((p) => p.actorId))]);
   if (channelNames.length > 0 && channel.team_id) {
     const found = await tx.query<{ id: string }>(
       `SELECT id FROM app.channels WHERE team_id = $1 AND kind = 'channel' AND name = ANY ($2::text[])`,
@@ -91,7 +181,7 @@ export async function syncMessageRefs(
     for (const r of found.rows) mentioned.push({ kind: 'channel', id: r.id, personId: null });
   }
 
-  // 2. Rows: insert the new, delete the dropped (an edit), announce each newly named person once.
+  // 2. Rows: insert the new, delete what an edit stopped naming, announce each newly named person once.
   const existing =
     mode === 'edit'
       ? (await tx.query<{ mentioned_id: string; kind: string }>('SELECT mentioned_id, kind FROM app.message_mentions WHERE message_id = $1', [message.id])).rows
@@ -99,7 +189,14 @@ export async function syncMessageRefs(
   const had = new Set(existing.map((r) => `${r.kind}:${r.mentioned_id}`));
   const want = new Set(mentioned.map((m) => `${m.kind}:${m.id}`));
   const fresh = mentioned.filter((m) => !had.has(`${m.kind}:${m.id}`));
-  const dropped = existing.filter((r) => !want.has(`${r.kind}:${r.mentioned_id}`));
+  // People who were named by the earlier text and are named by no one now: a direct `@person` that was deleted, or the members of a group whose handle was.
+  const namedBefore = new Set<string>();
+  for (const h of earlierHandles) {
+    const hit = people.get(h);
+    if (hit) namedBefore.add(hit.actorId);
+  }
+  for (const g of reachedAll) if (earlier.has(g.group.handle) && !handles.includes(g.group.handle)) for (const p of g.people) namedBefore.add(p.actorId);
+  const dropped = existing.filter((r) => (r.kind === 'channel' ? !want.has(`channel:${r.mentioned_id}`) : namedBefore.has(r.mentioned_id) && !wantPeople.has(r.mentioned_id)));
   if (fresh.length > 0) {
     await tx.query(
       `INSERT INTO app.message_mentions (message_id, mentioned_id, kind, channel_id)
@@ -114,9 +211,10 @@ export async function syncMessageRefs(
       [message.id, dropped.map((r) => r.mentioned_id), dropped.map((r) => r.kind)],
     );
   }
-  for (const m of fresh) {
-    if (m.kind !== 'person') continue;
-    await ctx.audit.emit(tx, {
+  // One multi-row write for all the events, so a mention of a big group is a few statements, not one round trip per person.
+  const events = fresh
+    .filter((m) => m.kind === 'person')
+    .map((m) => ({
       type: 'channel.mention.created',
       channelId: channel.id,
       teamId: channel.team_id,
@@ -126,14 +224,14 @@ export async function syncMessageRefs(
       kind: 'person',
       mentionedId: m.id,
       personId: m.personId,
-    });
-  }
+    }));
+  await ctx.audit.emitMany(tx, events);
 
   // 3. Links: only for a team channel the author belongs to (the link table is for team members), and only to entities the author can
   //    see (the type's resolver answers for the caller; none registered, or hidden, or missing: no link).
   const teamId = channel.team_id;
   const mayLink = teamId !== null && (entities.length > 0 || mode === 'edit') && (await isTeamMember(tx, teamId));
-  if (!mayLink || teamId === null) return;
+  if (!mayLink || teamId === null) return notices;
   const src = { type: 'message' as const, id: message.id };
   const wanted = new Set<string>();
   for (const e of entities) {
@@ -147,6 +245,7 @@ export async function syncMessageRefs(
       if (!wanted.has(`${link.dst.type}:${link.dst.id}`)) await ctx.links.remove(tx, { src, dst: link.dst, kind: 'mentions' });
     }
   }
+  return notices;
 }
 
 async function isTeamMember(tx: PluginTx, teamId: string): Promise<boolean> {

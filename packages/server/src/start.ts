@@ -16,6 +16,7 @@ import {
   type RateLimiter,
   discoverPlugins,
   emit,
+  emitMany,
   ensureActor,
   hashPassword,
   verifyPassword,
@@ -277,6 +278,7 @@ export async function startServer(options: StartServerOptions): Promise<RunningS
     },
     // Plugins see the kernel's emit; validation against the event registry happens there.
     emit: (tx, event) => emit(tx as unknown as Tx, event),
+    emitMany: (tx, events) => emitMany(tx as unknown as Tx, events),
   }));
 
   const migrationSources: MigrationSource[] = [kernelMigrationSource];

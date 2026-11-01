@@ -14,7 +14,12 @@ export const PostMessageRequest = Message.pick({ channelId: true, body: true, th
   .strict();
 export type PostMessageRequest = z.infer<typeof PostMessageRequest>;
 
-export const PostMessageResponse = Message;
+/** A role group the message named that was notified only in part: `reached` people could read it, `notified` were told (one message notifies a group's first 500). */
+export const GroupMentionNotice = z.object({ handle: z.string(), reached: z.number().int().positive(), notified: z.number().int().positive() });
+export type GroupMentionNotice = z.infer<typeof GroupMentionNotice>;
+
+/** The new message; `groupNotices` appears only when a group mention was cut short, so the author can tell the rest in person. */
+export const PostMessageResponse = Message.extend({ groupNotices: z.array(GroupMentionNotice).optional() });
 export type PostMessageResponse = z.infer<typeof PostMessageResponse>;
 
 export const postMessageRoute = { method: 'POST', path: '/api/channels/:channelId/messages' } as const;

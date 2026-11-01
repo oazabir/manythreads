@@ -1,10 +1,10 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import type { PluginContext, PluginTx, RoleGroupProvider } from '@manythreads/sdk';
 import { BOT_BOARD_NAME, CreateTaskRequest, DEFAULT_BOARD_COLUMNS, RecordPullRequestInput, TasksBoardCreatedEvent } from '@manythreads/shared';
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
 import { emitCompleted, emitHandedOff, emitUpdated } from './emit.ts';
 import { verifyPullRequest, pullRequestDeps } from './pull-requests.ts';
-import { handoverAllowlist, isCardCreator, mayHandoffToActor } from './handoff.ts';
+import { handoverAllowlist, handoverPeople, isCardCreator, mayHandoffToActor } from './handoff.ts';
 import { TASK_SELECT, toBoard, toHandoff, toTask, type BoardRow, type HandoffRow, type TaskRow } from './rows.ts';
 
 /**
@@ -270,11 +270,12 @@ export function registerCapabilities(ctx: PluginContext): void {
     // The same allowlist the board enforces (P6-03): a bot reaches only the people and bots its grant's `mayTag` names, plus the card's creator
     // (a hand-back is always allowed). The refusal says outright that nothing moved, so a model cannot report a handover that did not happen.
     const mayTag = await handoverAllowlist(tx, tx.actor.id);
-    if (mayTag !== null && !(await mayHandoffToActor(tx, mayTag, toActorId)) && !(await isCardCreator(tx, taskId, toActorId))) {
+    const toPerson = mayTag === null ? [] : await handoverPeople(tx, tx.actor.id);
+    if (mayTag !== null && !(await mayHandoffToActor(tx, mayTag, toActorId, { toPerson, groups: ctx.providers.get<RoleGroupProvider>('role.groups') })) && !(await isCardCreator(tx, taskId, toActorId))) {
       return {
         ok: false,
         code: 'forbidden',
-        message: `not handed over: "${named}" is not in your handover.mayTag${mayTag.length ? ` (${mayTag.join(', ')})` : ' (it is empty)'} and did not create this card; the card is still yours. Hand it to one of those or to its creator, or say in the thread that you could not`,
+        message: `not handed over: "${named}" is not in your handover.mayTag${mayTag.length ? ` (${mayTag.join(', ')})` : ' (it is empty)'}${toPerson.length ? ` and does not hold one of your handover.toPerson (${toPerson.join(', ')})` : ''} and did not create this card; the card is still yours. Hand it to one of those or to its creator, or say in the thread that you could not`,
       };
     }
     const note = typeof input['note'] === 'string' ? input['note'] : '';

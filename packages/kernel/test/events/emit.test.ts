@@ -4,7 +4,7 @@ import { createTestDatabase, dropTestDatabase, type TestDatabase } from '@manyth
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppPool, createSystemPool, withActor, withSystem } from '../../src/db/index.ts';
-import { emit, eventToRaw, subscribe } from '../../src/events/index.ts';
+import { emit, emitMany, eventToRaw, subscribe } from '../../src/events/index.ts';
 import { ensureActor, personActor } from '../../src/identity/index.ts';
 
 let db: TestDatabase;
@@ -149,5 +149,46 @@ describe('emit', () => {
         pool,
       }),
     ).rejects.toThrow(/row-level security/);
+  });
+});
+
+describe('emitMany', () => {
+  const ping = (note: string) => ({ type: 'kernel.test.pinged', schemaVersion: 1, workspaceId, note });
+
+  it('writes every event with its own id and one outbox row per subscriber, in the same shape as emit', async () => {
+    const actor = personActor(ActorId.parse(randomUUID()), workspaceId);
+    const results = await withActor(actor, (tx) => emitMany(tx, [ping('a'), ping('b'), ping('c')]), { pool });
+    expect(results).toHaveLength(3);
+    expect(new Set(results.map((r) => r.record.id)).size).toBe(3);
+    for (const r of results) {
+      expect(r.subscribers.sort()).toEqual(['sub-a', 'sub-b']);
+      expect(r.record.actorId).toBe(actor.id);
+    }
+    const rows = await withSystem(
+      async (tx) => ({
+        ev: (await tx.query('SELECT payload FROM app.events WHERE id = ANY ($1::uuid[]) ORDER BY id', [results.map((r) => r.record.id)])).rows,
+        ob: Number((await tx.query<{ n: string }>('SELECT count(*) AS n FROM app.outbox WHERE event_id = ANY ($1::uuid[])', [results.map((r) => r.record.id)])).rows[0]?.n),
+      }),
+      { pool: sys },
+    );
+    expect(rows.ev.map((r) => (r['payload'] as { note: string }).note)).toEqual(['a', 'b', 'c']);
+    expect(rows.ob).toBe(6);
+  });
+
+  it('writes nothing when one event is invalid, and nothing for an empty list', async () => {
+    const actor = personActor(ActorId.parse(randomUUID()), workspaceId);
+    const before = await count('app.events');
+    await expect(withActor(actor, (tx) => emitMany(tx, [ping('ok'), { ...ping('bad'), note: 42 }]), { pool })).rejects.toThrow();
+    expect(await withActor(actor, (tx) => emitMany(tx, []), { pool })).toEqual([]);
+    expect(await count('app.events')).toBe(before);
+  });
+
+  it('a thousand events are a handful of statements', async () => {
+    const actor = personActor(ActorId.parse(randomUUID()), workspaceId);
+    const events = Array.from({ length: 1000 }, (_, i) => ping(`n${i}`));
+    const started = Date.now();
+    const results = await withActor(actor, (tx) => emitMany(tx, events), { pool });
+    expect(results).toHaveLength(1000);
+    expect(Date.now() - started).toBeLessThan(10_000);
   });
 });

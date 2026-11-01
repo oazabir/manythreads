@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type {
   EmitEvent,
+  EmitManyEvents,
   EventMeta,
   IdentityServices,
   MailService,
@@ -65,6 +66,7 @@ export interface LoadPluginsOptions {
     baseSources?: readonly MigrationSource[];
   };
   emit?: EmitEvent;
+  emitMany?: EmitManyEvents;
   /**
    * Storage handed to plugins: one instance, or a factory called with the plugin name. Default: `app.scoped_kv`
    * (namespaced per plugin) when `database` is set, in-memory otherwise.
@@ -319,6 +321,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
       ...(runs ? { runs } : {}),
       templates,
       ...(options.emit ? { emit: options.emit } : {}),
+      ...(options.emitMany ? { emitMany: options.emitMany } : {}),
       ...(options.database?.pool ? { pool: options.database.pool } : {}),
       ...(options.database?.systemPool ? { systemPool: options.database.systemPool } : {}),
     });

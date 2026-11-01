@@ -1,4 +1,6 @@
 import {
+  ListMentionGroupsResponse,
+  listMentionGroupsRoute,
   LaterItem,
   ListLaterQuery,
   ListLaterResponse,
@@ -512,6 +514,8 @@ export const removeTeamMember = (slug: string, personId: string) =>
 export const setTeamMemberRole = (slug: string, personId: string, role: SetTeamMemberRoleRequest['role']) =>
   call(setTeamMemberRoleRoute, { request: SetTeamMemberRoleRequest, response: SetTeamMemberRoleResponse }, { role }, { slug, personId });
 
+/** The role groups the `@` picker offers in a conversation, each with how many people a mention reaches there (P14-03). */
+export const fetchMentionGroups = (channelId: string) => call(listMentionGroupsRoute, { response: ListMentionGroupsResponse }, undefined, { channelId });
 export const fetchTeamTags = (slug: string) => call(listTeamTagsRoute, { response: ListTeamTagsResponse }, undefined, { slug });
 export const createTeamTag = (slug: string, name: string) =>
   call(createTeamTagRoute, { request: CreateTeamTagRequest, response: CreateTeamTagResponse }, { name }, { slug });

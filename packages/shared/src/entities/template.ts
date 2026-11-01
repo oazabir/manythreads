@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { reservedTagReason } from '../markup/role-handles.ts';
 
 // Team templates (PLAN.md P2-08, SPEC §5.3, §13). A template is data: channel names, a board and bot
 // names as text. Channels are created when phase 3 applies it and bots when phase 5 does.
@@ -50,7 +51,17 @@ export const TeamTemplate = z
     channels: z.array(TemplateChannel).min(1).max(30),
     board: TemplateBoard,
     bots: z.array(TemplateBot).min(1).max(30),
-    roleTags: z.array(z.string().regex(/^role:[a-z][a-z0-9-]*$/, "role tag like 'role:on-call'")).max(20),
+    roleTags: z
+      .array(
+        z
+          .string()
+          .regex(/^role:[a-z][a-z0-9-]*$/, "role tag like 'role:on-call'")
+          .superRefine((tag, ctx) => {
+            const reason = reservedTagReason(tag);
+            if (reason !== null) ctx.addIssue({ code: 'custom', message: reason });
+          }),
+      )
+      .max(20),
     teamMd: z.string().min(1),
     /** Absent on a template read from an older definition and on the copy a team stores (`templateDefinitionOf`). */
     files: TemplateFiles.optional(),

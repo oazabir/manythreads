@@ -6,6 +6,7 @@ import { registerTeamRoutes } from './routes-teams.ts';
 import { registerTemplateRoutes } from './routes-templates.ts';
 import { registerWorkspaceRoutes } from './routes-workspace.ts';
 import { registerHttpsRoutes } from './routes-https.ts';
+import { createRoleGroupProvider } from './role-groups.ts';
 
 /**
  * Teams: templates, teams, roster, team roles, role tags and invitations (SPEC section 5, templates and the teams API).
@@ -16,7 +17,7 @@ export default definePlugin({
     name: 'teams',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit'],
+    extends: ['event.emit', 'provider.role.groups'],
     events: {
       emits: [
         'workspace.team.created',
@@ -28,6 +29,7 @@ export default definePlugin({
         'team.member.removed',
         'team.role.changed',
         'team.tag.created',
+        'team.tag.handle_closed',
         'team.tag.deleted',
         'team.tag.assigned',
         'team.tag.removed',
@@ -51,5 +53,7 @@ export default definePlugin({
     registerInvitationRoutes(ctx, deps);
     registerWorkspaceRoutes(ctx, deps);
     registerHttpsRoutes(ctx);
+    // P14-03: a team's role tags as mention groups; channels (mentions, the picker) and tasks (handover.toPerson) read them through this.
+    ctx.providers.register('role.groups', createRoleGroupProvider());
   },
 });

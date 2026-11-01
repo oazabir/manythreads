@@ -44,6 +44,30 @@ An archived team is read-only (409 on changes) until unarchived.
 (which team defines which tag, the mirror of `TEAM.md` `roleTags`). A roster shows the tags a person holds that the team
 defines. Assigning a tag someone already holds elsewhere still counts as an assignment for the roster and emits the event.
 
+## Role groups (P14-03)
+
+A role tag is also a **user group**: the people of the team who hold it, answering to the mention handle `@<tag without role:>` (`role:on-call` is `@on-call`). There is no second table: the group is the tag
+(`team_role_tags` and `roles`) joined to who holds it (`role_members`) and to the team's roster. The plugin registers it as the `role.groups` provider (`provider.role.groups`,
+`ctx.providers.get<RoleGroupProvider>('role.groups')`, type in `packages/sdk/src/role-groups.ts`, implementation `src/role-groups.ts`); `list(tx, teamId)` returns every tag a member of the team holds as
+`{ tag, handle, personIds, mentionable }` (the roster function answers a bot of the team too, where the `roles` table is hidden from bots, so a tag nobody holds is simply no group: it would reach nobody). Readers of the one definition:
+
+| Reader | Uses it for |
+|---|---|
+| channels | `@on-call` in a message notifies the holders who can read the channel; the `@` picker lists the groups with a count (see [channels](./channels.md), "Mentions and links") |
+| tasks | a bot's `handover.toPerson: [role:on-call]` allows a hand-over to any holder of that tag on the bot's team (see [tasks](./tasks.md)) |
+
+Rules, in one place: the holders are the roster's members who hold the tag (a person in another team who holds the same-named tag is not part of this team's group, a bot never holds a tag); a caller
+who cannot read the team gets `[]`; **an exact person handle or a bot wins a word collision**: a tag named like someone's email part or name slug (not their first name), or like a bot's slug, stays a group for
+tag-name checks but is not `mentionable` (`closedBy` says `person` or `bot`). The reserved words (`here`, `channel`, `everyone`, `everybody`, `all`, `admin`, `administrator`, `owner`, `team`, `staff`, `security`,
+`moderator`, `mod` and plurals; one list, `RESERVED_GROUP_HANDLES`) are never handles and **cannot be defined as a new tag**: `POST /api/teams/:slug/tags`, the first `PUT .../members/:personId/tags/:tag` that would define one,
+and a template's `roleTags` answer a plain 400 sentence ("\"admin\" is kept for ... pick another name"). Old tags with such a word keep working for hand-overs and can still be removed.
+A group's holders are not secret from the team (the roster and `GET .../tags` already show them to its members); the provider adds no new reader.
+
+For a lead: `GET /api/teams/:slug/tags` and the create/assign answers carry `mentionable` and `closedBy` per tag, so the reason a tag cannot be used as `@word` is shown where tags are listed. When a tag is defined and its word is
+already taken by a person or a bot, one audit row is written (`team.tag.handle_closed`: `teamId`, `tag`, `handle`, `reason`). A rename that takes the word later closes the tag without a new row; the list shows it.
+`list(tx, teamId, { handles })` takes a hint: when the team defines no role tag, or every handle asked for is a bot slug of the team, the roster is not read. Not built: a group cannot hold a bot; the web
+tag editor does not yet show `closedBy` (the API does).
+
 ## Events
 
 All schema version 1, registered in `packages/shared/src/events/registry.ts`, written as the acting person in the same
@@ -59,6 +83,7 @@ transaction as the change. Names follow `domain.noun.verb`, so team lifecycle an
 | `team.member.removed` | `teamId, personId, role, tags` |
 | `team.role.changed` | `teamId, personId, previousRole, role` |
 | `team.tag.created` | `teamId, tag, roleId` |
+| `team.tag.handle_closed` | `teamId, tag, handle, reason` (`person`, `bot` or `reserved`; written when a tag is defined whose `@word` is already taken) |
 | `team.tag.deleted` | `teamId, tag, removedFrom` |
 | `team.tag.assigned`, `team.tag.removed` | `teamId, personId, tag` |
 | `workspace.invitation.created` | `teamId` (null for workspace and guest invitations), `invitationId, email, role, teamRole` |
@@ -98,7 +123,7 @@ The two outbound checks are cached in process memory for 15 s (shared by concurr
 | Field | Value |
 |---|---|
 | name / version / kind | `teams` / `0.1.0` / `server` |
-| extends | `event.emit` |
+| extends | `event.emit`, `provider.role.groups` |
 | events | emits the fourteen types above, consumes nothing |
 | migrations | `migrations` |
 
@@ -106,4 +131,4 @@ The two outbound checks are cached in process memory for 15 s (shared by concurr
 
 `packages/plugins/teams/test/teams-api.test.ts` (apply, idempotency, criterion 6, roster, roles, tags, invitations),
 `test/guest-grant.test.ts` (the guest grant on accept: read only, post, several channels, a missing channel, a demoted inviter, a spent token), `test/events/teams-events.test.ts` (`pnpm test:events`, every event parses against its registered schema),
-`test/rls/teams-plugin.test.ts` (`pnpm test:rls`), and `e2e/api/identity/rls.spec.ts` and `e2e/api/teams/guest-invite.spec.ts` (`pnpm e2e --project=api`).
+`test/rls/teams-plugin.test.ts` (`pnpm test:rls`), the `role.groups` provider through the channels tests (`packages/plugins/channels/test/role-mentions.test.ts`), the notifications tests (`packages/plugins/notifications/test/role-mentions.test.ts`) and the tasks tests (`packages/plugins/tasks/test/api.test.ts`, "handover.toPerson"), and the pure rule in `packages/shared/test/markup/role-handles.test.ts`, and `e2e/api/identity/rls.spec.ts` and `e2e/api/teams/guest-invite.spec.ts` (`pnpm e2e --project=api`).

@@ -11,7 +11,7 @@ Four kinds, each made by a subscription of the plugin's outbox consumer (it runs
 
 | Event | Kind | Who is told |
 |---|---|---|
-| `channel.mention.created` | `mention` | the mentioned person (people only, not bots) |
+| `channel.mention.created` | `mention` | the mentioned person (people only, not bots). A role group (`@on-call`, P14-03) is expanded by the channels plugin into one event per holder who can read the channel, so each holder is told as for a direct mention: the author is left out, a person named twice is told once, and the person's level for the channel, the per-kind switch and Do not disturb apply. This plugin has no group logic of its own |
 | `channel.message.posted` in a **direct message** (or group conversation) | `dm` | every other member |
 | `channel.message.posted` as a **reply** in a team channel's thread | `reply` | the followers of the thread (`app.thread_follower_ids`) |
 | `reminders.reminder.due` | `reminder` | the person who asked to be reminded (see below) |

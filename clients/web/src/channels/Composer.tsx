@@ -15,6 +15,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
 import { MAX_UPLOAD_BYTES, TOO_LARGE, filesOf, useFilesSupport } from './files';
 import { handleFor, type People } from './hooks';
+import { groupCountText, matchGroups, useMentionGroups } from './mentionGroups';
 import { PresenceDot } from '../presence/PresenceDot';
 
 /*
@@ -90,7 +91,19 @@ export type ComposerProps = {
 };
 
 /** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
-type PickItem = { key: string; label: string; hint: string; insert: string; from: number; to: number; disabled?: string; /** A person offered by the @ picker: their presence dot is drawn beside the name. */ personId?: string };
+type PickItem = {
+  key: string;
+  label: string;
+  hint: string;
+  insert: string;
+  from: number;
+  to: number;
+  disabled?: string;
+  /** A person offered by the @ picker: their presence dot is drawn beside the name. */
+  personId?: string;
+  /** A role group offered by the @ picker (`@on-call`): drawn with a "Group" badge and the number of people it reaches. */
+  group?: true;
+};
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
@@ -190,6 +203,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const trigger = useMemo(() => (slashContext ? null : detectTrigger(text, caret)), [slashContext, text, caret]);
   // what Esc closed is remembered by where the word starts, so the menu stays shut until that word changes
   const anchor = slashContext ? (slashContext.stage === 'command' ? 0 : slashContext.from) : (trigger?.start ?? null);
+  const groups = useMentionGroups(channelId, trigger?.char === '@');
   const items = useMemo<PickItem[]>(() => {
     if (anchor === null || dismissed === anchor) return [];
     if (slashContext?.stage === 'command') {
@@ -218,16 +232,22 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     if (!trigger) return [];
     const q = trigger.query.toLowerCase();
     if (trigger.char === '@') {
-      return people.list
+      const persons: PickItem[] = people.list
         .filter((p) => q === '' || p.name.toLowerCase().includes(q) || handleFor(p, people.list).startsWith(q))
         .slice(0, 6)
         .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} `, from: trigger.start, to: caret, personId: p.personId }));
+      // role groups after the people: a person's own handle always wins, so a group is offered only when its word is not one of theirs
+      const shown = new Set(persons.map((p) => p.insert.trim().toLowerCase()));
+      const roles: PickItem[] = matchGroups(groups, q)
+        .filter((g) => !shown.has(`@${g.handle}`))
+        .map((g) => ({ key: `group:${g.handle}`, label: `@${g.handle}`, hint: groupCountText(g.memberCount), insert: `@${g.handle} `, from: trigger.start, to: caret, group: true as const }));
+      return [...persons, ...roles];
     }
     return channelNames
       .filter((n) => q === '' || n.toLowerCase().includes(q))
       .slice(0, 6)
       .map((n) => ({ key: n, label: `#${n}`, hint: '', insert: `#${n} `, from: trigger.start, to: caret }));
-  }, [anchor, slashContext, trigger, dismissed, people, channelNames, who, text, caret]);
+  }, [anchor, slashContext, trigger, dismissed, people, groups, channelNames, who, text, caret]);
   const open = items.length > 0;
   const active = Math.min(pick, Math.max(0, items.length - 1));
   const menuLabel = slashContext?.stage === 'command' ? 'Commands' : slashContext?.stage === 'bot' ? 'Bots' : trigger?.char === '@' ? 'People' : 'Channels';
@@ -581,11 +601,13 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
                   role="option"
                   aria-selected={i === active}
                   aria-disabled={it.disabled ? true : undefined}
-                  className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''}`}
+                  className={`${i === active ? 'on' : ''} ${it.disabled ? 'off' : ''} ${it.group ? 'pk-group' : ''}`}
+                  data-group={it.group ? it.key.slice(6) : undefined}
                   data-command={slashContext?.stage === 'command' ? it.key : undefined}
                   onMouseDown={(e) => { e.preventDefault(); choose(i); }}
                 >
                   <span className="pk-name">{it.label}</span>
+                  {it.group ? <span className="pk-badge">Group</span> : null}
                   {it.personId ? <PresenceDot personId={it.personId} status /> : null}
                   {it.hint ? <small className="pk-hint">{it.hint}</small> : null}
                 </li>

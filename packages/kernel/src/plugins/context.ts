@@ -5,6 +5,7 @@ import type {
   CapabilityDecision,
   CapabilityHandler,
   EmitEvent,
+  EmitManyEvents,
   EnqueueJobOptions,
   GetOneOrCreateInput,
   HttpCaller,
@@ -45,6 +46,7 @@ import type { ExtensionRegistries } from './registries.ts';
 export interface ContextDeps {
   registries: ExtensionRegistries;
   emit?: EmitEvent;
+  emitMany?: EmitManyEvents;
   storage: ScopedKv;
   mail: MailService;
   runtime: PluginRuntime;
@@ -107,6 +109,21 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     }
     if (!deps.emit) throw new PluginError(`Plugin "${name}": no event emitter is wired into the host`, { plugin: name });
     await deps.emit(guardPluginTx(tx), event);
+  };
+
+  const emitManyChecked = async (tx: PluginTx, events: readonly PluginEvent[]): Promise<void> => {
+    use('event.emit');
+    for (const event of events) {
+      if (!manifest.events.emits.includes(event.type)) {
+        throw new PluginError(
+          `Plugin "${name}" emitted "${event.type}" but its manifest does not list it in events.emits`,
+          { plugin: name },
+        );
+      }
+    }
+    if (!deps.emit) throw new PluginError(`Plugin "${name}": no event emitter is wired into the host`, { plugin: name });
+    if (deps.emitMany) await deps.emitMany(guardPluginTx(tx), events);
+    else for (const event of events) await deps.emit(guardPluginTx(tx), event);
   };
 
   const db: PluginDb = {
@@ -364,6 +381,8 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     audit: {
       emit: (tx: PluginTx, event: AuditEvent) =>
         emitChecked(tx, { ...event, schemaVersion: event.schemaVersion ?? 1, workspaceId: event.workspaceId ?? tx.actor.workspaceId }),
+      emitMany: (tx: PluginTx, events: readonly AuditEvent[]) =>
+        emitManyChecked(tx, events.map((event) => ({ ...event, schemaVersion: event.schemaVersion ?? 1, workspaceId: event.workspaceId ?? tx.actor.workspaceId }))),
     },
     templates,
     get jobs() {

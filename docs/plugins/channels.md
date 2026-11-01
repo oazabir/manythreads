@@ -199,6 +199,34 @@ On every post and edit, in the same transaction, `src/mentions.ts` parses the bo
   a definer function because `actors` shows a caller only their own row): `@nadia` means the Nadia of this conversation. An exact handle shared by two people, and a first name shared by two, name
   nobody (no guess); so does an unknown handle, a person who cannot read the channel (nothing is learned about them) and the author. A guest resolves nobody (guests see no member list). `@bot` handles
   arrive with bots (`parseMarkup`'s `botHandles`).
+- **`@role` to a group of people (P14-03).** A role tag the team defines in `TEAM.md` (`role:on-call`) is also a handle (`@on-call`) for the team members who hold it. The tags and holders
+  come from the teams plugin through the `role.groups` provider (`ctx.providers.get<RoleGroupProvider>('role.groups')`, `packages/sdk/src/role-groups.ts`); this plugin keeps no table of groups. The rules, in the order a word is read:
+  1. **An exact person handle wins.** If anyone on the team answers to the word with the local part of their email or their name as a slug, or a bot of the team has it as its slug, the tag is not a mention handle
+     (`mentionable: false`, `closedBy` says `person` or `bot`) and `@word` keeps its old meaning. A **first name does not win**: anyone could otherwise kill a team's tag by joining with that first name. For a
+     word that is also a tag, `@word` therefore finds a person only by an exact handle; where no tag has the word, a first name still finds its one person as before. Two people with the same exact
+     handle are ambiguous: `@word` names nobody and the tag is closed, which a lead sees in the tag list. The check is made on the whole team roster, so a team member who cannot read this particular channel still closes the word there.
+  2. **Reserved words are never handles** and a team cannot define a tag with one: `here`, `channel`, `everyone`, `everybody`, `all`, `admin`, `administrator`, `owner`, `team`, `staff`, `security`, `moderator`, `mod` and the
+     plurals (`packages/shared/src/markup/role-handles.ts`, `RESERVED_GROUP_HANDLES`, used by the rule and by tag creation alike; the teams API answers a plain 400 sentence). An older tag with such a word stays a group for hand-overs and is closed for `@`.
+  3. Otherwise the tag is the group. The rule is `roleGroups`, shared with the composer.
+  A rename can close a tag later (a person is renamed to the word): the team's tag list (`GET /api/teams/:slug/tags`, `mentionable` and `closedBy`) shows it; the one audit row (`team.tag.handle_closed`) is written when the tag is defined.
+  A group in a message names the holders **who can read this channel** (`app.channel_role_audience`, a definer function that refuses a guest and a caller who cannot read the channel): in a private channel, team members
+  who are not in it are not named and nothing says they hold the tag. A direct message has no team and so no groups. Each person is named as for `@person` (a `message_mentions` row and a `channel.mention.created` event with their ids; the
+  author never; once even when named directly as well), so levels, Do not disturb and the author rule of the notifications plugin apply with no extra code, and **a role mention never starts a bot run**: bots cannot hold role tags,
+  and the bot router matches `@handle` against bot slugs only (a bot slug wins any collision).
+  **Limits.** One message notifies at most **500 people per group** (the first 500 by person id, the author excluded); when a group is cut, the post answer carries `groupNotices: [{ handle, reached, notified }]` so the author can tell the
+  rest in person (the picker still counts everyone). **Budget:** per author and team, at most 5 group mentions in a minute and 1,000 people reached in an hour (`src/mention-budget.ts`, in memory per replica like the other limits);
+  over it the post is refused with a 429 and the plain sentence "You mentioned groups too often; try again in a minute." (or, for the hour, "Your group mentions have reached too many people this hour; try again later."), and nothing is posted.
+  A group already named before an edit is not charged again. The events of a big group are written with `ctx.audit.emitMany` (a fixed number of statements, not one round trip per person). When the team has no role tag at all, or every
+  `@word` of the message is a bot's slug, the provider does not read the roster.
+  **Who counts as the author.** A message written by a person, or by the server in the system role under an actor of its own, reaches groups (and has its own budget per actor). A message written by a bot reaches nobody through groups
+  (the same door as `@person`: a bot's mentions are not read). The text of an incoming webhook or alert never reaches a group or a person: the webhooks plugin breaks every `@` of outside text.
+  **Edits.** An edit keeps the rows it has. It adds rows and announcements only for what it newly names (a direct `@person`, or a group whose handle the old text did not have), so a member who joined the tag since is not added by a wording change.
+  It removes rows only of people it stopped naming: a direct `@person` that was deleted, or the holders of a group whose handle was deleted (while the handle stays, a person who left the tag keeps their row).
+- **`GET /api/channels/:channelId/mention-groups`** (P14-03, 120 a minute): the groups the composer's `@` picker offers in this conversation, `{ groups: [{ handle, tag, memberCount }] }` in handle order. `memberCount` is the number of
+  holders who can read the channel (the caller included if they hold the tag; never capped), so the picker never shows a membership the channel hides. **It is the count of readers who hold the tag, not exactly the number a mention
+  notifies:** a mention leaves out the author and notifies at most 500 per group. Groups nobody there holds, groups that lose a collision and a conversation without a team are left out, and a guest gets `[]`. A caller who cannot
+  read the channel gets 403 like every channel route. The web composer asks only after the person types an `@`, keeps the answer for a minute per person and channel (dropped when the person changes or signs out, and never shown for
+  another channel) and draws a group below the people with a "Group" badge and "N people".
 - **`message_mentions` rows**: `kind 'person'` with the person's **actor** id as `mentioned_id`, `kind 'channel'` for `#name` (a channel of the same team the author can see; a DM has none). An edit
   inserts what is new and deletes what the new text dropped.
 - **Event `channel.mention.created`** (schema v1; ids only): one per person the first time a body names them, as the author, with the team (null in a DM). An edit that keeps a mention does not announce it
@@ -302,7 +330,7 @@ on the copy. Editing a message that carries an Answer is refused (409): the text
 | Field | Value |
 |---|---|
 | name / version / kind | `channels` / `0.1.0` / `server` |
-| extends | `event.emit`, `event.subscribe`, `provider.messages` |
+| extends | `event.emit`, `event.subscribe`, `provider.messages` (uses, without extending, the teams plugin's `role.groups` provider) |
 | capabilities | `messages.post`, `messages.update` (neither destructive) |
 | events | emits the ten types above, consumes `team.template.applied` |
 | migrations | `migrations` |
@@ -310,7 +338,7 @@ on the copy. Editing a message that carries an Answer is refused (409): the text
 ## Tests
 
 `test/message-actions.test.ts` (edit history, clearing it, forward cards per reader, the push of a forward), `test/channels-api.test.ts` (directory, creation, membership, authz, threads, reactions, 5,000-message pagination, unread, links), `test/realtime.test.ts` (sockets: delivery to permitted people only),
-`test/mentions.test.ts` (parsing, resolution, edits, links), `test/ephemeral.test.ts` (presence, typing, expiry), `test/plain.test.ts`, `test/rls/channels-plugin.test.ts` (`pnpm test:rls`: per persona visibility, policies, guards, definer functions, the audience equals the visible sets),
+`test/mentions.test.ts` (parsing, resolution, edits, links), `test/role-mentions.test.ts` (role groups: holders, collisions, private channels, edits, the picker route), `test/ephemeral.test.ts` (presence, typing, expiry), `test/plain.test.ts`, `test/rls/channels-plugin.test.ts` (`pnpm test:rls`: per persona visibility, policies, guards, definer functions, the audience equals the visible sets),
 `test/events/channels-events.test.ts` (`pnpm test:events`), `e2e/api/messages/{rls,pagination}.spec.ts` (`pnpm e2e --project=api`; the specs use two test-only routes of `test-kernel`:
 `/api/test/bulk-messages` and `/api/test/channel-grants`, both run as the caller).
 Web client: `clients/web/test/new-channel.test.ts` (who is offered New channel, the cleaned name and request, one sentence per refusal, the unread look per notification level) and `e2e/shell/new-channel.spec.ts` (a lead makes a public and a private channel through the dialog, a member is not offered it, a second person sees the row bold with a count and opening clears it, a "nothing" channel keeps a grey count).

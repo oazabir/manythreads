@@ -148,6 +148,35 @@ describe('the BOT.md loader', () => {
     expect(loaded).toMatchObject({ botId: row['id'], path, definitionSha: row['definition_sha'], mayTag: ['reviewer'] });
   });
 
+  it('handover.toPerson alone makes the tasks.handoff grant, a change updates it, and removing it deletes the grant (P14-03)', async () => {
+    const slug = 'p1403-pager';
+    const withPeople = (list: string): string => validMd('Pager', []).replace('  mayTag: []', `  mayTag: []\n  toPerson: [${list}]`);
+    const grantOf = async () => {
+      const bot = await botRow(slug);
+      if (!bot) return undefined;
+      return w.system(async (tx) =>
+        (await tx.query<{ constraints: { mayTag?: string[]; toPerson?: string[] } }>(
+          `SELECT g.constraints FROM app.capability_grants g JOIN app.actors a ON a.id = g.actor_id WHERE a.ref_id = $1 AND g.capability = 'tasks.handoff'`,
+          [bot['id']],
+        )).rows[0],
+      );
+    };
+    expect((await commit(`bots/${slug}/BOT.md`, withPeople('role:on-call'), 'A bot that hands to the on-call person')).status).toBe(201);
+    const made = await until(async () => {
+      const g = await grantOf();
+      return g?.constraints.toPerson?.length ? g : null;
+    }, 10_000);
+    expect(made.constraints).toEqual({ mayTag: [], toPerson: ['role:on-call'] });
+    expect((await commit(`bots/${slug}/BOT.md`, withPeople('role:on-call, role:release-owner'), 'Two roles')).status).toBe(201);
+    const changed = await until(async () => {
+      const g = await grantOf();
+      return g?.constraints.toPerson?.length === 2 ? g : null;
+    }, 10_000);
+    expect(changed.constraints.toPerson).toEqual(['role:on-call', 'role:release-owner']);
+    expect((await commit(`bots/${slug}/BOT.md`, validMd('Pager', []), 'No one to hand to')).status).toBe(201);
+    await until(async () => ((await grantOf()) === undefined ? true : null), 10_000);
+  });
+
   it('the knowledge list in BOT.md is projected onto the row, and dropping it clears the projection (P8-08)', async () => {
     const withList = validMd('Reader', []).replace('capabilities:', 'knowledge:\n  - base: manuals\n    answer_only_from: true\n  - base: faq\ncapabilities:');
     expect((await commit('bots/p808-reader/BOT.md', withList, 'A bot that reads the manuals')).status).toBe(201);

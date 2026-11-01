@@ -193,13 +193,16 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   // The definition's own allowlist, then `handover.mayTag` — which owns `tasks.handoff` alone.
   await compileNative(tx, actorId, commit.teamId, native, new Set(fm.approvals?.needsApproval ?? []), previousNative);
 
+  // `tasks.handoff` is compiled from `handover`: `mayTag` (bots, by slug) and `toPerson` (people: `person:<id>` or `role:<tag>`, resolved by the tasks plugin
+  // through the teams plugin's role groups, P14-03). Neither listed: no grant.
   const mayTag = fm.handover?.mayTag ?? [];
-  if (mayTag.length > 0) {
+  const toPerson = fm.handover?.toPerson ?? [];
+  if (mayTag.length > 0 || toPerson.length > 0) {
     await tx.query(
       `INSERT INTO app.capability_grants (team_id, actor_id, capability, constraints)
-       VALUES ($1, $2, 'tasks.handoff', jsonb_build_object('mayTag', $3::jsonb))
+       VALUES ($1, $2, 'tasks.handoff', jsonb_build_object('mayTag', $3::jsonb, 'toPerson', $4::jsonb))
        ON CONFLICT (actor_id, capability) DO UPDATE SET team_id = EXCLUDED.team_id, constraints = EXCLUDED.constraints`,
-      [commit.teamId, actorId, JSON.stringify(mayTag)],
+      [commit.teamId, actorId, JSON.stringify(mayTag), JSON.stringify(toPerson)],
     );
   } else {
     await tx.query(`DELETE FROM app.capability_grants WHERE actor_id = $1 AND capability = 'tasks.handoff'`, [actorId]);

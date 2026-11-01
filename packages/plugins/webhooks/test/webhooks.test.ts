@@ -346,3 +346,17 @@ describe('the stranger lock (PLAN D5)', () => {
     expect((await messages()).some((m) => m.body.includes('still works'))).toBe(true);
   });
 });
+
+describe('a role group named in a webhook message (P14-03)', () => {
+  it('pings nobody: the sender\'s @ is broken like any other mention, so an outside system cannot page a team through a tag', async () => {
+    const tag = 'role:hook-pager';
+    expect((await w.call(omar, 'POST', '/api/teams/engineering/tags', { name: tag })).status).toBe(201);
+    expect((await w.call(omar, 'PUT', `/api/teams/engineering/members/${nadia.personId}/tags/${encodeURIComponent(tag)}`)).status).toBe(200);
+    const m = await make('Alerts with a pager');
+    const sent = await hit(m.path, { text: 'disk full on db-1 @hook-pager' });
+    expect(sent.status, sent.body).toBe(200);
+    const id = (await messages()).find((x) => x.body.includes('disk full on db-1'))!.id;
+    const named = await w.system(async (tx) => (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.message_mentions WHERE message_id = $1", [id])).rows[0]!.n);
+    expect(named).toBe(0);
+  });
+});

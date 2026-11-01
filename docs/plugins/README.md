@@ -71,6 +71,8 @@ const created = row.id === id;               // the pre-drawn id came back: this
 
 // Audit/domain event with the envelope filled in (schemaVersion 1, the transaction's workspaceId unless you pass them).
 await ctx.audit.emit(tx, { type: 'workspace.team.created', teamId, slug, name, template: null });
+// Many events of one transaction (a mention of a big group): same checks per event, a fixed number of statements.
+await ctx.audit.emitMany(tx, events);
 
 // The shipped team templates (templates/ at the repo root or MANYTHREADS_TEMPLATES_DIR); read once, cached, validated.
 const template = await ctx.templates.get('engineering');   // or await ctx.templates.list()

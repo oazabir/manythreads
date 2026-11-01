@@ -15,6 +15,7 @@ import {
   type TestDatabase,
   testClient,
 } from '@manythreads/test-utils';
+import { randomUUID as randomUuid } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -465,6 +466,19 @@ describe('mentions: who writes and deletes them, and who they can name (migratio
     expect(await cands(lena, ch['eng-releases']!, ['%'])).toEqual([]);                         // a guest resolves nobody
     expect(await cands(sameera, ch['eng-general']!, ['%'])).toEqual([]);
     expect(await cands(nadia, ch['eng-general']!, [])).toEqual([]);
+  });
+
+  it('app.channel_role_audience (P14-03) narrows a role group to people who can read the channel, and says nothing to a guest, an outsider or about a channel the caller cannot read', async () => {
+    const reach = (p: Persona, channelId: string, ids: string[]): Promise<string[]> =>
+      as(p, async (tx) => (await tx.query<{ person_id: string }>('SELECT person_id FROM app.channel_role_audience($1, $2::uuid[])', [channelId, ids])).rows.map((r) => r.person_id).sort());
+    const group = [rafi.personId, priya.personId, sameera.personId, lena.personId];
+    expect(await reach(nadia, ch['eng-general']!, group)).toEqual([rafi.personId, priya.personId].sort());   // Sameera is on another team and Lena is a guest: not in the audience
+    expect(await reach(nadia, ch['eng-leads']!, group)).toEqual([]);                                          // a channel she cannot read: nothing, not even "empty"
+    expect(await reach(rafi, ch['eng-leads']!, group)).toEqual([rafi.personId]);                              // a private channel: only its members, so Priya is not revealed as a holder
+    expect(await reach(lena, ch['eng-releases']!, group)).toEqual([]);                                        // a guest asks for nobody
+    expect(await reach(sameera, ch['eng-general']!, group)).toEqual([]);                                      // an outsider asks for nobody
+    expect(await reach(nadia, ch['eng-general']!, [])).toEqual([]);
+    expect(await reach(nadia, ch['eng-general']!, [randomUuid()])).toEqual([]);                                // a person not in the audience, or unknown, is not returned
   });
 });
 

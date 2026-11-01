@@ -4,6 +4,7 @@ import { registerCohesion } from './cohesion.ts';
 import { registerBookmarkRoutes } from './routes-bookmarks.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
+import { registerMentionRoutes } from './routes-mentions.ts';
 import { registerMessageRoutes } from './routes-messages.ts';
 import { registerSidebarRoutes } from './routes-sidebar.ts';
 import { registerTemplateConsumer } from './templates.ts';
@@ -47,6 +48,7 @@ export default definePlugin({
     const deps = { ctx };
     registerChannelRoutes(deps);
     registerMessageRoutes(deps);
+    registerMentionRoutes(deps);
     registerBookmarkRoutes(deps);
     registerSidebarRoutes(deps);
     registerEphemeralRoutes(deps);
