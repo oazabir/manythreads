@@ -152,7 +152,18 @@ import {
   uploadFileRoute,
   AddBookmarkRequest,
   AddBookmarkResponse,
+  CancelScheduledResponse,
   ClearMessageVersionsResponse,
+  EditScheduledRequest,
+  EditScheduledResponse,
+  ListScheduledResponse,
+  ScheduleMessageRequest,
+  ScheduleMessageResponse,
+  cancelScheduledRoute,
+  editScheduledRoute,
+  listAllScheduledRoute,
+  listScheduledRoute,
+  scheduleMessageRoute,
   ListBookmarksResponse,
   MarkMessageUnreadResponse,
   RemoveBookmarkResponse,
@@ -591,6 +602,16 @@ export const addBookmark = (channelId: string, body: AddBookmarkRequest) =>
   call(addBookmarkRoute, { request: AddBookmarkRequest, response: AddBookmarkResponse }, body, { channelId });
 export const removeBookmark = (channelId: string, bookmarkId: string) =>
   call(removeBookmarkRoute, { response: RemoveBookmarkResponse }, undefined, { channelId, bookmarkId });
+/** Scheduled send (P14-05): the caller's own scheduled and refused messages in a channel, and the writes on them. */
+export const fetchScheduled = (channelId: string) => call(listScheduledRoute, { response: ListScheduledResponse }, undefined, { channelId });
+/** Every scheduled and refused message of the caller, in any channel: the "Not sent" list, which needs no open channel. */
+export const fetchAllScheduled = () => call(listAllScheduledRoute, { response: ListScheduledResponse });
+export const scheduleMessage = (channelId: string, body: ScheduleMessageRequest) =>
+  call(scheduleMessageRoute, { request: ScheduleMessageRequest, response: ScheduleMessageResponse }, body, { channelId });
+export const editScheduled = (channelId: string, scheduledId: string, body: EditScheduledRequest) =>
+  call(editScheduledRoute, { request: EditScheduledRequest, response: EditScheduledResponse }, body, { channelId, scheduledId });
+export const cancelScheduled = (channelId: string, scheduledId: string) =>
+  call(cancelScheduledRoute, { response: CancelScheduledResponse }, undefined, { channelId, scheduledId });
 export const deleteMessage = (channelId: string, messageId: string) =>
   call(deleteMessageRoute, { response: DeleteMessageResponse }, undefined, { channelId, messageId });
 export const addReaction = (channelId: string, messageId: string, emoji: string) =>

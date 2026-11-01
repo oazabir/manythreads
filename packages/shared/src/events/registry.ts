@@ -9,6 +9,7 @@ import { ChannelChannelArchivedEvent } from './channel.channel.archived.ts';
 import { ChannelMemberAddedEvent } from './channel.member.added.ts';
 import { ChannelMemberRemovedEvent } from './channel.member.removed.ts';
 import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
+import { ChannelScheduledMessageChangedEvent } from './channel.scheduled_message.changed.ts';
 import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
 import { PresenceDndChangedEvent } from './presence.dnd.changed.ts';
 import { RemindersReminderDueEvent } from './reminders.reminder.due.ts';
@@ -125,6 +126,7 @@ export const eventRegistry = {
   'channel.member.added': { 1: ChannelMemberAddedEvent },
   'channel.member.removed': { 1: ChannelMemberRemovedEvent },
   'channel.mention.created': { 1: ChannelMentionCreatedEvent },
+  'channel.scheduled_message.changed': { 1: ChannelScheduledMessageChangedEvent },
   'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
   'presence.dnd.changed': { 1: PresenceDndChangedEvent },
   'reminders.reminder.due': { 1: RemindersReminderDueEvent },

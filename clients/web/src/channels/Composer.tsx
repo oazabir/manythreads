@@ -17,6 +17,9 @@ import { MAX_UPLOAD_BYTES, TOO_LARGE, filesOf, useFilesSupport } from './files';
 import { handleFor, type People } from './hooks';
 import { groupCountText, matchGroups, useMentionGroups } from './mentionGroups';
 import { PresenceDot } from '../presence/PresenceDot';
+import { remindWhen } from '../later/times';
+import { SendLaterMenu } from './SendLater';
+import { scheduledErrorText, scheduledStore } from './scheduled';
 
 /*
  * The shared composer (channel, thread, later DMs): markdown toolbar, Enter to send and Shift+Enter for a new line, a draft kept per
@@ -88,6 +91,8 @@ export type ComposerProps = {
    * posted as typed, `//` included.
    */
   slash?: { teamSlug: string; origin: string };
+  /** Offer "Send later" beside Send (P14-05): the text is scheduled for this channel (or thread) and posted by a job at the chosen time. Text only. */
+  sendLater?: boolean;
 };
 
 /** One line of the picker: what to show, and the text that replaces `from`..`to` when it is chosen. A disabled one only explains itself. */
@@ -107,9 +112,12 @@ type PickItem = {
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
 
-export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false, onEditLast, slash }: ComposerProps) {
+export function Composer({ draftKey, placeholder, label, channelId, threadRootId, people, channelNames, onSend, autoFocus = false, onEditLast, slash, sendLater = false }: ComposerProps) {
   const filesOn = useFilesSupport(channelId);
   const [text, setText] = useState(() => readDraft(draftKey));
+  // true while a "Send later" request is out; the ref is what the handlers read, the state is what the buttons show
+  const scheduling = useRef(false);
+  const [schedulingNow, setSchedulingNow] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [caret, setCaret] = useState(0);
   const [pick, setPick] = useState(0);
@@ -381,7 +389,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   };
 
   const send = (): void => {
-    if (!canSend || makingCard.current) return;
+    if (!canSend || makingCard.current || scheduling.current) return;
     // a message of only files has no text of its own: the server wants one character, so it carries the file names
     let body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
     if (slash && text.trim() !== '') {
@@ -406,6 +414,49 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     setNotice(null);
     onSend(body, ready);
     clearBox();
+  };
+
+  /** "Send later": the box's text is scheduled for `at` instead of posted now, and the box is emptied once the server has it. */
+  const scheduleFor = async (at: Date): Promise<void> => {
+    if (scheduling.current) return;
+    if (uploading || ready.length > 0 || uploads.length > 0) {
+      setNotice({ tone: 'bad', text: 'A scheduled message can only hold text for now. Remove the attached files, or send it now.' });
+      return;
+    }
+    let body = text.trim();
+    if (body === '') return;
+    if (slash) {
+      const plan = planSlash(text, who, false);
+      if (plan.do === 'say') {
+        setNotice({ tone: 'bad', text: plan.message });
+        return;
+      }
+      if (plan.do !== 'post') {
+        setNotice({ tone: 'bad', text: 'Commands run at once, so they cannot be scheduled. Send it now, or start the message with two slashes to post it as text.' });
+        return;
+      }
+      body = plan.body;
+    }
+    // the box may change while the request runs: only the text that was scheduled is cleared
+    const key = draftFor.current;
+    const sent = area.current?.value ?? '';
+    // while the request runs neither Send nor Send later can fire again (the box still holds the text until the server has it)
+    scheduling.current = true;
+    setSchedulingNow(true);
+    try {
+      await scheduledStore.schedule(channelId, body, at, threadRootId);
+      if (draftFor.current !== key) {
+        writeDraft(key, '');
+        return;
+      }
+      if ((area.current?.value ?? '') === sent) clearBox();
+      setNotice({ tone: 'ok', text: `Scheduled for ${remindWhen(at.toISOString())}.` });
+    } catch (err) {
+      if (draftFor.current === key) setNotice({ tone: 'bad', text: scheduledErrorText(err) });
+    } finally {
+      scheduling.current = false;
+      setSchedulingNow(false);
+    }
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -635,7 +686,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
               <button type="button" className="icon-btn clip" aria-label="Attach a file" title="Attach a file" onClick={() => fileInput.current?.click()}><ClipIcon /></button>
             </>
           ) : null}
-          <button type="button" className="btn primary send" aria-label="Send" disabled={!canSend} onClick={send}><SendIcon /><span>Send</span></button>
+          <span className="sch-split">
+            <button type="button" className="btn primary send" aria-label="Send" disabled={!canSend || schedulingNow} onClick={send}><SendIcon /><span>Send</span></button>
+            {sendLater ? <SendLaterMenu disabled={text.trim() === '' || schedulingNow} onPick={(at) => void scheduleFor(at)} /> : null}
+          </span>
         </div>
       </div>
       {helpOpen ? <SlashHelp who={who} onClose={() => { setHelpOpen(false); area.current?.focus(); }} /> : null}

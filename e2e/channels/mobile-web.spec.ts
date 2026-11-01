@@ -59,7 +59,7 @@ test('drawer, channel, thread sheet, send: no sideways scroll anywhere', async (
     // reply from the sheet with the send button
     const reply = page.getByTestId('thread-view').getByRole('textbox');
     await reply.fill('Approved from my phone.');
-    await page.getByTestId('thread-view').getByRole('button', { name: 'Send' }).click();
+    await page.getByTestId('thread-view').getByRole('button', { name: 'Send', exact: true }).click();
     await expect(page.getByTestId('thread-view').locator('[data-testid="message"]').filter({ hasText: 'Approved from my phone.' })).toBeVisible();
     await page.getByRole('button', { name: 'Close panel' }).click();
     await expect(sheet).toBeHidden();

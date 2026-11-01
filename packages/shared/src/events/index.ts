@@ -46,6 +46,7 @@ export * from './channel.member.removed.ts';
 export * from './files.file.uploaded.ts';
 export * from './files.file.deleted.ts';
 export * from './channel.mention.created.ts';
+export * from './channel.scheduled_message.changed.ts';
 export * from './notifications.notification.created.ts';
 export * from './presence.dnd.changed.ts';
 export * from './reminders.reminder.due.ts';

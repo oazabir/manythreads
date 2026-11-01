@@ -8,6 +8,7 @@ import {
   type ForwardedMessage,
   type MessageAuthor,
   Reaction,
+  ScheduledMessage,
   Thread,
   ThreadFollow,
   type FileSummary,
@@ -161,3 +162,28 @@ export const toThread = (r: ThreadRow): Thread =>
 export type ThreadFollowRow = { person_id: string; thread_root_id: string; created_at: Date };
 export const toThreadFollow = (r: ThreadFollowRow): ThreadFollow =>
   ThreadFollow.parse({ personId: r.person_id, threadRootId: r.thread_root_id, createdAt: r.created_at.toISOString() });
+
+export type ScheduledRow = {
+  id: string;
+  channel_id: string;
+  thread_root_id: string | null;
+  body: string;
+  send_at: Date;
+  state: string;
+  refused_reason: string | null;
+  refused_at: Date | null;
+  created_at: Date;
+};
+export const SCHEDULED_COLUMNS = 'id, channel_id, thread_root_id, body, send_at, state, refused_reason, refused_at, created_at';
+export const toScheduledMessage = (r: ScheduledRow): ScheduledMessage =>
+  ScheduledMessage.parse({
+    id: r.id,
+    channelId: r.channel_id,
+    threadRootId: r.thread_root_id,
+    body: r.body,
+    sendAt: r.send_at.toISOString(),
+    state: r.state,
+    refusedReason: r.refused_reason,
+    refusedAt: iso(r.refused_at),
+    createdAt: r.created_at.toISOString(),
+  });

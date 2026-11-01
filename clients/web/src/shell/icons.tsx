@@ -131,6 +131,19 @@ export const SendIcon = () => (
     <path d="M2.5 8 13.5 2.5 9 13.5 7.4 9z M7.4 9l6.1-6.5" />
   </Svg>
 );
+/** A small caret pointing up: the "more ways to send" button beside Send, whose menu opens upward. */
+export const ChevronUpIcon = () => (
+  <Svg size={14}>
+    <path d="m4 10 4-4 4 4" />
+  </Svg>
+);
+/** A clock face: scheduled messages. */
+export const ClockIcon = () => (
+  <Svg size={14}>
+    <circle cx="8" cy="8" r="5.5" />
+    <path d="M8 5v3.2l2 1.3" />
+  </Svg>
+);
 export const ArrowDownIcon = () => (
   <Svg size={14}>
     <path d="M8 3v9M4 8.5l4 4 4-4" />

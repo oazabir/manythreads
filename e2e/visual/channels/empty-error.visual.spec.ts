@@ -55,7 +55,7 @@ for (const [size, viewport, mobile] of [
       await expect(page.getByText('This is the start of #quiet.')).toBeVisible();
       await page.route('**/api/channels/*/messages', (route) => (route.request().method() === 'POST' ? route.abort() : route.continue()));
       await page.getByRole('textbox', { name: 'Message #quiet' }).fill('Is the rota final?');
-      await page.getByRole('button', { name: 'Send' }).click();
+      await page.getByRole('button', { name: 'Send', exact: true }).click();
       await expect(page.getByText('Not sent ·')).toBeVisible();
       await expectWireframe(page, `not-sent-${size}`, order);
     } finally {

@@ -13,14 +13,15 @@ import { DESKTOP, MOBILE, expectWireframe, openPage } from '../support/vt.ts';
 let stack: Stack;
 let files: { pdf: string; big: string };
 test.skip(({ isMobile }) => isMobile, 'the spec sets its own viewports');
-test.beforeAll(async () => {
+// A fresh stack per test: the files plugin numbers a repeated name in a folder ("incident-review (2).pdf"), so the second test would draw a different name.
+test.beforeEach(async () => {
   stack = await startStack({ MANYTHREADS_STACK_SEED: 'content', MANYTHREADS_CLOCK: 'fixed' });
   const dir = mkdtempSync(join(tmpdir(), 'mt-composer-'));
   files = { pdf: join(dir, 'incident-review.pdf'), big: join(dir, 'big.zip') };
   writeFileSync(files.pdf, Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(2_200_000, 0x20)]));
   writeFileSync(files.big, Buffer.alloc(51 * 1024 * 1024)); // over the 50 MB limit: refused before a byte is sent
 });
-test.afterAll(async () => {
+test.afterEach(async () => {
   await stack?.stop();
 });
 

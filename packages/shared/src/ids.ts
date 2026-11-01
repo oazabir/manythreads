@@ -92,6 +92,10 @@ export type NotificationId = z.infer<typeof NotificationId>;
 export const LaterItemId = z.uuid().brand<'LaterItemId'>();
 export type LaterItemId = z.infer<typeof LaterItemId>;
 
+/** One message a person scheduled to be sent later (P14-05). */
+export const ScheduledMessageId = z.uuid().brand<'ScheduledMessageId'>();
+export type ScheduledMessageId = z.infer<typeof ScheduledMessageId>;
+
 // Phase 5: approvals.
 
 export const ApprovalId = z.uuid().brand<'ApprovalId'>();

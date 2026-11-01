@@ -21,7 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ALL = [omar, nadia, rafi, sameera, tariq, priya, lena] as const;
-const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs'];
+const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs', 'scheduled_messages'];
 
 let db: TestDatabase;
 let appPool: pg.Pool;
@@ -381,6 +381,67 @@ describe('stars and sidebar preferences are one person\'s own (migration 0011)',
     await as(rafi, (tx) => tx.query("UPDATE app.sidebar_prefs SET sort = 'recent' WHERE person_id = $1", [nadia.personId]));
     expect((await q<{ sort: string }>(nadia, 'SELECT sort FROM app.sidebar_prefs'))[0]?.sort).toBe('name');
     expect(await code(as(nadia, (tx) => tx.query("UPDATE app.sidebar_prefs SET sort = 'size' WHERE person_id = $1", [nadia.personId])))).toBe('23514');
+  });
+});
+
+describe('scheduled messages are their author\'s own (migration 0013)', () => {
+  const schedule = (p: Persona, channelId: string, who: Persona = p, state = 'scheduled'): Promise<{ rows: { id: string }[] }> =>
+    as(p, (tx) =>
+      tx.query<{ id: string }>(
+        `INSERT INTO app.scheduled_messages (workspace_id, channel_id, author_id, body, send_at, state)
+         VALUES ($1, $2, $3, 'later', now() + interval '1 hour', $4) RETURNING id`,
+        [omar.workspaceId, channelId, who.actorId, state],
+      ),
+    );
+  let mine = '';
+
+  it('a person schedules as themself into a channel they may post in, and only a waiting message', async () => {
+    mine = (await schedule(nadia, ch['eng-general']!)).rows[0]!.id;
+    expect(await code(schedule(nadia, ch['eng-general']!, rafi))).toBe('42501');       // as someone else
+    expect(await code(schedule(nadia, ch['eng-leads']!))).toBe('42501');               // a private channel she is not in
+    expect(await code(schedule(sameera, ch['eng-general']!))).toBe('42501');           // another team's channel
+    expect(await code(schedule(lena, ch['eng-general']!))).toBe('42501');             // a guest cannot post
+    expect(await code(schedule(nadia, ch['eng-general']!, nadia, 'refused'))).toBe('42501'); // nobody but the system marks one refused
+  });
+
+  it('only the author reads, edits or removes it; an admin does not', async () => {
+    expect((await q(nadia, 'SELECT id FROM app.scheduled_messages')).map((r) => r['id'])).toEqual([mine]);
+    expect(await q(rafi, 'SELECT 1 FROM app.scheduled_messages')).toEqual([]);
+    expect(await q(omar, 'SELECT 1 FROM app.scheduled_messages')).toEqual([]);
+    expect((await as(rafi, (tx) => tx.query("UPDATE app.scheduled_messages SET body = 'mine' WHERE id = $1", [mine]))).rowCount).toBe(0);
+    expect((await as(omar, (tx) => tx.query('DELETE FROM app.scheduled_messages WHERE id = $1', [mine]))).rowCount).toBe(0);
+    expect((await as(nadia, (tx) => tx.query("UPDATE app.scheduled_messages SET body = 'edited', send_at = now() + interval '2 hours' WHERE id = $1", [mine]))).rowCount).toBe(1);
+  });
+
+  it('an edit changes only the text and the time: not the channel, the author or the state', async () => {
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.scheduled_messages SET channel_id = $2 WHERE id = $1', [mine, ch['eng-releases']])))).toBe('23514');
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.scheduled_messages SET author_id = $2 WHERE id = $1', [mine, rafi.actorId])))).toBe('23514');
+    // the team the events name is copied when the message is scheduled and never changes
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.scheduled_messages SET team_id = $2 WHERE id = $1', [mine, rafi.actorId])))).toBe('23514');
+    expect(await code(as(nadia, (tx) => tx.query("UPDATE app.scheduled_messages SET state = 'refused', refused_reason = 'x', refused_at = now() WHERE id = $1", [mine])))).toBe('42501');
+  });
+
+  it('the system marks a message refused (the reason is required) and still reads every row', async () => {
+    expect(await code(sys((tx) => tx.query("UPDATE app.scheduled_messages SET state = 'refused' WHERE id = $1", [mine])))).toBe('23514');
+    await sys((tx) => tx.query("UPDATE app.scheduled_messages SET state = 'refused', refused_reason = 'This channel is archived', refused_at = now() WHERE id = $1", [mine]));
+    expect((await sys((tx) => tx.query('SELECT 1 FROM app.scheduled_messages'))).rows.length).toBe(1);
+    // the author edits it back to waiting: the reason goes with it
+    await as(nadia, (tx) => tx.query("UPDATE app.scheduled_messages SET state = 'scheduled', refused_reason = NULL, refused_at = NULL WHERE id = $1", [mine]));
+    expect((await q<{ state: string }>(nadia, 'SELECT state FROM app.scheduled_messages'))[0]?.state).toBe('scheduled');
+  });
+
+  it('holds at most 100 per person, however the inserts arrive', async () => {
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.scheduled_messages (workspace_id, channel_id, author_id, body, send_at)
+         SELECT $1, $2, $3, 'bulk', now() + interval '1 day' FROM generate_series(1, 99) g`,
+        [omar.workspaceId, ch['eng-general'], nadia.actorId],
+      ),
+    );
+    expect(await code(schedule(nadia, ch['eng-general']!))).toBe('23514');
+    expect(await code(schedule(rafi, ch['eng-general']!))).toBeUndefined();   // another person's count is their own
+    await as(nadia, (tx) => tx.query('DELETE FROM app.scheduled_messages'));
+    expect(await q(nadia, 'SELECT 1 FROM app.scheduled_messages')).toEqual([]);
   });
 });
 

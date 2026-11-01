@@ -13,6 +13,7 @@ export * from './file.ts';
 export * from './notification.ts';
 export * from './notification-level.ts';
 export * from './later.ts';
+export * from './scheduled-message.ts';
 export * from './presence.ts';
 export * from './presence-time.ts';
 export * from './repo.ts';

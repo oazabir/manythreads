@@ -62,6 +62,7 @@ The channel directory (`GET /api/teams/:slug/channels`) lists `kind = 'channel'`
 | `channel_template_syncs` | S: teams whose template channels were created (see below). |
 | `channel_stars` | A person's starred channels (migration `0011`): `(person_id, channel_id)` primary key. P: a person reads, adds and removes only their own rows, and stars only a channel they can read. The row goes with the channel or the person. |
 | `sidebar_prefs` | A person's sidebar view of one team (migration `0011`): `(person_id, team_id)` primary key, `sort` (`team`, `recent` or `name`), `hide_idle`, `group_order` (group ids). P: own row only, for a team the person can read. |
+| `scheduled_messages` | A person's messages waiting to be sent (migration `0013`, P14-05). P: a person reads, adds, changes and deletes only their own rows, and adds one only to a channel they can post in. See [Scheduled send](#scheduled-send-p14-05). |
 
 Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and passes `findRlsViolations` and `findPerRowPolicyCalls` (`pnpm test:rls`).
 
@@ -84,6 +85,7 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 | `POST .../messages/:messageId/unread` | "Mark unread from here": moves **your own** read position back to just before this message (the message before it in the same feed, or "nothing read" for the first), so it and everything after it count as unread again. For a reply the thread's position moves, otherwise the channel's. Answers the new read state (`ReadStateEntry`). 403 for a channel you cannot read, 404 missing message, 409 deleted message. Nothing is sent to anybody else. |
 | `GET/POST .../bookmarks`, `DELETE .../bookmarks/:bookmarkId` | The channel's bookmarks bar, below. |
 | `GET/PUT /api/teams/:slug/sidebar-prefs` | The caller's own sidebar view of a team: starred channels, sort, "hide idle channels", order of the groups. See [Your own sidebar](#your-own-sidebar-p14-15). |
+| `GET/POST /api/channels/:channelId/scheduled-messages`, `PATCH/DELETE .../scheduled-messages/:scheduledId`, `GET /api/scheduled-messages` | The caller's own scheduled messages: list in a channel, schedule (text only), edit text or time, cancel, and the list of every channel (the "Not sent" list). See [Scheduled send](#scheduled-send-p14-05). |
 | `POST .../messages/:messageId/reactions` `{ emoji }`, `DELETE .../reactions/:emoji` | Add or take back your reaction (needs the post permission to add). Both answer the message's reaction summary. |
 | `POST /api/presence` `{ status? }`, `GET /api/presence` | The heartbeat (`online`, the default, or `away`; clients send one every 30 s) and who has beaten in the last 90 s (a guest sees only themself). Presence is read by polling; nothing is pushed. 120 per minute. |
 | `POST /api/channels/:channelId/typing` `{ threadRootId? }`, `GET .../typing` | "I am typing here" (needs the post permission; 409 in an archived channel): the row lives 5 s and the response says until when. The listing answers who is typing now, not the caller. Sending a message deletes the sender's row. 120 per minute. |
@@ -180,6 +182,18 @@ A star on a channel the person can no longer read, or that was archived, is not 
 
 Tests: `packages/plugins/channels/test/sidebar-prefs.test.ts` (routes), the `stars and sidebar preferences` block in `test/rls/channels-plugin.test.ts` (row level security), `clients/web/test/sidebar-layout.test.ts` and `sidebar-prefs-store.test.ts`.
 
+## Scheduled send (P14-05)
+
+A person can write a message now and have it posted later, as themself. The send button has a small button beside it ("Send later") with the times "Remind me" offers (20 minutes, 1 hour, tomorrow morning, next week) and "Pick a date and time...". Above the box, a strip says "2 scheduled" with each message, its time, **Edit** and **Cancel**; it is drawn only while there is something to show. It works in the channel box and in a thread's reply box (the strip of a thread shows that thread's messages).
+
+- **Table.** `scheduled_messages` (migration `0013`): `author_id`, `channel_id`, `team_id` (copied from the channel when it is scheduled, so an event can name the team even when the author can no longer read the channel), `thread_root_id` (no foreign key: a deleted root is found out at send time), `body` (1 to 40,000 characters, text only: no files, no slash commands), `send_at`, `state` (`scheduled` or `refused`), `refused_reason`, `refused_at`, `attempts`, `retry_at` (set while the post door asked to try again later). Policy (person-owned): every row is read, changed and deleted only by `author_id = app.actor()`; an insert needs the author to be the caller (a person, not a bot), the channel to be one they can post in (`app.visible_channel_ids('post')`) and `state = 'scheduled'`. A person can never mark a row `refused`: only the system job does. A guard trigger lets a person change only the text, the time and the retry fields (never the channel, the author or the team). A trigger refuses a 101st waiting message for one person (a lock makes the count safe under parallel requests).
+- **Routes** (person only: a bot gets 403; 60 new schedules and 120 of every other call a minute). Scheduling needs the post permission and a time between now (a minute of clock difference is allowed) and one year ahead; 400 otherwise, with a sentence saying which. Editing a `refused` message with a new time puts it back to `scheduled` and starts its counters over. Listing (in a channel, or `GET /api/scheduled-messages` for every channel, newest 200) and cancelling need **no right to read or post in the channel**: a draft whose author lost access must stay findable and removable (and must not hold one of the 100 places for ever). Cancelling answers `{ cancelled }` and is safe to repeat. Editing needs the post permission, so a person who lost access can copy the text and dismiss the draft but not reschedule it.
+- **The job.** `channels.send_scheduled` runs every minute, one run at a time (`concurrency: 1`), as a *detached* job: it holds no transaction open, but lists the due rows a page of 100 at a time (each page after the last row of the one before) and goes on page after page until nothing is due or 45 seconds are spent (the next minute takes the rest). A message goes out within about a minute after its time. For each due row it opens a transaction **as the author**, locks the row (`FOR UPDATE SKIP LOCKED`, so two replicas never take the same one, and a row that an edit or a cancel is changing is left to that edit or cancel), posts through the same function the composer uses (`postChannelMessage`), deletes the row and records the event, all in one transaction. A failure rolls everything back, so a message is posted once or not at all. A row whose handling throws is counted and passed over: it never holds up the rows after it.
+- **The check at send time.** Because the post is made as the author, the normal rules run again: the author must still see the channel and be allowed to post (a person who left a private channel, was suspended, or lost the post permission is refused), the channel must not be archived, and a thread root must still exist and not be deleted. A refusal (a 4xx) turns the row into `refused` with the door's reason in plain words (never empty); the message is **not lost**: it stays in the channel's strip as "Not sent. <reason>" and in the "Not sent" list at the top of Later, to edit and schedule again or to dismiss, and the author's open tabs are told. The update that marks a refusal is tied to the row as the send read it (`updated_at`), so an edit made while the send was failing is never overwritten. A failure that may pass (database busy) is retried on the next minute, counted, and on the third refused with a general sentence. A **429** from the door ("busy, try later") is not a refusal and is not counted: the row waits until the time the door named (`retry-after`, one minute when absent, at most an hour), and is refused with a sentence only after a whole day of waiting.
+- **Event.** `channel.scheduled_message.changed` with `change` `scheduled`, `edited`, `sent`, `refused` or `cancelled`. It carries ids only (no text, no time, no reason), and the team is read from the row. A sent or cancelled row is deleted; this event log is the record of it. (A notification for a refused message is not built yet; the `refused` event is there for it, and the strip and the "Not sent" list show the reason meanwhile.)
+- **Client.** The send button has a small button beside it (hidden while "Also send to channel" is ticked in a thread, which a scheduled reply would drop; and while a request is out, so Send and Send later cannot both fire). The strip above the box lists the channel's scheduled messages, including replies scheduled into its threads ("In a thread"); a thread's own box lists that thread's. The "Not sent" list at the top of the Later tab shows every refused message of the person, from any channel, with Copy text, Edit and reschedule, and Dismiss. An edit sends the time only when the time field was changed.
+- **Limits.** Text only; 100 waiting messages per person; at most one year ahead; about one minute of precision.
+
 ## Author names (`ChannelMessage.author`)
 
 `people` and `actors` show a caller only their own row and a guest has no roster, so a client could not name the author of a message (it showed "Someone"). Every `ChannelMessage` the
@@ -257,6 +271,7 @@ Schema version 1, in `packages/shared/src/events`, written as the acting person 
 | `channel.channel.archived` | `archived` (true to archive, false to restore) |
 | `channel.member.added`, `channel.member.removed` | `personId, self` (the audit trail of who sees a private channel) |
 | `channel.mention.created` | `messageId, threadRootId, authorId, kind, mentionedId` (actor id), `personId` (see Mentions) |
+| `channel.scheduled_message.changed` | `scheduledId, authorId, change` (`scheduled`, `edited`, `sent`, `refused` or `cancelled`), `messageId` (set on `sent`). Ids only: no text, no time, no reason (the event log is readable by the team; a scheduled message is private to its author). |
 
 The plugin consumes `team.template.applied`.
 
@@ -281,6 +296,7 @@ Envelope `{ type, id, payload }`; schemas in `packages/shared/src/api/channels/r
 | `reaction.changed` | `{ channelId, messageId, actorId, emoji, added, count }` |
 | `channel.created` | `{ channel }` (also sent by direct-messages when a DM is made) |
 | `typing.started` | `{ channelId, personId, threadRootId, expiresAt }`, to the audience except the typist |
+| `scheduled.changed` | `{ channelId, change }` (`change` as in the event above), to the author only: another tab, or the job that sent or refused the message, tells this one to read the list again |
 
 ## Unread and links (the kernel services)
 
@@ -330,9 +346,9 @@ on the copy. Editing a message that carries an Answer is refused (409): the text
 | Field | Value |
 |---|---|
 | name / version / kind | `channels` / `0.1.0` / `server` |
-| extends | `event.emit`, `event.subscribe`, `provider.messages` (uses, without extending, the teams plugin's `role.groups` provider) |
+| extends | `event.emit`, `event.subscribe`, `job.register`, `provider.messages` (uses, without extending, the teams plugin's `role.groups` provider) |
 | capabilities | `messages.post`, `messages.update` (neither destructive) |
-| events | emits the ten types above, consumes `team.template.applied` |
+| events | emits the eleven types above, consumes `team.template.applied` |
 | migrations | `migrations` |
 
 ## Tests
@@ -341,4 +357,5 @@ on the copy. Editing a message that carries an Answer is refused (409): the text
 `test/mentions.test.ts` (parsing, resolution, edits, links), `test/role-mentions.test.ts` (role groups: holders, collisions, private channels, edits, the picker route), `test/ephemeral.test.ts` (presence, typing, expiry), `test/plain.test.ts`, `test/rls/channels-plugin.test.ts` (`pnpm test:rls`: per persona visibility, policies, guards, definer functions, the audience equals the visible sets),
 `test/events/channels-events.test.ts` (`pnpm test:events`), `e2e/api/messages/{rls,pagination}.spec.ts` (`pnpm e2e --project=api`; the specs use two test-only routes of `test-kernel`:
 `/api/test/bulk-messages` and `/api/test/channel-grants`, both run as the caller).
+Scheduled send: `test/scheduled-send.test.ts` (routes, bot 403, the job and its clock, refusals at send time: archived channel, left channel, deleted thread root, suspended author, a failure counted to three, a row held by an edit or cancel, a direct message with a null team, the cap, a content-blind event log), `test/scheduled-job.test.ts` (no database: one bad row, a 429, an empty reason, the tie to `updated_at`, paging, the time budget), `packages/shared/test/scheduled.test.ts`, `clients/web/test/scheduled.test.ts` (the client's copy, including a forced re-read) and `e2e/channels/scheduled.spec.ts` (the menu with the keyboard and Escape, the strip, the phone).
 Web client: `clients/web/test/new-channel.test.ts` (who is offered New channel, the cleaned name and request, one sentence per refusal, the unread look per notification level) and `e2e/shell/new-channel.spec.ts` (a lead makes a public and a private channel through the dialog, a member is not offered it, a second person sees the row bold with a count and opening clears it, a "nothing" channel keeps a grey count).

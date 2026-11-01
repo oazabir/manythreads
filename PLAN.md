@@ -4,7 +4,7 @@ Phase-wise build plan for Claude as orchestrating coding agent. Contract: `SPEC-
 
 ## 1. Purpose
 
-Build the spec in eighteen phases. Phases 1–11 and 14–18 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
+Build the spec in nineteen phases. Phases 1–11 and 14–19 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. Phase 19 (added 2026-11-01) lets a team run its bots on a Claude Code pod in k3s from an uploaded sign-in file. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
 
 ## 2. How to use
 
@@ -124,17 +124,18 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
 | 7 | 14 | Messaging parity and moving in | XL | 6 | 5 of 23 built, 10 partly |
-| 8 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
-| 9 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
-| 10 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
-| 11 | 16 | Connectors to the tools a company already uses | XL | 15 | 0 of 12 built |
-| 12 | 9 | Surfaces | M | 16 | 0 of 9 built |
-| 13 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 | 0 of 12 built |
-| 14 | 18 | Workflow automation and a team that runs itself | XL | 17 | 0 of 14 built |
-| 15 | 10 | Onboarding, admin and deployment | L | 18 | 3 of 16 built, 11 partly |
-| 16 | 11 | Mobile client | L | 10 | 0 of 10 built |
-| 17 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 0 of 8 built |
-| 18 | 13 | Screenshot UI review | M | 12 | 0 of 11 built |
+| 8 | 19 | A team's own Claude Code pod | L | 6, 14 | 0 of 9 built |
+| 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
+| 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
+| 11 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
+| 12 | 16 | Connectors to the tools a company already uses | XL | 15 | 0 of 12 built |
+| 13 | 9 | Surfaces | M | 16 | 0 of 9 built |
+| 14 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 | 0 of 12 built |
+| 15 | 18 | Workflow automation and a team that runs itself | XL | 17 | 0 of 14 built |
+| 16 | 10 | Onboarding, admin and deployment | L | 18 | 3 of 16 built, 11 partly |
+| 17 | 11 | Mobile client | L | 10 | 0 of 10 built |
+| 18 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 0 of 8 built |
+| 19 | 13 | Screenshot UI review | M | 12 | 0 of 11 built |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
@@ -146,7 +147,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-10-31)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **97 of 281 tasks (the 280 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 147 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **97 of 290 tasks (the 289 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 156 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -170,6 +171,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 16 · Connectors to the tools a company already uses | 0 | 0 | 12 | 0 |
 | 17 · Video calls, screen sharing and the meeting assistant | 0 | 0 | 12 | 0 |
 | 18 · Workflow automation and a team that runs itself | 0 | 0 | 14 | 0 |
+| 19 · A team's own Claude Code pod | 0 | 0 | 9 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -541,6 +543,20 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P18-12 | Personal assistant (Hermes parity): each person may have their own … | Not built |  | no templates/personal, no per-person bot flow; bridges (P16-09) absent too |
 | P18-13 | Automation analytics: per recipe runs, failures, approval wait … | Not built |  | no plugins/analytics plugin |
 | P18-14 | Seed v18, event contracts, docs per recipe with every YAML tested … | Not built |  | nothing exists for this row |
+
+### Phase 19 · A team's own Claude Code pod — 0 built, 0 partly, 9 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P19-01 | Spike: does a sign-in file with only `claudeAiOauth` run `claude` in a pod, does a refresh there break the source machine's copy, the egress host list … | Not built | - (tried 2026-11-01 on the devbox; the tool-permission classifier refused to copy a credential to a scratch folder, so nothing is measured) | `docs/spikes/claude-pod.md`; needs a second Claude login, never the owner's working one |
+| P19-02 | The image and the pod: `claude` pinned, the agent bridge as entry point, per-team Deployment, Service, volumes, NetworkPolicy, Helm values … | Not built | tools/agent-bridge (the bridge runs by hand on the host: docs/agent-bridge.md); packages/plugins/hermes-pods (the pattern to follow) | no `deploy/images/claude-pod`, no `claude-pods` plugin, no `app.claude_pods` |
+| P19-03 | Sign-in upload (only `claudeAiOauth` kept, in the browser and again on the server), the check on save, keeping the file fresh (one refresher) … | Not built | tools/agent-bridge/src/runs.ts (the child's environment already passes `CLAUDE_CONFIG_DIR`) | no upload route, no keeper, no refresh gate, no whitelist |
+| P19-04 | The `claude` connection the platform registers, the Run on Claude Code switch, the subscription rules enforced where a run starts … | Not built | packages/plugins/runtime-hermes/src/connections.ts (a managed connection can only be `hermes`; `resolveTarget` has two kinds) | no `claude` kind, no switch, no trigger rule, no flag for platform-triggered runs (D9) |
+| P19-05 | Choosing the node: list of allowed nodes, `nodeSelector`, Waiting and Moving states, the one read-only cluster permission … | Not built | - (the server's role is namespace-only; the devbox cluster has one node, `ubuntu-vm`, and `local-path` volumes) | no node route, no ClusterRole, no picker |
+| P19-06 | Work volume, repositories and publishing from the Claude pod … | Not built | packages/plugins/hermes-pods/src/render.ts (repo list, publishers) | no clones, no publishing helper in the pod |
+| P19-07 | The settings page Claude Code: steps, upload, status, test, replace, remove, node, concurrency, bots on it … | Not built | - | no screen |
+| P19-08 | Engineering template option, `claude-pod-fake` stand-in CLI, Seed v19, docs, retro … | Not built | - | no template step, no fake CLI image, no seed |
+| P19-09 | Security proof and the live run with the owner's own file: egress, canary, DLP shapes, Role scope, refresh under load, screenshots … | Not built | - | no spec |
 
 ---
 
@@ -2375,6 +2391,83 @@ Omar installs the stand-up and incident recipes as proposals, Rafi runs an incid
 
 ---
 
+# Phase 19 · A team's own Claude Code pod
+
+Goal: a team lead uploads the Claude Code sign-in file from a machine where Claude Code already works, picks the k3s node, and the team's bots can then do their work with the `claude` command-line tool in a pod the platform runs, instead of a program somebody installs and keeps running on a laptop or on the devbox host. Size L. Spec §10.3, §7.1, §11; guide §7. Added 2026-11-01. It builds on the agent bridge (`tools/agent-bridge`; today run by hand: `docs/agent-bridge.md`), the team pods of `hermes-pods` (P6-00, P10-08) and the subscription rules of P10-03 (the workspace flag and the label are built here if P10-03 is not built yet).
+
+**What exists and what is missing.** The bridge already speaks the run API, starts one `claude` process per run in a chosen folder, gives it the bot's tools as an MCP server with a token that opens only that run, and an `agent: claude-code` connection already sends runs to it. Missing: a pod that holds the bridge and the CLI, a way to give the pod a sign-in and keep it valid, a way to choose where it runs, a connection the platform registers itself (the outbound guard refuses an in-cluster address typed by hand, and a managed connection can only be `hermes`), and the screen.
+
+**Decisions made in this phase (binding unless the owner changes them).**
+1. **One pod per team** (`<team>-claude`, in the pods namespace), **one sign-in per pod.** The person who uploaded it is its **owner**, shown by name with their plan ("Omar's Max plan"). That is spec §10.3's "bound to one person".
+2. **Only the `claudeAiOauth` part of the file is kept.** `~/.claude/.credentials.json` also holds `mcpOAuth`: sign-in tokens for every other tool that person connected (on the devbox host today: fourteen services, among them Notion, Slack, Linear, Figma and Atlassian). Those must never reach the platform. The browser filters before sending, the server accepts only the whitelisted shape (unknown keys are refused, never stored), and the pod writes only that part.
+3. **The live sign-in file lives in the pod's own Secret and volume, not in the database.** The CLI rewrites the file when it refreshes the access token, so the pod must hold the newest copy; the database keeps metadata only (owner, plan, expiry, uploaded at).
+4. **The node is a `nodeSelector` on `kubernetes.io/hostname`.** The k3s `local-path` storage class (volume binding `WaitForFirstConsumer`) pins a volume to the node that first runs the pod, so moving the pod recreates the work volume (repositories are cloned again); the sign-in survives because it is a Secret.
+5. **One refresher at a time.** Several `claude` processes sharing one sign-in file near its expiry can each try to refresh; if the refresh token is single-use, all but one fail. The bridge lets exactly one refresh while new runs wait.
+6. **Where the tool may go is limited by the network, not by trust.** A run with the `shell` grant can read the sign-in file (it has to be readable by the CLI). So the pod's egress is limited to the hosts the CLI needs, the platform's MCP address and the team's git hosts, and `shell` goes only to bots the lead trusts (the same rule as on the host).
+
+**D9 · open, needs the owner (a conflict with spec §10.3).** §10.3 says a subscription runtime is bound to one person and is **never** used for anything the platform triggers: routines, heartbeats, inbox watches and `task_assigned` always use the gateway, and the gateway's pre-call guard is bypassed. The Engineering chain's hand-offs and bot-to-bot mentions are platform-triggered, so as the spec stands they cannot run on the Claude pod. The owner's request of 2026-11-01 ("allow bots to use the Claude CLI pod to perform tasks") reads like option B below, but it overrides a spec rule, so it is recorded here and not assumed. Options: **A** keep §10.3: a Claude-pod bot answers only a `conversation` or `mention` from the sign-in's owner; hand-offs, routines and other people's messages are refused with one plain line and use the team's model. **B** a second workspace flag, **Allow platform-triggered runs on a subscription** (off by default; the workspace owner accepts the provider's terms when turning it on, as for the first flag), lets Claude-pod bots take hand-offs, bot mentions and routines; the cost is that the plan's own usage limits are reached sooner and the use is automated, which the provider's terms must allow. **C** use a Console API key (`ANTHROPIC_API_KEY`, which the bridge already passes on) instead of a subscription for chain work: not bound to a person, metered, but it also bypasses the LLM gateway and needs its own spend view (a follow-up task). **Recommendation: build A as the default and B behind its flag; the flag stays off until the owner writes the D9 decision here.**
+
+### 0 · Reflect and refactor
+
+Re-read P6-00, P10-03, P10-08, P14-21 and P14-22. Prompts:
+- The Hermes pod controller and this one share the Kubernetes client, server-side apply, scale-to-zero, name resolution and the namespace checks. Extract those once (a small shared module both plugins import) before writing the second controller.
+- The repository list, the prefix allow-list and the project push credential are read for the Hermes pod; the Claude pod must read them through the same function, not a copy.
+- The bridge starts a fresh process per run, so a changed tool list or `BOT.md` is always seen (P14-22 does not apply). Confirm with one test and say so in `docs/agent-bridge.md`.
+
+Refactor with tests green; write `docs/retro/phase-19.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P19-01 | **Spike (the rest of the phase changes with its answers): `docs/spikes/claude-pod.md`.** Run with a **second Claude login made for this test, never the owner's working one** (a refresh in the pod may invalidate the copy it came from). Questions, each with pass or fail: (a) does a config folder holding only `{ "claudeAiOauth": … }` (no `.claude.json`, no history) run `claude -p` and `--restricted`, with `HOME` read-only and the folder writable? (b) when the pod's copy refreshes, is the refresh token replaced, and does the source machine's copy stop working (and the reverse)? (c) three processes started at once with a sign-in that expires in a minute: does the second refresh fail? (d) which hosts does `claude -p` call (the API host, the host that refreshes the token, telemetry, update checks)? Start from a deny-all egress policy and add hosts one at a time; also try the variables that switch off non-essential traffic; the result is the NetworkPolicy list of P19-02. (e) On macOS the sign-in is in the Keychain and there is no file: what exactly does the owner export, and does `claude setup-token` give a long-lived token the pod can use with no refresh at all (it decides whether P19-03 offers a second input)? (f) memory and start time of one run, to size requests, limits and the default concurrency. (g) what the CLI prints when the plan's limit is reached, to map it to a plain failure. **Not measured yet:** on 2026-11-01 the question (a) was tried on the devbox and the tool-permission classifier refused to copy a credential into a scratch folder; the owner (or a session the owner allows) runs it. | `docs/spikes`, `tools/agent-bridge` | §10.3 | Sonnet |
+| P19-02 | **The image and the pod.** `deploy/images/claude-pod`: Node 22, `claude` pinned by a build argument (2.1.316 is what the devbox runs), the bridge as entry point, git, CA certificates; runs as a non-root user; read-only root; writable `/state` (the sign-in folder and `sessions.json`), `/work` and `/tmp`. New plugin `packages/plugins/claude-pods`: a reconciler built like `hermes-pods` (about twenty seconds after start, every 30 seconds, two seconds after a change; server-side apply; never deletes a volume; scale 0 when there is no sign-in or no bot placed on it) that writes the Deployment, a ClusterIP Service on 8650, PVCs `<team>-claude-state` (256 Mi) and `<team>-claude-work` (10 Gi, a Helm value), the Secret `<team>-claude-key` (the bridge's API key, drawn once), the Secret `<team>-claude-credentials` (P19-03) and a ConfigMap with the bridge's `config.json` (one profile per placed bot: its `workdir`, `modelAliases`, the "where you run" `instructions`, `maxConcurrentRuns` from the page, default 2). **NetworkPolicy:** ingress only from the server pod; egress only DNS, the server's MCP address, the hosts P19-01 found and the team's git hosts. No ServiceAccount token reaches the run container. Helm values `claudePod.{enabled, image, allowedNodes, workSize, egressHosts, defaultConcurrency}`, **off by default**; the chart test shows what the server's role may do (`kubectl auth can-i`) and docs list every added permission. Table `app.claude_pods` (A.12) as a triple with its Zod and mapper. Tests: the rendered objects byte for byte; a second pass changes nothing; no bot placed means 0 replicas; the whole thing against the fake Kubernetes client the `hermes-pods` tests use | `packages/plugins/claude-pods`, `deploy/images/claude-pod`, `deploy/helm`, `packages/shared`, `docs/plugins` | §7.1, §2 | Sonnet; fresh Sonnet review |
+| P19-03 | **The sign-in: upload, keeping it fresh, and the check.** (1) **In the browser:** a file chooser or drop for `.credentials.json` (or a paste); the file is read and parsed in the browser and only `claudeAiOauth.{accessToken, refreshToken, expiresAt, refreshTokenExpiresAt, scopes, subscriptionType, rateLimitTier}` is kept. The summary says what will be sent: "Max plan · 20x · valid until 14:20. 14 other sign-ins in this file were left out; they never left your browser." A file that is not JSON, or has no `claudeAiOauth`, gets a plain message. (2) **On the server:** `PUT /api/teams/:slug/claude-pod/credentials` (lead or workspace admin; JSON only; at most 32 KB; Zod `.strict()` on the whitelisted shape, so an unknown key is refused and nothing of it stored; `scopes` must include `user:inference`; the refresh token must not be past its own expiry; the body is never logged or echoed; `abuseLimit` on the route). It writes the Secret `<team>-claude-credentials` (one key, `.credentials.json`, only the whitelisted part) and the metadata row, never the tokens. (3) **Check on save:** the pod runs one small `claude -p` through the bridge and the page says "Connected as Omar's Max plan", or one of: token rejected, expired and cannot refresh, no inference scope, plan limit reached. Nothing is kept when the check fails. **Test connection** repeats it. (4) **The keeper:** on start the file is copied from the Secret to `/state/claude/.credentials.json` (mode 0600) only when the volume has none or the upload is newer; after the CLI refreshes it, a small **keeper in a second container** copies the file back into the Secret with a ServiceAccount whose Role names that one Secret (`resourceNames`), a token the run container cannot see; the reconciler never writes that Secret's data after an upload (server-side apply field ownership). (5) **The refresh gate in the bridge:** with the file within 20 minutes of expiry, new runs wait, exactly one `claude` probe refreshes, then they are released. (6) A run that gets 401 sets the pod to **Needs sign-in**: a banner, one message to the owner, no retry storm, until a new upload. (7) **Replace** and **Remove** (Remove deletes the Secret and the file on the volume and scales the pod to 0). If P19-01 (b) or (c) shows that a refresh breaks the source copy, the page says so before the upload ("Use a separate Claude login for this pod if you can") and, if (e) allows, takes a `claude setup-token` token as a second input. Tests: **a file that also holds `mcpOAuth` stores none of it** (Secret, API answers, logs); a 5 MB file, deep nesting, `__proto__`, wrong types, a second top-level key and a `scopes` list without inference are each refused; a stand-in `claude` that replaces the refresh token on every refresh and fails a reused one passes with the gate and fails without it; the keeper's Role cannot read any other Secret; a canary string in a token never appears in a log line, event, audit row, run, message or API answer | `packages/plugins/claude-pods`, `tools/agent-bridge`, `deploy/images/claude-pod`, `clients/web/src/screens/claude` | §10.3, §11 | Sonnet; fresh Sonnet review |
+| P19-04 | **The connection and placing a bot on it.** A connection kind `claude` (name `claude`) that **the platform registers itself**, as it does `managed`: address `http://<team>-claude.<namespace>.svc:8650`, agent `claude-code`, key the pod's bridge key (never shown to a person); `resolveTarget` answers it as `kind: 'claude'` with no outbound guard (the guard keeps refusing an in-cluster address that a person types); nobody creates, edits or deletes it by hand. The run extension (the `manythreads` object with the per-run MCP address and token) already exists; its address is the server's in-cluster address. **Bot page:** a switch **Run on Claude Code** (lead only; shown when the pod is Ready) that writes `placement.gateway.connection: claude` into `BOT.md` as a proposal a lead approves, like any change to a bot's definition. **The §10.3 rules, enforced where a run starts and before any process:** by default (D9 option A) a run is allowed only for the triggers `conversation` and `mention` **from the sign-in's owner**; anything else is refused with one plain line ("This bot runs on Omar's Claude subscription and answers only Omar. Routines, hand-offs and other people's messages use the team's model."); the label **subscription · bypasses gateway guard** shows on the bot and on each reply; spend, read from the CLI's usage output, is shown separately. **Option B (D9), off until the owner records it:** the workspace flag **Allow platform-triggered runs on a subscription**, off by default, with the provider's terms text the workspace owner accepts when turning it on. A plan limit reached ends the run with "The Claude plan's limit was reached; it resets at 18:00" (the wording from P19-01 (g)) and posts it once. Content-blind audit events `claude_pod.credentials.uploaded`, `.replaced`, `.removed`, `claude_pod.node.changed`, `claude_pod.run.refused` (contracts in `packages/shared/src/events`). Docs: `docs/plugins/runtime-hermes.md` (agent kinds, the `claude` kind) and `docs/agent-bridge.md` (the pod). Tests: `resolveTarget` for the new kind; each trigger and asker (owner, other person, bot, routine, hand-off) allowed or refused as above with the flag off and on; the label; a refused run starts no process | `packages/plugins/runtime-hermes`, `packages/plugins/claude-pods`, `clients/web/src/screens/agents`, `docs` | §10.3, §7.1 | Sonnet; fresh Sonnet review |
+| P19-05 | **Choosing the node.** `GET /api/claude-pod/nodes` answers the nodes the admin allows (Helm `claudePod.allowedNodes`, default all): name, Ready, free CPU and memory, architecture, and whether this team's work volume is there. It needs a **read-only ClusterRole on `nodes` (`get`, `list`)** for the server's ServiceAccount: the **one cluster-wide permission this phase adds** (until now the role is namespace-only); it is written in the chart and in `docs/plugins/security.md`, and D9 asks the owner to accept it. `PUT /api/teams/:slug/claude-pod/node` (lead or workspace admin) takes a node name or null (null: k3s chooses); a name must be allowed and Ready, and becomes `nodeSelector: kubernetes.io/hostname`. Shown: **Running on `<node>`**, **Waiting: node `<node>` is not Ready** (read from the pod's Pending condition), **Moving**. A move recreates `<team>-claude-work` empty and clones the repositories again; the sign-in Secret and state survive; the dialog says so in plain words and asks to confirm; `claude_pod.node.changed` is written. A one-node install shows its one node and a line saying so (the devbox's is `ubuntu-vm`). Tests: the rendered `nodeSelector`; a node outside the allowlist refused; a NotReady node leaves the pod Pending and the page says why; a move recreates the work volume and keeps the Secret; the ClusterRole cannot update anything (`can-i update nodes` is false). The two-node case runs on a `k3d` cluster in CI if the runner allows it, otherwise on the fake client with a manual check noted in `docs/testing.md` | `packages/plugins/claude-pods`, `deploy/helm`, `clients/web/src/screens/claude`, `docs/plugins/security.md` | §2, §7.4 | Sonnet; fresh Sonnet review |
+| P19-06 | **Work volume, repositories and publishing from the Claude pod.** The pod keeps its own clone of each project at `/work/<bot>/<repo>`, from the same list and the same address prefix allow-list the team's Hermes pod uses (one function, from the reflect step). A branch reaches GitHub only through the same publishing helper and the project's token (P14-21), never to `main`, never with the token in an address or in `argv`; the token is mounted into that helper's container only, not into the run container. The deployer's kubeconfig is not given to this pod (the deployer bot stays on Hermes). `extraAllowedTools` per bot comes from the bridge profile written by P19-02 (for example `Bash(git status)`). Tests: a clone appears within 30 seconds of a project being added; a push to `main` is refused; the token is absent from the run container's environment and mounts | `packages/plugins/claude-pods`, `packages/plugins/projects`, `deploy/images/claude-pod` | §6.1, D5 | Sonnet |
+| P19-07 | **The settings page "Claude Code"** (team settings, next to Connections; leads and workspace admins). Empty state with three steps (find the file on your computer, upload it, pick a node); the upload card of P19-03; a status badge (Not set up, Waiting for sign-in, Starting, Ready, Needs sign-in, Waiting for node, Moving); the owner line with plan and expiry; **Test**, **Replace**, **Remove**; the node picker and the Moving dialog (P19-05); a concurrency stepper (1 to 4, default 2, with the line "A Claude plan has its own limits; more at once reaches them sooner"); the list of bots on the pod, each linking to its switch; the label text. With the subscription flag off the page says an admin turns it on and shows nothing else; on an install with no cluster (compose) it explains that the pod needs the k3s install and links to `docs/agent-bridge.md`. At 390 px, by keyboard, with a live region for status changes; plain-language errors; no plan or phase wording | `clients/web/src/screens/claude`, `clients/web/src/settings` | §10.3, §15 | Sonnet |
+| P19-08 | **Template option, stand-in CLI, seed and docs.** `templates/engineering` gets an optional "Run on Claude Code" step on its onboarding card (`TEAM.md`); no bot's text changes except a placement proposal. `claude-pod-fake`: a stand-in `claude` that speaks Claude Code's `stream-json`, calls the run's MCP endpoint for real and can be told to refresh, fail (401) or hit a limit, used by every test and the gallery; **no real sign-in is ever used in CI**. Seed v19 (a Ready pod, one owner, two bots placed). Docs: `docs/plugins/claude-pods.md`, the pod section of `docs/agent-bridge.md`, the steps for finding the file on Linux, Windows and macOS (from P19-01 (e)), the permissions list, the egress hosts. Retro | `templates/engineering`, `deploy/images/claude-pod-fake`, `e2e/fixtures`, `docs` | guide §6 | Sonnet; Haiku |
+| P19-09 | **Security proof and the live run with the owner's own file.** Egress: from the run container a request to the Kubernetes API, to the metadata address and to a host that is not listed all fail; a bot with `shell` can read the sign-in file (accepted, written in the docs) and has no route that would take it out. The DLP detectors learn the shapes of Anthropic sign-in tokens, applied to every outbound message and to the bridge's final-answer scrub. The sign-in is absent from `kubectl describe`, the container environment and `argv`. A node move and a Remove leave no copy behind. **Live (devbox):** the owner uploads the host's own `.credentials.json`; the page says "Connected as …" and how many other sign-ins were left out; `@coder` on Claude Code answers the owner's mention in a thread and its tool calls reach the platform (it posts, it writes to memory); a hand-off to it is refused with the plain line (option A) or accepted (option B, only if D9 says so); the node is chosen; a refresh is shown with a second login whose expiry was moved. One Playwright live spec with screenshots on the gallery | `e2e/claude`, `e2e/screens`, `packages/plugins/guardrails-dlp`, `deploy/images/claude-pod` | §10.3, §11, §15 | Sonnet; fresh Sonnet review |
+
+**Not in this phase:** a Codex pod (the same pattern, later), a pod per person, GPU or Windows nodes, an API-key credential (option C of D9) and the spend view it needs.
+
+### 2 · UI references
+
+No plates. W baselines: `claude/setup-empty`, `claude/upload-summary`, `claude/ready`, `claude/needs-signin`, `claude/node-picker`, `claude/moving-dialog` at 1440 and 390. Copy: "Upload the sign-in file", "Only the part Claude Code needs is sent. Your other sign-ins stay on your computer.", "Run on Claude Code", "subscription · bypasses gateway guard".
+
+### 3 · Acceptance criteria
+
+1. A lead uploads a real `.credentials.json` that also holds other sign-ins: the pod keeps only `claudeAiOauth` (checked in the Secret, in every API answer and in the logs), and the page says how many sign-ins were left out.
+2. A file the server refuses (too large, wrong shape, a second top-level key, no inference scope) stores nothing and says why in plain words.
+3. After an upload the pod is Ready within two minutes and **Test connection** says "Connected as <name>'s <plan>".
+4. A bot with **Run on Claude Code** on answers the owner's mention in the pod, with the label; its tool calls (post a message, write memory) work. A run from another person, a routine or a hand-off is refused with the plain line **before any process starts** (option A), or accepted only if the flag of option B is on.
+5. The chosen node is the pod's node; a node outside the allowlist is refused; a NotReady node shows "Waiting: node … is not Ready"; a move asks for confirmation, recreates the work volume and keeps the sign-in.
+6. A sign-in within 20 minutes of expiry is refreshed exactly once while four runs wait; all four succeed; the Secret holds the new file; the canary token appears in no log, event, audit row, message or API answer.
+7. A 401 sets "Needs sign-in" and writes one message to the owner; a new upload fixes it without a restart.
+8. From the run container the Kubernetes API and an unlisted host are unreachable; the keeper's Role can read exactly one Secret; the server's new cluster permission can only read nodes.
+9. With the subscription flag off nothing here can be used and the page says an admin turns it on.
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/claude/upload.spec.ts` | the file with `mcpOAuth` → summary, only `claudeAiOauth` stored; each refusal case |
+| `e2e/claude/pod.spec.ts` | upload → Ready (stand-in CLI) → mention by the owner answers; other asker, routine, hand-off refused; flag on, option B accepted |
+| `e2e/claude/node.spec.ts` | picker, node outside the allowlist, NotReady, move keeps the Secret |
+| `e2e/claude/refresh.spec.ts` | four queued runs, one refresh, rotated token accepted once |
+| `e2e/claude/security.spec.ts` | canary, egress, Role scope, DLP shapes |
+
+### 5 · Visual browser tests
+
+The W baselines above.
+
+### 6 · Exit
+
+Omar uploads the devbox host's own `.credentials.json`, sees that the other sign-ins in it were left out, picks the node, switches `@coder` to Claude Code and gets a working reply in a thread that used the platform's tools, shot on the gallery; **D9 is decided and written in this plan**, and the flag of option B is on or off to match it.
+
+---
+
 # Appendix A · Database starting schema
 
 Starting point for phases 1–6 plus outbox, jobs and analytics. Phases refine it by forward-only migrations. Postgres 19, decision D3.
@@ -2556,6 +2649,14 @@ The older `DO UPDATE SET dm_key = EXCLUDED.dm_key` trick writes a dead row versi
 | `meeting_participants` | who was in it and what they allowed | `meeting_id u`, `actor_id u`, `joined_at tz`, `left_at tz?`, `consent_transcribe t`, `consent_record t` (`yes`,`no`,`unasked`) | `(meeting_id)`, `(actor_id)` | as `meetings` | logged |
 | `meeting_segments` | one line of text a device or the fallback wrote | `meeting_id u`, `speaker_id u`, `start_ms int`, `end_ms int`, `text t`, `final bool`, `source t` (`device`,`server`), `lang t?`, `created_at tz` | `(meeting_id, start_ms)`; BRIN `(created_at)` | as `meetings` | logged; pruned by retention after the transcript is written |
 | `meeting_presence` | who is in a live room now, speaking | `meeting_id u`, `actor_id u`, `speaking bool`, `seen_at tz` | PK `(meeting_id, actor_id)` | as `meetings` | **UNLOGGED** |
+
+---
+
+## A.12 · Phase 19 — a team's Claude Code pod
+
+| Table | Purpose | Key columns | Indexes | RLS | Persist |
+|---|---|---|---|---|---|
+| `claude_pods` | one team's Claude Code pod: where it runs and whose sign-in it holds (no token is stored here) | `team_id u` PK, `enabled bool`, `node t?`, `owner_actor_id u?`, `plan_label t?`, `credentials_expires_at tz?`, `uploaded_at tz?`, `max_concurrent int` CHECK 1–4, `status t` CHECK (`not_set_up`, `waiting_for_sign_in`, `starting`, `ready`, `needs_sign_in`, `waiting_for_node`, `moving`), `status_detail t?`, `last_probe_at tz?` | PK | team leads and workspace admins read and write; the sign-in itself is in the pod's Secret, not in any column | logged |
 
 ---
 

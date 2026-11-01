@@ -86,7 +86,7 @@ async function postInChannel(page: Page, team: string, channel: string, body: st
   const box = page.locator('[data-landmark="composer"] textarea').first();
   await expect(box).toBeVisible(T);
   await box.fill(body);
-  await page.locator('[data-landmark="composer"]').first().getByRole('button', { name: 'Send' }).click();
+  await page.locator('[data-landmark="composer"]').first().getByRole('button', { name: 'Send', exact: true }).click();
   const mine = page.getByTestId('message').filter({ hasText: body.slice(0, 40) }).last();
   await expect(mine).toBeVisible(T);
   // the reply link appears once any bot has answered; before that, open the thread from the message's own action
@@ -111,7 +111,7 @@ async function askBot(page: Page, team: string, bot: string, question: string): 
   const box = page.getByRole('textbox', { name: /^Message / }).first();
   await expect(box).toBeVisible(T);
   await box.fill(question);
-  await page.getByTestId('conversation-view').getByRole('button', { name: 'Send' }).click();
+  await page.getByTestId('conversation-view').getByRole('button', { name: 'Send', exact: true }).click();
   const view = page.getByTestId('thread-view').first();
   await expect(view).toBeVisible(T);
   return view;

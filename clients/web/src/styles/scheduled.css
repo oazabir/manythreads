@@ -1,0 +1,227 @@
+/* Scheduled send (PLAN P14-05): the "Send later" button beside Send and the "N scheduled" strip above the composer. Classes are prefixed `sch-`; the
+   composer (`.composer`, `.cinput`, `.send`), the menu (`.menu`, `.menu-item`) and the dialog fields (`.fwd-*`) belong to other stylesheets and are
+   never redefined here. */
+
+/* ---- the button beside Send ---- */
+.sch-split {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.sch-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.sch-more {
+  width: 26px;
+  height: 28px;
+  color: var(--mute);
+}
+
+.sch-more:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sch-more[aria-expanded="true"] {
+  background: var(--nav-on);
+  color: var(--ink);
+}
+
+/* the menu opens upward from the button, right-aligned with it, and never wider than the screen */
+.menu.sch-menu {
+  right: 0;
+  left: auto;
+  width: max-content;
+  min-width: 230px;
+  max-width: calc(100vw - 32px);
+}
+
+.sch-menu-head {
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.menu-item.sch-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sch-when {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.sch-text {
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+/* ---- the strip ---- */
+.sch-strip {
+  flex: none;
+  border-top: 1px solid var(--rule);
+  background: var(--shell);
+}
+
+.sch-strip.bad {
+  background: var(--alert-wash);
+}
+
+.sch-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 20px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sch-head:hover {
+  color: var(--ink);
+}
+
+.sch-head:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: -2px;
+}
+
+.sch-strip.bad .sch-head {
+  color: var(--alert-ink);
+}
+
+.sch-count {
+  font-weight: 600;
+}
+
+.sch-hint {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.sch-list {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0 20px 8px;
+  list-style: none;
+}
+
+.sch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.sch-main {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sch-time {
+  color: var(--human);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.sch-snippet {
+  overflow: hidden;
+  color: var(--txt);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sch-where {
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.sch-unsent {
+  border-top: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sch-unsent-head {
+  margin: 0;
+  cursor: default;
+  font-weight: 400;
+}
+
+.sch-reason {
+  margin: 0;
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+.sch-acts {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.sch-error {
+  margin: 0;
+  padding: 0 20px 8px;
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+/* ---- phone ---- */
+@media (width <= 760px) {
+  .sch-head {
+    min-height: 36px;
+    padding: 6px 14px;
+  }
+
+  .sch-list {
+    padding: 0 14px 8px;
+  }
+
+  .sch-error {
+    padding: 0 14px 8px;
+  }
+
+  /* the text and the two buttons do not fit one line at 390 px: the buttons go under the text */
+  .sch-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .sch-acts .btn {
+    flex: 1 1 auto;
+    min-height: 36px;
+  }
+
+  .sch-more {
+    width: 34px;
+    height: 34px;
+  }
+
+  .menu-item.sch-item {
+    min-height: 40px;
+  }
+}

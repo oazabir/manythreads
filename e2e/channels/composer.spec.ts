@@ -174,7 +174,7 @@ test('attachments: upload with progress, a card for a file or a preview for a pi
     await expect(thumbs).toHaveCount(2);
     expect(await thumbs.first().evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 
-    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(messages(page)).toHaveCount(2);
     const pictures = messages(page).nth(1);
     await expect(pictures.getByTestId('attachment')).toHaveCount(0);

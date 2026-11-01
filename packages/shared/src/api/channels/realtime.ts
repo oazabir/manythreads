@@ -44,3 +44,14 @@ export type ReactionChangedPush = z.infer<typeof ReactionChangedPush>;
 
 export const ChannelCreatedPush = z.object({ channel: Channel });
 export type ChannelCreatedPush = z.infer<typeof ChannelCreatedPush>;
+
+/**
+ * The author's own scheduled messages changed somewhere (another tab, or the job that sends them): the client reads the channel's list again.
+ * Sent only to the author. `change` says what happened so the screen can word a notice ("Your scheduled message was not sent").
+ */
+export const WS_SCHEDULED_CHANGED = 'scheduled.changed';
+export const ScheduledChangedPush = z.object({
+  channelId: ChannelId,
+  change: z.enum(['scheduled', 'edited', 'sent', 'refused', 'cancelled']),
+});
+export type ScheduledChangedPush = z.infer<typeof ScheduledChangedPush>;

@@ -27,6 +27,7 @@ import { boardPath, botBoardOf } from './boards/board';
 import { fetchProjects } from './projects/api';
 import { headerTopic, projectOfChannel } from './projects/commands';
 import { useRealtimeStatus } from '../realtime';
+import { ScheduledStrip } from '../channels/ScheduledStrip';
 
 export function NoChannelAccess() {
   return (
@@ -329,6 +330,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           </button>
         ) : null}
       </div>
+      {info.status === 'ok' ? <ScheduledStrip channelId={channelId} /> : null}
       {info.status === 'ok' && canPost ? (
         <Composer
           draftKey={`channel:${channelId}`}
@@ -340,6 +342,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           channelNames={channelNames}
           onSend={send}
           slash={{ teamSlug, origin: dm ? 'a direct message' : `#${name}` }}
+          sendLater
           onEditLast={() => {
             const id = lastEditableOwn(tl.items, self);
             if (!id) return;

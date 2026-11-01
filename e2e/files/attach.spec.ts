@@ -37,7 +37,7 @@ test('a PDF and a PNG upload, an 80 MB file is refused in the box, and both down
     await page.getByRole('button', { name: 'Remove big.zip' }).click();
 
     await page.getByRole('textbox', { name: `Message #${name}` }).fill('The report and the screenshot');
-    await page.getByRole('button', { name: 'Send' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     // the PDF stays a card; the picture is drawn on the message itself, not as a card
     const sent = messages(page).first();
     const cards = sent.getByTestId('attachment');

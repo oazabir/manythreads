@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { LaterItem } from '@manythreads/shared';
 import { fetchLater } from '../api/endpoints';
+import { NotSentList } from '../channels/ScheduledStrip';
 import { useQuery } from '../app/useQuery';
 import { Avatar } from '../components/ui';
 import { ago, clock, dayLabel } from '../channels/format';
@@ -70,6 +71,7 @@ export function LaterListBody({
   const dueCount = q.status === 'ok' ? q.data.dueCount : 0;
   return (
     <>
+      <NotSentList />
       <div className="lt-views" role="group" aria-label="Show">
         <button type="button" className={`lt-view ${view === 'open' ? 'on' : ''}`} aria-pressed={view === 'open'} onClick={() => setView('open')} data-testid="later-view-open">
           To do{q.status === 'ok' && view === 'open' ? <span data-vt-mask>{` · ${q.data.openCount}`}</span> : null}

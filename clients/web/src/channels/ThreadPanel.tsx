@@ -15,6 +15,7 @@ import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
 import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
 import { lastEditableOwn } from './messageActions';
+import { ScheduledStrip } from './ScheduledStrip';
 import { channelStore, threadKey } from './store';
 
 /** The right-panel entry `thread:<root message id>`. */
@@ -232,6 +233,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         <p className="read-only" data-testid="reply-blocked">{replyBlocked}</p>
       ) : canReply ? (
         <div className="rpf">
+          {!answerTools ? <ScheduledStrip channelId={channelId} threadRootId={rootId} /> : null}
           {alsoLabel && !answerTools ? (
             <label className="also-row">
               <input type="checkbox" checked={also} onChange={(e) => setAlso(e.target.checked)} data-testid="also-to-channel" />
@@ -249,6 +251,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             onSend={send}
             slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
             autoFocus={variant === 'panel'}
+            // a scheduled reply is posted in the thread only: while "Also send to channel" is ticked there is no Send later (it would drop the tick)
+            sendLater={!answerTools && !(alsoLabel && also)}
             onEditLast={() => {
               const id = lastEditableOwn(tl.items, self);
               if (id) window.dispatchEvent(new CustomEvent(EDIT_EVENT, { detail: id }));

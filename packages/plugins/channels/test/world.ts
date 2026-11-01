@@ -29,8 +29,8 @@ export interface World {
  * were made from) and a server on a random port with dev auth on. Template channels appear when somebody first asks for a
  * team's directory (or when `team.template.applied` is consumed): call `ensureChannels` to make them now.
  */
-export async function createWorld(options: { storage?: 'local' | 's3' } = {}): Promise<World> {
-  const server = await startTestServer(options.storage ? { storage: options.storage } : {});
+export async function createWorld(options: { storage?: 'local' | 's3'; now?: () => Date } = {}): Promise<World> {
+  const server = await startTestServer({ ...(options.storage ? { storage: options.storage } : {}), ...(options.now ? { now: options.now } : {}) });
   await seedWorld(server.db);
   const systemPool: pg.Pool = createSystemPool(server.db.systemUrl, 2);
   const call: World['call'] = async (who, method, path, body) => {
@@ -74,4 +74,15 @@ export async function ensureChannels(w: World): Promise<void> {
   await w.call(omar, 'GET', '/api/teams/engineering/channels');
   await w.call(sameera, 'GET', '/api/teams/customer-support/channels');
   await w.call(tariq, 'GET', '/api/teams/marketing/channels');
+}
+
+/** Polls until `check` returns a value (not undefined/false); throws after `timeoutMs`. */
+export async function eventually<T>(check: () => Promise<T | undefined | false>, timeoutMs = 20_000, what = 'condition'): Promise<T> {
+  const start = Date.now();
+  for (;;) {
+    const value = await check();
+    if (value !== undefined && value !== false) return value;
+    if (Date.now() - start > timeoutMs) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }

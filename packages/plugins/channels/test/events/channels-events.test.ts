@@ -70,7 +70,8 @@ describe('channel events', () => {
   it('registers every event the plugin declares, at schema version 1, and the manifest lists exactly them', async () => {
     for (const type of EMITTED) expect(Object.keys(eventRegistry[type])).toEqual(['1']);
     const plugin = (await import('../../src/index.ts')).default;
-    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED].sort());
+    // the scheduled-send event (P14-05) has its own test, test/scheduled-send.test.ts
+    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed'].sort());
   });
 
   it('every stored event parses against its registered schema', async () => {
