@@ -5,7 +5,7 @@ import { PHONE, apiOn, channelsOf, noSidewaysScroll, openOn, type StackApi } fro
 /**
  * Polls (PLAN P14-07), on a stack of its own (the spec posts messages and polls). Omar asks a poll from the composer's Poll button and from `/poll`;
  * Nadia and Rafi vote from their own pages and every page's counts move without a reload. An anonymous poll never lists who voted, and is only
- * asked in a channel with at least 5 readers (the seeded #dev has 4, so a private room of 6 is made for it). The author closes a poll early and its
+ * asked in a channel with at least 5 readers (a private room of 6 is made for it, with Tariq and Sameera added to Engineering, and a room of 2 for the refusal). The author closes a poll early and its
  * result appears as a plain message. Options are toggle buttons (a click votes; an arrow key does not). At 390 px the card fits, a count changing
  * moves nothing, and "Your vote" never lands on the option text or the count.
  */
@@ -17,6 +17,7 @@ let stack: Stack;
 let omar: StackApi;
 let dev = '';
 let room = '';
+let small = '';
 
 test.beforeAll(async ({ playwright }) => {
   stack = await startStack({ MANYTHREADS_STACK_SEED: 'work' });
@@ -24,9 +25,14 @@ test.beforeAll(async ({ playwright }) => {
   dev = (await channelsOf(omar))['dev']!;
   // a private room of six readers (Omar and five more), for the anonymous poll
   room = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'poll-room', private: true })).channel.id;
-  for (const who of ['nadia', 'rafi', 'priya', 'tariq', 'lena']) {
+  // a private room of two (Omar and Nadia, added below), too small for an anonymous poll
+  small = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: 'poll-small', private: true })).channel.id;
+  // Engineering holds Omar, Nadia, Rafi and Priya; a channel only takes people of its team, so Tariq and Sameera join the team first
+  for (const who of ['nadia', 'rafi', 'priya', 'tariq', 'sameera']) {
     const api = await apiOn(playwright, stack, who);
     const me = await api.get<{ person: { id: string } }>('/api/session');
+    if (who === 'tariq' || who === 'sameera') await omar.post('/api/teams/engineering/members', { personId: me.person.id });
+    if (who === 'nadia') await omar.post(`/api/channels/${small}/members`, { personId: me.person.id });
     await omar.post(`/api/channels/${room}/members`, { personId: me.person.id });
     await api.ctx.dispose();
   }
@@ -43,6 +49,7 @@ const choice = (poll: ReturnType<typeof card>, name: RegExp | string) => poll.ge
 test('the Poll button opens a dialog; a poll is asked with two options and shown as a card with a group of toggle buttons', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/c/dev');
   try {
+    await box(page).click(); // the toolbar opens with the caret
     await page.getByTestId('poll-tool').click();
     const dlg = page.getByTestId('poll-dialog');
     await expect(dlg).toBeVisible();
@@ -147,13 +154,13 @@ test('votes move the counts live on every page; a vote can be changed and remove
 });
 
 test('an anonymous poll lists nobody, to the author as to anyone; several choices are several pressed buttons; a small channel refuses it', async ({ browser, playwright }) => {
-  // #dev has 4 readers: below 5 an anonymous poll is refused with a sentence, and nothing is posted
-  const small = await omar.ctx.post(`/api/channels/${dev}/polls`, {
+  // two readers: below 5 an anonymous poll is refused with a sentence, and nothing is posted
+  const refused = await omar.ctx.post(`/api/channels/${small}/polls`, {
     data: { question: 'Too small?', options: ['Yes', 'No'], anonymous: true },
     headers: await omar.headers(),
   });
-  expect(small.status()).toBe(400);
-  expect(await small.text()).toContain('at least 5 people');
+  expect(refused.status()).toBe(400);
+  expect(await refused.text()).toContain('at least 5 people');
 
   await omar.post(`/api/channels/${room}/polls`, { question: 'Secret lunch?', options: ['Pizza', 'Sushi', 'Soup'], anonymous: true, multiple: true });
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/c/poll-room');
@@ -161,6 +168,9 @@ test('an anonymous poll lists nobody, to the author as to anyone; several choice
     const poll = card(page, 'Secret lunch?');
     await expect(poll.getByTestId('poll-choice')).toHaveCount(3);
     await choice(poll, /Pizza/).click();
+    // a click while a vote is in flight is ignored by the card, so wait for the first to settle
+    await expect(choice(poll, /Pizza/)).toHaveAttribute('aria-pressed', 'true');
+    await expect(poll.getByTestId('poll-voters')).toHaveText('1 vote');
     await choice(poll, /Soup/).click();
     await expect(poll.getByRole('button', { pressed: true })).toHaveCount(2);
     await expect(poll.getByTestId('poll-voters')).toHaveText('1 vote');
@@ -245,6 +255,7 @@ test('at 390 px the card and the dialog fit, a count changing moves nothing, and
     expect(await noSidewaysScroll(phone.page)).toBe(true);
 
     // the dialog
+    await phone.page.getByRole('textbox', { name: 'Message #dev' }).click(); // the toolbar opens with the caret
     await phone.page.getByTestId('poll-tool').click();
     const dlg = phone.page.getByTestId('poll-dialog');
     await expect(dlg).toBeVisible();

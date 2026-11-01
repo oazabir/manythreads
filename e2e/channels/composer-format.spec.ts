@@ -77,11 +77,11 @@ test('the toolbar is one tab stop and the arrow keys move along it', async ({ br
     await page.keyboard.press('ArrowRight');
     await expect(bar.getByRole('button', { name: 'Italic' })).toBeFocused();
     await page.keyboard.press('End');
-    await expect(bar.getByRole('button', { name: 'Emoji' })).toBeFocused();
+    await expect(bar.getByRole('button', { name: 'Ask a poll' })).toBeFocused(); // the Poll button is the last tool
     await page.keyboard.press('Home');
     await expect(bar.getByRole('button', { name: 'Bold' })).toBeFocused();
     await page.keyboard.press('ArrowLeft');
-    await expect(bar.getByRole('button', { name: 'Emoji' })).toBeFocused();
+    await expect(bar.getByRole('button', { name: 'Ask a poll' })).toBeFocused(); // the Poll button is the last tool
     await expect(tabbable).toHaveCount(1);
   } finally {
     await context.close();
