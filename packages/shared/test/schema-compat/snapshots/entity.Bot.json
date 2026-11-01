@@ -28,6 +28,18 @@
     "role": {
       "type": "string"
     },
+    "avatar": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(preset:[a-z0-9-]{1,40}|photo:[0-9a-f]{16})$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "kind": {
       "type": "string",
       "enum": [
@@ -128,6 +140,7 @@
     "slug",
     "name",
     "role",
+    "avatar",
     "kind",
     "runtime",
     "visibility",

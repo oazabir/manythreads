@@ -12,6 +12,18 @@
     },
     "email": {
       "type": "string"
+    },
+    "avatar": {
+      "default": null,
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(preset:[a-z0-9-]{1,40}|photo:[0-9a-f]{16})$"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "required": [

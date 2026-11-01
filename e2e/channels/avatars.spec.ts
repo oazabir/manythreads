@@ -42,7 +42,7 @@ test.describe('desktop', () => {
       const dialog = page.getByTestId('avatar-picker');
       await expect(dialog).toBeVisible(T);
       // the three people groups and no bot pictures
-      await expect(dialog.getByRole('region', { name: 'Men' }).locator('.avp-cell')).toHaveCount(10);
+      await expect(dialog.getByRole('region', { name: 'Men', exact: true }).locator('.avp-cell')).toHaveCount(10);
       await expect(dialog.getByRole('region', { name: 'Women', exact: true }).locator('.avp-cell')).toHaveCount(5);
       await expect(dialog.getByRole('region', { name: 'Women with a hijab' }).locator('.avp-cell')).toHaveCount(5);
       await expect(dialog.getByTestId('avatar-bot-panda')).toHaveCount(0);

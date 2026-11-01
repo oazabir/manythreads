@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "avatar": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(preset:[a-z0-9-]{1,40}|photo:[0-9a-f]{16})$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "avatar"
+  ]
+}
