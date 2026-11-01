@@ -84,6 +84,7 @@ export class ChannelStore {
   private self: string | null = null;
   private summaryTimer: ReturnType<typeof setTimeout> | null = null;
   private resyncHooks = new Set<() => void>();
+  private activityHooks = new Set<(channelId: string, at: string) => void>();
   private detach: Array<() => void> = [];
 
   // ---- subscription -------------------------------------------------------------------------------------
@@ -135,6 +136,12 @@ export class ChannelStore {
   onResync(cb: () => void): () => void {
     this.resyncHooks.add(cb);
     return () => this.resyncHooks.delete(cb);
+  }
+
+  /** A hook for the sidebar: called with a channel's id and the time of every message that arrives in it (pushed, or sent from here). */
+  onActivity(cb: (channelId: string, at: string) => void): () => void {
+    this.activityHooks.add(cb);
+    return () => this.activityHooks.delete(cb);
   }
 
   handlePush(push: Push): void {
@@ -192,6 +199,7 @@ export class ChannelStore {
 
   /** A message arrived (push, or the answer to our own POST): into its timeline, counted once, pending copy dropped. */
   applyPosted(message: ChannelMessage, localId?: string): void {
+    for (const h of [...this.activityHooks]) h(message.channelId, message.createdAt);
     const root = message.threadRootId;
     const key = root ? threadKey(root) : channelKey(message.channelId);
     const mine = this.self !== null && message.authorId === this.self;

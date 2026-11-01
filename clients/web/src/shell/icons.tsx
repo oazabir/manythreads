@@ -176,3 +176,19 @@ export const BellIcon = () => (
     <path d="M6.6 13.8a1.6 1.6 0 0 0 2.8 0" />
   </Svg>
 );
+
+/** A star: outline for "not starred", filled for "starred". */
+export const StarIcon = ({ filled = false }: { filled?: boolean }) => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <path d="m8 2.2 1.8 3.7 4 .6-2.9 2.8.7 4L8 11.4 4.4 13.3l.7-4L2.2 6.5l4-.6Z" />
+  </svg>
+);
+
+/** Two sliders: the options of the channel list. */
+export const OptionsIcon = () => (
+  <Svg>
+    <path d="M2.5 5h11M2.5 11h11" />
+    <circle cx="6" cy="5" r="1.6" fill="var(--surface)" />
+    <circle cx="10.5" cy="11" r="1.6" fill="var(--surface)" />
+  </Svg>
+);

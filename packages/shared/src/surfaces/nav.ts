@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ApiRoute } from '../api/client/route.ts';
+import { IsoDateTime } from '../common/time.ts';
 
 /** A counter the sidebar can show next to an entry, read from a named source (`threads.unread`). */
 export const NavBadge = z.strictObject({
@@ -46,6 +47,8 @@ export const NavChannel = z.object({
   name: z.string().min(1),
   isPrivate: z.boolean().default(false),
   unread: z.number().int().nonnegative().default(0),
+  /** When the channel last had a message (when it was made, if it has none). Older servers leave it out; a channel without it is never hidden as idle. */
+  lastActivityAt: IsoDateTime.nullable().optional(),
 });
 export type NavChannel = z.infer<typeof NavChannel>;
 

@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ALL = [omar, nadia, rafi, sameera, tariq, priya, lena] as const;
-const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing'];
+const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs'];
 
 let db: TestDatabase;
 let appPool: pg.Pool;
@@ -350,6 +350,36 @@ describe('writing: the policies and guards', () => {
       `EXPLAIN SELECT id FROM app.messages WHERE channel_id = $1 ORDER BY id DESC LIMIT 50`, [ch['eng-general']])).rows.map((r) => r['QUERY PLAN']).join('\n'));
     expect(plan).toMatch(/messages_channel_id_desc/);
     expect(plan).not.toMatch(/app\.can/);
+  });
+});
+
+describe('stars and sidebar preferences are one person\'s own (migration 0011)', () => {
+  const star = (p: Persona, personId: string, channelId: string): Promise<unknown> =>
+    as(p, (tx) => tx.query('INSERT INTO app.channel_stars (person_id, channel_id, workspace_id) VALUES ($1, $2, $3)', [personId, channelId, omar.workspaceId]));
+
+  it('a person stars a channel they can read, for themself only, and nobody else reads or removes the star', async () => {
+    await star(nadia, nadia.personId, ch['eng-general']!);
+    expect(await code(star(nadia, rafi.personId, ch['eng-general']!))).toBe('42501');
+    expect(await code(star(nadia, nadia.personId, ch['eng-leads']!))).toBe('42501'); // a private channel she is not in
+    expect(await code(star(sameera, sameera.personId, ch['eng-general']!))).toBe('42501'); // another team's channel
+    expect(await q(rafi, 'SELECT 1 FROM app.channel_stars')).toEqual([]);
+    expect(await q(omar, 'SELECT 1 FROM app.channel_stars')).toEqual([]); // not even a workspace admin
+    await as(rafi, (tx) => tx.query('DELETE FROM app.channel_stars WHERE person_id = $1', [nadia.personId]));
+    expect((await q(nadia, 'SELECT 1 FROM app.channel_stars')).length).toBe(1);
+    await as(nadia, (tx) => tx.query('DELETE FROM app.channel_stars WHERE person_id = $1', [nadia.personId]));
+    expect(await q(nadia, 'SELECT 1 FROM app.channel_stars')).toEqual([]);
+  });
+
+  it('preferences: own row, for a team the person can read; another person\'s row is neither visible nor changeable', async () => {
+    const put = (p: Persona, personId: string, team: string): Promise<unknown> =>
+      as(p, (tx) => tx.query("INSERT INTO app.sidebar_prefs (person_id, team_id, workspace_id, sort) VALUES ($1, $2, $3, 'name')", [personId, team, omar.workspaceId]));
+    await put(nadia, nadia.personId, TEAM_IDS.Engineering);
+    expect(await code(put(nadia, rafi.personId, TEAM_IDS.Engineering))).toBe('42501');
+    expect(await code(put(sameera, sameera.personId, TEAM_IDS.Engineering))).toBe('42501'); // a team she cannot read
+    expect(await q(rafi, 'SELECT 1 FROM app.sidebar_prefs')).toEqual([]);
+    await as(rafi, (tx) => tx.query("UPDATE app.sidebar_prefs SET sort = 'recent' WHERE person_id = $1", [nadia.personId]));
+    expect((await q<{ sort: string }>(nadia, 'SELECT sort FROM app.sidebar_prefs'))[0]?.sort).toBe('name');
+    expect(await code(as(nadia, (tx) => tx.query("UPDATE app.sidebar_prefs SET sort = 'size' WHERE person_id = $1", [nadia.personId])))).toBe('23514');
   });
 });
 

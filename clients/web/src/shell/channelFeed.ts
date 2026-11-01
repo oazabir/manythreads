@@ -50,6 +50,30 @@ export function refreshDirectories(): void {
   for (const slug of feeds.keys()) void refreshDirectory(slug);
 }
 
+/**
+ * A message arrived in a channel: remember it as the channel's newest activity in every directory held, so a sidebar sorted by recent activity
+ * moves the channel up without another fetch. Never moves a time backwards.
+ */
+export function noteActivity(channelId: string, at: string): void {
+  const t = Date.parse(at);
+  if (!Number.isFinite(t)) return;
+  let changed = false;
+  for (const [slug, feed] of feeds) {
+    if (feed.status !== 'ok') continue;
+    let touched = false;
+    const groups = feed.groups.map((g) => {
+      if (!g.channels.some((c) => c.id === channelId && !(c.lastActivityAt && Date.parse(c.lastActivityAt) >= t))) return g;
+      touched = true;
+      return { ...g, channels: g.channels.map((c) => (c.id === channelId ? { ...c, lastActivityAt: at } : c)) };
+    });
+    if (touched) {
+      feeds.set(slug, { status: 'ok', groups });
+      changed = true;
+    }
+  }
+  if (changed) emit();
+}
+
 onPersonChange(() => {
   feeds.clear();
   emit();

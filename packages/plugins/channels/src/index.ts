@@ -5,6 +5,7 @@ import { registerBookmarkRoutes } from './routes-bookmarks.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
 import { registerMessageRoutes } from './routes-messages.ts';
+import { registerSidebarRoutes } from './routes-sidebar.ts';
 import { registerTemplateConsumer } from './templates.ts';
 
 /**
@@ -47,6 +48,7 @@ export default definePlugin({
     registerChannelRoutes(deps);
     registerMessageRoutes(deps);
     registerBookmarkRoutes(deps);
+    registerSidebarRoutes(deps);
     registerEphemeralRoutes(deps);
     registerTemplateConsumer(ctx);
     registerCohesion(ctx);

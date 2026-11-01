@@ -45,7 +45,7 @@ member, so everything that follows a channel's visibility keeps it theirs. 0006 
 
 The channel directory (`GET /api/teams/:slug/channels`) lists `kind = 'channel'` only, so a conversation is never in the sidebar.
 
-## Tables (migrations `0001_channels.sql`, `0002_messages.sql`, `0003_mentions_presence_typing.sql`)
+## Tables (migrations `0001_channels.sql` onward; the table below lists the main ones)
 
 | Table | Notes |
 |---|---|
@@ -60,6 +60,8 @@ The channel directory (`GET /api/teams/:slug/channels`) lists `kind = 'channel'`
 | `presence` | `(person_id PK, workspace_id, status 'online'/'away', seen_at)`. **UNLOGGED**. WR: members read everyone of the workspace, a guest only themself; a person writes only their own row. |
 | `typing` | `(channel_id, person_id) PK, expires_at`. **UNLOGGED**. C: readable with the channel; a person writes only their own row, in a channel they can post in; anyone who reads the channel may delete rows that have expired. |
 | `channel_template_syncs` | S: teams whose template channels were created (see below). |
+| `channel_stars` | A person's starred channels (migration `0011`): `(person_id, channel_id)` primary key. P: a person reads, adds and removes only their own rows, and stars only a channel they can read. The row goes with the channel or the person. |
+| `sidebar_prefs` | A person's sidebar view of one team (migration `0011`): `(person_id, team_id)` primary key, `sort` (`team`, `recent` or `name`), `hide_idle`, `group_order` (group ids). P: own row only, for a team the person can read. |
 
 Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and passes `findRlsViolations` and `findPerRowPolicyCalls` (`pnpm test:rls`).
 
@@ -67,7 +69,7 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 
 | Method and path | What it does |
 |---|---|
-| `GET /api/teams/:slug/channels` | The sidebar directory, shape `NavChannelDirectory`: groups by position with the channels the caller can see (archived ones left out), `unread` from the read state. A team the caller cannot see, or an unknown slug, is `{ groups: [] }` (200, so the shell's 404 feature detection stays on). A **guest** gets only their granted channels in one group "Channels", whatever the slug. Also creates a seeded team's template channels once (below). |
+| `GET /api/teams/:slug/channels` | The sidebar directory, shape `NavChannelDirectory`: groups by position with the channels the caller can see (archived ones left out), `unread` from the read state. A team the caller cannot see, or an unknown slug, is `{ groups: [] }` (200, so the shell's 404 feature detection stays on). A **guest** gets only their granted channels in one group "Channels", whatever the slug. Also creates a seeded team's template channels once (below). Each channel also carries `lastActivityAt`: when it last had a message (when it was made, if it has none). |
 | `POST /api/teams/:slug/channels` `{ name, purpose?, private?, groupId? }` | Team lead or workspace admin. A leading `#` is accepted. Without `groupId` the channel joins the team's group "Channels" when there is one. A private channel starts with its creator as its only member. 409 for a taken name. |
 | `POST /api/teams/:slug/channel-groups` `{ name }` | Lead or admin; the same name again returns the group (`created: false`). |
 | `GET /api/channels/:channelId` | The channel plus `isMember`, `canPost`, `canManage` (the composer hides when `canPost` is false). |
@@ -81,6 +83,7 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 | `POST .../messages/:messageId/forward` `{ targetChannelId, note? }` | Forward a message you can read into a channel or direct message you can post in. 201 `ChannelMessage`: a new message **by you** (text = your note, or "Forwarded a message") holding a reference to the original in `meta.forward`. 403 when you cannot read the original or cannot post in the target, 404 missing message, 409 for a deleted original, an archived target or a conversation with a bot. |
 | `POST .../messages/:messageId/unread` | "Mark unread from here": moves **your own** read position back to just before this message (the message before it in the same feed, or "nothing read" for the first), so it and everything after it count as unread again. For a reply the thread's position moves, otherwise the channel's. Answers the new read state (`ReadStateEntry`). 403 for a channel you cannot read, 404 missing message, 409 deleted message. Nothing is sent to anybody else. |
 | `GET/POST .../bookmarks`, `DELETE .../bookmarks/:bookmarkId` | The channel's bookmarks bar, below. |
+| `GET/PUT /api/teams/:slug/sidebar-prefs` | The caller's own sidebar view of a team: starred channels, sort, "hide idle channels", order of the groups. See [Your own sidebar](#your-own-sidebar-p14-15). |
 | `POST .../messages/:messageId/reactions` `{ emoji }`, `DELETE .../reactions/:emoji` | Add or take back your reaction (needs the post permission to add). Both answer the message's reaction summary. |
 | `POST /api/presence` `{ status? }`, `GET /api/presence` | The heartbeat (`online`, the default, or `away`; clients send one every 30 s) and who has beaten in the last 90 s (a guest sees only themself). Presence is read by polling; nothing is pushed. 120 per minute. |
 | `POST /api/channels/:channelId/typing` `{ threadRootId? }`, `GET .../typing` | "I am typing here" (needs the post permission; 409 in an archived channel): the row lives 5 s and the response says until when. The listing answers who is typing now, not the caller. Sending a message deletes the sender's row. 120 per minute. |
@@ -143,11 +146,39 @@ Typing `/` as the very first character of the message box opens a small menu of 
 
 **Not built, on purpose.** `/remind` belongs to P14-04; `/status`, `/dnd`, `/away`, `/poll`, `/invite`, `/leave`, `/mute` and `/topic` need server rules or a command registry that do not exist yet (polls P14-07; Do not disturb now has a screen, see [presence.md](./presence.md), but no `/dnd` or `/status` command). A bot cannot declare commands: `BOT.md` has no `commands` field and no `command` trigger exists, so the menu lists only the built-ins above and nothing is invented for bots. `/ask` wakes only a bot whose definition has a `mention` trigger; the page cannot tell which bots have one, so it lists every bot that is switched on.
 
-## New channel and sidebar unread (P14-15; web client only, no new route or table)
+## New channel and sidebar unread (P14-15; web client only)
 
 **New channel.** Under the channel groups the sidebar shows "+ New channel" to the people the server lets create one: a lead of the team or a workspace admin, in a team that is not archived (`canCreateChannel` in `clients/web/src/shell/newChannel.ts` mirrors the rule of `POST /api/teams/:slug/channels`, which stays the only authority). A plain member and a guest do not see the button; the server still answers 403 if they call the route. The dialog (shared `.dlg` styles, `clients/web/src/shell/NewChannel.tsx`) asks for a name, an optional topic (sent as `purpose`, at most 250 characters) and who can see the channel: everyone on the team (public) or only the people added afterwards (private; the creator is its first member). A typed name is cleaned the way the server stores it (no `#`, lowercase, spaces and underscores become one dash) and a name the server would refuse is explained before anything is sent. A refusal gets one plain sentence: 409 name taken (or team archived), 400 invalid name or topic, 403 not allowed, 404 no such team, 429 too many tries. After creating, the web app opens the new channel; other people on the team get a public channel in their sidebar through the existing `channel.channel.created` push. Putting the new channel in a group other than the team's default "Channels" group is not offered yet (the route takes `groupId`).
 
 **Sidebar unread.** Every channel and direct message row shows its unread count from the read state (`GET /api/teams/:slug/channels` seeds `unread`, `reading.state.changed` pushes keep it live) as a count badge, and a bold label. How loudly it shows follows the person's notification level for that conversation (P14-09, `clients/web/src/shell/unreadLook.ts`): at "all messages" or "mentions" the label is bold and the badge is highlighted; at "nothing" the count stays but is grey and the label is not bold. Opening the conversation reads it, so the badge and the bold label go away at once. A count above 99 shows as "99+".
+
+## Your own sidebar (P14-15)
+
+Everything here sits inside slot 40 of the sidebar contract (the channel groups); the seven slots and their order do not change. It is a person's own view: nobody else sees it, it is kept on the server so it follows the person to another device, and no event is emitted (like a notification level, it tells nobody anything).
+
+**What is kept.** `GET /api/teams/:slug/sidebar-prefs` answers `{ starred, sort, hideIdle, groupOrder }` (`SidebarPrefs`, `packages/shared/src/api/channels/sidebar.ts`); a person who never changed anything gets no stars, `team` (the order the team set), `false` and no order. `PUT` changes any of them and leaves the rest (400 when the body is empty or names an unknown field); it answers the saved view. Stars are sent as changes, not as a whole list: `starAdd` and `starRemove` (a tab that is out of date can therefore not undo a star made on another device). 120 writes a minute. Writes for one person and team are taken one at a time (an advisory lock), so two devices cannot interleave their list replacements.
+
+| Field | Meaning | Server checks |
+|---|---|---|
+| `starAdd` | channel ids to star | each must be a channel (not a direct message) of this team that the caller can read and that is not archived (403 for a channel they cannot see, the same answer as for one that does not exist; 400 for one of another team or an archived one); the stars left after the change, counting the ones being added, are at most 100 (400 otherwise); a channel already starred is left as it is |
+| `starRemove` | channel ids to unstar | the caller's own stars in this team; a channel that is not starred is left alone; the same id in both lists is a 400 |
+| `sort` | `team` (the order the team set: group, then position; the default), `recent` (newest message first) or `name` | closed set |
+| `hideIdle` | fold away channels with no message for 30 days | boolean |
+| `groupOrder` | group ids in the person's order; replaces the whole order | each id must be a group of this team, or the team's own id (the id the directory gives channels that sit in no group), once each (400 otherwise) |
+
+A star on a channel the person can no longer read, or that was archived, is not listed (the row stays in the table, and does not count toward the 100); a group that no longer exists drops out of `groupOrder` when it is read. Channel groups themselves are still the team's (a lead makes them); only their order is personal. A guest has no team to arrange: both calls answer 403 for them and the web client shows the default layout without the controls.
+
+**The directory** (`GET /api/teams/:slug/channels`) carries `lastActivityAt` for every channel (the time of its newest message, or of its creation when it has none), one index probe per channel; a deleted message does not count. Sorting and hiding are done in the browser (`clients/web/src/shell/sidebarLayout.ts`, pure functions with tests), so the server order of the directory is unchanged.
+
+**What the person sees** (`clients/web/src/shell/ChannelGroups.tsx`).
+- **Starred**: a group at the top of slot 40, shown only when there is at least one star. A starred channel is listed there and in no other group; a group whose channels are all starred disappears. A channel is starred from its row menu (a button shown on hover and keyboard focus, always visible on a touch screen, also opened by right click; "Star channel" or "Remove star") or from the star in the channel header (hidden on a phone, where the title needs the room).
+- **Sort**: the small "Channel list options" button at the right of the first heading (it stays in place when groups move, so an open menu does not close) opens a menu: Team order (default, the sidebar as it always was), Recent activity, or Name. It orders the channels inside every group and the Starred group the same way; with Team order the Starred group follows the groups as shown, then the team's order inside each. Recent activity follows live: a message pushed to the page, or sent from it, moves its channel up without another fetch.
+- **Hide channels idle for 30 days**: a checkbox in the same menu. An idle channel collapses into a row at the end of its group that reads "3 quiet channels hidden", which expands. A channel with unread messages (a mention is unread too), the channel that is open, and a starred channel are never hidden; a channel whose last activity is unknown is not hidden either.
+- **Order of the groups**: drag a group by the grip that appears at the left of its heading (mouse or pen), or use the "Move <group> up" and "Move <group> down" buttons in the options menu, or press Alt with the up or down arrow on a focused heading (the menu says so, and the heading carries `aria-keyshortcuts`). Only the groups on screen move; a group that is not shown (every channel starred, or none to see) keeps its place among the others. The Starred group always stays first.
+- A change shows at once and is sent in the order it was made; if the server refuses it, the old value comes back and one plain sentence appears under the list. With a newer change already waiting, a refused one is not shown flipping back; the answer to the newest change settles it. The list draws at once with the defaults and never waits on the request; the controls appear when the person's own view has arrived. A first request that failed is asked again on the next load. The view is asked for again when the tab comes back to the front (at most every 15 seconds) and when the socket reconnects, so stars made elsewhere appear. When another person signs in, anything still on its way for the previous one is dropped. Code: `sidebarPrefsStore.ts` (store), `ChannelStar.tsx` (header).
+- Keyboard and screen readers: after a star, a move or Alt+Arrow, focus goes to the row or heading in its new place (a Move button that became disabled hands focus to the other one), a hidden `role="status"` line says what happened ("Starred #dev", "Moved group Projects up", "3 quiet channels hidden"), Tab closes an open menu and carries on from its button, and right click on a row is left to the browser (the "…" button opens the row menu).
+
+Tests: `packages/plugins/channels/test/sidebar-prefs.test.ts` (routes), the `stars and sidebar preferences` block in `test/rls/channels-plugin.test.ts` (row level security), `clients/web/test/sidebar-layout.test.ts` and `sidebar-prefs-store.test.ts`.
 
 ## Author names (`ChannelMessage.author`)
 

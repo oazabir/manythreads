@@ -1,0 +1,295 @@
+/*
+ * The person's own view of the channel groups in the sidebar (slot 40): the Starred group, the options menu in its heading, the row menu, the
+ * "N hidden" row, dragging a group, and the star in a channel's header -- PLAN P14-15. Classes start with `sb-`.
+ */
+
+.sb-ghead {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+
+.sb-ghead .grp {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.sb-grip {
+  display: none;
+  flex: none;
+  width: 12px;
+  padding: 14px 0 6px 2px;
+  cursor: grab;
+}
+
+.sb-grip span {
+  display: block;
+  width: 6px;
+  height: 10px;
+  background: radial-gradient(circle, var(--faint) 1px, transparent 1.5px) 0 0 / 3px 4px;
+}
+
+@media (hover: hover) {
+  .sb-ghead:hover .sb-grip {
+    display: block;
+  }
+}
+
+.sb-dragging {
+  opacity: 0.45;
+}
+
+.group.sb-drop-before {
+  box-shadow: 0 -2px 0 var(--human);
+}
+
+.group.sb-drop-after {
+  box-shadow: 0 2px 0 var(--human);
+}
+
+.channel-groups {
+  position: relative;
+}
+
+/* the options control sits over the right end of the first heading; it stays mounted when the groups are moved, so an open menu keeps its place */
+.sb-opts-pin {
+  position: absolute;
+  top: 8px;
+  right: 4px;
+  z-index: 2;
+}
+
+.sb-opts-pin + .group .grp {
+  padding-right: 34px;
+}
+
+.sb-opts {
+  position: relative;
+  flex: none;
+  padding-bottom: 1px;
+}
+
+.sb-opts-btn {
+  width: 24px;
+  height: 22px;
+}
+
+.sb-row {
+  position: relative;
+}
+
+.sb-row > .it {
+  min-width: 0;
+}
+
+/* the small menu button of a row: shown on hover and keyboard focus, always on a touch screen */
+.sb-more {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 5px;
+  background: var(--nav-on);
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.sb-more:hover {
+  color: var(--ink);
+}
+
+@media (hover: hover) {
+  .sb-more {
+    opacity: 0;
+  }
+
+  .sb-row:hover .sb-more,
+  .sb-row:focus-within .sb-more,
+  .sb-row.sb-open .sb-more {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .sb-row > .it {
+    padding-right: 38px;
+  }
+
+  .sb-more {
+    right: 8px;
+    width: 30px;
+    height: 30px;
+    background: transparent;
+  }
+}
+
+.sb-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 4px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.sb-menu-wide {
+  width: 250px;
+}
+
+.sb-menu-h {
+  margin: 4px 8px 2px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.sb-menu-hint {
+  margin: 4px 8px 2px;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.sb-sep {
+  width: 100%;
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sb-item:hover,
+.sb-item:focus-visible {
+  background: var(--msg-hover);
+}
+
+.sb-ic {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  color: var(--mute);
+}
+
+.sb-ord {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px 0 8px;
+}
+
+.sb-ord-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-ord-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.sb-ord-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sb-ord-btn:enabled:hover,
+.sb-ord-btn:enabled:focus-visible {
+  background: var(--msg-hover);
+  color: var(--ink);
+}
+
+/* the "N hidden" row under a group */
+.sb-hidden-row {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sb-hidden-row:hover {
+  background: var(--nav-on);
+}
+
+.sb-problem {
+  margin: 6px 8px 0;
+  color: var(--alert-ink);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* the star in a channel's header */
+.sb-star-head {
+  position: relative;
+  display: flex;
+  margin-right: 4px;
+}
+
+.sb-starred {
+  color: var(--warn-ink, var(--human));
+}
+
+.sb-star-problem {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 25;
+  width: 240px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+  color: var(--alert-ink);
+  font-size: 12px;
+}
+
+@media (width <= 640px) {
+  .sb-star-head {
+    display: none;
+  }
+}

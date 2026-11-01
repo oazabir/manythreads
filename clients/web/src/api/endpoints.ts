@@ -290,6 +290,11 @@ import {
   listTemplatesRoute,
   listWorkspaceMembersRoute,
   navChannelDirectoryRoute,
+  GetSidebarPrefsResponse,
+  PutSidebarPrefsRequest,
+  PutSidebarPrefsResponse,
+  getSidebarPrefsRoute,
+  putSidebarPrefsRoute,
   removeTeamMemberRoute,
   renameTeamRoute,
   requestEmailVerificationRoute,
@@ -526,6 +531,11 @@ export type { AuthenticatedSession };
 // ---- sidebar ---------------------------------------------------------------------------------------------
 /** The team's channel groups as the sidebar lists them. The route exists once the channels plugin is loaded; callers feature-detect. */
 export const fetchNavChannels = (slug: string) => call(navChannelDirectoryRoute, { response: NavChannelDirectory }, undefined, { slug });
+/** The person's own sidebar view for a team (stars, sort, hide idle, group order); a server without it answers 404. */
+export const fetchSidebarPrefs = (slug: string) => call(getSidebarPrefsRoute, { response: GetSidebarPrefsResponse }, undefined, { slug });
+/** Changes some of the fields of that view; the ones left out stay. The answer is the saved view. */
+export const saveSidebarPrefs = (slug: string, body: PutSidebarPrefsRequest) =>
+  call(putSidebarPrefsRoute, { request: PutSidebarPrefsRequest, response: PutSidebarPrefsResponse }, body, { slug });
 
 // ---- channels, messages, read state ------------------------------------------------------------------------
 export const fetchChannel = (channelId: string) => call(getChannelRoute, { response: GetChannelResponse }, undefined, { channelId });
