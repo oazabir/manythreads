@@ -1,5 +1,5 @@
-import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
-import { PASSWORD_MIN_LENGTH as PASSWORD_MIN } from '@manythreads/shared';
+import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { PASSWORD_MIN_LENGTH as PASSWORD_MIN, avatarSrc } from '@manythreads/shared';
 
 export function Brand({ name = 'manythreads', mark = 'm' }: { name?: string; mark?: string }) {
   return (
@@ -92,13 +92,30 @@ export function Toggle({ checked, onChange, label, disabled }: { checked: boolea
   );
 }
 
-export function Avatar({ name, kind = 'person' }: { name: string; kind?: 'person' | 'agent' | 'automation' }) {
+/** The initials drawn when a person or bot has no picture: two words, first and last initial ("Omar Al Zabir" -> OZ); one word, its first two letters ("Brain" -> BR). */
+export function initialsOf(name: string): string {
   const words = name.split(/\s+/).filter(Boolean);
-  // two words: first and last initial ("Omar Al Zabir" -> OZ); one word: first two letters ("Brain" -> BR)
-  const initials = (words.length > 1 ? `${words[0]![0]}${words[words.length - 1]![0]}` : (words[0] ?? '').slice(0, 2)).toUpperCase();
+  return (words.length > 1 ? `${words[0]![0]}${words[words.length - 1]![0]}` : (words[0] ?? '').slice(0, 2)).toUpperCase();
+}
+
+/**
+ * A person's or bot's picture (PLAN P14-23): the built-in picture or uploaded photo they chose (`avatar`: `preset:<id>` or `photo:<hash>`), else their
+ * initials on a coloured disc. A picture that cannot be loaded falls back to the initials, so a broken frame is never drawn. `personId` is needed for a photo.
+ */
+export function Avatar({ name, kind = 'person', avatar, personId }: { name: string; kind?: 'person' | 'agent' | 'automation'; avatar?: string | null | undefined; personId?: string | null | undefined }) {
+  const src = avatarSrc(avatar, personId);
+  const [broken, setBroken] = useState<string | null>(null);
+  const shape = kind === 'agent' ? 'a' : kind === 'automation' ? 'r' : '';
+  if (src && broken !== src) {
+    return (
+      <span className={`av pic ${shape}`} aria-hidden="true" data-avatar={avatar}>
+        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setBroken(src)} />
+      </span>
+    );
+  }
   return (
-    <span className={`av ${kind === 'agent' ? 'a' : kind === 'automation' ? 'r' : ''}`} aria-hidden="true">
-      {initials}
+    <span className={`av ${shape}`} aria-hidden="true">
+      {initialsOf(name)}
     </span>
   );
 }

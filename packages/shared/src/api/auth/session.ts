@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
+import { Avatar } from '../../entities/avatar.ts';
 import { AuthProviderKind } from '../../entities/auth.ts';
 import { TeamRole } from '../../entities/team.ts';
 import { WorkspaceRole } from '../../entities/workspace.ts';
@@ -13,7 +14,7 @@ export const SignInMethod = z.object({
 });
 export type SignInMethod = z.infer<typeof SignInMethod>;
 
-export const SessionPerson = z.object({ id: PersonId, name: z.string(), email: z.string() });
+export const SessionPerson = z.object({ id: PersonId, name: z.string(), email: z.string(), avatar: Avatar.nullable().default(null) });
 export type SessionPerson = z.infer<typeof SessionPerson>;
 
 export const SessionWorkspace = z.object({ id: WorkspaceId, name: z.string() });

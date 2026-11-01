@@ -39,3 +39,4 @@ export * from './eval.ts';
 export * from './audit.ts';
 export * from './guardrails.ts';
 export * from './knowledge.ts';
+export * from './avatar.ts';

@@ -2,6 +2,9 @@ import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   GetBotResponse,
   GetBotPathParams,
+  SetBotAvatarRequest,
+  SetBotAvatarResponse,
+  setBotAvatarRoute,
   ListBotsResponse,
   ListBotsPathParams,
   botMdPath,
@@ -30,6 +33,23 @@ async function botRows(tx: PluginTx, teamId: string, slug?: string): Promise<Bot
 }
 
 export function registerBotRoutes(ctx: PluginContext): void {
+  // A bot's picture: one of the bot set, or none. A lead of the team or a workspace admin (the SQL function checks), no proposal: it is not in BOT.md.
+  ctx.http.route({
+    ...setBotAvatarRoute,
+    schema: { body: SetBotAvatarRequest, response: SetBotAvatarResponse },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const { slug, botSlug } = GetBotPathParams.parse(req.params);
+      const { preset } = SetBotAvatarRequest.parse(req.body);
+      const team = await requireTeam(tx, slug);
+      const row = (await botRows(tx, team.id, botSlug))[0];
+      if (!row) throw notFound(`No bot "${botSlug}"`);
+      const avatar = preset === null ? null : `preset:${preset}`;
+      await tx.query('SELECT app.bots_set_avatar($1::uuid, $2::text)', [row.id, avatar]);
+      return json(SetBotAvatarResponse.parse({ avatar }));
+    }),
+  });
+
   ctx.http.route({
     ...listBotsRoute,
     schema: { response: ListBotsResponse },

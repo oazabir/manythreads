@@ -69,6 +69,7 @@ export class ExtensionRegistries {
     'hermes.profiles': new ExtensionRegistry(),
     'project.credentials': new ExtensionRegistry(),
     'role.groups': new ExtensionRegistry(),
+    'mcp.tools': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

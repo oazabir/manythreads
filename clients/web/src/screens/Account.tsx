@@ -6,9 +6,10 @@ import { useSession, useSessionState } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { PlainFrame } from '../components/frames';
 import { QueryView } from '../components/states';
-import { Alert, Field, Notice, PasswordField, Time } from '../components/ui';
+import { Alert, Avatar, Field, Notice, PasswordField, Time } from '../components/ui';
 import { NotificationSettings } from '../notifications/NotificationSettings';
 import { disablePush } from '../notifications/push';
+import { MyAvatarPicker } from '../avatars/MyAvatarPicker';
 import { PresenceSettings } from '../presence/PresenceSettings';
 import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { PASSWORD_MIN_LENGTH } from '@manythreads/shared';
@@ -27,6 +28,7 @@ export function Account() {
   const [nameBusy, setNameBusy] = useState(false);
   const [nameNote, setNameNote] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
   const [changing, setChanging] = useState(false);
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -104,6 +106,13 @@ export function Account() {
           </form>
           {nameError ? <Alert>{nameError}</Alert> : null}
           {nameNote ? <Notice>{nameNote}</Notice> : null}
+          <div className="kv" data-testid="account-picture">
+            <span className="k">Picture</span>
+            <span className="acc-pic">
+              <Avatar name={session.person.name} avatar={session.person.avatar} personId={session.person.id} />
+              <button type="button" className="btn s" onClick={() => setPicking(true)} data-testid="account-change-picture">Change picture</button>
+            </span>
+          </div>
           <div className="kv"><span className="k">Email</span><span>{session.person.email}</span></div>
           <div className="kv"><span className="k">Workspace</span><span>{session.workspace.name} · {session.role}</span></div>
           {hasPassword ? (
@@ -179,6 +188,7 @@ export function Account() {
           ))}
         </div>
       </section>
+      {picking ? <MyAvatarPicker onClose={() => setPicking(false)} /> : null}
     </PlainFrame>
   );
 }

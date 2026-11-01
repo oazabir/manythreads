@@ -71,7 +71,7 @@ function PersonRow({ m, slug, canManage, tagNames, act }: { m: RosterMember; slu
   const listId = `tags-${m.personId}`;
   return (
     <div className="mrow person-row" data-person={m.email}>
-      <Avatar name={m.displayName} />
+      <Avatar name={m.displayName} avatar={m.avatar} personId={m.personId} />
       <div><div><PersonLink personId={m.personId} name={m.displayName} email={m.email} /><PresenceDot personId={m.personId} status /><div className="d">{m.email}</div></div></div>
       <div><span className="kind h">person</span></div>
       <div className="roster-cell">

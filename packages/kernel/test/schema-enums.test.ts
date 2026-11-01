@@ -1,4 +1,5 @@
 import {
+  AvatarPhotoType,
   AclPermission,
   ApprovalDecisionKind,
   ApprovalOutcome,
@@ -116,6 +117,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'scoped_kv.scope_type': ScopedKvScopeType,
   'workspace_members.role': WorkspaceRole,
   'people.status': PersonStatus,
+  'person_photos.content_type': AvatarPhotoType,
   'auth_providers.kind': AuthProviderKind,
   'invitations.role': InvitationRole,
   'email_verifications.purpose': EmailVerificationPurpose,

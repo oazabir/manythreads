@@ -1,7 +1,9 @@
 import { HttpError, RunEndedError, type BotRunHandle, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { handleRpc, setFaultLog } from '../src/protocol.ts';
+import { toolsDigest } from '../src/digest.ts';
+import { handleBotRpc, handleRpc, offeredTools, setFaultLog, type BotEndpoint, type PairedBotHandle } from '../src/protocol.ts';
+import { createMcpSessions } from '../src/session.ts';
 
 // The JSON-RPC face without a database: what a run is offered, what a call does, and which failures are answers
 // (isError content the model reads) versus transport errors (a JSON-RPC error envelope). The gateway's own
@@ -449,5 +451,59 @@ describe('gateway-mcp protocol', () => {
 
     const badParams = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 10, method: 'tools/call', params: { arguments: {} } });
     expect((await body(badParams)).error).toMatchObject({ code: -32602 });
+  });
+});
+
+describe('a bot’s own address (PLAN P14-22)', () => {
+  const BOT: PairedBotHandle = { botId: UUIDS.bot, botActorId: UUIDS.actor, teamId: UUIDS.team, workspaceId: UUIDS.workspace };
+  const endpoint = () => {
+    const listed: Array<{ botId: string; digest: string }> = [];
+    const sessions = createMcpSessions(Buffer.alloc(32, 1));
+    const value: BotEndpoint = { sessions, listed: (botId, digest) => void listed.push({ botId, digest }) };
+    return { endpoint: value, listed, sessions };
+  };
+
+  it('initialize says the list can change and hands out a session id that names the bot; a run’s address does neither', async () => {
+    const { ctx } = fakeContext({ tools: [] });
+    const { endpoint: e, sessions } = endpoint();
+    const res = await handleBotRpc(ctx, BOT, null, { jsonrpc: '2.0', id: 1, method: 'initialize' }, e);
+    expect(((await body(res)).result as { capabilities: { tools: unknown } }).capabilities.tools).toEqual({ listChanged: true });
+    expect(sessions.verify(res.headers!['mcp-session-id']!)).toBe(UUIDS.bot);
+    // without the endpoint (the older callers) and at a run's own address: no push, no session
+    const plain = await handleBotRpc(ctx, BOT, null, { jsonrpc: '2.0', id: 1, method: 'initialize' });
+    expect(((await body(plain)).result as { capabilities: { tools: unknown } }).capabilities.tools).toEqual({ listChanged: false });
+    expect(plain.headers).toBeUndefined();
+    expect((await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 1, method: 'initialize' })).headers).toBeUndefined();
+  });
+
+  it('a tools/list reports the digest of the bot’s own list, with no run open and with one open (judged by that run, compared by the bot’s list)', async () => {
+    const { ctx } = fakeContext({ tools: [SEARCH_TOOL, WRITE_TOOL], decisions: { 'messages.search': ALLOWED, 'pages.write': { allowed: true, reason: 'granted', needsApproval: true } } });
+    const { endpoint: e, listed } = endpoint();
+    const expected = toolsDigest(await offeredTools(ctx, { ...RUN, runId: '00000000-0000-0000-0000-000000000000' }));
+    const none = await handleBotRpc(ctx, BOT, null, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, e);
+    expect(((await body(none)).result as { tools: unknown[] }).tools).toHaveLength(2);
+    expect(listed).toEqual([{ botId: UUIDS.bot, digest: expected }]);
+    await handleBotRpc(ctx, BOT, RUN, { jsonrpc: '2.0', id: 3, method: 'tools/list' }, e);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(listed).toHaveLength(2);
+    expect(listed[1]!.digest).toBe(expected);
+  });
+
+  it('the digest changes with the approval flag of a grant and with a grant removed, the way the pod’s profile line needs', async () => {
+    const digestOf = async (decisions: Record<string, Decision>) => toolsDigest(await offeredTools(fakeContext({ tools: [SEARCH_TOOL, WRITE_TOOL], decisions }).ctx, RUN));
+    const both = { 'messages.search': ALLOWED, 'pages.write': ALLOWED };
+    const base = await digestOf(both);
+    expect(await digestOf({ ...both, 'pages.write': { allowed: true, reason: 'granted', needsApproval: true } })).not.toBe(base);
+    expect(await digestOf({ 'messages.search': ALLOWED })).not.toBe(base);
+    expect(await digestOf(both)).toBe(base);
+  });
+
+  it('a call with no run open is still an answer, with the endpoint on as well', async () => {
+    const { ctx } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
+    const { endpoint: e } = endpoint();
+    const res = await handleBotRpc(ctx, BOT, null, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'messages.search', arguments: {} } }, e);
+    expect(JSON.stringify((await body(res)).result)).toContain('no_open_run');
+    const ambiguous = await handleBotRpc(ctx, BOT, 'ambiguous', { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'messages.search', arguments: {} } }, e);
+    expect(JSON.stringify((await body(ambiguous)).result)).toContain('ambiguous_run');
   });
 });

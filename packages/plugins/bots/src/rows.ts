@@ -13,6 +13,7 @@ export type BotRow = {
   slug: string;
   name: string;
   role: string;
+  avatar?: string | null;
   may_tag: string[];
   kind: string;
   runtime: string;
@@ -27,7 +28,7 @@ export type BotRow = {
   updated_at: Date;
 };
 export const BOT_COLUMNS =
-  'id, workspace_id, team_id, slug, name, role, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, triggers, created_at, updated_at';
+  'id, workspace_id, team_id, slug, name, role, avatar, may_tag, kind, runtime, visibility, definition_sha, status, placement, invalid_reason, triggers, created_at, updated_at';
 export const toBot = (r: BotRow): Bot =>
   Bot.parse({
     id: r.id,
@@ -36,6 +37,7 @@ export const toBot = (r: BotRow): Bot =>
     slug: r.slug,
     name: r.name,
     role: r.role,
+    avatar: r.avatar ?? null,
     kind: r.kind,
     runtime: r.runtime,
     visibility: r.visibility,

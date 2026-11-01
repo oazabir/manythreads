@@ -68,12 +68,12 @@ describe('what a run carries to the gateway', () => {
   const external = (agent: 'hermes' | 'claude-code' | 'codex') => ({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent }) });
   const bodyOf = (): Record<string, unknown> => gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!.body as Record<string, unknown>;
 
-  it('sends the definition body as instructions to a gateway the customer runs, and not to the team’s own pod', async () => {
+  it('sends the definition body as instructions on every connection, the team’s own pod included (a pod’s SOUL.md is frozen per thread, instructions are not)', async () => {
     await collect((await runOnGateway(options(external('hermes')), input(), scope, { connection: 'host', profile: 'mt-coder' })).events);
     expect(bodyOf()['instructions']).toBe('soul');
     gw.calls.length = 0;
     await collect((await runOnGateway(options(), input(), scope, { connection: 'managed' })).events);
-    expect(bodyOf()).not.toHaveProperty('instructions');
+    expect(bodyOf()['instructions']).toBe('soul');
   });
 
   it('sends the run extension only to a bridge agent, with the run token', async () => {
@@ -121,7 +121,7 @@ describe('a run on a gateway', () => {
     const post = gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!;
     expect(post.authorized).toBe(true);
     expect(post.idempotencyKey).toBe(RUN_ID);
-    expect(post.body).toEqual({ input: 'Nadia in #dev:\n\n@coder what changed?', session_id: `${BOT_ID}:${THREAD}` });
+    expect(post.body).toEqual({ input: 'Nadia in #dev:\n\n@coder what changed?', instructions: 'soul', session_id: `${BOT_ID}:${THREAD}` });
 
     expect(events.map((e) => e.type)).toEqual(['tool', 'tool_result', 'text', 'text', 'result']);
     expect(events[0]).toMatchObject({ type: 'tool', name: 'mcp__manythreads__memory_recall' });

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jsonrpc": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "method": {
+      "type": "string",
+      "const": "notifications/tools/list_changed"
+    }
+  },
+  "required": [
+    "jsonrpc",
+    "method"
+  ],
+  "additionalProperties": false
+}

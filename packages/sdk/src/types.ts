@@ -68,6 +68,8 @@ export const PROVIDER_KINDS = [
   'project.credentials',
   /** A team's role tags as mention groups (teams plugin): `RoleGroupProvider` in ./role-groups.ts. */
   'role.groups',
+  /** What a bot's MCP tool list is right now, as a digest (gateway-mcp): `McpToolsProvider` in ./mcp-tools.ts. */
+  'mcp.tools',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

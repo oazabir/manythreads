@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BotKind, BotPlacement, BotRuntime, BotVisibility } from '../bot-md/frontmatter.ts';
 import { IsoDateTime } from '../common/time.ts';
+import { Avatar } from './avatar.ts';
 import { ActorId, BotId, RunId, TeamId, ThreadId, WorkspaceId } from '../ids.ts';
 
 // Bots (PLAN.md A.5, P5-03). Every type here matches a column or a CHECK of the bots plugin's migration
@@ -53,6 +54,8 @@ export const Bot = z.object({
   name: z.string().min(1),
   /** The definition's `role` line; empty when the author wrote none, which the roster shows as nothing. */
   role: z.string(),
+  /** The picture a lead or admin chose (`preset:<id>`), or null: the client draws the initials. It is not part of the definition in the repo. */
+  avatar: Avatar.nullable().default(null),
   kind: BotKind,
   runtime: BotRuntime,
   visibility: BotVisibility,

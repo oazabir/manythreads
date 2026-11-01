@@ -64,6 +64,7 @@ export type RosterRow = {
   team_role: string;
   tags: string[];
   joined_at: Date;
+  avatar: string | null;
 }
 
 export const toRosterMember = (row: RosterRow): RosterMember =>
@@ -71,6 +72,7 @@ export const toRosterMember = (row: RosterRow): RosterMember =>
     personId: row.person_id,
     actorId: row.actor_id,
     displayName: row.display_name,
+    avatar: row.avatar ?? null,
     email: row.email,
     workspaceRole: row.workspace_role,
     role: row.team_role,

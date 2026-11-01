@@ -60,6 +60,13 @@ No CRDs of our own (D4). Postgres is a CNPG `Cluster` `manythreads-pg` (service 
 `manythreads-db-app` (generated once, kept across upgrades). LiteLLM and Hindsight are real workloads (below); Hermes is not a cluster workload (it runs on the host through a runner) and `hermes.enabled` only fails the render.
 nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`, `/ws` to `manythreads-server`.
 
+**Bot tools stream (PLAN P14-22).** A bot's Hermes keeps `GET /mcp` (or `GET /api/mcp/bots/<id>`) open with `Accept: text/event-stream` for up to 30 minutes; the server sends a
+keepalive comment every 25 s and the header `X-Accel-Buffering: no`. The path to the server must not buffer it and must not time out before 30 minutes. In the chart: the web pod's nginx has
+`proxy_buffering off` on `/mcp` and reads `web.mcpStreamTimeout` (default `1900s`, env `MANYTHREADS_MCP_STREAM_TIMEOUT`; keep it over `1800s`); `/api/` already waits 3600 s. Traefik, the k3s
+ingress, buffers nothing and has no response timeout. Any other proxy you put in front (nginx ingress, a load balancer) needs `proxy-buffering off` and a read timeout over 30 minutes for those two paths.
+In the dev compose stack the server is reached directly (no proxy in between), so nothing is needed; if you add a proxy there, give it the same two settings. Without them Hermes still works: it
+reconnects when a stream drops, and the restart line on the bot's page remains the safety net.
+
 ## Server environment (set by the chart)
 | Variable | Value / source |
 |---|---|

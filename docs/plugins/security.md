@@ -81,6 +81,13 @@ and call with arguments of its own, and a payload the platform vouches for (whom
 something a model can write. `messages.post` takes no `meta`. Using the provider needs no `extends` entry; the posting still runs as the
 transaction's actor under the channel's own `post` rule.
 
+## The bot tools digest: `provider.mcp.tools`
+
+`gateway-mcp` registers `ctx.providers.get<McpToolsProvider>('mcp.tools')` (extension point `provider.mcp.tools`): `toolsDigest(botId)` answers the SHA-256 of exactly what `tools/list` offers that bot
+(names, descriptions, input schemas, destructive flag, `needsApproval`), or `null` for a bot it does not know. It carries no tool, no grant and no token, only the hash, and it is read-only; `runtime-hermes` writes it into the
+managed pod's `config.yaml` so a changed tool list re-serves the profile. The table behind it, `app.mcp_bot_tools`, is reachable by the system role only. The bot's tools stream (`GET` on the bot endpoint) is opened
+only with the bot's own token, is capped (4 per bot, 2,000 in all, each per process; 429 over that), drops a reader that falls behind, ends within about ten seconds of a revoked or rotated token, and never writes a token, id or counter in a frame.
+
 ## The role groups: `provider.role.groups`
 
 The teams plugin registers `ctx.providers.get<RoleGroupProvider>('role.groups')` (extension point `provider.role.groups`): `list(tx, teamId, { handles? })` answers a team's role tags with the people who hold them,

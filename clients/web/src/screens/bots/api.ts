@@ -23,6 +23,7 @@ import {
   GetRepoBlobQuery,
   GetRepoBlobResponse,
   ListBotsResponse,
+  McpToolsStatus,
   RunEvalsRequest,
   RunEvalsResponse,
   botMdPath,
@@ -30,6 +31,7 @@ import {
   getBotRoute,
   getRepoBlobRoute,
   listBotsRoute,
+  mcpToolsStatusRoute,
   runEvalsRoute,
 } from '@manythreads/shared';
 import { ApiError, CSRF_HEADER, buildPath, call, readCsrfCookie } from '../../api/client';
@@ -44,6 +46,9 @@ import { createProposal } from '../proposals/api';
 export const fetchBots = (slug: string) => call(listBotsRoute, { response: ListBotsResponse }, undefined, { slug });
 
 export const fetchBot = (slug: string, botSlug: string) => call(getBotRoute, { response: GetBotResponse }, undefined, { slug, botSlug });
+
+/** Whether the Hermes behind a bot has the tools the bot has now (PLAN P14-22): the digest of its last `tools/list` against the current one. */
+export const fetchMcpTools = (slug: string, botSlug: string) => call(mcpToolsStatusRoute, { response: McpToolsStatus }, undefined, { slug, botSlug });
 
 /** The definition file as the loader reads it: the text and the blob a save must be based on. */
 export type DefinitionFile = { content: string; blobSha: string; commitSha: string };

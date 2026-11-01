@@ -1,4 +1,4 @@
-import type { GatewayProfileSpec, HermesProfilesProvider, PluginContext, PluginLogger } from '@manythreads/sdk';
+import type { GatewayProfileSpec, HermesProfilesProvider, McpToolsProvider, PluginContext, PluginLogger } from '@manythreads/sdk';
 import { MANAGED_CONNECTION_NAME, mcpUrlOf } from '@manythreads/shared';
 import { GATEWAY_ENV, renderGatewayProfile } from './gateway-profile.ts';
 import { managedProfileName } from './gateway.ts';
@@ -51,6 +51,7 @@ export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, en
           [teamId, MANAGED_CONNECTION_NAME],
         );
         const llm = ctx.providers.get<LlmDoor>('llm');
+        const teamName = (await tx.query<{ name: string }>('SELECT name FROM app.teams WHERE id = $1::uuid', [teamId])).rows[0]?.name ?? 'the team';
         const specs: GatewayProfileSpec[] = [];
         for (const bot of bots.rows) {
           const definition = await loadDefinition(ctx, tx, bot, log);
@@ -69,11 +70,16 @@ export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, en
             log.warn(`runtime-hermes: the token of managed bot ${bot.slug} was turned off by a person; no profile until a lead re-enables it`);
             continue;
           }
+          // The digest of what the platform offers this bot (its grants, their approval flags, the tools this version adds): the pod re-serves the profile when it
+          // changes, for a Hermes that cannot be told by push. Without gateway-mcp the line falls back to the native grants.
+          const toolsDigest = (await ctx.providers.get<McpToolsProvider>('mcp.tools')?.toolsDigest(bot.id)) ?? undefined;
           const wantsShell = (definition.frontmatter.capabilities?.runtime ?? []).includes('shell');
           const files = renderGatewayProfile(
             { frontmatter: definition.frontmatter, body: definition.body },
             {
               botSlug: bot.slug,
+              teamName,
+              ...(toolsDigest ? { toolsDigest } : {}),
               mcpUrl: mcpUrlOf(env.serverUrl),
               mcpTokenVar: GATEWAY_ENV.mcpToken,
               filesInWorkbench: true,

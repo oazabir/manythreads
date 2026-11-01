@@ -40,6 +40,10 @@
   font-size: 12.5px;
 }
 
+.b-sub.warn {
+  color: var(--warn-ink);
+}
+
 .b-head-act {
   display: flex;
   gap: 8px;

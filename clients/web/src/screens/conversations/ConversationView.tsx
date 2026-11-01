@@ -278,7 +278,7 @@ export function ConversationView() {
         ) : (
           <div className="cv-start" data-testid="conversation-start">
             <div className="cv-intro">
-              <Avatar name={botName} kind="agent" />
+              <Avatar name={botName} kind="agent" avatar={known?.avatar ?? people.botAvatarBySlug(botSlug)} />
               <div>
                 <h2 className="cv-name" data-testid="conversation-bot">{botName}</h2>
                 <p className="cv-role">{botRole || 'Ask it anything it is here for.'}</p>

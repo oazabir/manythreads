@@ -51,7 +51,9 @@ every ten seconds) turns the Secret into `~/.hermes/profiles/<name>/` (`config.y
 
 * a **new** profile: written, then `hermes -p <name> gateway run` attaches it, MCP servers included, in about two seconds;
 * a profile whose `config.yaml` or `.env` **changed**: rewritten, then `hermes -p <name> gateway restart` (a served profile keeps its old MCP
-  connection and token otherwise);
+  connection and token otherwise). The `# manythreads tools: <digest>` line in `config.yaml` is the full tools digest of the bot (names, descriptions, schemas,
+  `needsApproval`), so a changed tool list restarts a profile whose Hermes did not take the push. `SOUL.md` is a fixed one-line identity and never
+  restarts anything: Hermes freezes it per thread, so the body of `BOT.md` travels as `instructions` on every run instead;
 * a **removed** profile: its directory is deleted (the gateway stops serving it within half a minute).
 
 Kubernetes refreshes a mounted Secret within about a minute, so a change takes up to roughly 70 seconds to reach a running profile.

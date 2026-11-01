@@ -3,6 +3,7 @@ import { TeamRole } from '../../entities/team.ts';
 import { WorkspaceRole } from '../../entities/workspace.ts';
 import { IsoDateTime } from '../../common/time.ts';
 import { ActorId, PersonId } from '../../ids.ts';
+import { Avatar } from '../../entities/avatar.ts';
 import { RoleTagName } from './common.ts';
 
 /** One person on a team's roster: their team role and the role tags they hold. */
@@ -10,6 +11,8 @@ export const RosterMember = z.object({
   personId: PersonId,
   actorId: ActorId,
   displayName: z.string(),
+  /** The picture they chose (`preset:<id>` or `photo:<hash>`), or null: the client draws their initials. */
+  avatar: Avatar.nullable().default(null),
   email: z.string(),
   workspaceRole: WorkspaceRole,
   role: TeamRole,

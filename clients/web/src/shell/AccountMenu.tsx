@@ -6,6 +6,8 @@ import { disablePush } from '../notifications/push';
 import { DndStrip } from '../presence/DndIndicators';
 import { useMyDnd } from '../presence/hooks';
 import { PauseDialog, StatusDialog } from '../presence/PresenceDialogs';
+import { MyAvatarPicker } from '../avatars/MyAvatarPicker';
+import { Avatar } from '../components/ui';
 import { useShell } from './context';
 import { GearIcon } from './icons';
 import { useDismiss } from './useDismiss';
@@ -17,7 +19,7 @@ export function AccountMenu() {
   const { guest } = useShell();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const [dialog, setDialog] = useState<'status' | 'pause' | null>(null);
+  const [dialog, setDialog] = useState<'status' | 'pause' | 'picture' | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const gear = useRef<HTMLButtonElement>(null);
   const dnd = useMyDnd();
@@ -42,6 +44,7 @@ export function AccountMenu() {
     <>
     <DndStrip />
     <div className="foot" ref={box}>
+      <Avatar name={session.person.name} avatar={session.person.avatar} personId={session.person.id} />
       <span className="foot-name">{session.person.name}</span>
       {dnd.customStatus ? (
         <span className="foot-status" title={`${dnd.customStatus.emoji ?? ''} ${dnd.customStatus.text}`.trim()} data-testid="foot-status">
@@ -63,6 +66,7 @@ export function AccountMenu() {
       {open ? (
         <div className="menu menu-up" role="menu" aria-label="Account">
           <Link role="menuitem" className="menu-item" to="/account" onClick={() => setOpen(false)}>Account</Link>
+          <button type="button" role="menuitem" className="menu-item" data-testid="menu-picture" onClick={() => { setOpen(false); setDialog('picture'); }}>Profile picture…</button>
           {dnd.supported ? (
             <>
               <button type="button" role="menuitem" className="menu-item" data-testid="menu-status" onClick={() => { setOpen(false); setDialog('status'); }}>Set status…</button>
@@ -81,6 +85,7 @@ export function AccountMenu() {
     </div>
     {dialog === 'status' ? <StatusDialog onClose={closeDialog} /> : null}
     {dialog === 'pause' ? <PauseDialog onClose={closeDialog} /> : null}
+    {dialog === 'picture' ? <MyAvatarPicker onClose={closeDialog} /> : null}
     </>
   );
 }

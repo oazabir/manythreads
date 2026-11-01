@@ -12,8 +12,7 @@
           "type": "object",
           "properties": {
             "listChanged": {
-              "type": "boolean",
-              "const": false
+              "type": "boolean"
             }
           },
           "required": [

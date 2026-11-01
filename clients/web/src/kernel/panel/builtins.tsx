@@ -36,7 +36,7 @@ function MemberPanel({ entry }: { entry: PanelEntry }) {
         if (!m) return <Placeholder title="Member">This person is not on the team.</Placeholder>;
         return (
           <div className="panel-member">
-            <Avatar name={m.displayName} />
+            <Avatar name={m.displayName} avatar={m.avatar} personId={m.personId} />
             <div>
               <p className="panel-member-name">{m.displayName}<PresenceDot personId={m.personId} status /></p>
               <p className="panel-member-line">{m.email}</p>

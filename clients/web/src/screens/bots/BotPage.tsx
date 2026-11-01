@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import type { BotRun, BotSummary } from '@manythreads/shared';
+import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
+import { AvatarPicker } from '../../avatars/AvatarPicker';
 import { Alert, Avatar, Notice } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
-import { botMdPath } from './api';
+import { botMdPath, fetchMcpTools } from './api';
 import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { TabPanel } from './tabs';
 import { BotTestPanel } from './test-panel';
@@ -23,6 +25,28 @@ import { canOfferTest } from './test-run';
  *  - bots/ is never committed directly (PLAN P7-01): "Save as proposal" leaves a proposal, "Propose and apply" (lead or admin) records one and
  *    applies it in the same step as the signed-in person; a file someone else changed meanwhile is refused rather than overwritten.
  */
+
+/**
+ * One line under the title for a bot placed on a Hermes gateway (PLAN P14-22): does that Hermes hold the tools the bot has now? It compares the digest of
+ * the last `tools/list` the profile made with the current one. A Hermes that keeps the tools stream open is current within seconds of any change; an older
+ * Hermes (or a cut stream) shows the second sentence, and the fix is one command. Nothing is drawn when the status cannot be read or nothing has listed yet.
+ */
+function HermesTools({ slug, botSlug }: { slug: string; botSlug: string }) {
+  const q = useQuery(`bot-mcp-tools:${slug}:${botSlug}`, () => fetchMcpTools(slug, botSlug));
+  const { reload } = q;
+  useEffect(() => {
+    const timer = setInterval(reload, 20_000);
+    return () => clearInterval(timer);
+  }, [reload]);
+  if (q.status !== 'ok' || q.data.state === 'never') return null;
+  const current = q.data.state === 'current';
+  return (
+    <p className={`b-sub ${current ? '' : 'warn'}`} data-testid="hermes-tools" data-state={q.data.state}>
+      {current ? 'Hermes has the current tools' : 'Hermes has an older list: restart its profile'}
+      {current ? null : <> (<span className="mono">hermes -p &lt;profile&gt; gateway restart</span>)</>}
+    </p>
+  );
+}
 
 type SaveState = { kind: 'ok'; message: string; proposalId?: string } | { kind: 'bad'; failure: SaveFailure } | null;
 
@@ -85,6 +109,9 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
   const draft = useDefinition(slug, path, revision);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [picking, setPicking] = useState(false);
+  // the picture shows at once after a lead or admin chooses it; `bot.avatar` is the roster's copy from the last load
+  const [picture, setPicture] = useState<string | null>(bot.avatar);
 
   const doSave = async (applyNow: boolean): Promise<void> => {
     if (!draft.frontmatter || busy || draft.issues.length > 0) return;
@@ -112,7 +139,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
   return (
     <>
       <header className="b-head" data-landmark="bot-head">
-        <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} />
+        <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} avatar={picture} />
         <div className="b-head-who">
           <h1 className="b-title" data-testid="bot-title">
             {bot.name}
@@ -122,6 +149,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
             {bot.runtime === 'hermes' ? 'Hermes' : 'Rules'} · <span className="mono">{path}</span>
             {bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}
           </p>
+          {bot.runtime === 'hermes' && bot.status === 'active' && bot.placement?.gateway !== undefined ? <HermesTools slug={slug} botSlug={bot.slug} /> : null}
         </div>
         <div className="b-head-act">
           {/* no conversation trigger, no 1:1 chat: nothing is drawn (the API answers 409 as well) */}
@@ -132,11 +160,14 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           {canOfferTest({ canEdit, status: bot.status, conversational: bot.conversational, runtime: bot.runtime }) ? (
             <button type="button" className="btn s" aria-expanded={testing} onClick={() => setTesting((v) => !v)} data-testid="open-test">Test</button>
           ) : null}
+          {canEdit ? <button type="button" className="btn s" onClick={() => setPicking(true)} data-testid="bot-change-picture">Change picture</button> : null}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
           <Link className="btn s" to={`/t/${slug}/proposals`} data-testid="bot-proposals">Proposals</Link>
         </div>
       </header>
+
+      {picking ? <AvatarPicker name={bot.name} target={{ kind: 'bot', slug, botSlug: bot.slug }} current={picture} onChanged={setPicture} onClose={() => setPicking(false)} /> : null}
 
       {invalid ? (
         <div className="b-banner" role="alert" data-testid="bot-invalid-banner">

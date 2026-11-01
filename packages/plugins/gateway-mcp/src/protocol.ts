@@ -3,6 +3,7 @@ import {
   MCP_ERROR_CODES,
   MCP_PROTOCOL_VERSION,
   MCP_SERVER_NAME,
+  MCP_SESSION_HEADER,
   McpError,
   McpInitializeResult,
   McpJsonRpcId,
@@ -16,7 +17,9 @@ import { z } from 'zod';
 import { askForApproval } from './approval.ts';
 import { authorizeContext, definitionOf, interceptTarget, withRunTeam } from './catalog.ts';
 import { describeFinding, guardValue } from './guard.ts';
+import { toolsDigest, type OfferedTool } from './digest.ts';
 import { json } from './http.ts';
+import type { McpSessions } from './session.ts';
 
 // The JSON-RPC 2.0 face of the run endpoint (MCP revision 2024-11-05). Three methods matter — `initialize`,
 // `tools/list` and `tools/call` — plus `ping` and the notifications a client sends and expects no answer to.
@@ -53,25 +56,31 @@ export function toolResult(answer: unknown, isError = false): McpToolResult {
   });
 }
 
-/** What `tools/list` offers this run: every implemented capability the broker would allow, and nothing else. */
-async function listTools(ctx: PluginContext, run: BotRunHandle): Promise<McpToolDescriptor[]> {
-  const offered: McpToolDescriptor[] = [];
+/**
+ * What `tools/list` offers this run: every implemented capability the broker would allow, and nothing else. `needsApproval` is kept beside each
+ * descriptor (the wire carries it only inside the description) because the tools digest is decided by it.
+ */
+export async function offeredTools(ctx: PluginContext, run: BotRunHandle): Promise<OfferedTool[]> {
+  const offered: OfferedTool[] = [];
   for (const tool of ctx.runs.catalog()) {
     // the run's token was resolved (it is `running`) a moment ago, in this request: no liveness read per capability
     const decision = await ctx.runs.may(run, tool.name, {}, { alreadyLive: true });
     if (!decision.allowed) continue;
     const definition = definitionOf(tool.name);
-    offered.push(
-      McpToolDescriptor.parse({
+    offered.push({
+      descriptor: McpToolDescriptor.parse({
         name: tool.name,
         description: decision.needsApproval ? `${definition.description} Needs a person’s approval before it runs.` : definition.description,
         inputSchema: definition.inputSchema,
         destructive: tool.destructive,
       }),
-    );
+      needsApproval: decision.needsApproval,
+    });
   }
   return offered;
 }
+
+const listTools = async (ctx: PluginContext, run: BotRunHandle): Promise<McpToolDescriptor[]> => (await offeredTools(ctx, run)).map((o) => o.descriptor);
 
 /**
  * The data-loss check, failing closed: if reading the value throws (the policy tables are missing, the database is down), the value counts as unread and
@@ -274,30 +283,9 @@ export interface PairedBotHandle {
 const LISTING_TRIGGER = 'conversation';
 const NO_RUN_ID = '00000000-0000-0000-0000-000000000000';
 
-/**
- * One JSON-RPC request at the bot's stable endpoint. The caller is a gateway profile that holds ONE address and ONE token for the bot (it cannot
- * be given a new token per run), so the run is looked up here: the bot's currently open run, which the runtime guarantees is at most one. A tool
- * call is attributed to that run exactly as a call at the run's own endpoint is — the same `handleRpc`, so reads are the asker's, writes the
- * bot's, approvals and the source log are the run's. With no run open, a call is answered with a clear tool error and the protocol's own
- * methods (`initialize`, `ping`, `tools/list`) still work, because a client connects and lists before any conversation exists.
- */
-export async function handleBotRpc(ctx: PluginContext, bot: PairedBotHandle, run: BotRunHandle | 'ambiguous' | null, raw: unknown): Promise<HttpResponse> {
-  if (run !== null && run !== 'ambiguous') return handleRpc(ctx, run, raw);
-  if (run === 'ambiguous') {
-    // More than one run of this bot is open: attributing a call to either could be wrong, so no call is made (fail closed).
-    const request = McpRequest.safeParse(raw);
-    if (request.success && request.data.method === 'tools/call') {
-      return reply(request.data.id, toolResult({ ok: false, code: 'ambiguous_run', message: 'More than one conversation is open for this bot, so the call cannot be attributed. Try again shortly.' }, true));
-    }
-  }
-  const request = McpRequest.safeParse(raw);
-  if (request.success && request.data.method === 'tools/call') {
-    return reply(
-      request.data.id,
-      toolResult({ ok: false, code: 'no_open_run', message: 'No conversation is waiting for this bot, so there is nothing to act for. Tools work only while the bot is answering a message.' }, true),
-    );
-  }
-  const listing: BotRunHandle = {
+/** The handle a bot is judged by when no run is open. The tools digest is the digest of this list, whichever run is open when a client lists. */
+export function listingHandleOf(bot: PairedBotHandle): BotRunHandle {
+  return {
     runId: NO_RUN_ID,
     botId: bot.botId,
     botActorId: bot.botActorId,
@@ -307,5 +295,70 @@ export async function handleBotRpc(ctx: PluginContext, bot: PairedBotHandle, run
     askerActorId: null,
     expiresAt: new Date(0).toISOString(),
   };
+}
+
+/** What a bot's endpoint adds to the protocol: the session ids it hands out, and the word that a token has read its tools. */
+export interface BotEndpoint {
+  sessions: McpSessions;
+  /** Called after a `tools/list` at the bot's endpoint with the digest of the bot's current list. Not awaited; must not throw. */
+  listed(botId: string, digest: string): void;
+}
+
+/**
+ * One JSON-RPC request at the bot's stable endpoint. The caller is a gateway profile that holds ONE address and ONE token for the bot (it cannot
+ * be given a new token per run), so the run is looked up here: the bot's currently open run, which the runtime guarantees is at most one. A tool
+ * call is attributed to that run exactly as a call at the run's own endpoint is — the same `handleRpc`, so reads are the asker's, writes the
+ * bot's, approvals and the source log are the run's. With no run open, a call is answered with a clear tool error and the protocol's own
+ * methods (`initialize`, `ping`, `tools/list`) still work, because a client connects and lists before any conversation exists.
+ *
+ * With an `endpoint`, `initialize` says the list can change and carries a session id (`Mcp-Session-Id`), because this address also serves the `GET`
+ * event stream that pushes `notifications/tools/list_changed`; a run's own address does neither.
+ */
+export async function handleBotRpc(
+  ctx: PluginContext,
+  bot: PairedBotHandle,
+  run: BotRunHandle | 'ambiguous' | null,
+  raw: unknown,
+  endpoint?: BotEndpoint,
+): Promise<HttpResponse> {
+  const request = McpRequest.safeParse(raw);
+  const method = request.success ? request.data.method : null;
+  if (endpoint && request.success && method === 'initialize') {
+    const answer = reply(
+      request.data.id,
+      McpInitializeResult.parse({
+        protocolVersion: MCP_PROTOCOL_VERSION,
+        capabilities: { tools: { listChanged: true } },
+        serverInfo: { name: MCP_SERVER_NAME, version: ctx.manifest.version },
+      }),
+    );
+    return { ...answer, headers: { [MCP_SESSION_HEADER]: endpoint.sessions.issue(bot.botId) } };
+  }
+  if (run !== null && run !== 'ambiguous') {
+    const answer = await handleRpc(ctx, run, raw);
+    if (endpoint && method === 'tools/list') {
+      // the answer above is judged by the open run's trigger; the page compares the bot's own list, so that one is read here
+      void offeredTools(ctx, listingHandleOf(bot)).then(
+        (offered) => endpoint.listed(bot.botId, toolsDigest(offered)),
+        () => undefined,
+      );
+    }
+    return answer;
+  }
+  if (request.success && method === 'tools/call') {
+    // More than one run of this bot open: attributing a call to either could be wrong, so no call is made (fail closed). With none open, nothing waits for the bot.
+    return reply(
+      request.data.id,
+      run === 'ambiguous'
+        ? toolResult({ ok: false, code: 'ambiguous_run', message: 'More than one conversation is open for this bot, so the call cannot be attributed. Try again shortly.' }, true)
+        : toolResult({ ok: false, code: 'no_open_run', message: 'No conversation is waiting for this bot, so there is nothing to act for. Tools work only while the bot is answering a message.' }, true),
+    );
+  }
+  const listing = listingHandleOf(bot);
+  if (endpoint && request.success && method === 'tools/list') {
+    const offered = await offeredTools(ctx, listing);
+    endpoint.listed(bot.botId, toolsDigest(offered));
+    return reply(request.data.id, McpToolsListResult.parse({ tools: offered.map((o) => o.descriptor) }));
+  }
   return handleRpc(ctx, listing, raw);
 }

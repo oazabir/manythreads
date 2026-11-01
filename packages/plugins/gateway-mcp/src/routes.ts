@@ -1,10 +1,25 @@
 import { createHash } from 'node:crypto';
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { MCP_PATH, McpRunCloseRequest, McpRunMintRequest, McpRunMintResponse, abuseLimit, addressKey, mcpUrlOf } from '@manythreads/shared';
+import type { HttpResponse, PluginContext, PluginTx } from '@manythreads/sdk';
+import {
+  BotPairingPathParams,
+  MCP_PATH,
+  MCP_SESSION_HEADER,
+  McpRunCloseRequest,
+  McpRunMintRequest,
+  McpRunMintResponse,
+  McpToolsStatus,
+  abuseLimit,
+  addressKey,
+  mcpToolsStatusRoute,
+  mcpUrlOf,
+} from '@manythreads/shared';
 import { z } from 'zod';
-import { HttpError } from '@manythreads/sdk';
-import { json, route, unauthenticated } from './http.ts';
-import { handleBotRpc, handleRpc } from './protocol.ts';
+import { HttpError, requireTeam } from '@manythreads/sdk';
+import { json, notFound, route, unauthenticated } from './http.ts';
+import { handleBotRpc, handleRpc, type BotEndpoint, type PairedBotHandle } from './protocol.ts';
+import type { McpSessions } from './session.ts';
+import type { StreamHub } from './streams.ts';
+import { recordListing, refreshPushedDigest, toolsStatusOf } from './tools-state.ts';
 
 // The endpoint (SPEC §11, PLAN P5-09). The runtime holds one pairing token for its bot and asks for a run; the
 // answer is one URL and one token for that run only (docs/spikes/per-run-scoping.md). Every call to that URL is
@@ -93,7 +108,16 @@ function windowed(limit: number, make: () => Error): (key: string) => Error | nu
   };
 }
 
-export function registerMcpRoutes(ctx: PluginContext): void {
+/** The session ids and the open event streams, made once by the plugin: the routes use them and the event subscribers wake the streams. */
+export interface McpStreams {
+  sessions: McpSessions;
+  hub: StreamHub;
+}
+
+const EVENT_STREAM = /(^|,)\s*text\/event-stream\s*(;|,|$)/i;
+const noStore = { 'cache-control': 'no-cache, no-transform', 'x-accel-buffering': 'no' } as const;
+
+export function registerMcpRoutes(ctx: PluginContext, { sessions, hub }: McpStreams): void {
   // The bot endpoint is reached by every profile of a pod from one address, so a per-address bucket would let one noisy bot starve the rest:
   // failures count per client address (a token-guessing flood is slowed), authenticated calls per bot.
   const rateLimited = (): Error => new HttpError(429, 'rate_limited', 'Too many requests; slow down', { 'retry-after': '30' });
@@ -101,6 +125,48 @@ export function registerMcpRoutes(ctx: PluginContext): void {
   const failedBotAuth = (ip: string, message = 'A valid bot token is required'): Error => countFailure(addressKey(ip)) ?? unauthenticated(message);
   const countBotCall = windowed(BOT_CALLS_PER_BOT_PER_MINUTE, rateLimited);
   const countRunCall = windowed(RUN_CALLS_PER_RUN_PER_MINUTE, rateLimited);
+
+  // A `tools/list` at a bot's address is kept as "this token has read these tools" (the bot page's line); the write never holds up the answer.
+  const endpoint: BotEndpoint = {
+    sessions,
+    listed: (botId, digest) => void ctx.db.system((tx) => recordListing(tx, botId, digest)).catch(() => undefined),
+  };
+
+  /** A session id the client sends back must be one this server issued for this bot; otherwise the session is unknown and the client starts a new one. No header: an older client, allowed. */
+  const checkSession = (req: { headers: Record<string, string | undefined>; body?: unknown }, botId: string): void => {
+    // an `initialize` starts a session, so a client that re-sends an old id with it (after a restart, or a rotated key) gets a new one instead of a 404
+    if ((req.body as { method?: unknown } | null | undefined)?.method === 'initialize') return;
+    const id = req.headers[MCP_SESSION_HEADER];
+    if (id !== undefined && sessions.verify(id) !== botId) throw notFound('Unknown session; send initialize again');
+  };
+
+  const methodNotAllowed = (): HttpResponse => ({
+    status: 405,
+    headers: { allow: 'POST, GET' },
+    body: { error: { code: 'validation_failed', message: 'This address takes POST requests, and GET for the event stream (Accept: text/event-stream)' } },
+  });
+
+  /**
+   * The event stream of a bot: authenticated like a `POST` (the caller has already resolved the bot's token). It starts with one `list_changed`, so a client
+   * that reconnects after a restart or a deploy lists again. The change counter is read BEFORE the stream opens so a change after that is never missed.
+   */
+  const openStream = async (req: { headers: Record<string, string | undefined> }, bot: PairedBotHandle, tokenHash: Buffer): Promise<HttpResponse> => {
+    checkSession(req, bot.botId);
+    const busy = (): HttpError => new HttpError(429, 'rate_limited', 'This bot already has its event streams open', { 'retry-after': '30' });
+    if (hub.refusal(bot.botId) !== null) throw busy();
+    const state = await ctx.db.system((stx) => refreshPushedDigest(ctx, stx, bot.botId));
+    if (!state) throw unauthenticated('A valid bot token is required');
+    // the list may have changed since the last stream looked (a new version of the platform): the others of this bot hear it too
+    if (state.changed) hub.wake();
+    const opened = hub.open(bot.botId, tokenHash.toString('hex'), state.version);
+    if (!opened.ok) throw busy();
+    return {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream; charset=utf-8', ...noStore },
+      body: opened.stream,
+    };
+  };
+
   ctx.http.route({
     method: 'POST',
     path: '/api/mcp/runs',
@@ -160,11 +226,26 @@ export function registerMcpRoutes(ctx: PluginContext): void {
       const bot = await resolveBotToken(tx, req, failedBotAuth);
       const limited = countBotCall(bot.botId);
       if (limited) throw limited;
+      checkSession(req, bot.botId);
       const run = await ctx.runs.openRunOf(bot.botId).catch((err: unknown) => {
         if (err instanceof Error && err.name === 'AmbiguousRunError') return 'ambiguous' as const;
         throw err;
       });
-      return handleBotRpc(ctx, bot, run, req.body);
+      return handleBotRpc(ctx, bot, run, req.body, endpoint);
+    }),
+  });
+
+  // The bot's event stream (GET, `Accept: text/event-stream`): the only frame it carries is `notifications/tools/list_changed`. Same credential as the POST.
+  ctx.http.route({
+    method: 'GET',
+    path: '/api/mcp/bots/:botId',
+    public: true,
+    handler: route(async (req, tx) => {
+      if (!EVENT_STREAM.test(req.headers['accept'] ?? '')) return methodNotAllowed();
+      const bot = await resolveBotToken(tx, req, failedBotAuth);
+      const limited = countBotCall(bot.botId);
+      if (limited) throw limited;
+      return openStream(req, bot, sha256(bearerToken(req) ?? ''));
     }),
   });
 
@@ -189,11 +270,45 @@ export function registerMcpRoutes(ctx: PluginContext): void {
       const bot = { botId: paired.bot_id, botActorId: paired.actor_id, teamId: paired.team_id, workspaceId: paired.workspace_id };
       const limited = countBotCall(bot.botId);
       if (limited) throw limited;
+      checkSession(req, bot.botId);
       const open = await ctx.runs.openRunOf(bot.botId).catch((err: unknown) => {
         if (err instanceof Error && err.name === 'AmbiguousRunError') return 'ambiguous' as const;
         throw err;
       });
-      return handleBotRpc(ctx, bot, open, req.body);
+      return handleBotRpc(ctx, bot, open, req.body, endpoint);
+    }),
+  });
+
+  // The same stream at the one address. Only a bot's pairing token opens it: a run's own token has a run's address and nothing to watch.
+  ctx.http.route({
+    method: 'GET',
+    path: MCP_PATH,
+    public: true,
+    handler: route(async (req, tx) => {
+      if (!EVENT_STREAM.test(req.headers['accept'] ?? '')) return methodNotAllowed();
+      const token = bearerToken(req);
+      if (token === null) throw failedBotAuth(req.ip);
+      const digest = sha256(token);
+      const paired = (await tx.query<PairedBotRow>('SELECT * FROM app.bots_pairing_resolve($1)', [digest])).rows[0];
+      if (!paired) throw failedBotAuth(req.ip);
+      const limited = countBotCall(paired.bot_id);
+      if (limited) throw limited;
+      return openStream(req, { botId: paired.bot_id, botActorId: paired.actor_id, teamId: paired.team_id, workspaceId: paired.workspace_id }, digest);
+    }),
+  });
+
+  // The bot page's line: does the bot's Hermes hold the tools it would be offered now?
+  ctx.http.route({
+    ...mcpToolsStatusRoute,
+    schema: { response: McpToolsStatus },
+    handler: route(async (req, tx) => {
+      const { slug, botSlug } = BotPairingPathParams.parse(req.params);
+      const team = await requireTeam(tx, slug);
+      const bot = (await tx.query<{ id: string }>('SELECT id FROM app.bots WHERE team_id = $1::uuid AND slug = $2', [team.id, botSlug])).rows[0];
+      if (!bot) throw notFound(`No bot "${botSlug}"`);
+      const status = await ctx.db.system((stx) => toolsStatusOf(ctx, stx, bot.id));
+      if (!status) throw notFound(`No bot "${botSlug}"`);
+      return json(McpToolsStatus.parse(status));
     }),
   });
 

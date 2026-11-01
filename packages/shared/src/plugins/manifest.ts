@@ -32,6 +32,8 @@ export const EXTENSION_POINTS = [
   'provider.project.credentials',
   // A team's role tags as mention groups (P14-03): registered by the teams plugin, read by channels (mentions, the picker) and tasks (handover.toPerson).
   'provider.role.groups',
+  // The digest of what a bot's MCP `tools/list` answers (gateway-mcp, P14-22): read by runtime-hermes to write the managed pod's `# manythreads tools:` line.
+  'provider.mcp.tools',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

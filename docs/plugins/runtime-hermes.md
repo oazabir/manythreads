@@ -461,17 +461,17 @@ The address is the same for every bot (the older `/api/mcp/bots/<bot id>` still 
 replaced with `POST …/pairing-tokens/rotate`. A profile reads its MCP settings when the gateway starts serving it, so after a rotation restart that
 profile (`hermes -p <profile> gateway restart`). One key per connection: it must be the `API_SERVER_KEY` of the profiles you place on it.
 
-**The bot's definition travels with the run.** A Hermes you run yourself has no copy of the bot's `BOT.md`, so for every connection that is
-not the team's own pod, each run carries the file's prose (its body, trimmed) as `instructions` in the start request. Hermes adds
-`instructions` to its system prompt on every model call, so the bot behaves as its definition says without you copying anything into the
-profile. The team's own pod does not get it: there the same text is already the profile's `SOUL.md` (the profile's identity file), and sending it twice would
-duplicate it.
+**The bot's definition travels with the run.** For every connection, the team's own pod included, each run carries the file's prose (its body,
+trimmed) as `instructions` in the start request. Hermes adds `instructions` to its system prompt on every model call, also in a thread that
+already has turns, so the next turn of any thread follows an edit of `BOT.md` with nothing restarted and nothing copied into the profile. The
+team's pod therefore keeps no copy of the body: its `SOUL.md` is one fixed line, `You are <name>, a bot of <team> on manythreads; your
+instructions come with each request.` (Hermes freezes `SOUL.md` for the life of a thread, so a body written there would go stale; see the table below.)
 
 **Agent kinds.** A connection names the agent behind its address (`agent`, default `hermes`). All three answer the same run API:
 
 | Agent | What answers | What the run request adds |
 |---|---|---|
-| `hermes` | A Hermes gateway (the team's pod is always this) | nothing beyond `input`, `session_id` and (external only) `instructions` |
+| `hermes` | A Hermes gateway (the team's pod is always this) | nothing beyond `input`, `session_id` and `instructions` |
 | `claude-code`, `codex` | The agent bridge (`tools/agent-bridge`), which starts one Claude Code or Codex command-line process per run | a `manythreads` object (below) |
 
 The bridge keeps no profile and no bot credential: each process lives for one run. So the start request also carries
@@ -526,6 +526,34 @@ The bot's stable endpoint attributes a call only to a run that a queue job opene
 receives a call there, and two open job runs of one bot fail the call closed (`ambiguous_run`). The endpoint counts failed authentications per client
 address (60 a minute, then 429) and authenticated calls per bot (600 a minute).
 
+## When a bot's definition or tools change (P14-22)
+
+A Hermes reads some things on every request and some only when a profile is served. Measured on Hermes v0.21.5 with a throwaway profile and a stand-in
+MCP server whose tool list the test edits (`tools/devbox/probe-hermes-reload.mjs` repeats it):
+
+| | Question | Result | So |
+|---|---|---|---|
+| (a) | `config.yaml` toolsets (`platform_toolsets`, `disabled_toolsets`) after an edit? | read again on every request | live |
+| (b) | `SOUL.md` after an edit? | read when a session starts, then frozen: a new thread sees the edit, a thread with one turn keeps the old text | never carries the body |
+| (c) | per-run `instructions`? | applied again on every turn, also in a thread that exists | carries the body, on every connection |
+| (d) | the MCP tool list after tools were added on the server? | read once, when the profile is served; a fresh session still lists the old tools | needs a push or a re-serve |
+| (e) | a `notifications/tools/list_changed` push? | works: with a session id, `listChanged: true` and the `GET` event stream Hermes opens after `initialized`, one frame made Hermes call `tools/list` again within 5 ms; old and new threads saw the new tools | `gateway-mcp` sends it |
+| (f) | `.env`, and the MCP address or token in `config.yaml`? | read when the profile is served | a restart (a token rotation) |
+| (g) | `/reload-mcp` typed as a run's input? | not a command on the API server; the model took it as text | not used |
+
+What the platform does about it. The body of `BOT.md` is `instructions` on every run, so an edit is live in the next turn of every thread. `gateway-mcp` answers
+`initialize` with `tools: { listChanged: true }` and a signed `Mcp-Session-Id`, and holds the `GET` event stream (see [gateway-mcp](./gateway-mcp.md)), so a change of
+a bot's tools reaches a running Hermes at once. A Hermes that does not hold the stream (older, or behind a proxy that cuts it) is covered by the digest line in the
+pod's `config.yaml` (the pod re-serves the profile when it changes) and by the bot's page, which says **Hermes has the current tools** or **Hermes has an older list:
+restart its profile**, from the digest of the last `tools/list` that profile made. For an older Hermes on your own machine the one command is:
+
+```
+hermes -p <profile> gateway restart
+```
+
+On a multiplexing host gateway a new profile directory is served by itself within about 30 s (`hermes gateway list` says "served by the default multiplexer"); a changed
+one needs the restart above. For the host bots of the devbox, `node tools/devbox/provision-host-bots.mjs --reserve <profile|team>` does the same through the gateway's control socket (that profile only; it refuses a profile `hermes gateway list` does not show as served by the default multiplexer, and a team name means the bots of `templates/<team>/bots/`, never a name prefix).
+
 ## The `hermes.profiles` provider (mode B)
 
 For a controller that keeps the team's pod in step with the team's bots (`ctx.providers.get<HermesProfilesProvider>('hermes.profiles')`, type in
@@ -533,7 +561,7 @@ For a controller that keeps the team's pod in step with the team's bots (`ctx.pr
 
 | Member | What it does |
 |---|---|
-| `profilesForTeam(teamId)` | for every active bot of the team placed on `managed`: `{ profile: 'mt-<slug>', botId, files, secrets }`. `files` are `SOUL.md`, `config.yaml`, `.env.template`; `secrets` are `{ MCP_TOKEN, LLM_KEY, API_SERVER_KEY }`. Credentials are created on first use and then stable. If a lead revokes or rotates the bot's tokens, that is remembered and the bot has **no entry** until a lead or workspace admin calls `POST /api/teams/:slug/bots/:botSlug/hermes/reenable` (fresh `MCP_TOKEN`, same API key); the platform never mints a replacement by itself. A bot with no model alias or no LLM-gateway key yet has no entry. |
+| `profilesForTeam(teamId)` | for every active bot of the team placed on `managed`: `{ profile: 'mt-<slug>', botId, files, secrets }`. `files` are `SOUL.md` (a fixed one-line identity), `config.yaml` (its `# manythreads tools: <digest>` line is the full tools digest `gateway-mcp` computes, so the pod re-serves the profile when the tools a bot is offered change), `.env.template`; `secrets` are `{ MCP_TOKEN, LLM_KEY, API_SERVER_KEY }`. Credentials are created on first use and then stable. If a lead revokes or rotates the bot's tokens, that is remembered and the bot has **no entry** until a lead or workspace admin calls `POST /api/teams/:slug/bots/:botSlug/hermes/reenable` (fresh `MCP_TOKEN`, same API key); the platform never mints a replacement by itself. A bot with no model alias or no LLM-gateway key yet has no entry. |
 | `setManagedGateway(teamId, { baseUrl })` | says where the team's pod answers (the connection named `managed`), so runs go there. Idempotent. |
 | `onChange(listener)` | called in this process after a team's managed profile set may have changed; also written as the event `hermes.profiles.changed` (`teamId`) for other processes. |
 

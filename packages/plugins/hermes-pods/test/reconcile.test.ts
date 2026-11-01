@@ -120,6 +120,24 @@ describe('reconcileTeam', () => {
     expect(mounts('hermes')).not.toContain('deployer');
   });
 
+  it('a changed tools digest line in a profile reaches the pod as a changed config.yaml (the sync restarts that profile; SOUL.md is fixed and does not carry the change) (PLAN P14-22)', async () => {
+    const withDigest = (digest: string): GatewayProfileSpec => {
+      const base = spec('dev');
+      return { ...base, files: { ...base.files, 'config.yaml': `model:\n  default: fast\n# manythreads tools: ${digest}\n`, 'SOUL.md': 'You are dev, a bot of engineering on manythreads; your instructions come with each request.\n' } };
+    };
+    const configOf = async (digest: string): Promise<{ config: string; soul: string }> => {
+      const k8s = new FakeK8s();
+      await new Reconciler(k8s, CFG, source([withDigest(digest)]), LOG, () => 'KEY').reconcileTeam(TEAM);
+      const doc = JSON.parse((k8s.store.get('Secret/manythreads/hermes-engineering-profiles')!['stringData'] as any)['profiles.json']);
+      return { config: doc.profiles[0].files['config.yaml'], soul: doc.profiles[0].files['SOUL.md'] };
+    };
+    const one = await configOf('a'.repeat(64));
+    const two = await configOf('b'.repeat(64));
+    expect(one.config).toContain(`# manythreads tools: ${'a'.repeat(64)}`);
+    expect(two.config).not.toBe(one.config);
+    expect(two.soul).toBe(one.soul);
+  });
+
   it('writes the profiles with their secrets and one Unix user per bot; drops .env.template', async () => {
     const k8s = new FakeK8s();
     await new Reconciler(k8s, CFG, source([spec('dev'), spec('qa')]), LOG, () => 'KEY').reconcileTeam(TEAM);

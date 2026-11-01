@@ -1,0 +1,125 @@
+/* Profile pictures (`avp-`, and the picture inside `.av.pic`) -- PLAN P14-23. Uses the shared .dlg, .btn and .av; only what is its own is here. */
+
+.av.pic {
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+.avp-cell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.av.pic img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avp {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.avp-now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.avp-now .av {
+  width: 56px;
+  height: 56px;
+  font-size: 18px;
+}
+
+.avp-now-text {
+  display: flex;
+  flex: 1 1 140px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.avp-sub {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.avp-now-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.avp-h {
+  margin: 0 0 6px;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.avp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 8px;
+}
+
+.avp-cell {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 2px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--shell);
+  cursor: pointer;
+}
+
+.avp-cell.bot {
+  border-radius: 12px;
+}
+
+.avp-cell:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.avp-cell:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.avp-cell:hover:not(:disabled) {
+  border-color: var(--human-border);
+}
+
+.avp-cell[aria-pressed="true"] {
+  border-color: var(--human);
+  background: var(--human-wash);
+}
+
+.avp-credit {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.pcard-pic {
+  margin-top: 4px;
+}
+
+.acc-pic {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}

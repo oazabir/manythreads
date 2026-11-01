@@ -39,7 +39,7 @@ function State({ bot, connections }: { bot: BotSummary; connections: ReadonlyArr
 function Row({ bot, slug, connections }: { bot: BotSummary; slug: string; connections: ReadonlyArray<HermesConnection> | null }) {
   return (
     <div className="b-row" data-testid="bot-row" data-bot={bot.slug}>
-      <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} />
+      <Avatar name={bot.name} kind={bot.kind === 'automation' ? 'automation' : 'agent'} avatar={bot.avatar} />
       <div className="b-who">
         <div className="b-name">
           <Link to={`/t/${slug}/bots/${bot.slug}`} data-testid="bot-open">{bot.name}</Link>

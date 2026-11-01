@@ -33,3 +33,4 @@ export * from './guardrails/index.ts';
 export * from './onboarding/index.ts';
 export * from './knowledge/index.ts';
 export * from './link-preview/index.ts';
+export * from './avatars/index.ts';

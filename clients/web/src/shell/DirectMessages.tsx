@@ -53,7 +53,7 @@ function NewConversation({ slug, onDone }: { slug: string; onDone: () => void })
           <li key={p.personId}>
             <label className="dm-person">
               <input type="checkbox" checked={picked.has(p.personId)} onChange={() => toggle(p.personId)} />
-              <Avatar name={p.name} />
+              <Avatar name={p.name} avatar={p.avatar} personId={p.personId} />
               <span>{p.name}</span>
               <PresenceDot personId={p.personId} />
             </label>

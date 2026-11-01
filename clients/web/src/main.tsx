@@ -26,6 +26,7 @@ import './styles/notify.css';
 import './styles/sidebar.css';
 import './styles/presence.css';
 import './styles/webhooks.css';
+import './styles/avatars.css';
 import './styles/proposals.css';
 import './styles/switcher.css';
 import './styles/emoji.css';

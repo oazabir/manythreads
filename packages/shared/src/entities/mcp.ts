@@ -43,14 +43,37 @@ export const McpError = z.strictObject({
 });
 export type McpError = z.infer<typeof McpError>;
 
-/** `initialize`: what the server is and what it can do. Only tools are offered. */
+/** `initialize`: what the server is and what it can do. Only tools are offered. `listChanged` is true at a bot's own address (it pushes), false at a run's. */
 export const McpServerInfo = z.strictObject({ name: z.string(), version: z.string() });
 export const McpInitializeResult = z.strictObject({
   protocolVersion: z.string(),
-  capabilities: z.strictObject({ tools: z.strictObject({ listChanged: z.literal(false) }) }),
+  capabilities: z.strictObject({ tools: z.strictObject({ listChanged: z.boolean() }) }),
   serverInfo: McpServerInfo,
 });
 export type McpInitializeResult = z.infer<typeof McpInitializeResult>;
+
+/** The header that carries a bot endpoint's session id (a signed value naming the bot; the server keeps nothing for it). */
+export const MCP_SESSION_HEADER = 'mcp-session-id';
+
+/** The one frame a bot's event stream carries: the tool list changed, ask `tools/list` again. */
+export const MCP_TOOLS_LIST_CHANGED_METHOD = 'notifications/tools/list_changed';
+export const McpToolsListChanged = z.strictObject({ jsonrpc: z.literal('2.0'), method: z.literal(MCP_TOOLS_LIST_CHANGED_METHOD) });
+export type McpToolsListChanged = z.infer<typeof McpToolsListChanged>;
+
+/**
+ * Whether a bot's Hermes holds the tools the platform would offer it now (the bot page's line): `current` when the last `tools/list` the bot's token
+ * made carries the same digest as today's, `older` when it differs (restart the profile), `never` when that token has not listed yet.
+ */
+export const McpToolsStatus = z.strictObject({
+  state: z.enum(['current', 'older', 'never']),
+  /** The digest of what `tools/list` answers the bot now. */
+  digest: z.string().regex(/^[0-9a-f]{64}$/),
+  /** The digest of the last list the bot's token made; null before the first. */
+  listedDigest: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+  listedAt: IsoDateTime.nullable(),
+});
+export type McpToolsStatus = z.infer<typeof McpToolsStatus>;
+export const mcpToolsStatusRoute = { method: 'GET', path: '/api/teams/:slug/bots/:botSlug/mcp-tools' } as const;
 
 /** One tool as `tools/list` describes it. `inputSchema` is JSON Schema, never code. */
 export const McpToolDescriptor = z.strictObject({

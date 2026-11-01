@@ -19,7 +19,7 @@ import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
 import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import { TOMBSTONE, type PendingSend } from './timeline';
-import type { People } from './hooks';
+import { usePeople, type People } from './hooks';
 import { PresenceDot } from '../presence/PresenceDot';
 import { PersonLink } from '../presence/ProfileCard';
 
@@ -226,9 +226,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         </div>
       )}
       {authorPerson ? (
-        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} /></PersonLink>
+        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} /></PersonLink>
       ) : (
-        <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} />
+        <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} avatar={m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null} />
       )}
       <div className="msg-main">
         <div className="who">
@@ -325,9 +325,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
 export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: PendingSend; name: string; onRetry: () => void; onDiscard: () => void }) {
   const failed = pending.status === 'failed';
   const attached = splitAttachments(pending.attachments);
+  const me = usePeople().me;
   return (
     <div className={`msg pending ${failed ? 'failed' : ''}`} data-testid="pending-message" data-status={pending.status}>
-      <Avatar name={name} />
+      <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />
       <div className="msg-main">
         <div className="who">
           <b>{name}</b>

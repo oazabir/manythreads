@@ -151,8 +151,8 @@ run's bot transaction. The loader compiles a `BOT.md`'s `capabilities.native` in
 Every URL the platform hands out is `<publicUrl>/mcp` (inside the cluster, `http://manythreads-server:3000/mcp`). The bearer token alone says who is
 calling: it is looked up first as a run token (that run's call, with the asker's authority) and otherwise as a bot's pairing token (the call is
 attributed to the bot's open run, as below). Anything else is one 401, and failed attempts are counted per client address. `/api/mcp/runs/:runId`
-and `/api/mcp/bots/:botId` keep working for profiles written before. Only `POST` is served: the endpoint answers each request with one JSON
-document and offers no event stream.
+and `/api/mcp/bots/:botId` keep working for profiles written before. `POST` answers each request with one JSON document. A bot's token also opens
+the tools stream with `GET` (below); a run's own address serves `POST` only and says `listChanged: false`.
 
 ## The bot's stable endpoint
 
@@ -162,3 +162,36 @@ lead). A call is attributed to the bot's currently open run — `ctx.runs.openRu
 mint — and then goes through the same `handleRpc` as the per-run endpoint. With no run open, `initialize`, `ping` and `tools/list` answer normally
 (the list is judged as for a conversation) and `tools/call` is a tool error with code `no_open_run`. An unknown, revoked or other bot's token is a
 401 identical to every other 401 of the endpoint.
+
+## The tools stream (P14-22)
+
+A Hermes reads a bot's tool list once, when its profile is served; a change of tools reaches it only by push. So the bot's endpoint (`/mcp` and
+`/api/mcp/bots/<botId>`, never a run's address) says more:
+
+* **`initialize`** answers `tools: { listChanged: true }` and a header `Mcp-Session-Id`. The id is a signed value that names the bot
+  (`v1.<bot id>.<HMAC>`; the key is derived from `MANYTHREADS_KMS_KEY`, the same on every replica, random per process without one). No server memory
+  holds it: any valid id is accepted after a restart or on another replica. A client that sends an id the signature does not verify, or another bot's, gets
+  404 `Unknown session; send initialize again`; a client that sends none is served as before. An `initialize` itself is never refused for its session header: a
+  client that re-sends an old id with a fresh `initialize` is given a new session.
+* **`GET`** with `Accept: text/event-stream` and the bot's token opens a stream (the same authentication as `POST`: a missing, wrong, revoked or another
+  bot's token is the same 401, and a run's token never opens one). Any other `GET` stays 405. The stream sends one `list_changed`
+  (`event: message`, `data: {"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`) the moment it opens, so a Hermes that reconnects after a deploy lists
+  again; a `: keepalive` comment every 25 s; it ends after 30 minutes (the client reconnects). A revoked token (`DELETE …/pairing-tokens`) ends its streams at the next
+  token check, within about ten seconds; a rotation (`bots.pairing.rotated`) makes that check at once. At most 4 streams per bot and 2,000 in all, **each counted per
+  process (per replica)**, so a bot can hold 4 on every replica: an excess one is 429 with `Retry-After`. A reader that cannot keep up is dropped, never buffered
+  further: over 16 KB waiting, or with anything it was sent still unread at two keepalive times in a row (a frame is tiny, so a stalled client would otherwise take
+  hours to reach the byte limit). A frame carries no token, id or counter. A `MANYTHREADS_KMS_KEY` that is set but is not 32 bytes of base64 is logged at start-up: the
+  session key then differs per process.
+* **The tools digest** is a SHA-256 of exactly what `tools/list` answers the bot as a conversation: every tool's name, description, input schema, destructive
+  flag and `needsApproval`, sorted by name with sorted keys (a reordered grant list is the same digest). It is recomputed when the bot is loaded (a `BOT.md`
+  commit: definition and grants) and when a workspace policy changes (approval rules), and kept in `app.mcp_bot_tools` (migration 0002; system role only;
+  `version` goes up only when the digest differs from the last one pushed). Another plugin reads it through the provider `mcp.tools` (`toolsDigest(botId)`),
+  which is how the pod's `config.yaml` line carries the same value.
+* **Across replicas.** Plugin events are taken by one replica, so the event handler only writes the new digest and bumps `version`. Each replica that holds
+  streams reads the versions of its bots' rows every two seconds (and at once for a change it wrote itself) and sends `list_changed` to its own streams when
+  one moved. Nothing is shared in process memory.
+* **What the bot's page shows.** `tools/list` at a bot's address records the digest it answered (`listed_digest`, `listed_at`; one row per bot, cleared when the token is rotated).
+  `GET /api/teams/:slug/bots/:botSlug/mcp-tools` (team members) answers `{ state: 'current' | 'older' | 'never', digest, listedDigest, listedAt }`: `older` means the
+  profile last listed a different set than the bot has now, which a Hermes that holds the stream never shows for more than a moment.
+* **The ingress** must pass the stream unbuffered: the response carries `X-Accel-Buffering: no`, and the read timeout in front must be over 30 minutes (Helm
+  `web.mcpStreamTimeout`; see `docs/deploy.md`).

@@ -119,11 +119,12 @@ export async function loadAuthenticated(
     id: string;
     display_name: string;
     primary_email: string;
+    avatar: string | null;
     workspace_id: string;
     workspace_name: string;
     role: AuthenticatedSession['role'];
   }>(
-    `SELECT p.id, p.display_name, p.primary_email, w.id AS workspace_id, w.name AS workspace_name, wm.role
+    `SELECT p.id, p.display_name, p.primary_email, p.avatar, w.id AS workspace_id, w.name AS workspace_name, wm.role
      FROM app.people p
      JOIN app.workspaces w ON w.id = p.workspace_id
      JOIN app.workspace_members wm ON wm.person_id = p.id AND wm.workspace_id = p.workspace_id
@@ -143,7 +144,7 @@ export async function loadAuthenticated(
   );
   return {
     authenticated: true,
-    person: { id: row.id as never, name: row.display_name, email: row.primary_email },
+    person: { id: row.id as never, name: row.display_name, email: row.primary_email, avatar: (row.avatar ?? null) as never },
     workspace: { id: row.workspace_id as never, name: row.workspace_name },
     role: row.role,
     teams: teams.rows,

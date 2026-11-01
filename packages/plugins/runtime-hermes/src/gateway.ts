@@ -23,7 +23,7 @@ export interface GatewayTarget {
   apiKey: string;
   /** True for an address a team lead typed: every request then goes through the outbound guard (`outbound.ts`). False for the platform's own pod. */
   guarded?: boolean;
-  /** `managed` is the team's own pod, whose profiles already carry the definition's body as SOUL.md; `external` is a gateway the customer runs. */
+  /** `managed` is the team's own pod, `external` a gateway the customer runs. Both get the definition's body as `instructions` on every run. */
   kind: 'managed' | 'external';
   /** What answers behind the address. `claude-code` and `codex` are the agent bridge, which gets a token for the run; `hermes` never does. */
   agent: HermesConnectionAgent;
@@ -190,10 +190,11 @@ export async function runOnGateway(
     input: input.prompt,
     session_id: sessionIdFor(input.bot.id, input.thread?.threadRootId ?? null, runId),
   };
-  // A gateway the customer runs knows nothing of the definition, so its body (what the bot is and how it behaves) goes with every run as
-  // `instructions`, which Hermes adds to its system prompt on each model call. The team's own pod needs no copy: its profiles carry it as SOUL.md.
+  // The definition's body (what the bot is and how it behaves) goes with every run, on every connection, as `instructions`, which Hermes adds to its system
+  // prompt on each model call, also in a thread that already exists. It is never read from the profile's `SOUL.md`: Hermes freezes that file per thread
+  // (PLAN P14-22), so a body edit would reach only new threads, and the team's pod would also wait for its Secret to refresh.
   const instructions = input.definition.body.trim();
-  if (target.kind !== 'managed' && instructions !== '') runBody['instructions'] = instructions;
+  if (instructions !== '') runBody['instructions'] = instructions;
   // The agent bridge starts a fresh process per run and has no bot credential of its own, so what that process needs travels in the request,
   // including the token of this one run. A Hermes agent never gets the token: it reaches the platform with its profile's own credential.
   if (target.agent !== 'hermes') {

@@ -476,6 +476,9 @@ describe('mode B: the team’s own pod (profiles for a controller)', () => {
     expect(Object.keys(spec!.files).sort()).toEqual(['.env.template', 'SOUL.md', 'config.yaml']);
     expect(spec!.files['config.yaml']).toContain(`http://manythreads-server:3000/mcp`);
     expect(spec!.files['config.yaml']).toContain('"off"');
+    // the pod's SOUL.md is a fixed identity line (a body edit never rewrites it); the tools line is the full digest gateway-mcp computed for this bot
+    expect(spec!.files['SOUL.md']).toMatch(/^You are .+, a bot of .+ on manythreads; your instructions come with each request\.\n$/);
+    expect(spec!.files['config.yaml']).toMatch(/^# manythreads tools: [0-9a-f]{64}$/m);
     expect(spec!.secrets.LLM_KEY).toBe('sk-virtual-key-of-pod-bot');
     expect(spec!.secrets.API_SERVER_KEY).toMatch(/^mtk_/);
     for (const secret of Object.values(spec!.secrets)) expect(spec!.files['config.yaml']).not.toContain(secret);
@@ -490,7 +493,10 @@ describe('mode B: the team’s own pod (profiles for a controller)', () => {
     const rootId = await post('@pod-bot hello from the pod');
     const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the pod reply');
     expect(reply.body).toBe('Answered by the pod.');
-    expect(gw.calls.find((c) => c.path === '/p/mt-pod-bot/v1/runs' && c.method === 'POST')).toMatchObject({ authorized: true });
+    const podRun = gw.calls.find((c) => c.path === '/p/mt-pod-bot/v1/runs' && c.method === 'POST');
+    expect(podRun).toMatchObject({ authorized: true });
+    // the body of BOT.md goes with the run, also to the team's own pod, so an edit is followed by the next turn of any thread
+    expect((podRun!.body as { instructions?: string }).instructions).toEqual(expect.stringMatching(/\S/));
 
     // a lead revokes the bot's tokens by hand: that is a decision, not a fault. The platform does not undo it: the old token is dead, no new one is
     // minted, the bot drops out of the pod's profile set, and only an explicit re-enable brings it back with a fresh token.

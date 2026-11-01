@@ -4,6 +4,7 @@ import { Dialog } from '../components/Dialog';
 import { usePeople } from '../channels/hooks';
 import { useSession } from '../app/session';
 import { useCanShowPresence, useNow, usePresence, usePresenceCard } from './hooks';
+import { MyAvatarPicker } from '../avatars/MyAvatarPicker';
 import { PresenceDot } from './PresenceDot';
 import { deviceTimeZone } from './settingsModel';
 import { profileFacts } from './profileModel';
@@ -30,6 +31,8 @@ export function ProfileCard({ personId, name, email, onClose }: { personId: stri
   const { me } = usePresence();
   const now = useNow(30_000);
   const known = people.byPerson(personId);
+  const mine = personId === session.person.id;
+  const [picking, setPicking] = useState(false);
   const facts = profileFacts(card, now, me?.timeZone ?? deviceTimeZone());
   const mail = email ?? known?.email;
   const live = useCanShowPresence(personId);
@@ -40,7 +43,7 @@ export function ProfileCard({ personId, name, email, onClose }: { personId: stri
     <Dialog title={name} onClose={onClose} testId="profile-card" footer={<button type="button" className="btn" onClick={onClose} data-autofocus>Close</button>}>
       <div className="pcard">
         <div className="pcard-head">
-          <Avatar name={name} />
+          <Avatar name={name} avatar={mine ? session.person.avatar : known?.avatar} personId={personId} />
           <div className="pcard-id">
             <p className="pcard-presence" data-testid="profile-presence">
               <PresenceDot personId={personId} />
@@ -49,6 +52,7 @@ export function ProfileCard({ personId, name, email, onClose }: { personId: stri
             </p>
             {mail ? <p className="pcard-line" data-vt-mask>{mail}</p> : null}
             {known ? <p className="pcard-line">{known.role === 'lead' ? 'Team lead' : 'Member'}</p> : null}
+            {mine ? <button type="button" className="linkish pcard-pic" onClick={() => setPicking(true)} data-testid="profile-change-picture">Change picture</button> : null}
           </div>
         </div>
         <dl className="pcard-facts">
@@ -77,6 +81,7 @@ export function ProfileCard({ personId, name, email, onClose }: { personId: stri
         </dl>
         {live && !facts.status && !facts.outOfOffice && !facts.localTime && !facts.workingHours ? <p className="pcard-empty" data-testid="profile-empty">{name} has not shared a status, time zone or working hours.</p> : null}
       </div>
+    {picking ? <MyAvatarPicker onClose={() => setPicking(false)} /> : null}
     </Dialog>
   );
 }
