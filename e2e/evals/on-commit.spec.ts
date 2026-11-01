@@ -72,8 +72,17 @@ test('a lead runs the set; a worse BOT.md applied through a proposal is flagged 
     expect((await applyGuarded(omar, BOT_PATH, botMd('answer.post, tasks.complete'), 'Add the eval demo bot')).status).toBe(201);
     expect((await applyGuarded(omar, `bots/${BOT}/evals/qa.yaml`, SET, 'Add its scenarios')).status).toBe(201);
     const evals = () => omar.get<Evals>(`/api/teams/engineering/bots/${BOT}/evals`);
+    // The bot is loaded from the repo a moment after the commit, and until then the evals route answers 404 "No bot": that is "not yet", not a failure
+    // (`evals()` asserts 200, so the poll reads the route itself and treats any other status as an answer that is not there yet).
+    const peek = async (): Promise<Evals | null> => {
+      const res = await omar.ctx.get(`/api/teams/engineering/bots/${BOT}/evals`);
+      return res.status() === 200 ? ((await res.json()) as Evals) : null;
+    };
     const settled = async (pick: (e: Evals) => boolean): Promise<Evals> => {
-      await expect.poll(async () => pick(await evals()), { timeout: 30_000 }).toBe(true);
+      await expect.poll(async () => {
+        const e = await peek();
+        return e !== null && pick(e);
+      }, { timeout: 30_000 }).toBe(true);
       return evals();
     };
     await settled((e) => e.recent.some((r) => r.status !== 'running') && !e.recent.some((r) => r.status === 'running'));

@@ -50,6 +50,8 @@ export function ChannelView() {
 }
 
 const NO_NAMES: string[] = [];
+/** How long a channel's rows wait for the roster and the read position before they are drawn without the "New" line decision. */
+const OPENING_DECISION_WAIT_MS = 2_500;
 function useNames(slug: string): string[] {
   const feed = useChannelFeed(slug);
   return useMemo(() => (feed.groups.length === 0 ? NO_NAMES : feed.groups.flatMap((g) => g.channels.map((c) => c.name.replace(/^#/, '')))), [feed.groups]);
@@ -123,6 +125,17 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     [tl.items, tl.pending, tl.cursor, lastRead, self, readyToDivide],
   );
   const unreadShown = items.some((i) => i.kind === 'unread');
+  // The rows are not drawn until the opening decision is made (the roster has answered and the read position is known): the "New" line goes in front of the
+  // first unread message, so drawing the rows first and the line a moment later pushed them down under the reader's pointer or finger (a message's action
+  // bar vanished while it was being pressed). Not for ever: a roster that never answers must not keep the channel blank, so after a moment the rows show
+  // without the decision, as before.
+  const [decisionLate, setDecisionLate] = useState(false);
+  useEffect(() => {
+    if (hadUnread !== null) return;
+    const t = setTimeout(() => setDecisionLate(true), OPENING_DECISION_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [hadUnread]);
+  const deciding = tl.status === 'ready' && hadUnread === null && !decisionLate;
   useEffect(() => {
     // not before the roster has answered: with `self` still unknown, every message of the reader's own counts as unread, and the list opens at the top
     if (hadUnread === null && tl.status === 'ready' && readAtOpen.known && peopleSettled) {
@@ -251,7 +264,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   );
 
   return (
-    <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || undefined}>
+    <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
       {headerSlot && !dm ? createPortal(<ChannelStar channelId={channelId} channelName={name} teamSlug={teamSlug} />, headerSlot) : null}
       {headerSlot
         ? createPortal(<ChannelBell channel={{ channelId, channelName: dm ? null : name, channelKind: dm ? 'dm' : 'channel' }} />, headerSlot)
@@ -270,7 +283,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
       {status === 'waiting' ? <div className="net-banner" role="status">Reconnecting… new messages will appear when you are back online.</div> : null}
       <BookmarksBar channelId={channelId} teamSlug={teamSlug} dm={dm !== undefined} canEdit={canPost} slot={headerSlot} />
       <div className="chview-list">
-        {tl.status === 'loading' ? (
+        {tl.status === 'loading' || deciding ? (
           <div className="loading-rows" aria-hidden="true">
             {[0, 1, 2, 3].map((n) => <div key={n} className="skel" />)}
           </div>
