@@ -123,7 +123,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
-| 7 | 14 | Messaging parity and moving in | XL | 6 | 7 of 23 built, 10 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 11 of 23 built, 8 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 0 of 13 built |
 | 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
@@ -166,7 +166,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 11 · Mobile client | 0 | 0 | 10 | 0 |
 | 12 · Full persona end-to-end automation and user manual | 0 | 0 | 7 | 1 |
 | 13 · Screenshot UI review | 0 | 0 | 11 | 0 |
-| 14 · Messaging parity and moving in | 5 | 10 | 8 | 0 |
+| 14 · Messaging parity and moving in | 11 | 8 | 4 | 0 |
 | 15 · Voice rooms, meeting transcripts and meeting memory | 0 | 0 | 25 | 0 |
 | 16 · Connectors to the tools a company already uses | 0 | 0 | 12 | 0 |
 | 17 · Video calls, screen sharing and the meeting assistant | 0 | 0 | 12 | 0 |
@@ -433,7 +433,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI … | Not built |  | no pre-check/contrast/Tab-walk CI jobs; USER_JOURNEYS.md not generated |
 | P13-11 | Build the /dev/components gallery (Button, Chip, Card, Table row … | Not built | clients/web/src/pages/DevTokens.tsx (/dev/tokens), DevViewers; eslint.config.js raw-hex ban; stylelint.config.js color-no-hex | no /dev/components gallery, no 4px spacing lint |
 
-### Phase 14 · Messaging parity and moving in — 5 built, 10 partly, 8 not built
+### Phase 14 · Messaging parity and moving in — 11 built, 8 partly, 4 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
@@ -441,9 +441,9 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P14-01b | (not a row of the plan; built as a follow-up) | Built | clients/web/src/presence/PresencePanels.tsx, PresenceSettings.tsx, DndIndicators.tsx; commit 47e30d0 | - (id not in PLAN table; commit-only follow-up of P14-01: status dialog, DND pause, schedule, hours editors) |
 | P14-02 | Composer parity. Formatting toolbar for the Markdown the renderer … | Partly built | clients/web/src/channels/Composer.tsx (toolbar, up-arrow edit-last, localStorage drafts), EmojiPicker.tsx, emoji.ts | no custom emoji, no @here/@channel confirm, drafts only in browser (not server); docs/plugins/channels.md:128 agrees |
 | P14-03 | User groups from role tags. A TEAM.md role tag is a mention handle … | Built | packages/shared/src/markup/role-handles.ts; plugins/teams role-groups.ts, routes-tags.ts; plugins/channels mentions.ts, mention-budget.ts, routes-mentions.ts, migration 0012; clients/web/src/channels/mentionGroups.ts, Composer.tsx; e2e/channels/role-mention-picker.spec.ts; live check e2e/screens/task.groups.shots.ts (2026-11-01) | - (a person-owned, bot-owned or reserved word is never a group; budget 5 group mentions a minute and 1000 people an hour per author; cut at 500 people; no client notice yet for a cut group) |
-| P14-04 | Later and reminders. "Save for later" on any message (with done … | Partly built | packages/plugins/reminders (migration 0001 later_items, fire.ts job, routes.ts); clients/web/src/later/; ThreadsInbox.tsx Later tab | no /remind command or time parser, no "Reminders" system-sender message (notification only) |
+| P14-04 | Later and reminders. "Save for later" on any message (with done … | Built | packages/plugins/reminders (migrations 0001 later_items, 0002_reminders; send.ts minute job, routes-remind.ts); packages/shared/src/commands/when.ts, remind.ts; clients/web/src/later/RemindersDialog.tsx; e2e/channels/reminders.spec.ts; live spec e2e/screens/task.reminders.shots.ts | - |
 | P14-05 | Scheduled send. "Send later" on the send button; scheduled_messages … | Built | plugins/channels migration 0013, scheduled.ts, routes-scheduled.ts; clients/web/src/channels/SendLater.tsx, ScheduledStrip.tsx, scheduled.ts, styles/scheduled.css; e2e/channels/scheduled.spec.ts; live check e2e/screens/task.scheduled.shots.ts (2026-11-01) | - (text only, no files; 100 waiting per person; a refusal shows in the Not sent list, no notification kind yet) |
-| P14-06 | Slash commands. One registry in shared/commands (name, arguments … | Partly built | packages/shared/src/commands/index.ts (ask, task, me, shrug, help); clients/web/src/channels/slash.ts, useSlash.ts | no remind/status/dnd/away/poll/invite/leave/mute/topic; no BOT.md commands or command trigger (docs/plugins/channels.md:144) |
+| P14-06 | Slash commands. One registry in shared/commands (name, arguments … | Built | packages/shared/src/commands/ (registry with usage and needs; remind, status, dnd, away, poll, invite, leave, mute, topic, shrug); clients/web/src/channels/slash.ts, slashRun.ts, useSlash.ts; e2e/channels/slash-commands.spec.ts | the BOT.md `command` trigger (a bot declares a command) is skipped; `/status :shortcode:` is stored as text, not converted |
 | P14-07 | Polls. /poll and a composer action; single or multiple choice … | Built | plugins/channels migration 0014_polls.sql (RLS: an anonymous ballot is readable only by its voter; app.polls_close and app.polls_lock definer functions), polls.ts, routes-polls.ts, poll-views.ts, poll-push.ts; shared entities/poll.ts, api/channels/polls.ts, commands/poll.ts; clients/web PollCard.tsx, PollDialog.tsx, polls.ts, styles/polls.css; e2e/channels/polls.spec.ts; live check e2e/screens/task.polls.shots.ts (2026-11-01) | Left: a second option click while a vote is in flight is dropped (queue it), anonymous refusal wording in a channel |
 | P14-08 | Link previews. For a link in a posted message the server reads the … | Built | packages/plugins/link-preview (migrations 0001 and 0002, resolver.ts, safe-fetch.ts, fetch-preview.ts, jobs.ts, limits.ts, routes.ts); shared api/link-preview; clients/web linkpreview/, LinkPreviewCards.tsx; live check e2e/screens/task.link-preview.shots.ts (2026-11-01) | Left: no admin screen for the allow and deny lists (API only), blank slot for a link that never gets a card |
 | P14-09 | Notifications that reach people. Per-channel level (all · mentions · … | Partly built | notifications migration 0003 (notification_levels, keywords, push_subscriptions), src/webpush.ts, push.ts; clients/web/public/sw.js | no email digest and no one-click unsubscribe (docs/plugins/notifications.md:134) |
