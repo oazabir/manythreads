@@ -1,4 +1,4 @@
-import { parseSlash, SLASH_COMMANDS, type SlashCommand } from '@manythreads/shared';
+import { parsePollArgs, parseSlash, SLASH_COMMANDS, type SlashCommand } from '@manythreads/shared';
 
 /*
  * What a slash command does once the composer reads it (PLAN P14-06). `parseSlash` in `@manythreads/shared` says which command a message is;
@@ -48,6 +48,8 @@ export type SlashPlan =
   | { do: 'post'; body: string }
   | { do: 'task'; title: string }
   | { do: 'help' }
+  /** `/poll` alone opens the dialog empty; with a question and options it asks the poll at once. */
+  | { do: 'poll'; question: string | null; options: string[]; prefill?: { question: string; options: string[] } }
   /** Nothing is sent and the text stays in the box; the sentence says what to fix. */
   | { do: 'say'; message: string };
 
@@ -69,7 +71,7 @@ export function planSlash(text: string, who: SlashWho, hasFiles = false): SlashP
   const { command, args } = parsed;
   const can = availability(command, who);
   if (!can.ok) return { do: 'say', message: can.reason };
-  if ((command.name === 'task' || command.name === 'help') && hasFiles) {
+  if ((command.name === 'task' || command.name === 'help' || command.name === 'poll') && hasFiles) {
     return { do: 'say', message: `Remove the attached files first: /${command.name} does not post a message.` };
   }
   switch (command.name) {
@@ -77,6 +79,13 @@ export function planSlash(text: string, who: SlashWho, hasFiles = false): SlashP
       // "/help me with this" is a sentence, not the command: keep it in the box rather than open a dialog and empty it
       if (args !== '') return { do: 'say', message: 'Type /help on its own to see the commands. To post this as a message, start it with two slashes: //help.' };
       return { do: 'help' };
+    case 'poll': {
+      const parsed = parsePollArgs(args);
+      if (parsed.kind === 'empty') return { do: 'poll', question: null, options: [] };
+      if (parsed.kind === 'partial') return { do: 'poll', question: null, options: [], prefill: { question: parsed.question, options: parsed.options } };
+      if (parsed.kind === 'error') return { do: 'say', message: parsed.reason };
+      return { do: 'poll', question: parsed.question, options: parsed.options };
+    }
     case 'shrug':
       return { do: 'post', body: args === '' ? SHRUG : `${args} ${SHRUG}` };
     case 'me': {

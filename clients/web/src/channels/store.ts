@@ -2,12 +2,15 @@ import {
   MessageDeletedPush,
   MessageEditedPush,
   MessagePostedPush,
+  PollChangedPush,
   ReactionChangedPush,
   ReadStateEntry,
   TypingStartedPush,
   type ChannelMessage,
+  type CreatePollRequest,
   type FileSummary,
   type Message,
+  type PollView,
   type ReactionSummary,
 } from '@manythreads/shared';
 import { z } from 'zod';
@@ -15,6 +18,9 @@ import { isApiError } from '../api/client';
 import { onPersonChange } from '../app/caches';
 import {
   addReaction,
+  closePoll,
+  fetchPollResults,
+  createPoll,
   deleteMessage,
   editMessage,
   fetchMessage,
@@ -26,7 +32,10 @@ import {
   markRead,
   postMessage,
   removeReaction,
+  votePoll,
+  withdrawVote,
 } from '../api/endpoints';
+import { withServerPoll, withTotals, withVote } from './polls';
 import type { Push, RealtimeClient } from '../realtime/socket';
 import {
   applyReaction,
@@ -164,6 +173,12 @@ export class ChannelStore {
       case 'reaction.changed': {
         const p = ReactionChangedPush.safeParse(push.payload);
         if (p.success) this.onReaction(p.data);
+        return;
+      }
+      case 'poll.changed': {
+        // totals only (never who voted); the reader's own vote is not in it and stays as it was
+        const p = PollChangedPush.safeParse(push.payload);
+        if (p.success) this.mapMessageAnywhere(p.data.channelId, p.data.messageId, (m) => (m.poll && m.poll.id === p.data.pollId ? { ...m, poll: withTotals(m.poll, p.data) } : m));
         return;
       }
       case 'typing.started': {
@@ -530,6 +545,49 @@ export class ChannelStore {
     } catch {
       this.mapMessage(channelId, rootId, id, (m) => ({ ...m, reactions: current ? applyReaction(m.reactions, { emoji, count: current.count, added: current.mine, byMe: true }) : applyReaction(m.reactions, { emoji, count: 0, added: false, byMe: true }) }));
     }
+  }
+
+  /** Ask a poll: the message the server answers with goes into the timeline at once (its push would bring the same). */
+  async createPoll(channelId: string, request: CreatePollRequest): Promise<ChannelMessage> {
+    const message = await createPoll(channelId, request);
+    this.applyPosted(message);
+    return message;
+  }
+
+  /** Set the reader's vote on a poll to exactly these options (none: withdraw it). Counted on the page at once, then settled with the server's answer. */
+  async vote(channelId: string, rootId: string | null, messageId: string, poll: PollView, options: readonly number[]): Promise<void> {
+    await this.changeVote(channelId, rootId, messageId, poll, options, options.length === 0 ? withdrawVote : (c, p) => votePoll(c, p, [...options]));
+  }
+
+  private async changeVote(
+    channelId: string,
+    rootId: string | null,
+    messageId: string,
+    before: PollView,
+    options: readonly number[],
+    send: (channelId: string, pollId: string) => Promise<{ poll: PollView }>,
+  ): Promise<void> {
+    this.mapMessage(channelId, rootId, messageId, (m) => (m.poll ? { ...m, poll: withVote(m.poll, options) } : m));
+    try {
+      const res = await send(channelId, before.id);
+      this.mapMessage(channelId, rootId, messageId, (m) => (m.poll ? { ...m, poll: withServerPoll(m.poll, res.poll) } : m));
+    } catch (e) {
+      // Not put back from a snapshot (a push may have moved the totals meanwhile): the poll is read again. Only if that fails too is the old copy restored.
+      let fresh: PollView | null = null;
+      try {
+        fresh = (await fetchPollResults(channelId, before.id)).poll;
+      } catch {
+        fresh = null;
+      }
+      this.mapMessage(channelId, rootId, messageId, (m) => (m.poll ? { ...m, poll: fresh ? { ...withServerPoll(m.poll, fresh), mine: fresh.mine } : before } : m));
+      throw e;
+    }
+  }
+
+  /** The author closes a poll early; the poll on the page takes the closed state the server answers with. */
+  async closePoll(channelId: string, rootId: string | null, messageId: string, pollId: string): Promise<void> {
+    const res = await closePoll(channelId, pollId);
+    this.mapMessage(channelId, rootId, messageId, (m) => (m.poll ? { ...m, poll: withServerPoll(m.poll, res.poll) } : m));
   }
 
   private findMessage(channelId: string, rootId: string | null, id: string): ChannelMessage | undefined {

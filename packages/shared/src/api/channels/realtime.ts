@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { ActorId, ChannelId, MessageId } from '../../ids.ts';
+import { IsoDateTime } from '../../common/time.ts';
+import { ActorId, ChannelId, MessageId, PollId } from '../../ids.ts';
 import { Channel } from '../../entities/channel.ts';
 import { Emoji } from '../../entities/message.ts';
 import { ChannelMessage } from './common.ts';
@@ -55,3 +56,22 @@ export const ScheduledChangedPush = z.object({
   change: z.enum(['scheduled', 'edited', 'sent', 'refused', 'cancelled']),
 });
 export type ScheduledChangedPush = z.infer<typeof ScheduledChangedPush>;
+
+/**
+ * The counts of a poll changed (a vote, a withdrawn vote, the poll closed): sent to everyone who can read the channel so the bars move while the
+ * card is open. It holds the totals only, never who voted or for what, and nothing that depends on the reader (their own vote stays as it was).
+ */
+export const WS_POLL_CHANGED = 'poll.changed';
+export const PollChangedPush = z.object({
+  channelId: ChannelId,
+  messageId: MessageId,
+  pollId: PollId,
+  votes: z.array(z.number().int().nonnegative()),
+  voters: z.number().int().nonnegative(),
+  /** The poll's change counter (`PollView.version`): a page ignores a push older than the poll it already holds. */
+  version: z.number().int().nonnegative(),
+  closed: z.boolean(),
+  closedAt: IsoDateTime.nullable(),
+  resultMessageId: MessageId.nullable(),
+});
+export type PollChangedPush = z.infer<typeof PollChangedPush>;

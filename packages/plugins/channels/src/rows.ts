@@ -4,6 +4,7 @@ import {
   ChannelMember,
   ChannelMessage,
   Mention,
+  PollView,
   Message,
   type ForwardedMessage,
   type MessageAuthor,
@@ -127,12 +128,14 @@ export const toChannelMessage = (
   attachments: readonly FileSummary[] = [],
   author?: MessageAuthor,
   forward?: ForwardedMessage,
+  poll?: PollView,
 ): ChannelMessage => {
   const alsoSentFromThread = r.deleted_at ? undefined : alsoSentFromThreadOf(r.meta);
   return ChannelMessage.parse({
     ...messageFields(r),
     ...(author ? { author } : {}),
     ...(forward ? { forward } : {}),
+    ...(poll && !r.deleted_at ? { poll } : {}),
     ...(alsoSentFromThread ? { alsoSentFromThread } : {}),
     reactions,
     attachments: r.deleted_at ? [] : attachments,   // a deleted message shows no cards
@@ -186,4 +189,45 @@ export const toScheduledMessage = (r: ScheduledRow): ScheduledMessage =>
     refusedReason: r.refused_reason,
     refusedAt: iso(r.refused_at),
     createdAt: r.created_at.toISOString(),
+  });
+
+/** A poll with the reader's own ballot (`mine`, null when they have not voted) and whether it counts as closed now (the database's clock decides). */
+export type PollRow = {
+  id: string;
+  workspace_id: string;
+  channel_id: string;
+  message_id: string;
+  author_id: string;
+  question: string;
+  options: string[];
+  multiple: boolean;
+  anonymous: boolean;
+  closes_at: Date | null;
+  closed_at: Date | null;
+  result_message_id: string | null;
+  vote_counts: number[];
+  voter_count: number;
+  version: number;
+  closed: boolean;
+  mine: number[] | null;
+};
+/** The columns of a poll; the query says `FROM app.polls p LEFT JOIN app.poll_votes mv ON ...` (`POLL_MINE_JOIN`) to find the reader's own ballot. */
+export const POLL_SELECT =
+  'p.id, p.workspace_id, p.channel_id, p.message_id, p.author_id, p.question, p.options, p.multiple, p.anonymous, p.closes_at, p.closed_at, p.result_message_id, p.vote_counts, p.voter_count, p.version, ' +
+  '(p.closed_at IS NOT NULL OR (p.closes_at IS NOT NULL AND p.closes_at <= now())) AS closed, mv.choices AS mine';
+export const POLL_MINE_JOIN = 'LEFT JOIN app.poll_votes mv ON mv.poll_id = p.id AND mv.voter_id = app.actor()';
+export const toPollView = (r: PollRow): PollView =>
+  PollView.parse({
+    id: r.id,
+    question: r.question,
+    options: r.options.map((text, i) => ({ text, votes: r.vote_counts[i] ?? 0 })),
+    anonymous: r.anonymous,
+    multiple: r.multiple,
+    closesAt: iso(r.closes_at),
+    closed: r.closed,
+    closedAt: iso(r.closed_at),
+    voters: r.voter_count,
+    version: r.version,
+    mine: r.mine ?? [],
+    resultMessageId: r.result_message_id,
   });

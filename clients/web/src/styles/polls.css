@@ -1,0 +1,338 @@
+/*
+ * Polls (PLAN P14-07): the card in a message row (`poll-`) and the "Ask a poll" dialog. Tokens only. Shared classes (.btn, .link-btn, .dlg-*) are used,
+ * never redefined. Layout rule: a count changing never moves anything: the numbers sit in a column of fixed width, every bar in a track of fixed
+ * height, and the bar's fill is the only thing that changes size (it is painted behind the text, not part of the flow).
+ */
+
+.poll {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+  margin-top: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.poll.closed {
+  background: var(--shell);
+}
+
+.poll-set {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.poll-q {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.poll-opts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.poll-opt {
+  position: relative;
+}
+
+/* the option is a real button (aria-pressed): a click, Enter or Space votes, an arrow key does not */
+.poll-lab {
+  position: relative;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 10px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.poll-lab:disabled {
+  cursor: default;
+}
+
+.poll-lab:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.poll-opt.mine .poll-lab {
+  border-color: var(--human-border);
+}
+
+.poll-lab:not(:disabled):hover {
+  border-color: var(--human-border);
+}
+
+.poll-bar {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.poll-fill {
+  display: block;
+  height: 100%;
+  background: var(--human-wash);
+  transition: width 0.25s ease;
+}
+
+.poll-opt.mine .poll-fill {
+  background: var(--human-border);
+}
+
+.poll.closed .poll-fill {
+  background: var(--hairline);
+}
+
+.poll-mark,
+.poll-text,
+.poll-n {
+  position: relative;
+  z-index: 1;
+}
+
+.poll-mark {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--faint);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.poll-opt.mine .poll-mark {
+  border-color: var(--human);
+  background: var(--human);
+  box-shadow: inset 0 0 0 3px var(--surface);
+}
+
+.poll-text {
+  overflow-wrap: anywhere;
+}
+
+/* a fixed column: "100 · 100%" never grows past it, so the text beside it does not rewrap when a count changes */
+.poll-n {
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 12.5em;
+  color: var(--mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.poll-count {
+  min-width: 2.5ch;
+  text-align: right;
+}
+
+.poll-pct {
+  min-width: 4ch;
+  text-align: right;
+}
+
+/* "Your vote" has a slot of its own inside the numbers' column, empty (hidden, not removed) on the options that are not yours, so it never overlaps the
+   text or the numbers and voting moves nothing */
+.poll-you {
+  min-width: 4.6em;
+  color: var(--human);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  visibility: hidden;
+}
+
+.poll-opt.mine .poll-you {
+  visibility: visible;
+}
+
+.poll-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-height: 18px;
+  margin: 2px 0 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.poll-voters {
+  min-width: 6.5em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.poll-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  min-height: 22px;
+  font-size: 12.5px;
+}
+
+.poll-closed {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.poll-error {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--alert-border);
+  border-radius: 5px;
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+.poll-who {
+  padding-top: 6px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12.5px;
+}
+
+.poll-who ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.poll-who li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.poll-who-opts,
+.poll-hint {
+  color: var(--mute);
+  overflow-wrap: anywhere;
+}
+
+.poll-hint {
+  margin: 0;
+}
+
+/* ---- the dialog ---- */
+.poll-form {
+  display: grid;
+  gap: 12px;
+}
+
+.poll-f {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.poll-f > span,
+.poll-f > legend,
+.poll-f > label {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.poll-f-opts {
+  gap: 6px;
+}
+
+.poll-f-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.poll-f-row .dlg-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.poll-f-row .poll-amount {
+  flex: 0 0 5em;
+  width: 5em;
+}
+
+.poll-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.poll-check input {
+  margin-top: 2px;
+}
+
+/* ---- phone ---- */
+@media (width <= 760px) {
+  .poll {
+    max-width: none;
+    padding: 10px;
+  }
+
+  .poll-lab {
+    grid-template-columns: 18px minmax(0, 1fr);
+    min-height: 44px;
+  }
+
+  /* the numbers drop under the text, in a row of their own that is always there, so a changing count never rewraps the text */
+  .poll-n {
+    grid-column: 2;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
+  .poll-you {
+    order: 1;
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  .dlg .dlg-input,
+  .dlg .btn {
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .poll-fill {
+    transition: none;
+  }
+}

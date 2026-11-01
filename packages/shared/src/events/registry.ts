@@ -10,6 +10,9 @@ import { ChannelMemberAddedEvent } from './channel.member.added.ts';
 import { ChannelMemberRemovedEvent } from './channel.member.removed.ts';
 import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
 import { ChannelScheduledMessageChangedEvent } from './channel.scheduled_message.changed.ts';
+import { ChannelPollCreatedEvent } from './channel.poll.created.ts';
+import { ChannelPollVotedEvent } from './channel.poll.voted.ts';
+import { ChannelPollClosedEvent } from './channel.poll.closed.ts';
 import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
 import { PresenceDndChangedEvent } from './presence.dnd.changed.ts';
 import { RemindersReminderDueEvent } from './reminders.reminder.due.ts';
@@ -128,6 +131,9 @@ export const eventRegistry = {
   'channel.member.removed': { 1: ChannelMemberRemovedEvent },
   'channel.mention.created': { 1: ChannelMentionCreatedEvent },
   'channel.scheduled_message.changed': { 1: ChannelScheduledMessageChangedEvent },
+  'channel.poll.created': { 1: ChannelPollCreatedEvent },
+  'channel.poll.voted': { 1: ChannelPollVotedEvent },
+  'channel.poll.closed': { 1: ChannelPollClosedEvent },
   'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
   'presence.dnd.changed': { 1: PresenceDndChangedEvent },
   'reminders.reminder.due': { 1: RemindersReminderDueEvent },
@@ -278,6 +284,9 @@ export type AnyEvent =
   | z.infer<typeof ChannelMemberAddedEvent>
   | z.infer<typeof ChannelMemberRemovedEvent>
   | z.infer<typeof ChannelMentionCreatedEvent>
+  | z.infer<typeof ChannelPollCreatedEvent>
+  | z.infer<typeof ChannelPollVotedEvent>
+  | z.infer<typeof ChannelPollClosedEvent>
   | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>
@@ -351,6 +360,9 @@ export type LatestEvent =
   | z.infer<typeof ChannelMemberAddedEvent>
   | z.infer<typeof ChannelMemberRemovedEvent>
   | z.infer<typeof ChannelMentionCreatedEvent>
+  | z.infer<typeof ChannelPollCreatedEvent>
+  | z.infer<typeof ChannelPollVotedEvent>
+  | z.infer<typeof ChannelPollClosedEvent>
   | z.infer<typeof NotificationsNotificationCreatedEvent>
   | z.infer<typeof FilesFileUploadedEvent>
   | z.infer<typeof FilesFileDeletedEvent>

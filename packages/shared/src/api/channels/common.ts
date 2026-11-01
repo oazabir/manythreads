@@ -4,6 +4,7 @@ import { IsoDateTime } from '../../common/time.ts';
 import { FileSummary } from '../../entities/file.ts';
 import { ActorKind } from '../../entities/kernel.ts';
 import { ChannelKind } from '../../entities/channel.ts';
+import { PollView } from '../../entities/poll.ts';
 import { ActorId, ChannelId, MessageId, TeamId } from '../../ids.ts';
 
 /** A channel name as a client may write it: with or without the leading `#` (the server stores it without). */
@@ -64,5 +65,7 @@ export const ChannelMessage = Message.extend({
   forward: ForwardedMessage.optional(),
   /** Set on the channel's own copy of a thread reply sent with "Also send to channel": the first message of that thread. */
   alsoSentFromThread: MessageId.optional(),
+  /** Set on a poll message (P14-07): the poll as this reader sees it. The message text is the plain-text form of the poll, for search and bots. */
+  poll: PollView.optional(),
 });
 export type ChannelMessage = z.infer<typeof ChannelMessage>;

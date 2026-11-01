@@ -83,6 +83,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   const self = people.me?.actorId ?? null;
   const info = useQuery(`thread-channel:${channelId ?? ''}`, () => (channelId ? fetchChannel(channelId) : Promise.resolve(null)));
   const canReply = info.status === 'ok' && info.data !== null && info.data.canPost && info.data.channel.archivedAt === null;
+  const canVote = info.status === 'ok' && info.data !== null && info.data.channel.archivedAt === null;
+  const canManage = info.status === 'ok' && info.data !== null && info.data.canManage;
   const newestReply = tl.items.at(-1)?.id ?? null;
   usePanelSub(variant === 'panel' && channelName ? `# ${channelName}` : null);
 
@@ -202,7 +204,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         }}
       >
         <div className="root">
-          <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={rootActions} />
+          <MessageRow message={root} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={rootActions} />
           {variant === 'panel' ? followRow : null}
           {variant === 'panel' ? <Linked rootId={rootId} /> : null}
         </div>
@@ -213,7 +215,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         ) : null}
         {tl.items.length === 0 && tl.pending.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
         {tl.items.map((m) => (
-          <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+          <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
         ))}
         <ThreadApprovals rootId={rootId} slug={slug ?? null} />
         {waiting ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}

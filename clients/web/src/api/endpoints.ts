@@ -5,6 +5,17 @@ import {
   RemoveLinkPreviewResponse,
   listLinkPreviewsRoute,
   removeLinkPreviewRoute,
+  ClosePollResponse,
+  CreatePollRequest,
+  CreatePollResponse,
+  PollResultsResponse,
+  VotePollRequest,
+  VotePollResponse,
+  closePollRoute,
+  createPollRoute,
+  pollResultsRoute,
+  votePollRoute,
+  withdrawVoteRoute,
   LaterItem,
   ListLaterQuery,
   ListLaterResponse,
@@ -597,6 +608,17 @@ export const forwardMessage = (channelId: string, messageId: string, targetChann
     { targetChannelId, ...(note.trim() === '' ? {} : { note }) } as ForwardMessageRequest,
     { channelId, messageId },
   );
+/** Polls (P14-07): ask one as a message, vote or change the vote, withdraw it, close it early, read the results. */
+export const createPoll = (channelId: string, body: CreatePollRequest) =>
+  call(createPollRoute, { request: CreatePollRequest, response: CreatePollResponse }, body, { channelId });
+export const votePoll = (channelId: string, pollId: string, options: number[]) =>
+  call(votePollRoute, { request: VotePollRequest, response: VotePollResponse }, { options }, { channelId, pollId });
+export const withdrawVote = (channelId: string, pollId: string) =>
+  call(withdrawVoteRoute, { response: VotePollResponse }, undefined, { channelId, pollId });
+export const closePoll = (channelId: string, pollId: string) =>
+  call(closePollRoute, { response: ClosePollResponse }, undefined, { channelId, pollId });
+export const fetchPollResults = (channelId: string, pollId: string) =>
+  call(pollResultsRoute, { response: PollResultsResponse }, undefined, { channelId, pollId });
 /** "Mark unread from here": the caller's read position goes back to just before this message. */
 export const markMessageUnread = (channelId: string, messageId: string) =>
   call(markMessageUnreadRoute, { response: MarkMessageUnreadResponse }, undefined, { channelId, messageId });

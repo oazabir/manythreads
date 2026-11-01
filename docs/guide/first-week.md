@@ -50,7 +50,7 @@ and the mail carries it too. Invitations wait under "Pending invitations". The i
 - **Channels** are listed in the sidebar under their group. Open one and write in the composer. The toolbar formats text and has an emoji picker.
 - **Threads.** Hover a message and choose "Reply in thread". The sidebar item "Threads" lists the threads you follow, with unread counts.
 - **Direct messages.** Press "+ New" next to "Direct messages". The dialog "New message" says "Find a person". Pick one, then "Message" or "Start conversation".
-- **Slash commands.** Type `/` at the start of a message and pick from the menu with the arrow keys and Enter. `/ask coder <question>` mentions a bot so it answers in the channel, `/task <title>` makes a card on the team's board and links to it, `/me`, `/shrug` and `/help` do what they say (`/help` lists them). Anything else that starts with a slash is posted as you typed it, and `//ask` posts a literal `/ask`. A guest who is allowed to write in a channel is shown `/ask` and `/task` disabled, with the reason. There is no `/remind` yet, and bots cannot add commands of their own.
+- **Slash commands.** Type `/` at the start of a message and pick from the menu with the arrow keys and Enter. `/ask coder <question>` mentions a bot so it answers in the channel, `/task <title>` makes a card on the team's board and links to it, `/me`, `/shrug` and `/help` do what they say, and `/poll "Question" "A" "B"` asks a poll people vote on (or use the Ask a poll button for several choices, anonymous votes in a channel of at least 5 people, and a closing time) (`/help` lists them). Anything else that starts with a slash is posted as you typed it, and `//ask` posts a literal `/ask`. A guest who is allowed to write in a channel is shown `/ask` and `/task` disabled, with the reason. There is no `/remind` yet, and bots cannot add commands of their own.
 - **Quick switcher.** Press Ctrl+K (Cmd+K on a Mac). The dialog "Jump to…" finds channels, people, bots, files, pages, boards and cards. Press `?` to see the other keys.
 
 A member's Threads home shows a "Welcome" card with three first moves: join #general, follow a thread, ask Brain.
@@ -140,7 +140,7 @@ These are planned in `PLAN.md` and are not built. Do not rely on them.
 - Importing a Slack workspace.
 - A GitHub App, and an evals check on pull requests.
 - The bot page's "Test" action and Rehearse in the Workshop.
-- "Save for later" and reminders, and `/remind` and the other slash commands beyond the five that exist (`/ask`, `/task`, `/me`, `/shrug`, `/help`).
+- "Save for later" and reminders, and `/remind` and the other slash commands beyond the six that exist (`/ask`, `/task`, `/me`, `/shrug`, `/poll`, `/help`).
 - Email as a bot channel, an inbox, and sharing.
 - Automations written in plain words, and connectors beyond the ones listed above.
 - Search by meaning in Knowledge bases.

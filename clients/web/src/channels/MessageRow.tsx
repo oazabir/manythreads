@@ -15,6 +15,7 @@ import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize } from './format';
 import { splitAttachments } from './images';
 import { Markdown } from './MessageMarkdown';
+import { PollCard } from './PollCard';
 import { MessageImages } from './MessageImages';
 import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import { TOMBSTONE, type PendingSend } from './timeline';
@@ -70,6 +71,10 @@ type Props = {
   /** The reader's actor id: the message is theirs when it matches. */
   selfActor: string | null;
   canPost: boolean;
+  /** A poll can be voted on: the reader can read the channel and it is not archived. Not the same as `canPost` (a reader without the post right votes). Defaults to `canPost`. */
+  canVote?: boolean;
+  /** The reader may close any poll of the channel (a team lead or an admin); the poll's author always may. */
+  canManage?: boolean;
   /** Inside a thread: no reply count, no "reply" action. */
   inThread?: boolean;
   highlight?: boolean;
@@ -79,7 +84,7 @@ type Props = {
 };
 
 /** One message: avatar, name, time, markdown, attachments, reactions, the reply count, and (on hover) the actions. */
-export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, inThread = false, highlight = false, actions, answerTools }: Props) {
+export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, canVote, canManage = false, inThread = false, highlight = false, actions, answerTools }: Props) {
   // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
   const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
@@ -116,7 +121,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     setConfirm(false);
   }, box);
   // a message that carries an Answer is deleted and shared again, never edited (the server answers 409): its text is the payload's body
-  const canEdit = own && !deleted && m.meta.answer === undefined;
+  const canEdit = own && !deleted && m.meta.answer === undefined && m.poll === undefined;
   const canDelete = !deleted && (own || people.canModerate);
   useEffect(() => {
     if (!canEdit) return;
@@ -269,6 +274,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             messageId={m.id}
             tools={answerTools !== undefined && m.channelId === answerTools.channelId && m.meta.answer.answeredFor.personId === people.me?.personId ? answerTools : undefined}
           />
+        ) : m.poll ? (
+          // a poll: the card replaces the text (the text is still stored, for search and for bots)
+          <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
         ) : (
           <div className="txt"><Markdown source={m.body} teamSlug={teamSlug} /></div>
         )}

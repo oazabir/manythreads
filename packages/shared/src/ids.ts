@@ -95,6 +95,9 @@ export type LaterItemId = z.infer<typeof LaterItemId>;
 /** One message a person scheduled to be sent later (P14-05). */
 export const ScheduledMessageId = z.uuid().brand<'ScheduledMessageId'>();
 export type ScheduledMessageId = z.infer<typeof ScheduledMessageId>;
+/** One poll of a channel (P14-07). */
+export const PollId = z.uuid().brand<'PollId'>();
+export type PollId = z.infer<typeof PollId>;
 
 // Phase 5: approvals.
 

@@ -9,6 +9,8 @@
  * word as plain text, type two slashes: `//ask` posts `/ask`.
  */
 
+export * from './poll.ts';
+
 /** What a command needs from the person's side: nothing, or being a member of the team the conversation belongs to. */
 export type SlashNeeds = 'anyone' | 'team_member';
 
@@ -33,6 +35,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: 'task', usage: '/task <title>', summary: 'Create a card on the team’s board, from this conversation.', args: 'required', needs: 'team_member' },
   { name: 'me', usage: '/me <what you are doing>', summary: 'Post a line about yourself, like “Omar is at lunch”.', args: 'required', needs: 'anyone' },
   { name: 'shrug', usage: '/shrug [message]', summary: 'Add ¯\\_(ツ)_/¯ to your message.', args: 'optional', needs: 'anyone' },
+  { name: 'poll', usage: '/poll "Question" "Option 1" "Option 2" …', summary: 'Ask the channel a question with two to ten options to vote on. Type /poll alone for a form.', args: 'optional', needs: 'anyone' },
   { name: 'help', usage: '/help', summary: 'Show the list of commands.', args: 'none', needs: 'anyone' },
 ];
 

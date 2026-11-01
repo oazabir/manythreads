@@ -14,6 +14,7 @@ import {
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, notFound } from './http.ts';
 import { syncMessageRefs, type GroupNotice } from './mentions.ts';
+import { pollIdOf, pollsFor } from './poll-views.ts';
 import {
   CHANNEL_COLUMNS,
   MESSAGE_COLUMNS,
@@ -221,7 +222,8 @@ export async function findChannelMessage(tx: PluginTx, channelId: string, messag
   const attachments = await attachmentsFor(tx, [row]);
   const authors = await authorsFor(tx, [row.id]);
   const forwards = await forwardsFor(tx, [row]);
-  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id), forwards.get(row.id));
+  const polls = await pollsFor(tx, [row]);
+  return toChannelMessage(row, reactions.get(row.id) ?? [], attachments.get(row.id) ?? [], authors.get(row.author_id), forwards.get(row.id), polls.get(row.id));
 }
 
 /** Sends one push to each of `people` (the channel's audience), atomically with the change: delivered when `tx` commits. One statement for any audience size. */
@@ -242,10 +244,11 @@ export async function pushMessage(
   people: readonly string[],
   type: 'message.posted' | 'message.edited',
   message: ChannelMessage,
+  /** The card depends on who reads it (a forward's original, a poll's own ballot): one push goes to everybody, so it carries no message and each client fetches its own. */
+  perReader = false,
 ): Promise<void> {
   const full: MessagePostedPush = { channelId: message.channelId, messageId: message.id, threadRootId: message.threadRootId, message };
-  // a forwarding message's card depends on who reads it: one push goes to everybody, so it carries no message and each client fetches its own
-  const small = message.forward === undefined && JSON.stringify(full).length <= MAX_PUSH_BYTES;
+  const small = message.forward === undefined && !perReader && JSON.stringify(full).length <= MAX_PUSH_BYTES;
   const payload: MessagePostedPush = small ? full : { channelId: message.channelId, messageId: message.id, threadRootId: message.threadRootId };
   await pushToPeople(deps, tx, people, type, payload);
 }
@@ -360,7 +363,7 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
     // a forwarding message is pushed without its body (see pushMessage): the placeholder only marks it, no reader is shown this card
     forwardRefOf(meta) ? { state: 'hidden' } : undefined,
   );
-  await pushMessage(deps, tx, readers, 'message.posted', push);
+  await pushMessage(deps, tx, readers, 'message.posted', push, pollIdOf(meta) !== undefined);
   // Unread: a channel message counts for every reader, a reply for the followers of its thread (the replier and the root's author
   // follow it by themselves, see the messages triggers).
   await ctx.readState.onPosted(tx, {
@@ -403,8 +406,10 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
   if (current.body === body) return current;
   // An answer's text is the payload's `body` (the Answer is drawn from it, and a shared copy was checked against its original): editing the
   // message would make the two differ, so a message that carries an Answer is deleted and shared again, never edited.
-  const isAnswer = (await tx.query<{ answer: boolean }>("SELECT meta ? 'answer' AS answer FROM app.messages WHERE id = $1", [messageId])).rows[0]?.answer;
-  if (isAnswer === true) throw conflict('An answer cannot be edited. Delete it and share the answer again.');
+  const kind = (await tx.query<{ answer: boolean; poll: boolean }>("SELECT meta ? 'answer' AS answer, meta ? 'poll' AS poll FROM app.messages WHERE id = $1", [messageId])).rows[0];
+  if (kind?.answer === true) throw conflict('An answer cannot be edited. Delete it and share the answer again.');
+  // a poll's text is made from its question and options and the card is drawn from the poll: editing the message would make the two differ
+  if (kind?.poll === true) throw conflict('A poll cannot be edited. Delete it and ask again.');
   await requirePost(tx, channel);
   const res = await tx.query(
     `UPDATE app.messages SET body = $3, body_plain = $4, edited_at = now() WHERE id = $1 AND channel_id = $2 RETURNING id`,

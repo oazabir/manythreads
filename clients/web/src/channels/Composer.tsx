@@ -8,6 +8,9 @@ import { botBoardOf, branchFor } from '../screens/boards/board';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
 import { SlashHelp } from './SlashHelp';
+import { PollDialog } from './PollDialog';
+import { formFromPrefill, pollFailureText, type PollForm } from './polls';
+import { channelStore } from './store';
 import { availability, planSlash, taskFailureText } from './slash';
 import { useSlashWho } from './useSlash';
 import { CODE_LANGUAGES, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
@@ -126,6 +129,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // the poll dialog (the Poll tool, or /poll with nothing after it)
+  const [pollOpen, setPollOpen] = useState(false);
+  // a half-typed /poll (a question, fewer than two options) opens the form with those pieces in it
+  const [pollInitial, setPollInitial] = useState<Partial<PollForm> | undefined>(undefined);
   const [slashSeen, setSlashSeen] = useState(false);
   const makingCard = useRef(false);
   const listId = useId();
@@ -388,6 +395,27 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     }
   };
 
+  /** `/poll "Question" "A" "B"`: a single-choice, public poll with no closing time, asked at once. The box is emptied only once the poll exists. */
+  const askPoll = async (question: string, options: string[]): Promise<void> => {
+    if (makingCard.current) return;
+    makingCard.current = true;
+    const key = draftFor.current;
+    const sent = area.current?.value ?? '';
+    const here = (): boolean => draftFor.current === key && area.current !== null;
+    try {
+      await channelStore.createPoll(channelId, { question, options, multiple: false, anonymous: false, ...(threadRootId ? { threadRootId } : {}) });
+      if (!here()) {
+        writeDraft(key, '');
+        return;
+      }
+      if ((area.current?.value ?? '') === sent) clearBox();
+    } catch (err) {
+      if (here()) setNotice({ tone: 'bad', text: isApiError(err) ? pollFailureText(err.status, err.message) : pollFailureText(undefined, undefined) });
+    } finally {
+      makingCard.current = false;
+    }
+  };
+
   const send = (): void => {
     if (!canSend || makingCard.current || scheduling.current) return;
     // a message of only files has no text of its own: the server wants one character, so it carries the file names
@@ -402,6 +430,15 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         clearBox();
         setNotice(null);
         setHelpOpen(true);
+        return;
+      }
+      if (plan.do === 'poll') {
+        setNotice(null);
+        if (plan.question === null) {
+          clearBox();
+          setPollInitial(plan.prefill ? formFromPrefill(plan.prefill) : undefined);
+          setPollOpen(true);
+        } else void askPoll(plan.question, plan.options);
         return;
       }
       if (plan.do === 'task') {
@@ -611,6 +648,11 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
           >
             <span aria-hidden="true">☺</span>
           </button>
+          {slashOn ? (
+            <button type="button" className="ctool" aria-label="Ask a poll" title="Poll" aria-haspopup="dialog" onClick={() => { setPollInitial(undefined); setPollOpen(true); }} data-testid="poll-tool" {...tab(12)}>
+              <span aria-hidden="true">▤</span>
+            </button>
+          ) : null}
         </div>
         {emojiOpen ? (
           <div ref={emojiPop} className="emp-pop">
@@ -692,6 +734,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
           </span>
         </div>
       </div>
+      {pollOpen ? <PollDialog channelId={channelId} threadRootId={threadRootId} {...(pollInitial ? { initial: pollInitial } : {})} onClose={() => { setPollOpen(false); area.current?.focus(); }} onDone={() => { setPollOpen(false); area.current?.focus(); }} /> : null}
       {helpOpen ? <SlashHelp who={who} onClose={() => { setHelpOpen(false); area.current?.focus(); }} /> : null}
     </div>
   );

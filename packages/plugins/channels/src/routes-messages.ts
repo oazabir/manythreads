@@ -33,6 +33,7 @@ import {
   unreactRoute,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, json, notFound, route } from './http.ts';
+import { pollsFor } from './poll-views.ts';
 import {
   MESSAGE_COLUMNS,
   toChannelMessage,
@@ -119,10 +120,11 @@ export function registerMessageRoutes(deps: Deps): void {
       const attachments = await attachmentsFor(tx, page);
       const authors = await authorsFor(tx, page.map((r) => r.id));
       const forwards = await forwardsFor(tx, page);
+      const polls = await pollsFor(tx, page);
       const oldest = page[page.length - 1];
       return json(
         ListMessagesResponse.parse({
-          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id), forwards.get(r.id))),
+          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id), forwards.get(r.id), polls.get(r.id))),
           nextCursor: more && oldest ? oldest.id : null,
         }),
       );

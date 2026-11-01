@@ -203,6 +203,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const getKey = useCallback((i: ListItem) => i.key, []);
   const isMessage = useCallback((i: ListItem) => i.kind === 'message', []);
   const canPost = info.status === 'ok' && info.data.canPost && info.data.channel.archivedAt === null;
+  // a poll is voted on by anyone who can read the channel (a guest with a read grant included), unless it is archived
+  const canVote = info.status === 'ok' && info.data.channel.archivedAt === null;
+  const canManage = info.status === 'ok' && info.data.canManage;
   const pendingName = people.me?.name ?? 'You';
 
   const render = useCallback(
@@ -220,6 +223,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
               people={people}
               selfActor={self}
               canPost={canPost}
+              canVote={canVote}
+              canManage={canManage}
               highlight={highlight === item.message.id}
               actions={actions}
             />
@@ -235,7 +240,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           );
       }
     },
-    [teamSlug, people, self, canPost, highlight, actions, channelId, pendingName],
+    [teamSlug, people, self, canPost, canVote, canManage, highlight, actions, channelId, pendingName],
   );
 
   const send = useCallback(

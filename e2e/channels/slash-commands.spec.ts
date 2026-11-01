@@ -49,7 +49,7 @@ test('the menu opens on a slash at the start, is driven by the keyboard, and nev
     const list = menu(page);
     await expect(list).toBeVisible();
     await expect(list).toHaveAttribute('role', 'listbox');
-    await expect(list.getByRole('option')).toHaveCount(5);
+    await expect(list.getByRole('option')).toHaveCount(6);
     await expect(list.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
     await expect(input).toHaveAttribute('aria-expanded', 'true');
 
@@ -211,7 +211,7 @@ test('/help lists the commands in a dialog that Esc closes', async ({ browser, p
     await page.keyboard.press('Enter');
     const dlg = page.getByTestId('slash-help');
     await expect(dlg).toBeVisible();
-    for (const usage of ['/ask <bot> <question>', '/task <title>', '/me <what you are doing>', '/shrug [message]', '/help']) {
+    for (const usage of ['/ask <bot> <question>', '/task <title>', '/me <what you are doing>', '/shrug [message]', '/poll "Question" "Option 1" "Option 2" …', '/help']) {
       await expect(dlg.getByText(usage, { exact: true })).toBeVisible();
     }
     await expect(dlg).toContainText('//ask');

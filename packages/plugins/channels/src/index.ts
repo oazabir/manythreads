@@ -7,6 +7,8 @@ import { registerEphemeralRoutes } from './routes-ephemeral.ts';
 import { registerMentionRoutes } from './routes-mentions.ts';
 import { registerMessageRoutes } from './routes-messages.ts';
 import { registerScheduledRoutes } from './routes-scheduled.ts';
+import { registerPollRoutes } from './routes-polls.ts';
+import { CLOSE_CRON, CLOSE_QUEUE, closeDue } from './polls.ts';
 import { registerSidebarRoutes } from './routes-sidebar.ts';
 import { SEND_CRON, SEND_QUEUE, sendDue } from './scheduled.ts';
 import { registerTemplateConsumer } from './templates.ts';
@@ -42,6 +44,9 @@ export default definePlugin({
         'channel.member.removed',
         'channel.mention.created',
         'channel.scheduled_message.changed',
+        'channel.poll.created',
+        'channel.poll.voted',
+        'channel.poll.closed',
       ],
       consumes: ['team.template.applied'],
     },
@@ -54,6 +59,7 @@ export default definePlugin({
     registerMentionRoutes(deps);
     registerBookmarkRoutes(deps);
     registerScheduledRoutes(deps);
+    registerPollRoutes(deps);
     registerSidebarRoutes(deps);
     registerEphemeralRoutes(deps);
     registerTemplateConsumer(ctx);
@@ -71,6 +77,19 @@ export default definePlugin({
       },
       // detached: the run is many short transactions (a list, then one per message), never one held open; one run at a time in this process
       { cron: SEND_CRON, maxAttempts: 1, concurrency: 1, detached: true },
+    );
+
+    // Every minute: close the polls whose time has come, each as its author, and post the plain-text result (PLAN P14-07; polls.ts).
+    ctx.jobs.register(
+      CLOSE_QUEUE,
+      async (_payload, _unusable, job) => {
+        const done = await closeDue(deps, (fn) => job.transaction(fn), ctx.runtime.now(), job.log);
+        if (done.closed + done.closedQuietly + done.errors > 0) {
+          job.log.info(`channels: ${done.closed} poll(s) closed with a result, ${done.closedQuietly} closed without one, ${done.errors} not handled`);
+        }
+      },
+      // detached: the run is a list and then one transaction per poll, never one held open; one run at a time in this process
+      { cron: CLOSE_CRON, maxAttempts: 1, concurrency: 1, detached: true },
     );
   },
 });

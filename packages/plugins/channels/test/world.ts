@@ -1,6 +1,7 @@
 import { createSystemPool, withSystem, type Tx } from '@manythreads/kernel';
 import type { NavChannelDirectory } from '@manythreads/shared';
 import { seedWorld, personas, startTestServer, type Persona, type TestServer } from '@manythreads/test-utils';
+import type { RateLimiter } from '@manythreads/kernel';
 import type pg from 'pg';
 
 export { personas };
@@ -29,8 +30,8 @@ export interface World {
  * were made from) and a server on a random port with dev auth on. Template channels appear when somebody first asks for a
  * team's directory (or when `team.template.applied` is consumed): call `ensureChannels` to make them now.
  */
-export async function createWorld(options: { storage?: 'local' | 's3'; now?: () => Date } = {}): Promise<World> {
-  const server = await startTestServer({ ...(options.storage ? { storage: options.storage } : {}), ...(options.now ? { now: options.now } : {}) });
+export async function createWorld(options: { storage?: 'local' | 's3'; now?: () => Date; limiter?: RateLimiter } = {}): Promise<World> {
+  const server = await startTestServer({ ...(options.storage ? { storage: options.storage } : {}), ...(options.now ? { now: options.now } : {}), ...(options.limiter ? { limiter: options.limiter } : {}) });
   await seedWorld(server.db);
   const systemPool: pg.Pool = createSystemPool(server.db.systemUrl, 2);
   const call: World['call'] = async (who, method, path, body) => {

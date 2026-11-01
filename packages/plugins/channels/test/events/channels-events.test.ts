@@ -71,7 +71,10 @@ describe('channel events', () => {
     for (const type of EMITTED) expect(Object.keys(eventRegistry[type])).toEqual(['1']);
     const plugin = (await import('../../src/index.ts')).default;
     // the scheduled-send event (P14-05) has its own test, test/scheduled-send.test.ts
-    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed'].sort());
+    // the poll events (P14-07) are checked where polls are made, in test/polls.test.ts and the shared contract test
+    const POLL_EVENTS = ['channel.poll.created', 'channel.poll.voted', 'channel.poll.closed'];
+    for (const type of POLL_EVENTS) expect(Object.keys(eventRegistry[type as EventType])).toEqual(['1']);
+    expect([...plugin.manifest.events.emits].sort()).toEqual([...EMITTED, 'channel.scheduled_message.changed', ...POLL_EVENTS].sort());
   });
 
   it('every stored event parses against its registered schema', async () => {

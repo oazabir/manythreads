@@ -7,3 +7,4 @@ export * from './sidebar.ts';
 export * from './realtime.ts';
 export * from './ephemeral.ts';
 export * from './mention-groups.ts';
+export * from './polls.ts';
