@@ -39,6 +39,10 @@ export function route(
           throw conflict('Another change was in progress. Try again.');
         case '22P02':
           throw invalid('Malformed identifier');
+        case '22021':
+        case '22P05':
+          // a text the database cannot hold (a null character): the schemas refuse it first, this is the net under them
+          throw invalid('The text has a character that cannot be saved (a null character). Remove it and try again.');
         default:
           throw err;
       }

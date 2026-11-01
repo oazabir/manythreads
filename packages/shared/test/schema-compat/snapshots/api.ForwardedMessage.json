@@ -74,6 +74,13 @@
                 "bot",
                 "system"
               ]
+            },
+            "sender": {
+              "type": "string",
+              "enum": [
+                "reminders",
+                "webhook"
+              ]
             }
           },
           "required": [

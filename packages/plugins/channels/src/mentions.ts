@@ -1,5 +1,6 @@
 import type { PluginTx, RoleGroupProvider } from '@manythreads/sdk';
-import { handlePrefix, matchHandle, parseMarkup, type HandleSubject, type RoleGroup } from '@manythreads/shared';
+import { BROADCAST_MAX_REACH, broadcastWordsIn, handlePrefix, matchHandle, parseMarkup, type HandleSubject, type RoleGroup } from '@manythreads/shared';
+import { broadcastAudience, reachOf, requireBroadcastConfirmed } from './broadcast.ts';
 import { mentionBudget } from './mention-budget.ts';
 import type { ChannelRow } from './rows.ts';
 import type { Deps } from './service.ts';
@@ -11,7 +12,7 @@ import type { Deps } from './service.ts';
 /** At most this many distinct `@handles`, `#channels` and `[[entities]]` of one message are looked at (the rest are plain text). */
 const MAX_REFS = 50;
 /** At most this many people are notified by one role group in one message (the first by person id); the author is told when a group was cut. */
-export const MAX_ROLE_REACH = 500;
+export const MAX_ROLE_REACH = BROADCAST_MAX_REACH;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Entity references that can be links today: they need a uuid. `[[page:path]]` and `[[task:id]]` follow when those ids are uuids. */
@@ -25,6 +26,8 @@ export interface MessageRefs {
   threadRootId: string | null;
   /** On an edit: the text before it, so a group named then is not announced to its members a second time (a member who joined since stays unannounced). */
   previousBody?: string;
+  /** The writer confirmed that `@here` / `@channel` will notify a big room (P14-02); without it a message that adds either word to a room over the limit is refused. */
+  confirmBroadcast?: boolean;
 }
 
 type PersonRow = {
@@ -116,7 +119,10 @@ export interface GroupNotice {
   notified: number;
 }
 
-const handlesOf = (body: string): string[] => [...new Set(parseMarkup(body).mentions.map((m) => m.handle.toLowerCase()))].slice(0, MAX_REFS);
+/** `@here` and `@channel` are never a person's or a group's handle: they are the two whole-room words (see `broadcastWordsIn`, and the reserved words in role-handles.ts). */
+const isRoomWord = (handle: string): boolean => handle === 'here' || handle === 'channel';
+const handlesOf = (body: string): string[] =>
+  [...new Set(parseMarkup(body).mentions.map((m) => m.handle.toLowerCase()))].filter((h) => !isRoomWord(h)).slice(0, MAX_REFS);
 
 /**
  * Brings the mentions and links of one message in line with its body: inserts what is new, removes what an edit dropped, announces
@@ -125,7 +131,9 @@ const handlesOf = (body: string): string[] => [...new Set(parseMarkup(body).ment
  * Role groups: a handle that is not a person may be a group of the team. A first name never beats a tag (only an exact person handle does), so the groups
  * are looked up first and a word that has one is resolved to people by exact handle only. A group is notified only when it is new in the text (a post, or
  * an edit that adds it): the rows and events go to its holders who can read the channel, at most `MAX_ROLE_REACH` per group, and the author's group budget
- * is charged first (`mention-budget.ts`; over it the post is refused with a 429 and nothing is written). An edit keeps the rows it has; it adds rows only
+ * is charged first (`mention-budget.ts`; over it the post is refused with a 429 and nothing is written). `@channel` and `@here` (P14-02) work like a group of
+ * their own (everybody who can read the channel, or those of them online), are told once when new in the text, count against the same budget and the same
+ * per-message cut, and in a room of more than 20 other readers need `confirmBroadcast`, else the message is refused with 409 and nothing is written. An edit keeps the rows it has; it adds rows only
  * for what it newly names and removes only the rows of people it stopped naming (a direct `@person`, or a group whose handle was deleted); someone who left the
  * tag since stays recorded while the handle stays in the text. Returns the groups that were cut short.
  */
@@ -156,6 +164,14 @@ export async function syncMessageRefs(
     const hit = people.get(h);
     if (hit && hit.actorId !== message.authorId) direct.set(hit.actorId, hit);
   }
+  // `@channel` and `@here`: who they tell now, and which of the words this text adds or drops compared with the one before it
+  const wordsNow = broadcastWordsIn(message.body);
+  const wordsBefore = mode === 'edit' && message.previousBody !== undefined ? broadcastWordsIn(message.previousBody) : [];
+  const wordsAdded = wordsNow.filter((w) => !wordsBefore.includes(w));
+  const wordsDropped = wordsBefore.filter((w) => !wordsNow.includes(w));
+  const room = wordsNow.length + wordsBefore.length > 0 ? await broadcastAudience(tx, channel.id, message.authorId) : { channel: [], here: [] };
+  const roomAdded = reachOf(room, wordsAdded);
+  requireBroadcastConfirmed(wordsAdded, roomAdded.length, message.confirmBroadcast === true);
   const current = reachedAll.filter((g) => handles.includes(g.group.handle));
   const added = current.filter((g) => !earlier.has(g.group.handle));
   const notices: GroupNotice[] = [];
@@ -168,11 +184,17 @@ export async function syncMessageRefs(
     reachedByGroups += notified.length;
     for (const p of notified) named.set(p.actorId, p);
   }
+  // the room words are one more group: told once, the first `MAX_ROLE_REACH` by person id, and the author is told when it was cut
+  const roomNotified = roomAdded.slice(0, MAX_ROLE_REACH);
+  if (roomNotified.length < roomAdded.length) notices.push({ handle: wordsAdded.includes('channel') ? 'channel' : 'here', reached: roomAdded.length, notified: roomNotified.length });
+  for (const p of roomNotified) named.set(p.actorId, p);
+  reachedByGroups += roomNotified.length;
   // The budget is charged before anything is written. It counts per acting actor, so a webhook (a system-kind actor of its own) has a budget of its own too.
-  if (added.length > 0 && reachedByGroups > 0) mentionBudget.take(`${tx.actor.id}:${channel.team_id}`, added.length, reachedByGroups);
+  const groupsCharged = added.length + (roomNotified.length > 0 ? 1 : 0);
+  if (groupsCharged > 0 && reachedByGroups > 0) mentionBudget.take(`${tx.actor.id}:${channel.team_id}`, groupsCharged, reachedByGroups);
 
   const mentioned: Array<{ kind: 'person' | 'channel'; id: string; personId: string | null }> = [...named.values()].map((p) => ({ kind: 'person' as const, id: p.actorId, personId: p.personId }));
-  const wantPeople = new Set([...direct.keys(), ...current.flatMap((g) => notAuthor(g.people).map((p) => p.actorId))]);
+  const wantPeople = new Set([...direct.keys(), ...current.flatMap((g) => notAuthor(g.people).map((p) => p.actorId)), ...reachOf(room, wordsNow).map((p) => p.actorId)]);
   if (channelNames.length > 0 && channel.team_id) {
     const found = await tx.query<{ id: string }>(
       `SELECT id FROM app.channels WHERE team_id = $1 AND kind = 'channel' AND name = ANY ($2::text[])`,
@@ -196,6 +218,7 @@ export async function syncMessageRefs(
     if (hit) namedBefore.add(hit.actorId);
   }
   for (const g of reachedAll) if (earlier.has(g.group.handle) && !handles.includes(g.group.handle)) for (const p of g.people) namedBefore.add(p.actorId);
+  for (const p of reachOf(room, wordsDropped)) namedBefore.add(p.actorId);
   const dropped = existing.filter((r) => (r.kind === 'channel' ? !want.has(`channel:${r.mentioned_id}`) : namedBefore.has(r.mentioned_id) && !wantPeople.has(r.mentioned_id)));
   if (fresh.length > 0) {
     await tx.query(

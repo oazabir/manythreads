@@ -1,6 +1,9 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerMessageCapabilities, registerMessageProvider } from './capabilities.ts';
+import { registerBroadcastRoutes } from './broadcast.ts';
 import { registerCohesion } from './cohesion.ts';
+import { registerDraftRoutes } from './routes-drafts.ts';
+import { registerEmojiRoutes } from './routes-emoji.ts';
 import { registerBookmarkRoutes } from './routes-bookmarks.ts';
 import { registerChannelRoutes } from './routes-channels.ts';
 import { registerEphemeralRoutes } from './routes-ephemeral.ts';
@@ -15,7 +18,7 @@ import { registerTemplateConsumer } from './templates.ts';
 
 /**
  * Channels: groups, channels, membership, messages, reactions, mentions, presence and typing, and the live pushes (SPEC section 6.1, PLAN P3-01, P3-02, P3-05, P3-07).
- * Scheduled send (P14-05) adds the `channels.send_scheduled` minute job. Every mutation emits a registry event as the caller; docs/plugins/channels.md lists the routes, events and pushes.
+ * Scheduled send (P14-05) adds the `channels.send_scheduled` minute job; custom emoji, drafts kept on the server and `@here`/`@channel` (P14-02) add their routes. Every mutation emits a registry event as the caller; docs/plugins/channels.md lists the routes, events and pushes.
  */
 export default definePlugin({
   manifest: {
@@ -44,6 +47,7 @@ export default definePlugin({
         'channel.member.removed',
         'channel.mention.created',
         'channel.scheduled_message.changed',
+        'channel.custom_emoji.changed',
         'channel.poll.created',
         'channel.poll.voted',
         'channel.poll.closed',
@@ -59,6 +63,9 @@ export default definePlugin({
     registerMentionRoutes(deps);
     registerBookmarkRoutes(deps);
     registerScheduledRoutes(deps);
+    registerEmojiRoutes(deps);
+    registerDraftRoutes(deps);
+    registerBroadcastRoutes(deps);
     registerPollRoutes(deps);
     registerSidebarRoutes(deps);
     registerEphemeralRoutes(deps);

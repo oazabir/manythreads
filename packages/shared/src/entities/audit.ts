@@ -132,6 +132,8 @@ export const AUDIT_ACTIONS = {
   'knowledge.base_resynced': { category: 'content', label: 'Re-read a knowledge base' },
   'retention.settings_changed': { category: 'settings', label: 'Changed retention' },
   'linkpreview.settings_changed': { category: 'settings', label: 'Changed link previews' },
+  'emoji.added': { category: 'settings', label: 'Added a custom emoji' },
+  'emoji.deleted': { category: 'settings', label: 'Removed a custom emoji' },
   'retention.sweep_completed': { category: 'system', label: 'Ran the retention sweep' },
   'audit.exported': { category: 'system', label: 'Exported the audit log' },
 } as const satisfies Record<string, { category: AuditCategory; label: string }>;

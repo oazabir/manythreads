@@ -10,6 +10,11 @@ export const PostMessageRequest = Message.pick({ channelId: true, body: true, th
      * of the channel itself, marked as sent from that thread. The two are separate messages (editing one does not change the other).
      */
     alsoToChannel: z.boolean().optional(),
+    /**
+     * The writer confirmed that `@here` / `@channel` will notify a big room (P14-02, see api/channels/broadcast.ts). Without it the server refuses a message that
+     * names either word in a room of more than 20 other readers (409 `broadcast_needs_confirmation`).
+     */
+    confirmBroadcast: z.boolean().optional(),
   })
   .strict();
 export type PostMessageRequest = z.infer<typeof PostMessageRequest>;

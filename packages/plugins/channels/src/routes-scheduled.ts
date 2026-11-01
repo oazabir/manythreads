@@ -15,6 +15,7 @@ import {
   listScheduledRoute,
   scheduleMessageRoute,
 } from '@manythreads/shared';
+import { requireScheduledBroadcast } from './broadcast.ts';
 import { conflict, invalid, json, notFound, route } from './http.ts';
 import { SCHEDULED_COLUMNS, toScheduledMessage, type ScheduledRow } from './rows.ts';
 import { emitChanged, pushChanged } from './scheduled.ts';
@@ -88,10 +89,12 @@ export function registerScheduledRoutes(deps: Deps): void {
         if (root.thread_root_id) throw conflict('Reply to the first message of the thread, not to a reply');
         if (root.deleted_at) throw conflict('That message was deleted');
       }
+      // `@channel` / `@here` for a big room: agreed now (409 otherwise), because nobody can be asked when the job posts it
+      const confirmed = await requireScheduledBroadcast(tx, channelId, body.body, body.confirmBroadcast === true);
       const res = await tx.query<ScheduledRow>(
-        `INSERT INTO app.scheduled_messages (workspace_id, channel_id, author_id, thread_root_id, team_id, body, send_at)
-         VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::timestamptz) RETURNING ${SCHEDULED_COLUMNS}`,
-        [channelId, body.threadRootId ?? null, channel.team_id, body.body, when.at],
+        `INSERT INTO app.scheduled_messages (workspace_id, channel_id, author_id, thread_root_id, team_id, body, send_at, broadcast_confirmed)
+         VALUES (app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::timestamptz, $6) RETURNING ${SCHEDULED_COLUMNS}`,
+        [channelId, body.threadRootId ?? null, channel.team_id, body.body, when.at, confirmed],
       );
       const row = res.rows[0]!;
       await emitChanged(deps, tx, { id: row.id, workspaceId: tx.actor.workspaceId, channelId, teamId: channel.team_id, authorId: tx.actor.id }, 'scheduled');
@@ -122,12 +125,16 @@ export function registerScheduledRoutes(deps: Deps): void {
       if (text.trim() === '') throw invalid('body: write something to send');
       const when = checkSendAt(body.sendAt ?? current.send_at.toISOString(), ctx.runtime.now());
       if (!when.ok) throw invalid(`sendAt: ${when.reason}`);
+      // the agreement to tell a big room belongs to the text it was given for: an unchanged text keeps it, a changed text must be agreed again
+      const agreed = body.confirmBroadcast === true || (text === current.body && current.broadcast_confirmed);
+      const confirmed = await requireScheduledBroadcast(tx, channelId, text, agreed);
       // editing a refused message schedules it again: its reason goes, and a failed-send count starts over
       const res = await tx.query<ScheduledRow>(
         `UPDATE app.scheduled_messages
-            SET body = $2, send_at = $3::timestamptz, state = 'scheduled', refused_reason = NULL, refused_at = NULL, attempts = 0, retry_at = NULL, updated_at = now()
+            SET body = $2, send_at = $3::timestamptz, state = 'scheduled', refused_reason = NULL, refused_at = NULL, attempts = 0, retry_at = NULL,
+                broadcast_confirmed = $4, updated_at = now()
           WHERE id = $1 RETURNING ${SCHEDULED_COLUMNS}`,
-        [scheduledId, text, when.at],
+        [scheduledId, text, when.at, confirmed],
       );
       const row = res.rows[0]!;
       await emitChanged(deps, tx, { id: row.id, workspaceId: tx.actor.workspaceId, channelId, teamId: channel.team_id, authorId: tx.actor.id }, 'edited');

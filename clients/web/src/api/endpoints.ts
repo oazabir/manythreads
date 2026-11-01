@@ -1,4 +1,20 @@
 import {
+  AddCustomEmojiRequest,
+  AddCustomEmojiResponse,
+  BroadcastReach,
+  DeleteCustomEmojiResponse,
+  DeleteDraftResponse,
+  ListCustomEmojiResponse,
+  ListDraftsResponse,
+  SaveDraftRequest,
+  SaveDraftResponse,
+  addCustomEmojiRoute,
+  broadcastReachRoute,
+  deleteCustomEmojiRoute,
+  deleteDraftRoute,
+  listCustomEmojiRoute,
+  listDraftsRoute,
+  saveDraftRoute,
   ListMentionGroupsResponse,
   listMentionGroupsRoute,
   ListLinkPreviewsResponse,
@@ -615,15 +631,37 @@ export const postMessage = (
   threadRootId: string | null = null,
   attachments: readonly string[] = [],
   alsoToChannel = false,
+  confirmBroadcast = false,
 ) =>
   call(
     postMessageRoute,
     { request: PostMessageRequest, response: PostMessageResponse },
-    { channelId, body, threadRootId, ...(attachments.length > 0 ? { attachments } : {}), ...(alsoToChannel && threadRootId ? { alsoToChannel: true } : {}) } as PostMessageRequest,
+    {
+      channelId,
+      body,
+      threadRootId,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(alsoToChannel && threadRootId ? { alsoToChannel: true } : {}),
+      ...(confirmBroadcast ? { confirmBroadcast: true } : {}),
+    } as PostMessageRequest,
     { channelId },
   );
-export const editMessage = (channelId: string, messageId: string, body: string) =>
-  call(editMessageRoute, { request: EditMessageRequest, response: EditMessageResponse }, { body }, { channelId, messageId });
+export const editMessage = (channelId: string, messageId: string, body: string, confirmBroadcast = false) =>
+  call(editMessageRoute, { request: EditMessageRequest, response: EditMessageResponse }, { body, ...(confirmBroadcast ? { confirmBroadcast: true } : {}) }, { channelId, messageId });
+/** How many people `@channel` and `@here` would notify in this channel for the caller, and the size above which the writer confirms (P14-02). */
+export const fetchBroadcastReach = (channelId: string) => call(broadcastReachRoute, { response: BroadcastReach }, undefined, { channelId });
+// ---- custom emoji (P14-02) -------------------------------------------------------------------------------------
+export const fetchCustomEmoji = () => call(listCustomEmojiRoute, { response: ListCustomEmojiResponse });
+export const addCustomEmoji = (body: AddCustomEmojiRequest) => call(addCustomEmojiRoute, { request: AddCustomEmojiRequest, response: AddCustomEmojiResponse }, body);
+export const deleteCustomEmoji = (emojiId: string) => call(deleteCustomEmojiRoute, { response: DeleteCustomEmojiResponse }, undefined, { emojiId });
+/** Where the picture of a custom emoji is served (the browser sends its sign-in cookie with the image request). */
+export const customEmojiImageUrl = (emojiId: string): string => `/api/custom-emoji/${encodeURIComponent(emojiId)}/image`;
+// ---- drafts kept on the server (P14-02) --------------------------------------------------------------------
+export const fetchDrafts = (channelId: string) => call(listDraftsRoute, { response: ListDraftsResponse }, undefined, { channelId });
+export const saveDraft = (channelId: string, body: SaveDraftRequest) => call(saveDraftRoute, { request: SaveDraftRequest, response: SaveDraftResponse }, body, { channelId });
+// a DELETE carries no body, so the box's thread goes in the address
+export const deleteDraft = (channelId: string, threadRootId: string | null) =>
+  call({ ...deleteDraftRoute, path: threadRootId ? `${deleteDraftRoute.path}?threadRootId=${encodeURIComponent(threadRootId)}` : deleteDraftRoute.path }, { response: DeleteDraftResponse }, undefined, { channelId });
 /** The earlier texts of an edited message, oldest first (the current text is not among them). */
 export const fetchMessageVersions = (channelId: string, messageId: string) =>
   call(listMessageVersionsRoute, { response: ListMessageVersionsResponse }, undefined, { channelId, messageId });

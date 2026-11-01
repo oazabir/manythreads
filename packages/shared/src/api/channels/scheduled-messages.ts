@@ -42,6 +42,8 @@ export const ScheduleMessageRequest = z.strictObject({
   body: Message.shape.body,
   sendAt: IsoDateTime,
   threadRootId: MessageId.nullish(),
+  /** Set after the writer agreed to tell a big room: a text with `@channel` or `@here` for more than 20 people is refused (409 `broadcast_needs_confirmation`) without it, and the job that posts it later sends it with the same agreement. */
+  confirmBroadcast: z.boolean().optional(),
 });
 export type ScheduleMessageRequest = z.infer<typeof ScheduleMessageRequest>;
 export const ScheduleMessageResponse = ScheduledMessage;
@@ -53,7 +55,7 @@ export const scheduleMessageRoute = { method: 'POST', path: '/api/channels/:chan
  * valid, so a refused message whose old time has passed needs a `sendAt`.
  */
 export const EditScheduledRequest = z
-  .strictObject({ body: Message.shape.body.optional(), sendAt: IsoDateTime.optional() })
+  .strictObject({ body: Message.shape.body.optional(), sendAt: IsoDateTime.optional(), confirmBroadcast: z.boolean().optional() })
   .refine((v) => v.body !== undefined || v.sendAt !== undefined, { message: 'Change the text or the time' });
 export type EditScheduledRequest = z.infer<typeof EditScheduledRequest>;
 export const EditScheduledResponse = ScheduledMessage;

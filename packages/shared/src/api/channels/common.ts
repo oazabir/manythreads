@@ -18,7 +18,16 @@ export const ReactionSummary = z.object({ emoji: Emoji, count: z.number().int().
 export type ReactionSummary = z.infer<typeof ReactionSummary>;
 
 /** Who wrote a message, resolved by the server for the messages the caller can read (a guest has no roster to look the name up in). */
-export const MessageAuthor = z.object({ actorId: ActorId, displayName: z.string(), kind: ActorKind });
+export const MessageAuthor = z.object({
+  actorId: ActorId,
+  displayName: z.string(),
+  kind: ActorKind,
+  /**
+   * For an author of kind `system`: which sender it is, said by the server (never guessed from the name, which a webhook's admin chooses): the workspace's
+   * `reminders` sender, or an incoming `webhook`. Absent for a person, a bot, or a system author that is neither.
+   */
+  sender: z.enum(['reminders', 'webhook']).optional(),
+});
 export type MessageAuthor = z.infer<typeof MessageAuthor>;
 
 /** The longest excerpt of a forwarded message a card carries. */

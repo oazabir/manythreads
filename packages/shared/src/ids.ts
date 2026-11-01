@@ -99,6 +99,9 @@ export type ReminderId = z.infer<typeof ReminderId>;
 /** One message a person scheduled to be sent later (P14-05). */
 export const ScheduledMessageId = z.uuid().brand<'ScheduledMessageId'>();
 export type ScheduledMessageId = z.infer<typeof ScheduledMessageId>;
+/** One custom emoji an admin added to the workspace (P14-02). */
+export const CustomEmojiId = z.uuid().brand<'CustomEmojiId'>();
+export type CustomEmojiId = z.infer<typeof CustomEmojiId>;
 /** One poll of a channel (P14-07). */
 export const PollId = z.uuid().brand<'PollId'>();
 export type PollId = z.infer<typeof PollId>;

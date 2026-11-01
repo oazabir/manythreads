@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { CreateTaskRequest, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary } from '@manythreads/shared';
+import { CreateTaskRequest, broadcastWordsIn, customEmojiNameOf, findSlashCommand, matchSlashCommands, slashMenuContext, type FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { sendTyping, uploadChannelFile } from '../api/endpoints';
+import { fetchBroadcastReach, sendTyping, uploadChannelFile } from '../api/endpoints';
 import { createTask, fetchChannelBoards } from '../screens/boards/api';
 import { botBoardOf, branchFor } from '../screens/boards/board';
 import { ClipIcon, CloseIcon, SendIcon } from '../shell/icons';
@@ -26,30 +26,14 @@ import { groupCountText, matchGroups, useMentionGroups } from './mentionGroups';
 import { PresenceDot } from '../presence/PresenceDot';
 import { remindWhen } from '../later/times';
 import { SendLaterMenu } from './SendLater';
-import { scheduledErrorText, scheduledStore } from './scheduled';
+import { needsBroadcastAgreement, scheduledErrorText, scheduledStore } from './scheduled';
+import { broadcastAsk, broadcastAskFromRefusal, type BroadcastAsk } from './broadcast';
+import { readDraft, useServerDraft, writeDraft } from './serverDraft';
 
 /*
  * The shared composer (channel, thread, later DMs): markdown toolbar, Enter to send and Shift+Enter for a new line, a draft kept per
- * conversation, @ and # pickers, and attachments (upload with progress, paste, drag and drop, remove) when the server stores files.
+ * conversation (also kept on the server, so another device shows it), @ and # pickers, and attachments (upload with progress, paste, drag and drop, remove) when the server stores files.
  */
-
-const DRAFT_PREFIX = 'manythreads.draft:';
-
-function readDraft(key: string): string {
-  try {
-    return window.localStorage.getItem(DRAFT_PREFIX + key) ?? '';
-  } catch {
-    return '';
-  }
-}
-function writeDraft(key: string, text: string): void {
-  try {
-    if (text === '') window.localStorage.removeItem(DRAFT_PREFIX + key);
-    else window.localStorage.setItem(DRAFT_PREFIX + key, text);
-  } catch {
-    /* storage can be blocked: the draft then lives only in this tab */
-  }
-}
 
 type Trigger = { char: '@' | '#'; query: string; start: number };
 
@@ -86,8 +70,11 @@ export type ComposerProps = {
   people: People;
   /** Channel names offered after `#`. */
   channelNames: readonly string[];
-  /** Called with the text (and the files already uploaded); the caller shows the message at once and handles failure. */
-  onSend: (body: string, attachments: FileSummary[]) => void;
+  /**
+   * Called with the text (and the files already uploaded); the caller shows the message at once and handles failure. `confirmBroadcast` is true when the
+   * writer agreed that `@channel` or `@here` goes to a big room.
+   */
+  onSend: (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => void;
   /** Focus the box when it appears (the thread panel). */
   autoFocus?: boolean;
   /** The Up arrow in an empty box: open the reader's last message of their own for editing (absent where there is nothing to edit). */
@@ -141,6 +128,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   // a half-typed /poll (a question, fewer than two options) opens the form with those pieces in it
   const [pollInitial, setPollInitial] = useState<Partial<PollForm> | undefined>(undefined);
   const [slashSeen, setSlashSeen] = useState(false);
+  // `@channel` / `@here` for a big room: the question the writer must answer before the message goes (P14-02)
+  // `later` is set when the message is being scheduled, not sent: the agreement then goes with the schedule
+  const [bcast, setBcast] = useState<{ ask: BroadcastAsk; body: string; files: FileSummary[]; later?: Date } | null>(null);
+  const asking = useRef(false);
   const makingCard = useRef(false);
   const listId = useId();
   // the toolbar is one stop of the Tab key; the arrows move inside it (roving focus)
@@ -185,6 +176,11 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     return () => clearTimeout(t);
   }, [text]);
   useEffect(() => () => writeDraft(draftFor.current, area.current?.value ?? ''), []);
+  // the same draft on the server, for another device: read when the box opens, saved when typing pauses (serverDraft.ts)
+  useServerDraft({ channelId, threadRootId, draftKey }, text, (t) => {
+    setText(t);
+    setCaret(t.length);
+  });
   useEffect(() => {
     if (autoFocus) area.current?.focus();
   }, [autoFocus, threadRootId]);
@@ -223,7 +219,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   useEffect(() => {
     if (slashOn && text.startsWith('/')) setSlashSeen(true);
   }, [slashOn, text]);
-  const who = useSlashWho(slash?.teamSlug ?? null, channelId, slashOn && (slashSeen || text.startsWith('/')), people.me?.name ?? null);
+  const who = useSlashWho(slash?.teamSlug ?? null, channelId, slashOn && (slashSeen || text.startsWith('/')), people.me?.name ?? null, slashOn);
   const slashEnv = useSlashEnv(slash?.teamSlug ?? null, people);
   const slashContext = useMemo(() => (slashOn ? slashMenuContext(text, caret) : null), [slashOn, text, caret]);
 
@@ -302,7 +298,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   const block = (lang: string): void => apply((t, a, b) => codeBlock(t, a, b, lang));
   const putEmoji = (char: string): void => {
     setEmojiOpen(false);
-    apply((t, a, b) => insertText(t, a, b, char));
+    // a custom emoji is written `:name:`; a space after it keeps the next word from running into it
+    apply((t, a, b) => insertText(t, a, b, customEmojiNameOf(char) ? `${char} ` : char));
   };
   const mark = (char: '@' | '#'): void => {
     const el = area.current;
@@ -464,7 +461,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
   };
 
   const send = (): void => {
-    if (!canSend || makingCard.current || scheduling.current) return;
+    if (!canSend || makingCard.current || scheduling.current || asking.current || bcast) return;
     // a message of only files has no text of its own: the server wants one character, so it carries the file names
     let body = text.trim() !== '' ? text.trim() : ready.map((f) => f.name).join(', ');
     if (slash && text.trim() !== '') {
@@ -507,12 +504,76 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       body = plan.body;
     }
     setNotice(null);
+    if (broadcastWordsIn(body).length > 0) {
+      void askBroadcast(body, ready);
+      return;
+    }
     onSend(body, ready);
     clearBox();
   };
 
+  /**
+   * The message uses `@channel` or `@here`: ask the server how many people that is here. Few: it goes at once. A big room: the writer is asked first (the
+   * message stays in the box until they agree). If the server cannot say, the message is sent and the server decides.
+   */
+  const askBroadcast = async (body: string, files: FileSummary[]): Promise<void> => {
+    if (asking.current) return;
+    asking.current = true;
+    const key = draftFor.current;
+    const sent = area.current?.value ?? '';
+    try {
+      let ask: BroadcastAsk | null = null;
+      try {
+        ask = broadcastAsk(body, await fetchBroadcastReach(channelId));
+      } catch {
+        ask = null;
+      }
+      // the box changed while the answer was on its way: the person is writing something else now
+      if (draftFor.current !== key || (area.current?.value ?? '') !== sent) return;
+      if (ask) {
+        setBcast({ ask, body, files });
+        return;
+      }
+      onSend(body, files);
+      clearBox();
+    } finally {
+      asking.current = false;
+    }
+  };
+  const confirmBroadcast = async (): Promise<void> => {
+    if (!bcast || asking.current) return;
+    const b = bcast;
+    // the count on screen may be old (the room fills up while the question is read): count again, and if it moved, show the new number instead of sending
+    asking.current = true;
+    try {
+      let now: BroadcastAsk | null = null;
+      try {
+        now = broadcastAsk(b.body, await fetchBroadcastReach(channelId));
+      } catch {
+        now = null; // cannot count: the server holds the rule and asks again if it must
+      }
+      if (now && b.ask.people !== null && now.people !== b.ask.people) {
+        setBcast({ ...b, ask: now });
+        return;
+      }
+    } finally {
+      asking.current = false;
+    }
+    setBcast(null);
+    if (b.later) {
+      void scheduleFor(b.later, true);
+      return;
+    }
+    onSend(b.body, b.files, true);
+    clearBox();
+  };
+  const cancelBroadcast = (): void => {
+    setBcast(null);
+    area.current?.focus();
+  };
+
   /** "Send later": the box's text is scheduled for `at` instead of posted now, and the box is emptied once the server has it. */
-  const scheduleFor = async (at: Date): Promise<void> => {
+  const scheduleFor = async (at: Date, confirmed = false): Promise<void> => {
     if (scheduling.current) return;
     if (uploading || ready.length > 0 || uploads.length > 0) {
       setNotice({ tone: 'bad', text: 'A scheduled message can only hold text for now. Remove the attached files, or send it now.' });
@@ -539,7 +600,21 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     scheduling.current = true;
     setSchedulingNow(true);
     try {
-      await scheduledStore.schedule(channelId, body, at, threadRootId);
+      // `@channel` / `@here` for a big room is agreed now: nobody can be asked when the job posts it later
+      if (!confirmed && broadcastWordsIn(body).length > 0) {
+        let ask: BroadcastAsk | null = null;
+        try {
+          ask = broadcastAsk(body, await fetchBroadcastReach(channelId));
+        } catch {
+          ask = null; // cannot count: the server decides (409 below)
+        }
+        if (draftFor.current !== key || (area.current?.value ?? '') !== sent) return;
+        if (ask) {
+          setBcast({ ask, body, files: [], later: at });
+          return;
+        }
+      }
+      await scheduledStore.schedule(channelId, body, at, threadRootId, confirmed);
       if (draftFor.current !== key) {
         writeDraft(key, '');
         return;
@@ -547,7 +622,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
       if ((area.current?.value ?? '') === sent) clearBox();
       setNotice({ tone: 'ok', text: `Scheduled for ${remindWhen(at.toISOString())}.` });
     } catch (err) {
-      if (draftFor.current === key) setNotice({ tone: 'bad', text: scheduledErrorText(err) });
+      if (draftFor.current === key && needsBroadcastAgreement(err) && isApiError(err)) {
+        // the room has more people than the page counted: ask with the server's number
+        setBcast({ ask: broadcastAskFromRefusal(body, err.message), body, files: [], later: at });
+      } else if (draftFor.current === key) setNotice({ tone: 'bad', text: scheduledErrorText(err) });
     } finally {
       scheduling.current = false;
       setSchedulingNow(false);
@@ -644,6 +722,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     setCaret(at);
     setPick(0);
     setNotice(null);
+    setBcast(null);
     if (!value.startsWith('/')) setDismissed((d) => (d === 0 ? null : d));
     const now = Date.now();
     if (value.trim() !== '' && !typingOff.current && now - lastTyping.current > 3_000) {
@@ -762,6 +841,24 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
             <span>{notice.text}</span>
             {notice.href ? <Link className="cnotice-link" to={notice.href} data-testid="slash-notice-link">{notice.linkText ?? 'Open'}</Link> : null}
           </p>
+        ) : null}
+        {bcast ? (
+          <div
+            className="cconfirm"
+            role="alert"
+            data-testid="broadcast-confirm"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cancelBroadcast();
+              }
+            }}
+          >
+            <span>{bcast.ask.text}</span>
+            <button type="button" className="btn primary s" onClick={() => void confirmBroadcast()} autoFocus>Send anyway</button>
+            <button type="button" className="btn s" onClick={cancelBroadcast}>Cancel</button>
+          </div>
         ) : null}
         <div className="cinput">
           {open ? (

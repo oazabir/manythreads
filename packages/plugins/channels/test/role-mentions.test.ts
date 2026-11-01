@@ -255,7 +255,7 @@ describe('the group mention budget', () => {
     const before = await count();
     const refused = await w.call<{ error: { code: string; message: string } }>(nadia, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'one more @pager', threadRootId: null });
     expect(refused.status).toBe(429);
-    expect(refused.body.error.message).toBe('You mentioned groups too often; try again in a minute.');
+    expect(refused.body.error.message).toBe('You used group mentions (a group, @channel or @here) too often: 5 a minute at most. Try again in a minute.');
     expect(await count()).toBe(before);
     // a message without a group is not affected, and neither is another author
     await post(nadia, dev, 'no group here');
@@ -302,7 +302,7 @@ describe('a big group', () => {
     await post(nadia, dev, 'again @crowd');
     const third = await w.call<{ error: { message: string } }>(nadia, 'POST', `/api/channels/${dev}/messages`, { channelId: dev, body: 'and again @crowd', threadRootId: null });
     expect(third.status).toBe(429);
-    expect(third.body.error.message).toBe('Your group mentions have reached too many people this hour; try again later.');
+    expect(third.body.error.message).toBe('Your group mentions (a group, @channel or @here) have reached 1,000 people this hour, the most allowed. Try again later.');
   });
 });
 

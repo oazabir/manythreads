@@ -256,7 +256,7 @@ describe('delivery to the person themself', () => {
     expect(dm.participants.map((p) => p.personId)).toEqual([nadia.personId]);
     const posted = (await messagesOf(nadia, dm.channel.id)).filter((m) => m.body === 'Reminder: call mum back');
     expect(posted).toHaveLength(1);
-    expect(posted[0]!.author).toMatchObject({ displayName: 'Reminders', kind: 'system' });
+    expect(posted[0]!.author).toMatchObject({ displayName: 'Reminders', kind: 'system', sender: 'reminders' });
 
     // one notification, of the kind reminder, for the posted message; the ordinary DM notification is not raised on top of it
     const mineOnMessage = (await inbox(nadia)).filter((n) => n.refId === posted[0]!.id);
@@ -306,7 +306,7 @@ describe('delivery to another person and to a channel', () => {
     await settled(nadia, mine.id, 'sent');
     const posted = (await messagesOf(rafi, dev)).find((m) => m.body === 'Reminder from Nadia: `standup in five, @rafi and @omar please join`');
     expect(posted).toBeDefined();
-    expect(posted!.author).toMatchObject({ displayName: 'Reminders', kind: 'system' });
+    expect(posted!.author).toMatchObject({ displayName: 'Reminders', kind: 'system', sender: 'reminders' });
     // the text of a reminder is not a mention, whoever it names
     for (const named of [rafi, omar]) expect((await inbox(named)).some((n) => n.refId === posted!.id && n.kind === 'mention')).toBe(false);
     const mentions = await w.system(async (tx) => (await tx.query<{ n: number }>('SELECT count(*)::int AS n FROM app.message_mentions WHERE message_id = $1', [posted!.id])).rows[0]!.n);

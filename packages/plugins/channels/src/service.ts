@@ -99,11 +99,11 @@ export async function reactionsFor(tx: PluginTx, messageIds: readonly string[]):
 export async function authorsFor(tx: PluginTx, messageIds: readonly string[]): Promise<Map<string, MessageAuthor>> {
   const out = new Map<string, MessageAuthor>();
   if (messageIds.length === 0) return out;
-  const res = await tx.query<{ actor_id: string; display_name: string; kind: MessageAuthor['kind'] }>(
-    'SELECT actor_id, display_name, kind FROM app.message_authors($1::uuid[])',
+  const res = await tx.query<{ actor_id: string; display_name: string; kind: MessageAuthor['kind']; sender: MessageAuthor['sender'] | null }>(
+    'SELECT actor_id, display_name, kind, sender FROM app.message_authors($1::uuid[])',
     [messageIds],
   );
-  for (const r of res.rows) out.set(r.actor_id, { actorId: r.actor_id, displayName: r.display_name, kind: r.kind } as MessageAuthor);
+  for (const r of res.rows) out.set(r.actor_id, { actorId: r.actor_id, displayName: r.display_name, kind: r.kind, ...(r.sender ? { sender: r.sender } : {}) } as MessageAuthor);
   return out;
 }
 
@@ -281,6 +281,8 @@ export interface PostMessageInput {
   meta?: Record<string, unknown>;
   /** Do not record mentions and links (the copy made by "Also send to channel": the reply it copies has already notified everybody named). */
   skipRefs?: boolean;
+  /** The writer confirmed that `@here` / `@channel` will notify a big room (P14-02; a bot's post never carries it, and a bot's `@channel` notifies nobody). */
+  confirmBroadcast?: boolean;
 }
 
 export interface PostedMessage {
@@ -375,7 +377,7 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
   });
   // Sending ends the author's "typing" signal, and what the body names (people, channels, entities) is recorded.
   await tx.query('DELETE FROM app.typing WHERE channel_id = $1 AND person_id = app.person_id()', [input.channelId]);
-  const groupNotices = input.skipRefs ? [] : await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id }, 'post');
+  const groupNotices = input.skipRefs ? [] : await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id, ...(input.confirmBroadcast ? { confirmBroadcast: true } : {}) }, 'post');
   return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push, groupNotices };
 }
 
@@ -389,6 +391,8 @@ export interface EditMessageInput {
    * message was posted with stay as they were, a name added later is plain text, and nobody is notified or woken.
    */
   syncRefs: boolean;
+  /** As on posting: the editor confirmed that the `@here` / `@channel` this edit adds will notify a big room. */
+  confirmBroadcast?: boolean;
 }
 
 /**
@@ -427,7 +431,7 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
   const edited = (await findChannelMessage(tx, channelId, messageId))!;
   await pushMessage(deps, tx, await audience(tx, channelId), 'message.edited', edited);
   if (input.syncRefs) {
-    await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId, previousBody: current.body }, 'edit');
+    await syncMessageRefs(deps, tx, channel, { id: messageId, body, authorId: current.authorId, threadRootId: current.threadRootId, previousBody: current.body, ...(input.confirmBroadcast ? { confirmBroadcast: true } : {}) }, 'edit');
   }
   return edited;
 }

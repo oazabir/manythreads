@@ -35,6 +35,9 @@
     },
     "alsoToChannel": {
       "type": "boolean"
+    },
+    "confirmBroadcast": {
+      "type": "boolean"
     }
   },
   "required": [

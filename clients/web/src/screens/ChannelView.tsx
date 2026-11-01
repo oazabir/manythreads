@@ -189,7 +189,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     () => ({
       openThread: (id) => panel.push({ type: 'thread', id }),
       react: (id, emoji) => void channelStore.toggleReaction(channelId, null, id, emoji),
-      edit: (id, body) => channelStore.edit(channelId, null, id, body),
+      edit: (id, body, confirm) => channelStore.edit(channelId, null, id, body, confirm),
       remove: (id) => channelStore.remove(channelId, null, id),
       markUnread: async (id) => {
         const entry = await channelStore.markUnread(channelId, id, null);
@@ -236,7 +236,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             <PendingRow
               pending={item.pending}
               name={pendingName}
-              onRetry={() => void channelStore.retry(channelId, null, item.pending.localId)}
+              onRetry={(confirm) => void channelStore.retry(channelId, null, item.pending.localId, confirm === true)}
               onDiscard={() => channelStore.discard(channelId, null, item.pending.localId)}
             />
           );
@@ -246,8 +246,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   );
 
   const send = useCallback(
-    (body: string, attachments: FileSummary[]) => {
-      void channelStore.send(channelId, null, body, attachments);
+    (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => {
+      void channelStore.send(channelId, null, body, attachments, false, confirmBroadcast === true);
       api.current?.scrollToBottom();
     },
     [channelId],

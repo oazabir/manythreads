@@ -491,18 +491,30 @@ export class ChannelStore {
 
   // ---- writes ------------------------------------------------------------------------------------------------
   /** Optimistic send: the message shows at once as "sending"; on failure it stays with "Not sent · Retry". */
-  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false): Promise<void> {
+  async send(channelId: string, rootId: string | null, body: string, attachments: FileSummary[] = [], alsoToChannel = false, confirmBroadcast = false): Promise<void> {
     const key = rootId ? threadKey(rootId) : channelKey(channelId);
-    const item: PendingSend = { localId: idOf(), body, attachments, status: 'sending', createdAt: new Date().toISOString(), ...(alsoToChannel && rootId ? { alsoToChannel: true } : {}) };
+    const item: PendingSend = {
+      localId: idOf(),
+      body,
+      attachments,
+      status: 'sending',
+      createdAt: new Date().toISOString(),
+      ...(alsoToChannel && rootId ? { alsoToChannel: true } : {}),
+      // the writer confirmed that @channel or @here goes to a big room; kept so a retry sends what was confirmed
+      ...(confirmBroadcast ? { confirmBroadcast: true } : {}),
+    };
     this.put(key, (t) => ({ ...t, pending: [...t.pending, item] }));
     await this.deliver(key, channelId, rootId, item);
   }
 
-  retry(channelId: string, rootId: string | null, localId: string): Promise<void> {
+  /** Sends a failed message again. `confirmBroadcast` is the writer's "Send anyway" to a refusal that asked them to confirm `@channel` / `@here`. */
+  retry(channelId: string, rootId: string | null, localId: string, confirmBroadcast = false): Promise<void> {
     const key = rootId ? threadKey(rootId) : channelKey(channelId);
-    const item = this.get(key).pending.find((p) => p.localId === localId);
-    if (!item) return Promise.resolve();
-    this.put(key, (t) => ({ ...t, pending: t.pending.map((p) => (p.localId === localId ? { ...p, status: 'sending' } : p)) }));
+    const found = this.get(key).pending.find((p) => p.localId === localId);
+    if (!found) return Promise.resolve();
+    const item: PendingSend = { ...found, status: 'sending', ...(confirmBroadcast ? { confirmBroadcast: true } : {}) };
+    delete item.askConfirm;
+    this.put(key, (t) => ({ ...t, pending: t.pending.map((p) => (p.localId === localId ? item : p)) }));
     return this.deliver(key, channelId, rootId, item);
   }
 
@@ -513,17 +525,28 @@ export class ChannelStore {
 
   private async deliver(key: string, channelId: string, rootId: string | null, item: PendingSend): Promise<void> {
     try {
-      const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true);
+      const m = await postMessage(channelId, item.body, rootId, item.attachments.map((a) => a.id), item.alsoToChannel === true, item.confirmBroadcast === true);
       this.applyPosted(asChannelMessage(m, item.attachments), item.localId);
       // the push may have come first and already removed the pending copy; either way it is gone now
       this.put(key, (t) => ({ ...t, pending: t.pending.filter((p) => p.localId !== item.localId) }));
-    } catch {
-      this.put(key, (t) => ({ ...t, pending: t.pending.map((p) => (p.localId === item.localId ? { ...p, status: 'failed' } : p)) }));
+    } catch (err) {
+      // refused only because @channel / @here would notify a big room (the room grew since the question, or the question could not be asked): the sentence stays and "Send anyway" confirms it
+      const ask = isApiError(err) && err.code === 'broadcast_needs_confirmation' ? err.message : null;
+      this.put(key, (t) => ({
+        ...t,
+        pending: t.pending.map((p) => {
+          if (p.localId !== item.localId) return p;
+          const next: PendingSend = { ...p, status: 'failed' };
+          if (ask) next.askConfirm = ask;
+          else delete next.askConfirm;
+          return next;
+        }),
+      }));
     }
   }
 
-  async edit(channelId: string, rootId: string | null, id: string, body: string): Promise<void> {
-    const m = await editMessage(channelId, id, body);
+  async edit(channelId: string, rootId: string | null, id: string, body: string, confirmBroadcast = false): Promise<void> {
+    const m = await editMessage(channelId, id, body, confirmBroadcast);
     this.mapMessage(channelId, rootId, id, (x) => ({ ...x, body: m.body, bodyPlain: m.bodyPlain, editedAt: m.editedAt }));
   }
 

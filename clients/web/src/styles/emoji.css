@@ -128,3 +128,127 @@
 .emp-tab:hover {
   background: var(--nav-on);
 }
+
+/* Custom emoji (P14-02): a workspace's pictures, drawn at the size of the text; a bigger one in the add form. */
+.cemoji {
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  margin: 0 0.05em;
+  vertical-align: -0.28em;
+  object-fit: contain;
+}
+
+.emp-cell .cemoji {
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
+
+.cemoji.big {
+  width: 32px;
+  height: 32px;
+}
+
+.rx .cemoji {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+
+.emp-body h3 .emp-admin {
+  float: right;
+  display: inline-flex;
+  gap: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.emp-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--human);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.emp-link:hover,
+.emp-link.on {
+  text-decoration: underline;
+}
+
+.emp-hint {
+  margin: 4px 2px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.emp-add {
+  display: grid;
+  gap: 4px;
+  margin: 6px 2px 8px;
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--table-head);
+  font-size: 12.5px;
+}
+
+.emp-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.emp-add-name {
+  flex: 1 1 100px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.emp-add-error {
+  margin: 2px 0 0;
+  color: var(--alert-ink);
+}
+
+.emp-remove {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 4px 2px 8px;
+  padding: 8px;
+  border: 1px solid var(--alert-border);
+  border-radius: 6px;
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+/* the confirmation before @channel or @here goes to a big room (P14-02) */
+.cconfirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 6px 8px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 12.5px;
+}
+
+.cconfirm span {
+  flex: 1 1 200px;
+}

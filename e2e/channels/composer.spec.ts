@@ -89,6 +89,12 @@ test('a send that fails stays in place as "Not sent · Retry" and is delivered b
     await box.press('Enter');
     await expect(pending).toContainText('Not sent');
     await pending.getByRole('button', { name: 'Discard' }).click();
+    // the text is lost with it, so it asks first; "Keep it" brings the row back as it was
+    await expect(pending).toContainText('Its text is lost');
+    await pending.getByRole('button', { name: 'Keep it' }).click();
+    await expect(pending).toContainText('Not sent');
+    await pending.getByRole('button', { name: 'Discard' }).click();
+    await pending.getByRole('button', { name: 'Yes, discard' }).click();
     await expect(pending).toHaveCount(0);
     await expect(messages(page)).toHaveCount(1);
   } finally {

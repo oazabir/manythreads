@@ -1,9 +1,12 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ChannelMessage, FileSummary } from '@manythreads/shared';
+import { isApiError } from '../api/client';
 import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
+import { EmojiGlyph } from './EmojiGlyph';
+import { authorMark } from './authorMark';
 import { useDismiss } from '../shell/useDismiss';
 import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
@@ -58,7 +61,7 @@ export const EDIT_EVENT = 'mt:edit-message';
 export type RowActions = {
   openThread?: (rootId: string) => void;
   react: (messageId: string, emoji: string) => void;
-  edit: (messageId: string, body: string) => Promise<void>;
+  edit: (messageId: string, body: string, confirmBroadcast?: boolean) => Promise<void>;
   remove: (messageId: string) => Promise<void>;
   /** "Mark unread from here": the reader's position goes back to just before the message. Absent where the view has no read position of its own. */
   markUnread?: (messageId: string) => Promise<void>;
@@ -90,6 +93,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const own = selfActor !== null && m.authorId === selfActor;
   // a person's name opens their profile card and carries their presence dot; a bot or a webhook has neither (the roster lists people only)
   const authorPerson = m.author?.kind === 'bot' || m.author?.kind === 'system' ? undefined : people.byActor(m.authorId);
+  const mark = authorMark(m.author);
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
   const [tapped, setTapped] = useState(false);
   // the toolbar exists only while the row is under the pointer or has focus: 5,000 rows do not each carry three buttons
@@ -98,6 +102,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [confirm, setConfirm] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the last save was refused because @channel or @here would notify a big room: the text that was refused, which the next save may confirm. Any change of
+  // the text takes the confirmation away (the new text may name more people, or none).
+  const [confirmFor, setConfirmFor] = useState<string | null>(null);
+  const needsConfirm = confirmFor !== null && confirmFor === (editing ?? '').trim();
   const [forwarding, setForwarding] = useState(false);
   const [reminding, setReminding] = useState(false);
   // a short line in the header of the row after an action that has no other sign ("Link copied")
@@ -147,14 +155,17 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     setDone(ok ? 'Link copied' : 'Could not copy the link');
   };
 
-  const save = async (): Promise<void> => {
+  const save = async (confirmBroadcast = false): Promise<void> => {
     const body = (editing ?? '').trim();
     if (body === '' || body === m.body) return setEditing(null);
     try {
-      await actions.edit(m.id, body);
+      await actions.edit(m.id, body, confirmBroadcast);
       setEditing(null);
       setError(null);
+      setConfirmFor(null);
     } catch (e) {
+      // @channel or @here added to a big room: the server says how many people, and the writer may confirm this text
+      setConfirmFor(isApiError(e) && e.code === 'broadcast_needs_confirmation' ? body : null);
       setError(e instanceof Error ? e.message : 'Could not save');
     }
   };
@@ -234,7 +245,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         <div className="who">
           <b>{authorPerson ? <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} /> : name}</b>
           {authorPerson ? <PresenceDot personId={authorPerson.personId} status /> : null}
-          {m.author?.kind === 'system' ? <span className="wh-mark" title="Posted by an incoming webhook, not by a person">Webhook</span> : null}
+          {mark ? <span className="wh-mark" title={mark.title}>{mark.label}</span> : null}
           <time dateTime={m.createdAt} data-vt-mask>{clock(m.createdAt)}</time>
           {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
           {done ? <span className="row-done" role="status">{done}</span> : null}
@@ -247,7 +258,14 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               aria-label="Edit message"
               value={editing}
               rows={Math.min(8, editing.split('\n').length + 1)}
-              onChange={(e) => setEditing(e.target.value)}
+              onChange={(e) => {
+                setEditing(e.target.value);
+                // the refusal was about the text as it was: a changed text is asked again
+                if (confirmFor !== null && confirmFor !== e.target.value.trim()) {
+                  setConfirmFor(null);
+                  setError(null);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
@@ -261,8 +279,12 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
               autoFocus
             />
             <div className="edit-actions">
-              <button type="button" className="btn primary s" onClick={() => void save()}>Save</button>
-              <button type="button" className="btn s" onClick={() => setEditing(null)}>Cancel</button>
+              {needsConfirm ? (
+                <button type="button" className="btn primary s" onClick={() => void save(true)}>Save and notify them</button>
+              ) : (
+                <button type="button" className="btn primary s" onClick={() => void save()}>Save</button>
+              )}
+              <button type="button" className="btn s" onClick={() => { setEditing(null); setConfirmFor(null); setError(null); }}>Cancel</button>
               {error ? <span className="edit-error" role="alert">{error}</span> : null}
             </div>
           </div>
@@ -303,7 +325,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 disabled={!canPost}
                 onClick={() => actions.react(m.id, r.emoji)}
               >
-                <span aria-hidden="true">{r.emoji}</span> <span className="rx-n" data-vt-mask>{r.count}</span>
+                <span aria-hidden="true"><EmojiGlyph value={r.emoji} /></span> <span className="rx-n" data-vt-mask>{r.count}</span>
               </button>
             ))}
           </div>
@@ -322,9 +344,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
 });
 
 /** A message this tab is sending, or that failed: shown in its place with "Not sent · Retry". */
-export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: PendingSend; name: string; onRetry: () => void; onDiscard: () => void }) {
+export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: PendingSend; name: string; onRetry: (confirmBroadcast?: boolean) => void; onDiscard: () => void }) {
   const failed = pending.status === 'failed';
   const attached = splitAttachments(pending.attachments);
+  // the text of an unsent message is lost with it: Discard asks first
+  const [sure, setSure] = useState(false);
   const me = usePeople().me;
   return (
     <div className={`msg pending ${failed ? 'failed' : ''}`} data-testid="pending-message" data-status={pending.status}>
@@ -339,9 +363,25 @@ export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: Pen
         {attached.files.length > 0 ? <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}
         {failed ? (
           <div className="send-state" role="alert">
-            <span>{'Not sent · '}</span>
-            <button type="button" className="link-btn" onClick={onRetry}>Retry</button>
-            <button type="button" className="link-btn quiet" onClick={onDiscard}>Discard</button>
+            {sure ? (
+              <>
+                <span>{'Throw this message away? Its text is lost. '}</span>
+                <button type="button" className="link-btn" onClick={onDiscard}>Yes, discard</button>
+                <button type="button" className="link-btn quiet" onClick={() => setSure(false)}>Keep it</button>
+              </>
+            ) : pending.askConfirm ? (
+              <>
+                <span data-testid="pending-ask">{`Not sent · ${pending.askConfirm.replace(/\s*Confirm to send it\.$/, '')} `}</span>
+                <button type="button" className="link-btn" onClick={() => onRetry(true)}>Send anyway</button>
+                <button type="button" className="link-btn quiet" onClick={() => setSure(true)}>Discard</button>
+              </>
+            ) : (
+              <>
+                <span>{'Not sent · '}</span>
+                <button type="button" className="link-btn" onClick={() => onRetry()}>Retry</button>
+                <button type="button" className="link-btn quiet" onClick={() => setSure(true)}>Discard</button>
+              </>
+            )}
           </div>
         ) : (
           <div className="send-state sending">Sending…</div>

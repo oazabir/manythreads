@@ -47,6 +47,7 @@ export * from './files.file.uploaded.ts';
 export * from './files.file.deleted.ts';
 export * from './channel.mention.created.ts';
 export * from './channel.scheduled_message.changed.ts';
+export * from './channel.custom_emoji.changed.ts';
 export * from './channel.poll.created.ts';
 export * from './channel.poll.voted.ts';
 export * from './channel.poll.closed.ts';

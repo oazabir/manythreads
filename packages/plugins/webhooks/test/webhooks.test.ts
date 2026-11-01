@@ -129,7 +129,7 @@ describe('a call to the secret address', () => {
     const msg = (await messages(nadia)).find((x) => x.id === messageId)!;
     expect(msg.authorId).toBe(actor);
     expect(msg.body).toContain('Build **passed** on main');
-    expect(msg.author).toMatchObject({ displayName: 'GitHub Actions', kind: 'system' });
+    expect(msg.author).toMatchObject({ displayName: 'GitHub Actions', kind: 'system', sender: 'webhook' });
     // notifications name the webhook, not "Bot"
     const facts = await w.system((tx) => loadMessage(tx as unknown as PluginTx, messageId));
     expect(facts?.authorName).toBe('GitHub Actions');
@@ -137,6 +137,15 @@ describe('a call to the secret address', () => {
     expect(used.lastStatus).toBe('posted');
     expect(used.postedCount).toBe(1);
     expect(used.lastUsedAt).not.toBeNull();
+  });
+
+  it('a webhook that its admin called "Reminders" is still a webhook: the server marks the sender, the name decides nothing', async () => {
+    const m = await make('Reminders');
+    const res = await hit(m.path, { text: 'I only look like the reminder sender' });
+    expect(res.status, res.body).toBe(200);
+    const { messageId } = JSON.parse(res.body) as { ok: boolean; messageId: string };
+    const msg = (await messages(nadia)).find((x) => x.id === messageId)!;
+    expect(msg.author).toMatchObject({ displayName: 'Reminders', kind: 'system', sender: 'webhook' });
   });
 
   it('pushes the message live with its author named (the webhook, emoji first), not "Someone"', async () => {
@@ -152,7 +161,7 @@ describe('a call to the secret address', () => {
       const frame = await sock.waitFor((f) => f.type === 'message.posted' && (f.payload as { messageId?: string }).messageId === messageId);
       expect(frame, 'no message.posted was pushed').toBeDefined();
       const push = MessagePostedPush.parse(frame!.payload);
-      expect(push.message?.author).toMatchObject({ actorId: await authorOf(made.webhook.id), displayName: '🚀 Deploys', kind: 'system' });
+      expect(push.message?.author).toMatchObject({ actorId: await authorOf(made.webhook.id), displayName: '🚀 Deploys', kind: 'system', sender: 'webhook' });
     } finally {
       sock.close();
     }

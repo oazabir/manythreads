@@ -10,6 +10,7 @@ import { ChannelMemberAddedEvent } from './channel.member.added.ts';
 import { ChannelMemberRemovedEvent } from './channel.member.removed.ts';
 import { ChannelMentionCreatedEvent } from './channel.mention.created.ts';
 import { ChannelScheduledMessageChangedEvent } from './channel.scheduled_message.changed.ts';
+import { ChannelCustomEmojiChangedEvent } from './channel.custom_emoji.changed.ts';
 import { ChannelPollCreatedEvent } from './channel.poll.created.ts';
 import { ChannelPollVotedEvent } from './channel.poll.voted.ts';
 import { ChannelPollClosedEvent } from './channel.poll.closed.ts';
@@ -132,6 +133,7 @@ export const eventRegistry = {
   'channel.member.removed': { 1: ChannelMemberRemovedEvent },
   'channel.mention.created': { 1: ChannelMentionCreatedEvent },
   'channel.scheduled_message.changed': { 1: ChannelScheduledMessageChangedEvent },
+  'channel.custom_emoji.changed': { 1: ChannelCustomEmojiChangedEvent },
   'channel.poll.created': { 1: ChannelPollCreatedEvent },
   'channel.poll.voted': { 1: ChannelPollVotedEvent },
   'channel.poll.closed': { 1: ChannelPollClosedEvent },

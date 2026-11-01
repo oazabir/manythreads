@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMOJI_GROUPS, RECENT_LIMIT, SKIN_TONES, parseRecent, parseTone, pushRecent, searchEmoji, takesTone, withTone } from '../src/channels/emoji';
+import { EMOJI_GROUPS, RECENT_LIMIT, emojiForShortcode, leadingShortcode, SKIN_TONES, parseRecent, parseTone, pushRecent, searchEmoji, takesTone, withTone } from '../src/channels/emoji';
 
 describe('withTone', () => {
   it('puts the tone after a hand, dropping the variation selector it replaces', () => {
@@ -70,5 +70,31 @@ describe('recent emoji', () => {
     expect(parseTone('9')).toBe(0);
     expect(parseTone('abc')).toBe(0);
     expect(parseTone(null)).toBe(0);
+  });
+});
+
+describe('shortcodes (:coffee:)', () => {
+  it('finds an emoji by the whole name, its first word, two first words run together, or any word', () => {
+    expect(emojiForShortcode('palm_tree')).toBe('🌴');
+    expect(emojiForShortcode(':palm_tree:')).toBe('🌴');
+    expect(emojiForShortcode('smile')).toBe('😄');
+    expect(emojiForShortcode('thumbsup')).toBe('👍');
+    expect(emojiForShortcode('+1')).toBe('👍');
+    expect(emojiForShortcode('coffee')).toBe('☕');
+    expect(emojiForShortcode('Coffee')).toBe('☕');
+  });
+
+  it('answers null for a word no emoji has, and for nothing', () => {
+    expect(emojiForShortcode('nosuchemoji')).toBeNull();
+    expect(emojiForShortcode('')).toBeNull();
+    expect(emojiForShortcode('::')).toBeNull();
+  });
+
+  it('takes a leading :code: off a text and leaves the rest', () => {
+    expect(leadingShortcode(':coffee: on a break')).toEqual({ emoji: '☕', rest: 'on a break' });
+    expect(leadingShortcode(':coffee:')).toEqual({ emoji: '☕', rest: '' });
+    expect(leadingShortcode(':coffee:on a break')).toBeNull();
+    expect(leadingShortcode('on a break :coffee:')).toBeNull();
+    expect(leadingShortcode(':nosuch: x')).toBeNull();
   });
 });

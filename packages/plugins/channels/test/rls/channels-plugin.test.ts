@@ -21,7 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const { omar, nadia, rafi, sameera, tariq, priya, lena } = personas;
 const ALL = [omar, nadia, rafi, sameera, tariq, priya, lena] as const;
-const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs', 'scheduled_messages'];
+const TABLES = ['channel_groups', 'channels', 'channel_members', 'messages', 'message_reactions', 'message_mentions', 'threads', 'thread_follows', 'message_versions', 'channel_template_syncs', 'presence', 'typing', 'channel_stars', 'sidebar_prefs', 'scheduled_messages', 'custom_emoji', 'message_drafts'];
 
 let db: TestDatabase;
 let appPool: pg.Pool;
@@ -442,6 +442,114 @@ describe('scheduled messages are their author\'s own (migration 0013)', () => {
     expect(await code(schedule(rafi, ch['eng-general']!))).toBeUndefined();   // another person's count is their own
     await as(nadia, (tx) => tx.query('DELETE FROM app.scheduled_messages'));
     expect(await q(nadia, 'SELECT 1 FROM app.scheduled_messages')).toEqual([]);
+  });
+});
+
+describe('custom emoji belong to the workspace; only an admin changes them (migration 0015)', () => {
+  const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
+  const add = (p: Persona, name: string, bytes: Buffer = PNG, type = 'image/png'): Promise<{ rows: { id: string }[] }> =>
+    as(p, (tx) =>
+      tx.query<{ id: string }>(
+        'INSERT INTO app.custom_emoji (workspace_id, name, content_type, bytes, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [omar.workspaceId, name, type, bytes, p.actorId],
+      ),
+    );
+  let parrot = '';
+
+  it('an owner or admin adds one; a member and a guest cannot', async () => {
+    parrot = (await add(omar, 'parrot')).rows[0]!.id;
+    expect(await code(add(nadia, 'nope'))).toBe('42501');
+    expect(await code(add(lena, 'nope'))).toBe('42501');
+  });
+
+  it('everyone in the workspace reads the rows, guests too', async () => {
+    for (const p of [omar, nadia, sameera, lena]) expect((await q(p, 'SELECT id FROM app.custom_emoji')).map((r) => r['id']), p.name).toEqual([parrot]);
+  });
+
+  it('only an admin removes one; a name is unique, and the table refuses a bad name, type or size', async () => {
+    expect((await as(nadia, (tx) => tx.query('DELETE FROM app.custom_emoji WHERE id = $1', [parrot]))).rowCount).toBe(0);
+    expect(await code(add(omar, 'parrot'))).toBe('23505');
+    expect(await code(add(omar, 'Bad-Name'))).toBe('23514');
+    expect(await code(add(omar, '1st'))).toBe('23514');
+    expect(await code(add(omar, 'svgpic', PNG, 'image/svg+xml'))).toBe('23514');
+    expect(await code(add(omar, 'tiny', Buffer.from('89504e47', 'hex')))).toBe('23514');
+    expect(await code(add(omar, 'huge', Buffer.alloc(262_145, 1)))).toBe('23514');
+    expect((await as(omar, (tx) => tx.query('DELETE FROM app.custom_emoji WHERE id = $1', [parrot]))).rowCount).toBe(1);
+  });
+
+  it('holds at most 500 per workspace, however the inserts arrive', async () => {
+    await sys((tx) =>
+      tx.query(
+        `INSERT INTO app.custom_emoji (workspace_id, name, content_type, bytes)
+         SELECT $1, 'bulk_' || g, 'image/png', $2 FROM generate_series(1, 500) g`,
+        [omar.workspaceId, PNG],
+      ),
+    );
+    expect(await code(add(omar, 'one_too_many'))).toBe('23514');
+    await sys((tx) => tx.query("DELETE FROM app.custom_emoji WHERE name LIKE 'bulk_%'"));
+  });
+});
+
+describe("drafts are their owner's own (migration 0015)", () => {
+  const draft = (p: Persona, channelId: string, body = 'half a thought', thread: string | null = null, who: Persona = p): Promise<{ rows: { id: string }[] }> =>
+    as(p, (tx) =>
+      tx.query<{ id: string }>(
+        `INSERT INTO app.message_drafts (workspace_id, person_id, channel_id, thread_root_id, body) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (person_id, channel_id, thread_key) DO UPDATE SET body = EXCLUDED.body, updated_at = now() RETURNING id`,
+        [omar.workspaceId, who.personId, channelId, thread, body],
+      ),
+    );
+  let mine = '';
+
+  it('a person drafts as themself, in a channel they may post in', async () => {
+    mine = (await draft(nadia, ch['eng-general']!)).rows[0]!.id;
+    expect(await code(draft(nadia, ch['eng-general']!, 'x', null, rafi))).toBe('42501'); // as someone else
+    expect(await code(draft(nadia, ch['eng-leads']!))).toBe('42501'); // a private channel she is not in
+    expect(await code(draft(sameera, ch['eng-general']!))).toBe('42501'); // another team's channel
+    expect(await code(draft(lena, ch['eng-releases']!))).toBe('42501'); // a guest who may only read
+    expect(await code(draft(nadia, ch['eng-general']!, ''))).toBe('23514'); // an empty draft is not a draft
+  });
+
+  it('one row per box: saving again replaces the text, and a thread has a row of its own', async () => {
+    expect((await draft(nadia, ch['eng-general']!, 'second try')).rows[0]!.id).toBe(mine);
+    await draft(nadia, ch['eng-general']!, 'in a thread', msg['general']!);
+    const rows = await q<{ body: string; thread_root_id: string | null }>(nadia, 'SELECT body, thread_root_id FROM app.message_drafts ORDER BY body');
+    expect(rows.map((r) => r.body)).toEqual(['in a thread', 'second try']);
+  });
+
+  it('only the owner reads, changes or deletes it; an admin does not', async () => {
+    expect(await q(rafi, 'SELECT 1 FROM app.message_drafts')).toEqual([]);
+    expect(await q(omar, 'SELECT 1 FROM app.message_drafts')).toEqual([]);
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.message_drafts')).rows.length)).toBe(0);
+    expect((await as(rafi, (tx) => tx.query("UPDATE app.message_drafts SET body = 'mine'"))).rowCount).toBe(0);
+    expect((await as(omar, (tx) => tx.query('DELETE FROM app.message_drafts'))).rowCount).toBe(0);
+  });
+
+  it('an edit changes the text only: not the owner, the channel or the thread', async () => {
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.message_drafts SET person_id = $1', [rafi.personId])))).toBe('42501');
+    expect(await code(as(nadia, (tx) => tx.query('UPDATE app.message_drafts SET channel_id = $1', [ch['eng-releases']])))).toBe('42501');
+    expect((await as(nadia, (tx) => tx.query("UPDATE app.message_drafts SET body = 'edited', updated_at = now() WHERE id = $1", [mine]))).rowCount).toBe(1);
+  });
+
+  it('holds at most 200 per person: the one changed longest ago makes room, and saving a box again pushes nobody out', async () => {
+    await as(nadia, (tx) => tx.query('DELETE FROM app.message_drafts'));
+    await as(nadia, (tx) =>
+      tx.query(
+        `INSERT INTO app.message_drafts (workspace_id, person_id, channel_id, thread_root_id, body, updated_at)
+         SELECT $1, $2, $3, uuidv7(), 'old ' || g, now() - make_interval(mins => g) FROM generate_series(1, 200) g`,
+        [omar.workspaceId, nadia.personId, ch['eng-general']],
+      ),
+    );
+    expect((await q(nadia, 'SELECT 1 FROM app.message_drafts')).length).toBe(200);
+    await draft(nadia, ch['eng-general']!, 'the 201st');
+    const after = await q<{ body: string }>(nadia, 'SELECT body FROM app.message_drafts');
+    expect(after.length).toBe(200);
+    expect(after.map((r) => r.body)).toContain('the 201st');
+    expect(after.map((r) => r.body)).not.toContain('old 200');
+    await draft(nadia, ch['eng-general']!, 'the 201st, again');
+    expect((await q(nadia, 'SELECT 1 FROM app.message_drafts')).length).toBe(200);
+    expect((await q(rafi, 'SELECT 1 FROM app.message_drafts')).length).toBe(0);
+    await as(nadia, (tx) => tx.query('DELETE FROM app.message_drafts'));
   });
 });
 

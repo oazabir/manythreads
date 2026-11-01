@@ -3,7 +3,7 @@ import type { ScheduledMessage } from '@manythreads/shared';
 import { remindWhen } from '../later/times';
 import { ClockIcon } from '../shell/icons';
 import { ScheduleDialog } from './SendLater';
-import { ALL_SCHEDULED, scheduledErrorText, scheduledStore, useScheduled } from './scheduled';
+import { ALL_SCHEDULED, scheduledErrorText, scheduledStore, useAgreedEdit, useScheduled } from './scheduled';
 
 /** One line of the text, for the strip: the first non-empty line, clipped. */
 export function snippetOf(body: string, max = 140): string {
@@ -26,6 +26,7 @@ export function ScheduledStrip({ channelId, threadRootId = null }: { channelId: 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduledMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const agreedEdit = useAgreedEdit();
   // a message that could not be sent opens the list by itself, so its reason is read
   const seenRefused = useRef(0);
   useEffect(() => {
@@ -89,13 +90,7 @@ export function ScheduledStrip({ channelId, threadRootId = null }: { channelId: 
           currentAt={new Date(editing.sendAt)}
           initialBody={editing.body}
           onClose={() => setEditing(null)}
-          onSubmit={async ({ at, body, timeChanged }) => {
-            try {
-              await scheduledStore.edit(editing, timeChanged ? { body, sendAt: at } : { body });
-            } catch (e) {
-              throw new Error(scheduledErrorText(e));
-            }
-          }}
+          onSubmit={({ at, body, timeChanged }) => agreedEdit(editing, timeChanged ? { body, sendAt: at } : { body }, editing.state === 'refused' ? 'Schedule again' : 'Save')}
         />
       ) : null}
     </section>
@@ -113,6 +108,7 @@ export function NotSentList() {
   const refused = snap.items.filter((m) => m.state === 'refused');
   const [editing, setEditing] = useState<ScheduledMessage | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const agreedEdit = useAgreedEdit();
   if (refused.length === 0) return null;
 
   const dismiss = async (m: ScheduledMessage): Promise<void> => {
@@ -164,14 +160,8 @@ export function NotSentList() {
           currentAt={new Date(editing.sendAt)}
           initialBody={editing.body}
           onClose={() => setEditing(null)}
-          onSubmit={async ({ at, body }) => {
-            try {
-              // a refused message's own time has passed: the new time is always sent
-              await scheduledStore.edit(editing, { body, sendAt: at });
-            } catch (e) {
-              throw new Error(scheduledErrorText(e));
-            }
-          }}
+          // a refused message's own time has passed: the new time is always sent
+          onSubmit={({ at, body }) => agreedEdit(editing, { body, sendAt: at }, 'Schedule again')}
         />
       ) : null}
     </section>

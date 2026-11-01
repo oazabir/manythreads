@@ -108,15 +108,21 @@ async function sendOne(deps: Deps, due: DueRow, now: Date): Promise<Outcome> {
   const caller: HttpCaller = { actorId: due.author_id, kind: 'person', workspaceId: due.workspace_id, personId: null, sessionId: null };
   try {
     return await ctx.db.as(caller, async (tx): Promise<Outcome> => {
-      const res = await tx.query<{ body: string; thread_root_id: string | null; team_id: string | null }>(
-        `SELECT body, thread_root_id, team_id FROM app.scheduled_messages
+      const res = await tx.query<{ body: string; thread_root_id: string | null; team_id: string | null; broadcast_confirmed: boolean }>(
+        `SELECT body, thread_root_id, team_id, broadcast_confirmed FROM app.scheduled_messages
           WHERE id = $1 AND state = 'scheduled' AND send_at <= $2::timestamptz AND (retry_at IS NULL OR retry_at <= $2::timestamptz) FOR UPDATE SKIP LOCKED`,
         [due.id, now],
       );
       const row = res.rows[0];
       // cancelled, edited to a later time, or held by another replica meanwhile
       if (!row) return { kind: 'gone' };
-      const posted = await postChannelMessage(deps, tx, { channelId: due.channel_id, body: row.body, threadRootId: row.thread_root_id });
+      // a text that names @channel / @here for a big room was agreed when it was scheduled; one that was not (the room has grown since) is refused with the plain 409 sentence
+      const posted = await postChannelMessage(deps, tx, {
+        channelId: due.channel_id,
+        body: row.body,
+        threadRootId: row.thread_root_id,
+        ...(row.broadcast_confirmed ? { confirmBroadcast: true } : {}),
+      });
       await tx.query('DELETE FROM app.scheduled_messages WHERE id = $1', [due.id]);
       const person = await tx.query<{ id: string | null }>('SELECT app.person_id() AS id');
       const ref: ScheduledRef = { id: due.id, workspaceId: due.workspace_id, channelId: due.channel_id, teamId: row.team_id, authorId: due.author_id };

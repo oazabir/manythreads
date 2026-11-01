@@ -24,11 +24,13 @@ type Loaded = { slug: string | null; bots: SlashWho['bots'] };
 const NOT_LOADED: Loaded = { slug: null, bots: null };
 
 /**
- * The facts `planSlash` needs about the signed-in person in the conversation's team. The team's bots and the conversation's own facts (whether the
- * person is a member, whether they manage it) are read only once a message starts with a slash (`wanted`), so a composer nobody types a command in
- * never asks. A guest has no team routes and is never asked about bots.
+ * The facts `planSlash` needs about the signed-in person in the conversation's team. The team's bots are read only once a message starts with a slash
+ * (`wanted`), so a composer nobody types a command in never asks. The conversation's own facts (whether the person is a member, whether they manage it)
+ * are read as soon as the composer is on a conversation (`facts`, which defaults to `wanted`): the channel screen reads the same thing under the same
+ * key, so it costs nothing, and `/invite`, `/leave` and `/topic` typed in the first second of a freshly opened channel are not told to wait. A guest has no
+ * team routes and is never asked about bots.
  */
-export function useSlashWho(teamSlug: string | null, channelId: string, wanted: boolean, selfName: string | null): SlashWho {
+export function useSlashWho(teamSlug: string | null, channelId: string, wanted: boolean, selfName: string | null, facts: boolean = wanted): SlashWho {
   const shell = useContext(ShellContext);
   const session = useSession();
   const guest = shell?.guest ?? session.role === 'guest';
@@ -41,7 +43,7 @@ export function useSlashWho(teamSlug: string | null, channelId: string, wanted: 
       : Promise.resolve(NOT_LOADED),
   );
   // the same query (and key) the channel screen itself makes, so asking again costs nothing
-  const info = useQuery(wanted ? `channel:${channelId}` : 'slash-where:off', () => (wanted ? fetchChannel(channelId) : Promise.resolve(null)));
+  const info = useQuery(facts ? `channel:${channelId}` : 'slash-where:off', () => (facts ? fetchChannel(channelId) : Promise.resolve(null)));
   useChannelChanged(channelId, info.reload);
   // a previous answer is kept while another team's loads: use it only for the team it was read for
   const bots = q.status === 'ok' && q.data.slug === teamSlug ? q.data.bots : null;

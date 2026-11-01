@@ -4,12 +4,23 @@ import { ActorId, ChannelId, FileId, MessageId, WorkspaceId } from '../ids.ts';
 import { AnswerPayloadView } from './answer.ts';
 import { MAX_ATTACHMENTS_PER_MESSAGE } from './file.ts';
 
+/** A text that cannot be stored: the database refuses the NUL character (U+0000) in any text, so it is refused up front with a plain sentence rather than failing the save. */
+export const NO_NUL_MESSAGE = 'the text has a null character (U+0000), which cannot be saved; remove it';
+export const hasNul = (text: string): boolean => text.includes('\u0000');
+
+/** A message body: 1 to 40,000 characters of markdown, with no null character. */
+export const MessageBody = z
+  .string()
+  .min(1)
+  .max(40_000)
+  .refine((v) => !hasNul(v), { message: NO_NUL_MESSAGE }); // markdown
+
 export const Message = z.object({
   id: MessageId,
   workspaceId: WorkspaceId,
   channelId: ChannelId,
   authorId: ActorId,
-  body: z.string().min(1).max(40_000), // markdown
+  body: MessageBody,
   bodyPlain: z.string(), // derived by the server, used for search
   threadRootId: MessageId.nullable(),
   editedAt: IsoDateTime.nullable(),

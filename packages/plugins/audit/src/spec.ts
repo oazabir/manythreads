@@ -518,6 +518,16 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
       reason: `Link previews ${on === null ? 'changed' : on ? 'on' : 'off'}; ${plural(count(e['allowCount']), 'allowed site')}, ${plural(count(e['denyCount']), 'blocked site')}`,
     };
   },
+  'channel.custom_emoji.changed': (e) => {
+    // the name is 2 to 32 lower-case letters, digits and underscores (the event schema), so it can be shown; anything else is left out
+    const name = code(e['name']);
+    return {
+      action: e['change'] === 'deleted' ? 'emoji.deleted' : 'emoji.added',
+      who: actor(e['changedBy']),
+      target: of('emoji', uuid(e['emojiId']), name === null ? null : `:${name}:`),
+      reason: e['change'] === 'deleted' ? 'A custom emoji was removed' : 'A custom emoji was added',
+    };
+  },
   'retention.sweep.completed': (e) => ({
     action: 'retention.sweep_completed',
     who: 'system',

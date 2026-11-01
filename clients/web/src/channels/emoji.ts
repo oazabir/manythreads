@@ -377,6 +377,43 @@ export function searchEmoji(query: string, limit = 60): EmojiEntry[] {
   return out;
 }
 
+/** Shortcodes people know from other chat apps that are not a word of the emoji's name here. */
+const SHORTCODE_ALIASES: Record<string, string> = { '+1': '👍', '-1': '👎', thumbsup: '👍', thumbsdown: '👎', lgtm: '👍' };
+
+/**
+ * The built-in emoji a `:shortcode:` means, or null. The code is matched against the names in the table (underscores stand for spaces): the whole name
+ * first (`:palm_tree:`), then a name that starts with the word (`:smile:`), then two first words run together (`:thumbsup:`), then any word of a name
+ * (`:coffee:` for "hot beverage coffee"). The first emoji in picker order wins within a step. Colons around the code are optional.
+ */
+export function emojiForShortcode(code: string): string | null {
+  const c = code.trim().toLowerCase().replace(/^:|:$/g, '');
+  if (c === '') return null;
+  const alias = SHORTCODE_ALIASES[c];
+  if (alias) return alias;
+  const spaced = c.replace(/[_-]+/g, ' ');
+  let first: string | null = null;
+  let pair: string | null = null;
+  let any: string | null = null;
+  for (const g of EMOJI_GROUPS) {
+    for (const e of g.items) {
+      const words = e.name.toLowerCase().split(/\s+/);
+      if (words.join(' ') === spaced) return e.char;
+      if (first === null && words[0] === c) first = e.char;
+      if (pair === null && words.length > 1 && `${words[0]}${words[1]}` === c) pair = e.char;
+      if (any === null && words.includes(c)) any = e.char;
+    }
+  }
+  return first ?? pair ?? any;
+}
+
+/** A leading `:shortcode:` of a text turned into its emoji, with the rest of the text left as it is; null when the text does not start with a known one. */
+export function leadingShortcode(text: string): { emoji: string; rest: string } | null {
+  const m = /^:([a-z0-9_+-]{1,40}):(?:\s+|$)/i.exec(text);
+  if (!m) return null;
+  const emoji = emojiForShortcode(m[1] ?? '');
+  return emoji ? { emoji, rest: text.slice(m[0].length).trim() } : null;
+}
+
 export const RECENT_LIMIT = 16;
 
 /** The recent list with `char` first (it moves up when already there) and no more than `RECENT_LIMIT`. */

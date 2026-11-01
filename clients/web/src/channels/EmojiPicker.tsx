@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { customEmojiNameOf, emojiToken, type CustomEmoji } from '@manythreads/shared';
+import { isAdmin, useSession } from '../app/session';
+import { AddCustomEmoji, RemoveCustomEmoji } from './CustomEmojiAdmin';
+import { loadCustomEmoji, useCustomEmoji } from './customEmoji';
+import { CustomEmojiImg, EmojiGlyph } from './EmojiGlyph';
 import { EMOJI_GROUPS, SKIN_TONES, loadRecent, loadTone, pushRecent, saveRecent, saveTone, searchEmoji, takesTone, withTone } from './emoji';
 
 /** Cells in a row of the grid: the Up and Down arrows move by this many. */
@@ -15,13 +20,27 @@ export function EmojiPicker({ onPick, onClose, label = 'Emoji' }: { onPick: (cha
   const [query, setQuery] = useState('');
   const [tone, setTone] = useState(loadTone);
   const [recent, setRecent] = useState(loadRecent);
+  // custom emoji: the workspace's pictures; an admin can add and remove them from here
+  const { items: customs, byName } = useCustomEmoji();
+  const admin = isAdmin(useSession());
+  const [adding, setAdding] = useState(false);
+  const [managing, setManaging] = useState(false);
+  const [removing, setRemoving] = useState<CustomEmoji | null>(null);
 
   useEffect(() => {
     search.current?.focus();
+    // the list may have changed since the page last read it
+    void loadCustomEmoji();
   }, []);
 
   const found = useMemo(() => searchEmoji(query), [query]);
   const searching = query.trim() !== '';
+  const foundCustom = useMemo(() => {
+    const q = query.trim().toLowerCase().replace(/^:|:$/g, '');
+    return q === '' ? [] : customs.filter((c) => c.name.includes(q));
+  }, [query, customs]);
+  // a recent custom emoji that the workspace no longer has is not offered
+  const shownRecent = recent.filter((c) => customEmojiNameOf(c) === null || byName.has(customEmojiNameOf(c) ?? ''));
 
   const pick = (char: string): void => {
     const next = pushRecent(recent, char);
@@ -69,6 +88,19 @@ export function EmojiPicker({ onPick, onClose, label = 'Emoji' }: { onPick: (cha
     );
   };
 
+  const customCell = (c: CustomEmoji, key: string) => (
+    <button
+      key={key}
+      type="button"
+      className="emp-cell"
+      aria-label={emojiToken(c.name)}
+      title={emojiToken(c.name)}
+      onClick={() => (managing ? setRemoving(c) : pick(emojiToken(c.name)))}
+    >
+      <CustomEmojiImg id={c.id} name={c.name} />
+    </button>
+  );
+
   const jump = (id: string): void => {
     body.current?.querySelector<HTMLElement>(`[data-group="${id}"]`)?.scrollIntoView({ block: 'start' });
   };
@@ -104,8 +136,9 @@ export function EmojiPicker({ onPick, onClose, label = 'Emoji' }: { onPick: (cha
       </div>
       <div ref={body} className="emp-body">
         {searching ? (
-          found.length > 0 ? (
+          found.length > 0 || foundCustom.length > 0 ? (
             <div className="emp-grid" role="group" aria-label="Results" data-testid="emoji-results">
+              {foundCustom.map((c) => customCell(c, `sc-${c.id}`))}
               {found.map((e) => cell(e.char, e.name, `s-${e.char}`))}
             </div>
           ) : (
@@ -113,16 +146,41 @@ export function EmojiPicker({ onPick, onClose, label = 'Emoji' }: { onPick: (cha
           )
         ) : (
           <>
-            {recent.length > 0 ? (
+            {shownRecent.length > 0 ? (
               <section data-group="recent" aria-label="Recently used">
                 <h3>Recently used</h3>
                 <div className="emp-grid" role="group" aria-label="Recently used" data-testid="emoji-recent">
-                  {recent.map((c) => (
+                  {shownRecent.map((c) => (
                     <button key={`r-${c}`} type="button" className="emp-cell" aria-label={`${c} (recent)`} onClick={() => pick(c)}>
-                      <span aria-hidden="true">{c}</span>
+                      <span aria-hidden="true"><EmojiGlyph value={c} /></span>
                     </button>
                   ))}
                 </div>
+              </section>
+            ) : null}
+            {customs.length > 0 || admin ? (
+              <section data-group="custom" aria-label="Custom emoji" data-testid="emoji-custom">
+                <h3>
+                  Custom
+                  {admin ? (
+                    <span className="emp-admin">
+                      <button type="button" className="emp-link" aria-expanded={adding} onClick={() => { setAdding((a) => !a); setManaging(false); setRemoving(null); }}>Add</button>
+                      {customs.length > 0 ? (
+                        <button type="button" className={`emp-link ${managing ? 'on' : ''}`} aria-pressed={managing} onClick={() => { setManaging((m) => !m); setAdding(false); setRemoving(null); }}>Remove</button>
+                      ) : null}
+                    </span>
+                  ) : null}
+                </h3>
+                {adding ? <AddCustomEmoji onAdded={() => setAdding(false)} /> : null}
+                {managing && !removing ? <p className="emp-hint">Choose the emoji to remove.</p> : null}
+                {removing ? <RemoveCustomEmoji id={removing.id} name={removing.name} onDone={() => setRemoving(null)} /> : null}
+                {customs.length > 0 ? (
+                  <div className="emp-grid" role="group" aria-label="Custom emoji">
+                    {customs.map((c) => customCell(c, `c-${c.id}`))}
+                  </div>
+                ) : (
+                  <p className="emp-empty">This workspace has no custom emoji yet.</p>
+                )}
               </section>
             ) : null}
             {EMOJI_GROUPS.map((g) => (
@@ -138,6 +196,11 @@ export function EmojiPicker({ onPick, onClose, label = 'Emoji' }: { onPick: (cha
       </div>
       {searching ? null : (
         <div className="emp-tabs" role="toolbar" aria-label="Emoji groups">
+          {customs.length > 0 || admin ? (
+            <button type="button" className="emp-tab" aria-label="Custom" title="Custom" onClick={() => jump('custom')}>
+              <span aria-hidden="true">★</span>
+            </button>
+          ) : null}
           {EMOJI_GROUPS.map((g) => (
             <button key={g.id} type="button" className="emp-tab" aria-label={g.label} title={g.label} onClick={() => jump(g.id)}>
               <span aria-hidden="true">{g.icon}</span>

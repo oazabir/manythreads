@@ -131,6 +131,7 @@ Postgres uses: a BEFORE INSERT trigger runs before the policy's WITH CHECK, and 
 `reminder_senders` (system only): one `actor` of kind `system` per workspace, made on first use by `app.reminders_act_as()` (system role only; it switches the transaction's `app.actor_id` to the sender, the way
 the webhooks plugin does). Functions: `reminders_act_as`, `reminders_inbox(person)`, `reminders_target_ok`, `reminders_pending_for(person)`. Migration `0002` also replaces `app.message_authors` (the **fourth** time: it names the sender *Reminders*, on
 top of the webhooks version), which is why the manifest `dependsOn` `webhooks` (and through it `bots`): the migrations must run after the last one that replaced it.
+Migration `0003_message_author_sender.sql` drops and makes the function again with a fourth column, `sender`: `'reminders'` for the workspace's reminder sender, `'webhook'` for a webhook's actor, null for anybody else. The channels plugin copies it into the message's `author.sender`, and the web client badges a `reminders` author "System" and a `webhook` author "Webhook" from it. The name decides nothing, so a webhook its admin called "Reminders" is still badged "Webhook".
 
 ### Routes
 

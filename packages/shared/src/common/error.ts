@@ -18,6 +18,8 @@ export const ErrorCode = z.enum([
   'bot_has_no_conversation_trigger',
   /** 422: a file under `memory/` that is not valid OKF (no frontmatter, no `type`, bad YAML); the envelope names the file and the reason, nothing is committed. */
   'okf_invalid',
+  /** 409: a message that names `@here` or `@channel` in a room with more people than the confirmation limit must be sent with `confirmBroadcast: true`; the message says how many people it would notify (channels plugin, P14-02). */
+  'broadcast_needs_confirmation',
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;
 

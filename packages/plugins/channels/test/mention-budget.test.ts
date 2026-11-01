@@ -24,7 +24,7 @@ describe('the group mention budget', () => {
     for (let i = 0; i < GROUPS_PER_MINUTE; i++) b.take('a:t', 1, 2);
     const err = refusal(() => b.take('a:t', 1, 2));
     expect(err.status).toBe(429);
-    expect(err.message).toBe('You mentioned groups too often; try again in a minute.');
+    expect(err.message).toBe('You used group mentions (a group, @channel or @here) too often: 5 a minute at most. Try again in a minute.');
     expect(Number(err.headers['retry-after'])).toBeGreaterThan(0);
   });
 
@@ -51,7 +51,7 @@ describe('the group mention budget', () => {
     b.take('a:t', 1, PEOPLE_PER_HOUR - 10);
     c.advance(120_000);
     const err = refusal(() => b.take('a:t', 1, 11));
-    expect(err.message).toBe('Your group mentions have reached too many people this hour; try again later.');
+    expect(err.message).toBe('Your group mentions (a group, @channel or @here) have reached 1,000 people this hour, the most allowed. Try again later.');
     expect(() => b.take('a:t', 1, 10)).not.toThrow();           // the refused 11 was not kept
     c.advance(3_600_000);
     expect(() => b.take('a:t', 1, PEOPLE_PER_HOUR)).not.toThrow();

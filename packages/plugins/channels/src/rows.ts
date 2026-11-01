@@ -9,6 +9,8 @@ import {
   type ForwardedMessage,
   type MessageAuthor,
   Reaction,
+  CustomEmoji,
+  MessageDraft,
   ScheduledMessage,
   Thread,
   ThreadFollow,
@@ -176,8 +178,10 @@ export type ScheduledRow = {
   refused_reason: string | null;
   refused_at: Date | null;
   created_at: Date;
+  /** The writer agreed to tell a big room with `@channel` / `@here` (kept for the job; not shown to the client). */
+  broadcast_confirmed: boolean;
 };
-export const SCHEDULED_COLUMNS = 'id, channel_id, thread_root_id, body, send_at, state, refused_reason, refused_at, created_at';
+export const SCHEDULED_COLUMNS = 'id, channel_id, thread_root_id, body, send_at, state, refused_reason, refused_at, created_at, broadcast_confirmed';
 export const toScheduledMessage = (r: ScheduledRow): ScheduledMessage =>
   ScheduledMessage.parse({
     id: r.id,
@@ -190,6 +194,17 @@ export const toScheduledMessage = (r: ScheduledRow): ScheduledMessage =>
     refusedAt: iso(r.refused_at),
     createdAt: r.created_at.toISOString(),
   });
+
+/** A custom emoji without its bytes (the list and the answer to an add); the picture is read by its own route. */
+export type CustomEmojiRow = { id: string; name: string; content_type: string; size: string | number; created_by: string | null; created_at: Date };
+export const CUSTOM_EMOJI_COLUMNS = 'id, name, content_type, octet_length(bytes) AS size, created_by, created_at';
+export const toCustomEmoji = (r: CustomEmojiRow): CustomEmoji =>
+  CustomEmoji.parse({ id: r.id, name: r.name, contentType: r.content_type, size: Number(r.size), createdBy: r.created_by, createdAt: r.created_at.toISOString() });
+
+export type DraftRow = { channel_id: string; thread_root_id: string | null; body: string; updated_at: Date };
+export const DRAFT_COLUMNS = 'channel_id, thread_root_id, body, updated_at';
+export const toMessageDraft = (r: DraftRow): MessageDraft =>
+  MessageDraft.parse({ channelId: r.channel_id, threadRootId: r.thread_root_id, body: r.body, updatedAt: r.updated_at.toISOString() });
 
 /** A poll with the reader's own ballot (`mine`, null when they have not voted) and whether it counts as closed now (the database's clock decides). */
 export type PollRow = {

@@ -15,6 +15,7 @@ export * from './notification-level.ts';
 export * from './later.ts';
 export * from './reminder.ts';
 export * from './scheduled-message.ts';
+export * from './custom-emoji.ts';
 export * from './poll.ts';
 export * from './presence.ts';
 export * from './presence-time.ts';

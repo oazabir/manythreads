@@ -63,6 +63,10 @@ All subscribers of one event run in one database transaction. The audit subscrib
 
 `linkpreview.settings.updated` becomes `linkpreview.settings_changed` (category settings): who changed the link-preview switch or the allow or deny list, and a fixed reason ("Link previews off; 2 allowed sites, 1 blocked site"). The event carries only the switch and the sizes of the two lists, never a host name, so the line says how much changed and who did it ([link-preview.md](./link-preview.md)).
 
+## Custom emoji (P14-02)
+
+`channel.custom_emoji.changed` becomes `emoji.added` or `emoji.deleted` (category settings): which workspace admin added or removed a picture, the emoji's `:name:` as the target label (a name is 2 to 32 lower-case letters, digits and underscores, so it can hold nothing a person wrote beyond that) and a fixed reason. The picture itself is never in the event ([channels.md](./channels.md)).
+
 ## Setup and model tests (P10-01)
 
 `llm.alias.tested` becomes `model_alias.tested` (the alias as the label, the outcome and the cause code as the reason), `onboarding.step.marked` becomes `setup.step_marked`, `onboarding.goal.launched` becomes `setup.goal_launched` and `onboarding.checklist.dismissed` becomes `setup.checklist_dismissed` (all category settings). The question a person asks Brain in their first goal is never in an event.

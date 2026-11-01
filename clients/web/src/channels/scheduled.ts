@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { ScheduledChangedPush, WS_SCHEDULED_CHANGED, type ScheduledMessage } from '@manythreads/shared';
 import { cancelScheduled, editScheduled, fetchAllScheduled, fetchScheduled, scheduleMessage } from '../api/endpoints';
 import { isApiError } from '../api/client';
@@ -112,16 +112,23 @@ export class ScheduledStore {
   }
 
   /** Schedules a message; resolves to it. Rejects with the server's sentence in `message` when refused. */
-  async schedule(channelId: string, body: string, sendAt: Date, threadRootId: string | null): Promise<ScheduledMessage> {
-    const item = await scheduleMessage(channelId, { body, sendAt: sendAt.toISOString(), ...(threadRootId ? { threadRootId } : {}) } as Parameters<typeof scheduleMessage>[1]);
+  async schedule(channelId: string, body: string, sendAt: Date, threadRootId: string | null, confirmBroadcast = false): Promise<ScheduledMessage> {
+    const item = await scheduleMessage(channelId, {
+      body,
+      sendAt: sendAt.toISOString(),
+      ...(threadRootId ? { threadRootId } : {}),
+      // the writer agreed that @channel / @here will notify a big room; the job posts the message later with that agreement
+      ...(confirmBroadcast ? { confirmBroadcast: true } : {}),
+    } as Parameters<typeof scheduleMessage>[1]);
     this.put(item);
     return item;
   }
 
-  async edit(item: ScheduledMessage, change: { body?: string; sendAt?: Date }): Promise<ScheduledMessage> {
+  async edit(item: ScheduledMessage, change: { body?: string; sendAt?: Date; confirmBroadcast?: boolean }): Promise<ScheduledMessage> {
     const next = await editScheduled(item.channelId, item.id, {
       ...(change.body !== undefined ? { body: change.body } : {}),
       ...(change.sendAt ? { sendAt: change.sendAt.toISOString() } : {}),
+      ...(change.confirmBroadcast ? { confirmBroadcast: true } : {}),
     });
     this.put(next);
     return next;
@@ -146,6 +153,31 @@ export function useScheduled(channelId: string): ScheduledSnapshot {
     void scheduledStore.load(channelId);
   }, [channelId]);
   return snap;
+}
+
+/** True when the server refused a schedule or an edit only because `@channel` / `@here` would notify a big room and the writer must agree. */
+export const needsBroadcastAgreement = (e: unknown): boolean => isApiError(e) && e.code === 'broadcast_needs_confirmation';
+
+/**
+ * For the edit dialogs of the scheduled lists: an edit that names `@channel` / `@here` for a big room is refused until the writer agrees, and submitting the
+ * same text again is the agreement (the sentence says so). A different text starts over. The thrown message is what the dialog shows.
+ */
+export function useAgreedEdit(): (item: ScheduledMessage, change: { body?: string; sendAt?: Date }, submitLabel: string) => Promise<void> {
+  const asked = useRef<string | null>(null);
+  return async (item, change, submitLabel) => {
+    const text = change.body ?? item.body;
+    try {
+      await scheduledStore.edit(item, { ...change, ...(asked.current === text ? { confirmBroadcast: true } : {}) });
+      asked.current = null;
+    } catch (e) {
+      if (needsBroadcastAgreement(e) && isApiError(e)) {
+        asked.current = text;
+        throw new Error(`${e.message.replace(/\s*Confirm to send it\.$/, '')} Press “${submitLabel}” again to agree.`);
+      }
+      asked.current = null;
+      throw new Error(scheduledErrorText(e));
+    }
+  };
 }
 
 /** A sentence for a refused or failed write: the server's own words when it gave one. */

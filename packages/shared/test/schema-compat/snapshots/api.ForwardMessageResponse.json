@@ -934,6 +934,13 @@
             "bot",
             "system"
           ]
+        },
+        "sender": {
+          "type": "string",
+          "enum": [
+            "reminders",
+            "webhook"
+          ]
         }
       },
       "required": [
@@ -1016,6 +1023,13 @@
                     "person",
                     "bot",
                     "system"
+                  ]
+                },
+                "sender": {
+                  "type": "string",
+                  "enum": [
+                    "reminders",
+                    "webhook"
                   ]
                 }
               },

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,31}$"
+    },
+    "contentType": {
+      "type": "string",
+      "enum": [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp"
+      ]
+    },
+    "data": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 349528,
+      "format": "base64",
+      "contentEncoding": "base64",
+      "pattern": "^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$"
+    }
+  },
+  "required": [
+    "name",
+    "contentType",
+    "data"
+  ],
+  "additionalProperties": false
+}

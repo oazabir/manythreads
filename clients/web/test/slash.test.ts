@@ -222,6 +222,12 @@ describe('planSlash: status, dnd, away, invite, leave, mute, topic', () => {
     expect(plan('/status in a meeting')).toEqual({ do: 'status', emoji: null, text: 'in a meeting' });
     expect(plan('/status 🌴 on holiday')).toEqual({ do: 'status', emoji: '🌴', text: 'on holiday' });
     expect(plan('/status clear')).toEqual({ do: 'status-clear' });
+    // a leading :shortcode: becomes the emoji (P14-02 follow-up); the rest stays text
+    expect(plan('/status :coffee: on a break')).toEqual({ do: 'status', emoji: '☕', text: 'on a break' });
+    expect(plan('/status :palm_tree:')).toEqual({ do: 'status', emoji: '🌴', text: '' });
+    expect(plan('/status :nosuchemoji: hello')).toEqual({ do: 'status', emoji: null, text: ':nosuchemoji: hello' });
+    expect(plan('/status in :coffee: land')).toEqual({ do: 'status', emoji: null, text: 'in :coffee: land' });
+    expect(plan('/status 🌴 :coffee: x')).toEqual({ do: 'status', emoji: '🌴', text: ':coffee: x' });
     expect(plan('/status')).toMatchObject({ do: 'say', message: expect.stringContaining('/status') });
     expect(plan('/status hi', guest)).toEqual({ do: 'status', emoji: null, text: 'hi' });
   });

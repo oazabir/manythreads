@@ -33,6 +33,7 @@ import {
   unreactRoute,
 } from '@manythreads/shared';
 import { conflict, forbidden, invalid, json, notFound, route } from './http.ts';
+import { clearDraft } from './routes-drafts.ts';
 import { pollsFor } from './poll-views.ts';
 import {
   MESSAGE_COLUMNS,
@@ -81,7 +82,10 @@ export function registerMessageRoutes(deps: Deps): void {
         body: body.body,
         threadRootId: body.threadRootId ?? null,
         attachmentIds: body.attachments ?? [],
+        ...(body.confirmBroadcast ? { confirmBroadcast: true } : {}),
       });
+      // sent: the draft of this box goes, on every device (a person's own row; nothing for a bot)
+      if (tx.actor.kind === 'person') await clearDraft(tx, channelId, body.threadRootId ?? null);
       // "Also send to channel": the same text once more as a message of the channel, marked with the thread it came from
       if (body.alsoToChannel && body.threadRootId) {
         await postChannelMessage(deps, tx, {
@@ -149,9 +153,9 @@ export function registerMessageRoutes(deps: Deps): void {
     rateLimit: { limit: 300, windowMs: 60_000 },
     handler: route(async (req, tx) => {
       const { channelId, messageId } = MessagePathParams.parse(req.params);
-      const { body } = EditMessageRequest.parse(req.body);
+      const { body, confirmBroadcast } = EditMessageRequest.parse(req.body);
       // The write itself is `editChannelMessage` (service.ts) — the same call the `messages.update` capability makes.
-      const edited = await editChannelMessage(deps, tx, { channelId, messageId, body, syncRefs: true });
+      const edited = await editChannelMessage(deps, tx, { channelId, messageId, body, syncRefs: true, ...(confirmBroadcast ? { confirmBroadcast: true } : {}) });
       return json(EditMessageResponse.parse(edited));
     }),
   });

@@ -6,7 +6,17 @@ import type { ChannelMessage, FileSummary, ReactionSummary, ThreadChannelRef, Th
  * so id order is time order.
  */
 
-export type PendingSend = { localId: string; body: string; attachments: FileSummary[]; status: 'sending' | 'failed'; createdAt: string; alsoToChannel?: boolean };
+export type PendingSend = {
+  localId: string;
+  body: string;
+  attachments: FileSummary[];
+  status: 'sending' | 'failed';
+  createdAt: string;
+  alsoToChannel?: boolean;
+  confirmBroadcast?: boolean;
+  /** Set on a failed send that the server refused only because `@channel` / `@here` would notify a big room: its sentence ("@channel will notify 52 people."). "Send anyway" confirms it. */
+  askConfirm?: string;
+};
 
 export type Timeline = {
   /** Oldest first. */

@@ -1,5 +1,8 @@
 import { memo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import type { CustomEmoji } from '@manythreads/shared';
+import { splitCustomEmoji, useCustomEmoji } from './customEmoji';
+import { CustomEmojiImg } from './EmojiGlyph';
 import { parseMarkdown, type Block, type Inline } from './markdown';
 
 /** Parsed messages by their text: scrolling back over a row does not parse it again. Bounded, oldest out first. */
@@ -56,13 +59,23 @@ const hostClaimedBy = (label: string): string | null => {
   return m?.[1] ? m[1].toLowerCase().replace(/^www\./, '') : null;
 };
 
+/** The workspace's custom emoji while one message is being drawn (set by `Markdown` just before it draws, read by `inline`; drawing does not yield in between). */
+let drawing: ReadonlyMap<string, CustomEmoji> = new Map();
+
+/** A run of text with the known `:name:` tokens drawn as their pictures; text with none is the string itself. */
+function withEmoji(text: string, key: string): ReactNode {
+  const pieces = splitCustomEmoji(text, drawing);
+  if (pieces.length === 1 && typeof pieces[0] === 'string') return text;
+  return <span key={key}>{pieces.map((p, i) => (typeof p === 'string' ? p : <CustomEmojiImg key={`${key}e${i}`} id={p.id} name={p.name} />))}</span>;
+}
+
 /** Draws what `markdown.ts` read. Only React elements: message text never becomes HTML. External links open safely. */
 function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: CitationMarker, cited: ReadonlySet<number> = NONE): ReactNode[] {
   return nodes.map((n, i) => {
     const k = `${key}${i}`;
     switch (n.t) {
       case 'text':
-        return marker ? <span key={k} className="an-run">{withMarkers(n.v, marker, k, cited)}</span> : n.v;
+        return marker ? <span key={k} className="an-run">{withMarkers(n.v, marker, k, cited)}</span> : drawing.size === 0 ? n.v : withEmoji(n.v, k);
       case 'br':
         return <br key={k} />;
       case 'code':
@@ -172,5 +185,7 @@ function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker,
 }
 
 export const Markdown = memo(function Markdown({ source, teamSlug = null, marker, cited, toggle }: { source: string; teamSlug?: string | null; marker?: CitationMarker; /** The citation numbers a `[n]` may become; none when absent. */ cited?: ReadonlySet<number>; /** When given, the boxes of a task list can be ticked; each tick calls it. Absent: the boxes are shown, not changeable. */ toggle?: TaskToggle }) {
+  const { byName } = useCustomEmoji();
+  drawing = byName;
   return <div className="md">{blocks(read(source), teamSlug, marker, cited, toggle)}</div>;
 });

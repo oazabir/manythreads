@@ -111,7 +111,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       channelId
         ? {
             react: (id, emoji) => void channelStore.toggleReaction(channelId, null, id, emoji),
-            edit: (id, body) => channelStore.edit(channelId, null, id, body),
+            edit: (id, body, confirm) => channelStore.edit(channelId, null, id, body, confirm),
             remove: (id) => channelStore.remove(channelId, null, id),
           }
         : null,
@@ -122,7 +122,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       channelId
         ? {
             react: (id, emoji) => void channelStore.toggleReaction(channelId, rootId, id, emoji),
-            edit: (id, body) => channelStore.edit(channelId, rootId, id, body),
+            edit: (id, body, confirm) => channelStore.edit(channelId, rootId, id, body, confirm),
             remove: (id) => channelStore.remove(channelId, rootId, id),
             markUnread: async (id) => void (await channelStore.markUnread(channelId, id, rootId)),
           }
@@ -132,10 +132,10 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
   // "Also send to channel": for the next reply only, and not in a conversation with a bot (its replies are answers, not channel talk)
   const [also, setAlso] = useState(false);
   const send = useCallback(
-    (body: string, attachments: FileSummary[]) => {
+    (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => {
       if (!channelId) return;
       stuck.current = true;
-      void channelStore.send(channelId, rootId, body, attachments, also);
+      void channelStore.send(channelId, rootId, body, attachments, also, confirmBroadcast === true);
       setAlso(false);
     },
     [channelId, rootId, also],
@@ -224,7 +224,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             key={p.localId}
             pending={p}
             name={people.me?.name ?? 'You'}
-            onRetry={() => void channelStore.retry(channelId, rootId, p.localId)}
+            onRetry={(confirm) => void channelStore.retry(channelId, rootId, p.localId, confirm === true)}
             onDiscard={() => channelStore.discard(channelId, rootId, p.localId)}
           />
         ))}

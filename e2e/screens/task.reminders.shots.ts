@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- a live-site check reads loosely typed API answers */
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
@@ -62,7 +63,6 @@ let nadia: Sess | undefined;
 let rafi: Sess | undefined;
 let omar: Sess | undefined;
 let roomId = '';
-const pendingIds: string[] = [];
 
 /** types a command and presses Enter (a second Enter if the first only picked the menu entry) */
 async function run(page: Page, text: string, opts: { second?: boolean } = {}): Promise<string> {

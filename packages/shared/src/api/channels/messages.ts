@@ -31,7 +31,11 @@ export type GetMessageResponse = z.infer<typeof GetMessageResponse>;
 export const getMessageRoute = { method: 'GET', path: '/api/channels/:channelId/messages/:messageId' } as const;
 
 /** Edit your own message (the author only); `editedAt` is set. A deleted message cannot be edited. */
-export const EditMessageRequest = Message.pick({ body: true }).strict();
+export const EditMessageRequest = z.strictObject({
+  body: Message.shape.body,
+  /** As on posting (P14-02): needed when the edit adds `@here` or `@channel` to a message in a big room. */
+  confirmBroadcast: z.boolean().optional(),
+});
 export type EditMessageRequest = z.infer<typeof EditMessageRequest>;
 export const EditMessageResponse = ChannelMessage;
 export type EditMessageResponse = z.infer<typeof EditMessageResponse>;

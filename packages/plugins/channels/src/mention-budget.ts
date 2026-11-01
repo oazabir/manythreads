@@ -33,12 +33,12 @@ export function createMentionBudget(now: () => number = Date.now): MentionBudget
       peopleStamps.set(key, p);
       if (g.length + groups > GROUPS_PER_MINUTE) {
         const wait = Math.max(1, Math.ceil(((g[0] ?? t) + MINUTE - t) / 1000));
-        throw new HttpError(429, 'rate_limited', 'You mentioned groups too often; try again in a minute.', { 'retry-after': String(wait) });
+        throw new HttpError(429, 'rate_limited', 'You used group mentions (a group, @channel or @here) too often: 5 a minute at most. Try again in a minute.', { 'retry-after': String(wait) });
       }
       const reached = p.reduce((sum, s) => sum + s[1], 0);
       if (reached + people > PEOPLE_PER_HOUR) {
         const wait = Math.max(1, Math.ceil(((p[0]?.[0] ?? t) + HOUR - t) / 1000));
-        throw new HttpError(429, 'rate_limited', 'Your group mentions have reached too many people this hour; try again later.', { 'retry-after': String(wait) });
+        throw new HttpError(429, 'rate_limited', 'Your group mentions (a group, @channel or @here) have reached 1,000 people this hour, the most allowed. Try again later.', { 'retry-after': String(wait) });
       }
       for (let i = 0; i < groups; i++) g.push(t);
       p.push([t, people]);

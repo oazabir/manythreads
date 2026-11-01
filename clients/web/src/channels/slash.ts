@@ -10,6 +10,7 @@ import {
   SLASH_COMMANDS,
   type SlashCommand,
 } from '@manythreads/shared';
+import { leadingShortcode } from './emoji';
 
 /*
  * What a slash command does once the composer reads it (PLAN P14-06). `parseSlash` in `@manythreads/shared` says which command a message is;
@@ -203,7 +204,10 @@ export function planSlash(text: string, who: SlashWho, hasFiles = false, env: Sl
     case 'status': {
       const a = parseStatusArgs(args);
       if (a.kind === 'error') return say(a.reason);
-      return a.kind === 'clear' ? { do: 'status-clear' } : { do: 'status', emoji: a.emoji, text: a.text };
+      if (a.kind === 'clear') return { do: 'status-clear' };
+      // `/status :coffee: on a break`: a leading :shortcode: becomes the status emoji (a unicode one is already taken by the parser); an unknown code stays text
+      const lead = a.emoji === null ? leadingShortcode(a.text) : null;
+      return lead ? { do: 'status', emoji: lead.emoji, text: lead.rest } : { do: 'status', emoji: a.emoji, text: a.text };
     }
     case 'dnd': {
       const a = parseDndArgs(args);

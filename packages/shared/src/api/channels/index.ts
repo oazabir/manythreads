@@ -8,3 +8,6 @@ export * from './realtime.ts';
 export * from './ephemeral.ts';
 export * from './mention-groups.ts';
 export * from './polls.ts';
+export * from './custom-emoji.ts';
+export * from './drafts.ts';
+export * from './broadcast.ts';
