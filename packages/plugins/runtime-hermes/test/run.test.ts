@@ -1214,6 +1214,8 @@ describe('bot-to-bot delegation in team channels', () => {
     // and nothing off the bot's mention. Its reply answers the person's message through the stand-in's handoff branch.
     const reply = await until(async () => (await messagesBy(rootId, chan.actorId))[0], 30_000, 'the channel bot to answer the person');
     expect(reply.body).toBe('@dlg-chanonly please continue');
+    // The reply is posted before the run row is closed; wait for the run to end before reading its status.
+    await finished(chan.botId);
     expect(await runsOf(chan.botId)).toMatchObject([{ status: 'done', trigger_type: 'channel_message', asker_id: nadia.actorId, delegation_depth: 0 }]);
     await quiet(4000);
   });
