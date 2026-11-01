@@ -123,7 +123,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
-| 7 | 14 | Messaging parity and moving in | XL | 6 | 4 of 23 built, 11 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 5 of 23 built, 10 partly |
 | 8 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
 | 9 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
 | 10 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
@@ -146,7 +146,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-10-31)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **96 of 281 tasks (the 280 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 147 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **97 of 281 tasks (the 280 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 147 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -165,7 +165,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 11 · Mobile client | 0 | 0 | 10 | 0 |
 | 12 · Full persona end-to-end automation and user manual | 0 | 0 | 7 | 1 |
 | 13 · Screenshot UI review | 0 | 0 | 11 | 0 |
-| 14 · Messaging parity and moving in | 4 | 11 | 8 | 0 |
+| 14 · Messaging parity and moving in | 5 | 10 | 8 | 0 |
 | 15 · Voice rooms, meeting transcripts and meeting memory | 0 | 0 | 25 | 0 |
 | 16 · Connectors to the tools a company already uses | 0 | 0 | 12 | 0 |
 | 17 · Video calls, screen sharing and the meeting assistant | 0 | 0 | 12 | 0 |
@@ -431,11 +431,11 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI … | Not built |  | no pre-check/contrast/Tab-walk CI jobs; USER_JOURNEYS.md not generated |
 | P13-11 | Build the /dev/components gallery (Button, Chip, Card, Table row … | Not built | clients/web/src/pages/DevTokens.tsx (/dev/tokens), DevViewers; eslint.config.js raw-hex ban; stylelint.config.js color-no-hex | no /dev/components gallery, no 4px spacing lint |
 
-### Phase 14 · Messaging parity and moving in — 4 built, 11 partly, 8 not built
+### Phase 14 · Messaging parity and moving in — 5 built, 10 partly, 8 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
-| P14-01 | Presence and status. Active or away from the socket heartbeat … | Partly built | packages/plugins/presence (migration 0001, heartbeat.ts, routes.ts); notifications/src/hold.ts; clients/web/src/presence/ | no status/active dot beside names (members, mention picker, authors, DMs), no profile card with local time, no OOO screen |
+| P14-01 | Presence and status. Active or away from the socket heartbeat … | Partly built | packages/plugins/presence (migration 0001, heartbeat.ts, routes.ts); notifications/src/hold.ts; clients/web/src/presence/ (PresenceDot, ProfileCard with local time, OutOfOfficeEditor, tabLease); e2e/presence/presence-ui.spec.ts; e2e/screens/task.presence.shots.ts (live, 2026-11-01) | no channel "who is here" list, no dots on the workspace members settings page, no Message button on the card, no /status and /dnd commands, approvals do not read the delegate yet (P18-03); live card fields (status, local time) seen only on the devbox because no live user shared any |
 | P14-01b | (not a row of the plan; built as a follow-up) | Built | clients/web/src/presence/PresencePanels.tsx, PresenceSettings.tsx, DndIndicators.tsx; commit 47e30d0 | - (id not in PLAN table; commit-only follow-up of P14-01: status dialog, DND pause, schedule, hours editors) |
 | P14-02 | Composer parity. Formatting toolbar for the Markdown the renderer … | Partly built | clients/web/src/channels/Composer.tsx (toolbar, up-arrow edit-last, localStorage drafts), EmojiPicker.tsx, emoji.ts | no custom emoji, no @here/@channel confirm, drafts only in browser (not server); docs/plugins/channels.md:128 agrees |
 | P14-03 | User groups from role tags. A TEAM.md role tag is a mention handle … | Not built | - (role tags exist only for approvals, plugins/bots/src/loader.ts) | no role-tag mention handle, no picker entry with count, no toPerson role resolution |
@@ -450,7 +450,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P14-12 | Message actions. Edit history ("edited" opens the versions); forward … | Built | channels migrations 0009 message_versions, 0010 channel_bookmarks; routes-bookmarks.ts; web ForwardDialog.tsx, BookmarksBar.tsx, MessageExtras.tsx | - (bookmarks sit beside pins, which do not exist) |
 | P14-13 | Import from Slack and Mattermost. An admin uploads a Slack export … | Not built | - (no plugins/import, no tools/import) | no Slack/Mattermost importer, dry run, job or hostile-input tests |
 | P14-14 | Incoming webhooks and a Slack-shaped API. Promote slack-compat from … | Partly built | packages/plugins/webhooks (incoming URL per channel, Slack/Mattermost payloads, adapters/); clients/web/src/webhooks/WebhooksDialog.tsx | slack-compat still spike (only chat.postMessage); no outgoing webhooks, chat.update, reactions.add, per-integration API token |
-| P14-15 | A personal sidebar inside the contract. Star a channel (a Starred … | Partly built | clients/web/src/shell/unreadLook.ts (muted look follows level), shell/NewChannel.tsx; docs/plugins/channels.md:146 | no Starred group, sort, hide idle 30 days, drag-reorder groups; New channel button is not in the row |
+| P14-15 | A personal sidebar inside the contract. Star a channel (a Starred … | Built | channels migration 0011 (channel_stars, sidebar_prefs, forced RLS), routes-sidebar.ts; clients/web/src/shell/ChannelGroups.tsx, sidebarLayout.ts, sidebarPrefsStore.ts; e2e/shell/sidebar-prefs.spec.ts; e2e/screens/task.sidebar.shots.ts (live) | - (drag by mouse; keyboard and menu reorder; sort team order, recent or name) |
 | P14-16 | On-device speech in the browser: spike, then the engine … | Not built | - (no clients/web/src/speech, no docs/spikes/speech.md, no /models/ route) | no spike, engine, FAKE_ASR |
 | P14-17 | Voice messages. Hold the mic button in the composer (or tap to start … | Not built |  | no recorder, meta.voice, player or transcript flow |
 | P14-18 | Seed v14 (statuses, a reminder due, a scheduled message, a poll, a … | Partly built | docs/plugins/presence.md, reminders.md, slack-compat.md; packages/shared/src/events/presence.dnd.changed.ts, reminders.reminder.due.ts | no seed v14, no import docs page, no benchmarks in tools/bench, no Slack fixture |

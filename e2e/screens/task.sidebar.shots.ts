@@ -377,7 +377,13 @@ test('sb-02 mobile 390x844: drawer, options menu, star and unstar from the row m
     await inside(menu, 'options menu');
     expect(await noSideways(page), 'no sideways scroll with the options menu open').toBe(true);
     await shoot(page, 'sb-22-mobile-options-menu');
-    // close it by choosing the sort already in force (a no-op; Esc is not used here: with the drawer open it closes the drawer first and leaves this menu open, noted in the report)
+    // P14-15c: Escape closes the open menu first and leaves the drawer open; a second Escape closes the drawer
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden(T);
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
+    await options.tap();
+    await expect(menu).toBeVisible(T);
+    // close it by choosing the sort already in force (a no-op)
     await menu.getByTestId(`sort-${initial.sort}`).tap();
     await expect(menu).toBeHidden();
 
@@ -391,6 +397,11 @@ test('sb-02 mobile 390x844: drawer, options menu, star and unstar from the row m
     await expect(rm).toBeVisible(T);
     await inside(rm, 'row menu');
     await shoot(page, 'sb-23-mobile-row-menu');
+    await page.keyboard.press('Escape');
+    await expect(rm).toBeHidden(T);
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
+    await more.tap();
+    await expect(rm).toBeVisible(T);
     await rm.getByTestId('channel-row-star').tap();
     await expect.poll(async () => (await getPrefs(page)).starred.length, T).toBe(initial.starred.length + 1);
     const st = await layout(r);
