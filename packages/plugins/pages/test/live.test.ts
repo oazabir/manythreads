@@ -208,8 +208,10 @@ describe('a page edited live (PLAN P6-09)', () => {
     expect(await fileText(path)).toBe(expected);
     const commit = await lastCommit(path);
     expect(commit?.message.split('\n')[0]).toBe('Edit pages/live/merge.md live with 2 editors');
-    expect(commit?.author_id).toBe(personas.nadia.actorId);
-    expect(commit?.co_authors).toEqual([personas.rafi.actorId]);
+    // The two edits arrive together, so whichever the server saw first is the author and the other is the co-author.
+    const pair = [personas.nadia.actorId, personas.rafi.actorId];
+    expect(pair).toContain(commit?.author_id);
+    expect(commit?.co_authors).toEqual(pair.filter((id) => id !== commit?.author_id));
 
     // A later session reads the committed page from the document snapshot, not a stale copy.
     const later = new Editor(personas.omar, path);
