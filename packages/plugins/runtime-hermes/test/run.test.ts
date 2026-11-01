@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { ListMessagesResponse } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
-import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
-import { FAILURE_NOTICE } from '../src/failure-notice.ts';
+import { createRepoWorld, personas, TEAM_IDS, type RepoWorld } from '../../repo-git/test/world.ts';
+import { FAILURE_NOTICE, notOnTeamNotice } from '../src/failure-notice.ts';
 import { CLASSIFIER_INSTRUCTION, wrapMessage } from '../src/gate.ts';
 
 // The run job end to end (PLAN P5-10): a person's mention goes through the outbox subscription, the router decides, the job
@@ -364,6 +364,38 @@ describe('a hermes run, end to end', () => {
     }, 30_000, 'the notice');
     expect(said.map((m) => m.body)).toEqual([FAILURE_NOTICE.not_allowed]);
     expect(await metaOf(bot.actorId, rootId)).toEqual([{ runId: run.id, runFailure: 'not_allowed' }]);
+  });
+
+  it('a person off the bot\'s team who mentions it is told so in the thread: no run, no process, one line (the live case: an Engineering lead naming a Marketing bot heard nothing)', async () => {
+    const bot = await loadBot('hermes-off-team', botMd({ name: 'HermesOffTeam', model: 'smart', capabilities: 'messages.post' }));
+    const before = spoolLines().length;
+
+    // Omar owns the workspace and so can post in any public channel, but he steps off the Engineering team for this message (the live case:
+    // he named a Marketing bot from #content).
+    const leave = await w.system(async (tx) => (await tx.query<{ role: string; workspace_id: string }>(`DELETE FROM app.team_members WHERE team_id = $1 AND actor_id = $2 RETURNING role, workspace_id`, [TEAM_IDS.Engineering, omar.actorId])).rows[0]);
+    expect(leave).toBeDefined();
+    let rootId = '';
+    let said: { id: string; body: string }[] = [];
+    try {
+      const res = await w.call(omar, 'POST', `/api/channels/${channelId}/messages`, { channelId, body: '@hermes-off-team are you there?', threadRootId: null });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      rootId = (res.body as { id: string }).id;
+      said = await until(async () => {
+        const rows = await messagesBy(rootId, bot.actorId);
+        return rows.length > 0 ? rows : null;
+      }, 30_000, 'the not-on-team line');
+    } finally {
+      // the job reads membership when it runs, so the team gets its lead back only after the line is there
+      await w.system(async (tx) => {
+        await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, $4)`, [TEAM_IDS.Engineering, omar.actorId, leave!.workspace_id, leave!.role]);
+      });
+    }
+    expect(said.map((m) => m.body)).toEqual([notOnTeamNotice('Engineering')]);
+    expect(spoolLines()).toHaveLength(before);
+    expect((await metaOf(bot.actorId, rootId))[0]).toMatchObject({ runFailure: 'not_on_team' });
+    await quiet(1500);
+    expect((await messagesBy(rootId, bot.actorId)).length).toBe(1);
+    expect((await runsOf(bot.botId)).every((r) => r.asker_id === null)).toBe(true);
   });
 
   it('a definition that names no model fails the run and starts no process', async () => {

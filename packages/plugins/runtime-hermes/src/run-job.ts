@@ -24,7 +24,7 @@ import {
 import { z } from 'zod';
 import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
-import { classifyFailure, looksLikeRejectedKey, postFailureNotice, type FailureCategory } from './failure-notice.ts';
+import { classifyFailure, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
 import { rehearsalBlocker, withRehearsalNote } from './rehearsal.ts';
 import { rhythmOverrideProblem, applyRhythmOverrides, emitRhythmFinished, emitRhythmStarted, finishRhythmRun } from './rhythm-run.ts';
@@ -607,6 +607,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             // A run that cannot be opened (an asker no longer on the team, a bot that moved) will not open on a retry either: say so
             // once and end the job rather than letting the queue replay it five times.
             job.log.warn(`runtime-hermes: no run for bot ${bot.slug}: ${err instanceof Error ? err.message : String(err)}`);
+            // A person off the bot's team who names it would otherwise wait for an answer that never comes: tell them in the thread.
+            await postNotOnTeamNotice(ctx, tx, { payload, jobId: job.jobId, bot }, (line) => job.log.warn(line));
             return null;
           }
           const { run, token } = openedRun;

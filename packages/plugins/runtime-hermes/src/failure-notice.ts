@@ -102,3 +102,59 @@ export async function postFailureNotice(
     return false;
   }
 }
+
+/** The line a person hears when they name a team's bot without being on that team. The team's name is the platform's own (a database value), not the asker's text. */
+export function notOnTeamNotice(teamName: string): string {
+  return `I couldn't answer: I only answer people on the ${teamName} team, and you are not on it. Ask a lead of the team to add you.`;
+}
+
+/**
+ * A mention from someone who is not on the bot's team opens no run (a run reads as its asker, and the asker must be a person of the team), so the job
+ * ended with a log line and the person waited for ever. Say so in the thread instead, once per job, as the bot. Only a run a person addressed gets it, and
+ * only when the asker really is off the team (any other reason a run did not open stays a log line). The line is the platform's, so it is posted past the
+ * bot's `messages.post` grant, like every failure notice; a run with no asker is opened just for it and closed at once. Never throws.
+ */
+export async function postNotOnTeamNotice(
+  ctx: PluginContext,
+  tx: PluginTx,
+  input: { payload: RunPayload; jobId: string; bot: { id: string; team_id: string; workspace_id: string } },
+  log: (line: string) => void,
+): Promise<boolean> {
+  const { payload, bot } = input;
+  if (!personAddressed(payload) || payload.askerActorId === null) return false;
+  const messages = ctx.providers.get<MessageProvider>('messages');
+  if (!messages) return false;
+  try {
+    await tx.query('SAVEPOINT run_not_on_team');
+    const member = await tx.query('SELECT 1 FROM app.team_members WHERE team_id = $1::uuid AND actor_id = $2::uuid', [bot.team_id, payload.askerActorId]);
+    const team = (await tx.query<{ name: string }>('SELECT name FROM app.teams WHERE id = $1::uuid', [bot.team_id])).rows[0];
+    const first = await tx.query(
+      `INSERT INTO app.outbox_processed (subscriber, event_id) VALUES ('runtime-hermes:not_on_team', md5($1)::uuid) ON CONFLICT DO NOTHING RETURNING 1 AS ok`,
+      [input.jobId],
+    );
+    await tx.query('RELEASE SAVEPOINT run_not_on_team');
+    if (member.rows.length > 0 || !team || first.rows.length === 0) return false;
+    const run = (
+      await ctx.runs.open({
+        botId: bot.id,
+        teamId: bot.team_id,
+        workspaceId: bot.workspace_id,
+        trigger: payload.trigger,
+        channelId: payload.channelId,
+        replyRootId: payload.replyRootId,
+        delegationDepth: 0,
+      })
+    ).run;
+    try {
+      const body = notOnTeamNotice(team.name);
+      await ctx.runs.asBot(run, (inner) => messages.post(inner, { channelId: payload.channelId, body, threadRootId: payload.replyRootId, meta: { runId: run.runId, runFailure: 'not_on_team' } }));
+    } finally {
+      await ctx.runs.close(run.runId, 'done');
+    }
+    return true;
+  } catch (err) {
+    await tx.query('ROLLBACK TO SAVEPOINT run_not_on_team').catch(() => undefined);
+    log(`runtime-hermes: the not-on-team notice for bot ${bot.id} could not be posted: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  }
+}
