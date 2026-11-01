@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { isMockMode } from '../api/setup';
 import { channelStore } from '../channels/store';
+import { linkPreviewStore } from '../linkpreview/store';
 import { refreshDmsIfUsed } from '../dms/store';
 import { notificationStore } from '../notifications/store';
 import { noteActivity, refreshDirectories } from '../shell/channelFeed';
@@ -24,6 +25,7 @@ export function useRealtime(): void {
     const rt = realtimeClient();
     channelStore.attach(rt);
     notificationStore.attach(rt);
+    linkPreviewStore.attach(rt);
     const offHook = channelStore.onResync(() => {
       refreshDirectories();
       refreshDmsIfUsed();

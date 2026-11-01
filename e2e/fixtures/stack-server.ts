@@ -15,6 +15,8 @@
 //   MANYTHREADS_STACK_API_ONLY   1: no web client needed (clients/web/dist may be missing); every non-API path is the client index or 404
 //   MANYTHREADS_STACK_DEV_AUTH   1: the header actor of the api specs (`x-manythreads-dev-actor`, NODE_ENV=test only)
 //   MANYTHREADS_STACK_TEST_PLUGINS 1: the test-kernel plugin (bulk messages, channel grants, stub resources)
+//   MANYTHREADS_LINK_PREVIEW     `off` (the default here: NODE_ENV is `test`, and fixtures/stack.ts sends `off`) or `on`: whether the server reads the pages of
+//                                the links in posted messages (P14-08). A spec that posts links and does not test previews must leave it off.
 import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';

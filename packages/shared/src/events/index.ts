@@ -61,6 +61,7 @@ export * from './answer.answer.posted.ts';
 export * from './answer.answer.shared.ts';
 export * from './retention.sweep.completed.ts';
 export * from './retention.settings.changed.ts';
+export * from './linkpreview.settings.updated.ts';
 export * from './ops.health.changed.ts';
 export * from './llm.config.applied.ts';
 export * from './llm.key.changed.ts';

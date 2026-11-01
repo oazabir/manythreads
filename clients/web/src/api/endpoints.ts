@@ -1,6 +1,10 @@
 import {
   ListMentionGroupsResponse,
   listMentionGroupsRoute,
+  ListLinkPreviewsResponse,
+  RemoveLinkPreviewResponse,
+  listLinkPreviewsRoute,
+  removeLinkPreviewRoute,
   LaterItem,
   ListLaterQuery,
   ListLaterResponse,
@@ -843,3 +847,11 @@ export const removeDlpRule = (ruleId: string) => call(deleteDlpRuleRoute, { resp
 export const testDlp = (body: TestDlpRequest) => call(testDlpRoute, { request: TestDlpRequest, response: TestDlpResponse }, body);
 export const fetchTeamEgress = () => call(listTeamEgressRoute, { response: ListTeamEgressResponse });
 export const saveTeamEgress = (teamId: string, body: SetTeamEgressRequest) => call(setTeamEgressRoute, { request: SetTeamEgressRequest, response: SetTeamEgressResponse }, body, { teamId });
+
+// ---- link previews (P14-08) ----------------------------------------------------------------------------
+/** The cards of up to 100 messages of one channel. The ids go as one comma list (the shared query schema reads it). */
+export const fetchLinkPreviews = (channelId: string, messageIds: readonly string[]) =>
+  call(listLinkPreviewsRoute, { response: ListLinkPreviewsResponse }, { messageIds: messageIds.join(',') }, { channelId });
+/** The author takes a card off their message. */
+export const removeLinkPreview = (channelId: string, messageId: string, previewId: string) =>
+  call(removeLinkPreviewRoute, { response: RemoveLinkPreviewResponse }, undefined, { channelId, messageId, previewId });

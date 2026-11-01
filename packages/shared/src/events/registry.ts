@@ -26,6 +26,7 @@ import { AnswerAnswerSharedEvent } from './answer.answer.shared.ts';
 import { ConversationsConversationStartedEvent } from './conversations.conversation.started.ts';
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
+import { LinkPreviewSettingsUpdatedEvent } from './linkpreview.settings.updated.ts';
 import { OpsHealthChangedEvent } from './ops.health.changed.ts';
 import { AuditExportCreatedEvent } from './audit.export.created.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
@@ -143,6 +144,7 @@ export const eventRegistry = {
   'answer.answer.shared': { 1: AnswerAnswerSharedEvent },
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
   'retention.settings.changed': { 1: RetentionSettingsChangedEvent },
+  'linkpreview.settings.updated': { 1: LinkPreviewSettingsUpdatedEvent },
   'ops.health.changed': { 1: OpsHealthChangedEvent },
   'audit.export.created': { 1: AuditExportCreatedEvent },
   'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },
@@ -288,6 +290,7 @@ export type AnyEvent =
   | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
+  | z.infer<typeof LinkPreviewSettingsUpdatedEvent>
   | z.infer<typeof AuditExportCreatedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
   | z.infer<typeof ApprovalsApprovalRequestedEvent>
@@ -361,6 +364,7 @@ export type LatestEvent =
   | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
+  | z.infer<typeof LinkPreviewSettingsUpdatedEvent>
   | z.infer<typeof AuditExportCreatedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
   | z.infer<typeof ApprovalsApprovalRequestedEvent>

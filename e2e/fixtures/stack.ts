@@ -47,7 +47,8 @@ export async function startStack(env: Record<string, string> = {}): Promise<Stac
   allowForStart();
   const child: ChildProcess = spawn('pnpm', ['exec', 'tsx', serverFile], {
     cwd: e2eDir,
-    env: { ...process.env, NODE_ENV: 'test', ...E2E_POOL_ENV, ...env },
+    // link previews are off in a stack unless a spec turns them on (`startStack({ MANYTHREADS_LINK_PREVIEW: 'on' })`): a spec that posts a link must not start a real network read
+    env: { ...process.env, NODE_ENV: 'test', MANYTHREADS_LINK_PREVIEW: 'off', ...E2E_POOL_ENV, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   // A worker that dies (timeout, crash, Ctrl-C) must not leave its stack and database behind.

@@ -385,6 +385,172 @@
   font-size: 11px;
 }
 
+/* ---- link previews under a message (P14-08) ---- */
+
+/* The card is 96px tall whatever it holds, and its picture slot is 88px square, so a late picture or a long description never moves a row. */
+.lp-cards {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  max-width: 520px;
+  animation: lp-in 160ms ease-out;
+}
+
+.lp-slot {
+  height: 96px;
+  margin-top: 8px;
+  max-width: 520px;
+}
+
+.lp-card {
+  position: relative;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--human-border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.lp-card:hover {
+  background: var(--table-head);
+}
+
+.lp-link {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  height: 94px;
+  padding: 3px 3px 3px 10px;
+  overflow: hidden;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.lp-link:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.lp-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 26px 0 0;
+}
+
+.lp-host {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--human);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lp-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lp-img {
+  flex: none;
+  align-self: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 4px;
+  background: var(--shell);
+  object-fit: cover;
+}
+
+.lp-x {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--mute);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.lp-x:hover {
+  background: var(--nav-on);
+  color: var(--ink);
+}
+
+.lp-x:focus-visible {
+  outline: 2px solid var(--human);
+  opacity: 1;
+}
+
+/* the button shows with the card under the pointer or focus; on a touch screen it is always there */
+.lp-card:hover .lp-x,
+.lp-card:focus-within .lp-x {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .lp-x {
+    opacity: 1;
+  }
+}
+
+.lp-err {
+  margin: 0;
+  padding: 4px 10px 6px;
+  color: var(--alert-ink);
+  font-size: 12px;
+}
+
+@keyframes lp-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (width <= 480px) {
+  .lp-img {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-cards {
+    animation: none;
+  }
+}
+
 /* ---- pictures in a message ---- */
 .msg-imgs {
   display: grid;

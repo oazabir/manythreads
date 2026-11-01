@@ -16,6 +16,7 @@ import { clock, fileKind, fileSize } from './format';
 import { splitAttachments } from './images';
 import { Markdown } from './MessageMarkdown';
 import { MessageImages } from './MessageImages';
+import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import type { People } from './hooks';
 import { PresenceDot } from '../presence/PresenceDot';
@@ -281,6 +282,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         {!deleted && attached.files.length > 0 ? (
           <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div>
         ) : null}
+        <LinkPreviewCards channelId={m.channelId} messageId={m.id} body={m.body} enabled={!deleted} />
         {!deleted && m.reactions.length > 0 ? (
           <div className="reactions">
             {m.reactions.map((r) => (

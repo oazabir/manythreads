@@ -80,6 +80,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'knowledge.document.removed': { teamId: id(20), baseId: id(90), documentId: id(91), removedBy: id(13), at: AT },
   'knowledge.base.resynced': { teamId: id(20), baseId: id(90), checked: 3, updated: 1, added: 0, removed: 0, failed: 0, resyncedBy: id(13), at: AT },
   'retention.settings.changed': { changedBy: id(13), runLogDays: { from: 30, to: 60 }, memoryLogDays: { from: 30, to: 30 }, changedAt: AT },
+  'linkpreview.settings.updated': { changedBy: id(13), enabled: { from: true, to: false }, allowCount: { from: 0, to: 2 }, denyCount: { from: 1, to: 1 }, at: AT },
   'retention.sweep.completed': { sweepId: id(80), dryRun: false, runLogCutoff: AT, memoryLogCutoff: AT, counts: { runs: 0, runsSkipped: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0 }, durationMs: 5 },
   'audit.export.created': { exportedBy: id(13), rowCount: 12, truncated: false, from: null, to: null, keyId: 'abcdef0123456789', exportedAt: AT },
 };

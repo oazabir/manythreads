@@ -507,6 +507,17 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     };
     return { action: 'retention.settings_changed', who: actor(e['changedBy']), target: of('retention', null), reason: `Run logs ${win(e['runLogDays'])}; memory log ${win(e['memoryLogDays'])}` };
   },
+  'linkpreview.settings.updated': (e) => {
+    const flag = (v: unknown): boolean | null => (v && typeof v === 'object' && typeof (v as Fields)['to'] === 'boolean' ? ((v as Fields)['to'] as boolean) : null);
+    const count = (v: unknown): number => (v && typeof v === 'object' ? num((v as Fields)['to']) : 0);
+    const on = flag(e['enabled']);
+    return {
+      action: 'linkpreview.settings_changed',
+      who: actor(e['changedBy']),
+      target: of('linkpreview', null),
+      reason: `Link previews ${on === null ? 'changed' : on ? 'on' : 'off'}; ${plural(count(e['allowCount']), 'allowed site')}, ${plural(count(e['denyCount']), 'blocked site')}`,
+    };
+  },
   'retention.sweep.completed': (e) => ({
     action: 'retention.sweep_completed',
     who: 'system',

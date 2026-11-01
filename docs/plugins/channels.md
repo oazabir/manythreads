@@ -249,6 +249,10 @@ On every post and edit, in the same transaction, `src/mentions.ts` parses the bo
   (the link table is team-members-only) and only to an entity the author can see (the type's registered resolver answers for the author; none registered, hidden or missing gives no link, never an
   error). An edit removes links the new text no longer holds. `[[page:path]]` and a `[[task:...]]` that is not a uuid wait for those types to have uuid ids (phase 4 and 6).
 
+## Link previews (P14-08)
+
+A message that carries a web link gets a card under it (site, title, description, picture) made by the [link-preview](./link-preview.md) plugin from the `channel.message.*` events; this plugin only owns the message. A link dropped into the team inbox is never read.
+
 ## Presence and typing (A.3)
 
 Two UNLOGGED tables, so they cost no WAL and are gone after a crash, which nobody minds. Both **expire by themselves**: readers filter by `seen_at > now() - 90 s` and `expires_at > now()`, so no

@@ -315,6 +315,19 @@ describe('hostile input (claims are checked with sorted-interval sweeps, not aga
     }
   });
 
+  it('a link that is one long run of closing brackets is trimmed in linear time', () => {
+    for (const closer of [')', ']']) {
+      expectLinear(
+        (n) => `http://a.example/${closer.repeat(n)}`,
+        (input) => parseMarkup(input),
+        { n: 10_000, label: `a URL ending in a run of ${closer}` },
+      );
+    }
+    // the trimming itself is unchanged: an unbalanced closer goes, a balanced one stays
+    const kept = parseMarkup('see http://a.example/x_(y) and http://a.example/z).').tokens.filter((t) => t.type === 'url');
+    expect(kept).toHaveLength(2);
+  });
+
   it('keeps the first claim on an overlap: a mention inside a code span, URL or link destination is not a mention', () => {
     const r = parseMarkup('`@in` @out [x](http://a/@b) http://c/@d @out2');
     expect(r.mentions.map((m) => m.handle)).toEqual(['out', 'out2']);

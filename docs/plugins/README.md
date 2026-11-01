@@ -195,6 +195,13 @@ only place a payload shape is defined). `emit` validates, writes `events` and `o
 (writing nothing) on an invalid payload. Subscribers run from the outbox, at least once; make effects idempotent. The
 host dedupes per subscriber, so a handler's own transaction is the unit of exactly-once effect.
 
+### Reading an address a person typed
+
+A plugin that fetches a web address a member typed (a link preview, a webhook target, an import from a URL) is a door onto the server's own network unless it is careful: the address can name `localhost`, the cloud metadata service at `169.254.169.254`, a database or an admin page in the cluster
+(SSRF, server-side request forgery). The worked example is [link-preview](./link-preview.md), `src/address.ts` and `src/safe-fetch.ts`; copy its rules, not its code (plugins cannot import each other). The rules: only `http`/`https` and the usual ports; drop credentials from the address; resolve the name **once** and refuse the whole name if any
+answer is not public (private, loopback, link-local, shared 100.64/10, IPv4-mapped IPv6 and the other IPv6 forms of those); connect to the vetted address itself, not to the name; run every redirect through the same rules again and cap them; count bytes while streaming (also after decompression) and time-box the whole read; and send the read
+through the `pre_egress` chain so the air-gapped and strict-egress presets keep their promise. Test it with a fake resolver and a fake local server, never the real network.
+
 ## Migrations with RLS
 
 One SQL file, one manifest line (`migrations: 'migrations'`). Files are `NNNN_name.sql`, forward-only, never edited

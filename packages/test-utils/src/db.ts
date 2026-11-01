@@ -135,6 +135,12 @@ export const guardrailsEgressMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/guardrails-egress/migrations/', import.meta.url)),
 };
 
+/** Migrations of the link-preview plugin (`link_previews` and its settings, cache and image tables); pass it in `sources` after `channelsMigrationSource`. */
+export const linkPreviewMigrationSource: MigrationSource = {
+  namespace: 'link-preview',
+  dir: fileURLToPath(new URL('../../plugins/link-preview/migrations/', import.meta.url)),
+};
+
 /** Migrations of the retention plugin (`retention_settings`, the DELETE policies on the run logs); pass it in `sources` after `botsMigrationSource` and `memoryMigrationSource`. */
 export const retentionMigrationSource: MigrationSource = {
   namespace: 'retention',

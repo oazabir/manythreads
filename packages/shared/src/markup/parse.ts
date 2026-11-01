@@ -35,17 +35,32 @@ const LINK_DEST = /\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+(?:"[^"\n]*"|'[^'\n]*'))?\
 const URL = /(?:\b(?:https?|ftp|mailto):|\bwww\.)[^\s<>`]+/gi;
 
 function trimUrl(url: string): string {
+  // Running counts of the brackets in the kept part: a link that is a long run of `)` or `]` costs one pass, not a recount per trimmed character.
+  let openParen = 0;
+  let closeParen = 0;
+  let openBracket = 0;
+  let closeBracket = 0;
+  for (let i = 0; i < url.length; i++) {
+    const c = url.charCodeAt(i);
+    if (c === 40) openParen++;
+    else if (c === 41) closeParen++;
+    else if (c === 91) openBracket++;
+    else if (c === 93) closeBracket++;
+  }
   let end = url.length;
   for (;;) {
     const last = url[end - 1];
     if (last !== undefined && '.,;:!?\'"*~'.includes(last)) end--;
-    else if (last === ')' && count(url.slice(0, end), '(') < count(url.slice(0, end), ')')) end--;
-    else if (last === ']' && count(url.slice(0, end), '[') < count(url.slice(0, end), ']')) end--;
-    else break;
+    else if (last === ')' && openParen < closeParen) {
+      closeParen--;
+      end--;
+    } else if (last === ']' && openBracket < closeBracket) {
+      closeBracket--;
+      end--;
+    } else break;
   }
   return url.slice(0, end);
 }
-const count = (s: string, ch: string): number => s.split(ch).length - 1;
 
 /** `[[page:path]]` ids: a repo-relative path with no empty, `.` or `..` segments, no backslash, no control characters. */
 function pagePath(raw: string): string | null {

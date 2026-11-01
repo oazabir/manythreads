@@ -59,6 +59,10 @@ All subscribers of one event run in one database transaction. The audit subscrib
 
 `guardrails.policy.updated` becomes `guard.policy_changed` (category guardrails): who changed the data-loss policy or a team's host list, the kind (`dlp_policy` or `egress_policy`), the detector, rule or team code as the target label and a fixed reason ("rule added (data-loss check)"). The matched text is never involved; the event only carries names. The data-loss and egress decision events also carry the team now.
 
+## Link-preview rules (P14-08)
+
+`linkpreview.settings.updated` becomes `linkpreview.settings_changed` (category settings): who changed the link-preview switch or the allow or deny list, and a fixed reason ("Link previews off; 2 allowed sites, 1 blocked site"). The event carries only the switch and the sizes of the two lists, never a host name, so the line says how much changed and who did it ([link-preview.md](./link-preview.md)).
+
 ## Setup and model tests (P10-01)
 
 `llm.alias.tested` becomes `model_alias.tested` (the alias as the label, the outcome and the cause code as the reason), `onboarding.step.marked` becomes `setup.step_marked`, `onboarding.goal.launched` becomes `setup.goal_launched` and `onboarding.checklist.dismissed` becomes `setup.checklist_dismissed` (all category settings). The question a person asks Brain in their first goal is never in an event.
