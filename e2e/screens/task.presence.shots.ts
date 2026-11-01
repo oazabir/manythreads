@@ -79,8 +79,6 @@ const authorRows = (page: Page, name: RegExp): Locator => msgRows(page).filter({
 let omarCtx: BrowserContext | undefined;
 let omarPage: Page | undefined;
 let omarOpenedAt = 0;
-let nadiaName = '';
-let omarName = '';
 
 test.afterAll(async () => {
   await omarCtx?.close().catch(() => undefined);
@@ -190,7 +188,6 @@ test('pd-02 desktop 1440x900: #dev authors have dots, Nadia is Active, bots have
     // Nadia's own dot reads Active
     const mine = authorRows(page, /^Nadia/).filter({ has: page.getByTestId('presence-dot') }).first();
     await expect(mine).toBeVisible(T);
-    nadiaName = ((await mine.locator('.who b').first().innerText()) ?? 'Nadia').trim();
     const mineDot = dotOf(mine.locator('.who'));
     await expect(mineDot).toHaveAttribute('data-presence', 'online', T);
     await expect(mineDot).toHaveAccessibleName(/^Active/);
@@ -205,7 +202,6 @@ test('pd-02 desktop 1440x900: #dev authors have dots, Nadia is Active, bots have
     // Omar (if he wrote in #dev, else checked in the roster below)
     const omarRow = authorRows(page, /^Omar/).first();
     if (await omarRow.count()) {
-      omarName = ((await omarRow.locator('.who b').first().innerText()) ?? 'Omar').trim();
       await expect(dotOf(omarRow.locator('.who')), "Nadia sees Omar's dot Active").toHaveAttribute('data-presence', 'online');
       log(`Omar's dot seen from Nadia in #dev: "${await dotOf(omarRow.locator('.who')).getAttribute('aria-label')}"`);
     } else log('Omar has no message in the loaded part of #dev; checked in the roster');
