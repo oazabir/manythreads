@@ -52,12 +52,30 @@
   position: relative;
 }
 
-/* the options control sits over the right end of the first heading; it stays mounted when the groups are moved, so an open menu keeps its place */
+/*
+ * the options control sits over the right end of the first heading; it stays mounted when the groups are moved, so an open menu keeps its place.
+ * The pin spans the width of the list and the button sits at its right end, so the menu is anchored to the list (inside the sidebar on both sides),
+ * not to the button: the sidebar clips whatever goes past its edge.
+ */
 .sb-opts-pin {
   position: absolute;
   top: 8px;
-  right: 4px;
+  right: 0;
+  left: 0;
   z-index: 2;
+  height: 23px;
+  pointer-events: none;
+}
+
+.sb-opts-btn {
+  width: 24px;
+  height: 22px;
+}
+
+.sb-opts-pin .sb-opts-btn {
+  position: absolute;
+  top: 0;
+  right: 4px;
 }
 
 .sb-opts-pin + .group .grp {
@@ -65,14 +83,8 @@
 }
 
 .sb-opts {
-  position: relative;
   flex: none;
-  padding-bottom: 1px;
-}
-
-.sb-opts-btn {
-  width: 24px;
-  height: 22px;
+  pointer-events: auto;
 }
 
 .sb-row {
@@ -138,7 +150,7 @@
   display: flex;
   flex-direction: column;
   min-width: 180px;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100% - 8px);
   padding: 4px;
   border: 1px solid var(--rule);
   border-radius: 8px;
@@ -147,7 +159,9 @@
 }
 
 .sb-menu-wide {
-  width: 250px;
+  left: 4px;
+  width: auto;
+  min-width: 0;
 }
 
 .sb-menu-h {

@@ -50,6 +50,26 @@ function useMenuKeys(open: boolean, menu: RefObject<HTMLElement | null>, close: 
   };
 }
 
+/**
+ * Closes an open menu when the sidebar around it is put away (the phone's drawer closing makes the sidebar inert): a menu left open there would
+ * come back open, and report itself as expanded while nobody can reach it.
+ */
+function useCloseWhenSidebarLeaves(open: boolean, box: RefObject<HTMLElement | null>, close: () => void): void {
+  const closeRef = useRef(close);
+  useEffect(() => {
+    closeRef.current = close;
+  });
+  useEffect(() => {
+    const rail = open ? box.current?.closest('aside') : null;
+    if (!rail) return;
+    const watch = new MutationObserver(() => {
+      if (rail.hasAttribute('inert')) closeRef.current();
+    });
+    watch.observe(rail, { attributes: true, attributeFilter: ['inert'] });
+    return () => watch.disconnect();
+  }, [open, box]);
+}
+
 /** Runs a change of the sidebar and shows its one plain-language error line if the server refuses it. */
 type Report = (work: Promise<void>) => void;
 
@@ -100,6 +120,7 @@ function ChannelRow({ slug, channel, count, look, starred, personal, stars, repo
     setOpen(false);
   };
   useDismiss(open, close, box);
+  useCloseWhenSidebarLeaves(open, box, close);
   const keys = useMenuKeys(open, panel, close);
   const name = channel.name.replace(/^#/, '');
   const toggleStar = (): void => {
@@ -173,6 +194,7 @@ function ListOptions({ slug, prefs, groups, report, notify, onMove }: OptionsPro
     setOpen(false);
   };
   useDismiss(open, close, box);
+  useCloseWhenSidebarLeaves(open, box, close);
   const keys = useMenuKeys(open, panel, close);
   const move = (id: string, name: string, step: -1 | 1): void =>
     onMove(id, step, { focus: { move: id, dir: step }, say: `Moved group ${name} ${step < 0 ? 'up' : 'down'}` });

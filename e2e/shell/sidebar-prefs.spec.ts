@@ -471,6 +471,38 @@ test('when the server refuses a change, the old value comes back and one plain l
   }
 });
 
+test('the options menu and a row menu sit inside the sidebar on both sides, with every word readable', async ({ browser, playwright }) => {
+  await reset(nadia);
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/threads');
+  try {
+    await waitForList(page);
+    const side = (await sidebar(page).boundingBox())!;
+    const within = (box: { x: number; y: number; width: number; height: number }, what: string): void => {
+      expect(box.x, `${what}: left edge`).toBeGreaterThanOrEqual(side.x);
+      expect(box.x + box.width, `${what}: right edge`).toBeLessThanOrEqual(side.x + side.width + 0.5);
+    };
+    const menu = await openOptions(page);
+    within((await menu.boundingBox())!, 'options menu');
+    // the first words are not cut off: the heading starts inside the menu, and so does every choice
+    const heading = menu.getByText('Sort channels by');
+    const menuBox = (await menu.boundingBox())!;
+    expect((await heading.boundingBox())!.x).toBeGreaterThanOrEqual(menuBox.x);
+    for (const choice of await menu.getByRole('menuitemradio').all()) within((await choice.boundingBox())!, 'sort choice');
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+
+    for (const name of ['general', 'standup']) {
+      const rowMenuEl = await rowMenu(page, name);
+      within((await rowMenuEl.boundingBox())!, `row menu of #${name}`);
+      await page.keyboard.press('Escape');
+      await expect(rowMenuEl).toBeHidden();
+    }
+  } finally {
+    await context.close();
+    await reset(nadia);
+  }
+});
+
 test('at 390 px the options button and the row menu fit in the drawer and can be used by touch', async ({ browser, playwright }) => {
   await reset(nadia);
   await setStarred(nadia, [ids['dev']!]);
@@ -514,6 +546,30 @@ test('at 390 px the options button and the row menu fit in the drawer and can be
     expect(m.x).toBeGreaterThanOrEqual(0);
     expect(m.x + m.width).toBeLessThanOrEqual(PHONE.width);
     expect(await noSideways()).toBe(true);
+
+    // Esc closes the menu first and leaves the drawer open; a second Esc closes the drawer
+    await expect(options).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+    await expect(options).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'closed');
+
+    // a menu is never left open behind a closed drawer: closing the drawer by its backdrop closes the menu too
+    await page.getByRole('button', { name: 'Open menu' }).tap();
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
+    await options.tap();
+    await expect(menu).toBeVisible();
+    await page.getByRole('button', { name: 'Close menu' }).dispatchEvent('click');
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'closed');
+    await page.getByRole('button', { name: 'Open menu' }).tap();
+    await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
+    await expect(options).toHaveAttribute('aria-expanded', 'false');
+    await expect(menu).toBeHidden();
+
+    await options.tap();
+    await expect(menu).toBeVisible();
     await menu.getByTestId('sort-name').tap();
     await expect(menu).toBeHidden();
     await expect.poll(async () => (await prefsOf(nadia)).sort).toBe('name');
