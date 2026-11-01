@@ -7,7 +7,7 @@ import {
   PollChannelPathParams,
   PollPathParams,
   POLL_ANONYMOUS_MIN_READERS,
-  POLL_ANONYMOUS_TOO_SMALL,
+  pollAnonymousRefusal,
   PollResultsResponse,
   VotePollRequest,
   VotePollResponse,
@@ -51,7 +51,7 @@ export function registerPollRoutes(deps: Deps): void {
       const channel = await requireChannel(tx, channelId);
       if (channel.kind === 'bot_conversation') throw invalid('A conversation with a bot cannot hold a poll');
       // The ballots of an anonymous poll are unreadable to everyone, but the totals move live: in a small group that alone shows who voted.
-      if (body.anonymous && (channel.kind === 'dm' || (await audience(tx, channelId)).length < POLL_ANONYMOUS_MIN_READERS)) throw invalid(POLL_ANONYMOUS_TOO_SMALL);
+      if (body.anonymous && (channel.kind === 'dm' || (await audience(tx, channelId)).length < POLL_ANONYMOUS_MIN_READERS)) throw invalid(pollAnonymousRefusal(channel.kind));
       let closesAt: string | null = null;
       if (body.closesAt) {
         const when = checkClosesAt(body.closesAt, ctx.runtime.now());

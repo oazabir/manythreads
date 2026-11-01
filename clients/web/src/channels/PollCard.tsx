@@ -1,9 +1,9 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { votersText, type ChannelMessage, type PollResultsResponse } from '@manythreads/shared';
 import { fetchPollResults } from '../api/endpoints';
 import { isApiError } from '../api/client';
 import { channelStore } from './store';
-import { closedByClock, optionPercent, pollFailureText, pollStatus, toggled } from './polls';
+import { closedByClock, nextWish, optionPercent, pollFailureText, pollStatus, sameChoices } from './polls';
 
 /*
  * The poll card in a message row (PLAN P14-07): the question, the options as a group of toggle buttons (`aria-pressed`; a button votes on a click, Enter
@@ -24,7 +24,14 @@ export function PollCard({ message: m, canClose, canVote }: Props) {
   const closesAt = stored && !stored.closed ? stored.closesAt : null;
   const name = useId();
   const [error, setError] = useState<string | null>(null);
+  // `busy`: a vote request is out. A press meanwhile is not dropped: the newest wish waits and goes out when the request in flight is answered.
   const [busy, setBusy] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const running = useRef(false);
+  const wanted = useRef<number[] | null>(null);
+  const queued = useRef<number[] | null>(null);
+  const latest = useRef<typeof stored>(stored);
+  latest.current = stored;
   const [confirmClose, setConfirmClose] = useState(false);
   const [who, setWho] = useState<{ open: boolean; data: PollResultsResponse | null; failed: boolean }>({ open: false, data: null, failed: false });
   // the totals as one string: the list of voters is read again when any count moves while it is open
@@ -57,46 +64,64 @@ export function PollCard({ message: m, canClose, canVote }: Props) {
   }, [closesAt, now]);
 
   if (!poll) return null;
-  const multiple = poll.multiple;
   const closed = poll.closed;
-  const disabled = !canVote || closed || busy;
+  const disabled = !canVote || closed;
 
   const fail = (e: unknown): void => setError(isApiError(e) ? pollFailureText(e.status, e.message) : pollFailureText(undefined, undefined));
-  const choose = async (option: number): Promise<void> => {
-    if (disabled) return;
-    if (!multiple && poll.mine.includes(option)) return;
+  // One request at a time, in order (the server's versions only go up); a wish made while one is out replaces any earlier waiting wish.
+  const send = async (options: number[]): Promise<void> => {
+    wanted.current = options;
+    if (running.current) {
+      queued.current = options;
+      return;
+    }
+    running.current = true;
     setError(null);
     setBusy(true);
+    let next: number[] | null = options;
     try {
-      await channelStore.vote(m.channelId, m.threadRootId, m.id, poll, toggled(poll, option));
-    } catch (e) {
-      fail(e);
+      while (next) {
+        queued.current = null;
+        const current = latest.current;
+        if (!current || current.closed) break;
+        try {
+          await channelStore.vote(m.channelId, m.threadRootId, m.id, current, next);
+        } catch (e) {
+          // the poll was read again by the store; a wish waiting behind the refused one was made on a state that never held
+          queued.current = null;
+          fail(e);
+          break;
+        }
+        const waiting: number[] | null = queued.current;
+        const sent: number[] = next;
+        next = waiting && !sameChoices(waiting, sent) ? waiting : null;
+      }
     } finally {
+      running.current = false;
+      wanted.current = null;
+      queued.current = null;
       setBusy(false);
     }
   };
-  const withdraw = async (): Promise<void> => {
-    if (disabled) return;
-    setError(null);
-    setBusy(true);
-    try {
-      await channelStore.vote(m.channelId, m.threadRootId, m.id, poll, []);
-    } catch (e) {
-      fail(e);
-    } finally {
-      setBusy(false);
-    }
+  const choose = (option: number): void => {
+    if (disabled || closing) return;
+    const wish = nextWish(poll, wanted.current, option);
+    if (wish) void send(wish);
+  };
+  const withdraw = (): void => {
+    if (disabled || closing) return;
+    void send([]);
   };
   const close = async (): Promise<void> => {
     setConfirmClose(false);
     setError(null);
-    setBusy(true);
+    setClosing(true);
     try {
       await channelStore.closePoll(m.channelId, m.threadRootId, m.id, poll.id);
     } catch (e) {
       fail(e);
     } finally {
-      setBusy(false);
+      setClosing(false);
     }
   };
 
@@ -123,7 +148,7 @@ export function PollCard({ message: m, canClose, canVote }: Props) {
                   aria-labelledby={textId}
                   aria-describedby={countsId}
                   disabled={!canVote || closed}
-                  onClick={() => void choose(i)}
+                  onClick={() => choose(i)}
                   data-testid="poll-choice"
                 >
                   <span className="poll-bar" aria-hidden="true">
@@ -149,7 +174,7 @@ export function PollCard({ message: m, canClose, canVote }: Props) {
       </p>
       <div className="poll-acts">
         {voted && !closed && canVote ? (
-          <button type="button" className="link-btn" onClick={() => void withdraw()} disabled={busy}>Remove my vote</button>
+          <button type="button" className="link-btn" onClick={withdraw} disabled={busy || closing}>Remove my vote</button>
         ) : null}
         {!poll.anonymous && poll.voters > 0 ? (
           <button type="button" className="link-btn" aria-expanded={who.open} onClick={() => setWho((w) => ({ ...w, open: !w.open }))}>
@@ -159,11 +184,11 @@ export function PollCard({ message: m, canClose, canVote }: Props) {
         {canClose && !closed ? (
           confirmClose ? (
             <>
-              <button type="button" className="btn s danger" onClick={() => void close()} disabled={busy}>Close the poll now</button>
+              <button type="button" className="btn s danger" onClick={() => void close()} disabled={busy || closing}>Close the poll now</button>
               <button type="button" className="link-btn quiet" onClick={() => setConfirmClose(false)}>Keep it open</button>
             </>
           ) : (
-            <button type="button" className="link-btn" onClick={() => setConfirmClose(true)} disabled={busy}>Close poll</button>
+            <button type="button" className="link-btn" onClick={() => setConfirmClose(true)} disabled={busy || closing}>Close poll</button>
           )
         ) : null}
       </div>

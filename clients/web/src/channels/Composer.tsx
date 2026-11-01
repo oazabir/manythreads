@@ -147,6 +147,10 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     [],
   );
   const area = useRef<HTMLTextAreaElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // A press elsewhere (a poll option, a button in the feed) blurs the box and folds the resting toolbar; the feed above then grows by the toolbar's height
+  // before the button is released, the click lands on a moved element and is lost. So the toolbar stays open from the press until just after the release.
+  const [holdTools, setHoldTools] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const nextId = useRef(1);
   const selection = useRef<[number, number] | null>(null);
@@ -561,6 +565,26 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     area.current?.focus();
   }, emojiInside);
 
+  useEffect(() => {
+    let release: ReturnType<typeof setTimeout> | undefined;
+    const press = (): void => {
+      if (root.current?.contains(document.activeElement)) setHoldTools(true);
+    };
+    const letGo = (): void => {
+      clearTimeout(release);
+      release = setTimeout(() => setHoldTools(false), 0);
+    };
+    document.addEventListener('pointerdown', press, true);
+    document.addEventListener('pointerup', letGo, true);
+    document.addEventListener('pointercancel', letGo, true);
+    return () => {
+      clearTimeout(release);
+      document.removeEventListener('pointerdown', press, true);
+      document.removeEventListener('pointerup', letGo, true);
+      document.removeEventListener('pointercancel', letGo, true);
+    };
+  }, []);
+
   const onChange = (value: string, at: number): void => {
     setText(value);
     setCaret(at);
@@ -595,7 +619,8 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
 
   return (
     <div
-      className={`composer ${drag ? 'dragging' : ''} ${text === '' && uploads.length === 0 ? 'resting' : ''}`}
+      ref={root}
+      className={`composer ${drag ? 'dragging' : ''} ${text === '' && uploads.length === 0 ? 'resting' : ''} ${holdTools ? 'holding' : ''}`}
       data-testid="composer"
       data-landmark={threadRootId ? 'reply-composer' : 'composer'}
       onDragOver={(e) => {

@@ -94,6 +94,19 @@ export function toggled(poll: Pick<PollView, 'multiple' | 'mine'>, option: numbe
 }
 
 /**
+ * What a press on `option` asks for, counted from the newest wish when a vote request is still out (`wanted`), else from the poll's own choices.
+ * `null` when the press changes nothing (a single-choice poll already wanting that option).
+ */
+export function nextWish(poll: Pick<PollView, 'multiple' | 'mine'>, wanted: readonly number[] | null, option: number): number[] | null {
+  const base = wanted ?? poll.mine;
+  if (!poll.multiple && base.includes(option)) return null;
+  return toggled({ multiple: poll.multiple, mine: [...base] }, option);
+}
+
+/** True when two lists of chosen options hold the same options. */
+export const sameChoices = (a: readonly number[], b: readonly number[]): boolean => a.length === b.length && [...a].sort((x, y) => x - y).every((v, i) => v === [...b].sort((x, y) => x - y)[i]);
+
+/**
  * The totals a `poll.changed` push carries, put on the poll; the reader's own vote is not in a push and stays as it was. A push older than the poll the
  * page holds (versions only go up) changes nothing, and a poll that is closed here never opens again because of one.
  */

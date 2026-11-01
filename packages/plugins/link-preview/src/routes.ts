@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { SWEEP_QUEUE, hostOf, loadRules, pushChanged } from './jobs.ts';
 import { linkPreviewEnabled } from './limits.ts';
-import { cleanHostList, extractLinks, refusedByRules, type HostRules } from './links.ts';
+import { cleanHostList, extractLinks, isPrivateLiteralHost, refusedByRules, type HostRules } from './links.ts';
 import { sniffImage } from './parse.ts';
 
 // Routes of the link-preview plugin. Reading a card, its picture and removing a card are all judged by row-level security through the message's
@@ -96,8 +96,12 @@ async function cardsOf(tx: PluginTx, channelId: string, messageIds: readonly str
 /** A card may still arrive for a message this young: a read is queued or running. After this long the row stops waiting. */
 export const PENDING_WINDOW_SECONDS = 30;
 
-/** Of the asked messages, the ones that are new and carry an allowed link that has neither a card nor a removed card yet. */
-async function pendingOf(tx: PluginTx, channelId: string, messageIds: readonly string[], rules: HostRules): Promise<string[]> {
+/**
+ * Of the asked messages, the ones that are new and carry a link that may still get a card: not denied by the rules, not a private or loopback address
+ * (refused without a fetch), not already refused in the cache, and with neither a card nor a removed card yet. A message whose every link is known to
+ * be refused is not waited for (the client would hold a blank slot for nothing and then jump).
+ */
+async function pendingOf(ctx: PluginContext, tx: PluginTx, channelId: string, messageIds: readonly string[], rules: HostRules): Promise<string[]> {
   const recent = (
     await tx.query<{ id: string; body: string }>(
       `SELECT m.id, m.body FROM app.messages m JOIN app.channels c ON c.id = m.channel_id
@@ -113,7 +117,33 @@ async function pendingOf(tx: PluginTx, channelId: string, messageIds: readonly s
     if (!set) have.set(r.message_id, (set = new Set()));
     set.add(r.url);
   }
-  return recent.filter((m) => extractLinks(m.body).some((url) => allowedByRules(rules, url) && !(have.get(m.id)?.has(url) ?? false))).map((m) => m.id);
+  // links that could still get a card by the rules and the address alone
+  const open = new Map<string, string[]>();
+  for (const m of recent) {
+    const urls = extractLinks(m.body).filter((url) => {
+      const host = hostOf(url);
+      return host !== null && refusedByRules(rules, host) === null && !isPrivateLiteralHost(host) && !(have.get(m.id)?.has(url) ?? false);
+    });
+    if (urls.length > 0) open.set(m.id, urls);
+  }
+  if (open.size === 0) return [];
+  // links the fetch job already refused or failed on, still remembered: no card will come for them. The cache is the job's own table (system only); only
+  // "refused or not" for addresses of messages this caller can already read leaves this function.
+  const refused = new Set(
+    (
+      await ctx.db.system(
+        async (sys) =>
+          (
+            await sys.query<{ url: string }>(
+              "SELECT url FROM app.link_preview_cache WHERE workspace_id = $1::uuid AND url = ANY ($2::text[]) AND status <> 'ok' AND expires_at > now()",
+              [tx.actor.workspaceId, [...new Set([...open.values()].flat())]],
+            )
+          ).rows,
+        { workspaceId: tx.actor.workspaceId },
+      )
+    ).map((r) => r.url),
+  );
+  return [...open].filter(([, urls]) => urls.some((url) => !refused.has(url))).map(([id]) => id);
 }
 
 const sameList = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
@@ -128,7 +158,7 @@ export function registerRoutes(ctx: PluginContext, serverEnabled: () => boolean 
     const { rules, on } = await rulesOf(tx);
     if (!on) return ListLinkPreviewsResponse.parse({ items: [], pending: [], enabled: false });
     const items = await cardsOf(tx, channelId, messageIds, rules);
-    const pending = await pendingOf(tx, channelId, messageIds, rules);
+    const pending = await pendingOf(ctx, tx, channelId, messageIds, rules);
     return ListLinkPreviewsResponse.parse({ items, pending, enabled: true });
   };
   // The cards of several messages of one channel (the message list asks for a screenful at once).

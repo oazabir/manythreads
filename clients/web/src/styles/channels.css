@@ -985,8 +985,11 @@
   border-bottom: 1px solid var(--hairline);
 }
 
-/* at rest (nothing typed, nothing attached, no focus) the box is one line, as in the prototype; the toolbar opens with the caret */
-.composer.resting:not(:focus-within) .ctools {
+/*
+ * at rest (nothing typed, nothing attached, no focus) the box is one line, as in the prototype; the toolbar opens with the caret.
+ * .holding: a press began while the box had focus and is not released yet; the toolbar stays so the feed above does not move under the pointer
+ */
+.composer.resting:not(:focus-within, .holding) .ctools {
   display: none;
 }
 

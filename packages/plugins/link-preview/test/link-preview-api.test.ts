@@ -447,6 +447,30 @@ describe('the list says what is still coming', () => {
     expect(res.pending).toEqual([linked]);
   });
 
+  it('a message whose every link is refused without a fetch is not pending: a private address, a remembered refusal; one open link keeps it pending', async () => {
+    await setRules({});
+    process.env['MANYTHREADS_LINK_PREVIEW'] = 'off';
+    let priv = '';
+    let remembered = '';
+    let mixed = '';
+    try {
+      priv = await post(nadia, dev, 'look http://127.0.0.1/admin and http://10.0.0.5/x');
+      remembered = await post(nadia, dev, 'again http://refused.fake.example/a');
+      mixed = await post(nadia, dev, 'both http://127.0.0.1/admin and http://still.fake.example/b');
+      await drained(w);
+    } finally {
+      process.env['MANYTHREADS_LINK_PREVIEW'] = 'on';
+    }
+    await w.system((tx) =>
+      tx.query(
+        "INSERT INTO app.link_preview_cache (workspace_id, url, status, reason, fetched_at, expires_at) SELECT workspace_id, 'http://refused.fake.example/a', 'blocked', 'blocked_address', now(), now() + interval '1 hour' FROM app.messages WHERE id = $1 ON CONFLICT (workspace_id, url) DO UPDATE SET status = 'blocked', expires_at = now() + interval '1 hour'",
+        [remembered],
+      ),
+    );
+    const res = (await list(rafi, dev, [priv, remembered, mixed])).body;
+    expect(res.pending).toEqual([mixed]);
+  });
+
   it('is empty for a message older than the window, so the client stops waiting', async () => {
     const old = await post(nadia, dev, 'old http://old.fake.example/a');
     await drained(w);

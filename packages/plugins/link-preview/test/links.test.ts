@@ -1,6 +1,6 @@
 import { expectLinear } from '@manythreads/test-utils/linear';
 import { describe, expect, it } from 'vitest';
-import { cleanHostList, extractLinks, hostMatches, normalizeLink, refusedByRules } from '../src/links.ts';
+import { cleanHostList, extractLinks, hostMatches, isPrivateLiteralHost, normalizeLink, refusedByRules } from '../src/links.ts';
 
 describe('extractLinks', () => {
   it('finds bare links in the order written, without repeats', () => {
@@ -122,5 +122,22 @@ describe('workspace rules', () => {
     expect(cleanHostList(['https://Example.com/path', 'b.example', 'example.com'])).toEqual({ hosts: ['b.example', 'example.com'] });
     expect(cleanHostList([])).toEqual({ hosts: [] });
     expect(cleanHostList(['ok.example', 'not a host!'])).toEqual({ bad: 'not a host!' });
+  });
+});
+
+describe('isPrivateLiteralHost', () => {
+  it.each(['127.0.0.1', '10.1.2.3', '192.168.0.9', '169.254.169.254', '[::1]', '::1', '[fd00::1]', '[::ffff:127.0.0.1]', 'localhost', 'app.localhost', 'LOCALHOST.'])(
+    'is true for %s (no fetch is made, so no card will come)',
+    (host) => {
+      expect(isPrivateLiteralHost(host)).toBe(true);
+    },
+  );
+
+  it.each(['example.com', 'sub.example.org', '8.8.8.8', '1.1.1.1', '[2606:4700:4700::1111]'])('is false for %s (a read may still make a card)', (host) => {
+    expect(isPrivateLiteralHost(host)).toBe(false);
+  });
+
+  it('judges the host of a normalized link: a decimal address is the same loopback address', () => {
+    expect(isPrivateLiteralHost(new URL(normalizeLink('http://2130706433/admin')!).hostname)).toBe(true);
   });
 });

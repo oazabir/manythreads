@@ -213,7 +213,10 @@ describe('an anonymous poll', () => {
     const opened = await w.call<{ dm: { channel: { id: string } } }>(nadia, 'POST', '/api/dms', { personIds: [rafi.personId] });
     expect([200, 201]).toContain(opened.status);
     const dm = opened.body.dm.channel.id;
-    expect((await create(nadia, { question: 'Q', options: ['A', 'B'], anonymous: true }, dm)).status).toBe(400);
+    expect(JSON.stringify(small.body)).not.toContain('direct message');
+    const inDm = await create(nadia, { question: 'Q', options: ['A', 'B'], anonymous: true }, dm);
+    expect(inDm.status).toBe(400);
+    expect(JSON.stringify(inDm.body)).toContain('A direct message is too small for an anonymous poll');
     expect((await create(nadia, { question: 'Q', options: ['A', 'B'], anonymous: false }, dm)).status).toBe(201); // a named poll is fine there
     ok(await create(nadia, { question: 'Q', options: ['A', 'B'], anonymous: true }, room), 201);
   });

@@ -21,7 +21,12 @@ export const POLL_CLOSE_TRANSIT_MARGIN_MS = 15_000;
  * (two people, one count that moved), however well the ballots are hidden.
  */
 export const POLL_ANONYMOUS_MIN_READERS = 5;
-export const POLL_ANONYMOUS_TOO_SMALL = `An anonymous poll needs a channel that at least ${POLL_ANONYMOUS_MIN_READERS} people can read, and a direct message is too small. In a small group the totals moving would show who voted. Ask a public poll instead.`;
+/** The refusal in a channel that fewer than that many people can read. */
+export const POLL_ANONYMOUS_TOO_SMALL = `An anonymous poll needs a channel that at least ${POLL_ANONYMOUS_MIN_READERS} people can read. In a small group the totals moving would show who voted. Ask a public poll instead.`;
+/** The refusal in a direct message, whatever its size. */
+export const POLL_ANONYMOUS_IN_DM = 'A direct message is too small for an anonymous poll: the totals moving would show who voted. Ask a public poll instead.';
+/** The sentence that fits the place the poll is asked in. */
+export const pollAnonymousRefusal = (kind: string): string => (kind === 'dm' ? POLL_ANONYMOUS_IN_DM : POLL_ANONYMOUS_TOO_SMALL);
 
 /** Text with a line break, a tab or another control character in it (they would forge lines in the poll message and in the result). */
 const CONTROL = /[\p{Cc}\p{Zl}\p{Zp}]/u;

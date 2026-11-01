@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   CreatePollRequest,
   POLL_ANONYMOUS_MIN_READERS,
+  POLL_ANONYMOUS_IN_DM,
   POLL_ANONYMOUS_TOO_SMALL,
+  pollAnonymousRefusal,
   POLL_MAX_OPTIONS,
   POLL_OPTION_MAX,
   POLL_QUESTION_MAX,
@@ -188,5 +190,12 @@ describe('anonymous polls need a group', () => {
     expect(POLL_ANONYMOUS_MIN_READERS).toBe(5);
     expect(POLL_ANONYMOUS_TOO_SMALL).toContain('5 people');
     expect(POLL_ANONYMOUS_TOO_SMALL).toContain('totals');
+  });
+  it('says the sentence that fits the place: a direct message, or a channel that is too small', () => {
+    expect(pollAnonymousRefusal('dm')).toBe(POLL_ANONYMOUS_IN_DM);
+    expect(POLL_ANONYMOUS_IN_DM).toMatch(/^A direct message is too small for an anonymous poll/);
+    expect(pollAnonymousRefusal('public')).toBe(POLL_ANONYMOUS_TOO_SMALL);
+    expect(POLL_ANONYMOUS_TOO_SMALL).toMatch(/^An anonymous poll needs a channel that at least 5 people can read/);
+    expect(POLL_ANONYMOUS_TOO_SMALL).not.toContain('direct message');
   });
 });

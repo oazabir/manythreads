@@ -1,5 +1,6 @@
 import { LINK_PREVIEW_MAX_PER_MESSAGE, normalizeEgressHost, parseMarkup } from '@manythreads/shared';
 import { isIP } from 'node:net';
+import { isPublicAddress } from './address.ts';
 
 // Which links of a message get a card, and which sites the workspace allows. Pure; the same input always gives the same answer.
 
@@ -101,6 +102,17 @@ export function refusedByRules(rules: HostRules, rawHost: string): 'off' | 'deni
   if (rules.deny.some((entry) => hostMatches(host, entry))) return 'denied';
   if (rules.allow.length > 0 && !rules.allow.some((entry) => hostMatches(host, entry))) return 'not_allowed';
   return null;
+}
+
+/**
+ * True when the host is `localhost` (or a name under it) or an address literal that is not a public address (loopback, private, link-local, ...): a read of it
+ * is refused before any network is touched, so such a link never gets a card. A name that merely resolves to a private address is not judged here (that
+ * takes a lookup); the fetch job refuses it and the refusal is remembered.
+ */
+export function isPrivateLiteralHost(rawHost: string): boolean {
+  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  return isIP(host) !== 0 && !isPublicAddress(host);
 }
 
 /** Cleans an admin's list: each entry becomes a plain host name (a pasted address loses its scheme and path), repeats go, order is sorted. Null names the first bad entry. */

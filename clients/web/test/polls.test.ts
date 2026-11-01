@@ -10,11 +10,13 @@ import {
   closesIn,
   filledOptions,
   formFromPrefill,
+  nextWish,
   oneLine,
   optionPercent,
   pollFailureText,
   pollStatus,
   requestOf,
+  sameChoices,
   toggled,
   withServerPoll,
   withTotals,
@@ -141,6 +143,23 @@ describe('a vote on the page', () => {
     expect(toggled({ multiple: true, mine: [1] }, 2)).toEqual([1, 2]);
     expect(toggled({ multiple: true, mine: [1, 2] }, 1)).toEqual([2]);
     expect(toggled({ multiple: true, mine: [2] }, 2)).toEqual([]);
+  });
+  it('a press while a vote is in flight counts from the newest wish, not from the old choices', () => {
+    // single choice: B was asked for, then C: the wish is C; pressing B again while B is wanted changes nothing
+    expect(nextWish({ multiple: false, mine: [0] }, [1], 2)).toEqual([2]);
+    expect(nextWish({ multiple: false, mine: [0] }, [1], 1)).toBeNull();
+    expect(nextWish({ multiple: false, mine: [0] }, null, 0)).toBeNull();
+    // several choices: two quick presses add up, a third flips the first back
+    const first = nextWish({ multiple: true, mine: [] }, null, 0);
+    expect(first).toEqual([0]);
+    const second = nextWish({ multiple: true, mine: [] }, first, 2);
+    expect(second).toEqual([0, 2]);
+    expect(nextWish({ multiple: true, mine: [] }, second, 0)).toEqual([2]);
+  });
+  it('two lists of choices are the same when they hold the same options', () => {
+    expect(sameChoices([2, 0], [0, 2])).toBe(true);
+    expect(sameChoices([0], [0, 1])).toBe(false);
+    expect(sameChoices([], [])).toBe(true);
   });
   it('a push of totals keeps the reader’s own vote and the question', () => {
     const next = withTotals(poll({ mine: [1] }), { votes: [5, 4], voters: 9, version: 6, closed: true, closedAt: '2026-11-01T10:00:00.000Z', resultMessageId: uuid(9) as PollView['resultMessageId'] });
