@@ -179,6 +179,14 @@
 .sch-acts {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* a refused draft has three buttons and a sentence: in the Later tab's narrow column they go under the text, at any width */
+.sch-row.refused {
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
 }
 
