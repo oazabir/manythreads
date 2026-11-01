@@ -141,6 +141,21 @@ export const linkPreviewMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/link-preview/migrations/', import.meta.url)),
 };
 
+/** Migrations of the reminders plugin (`reminders`, `reminder_senders`, the author function with its `sender` column); pass it in `sources` after `channelsMigrationSource`, `botsMigrationSource` and `webhooksMigrationSource`. */
+export const remindersMigrationSource: MigrationSource = {
+  namespace: 'reminders',
+  dir: fileURLToPath(new URL('../../plugins/reminders/migrations/', import.meta.url)),
+};
+
+/**
+ * Migrations of the import plugin (`import_runs`, `import_people`, `import_map`, the claim triggers, the replaced `app.message_authors`); pass it in `sources`
+ * after `channelsMigrationSource`, `botsMigrationSource`, `webhooksMigrationSource`, `remindersMigrationSource` and `directMessagesMigrationSource`.
+ */
+export const importMigrationSource: MigrationSource = {
+  namespace: 'import',
+  dir: fileURLToPath(new URL('../../plugins/import/migrations/', import.meta.url)),
+};
+
 /** Migrations of the retention plugin (`retention_settings`, the DELETE policies on the run logs); pass it in `sources` after `botsMigrationSource` and `memoryMigrationSource`. */
 export const retentionMigrationSource: MigrationSource = {
   namespace: 'retention',

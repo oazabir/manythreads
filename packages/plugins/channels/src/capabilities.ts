@@ -1,8 +1,9 @@
-import type { MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
-import { AnswerPayload, isSubsequence, repairBotMarkdown } from '@manythreads/shared';
+import type { ImportChannelInput, ImportedChannel, MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
+import { AnswerPayload, importChannelName, isSubsequence, repairBotMarkdown } from '@manythreads/shared';
 import { z } from 'zod';
-import { forbidden, invalid } from './http.ts';
-import { editChannelMessage, postChannelMessage, type Deps } from './service.ts';
+import { conflict, forbidden, invalid } from './http.ts';
+import { CHANNEL_COLUMNS, type ChannelRow } from './rows.ts';
+import { editChannelMessage, postChannelMessage, pushChannelCreated, type Deps } from './service.ts';
 
 // What a bot may do with channel messages (SPEC §7.1 lists `messages.*` among a bot's native capabilities; PLAN P5-10). A
 // capability is how one plugin calls another's behaviour — plugins never import each other — so the reply a runtime posts
@@ -197,10 +198,83 @@ async function checkAnswerCopy(tx: PluginTx, copyOf: string, copy: AnswerPayload
   if (copy.share?.masked !== masked || copy.share.removed !== gone) throw invalid('meta.answer.share is the number of citations masked and removed');
 }
 
+const ImportedMessageInput = z.strictObject({
+  at: z.iso.datetime({ offset: true }),
+  source: z.enum(['slack', 'mattermost']),
+  sourceId: z.string().min(1).max(300),
+  reactions: z.array(z.strictObject({ emoji: z.string().min(1).max(64), actorIds: z.array(z.uuid()).max(5_000) })).max(200).optional(),
+});
+
+/** Only the system pool (a background job) may import history: the check is on the login role, which no actor setting can change. */
+const requireSystemRole = async (tx: PluginTx): Promise<void> => {
+  const ok = (await tx.query<{ ok: boolean }>("SELECT session_user = 'manythreads_system' AS ok")).rows[0]?.ok === true;
+  if (!ok) throw forbidden('Only the import job may do that');
+};
+
+async function importChannel(deps: Deps, tx: PluginTx, input: ImportChannelInput): Promise<ImportedChannel> {
+  await requireSystemRole(tx);
+  const team = (await tx.query<{ id: string; workspace_id: string; archived_at: Date | null }>('SELECT id, workspace_id, archived_at FROM app.teams WHERE id = $1', [input.teamId])).rows[0];
+  if (!team) throw invalid('teamId: no such team');
+  if (team.archived_at) throw conflict('This team is archived');
+  const base = importChannelName(input.name);
+  const taken = new Set(
+    (await tx.query<{ name: string }>('SELECT lower(name) AS name FROM app.channels WHERE team_id = $1 AND (lower(name) = $2 OR lower(name) LIKE $3)', [team.id, base, `${base}-%`])).rows.map((r) => r.name),
+  );
+  let name = base;
+  for (let n = 2; taken.has(name); n += 1) name = `${base}-${n}`;
+  const groupId = (await tx.query<{ id: string }>("SELECT id FROM app.channel_groups WHERE team_id = $1 AND name = 'Channels'", [team.id])).rows[0]?.id ?? null;
+  const id = (await tx.query<{ id: string }>('SELECT uuidv7() AS id')).rows[0]!.id;
+  await tx.query(
+    `INSERT INTO app.channels (id, workspace_id, team_id, group_id, name, kind, private, purpose, position, created_by)
+     VALUES ($1, $2, $3, $4, $5, 'channel', $6, $7, (SELECT coalesce(max(position), 0) + 1 FROM app.channels WHERE team_id = $3), app.actor())`,
+    [id, team.workspace_id, team.id, groupId, name, input.private, input.purpose.slice(0, 500)],
+  );
+  let added = 0;
+  if (input.private) {
+    // Only active people on the team who are not guests can be members (channels_add_member says the same); the others are counted, not guessed at.
+    const ok = await tx.query<{ person_id: string }>(
+      `SELECT DISTINCT p.id AS person_id
+         FROM app.people p
+         JOIN app.workspace_members wm ON wm.person_id = p.id AND wm.workspace_id = p.workspace_id AND wm.role <> 'guest'
+         JOIN app.actors a ON a.kind = 'person' AND a.ref_id = p.id
+         JOIN app.team_members tm ON tm.actor_id = a.id AND tm.team_id = $1
+        WHERE p.id = ANY ($2::uuid[]) AND p.workspace_id = $3 AND p.status = 'active'`,
+      [team.id, input.memberPersonIds, team.workspace_id],
+    );
+    for (const r of ok.rows) {
+      await tx.query('SELECT app.channels_add_member($1, $2)', [id, r.person_id]);
+      added += 1;
+    }
+  }
+  const row = (await tx.query<ChannelRow>(`SELECT ${CHANNEL_COLUMNS} FROM app.channels c WHERE c.id = $1`, [id])).rows[0]!;
+  await deps.ctx.audit.emit(tx, { type: 'channel.channel.created', channelId: id, teamId: team.id, name, kind: 'channel', private: input.private });
+  await pushChannelCreated(deps, tx, row);
+  const wanted = new Set(input.memberPersonIds).size;
+  return { channelId: id, name, membersAdded: added, membersSkipped: input.private ? Math.max(0, wanted - added) : 0 };
+}
+
 export function registerMessageProvider(deps: Deps): void {
   const provider: MessageProvider = {
     id: 'channels',
+    importChannel: (tx, input) => importChannel(deps, tx, input),
     async post(tx: PluginTx, input: ProviderPostInput): Promise<MessagePosted> {
+      if (input.imported !== undefined) {
+        // History from another product (the import plugin): system pool only, never combined with a bot's bookkeeping.
+        await requireSystemRole(tx);
+        if (input.meta !== undefined || input.copyOf !== undefined) throw invalid('imported: cannot be combined with meta or copyOf');
+        const imp = ImportedMessageInput.safeParse(input.imported);
+        if (!imp.success) throw invalid(`imported: ${imp.error.issues.map((i) => `${i.path.join('.') || '(imported)'}: ${i.message}`).join('; ')}`);
+        const text = z.string().min(1).max(40_000).safeParse(input.body);
+        if (!text.success) throw invalid('body: 1 to 40,000 characters');
+        if (Date.parse(imp.data.at) > Date.now() + 60_000) throw invalid('imported.at: not in the future');
+        const done = await postChannelMessage(deps, tx, {
+          channelId: input.channelId,
+          body: text.data,
+          threadRootId: input.threadRootId ?? null,
+          imported: { ...imp.data, reactions: imp.data.reactions ?? [] },
+        });
+        return { id: done.id, channelId: done.channelId, threadRootId: done.threadRootId, createdAt: done.row.created_at.toISOString() };
+      }
       const body = z.string().min(1).max(40_000).safeParse(input.body);
       if (!body.success) throw invalid('body: 1 to 40,000 characters');
       const meta = input.meta === undefined ? undefined : ProviderMeta.safeParse(input.meta);

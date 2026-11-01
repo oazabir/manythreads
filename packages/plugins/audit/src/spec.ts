@@ -528,6 +528,40 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
       reason: e['change'] === 'deleted' ? 'A custom emoji was removed' : 'A custom emoji was added',
     };
   },
+  'import.run.uploaded': (e) => ({
+    action: 'import.uploaded',
+    who: actor(e['uploadedBy']),
+    teamId: team(e['teamId']),
+    target: of('import', uuid(e['runId'])),
+    reason: `An export from ${e['source'] === 'mattermost' ? 'Mattermost' : 'Slack'}, ${num(e['size'])} bytes`,
+  }),
+  'import.run.analysed': (e) => ({
+    action: 'import.analysed',
+    who: actor(e['requestedBy']),
+    target: of('import', uuid(e['runId'])),
+    outcome: e['ok'] === false ? 'failed' : 'ok',
+    reason: e['ok'] === false ? 'The export could not be read' : `${plural(num(e['people']), 'person', 'people')}, ${plural(num(e['channels']), 'channel')}, ${plural(num(e['messages']), 'message')} found, ${num(e['skipped'])} left out. Nothing was written.`,
+  }),
+  'import.run.started': (e) => ({
+    action: 'import.started',
+    who: actor(e['startedBy']),
+    teamId: team(e['teamId']),
+    target: of('import', uuid(e['runId'])),
+  }),
+  'import.run.finished': (e) => ({
+    action: 'import.finished',
+    who: actor(e['startedBy']),
+    teamId: team(e['teamId']),
+    target: of('import', uuid(e['runId'])),
+    outcome: e['outcome'] === 'done' ? 'ok' : e['outcome'] === 'cancelled' ? 'ok' : 'failed',
+    reason: `${words(e['outcome']) ?? 'ended'}: ${plural(num(e['channels']), 'channel')}, ${plural(num(e['messages']), 'message')}, ${plural(num(e['matchedPeople']), 'person', 'people')} matched, ${plural(num(e['placeholders']), 'placeholder')}, ${num(e['skipped'])} left out`,
+  }),
+  'import.person.claimed': (e) => ({
+    action: 'import.person_claimed',
+    who: person(e['personId']) ?? 'system',
+    target: of('import_placeholder', uuid(e['placeholderActorId'])),
+    reason: `${plural(num(e['messages']), 'message')} moved to the person who signed in`,
+  }),
   'retention.sweep.completed': (e) => ({
     action: 'retention.sweep_completed',
     who: 'system',

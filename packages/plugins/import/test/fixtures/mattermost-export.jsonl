@@ -1,0 +1,49 @@
+{"type":"version","version":1}
+{"type":"team","team":{"name":"acme","display_name":"Acme"}}
+{"type":"channel","channel":{"team":"acme","name":"town-square","display_name":"Town Square","type":"O","purpose":"Everything"}}
+{"type":"channel","channel":{"team":"acme","name":"ops-private","display_name":"Ops Private","type":"P","purpose":"Operations"}}
+{"type":"user","user":{"username":"omar","email":"omar@kahf.example","first_name":"Omar","last_name":"","teams":[{"name":"acme","channels":[{"name":"town-square"},{"name":"ops-private"}]}]}}
+{"type":"user","user":{"username":"nadia","email":"nadia@kahf.example","first_name":"Nadia","last_name":"","teams":[{"name":"acme","channels":[{"name":"town-square"},{"name":"ops-private"}]}]}}
+{"type":"user","user":{"username":"rafi","email":"rafi@kahf.example","first_name":"Rafi","last_name":"","teams":[{"name":"acme","channels":[{"name":"town-square"}]}]}}
+{"type":"user","user":{"username":"jon","email":"jon@outside.example","first_name":"Jon","last_name":"","teams":[{"name":"acme","channels":[{"name":"town-square"},{"name":"ops-private"}]}]}}
+{"type":"direct_channel","direct_channel":{"members":["omar","nadia"]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 0 with @omar mentioned","create_at":1709632800000,"replies":[{"user":"nadia","message":"Reply 1 to 0","create_at":1709632801000},{"user":"rafi","message":"Reply 2 to 0","create_at":1709632802000}],"reactions":[{"user":"nadia","emoji_name":"thumbsup","create_at":1709632800000},{"user":"jon","emoji_name":"tada","create_at":1709632800000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 1 with @omar mentioned","create_at":1709632860000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 2 with @omar mentioned","create_at":1709632920000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 3 with @omar mentioned","create_at":1709632980000,"attachments":[{"path":"data/ab/plan.pdf"}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 4 with @omar mentioned","create_at":1709633040000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 5 with @omar mentioned","create_at":1709633100000,"replies":[{"user":"rafi","message":"Reply 1 to 5","create_at":1709633101000},{"user":"jon","message":"Reply 2 to 5","create_at":1709633102000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 6 with @omar mentioned","create_at":1709633160000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 7 with @omar mentioned","create_at":1709633220000,"reactions":[{"user":"nadia","emoji_name":"thumbsup","create_at":1709632800000},{"user":"jon","emoji_name":"tada","create_at":1709632800000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 8 with @omar mentioned","create_at":1709633280000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 9 with @omar mentioned","create_at":1709633340000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 10 with @omar mentioned","create_at":1709633400000,"replies":[{"user":"jon","message":"Reply 1 to 10","create_at":1709633401000},{"user":"omar","message":"Reply 2 to 10","create_at":1709633402000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 11 with @omar mentioned","create_at":1709633460000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 12 with @omar mentioned","create_at":1709633520000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 13 with @omar mentioned","create_at":1709633580000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 14 with @omar mentioned","create_at":1709633640000,"reactions":[{"user":"nadia","emoji_name":"thumbsup","create_at":1709632800000},{"user":"jon","emoji_name":"tada","create_at":1709632800000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 15 with @omar mentioned","create_at":1709633700000,"replies":[{"user":"omar","message":"Reply 1 to 15","create_at":1709633701000},{"user":"nadia","message":"Reply 2 to 15","create_at":1709633702000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 16 with @omar mentioned","create_at":1709633760000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 17 with @omar mentioned","create_at":1709633820000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 18 with @omar mentioned","create_at":1709633880000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 19 with @omar mentioned","create_at":1709633940000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 20 with @omar mentioned","create_at":1709634000000,"replies":[{"user":"nadia","message":"Reply 1 to 20","create_at":1709634001000},{"user":"rafi","message":"Reply 2 to 20","create_at":1709634002000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 21 with @omar mentioned","create_at":1709634060000,"reactions":[{"user":"nadia","emoji_name":"thumbsup","create_at":1709632800000},{"user":"jon","emoji_name":"tada","create_at":1709632800000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 22 with @omar mentioned","create_at":1709634120000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 23 with @omar mentioned","create_at":1709634180000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 24 with @omar mentioned","create_at":1709634240000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 25 with @omar mentioned","create_at":1709634300000,"replies":[{"user":"rafi","message":"Reply 1 to 25","create_at":1709634301000},{"user":"jon","message":"Reply 2 to 25","create_at":1709634302000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"rafi","message":"Town square message 26 with @omar mentioned","create_at":1709634360000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"jon","message":"Town square message 27 with @omar mentioned","create_at":1709634420000}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"omar","message":"Town square message 28 with @omar mentioned","create_at":1709634480000,"reactions":[{"user":"nadia","emoji_name":"thumbsup","create_at":1709632800000},{"user":"jon","emoji_name":"tada","create_at":1709632800000}]}}
+{"type":"post","post":{"team":"acme","channel":"town-square","user":"nadia","message":"Town square message 29 with @omar mentioned","create_at":1709634540000}}
+{"type":"post","post":{"team":"acme","channel":"ops-private","user":"nadia","message":"Ops note 0","create_at":1709632800000}}
+{"type":"post","post":{"team":"acme","channel":"ops-private","user":"omar","message":"Ops note 1","create_at":1709632890000}}
+{"type":"post","post":{"team":"acme","channel":"ops-private","user":"nadia","message":"Ops note 2","create_at":1709632980000}}
+{"type":"post","post":{"team":"acme","channel":"ops-private","user":"omar","message":"Ops note 3","create_at":1709633070000}}
+{"type":"post","post":{"team":"acme","channel":"ops-private","user":"nadia","message":"Ops note 4","create_at":1709633160000}}
+{"type":"post","post":{"team":"acme","channel":"ops-private","user":"omar","message":"Ops note 5","create_at":1709633250000}}
+{"type":"direct_post","direct_post":{"channel_members":["omar","nadia"],"user":"nadia","message":"Direct note 0","create_at":1709632800000}}
+{"type":"direct_post","direct_post":{"channel_members":["omar","nadia"],"user":"omar","message":"Direct note 1","create_at":1709632845000}}
+{"type":"direct_post","direct_post":{"channel_members":["omar","nadia"],"user":"nadia","message":"Direct note 2","create_at":1709632890000}}
+{"type":"direct_post","direct_post":{"channel_members":["omar","nadia"],"user":"omar","message":"Direct note 3","create_at":1709632935000}}

@@ -86,6 +86,7 @@ export function SettingsFrame() {
         { to: '/settings/workspace/health', label: 'System health' },
         { to: '/settings/workspace/guardrails', label: 'Data protection' },
         { to: '/settings/workspace/audit', label: 'Audit' },
+        { to: '/settings/workspace/import', label: 'Import' },
       ],
     });
   }

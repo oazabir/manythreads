@@ -415,3 +415,26 @@ describe('the original of a knowledge document is not an orphan (P8-07)', () => 
     expect(await store.head(key)).toBeNull();
   });
 });
+
+describe('an uploaded export archive of the import plugin is not an orphan (P14-13)', () => {
+  it('a blob only an import run points at survives the collection; once the run keeps no archive it is collected', async () => {
+    await upload(nadia, 'gc-import-anchor.txt');
+    const key = await putStray('the zip of a Slack export', 3 * DAY);
+    const run = await sys(async (tx) => {
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      return (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.import_runs (workspace_id, source, team_id, file_name, size_bytes, sha256, blob_key, created_by)
+           VALUES ($1, 'slack', $2, 'export.zip', 25, repeat('c', 64), $3, $4) RETURNING id`,
+          [omar.workspaceId, team, key, omar.actorId],
+        )
+      ).rows[0]!.id;
+    });
+    const first = await gc();
+    expect(first.refused ?? null).toBeNull();
+    expect(await store.head(key)).not.toBeNull();
+    await sys((tx) => tx.query('UPDATE app.import_runs SET blob_key = NULL WHERE id = $1', [run]));
+    await gc();
+    expect(await store.head(key)).toBeNull();
+  });
+});

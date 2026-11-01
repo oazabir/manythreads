@@ -425,6 +425,17 @@ import {
   leaveChannelRoute,
   listRemindersRoute,
   updateChannelRoute,
+  ImportRun,
+  ListImportsResponse,
+  cancelImportRoute,
+  deleteImportRoute,
+  dryRunImportRoute,
+  getImportRoute,
+  listImportsRoute,
+  startImportRoute,
+  uploadImportRoute,
+  DeleteImportResponse,
+  type ImportSource,
 } from '@manythreads/shared';
 import { CSRF_HEADER, ApiError, buildPath, call, readCsrfCookie } from './client';
 
@@ -945,3 +956,55 @@ export const fetchLinkPreviews = (channelId: string, messageIds: readonly string
 /** The author takes a card off their message. */
 export const removeLinkPreview = (channelId: string, messageId: string, previewId: string) =>
   call(removeLinkPreviewRoute, { response: RemoveLinkPreviewResponse }, undefined, { channelId, messageId, previewId });
+
+// ---- import from Slack and Mattermost (workspace admins) -----------------------------------------------------
+export const fetchImports = () => call(listImportsRoute, { response: ListImportsResponse });
+export const fetchImport = (runId: string) => call(getImportRoute, { response: ImportRun }, undefined, { runId });
+export const dryRunImport = (runId: string) => call(dryRunImportRoute, { response: ImportRun }, undefined, { runId });
+export const startImport = (runId: string) => call(startImportRoute, { response: ImportRun }, undefined, { runId });
+export const cancelImport = (runId: string) => call(cancelImportRoute, { response: ImportRun }, undefined, { runId });
+export const deleteImport = (runId: string) => call(deleteImportRoute, { response: DeleteImportResponse }, undefined, { runId });
+
+/**
+ * Upload an export archive as a raw byte stream, with progress (an XHR, because `fetch` cannot report upload progress). The choices ride in the address:
+ * the server reads the first bytes to check the file is what was said, and refuses anything else at once.
+ */
+export function uploadImportArchive(
+  input: { source: ImportSource; team: string; file: File },
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<ImportRun> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const query = new URLSearchParams({ source: input.source, team: input.team, name: input.file.name.slice(0, 200) || 'export' });
+    xhr.open(uploadImportRoute.method, `${uploadImportRoute.path}?${query.toString()}`);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('accept', 'application/json');
+    xhr.setRequestHeader('content-type', 'application/octet-stream');
+    const csrf = readCsrfCookie(document.cookie);
+    if (csrf) xhr.setRequestHeader(CSRF_HEADER, csrf);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    };
+    xhr.onerror = () => reject(new ApiError({ code: 'network', status: 0, message: 'Network error' }));
+    xhr.onabort = () => reject(new ApiError({ code: 'network', status: 0, message: 'Cancelled' }));
+    xhr.onload = () => {
+      let body: unknown;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        body = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const parsed = ImportRun.safeParse(body);
+        if (parsed.success) resolve(parsed.data);
+        else reject(new ApiError({ code: 'bad_response', status: xhr.status, message: 'The server sent a response this app does not understand.' }));
+        return;
+      }
+      const message = typeof (body as { error?: { message?: unknown } } | undefined)?.error?.message === 'string' ? (body as { error: { message: string } }).error.message : `Upload failed (${xhr.status})`;
+      reject(new ApiError({ code: xhr.status === 413 ? 'validation_failed' : 'internal', status: xhr.status, message }));
+    };
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(input.file);
+  });
+}

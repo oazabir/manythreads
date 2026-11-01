@@ -446,6 +446,8 @@ and is the message's own text, every citation is the original's by number (a mas
 "Sources reached" are subsets, and there are no chips (400 otherwise). A `meta.runId` with `copyOf` is a 400. Nothing about the original is stored
 on the copy. Editing a message that carries an Answer is refused (409): the text must stay the payload's `body`.
 
+**Imported messages and channels (P14-13).** The same provider carries the [import](./import.md) plugin's two doors, both for the system role only (`session_user = 'manythreads_system'`; any request-side caller is refused). `post(tx, { ..., imported: { at, source, sourceId, reactions } })` writes a message as the transaction's actor (the import job first calls `app.import_act_as(actor)` so the author is the right person or placeholder) with `created_at = at` and an id that sorts by `at`, so the channel reads in the order it was written in the other product; `meta.importedFrom = { source, id }`; the reactions are written in the same step. It raises no event, no push, no unread mark, no mention row, no notification and no link-preview job: an old message must not wake anyone. A thread reply must name a root of the same channel, and `at` may not be in the future. `importChannel(tx, { teamId, name, private, purpose, memberPersonIds })` makes a channel (a taken name gets `-2`, `-3`... after it) and, for a private one, adds only the listed people who are active, not guests and on the team; it announces `channel.channel.created` as usual.
+
 ## Manifest
 
 | Field | Value |

@@ -18,6 +18,7 @@ import { Shell } from './shell/Shell';
 import { WorkspaceHttps } from './screens/https/WorkspaceHttps';
 import { SystemHealth } from './screens/health/SystemHealth';
 import { Audit } from './screens/audit/Audit';
+import { ImportScreen } from './screens/import/ImportScreen';
 import { Guardrails } from './screens/guardrails/Guardrails';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
 import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
@@ -106,6 +107,7 @@ function AppRoutes() {
               <Route path="health" element={<SystemHealth />} />
               <Route path="guardrails" element={<Guardrails />} />
               <Route path="audit" element={<Audit />} />
+              <Route path="import" element={<ImportScreen />} />
             </Route>
             <Route path="/settings/team/:slug">
               <Route index element={<Navigate to="roster" replace />} />

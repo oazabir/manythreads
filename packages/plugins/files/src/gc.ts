@@ -161,6 +161,7 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
   let emptyDatabase: boolean | undefined;
   let markerRefusal: string | null | undefined;
   let hasKnowledge: boolean | undefined;
+  let hasImport: boolean | undefined;
   let after = options.cursor;
   for (;;) {
     const page = await storage.list({ ...(after !== undefined ? { after } : {}), limit: pageSize });
@@ -173,6 +174,11 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
       if ((hasKnowledge ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.knowledge_documents') IS NOT NULL AS found")).rows[0]?.found === true)) {
         const docs = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.knowledge_documents WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
         for (const r of docs.rows) referenced.add(r.blob_key);
+      }
+      // So are the uploaded export archives of the import plugin, while a run still keeps its archive.
+      if ((hasImport ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.import_runs') IS NOT NULL AS found")).rows[0]?.found === true)) {
+        const runs = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.import_runs WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
+        for (const r of runs.rows) referenced.add(r.blob_key);
       }
       report.referenced += referenced.size;
       const doomed = [];

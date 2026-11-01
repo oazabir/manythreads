@@ -134,6 +134,11 @@ export const AUDIT_ACTIONS = {
   'linkpreview.settings_changed': { category: 'settings', label: 'Changed link previews' },
   'emoji.added': { category: 'settings', label: 'Added a custom emoji' },
   'emoji.deleted': { category: 'settings', label: 'Removed a custom emoji' },
+  'import.uploaded': { category: 'content', label: 'Uploaded an export to import' },
+  'import.analysed': { category: 'content', label: 'Checked an export before importing it' },
+  'import.started': { category: 'content', label: 'Started an import' },
+  'import.finished': { category: 'content', label: 'An import ended' },
+  'import.person_claimed': { category: 'content', label: 'Someone took over their imported messages' },
   'retention.sweep_completed': { category: 'system', label: 'Ran the retention sweep' },
   'audit.exported': { category: 'system', label: 'Exported the audit log' },
 } as const satisfies Record<string, { category: AuditCategory; label: string }>;

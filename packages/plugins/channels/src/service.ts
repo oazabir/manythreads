@@ -1,4 +1,4 @@
-import type { PluginContext, PluginTx } from '@manythreads/sdk';
+import type { ImportedMessage, PluginContext, PluginTx } from '@manythreads/sdk';
 import {
   ChannelMessage,
   FORWARD_EXCERPT_CHARS,
@@ -283,6 +283,8 @@ export interface PostMessageInput {
   skipRefs?: boolean;
   /** The writer confirmed that `@here` / `@channel` will notify a big room (P14-02; a bot's post never carries it, and a bot's `@channel` notifies nobody). */
   confirmBroadcast?: boolean;
+  /** Imported history (the import plugin; system transactions only): keeps its original time, raises no event, push, unread count or mention. */
+  imported?: ImportedMessage;
 }
 
 export interface PostedMessage {
@@ -304,6 +306,7 @@ export interface PostedMessage {
  * transaction says (`app.actor()`): a person on the route, the run's bot through the capability.
  */
 export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMessageInput): Promise<PostedMessage> {
+  if (input.imported) return postImportedMessage(tx, input, input.imported);
   const { ctx } = deps;
   const channel = await requireChannel(tx, input.channelId);
   await requirePost(tx, channel);
@@ -379,6 +382,45 @@ export async function postChannelMessage(deps: Deps, tx: PluginTx, input: PostMe
   await tx.query('DELETE FROM app.typing WHERE channel_id = $1 AND person_id = app.person_id()', [input.channelId]);
   const groupNotices = input.skipRefs ? [] : await syncMessageRefs(deps, tx, channel, { id: row.id, body: row.body, authorId: row.author_id, threadRootId: row.thread_root_id, ...(input.confirmBroadcast ? { confirmBroadcast: true } : {}) }, 'post');
   return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push, groupNotices };
+}
+
+/**
+ * Write one message of imported history (PLAN P14-13). The caller is a system transaction that has set the author with `app.import_act_as`; the
+ * message gets an id that sorts at its original time (uuidv7 shifted back from now), that time as `created_at`, and `meta.importedFrom`. It
+ * raises no event, no live push, no unread count, no typing change and no mention or link record: old history must not notify anybody.
+ * The thread rules are the live ones (the root is a top-level message of the same channel). The channel's own post permission is not asked:
+ * the import plugin decides who wrote what, and the people it names may no longer be allowed to post.
+ */
+async function postImportedMessage(tx: PluginTx, input: PostMessageInput, imp: ImportedMessage): Promise<PostedMessage> {
+  const channel = (await tx.query<{ id: string }>('SELECT id FROM app.channels WHERE id = $1', [input.channelId])).rows[0];
+  if (!channel) throw notFound('No such channel');
+  if (input.threadRootId) {
+    const root = (
+      await tx.query<{ thread_root_id: string | null; deleted_at: Date | null }>(
+        'SELECT thread_root_id, deleted_at FROM app.messages WHERE id = $1 AND channel_id = $2',
+        [input.threadRootId, input.channelId],
+      )
+    ).rows[0];
+    if (!root) throw notFound('No such message to reply to in this channel');
+    if (root.thread_root_id) throw conflict('Reply to the first message of the thread, not to a reply');
+  }
+  const meta = { importedFrom: { source: imp.source, id: imp.sourceId } };
+  const res = await tx.query<MessageRow>(
+    `INSERT INTO app.messages AS m (id, workspace_id, channel_id, author_id, body, body_plain, thread_root_id, meta, created_at)
+     VALUES (uuidv7($6::timestamptz - clock_timestamp()), app.workspace_id(), $1, app.actor(), $2, $3, $4, $5::jsonb, $6::timestamptz)
+     RETURNING ${MESSAGE_COLUMNS}`,
+    [input.channelId, input.body, toPlainText(input.body), input.threadRootId ?? null, JSON.stringify(meta), imp.at],
+  );
+  const row = res.rows[0]!;
+  for (const group of imp.reactions ?? []) {
+    for (const actorId of group.actorIds) {
+      await tx.query(
+        'INSERT INTO app.message_reactions (message_id, actor_id, emoji, created_at) VALUES ($1, $2, $3, $4::timestamptz) ON CONFLICT DO NOTHING',
+        [row.id, actorId, group.emoji, imp.at],
+      );
+    }
+  }
+  return { id: row.id, channelId: input.channelId, threadRootId: row.thread_root_id, row, push: toChannelMessage({ ...row, reply_count: null, last_reply_at: null }, []), groupNotices: [] };
 }
 
 /** What editing one message needs. */

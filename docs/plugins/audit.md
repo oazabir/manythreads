@@ -66,6 +66,9 @@ All subscribers of one event run in one database transaction. The audit subscrib
 ## Custom emoji (P14-02)
 
 `channel.custom_emoji.changed` becomes `emoji.added` or `emoji.deleted` (category settings): which workspace admin added or removed a picture, the emoji's `:name:` as the target label (a name is 2 to 32 lower-case letters, digits and underscores, so it can hold nothing a person wrote beyond that) and a fixed reason. The picture itself is never in the event ([channels.md](./channels.md)).
+## Imports (P14-13)
+
+The five import events become `import.uploaded`, `import.analysed`, `import.started`, `import.finished` and `import.person_claimed` (category content). Each names who did it (the admin who uploaded, read or started the archive; the person who took over messages), the run as the target and a fixed reason made of numbers ("200 messages, 3 channels, 2 people without an account yet"). Never a file name, a channel name, a person's name or an email address from the archive ([import.md](./import.md)).
 
 ## Setup and model tests (P10-01)
 

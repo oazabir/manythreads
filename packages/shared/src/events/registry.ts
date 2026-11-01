@@ -32,6 +32,11 @@ import { ConversationsConversationStartedEvent } from './conversations.conversat
 import { RetentionSweepCompletedEvent } from './retention.sweep.completed.ts';
 import { RetentionSettingsChangedEvent } from './retention.settings.changed.ts';
 import { LinkPreviewSettingsUpdatedEvent } from './linkpreview.settings.updated.ts';
+import { ImportPersonClaimedEvent } from './import.person.claimed.ts';
+import { ImportRunAnalysedEvent } from './import.run.analysed.ts';
+import { ImportRunFinishedEvent } from './import.run.finished.ts';
+import { ImportRunStartedEvent } from './import.run.started.ts';
+import { ImportRunUploadedEvent } from './import.run.uploaded.ts';
 import { OpsHealthChangedEvent } from './ops.health.changed.ts';
 import { AuditExportCreatedEvent } from './audit.export.created.ts';
 import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.ts';
@@ -155,6 +160,11 @@ export const eventRegistry = {
   'retention.sweep.completed': { 1: RetentionSweepCompletedEvent },
   'retention.settings.changed': { 1: RetentionSettingsChangedEvent },
   'linkpreview.settings.updated': { 1: LinkPreviewSettingsUpdatedEvent },
+  'import.run.uploaded': { 1: ImportRunUploadedEvent },
+  'import.run.analysed': { 1: ImportRunAnalysedEvent },
+  'import.run.started': { 1: ImportRunStartedEvent },
+  'import.run.finished': { 1: ImportRunFinishedEvent },
+  'import.person.claimed': { 1: ImportPersonClaimedEvent },
   'ops.health.changed': { 1: OpsHealthChangedEvent },
   'audit.export.created': { 1: AuditExportCreatedEvent },
   'approvals.approval.requested': { 1: ApprovalsApprovalRequestedEvent },
@@ -304,6 +314,11 @@ export type AnyEvent =
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
   | z.infer<typeof LinkPreviewSettingsUpdatedEvent>
+  | z.infer<typeof ImportRunUploadedEvent>
+  | z.infer<typeof ImportRunAnalysedEvent>
+  | z.infer<typeof ImportRunStartedEvent>
+  | z.infer<typeof ImportRunFinishedEvent>
+  | z.infer<typeof ImportPersonClaimedEvent>
   | z.infer<typeof AuditExportCreatedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
   | z.infer<typeof ApprovalsApprovalRequestedEvent>
@@ -381,6 +396,11 @@ export type LatestEvent =
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
   | z.infer<typeof LinkPreviewSettingsUpdatedEvent>
+  | z.infer<typeof ImportRunUploadedEvent>
+  | z.infer<typeof ImportRunAnalysedEvent>
+  | z.infer<typeof ImportRunStartedEvent>
+  | z.infer<typeof ImportRunFinishedEvent>
+  | z.infer<typeof ImportPersonClaimedEvent>
   | z.infer<typeof AuditExportCreatedEvent>
   | z.infer<typeof LlmConfigAppliedEvent>
   | z.infer<typeof ApprovalsApprovalRequestedEvent>

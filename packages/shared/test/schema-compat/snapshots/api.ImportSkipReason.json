@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "app_message",
+    "huddle",
+    "canvas",
+    "system_message",
+    "empty_message",
+    "channel_without_members",
+    "dm_not_matched",
+    "private_channel_unknown_members",
+    "malformed_entry",
+    "refused_entry",
+    "line_too_long",
+    "orphan_reply",
+    "file_not_in_export",
+    "message_shortened",
+    "reaction_unknown_person"
+  ]
+}

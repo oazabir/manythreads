@@ -35,6 +35,42 @@ export interface MessagePostInput {
    * writes from something a person typed that must not ping anyone (a reminder's text). Plugin code only: the provider is not reachable by a bot.
    */
   skipRefs?: boolean;
+  /** The message is imported history (see `ImportedMessage`); cannot be combined with `meta` or `copyOf`. */
+  imported?: ImportedMessage;
+}
+
+/**
+ * A message that is history from another product (PLAN P14-13, the import plugin): it keeps the time it was written at, gets an id that sorts at that
+ * time, carries `meta.importedFrom`, and raises nothing: no event, no live push, no unread count, no notification, no mention. Only a system
+ * transaction may post one (403 otherwise); the author is the transaction's actor, which the import plugin sets for each message.
+ */
+export interface ImportedMessage {
+  /** When the message was written in the source, ISO 8601. Not in the future. */
+  at: string;
+  source: 'slack' | 'mattermost';
+  /** The message's id in the source (or a key derived from it), recorded in `meta.importedFrom.id`. */
+  sourceId: string;
+  /** Reactions to add with the message: one row per (emoji, actor id). */
+  reactions?: readonly { emoji: string; actorIds: readonly string[] }[];
+}
+
+/** A channel the import plugin asks for: made in a team as the transaction's actor (a lead or admin), with the people who may read it when private. */
+export interface ImportChannelInput {
+  teamId: string;
+  /** Any text: it is turned into a channel name (lowercase letters, digits and hyphens) and made unique in the team. */
+  name: string;
+  private: boolean;
+  purpose: string;
+  /** People (person ids) to add to a private channel; the ones who are not on the team are counted as skipped. */
+  memberPersonIds: readonly string[];
+}
+
+export interface ImportedChannel {
+  channelId: string;
+  /** The name the channel got (the asked name made valid and unique). */
+  name: string;
+  membersAdded: number;
+  membersSkipped: number;
 }
 
 export interface MessagePosted {
@@ -51,4 +87,11 @@ export interface MessageProvider extends ProviderImpl {
    * `channel.message.posted`, pushes it live, counts it unread for the thread's followers and records what it mentions.
    */
   post(tx: PluginTx, input: MessagePostInput): Promise<MessagePosted>;
+  /**
+   * Makes a team channel exactly as the create-channel route does (a lead or workspace admin of the team; 403 otherwise; the live push to the
+   * team), but for a name that may be anything: it is made valid, and unique by a numeric suffix. A private channel gets `memberPersonIds`
+   * (those on the team; the others are counted in `membersSkipped`). No per-channel event is raised for the people added: the import run's own
+   * events say what happened.
+   */
+  importChannel(tx: PluginTx, input: ImportChannelInput): Promise<ImportedChannel>;
 }
