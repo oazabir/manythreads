@@ -2,6 +2,7 @@ import type { BotRunHandle, PluginTx, RunSourceLine, ToolSourceTool } from '@man
 import { MailAddress } from '@manythreads/shared';
 import { z } from 'zod';
 import { callEmail } from './email/tools.ts';
+import { personToolDef } from './person-tools.ts';
 import type { ConnectionRow } from './rows.ts';
 
 // The kinds of connection the platform knows (PLAN P8-28). A kind says which tools a connection of that kind can serve and what a call to one does. The
@@ -64,7 +65,7 @@ const jsonSchemaOf = (tool: string): Record<string, unknown> => {
  * given).
  */
 export function inputProblem(tool: string, input: unknown): string | null {
-  const schema = INPUTS[tool];
+  const schema = INPUTS[tool] ?? personToolDef(tool)?.input;
   if (!schema) return `“${tool}” takes no input here.`;
   const parsed = schema.safeParse(input);
   if (parsed.success) return null;

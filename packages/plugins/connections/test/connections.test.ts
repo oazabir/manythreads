@@ -213,7 +213,7 @@ describe('the compile', () => {
     ]);
     const first = await compile(MKT, bot.botId);
     expect(first.granted).toEqual([]);
-    expect(first.skipped.map((s) => `${s.connection}:${s.reason}`)).toEqual(['support-mail:no_such_connection', 'person:*:person_connections_not_built', 'ghost:no_such_connection']);
+    expect(first.skipped.map((s) => `${s.connection}:${s.reason}`)).toEqual(['support-mail:no_such_connection', 'person:*:tool_not_personal', 'ghost:no_such_connection']);
     expect(await grantsOf(bot.actorId)).toEqual([]);
     expect(await brokerGrantsOf(bot.actorId)).toEqual([]);
 

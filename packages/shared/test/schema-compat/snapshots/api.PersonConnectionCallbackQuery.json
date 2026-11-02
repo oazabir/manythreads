@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "state": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "error": {
+      "type": "string",
+      "maxLength": 256
+    }
+  },
+  "additionalProperties": {}
+}

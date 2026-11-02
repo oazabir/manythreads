@@ -206,6 +206,10 @@
               "filter": {
                 "type": "string",
                 "minLength": 1
+              },
+              "channel": {
+                "type": "string",
+                "pattern": "^#[a-z0-9][a-z0-9._-]*$"
               }
             },
             "required": [

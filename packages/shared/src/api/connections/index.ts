@@ -77,3 +77,4 @@ export type DeleteConnectionResponse = z.infer<typeof DeleteConnectionResponse>;
 export const deleteConnectionRoute = { method: 'DELETE', path: '/api/connections/:id' } as const satisfies ApiRoute;
 
 export * from './mail.ts';
+export * from './person.ts';

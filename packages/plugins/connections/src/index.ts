@@ -2,6 +2,9 @@ import { definePlugin, type PluginEvent } from '@manythreads/sdk';
 import { ChannelMessagePostedEvent } from '@manythreads/shared';
 import { compileBot, compileTeam, dropBot, type Declared } from './compile.ts';
 import { linkPost } from './link.ts';
+import type { OAuthDeps } from './oauth/store.ts';
+import { registerPersonRoutes } from './person-routes.ts';
+import { PERSON_TOOL_DEFS } from './person-tools.ts';
 import { registerRoutes } from './routes.ts';
 import { createConnectionsSource } from './source.ts';
 import { registerWatch } from './watch.ts';
@@ -13,6 +16,7 @@ export type { EmailTransport, ListMailQuery, MailMessage, MailSummary, OutgoingM
 export { mailBehindRun } from './email/tools.ts';
 export { linkPost } from './link.ts';
 export { triggerMatches, watchInbox, WATCH_QUEUE } from './watch.ts';
+export { PERSON_TOOLS } from './person-tools.ts';
 export { deleteConnectionAndSecrets, putConnectionSecret, readConnectionSecret } from './secrets.ts';
 
 /**
@@ -41,13 +45,16 @@ export default definePlugin({
       { name: 'email.read', destructive: false },
       { name: 'email.draft', destructive: false },
       { name: 'email.send', destructive: false },
+      // the tools of a person's own Google, Microsoft and Notion connection (person-tools.ts); the ones that write always wait for approval
+      ...PERSON_TOOL_DEFS.map((t) => ({ name: t.name, destructive: false })),
     ],
     // app.connection_grants references app.team_members (teams); the compile and the watch read app.bots and its projection (bots); the link reads the posts (channels)
     dependsOn: ['teams', 'bots', 'channels'],
   },
   register(ctx) {
     const declared: Declared = new Map(ctx.manifest.capabilities.map((c) => [c.name, { destructive: c.destructive }]));
-    ctx.toolSources.register(createConnectionsSource({ db: ctx.db, secrets: ctx.secrets }));
+    const oauth: OAuthDeps = { db: ctx.db, secrets: ctx.secrets, now: () => ctx.runtime.now(), env: process.env };
+    ctx.toolSources.register(createConnectionsSource(oauth));
 
     // Runs as the system actor in the outbox consumer, after the loader committed the bot's row and its projection; idempotent, so a redelivery changes nothing.
     ctx.events.subscribe('bots.bot.loaded', async (event: PluginEvent, tx) => {
@@ -79,5 +86,6 @@ export default definePlugin({
 
     registerWatch(ctx);
     registerRoutes(ctx);
+    registerPersonRoutes(ctx, oauth);
   },
 });

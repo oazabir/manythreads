@@ -83,6 +83,11 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('PATCH', '/api/connections/:id', 30, 'person'),
   r('PUT', '/api/connections/:id/credentials/:name', 20, 'person'),
   r('DELETE', '/api/connections/:id', 30, 'person'),
+  // A person's own sign-in to Google, Microsoft or Notion (P8-02): the start writes a one-time state; the callback trades the provider's code, which is also single
+  // use and bound to the person that started it; a disconnect revokes and deletes the sealed tokens.
+  r('POST', '/api/me/connections/:provider/start', 20, 'person'),
+  r('GET', '/api/me/connections/:provider/callback', 30, 'person', 'one-time state: single use, bound to the person who started it, ten minutes'),
+  r('DELETE', '/api/me/connections/:provider', 30, 'person'),
   // Machine credentials presented to a public address: the secret is long and random, so the limit counts only the failed guesses.
   r('POST', '/api/mcp/runs', 60, 'address', 'pairing token: failures counted below'),
   r('POST', '/api/mcp/bots/:botId', 60, 'failures', 'bot token: 60 failures per address a minute'),

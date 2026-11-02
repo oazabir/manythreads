@@ -1,6 +1,7 @@
 import type { PluginTx } from '@manythreads/sdk';
 import { z } from 'zod';
 import { kindServes, TOOLS } from './kinds.ts';
+import { personToolDef, PERSON_TOOLS } from './person-tools.ts';
 
 // Compile what a bot's BOT.md asks of its connections into rows (PLAN P8-28). The bots loader projects `capabilities.connections` into `app.bots.connections`;
 // this runs when a bot is loaded (and when a connection appears that a definition was waiting for) and writes, in the same transaction:
@@ -10,8 +11,9 @@ import { kindServes, TOOLS } from './kinds.ts';
 //
 // What it refuses, quietly and by name (the `skipped` list, never a thrown error: one bad line must not stop the others, and the definition was already accepted
 // by the loader): a connection that does not exist on the bot's own team, a tool the connection's kind does not serve, a tool nobody declared, a destructive
-// tool (the broker never grants one, and a connection must not be a way around that), and a wildcard. `person:*` (the asking person's own connections) is not
-// compiled here: it grants nothing until the person-connection work lands. Idempotent: running it twice leaves the same rows.
+// tool (the broker never grants one, and a connection must not be a way around that), and a wildcard. `person:*` (the asking person's own connections, PLAN P8-02) is
+// compiled into person_connection_grants (no connection named: the asker's own is found at call time) plus the broker's row; a tool of a person connection that
+// writes always waits for a person, whatever the definition says. Idempotent: running it twice leaves the same rows.
 
 const Projection = z.array(
   z.object({
@@ -24,7 +26,7 @@ const Projection = z.array(
 export interface Skipped {
   connection: string;
   tool: string | null;
-  reason: 'no_such_connection' | 'person_connections_not_built' | 'tool_not_served' | 'tool_not_declared' | 'tool_destructive' | 'wildcard';
+  reason: 'no_such_connection' | 'tool_not_personal' | 'tool_not_served' | 'tool_not_declared' | 'tool_destructive' | 'wildcard';
 }
 
 export interface CompileResult {
@@ -36,6 +38,8 @@ export interface CompileResult {
 export type Declared = ReadonlyMap<string, { destructive: boolean }>;
 
 const OWN_TOOLS = new Set(TOOLS.map((t) => t.name));
+const OWN_PERSON_TOOLS = new Set(PERSON_TOOLS.map((t) => t.name));
+export const PERSON_SCOPE = 'person:*';
 
 /** Compiles one bot's connection list. `tx` is a system transaction (the event consumer's). Returns what it granted and what it refused. */
 export async function compileBot(tx: PluginTx, declared: Declared, ids: { workspaceId: string; teamId: string; botId: string }): Promise<CompileResult> {
@@ -63,9 +67,18 @@ export async function compileBot(tx: PluginTx, declared: Declared, ids: { worksp
   );
 
   const wanted = new Map<string, { connectionId: string; slug: string; needsApproval: boolean }>();
+  const wantedPerson = new Map<string, { needsApproval: boolean }>();
   for (const entry of asked) {
-    if (entry.connection === 'person:*') {
-      result.skipped.push({ connection: entry.connection, tool: null, reason: 'person_connections_not_built' });
+    if (entry.connection === PERSON_SCOPE) {
+      for (const tool of entry.tools) {
+        const skip = (reason: Skipped['reason']): void => void result.skipped.push({ connection: entry.connection, tool, reason });
+        const def = personToolDef(tool);
+        if (tool.includes('*')) skip('wildcard');
+        else if (!declared.has(tool) || !OWN_PERSON_TOOLS.has(tool)) skip(OWN_TOOLS.has(tool) ? 'tool_not_personal' : 'tool_not_declared');
+        else if (declared.get(tool)!.destructive) skip('tool_destructive');
+        else if (!def) skip('tool_not_personal');
+        else if (!wantedPerson.has(tool)) wantedPerson.set(tool, { needsApproval: def.kind === 'write' || (entry.needsApproval ?? []).includes(tool) });
+      }
       continue;
     }
     const connection = connections.get(entry.connection);
@@ -85,9 +98,26 @@ export async function compileBot(tx: PluginTx, declared: Declared, ids: { worksp
   }
 
   const tools = [...wanted.keys()];
+  const personTools = [...wantedPerson.keys()];
   // what the bot had and no longer asks for goes first (a tool, or the same tool through another connection, is replaced below)
   await tx.query('DELETE FROM app.connection_grants WHERE actor_id = $1 AND tool <> ALL ($2::text[])', [bot.actor_id, tools]);
-  await tx.query(`DELETE FROM app.capability_grants WHERE actor_id = $1 AND constraints ? 'connection' AND capability <> ALL ($2::text[])`, [bot.actor_id, tools]);
+  await tx.query('DELETE FROM app.person_connection_grants WHERE actor_id = $1 AND tool <> ALL ($2::text[])', [bot.actor_id, personTools]);
+  await tx.query(`DELETE FROM app.capability_grants WHERE actor_id = $1 AND constraints ? 'connection' AND capability <> ALL ($2::text[])`, [bot.actor_id, [...tools, ...personTools]]);
+  for (const [tool, want] of wantedPerson) {
+    await tx.query(
+      `INSERT INTO app.person_connection_grants (workspace_id, team_id, actor_id, tool, needs_approval)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (actor_id, tool) DO UPDATE SET needs_approval = EXCLUDED.needs_approval`,
+      [ids.workspaceId, ids.teamId, bot.actor_id, tool, want.needsApproval],
+    );
+    await tx.query(
+      `INSERT INTO app.capability_grants (team_id, actor_id, capability, needs_approval, constraints)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (actor_id, capability) DO UPDATE SET team_id = EXCLUDED.team_id, needs_approval = EXCLUDED.needs_approval, constraints = EXCLUDED.constraints`,
+      [ids.teamId, bot.actor_id, tool, want.needsApproval, JSON.stringify({ connection: PERSON_SCOPE })],
+    );
+    result.granted.push({ tool, connection: PERSON_SCOPE, needsApproval: want.needsApproval });
+  }
   for (const [tool, want] of wanted) {
     await tx.query(
       `INSERT INTO app.connection_grants (workspace_id, connection_id, team_id, actor_id, tool, needs_approval)
@@ -119,6 +149,7 @@ export async function compileTeam(tx: PluginTx, declared: Declared, ids: { works
 export async function dropBot(tx: PluginTx, ids: { workspaceId: string; botId: string }): Promise<void> {
   const actors = `SELECT id FROM app.actors WHERE kind = 'bot' AND workspace_id = $1 AND ref_id = $2`;
   await tx.query(`DELETE FROM app.connection_grants WHERE actor_id IN (${actors})`, [ids.workspaceId, ids.botId]);
+  await tx.query(`DELETE FROM app.person_connection_grants WHERE actor_id IN (${actors})`, [ids.workspaceId, ids.botId]);
   await tx.query(`DELETE FROM app.capability_grants WHERE constraints ? 'connection' AND actor_id IN (${actors})`, [ids.workspaceId, ids.botId]);
   // the bot's claims on mail threads go with it (no foreign key: the bots plugin's table is not this plugin's to reference)
   await tx.query('DELETE FROM app.connection_mail_claims WHERE workspace_id = $1 AND bot_id = $2', [ids.workspaceId, ids.botId]);

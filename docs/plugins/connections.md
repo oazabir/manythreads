@@ -4,6 +4,7 @@ A team's links to outside services, and the tools a bot gets from them. A **conn
 
 Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit']`, `dependsOn: ['teams', 'bots']`, migrations `connections/0001_connections.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded`, `bots.bot.removed` and its own `connections.connection.changed`; emits `connections.connection.changed`.
 Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit', 'job.register']`, `dependsOn: ['teams', 'bots', 'channels']`, migrations `connections/0001_connections.sql` and `0002_mail.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded`, `bots.bot.removed` and `channel.message.posted`; emits `connections.inbox.claimed` (ids only).
+Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe']`, `dependsOn: ['teams', 'bots']`, migrations `connections/0001_connections.sql`, `0002_mail.sql` (mail) and `0003_person_connections.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded` and `bots.bot.removed`; emits no events yet.
 
 ## What it is made of
 
@@ -113,7 +114,7 @@ approvals:
 1. The bots loader reads the file and writes the bot's row and, in `bots.connections`, the list of `{ connection, tools, needsApproval }`.
 2. It emits `bots.bot.loaded`. This plugin's subscriber compiles that row, as the system, after the loader's commit. The compile is idempotent: a repeat changes nothing.
 3. For each named team connection it writes a `connection_grants` row and the matching `capability_grants` row (the broker's table), with the connection's slug in the grant's constraints. A tool the bot no longer names loses both rows; a bot that is removed loses all of them.
-4. A tool is **skipped** (never granted, logged without any credential) when: the connection does not exist on the bot's own team, the connection's kind does not serve the tool, the tool is not a declared capability, it is destructive, or the name is a wildcard. `person:*` (the person's own connections) is not built yet (P8-02) and is skipped too.
+4. A tool is **skipped** (never granted, logged without any credential) when: the connection does not exist on the bot's own team, the connection's kind does not serve the tool, the tool is not a declared capability, it is destructive, or the name is a wildcard.  `person:*` entries are compiled separately (see [A person's own connections](#a-persons-own-connections)); a tool that is not one of the person tools is skipped there as `tool_not_personal`.
 
 **A tool is in `native` or in `connections`, never both.** The BOT.md schema refuses a file that has the same tool (or a `namespace.*` wildcard that covers it) in both lists, and names the field. The same tool through two different connections is refused too. The two lists never share a grant row.
 
@@ -134,7 +135,69 @@ The MCP gateway ([gateway-mcp.md](./gateway-mcp.md)) asks the registry of tool s
 
 ### bot capabilities ∩ asker visibility
 
-For every source there is one shared test that proves the rule in four states (granted or not, visible to the asker or not): `describeToolSourceIntersection` in `packages/test-utils/src/tool-source-intersection.ts`. A new source (drives, a code host, knowledge) runs it as its first test. Connections run it for `email.read` (a read) and `email.draft` (a write).
+For every source there is one shared test that proves the rule in four states (granted or not, visible to the asker or not): `describeToolSourceIntersection` in `packages/test-utils/src/tool-source-intersection.ts`. A new source (drives, a code host, knowledge) runs it as its first test. Connections run it for `email.read` (a read) and `email.draft` (a write), and for a person's own connection with `google_drive.search` (a read) and `google_calendar.create_event` (a write).
+
+## A person's own connections
+
+A person can connect their own **Google**, **Microsoft 365** and **Notion** account (PLAN P8-02). The connection belongs to that person alone (row-level security shows it to nobody else, not a lead or an admin). A bot uses it only for a run that this person asked, in a conversation or a mention: never for a run that nobody asked (a schedule, a webhook), and never another person's.
+
+### Signing in
+
+One piece of code does the OAuth sign-in for all three providers (`src/oauth/flow.ts`, with each provider's differences in one table, `src/oauth/providers.ts`). It is the authorization code flow with a PKCE proof (a one-time secret that ties the code to the browser that asked, so a stolen code is useless), a random single-use `state` that is bound to the signed-in person and runs out after 10 minutes, and no redirect is followed on any call to a provider. Notion has no PKCE; its sign-in relies on the `state` and the app's secret.
+
+| Route | What it does |
+|---|---|
+| `GET /api/me/connections/providers` | The three providers: whether the server is set up for it (`configured`), whether the caller has connected it, `needs_reconnect` when the provider stopped honouring the sign-in, the account's address, the redirect address an admin registers, and the services each offers (with the tools it gives and whether any of them writes). |
+| `POST /api/me/connections/:provider/start` | `{ services?, returnTo? }` gives `{ url }`: where to send the browser (the provider's consent page). Without `services`, the read-only set is asked for. Answers a plain **409** when the server has no app for the provider. |
+| `GET /api/me/connections/:provider/callback` | Where the provider sends the browser back. The answer is a redirect to `returnTo` (a path of this site, default `/settings/connections`) with `connected=<provider>` or `connect_error=` set to `denied`, `expired`, `failed`, `not_configured` or `wrong_person`. The sign-in must finish as the person who started it. |
+| `DELETE /api/me/connections/:provider` | Tells the provider to forget the token (best effort), then deletes the connection and every sealed token. |
+
+All four are limited per person (`docs/deploy/rate-limits.md`). No answer, log line or event carries a token.
+
+**What the server needs.** An admin makes an app at each provider and puts its id and secret in the server's environment (names only here; the values are never committed): `MANYTHREADS_OAUTH_GOOGLE_CLIENT_ID` and `MANYTHREADS_OAUTH_GOOGLE_CLIENT_SECRET`, the same two with `MICROSOFT` and with `NOTION`, and optionally `MANYTHREADS_OAUTH_MICROSOFT_TENANT` (default `common`). The redirect address to register is `<public address of the site>/api/me/connections/<provider>/callback`; `GET /api/me/connections` shows the exact one. Until both values exist the start route answers 409. (Typing these in a screen instead is the later workspace-settings work, P16-02.)
+
+**Tokens.** The access token and the refresh token are sealed with `ctx.secrets` like every other connection secret and live in `connection_secrets`. Table `connection_oauth` (what the person agreed to, the account's address, when the access token ends, and `ok` or `needs_reconnect`) holds no token. Unfinished sign-ins live in `connection_oauth_flows` (the state is kept only as a hash; the application role has no access to it).
+
+**Keeping it alive.** The access token is renewed when it is used and has under a minute left, or when the provider answers 401. The renewal holds the connection's row for its whole length, so many calls at once renew once (a provider that rotates refresh tokens would refuse the second use of the first one). If the provider says the sign-in is no longer valid (`invalid_grant`), the connection is switched off, marked `needs_reconnect`, its tools disappear for the bot and a call says the person has to connect again; connecting again fixes it. A provider that is down changes nothing. Notion's token does not expire.
+
+**More services later.** A second sign-in for another service adds to what the person already agreed to, on the same connection (Google's `include_granted_scopes`; the plugin keeps the union).
+
+### Services, scopes and tools
+
+A person ticks services; each one is a set of the provider's scopes. A tool is offered to a bot only when the run's asker agreed to its service.
+
+| Provider | Service (ticked by default: read-only ones marked *) | Scopes | Tools |
+|---|---|---|---|
+| Google | Drive (read)* | `drive.readonly` | `google_drive.search`, `google_drive.read` |
+| | Gmail (read) | `gmail.readonly` | `gmail.search`, `gmail.read` |
+| | Gmail drafts | `gmail.compose` | `gmail.draft` (write) |
+| | Calendar (read)* | `calendar.events.readonly` | `google_calendar.list_events` |
+| | Calendar (add events) | `calendar.events` | `google_calendar.create_event` (write) |
+| Microsoft 365 | OneDrive (read)* | `Files.Read` | `onedrive.search`, `onedrive.read` |
+| | Outlook mail (read) | `Mail.Read` | `outlook.search`, `outlook.read` |
+| | Outlook drafts | `Mail.ReadWrite` | `outlook.draft` (write) |
+| | Outlook calendar (read)* | `Calendars.Read` | `outlook_calendar.list_events` |
+| | Outlook calendar (add events) | `Calendars.ReadWrite` | `outlook_calendar.create_event` (write) |
+| Notion | Notion (what the person shares with the connection)* | none (Notion has no scopes) | `notion.search`, `notion.read_page`, `notion.create_page` (write) |
+
+Every sign-in also asks for the identity scopes (`openid`, `email`; Microsoft adds `offline_access` and `User.Read`), and Google's `access_type=offline` so a refresh token is issued.
+
+* **Reads by default, writes only after approval.** Every tool that changes something outside (a draft, a calendar event, a Notion page) is marked `needsApproval` by the compile whatever the BOT.md says, so each call waits for a person. Nothing sends mail: the draft tools save a draft the person sends themselves. No tool deletes anything.
+* **Outside text is data.** A tool's description says what it returns was written by other people or systems and is never to be taken as an instruction. Answers are cut at a size cap, HTML is reduced to text, search words are quoted so they cannot change the provider's query, and every id is checked against a strict pattern before it is placed in an address (a tool passes a path to the plugin's one door, which only ever calls the provider's own address).
+* **Bots name them with `person:*`:**
+
+```yaml
+capabilities:
+  connections:
+    - name: person:*
+      tools: [google_drive.search, google_drive.read, google_calendar.list_events]
+```
+
+The compile writes a `person_connection_grants` row (no connection to point at, because the connection is whoever asked) and the broker's `capability_grants` row with the constraint `connection: person:*`. A call is allowed when the bot holds the grant, the run was started by a person in a conversation or mention, that person's own connection works, and they agreed to the tool's service. A read runs in the asker's transaction, so a person who left the team reaches nothing; a write runs as the bot and waits for approval, and when approved it runs once more for the same asker.
+
+### Testing it
+
+`packages/test-utils/src/fake-providers.ts` is a fake Google, Microsoft 365 and Notion on one local address: the consent page, a token address that checks the app, the redirect and the PKCE proof, a refresh that can rotate, and the APIs the tools call, on per-account data (`fake-providers-data.ts`). `MANYTHREADS_OAUTH_<PROVIDER>_FAKE_BASE` points the plugin at it, and is read only outside production. It never records a token, a code or a secret. `e2e/fixtures/outside.ts` starts it together with the fake GitHub for the browser tests. `test/person.test.ts` covers the sign-in, the refresh, the tools and the intersection test.
 
 ## The routes (P8-06)
 
@@ -172,3 +235,6 @@ Every add, change, switch, credential put and removal emits `connections.connect
 * `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02).
 * A real mail transport (IMAP, Gmail), audit lines and events for connection changes (P8-06), the Connections screen.
 * The screens that consume the mail (P8-34 to P8-36).
+* Creating a connection and putting credentials in for a team connection: no route yet (P8-03). The functions exist (`putConnectionSecret`, `deleteConnectionAndSecrets`) for the code that will.
+* Workspace-scoped grants to a bot, an admin screen for the provider apps (P16-02), and the person's connections page in the web client.
+* A real mail transport (P8-29), audit lines and events for connection changes (P8-06), the Connections screen.
