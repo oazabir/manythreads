@@ -79,6 +79,7 @@ export async function evalComplete(ctx: PluginContext, tx: PluginTx, request: Ll
       promptTokens: answer.promptTokens,
       completionTokens: answer.completionTokens,
       costUsd: 0,
+      purpose: 'eval',
     });
     return { ok: true, text: answer.text, tokens: answer.promptTokens + answer.completionTokens, decision };
   } catch (err) {

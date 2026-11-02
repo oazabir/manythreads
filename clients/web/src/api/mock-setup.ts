@@ -8,6 +8,8 @@ import {
   getProposalRoute,
   getSetupSessionRoute,
   rejectProposalRoute,
+  retrySetupRoute,
+  withdrawProposalRoute,
   type GradedRequirement,
   type SetupInventory,
   type SetupQuestion,
@@ -81,8 +83,8 @@ const diffOf = (path: string, text: string): string => {
   return `--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((l) => `+${l}`).join('\n')}\n`;
 };
 
-type Held = { session: SetupSession; reads: number; stage: 'first' | 'second' | 'done' };
-type FiledProposal = { id: string; teamSlug: string; path: string; title: string; status: 'open' | 'applied' | 'rejected'; diff: string; added: number };
+type Held = { session: SetupSession; reads: number; stage: 'first' | 'second' | 'done'; retried: boolean; tries: number };
+type FiledProposal = { id: string; teamSlug: string; path: string; title: string; status: 'open' | 'applied' | 'rejected' | 'withdrawn'; diff: string; added: number };
 
 export function installSetupMock(on: On, hooks: SetupMockHooks): void {
   const sessions = new Map<string, Held>();
@@ -128,8 +130,9 @@ export function installSetupMock(on: On, hooks: SetupMockHooks): void {
         staleReason: null,
         canApply: p.status === 'open' && may,
         cannotApplyReason: p.status === 'open' && !may ? 'Only a workspace admin can add a bot. It waits in Proposals.' : null,
-        canReject: p.status === 'open' && may,
-        canWithdraw: false,
+        // the helper files the proposal in the asker's name: the author takes it back (withdraw) and cannot reject their own
+        canReject: false,
+        canWithdraw: p.status === 'open',
       },
     });
   };
@@ -145,7 +148,7 @@ export function installSetupMock(on: On, hooks: SetupMockHooks): void {
         requirements: [], questions: [], answers: [], inventory: null, proposals: [], limits: [], message: null, rounds: 0, createdAt: NOW, updatedAt: NOW,
       },
     }).session;
-    sessions.set(session.id, { session, reads: 0, stage: 'first' });
+    sessions.set(session.id, { session, reads: 0, stage: 'first', retried: false, tries: 0 });
     void slug;
     return created({ session });
   });
@@ -155,7 +158,7 @@ export function installSetupMock(on: On, hooks: SetupMockHooks): void {
     const slug = params['slug'] as string;
     if (h.session.status === 'working') {
       h.reads += 1;
-      if (/fail/i.test(h.session.brief) && h.reads >= 2) {
+      if (/fail/i.test(h.session.brief) && (!h.retried || /always/i.test(h.session.brief)) && h.reads >= 2) {
         h.session = { ...h.session, status: 'failed', message: 'The model did not answer. Try again in a minute.' };
       } else if (h.stage === 'first') {
         h.session = { ...h.session, inventory: INVENTORY(slug, hooks.teamName(slug)) };
@@ -177,7 +180,13 @@ export function installSetupMock(on: On, hooks: SetupMockHooks): void {
           status: 'proposed',
           name,
           proposals: [{ proposalId: filed.id as SetupSession['proposals'][number]['proposalId'], path, role: 'bot', title: filed.title }],
-          limits: ['Not available yet: needs the mailbox connection, so it answers when mentioned and does not watch email.'],
+          // a gap the person answered reads as decided, in their words; the rest stays "not settled"
+          limits: REQUIREMENTS()
+            .filter((r) => r.grade === 'missing' || r.grade === 'unclear')
+            .map((r) => {
+              const a = h.session.answers.find((x) => x.requirementId === r.id);
+              return a ? `You decided: ${a.answer} (${r.text})` : r.grade === 'missing' ? 'Not available yet: needs the mailbox connection, so it answers when mentioned and does not watch email.' : `Not settled: ${r.text}`;
+            }),
           message: 'A bot that answers from the manuals when it is mentioned.',
           questions: [],
         };
@@ -199,6 +208,19 @@ export function installSetupMock(on: On, hooks: SetupMockHooks): void {
       answers: [...h.session.answers, ...h.session.questions.map((q) => ({ questionId: q.id, requirementId: q.requirementId, question: q.question, answer: given.get(q.id) as string }))],
       questions: [],
     };
+    h.reads = 0;
+    return view(h);
+  });
+
+  // Try again: a failed conversation runs its last round again (the scripted failure happens once); the answers already given stay
+  on(retrySetupRoute, ({ params }) => {
+    const h = held(params['sessionId']);
+    if (h.session.status !== 'failed') hooks.fail(409, 'conflict', 'Only a conversation that did not finish can be tried again');
+    // the same limit as the server: three tries per conversation
+    if (h.tries >= 3) hooks.fail(409, 'conflict', 'This conversation has been tried again 3 times and keeps stopping. Start a new one.');
+    h.tries += 1;
+    h.session = { ...h.session, status: 'working', message: null };
+    h.retried = true;
     h.reads = 0;
     return view(h);
   });
@@ -225,6 +247,12 @@ export function installSetupMock(on: On, hooks: SetupMockHooks): void {
     const p = filedOf(params['proposalId']);
     if (!hooks.canApprove(p.teamSlug)) hooks.fail(403, 'forbidden', 'Only a team lead or a workspace admin can decline a proposal.');
     p.status = 'rejected';
+    return proposalBody(p);
+  });
+  on(withdrawProposalRoute, ({ params }) => {
+    const p = filedOf(params['proposalId']);
+    if (p.status !== 'open') hooks.fail(409, 'conflict', 'This proposal is no longer open');
+    p.status = 'withdrawn';
     return proposalBody(p);
   });
 }

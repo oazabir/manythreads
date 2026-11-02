@@ -5,8 +5,8 @@ import { StaticRouter } from 'react-router';
 import type { SetupSession } from '@manythreads/shared';
 import { setTransport } from '../src/api/client';
 import { createMockTransport } from '../src/api/mock';
-import { answerSetup, cancelSetup, fetchSetup, startSetup } from '../src/screens/setup/api';
-import { fetchProposal, approveProposal } from '../src/screens/proposals/api';
+import { answerSetup, cancelSetup, fetchSetup, retrySetup, startSetup } from '../src/screens/setup/api';
+import { fetchProposal, approveProposal, withdrawProposal } from '../src/screens/proposals/api';
 import { BriefForm, Feasibility, InventoryPanel, Questions } from '../src/screens/setup/parts';
 
 // P7-04: the "Add a bot" flow against the mock transport (a scripted helper), and the markup of its parts.
@@ -50,6 +50,8 @@ describe('the flow, offline', () => {
     expect(proposed.status).toBe('proposed');
     expect(proposed.proposals).toHaveLength(1);
     expect(proposed.limits.join(' ')).toMatch(/mailbox/);
+    // both gaps were answered, so they read as decided, not as open
+    expect(proposed.limits.every((l) => l.startsWith('You decided'))).toBe(true);
     const filed = await fetchProposal('engineering', proposed.proposals[0]!.proposalId);
     expect(filed.proposal.proposal.status).toBe('open');
     expect(filed.proposal.proposal.diff).toContain('+name: Manual helper');
@@ -71,6 +73,44 @@ describe('the flow, offline', () => {
     const failed = await untilQuiet('engineering', session.id);
     expect(failed.status).toBe('failed');
     expect(failed.message).toBe('The model did not answer. Try again in a minute.');
+  });
+
+  it('offers Try again after a failure: the same conversation runs again and finishes', async () => {
+    const { session } = await startSetup('engineering', 'This brief will fail on purpose, thanks.');
+    const failed = await untilQuiet('engineering', session.id);
+    expect(failed.status).toBe('failed');
+    await expect(retrySetup('engineering', failed.id)).resolves.toMatchObject({ session: { id: failed.id, status: 'working', message: null } });
+    const next = await untilQuiet('engineering', session.id);
+    expect(next.status).toBe('asking');
+    // only a conversation that failed can be tried again
+    await expect(retrySetup('engineering', session.id)).rejects.toThrow(/did not finish/);
+  });
+
+  it('stops offering Try again after three tries, with a plain sentence', async () => {
+    const { session } = await startSetup('engineering', 'This brief will always fail on purpose, thanks.');
+    let current = await untilQuiet('engineering', session.id);
+    for (let i = 0; i < 3; i += 1) {
+      expect(current.status).toBe('failed');
+      await retrySetup('engineering', session.id);
+      current = await untilQuiet('engineering', session.id);
+    }
+    expect(current.status).toBe('failed');
+    await expect(retrySetup('engineering', session.id)).rejects.toThrow(/tried again 3 times.*Start a new one/);
+  });
+
+  it('lets the author take the proposal back (Withdraw) but not reject it, and says no more after that', async () => {
+    const { session } = await startSetup('engineering', BRIEF);
+    const asking = await untilQuiet('engineering', session.id);
+    await answerSetup('engineering', session.id, asking.questions.map((q) => ({ questionId: q.id, text: q.options[0] as string })));
+    const proposed = await untilQuiet('engineering', session.id);
+    const pid = proposed.proposals[0]!.proposalId;
+    const before = await fetchProposal('engineering', pid);
+    expect(before.proposal.canWithdraw).toBe(true);
+    expect(before.proposal.canReject).toBe(false);
+    const done = await withdrawProposal('engineering', pid);
+    expect(done.proposal.proposal.status).toBe('withdrawn');
+    expect(done.proposal.canWithdraw).toBe(false);
+    await expect(withdrawProposal('engineering', pid)).rejects.toThrow(/no longer open/);
   });
 
   it('refuses a brief that is too short', async () => {

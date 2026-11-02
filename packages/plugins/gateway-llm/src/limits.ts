@@ -172,13 +172,15 @@ export interface LlmSpendRecord {
   completionTokens: number;
   costUsd: number;
   occurredAt?: Date;
+  /** What the call was for (`run`, `setup`, `workshop`, `rehearsal`, `gate`, `eval`, `alias-test`); the Spend page names the bot-less kinds. Null when not said. */
+  purpose?: string | null;
 }
 
 /** Append one line to the ledger. Nothing enforces here: the pre-call check is the gate, this is the record. */
 export async function recordSpend(tx: PluginTx, record: LlmSpendRecord): Promise<string> {
   const res = await tx.query<{ id: string }>(
-    `INSERT INTO app.llm_spend (workspace_id, team_id, bot_id, session_id, run_id, alias, model, prompt_tokens, completion_tokens, cost_usd, occurred_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, now())) RETURNING id`,
+    `INSERT INTO app.llm_spend (workspace_id, team_id, bot_id, session_id, run_id, alias, model, prompt_tokens, completion_tokens, cost_usd, occurred_at, purpose)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, coalesce($11, now()), $12) RETURNING id`,
     [
       record.workspaceId,
       record.teamId,
@@ -191,6 +193,7 @@ export async function recordSpend(tx: PluginTx, record: LlmSpendRecord): Promise
       record.completionTokens,
       record.costUsd,
       record.occurredAt ?? null,
+      record.purpose ?? null,
     ],
   );
   return res.rows[0]?.id ?? '';
@@ -218,9 +221,11 @@ export async function spendSummary(
     )
   ).rows;
   const byBot = (
-    await tx.query<{ bot_id: string | null; spent: string; calls: string }>(
-      `SELECT bot_id, sum(cost_usd)::text AS spent, count(*)::text AS calls FROM app.llm_spend
-        WHERE workspace_id = $1 AND occurred_at >= $2 AND occurred_at < $3 GROUP BY bot_id ORDER BY 2 DESC`,
+    // Lines with no bot are split by what they were for (the setup helper, the Workshop helper, model tests ...), so they no longer read as one "no bot" row.
+    // A rehearsal's lines carry the bot (its budget and guard apply to them) but are kept in a row of their own, so the bot's real work and its rehearsals read apart.
+    await tx.query<{ bot_id: string | null; purpose: string | null; spent: string; calls: string }>(
+      `SELECT bot_id, CASE WHEN bot_id IS NULL OR purpose = 'rehearsal' THEN purpose END AS purpose, sum(cost_usd)::text AS spent, count(*)::text AS calls FROM app.llm_spend
+        WHERE workspace_id = $1 AND occurred_at >= $2 AND occurred_at < $3 GROUP BY 1, 2 ORDER BY 3 DESC, 4 DESC`,
       [workspaceId, range.since, range.until],
     )
   ).rows;
@@ -243,7 +248,14 @@ export async function spendSummary(
     promptTokens: Number(total?.prompt_tokens ?? 0),
     completionTokens: Number(total?.completion_tokens ?? 0),
     byTeam: byTeam.map((r) => ({ teamId: r.team_id, spentUsd: Number(r.spent), calls: Number(r.calls) })),
-    byBot: byBot.map((r) => ({ botId: r.bot_id, botName: names.get(r.bot_id ?? '')?.bot ?? null, teamName: names.get(r.bot_id ?? '')?.team ?? null, spentUsd: Number(r.spent), calls: Number(r.calls) })),
+    byBot: byBot.map((r) => ({
+      botId: r.bot_id,
+      botName: names.get(r.bot_id ?? '')?.bot ?? null,
+      teamName: names.get(r.bot_id ?? '')?.team ?? null,
+      purpose: r.purpose,
+      spentUsd: Number(r.spent),
+      calls: Number(r.calls),
+    })),
   });
 }
 

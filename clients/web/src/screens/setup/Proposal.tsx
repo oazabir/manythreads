@@ -5,7 +5,7 @@ import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { Alert } from '../../components/ui';
 import { fetchBot } from '../bots/api';
-import { approveProposal, fetchProposal, rejectProposal } from '../proposals/api';
+import { approveProposal, fetchProposal, rejectProposal, withdrawProposal } from '../proposals/api';
 import { ProposalChecks, ProposalDiff, StatusPill } from '../proposals/parts';
 import { placeOf } from '../proposals/store';
 import { approvalOrder, botSlugOf } from './model';
@@ -60,14 +60,18 @@ function useBotThere(slug: string, botSlug: string | null, wanted: boolean): 'ch
 }
 
 function Loaded({ slug, session, rows, reload }: { slug: string; session: SetupSession; rows: Row[]; reload: () => void }) {
-  const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
+  const [busy, setBusy] = useState<'approve' | 'reject' | 'withdraw' | null>(null);
+  const [said, setSaid] = useState('');
   const [error, setError] = useState<string | null>(null);
   const bot = rows.find((r) => r.ref.role === 'bot');
   const open = rows.filter((r) => r.detail.proposal.status === 'open');
   const applied = rows.every((r) => r.detail.proposal.status === 'applied');
   const declined = rows.some((r) => r.detail.proposal.status === 'rejected' || r.detail.proposal.status === 'withdrawn');
+  const withdrawn = rows.some((r) => r.detail.proposal.status === 'withdrawn');
   const canApprove = open.length > 0 && open.every((r) => r.detail.canApply && !r.detail.stale && r.detail.proposal.checks.every((c) => c.ok));
   const canReject = open.length > 0 && open.every((r) => r.detail.canReject);
+  // the person who filed a proposal can take it back; the server decides (the helper files it in the asker's name)
+  const canWithdraw = open.length > 0 && open.every((r) => r.detail.canWithdraw);
   const blockedWhy = open.map((r) => r.detail.staleReason ?? r.detail.cannotApplyReason).find((t) => t);
   const slugOfBot = botSlugOf(session.proposals);
   const botThere = useBotThere(slug, slugOfBot, applied);
@@ -76,12 +80,14 @@ function Loaded({ slug, session, rows, reload }: { slug: string; session: SetupS
     document.getElementById('su-prop-h')?.focus();
   }, [applied, declined]);
 
-  const run = async (name: 'approve' | 'reject', one: (id: string) => Promise<unknown>): Promise<void> => {
+  const run = async (name: 'approve' | 'reject' | 'withdraw', one: (id: string) => Promise<unknown>): Promise<void> => {
     setBusy(name);
     setError(null);
+    setSaid('');
     try {
       // one after the other, in order: the bot last, so a failure on the way leaves the bot not created
       for (const r of open) await one(r.ref.proposalId);
+      setSaid(name === 'approve' ? 'Approved. The bot is being created.' : name === 'reject' ? 'Rejected. Nothing was changed.' : 'Withdrawn. Nothing was changed.');
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : 'That did not work. Try again.');
     } finally {
@@ -92,9 +98,10 @@ function Loaded({ slug, session, rows, reload }: { slug: string; session: SetupS
 
   return (
     <div className="su-stack" data-testid="setup-proposal">
+      <p className="su-sr" role="status" aria-live="polite" data-testid="setup-decided">{said}</p>
       <section className="su-card" aria-labelledby="su-prop-h">
         <h3 className="su-h" id="su-prop-h" tabIndex={-1}>
-          {applied ? 'The bot is created' : declined ? 'Not approved' : 'Here is what I propose'} <span className="su-count">{session.name ?? bot?.detail.proposal.title ?? ''}</span>
+          {applied ? 'The bot is created' : withdrawn ? 'Withdrawn' : declined ? 'Not approved' : 'Here is what I propose'} <span className="su-count">{session.name ?? bot?.detail.proposal.title ?? ''}</span>
         </h3>
         {session.message ? <p className="su-summary" data-testid="setup-summary">{session.message}</p> : null}
         {!applied && !declined ? <p className="su-hint">Nothing is applied until a person approves. {open.length > 1 ? `${open.length} changes are waiting.` : ''}</p> : null}
@@ -146,6 +153,11 @@ function Loaded({ slug, session, rows, reload }: { slug: string; session: SetupS
           {canReject ? (
             <button type="button" className="btn" disabled={busy !== null} data-testid="setup-reject" onClick={() => void run('reject', (id) => rejectProposal(slug, id))}>
               {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+            </button>
+          ) : null}
+          {canWithdraw ? (
+            <button type="button" className="btn" disabled={busy !== null} data-testid="setup-withdraw" onClick={() => void run('withdraw', (id) => withdrawProposal(slug, id))}>
+              {busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw'}
             </button>
           ) : null}
           {!canApprove && open.length > 0 ? (

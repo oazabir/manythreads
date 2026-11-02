@@ -1,10 +1,14 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerSetupRoutes } from './routes.ts';
 import { registerSetupJob } from './session.ts';
+import { registerWorkshopJob } from './wsession.ts';
+import { registerWorkshopRoutes } from './wroutes.ts';
 
 export { checkBotProposal, checkSkill, checkTeamMdChange } from './policy.ts';
 export { gradeAll, gradeRequirement, questionsForGaps } from './grade.ts';
 export { readTeamDefaults } from './team-defaults.ts';
+export { rehearsalTools, wireNames } from './rehearse.ts';
+export { runTurn } from './turn.ts';
 
 /**
  * workshop: where a person sets up a bot by describing it (PLAN P7-02 to P7-04, SPEC section 9). A built-in helper (the profile in `templates/_setup/PROFILE.md`) looks at what the team has, the platform grades
@@ -20,12 +24,14 @@ export default definePlugin({
     // the platform's own `knowledge.search` and `proposals.propose`, called in the PERSON's transaction; the narrow door adds no actor.
     extends: ['job.register', 'capability.call'],
     calls: ['knowledge.search', 'proposals.propose'],
-    // teams, channels and bots: the tables read for the inventory; proposals and knowledge: the capabilities the tools call; bot-runners: the placement question; gateway-llm: the model; repo-git: TEAM.md and the skills folder.
-    dependsOn: ['teams', 'channels', 'bots', 'proposals', 'knowledge', 'bot-runners', 'gateway-llm', 'repo-git'],
+    // teams, channels and bots: the tables read for the inventory; proposals and knowledge: the capabilities the tools call; bot-runners: the placement question; gateway-llm: the model; repo-git: TEAM.md and the skills folder; gateway-mcp: the sandbox where a bot is rehearsed (P7-05).
+    dependsOn: ['teams', 'channels', 'bots', 'proposals', 'knowledge', 'bot-runners', 'gateway-llm', 'repo-git', 'gateway-mcp'],
     migrations: 'migrations',
   },
   register(ctx) {
     registerSetupRoutes(ctx);
     registerSetupJob(ctx);
+    registerWorkshopRoutes(ctx);
+    registerWorkshopJob(ctx);
   },
 });

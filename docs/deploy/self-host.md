@@ -263,6 +263,7 @@ Use the chart values `domain`, `publicUrl`, `mail.*`, `server.storage.*`.
 | `MANYTHREADS_AUDIT_EXPORT_MAX_ROWS` | Rows in one audit export (hard maximum 20000). | 20000 |
 | `MANYTHREADS_WEBHOOK_RATE_PER_MINUTE` | Webhook calls per minute per address. | 120 |
 | `MANYTHREADS_LLM_TEST_TIMEOUT_MS`, `MANYTHREADS_LLM_PROXY_TIMEOUT_MS` | Time limit for a provider test, and for a proxied model call. | proxy: 10 minutes |
+| `MANYTHREADS_WORKSHOP_MODEL_TIMEOUT_MS` | Time limit for one model call of the Add a bot helper and the Workshop tab ([workshop](../plugins/workshop.md)). Kept between 10000 and 540000. Real turns took 80 to 230 seconds. | 240000 |
 | `MANYTHREADS_VAPID_PRIVATE_KEY`, `MANYTHREADS_VAPID_SUBJECT` | Browser push signing key (the chart makes it) and contact address. | subject: the public URL |
 | `MANYTHREADS_PUSH_HOSTS` | Extra push-service hosts allowed. | built-in list of push services; extra host suffixes, comma separated |
 | `MANYTHREADS_LITELLM_URL`, `MANYTHREADS_LITELLM_MASTER_KEY` | Model gateway. The chart sets both when `litellm.enabled`. | unset |

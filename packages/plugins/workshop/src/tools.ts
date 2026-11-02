@@ -12,7 +12,8 @@ import {
   type SetupTool,
 } from '@manythreads/shared';
 import { z } from 'zod';
-import { gapsOf, gradeAll, limitsOf, mergeGraded, questionsForGaps } from './grade.ts';
+import { ROLE_MAX_CHARS, frontmatterScalarProblems, renderBotMd } from './frontmatter.ts';
+import { gapsOf, gradeAll, limitsOf, mergeGraded, questionProblem, questionsForGaps, type AskedWording } from './grade.ts';
 import { buildInventory, currentTeamMd, helperView, type SetupTeam } from './inventory.ts';
 import { checkBotProposal, checkSkill, checkTeamMdChange, refusalText, type Refusal } from './policy.ts';
 import { patchWorking, type SessionPatch } from './rows.ts';
@@ -37,6 +38,8 @@ export interface SessionState {
   message: string | null;
   /** The team's TEAM.md defaults were there but could not be read (read as the strictest); `propose_config` refuses while that is so. Not kept on the row: rebuilt with the inventory. */
   defaultsUnreadable: boolean;
+  /** The helper was already asked once, in this run, to reword its questions. */
+  rephrased?: boolean;
 }
 
 export interface ToolEnv {
@@ -130,6 +133,7 @@ export const TOOL_SPECS: Record<SetupTool, { description: string; inputSchema: R
       properties: {
         slug: { type: 'string', description: 'The bot folder name: lower case letters, digits, ".", "_" or "-". It must be new.' },
         name: { type: 'string', description: 'The bot name people see.' },
+        role: { type: 'string', description: 'One plain sentence, up to 200 characters, saying what the bot is for. The platform writes it into BOT.md itself, as quoted text, so any characters are safe.' },
         botMd: { type: 'string', description: 'The whole BOT.md: the YAML block between two lines of --- and then the instructions.' },
         skills: {
           type: 'array',
@@ -157,16 +161,17 @@ const AskArgs = z.object({
 const ProposeArgs = z.object({
   slug: z.string().min(1).max(100),
   name: z.string().trim().min(1).max(80),
+  role: z.string().trim().min(1).max(ROLE_MAX_CHARS).optional(),
   botMd: z.string().min(1).max(120_000),
   skills: z.array(z.object({ slug: z.string().min(1).max(100), text: z.string().max(60_000) })).max(3).optional(),
   teamMd: z.string().max(120_000).optional(),
   requirements: z.array(LooseRequirement).max(SETUP_MAX_REQUIREMENTS).optional(),
   summary: z.string().max(600).optional(),
 });
-const SearchArgs = z.object({ query: z.string().trim().min(2).max(200), base: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/).optional() });
+export const SearchArgs = z.object({ query: z.string().trim().min(2).max(200), base: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/).optional() });
 
-const fail = (message: string, extra: Record<string, unknown> = {}): ToolResult => ({ answer: { ok: false, message, ...extra } });
-const problemsOf = (error: z.ZodError): string => error.issues.slice(0, 6).map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`).join('; ');
+export const fail = (message: string, extra: Record<string, unknown> = {}): ToolResult => ({ answer: { ok: false, message, ...extra } });
+export const problemsOf = (error: z.ZodError): string => error.issues.slice(0, 6).map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`).join('; ');
 
 /** The inventory of this run, built once and kept: the helper may call `describe_self` more than once and every call shows the same picture. */
 async function inventoryOf(env: ToolEnv, refresh = false): Promise<SetupInventory> {
@@ -191,7 +196,7 @@ async function describeSelf(env: ToolEnv): Promise<ToolResult> {
   };
 }
 
-async function knowledgeSearch(env: ToolEnv, args: unknown): Promise<ToolResult> {
+export async function knowledgeSearch(env: Pick<ToolEnv, 'ctx' | 'team' | 'asker'>, args: unknown): Promise<ToolResult> {
   const parsed = SearchArgs.safeParse(args);
   if (!parsed.success) return fail(problemsOf(parsed.error));
   // the team is the session's, never the helper's choice; the search runs as the person, so what they may read decides what is found
@@ -222,18 +227,32 @@ async function askClarification(env: ToolEnv, args: unknown): Promise<ToolResult
   if (env.state.rounds >= SETUP_MAX_ROUNDS) {
     return fail('You have asked as often as one conversation allows. Call propose_config with what you have: leave out what could not be settled.', { graded: summary });
   }
-  const wording = new Map<string, { question?: string; options?: string[] }>();
+  const wording = new Map<string, AskedWording>();
   for (const q of parsed.data.questions ?? []) wording.set(q.requirementId, { ...(q.question ? { question: q.question } : {}), ...(q.options ? { options: q.options } : {}) });
-  env.state.questions = questionsForGaps(open, wording, env.state.answers.length);  env.state.rounds += 1;
+  // A question the helper worded must be a question (a question mark), with choices, in plain words. The first time it is not, the helper is asked once to rephrase; after that the platform's own
+  // question for that gap is used, so a stubborn model cannot hold the person up.
+  if (!env.state.rephrased) {
+    const bad = open.flatMap((r) => {
+      const mine = wording.get(r.id);
+      const problem = mine === undefined ? null : questionProblem(r.text, mine);
+      return problem === null ? [] : [problem];
+    });
+    if (bad.length > 0) {
+      env.state.rephrased = true;
+      return fail('Some questions are not ready. Word each one as a real question with a question mark, give two to four short choices, and use plain words (no tool or setting names). Call ask_clarification again with the same requirements.', { problems: bad });
+    }
+  }
+  env.state.questions = questionsForGaps(open, wording, env.state.answers.length);
+  env.state.rounds += 1;
   return { answer: { ok: true, message: 'The questions are with the person. Wait for their answers.', graded: summary }, end: 'asking' };
 }
 
 /** A proposal could not be filed; the message is the proposals plugin's own. Thrown inside the person's transaction so that nothing at all is filed. */
-class FilingError extends Error {}
+export class FilingError extends Error {}
 
-type Filed = { id: string; path: string; status: string; checks: Array<{ ok?: boolean }> };
+export type Filed = { id: string; path: string; status: string; checks: Array<{ ok?: boolean }> };
 
-async function file(env: ToolEnv, tx: PluginTx, input: { path: string; content: string; title: string; note: string; baseBlobSha?: null }): Promise<Filed> {
+export async function file(env: Pick<ToolEnv, 'ctx' | 'team'>, tx: PluginTx, input: { path: string; content: string; title: string; note: string; baseBlobSha?: string | null }): Promise<Filed> {
   const out = (await env.ctx.runs.invoke(tx, 'proposals.propose', { team: env.team.slug, op: 'put', ...input })) as
     | { ok: true; proposal: Filed }
     | { ok: false; message?: string };
@@ -255,7 +274,13 @@ async function proposeConfig(env: ToolEnv, args: unknown): Promise<ToolResult> {
     return fail('Call ask_clarification first, with every requirement of the brief (also those that look covered). The platform grades them and asks the person about the gaps. Then call propose_config.');
   }
 
-  const bot = parseBotMd(a.botMd);
+  // The name and the role are written into the file by the platform, as quoted text; every other line that holds a sentence is read back, and one that would be stored differently is refused.
+  const unsafe = frontmatterScalarProblems(a.botMd).filter((p) => !p.startsWith('The line "name:"') && !(a.role !== undefined && p.startsWith('The line "role:"')));
+  if (unsafe.length > 0) return fail('BOT.md would be stored differently than you wrote it. Fix these and call propose_config again.', { refusals: unsafe });
+  const rendered = renderBotMd(a.botMd, { name: a.name, role: a.role });
+  if (!rendered.ok) return fail(rendered.message);
+  const botMd = rendered.botMd;
+  const bot = parseBotMd(botMd);
   if (!bot.ok) return fail(`BOT.md does not load: ${bot.failure.message.slice(0, 1200)}`);
 
   const skills = a.skills ?? [];
@@ -300,7 +325,7 @@ async function proposeConfig(env: ToolEnv, args: unknown): Promise<ToolResult> {
     });
   }
 
-  const limits = limitsOf(env.state.requirements);
+  const limits = limitsOf(env.state.requirements, env.state.answers);
   const note = [a.summary ?? '', limits.length > 0 ? `What it will not be able to do:\n${limits.map((l) => `- ${l}`).join('\n')}` : '', 'Set up with the Add a bot helper. Nothing is applied until you approve.']
     .filter((t) => t !== '')
     .join('\n\n')
@@ -311,7 +336,7 @@ async function proposeConfig(env: ToolEnv, args: unknown): Promise<ToolResult> {
     // One transaction as the person: all of the proposals and the session's own state are written together or not at all.
     await env.asker(async (tx) => {
       const botPath = `bots/${a.slug}/BOT.md`;
-      const made = await file(env, tx, { path: botPath, content: a.botMd, title: `Add the bot ${a.name}`, note, baseBlobSha: null });
+      const made = await file(env, tx, { path: botPath, content: botMd, title: `Add the bot ${a.name}`, note, baseBlobSha: null });
       refs.push({ proposalId: made.id as SetupProposalRef['proposalId'], path: botPath, role: 'bot', title: `Add the bot ${a.name}` });
       for (const skill of skills) {
         const path = `skills/${skill.slug}/SKILL.md`;

@@ -38,3 +38,4 @@ export * from './link-preview/index.ts';
 export * from './avatars/index.ts';
 export * from './import/index.ts';
 export * from './setup/index.ts';
+export * from './workshop/index.ts';

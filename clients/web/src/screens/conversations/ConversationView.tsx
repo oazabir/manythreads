@@ -17,6 +17,9 @@ import { useHeaderTopic } from '../../shell/topic';
 import { useNarrow } from '../../shell/useNarrow';
 import { fetchBots } from '../bots/api';
 import { fetchConversations, openConversation } from './api';
+import { viewOf, type View } from '../workshop/model';
+import { ViewTabs, viewPanelProps } from '../workshop/parts';
+import { WorkshopTab } from '../workshop/WorkshopTab';
 
 /*
  * Talking to a bot (SPEC §6.2, PLAN P5-16, `[proto §12]`): at `/t/:team/bots/:botSlug/chat`. On the left the bot's conversations with the
@@ -25,7 +28,8 @@ import { fetchConversations, openConversation } from './api';
  * switches to it. A conversation is an ordinary thread of the person's own channel with the bot (kind `bot_conversation`, never in the
  * sidebar), so following, unread and the thread view are the ones the rest of the app has; the thread is drawn by `ThreadBody`.
  *
- * The URL says what is on screen: `?tab=` the list, `?thread=` the conversation (absent: the empty state with its message box).
+ * The URL says what is on screen: `?tab=` the list, `?thread=` the conversation (absent: the empty state with its message box). `?view=workshop` swaps the whole view for the bot's
+ * Workshop tab (build, rehearse, live; PLAN P7-05); a Chat | Workshop row of tabs moves between the two.
  */
 
 const TABS: ReadonlyArray<{ id: ConversationScope; label: string }> = [
@@ -67,6 +71,7 @@ export function ConversationView() {
   const feed = useChannelFeed(team);
   const scope = scopeOf(params.get('tab'));
   const thread = params.get('thread');
+  const view = viewOf(params.get('view'));
   const opened = useQuery(`conversation-open:${team}:${botSlug}`, () => openConversation(team, botSlug));
   // A bot that cannot answer right now (turned off, invalid, no conversation trigger) answers `open` with 409. The person's past
   // conversations and what the team shared are still theirs to read, so the view stays; only the message box is replaced by the reason.
@@ -170,6 +175,16 @@ export function ConversationView() {
     [params, setParams],
   );
 
+  const changeView = useCallback(
+    (next: View): void => {
+      const q = new URLSearchParams(params);
+      if (next === 'workshop') q.set('view', 'workshop');
+      else for (const k of ['view', 'mode', 'ws']) q.delete(k);
+      void setParams(q, { replace: false });
+    },
+    [params, setParams],
+  );
+
   const [failed, setFailed] = useState<{ body: string; attachments: FileSummary[]; message: string } | null>(null);
   const [sending, setSending] = useState(false);
   const channelId = bot?.channelId ?? null;
@@ -195,6 +210,7 @@ export function ConversationView() {
     [channelId, sending, go, refresh],
   );
 
+  if (view === 'workshop') return <WorkshopTab slug={team} botSlug={botSlug} botName={botName} onView={changeView} />;
   if (opened.status === 'loading') return <div className="view-empty" aria-busy="true" data-testid="conversation-loading" />;
   if (opened.status === 'error' && blocked === null) return <CannotTalk error={opened.error} slug={team} />;
   // On a phone an open thread has the screen to itself; with none open the message box comes first and the list sits under it (conversations.css).
@@ -202,7 +218,7 @@ export function ConversationView() {
   const empty = EMPTY[scope](botName, botSlug);
 
   return (
-    <div className={`inbox cv ${narrow ? 'narrow' : ''} ${narrow && thread !== null ? 'cv-thread' : ''}`} data-testid="conversation-view" data-bot={botSlug} data-channel-id={bot?.channelId ?? ''}>
+    <div className={`inbox cv ${narrow ? 'narrow' : ''} ${narrow && thread !== null ? 'cv-thread' : ''}`} data-testid="conversation-view" data-bot={botSlug} data-channel-id={bot?.channelId ?? ''} {...viewPanelProps('chat')}>
       {showList ? (
         <div className="inl" data-landmark="conversation-list">
           <header className="inh cv-head">
@@ -210,6 +226,7 @@ export function ConversationView() {
               <Link to={{ pathname: path, search: scope === 'mine' ? '' : `?tab=${scope}` }} data-testid="conversation-home">{botName}</Link>
               <span className="cv-sub"> · conversations with you</span>
             </h2>
+            <ViewTabs view="chat" onChange={changeView} />
             <div className="tabs2" role="tablist" aria-label={`${botName} conversations`}>
               {TABS.map((t) => (
                 <button key={t.id} type="button" role="tab" aria-selected={scope === t.id} data-testid={`conversation-tab-${t.id}`} className={scope === t.id ? 'on' : ''} onClick={() => go({ tab: t.id })}>

@@ -12,15 +12,20 @@ export const DEFAULT_RUN_LIMIT_SECONDS = 6 * 60 * 60;
 export const RUN_GRACE_SECONDS = 10 * 60;
 /** Runs closed per pass; the rest wait for the next hour. */
 export const REAP_BATCH = 200;
+/**
+ * A rehearsal run (the Workshop's Rehearse mode) is open for one turn of a conversation, which is up to 8 model calls of at most 9 minutes each, and its worker closes it at the end of the turn.
+ * It is measured against the bot's `limits.timeoutSeconds` like any run, but never sooner than this, so a bot with a short limit does not lose its rehearsal sandbox in the middle of a turn.
+ */
+export const REHEARSAL_MIN_SECONDS = 90 * 60;
 
 export async function reapStaleRuns(ctx: PluginContext, tx: PluginTx): Promise<number> {
   const stale = await tx.query<{ id: string }>(
     `SELECT r.id
        FROM app.bot_runs r JOIN app.bots b ON b.id = r.bot_id
       WHERE r.status = 'running' AND r.ended_at IS NULL
-        AND r.started_at < now() - make_interval(secs => coalesce(b.run_timeout_seconds, $1) + $2)
+        AND r.started_at < now() - make_interval(secs => CASE WHEN r.rehearsal THEN greatest(coalesce(b.run_timeout_seconds, $1) + $2, $4) ELSE coalesce(b.run_timeout_seconds, $1) + $2 END)
       ORDER BY r.started_at LIMIT $3`,
-    [DEFAULT_RUN_LIMIT_SECONDS, RUN_GRACE_SECONDS, REAP_BATCH],
+    [DEFAULT_RUN_LIMIT_SECONDS, RUN_GRACE_SECONDS, REAP_BATCH, REHEARSAL_MIN_SECONDS],
   );
   let closed = 0;
   for (const row of stale.rows) {

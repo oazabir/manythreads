@@ -19,8 +19,11 @@ export interface LlmChatRequest {
   runId: string | null;
   /** What groups the calls in the ledger when there is no run (a setup session's id). A run's calls are grouped by `runId`. */
   sessionId?: string;
-  /** What the call is for, as the proxy records it. `run` unless the caller says otherwise. */
-  purpose?: 'run' | 'setup';
+  /**
+   * What the call is for, as the proxy records it. `run` unless the caller says otherwise: `setup` the "Add a bot" helper, `workshop` the Build and Live helpers of a bot's
+   * Workshop tab (PLAN P7-05), `rehearsal` a bot answering in the Workshop's Rehearse mode (the caller also puts `rehearsal:` in front of the session id, so the spend ledger line is labelled).
+   */
+  purpose?: 'run' | 'setup' | 'workshop' | 'rehearsal';
   /** The alias the runner names. */
   alias: string;
   messages: LiteLlmChatMessage[];
@@ -130,6 +133,7 @@ export async function chat(
         promptTokens: answer.promptTokens,
         completionTokens: answer.completionTokens,
         costUsd: 0,
+        purpose: request.purpose ?? 'run',
       }),
     );
     return { ok: true, text: answer.text, toolCalls: answer.toolCalls, promptTokens: answer.promptTokens, completionTokens: answer.completionTokens, messages, truncated: answer.truncated };

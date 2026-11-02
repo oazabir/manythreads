@@ -19,4 +19,21 @@ export interface McpToolsProvider extends ProviderImpl {
    * model should read and whether it is an error. A run that has ended throws (`RunEndedError`).
    */
   call(run: BotRunHandle, name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>;
+
+  // The sandbox (PLAN P7-05, the Workshop's Rehearse mode). A plugin that is not a runtime cannot open a run (`capability.call` is not `tool.invoke`), and it must not be able to make a
+  // rehearsal that is not one. So the broker offers a closed set of four members: a run that is ALWAYS a rehearsal, its tool list, one call through the hold, and its end. The hold is
+  // enforced here, in the broker, never by what the model is told: `sandboxCall` re-reads the run's own row and refuses anything that is not a running rehearsal run, then holds back
+  // EVERY tool that is not a read (the reply tool included), and logs the held call in `rehearsal_intercepts`.
+
+  /** Opens a rehearsal run for `askerActorId` (a person on the bot's team) with the bot. The flag is set here, never by the caller. Throws when the bot or the asker does not qualify. */
+  openSandbox(input: { workspaceId: string; teamId: string; botId: string; askerActorId: string }): Promise<BotRunHandle>;
+  /** What the bot could call in the sandbox: its offered tools plus `test.write`, a write that exists only here and does nothing anywhere. */
+  sandboxTools(run: BotRunHandle): Promise<Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>>;
+  /** One call in the sandbox. `held` is true when the call was a write and the broker held it back (nothing was done). Throws `RunEndedError` for a run that has ended. */
+  sandboxCall(run: BotRunHandle, name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean; held: boolean }>;
+  /** Ends the sandbox run and revokes its token. */
+  closeSandbox(run: BotRunHandle, status: 'done' | 'failed' | 'stopped'): Promise<void>;
 }
+
+/** The name of the write that exists only in the sandbox. A real bot cannot call it (nothing implements it outside `sandboxCall`). */
+export const SANDBOX_TEST_WRITE = 'test.write';

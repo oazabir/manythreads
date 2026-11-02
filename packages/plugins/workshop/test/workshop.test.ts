@@ -1,5 +1,6 @@
 import type { ProposalDetail, SetupSession } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import { startFakeLlm, type FakeLlm } from '../../../../tools/fake-llm/src/server.ts';
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
 
@@ -542,6 +543,123 @@ describe('open conversations', () => {
     release();
     await jobsIdle(stuck.body.session.id);
     expect((await read(nadia, stuck.body.session.id)).body.session.status).toBe('failed');
+  });
+});
+
+describe('Try again after a failure', () => {
+  const retry = (who: Who, id: string) => w.call<{ session: SetupSession; error?: { message: string } }>(who, 'POST', `${base()}/${id}/retry`, {});
+  const ROLE = 'Reads new pull request posts in #dev and replies: with a first review';
+
+  it('runs the last round again from the stored answers, in the same conversation, and the proposal stores the role exactly', async () => {
+    script = [
+      { name: 'describe_self', args: {} },
+      { name: 'ask_clarification', args: { requirements: [REQ.post, REQ.mail, REQ.tone] } },
+    ];
+    const created = await start(nadia, 'A bot that reads the pull request posts in the dev channel and replies.');
+    const id = created.body.session.id;
+    const asking = await settled(nadia, id);
+    expect(asking.status).toBe('asking');
+
+    // not failed yet: nothing to try again
+    expect((await retry(nadia, id)).status).toBe(409);
+
+    // the answers go in, and the model has nothing scripted: the helper gives up with a plain sentence
+    script = [];
+    await w.call(nadia, 'POST', `${base()}/${id}/answers`, { answers: [{ questionId: 'q1', text: 'Skip email' }, { questionId: 'q2', text: 'Short answers' }] });
+    const failed = await settled(nadia, id);
+    expect(failed.status).toBe('failed');
+    expect(failed.answers).toHaveLength(2);
+    await jobsIdle(id);
+
+    // only its owner may try again; nobody else learns the conversation exists (a guest is stopped at the door)
+    expect((await retry(lena, id)).status).toBe(403);
+    expect((await retry(omar, id)).status).toBe(404);
+
+    // the model can answer now
+    script = [{ name: 'propose_config', args: { slug: 'dev-reviewer', name: 'Dev reviewer', role: ROLE, botMd: botMd('Dev reviewer'), requirements: [REQ.post, REQ.mail, REQ.tone] } }];
+    const again = await retry(nadia, id);
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body.session.id).toBe(id);
+    expect(again.body.session.status).toBe('working');
+    expect(again.body.session.message).toBeNull();
+
+    const done = await settled(nadia, id);
+    expect(done.status, done.message ?? '').toBe('proposed');
+    // nothing was asked a second time and the answers are the ones the person gave
+    expect(done.answers.map((a) => a.answer)).toEqual(['Skip email', 'Short answers']);
+    expect(done.limits.every((l) => l.startsWith('You decided'))).toBe(true);
+    expect(done.limits.join(' ')).toContain('Skip email');
+    // a conversation that finished cannot be tried again
+    expect((await retry(nadia, id)).status).toBe(409);
+
+    // the helper's calls are named on the Spend page by what they were for
+    const lines = await w.system((tx) => tx.query<{ purpose: string | null; bot_id: string | null }>(`SELECT purpose, bot_id FROM app.llm_spend WHERE session_id = $1`, [id]));
+    expect(lines.rows.length).toBeGreaterThan(2);
+    expect(lines.rows.every((r) => r.purpose === 'setup' && r.bot_id === null)).toBe(true);
+
+    // the role is stored as proposed, `#` and `: ` included, once the bot is approved
+    const proposalId = done.proposals[0]!.proposalId;
+    expect((await w.call(omar, 'POST', `/api/teams/engineering/proposals/${proposalId}/approve`, {})).status).toBe(200);
+    const stored = (await blobOf('bots/dev-reviewer/BOT.md')) ?? '';
+    const front = parseYaml(stored.split('---')[1] as string) as { role?: string; name?: string };
+    expect(front.role).toBe(ROLE);
+    expect(front.name).toBe('Dev reviewer');
+  });
+
+  it('a conversation that keeps stopping can be tried again three times, then the person is told to start a new one', async () => {
+    script = [{ name: 'describe_self', args: {} }, { name: 'ask_clarification', args: { requirements: [REQ.tone] } }];
+    const created = await start(personas.tariq, 'A bot for marketing that cannot get an answer from the model.', 'marketing');
+    const id = created.body.session.id;
+    await settled(personas.tariq, id, ['asking'], 'marketing');
+    script = [];
+    await w.call(personas.tariq, 'POST', `${base('marketing')}/${id}/answers`, { answers: [{ questionId: 'q1', text: 'ok' }] });
+    await settled(personas.tariq, id, ['failed'], 'marketing');
+    await jobsIdle(id);
+    const again = () => w.call<{ session: SetupSession; error?: { message: string } }>(personas.tariq, 'POST', `${base('marketing')}/${id}/retry`, {});
+    for (let i = 1; i <= 3; i += 1) {
+      const r = await again();
+      expect(r.status, `try ${String(i)}: ${JSON.stringify(r.body)}`).toBe(200);
+      await settled(personas.tariq, id, ['failed'], 'marketing');
+      await jobsIdle(id);
+    }
+    const fourth = await again();
+    expect(fourth.status).toBe(409);
+    expect(fourth.body.error?.message).toMatch(/tried again 3 times/);
+    expect(fourth.body.error?.message).toMatch(/Start a new one/);
+    const row = await w.system((tx) => tx.query<{ status: string; retries: number }>('SELECT status, retries FROM app.setup_sessions WHERE id = $1', [id]));
+    expect(row.rows[0]).toEqual({ status: 'failed', retries: 3 });
+  });
+
+  it('refuses a retry when the person already has three open conversations', async () => {
+    script = [{ name: 'describe_self', args: {} }, { name: 'ask_clarification', args: { requirements: [REQ.tone] } }];
+    const first = await start(personas.tariq, 'A bot for marketing whose helper will fail soon.', 'marketing');
+    await settled(personas.tariq, first.body.session.id, ['asking'], 'marketing');
+    await w.call(personas.tariq, 'POST', `${base('marketing')}/${first.body.session.id}/answers`, { answers: [{ questionId: 'q1', text: 'ok' }] });
+    script = [];
+    expect((await settled(personas.tariq, first.body.session.id, ['failed'], 'marketing')).status).toBe('failed');
+    await jobsIdle(first.body.session.id);
+    // three more open ones: the failed one cannot come back to life past the limit
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    script = Array.from({ length: 6 }, () => ({ name: 'describe_self', args: {}, wait: gate }));
+    const open: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const made = await start(personas.tariq, `Another conversation number ${String(i)} that stays open.`, 'marketing');
+      expect(made.status).toBe(201);
+      open.push(made.body.session.id);
+    }
+    const refused = await w.call<{ error: { message: string } }>(personas.tariq, 'POST', `${base('marketing')}/${first.body.session.id}/retry`, {});
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.message).toMatch(/already have/);
+    // the failed conversation is still there and still failed
+    expect((await w.call<{ session: SetupSession }>(personas.tariq, 'GET', `${base('marketing')}/${first.body.session.id}`)).body.session.status).toBe('failed');
+    // let the waiting model calls go and stop the conversations
+    release();
+    script = [];
+    for (const id of open) await w.call(personas.tariq, 'POST', `${base('marketing')}/${id}/cancel`, {});
+    for (const id of open) await jobsIdle(id);
   });
 });
 

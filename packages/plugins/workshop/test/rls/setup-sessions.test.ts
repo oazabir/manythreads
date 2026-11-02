@@ -1,5 +1,6 @@
 import { createAppPool, createSystemPool, withActor, withSystem, type Tx } from '@manythreads/kernel';
 import {
+  botsMigrationSource,
   channelsMigrationSource,
   createPersonas,
   createTestDatabase,
@@ -43,7 +44,7 @@ const start = (p: Persona, brief = 'A bot that answers from the manuals'): Promi
 const visible = (p: Persona): Promise<string[]> => as(p, async (tx) => (await tx.query<{ id: string }>('SELECT id FROM app.setup_sessions ORDER BY id')).rows.map((r) => r.id));
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, workshopMigrationSource] });
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, workshopMigrationSource] });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);
   sysPool = createSystemPool(db.systemUrl, 2);

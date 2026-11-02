@@ -2,11 +2,13 @@ import {
   AnswerSetupRequest,
   CancelSetupRequest,
   CreateSetupSessionRequest,
+  RetrySetupRequest,
   SetupSessionResponse,
   answerSetupRoute,
   cancelSetupRoute,
   createSetupSessionRoute,
   getSetupSessionRoute,
+  retrySetupRoute,
 } from '@manythreads/shared';
 import { call } from '../../api/client';
 
@@ -25,3 +27,7 @@ export const answerSetup = (slug: string, sessionId: string, answers: Array<{ qu
 
 export const cancelSetup = (slug: string, sessionId: string) =>
   call(cancelSetupRoute, { request: CancelSetupRequest, response: SetupSessionResponse }, CancelSetupRequest.parse({}), { slug, sessionId });
+
+/** Runs the last round again after a failure (the model was slow or busy). The answers already given are kept. */
+export const retrySetup = (slug: string, sessionId: string) =>
+  call(retrySetupRoute, { request: RetrySetupRequest, response: SetupSessionResponse }, RetrySetupRequest.parse({}), { slug, sessionId });

@@ -1,6 +1,7 @@
 import { GRADES, isGap, type GradedRequirement, type SetupRequirement } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { gapsOf, gradeAll, gradeRequirement, limitsOf, mergeGraded, questionsForGaps } from '../src/grade.ts';
+import { gapsOf, gradeAll, gradeRequirement, limitsOf, mergeGraded, questionProblem, questionsForGaps } from '../src/grade.ts';
+import { looksInternal, plainify } from '../src/labels.ts';
 import { admin, inventory, member } from './fixtures.ts';
 
 // P7-03: the grade of each requirement is the platform's, a function of the requirement and the inventory. These cover every kind and every grade.
@@ -152,7 +153,7 @@ describe('the questions', () => {
   it('use the helper\'s wording when it gave some, and the platform\'s own otherwise', () => {
     const questions = questionsForGaps(gapsOf(graded), new Map([['mail', { question: 'Which mailbox should it read?', options: ['Support', 'Sales', ' ', 'x'.repeat(100)] }]]), 0);
     expect(questions[0]).toMatchObject({ requirementId: 'mail', question: 'Which mailbox should it read?', options: ['Support', 'Sales'] });
-    expect(questions[1]!.question).toContain('This team has not allowed bots to use shell');
+    expect(questions[1]!.question).toContain('This team has not allowed bots to use a shell');
   });
 
   it('continue the numbering of the rounds before', () => {
@@ -171,5 +172,92 @@ describe('what the bot will not be able to do', () => {
     expect(limits).toHaveLength(2);
     expect(limits[0]).toMatch(/^Not available yet: needs mailbox/);
     expect(limits[1]).toMatch(/^Not allowed: needs shell/);
+  });
+});
+
+describe('the words a person reads', () => {
+  const inv = inventory();
+  const all: SetupRequirement[] = [
+    req('capability', 'messages.post'),
+    req('capability', 'email.send'),
+    req('capability', 'telepathy.read'),
+    req('runtime', 'shell'),
+    req('trigger', 'channel_message'),
+    req('trigger', 'inbox'),
+    req('model', 'smart-and-slow'),
+    { id: 'o', text: 'Reply in the PR channel using messages.post when a channel_message arrives', kind: 'other', name: 'no-write-access' },
+  ];
+  const graded = gradeAll(all.map((r) => (r.kind === 'other' ? r : { ...r, text: 'Something the brief asked for' })), inv);
+
+  it('never show an internal tool, trigger or requirement id in a reason', () => {
+    for (const g of graded) {
+      expect(looksInternal(g.reason), g.reason).toBe(false);
+      expect(g.reason).not.toMatch(/"(?:messages\.post|channel_message|no-write-access|guard-team-only)"/);
+    }
+  });
+  it('say the other kind of need in the helper\'s sentence, never by the name it picked', () => {
+    const other = graded.find((g) => g.id === 'r1' && g.kind === 'other') ?? graded.at(-1)!;
+    expect(other.reason).toContain('post messages');
+    expect(other.reason).toContain('a new message appears in a channel');
+    expect(other.reason).not.toContain('no-write-access');
+  });
+  it('spell out a name the table does not know instead of showing it as an id', () => {
+    expect(plainify('needs messages.post')).toBe('needs post messages');
+  });
+  it('are in the limits and the platform\'s own questions too', () => {
+    for (const line of limitsOf(graded)) expect(looksInternal(line.replace(/\(.*\)$/, '')), line).toBe(false);
+    for (const q of questionsForGaps(graded, new Map(), 0)) {
+      expect(q.question).toContain('?');
+      expect(q.options.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('a question the helper worded', () => {
+  it('is refused when it has no question mark, no choice, or an internal name; accepted otherwise', () => {
+    expect(questionProblem('Watch the mailbox', { question: 'No write access to the mailbox, so it stays out.', options: ['Yes'] })).toMatch(/question mark/);
+    expect(questionProblem('Watch the mailbox', { question: 'Which mailbox?', options: [] })).toMatch(/choices/);
+    expect(questionProblem('Watch the mailbox', { question: 'Which mailbox?', options: [' ', 'x'.repeat(90)] })).toMatch(/choices/);
+    expect(questionProblem('Watch the mailbox', { question: 'Should guard-team-only stay on?', options: ['Yes', 'No'] })).toMatch(/internal name/);
+    expect(questionProblem('Watch the mailbox', { question: 'Should it use messages.post?', options: ['Yes', 'No'] })).toMatch(/internal name/);
+    expect(questionProblem('Watch the mailbox', { question: 'Which mailbox should it read?', options: ['Support', 'Sales'] })).toBeNull();
+  });
+  it('is replaced by the platform\'s own question, which always has choices, when it is unusable', () => {
+    const g = gradeAll([req('connection', 'mailbox', 'mail')], inventory());
+    const [q] = questionsForGaps(g, new Map([['mail', { question: 'The mailbox requirement: no-write-access', options: [] }]]), 0);
+    expect(q!.question).toContain('?');
+    expect(q!.options.length).toBeGreaterThan(0);
+    expect(looksInternal(q!.question)).toBe(false);
+  });
+});
+
+describe('a gap the person answered', () => {
+  const graded = gradeAll([req('connection', 'mailbox', 'mail'), req('other', undefined, 'tone'), req('runtime', 'shell', 'sh')], inventory());
+  const answer = (requirementId: string, text: string, questionId = 'q1') => ({ questionId, requirementId, question: 'Q?', answer: text });
+
+  it('reads "You decided" in their words; the grade does not change', () => {
+    const limits = limitsOf(graded, [answer('mail', 'Skip email, mention only')]);
+    expect(limits[0]).toMatch(/^You decided: Skip email, mention only \(/);
+    expect(limits[1]).toMatch(/^Not settled/);
+    expect(limits[2]).toMatch(/^Not allowed/);
+    expect(gapsOf(graded)).toHaveLength(3);
+  });
+  it('stays Not settled when nothing was recorded, and an empty answer is no answer', () => {
+    expect(limitsOf(graded).every((l) => !l.startsWith('You decided'))).toBe(true);
+    expect(limitsOf(graded, [answer('mail', '   ')])[0]).toMatch(/^Not available yet/);
+  });
+  it('is not decided by the model: only a recorded answer for that requirement counts, so a gap re-listed under a new id stays open', () => {
+    // the helper lists the mailbox again under a fresh id after the answer was recorded for `mail`
+    const merged = mergeGraded(graded, gradeAll([{ id: 'mail', text: 'Watch the mailbox', kind: 'connection', name: 'other-mailbox' }], inventory()));
+    const relisted = merged.find((r) => r.name === 'other-mailbox')!;
+    expect(relisted.id).not.toBe('mail');
+    const limits = limitsOf(merged, [answer('mail', 'Skip email')]);
+    expect(limits.filter((l) => l.startsWith('You decided'))).toHaveLength(1);
+    expect(limits.filter((l) => l.startsWith('Not available yet'))).toHaveLength(1);
+    // an answer that names a requirement that is not a gap (or does not exist) changes nothing
+    expect(limitsOf(graded, [answer('nothing', 'ok'), answer('covered-one', 'ok')]).every((l) => !l.startsWith('You decided'))).toBe(true);
+  });
+  it('uses the latest answer when a question was answered in two rounds', () => {
+    expect(limitsOf(graded, [answer('mail', 'First', 'q1'), answer('mail', 'Second', 'q4')])[0]).toMatch(/^You decided: Second/);
   });
 });

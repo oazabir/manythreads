@@ -9,6 +9,7 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { askerRole, buildInventory, type SetupTeam } from './inventory.ts';
+import { modelTimeoutMs } from './limits.ts';
 import { MODEL_FAILURE, runLoop, type ChatMessage, type ModelAnswer } from './loop.ts';
 import { SESSION_COLUMNS, patchWorking, type SessionRow } from './rows.ts';
 import { TOOL_SPECS, runTool, type SessionState, type ToolEnv } from './tools.ts';
@@ -48,7 +49,7 @@ interface LlmDoor extends ProviderImpl {
 
 /** The most one model turn may write. A BOT.md goes through `propose_config` whole, so this is more than a chat turn needs. */
 const MAX_TOKENS_PER_TURN = 4096;
-const MODEL_TIMEOUT_MS = 120_000;
+
 /** The conversation kept on the row stops here; a longer one fails with a plain sentence instead of growing without end. */
 const HISTORY_MAX_CHARS = 300_000;
 
@@ -127,7 +128,14 @@ async function runSession(ctx: PluginContext, job: JobInfo, row: SessionRow, tea
   const tools = profile.tools.map((name) => ({ name, ...TOOL_SPECS[name] }));
   const allowed: readonly SetupTool[] = profile.tools;
   const history = Array.isArray(row.history) ? (row.history as ChatMessage[]) : [];
-  const messages = history.length > 0 ? history : initialMessages(prompt, row.brief, row.name);
+  // A retry continues from what was stored. If the stored conversation ends with the helper's own plain words, a model provider refuses to continue it, so the platform adds a short nudge.
+  const lastStored = history.at(-1);
+  const messages =
+    history.length === 0
+      ? initialMessages(prompt, row.brief, row.name)
+      : lastStored?.role === 'assistant' && !lastStored.toolCalls?.length
+        ? [...history, { role: 'user' as const, content: 'Please continue with the tools.' }]
+        : history;
   const checkedUpTo = history.length > 0 ? history.length - 1 : 0;
 
   const keep = async (current: ChatMessage[]): Promise<boolean> => {
@@ -154,7 +162,7 @@ async function runSession(ctx: PluginContext, job: JobInfo, row: SessionRow, tea
         maxTokens: MAX_TOKENS_PER_TURN,
         firstTurn: false,
         checkedUpTo: checked,
-        timeoutMs: MODEL_TIMEOUT_MS,
+        timeoutMs: modelTimeoutMs(),
       });
       if (!answer.ok) {
         job.log.warn(`workshop: setup session ${row.id}: the model call ended as ${answer.reason}`);

@@ -2,6 +2,7 @@ import { HttpError, conflict, forbidden, invalid, json, notFound, requireTeam, r
 import {
   AnswerSetupRequest,
   CancelSetupRequest,
+  RetrySetupRequest,
   CreateSetupSessionRequest,
   SetupQuestion,
   SetupSessionParams,
@@ -11,10 +12,11 @@ import {
   cancelSetupRoute,
   createSetupSessionRoute,
   getSetupSessionRoute,
+  retrySetupRoute,
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { SESSION_COLUMNS, failStuck, toSession, type SessionRow } from './rows.ts';
-import { answersMessage, enqueueSetup } from './session.ts';
+import { SETUP_QUEUE, answersMessage, enqueueSetup } from './session.ts';
 
 // HTTP for "Add a bot" (PLAN P7-04). Every route runs as the person: the row-level policy of `setup_sessions` lets a person see only their own sessions, so a session id of someone else is a
 // plain 404. The routes only write the row and queue the job (`session.ts`); the model is never called inside a request.
@@ -23,6 +25,8 @@ const WRITE_LIMIT = { limit: 30, windowMs: 60_000 } as const;
 const READ_LIMIT = { limit: 600, windowMs: 60_000 } as const;
 /** Conversations one person may have open (working or waiting for answers) at once. */
 const OPEN_PER_PERSON = 3;
+/** How many times one conversation may be tried again after it stopped. */
+export const SETUP_RETRY_LIMIT = 3;
 
 async function ownSession(tx: PluginTx, team: TeamRow, sessionId: string, lock = false): Promise<SessionRow> {
   await failStuck(tx);
@@ -108,6 +112,37 @@ export function registerSetupRoutes(ctx: PluginContext): void {
         )
       ).rows[0] as SessionRow;
       await enqueueSetup(ctx, tx, team.workspace_id, row.id, row.rounds);
+      return json(SetupSessionResponse.parse({ session: toSession(updated) }));
+    }),
+  });
+
+  // Try again: a failed session (the model was slow or busy, the server stopped mid-round) runs its last round again from what was stored. The brief, the answers and the conversation are kept; the
+  // person is not asked anything twice. It counts as one of the open conversations again, so the limit holds.
+  ctx.http.route({
+    method: retrySetupRoute.method,
+    path: retrySetupRoute.path,
+    rateLimit: WRITE_LIMIT,
+    schema: { body: RetrySetupRequest, response: SetupSessionResponse },
+    handler: route(async (req, tx) => {
+      const { slug, sessionId } = SetupSessionParams.parse(req.params);
+      RetrySetupRequest.parse(req.body ?? {});
+      const team = await requireTeam(tx, slug);
+      if (team.archived_at) throw conflict('This team is archived, so no bot can be added to it');
+      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`workshop.setup:${tx.actor.id}`]);
+      const row = await ownSession(tx, team, sessionId, true);
+      if (row.status !== 'failed') throw conflict('Only a conversation that stopped can be tried again');
+      // a session that already filed its proposals is finished, whatever else was written after
+      if (Array.isArray(row.proposals) && row.proposals.length > 0) throw conflict('This conversation already filed its proposals');
+      const open = (await tx.query<{ n: string }>("SELECT count(*) AS n FROM app.setup_sessions WHERE owner_id = (SELECT app.actor()) AND status IN ('working', 'asking')")).rows[0]?.n ?? '0';
+      if (Number(open) >= OPEN_PER_PERSON) throw conflict('You already have setup conversations open. Finish or cancel one first.');
+      // every run costs model calls: three tries per conversation, then a new one (the lock above makes the count and the update one step)
+      const tried = Number((await tx.query<{ retries: number }>('SELECT retries FROM app.setup_sessions WHERE id = $1::uuid', [row.id])).rows[0]?.retries ?? 0);
+      if (tried >= SETUP_RETRY_LIMIT) throw conflict(`This conversation has been tried again ${String(SETUP_RETRY_LIMIT)} times and keeps stopping. Start a new one.`);
+      const updated = (
+        await tx.query<SessionRow>(`UPDATE app.setup_sessions SET status = 'working', message = NULL, retries = retries + 1, updated_at = now() WHERE id = $1::uuid RETURNING ${SESSION_COLUMNS}`, [row.id])
+      ).rows[0] as SessionRow;
+      // a fresh key each time: the key of the failed run must not swallow this one
+      await ctx.jobs.enqueue(tx, SETUP_QUEUE, { workspaceId: team.workspace_id, sessionId: row.id }, { dedupeKey: `${row.id}:retry:${String(Date.now())}` });
       return json(SetupSessionResponse.parse({ session: toSession(updated) }));
     }),
   });

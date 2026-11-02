@@ -118,7 +118,7 @@ test('an admin (who also leads Engineering) writes a brief, sees the grades and 
     // ---- the proposal: the file as a diff, what it will not do, and a button that waits for a person
     await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId('setup-file').first()).toContainText('bots/release-helper/BOT.md');
-    await expect(page.getByTestId('proposal-diff')).toContainText('name: Release helper');
+    await expect(page.getByTestId('proposal-diff')).toContainText('name: "Release helper"');
     await expect(page.getByTestId('setup-limits')).toContainText('mailbox');
     expect(await noSidewaysScroll(page)).toBe(true);
     const missing = await api.ctx.get('/api/teams/engineering/bots/release-helper');
@@ -156,6 +156,18 @@ test('a team lead who is not an admin gets the same help, but the approval waits
     expect(await noSidewaysScroll(page)).toBe(true);
     const api = await apiOn(playwright, stack, 'omar');
     expect((await api.ctx.get('/api/teams/marketing/bots/lead-helper')).status()).toBe(404);
+
+    // ---- the person who asked cannot reject their own proposal, but can take it back: Withdraw, announced, focus on the heading
+    await expect(page.getByTestId('setup-reject')).toHaveCount(0);
+    await page.getByTestId('setup-withdraw').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('setup-decided')).toContainText('Withdrawn', { timeout: 30_000 });
+    await expect(page.locator('#su-prop-h')).toContainText('Withdrawn');
+    await expect(page.locator('#su-prop-h')).toBeFocused();
+    await expect(page.getByTestId('setup-withdraw')).toHaveCount(0);
+    const listed = await api.get<{ proposals: Array<{ path: string; status: string }> }>('/api/teams/marketing/proposals');
+    expect(listed.proposals.find((p) => p.path === 'bots/lead-helper/BOT.md')?.status).toBe('withdrawn');
+    expect(await noSidewaysScroll(page)).toBe(true);
   } finally {
     await context.close();
   }
@@ -181,6 +193,43 @@ test('a member gets the same help, but the approval is for an admin: the proposa
     expect(await noSidewaysScroll(page)).toBe(true);
     const api = await apiOn(playwright, stack, 'omar');
     expect((await api.ctx.get('/api/teams/engineering/bots/wait-helper')).status()).toBe(404);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a helper that stops after the answers offers Try again, which finishes from the answers already given', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(240_000);
+  // round one asks; after the answers the stand-in has nothing scripted, so the helper gives up (the same sentence a slow model call ends with)
+  script = [
+    { name: 'describe_self', args: {} },
+    { name: 'ask_clarification', args: { requirements: [REQ[1], REQ[2]] } },
+  ];
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await askAndWait(page);
+    await page.locator('[data-question="q1"] [data-testid="setup-option"]').first().click();
+    await page.locator('#su-a-q2').fill('Short answers');
+    await page.getByTestId('setup-send').click();
+    await expect(page.getByTestId('setup-failed')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('setup-retry')).toBeVisible();
+    expect(await noSidewaysScroll(page)).toBe(true);
+
+    // the helper can finish now: Try again runs the last round from the stored answers; the conversation is the same one
+    const url = page.url();
+    script = [{ name: 'propose_config', args: { slug: 'retry-helper', name: 'Retry helper', botMd: botMd('Retry helper'), requirements: [REQ[1], REQ[2]] } }];
+    await page.getByTestId('setup-retry').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('setup-announce')).toContainText('working');
+    await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
+    expect(page.url()).toBe(url);
+    await expect(page.getByTestId('setup-file').first()).toContainText('bots/retry-helper/BOT.md');
+    // what the person decided is shown as decided, not as still open
+    await expect(page.getByTestId('setup-limits')).toContainText('You decided');
+    await expect(page.getByTestId('setup-limits')).not.toContainText('Not settled');
+    expect(await noSidewaysScroll(page)).toBe(true);
+    const api = await apiOn(playwright, stack, 'omar');
+    expect((await api.ctx.get('/api/teams/engineering/bots/retry-helper')).status()).toBe(404);
   } finally {
     await context.close();
   }

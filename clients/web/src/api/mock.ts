@@ -91,6 +91,7 @@ import {
 } from '@manythreads/shared';
 import type { Transport } from './client';
 import { installSetupMock } from './mock-setup';
+import { installWorkshopMock } from './mock-workshop';
 
 /*
  * Mock transport (P2-10a, kept on the real shared schemas in P2-10b). Enabled with `?mock=1` (remembered for the tab)
@@ -1016,6 +1017,17 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       throw new MockHttpError(status, code, message);
     },
     teamName: (slug) => teamOf(slug).name,
+  });
+
+  // The Workshop tab (P7-05): a scripted helper, a pretend rehearsal and pretend run records, in mock-workshop.ts
+  installWorkshopMock(on, {
+    canRehearse: (slug) => {
+      const p = me();
+      return isAdmin(p) || teamOf(slug).members.find((m) => m.personId === p.id)?.role === 'lead';
+    },
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
   });
 
   return async (req) => {

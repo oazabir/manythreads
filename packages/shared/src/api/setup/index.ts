@@ -34,3 +34,8 @@ export const answerSetupRoute = { method: 'POST', path: '/api/teams/:slug/setup/
 export const CancelSetupRequest = z.strictObject({});
 export type CancelSetupRequest = z.infer<typeof CancelSetupRequest>;
 export const cancelSetupRoute = { method: 'POST', path: '/api/teams/:slug/setup/sessions/:sessionId/cancel' } as const;
+
+/** Run the last round again after the session failed (the model was slow or busy). The answers already given are kept; nothing is asked again. */
+export const RetrySetupRequest = z.strictObject({});
+export type RetrySetupRequest = z.infer<typeof RetrySetupRequest>;
+export const retrySetupRoute = { method: 'POST', path: '/api/teams/:slug/setup/sessions/:sessionId/retry' } as const;

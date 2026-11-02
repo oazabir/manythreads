@@ -4,9 +4,11 @@ import {
   type Grade,
   type GradedRequirement,
   type SetupInventory,
+  type SetupAnswer,
   type SetupQuestion,
   type SetupRequirement,
 } from '@manythreads/shared';
+import { looksInternal, plainify, plainAlias, plainRuntime, plainTool, plainTrigger } from './labels.ts';
 
 // Grading (PLAN P7-03): how each thing a brief needs stands against what the team has. The setup helper (a model) lists the requirements; this file, plain code, gives each its grade
 // and the reason, so a model that is wrong, or was led astray by the brief, cannot call a missing tool "covered". Nothing here reads a database: it is a function of the requirement
@@ -17,8 +19,6 @@ export interface Graded {
   reason: string;
 }
 
-const named = (req: SetupRequirement): string => req.name ?? req.text;
-
 /** The ways a bot can be started that exist in this release, and the two that need a connection to another app (none exist yet). */
 const needsConnection = (type: string): boolean => type === 'inbox' || type === 'webhook';
 
@@ -27,20 +27,20 @@ export function gradeRequirement(req: SetupRequirement, inv: SetupInventory): Gr
   const canGrantDangerous = inv.asker.canGrantDestructive;
   switch (req.kind) {
     case 'capability': {
-      if (name === '') return { grade: 'unclear', reason: 'The brief does not say which tool the bot needs.' };
+      if (name === '') return { grade: 'unclear', reason: 'The brief does not say what the bot needs to be able to do.' };
       const tool = inv.capabilities.find((c) => c.name === name);
-      if (!tool) return { grade: 'unclear', reason: `There is no tool called "${name}" on this platform.` };
-      if (!tool.destructive) return { grade: 'covered', reason: `"${name}" is a tool the bot can simply be given.` };
+      if (!tool) return { grade: 'unclear', reason: `The platform has no tool that lets a bot ${plainTool(name)}.` };
+      if (!tool.destructive) return { grade: 'covered', reason: `The bot can simply be given the ability to ${plainTool(name)}.` };
       return canGrantDangerous
-        ? { grade: 'grantable', reason: `"${name}" can change things, so it is given with "ask a person first" on, and you may grant it.` }
-        : { grade: 'blocked', reason: `"${name}" can change things, so only a team lead or an admin may give it to a bot.` };
+        ? { grade: 'grantable', reason: `Being able to ${plainTool(name)} can change things, so it is given with "ask a person first" on, and you may grant it.` }
+        : { grade: 'blocked', reason: `Being able to ${plainTool(name)} can change things, so only a team lead or an admin may give it to a bot.` };
     }
     case 'runtime': {
       if (name === '') return { grade: 'unclear', reason: 'The brief does not say whether the bot needs a shell, files or a browser.' };
-      if (!inv.runtimeAllowed.includes(name)) return { grade: 'blocked', reason: `This team has not allowed bots to use ${name}.` };
+      if (!inv.runtimeAllowed.includes(name)) return { grade: 'blocked', reason: `This team has not allowed bots to use ${plainRuntime(name)}.` };
       return canGrantDangerous
-        ? { grade: 'grantable', reason: `This team allows ${name} for bots, and you may grant it.` }
-        : { grade: 'blocked', reason: `This team allows ${name} for bots, but only a team lead or an admin may grant it.` };
+        ? { grade: 'grantable', reason: `This team allows ${plainRuntime(name)} for bots, and you may grant it.` }
+        : { grade: 'blocked', reason: `This team allows ${plainRuntime(name)} for bots, but only a team lead or an admin may grant it.` };
     }
     case 'knowledge': {
       if (name === '') return { grade: 'unclear', reason: 'The brief does not say which knowledge base the bot should read.' };
@@ -68,18 +68,19 @@ export function gradeRequirement(req: SetupRequirement, inv: SetupInventory): Gr
     case 'trigger': {
       if (name === '') return { grade: 'unclear', reason: 'The brief does not say what should start the bot.' };
       const trigger = inv.triggers.find((t) => t.type === name);
-      if (!trigger) return { grade: 'unclear', reason: `"${name}" is not a way a bot can be started.` };
-      if (needsConnection(name) || !trigger.available) return { grade: 'missing', reason: trigger.note ?? `"${name}" needs a connection to another app, which is not available yet.` };
-      return { grade: 'covered', reason: `A bot can be started by "${name}".` };
+      if (!trigger) return { grade: 'unclear', reason: `A bot cannot be started when ${plainTrigger(name)}.` };
+      if (needsConnection(name) || !trigger.available) return { grade: 'missing', reason: trigger.note ?? `Starting the bot when ${plainTrigger(name)} needs a connection to another app, which is not available yet.` };
+      return { grade: 'covered', reason: `A bot can be started when ${plainTrigger(name)}.` };
     }
     case 'model': {
       if (name === '') return { grade: 'covered', reason: "The bot will use the team's usual models." };
       return inv.models.some((m) => m.alias === name)
-        ? { grade: 'covered', reason: `The model "${name}" is set up.` }
-        : { grade: 'missing', reason: `The model "${name}" is not set up in this workspace.` };
+        ? { grade: 'covered', reason: `The ${plainAlias(name)} is set up.` }
+        : { grade: 'missing', reason: `The ${plainAlias(name)} is not set up in this workspace.` };
     }
     case 'other':
-      return { grade: 'unclear', reason: `"${named(req)}" is something the helper cannot check; it needs your word on it.` };
+      // `name` of an "other" requirement is whatever the helper chose to call it (often an id): only the sentence it wrote is shown
+      return { grade: 'unclear', reason: `The helper cannot check this itself (${plainify(req.text).replace(/[.\s]+$/, '')}); it needs your word on it.` };
   }
 }
 
@@ -127,39 +128,62 @@ export const gapsOf = (graded: readonly GradedRequirement[]): GradedRequirement[
 
 const DEFAULT_OPTIONS: Record<'missing' | 'blocked' | 'unclear', (req: GradedRequirement) => { question: string; options: string[] }> = {
   missing: (req) => ({
-    question: `${req.text}: ${req.reason} What should we do?`,
+    question: `${plainify(req.text)}: ${req.reason} What should we do?`,
     options: req.kind === 'skill' ? ['Create a starter skill', 'Leave it out'] : ['Leave it out', 'I will add it first'],
   }),
-  blocked: (req) => ({ question: `${req.text}: ${req.reason} What should we do?`, options: ['Leave it out', 'I will ask a team lead'] }),
-  unclear: (req) => ({ question: `${req.text}: ${req.reason}`, options: [] }),
+  blocked: (req) => ({ question: `${plainify(req.text)}: ${req.reason} What should we do?`, options: ['Leave it out', 'I will ask a team lead'] }),
+  // an open question still gets a way out; the person can always write their own answer instead
+  unclear: (req) => ({ question: `${plainify(req.text)}: ${req.reason} What should we do?`, options: ['Leave it out', 'I will explain in my own words'] }),
 };
+
+/** What the helper may say for one gap: its own question and choices. */
+export type AskedWording = { question?: string; options?: string[] };
+
+/**
+ * What is wrong with a question the helper worded, in one plain sentence, or null. A question needs a question mark and at least one concrete choice, and must not show an internal name.
+ * (The platform's own questions are built to pass this.)
+ */
+export function questionProblem(requirementText: string, wording: AskedWording): string | null {
+  const question = wording.question?.trim() ?? '';
+  const options = (wording.options ?? []).map((o) => o.trim()).filter((o) => o !== '' && o.length <= 80);
+  const about = requirementText.slice(0, 60);
+  if (question === '' || !question.includes('?')) return `The question for "${about}" must be a real question that ends with a question mark.`;
+  if (options.length === 0) return `The question for "${about}" needs two to four short choices the person can pick.`;
+  if (looksInternal(question) || options.some(looksInternal)) return `The question for "${about}" shows an internal name. Say it in plain words.`;
+  return null;
+}
 
 /**
  * One question for each gap, batched into one list. The helper may word a question itself (`asked`, by requirement id); when it does not, or the words are unusable, the platform's own
  * question for that kind of gap is used. The ids continue from `taken`, the number of questions asked in earlier rounds, so an answer always names exactly one question.
  */
-export function questionsForGaps(graded: readonly GradedRequirement[], asked: ReadonlyMap<string, { question?: string; options?: string[] }>, taken: number): SetupQuestion[] {
+export function questionsForGaps(graded: readonly GradedRequirement[], asked: ReadonlyMap<string, AskedWording>, taken: number): SetupQuestion[] {
   const gaps = gapsOf(graded).slice(0, SETUP_MAX_QUESTIONS);
   return gaps.map((req, i) => {
     const fallback = DEFAULT_OPTIONS[req.grade as 'missing' | 'blocked' | 'unclear'](req);
     const mine = asked.get(req.id);
-    const question = mine?.question?.trim();
-    const options = (mine?.options ?? []).map((o) => o.trim()).filter((o) => o !== '' && o.length <= 80).slice(0, 4);
-    return {
-      id: `q${String(Math.min(taken + i + 1, 999))}`,
-      requirementId: req.id,
-      question: (question !== undefined && question !== '' ? question : fallback.question).slice(0, 400),
-      options: options.length > 0 ? options : fallback.options,
-    };
+    const usable = mine !== undefined && questionProblem(req.text, mine) === null;
+    const question = usable ? plainify((mine.question ?? '').trim()) : fallback.question;
+    const options = usable ? (mine.options ?? []).map((o) => plainify(o.trim())).filter((o) => o !== '' && o.length <= 80).slice(0, 4) : fallback.options;
+    return { id: `q${String(Math.min(taken + i + 1, 999))}`, requirementId: req.id, question: question.slice(0, 400), options };
   });
 }
 
-/** The sentences for "what the bot will not be able to do", one for each requirement the team could not meet. */
-export function limitsOf(graded: readonly GradedRequirement[]): string[] {
+/** How the platform words an answer the person gave to the question about a gap. The person's words are shown as they wrote them (cut to fit one line). */
+export const decidedLine = (text: string, answer: string): string => `You decided: ${answer.replace(/\s+/g, ' ').trim().slice(0, 140)} (${plainify(text).replace(/[.\s]+$/, '').slice(0, 160)})`;
+
+/**
+ * The sentences for "what the bot will not be able to do", one for each requirement the team could not meet. A gap the person answered a question about reads "You decided: <their answer>";
+ * the others stay "Not settled", "Not available yet" or "Not allowed". Only a RECORDED answer counts: the answers are written by the route from the questions the platform asked (never by the
+ * helper), each names the requirement it was asked about, and a requirement the helper re-listed under a fresh id has no answer yet. The grade itself is never changed by an answer.
+ */
+export function limitsOf(graded: readonly GradedRequirement[], answers: readonly SetupAnswer[] = []): string[] {
   return gapsOf(graded)
     .map((r) => {
+      const answer = [...answers].reverse().find((a) => a.requirementId === r.id && a.answer.trim() !== '');
+      if (answer) return decidedLine(r.text, answer.answer).slice(0, 400);
       const lead = r.grade === 'missing' ? 'Not available yet' : r.grade === 'blocked' ? 'Not allowed' : 'Not settled';
-      return `${lead}: ${r.text} (${r.reason})`.slice(0, 400);
+      return `${lead}: ${plainify(r.text)} (${r.reason})`.slice(0, 400);
     })
     .slice(0, 20);
 }

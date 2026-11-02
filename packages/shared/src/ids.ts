@@ -172,3 +172,7 @@ export type DlpRuleId = z.infer<typeof DlpRuleId>;
 /** One "Add a bot" conversation: a person's brief, what was found out and the proposals it ended in (`setup_sessions`, PLAN P7-02). */
 export const SetupSessionId = z.uuid().brand<'SetupSessionId'>();
 export type SetupSessionId = z.infer<typeof SetupSessionId>;
+
+/** One Workshop conversation on a bot's page: Build, Rehearse or Live (`workshop_sessions`, PLAN P7-05). */
+export const WorkshopSessionId = z.uuid().brand<'WorkshopSessionId'>();
+export type WorkshopSessionId = z.infer<typeof WorkshopSessionId>;

@@ -29,6 +29,7 @@ import './styles/webhooks.css';
 import './styles/avatars.css';
 import './styles/proposals.css';
 import './styles/setup.css';
+import './styles/workshop.css';
 import './styles/switcher.css';
 import './styles/emoji.css';
 import './styles/polls.css';

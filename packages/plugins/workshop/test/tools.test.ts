@@ -1,6 +1,7 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
-import { SetupInventory } from '@manythreads/shared';
+import { SETUP_MAX_ROUNDS, SetupInventory } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import { helperView } from '../src/inventory.ts';
 import { TOOL_ANSWER_MAX_CHARS, runTool, type SessionState, type ToolEnv } from '../src/tools.ts';
 import { UNREADABLE_DEFAULTS_MESSAGE } from '../src/team-defaults.ts';
@@ -248,5 +249,101 @@ describe('unknown tools', () => {
     const r = await runTool(s.env, TOOLS, 'files_delete', '{}');
     expect(r.answer['ok']).toBe(false);
     expect(s.invoked).toEqual([]);
+  });
+});
+
+/** The front matter of the BOT.md the helper's proposal carried, as a YAML reader stores it. */
+const frontOf = (s: Stub): Record<string, unknown> => {
+  const content = String(s.invoked.find((i) => String(i.input['path']).endsWith('BOT.md'))?.input['content']);
+  return parseYaml(content.split('---')[1] as string) as Record<string, unknown>;
+};
+
+describe('the role and the name are stored exactly as proposed (found live: "#dev" was read as a comment)', () => {
+  const ready = (): Stub => stub({ requirements: [{ ...REQ.post, kind: 'capability', grade: 'covered', reason: 'ok' }] });
+  it.each([
+    'Reads new pull request posts in #dev and replies with a first review',
+    'Answers: briefly, and says "I do not know" when unsure',
+    '- first look, then reply',
+    '* all channels',
+    '> quoted start',
+    '& more',
+    '! urgent',
+    '% done',
+    '@team first',
+    'Antwortet auf Fragen: überprüft 日本語 ✓ #wichtig',
+  ])('keeps %j whole', async (role) => {
+    const s = ready();
+    const made = await call(s, 'propose_config', proposal('a-bot', { role, name: 'Name: with # and "quotes"' }));
+    expect(made.answer['ok'], said(made)).toBe(true);
+    const front = frontOf(s);
+    expect(String(front['role']).replace(/\s+/g, ' ')).toBe(role.replace(/\s+/g, ' '));
+    expect(front['name']).toBe('Name: with # and "quotes"');
+  });
+
+  it('refuses a role of more than one line, in plain words, and files nothing', async () => {
+    const s = ready();
+    const made = await call(s, 'propose_config', proposal('a-bot', { role: 'Line one\nline two' }));
+    expect(made.answer['ok']).toBe(false);
+    expect(said(made)).toContain('one line');
+    expect(s.invoked).toEqual([]);
+  });
+
+  it('refuses, in plain words, a role line the model wrote unquoted when no role argument is given and the file would store it differently', async () => {
+    const s = ready();
+    const md = GOOD_BOT_MD.replace('role: Answers questions from the manuals.', 'role: Reads posts in #dev and replies');
+    const made = await call(s, 'propose_config', proposal('a-bot', { botMd: md }));
+    expect(made.answer['ok']).toBe(false);
+    expect(said(made)).toMatch(/role/);
+    expect(s.invoked).toEqual([]);
+  });
+});
+
+describe('questions the helper words itself', () => {
+  const GAPS = [REQ.post, REQ.mail];
+  const bad = { requirementId: 'mail', question: 'There is no write access to the mailbox.', options: [] as string[] };
+
+  it('are sent back once to be reworded; after that the platform\'s own plain question is used, so a stubborn model cannot hold the person up', async () => {
+    const s = stub();
+    const first = await call(s, 'ask_clarification', { requirements: GAPS, questions: [bad] });
+    expect(first.answer['ok']).toBe(false);
+    expect(first.end).toBeUndefined();
+    expect(s.env.state.questions).toEqual([]);
+    expect(said(first)).toContain('question mark');
+    const second = await call(s, 'ask_clarification', { requirements: GAPS, questions: [bad] });
+    expect(second.end).toBe('asking');
+    const q = s.env.state.questions[0]!;
+    expect(q.question).toContain('?');
+    expect(q.options.length).toBeGreaterThan(0);
+  });
+  it('are used as worded when they are real questions with choices', async () => {
+    const s = stub();
+    const good = { requirementId: 'mail', question: 'Which mailbox should it read?', options: ['Support', 'Sales'] };
+    const r = await call(s, 'ask_clarification', { requirements: GAPS, questions: [good] });
+    expect(r.end).toBe('asking');
+    expect(s.env.state.questions[0]).toMatchObject({ question: 'Which mailbox should it read?', options: ['Support', 'Sales'] });
+  });
+  it('are refused when they show an internal name', async () => {
+    const s = stub();
+    const r = await call(s, 'ask_clarification', { requirements: GAPS, questions: [{ requirementId: 'mail', question: 'Is no-write-access acceptable for messages.post?', options: ['Yes', 'No'] }] });
+    expect(r.end).toBeUndefined();
+    expect(said(r)).toContain('internal name');
+  });
+});
+
+describe('what it will not be able to do, after the person answered', () => {
+  it('says what they decided for a gap they answered, keeps the rest "Not settled", and the model cannot change which is which', async () => {
+    const s = stub();
+    const two = [REQ.mail, { id: 'tone', text: 'Friendly but short', kind: 'other' }];
+    await call(s, 'ask_clarification', { requirements: two });
+    expect(s.env.state.questions.map((q) => q.requirementId)).toEqual(['mail', 'tone']);
+    // only the mailbox question was answered (the route records answers; here the stub does)
+    s.env.state.answers = [{ questionId: 'q1', requirementId: 'mail', question: 'q', answer: 'Skip email, mention only' }];
+    // the rounds of questions are used up, so the helper may go on with a gap still open; and a hostile model re-lists the tone need as covered: that changes nothing
+    s.env.state.rounds = SETUP_MAX_ROUNDS;
+    const made = await call(s, 'propose_config', proposal('a-bot', { requirements: [{ id: 'tone', text: 'Friendly but short', kind: 'trigger', name: 'conversation' }], role: 'Helps' }));
+    expect(made.answer['ok'], said(made)).toBe(true);
+    const limits = s.env.state.limits;
+    expect(limits.find((l) => l.includes('Read the mailbox'))).toMatch(/^You decided: Skip email, mention only/);
+    expect(limits.find((l) => l.includes('Friendly but short'))).toMatch(/^Not settled/);
   });
 });

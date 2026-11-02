@@ -87,6 +87,29 @@ describe('bots.reap-runs', () => {
     expect(closed.some((e) => [withinGrace, fresh, withinDefault].includes(e.run))).toBe(false);
   });
 
+  it('a rehearsal is not taken in the middle of a turn: a short limit of the bot does not shorten it, only a very old one is closed', async () => {
+    const b = await bot('rehearsed-short', 60);
+    const rehearse = (ago: string): Promise<string> =>
+      w.system(
+        async (tx) =>
+          (
+            await tx.query<{ id: string }>(
+              `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, started_at, rehearsal)
+               VALUES ($1, $2, $3, 'conversation', $4, 'running', now() - $5::interval, true) RETURNING id`,
+              [omar.workspaceId, b, teamId, nadia.actorId, ago],
+            )
+          ).rows[0]!.id,
+      );
+    const midTurn = await rehearse('30 minutes');
+    const abandoned = await rehearse('3 hours');
+    const ordinary = await run(b, '30 minutes');
+    await reap();
+    expect(await state(midTurn)).toEqual({ status: 'running', ended: false });
+    expect(await state(abandoned)).toEqual({ status: 'failed', ended: true });
+    // the same age and limit on a normal run is closed, so only the rehearsal got the longer allowance
+    expect(await state(ordinary)).toEqual({ status: 'failed', ended: true });
+  });
+
   it('a run that is already closed is left as it is', async () => {
     const b = await bot('already-done', 60);
     const id = await run(b, '3 hours');

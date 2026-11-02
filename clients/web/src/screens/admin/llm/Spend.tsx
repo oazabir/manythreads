@@ -18,11 +18,24 @@ import { spendRange } from './spendRange';
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
-/** A bot in the by-bot table: its name and team when the server could name it, else the short id (the whole id is the cell's title either way). */
-export function BotCell({ id, name, team }: { id: string; name: string | null; team: string | null }) {
-  if (name === null) return <span className="mono" title={id}>{short(id)}</span>;
+/** Plain names for the calls that belong to no bot, by what they were for. */
+const PURPOSE_LABELS: Record<string, string> = {
+  setup: 'Add a bot helper',
+  workshop: 'Workshop helper',
+  'alias-test': 'Model test',
+  gate: 'Safety check',
+  eval: 'Scenario test run',
+  rehearsal: 'Rehearsal',
+  run: 'Bot work',
+};
+export const purposeLabel = (purpose: string | null): string => (purpose === null ? 'Not tied to a bot' : (PURPOSE_LABELS[purpose] ?? 'Other model calls'));
+
+/** A bot in the by-bot table: its name and team when the server could name it; "Removed bot" when it no longer exists (the whole id is the cell's title either way, never shown as text). */
+export function BotCell({ id, name, team, rehearsal = false }: { id: string; name: string | null; team: string | null; rehearsal?: boolean }) {
+  if (name === null) return <span className="faint" title={id}>{rehearsal ? 'Rehearsal of a removed bot' : 'Removed bot'}</span>;
   return (
     <span title={id}>
+      {rehearsal ? 'Rehearsal of ' : ''}
       {name}
       {team !== null ? <span className="faint"> · {team}</span> : null}
     </span>
@@ -100,9 +113,9 @@ export function SpendSection({ teams }: { teams: TeamSummary[] }) {
                     <thead><tr><th scope="col">Bot</th><th scope="col">Spent</th><th scope="col">Calls</th></tr></thead>
                     <tbody>
                       {summary.byBot.map((row) => (
-                        <tr key={row.botId ?? 'none'}>
+                        <tr key={`${row.botId ?? 'none'}:${row.purpose ?? ''}`}>
                           <td data-label="Bot" data-testid="llm-spend-bot">
-                            {row.botId === null ? <span className="faint">no bot</span> : <BotCell id={row.botId} name={row.botName} team={row.teamName} />}
+                            {row.botId === null ? <span data-testid="llm-spend-purpose">{purposeLabel(row.purpose)}</span> : <BotCell id={row.botId} name={row.botName} team={row.teamName} rehearsal={row.purpose === 'rehearsal'} />}
                           </td>
                           <td data-label="Spent" className="d-cell">{usd(row.spentUsd)}</td>
                           <td data-label="Calls" className="d-cell">{row.calls}</td>

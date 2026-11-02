@@ -88,6 +88,7 @@ export async function classify(ctx: PluginContext, tx: PluginTx, rate: RateHit, 
       completionTokens: answer.completionTokens,
       // The proxy reports tokens, not money; a model inside the deployment costs nothing per call.
       costUsd: 0,
+      purpose: 'gate',
     });
     return { ok: true, text: answer.text, sent: decision.text, decision };
   } catch (err) {

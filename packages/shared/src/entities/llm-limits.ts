@@ -154,6 +154,8 @@ export const LlmSpendSummary = z.object({
       botId: BotId.nullable(),
       botName: z.string().nullable(),
       teamName: z.string().nullable(),
+      /** For a line with no bot: what the calls were for (`setup`, `workshop`, `alias-test`, ...). For a bot: `rehearsal` on the row of its Workshop rehearsals (kept apart from its real work), else null. Also null for an older line that did not say. */
+      purpose: z.string().nullable(),
       spentUsd: z.number().nonnegative(),
       calls: z.number().int().nonnegative(),
     }),

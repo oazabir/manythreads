@@ -2,6 +2,7 @@ import { definePlugin, type McpToolsProvider, type PluginContext, type PluginEve
 import { STUB_CAPABILITIES, TOOLS } from './catalog.ts';
 import { callTool, offeredTools } from './protocol.ts';
 import { registerMcpRoutes } from './routes.ts';
+import { sandboxMembers } from './sandbox.ts';
 import { createMcpSessions, sessionSecretFromEnv } from './session.ts';
 import { createStreamHub, type StreamHub } from './streams.ts';
 import { currentToolsDigest, readVersions, refreshPushedDigest, stillValidTokens } from './tools-state.ts';
@@ -127,6 +128,7 @@ export default definePlugin({
         const text = result.content.map((c) => c.text).join('\n');
         return { text, isError: result.isError === true };
       },
+      ...sandboxMembers(ctx),
     };
     ctx.providers.register('mcp.tools', provider);
   },

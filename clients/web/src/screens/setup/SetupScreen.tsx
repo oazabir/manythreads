@@ -6,7 +6,7 @@ import { isApiError } from '../../api/client';
 import { Alert } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
 import { useProposalPerms } from '../proposals/store';
-import { answerSetup, cancelSetup, fetchSetup, startSetup } from './api';
+import { answerSetup, cancelSetup, fetchSetup, retrySetup, startSetup } from './api';
 import { announcement, answersFrom, FOCUS_ID, pollDelay, stepOf, stopsPolling, workingLine, type Draft } from './model';
 import { BriefForm, Feasibility, InventoryPanel, Questions } from './parts';
 import { ProposalStep } from './Proposal';
@@ -158,6 +158,22 @@ export function SetupScreen() {
     }
   };
 
+  // the last round again, from the answers already given: the conversation is kept, so nothing is asked twice
+  const retry = async (): Promise<void> => {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { session: next } = await retrySetup(slug, session.id);
+      set(next);
+      refresh();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const startOver = (): void => {
     set(null);
     setDraft({});
@@ -233,7 +249,12 @@ export function SetupScreen() {
                 {step === 'failed' ? (session.message ?? 'It did not finish. Try again, or add the bot by hand.') : 'Nothing was proposed and nothing was changed.'}
               </p>
               <div className="su-actions">
-                <button type="button" className="btn primary" data-testid="setup-again" onClick={startOver}>Start again</button>
+                {step === 'failed' ? (
+                  <button type="button" className="btn primary" disabled={busy} data-testid="setup-retry" onClick={() => void retry()}>
+                    {busy ? 'Trying again…' : 'Try again'}
+                  </button>
+                ) : null}
+                <button type="button" className={step === 'failed' ? 'btn' : 'btn primary'} data-testid="setup-again" onClick={startOver}>Start again</button>
                 <Link className="btn" to={`/t/${slug}/files?path=bots`}>Configure by hand instead</Link>
               </div>
             </section>

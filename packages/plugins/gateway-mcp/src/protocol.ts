@@ -96,8 +96,15 @@ async function guarded(ctx: PluginContext, run: BotRunHandle, value: unknown, wh
   }
 }
 
-/** Runs one `tools/call`, from the grant check to the source log. */
-export async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams): Promise<McpToolResult> {
+/** The results `holdBack` made: the one sure sign that a call was held back (an answer's own text can say anything, this set cannot be written to from outside). */
+const heldResults = new WeakSet<McpToolResult>();
+export const wasHeld = (result: McpToolResult): boolean => heldResults.has(result);
+
+/**
+ * Runs one `tools/call`, from the grant check to the source log. `sandbox` is the Workshop's Rehearse mode (`sandbox.ts`): the run is a rehearsal and NOTHING that is not a read goes
+ * through, the reply tool included (a Workshop rehearsal has no conversation thread to post into), and a read that would wait for a person is held too, because a rehearsal files no card.
+ */
+export async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams, options: { sandbox?: boolean } = {}): Promise<McpToolResult> {
   const definition = definitionOf(params.name);
   let input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
@@ -134,9 +141,9 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   // Approvals inbox, so it is held back like any write (the closing text of the run then carries the answer).
   if (
     run.rehearsal === true &&
-    definition.kind !== 'read' &&
-    definition.kind !== 'stub' &&
-    (definition.rehearsalSafe !== true || decision.needsApproval || holdForPerson)
+    ((definition.kind !== 'read' && definition.kind !== 'stub' && (options.sandbox === true || definition.rehearsalSafe !== true || decision.needsApproval || holdForPerson)) ||
+      // a read or a stub that the grant says a person must approve would file a card in the Approvals inbox: a rehearsal files none
+      ((definition.kind === 'read' || definition.kind === 'stub') && (decision.needsApproval || holdForPerson)))
   ) {
     return await holdBack(ctx, run, params.name, input, decision.needsApproval || holdForPerson);
   }
@@ -178,7 +185,7 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
  * A write a rehearsal run tried: nothing is done, one line is kept (the tool and where it aimed, no content), and the model is told in so many words that
  * nothing happened so it does not report the work as finished. The answer is `ok: true` so the model carries on to its reply instead of retrying.
  */
-async function holdBack(ctx: PluginContext, run: BotRunHandle, tool: string, input: Record<string, unknown>, wouldWait: boolean): Promise<McpToolResult> {
+export async function holdBack(ctx: PluginContext, run: BotRunHandle, tool: string, input: Record<string, unknown>, wouldWait: boolean): Promise<McpToolResult> {
   const target = interceptTarget(input);
   try {
     await ctx.runs.asBot(run, (tx) => ctx.runs.logIntercept(tx, { capability: tool, target, wouldWait }));
@@ -188,12 +195,14 @@ async function holdBack(ctx: PluginContext, run: BotRunHandle, tool: string, inp
     faultLog(`gateway-mcp: a rehearsal could not record a held-back ${tool}: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
     return toolResult({ ok: false, code: 'failed', message: 'the call was not made' }, true);
   }
-  return toolResult({
+  const held = toolResult({
     ok: true,
     rehearsal: true,
     done: false,
     message: `Rehearsal: “${tool}” was NOT done. Nothing changed and nothing was sent. In your reply say what you would have done, and do not say it happened.`,
   });
+  heldResults.add(held);
+  return held;
 }
 
 /** Where the real text of an unexpected error goes (the server's stderr); tests replace it. The plugin SDK has no request logger. */

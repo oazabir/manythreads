@@ -1,0 +1,457 @@
+/* The Workshop tab of a bot (PLAN P7-05, P7-06). Every class here is prefixed `ws-` so nothing collides with a shared class. Colours come from tokens.css only. Phone width (390px) is the
+ * narrowest it is made for: rows wrap, the side list goes above the conversation and nothing scrolls sideways. */
+
+.ws-screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 18px 20px 28px;
+  overflow: auto;
+}
+
+.ws-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.ws-back {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.ws-title {
+  margin: 0;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ws-sub {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+/* rows of tabs: the Chat | Workshop pair and the three modes */
+.ws-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.ws-views {
+  flex-basis: auto;
+  align-self: flex-start;
+}
+
+.ws-tab {
+  min-height: 32px;
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mute);
+  font: inherit;
+  cursor: pointer;
+}
+
+.ws-tab:hover {
+  background: var(--msg-hover);
+}
+
+.ws-tab.on {
+  background: var(--ink);
+  color: var(--surface);
+}
+
+/* a tab the person may not use: still reachable and readable, and it says why (aria-describedby), but it chooses nothing */
+.ws-tab[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ws-tab[aria-disabled='true']:hover {
+  background: none;
+}
+
+.ws-tab:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.ws-modes {
+  align-self: flex-start;
+}
+
+.ws-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ws-lead {
+  max-width: 70ch;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.ws-hint {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.ws-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ws-side,
+.ws-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ws-main {
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.ws-h {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ws-h:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.ws-earlier {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-earlier-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ws-earlier-btn:hover {
+  background: var(--msg-hover);
+}
+
+.ws-earlier-btn.on {
+  border-color: var(--human);
+  background: var(--human-wash);
+}
+
+.ws-earlier-btn:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.ws-earlier-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-earlier-meta {
+  color: var(--mute);
+  font-size: 11.5px;
+}
+
+/* the conversation */
+.ws-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+.ws-person {
+  background: var(--human-wash);
+  border-color: var(--human-border);
+}
+
+.ws-reply {
+  background: var(--surface);
+}
+
+.ws-rehearsed {
+  border-style: dashed;
+}
+
+.ws-proposal {
+  background: var(--ok-wash);
+  border-color: var(--ok-border);
+}
+
+.ws-refusal {
+  background: var(--warn-wash);
+  border-color: var(--warn-border);
+  color: var(--warn-ink);
+}
+
+.ws-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.ws-tag {
+  padding: 1px 8px;
+  border: 1px solid var(--warn-border);
+  border-radius: 999px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 11.5px;
+}
+
+.ws-text {
+  margin: 0;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ws-about {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--rule);
+  color: var(--mute);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.ws-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin-left: 12px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--rule);
+  font-size: 12.5px;
+}
+
+.ws-step-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-step-out {
+  color: var(--mute);
+}
+
+.ws-held {
+  border-left-color: var(--warn-border);
+}
+
+.ws-refused,
+.ws-failed {
+  border-left-color: var(--alert-border);
+}
+
+.ws-badge {
+  padding: 1px 8px;
+  border: 1px solid var(--warn-border);
+  border-radius: 999px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ws-notice {
+  color: var(--mute);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.ws-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.ws-usage {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+/* the message box */
+.ws-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ws-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ws-textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.ws-textarea:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.ws-about-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--msg-hover);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.ws-compose [aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ws-working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.ws-spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--human);
+  border-radius: 50%;
+  animation: ws-turn 0.9s linear infinite;
+}
+
+@keyframes ws-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-spin {
+    animation: none;
+  }
+}
+
+.ws-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (width <= 760px) {
+  .ws-screen {
+    padding: 14px 16px 24px;
+  }
+
+  .ws-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ws-main {
+    padding: 12px;
+  }
+
+  .ws-tab {
+    flex: 1 1 auto;
+  }
+
+  .ws-modes,
+  .ws-views {
+    align-self: stretch;
+  }
+
+  .ws-row .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

@@ -119,6 +119,7 @@ export async function runAliasTest(ctx: PluginContext, options: AliasTestOptions
             promptTokens: spend.prompt,
             completionTokens: spend.completion,
             costUsd: 0,
+            purpose: 'alias-test',
           });
         }
         const message = causeMessage(cause, { seconds: Math.round(timeoutMs / 1000) });

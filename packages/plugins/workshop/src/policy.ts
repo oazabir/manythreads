@@ -20,6 +20,8 @@ export interface PolicyInput {
   newSkills: readonly string[];
   /** The team's slug, for the memory bank a bot may be given. */
   teamSlug: string;
+  /** The bot already exists and this is an edit of it (the Workshop's Build mode): its own slug is not a duplicate, and the scenario set (`evals`) is allowed. See `checkBotEdit`. */
+  existing?: boolean;
 }
 
 const refuse = (field: string, message: string): Refusal => ({ field, message });
@@ -39,9 +41,9 @@ export function checkBotProposal(input: PolicyInput): Refusal[] {
   if (slugProblem !== null) out.push(refuse('slug', slugProblem));
   // `new` is the address of the Add a bot page (/t/<team>/bots/new): a bot with that slug could never be opened
   else if (slug === 'new') out.push(refuse('slug', 'A bot cannot be called "new": that is the address of the Add a bot page. Pick another name.'));
-  else if (inv.bots.some((b) => b.slug === slug)) out.push(refuse('slug', `The team already has a bot called "${slug}". Change it on its own page; pick a new name for a new bot.`));
+  else if (input.existing !== true && inv.bots.some((b) => b.slug === slug)) out.push(refuse('slug', `The team already has a bot called "${slug}". Change it on its own page; pick a new name for a new bot.`));
 
-  if (fm.kind !== 'agent' || fm.runtime !== 'hermes') {
+  if (input.existing !== true && (fm.kind !== 'agent' || fm.runtime !== 'hermes')) {
     out.push(refuse('runtime', 'The setup helper makes agent bots that run on Hermes (kind: agent, runtime: hermes). A rules bot is written by hand.'));
   }
 
@@ -150,7 +152,29 @@ export function checkBotProposal(input: PolicyInput): Refusal[] {
     }
   }
 
-  if (fm.evals !== undefined) out.push(refuse('evals', 'An evaluation set is written by hand after the bot exists; leave evals out.'));
+  if (input.existing !== true && fm.evals !== undefined) out.push(refuse('evals', 'An evaluation set is written by hand after the bot exists; leave evals out.'));
+  return out;
+}
+
+/**
+ * What a change to an EXISTING bot's BOT.md is refused for (the Workshop's Build mode, PLAN P7-05). The rule is the same sentence as for a new bot (never more than the team's defaults and
+ * the asker allow) with two changes: the bot keeps its kind and runtime (the helper changes what a bot does, not what it is), and a refusal the CURRENT file already earns is not held
+ * against the change: only what the change makes worse is refused, so tightening a bot that is looser than today's defaults is always possible and a member can still edit its words.
+ */
+export function checkBotEdit(input: Omit<PolicyInput, 'frontmatter' | 'existing'> & { current: BotFrontmatter; next: BotFrontmatter }): Refusal[] {
+  const { current, next, ...rest } = input;
+  const key = (r: Refusal): string => `${r.field}\u0000${r.message}`;
+  const before = new Set(checkBotProposal({ ...rest, frontmatter: current, existing: true }).map(key));
+  const out = checkBotProposal({ ...rest, frontmatter: next, existing: true }).filter((r) => !before.has(key(r)));
+  if (next.kind !== current.kind || next.runtime !== current.runtime) {
+    out.push(refuse('runtime', `The helper cannot change what kind of bot this is (it is ${current.kind}/${current.runtime}). Keep kind and runtime as they are.`));
+  }
+  // taking away a "ask a person first" is loosening a gate: only a lead or an admin may propose it
+  const nextApprovals = new Set(next.approvals?.needsApproval ?? []);
+  const removed = (current.approvals?.needsApproval ?? []).filter((t) => !nextApprovals.has(t));
+  if (removed.length > 0 && !input.inventory.asker.canGrantDestructive) {
+    out.push(refuse('approvals.needsApproval', `Only a team lead or an admin may let a bot use ${removed.map((t) => `"${t}"`).join(', ')} without asking a person first. Keep it in approvals.needsApproval.`));
+  }
   return out;
 }
 

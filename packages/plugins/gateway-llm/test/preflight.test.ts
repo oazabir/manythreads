@@ -656,4 +656,36 @@ describe('recordSpend', () => {
     const asMember = await withActor(personaActor(personas.tariq), (tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, range), { pool: appPool });
     expect(asMember.byBot).toEqual([]);
   });
+
+  it('keeps what a line was for, and splits the lines with no bot by it (the Add a bot helper, a model test, an older line with none)', async () => {
+    const line = (purpose?: string) => ({
+      workspaceId: omar.workspaceId, teamId: ENG, botId: null, sessionId: null, runId: null, alias: 'smart' as LlmAliasName, model: null, promptTokens: 1, completionTokens: 1, costUsd: 0.002,
+      ...(purpose ? { purpose } : {}),
+    });
+    const before = await sys((tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, { since: new Date(0), until: new Date(Date.now() + 60_000) }));
+    const countOf = (rows: typeof before.byBot, purpose: string | null) => rows.find((r) => r.botId === null && r.purpose === purpose)?.calls ?? 0;
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line('setup')));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line('setup')));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line('alias-test')));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line()));
+    const after = await sys((tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, { since: new Date(0), until: new Date(Date.now() + 60_000) }));
+    expect(countOf(after.byBot, 'setup') - countOf(before.byBot, 'setup')).toBe(2);
+    expect(countOf(after.byBot, 'alias-test') - countOf(before.byBot, 'alias-test')).toBe(1);
+    expect(countOf(after.byBot, null) - countOf(before.byBot, null)).toBe(1);
+    // a bot's own work carries no purpose; its rehearsals keep theirs, so they read as a row of their own (they still carry the bot, so its budget counts them)
+    const botId = await sys((tx) => makeBot(tx, 'preflight-purpose'));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, { ...line('rehearsal'), botId }));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, { ...line('rehearsal'), botId }));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, { ...line(), botId }));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, { ...line('run'), botId }));
+    const withBot = await sys((tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, { since: new Date(0), until: new Date(Date.now() + 60_000) }));
+    const ofBot = withBot.byBot.filter((r) => r.botId === botId);
+    expect(ofBot.find((r) => r.purpose === 'rehearsal')).toMatchObject({ calls: 2 });
+    expect(ofBot.find((r) => r.purpose === null)).toMatchObject({ calls: 2 });
+    expect(ofBot).toHaveLength(2);
+    // the bot's budget counts every line that carries its id, rehearsal lines too (the two rows are one bot)
+    expect(ofBot.reduce((n, r) => n + r.calls, 0)).toBe(4);
+    // a purpose must be a short word
+    await expect(sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line('x'.repeat(41))))).rejects.toThrow();
+  });
 });

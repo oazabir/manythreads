@@ -97,6 +97,12 @@
                   "null"
                 ]
               },
+              "purpose": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "spentUsd": {
                 "type": "number",
                 "minimum": 0
@@ -111,6 +117,7 @@
               "botId",
               "botName",
               "teamName",
+              "purpose",
               "spentUsd",
               "calls"
             ]
