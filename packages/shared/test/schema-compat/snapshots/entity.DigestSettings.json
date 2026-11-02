@@ -13,6 +13,9 @@
     "emailAvailable": {
       "type": "boolean"
     },
+    "mailConfigured": {
+      "type": "boolean"
+    },
     "lastSentAt": {
       "type": [
         "string",
@@ -24,6 +27,7 @@
     "enabled",
     "delayMinutes",
     "emailAvailable",
+    "mailConfigured",
     "lastSentAt"
   ],
   "additionalProperties": false

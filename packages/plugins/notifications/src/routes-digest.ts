@@ -22,7 +22,7 @@ async function callerPerson(tx: PluginTx): Promise<string> {
   return row.id;
 }
 
-async function settingsOf(tx: PluginTx, personId: string): Promise<DigestSettings> {
+async function settingsOf(ctx: PluginContext, tx: PluginTx, personId: string): Promise<DigestSettings> {
   const row = (await tx.query<{ enabled: boolean; delay_minutes: number; last_digest_at: Date | null }>(
     'SELECT enabled, delay_minutes, last_digest_at FROM app.notification_digest WHERE person_id = $1::uuid',
     [personId],
@@ -37,6 +37,7 @@ async function settingsOf(tx: PluginTx, personId: string): Promise<DigestSetting
     enabled: row?.enabled ?? true,
     delayMinutes: row?.delay_minutes ?? DIGEST_DELAY_DEFAULT,
     emailAvailable: mail?.ok === true,
+    mailConfigured: ctx.mail.configured,
     lastSentAt: row?.last_digest_at ? row.last_digest_at.toISOString() : null,
   };
 }
@@ -137,7 +138,7 @@ export function registerDigestRoutes(ctx: PluginContext): void {
   ctx.http.route({
     ...getDigestSettingsRoute,
     schema: { response: GetDigestSettingsResponse },
-    handler: route(async (_req, tx) => json(GetDigestSettingsResponse.parse(await settingsOf(tx, await callerPerson(tx))))),
+    handler: route(async (_req, tx) => json(GetDigestSettingsResponse.parse(await settingsOf(ctx, tx, await callerPerson(tx))))),
   });
 
   ctx.http.route({
@@ -147,7 +148,7 @@ export function registerDigestRoutes(ctx: PluginContext): void {
     handler: route(async (req, tx) => {
       const body = PutDigestSettingsRequest.parse(req.body);
       const person = await callerPerson(tx);
-      const before = (await settingsOf(tx, person)).enabled;
+      const before = (await settingsOf(ctx, tx, person)).enabled;
       await tx.query(
         `INSERT INTO app.notification_digest (person_id, workspace_id, enabled, delay_minutes) VALUES ($1::uuid, app.workspace_id(), $2, $3)
          ON CONFLICT (person_id) DO UPDATE SET enabled = EXCLUDED.enabled, delay_minutes = EXCLUDED.delay_minutes, updated_at = now()`,
@@ -159,7 +160,7 @@ export function registerDigestRoutes(ctx: PluginContext): void {
           NotificationsDigestUnsubscribedEvent.parse({ type: 'notifications.digest.unsubscribed', schemaVersion: 1, workspaceId: tx.actor.workspaceId, personId: person, via: 'settings' }),
         );
       }
-      return json(PutDigestSettingsResponse.parse(await settingsOf(tx, person)));
+      return json(PutDigestSettingsResponse.parse(await settingsOf(ctx, tx, person)));
     }),
   });
 

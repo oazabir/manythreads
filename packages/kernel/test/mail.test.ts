@@ -1,3 +1,4 @@
+import net from 'node:net';
 import nodemailer from 'nodemailer';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,6 +10,7 @@ import {
   opsAlertMail,
   renderMail,
   resetPasswordMail,
+  SMTP_TIMEOUT_MS,
   verifyEmailMail,
 } from '../src/index.ts';
 
@@ -109,7 +111,7 @@ describe('mailers', () => {
     }) as typeof transport.sendMail;
     const url = 'https://x.example/api/notifications/digest/unsubscribe/v1.abc';
     await mailer.send(
-      renderMail({ template: 'digest', to: 'nadia@kahf.example', name: 'Nadia', groups: [{ title: '#dev', items: [{ sender: 'Rafi', excerpt: 'hi', url: 'https://x.example/open?channel=c&message=m' }] }], more: 0, openUrl: 'https://x.example/', unsubscribeUrl: url, settingsUrl: 'https://x.example/account' }),
+      renderMail({ template: 'digest', to: 'nadia@kahf.example', name: 'Nadia', groups: [{ title: '#dev', items: [{ sender: 'Rafi', excerpt: 'hi', url: 'https://x.example/open?channel=c&message=m' }] }], more: 0, openUrl: 'https://x.example/', unsubscribeUrl: url, settingsUrl: 'https://x.example/account', delayMinutes: 60 }),
     );
     expect(sent[0]?.headers).toEqual({ 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' });
   });
@@ -129,6 +131,27 @@ describe('mailers', () => {
     expect(lines[0]).toContain('MANYTHREADS_SMTP_URL');
     expect(lines[0]).not.toContain('secret-link');
     expect(createUnconfiguredMailer(() => undefined)).toBeDefined();
+  });
+
+  it('says whether it can deliver: the unconfigured mailer does not, SMTP and the memory mailer do', () => {
+    expect(mailerFromEnv({}).configured).toBe(false);
+    expect(createUnconfiguredMailer(() => undefined).configured).toBe(false);
+    expect(mailerFromEnv({ MANYTHREADS_SMTP_URL: 'smtp://localhost:1025' }).configured).not.toBe(false);
+    expect(createMemoryMailer().configured).not.toBe(false);
+  });
+
+  it('gives up on a hung mail server instead of waiting for ever (it accepts the connection and never says hello)', async () => {
+    const server = net.createServer(() => undefined);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as net.AddressInfo;
+      const started = Date.now();
+      await expect(createSmtpMailer({ url: `smtp://127.0.0.1:${port}`, timeoutMs: 400 }).send({ to: 'a@b.example', subject: 's', text: 't', html: 'h' })).rejects.toThrow();
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(SMTP_TIMEOUT_MS).toBeLessThanOrEqual(30_000);
+    } finally {
+      server.close();
+    }
   });
 
   it('with MANYTHREADS_SMTP_URL set it builds an SMTP mailer', () => {

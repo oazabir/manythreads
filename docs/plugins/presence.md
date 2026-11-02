@@ -82,7 +82,7 @@ Errors come from the closed set: 400 `validation_failed` (the reason is a plain 
 
 `presence` / `0.1.0` / `server`, `dependsOn: ['channels']`, `extends: ['event.emit', 'provider.presence']`, emits `presence.dnd.changed`, consumes nothing.
 
-**The `presence` provider (P14-09).** `ctx.providers.get<PresenceProvider>('presence')` (extension point `provider.presence`, `PresenceProvider` in the SDK): `lastSeen(tx, personIds)` answers, as the transaction's actor, when each person's latest heartbeat arrived (people who never sent one are absent from the map). It is how the notifications plugin's email digest decides who has been away, without reading `app.presence` itself. Read-only; it takes no `extends` to use. Test: `test/provider.test.ts`.
+**The `presence` provider (P14-09).** `ctx.providers.get<PresenceProvider>('presence')` (extension point `provider.presence`, `PresenceProvider` in the SDK): `lastSeen(tx, personIds)` answers, as the transaction's actor, when each person's latest heartbeat arrived (people who never sent one are absent from the map). It is how the notifications plugin's email digest decides who has been away, without reading `app.presence` itself. `seenSince(tx, since, workspaceId)` lists the people of a workspace seen after a time (the digest uses it to read only people who are away). `warmSince(tx)` (system transaction only) returns when the heartbeat data started: the one-row UNLOGGED table `presence_epoch` (migration `0002`, RLS system) is made on first use and lost in the same crash that empties `app.presence`, so a job that acts on absence can wait a few minutes after a restart. It takes no `extends` to use. Test: `test/provider.test.ts`.
 
 ## Tests
 

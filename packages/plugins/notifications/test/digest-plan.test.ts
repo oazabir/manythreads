@@ -95,7 +95,7 @@ describe('words in the mail', () => {
 });
 
 describe('the mail', () => {
-  const render = (items: DigestItem[], extra: { more?: number; unsubscribeUrl?: string } = {}) => {
+  const render = (items: DigestItem[], extra: { more?: number; unsubscribeUrl?: string; delayMinutes?: number } = {}) => {
     const plan = planDigest(items);
     return renderMail({
       template: 'digest',
@@ -106,12 +106,13 @@ describe('the mail', () => {
       openUrl: 'https://m.test/',
       unsubscribeUrl: extra.unsubscribeUrl ?? `https://m.test/api/notifications/digest/unsubscribe/${signDigestToken(PERSON, KEY)}`,
       settingsUrl: 'https://m.test/account#' + 'acc-notifications',
+      delayMinutes: extra.delayMinutes ?? 60,
     });
   };
 
   it('lists sender, place, excerpt and a link, says "and N more", and carries the one-click headers', () => {
     const mail = render(Array.from({ length: 12 }, () => item({ preview: 'deploy is red' })));
-    expect(mail.subject).toBe('12 unread messages are waiting for you');
+    expect(mail.subject).toBe('12 new messages for you');
     expect(mail.text).toContain('#dev');
     expect(mail.text).toContain('Nadia: deploy is red');
     expect(mail.text).toContain('https://m.test/open?channel=c-dev&message=');
@@ -121,8 +122,26 @@ describe('the mail', () => {
     expect(mail.headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
   });
 
-  it('says "1 unread message" for one', () => {
-    expect(render([item()]).subject).toBe('1 unread message is waiting for you');
+  it('says "1 new message" for one, and never claims to count everything unread', () => {
+    expect(render([item()]).subject).toBe('1 new message for you');
+    expect(render([item()]).subject).not.toMatch(/unread/);
+  });
+
+  it('says in the footer how often the mail can come, in the person\'s own delay, and does not promise "never"', () => {
+    expect(render([item()]).text).toContain('at most one email every 1 hour');
+    expect(render([item()], { delayMinutes: 240 }).text).toContain('at most one email every 4 hours');
+    expect(render([item()], { delayMinutes: 30 }).html).toContain('at most one email every 30 minutes');
+    expect(render([item()]).text).not.toContain('never repeats');
+  });
+
+  it('drops every mark that reorders or hides text, including the Arabic letter mark', () => {
+    const marks = ['\u061c', '\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2066', '\u2067', '\u2068', '\u2069', '\u200b', '\ufeff', '\u0000'];
+    for (const m of marks) {
+      expect(excerptOf(`a${m}b`), JSON.stringify(m)).toBe('a b');
+      const mail = render([item({ actorName: `Ev${m}e`, preview: `x${m}y` })]);
+      expect(mail.text, JSON.stringify(m)).not.toContain(m);
+      expect(mail.html, JSON.stringify(m)).not.toContain(m);
+    }
   });
 
   it('escapes everything somebody else wrote in the HTML part', () => {
@@ -142,7 +161,7 @@ describe('the mail', () => {
   it('never turns a javascript: link into a clickable one', () => {
     const plan = planDigest([item()]);
     const groups = mailGroups(plan, 'javascript:alert(1)//');
-    const mail = renderMail({ template: 'digest', to: 'a@example.test', name: 'Aya', groups, more: 0, openUrl: 'https://m.test/', unsubscribeUrl: 'https://m.test/u', settingsUrl: 'https://m.test/s' });
+    const mail = renderMail({ template: 'digest', to: 'a@example.test', name: 'Aya', groups, more: 0, openUrl: 'https://m.test/', unsubscribeUrl: 'https://m.test/u', settingsUrl: 'https://m.test/s', delayMinutes: 60 });
     expect(mail.html).not.toContain('javascript:');
   });
 });

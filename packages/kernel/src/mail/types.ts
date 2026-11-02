@@ -12,5 +12,7 @@ export interface MailMessage {
 
 /** The kernel's one way to send mail. Implementations: SMTP, in-memory (tests), unconfigured (logs, sends nothing). */
 export interface Mailer {
+  /** False when nothing can be delivered (no SMTP url): `send` then resolves without sending. Absent means true. */
+  readonly configured?: boolean;
   send(message: MailMessage): Promise<void>;
 }

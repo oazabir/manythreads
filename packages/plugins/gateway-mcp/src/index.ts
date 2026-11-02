@@ -21,10 +21,35 @@ function watchToolChanges(ctx: PluginContext, hub: StreamHub): void {
     for (const botId of botIds) moved = ((await refreshPushedDigest(ctx, tx, botId))?.changed ?? false) || moved;
     if (moved) setTimeout(() => hub.wake(), 100).unref();
   };
+  // Reading a bot's list asks the broker for each grant, and the broker reads on a connection of its own: inside the event's transaction that sees
+  // none of the grants written in it, and a template that loads many bots at once holds every pooled connection while each waits for one more. So the
+  // refresh runs after the event's transaction has ended, one bot at a time.
+  const pending = new Set<string>();
+  let draining: Promise<void> | null = null;
+  const drain = async (): Promise<void> => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    while (pending.size > 0) {
+      const [botId] = pending;
+      if (botId === undefined) break;
+      pending.delete(botId);
+      try {
+        await ctx.db.system((tx) => refresh(tx, [botId]));
+      } catch {
+        // the next look at the bot's list (tools/list) keeps the digest; a missed push is only a later one
+      }
+    }
+  };
+  const refreshAfterCommit = (botIds: readonly string[]): void => {
+    for (const botId of botIds) pending.add(botId);
+    draining ??= drain().finally(() => {
+      draining = null;
+      if (pending.size > 0) refreshAfterCommit([]);
+    });
+  };
   // a bot's BOT.md was loaded: its grants (and the approval flag on each) were compiled in the transaction that wrote this event
-  ctx.events.subscribe('bots.bot.loaded', async (event: PluginEvent, tx: PluginTx) => {
+  ctx.events.subscribe('bots.bot.loaded', async (event: PluginEvent) => {
     const botId = (event as PluginEvent & { botId?: unknown }).botId;
-    if (typeof botId === 'string') await refresh(tx, [botId]);
+    if (typeof botId === 'string') refreshAfterCommit([botId]);
   });
   // the data-protection policy was changed: the bots that have used the event stream are read again (a bot that never has needs nothing kept)
   ctx.events.subscribe('guardrails.policy.updated', async (event: PluginEvent, tx: PluginTx) => {
@@ -34,7 +59,7 @@ function watchToolChanges(ctx: PluginContext, hub: StreamHub): void {
       'SELECT m.bot_id FROM app.mcp_bot_tools m JOIN app.bots b ON b.id = m.bot_id WHERE b.workspace_id = $1::uuid',
       [workspaceId],
     );
-    await refresh(tx, bots.rows.map((r) => r.bot_id));
+    refreshAfterCommit(bots.rows.map((r) => r.bot_id));
   });
   // a new token was paired: nothing it has read is known yet, so the page must not claim the old token's list
   ctx.events.subscribe('bots.pairing.rotated', async (event: PluginEvent, tx: PluginTx) => {

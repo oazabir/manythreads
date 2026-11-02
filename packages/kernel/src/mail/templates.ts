@@ -1,3 +1,4 @@
+import { DIGEST_UNPRINTABLE, digestDelayLabel } from '@manythreads/shared';
 import type { MailMessage } from './types.ts';
 
 export type RenderedMail = Pick<MailMessage, 'subject' | 'text' | 'html'> & Pick<Partial<MailMessage>, 'headers'>;
@@ -95,12 +96,9 @@ export function listUnsubscribeHeaders(url: string): Record<string, string> {
   return { 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
 }
 
-// Anything that is not printable text (control characters, the marks that reorder text, zero-width characters) is dropped from a name or an excerpt.
-// eslint-disable-next-line no-control-regex
-const UNPRINTABLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
 /** One line of at most `max` characters (counted as code points) from text a person wrote; linear in the input. */
 export function oneLine(text: string, max: number): string {
-  const line = text.slice(0, max * 8).replace(UNPRINTABLE, ' ').replace(/\s+/g, ' ').trim();
+  const line = text.slice(0, max * 8).replace(DIGEST_UNPRINTABLE, ' ').replace(/\s+/g, ' ').trim();
   const chars = [...line.slice(0, max * 2 + 2)];
   return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('');
 }
@@ -118,6 +116,7 @@ export function digestMail(input: {
   openUrl: string;
   unsubscribeUrl: string;
   settingsUrl: string;
+  delayMinutes: number;
 }): RenderedMail & { headers: Record<string, string> } {
   const groups = input.groups.map((g) => ({
     title: oneLine(g.title, 80) || 'Conversation',
@@ -125,11 +124,13 @@ export function digestMail(input: {
   }));
   const shown = groups.reduce((n, g) => n + g.items.length, 0);
   const total = shown + Math.max(0, Math.floor(input.more));
-  const subject = total === 1 ? '1 unread message is waiting for you' : `${total} unread messages are waiting for you`;
+  // `total` counts what arrived since the last digest and is still unread, not everything the person has unread: the subject says "new".
+  const subject = total === 1 ? '1 new message for you' : `${total} new messages for you`;
   const name = oneLine(input.name, 60) || 'there';
   const moreLine = input.more > 0 ? `and ${input.more} more` : '';
   const intro = 'You have been away for a while. These mentions, replies and direct messages are still unread.';
-  const footer = 'You get this mail because you were away and had unread mentions or messages. It never repeats until you have been away again.';
+  const delay = digestDelayLabel(Number.isFinite(input.delayMinutes) && input.delayMinutes > 0 ? Math.floor(input.delayMinutes) : 60);
+  const footer = `You get this mail because you were away and had unread mentions or messages. You get at most one email every ${delay}.`;
 
   const text = [
     `Hi ${name}, here is what you missed`,
@@ -178,6 +179,7 @@ export type MailTemplateInput =
       openUrl: string;
       unsubscribeUrl: string;
       settingsUrl: string;
+      delayMinutes: number;
     }
   | { template: 'verify'; to: string; name: string; url: string }
   | { template: 'reset'; to: string; name: string; url: string }

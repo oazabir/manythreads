@@ -13,4 +13,16 @@ export interface PresenceProvider extends ProviderImpl {
    * transaction's actor, so the system role sees everyone and a person sees what their workspace role lets them.
    */
   lastSeen(tx: PluginTx, personIds: readonly string[]): Promise<Map<string, Date>>;
+  /**
+   * The people of one workspace whose latest heartbeat is newer than `since`, with its time: everyone who has been seen lately. Whoever is not in
+   * the map has not been seen since `since` (or ever). It lets a job find the people who are AWAY with one list instead of asking about every
+   * candidate.
+   */
+  seenSince(tx: PluginTx, since: Date, workspaceId: string): Promise<Map<string, Date>>;
+  /**
+   * When the heartbeat data started to be trustworthy: the time the first caller asked after the heartbeat table was last empty (a fresh install,
+   * or a database crash, which empties it because it is UNLOGGED). Before it has been filled again for a few minutes every tab looks "away", so a
+   * job that acts on absence must wait. Makes the marker on first use; system transaction only.
+   */
+  warmSince(tx: PluginTx): Promise<Date>;
 }

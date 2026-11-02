@@ -132,6 +132,8 @@ test('Account shows "Email me what I missed", on by default, and keeps a change'
 test('a person who has been away gets one email with the mention, a link and the one-click headers', async () => {
   // Rafi is away: no heartbeat (the API sign-in sends none and no tab is open). Nadia mentions him twice in one room; he reads neither.
   await stack.sql('DELETE FROM app.presence');
+  // The digest waits five minutes after the heartbeat data starts (a fresh stack has just started it): say it started long ago.
+  await stack.sql("INSERT INTO app.presence_epoch (id, started_at) VALUES (true, now() - interval '10 minutes') ON CONFLICT (id) DO UPDATE SET started_at = EXCLUDED.started_at");
   await postAs(nadia, dev, '@rafi the staging deploy is red, can you look? <b>not bold</b>');
   await postAs(nadia, dev, '@rafi and the rollback plan is in the wiki');
   await runDigestNow();
@@ -143,7 +145,7 @@ test('a person who has been away gets one email with the mention, a link and the
   expect(mails).toHaveLength(1);
   const { headers, body } = decoded(mails[0]!);
 
-  expect(headers).toMatch(/^Subject: 2 unread messages are waiting for you$/im);
+  expect(headers).toMatch(/^Subject: 2 new messages for you$/im);
   const listUnsubscribe = /^List-Unsubscribe: <([^>]+)>$/im.exec(headers);
   expect(listUnsubscribe, headers).not.toBeNull();
   expect(headers).toMatch(/^List-Unsubscribe-Post: List-Unsubscribe=One-Click$/im);
@@ -214,6 +216,8 @@ test('while it is off nothing is sent, and Account turns it back on', async ({ b
     await expect(block.getByTestId('digest-help')).toContainText('Off.');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true', T);
+    await expect(block.getByTestId('digest-status')).toHaveText('Saved.', T);
+    await expect(toggle).toBeFocused();                                       // saving did not take keyboard focus away
     expect((await rafi.get<{ enabled: boolean }>('/api/notifications/digest')).enabled).toBe(true);
   } finally {
     await context.close();

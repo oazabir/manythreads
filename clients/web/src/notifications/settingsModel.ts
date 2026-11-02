@@ -79,7 +79,8 @@ export function digestDelayOptions(current: number): Array<{ minutes: number; la
 }
 
 /** The sentence under the switch: what the digest does now, in plain words, and why it cannot work when there is no address. */
-export function digestHelp(s: Pick<DigestSettings, 'enabled' | 'delayMinutes' | 'emailAvailable'>): string {
+export function digestHelp(s: Pick<DigestSettings, 'enabled' | 'delayMinutes' | 'emailAvailable'> & { mailConfigured?: boolean }): string {
+  if (s.mailConfigured === false) return 'Email digests are not available on this server because it has no mail server set up. Ask a workspace admin.';
   if (!s.emailAvailable) return 'You have no verified email address, so there is nowhere to send this. Verify one in your account first.';
   const when = digestDelayLabel(s.delayMinutes).toLowerCase();
   return s.enabled

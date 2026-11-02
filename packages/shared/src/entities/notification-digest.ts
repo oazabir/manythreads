@@ -13,6 +13,14 @@ export const DIGEST_MAX_ITEMS = 10;
 /** A message is shown as its first 140 characters. */
 export const DIGEST_EXCERPT_MAX = 140;
 
+/**
+ * Characters that are dropped from a name or an excerpt before it goes into a mail: control characters, the marks that reorder text (U+061C, U+200E,
+ * U+200F, U+202A to U+202E, U+2066 to U+2069), zero-width characters, interlinear annotation marks and the invisible "tag" characters. One shared
+ * pattern, so the mail template and the plugin that builds the excerpts cannot drift apart.
+ */
+// eslint-disable-next-line no-control-regex
+export const DIGEST_UNPRINTABLE = /[\u0000-\u001f\u007f-\u009f\u061c\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff\ufff9-\ufffb\u{e0000}-\u{e007f}]/gu;
+
 /** The delays the settings screen offers, in minutes. The server accepts any whole number of minutes from 30 to 1,440. */
 export const DIGEST_DELAY_CHOICES: readonly number[] = [30, 60, 120, 240, 480, 1440];
 
@@ -27,12 +35,14 @@ export const DigestDelayMinutes = z.number().int().min(DIGEST_DELAY_MIN).max(DIG
 
 /**
  * A person's digest settings. `emailAvailable` is false when the person has no verified email address: the mail would have nowhere to go, so the
- * screen says so instead of offering a switch that does nothing. `lastSentAt` is when the latest digest went out (null: none yet).
+ * screen says so instead of offering a switch that does nothing; `mailConfigured` is false when the server itself cannot send mail. `lastSentAt` is when the latest digest went out (null: none yet).
  */
 export const DigestSettings = z.object({
   enabled: z.boolean(),
   delayMinutes: DigestDelayMinutes,
   emailAvailable: z.boolean(),
+  /** False when this server has no mail server set up (no `MANYTHREADS_SMTP_URL`): no digest can be sent to anyone, whatever their address. */
+  mailConfigured: z.boolean(),
   lastSentAt: z.string().nullable(),
 });
 export type DigestSettings = z.infer<typeof DigestSettings>;

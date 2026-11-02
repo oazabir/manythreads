@@ -238,6 +238,8 @@ function DigestBlock() {
   const [settings, setSettings] = useState<DigestSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** What a screen reader hears after a save: "Saved." or the reason it failed (the visible alert shows the same failure). */
+  const [status, setStatus] = useState('');
   useEffect(() => {
     let live = true;
     fetchDigestSettings().then((s) => live && setSettings(s), () => live && setError('Could not load this setting.'));
@@ -248,10 +250,14 @@ function DigestBlock() {
   const save = async (enabled: boolean, delayMinutes: number): Promise<void> => {
     setBusy(true);
     setError(null);
+    setStatus('Saving…');
     try {
       setSettings(await saveDigestSettings({ enabled, delayMinutes }));
+      setStatus('Saved.');
     } catch (e) {
-      setError(isApiError(e) ? e.message : 'Could not save the setting.');
+      const message = isApiError(e) ? e.message : 'Could not save the setting.';
+      setError(message);
+      setStatus(message);
     } finally {
       setBusy(false);
     }
@@ -269,7 +275,7 @@ function DigestBlock() {
               <div>Send me an email</div>
               <div className="nset-help" data-testid="digest-help">{digestHelp(settings)}</div>
             </div>
-            <Toggle label="Send me an email about what I missed" checked={settings.enabled} disabled={busy} onChange={(on) => void save(on, settings.delayMinutes)} />
+            <Toggle label="Send me an email about what I missed" checked={settings.enabled} disabled={!settings.mailConfigured} busy={busy} onChange={(on) => void save(on, settings.delayMinutes)} />
           </div>
           <div className="nset-row">
             <div>
@@ -280,14 +286,18 @@ function DigestBlock() {
               className="nset-select"
               aria-label="How long away before the email"
               value={settings.delayMinutes}
-              disabled={busy || !settings.enabled}
-              onChange={(e) => void save(settings.enabled, Number(e.target.value))}
+              disabled={!settings.mailConfigured || !settings.enabled}
+              aria-busy={busy || undefined}
+              onChange={(e) => {
+                if (!busy) void save(settings.enabled, Number(e.target.value));
+              }}
             >
               {digestDelayOptions(settings.delayMinutes).map((o) => <option key={o.minutes} value={o.minutes}>{o.label}</option>)}
             </select>
           </div>
         </>
       )}
+      <div className="nset-help" role="status" aria-live="polite" data-testid="digest-status">{status}</div>
     </div>
   );
 }

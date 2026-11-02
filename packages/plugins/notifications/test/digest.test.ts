@@ -75,7 +75,7 @@ describe('who gets a digest, and when', () => {
     await runDigest();
     expect(mails(rafi)).toHaveLength(1);
     const mail = mails(rafi)[0]!;
-    expect(mail.subject).toBe('1 unread message is waiting for you');
+    expect(mail.subject).toBe('1 new message for you');
     expect(mail.text).toContain('#dev');
     expect(mail.text).toContain('do you have a minute for the release?');
     expect(mail.text).toContain(`/open?channel=${dev}&message=`);
@@ -201,7 +201,7 @@ describe('who gets a digest, and when', () => {
     await runDigest();
     expect(mails(omar)).toHaveLength(1);
     const mail = mails(omar)[0]!;
-    expect(mail.subject).toBe('12 unread messages are waiting for you');
+    expect(mail.subject).toBe('12 new messages for you');
     expect(mail.text).toContain('and 2 more.');
     expect(mail.text.match(/\/open\?channel=/g)).toHaveLength(10);
     expect(await digestEvents('notifications.digest.sent', omar)).toHaveLength(1);
@@ -212,7 +212,7 @@ describe('who gets a digest, and when', () => {
 describe('the settings', () => {
   it('start on, at an hour, and are changed with a delay from 30 minutes to 24 hours', async () => {
     const first = GetDigestSettingsResponse.parse(ok(await w.call(lena, 'GET', '/api/notifications/digest')));
-    expect(first).toMatchObject({ enabled: true, delayMinutes: 60, emailAvailable: true, lastSentAt: null });
+    expect(first).toMatchObject({ enabled: true, delayMinutes: 60, emailAvailable: true, mailConfigured: true, lastSentAt: null });
     const saved = PutDigestSettingsResponse.parse(ok(await w.call(lena, 'PUT', '/api/notifications/digest', { enabled: true, delayMinutes: 240 })));
     expect(saved.delayMinutes).toBe(240);
     expect(GetDigestSettingsResponse.parse(ok(await w.call(lena, 'GET', '/api/notifications/digest'))).delayMinutes).toBe(240);
