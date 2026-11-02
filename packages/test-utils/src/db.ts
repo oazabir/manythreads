@@ -497,3 +497,9 @@ export const analyticsMigrationSource: MigrationSource = {
   namespace: 'analytics',
   dir: fileURLToPath(new URL('../../plugins/analytics/migrations/', import.meta.url)),
 };
+
+/** Migrations of the connections plugin (`connections`, `connection_grants`, `connection_secrets`); needs the kernel's, the teams plugin's and (for the compile) the bots plugin's. */
+export const connectionsMigrationSource: MigrationSource = {
+  namespace: 'connections',
+  dir: fileURLToPath(new URL('../../plugins/connections/migrations/', import.meta.url)),
+};

@@ -21,6 +21,7 @@ export * from './project-credentials.ts';
 export * from './runner-nodes.ts';
 export * from './http.ts';
 export * from './lockout.ts';
+export * from './tool-sources.ts';
 
 /**
  * Declare a plugin. The manifest is validated immediately (a bad field throws a ZodError naming it), so a

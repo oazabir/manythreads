@@ -48,3 +48,4 @@ export * from './terminal.ts';
 export * from './workshop.ts';
 export * from './replay.ts';
 export * from './analytics.ts';
+export * from './connection.ts';

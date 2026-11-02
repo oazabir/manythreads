@@ -22,14 +22,17 @@ import type {
   PluginRealtime,
   PluginRuntime,
   PluginRuns,
+  PluginToolSources,
   PluginTx,
   ProviderImpl,
+  ToolSource,
+  ToolSourceView,
   ProviderKind,
   ScopedKv,
   SecretService,
   StorageScope,
 } from '@manythreads/sdk';
-import type { ExtensionPoint, PluginManifest, WorkspaceId } from '@manythreads/shared';
+import { CapabilityName, type ExtensionPoint, type PluginManifest, type WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import { getOneOrCreate } from '../db/get-or-create.ts';
 import { createEntityLinkService } from '../entity-links/index.ts';
@@ -128,6 +131,63 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     if (!deps.emit) throw new PluginError(`Plugin "${name}": no event emitter is wired into the host`, { plugin: name });
     if (deps.emitMany) await deps.emitMany(guardPluginTx(tx), events);
     else for (const event of events) await deps.emit(guardPluginTx(tx), event);
+  };
+
+  /** The registered source that offers a tool name, with the plugin that registered it. */
+  const ownerOfSourceTool = (tool: string): { plugin: string; source: ToolSource } | undefined => {
+    for (const entry of registries.toolSources.list()) {
+      if (entry.value.tools.some((t) => t.name === tool)) return { plugin: entry.plugin, source: entry.value };
+    }
+    return undefined;
+  };
+
+  const toolSources: PluginToolSources = {
+    register(source: ToolSource) {
+      use('tool.source');
+      const fail = (message: string): never => {
+        throw new PluginError(`Plugin "${name}": tool source "${source.id}": ${message}`, { plugin: name });
+      };
+      if (typeof source.id !== 'string' || !/^[a-z][a-z0-9_.-]{0,62}$/.test(source.id)) fail('the id must be lowercase letters, digits, dots, dashes or underscores');
+      if (registries.toolSources.values().some((s) => s.id === source.id)) fail('a source with that id is already registered');
+      if (!Array.isArray(source.tools) || source.tools.length === 0) fail('a source offers at least one tool');
+      const own = new Set<string>();
+      for (const tool of source.tools) {
+        if (!CapabilityName.safeParse(tool.name).success) fail(`“${tool.name}” is not a namespace.verb tool name`);
+        // the broker knows a tool by the capability its plugin declares; a name the manifest does not declare would be refused as unknown at every call
+        if (!manifest.capabilities.some((c) => c.name === tool.name)) fail(`“${tool.name}” is not declared in the manifest's capabilities`);
+        if (own.has(tool.name)) fail(`“${tool.name}” is listed twice`);
+        own.add(tool.name);
+        if (tool.kind !== 'read' && tool.kind !== 'write') fail(`“${tool.name}” must be a read or a write`);
+        const other = ownerOfSourceTool(tool.name);
+        if (other) fail(`“${tool.name}” is already offered by the source "${other.source.id}" of plugin "${other.plugin}"`);
+        const handler = registries.capabilityHandlers.get(tool.name);
+        if (handler) fail(`“${tool.name}” already has a capability handler from plugin "${handler.plugin}"`);
+      }
+      // The registry keeps a frozen copy: a plugin that edits `tools` after this point cannot add a name that was never checked above.
+      registries.toolSources.add(
+        name,
+        Object.freeze<ToolSource>({
+          id: source.id,
+          tools: Object.freeze(source.tools.map((t) => Object.freeze({ ...t }))),
+          offered: (tx, run) => source.offered(tx, run),
+          call: (tx, run, tool, input) => source.call(tx, run, tool, input),
+        }),
+      );
+    },
+    // A plugin that looks at the sources gets a narrowed view without `call`: the real `call` stays in the kernel registry and is reached only through the
+    // run service (`ctx.runs.invoke`), which reads the run from its own row first.
+    list() {
+      use('tool.invoke');
+      return registries.toolSources.values().map(viewOf);
+    },
+    find(toolName: string) {
+      use('tool.invoke');
+      for (const source of registries.toolSources.values()) {
+        const tool = source.tools.find((t) => t.name === toolName);
+        if (tool) return { source: viewOf(source), tool };
+      }
+      return undefined;
+    },
   };
 
   const db: PluginDb = {
@@ -290,6 +350,11 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
             `Plugin "${name}" registered capability "${capability}" but its manifest does not declare it`,
             { plugin: name },
           );
+        }
+        // a tool name has one owner: a source of tools that already offers this name would answer a call that this handler also answers
+        const owner = ownerOfSourceTool(capability);
+        if (owner) {
+          throw new PluginError(`Plugin "${name}" registered a handler for "${capability}", which the tool source "${owner.source.id}" of plugin "${owner.plugin}" already offers`, { plugin: name });
         }
         registries.capabilityHandlers.set(capability, { plugin: name, handler: (input, tx) => handler(input, guardPluginTx(tx)) });
       },
@@ -467,6 +532,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
       }
       return deps.identity;
     },
+    toolSources,
     get secrets(): SecretService {
       // The secret service also encrypts a model provider's API key (gateway-llm, PLAN P5-06), so a plugin that
       // extends `provider.llm` may use it too; `docs/plugins/security.md` explains both doors.
@@ -478,6 +544,9 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
     },
   };
 }
+
+/** The view of a source a looking plugin gets: id, tools and `offered` only, as a fresh frozen object (no `call`, nothing to reach it through). */
+const viewOf = (source: ToolSource): ToolSourceView => Object.freeze({ id: source.id, tools: source.tools, offered: source.offered });
 
 const kvKey = (scope: StorageScope, key: string): string => `${scope.type}:${scope.id}:${key}`;
 

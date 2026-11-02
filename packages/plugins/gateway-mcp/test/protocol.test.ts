@@ -39,6 +39,8 @@ function fakeContext(options: {
   /** The approvals plugin's handler, when the deployment has it. */
   approvals?: { request: (tx: PluginTx, input: Record<string, unknown>) => Promise<{ approvalId: string; created: boolean }> };
   /** The `pre_egress` chain as the call sees it; the default is the data-loss plugin answering "nothing found" for every piece of text. */
+  /** Tools of a source (`ctx.toolSources`), by tool name. */
+  sourceTools?: Record<string, { kind: 'read' | 'write'; sourcesFrom?: (result: unknown) => Array<{ sourceType: string; sourceRef: string; scope: 'team' | 'channel' | 'person' }> }>;
   guard?: (input: { text: string; destination: string }) => { outcome: 'allow' | 'redact' | 'require_approval' | 'block'; text: string; rules: string[]; hooks: number; ran: string[]; message?: string };
 }) {
   const invoked: Array<{ name: string; input: Record<string, unknown>; as: 'bot' | 'reader' }> = [];
@@ -80,7 +82,11 @@ function fakeContext(options: {
   const guard = options.guard ?? ((input: { text: string }) => ({ outcome: 'allow' as const, text: input.text, rules: [], hooks: 1, ran: ['guardrails-dlp'] }));
   const hooks = { runPreEgress: (_tx: PluginTx, input: { text: string; destination: string }) => Promise.resolve(guard(input)) };
   const audit = { emit: (_tx: PluginTx, event: Record<string, unknown>) => Promise.resolve(void emitted.push(event)) };
-  const ctx = { manifest: { version: '0.1.0' }, runs, providers, hooks, audit, runtime: { now: () => new Date('2026-10-30T09:00:00.000Z') } } as unknown as PluginContext;
+  const sourceFind = (name: string) => {
+    const t = options.sourceTools?.[name];
+    return t ? { source: { id: 'fake', tools: [], offered: () => Promise.resolve([name]) }, tool: { name, description: `${name} does something`, inputSchema: { type: 'object' }, ...t } } : undefined;
+  };
+  const ctx = { manifest: { version: '0.1.0' }, runs, providers, toolSources: { register: () => undefined, list: () => [], find: sourceFind }, hooks, audit, runtime: { now: () => new Date('2026-10-30T09:00:00.000Z') } } as unknown as PluginContext;
   return { ctx, invoked, logged, authorized, warned, emitted };
 }
 
@@ -120,6 +126,34 @@ describe('gateway-mcp protocol', () => {
     // the approval flag reaches the model as copy, so it can prefer a path that does not wait for a person
     expect(result.tools[1]!.description).toContain('approval');
     expect(result.tools[0]!.description).not.toContain('approval');
+  });
+
+  it('a successful read of a source tool always writes a run source line, beside what sourcesFrom answers', async () => {
+    const read = { name: 'email.read', destructive: false };
+    const decisions = { 'email.read': ALLOWED };
+    // sourcesFrom answers nothing: the default line is still written
+    const bare = fakeContext({ tools: [read], decisions, sourceTools: { 'email.read': { kind: 'read', sourcesFrom: () => [] } }, answer: () => ({ messages: [] }) });
+    await handleRpc(bare.ctx, RUN, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'email.read', arguments: {} } });
+    expect(bare.logged).toEqual([{ sourceType: 'connection', sourceRef: 'email.read', scope: 'person' }]);
+    // no sourcesFrom at all
+    const none = fakeContext({ tools: [read], decisions, sourceTools: { 'email.read': { kind: 'read' } } });
+    await handleRpc(none.ctx, RUN, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'email.read', arguments: {} } });
+    expect(none.logged).toEqual([{ sourceType: 'connection', sourceRef: 'email.read', scope: 'person' }]);
+    // the source's own lines are kept too
+    const both = fakeContext({
+      tools: [read],
+      decisions,
+      sourceTools: { 'email.read': { kind: 'read', sourcesFrom: () => [{ sourceType: 'mail', sourceRef: 'm1', scope: 'team' }] } },
+    });
+    await handleRpc(both.ctx, RUN, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'email.read', arguments: {} } });
+    expect(both.logged).toEqual([
+      { sourceType: 'mail', sourceRef: 'm1', scope: 'team' },
+      { sourceType: 'connection', sourceRef: 'email.read', scope: 'person' },
+    ]);
+    // a refused call (no grant) writes no line
+    const denied = fakeContext({ tools: [read], sourceTools: { 'email.read': { kind: 'read' } } });
+    await handleRpc(denied.ctx, RUN, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'email.read', arguments: {} } });
+    expect(denied.logged).toEqual([]);
   });
 
   it('a denied tool call is an answer, not an error, and nothing runs', async () => {

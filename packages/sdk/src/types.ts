@@ -2,6 +2,7 @@ import type { ErrorCode, ExtensionPoint, PluginManifest, SetupProfile, TeamTempl
 import type { ZodType } from 'zod';
 import type { PluginAccess, PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
 import type { EgressDecision, EgressHook, EgressInput } from './egress.ts';
+import type { PluginToolSources } from './tool-sources.ts';
 
 /** What a plugin sees of a database transaction: queries inside one actor transaction, nothing else. */
 export interface PluginTx {
@@ -503,6 +504,11 @@ export interface PluginContext {
    * every other plugin throws on access. docs/plugins/security.md explains what the door grants.
    */
   readonly runs: PluginRuns;
+  /**
+   * Sources of tools other than the platform's own capability handlers (PLAN P8-01): a plugin that extends `tool.source` registers one, the gateway (which extends
+   * `tool.invoke`) lists and finds them. Any other use throws.
+   */
+  readonly toolSources: PluginToolSources;
   /** Routes the server mounts at their declared absolute paths. */
   readonly http: { route(definition: HttpRouteDefinition): void };
   readonly storage: ScopedKv;

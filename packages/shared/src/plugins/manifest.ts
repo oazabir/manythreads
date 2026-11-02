@@ -66,6 +66,11 @@ export const EXTENSION_POINTS = [
   // capabilities that have one (`ctx.runs.catalog`) — and nothing else of `ctx.runs`. It adds no actor: the handler runs as whoever the caller's transaction is. For a plugin
   // that does one person's work through the platform's own tools (the "Add a bot" helper, P7-02); the full run door is `tool.invoke`. docs/plugins/security.md.
   'capability.call',
+  // Also not in section 3: the right to offer tools to bots from a source of the plugin's own (`ctx.toolSources.register`, PLAN P8-01): a connection to an outside
+  // service is the first. The gateway lists the source's tools for a bot that has a grant for them and hands the call to the source after the broker allowed it.
+  // Every tool the source offers must be a capability the same manifest declares, so the broker knows its name and its destructive tag. Trusted code like
+  // `provider.identity`: the source receives the run's own transaction and nothing wider. docs/plugins/security.md.
+  'tool.source',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);

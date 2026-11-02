@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./blob-contract": "./src/blob-contract.ts",
-    "./linear": "./src/linear.ts"
+    "./linear": "./src/linear.ts",
+    "./tool-source-intersection": "./src/tool-source-intersection.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

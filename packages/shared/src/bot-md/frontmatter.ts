@@ -93,19 +93,56 @@ export const BotModelConfig = z
   });
 export type BotModelConfig = z.infer<typeof BotModelConfig>;
 
-export const BotCapabilities = z.strictObject({
-  native: z.array(CapabilityName).optional(),
-  runtime: z.array(Slug).optional(),
-  connections: z
-    .array(
-      z.strictObject({
-        /** `person:*` means the asking person's own connections. */
-        name: z.union([Slug, z.literal('person:*')]),
-        tools: z.array(CapabilityName).min(1),
-      }),
-    )
-    .optional(),
-});
+/**
+ * True when a `native` entry already grants `tool`: the same name, or the namespace wildcard (`email.*` covers `email.send`). The broker looks a grant up by
+ * exactly these two keys, so a tool that is in both lists would be reachable through a grant row that no connection stands behind.
+ */
+export const nativeCoversTool = (nativeEntry: string, tool: string): boolean =>
+  nativeEntry === tool || (nativeEntry.endsWith('.*') && tool.startsWith(nativeEntry.slice(0, -1)));
+
+export const BotCapabilities = z
+  .strictObject({
+    native: z.array(CapabilityName).optional(),
+    runtime: z.array(Slug).optional(),
+    connections: z
+      .array(
+        z.strictObject({
+          /** `person:*` means the asking person's own connections. */
+          name: z.union([Slug, z.literal('person:*')]),
+          tools: z.array(CapabilityName).min(1),
+        }),
+      )
+      .optional(),
+  })
+  .superRefine((caps, ctx) => {
+    // A tool comes from one place: the platform's own (`native`) or a connection, never both (PLAN P8-28). The two kinds of grant live in different tables with
+    // different rules (a connection's can be switched off, can expire and waits on a credential); a tool in both would keep working after its connection is gone.
+    const native = caps.native ?? [];
+    (caps.connections ?? []).forEach((connection, c) => {
+      connection.tools.forEach((tool, t) => {
+        const covering = native.find((entry) => nativeCoversTool(entry, tool));
+        if (covering !== undefined) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['connections', c, 'tools', t],
+            message: `“${tool}” is also in capabilities.native (as “${covering}”): a tool is granted either by the platform or through a connection, not both. Remove it from one list.`,
+          });
+        }
+      });
+    });
+    // The same tool through two connections would need two grants for one bot and one tool; the broker keeps one grant per tool, so it is refused instead of picked from.
+    const seen = new Map<string, string>();
+    (caps.connections ?? []).forEach((connection, c) => {
+      connection.tools.forEach((tool, t) => {
+        const key = connection.name === 'person:*' ? null : tool;
+        if (key === null) return;
+        const earlier = seen.get(key);
+        if (earlier !== undefined && earlier !== connection.name) {
+          ctx.addIssue({ code: 'custom', path: ['connections', c, 'tools', t], message: `“${tool}” is already granted through the connection “${earlier}”: name it under one connection only.` });
+        } else seen.set(key, connection.name);
+      });
+    });
+  });
 export type BotCapabilities = z.infer<typeof BotCapabilities>;
 
 export const BotKnowledgeEntry = z.strictObject({

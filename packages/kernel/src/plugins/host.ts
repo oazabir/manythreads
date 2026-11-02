@@ -310,6 +310,7 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
           registry: capabilities,
           broker: options.broker as Parameters<typeof createRunService>[0]['broker'],
           handlers: registries.capabilityHandlers,
+          toolSources: registries.toolSources,
         })
       : undefined);
   const templates = options.templates ?? createTemplateService();

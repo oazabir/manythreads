@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 export type ToolKind = 'read' | 'write' | 'stub';
 
-export interface ToolSource {
+export interface RunSourceLine {
   sourceType: string;
   sourceRef: string;
   scope: 'team' | 'channel' | 'person';
@@ -34,7 +34,7 @@ export interface ToolDefinition {
   /** The stub's answer; only for `kind: 'stub'`. */
   answer?: Record<string, unknown>;
   /** What the call's answer proves the run read; only for `kind: 'read'`. */
-  sourcesFrom?: (result: unknown) => ToolSource[];
+  sourcesFrom?: (result: unknown) => RunSourceLine[];
   /**
    * A write that a rehearsal run (the bot page's Test action) may still make for real, because it IS the answer being rehearsed: it only posts the bot's
    * reply into the asker's own conversation thread. Every other write is held back in a rehearsal; a tool with no entry here counts as a write that is not safe.
@@ -158,10 +158,10 @@ const MEMORY_WRITE_SCHEMA = z.toJSONSchema(OkfProposal, { io: 'input' }) as Reco
 delete MEMORY_WRITE_SCHEMA['$schema'];
 
 /** Reads `{ hits: [{ id, channel? }] }` (the search plugin's answer) into source lines. */
-const hitsFrom = (sourceType: 'message' | 'file') => (result: unknown): ToolSource[] => {
+const hitsFrom = (sourceType: 'message' | 'file') => (result: unknown): RunSourceLine[] => {
   const hits = (result as { hits?: unknown } | null)?.hits;
   if (!Array.isArray(hits)) return [];
-  const out: ToolSource[] = [];
+  const out: RunSourceLine[] = [];
   for (const hit of hits) {
     const row = hit as { id?: unknown; channel?: { id?: unknown } | null };
     if (typeof row?.id !== 'string') continue;
@@ -267,7 +267,7 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     sourcesFrom: (result) => {
       const answer = result as { ok?: unknown; hits?: unknown } | null;
       if (answer?.ok !== true || !Array.isArray(answer.hits)) return [];
-      const out: ToolSource[] = [];
+      const out: RunSourceLine[] = [];
       for (const h of answer.hits as Array<{ base?: unknown; document?: unknown; version?: unknown; file?: unknown }>) {
         if (typeof h.base === 'string' && typeof h.document === 'string' && typeof h.version === 'number') {
           out.push({ sourceType: 'knowledge', sourceRef: `${h.base}/${h.document} v${h.version}`.slice(0, 1000), scope: 'team' });

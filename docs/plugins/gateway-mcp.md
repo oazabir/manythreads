@@ -127,6 +127,16 @@ A handler that **throws** is also an answer (`isError`), never a transport error
 columns and constraints) becomes `{ ok: false, code: 'failed', message: 'the call failed' }` and its real text goes to the server log only.
 A run that ended under the call is not an answer of this kind: it is rethrown and becomes `run_ended` (a call) or a 401.
 
+## Tools that come from a source
+
+Not every tool is a capability handler. A plugin that extends `tool.source` registers a **source** (`ctx.toolSources`, [security.md](./security.md)): a list of tools it can serve and two functions, `offered` (which of them this bot may see, asked in the bot's own transaction) and `call`. [connections](./connections.md) is the first one.
+
+* **`tools/list`** offers a source's tool only when the capability broker allows the bot **and** the source says yes. A source that throws offers nothing (fail closed, and the fault goes to the server log).
+* **`tools/call`** runs the same path as any tool: the grant and the destructive tag are checked by the broker first, a `needsApproval` call waits for a person (and, once approved, is run again through the same source), and only then does the run service hand the call to the source. It does so in the transaction of the run's bot (a write) or of the person who asked (a read), and only while the run is open: the source gets the run from the run's own row, never from the request.
+* **What the run read.** A successful read of a source's tool always writes a `connection` line to the run's source log (the tool name, scope `person`, the narrowest, because the gateway cannot tell how widely the source's data is visible), in addition to any lines the tool's own `sourcesFrom` returns. The retention rule (a run keeps no wider than the narrowest source it read) therefore sees every read of outside data.
+* A source's tool and a capability handler can never share a name (the kernel refuses the second one to register, in either order), so there is exactly one place a call can land.
+* The source's answer, including a refusal such as `not_available`, is the tool's answer. A source that throws is answered like a handler that throws (see above).
+
 ## What the run read
 
 Every hit a read answers with becomes a line in `app.run_source_log` (`sourceType` `message` or `file`, the hit's id,
@@ -143,7 +153,7 @@ Next to the source log, every tool call and every guard check on a tool's answer
 
 ## Not yet
 
-- Connections (`person:*` tools, `needsApproval` per connection) are P8.
+- A person's own connections (`person:*`) are P8-02; the team connections that exist today are in [connections.md](./connections.md).
 - The spend a runtime's calls cost is not written to `llm_spend` (no price source in this deployment); the tokens the model
   reported are logged by the runtime instead.
 

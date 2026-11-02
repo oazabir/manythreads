@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { CapabilityDecision, CapabilityHandler, PluginRuns, PluginTx, ToolDescriptor } from '@manythreads/sdk';
+import type { CapabilityDecision, CapabilityHandler, PluginRuns, PluginTx, ToolDescriptor, ToolSource } from '@manythreads/sdk';
 import { RunEndedError, guardPluginTx } from '@manythreads/sdk';
 
 export { RunEndedError };
@@ -7,6 +7,7 @@ import type { ActorId, RunId, WorkspaceId } from '@manythreads/shared';
 import type pg from 'pg';
 import type { AuthorizeContext, CapabilityBroker } from '../capabilities/broker.ts';
 import type { CapabilityRegistry } from '../capabilities/registry.ts';
+import type { ExtensionRegistry } from '../plugins/registries.ts';
 import { withActor, withSystem } from '../db/with-actor.ts';
 import { emit } from '../events/index.ts';
 import type { Actor } from '../db/with-actor.ts';
@@ -41,6 +42,8 @@ export interface RunServiceOptions {
   broker: CapabilityBroker;
   /** Capability implementations by name (`ctx.capabilities.register`), read at call time. */
   handlers: ReadonlyMap<string, { plugin: string; handler: CapabilityHandler }>;
+  /** Sources of tools other than handlers (`ctx.toolSources.register`), read at call time. A tool a source offers is a capability of the registry like any other. */
+  toolSources?: Pick<ExtensionRegistry<ToolSource>, 'values'>;
 }
 
 interface RunRow {
@@ -74,12 +77,51 @@ const botActor = (run: BotRunHandle): Actor => ({
 
 export function createRunService(options: RunServiceOptions): PluginRuns {
   const { pool, systemPool, registry, broker, handlers } = options;
+  const sourceOf = (tool: string): ToolSource | undefined => options.toolSources?.values().find((s) => s.tools.some((t) => t.name === tool));
   const system = { pool: systemPool };
 
   /** True while the run is `running`: one primary-key read as the system role. Every door below asks it first — a run that was closed (by the stale-run
    * reaper, by an approval's re-run waiting for it, by its own client) takes no more actions from a worker that still holds its handle. */
   const live = async (runId: string): Promise<boolean> =>
     withSystem(async (tx) => (await tx.query("SELECT 1 FROM app.bot_runs WHERE id = $1::uuid AND status = 'running' AND ended_at IS NULL", [runId])).rows.length > 0, system);
+
+  /**
+   * The live run a transaction acts for, read as the system role: the transaction's actor must BE that run's bot (a write) or the person who asked (a read), so a
+   * transaction opened for one run cannot be used to call a source's tool on behalf of another. Fails closed: no run, an ended run or a mismatch throws.
+   */
+  const runOfTransaction = async (tx: PluginTx): Promise<BotRunHandle> => {
+    const actor = tx.actor as Actor;
+    if (!actor.runId) throw new Error('a tool of a source can only be called inside a run');
+    const row = await withSystem(
+      async (sys) =>
+        (
+          await sys.query<RunRow>(
+            `SELECT r.id AS run_id, r.bot_id, t.expires_at, r.team_id, r.workspace_id, r.trigger_type, r.asker_id, r.rehearsal, a.id AS bot_actor_id
+               FROM app.bot_runs r
+               JOIN app.mcp_run_tokens t ON t.run_id = r.id
+               JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = r.bot_id
+              WHERE r.id = $1::uuid AND r.status = 'running' AND r.ended_at IS NULL
+              ORDER BY t.expires_at DESC LIMIT 1`,
+            [actor.runId],
+          )
+        ).rows[0],
+      system,
+    );
+    if (!row) throw new RunEndedError(actor.runId);
+    const acts = (actor.kind === 'bot' && actor.id === row.bot_actor_id) || (actor.kind === 'person' && actor.id === row.asker_id);
+    if (!acts || actor.workspaceId !== row.workspace_id) throw new Error('the transaction does not act for that run');
+    return {
+      runId: row.run_id,
+      botId: row.bot_id,
+      botActorId: row.bot_actor_id,
+      teamId: row.team_id,
+      workspaceId: row.workspace_id,
+      trigger: row.trigger_type,
+      askerActorId: row.asker_id,
+      expiresAt: row.expires_at.toISOString(),
+      ...(row.rehearsal ? { rehearsal: true } : {}),
+    } satisfies BotRunHandle;
+  };
 
   return {
     async open(input: OpenRunInput): Promise<{ run: BotRunHandle; token: string }> {
@@ -274,16 +316,21 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
     },
 
     catalog(): readonly ToolDescriptor[] {
+      // a capability has an implementation when a plugin registered a handler for it or a tool source offers it (the two never overlap: the kernel refuses it)
       return registry
         .list()
-        .filter((c) => handlers.has(c.name))
+        .filter((c) => handlers.has(c.name) || sourceOf(c.name) !== undefined)
         .map((c) => ({ name: c.name, destructive: c.destructive }));
     },
 
     async invoke(tx: PluginTx, capability: string, input: Record<string, unknown>): Promise<unknown> {
       const registered = handlers.get(capability);
-      if (!registered) throw new Error(`no plugin implements the capability "${capability}"`);
-      return registered.handler(input, tx);
+      if (registered) return registered.handler(input, tx);
+      const source = sourceOf(capability);
+      if (!source) throw new Error(`no plugin implements the capability "${capability}"`);
+      // A tool of a source acts for a run: which bot, which team and which asker are read from the run's own row (the transaction names the run), never from the caller.
+      const run = await runOfTransaction(tx);
+      return source.call(tx, run, capability, input);
     },
 
     async inheritSources(run: BotRunHandle, fromRunId: string): Promise<number> {

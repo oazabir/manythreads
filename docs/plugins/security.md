@@ -181,6 +181,15 @@ The `workshop` plugin lets a workspace **admin** open a shell into a throwaway t
 * **Hard limits.** Idle 300 s, longest 30 minutes, output 128 KiB/s and 8 MiB in all, input 1 MiB in all and 4096 bytes per frame, one open terminal per admin (a unique index), 60 s to connect; a frame that is not valid closes the socket. A terminal is claimed once, by the admin who asked for it.
 * **Recorded, minimised, redacted.** Who, which bot, when, how it ended and the shell's **output** (never the raw keystrokes) are stored in `app.terminal_sessions`. The output goes through the data-protection pre-egress chain (`destination: terminal`, fail closed: a part that cannot be checked is not stored). 256 KiB at most. A private key block is masked whole. Only an admin of the workspace reads a record; the table is written only by the system (row policy). Typed secrets that the shell does not echo are not recorded. Retention does not sweep these rows yet.
 * **Audit.** `terminal.opened` and `terminal.closed` appear in the audit log with the admin's name.
+## A source of tools: `tool.source`
+
+A plugin that extends `tool.source` may register **tool sources** with `ctx.toolSources.register(source)`: a list of tools plus `offered(tx, run)` and `call(tx, run, tool, input)`. The kernel checks at load time and refuses the plugin if it breaks any of these:
+
+- every tool is a capability the plugin's own manifest declares (so the broker knows its name and whether it is destructive; a source cannot smuggle in an undeclared tool or a destructive one the broker would not tag);
+- no tool is offered by two sources, and no tool is also a capability handler (in either order of registration), so a call has one landing place;
+- the source id is unique, there is at least one tool, and each tool is a plain read or write.
+
+The kernel keeps a frozen copy, so changing the list afterwards adds nothing. Looking at the registered sources (`list`, `find`) is the MCP gateway's job and needs `tool.invoke`; what it gets back is a **view** (`id`, `tools`, `offered`) with no `call`, so no plugin can reach a source's credentials except through the run service, which reads the run from its own row first (a kernel test proves the view has no `call`, however it is read). A source gives a plugin **no new right**: the run service calls it only after the broker authorized the call, inside the transaction of the run's bot (a write) or of the asker (a read), and only for a run that is still open. The source must check its own rows again under that transaction's row-level rules; it is never handed the system role. The source whose tools carry credentials (connections) reads them at the moment of use and never returns them.
 
 ## Background jobs: `job.register`
 

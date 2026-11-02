@@ -15,7 +15,7 @@ import {
 } from '@manythreads/shared';
 import { z } from 'zod';
 import { askForApproval } from './approval.ts';
-import { authorizeContext, definitionOf, interceptTarget, withRunTeam } from './catalog.ts';
+import { authorizeContext, definitionOf, interceptTarget, withRunTeam, type ToolDefinition } from './catalog.ts';
 import { describeFinding, guardValue } from './guard.ts';
 import { toolsDigest, type OfferedTool } from './digest.ts';
 import { json } from './http.ts';
@@ -57,16 +57,50 @@ export function toolResult(answer: unknown, isError = false): McpToolResult {
 }
 
 /**
+ * How a tool is described and how a call to it behaves: the descriptor of the source that owns it (a connection's tool, `ctx.toolSources`), else the catalog's
+ * own entry. A source's tool is never a `stub` and never rehearsal-safe: it is a read or a write, and a write is held back in a rehearsal.
+ */
+function describeTool(ctx: PluginContext, name: string): ToolDefinition {
+  const found = ctx.toolSources.find(name);
+  if (!found) return definitionOf(name);
+  const { tool } = found;
+  return { name, description: tool.description, inputSchema: tool.inputSchema, kind: tool.kind, ...(tool.sourcesFrom ? { sourcesFrom: tool.sourcesFrom } : {}) };
+}
+
+/**
+ * Of the tools of each source, the ones the source itself would offer the run's bot (a grant from a connection that is on and has not expired). Asked once per source
+ * per listing, in a transaction as the bot, so what the bot may not see is not offered. A source that throws offers nothing: the listing fails closed.
+ */
+async function offeredBySources(ctx: PluginContext, run: BotRunHandle): Promise<Map<string, ReadonlySet<string>>> {
+  const out = new Map<string, ReadonlySet<string>>();
+  for (const source of ctx.toolSources.list()) {
+    try {
+      const names = await ctx.db.as({ actorId: run.botActorId, kind: 'bot', workspaceId: run.workspaceId, personId: null, sessionId: null }, (tx) => source.offered(tx, run));
+      const own = new Set(source.tools.map((t) => t.name));
+      out.set(source.id, new Set(names.filter((n) => own.has(n))));
+    } catch (err) {
+      faultLog(`gateway-mcp: tool source ${source.id} could not list its tools: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
+      out.set(source.id, new Set());
+    }
+  }
+  return out;
+}
+
+/**
  * What `tools/list` offers this run: every implemented capability the broker would allow, and nothing else. `needsApproval` is kept beside each
  * descriptor (the wire carries it only inside the description) because the tools digest is decided by it.
  */
 export async function offeredTools(ctx: PluginContext, run: BotRunHandle): Promise<OfferedTool[]> {
   const offered: OfferedTool[] = [];
+  const fromSources = await offeredBySources(ctx, run);
   for (const tool of ctx.runs.catalog()) {
+    // a tool of a source needs the source's yes as well as the broker's: both must agree (a source is asked first, it is the cheaper "no")
+    const owner = ctx.toolSources.find(tool.name);
+    if (owner && !fromSources.get(owner.source.id)?.has(tool.name)) continue;
     // the run's token was resolved (it is `running`) a moment ago, in this request: no liveness read per capability
     const decision = await ctx.runs.may(run, tool.name, {}, { alreadyLive: true });
     if (!decision.allowed) continue;
-    const definition = definitionOf(tool.name);
+    const definition = describeTool(ctx, tool.name);
     offered.push({
       descriptor: McpToolDescriptor.parse({
         name: tool.name,
@@ -105,7 +139,7 @@ export const wasHeld = (result: McpToolResult): boolean => heldResults.has(resul
  * through, the reply tool included (a Workshop rehearsal has no conversation thread to post into), and a read that would wait for a person is held too, because a rehearsal files no card.
  */
 export async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams, options: { sandbox?: boolean } = {}): Promise<McpToolResult> {
-  const definition = definitionOf(params.name);
+  const definition = describeTool(ctx, params.name);
   let input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
@@ -187,12 +221,23 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
     return toolResult(definition.answer ?? { ok: false, code: 'not_available', message: 'Not available in this deployment yet.' });
   }
   if (definition.kind === 'read') {
-    const answer = await ctx.runs.asReader(run, async (tx) => {
-      const result = await ctx.runs.invoke(tx, params.name, input);
-      // The source log is what "Sources reached" and the retention rule stand on: one line per hit the call answered with.
-      for (const source of definition.sourcesFrom?.(result) ?? []) await ctx.runs.logSource(tx, source);
-      return result;
-    });
+    let answer: unknown;
+    try {
+      answer = await ctx.runs.asReader(run, async (tx) => {
+        const result = await ctx.runs.invoke(tx, params.name, input);
+        // The source log is what "Sources reached" and the retention rule stand on: one line per hit the call answered with.
+        for (const source of definition.sourcesFrom?.(result) ?? []) await ctx.runs.logSource(tx, source);
+        // A read of a tool source always leaves a line, whatever `sourcesFrom` answered (a source may name no hit, or none at all): the retention rule ("a run keeps
+        // no wider than the narrowest source it read") must see that outside data was read. The gateway cannot tell how widely the data is visible, so the line
+        // takes the narrowest scope.
+        if (ctx.toolSources.find(params.name)) await ctx.runs.logSource(tx, { sourceType: 'connection', sourceRef: params.name, scope: 'person' });
+        return result;
+      });
+    } catch (err) {
+      // A run that ended under the call is control flow; a refusal of the tool's own (a source's `forbidden`) is an answer the model reads.
+      if (err instanceof RunEndedError) throw err;
+      return toolResult(thrownAnswer(params.name, err), true);
+    }
     // What a read answers with is checked before the bot sees it: a secret that sits in a page or a file stays out of the model's context.
     const shown = await guarded(ctx, run, answer, 'mcp_result');
     if (shown.unchecked || shown.outcome === 'block' || shown.outcome === 'require_approval') {

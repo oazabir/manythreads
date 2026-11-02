@@ -114,6 +114,41 @@ describe('BotFrontmatter', () => {
   });
 });
 
+describe('capabilities: native and connections never share a tool (PLAN P8-28)', () => {
+  const withCaps = (capabilities: unknown) => BotFrontmatter.safeParse({ ...coder, capabilities });
+  const issue = (result: ReturnType<typeof withCaps>) => (result.success ? undefined : result.error.issues[0]);
+
+  it('refuses a tool that is in both lists, naming the field and the tool', () => {
+    const result = withCaps({ native: ['email.send'], connections: [{ name: 'support-mail', tools: ['email.read', 'email.send'] }] });
+    expect(result.success).toBe(false);
+    expect(issue(result)?.path).toEqual(['capabilities', 'connections', 0, 'tools', 1]);
+    expect(issue(result)?.message).toContain('email.send');
+    expect(issue(result)?.message).toContain('capabilities.native');
+  });
+
+  it('a namespace wildcard in native covers the connection’s tool too', () => {
+    const result = withCaps({ native: ['email.*'], connections: [{ name: 'support-mail', tools: ['email.read'] }] });
+    expect(result.success).toBe(false);
+    expect(issue(result)?.message).toContain('email.*');
+    // a wildcard of another namespace does not
+    expect(withCaps({ native: ['messages.*'], connections: [{ name: 'support-mail', tools: ['email.read'] }] }).success).toBe(true);
+    // and `email.*` does not cover a tool of a namespace that merely starts the same way
+    expect(withCaps({ native: ['email.*'], connections: [{ name: 'x', tools: ['emailer.read'] }] }).success).toBe(true);
+  });
+
+  it('refuses the same tool through two different connections (one grant per tool), but not twice through the person’s own', () => {
+    const twice = withCaps({ connections: [{ name: 'mail-a', tools: ['email.read'] }, { name: 'mail-b', tools: ['email.read'] }] });
+    expect(twice.success).toBe(false);
+    expect(issue(twice)?.path).toEqual(['capabilities', 'connections', 1, 'tools', 0]);
+    expect(issue(twice)?.message).toContain('mail-a');
+    expect(withCaps({ connections: [{ name: 'mail-a', tools: ['email.read'] }, { name: 'person:*', tools: ['email.read'] }] }).success).toBe(true);
+  });
+
+  it('accepts the lists when they do not overlap', () => {
+    expect(withCaps({ native: ['messages.*', 'tasks.read'], connections: [{ name: 'support-mail', tools: ['email.read', 'email.send'] }] }).success).toBe(true);
+  });
+});
+
 describe('BOT sections', () => {
   it('lists the fourteen §7.2 sections', () => {
     expect(BOT_SECTIONS).toHaveLength(14);

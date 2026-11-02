@@ -13,6 +13,7 @@ import type {
   ProviderKind,
   SettingsPageDefinition,
   SurfaceDefinition,
+  ToolSource,
   TriggerDefinition,
 } from '@manythreads/sdk';
 import type { EntityResolvers } from '../entity-links/index.ts';
@@ -93,4 +94,6 @@ export class ExtensionRegistries {
   readonly unreadCounters: UnreadCounters = new Map();
   /** Implementations bound to declared capability names, by capability name. */
   readonly capabilityHandlers = new Map<string, { plugin: string; handler: CapabilityHandler }>();
+  /** Sources of tools other than capability handlers (`ctx.toolSources.register`, PLAN P8-01), one per source id. A tool name is owned by a handler or a source, never both. */
+  readonly toolSources = new ExtensionRegistry<ToolSource>();
 }

@@ -35,6 +35,9 @@ import {
   KnowledgeBaseState,
   KnowledgeGapOutcome,
   KnowledgeSourceKind,
+  ConnectionEnvironment,
+  ConnectionScope,
+  ConnectionStatus,
   BotRunnerKind,
   BotRunnerStatus,
   HermesConnectionAgent,
@@ -100,6 +103,7 @@ import {
   filesMigrationSource,
   gatewayLlmMigrationSource,
   knowledgeMigrationSource,
+  connectionsMigrationSource,
   memoryMigrationSource,
   onboardingMigrationSource,
   proposalsMigrationSource,
@@ -171,6 +175,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'knowledge_documents.kind': KnowledgeDocumentKind,
   'knowledge_documents.status': KnowledgeDocumentStatus,
   'knowledge_sources.kind': KnowledgeSourceKind,
+  'connections.scope': ConnectionScope,
+  'connections.status': ConnectionStatus,
+  'connections.environment': ConnectionEnvironment,
   'onboarding_marks.step': OnboardingMarkStep,
   'onboarding_marks.kind': OnboardingMarkKind,
   'approvals.source': ApprovalSource,
@@ -239,7 +246,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

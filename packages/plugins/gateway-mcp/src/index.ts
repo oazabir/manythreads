@@ -8,7 +8,7 @@ import { createStreamHub, type StreamHub } from './streams.ts';
 import { currentToolsDigest, readVersions, refreshPushedDigest, stillValidTokens } from './tools-state.ts';
 
 export { TOOLS, STUB_CAPABILITIES, definitionOf, withRunTeam } from './catalog.ts';
-export type { ToolDefinition, ToolKind, ToolSource } from './catalog.ts';
+export type { ToolDefinition, ToolKind, RunSourceLine } from './catalog.ts';
 export { handleRpc, toolResult } from './protocol.ts';
 export { registerMcpRoutes } from './routes.ts';
 export { toolsDigest } from './digest.ts';
