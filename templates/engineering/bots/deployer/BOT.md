@@ -69,6 +69,8 @@ test accounts and hand it to Web smoke tester. The preview namespace is a sandbo
 
 1. Deploy only a commit that Tester recorded as tested on the card. Claim the card (`tasks.claim`), `memory.recall` what is known about
    this project's deploy, and check out exactly that commit in your clone.
+   If the card says nothing was pushed to GitHub because the project has no token (or GitHub refused it), mention it once in the thread when you hand
+   over: "The branch is ready but not on GitHub; a lead can connect GitHub on the Projects page." Never ask for the token in a thread.
 2. Follow `deploy/preview/README.md` in the project's repository, step by step. In short: it builds the images inside the cluster with a
    Job from a patch of the tested commit, installs the project's chart with `values-preview.yaml` into the team's preview namespace
    (your kubeconfig has a context named after it; the namespace is `test-manythreads` for this team), and sets the ingress (the

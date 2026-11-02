@@ -720,7 +720,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     freeChannel(t, body.channelId, null);
     const pr = {
       id: nextId('f'), workspaceId: uuid('a', 1), teamId: t.id, name: String(body.name), repoUrl: String(body.repoUrl), defaultBranch: body.defaultBranch ?? 'main',
-      channelId: body.channelId ?? null, createdBy: me().id, pushCredentialSetAt: null, pushUsername: null, pushCredentialExpiresAt: null, pushCredentialStatus: null, createdAt: NOW, updatedAt: NOW,
+      channelId: body.channelId ?? null, createdBy: me().id, pushCredentialSetAt: null, pushUsername: null, pushCredentialExpiresAt: null, pushCredentialStatus: null, pushCredentialShared: false, createdAt: NOW, updatedAt: NOW,
     };
     list.push(pr);
     return created({ project: pr });
@@ -743,7 +743,21 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     pr['pushUsername'] = body.username;
     pr['pushCredentialExpiresAt'] = '2027-01-15T00:00:00.000Z';
     pr['pushCredentialStatus'] = 'ok';
-    return { project: pr };
+    pr['pushCredentialShared'] = body.shareWithOwner === true;
+    // the same owner's other projects share the token (the server checks each against GitHub; the mock says all can write)
+    const owner = (u: unknown): string => String(u).split('/').slice(0, 4).join('/').toLowerCase();
+    const same = body.shareWithOwner === true ? projectsOf(t).filter((x) => x !== pr && owner(x['repoUrl']) === owner(pr['repoUrl'])) : [];
+    // a project that already has a token of its own is left as it was
+    const keptOwn = same.filter((x) => x['pushCredentialSetAt'] && !x['pushCredentialShared']);
+    const others = same.filter((x) => !keptOwn.includes(x));
+    for (const o of others) {
+      o['pushCredentialSetAt'] = NOW;
+      o['pushUsername'] = body.username;
+      o['pushCredentialExpiresAt'] = '2027-01-15T00:00:00.000Z';
+      o['pushCredentialStatus'] = 'ok';
+      o['pushCredentialShared'] = true;
+    }
+    return { project: pr, alsoConnected: others.map((o) => String(o['name'])), notConnected: [], keptOwn: keptOwn.map((o) => String(o['name'])) };
   });
   on(testPushCredentialRoute, ({ params }) => {
     const t = teamOf(params.slug);
@@ -759,6 +773,7 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     pr['pushUsername'] = null;
     pr['pushCredentialExpiresAt'] = null;
     pr['pushCredentialStatus'] = null;
+    pr['pushCredentialShared'] = false;
     return { project: pr };
   });
   on(deleteProjectRoute, ({ params }) => {

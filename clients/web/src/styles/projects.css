@@ -111,6 +111,17 @@
   max-width: 460px;
 }
 
+.pj-share {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  color: var(--ink);
+}
+
+.pj-share input {
+  margin-top: 2px;
+}
+
 .pj-select {
   width: 100%;
   max-width: 360px;

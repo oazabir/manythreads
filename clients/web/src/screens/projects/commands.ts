@@ -1,4 +1,4 @@
-import { CreateProjectRequest, UpdateProjectRequest, type Project } from '@manythreads/shared';
+import { CreateProjectRequest, UpdateProjectRequest, parseGithubRepo, type Project, type SetPushCredentialResponse } from '@manythreads/shared';
 
 export type FormValues = { name: string; repoUrl: string; defaultBranch: string; channelId: string };
 export type FormErrors = Partial<Record<'name' | 'repoUrl' | 'defaultBranch', string>>;
@@ -62,7 +62,7 @@ const EXPIRY_WARN_DAYS = 14;
 
 /** "Connected as octocat · expires 15 Jan 2027", and a warning from 14 days before the date. */
 export function describeToken(p: Pick<Project, 'pushUsername' | 'pushCredentialExpiresAt' | 'pushCredentialStatus'>, now = Date.now()): { line: string; tone: 'ok' | 'warn' | 'bad' } {
-  if (p.pushCredentialStatus === 'needs_replacing') return { line: 'GitHub no longer accepts this token. Save a new one to publish again.', tone: 'bad' };
+  if (p.pushCredentialStatus === 'needs_replacing') return { line: 'Token needs replacing: GitHub no longer accepts it, so the bots cannot publish. Save a new one below', tone: 'bad' };
   const who = p.pushUsername ? `Connected as ${p.pushUsername}` : 'A GitHub token is set';
   if (!p.pushCredentialExpiresAt) return { line: `${who} · no expiry date`, tone: 'ok' };
   const at = Date.parse(p.pushCredentialExpiresAt);
@@ -72,3 +72,15 @@ export function describeToken(p: Pick<Project, 'pushUsername' | 'pushCredentialE
   return { line: `${who} · expires ${date}`, tone: days <= EXPIRY_WARN_DAYS ? 'warn' : 'ok' };
 }
 
+
+/** The GitHub account a project's repository lives under (the first part of its path), or null when the address is not a GitHub repository. */
+export const ownerOfRepo = (repoUrl: string): string | null => parseGithubRepo(repoUrl)?.owner ?? null;
+
+/** What a person is told after a save that was shared with the owner's other projects: who else now publishes, and who was left out. */
+export function describeShare(r: Pick<SetPushCredentialResponse, 'alsoConnected' | 'notConnected' | 'keptOwn'>): string | null {
+  const parts: string[] = [];
+  if (r.alsoConnected.length > 0) parts.push(`Also connected: ${r.alsoConnected.join(', ')}.`);
+  if (r.notConnected.length > 0) parts.push(`Not connected, because this token cannot write to them: ${r.notConnected.join(', ')}.`);
+  if (r.keptOwn.length > 0) parts.push(`Left as they were, because they already have a token of their own: ${r.keptOwn.join(', ')}.`);
+  return parts.length > 0 ? parts.join(' ') : null;
+}

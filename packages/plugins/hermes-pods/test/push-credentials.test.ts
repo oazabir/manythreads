@@ -111,6 +111,118 @@ describe('PushCredentials', () => {
     expect(k8s.store.has(SECRET)).toBe(false);
   });
 
+  describe('one token for every project of a GitHub owner', () => {
+    const OWNER = 'github.com/acme';
+    const OWNER_KEY = '_owner.github.com.acme';
+    const GADGETS = 'https://github.com/acme/gadgets';
+    const shared = async (creds: PushCredentials, token = 'owner-token-0123456789') =>
+      creds.putShared(TEAM, OWNER, token, [
+        { name: 'widgets', origin: ORIGIN, branch: 'main' },
+        { name: 'gadgets', origin: GADGETS, branch: 'dev' },
+      ]);
+
+    it('keeps the token once under the owner and gives each project only its address, branch and a pointer', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      expect(Object.keys(dataOf(k8s)).sort()).toEqual([OWNER_KEY, 'gadgets', 'widgets']);
+      const widgets = parsed(dataOf(k8s)['widgets']!) as unknown as Record<string, unknown>;
+      expect(widgets).toMatchObject({ origin: ORIGIN, branch: 'main', via: OWNER_KEY });
+      expect(widgets['token']).toBeUndefined();
+      expect(Object.entries(dataOf(k8s)).filter(([, v]) => Buffer.from(v, 'base64').toString('utf8').includes('owner-token')).map(([k]) => k)).toEqual([OWNER_KEY]); // the token is in one document only
+      expect(await creds.read(TEAM, 'widgets')).toEqual({ token: 'owner-token-0123456789', origin: ORIGIN, branch: 'main' });
+      expect(await creds.read(TEAM, 'gadgets')).toEqual({ token: 'owner-token-0123456789', origin: GADGETS, branch: 'dev' });
+    });
+
+    it('removes the listed projects’ tokens in the same change as it writes the shared one', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      await creds.put(TEAM, 'solo', 'solo-token-0123456789', 'https://github.com/other/solo', 'main');
+      const writes = k8s.calls.length;
+      await creds.putShared(TEAM, OWNER, 'owner-token-0123456789', [{ name: 'widgets', origin: ORIGIN, branch: 'main' }], ['gadgets', 'solo']);
+      expect(k8s.calls.length - writes, 'one change of the Secret').toBeLessThanOrEqual(2);
+      expect(Object.keys(dataOf(k8s)).sort()).toEqual([OWNER_KEY, 'widgets']);
+      await expect(creds.putShared(TEAM, OWNER, 'owner-token-0123456789', [{ name: 'widgets', origin: ORIGIN, branch: 'main' }], ['../x'])).rejects.toThrow('bad project name');
+    });
+
+    it('replacing the owner token changes it for every project at once, and clears a refusal', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      await creds.setRefused(TEAM, 'widgets', true);
+      expect(await creds.read(TEAM, 'gadgets')).toMatchObject({ refused: true });
+      await shared(creds, 'owner-token-new-0123456789');
+      expect(await creds.read(TEAM, 'gadgets')).toEqual({ token: 'owner-token-new-0123456789', origin: GADGETS, branch: 'dev' });
+    });
+
+    it('takes the owner token away with its last project, and not before', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      await creds.remove(TEAM, 'widgets');
+      expect(Object.keys(dataOf(k8s)).sort()).toEqual([OWNER_KEY, 'gadgets']);
+      expect(await creds.read(TEAM, 'gadgets')).toMatchObject({ token: 'owner-token-0123456789' });
+      await creds.remove(TEAM, 'gadgets');
+      expect(k8s.store.has(SECRET)).toBe(false);
+    });
+
+    it('a project given its own token leaves the owner token, which the others keep using', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      await creds.put(TEAM, 'widgets', 'own-token-0123456789', ORIGIN, 'main');
+      expect(await creds.read(TEAM, 'widgets')).toEqual({ token: 'own-token-0123456789', origin: ORIGIN, branch: 'main' });
+      expect(await creds.read(TEAM, 'gadgets')).toMatchObject({ token: 'owner-token-0123456789' });
+      await creds.put(TEAM, 'gadgets', 'own-two-0123456789', GADGETS, 'dev');
+      expect(Object.keys(dataOf(k8s)).sort()).toEqual(['gadgets', 'widgets']); // nobody points at the owner token any more
+    });
+
+    it('marks a refusal on the document that holds the token: the owner’s, so every project on it stops; a project’s own, so only it does', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      await creds.put(TEAM, 'solo', 'solo-token-0123456789', 'https://github.com/other/solo', 'main');
+      await creds.setRefused(TEAM, 'gadgets', true);
+      expect(await creds.read(TEAM, 'widgets')).toMatchObject({ refused: true });
+      expect(await creds.read(TEAM, 'solo')).not.toHaveProperty('refused');
+      await creds.setRefused(TEAM, 'solo', true);
+      expect(await creds.read(TEAM, 'solo')).toMatchObject({ refused: true });
+      await creds.setRefused(TEAM, 'widgets', false);
+      expect(await creds.read(TEAM, 'gadgets')).not.toHaveProperty('refused');
+      await creds.setRefused(TEAM, 'nothing', true); // not an error
+      // saving a new token starts clean
+      await creds.put(TEAM, 'solo', 'solo-token-new-0123456789', 'https://github.com/other/solo', 'main');
+      expect(await creds.read(TEAM, 'solo')).not.toHaveProperty('refused');
+    });
+
+    it('prune keeps an owner token that a kept project points at, and drops one nothing points at', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      await shared(creds);
+      const later = Date.now() + 10 * 60_000;
+      expect(await creds.prune(TEAM, new Set(['widgets', 'gadgets']), 120_000, later)).toEqual([]);
+      expect(Object.keys(dataOf(k8s)).sort()).toEqual([OWNER_KEY, 'gadgets', 'widgets']);
+      expect(await creds.prune(TEAM, new Set(['widgets']), 120_000, later)).toEqual(['gadgets']);
+      expect(Object.keys(dataOf(k8s)).sort()).toEqual([OWNER_KEY, 'widgets']);
+      expect(await creds.prune(TEAM, new Set(), 120_000, later)).toEqual(['widgets']);
+      expect(k8s.store.has(SECRET)).toBe(false);
+    });
+
+    it('refuses a bad owner, token, project or an empty list before touching the cluster', async () => {
+      const k8s = new Store();
+      const creds = new PushCredentials(() => k8s, { namespace: NS });
+      const one = [{ name: 'widgets', origin: ORIGIN, branch: 'main' }];
+      await expect(creds.putShared(TEAM, 'Github.com/Acme', 'owner-token-0123456789', one)).rejects.toThrow('bad owner');
+      await expect(creds.putShared(TEAM, 'github.com', 'owner-token-0123456789', one)).rejects.toThrow('bad owner');
+      await expect(creds.putShared(TEAM, OWNER, 'two words', one)).rejects.toThrow('bad token');
+      await expect(creds.putShared(TEAM, OWNER, 'owner-token-0123456789', [])).rejects.toThrow('no projects');
+      await expect(creds.putShared(TEAM, OWNER, 'owner-token-0123456789', [{ name: '_owner.x', origin: ORIGIN, branch: 'main' }])).rejects.toThrow('bad project name');
+      await expect(creds.putShared(TEAM, OWNER, 'owner-token-0123456789', [{ name: 'widgets', origin: 'http://github.com/a/b', branch: 'main' }])).rejects.toThrow('bad origin');
+      expect(k8s.calls).toEqual([]);
+    });
+  });
+
   it('reports a cluster failure without the token in the message', async () => {
     const fake = await startFakeK8s();
     try {

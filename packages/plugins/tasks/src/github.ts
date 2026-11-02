@@ -15,7 +15,8 @@ export interface PullInfo {
   headRepo: string | null;
 }
 
-export type PullAnswer = { kind: 'ok'; pull: PullInfo } | { kind: 'retry'; waitMs: number; why: string };
+/** `refused` is set when GitHub answered 401: the token itself was turned down, which waiting does not fix. */
+export type PullAnswer = { kind: 'ok'; pull: PullInfo } | { kind: 'retry'; waitMs: number; why: string; refused?: true };
 
 export interface GithubOptions {
   fetch?: typeof fetch;
@@ -82,6 +83,6 @@ export async function getPull(opts: GithubOptions & { apiBase: string; token: st
     else if (res.headers.get('x-ratelimit-remaining') === '0' && Number.isFinite(reset) && reset > 0) wait = Math.max(0, reset * 1000 - now);
     return { kind: 'retry', waitMs: Math.min(MAX_BACKOFF_MS, Math.max(30_000, wait)), why: `status ${res.status}` };
   }
-  if (res.status === 401) return { kind: 'retry', waitMs: MAX_BACKOFF_MS, why: "status 401 (the project's token was refused)" };
+  if (res.status === 401) return { kind: 'retry', waitMs: MAX_BACKOFF_MS, why: "status 401 (the project's token was refused)", refused: true };
   return { kind: 'retry', waitMs: backoffMs, why: `status ${res.status}` };
 }

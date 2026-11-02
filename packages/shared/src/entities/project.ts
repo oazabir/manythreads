@@ -51,6 +51,11 @@ export const Project = z.object({
   pushCredentialExpiresAt: IsoDateTime.nullable(),
   /** `ok`, or `needs_replacing` once GitHub refused the token; null when no token is set. */
   pushCredentialStatus: z.enum(['ok', 'needs_replacing']).nullable(),
+  /**
+   * True when the token is the one kept once for every project of the team under the same GitHub owner (the "use for every project under <owner>" box),
+   * false when it belongs to this project alone or none is set.
+   */
+  pushCredentialShared: z.boolean(),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

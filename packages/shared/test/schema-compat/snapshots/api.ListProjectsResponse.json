@@ -102,6 +102,9 @@
               }
             ]
           },
+          "pushCredentialShared": {
+            "type": "boolean"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -126,6 +129,7 @@
           "pushUsername",
           "pushCredentialExpiresAt",
           "pushCredentialStatus",
+          "pushCredentialShared",
           "createdAt",
           "updatedAt"
         ]

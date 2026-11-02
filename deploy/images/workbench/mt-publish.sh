@@ -2,16 +2,18 @@
 # Publishes a card's tested branch: pushes `card-<8 characters of the card id>` of a repository of record to the project's origin and opens a pull
 # request there (a person merges it in GitHub: that merge is the approval). Run by a bot as the `repo` user, through sudo, like mt-receive-pack.sh, so
 # the bot never reads the token: it lives in /run/mt-push/<project>, 0400 and owned by `repo` (mt-push-sync.sh puts it there; a JSON document of the
-# token and the repository address it was issued for). Only bots whose definition grants `tasks.pull_request` are in the `publishers` group that sudo allows.
+# token and the repository address it was issued for; a project that shares its team's token for one GitHub owner holds `via` instead, naming the
+# /run/mt-push/_owner.<host>.<owner> file that holds the token). Only bots whose definition grants `tasks.pull_request` are in the `publishers` group that sudo allows.
 #
 #   sudo -u repo mt-publish.sh check   <project>
-#       exit 0 and "ready" when the project has an origin and a token issued for that very origin; exit 3 and "no push credential" otherwise.
+#       exit 0 and "ready" when the project has an origin and a token issued for that very origin; exit 3 and "no push credential" when it has none;
+#       exit 7 and "token refused" when GitHub has turned the token down (the platform marked it; a lead must save a new one).
 #   sudo -u repo mt-publish.sh publish <project> <card id> <tested commit> <title>      (the pull request's text on standard input)
 #       refuses unless the branch head IS the tested commit; pushes the branch (never main, never a force push); opens the pull request, or finds the
 #       open one of that branch; prints  pull_request_number=N  and  pull_request_url=...  and  head_sha=... .
 #
 # Exit codes: 0 done, 2 refused (bad input, not a repository of record), 3 no credential, 4 the branch is not at the tested commit, 5 push refused,
-# 6 GitHub refused or did not answer. The token is passed to git through GIT_ASKPASS and to curl through a header read from standard input, never in an
+# 6 GitHub refused or did not answer, 7 GitHub turned the token down (401 or "authentication failed"; stop and tell the project's lead). The token is passed to git through GIT_ASKPASS and to curl through a header read from standard input, never in an
 # argument, and it is masked in everything this script prints.
 #
 # MT_REPOS_DIR / MT_PUSH_DIR / MT_REPO_USER / MT_GITHUB_API / MT_PUSH_URL are test hooks (a local bare "origin" and a local double of GitHub). A bot cannot set
@@ -28,10 +30,19 @@ mode="${1:-}"; project="${2:-}"
 dir="$REPOS/$project.git"
 [ -d "$dir" ] && [ ! -L "$dir" ] && [ "$(realpath -e "$dir")" = "$(realpath -m "$REPOS")/$project.git" ] || die 2 "no such repository of record"
 [ "$(stat -c %U "$dir")" = "$RUSER" ] || die 2 "repository is not owned by $RUSER"
-tokenfile="$PUSHDIR/$project"
+metafile="$PUSHDIR/$project"
+tokenfile="$metafile"
+# a project on the team's owner token reads the token (and the refused mark) from that file, the address and branch from its own
+via=""
+if [ -f "$metafile" ] && [ ! -L "$metafile" ]; then via="$(jq -r '.via // empty' -- "$metafile" 2>/dev/null || true)"; fi
+if [ -n "$via" ]; then
+  [[ "$via" =~ ^_owner\.[a-z0-9][a-z0-9.-]{0,200}$ ]] && [[ "$via" != *..* ]] || die 3 "no push credential"
+  tokenfile="$PUSHDIR/$via"
+fi
+is_refused() { [ "$(jq -r '.refused // empty' -- "$tokenfile" 2>/dev/null)" = true ]; }
 have_token() { [ -f "$tokenfile" ] && [ ! -L "$tokenfile" ] && [ "$(stat -c %U "$tokenfile")" = "$RUSER" ] && [ -s "$tokenfile" ]; }
 # the token counts only for the address it was issued for: if the project moved to another repository, the old token is refused here
-token_matches_origin() { [ -n "$origin" ] && [ "$(jq -r '.origin // empty' -- "$tokenfile" 2>/dev/null)" = "$origin" ] && [ -n "$(jq -r '.token // empty' -- "$tokenfile" 2>/dev/null)" ] && [ -n "$(jq -r '.branch // empty' -- "$tokenfile" 2>/dev/null)" ]; }
+token_matches_origin() { [ -n "$origin" ] && [ "$(jq -r '.origin // empty' -- "$metafile" 2>/dev/null)" = "$origin" ] && [ -n "$(jq -r '.token // empty' -- "$tokenfile" 2>/dev/null)" ] && [ -n "$(jq -r '.branch // empty' -- "$metafile" 2>/dev/null)" ]; }
 
 origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
 # The origin must be plain https (the same rule as mt-repo-create.sh) and name exactly <host>/<owner>/<repo>.
@@ -48,7 +59,10 @@ parse_origin() {
 case "$mode" in
   check)
     [ "$#" -eq 2 ] || die 2 "usage: mt-publish.sh check <project>"
-    if [ -n "$origin" ] && parse_origin && have_token && token_matches_origin; then echo ready; exit 0; fi
+    if [ -n "$origin" ] && parse_origin && have_token && token_matches_origin; then
+      if is_refused; then echo "token refused: GitHub no longer accepts this project's token; a lead must save a new one on the Projects page"; exit 7; fi
+      echo ready; exit 0
+    fi
     echo "no push credential"; exit 3 ;;
   publish) ;;
   *) die 2 "usage: mt-publish.sh check <project> | publish <project> <card id> <tested commit> <title>" ;;
@@ -60,13 +74,14 @@ card="$3"; sha="$4"; title="$5"
 [[ "$sha" =~ ^[0-9a-f]{7,64}$ ]] || die 2 "bad commit"
 [ "${#title}" -ge 1 ] && [ "${#title}" -le 200 ] && [[ "$title" != *$'\n'* ]] || die 2 "the title is one line of 1 to 200 characters"
 have_token && token_matches_origin || die 3 "no push credential"
+if is_refused; then die 7 "token refused: GitHub no longer accepts this project's token; a lead must save a new one on the Projects page"; fi
 [ -n "$origin" ] && parse_origin || die 2 "the repository's origin is not a plain https GitHub address"
 token="$(jq -r '.token' -- "$tokenfile")"
 mask() { local t; t="$(cat)"; printf '%s\n' "${t//"$token"/***}"; }
 
 branch="card-${card:0:8}"
 # the branch a pull request is aimed at is the project's main branch, as the token was issued for it (not whatever the repository's HEAD says)
-base="$(jq -r '.branch' -- "$tokenfile")"
+base="$(jq -r '.branch' -- "$metafile")"
 [[ "$base" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$ ]] && [ "$branch" != "$base" ] || die 2 "cannot tell the project's main branch"
 head="$(git -C "$dir" rev-parse --verify -q "refs/heads/$branch^{commit}" || true)"
 [ -n "$head" ] || die 4 "the branch $branch is not in the repository of record: push it first"
@@ -78,6 +93,8 @@ export GIT_ASKPASS="$HERE/mt-askpass.sh" MT_TOKEN_FILE="$tokenfile" GIT_TERMINAL
 pushurl="${MT_PUSH_URL:-$origin}"
 if ! out="$(git -C "$dir" -c credential.helper= push --no-verify "$pushurl" "$head:refs/heads/$branch" 2>&1)"; then
   printf '%s\n' "$out" | mask >&2
+  # git reports a token GitHub does not accept as a failed login (HTTP 401); a push refused for another reason (rules, history) is exit 5
+  if grep -qiE 'authentication failed|invalid username or password|bad credentials|returned error: 401' <<<"$out"; then die 7 "token refused: GitHub no longer accepts this project's token; a lead must save a new one on the Projects page"; fi
   die 5 "the push of $branch to the origin was refused"
 fi
 
@@ -98,6 +115,7 @@ tries="${MT_PR_TRIES:-30}"
 while :; do
   existing="$(gh GET "$repo_api?head=$oowner:$branch&base=$base&state=open" 2>&1 || true)"
   status="${existing##*$'\n'}"; json="${existing%$'\n'*}"
+  if [ "$status" = 401 ]; then die 7 "token refused: GitHub no longer accepts this project's token; a lead must save a new one on the Projects page"; fi
   [ "$status" = 200 ] || { printf '%s\n' "GitHub answered $status when listing pull requests: $(jq -r '.message? // empty' <<<"$json" 2>/dev/null | head -c 300)" | mask >&2; die 6 "GitHub refused the request"; }
   number="$(jq -r '.[0].number // empty' <<<"$json")"; url="$(jq -r '.[0].html_url // empty' <<<"$json")"
   prhead="$(jq -r '.[0].head.sha // empty' <<<"$json")"
@@ -115,6 +133,7 @@ if [ -z "$number" ]; then
   jq -n --arg title "$title" --arg head "$branch" --arg base "$base" --arg body "$body" '{title: $title, head: $head, base: $base, body: $body, maintainer_can_modify: false}' > "$tmp"
   made="$(gh POST "$repo_api" "$tmp" 2>&1 || true)"
   status="${made##*$'\n'}"; json="${made%$'\n'*}"
+  if [ "$status" = 401 ]; then die 7 "token refused: GitHub no longer accepts this project's token; a lead must save a new one on the Projects page"; fi
   [ "$status" = 201 ] || { printf '%s\n' "GitHub answered $status when opening the pull request: $(jq -r '.message? // empty' <<<"$json" 2>/dev/null | head -c 300)" | mask >&2; die 6 "GitHub refused the pull request"; }
   number="$(jq -r '.number // empty' <<<"$json")"; url="$(jq -r '.html_url // empty' <<<"$json")"
 fi

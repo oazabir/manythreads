@@ -9,7 +9,7 @@ import { useChannelFeed } from '../../shell/channelFeed';
 import { useHeaderTopic } from '../../shell/topic';
 import { useBotPerms } from '../bots/store';
 import { createProject, deleteProject, fetchProjects, removePushCredential, setPushCredential, testPushCredential, updateProject } from './api';
-import { describeToken, podPath, validateEdit, validateNew, type FormErrors } from './commands';
+import { describeShare, describeToken, ownerOfRepo, podPath, validateEdit, validateNew, type FormErrors } from './commands';
 
 /*
  * Projects: the git repositories a team works on. Each one is tied to a channel; a bot asked in that channel is told which repository it
@@ -129,6 +129,9 @@ function EditForm({ slug, p, channels, onDone }: { slug: string; p: Project; cha
 function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onChanged: () => void }) {
   const [username, setUsername] = useState(p.pushUsername ?? '');
   const [token, setToken] = useState('');
+  const [share, setShare] = useState(p.pushCredentialShared);
+  const [replacing, setReplacing] = useState(false);
+  const owner = ownerOfRepo(p.repoUrl);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -140,6 +143,7 @@ function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onCha
     try {
       await fn();
       setToken('');
+      setReplacing(false);
       onChanged();
     } catch (e) {
       setError(message(e));
@@ -156,7 +160,7 @@ function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onCha
 
   const set = p.pushCredentialSetAt !== null;
   const state = describeToken(p);
-  const showForm = !set || p.pushCredentialStatus === 'needs_replacing';
+  const showForm = !set || p.pushCredentialStatus === 'needs_replacing' || replacing;
   return (
     <div className="pj-publish" data-testid="projects-publishing">
       <div className="pj-publish-h">Pull requests</div>
@@ -165,18 +169,36 @@ function PublishingBox({ slug, p, onChanged }: { slug: string; p: Project; onCha
       {set ? (
         <div className="pj-publish-set">
           <span data-testid="projects-credential-set" data-tone={state.tone}>{state.line}. A tested branch is sent to GitHub as a pull request, and a person merges it there.</span>
+          {p.pushCredentialShared && owner ? <span className="d" data-testid="projects-credential-shared">The same token serves every project of this team under {owner}.</span> : null}
           <button type="button" className="btn s" disabled={busy} onClick={() => void test()} data-testid="projects-credential-test">Test connection</button>
+          {!showForm ? <button type="button" className="btn s" disabled={busy} onClick={() => setReplacing(true)} data-testid="projects-credential-replace">Replace token</button> : null}
           <button type="button" className="btn s danger" disabled={busy} onClick={() => void run(() => removePushCredential(slug, p.id))}>Remove the token</button>
         </div>
       ) : null}
       {showForm ? (
-        <form className="pj-publish-form" onSubmit={(e) => { e.preventDefault(); void run(() => setPushCredential(slug, p.id, username.trim(), token.trim())); }}>
+        <form
+          className="pj-publish-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              const r = await setPushCredential(slug, p.id, username.trim(), token.trim(), share && owner !== null);
+              setNote(describeShare(r));
+            });
+          }}
+        >
           <Field label="GitHub username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" placeholder="octocat"
             hint="The GitHub account the token belongs to." />
           <Field label="GitHub token" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" placeholder="github_pat_…"
             hint="A token with write access to this one repository: contents and pull requests. GitHub is asked about it before it is kept. Kept in the team pod only; nobody can read it back." />
+          {owner ? (
+            <label className="pj-share" data-testid="projects-credential-share">
+              <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
+              <span>Use for every project of this team that lives under <span className="mono">{owner}</span>. The token is kept once and each project is checked against GitHub. Only projects that exist now are covered, and one that already has a token of its own is left as it is.</span>
+            </label>
+          ) : null}
           <a className="btn s" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer noopener">Open GitHub&apos;s token page</a>
           <button type="submit" className="btn s primary" disabled={busy || token.trim().length < 20 || username.trim() === ''}>{busy ? 'Checking…' : 'Check and save'}</button>
+          {replacing ? <button type="button" className="btn s" onClick={() => setReplacing(false)}>Cancel</button> : null}
         </form>
       ) : null}
     </div>

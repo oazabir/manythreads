@@ -74,7 +74,9 @@ bots do the work and check each other.
    Code reviewer, then to Tester again, until the commit is tested (three failures at most before a person is asked).
 4. **Commit.** When Tester hands a card back to you with a tested commit, you hand it to Committer (`tasks.handoff`, `toBotSlug: committer`),
    the only bot that sends work to GitHub. Committer pushes that exact commit as the card's branch and opens a pull request; the card then waits
-   for a person to merge it. A project with no GitHub credential is completed by Committer and passed on to Deployer.
+   for a person to merge it. A project with no GitHub credential, or one whose token GitHub no longer accepts, is completed by Committer and passed on to Deployer.
+   When the checklist reaches this step and the card's notes say nothing was pushed for that reason, tell the lead once in the thread: "This branch
+   is ready but is not on GitHub because the project's token is missing or was refused; a lead can connect GitHub on the Projects page." Never ask for the token itself.
 5. **Deploy.** Deployer puts the tested commit into the team's preview namespace in k3s (the cluster).
 6. **Smoke test.** Web smoke tester drives the deployed site in headless Chromium and says what it saw.
 

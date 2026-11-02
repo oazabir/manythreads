@@ -30,6 +30,25 @@ without a token behaves as before: the committer completes the card and nothing 
   store nothing. The page then reads "Connected as `<login>` · expires `<date>`" (the date is GitHub's own, and warns 14 days ahead).
   `POST …/push-credential/test` asks GitHub again ("Test connection"); an answer of 401 marks the project `needs_replacing`, and the form comes back.
   Removing the token (`DELETE` on the same path) takes it away at once, with the username and expiry.
+- **One token for every project of an owner.** The form has a checkbox "Use for every project of this team that lives under `<owner>`" (`shareWithOwner: true`
+  in the request). The token is kept **once per owner** in the Secret (key `_owner.<host>.<owner>`, for example `_owner.github.com.acme`); each project under
+  that owner keeps only its address, branch and a pointer to it. GitHub is asked about every other project of the team under that owner too: one the token
+  can write to is connected, one it cannot is left out and named in the answer (`alsoConnected`, `notConnected`), and GitHub not answering stops the whole
+  save, and more than 25 other projects under the owner is refused (409) rather than cut short. The box covers the projects that exist when you save (a project
+  added later needs the box ticked again); a project that already has a token of its own is left as it is and named in the answer (`keptOwn`). Replacing the token from any one of
+  them replaces it for all; saving a token without the box, or removing one project's token, leaves the others on the owner's token, and the owner's token goes
+  when no project points at it. The project row says `pushCredentialShared`.
+- **When GitHub stops accepting the token.** A token can be revoked or expire without anyone telling this server. Two things on the server notice: the
+  15-minute job `projects.credential-check` (asks GitHub about the tokens that are in use, a few at a time, once per token however many projects share it;
+  it sends a token only to an address on the allow-list) and the pull-request sync in `tasks`. The sync, on a 401, marks the token as refused in the pod
+  so every bot stops using it. The job turns a mark into "needs replacing" only after asking GitHub itself (`GET /user`): if GitHub accepts the token
+  after all, the mark is cleared and the projects stay good. A 401 the job sees itself marks the pod and turns the project (and every project on the same
+  owner token) to `needs_replacing`; the Projects page reads "Token needs replacing" and the form comes back. Only a 401 counts: any other odd answer
+  (404, 410, 5xx) changes nothing. Nothing asks GitHub again until a new token is saved. The pod's publish command (`mt-publish.sh`) never writes the
+  mark (it cannot); it only returns exit code 7 when the token is marked refused or the push or the API answers "bad credentials". A bot learns of it
+  from the `check` command (exit 7) or from the `token_refused` answer of `tasks.pull_request`; the Committer then tells the lead once in the project's
+  channel or thread and does not ask for the token. (The server itself does not post the message: a background job has no author to post as, so the
+  bot that met the refusal does.)
 - **Where the token lives.** Only in a Kubernetes Secret in the team's pod namespace (`hermes-<team>-push`, one entry per project). The database
   records only that a token is set and when (`push_credential_set_at`); no route, event, log line or error ever carries the token, and the page cannot
   show it again. Inside the pod, the Secret is readable by the root user only, and the pod's reconcile loop hands each token to the `repo` Unix user
@@ -67,7 +86,7 @@ also the folder name on the pod; remove the project and add it again to rename i
 | `POST /api/teams/:slug/projects` | lead or admin | add one: `name`, `repoUrl`, optional `defaultBranch`, optional `channelId` |
 | `PATCH /api/teams/:slug/projects/:projectId` | lead or admin | change `repoUrl`, `defaultBranch` or `channelId` (send `null` to clear the channel) |
 | `DELETE /api/teams/:slug/projects/:projectId` | lead or admin | remove it (and its token) |
-| `PUT /api/teams/:slug/projects/:projectId/push-credential` | lead or admin | set or replace the GitHub token (`{ "token" }`, 20 to 255 characters of letters, digits, `_`, `-`, `.`); answers the project, never the token |
+| `PUT /api/teams/:slug/projects/:projectId/push-credential` | lead or admin | set or replace the GitHub token (`{ "username", "token", "shareWithOwner"? }`, token 20 to 255 characters of letters, digits, `_`, `-`, `.`); answers the project and the names of the other projects it also connected (`alsoConnected`) or could not (`notConnected`), never the token |
 | `DELETE /api/teams/:slug/projects/:projectId/push-credential` | lead or admin | remove the token |
 
 Errors: 403 for someone who may not (or cannot see the team), 404 for an unknown project, 409 for a name already used or a channel that already has a

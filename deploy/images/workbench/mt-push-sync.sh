@@ -3,14 +3,15 @@
 #   /etc/workbench-push/<project>   the Kubernetes Secret of the pod (root-only: the kubelet makes the files 0400 root)
 #   /run/mt-push/<project>          the copy mt-publish.sh reads: 0400 and owned by `repo`, in a directory only ROOT can write (0755, a memory
 #                                   volume): `repo` and the bots can neither plant a link there nor swap a file, and root's temp files are safe
-# Each file is a JSON document: the token and the repository address it was issued for. A project whose key left the Secret loses its copy. Safe to run again and again; a file that did not change is not rewritten.
+# Each file is a JSON document: the token and the repository address it was issued for (a project on an owner token holds `via` instead of the token, naming the `_owner.…` file that does). A project whose key left the Secret loses its copy. Safe to run again and again; a file that did not change is not rewritten.
 # MT_PUSH_SRC / MT_PUSH_DIR / MT_REPO_USER exist so the tests can run it without root and without /etc; a bot cannot set them (sudo clears its environment,
 # and root runs this script from the reconcile loop).
 set -uo pipefail
 SRC="${MT_PUSH_SRC:-/etc/workbench-push}"
 DIR="${MT_PUSH_DIR:-/run/mt-push}"
 OWNER="${MT_REPO_USER:-repo}"
-name_ok() { [[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] && [[ "$1" != *..* ]]; }
+# a project's name, or `_owner.<host>.<owner>` for a token kept once for every project under one GitHub owner (a project name cannot start with "_")
+name_ok() { { [[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,60}$ ]] || [[ "$1" =~ ^_owner\.[a-z0-9][a-z0-9.-]{0,200}$ ]]; } && [[ "$1" != *..* ]]; }
 if [ ! -d "$DIR" ] || [ -L "$DIR" ]; then
   [ -L "$DIR" ] && rm -f -- "$DIR"
   install -d -m 0755 -o root -g root -- "$DIR" || exit 1

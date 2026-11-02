@@ -28,7 +28,7 @@ const SECRET_KEY = 'manythreads-bots/hermes-engineering-push';
 const ORIGIN = 'https://github.com/acme/widgets';
 const SHA = 'a'.repeat(40);
 /** What the Secret holds for a project (base64 of a JSON document: the token and the address it was issued for). */
-const docB64 = (token = TOKEN, origin = ORIGIN) => Buffer.from(JSON.stringify({ branch: 'main', origin, setAt: new Date().toISOString(), token })).toString('base64');
+const docB64 = (token = TOKEN, origin = ORIGIN, extra: Record<string, unknown> = {}) => Buffer.from(JSON.stringify({ branch: 'main', origin, setAt: new Date().toISOString(), token, ...extra })).toString('base64');
 const parsedDoc = (b64: string) => JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) as { token: string; origin: string; branch: string };
 
 let server: TestServer;
@@ -452,6 +452,42 @@ describe('a card that waits on a pull request', () => {
     } finally {
       k8s.secrets.get(key)!.data!['widgets'] = before;
     }
+  });
+
+  it('does not follow a pull request with a token the pod marks as refused, and goes on once the mark is gone', async () => {
+    const c = await recorded('Refused token');
+    const key = SECRET_KEY;
+    const before = k8s.secrets.get(key)!.data!['widgets']!;
+    k8s.secrets.get(key)!.data!['widgets'] = docB64(TOKEN, ORIGIN, { refused: true });
+    try {
+      gh.merge(c.n, 'c'.repeat(40));
+      await ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET pull_request_checked_at = NULL WHERE id = $1', [c.id]);
+      const asked = gh.calls.length;
+      await runSync();
+      expect(gh.calls.slice(asked).filter((x) => x.path.endsWith(`/pulls/${c.n}`))).toEqual([]);
+      expect((await card(c.id)).state).toBe('waiting_on_person');
+    } finally {
+      k8s.secrets.get(key)!.data!['widgets'] = before;
+    }
+    await ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET pull_request_checked_at = NULL WHERE id = $1', [c.id]);
+    await runSync();
+    expect((await card(c.id)).state).toBe('done');
+  });
+
+  it('marks the token refused in the pod when GitHub answers 401 to the sync, and then stops asking', async () => {
+    const c = await recorded('Revoked token');
+    await ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET pull_request_checked_at = NULL WHERE id = $1', [c.id]);
+    gh.failNext(401, {}, 1);
+    await runSync();
+    expect(parsedDoc(k8s.secrets.get(SECRET_KEY)!.data!['widgets']!)).toMatchObject({ token: TOKEN, refused: true });
+    const asked = gh.calls.length;
+    await ownerSql(server.db.ownerUrl, 'UPDATE app.tasks SET pull_request_checked_at = NULL WHERE id = $1', [c.id]);
+    await runSync();
+    expect(gh.calls.length, 'a refused token is not tried again').toBe(asked);
+    expect((await card(c.id)).state).toBe('waiting_on_person');
+    expect(server.logs.join('\n')).not.toContain(TOKEN);
+    // saving a token again clears the mark
+    k8s.secrets.get(SECRET_KEY)!.data!['widgets'] = docB64();
   });
 
   it('backs off a project whose origin answers with a rate limit, and never logs the token', async () => {

@@ -48,6 +48,9 @@ export const pullRequestUrl = (origin: string, number: number): string | null =>
   return r ? `https://${r.host}/${r.owner}/${r.repo}/pull/${number}` : null;
 };
 
+/** What a bot is told when GitHub turned the project's token down; the lead replaces it on the Projects page (a bot never asks for it in a thread). */
+export const TOKEN_REFUSED_MESSAGE = "GitHub no longer accepts this project's token, so nothing was recorded. A lead of the team must save a new one on the Projects page; do not ask for it in a thread";
+
 export type Verified = { ok: true; origin: string; headRef: string; headSha: string; baseRef: string; url: string } | { ok: false; code: string; message: string };
 
 /** Everything the server insists on before a card may wait on a pull request. */
@@ -57,16 +60,22 @@ export async function verifyPullRequest(
 ): Promise<Verified> {
   const provider = deps.credentials();
   if (!provider) return { ok: false, code: 'no_credential', message: 'this server holds no push credentials' };
-  let cred: { token: string; origin: string; branch: string } | null;
+  let cred: { token: string; origin: string; branch: string; refused?: boolean } | null;
   try {
     cred = await provider.read(input.team, input.project);
   } catch {
     return { ok: false, code: 'github_unreachable', message: 'the project credential could not be read; try again in a moment' };
   }
   if (!cred) return { ok: false, code: 'no_credential', message: 'this project has no push credential' };
+  if (cred.refused) return { ok: false, code: 'token_refused', message: TOKEN_REFUSED_MESSAGE };
   const repo = isRepoOriginAllowed(cred.origin, deps.originAllow) ? parseGithubRepo(cred.origin) : null;
   if (!repo) return { ok: false, code: 'no_credential', message: "this project's address cannot be published to" };
   const answer = await getPull({ ...deps, apiBase: deps.apiBaseOverride ?? repo.apiBase, token: cred.token, owner: repo.owner, repo: repo.repo, number: input.number, failures: 0 });
+  if (answer.kind === 'retry' && answer.refused) {
+    // remembered in the pod's Secret, so the publish command and the sync stop using the token; the projects plugin shows the project as needing a new one
+    await provider.setRefused(input.team, input.project, true).catch(() => undefined);
+    return { ok: false, code: 'token_refused', message: TOKEN_REFUSED_MESSAGE };
+  }
   if (answer.kind === 'retry') return { ok: false, code: 'github_unreachable', message: `GitHub could not be asked about the pull request (${answer.why}); try again in a moment` };
   const p = answer.pull;
   const branch = `card-${input.taskId.slice(0, 8)}`;
@@ -136,7 +145,7 @@ export async function syncPullRequests(ctx: PluginContext, deps: PullRequestDeps
   const out: SyncResult = { checked: 0, merged: 0, closed: 0, skipped: 0, failed: 0 };
   const now = deps.now ?? Date.now;
   const due = await dueList(ctx);
-  const tokens = new Map<string, { token: string; origin: string; branch: string } | null>();
+  const tokens = new Map<string, { token: string; origin: string; branch: string; refused?: boolean } | null>();
   for (const d of due) {
     const key = `${d.team_id}/${d.project}`;
     const wait = backoff.get(key);
@@ -169,8 +178,15 @@ export async function syncPullRequests(ctx: PluginContext, deps: PullRequestDeps
       await ctx.db.system((tx) => markChecked(tx, d.task_id));
       continue;
     }
+    // A token GitHub turned down is not tried again (the projects plugin marks it after it asked GitHub itself): the card waits until a lead saves a new one.
+    if (cred.refused) {
+      out.skipped++;
+      await ctx.db.system((tx) => markChecked(tx, d.task_id));
+      continue;
+    }
     const answer = await getPull({ ...deps, apiBase: deps.apiBaseOverride ?? repo.apiBase, token: cred.token, owner: repo.owner, repo: repo.repo, number: d.number, failures: backoff.get(key)?.failures ?? 0 });
     out.checked++;
+    if (answer.kind === 'retry' && answer.refused) await provider.setRefused({ id: d.team_id, slug: d.team_slug }, d.project, true).catch(() => undefined);
     if (answer.kind === 'retry') {
       const failures = (backoff.get(key)?.failures ?? 0) + 1;
       backoff.set(key, { until: now() + answer.waitMs, failures });

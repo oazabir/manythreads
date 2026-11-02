@@ -9,10 +9,46 @@ import { labelsFor, type PodConfig } from './render.ts';
  * project name). The workbench container mounts it root-only and hands each file to the `repo` Unix user alone, so a bot cannot read a token and
  * neither can the database or an event: nothing here is ever logged, and the errors that leave this file name the Kubernetes call, never the value.
  *
+ * A key is a project's name, or `_owner.<host>.<owner>` for a token the team keeps once for every project under one GitHub owner (a project name cannot
+ * start with an underscore, so the two never collide). A project's own document then holds no token, only `via` (the owner key) beside the address and branch.
+ * A document GitHub has turned down carries `refused: true` on the document that holds the token (`setRefused`); the pod's publish command and the server's pull-request
+ * sync stop using it, and saving a new token writes a fresh document without the mark.
+ *
  * Changes to one team's Secret run one at a time IN THIS PROCESS (a promise chain: the server runs as a single replica, as the blob volume requires; two
  * replicas would need a lock in the cluster, e.g. a resourceVersion-checked update) (read, change one key, write back), so two people setting tokens for two projects of the same
  * team cannot overwrite each other. The Secret is written with `data` (not `stringData`) so server-side apply owns each key and drops one that is left out.
  */
+const OWNER_KEY = /^[a-z0-9][a-z0-9.-]{0,200}\/[a-z0-9][a-z0-9-]{0,38}$/;
+/** The Secret key of an owner token: `github.com/acme` becomes `_owner.github.com.acme` (an owner has no dot in its name, so the last part is the owner). */
+const ownerSecretKey = (ownerKey: string): string => `_owner.${ownerKey.replace('/', '.')}`;
+const isOwnerSecretKey = (k: string): boolean => k.startsWith('_owner.');
+
+interface Doc {
+  token?: unknown;
+  origin?: unknown;
+  branch?: unknown;
+  via?: unknown;
+  setAt?: unknown;
+  refused?: unknown;
+}
+const parseDoc = (v: string | undefined): Doc | null => {
+  if (v === undefined) return null;
+  try {
+    const doc = JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as unknown;
+    return doc !== null && typeof doc === 'object' ? (doc as Doc) : null;
+  } catch {
+    return null;
+  }
+};
+const encode = (doc: Record<string, unknown>): string => Buffer.from(JSON.stringify(doc), 'utf8').toString('base64');
+
+/** Remove owner tokens that no project document points at. */
+function dropUnreferencedOwners(data: Record<string, string>): void {
+  const used = new Set<string>();
+  for (const [k, v] of Object.entries(data)) if (!isOwnerSecretKey(k)) used.add(String(parseDoc(v)?.via ?? ''));
+  for (const k of Object.keys(data)) if (isOwnerSecretKey(k) && !used.has(k)) delete data[k];
+}
+
 export class PushCredentials implements ProjectCredentialsProvider {
   readonly id = 'project.credentials' as const;
   [member: string]: unknown;
@@ -48,7 +84,46 @@ export class PushCredentials implements ProjectCredentialsProvider {
     return this.serialized(async () => {
       const { name, data } = await this.load(team);
       // one JSON document per project: what mt-publish.sh reads with jq (the token for git and curl, the address it must match)
-      data[projectName] = Buffer.from(JSON.stringify({ branch, origin, setAt: new Date().toISOString(), token }), 'utf8').toString('base64');
+      data[projectName] = encode({ branch, origin, setAt: new Date().toISOString(), token });
+      dropUnreferencedOwners(data); // the project may have been on an owner token before
+      await this.k8s().apply(this.secret(team, name, data));
+    });
+  }
+
+  putShared(team: CredentialTeam, ownerKey: string, token: string, projects: ReadonlyArray<{ name: string; origin: string; branch: string }>, drop: ReadonlyArray<string> = []): Promise<void> {
+    if (!OWNER_KEY.test(ownerKey)) return Promise.reject(new Error('bad owner'));
+    if (token === '' || !/^[\x21-\x7e]+$/.test(token)) return Promise.reject(new Error('bad token'));
+    if (projects.length === 0) return Promise.reject(new Error('no projects'));
+    for (const p of projects) {
+      if (!ProjectName.safeParse(p.name).success) return Promise.reject(new Error('bad project name'));
+      if (!isPlainRepoUrl(p.origin)) return Promise.reject(new Error('bad origin'));
+      if (!ProjectBranch.safeParse(p.branch).success) return Promise.reject(new Error('bad branch'));
+    }
+    for (const d of drop) if (!ProjectName.safeParse(d).success) return Promise.reject(new Error('bad project name'));
+    return this.serialized(async () => {
+      const { name, data } = await this.load(team);
+      const now = new Date().toISOString();
+      const via = ownerSecretKey(ownerKey);
+      for (const d of drop) delete data[d]; // in the same change, so a failure leaves the Secret exactly as it was
+      data[via] = encode({ setAt: now, token });
+      for (const p of projects) data[p.name] = encode({ branch: p.branch, origin: p.origin, setAt: now, via });
+      dropUnreferencedOwners(data);
+      await this.k8s().apply(this.secret(team, name, data));
+    });
+  }
+
+  setRefused(team: CredentialTeam, projectName: string, refused: boolean): Promise<void> {
+    return this.serialized(async () => {
+      const { name, data } = await this.load(team);
+      const own = parseDoc(data[projectName]);
+      if (!own) return;
+      const holder = typeof own.via === 'string' && own.via in data ? own.via : projectName;
+      const doc = parseDoc(data[holder]);
+      if (!doc || (doc.refused === true) === refused) return;
+      const next: Record<string, unknown> = { ...doc };
+      if (refused) next['refused'] = true;
+      else delete next['refused'];
+      data[holder] = encode(next);
       await this.k8s().apply(this.secret(team, name, data));
     });
   }
@@ -58,6 +133,7 @@ export class PushCredentials implements ProjectCredentialsProvider {
       const { name, data } = await this.load(team);
       if (!(projectName in data)) return;
       delete data[projectName];
+      dropUnreferencedOwners(data); // the last project on an owner token takes the token with it
       if (Object.keys(data).length === 0) await this.k8s().delete('Secret', this.cfg.namespace, name);
       else await this.k8s().apply(this.secret(team, name, data));
     });
@@ -73,10 +149,10 @@ export class PushCredentials implements ProjectCredentialsProvider {
       const { name, data } = await this.load(team);
       const gone: string[] = [];
       for (const [project, v] of Object.entries(data)) {
-        if (keep.has(project)) continue;
+        if (isOwnerSecretKey(project) || keep.has(project)) continue;
         let setAt = 0;
         try {
-          setAt = Date.parse(String((JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as { setAt?: unknown }).setAt ?? ''));
+          setAt = Date.parse(String(parseDoc(v)?.setAt ?? ''));
         } catch {
           /* an unreadable entry counts as old */
         }
@@ -84,22 +160,22 @@ export class PushCredentials implements ProjectCredentialsProvider {
         delete data[project];
         gone.push(project);
       }
-      if (gone.length === 0) return gone;
+      const before = Object.keys(data).length;
+      dropUnreferencedOwners(data);
+      if (gone.length === 0 && Object.keys(data).length === before) return gone;
       if (Object.keys(data).length === 0) await this.k8s().delete('Secret', this.cfg.namespace, name);
       else await this.k8s().apply(this.secret(team, name, data));
       return gone;
     });
   }
 
-  async read(team: CredentialTeam, projectName: string): Promise<{ token: string; origin: string; branch: string } | null> {
+  async read(team: CredentialTeam, projectName: string): Promise<{ token: string; origin: string; branch: string; refused?: boolean } | null> {
     const { data } = await this.load(team);
-    const v = data[projectName];
-    if (!v) return null;
-    try {
-      const doc = JSON.parse(Buffer.from(v, 'base64').toString('utf8')) as { token?: unknown; origin?: unknown; branch?: unknown };
-      return typeof doc.token === 'string' && typeof doc.origin === 'string' && typeof doc.branch === 'string' ? { token: doc.token, origin: doc.origin, branch: doc.branch } : null;
-    } catch {
-      return null;
-    }
+    const doc = parseDoc(data[projectName]);
+    if (!doc || typeof doc.origin !== 'string' || typeof doc.branch !== 'string') return null;
+    // a project on an owner token holds the address and branch itself; the token (and the refused mark) are the owner's
+    const holder = typeof doc.via === 'string' ? (isOwnerSecretKey(doc.via) ? parseDoc(data[doc.via]) : null) : doc;
+    if (!holder || typeof holder.token !== 'string') return null;
+    return { token: holder.token, origin: doc.origin, branch: doc.branch, ...(holder.refused === true ? { refused: true } : {}) };
   }
 }

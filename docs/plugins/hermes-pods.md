@@ -89,14 +89,14 @@ branch to the project's origin and open a pull request there; a person merges it
 - **The token's journey.** The server writes it into the Secret `hermes-<team>-push` (one key per project name) through the `project.credentials`
   provider this plugin registers, using the same Kubernetes client as the rest of the controller (the controller's role also needs `delete` on secrets, so
   the last token's Secret can be removed). The workbench mounts the Secret read-only at `/etc/workbench-push`, readable by root only. Every few seconds
-  `mt-push-sync.sh` (run by the reconcile loop as root) copies each entry (a JSON document: the token, the repository address and the main branch it was issued for, and when it was set) to
+  `mt-push-sync.sh` (run by the reconcile loop as root) copies each entry (a JSON document: the token, the repository address and the main branch it was issued for, and when it was set; a project on an owner's shared token holds a pointer `via` to the entry `_owner.<host>.<owner>`, which holds the token, and either may carry `refused: true` once GitHub has answered 401) to
   `/run/mt-push/<project>`: mode 0400, owned by the `repo` user, in a directory only root can write (0755, on a memory volume), so neither `repo` nor a bot
   can plant a link or swap a file there; copies whose key has left the Secret are deleted. The Secret volume is optional, so a team with no token has no Secret and the pod runs as before.
 - **Who may publish.** Only bots whose definition grants `tasks.pull_request` (the engineering Committer): the controller marks them `publisher` in the bots
   ConfigMap and the reconcile loop keeps exactly them in the Unix group `publishers`, the only group sudo lets run `mt-publish.sh`. Other bots cannot push
   branches or open pull requests.
 - **`mt-publish.sh`**, run as `sudo -u repo /usr/local/bin/mt-publish.sh …` (the sudoers file names exactly these two shapes), so a bot never reads the token:
-  - `check <project>` prints `ready` (exit 0) when the project has a plain https GitHub origin and a token issued for that very origin, and exits 3 otherwise.
+  - `check <project>` prints `ready` (exit 0) when the project has a plain https GitHub origin and a token issued for that very origin, exits 3 when not, and exits 7 when the token is marked refused (GitHub answered 401). `publish` exits 7 the same way, and when the push or the API answers with a bad-credentials refusal. The script only returns 7; the mark itself is written by the server (the job and the pull-request sync).
   - `publish <project> <card id> <tested commit> <title>` (the pull request's text on standard input) refuses unless the branch `card-<first 8 characters
     of the card id>` of the repository of record is at exactly that commit (exit 4), pushes that one branch to the origin (a plain push of the exact
     commit: never the main line, never forced, so an origin branch that holds other work refuses it, exit 5), opens the pull request against the project's main branch (as the token was issued for it) (or finds the open one for that branch, so running it twice is safe; an open one that is not at the tested commit is refused, exit 4, after waiting up to a minute for GitHub to move it to the pushed commit) and prints `pull_request_number=`, `pull_request_url=` and

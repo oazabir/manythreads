@@ -42,7 +42,7 @@ async function openPull(over: { head?: string; sha?: string; headRepo?: string; 
   return ((await r.json()) as { number: number }).number;
 }
 
-function harness(opts: { door?: { o_outcome: string; o_reason: string }; credential?: { token: string; origin: string; branch: string } | null; owner?: string } = {}) {
+function harness(opts: { door?: { o_outcome: string; o_reason: string }; credential?: { token: string; origin: string; branch: string; refused?: boolean } | null; owner?: string; refusals?: string[] } = {}) {
   const door = opts.door ?? { o_outcome: 'recorded', o_reason: '' };
   const sql: { text: string; params: unknown[] }[] = [];
   const emitted: unknown[] = [];
@@ -76,6 +76,8 @@ function harness(opts: { door?: { o_outcome: string; o_reason: string }; credent
   const credentials: ProjectCredentialsProvider = {
     id: 'project.credentials',
     put: async () => undefined,
+    putShared: async () => undefined,
+    setRefused: async (_team, project, refused) => void (refused && opts.refusals?.push(project)),
     remove: async () => undefined,
     read: async () => (opts.credential === undefined ? { token: TOKEN, origin: ORIGIN, branch: 'main' } : opts.credential),
   };
@@ -129,6 +131,24 @@ describe('tasks.pull_request', () => {
     expect(await harness({ credential: { token: TOKEN, origin: 'https://gitlab.example/acme/widgets', branch: 'main' } }).run(asked(n))).toMatchObject({ ok: false, code: 'no_credential' });
     expect(await harness({ owner: '01a16e30-0000-7000-8000-0000000000ff' }).run(asked(n))).toMatchObject({ ok: false, code: 'not_owner' });
     expect(gh.calls.length).toBe(before);
+  });
+
+  it('stops at a token the pod marks as refused, and marks it when GitHub answers 401 now — asking GitHub nothing the first time', async () => {
+    const n = await openPull();
+    const before = gh.calls.length;
+    expect(await harness({ credential: { token: TOKEN, origin: ORIGIN, branch: 'main', refused: true } }).run(asked(n))).toMatchObject({ ok: false, code: 'token_refused' });
+    expect(gh.calls.length).toBe(before);
+    const refusals: string[] = [];
+    gh.failNext(401, {}, 1);
+    const h = harness({ refusals });
+    expect(await h.run(asked(n))).toMatchObject({ ok: false, code: 'token_refused', message: expect.stringContaining('lead') });
+    expect(refusals).toEqual(['widgets']);
+    expect(h.sql.some((x) => x.text.includes('tasks_record_pull_request'))).toBe(false);
+    // a 403 or a 500 is not a refusal of the token
+    gh.failNext(500, {}, 1);
+    const calm: string[] = [];
+    expect(await harness({ refusals: calm }).run(asked(n))).toMatchObject({ ok: false, code: 'github_unreachable' });
+    expect(calm).toEqual([]);
   });
 
   it('answers a refusal of the door as data, with nothing announced', async () => {

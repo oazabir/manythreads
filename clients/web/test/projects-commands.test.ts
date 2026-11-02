@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ChannelId, Project, ProjectId } from '@manythreads/shared';
 import { createMockTransport } from '../src/api/mock';
 import { setTransport } from '../src/api/client';
-import { createProject, deleteProject, fetchProjects, updateProject } from '../src/screens/projects/api';
-import { headerTopic, podPath, projectOfChannel, validateEdit, validateNew } from '../src/screens/projects/commands';
+import { createProject, deleteProject, fetchProjects, setPushCredential, updateProject } from '../src/screens/projects/api';
+import { describeShare, describeToken, headerTopic, ownerOfRepo, podPath, projectOfChannel, validateEdit, validateNew } from '../src/screens/projects/commands';
 
 const C1 = '00000000-0000-4000-8000-000000000001' as ChannelId;
 const project = (over: Partial<Project> = {}): Project => ({
@@ -62,5 +62,44 @@ describe('Projects over the mock transport', () => {
     expect((await fetchProjects('engineering')).items).toHaveLength(1);
     await deleteProject('engineering', a.id);
     expect((await fetchProjects('engineering')).items).toEqual([]);
+  });
+});
+
+describe('one token for every project of an owner', () => {
+  beforeEach(() => setTransport(createMockTransport({ latencyMs: 0 })));
+  const TOKEN = 'github_pat_TestTokenValue0123456789abcdef';
+
+  it('names the owner from the address, and none for an address that is not a GitHub repository', () => {
+    expect(ownerOfRepo('https://github.com/Acme/widgets')).toBe('Acme');
+    expect(ownerOfRepo('https://github.com/acme/widgets/tree/main')).toBeNull();
+    expect(ownerOfRepo('https://example.com/just-one-part')).toBeNull();
+  });
+
+  it('words what a shared save did: who else is connected and who was left out', () => {
+    expect(describeShare({ alsoConnected: [], notConnected: [], keptOwn: [] })).toBeNull();
+    expect(describeShare({ alsoConnected: ['gadgets', 'gizmos'], notConnected: [], keptOwn: [] })).toBe('Also connected: gadgets, gizmos.');
+    expect(describeShare({ alsoConnected: ['gadgets'], notConnected: ['locked'], keptOwn: [] })).toBe('Also connected: gadgets. Not connected, because this token cannot write to them: locked.');
+    expect(describeShare({ alsoConnected: [], notConnected: [], keptOwn: ['mine'] })).toBe('Left as they were, because they already have a token of their own: mine.');
+  });
+
+  it('says a refused token needs replacing, in plain words', () => {
+    const d = describeToken({ pushUsername: 'octocat', pushCredentialExpiresAt: null, pushCredentialStatus: 'needs_replacing' });
+    expect(d.tone).toBe('bad');
+    expect(d.line).toMatch(/needs replacing/i);
+  });
+
+  it('saves for one project, or for every project under the same owner and no other', async () => {
+    const a = (await createProject('engineering', { name: 'widgets', repoUrl: 'https://github.com/acme/widgets' })).project;
+    await createProject('engineering', { name: 'gadgets', repoUrl: 'https://github.com/acme/gadgets' });
+    await createProject('engineering', { name: 'elsewhere', repoUrl: 'https://github.com/other/thing' });
+    const alone = await setPushCredential('engineering', a.id, 'octocat', TOKEN);
+    expect(alone).toMatchObject({ alsoConnected: [], notConnected: [] });
+    expect(alone.project.pushCredentialShared).toBe(false);
+    const shared = await setPushCredential('engineering', a.id, 'octocat', TOKEN, true);
+    expect(shared.project.pushCredentialShared).toBe(true);
+    expect(shared.alsoConnected).toEqual(['gadgets']);
+    const list = (await fetchProjects('engineering')).items;
+    expect(list.find((p) => p.name === 'gadgets')).toMatchObject({ pushUsername: 'octocat', pushCredentialShared: true });
+    expect(list.find((p) => p.name === 'elsewhere')).toMatchObject({ pushUsername: null, pushCredentialShared: false });
   });
 });

@@ -46,7 +46,7 @@ async function readBody(req: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export async function startFakeGithub(options: { token: string; owner?: string; repo?: string; login?: string; canPush?: boolean; expires?: string }): Promise<FakeGithub> {
+export async function startFakeGithub(options: { token: string; owner?: string; repo?: string; login?: string; canPush?: boolean; readOnlyRepos?: string[]; expires?: string }): Promise<FakeGithub> {
   const pulls = new Map<number, FakePull>();
   const calls: FakeGithubCall[] = [];
   let failing: { status: number; headers: Record<string, string>; left: number } | null = null;
@@ -75,7 +75,7 @@ export async function startFakeGithub(options: { token: string; owner?: string; 
       if (req.method === 'GET' && repoOnly) {
         // any repository of the owner: the token is a stand-in for one that can see all of the account's repositories
         if (options.owner && repoOnly[1] !== options.owner) return send(404, { message: 'Not Found' });
-        return send(200, { full_name: `${repoOnly[1]}/${repoOnly[2]}`, permissions: { push: options.canPush ?? true } });
+        return send(200, { full_name: `${repoOnly[1]}/${repoOnly[2]}`, permissions: { push: (options.canPush ?? true) && !options.readOnlyRepos?.includes(repoOnly[2]!) } });
       }
       const m = /^\/repos\/([^/]+)\/([^/]+)\/pulls(?:\/(\d+))?$/.exec(url.pathname);
       if (!m || (options.owner && m[1] !== options.owner) || (options.repo && m[2] !== options.repo)) return send(404, { message: 'Not Found' });

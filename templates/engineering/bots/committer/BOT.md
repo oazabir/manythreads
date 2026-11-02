@@ -74,7 +74,8 @@ it and never look for it.
    the card id) and the **tested commit** Tester named. If the card names no tested commit, hand it back to Engineer and say so. Claim the card
    (`tasks.claim`).
 2. Ask whether the project can publish: `sudo -u repo /usr/local/bin/mt-publish.sh check <project>` (`<project>` is the repository's name from
-   the run prompt). It prints `ready` and exits 0 when the project has a GitHub origin and a push credential, and exits 3 when it has none.
+   the run prompt). It prints `ready` and exits 0 when the project has a GitHub origin and a push credential, exits 3 when it has none, and exits 7
+   when GitHub has turned the token down (it expired or was revoked).
 3. **Ready: publish, do not complete.**
    - The pull request must come from the branch `card-` plus the first eight characters of the card id, whatever name the card or the bots used
      for the work. Look at the repository of record: `git -C /workspace/repos/<project>.git rev-parse card-<8 characters>`.
@@ -92,12 +93,17 @@ it and never look for it.
    - Record it with `tasks.pull_request` (`taskId`, `project`, `testedSha` = `head_sha`, `number`). The platform asks GitHub itself. The card then
      waits on a person; the platform finishes it when the pull request is merged and sends it back when it is closed.
    - Post once in the card's thread: the pull request link and the tested commit. Hand the card to nobody.
-4. **Not ready** (exit 3): complete the card with `tasks.complete`, passing the tested commit as the tested sha, and hand it to Deployer
+4. **Not ready** (exit 3, or exit 7 on any step): complete the card with `tasks.complete`, passing the tested commit as the tested sha, and hand it to Deployer
    (`tasks.handoff`, `toBotSlug: deployer`) with the commit, the build and test commands from the card, and how long the build took. When the card
    or the goal says there is no deploy, hand it to nobody. Say in the thread that nothing was pushed because the project has no push credential,
-   so a person knows to add one on the Projects page.
+   so a person knows to add one on the Projects page. Address the project's lead in that message ("the lead of this team can connect GitHub on the
+   Projects page, in the project's Pull requests box"). Never ask for the token in a thread: a pasted token is blocked by the guard.
+   **Exit 7 (token refused):** post once, in the project's channel (or the card's thread if you cannot post there): "GitHub no longer accepts the
+   token of project `<project>`; a lead needs to replace it on the Projects page. Nothing was pushed." Do not run `publish` again for any card of
+   this project until the lead tells you a new token is saved (the server notices a refused token within a quarter of an hour, so `check` may still print `ready` until then). `tasks.pull_request` can answer `token_refused` for the same reason: handle it the same way.
 5. **A refusal is an answer.** `mt-publish.sh` exit codes: 2 bad input, 3 no credential, 4 the branch is not at the tested commit, 5 the push was
-   refused (the branch exists on GitHub with other work, or its history was rewritten), 6 GitHub refused or did not answer. `tasks.pull_request` can
+   refused (the branch exists on GitHub with other work, or its history was rewritten), 6 GitHub refused or did not answer, 7 GitHub turned the
+   token down (step 4). `tasks.pull_request` can
    refuse too. Say what refused, with the message, and do not retry more than once. For 5 after a rebase, hand the card to a person
    (`tasks.handoff`, `mode: person`): the old pull request must be closed and a new one opened. Never work around a refusal.
 6. Retain with `memory.retain` that the project publishes (or does not) and the pull request's number and link, one short fact per call.

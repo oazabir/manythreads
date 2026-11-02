@@ -104,6 +104,50 @@ describe('mt-publish.sh check', () => {
   it('refuses a name that is not a plain project name', async () => {
     for (const bad of ['../x', 'a/b', 'A', '', '-x']) expect((await run(PUBLISH, ['check', bad])).code).toBe(2);
   });
+  it('says the token was refused (exit 7) once the platform marked it, and says ready again when the mark is gone', async () => {
+    writeFileSync(join(root, 'push/widgets'), JSON.stringify({ branch: 'main', origin: ORIGIN, token: TOKEN, refused: true }), { mode: 0o400 });
+    const r = await run(PUBLISH, ['check', 'widgets']);
+    expect(r.code).toBe(7);
+    expect(r.out).toContain('token refused');
+    expect(r.out + r.err).not.toContain(TOKEN);
+    writeFileSync(join(root, 'push/widgets'), secretDoc(), { mode: 0o600 });
+    expect((await run(PUBLISH, ['check', 'widgets'])).code).toBe(0);
+  });
+});
+
+describe('a project on the team’s token for its owner', () => {
+  const OWNER_FILE = '_owner.github.com.acme';
+  /** The project's own file holds the address and branch and names the owner file that holds the token. */
+  const linked = (refused = false) => {
+    writeFileSync(join(root, 'push/widgets'), JSON.stringify({ branch: 'main', origin: ORIGIN, via: OWNER_FILE }), { mode: 0o400 });
+    writeFileSync(join(root, 'push', OWNER_FILE), JSON.stringify({ token: TOKEN, ...(refused ? { refused: true } : {}) }), { mode: 0o400 });
+  };
+
+  it('is ready, and publishes with the owner’s token', async () => {
+    linked();
+    expect((await run(PUBLISH, ['check', 'widgets'])).out).toBe('ready\n');
+    const r = await run(PUBLISH, ['publish', 'widgets', CARD, headSha, 'Fix the widget'], { input: 'tested\n' });
+    expect(r.code, r.err).toBe(0);
+    expect(r.out).toMatch(/pull_request_number=\d+/);
+    expect(gh.calls.every((c) => c.authorized)).toBe(true);
+    expect(r.out + r.err).not.toContain(TOKEN);
+  });
+  it('has no credential when the owner’s file is missing, and refuses when the owner’s token was marked refused', async () => {
+    linked();
+    rmSync(join(root, 'push', OWNER_FILE));
+    expect((await run(PUBLISH, ['check', 'widgets'])).code).toBe(3);
+    linked(true);
+    expect((await run(PUBLISH, ['check', 'widgets'])).code).toBe(7);
+    const r = await run(PUBLISH, ['publish', 'widgets', CARD, headSha, 'Fix the widget'], { input: 'tested\n' });
+    expect(r.code).toBe(7);
+    expect(gh.calls).toHaveLength(0);
+  });
+  it('refuses a pointer that names anything but an owner file', async () => {
+    writeFileSync(join(root, 'push/widgets'), JSON.stringify({ branch: 'main', origin: ORIGIN, via: '../widgets' }), { mode: 0o400 });
+    expect((await run(PUBLISH, ['check', 'widgets'])).code).toBe(3);
+    writeFileSync(join(root, 'push/widgets'), JSON.stringify({ branch: 'main', origin: ORIGIN, via: 'gadgets' }), { mode: 0o400 });
+    expect((await run(PUBLISH, ['check', 'widgets'])).code).toBe(3);
+  });
 });
 
 describe('mt-publish.sh publish', () => {
@@ -256,6 +300,20 @@ describe('mt-publish.sh publish', () => {
     expect(gh.calls).toHaveLength(0);
   });
 
+  it('exits 7 when GitHub answers 401 for the stored token (revoked or expired), and never prints the token', async () => {
+    const stale = 'ghp_StaleTokenValue0123456789abcdefghij';
+    writeFileSync(join(root, 'push/widgets'), secretDoc(stale), { mode: 0o600 });
+    const r = await publish();
+    expect(r.code).toBe(7);
+    expect(r.err).toContain('no longer accepts');
+    expect(r.out + r.err).not.toContain(stale);
+    expect(gh.calls.every((c) => !c.authorized)).toBe(true);
+    // a rate limit or an outage is not a refused token
+    writeFileSync(join(root, 'push/widgets'), secretDoc(), { mode: 0o600 });
+    gh.failNext(403, {}, 1);
+    expect((await publish()).code).toBe(6);
+  });
+
   it('reports a refusal by GitHub without the token, with a distinct exit code', async () => {
     gh.failNext(500, {}, 5);
     const r = await publish();
@@ -297,6 +355,19 @@ describe('mt-push-sync.sh', () => {
     rmSync(join(src, 'widgets'));
     await sync();
     expect(existsSync(join(root, 'push/widgets'))).toBe(false);
+  });
+
+  it('carries an owner’s token file too, under its own name, and still ignores other names', async () => {
+    writeFileSync(join(src, 'widgets'), JSON.stringify({ branch: 'main', origin: ORIGIN, via: '_owner.github.com.acme' }));
+    writeFileSync(join(src, '_owner.github.com.acme'), JSON.stringify({ token: TOKEN }));
+    writeFileSync(join(src, '_other.github.com.acme'), 'x');
+    writeFileSync(join(src, '_owner..x'), 'x');
+    expect((await sync()).code).toBe(0);
+    expect(readdirSync(join(root, 'push')).sort()).toEqual(['_owner.github.com.acme', 'widgets']);
+    expect(statSync(join(root, 'push/_owner.github.com.acme')).mode & 0o777).toBe(0o400);
+    rmSync(join(src, '_owner.github.com.acme'));
+    await sync();
+    expect(existsSync(join(root, 'push/_owner.github.com.acme'))).toBe(false);
   });
 
   it('removes everything when the Secret mount is gone', async () => {

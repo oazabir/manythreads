@@ -51,9 +51,25 @@ export const PushCredentialToken = z
   .regex(/^[A-Za-z0-9_\-.]+$/, 'letters, digits, "_", "-" and "." only');
 /** A GitHub login: letters, digits and single hyphens, up to 39 characters, not starting with a hyphen. */
 export const GithubUsername = z.string().trim().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/, 'a GitHub username: letters, digits and "-", up to 39 characters');
-export const SetPushCredentialRequest = z.strictObject({ username: GithubUsername, token: PushCredentialToken });
+export const SetPushCredentialRequest = z.strictObject({
+  username: GithubUsername,
+  token: PushCredentialToken,
+  /**
+   * Keep the token once for every project of this team whose repository lives under the same GitHub owner as this one (each is checked against GitHub;
+   * the ones the token cannot write to are left out and named in the answer). Omitted or false: this project alone.
+   */
+  shareWithOwner: z.boolean().optional(),
+});
 export type SetPushCredentialRequest = z.infer<typeof SetPushCredentialRequest>;
-export const SetPushCredentialResponse = z.object({ project: Project });
+export const SetPushCredentialResponse = z.object({
+  project: Project,
+  /** Other projects of the team that now use the same token (empty unless `shareWithOwner` was asked for). */
+  alsoConnected: z.array(ProjectName),
+  /** Projects of the same owner the token cannot write to: they were left without it (a token they had from this owner before is removed). */
+  notConnected: z.array(ProjectName),
+  /** Projects of the same owner that already have a token of their own: they were left as they were. */
+  keptOwn: z.array(ProjectName),
+});
 export type SetPushCredentialResponse = z.infer<typeof SetPushCredentialResponse>;
 export const setPushCredentialRoute = { method: 'PUT', path: '/api/teams/:slug/projects/:projectId/push-credential' } as const;
 

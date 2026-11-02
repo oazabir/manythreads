@@ -33,8 +33,8 @@ export const deleteProject = (slug: string, projectId: string) =>
   call(deleteProjectRoute, { response: DeleteProjectResponse }, undefined, { slug, projectId });
 
 /* The GitHub token the team pod publishes with: written, never read back (the project only says whether one is set). */
-export const setPushCredential = (slug: string, projectId: string, username: string, token: string) =>
-  call(setPushCredentialRoute, { request: SetPushCredentialRequest, response: SetPushCredentialResponse }, { username, token }, { slug, projectId });
+export const setPushCredential = (slug: string, projectId: string, username: string, token: string, shareWithOwner = false) =>
+  call(setPushCredentialRoute, { request: SetPushCredentialRequest, response: SetPushCredentialResponse }, { username, token, ...(shareWithOwner ? { shareWithOwner: true } : {}) }, { slug, projectId });
 
 /* Asks GitHub again about the stored token; the answer says who it belongs to and when it expires, or why it no longer works. */
 export const testPushCredential = (slug: string, projectId: string) =>
