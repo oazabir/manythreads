@@ -28,6 +28,8 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      '.claude/**',
+      'data/**',
       '**/node_modules/**',
       '**/coverage/**',
       'docs/spec/**',

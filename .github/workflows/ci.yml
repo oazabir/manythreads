@@ -8,10 +8,10 @@ name: ci
 # A pull request builds and tests the candidate in the CI namespace and stops there. A push
 # to main does the same and then promotes the very same build to the live namespace.
 
+# CI is switched off for now (owner decision, 2026-11-02): code is built, tested and deployed on the
+# devbox by hand. Run the pipeline by starting this workflow manually. To switch it back on, restore
+# the `push` (branches: [main]) and `pull_request` triggers below.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
