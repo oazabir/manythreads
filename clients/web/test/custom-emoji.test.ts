@@ -68,7 +68,9 @@ describe('the mark beside an author (follow-up to P14-04)', () => {
     expect(authorMark({ kind: 'system', sender: 'reminders' })).toMatchObject({ label: 'System' });
     // the server's marker decides, never the name: a webhook that its admin called "Reminders" is still a webhook
     expect(authorMark({ kind: 'system', sender: 'webhook', displayName: 'Reminders' } as never)).toMatchObject({ label: 'Webhook' });
-    expect(authorMark({ kind: 'system' })).toMatchObject({ label: 'Webhook' });
+    // a system author with no marker (an imported person's placeholder) gets no badge: nothing guesses it is a webhook
+    expect(authorMark({ kind: 'system' })).toBeNull();
+    expect(authorMark({ kind: 'system', sender: null })).toBeNull();
     expect(authorMark({ kind: 'person', sender: null })).toBeNull();
     expect(authorMark({ kind: 'bot' })).toBeNull();
     expect(authorMark(null)).toBeNull();

@@ -123,7 +123,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
-| 7 | 14 | Messaging parity and moving in | XL | 6 | 13 of 23 built, 7 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 14 of 23 built, 7 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 0 of 13 built |
 | 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
@@ -433,7 +433,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI … | Not built |  | no pre-check/contrast/Tab-walk CI jobs; USER_JOURNEYS.md not generated |
 | P13-11 | Build the /dev/components gallery (Button, Chip, Card, Table row … | Not built | clients/web/src/pages/DevTokens.tsx (/dev/tokens), DevViewers; eslint.config.js raw-hex ban; stylelint.config.js color-no-hex | no /dev/components gallery, no 4px spacing lint |
 
-### Phase 14 · Messaging parity and moving in — 13 built, 7 partly, 3 not built
+### Phase 14 · Messaging parity and moving in — 14 built, 7 partly, 2 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
@@ -450,7 +450,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P14-10 | Quick switcher and keyboard. Ctrl/Cmd+K jumps to any channel, DM … | Built | clients/web/src/app/QuickSwitcher.tsx, quick-switcher.ts, readAll.ts; ChannelView.tsx jump-first-unread; e2e/shell/quick-switcher.spec.ts |  |
 | P14-11 | Search parity. Filters from: in: has:file has:link has:pin is:thread … | Partly built | packages/plugins/search (migrations 0004 filters_pages, 0005 saved_searches; saved.ts); packages/shared/src/api/search/syntax.ts … | has:pin not supported (pins absent); transcripts are phase 15 |
 | P14-12 | Message actions. Edit history ("edited" opens the versions); forward … | Built | channels migrations 0009 message_versions, 0010 channel_bookmarks; routes-bookmarks.ts; web ForwardDialog.tsx, BookmarksBar.tsx, MessageExtras.tsx | - (bookmarks sit beside pins, which do not exist) |
-| P14-13 | Import from Slack and Mattermost. An admin uploads a Slack export … | Not built | - (no plugins/import, no tools/import) | no Slack/Mattermost importer, dry run, job or hostile-input tests |
+| P14-13 | Import from Slack and Mattermost. An admin uploads a Slack export … | Built, checked live 2026-11-02 | packages/plugins/import (migrations 0001, 0002; zip, slack, mattermost, engine, jobs, routes), packages/shared/src/api/import, clients/web/src/screens/import, docs/plugins/import.md; e2e/import/import.spec.ts; live spec e2e/screens/task.import.shots.ts | Left: file bytes are not copied (a message keeps a "(file: name)" line), custom emoji, user groups, pins, edit history, Teams and Discord are not imported; an imported channel shows a "New" divider although its unread count is 0; the dry run counts 5 reactions and the final report 6 (cause not found); the Remove button reads "Remove from this list" and a cancelled analysing run drops its archive |
 | P14-14 | Incoming webhooks and a Slack-shaped API. Promote slack-compat from … | Partly built | packages/plugins/webhooks (incoming URL per channel, Slack/Mattermost payloads, adapters/); clients/web/src/webhooks/WebhooksDialog.tsx | slack-compat still spike (only chat.postMessage); no outgoing webhooks, chat.update, reactions.add, per-integration API token |
 | P14-15 | A personal sidebar inside the contract. Star a channel (a Starred … | Built | channels migration 0011 (channel_stars, sidebar_prefs, forced RLS), routes-sidebar.ts; clients/web/src/shell/ChannelGroups.tsx, sidebarLayout.ts, sidebarPrefsStore.ts; e2e/shell/sidebar-prefs.spec.ts; e2e/screens/task.sidebar.shots.ts (live) | - (drag by mouse; keyboard and menu reorder; sort team order, recent or name) |
 | P14-16 | On-device speech in the browser: spike, then the engine … | Not built | - (no clients/web/src/speech, no docs/spikes/speech.md, no /models/ route) | no spike, engine, FAKE_ASR |
