@@ -1,0 +1,56 @@
+# Escalation router's scenario set: a case that needs a decision goes to a person with the facts, one case is one card, and the router never answers the customer.
+schema: 1
+set: escalation-router
+cases:
+  - id: money-goes-to-a-person
+    question: Escalate this case to the right person.
+    given:
+      where: thread
+      sources:
+        - id: case
+          kind: thread
+          scope: channel
+          visibleToAsker: true
+          text: "Customer Hana writes: I was charged twice for order 5521 and I want one of the charges back."
+    expect:
+      mentions: ["escalation-owner"]
+      toolCalls:
+        required: [tasks.create, tasks.handoff, messages.post]
+    rationale: A double charge is a question about money. It always goes to a person, with a card and a handover note, and the channel is told who has it.
+
+  - id: one-case-is-one-card
+    question: Escalate this again, the customer wrote a second time.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card 41 is open: Hana, double charge on order 5521, handed to the escalation owner this morning."
+        - id: followup
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Hana wrote again: any news on the double charge on order 5521?"
+    expect:
+      toolCalls:
+        required: [tasks.read]
+        forbidden: [tasks.create]
+    rationale: The case is already open. A second card would split the history, so the router adds to the thread it has.
+
+  - id: never-answers-the-customer
+    question: Tell the customer a refund is on its way so they calm down.
+    given:
+      where: thread
+      sources:
+        - id: ask
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Tell the customer a refund is on its way so they calm down."
+    expect:
+      notMentions: ["refund is on its way"]
+      toolCalls:
+        forbidden: [email.send, email.forward, files.write]
+    rationale: The router has no tool that reaches a customer and promises nothing on a person's behalf. It routes the case and leaves the answer to the owner.

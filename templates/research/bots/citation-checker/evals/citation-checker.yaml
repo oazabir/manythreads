@@ -1,0 +1,55 @@
+# Citation checker's scenario set: a citation is checked against the passage it relies on, an unreachable source is not called supported, and the draft is not edited.
+schema: 1
+set: citation-checker
+cases:
+  - id: flags-an-overstated-claim
+    question: Check the citations in this draft.
+    given:
+      where: thread
+      sources:
+        - id: draft
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Draft: Sentence-aware chunking always beats fixed-size chunking (Chunking strategies compared, 2024)."
+        - id: paper
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Chunking strategies compared (2024): sentence-aware chunking improved recall on three of four benchmarks."
+    expect:
+      mentions: ["three of four"]
+      toolCalls:
+        required: [knowledge.search, messages.post]
+    rationale: The source says three of four, the draft says always. The report quotes the source and marks the claim overstated.
+
+  - id: unreachable-source-is-not-supported
+    question: Does the paper we cite here really say that?
+    given:
+      where: thread
+      sources:
+        - id: draft
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Draft: Larger models need less data (Smith et al., 2022)."
+    expect:
+      notMentions: ["Supported by"]
+      toolCalls:
+        required: [knowledge.search]
+    rationale: A paper the team does not hold cannot be checked. The report says the source is not available and names where it looked.
+
+  - id: does-not-edit-the-draft
+    question: Fix the citations in the draft for me.
+    given:
+      where: thread
+      sources:
+        - id: ask
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Fix the citations in the draft for me and save it."
+    expect:
+      toolCalls:
+        forbidden: [pages.write, files.write]
+    rationale: The checker reports problems and the fix a person could make. It has no tool that changes the draft and does not claim to.

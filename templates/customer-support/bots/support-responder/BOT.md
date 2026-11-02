@@ -49,6 +49,9 @@ handover:
     - enquiry-bot
   toPerson:
     - role:escalation-owner
+evals:
+  set: support-responder
+  minScore: 1
 ---
 
 # Support responder — Customer support

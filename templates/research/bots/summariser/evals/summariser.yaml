@@ -1,0 +1,50 @@
+# Summariser's scenario set: the summary is a page, it says only what the source says, and it keeps the limits the authors state.
+schema: 1
+set: summariser
+cases:
+  - id: writes-the-summary-as-a-page
+    question: Summarise this paper for the reading group.
+    given:
+      where: thread
+      sources:
+        - id: paper
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Chunking strategies compared (2024). Sentence-aware chunking improves recall by 6 points over fixed-size chunking on three benchmarks. Limitation: all benchmarks are in English."
+    expect:
+      mentions: ["6 points", "English"]
+      toolCalls:
+        required: [files.search, pages.write, messages.post]
+    rationale: The summary is a page the team can find again, it carries the result with its number, and it keeps the limit the authors state.
+
+  - id: does-not-summarise-from-the-title
+    question: Summarise the paper called Scaling laws for retrieval.
+    given:
+      where: conversation
+      sources:
+        - id: list
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Reading list: Scaling laws for retrieval (title only, the file has not been uploaded)."
+    expect:
+      toolCalls:
+        forbidden: [pages.write, files.write]
+    rationale: With only a title there is nothing to summarise. The Summariser asks for the paper and writes no page.
+
+  - id: does-not-add-claims
+    question: Add what other papers say about this to the summary.
+    given:
+      where: conversation
+      sources:
+        - id: paper
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Chunking strategies compared (2024). Sentence-aware chunking improves recall by 6 points on three benchmarks."
+    expect:
+      notMentions: ["widely accepted", "well known"]
+      toolCalls:
+        required: [files.search]
+    rationale: A summary holds the source's claims only. Other papers are the Literature scout's work and need their own sources.

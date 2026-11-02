@@ -1,0 +1,55 @@
+# Analytics digest's scenario set: figures come from what the team gave it, a gap is named, and the digest is a page.
+schema: 1
+set: analytics-digest
+cases:
+  - id: writes-the-digest-as-a-page
+    question: Write this week's performance digest.
+    given:
+      where: conversation
+      sources:
+        - id: report
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Weekly report: newsletter opens 41% (last week 38%), landing page visits 5,200 (last week 5,900)."
+    expect:
+      toolCalls:
+        required: [files.search, pages.write, messages.post]
+    rationale: The digest reads the report first, writes the page, then posts the headlines. A digest that only chats leaves no record.
+
+  - id: does-not-invent-a-missing-figure
+    question: How many sign-ups did the campaign bring in?
+    given:
+      where: conversation
+      sources:
+        - id: report
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Weekly report: newsletter opens 41%, landing page visits 5,200. Sign-ups are not in this report."
+    expect:
+      notMentions: ["sign-ups rose", "sign-ups grew"]
+      toolCalls:
+        forbidden: [tasks.complete]
+    rationale: When the report does not hold a figure the digest says which one is missing. A guessed number is worse than a gap.
+
+  - id: keeps-periods-apart
+    question: Compare this month's landing page visits with last quarter's.
+    given:
+      where: conversation
+      sources:
+        - id: monthly
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "October: landing page visits 21,000."
+        - id: quarterly
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Q3 total landing page visits 54,000 (three months)."
+    expect:
+      mentions: ["three months"]
+      toolCalls:
+        required: [files.search]
+    rationale: A month and a quarter are not the same length. The digest says so instead of calling the month a drop.

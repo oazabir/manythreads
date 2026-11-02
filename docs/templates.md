@@ -43,16 +43,59 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 | Template | Definitions | Scenario sets |
 |---|---|---|
 | Engineering | Brain, Engineer, Plan reviewer, Coder, Code reviewer, Tester, Committer, Deployer, Web smoke tester, Alert triage, Standup relay | `brain`, `engineer`, `plan-reviewer`, `code-reviewer`, `tester`, `committer`, `deployer`, `web-smoke-tester`, `alert-triage`, `standup-relay` |
-| Customer support | Brain, Support responder | `brain` |
-| Marketing | Brain, Content drafter | `brain` |
-| Research | Brain | `brain` |
-| Product design | Brain | `brain` |
+| Customer support | Brain, Support responder, Escalation router, KB gardener | `brain`, `support-responder`, `escalation-router`, `kb-gardener` |
+| Marketing | Brain, Content drafter, Social scheduler, Analytics digest, Brand reviewer | `brain`, `content-drafter`, `social-scheduler`, `analytics-digest`, `brand-reviewer` |
+| Research | Brain, Literature scout, Summariser, Experiment tracker, Citation checker | `brain`, `literature-scout`, `summariser`, `experiment-tracker`, `citation-checker` |
+| Product design | Brain, Spec writer, Feedback synthesiser, Design critique, Figma watcher | `brain`, `spec-writer`, `feedback-synthesiser`, `design-critique`, `figma-watcher` |
 
-The other bots a template lists in `template.yaml` (Enquiry bot, Escalation router, KB gardener, Social scheduler, Analytics digest, Brand
-reviewer, Literature scout, Summariser, Experiment tracker, Citation checker, Spec writer, Feedback synthesiser, Design critique, Figma
-watcher) have no definition yet: they are names and roles, and the Archivist (SPEC §12.2) arrives with the team inbox. The three minimal bots
-below have **no scenario set yet**, and the six engineering bots have no setup prompt yet: SPEC §13 asks for both on every template bot, and
-the setup prompt's home is the self-setup profile and the Workshop, which do not exist in this version. Everything else ships a set.
+The one bot a template lists that has no definition yet is the Enquiry bot (Customer support); the Archivist (SPEC §12.2) arrives with the
+team inbox. No template bot has a setup prompt of its own: SPEC §13 asks for one on every template bot, and the only setup prompt there is
+today is the Workshop's shared "Add a bot" profile (`templates/_setup/PROFILE.md`), which does not know the template bots by name. Every
+shipped bot has a scenario set.
+
+## The other team bots
+
+Written with the narrowest tool list that does the job, from tools that exist today. None holds a connection, a runtime tool, a file write
+or an approval, and each one's `placement` is the managed gateway, as Brain's is. Five grants carry most of them: `messages.post` and
+`messages.search` (talk), `files.search` and `knowledge.search` (read what the team holds), `memory.recall`; `pages.write` is held by the ones
+whose output is a page.
+
+| Bot | Kind | Wakes on | Writes | Hands over to | Scenario set (`minScore`) |
+|---|---|---|---|---|---|
+| Social scheduler | automation | `routine`, mention #social, conversation | `pages/social/calendar.md`; one card per post (`tasks.create`, `tasks.handoff`) | brand-reviewer; `role:campaign-owner` | `social-scheduler` (1) |
+| Analytics digest | agent | `routine`, mention #analytics, conversation | `pages/digests/` | brand-reviewer; `role:campaign-owner` | `analytics-digest` (0.9) |
+| Brand reviewer | agent | mention #content/#brand, conversation | nothing but a review message | content-drafter; `role:brand-owner` | `brand-reviewer` (0.9) |
+| Literature scout | agent | `routine`, mention #papers/#reading-group, conversation | nothing but a message | summariser; `role:reading-group-host` | `literature-scout` (0.9) |
+| Summariser | agent | mention #papers/#notes/#reading-group, conversation | `pages/summaries/` | citation-checker; `role:principal-investigator` | `summariser` (0.9) |
+| Experiment tracker | agent | mention #experiments, conversation | `pages/experiments/`; cards (`tasks.create`) | summariser; `role:principal-investigator` | `experiment-tracker` (0.9) |
+| Citation checker | agent | mention #papers/#notes, conversation | nothing but a report message | summariser; `role:principal-investigator` | `citation-checker` (1) |
+| Spec writer | agent | mention #specs/#design, conversation | `pages/specs/` | design-critique; `role:product-owner` | `spec-writer` (0.9) |
+| Feedback synthesiser | agent | `routine`, mention #feedback, conversation | `pages/feedback/` | spec-writer; `role:product-owner` | `feedback-synthesiser` (0.9) |
+| Design critique | agent | mention #critique/#design, conversation | nothing but a critique message | spec-writer; `role:design-lead` | `design-critique` (0.9) |
+| Figma watcher | automation | `routine`, mention #design, conversation | nothing but an update message | none | `figma-watcher` (1) |
+| Escalation router | automation | mention #escalations/#support, conversation | cards (`tasks.create`) handed over (`tasks.handoff`) | support-responder; `role:escalation-owner`, `role:support-lead` | `escalation-router` (1) |
+| KB gardener | agent | `routine`, mention #kb-updates, conversation | `pages/kb-proposals/` and a note in #kb-updates | none | `kb-gardener` (1) |
+
+* **Which are automations** is the template's `automation: true`: Social scheduler, Figma watcher and Escalation router (the test refuses a
+  `kind` that disagrees with `template.yaml`). Several agents also carry a `routine` trigger (Analytics digest, Literature scout, Feedback
+  synthesiser, KB gardener); that does not make them automations. A routine trigger fires when a lead adds a routine for the bot; the
+  templates ship none.
+* **Escalation router.** TEAM.md gives `role:escalation-owner` "the cases the Escalation router cannot settle". The router settles none
+  itself: money, legal and safety cases, and anything the manuals do not answer, go to `role:escalation-owner`; a case about how the team works
+  (an email waiting for approval, a case that has waited too long) goes to `role:support-lead`. It has no tool that reaches a customer, and the
+  body says it never writes to one. A plain question the manuals answer is handed back to the Support responder.
+* **KB gardener.** The platform already posts unanswered questions to #kb-updates (knowledge plugin, `knowledge.gaps`). The gardener reads them,
+  groups and counts them, looks for pages the team's own recent answers contradict, and writes **a proposal as a page** under
+  `pages/kb-proposals/` with the source for every fact (a fact with no source is marked for a person). It does not grant `proposals.propose`:
+  that door files changes to `bots/`, `TEAM.md`, `skills/` and `routines/`, not to the manuals. A person adds the approved text.
+* **Left out because the tool does not exist yet.** Each of these says so in a `What is not built yet` section of its body and declares nothing
+  for it: Social scheduler (publishing to a social account), Analytics digest (reading an analytics or ad tool), Literature scout (searching the
+  web or a paper database), Citation checker (looking a source up online), Design critique and Figma watcher (the Figma API: they work from
+  links, images and notes people share). Nothing is declared under `capabilities.connections`.
+* **No gate lists.** None of the thirteen ships one; their channels are where a person already decides what they see.
+* **Evals for the two minimal bots.** Content drafter (`content-drafter`, 0.9) and Support responder (`support-responder`, 1) now name a
+  scenario set too. The Rehearse test of `email.send` for Support responder is not done: `email.send` is recorded in `needsApproval` but is
+  not a tool the platform offers, so there is nothing to rehearse yet.
 
 ## Brain
 

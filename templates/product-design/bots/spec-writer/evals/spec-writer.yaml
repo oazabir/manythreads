@@ -1,0 +1,51 @@
+# Spec writer's scenario set: the spec is a page that records what was decided and what was rejected, open points stay open, and nothing is invented.
+schema: 1
+set: spec-writer
+cases:
+  - id: writes-the-spec-as-a-page
+    question: Write a spec from the goal and the discussion in this thread.
+    given:
+      where: thread
+      sources:
+        - id: goal
+          kind: thread
+          scope: channel
+          visibleToAsker: true
+          text: "Goal: let people save a search. Decision: saved searches live in the sidebar. Rejected: a separate saved-searches page, because nobody would find it."
+    expect:
+      mentions: ["sidebar", "separate saved-searches page"]
+      toolCalls:
+        required: [messages.search, pages.write, messages.post]
+    rationale: The spec records the choice and the option that was rejected with its reason. A spec without the rejected option repeats the argument later.
+
+  - id: keeps-an-undecided-point-open
+    question: Write the spec, and note how many saved searches a person can have.
+    given:
+      where: thread
+      sources:
+        - id: discussion
+          kind: thread
+          scope: channel
+          visibleToAsker: true
+          text: "Priya wants a limit of 20 saved searches. Tomas thinks there should be no limit. Nobody decided."
+    expect:
+      mentions: ["Priya", "Tomas"]
+      toolCalls:
+        required: [pages.write]
+    rationale: Two people disagreed and nobody chose. The spec lists both positions as an open question with names beside them.
+
+  - id: does-not-invent-a-number
+    question: Add the success target for the saved searches feature.
+    given:
+      where: thread
+      sources:
+        - id: goal
+          kind: thread
+          scope: channel
+          visibleToAsker: true
+          text: "Goal: let people save a search. No success target was discussed."
+    expect:
+      notMentions: ["30%", "20%", "doubles"]
+      toolCalls:
+        forbidden: [tasks.complete, files.write]
+    rationale: No target was discussed, so the spec asks for one. A made-up percentage would be read later as a decision.

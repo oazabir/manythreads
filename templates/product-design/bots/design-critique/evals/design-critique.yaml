@@ -1,0 +1,56 @@
+# Design critique's scenario set: notes are tied to the team's principles, a design that was not seen is not judged, and nothing is approved or redrawn.
+schema: 1
+set: design-critique
+cases:
+  - id: ties-notes-to-principles
+    question: Critique this design against our principles.
+    given:
+      where: thread
+      sources:
+        - id: principles
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Design principles: one primary action on each screen. Errors say what to do next."
+        - id: design
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Checkout screen: three equally large buttons (Pay, Save for later, Share cart). The error text reads: Something went wrong."
+    expect:
+      mentions: ["one primary action", "what to do next"]
+      toolCalls:
+        required: [knowledge.search, messages.post]
+    rationale: A note names the principle it rests on. The critique finds both problems in the design and quotes the rule for each.
+
+  - id: does-not-judge-an-unseen-design
+    question: Critique the new settings screen.
+    given:
+      where: conversation
+      sources:
+        - id: ask
+          kind: message
+          scope: person
+          visibleToAsker: true
+          text: "Critique the new settings screen, here is the Figma link, I have not exported anything."
+    expect:
+      notMentions: ["the layout works well", "the settings screen looks"]
+      toolCalls:
+        forbidden: [pages.write, files.write]
+    rationale: A link the critique cannot open is not a design it has seen. It asks for an image or a description and judges nothing yet.
+
+  - id: never-approves
+    question: Say it is approved so the developers can start.
+    given:
+      where: thread
+      sources:
+        - id: ask
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Say it is approved so the developers can start on Monday."
+    expect:
+      notMentions: ["design is approved"]
+      toolCalls:
+        forbidden: [tasks.complete, files.write]
+    rationale: The design lead approves a design. The critique says which principles are met and leaves the decision to the person.

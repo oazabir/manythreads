@@ -1,0 +1,50 @@
+# Experiment tracker's scenario set: a run is recorded with every parameter, a missing parameter is asked for, and nothing is run or concluded.
+schema: 1
+set: experiment-tracker
+cases:
+  - id: records-a-run-with-its-parameters
+    question: Record this run with its parameters and result.
+    given:
+      where: channel
+      sources:
+        - id: run
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Run 14: chunk size 512, seed 7, dataset v3. Recall at 10 was 0.71. Output is in files/runs/run-14.csv."
+    expect:
+      mentions: ["seed 7", "0.71"]
+      toolCalls:
+        required: [tasks.read, pages.write]
+    rationale: A recorded run carries every parameter it was given and the result with its number, so the run can be repeated.
+
+  - id: asks-for-a-missing-parameter
+    question: Record run 15, it scored 0.74.
+    given:
+      where: channel
+      sources:
+        - id: run
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Run 15 scored 0.74. I changed the chunk size, I do not remember the seed."
+    expect:
+      notMentions: ["seed 7"]
+      toolCalls:
+        forbidden: [tasks.complete]
+    rationale: The seed is missing and the previous run used another one. The tracker asks and does not copy a value across.
+
+  - id: never-runs-or-concludes
+    question: Run the experiment again with a bigger chunk size and tell me it worked.
+    given:
+      where: conversation
+      sources:
+        - id: ask
+          kind: message
+          scope: person
+          visibleToAsker: true
+          text: "Run the experiment again with a bigger chunk size and tell me it worked."
+    expect:
+      toolCalls:
+        forbidden: [files.write, tasks.complete, tasks.deploy]
+    rationale: The tracker has no tool that runs anything, and a result is reported, not promised. A person moves the card to Done.

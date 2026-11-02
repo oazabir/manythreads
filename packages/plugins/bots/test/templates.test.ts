@@ -216,6 +216,11 @@ describe("Brain's scenario set", () => {
 describe('every shipped definition', () => {
   it('is the bot the template lists: same name and role, a bot of the template, in a folder of its own slug', () => {
     expect(shipped.length).toBeGreaterThanOrEqual(8);
+    // every bot a template lists has a definition, except the Enquiry bot, which has no definition yet
+    for (const t of templates) {
+      const have = new Set(shipped.filter((s) => s.template.id === t.id).map((s) => s.slug));
+      expect(t.bots.map((b) => b.slug).filter((slug) => !have.has(slug)), t.id).toEqual(t.id === 'customer-support' ? ['enquiry-bot'] : []);
+    }
     for (const s of shipped) {
       const listed = s.template.bots.find((b) => b.slug === s.slug);
       expect(listed, `${s.template.id}/${s.slug}`).toBeDefined();
@@ -228,6 +233,8 @@ describe('every shipped definition', () => {
     expect(shipped.map((s) => `${s.template.id}/${s.slug}`).sort()).toEqual(
       [
         'customer-support/brain',
+        'customer-support/escalation-router',
+        'customer-support/kb-gardener',
         'customer-support/support-responder',
         'engineering/alert-triage',
         'engineering/brain',
@@ -240,10 +247,21 @@ describe('every shipped definition', () => {
         'engineering/standup-relay',
         'engineering/tester',
         'engineering/web-smoke-tester',
+        'marketing/analytics-digest',
         'marketing/brain',
+        'marketing/brand-reviewer',
         'marketing/content-drafter',
+        'marketing/social-scheduler',
         'product-design/brain',
+        'product-design/design-critique',
+        'product-design/feedback-synthesiser',
+        'product-design/figma-watcher',
+        'product-design/spec-writer',
         'research/brain',
+        'research/citation-checker',
+        'research/experiment-tracker',
+        'research/literature-scout',
+        'research/summariser',
       ].sort(),
     );
   });
@@ -477,6 +495,106 @@ describe('every shipped definition', () => {
     expect(relay.fm.capabilities?.native).not.toContain('pages.write');
   });
 
+  describe('the remaining team bots of marketing, research, product design and customer support', () => {
+    const NEW_BOTS = [
+      'marketing/social-scheduler',
+      'marketing/analytics-digest',
+      'marketing/brand-reviewer',
+      'research/literature-scout',
+      'research/summariser',
+      'research/experiment-tracker',
+      'research/citation-checker',
+      'product-design/spec-writer',
+      'product-design/feedback-synthesiser',
+      'product-design/design-critique',
+      'product-design/figma-watcher',
+      'customer-support/escalation-router',
+      'customer-support/kb-gardener',
+    ];
+    const newBots = (): Shipped[] => shipped.filter((s) => NEW_BOTS.includes(`${s.template.id}/${s.slug}`));
+    const setOf = (s: Shipped): BotEvalSet => {
+      const parsed = parseBotEvalSet(s.template.files?.[botEvalSetPath(s.slug, s.fm.evals?.set ?? '')] ?? '');
+      if (!parsed.ok) throw new Error(`${s.slug}: ${parsed.message}`);
+      return parsed.set;
+    };
+
+    it('are all there, each on the managed gateway, woken by a person, a mention of a channel the template has, or a routine', () => {
+      expect(newBots().map((s) => `${s.template.id}/${s.slug}`).sort()).toEqual([...NEW_BOTS].sort());
+      for (const s of newBots()) {
+        const id = `${s.template.id}/${s.slug}`;
+        expect(s.fm.placement?.gateway, id).toEqual({ connection: 'managed' });
+        const types = (s.fm.triggers ?? []).map((t) => t.type);
+        expect(types, id).toContain('conversation');
+        for (const type of types) expect(['conversation', 'mention', 'routine'], `${id}: ${type}`).toContain(type);
+        expect((s.fm.conversation?.prompts ?? []).length, id).toBeGreaterThanOrEqual(3);
+      }
+      // the three the plan calls automations are the three the templates mark as such
+      expect(newBots().filter((s) => s.fm.kind === 'automation').map((s) => s.slug).sort()).toEqual(['escalation-router', 'figma-watcher', 'social-scheduler']);
+    });
+
+    it('hold only tools that exist today: no connection, no email or outside-world tool, no runtime tool, no file write, no task state change', () => {
+      for (const s of newBots()) {
+        const id = `${s.template.id}/${s.slug}`;
+        expect(s.fm.capabilities?.connections, id).toBeUndefined();
+        expect(s.fm.capabilities?.runtime, id).toBeUndefined();
+        for (const cap of s.fm.capabilities?.native ?? []) {
+          expect(cap, id).toMatch(/^(tasks\.(read|create|handoff)|pages\.write|messages\.(post|search)|files\.search|knowledge\.search|memory\.recall)$/);
+        }
+        expect(s.fm.approvals?.needsApproval, id).toEqual([]);
+      }
+      for (const slug of ['social-scheduler', 'analytics-digest', 'literature-scout', 'citation-checker', 'design-critique', 'figma-watcher']) {
+        const s = newBots().find((x) => x.slug === slug)!;
+        expect(s.body, slug).toContain('## What is not built yet');
+      }
+    });
+
+    it("keep the lines the plates draw: the router never reaches a customer, the gardener never edits a manual, nothing publishes", () => {
+      const native = (slug: string): string[] => newBots().find((s) => s.slug === slug)!.fm.capabilities?.native ?? [];
+      expect(native('escalation-router')).toEqual(expect.arrayContaining(['tasks.read', 'tasks.create', 'tasks.handoff', 'messages.post']));
+      expect(native('escalation-router')).not.toContain('pages.write');
+      const router = newBots().find((s) => s.slug === 'escalation-router')!;
+      expect(router.fm.handover?.toPerson).toEqual(['role:escalation-owner', 'role:support-lead']);
+      expect(router.body).toContain('You never write to the customer');
+      const gardener = newBots().find((s) => s.slug === 'kb-gardener')!;
+      expect(gardener.fm.capabilities?.native).toContain('pages.write');
+      expect(gardener.body).toContain('pages/kb-proposals/');
+      expect(gardener.body).toContain('You never change a manual');
+      // brand reviewer and citation checker review: no page, no card
+      for (const slug of ['brand-reviewer', 'citation-checker', 'design-critique', 'figma-watcher']) {
+        expect(native(slug), slug).not.toContain('pages.write');
+        expect(native(slug), slug).not.toContain('tasks.create');
+      }
+      expect(newBots().find((s) => s.slug === 'social-scheduler')!.body).toContain('you never publish');
+    });
+
+    it('each names a scenario set that exists, with cases a program can check against what the bot may call', () => {
+      for (const s of newBots()) {
+        const id = `${s.template.id}/${s.slug}`;
+        expect(s.fm.evals?.set, id).toBe(s.slug);
+        const set = setOf(s);
+        expect(set.cases.length, id).toBeGreaterThanOrEqual(3);
+        const granted = new Set([...(s.fm.capabilities?.native ?? []), ...((s.fm.handover?.mayTag ?? []).length > 0 ? ['tasks.handoff'] : [])]);
+        for (const c of set.cases) {
+          expect(c.rationale.length, `${id}/${c.id}`).toBeGreaterThan(20);
+          // a required call must be one the bot holds; a case that demands a tool the definition lacks could never pass
+          for (const call of c.expect.toolCalls?.required ?? []) expect(granted.has(call), `${id}/${c.id}: ${call}`).toBe(true);
+        }
+        // every set pins at least one thing the bot must never do, and one of those is provable from the definition alone: a tool it does not hold
+        // (a forbidden call it does hold, like a page it must not write for a title, is the run's to judge)
+        const forbidden = set.cases.flatMap((c) => c.expect.toolCalls?.forbidden ?? []);
+        expect(forbidden.some((call) => !granted.has(call)), id).toBe(true);
+      }
+    });
+
+    it('also: Content drafter and Support responder now carry a scenario set', () => {
+      for (const slug of ['content-drafter', 'support-responder']) {
+        const s = shipped.find((x) => x.slug === slug)!;
+        expect(s.fm.evals?.set, slug).toBe(slug);
+        expect(setOf(s).cases.length, slug).toBeGreaterThanOrEqual(3);
+      }
+    });
+  });
+
   it('is plain product copy: no plan or phase wording, no template placeholders, no retired name', () => {
     // the retired name is built, not written, so that this file is free of it too
     const retired = String.fromCharCode(109, 97, 106, 108, 105, 115);
@@ -552,7 +670,7 @@ describe('a team created from a template starts with its bots', () => {
           ).rows,
         );
         const native = m.fm.capabilities?.native ?? [];
-        const wantedHandoff = (m.fm.handover?.mayTag ?? []).length > 0 ? ['tasks.handoff'] : [];
+        const wantedHandoff = (m.fm.handover?.mayTag ?? []).length > 0 || (m.fm.handover?.toPerson ?? []).length > 0 ? ['tasks.handoff'] : [];
         // one grant per capability: a bot that names `tasks.handoff` itself and also has `handover.mayTag` still gets one row
         expect(grants.map((g) => g.capability), `${t.id}/${m.slug}`).toEqual([...new Set([...native, ...wantedHandoff])].sort());
         const waiting = new Set(m.fm.approvals?.needsApproval ?? []);

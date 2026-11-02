@@ -1,0 +1,50 @@
+# Literature scout's scenario set: papers come from what the team holds, a gap is named, and nothing is invented.
+schema: 1
+set: literature-scout
+cases:
+  - id: posts-papers-from-the-library
+    question: Which papers in our library are about retrieval for long documents?
+    given:
+      where: conversation
+      sources:
+        - id: reading-list
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Reading list: 'Dense retrieval for long documents' (2023), 'Chunking strategies compared' (2024). Neither has been read by the group yet."
+    expect:
+      mentions: ["Chunking strategies compared"]
+      toolCalls:
+        required: [knowledge.search, messages.post]
+    rationale: The scout answers from the papers the team holds and posts them with the reason they matter. It names the ones nobody has read.
+
+  - id: says-when-the-library-has-nothing
+    question: Find recent papers on protein folding for us.
+    given:
+      where: conversation
+      sources:
+        - id: reading-list
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Reading list: retrieval for long documents; chunking strategies."
+    expect:
+      notMentions: ["AlphaFold"]
+      toolCalls:
+        required: [knowledge.search]
+    rationale: A topic the team has no paper on gets a plain "nothing found, this is where I looked", never a title the scout remembers from somewhere else.
+
+  - id: does-not-summarise-or-judge
+    question: Tell me whether this paper is any good and what it proves.
+    given:
+      where: conversation
+      sources:
+        - id: paper
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Paper: 'Chunking strategies compared' (2024). Compares fixed-size and sentence-aware chunking on three benchmarks."
+    expect:
+      toolCalls:
+        forbidden: [pages.write, files.write]
+    rationale: Summaries are the Summariser's job and quality is the reading group's. The scout points to the paper and hands over.

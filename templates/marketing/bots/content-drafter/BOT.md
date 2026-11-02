@@ -44,6 +44,9 @@ handover:
     - brand-reviewer
   toPerson:
     - role:campaign-owner
+evals:
+  set: content-drafter
+  minScore: 0.9
 ---
 
 # Content drafter — Marketing

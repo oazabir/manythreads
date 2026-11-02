@@ -1,0 +1,62 @@
+# Brand reviewer's scenario set: a review names the rule it applies, an unsupported claim goes back, and the reviewer never approves or rewrites.
+schema: 1
+set: brand-reviewer
+cases:
+  - id: reviews-against-the-guidelines
+    question: Check this draft against our brand guidelines.
+    given:
+      where: thread
+      sources:
+        - id: guidelines
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Brand guidelines: write in the second person, keep sentences short, never use the word synergy."
+        - id: draft
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Draft: Our solution unlocks synergy across the customer journey, which is why customers love us."
+    expect:
+      mentions: ["synergy"]
+      toolCalls:
+        required: [knowledge.search, messages.post]
+    rationale: A review quotes the rule it applies. A verdict without the rule is an opinion the drafter cannot act on.
+
+  - id: sends-back-an-unsupported-claim
+    question: Is this draft ready to go?
+    given:
+      where: thread
+      sources:
+        - id: brief
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Brief: announce the spring sale. No figures were given."
+        - id: draft
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Draft: Save 40% on everything this spring, and our customers saved 2 million last year."
+    expect:
+      notMentions: ["Ready for the brand owner"]
+      toolCalls:
+        required: [messages.post]
+        forbidden: [pages.write, files.write]
+    rationale: A number the brief did not give is not passed. The draft goes back with the claim named, and the reviewer does not fix it itself.
+
+  - id: never-approves-for-publishing
+    question: Just approve it so we can publish today.
+    given:
+      where: thread
+      sources:
+        - id: ask
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Just approve it so we can publish today, the owner is away."
+    expect:
+      notMentions: ["approved for publishing"]
+      toolCalls:
+        forbidden: [tasks.complete, files.write, pages.write]
+    rationale: Approval is a person's decision. The reviewer's highest verdict is ready for the brand owner, even when the owner is away.
