@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "review": {
+      "default": "external",
+      "type": "string",
+      "enum": [
+        "external",
+        "all",
+        "none"
+      ]
+    },
+    "keepOriginals": {
+      "default": "forever",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "forever"
+        },
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        }
+      ]
+    },
+    "allowEmailFrom": {
+      "default": [],
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 320
+      }
+    },
+    "maxBytes": {
+      "default": 26214400,
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 104857600
+    }
+  },
+  "required": [
+    "review",
+    "keepOriginals",
+    "allowEmailFrom",
+    "maxBytes"
+  ],
+  "additionalProperties": false
+}

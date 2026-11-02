@@ -2,10 +2,11 @@
 // and posts back text or a plain reason, nothing else. Written with erasable TypeScript only (it is loaded by Node itself, not bundled).
 import { parentPort, workerData } from 'node:worker_threads';
 import { DEFAULT_LIMITS, extract, ExtractError } from './core.ts';
+import type { ExtractKind } from './types.ts';
 
 interface Job {
   bytes: Uint8Array;
-  kind: 'markdown' | 'text' | 'csv' | 'pdf' | 'html';
+  kind: ExtractKind;
   maxChars: number;
 }
 

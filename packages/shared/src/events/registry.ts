@@ -109,6 +109,12 @@ import { KnowledgeDocumentAddedEvent } from './knowledge.document.added.ts';
 import { KnowledgeDocumentRemovedEvent } from './knowledge.document.removed.ts';
 import { KnowledgeBaseResyncedEvent } from './knowledge.base.resynced.ts';
 import { ConnectionsInboxClaimedEvent } from './connections.inbox.claimed.ts';
+import { MemoryItemDroppedEvent } from './memory.item.dropped.ts';
+import { MemoryItemFiledEvent } from './memory.item.filed.ts';
+import { MemoryItemHeldEvent } from './memory.item.held.ts';
+import { MemoryItemFailedEvent } from './memory.item.failed.ts';
+import { MemoryItemReleasedEvent } from './memory.item.released.ts';
+import { MemoryItemDiscardedEvent } from './memory.item.discarded.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
 import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
 import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
@@ -214,6 +220,12 @@ export const eventRegistry = {
   'knowledge.document.removed': { 1: KnowledgeDocumentRemovedEvent },
   'knowledge.base.resynced': { 1: KnowledgeBaseResyncedEvent },
   'connections.inbox.claimed': { 1: ConnectionsInboxClaimedEvent },
+  'memory.item.dropped': { 1: MemoryItemDroppedEvent },
+  'memory.item.filed': { 1: MemoryItemFiledEvent },
+  'memory.item.held': { 1: MemoryItemHeldEvent },
+  'memory.item.failed': { 1: MemoryItemFailedEvent },
+  'memory.item.released': { 1: MemoryItemReleasedEvent },
+  'memory.item.discarded': { 1: MemoryItemDiscardedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
   'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },

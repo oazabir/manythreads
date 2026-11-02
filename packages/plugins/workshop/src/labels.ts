@@ -8,6 +8,8 @@ const TOOLS: Record<string, string> = {
   'knowledge.search': 'search the team knowledge',
   'memory.recall': 'remember things it was told',
   'memory.write': 'save notes to memory',
+  'inbox.read': 'read the item it is filing',
+  'inbox.drop': 'drop notes into the team inbox',
   'pages.write': 'write pages',
   'pages.read': 'read pages',
   'files.write': 'change files',
@@ -25,6 +27,7 @@ const TRIGGERS: Record<string, string> = {
   task_assigned: 'a task is given to it',
   routine: 'a set time or schedule comes',
   inbox: 'an email arrives',
+  drop: 'something is dropped into the team inbox',
   webhook: 'another app calls it',
 };
 

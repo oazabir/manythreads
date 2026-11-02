@@ -7,13 +7,16 @@
     ".": "./src/index.ts",
     "./process": "./src/process.ts",
     "./hermes-outbound": "./src/hermes-outbound.ts",
-    "./safe-fetch": "./src/safe-fetch/index.ts"
+    "./safe-fetch": "./src/safe-fetch/index.ts",
+    "./extract": "./src/extract/index.ts",
+    "./extract/core": "./src/extract/core.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@manythreads/shared": "workspace:*",
+    "pdfjs-dist": "6.3.289",
     "zod": "^4"
   }
 }

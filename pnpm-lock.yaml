@@ -730,9 +730,6 @@ importers:
       '@manythreads/shared':
         specifier: workspace:*
         version: link:../../shared
-      pdfjs-dist:
-        specifier: 6.3.289
-        version: 6.3.289
       zod:
         specifier: ^4
         version: 4.6.5
@@ -849,6 +846,37 @@ importers:
       '@manythreads/test-utils':
         specifier: workspace:*
         version: link:../../test-utils
+      '@types/pg':
+        specifier: ^8
+        version: 8.23.1
+      pg:
+        specifier: ^8
+        version: 8.23.1
+
+  packages/plugins/memory-inbox:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4
+        version: 4.6.5
+    devDependencies:
+      '@manythreads/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@manythreads/test-utils':
+        specifier: workspace:*
+        version: link:../../test-utils
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
       '@types/pg':
         specifier: ^8
         version: 8.23.1
@@ -1537,6 +1565,9 @@ importers:
       '@manythreads/shared':
         specifier: workspace:*
         version: link:../shared
+      pdfjs-dist:
+        specifier: 6.3.289
+        version: 6.3.289
       zod:
         specifier: ^4
         version: 4.6.5

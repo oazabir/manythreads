@@ -26,7 +26,8 @@
         "task_assigned",
         "inbox",
         "channel_message",
-        "webhook"
+        "webhook",
+        "drop"
       ]
     },
     "askerId": {

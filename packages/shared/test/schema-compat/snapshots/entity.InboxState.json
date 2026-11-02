@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "queued",
+    "extracting",
+    "filing",
+    "filed",
+    "held",
+    "failed",
+    "duplicate",
+    "needs_review",
+    "discarded"
+  ]
+}

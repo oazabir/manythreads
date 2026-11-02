@@ -128,7 +128,7 @@ export const LIVE_SPECS: Record<LiveTool, Omit<ToolSpec, 'name'>> = {
       type: 'object',
       properties: {
         days: { type: 'integer', minimum: 1, maximum: 90 },
-        trigger: { type: 'string', enum: ['conversation', 'mention', 'routine', 'task_assigned', 'inbox', 'channel_message', 'webhook'] },
+        trigger: { type: 'string', enum: ['conversation', 'mention', 'routine', 'task_assigned', 'inbox', 'channel_message', 'webhook', 'drop'] },
         status: { type: 'string', enum: ['running', 'done', 'failed', 'stopped'] },
         limit: { type: 'integer', minimum: 1, maximum: 30, description: 'Most runs to list (default 15).' },
       },
@@ -495,7 +495,7 @@ const Days = z.number().int().min(1).max(90).optional();
 const StatsArgs = z.object({ days: Days });
 const RecentArgs = z.object({
   days: Days,
-  trigger: z.enum(['conversation', 'mention', 'routine', 'task_assigned', 'inbox', 'channel_message', 'webhook']).optional(),
+  trigger: z.enum(['conversation', 'mention', 'routine', 'task_assigned', 'inbox', 'channel_message', 'webhook', 'drop']).optional(),
   status: z.enum(['running', 'done', 'failed', 'stopped']).optional(),
   limit: z.number().int().min(1).max(30).optional(),
 });

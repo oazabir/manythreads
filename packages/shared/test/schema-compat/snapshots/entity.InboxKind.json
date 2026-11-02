@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "markdown",
+    "text",
+    "csv",
+    "pdf",
+    "docx",
+    "pptx",
+    "xlsx",
+    "eml",
+    "html",
+    "image",
+    "audio",
+    "video",
+    "link",
+    "bundle",
+    "unknown"
+  ]
+}

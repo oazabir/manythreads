@@ -492,6 +492,12 @@ export const knowledgeMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/knowledge/migrations/', import.meta.url)),
 };
 
+/** Migrations of the memory-inbox plugin (`memory_inbox_items`, `memory_inbox_extracts`); needs the kernel's, teams, channels, files and bots migrations. */
+export const memoryInboxMigrationSource: MigrationSource = {
+  namespace: 'memory-inbox',
+  dir: fileURLToPath(new URL('../../plugins/memory-inbox/migrations/', import.meta.url)),
+};
+
 /** Migrations of the analytics plugin (`analytics_events` and its monthly partitions, `analytics_daily`, `analytics_progress`); they read only kernel tables, so they can be passed in `sources` anywhere after the kernel's. */
 export const analyticsMigrationSource: MigrationSource = {
   namespace: 'analytics',

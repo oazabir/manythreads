@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "confirmPrivate": {
+      "default": false,
+      "type": "boolean"
+    },
+    "teamOnly": {
+      "default": false,
+      "type": "boolean"
+    },
+    "thread": {
+      "default": false,
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

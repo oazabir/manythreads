@@ -58,6 +58,8 @@ export const BotTrigger = z.discriminatedUnion('type', [
   }),
   z.strictObject({ type: z.literal('channel_message'), source: Source.optional() }),
   z.strictObject({ type: z.literal('webhook'), connection: Slug.optional(), event: z.string().min(1).optional() }),
+  /** A drop into the team's memory inbox (SPEC §12.2, PLAN P8-14): the run reads that one item as data (`inbox.read`) and proposes concepts. */
+  z.strictObject({ type: z.literal('drop') }),
 ]);
 export type BotTrigger = z.infer<typeof BotTrigger>;
 

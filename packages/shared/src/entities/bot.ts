@@ -24,6 +24,7 @@ export const BotRunTrigger = z.enum([
   'inbox',
   'channel_message',
   'webhook',
+  'drop',
 ]);
 export type BotRunTrigger = z.infer<typeof BotRunTrigger>;
 

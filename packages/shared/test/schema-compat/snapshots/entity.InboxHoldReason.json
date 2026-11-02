@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "review_all",
+    "unknown_sender",
+    "failed_sender_check",
+    "foreign_bundle",
+    "dlp",
+    "oversize"
+  ]
+}

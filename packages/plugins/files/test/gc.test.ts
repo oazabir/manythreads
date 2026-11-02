@@ -416,6 +416,29 @@ describe('the original of a knowledge document is not an orphan (P8-07)', () => 
   });
 });
 
+describe('the original of a team memory inbox item is not an orphan (P8-14)', () => {
+  it('a blob only an inbox item points at survives the collection; once the original is removed it is collected', async () => {
+    await upload(nadia, 'gc-inbox-anchor.txt');
+    const key = await putStray('the original of a dropped note', 3 * DAY);
+    const id = await sys(async (tx) => {
+      const team = (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id;
+      return (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.memory_inbox_items (workspace_id, team_id, origin, state, stage, kind, name, size, sha256, blob_key) VALUES ($1, $2, 'person', 'queued', 'hold', 'markdown', 'gc-note.md', 30, repeat('d', 64), $3) RETURNING id`,
+          [omar.workspaceId, team, key],
+        )
+      ).rows[0]!.id;
+    });
+    const first = await gc();
+    expect(first.refused ?? null).toBeNull();
+    expect(await store.head(key)).not.toBeNull();
+    await sys((tx) => tx.query('UPDATE app.memory_inbox_items SET blob_key = NULL WHERE id = $1', [id]));
+    await gc();
+    expect(await store.head(key)).toBeNull();
+    await sys((tx) => tx.query('DELETE FROM app.memory_inbox_items WHERE id = $1', [id]));
+  });
+});
+
 describe('an uploaded export archive of the import plugin is not an orphan (P14-13)', () => {
   it('a blob only an import run points at survives the collection; once the run keeps no archive it is collected', async () => {
     await upload(nadia, 'gc-import-anchor.txt');

@@ -77,6 +77,8 @@ export const PROVIDER_KINDS = [
   'bot.runners',
   /** The cluster's machines and where the team Hermes pods stand on them (hermes-pods): `RunnerNodesProvider` in ./runner-nodes.ts. */
   'runner.nodes',
+  /** Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): `InboxDistiller` in ./inbox.ts. */
+  'inbox.distiller',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

@@ -33,6 +33,7 @@ export * from './integrations/index.ts';
 export * from './proposals/index.ts';
 export * from './guardrails/index.ts';
 export * from './onboarding/index.ts';
+export * from './inbox/index.ts';
 export * from './knowledge/index.ts';
 export * from './link-preview/index.ts';
 export * from './avatars/index.ts';

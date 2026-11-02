@@ -162,6 +162,7 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
   let markerRefusal: string | null | undefined;
   let hasKnowledge: boolean | undefined;
   let hasImport: boolean | undefined;
+  let hasInbox: boolean | undefined;
   let after = options.cursor;
   for (;;) {
     const page = await storage.list({ ...(after !== undefined ? { after } : {}), limit: pageSize });
@@ -179,6 +180,11 @@ export async function runBlobGc(tx: PluginTx, storage: BlobStorage, options: Blo
       if ((hasImport ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.import_runs') IS NOT NULL AS found")).rows[0]?.found === true)) {
         const runs = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.import_runs WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
         for (const r of runs.rows) referenced.add(r.blob_key);
+      }
+      // And the originals of the team memory inbox's items (the memory-inbox plugin), until the item is discarded or its keep-originals time has passed.
+      if ((hasInbox ??= (await tx.query<{ found: boolean }>("SELECT to_regclass('app.memory_inbox_items') IS NOT NULL AS found")).rows[0]?.found === true)) {
+        const held = await tx.query<{ blob_key: string }>('SELECT DISTINCT blob_key FROM app.memory_inbox_items WHERE blob_key = ANY ($1::text[])', [items.map((i) => i.blobKey)]);
+        for (const r of held.rows) referenced.add(r.blob_key);
       }
       report.referenced += referenced.size;
       const doomed = [];

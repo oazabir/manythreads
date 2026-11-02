@@ -235,7 +235,7 @@ describe('broker: allowlist, person scope, approvals', () => {
     expect((await bare.authorize(approved, 'tasks.claim')).allowed).toBe(false);
   });
 
-  it.each(['routine', 'heartbeat', 'task_assigned', 'inbox', 'webhook', 'channel_message', undefined])(
+  it.each(['routine', 'heartbeat', 'task_assigned', 'inbox', 'webhook', 'channel_message', 'drop', undefined])(
     'denies person:* for trigger %s',
     async (trigger) => {
       const { broker, denials } = setup(['person:*', 'gmail.read']);

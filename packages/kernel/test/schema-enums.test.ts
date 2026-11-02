@@ -39,6 +39,12 @@ import {
   MailDirection,
   ConnectionScope,
   ConnectionStatus,
+  InboxFailureStage,
+  InboxHoldReason,
+  InboxKind,
+  InboxOrigin,
+  InboxSenderCheck,
+  InboxState,
   BotRunnerKind,
   BotRunnerStatus,
   HermesConnectionAgent,
@@ -105,6 +111,7 @@ import {
   gatewayLlmMigrationSource,
   knowledgeMigrationSource,
   connectionsMigrationSource,
+  memoryInboxMigrationSource,
   memoryMigrationSource,
   onboardingMigrationSource,
   proposalsMigrationSource,
@@ -180,6 +187,12 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'connections.status': ConnectionStatus,
   'connections.environment': ConnectionEnvironment,
   'connection_messages.direction': MailDirection,
+  'memory_inbox_items.origin': InboxOrigin,
+  'memory_inbox_items.state': InboxState,
+  'memory_inbox_items.kind': InboxKind,
+  'memory_inbox_items.hold_reason': InboxHoldReason,
+  'memory_inbox_items.sender_check': InboxSenderCheck,
+  'memory_inbox_items.failed_stage': InboxFailureStage,
   'onboarding_marks.step': OnboardingMarkStep,
   'onboarding_marks.kind': OnboardingMarkKind,
   'approvals.source': ApprovalSource,
@@ -237,7 +250,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
  * CHECK (col IN (...)) columns that are deliberately not a shared enum, with the reason. Empty today.
  * (A value set that only the database knows is still an enum; prefer adding the Zod schema.)
  */
-const NOT_SHARED_ENUMS: Record<string, string> = {};
+const NOT_SHARED_ENUMS: Record<string, string> = {
+  'memory_inbox_items.stage': 'pipeline bookkeeping (which job runs next); it never leaves the memory-inbox plugin',
+};
 
 let db: TestDatabase;
 let owner: pg.Client;
@@ -248,7 +263,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

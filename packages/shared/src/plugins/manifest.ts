@@ -40,6 +40,8 @@ export const EXTENSION_POINTS = [
   'provider.bot.runners',
   // The machines (nodes) of the cluster and where the team Hermes pods stand on them (hermes-pods, P19-08): read by bot-runners for the admin's node picker.
   'provider.runner.nodes',
+  // Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): read by memory-inbox, which has a plain fallback while no plugin provides it.
+  'provider.inbox.distiller',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

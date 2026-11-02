@@ -74,6 +74,7 @@ export class ExtensionRegistries {
     presence: new ExtensionRegistry(),
     'bot.runners': new ExtensionRegistry(),
     'runner.nodes': new ExtensionRegistry(),
+    'inbox.distiller': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

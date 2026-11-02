@@ -21,6 +21,7 @@ const TRIGGERS: SetupInventory['triggers'] = [
   { type: 'task_assigned', available: true },
   { type: 'routine', available: true },
   { type: 'inbox', available: false, note: 'Starting from an email inbox needs a connection to a mailbox, which is not available yet.' },
+  { type: 'drop', available: false, note: 'Starting from a file dropped into the team memory inbox needs the Archivist, which is not available yet.' },
   { type: 'webhook', available: false, note: 'Starting from an outside event needs a connection to that app, which is not available yet.' },
 ];
 

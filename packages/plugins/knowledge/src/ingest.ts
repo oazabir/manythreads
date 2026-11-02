@@ -18,7 +18,7 @@ export interface BaseRef {
 }
 
 /** What a document's kind column holds: the kinds of file a person can upload. A web page is read as `html` and stored as `markdown`. */
-export type DocumentKind = Exclude<ExtractKind, 'html'>;
+export type DocumentKind = 'markdown' | 'text' | 'csv' | 'pdf';
 
 export interface IngestFile {
   name: string;
