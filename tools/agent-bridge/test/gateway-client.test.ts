@@ -46,7 +46,8 @@ describe('runOnGateway against the bridge', () => {
     const result = out.at(-1)!;
     expect(result).toMatchObject({ type: 'result', ok: true, text: 'Looking. Done.', tokens: { input: 110, output: 5, total: 115 } });
     const call = h.calls()[0]!;
-    expect(call['instructions']).toBe('You are Coder.');
+    // the runtime adds its output style after the bot's own text (P14-19)
+    expect(String(call['instructions']).startsWith('You are Coder.\n\n## How to write your messages')).toBe(true);
     expect(call['token']).toBe('run-token-abc');
     expect((call['argv'] as string[])[(call['argv'] as string[]).indexOf('--tools') + 1]).toContain('Read');
   });
