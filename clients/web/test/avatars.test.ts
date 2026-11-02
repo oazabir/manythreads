@@ -1,7 +1,8 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { AVATAR_PRESETS, Avatar, avatarLabel, avatarSrc } from '@manythreads/shared';
+import { AVATAR_PRESETS, Avatar, OFFERED_AVATAR_PRESETS, avatarLabel, avatarSrc } from '@manythreads/shared';
+import { creditLine } from '../src/avatars/credit';
 import { squareBox } from '../src/avatars/photo';
 import { initialsOf } from '../src/components/ui';
 
@@ -19,6 +20,9 @@ describe('initials (no avatar, no photo)', () => {
 
 describe('where a picture is loaded from', () => {
   it('a built-in picture is a file of the web app; a photo is the person\'s photo route with its hash', () => {
+    expect(avatarSrc('preset:hijab-30-formal')).toBe('/avatars/hijab-30-formal.svg');
+    expect(avatarSrc('preset:bot-noto-t-rex')).toBe('/avatars/bot-noto-t-rex.svg');
+    // a picture of the first library keeps drawing from its WebP file
     expect(avatarSrc('preset:woman-3')).toBe('/avatars/woman-3.webp');
     expect(avatarSrc('photo:0123456789abcdef', '0192a3b4-0000-7000-8000-000000000001')).toBe('/api/people/0192a3b4-0000-7000-8000-000000000001/avatar?v=0123456789abcdef');
   });
@@ -35,7 +39,7 @@ describe('where a picture is loaded from', () => {
     for (const p of AVATAR_PRESETS) {
       expect(Avatar.safeParse(`preset:${p.id}`).success, p.id).toBe(true);
       expect(avatarLabel(`preset:${p.id}`)).toBe(p.label);
-      expect(avatarSrc(`preset:${p.id}`)).toBe(`/avatars/${p.id}.webp`);
+      expect(avatarSrc(`preset:${p.id}`)).toBe(`/avatars/${p.id}.${p.retired ? 'webp' : 'svg'}`);
     }
     expect(avatarLabel('photo:0123456789abcdef')).toBe('Profile photo');
     expect(avatarLabel(null)).toBeNull();
@@ -57,8 +61,38 @@ describe('the square a photo is cut to', () => {
 
 describe('the picture files', () => {
   const dir = fileURLToPath(new URL('../public/avatars/', import.meta.url));
-  it('every picture in the catalogue has its file, and no file is left out of the catalogue', () => {
-    for (const p of AVATAR_PRESETS) expect(existsSync(`${dir}${p.id}.webp`), p.id).toBe(true);
-    expect(readdirSync(dir).map((f) => f.replace(/\.webp$/, '')).sort()).toEqual(AVATAR_PRESETS.map((p) => p.id).sort());
+  it('every picture in the catalogue has its file, and no picture file is left out of the catalogue', () => {
+    for (const p of AVATAR_PRESETS) expect(existsSync(`${dir}${p.id}.${p.retired ? 'webp' : 'svg'}`), p.id).toBe(true);
+    const pictures = readdirSync(dir).filter((f) => /\.(svg|webp)$/.test(f)).map((f) => f.replace(/\.(svg|webp)$/, ''));
+    expect(pictures.sort()).toEqual(AVATAR_PRESETS.map((p) => p.id).sort());
+  });
+
+  it('the Noto Emoji licence stays beside the animal pictures', () => {
+    expect(readFileSync(`${dir}LICENSE-noto-emoji.txt`, 'utf8')).toContain('Apache License');
+  });
+
+  it('a picture file is an image only: no script, no outside address to load', () => {
+    for (const p of OFFERED_AVATAR_PRESETS) {
+      const svg = readFileSync(`${dir}${p.id}.svg`, 'utf8');
+      expect(svg, p.id).toMatch(/<svg[\s>]/);
+      expect(svg, p.id).not.toMatch(/<script|\son\w+\s*=|<foreignObject|javascript:/i);
+      expect(svg.replace(/xmlns(:\w+)?="[^"]*"/g, ''), p.id).not.toMatch(/href\s*=\s*"https?:/i);
+    }
+  });
+});
+
+describe('the picker', () => {
+  it('offers 25 pictures to people and 25 to bots, and the retired ones are not among them', () => {
+    expect(OFFERED_AVATAR_PRESETS).toHaveLength(50);
+    expect(OFFERED_AVATAR_PRESETS.some((p) => p.retired)).toBe(false);
+    expect(new Set(OFFERED_AVATAR_PRESETS.map((p) => p.label)).size).toBe(50);
+  });
+
+  it('credits the makers of what is on offer, and Flaticon only while a first-library picture is in use', () => {
+    expect(creditLine(true, null)).toContain('Pablo Stanley');
+    expect(creditLine(true, null)).not.toContain('Flaticon');
+    expect(creditLine(true, 'preset:man-3')).toContain('Flaticon');
+    expect(creditLine(false, null)).toContain('Noto Emoji');
+    expect(creditLine(false, 'preset:bot-brain-chip')).not.toContain('Flaticon');
   });
 });

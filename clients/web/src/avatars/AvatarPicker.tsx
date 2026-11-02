@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react';
-import { AVATAR_PRESETS, BOT_AVATAR_PRESETS, avatarLabel, type AvatarGroup, type AvatarPreset } from '@manythreads/shared';
+import { OFFERED_AVATAR_PRESETS, avatarLabel, avatarSrc, type AvatarGroup, type AvatarPreset } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { Dialog } from '../components/Dialog';
 import { Alert, Avatar } from '../components/ui';
+import { creditLine } from './credit';
 import { chooseBotAvatar, chooseMyAvatar, removeMyAvatar, uploadMyPhoto } from './api';
 import { PhotoProblem, preparePhoto } from './photo';
 
-const GROUP_TITLE: Record<AvatarGroup, string> = { man: 'Men', hijab: 'Women with a hijab', woman: 'Women', bot: 'Bots' };
+const GROUP_TITLE: Record<AvatarGroup, string> = { man: 'Men', woman: 'Women', hijab: 'Women with a hijab', bot: 'Bots', brain: 'Brain' };
+const PERSON_GROUPS: readonly AvatarGroup[] = ['man', 'woman', 'hijab'];
+const BOT_GROUPS: readonly AvatarGroup[] = ['bot', 'brain'];
 
 type Target =
   | { kind: 'person'; personId: string }
@@ -18,8 +21,8 @@ function Group({ group, items, current, busy, onPick }: { group: AvatarGroup; it
       <h3 className="avp-h">{GROUP_TITLE[group]}</h3>
       <div className="avp-grid">
         {items.map((p) => (
-          <button key={p.id} type="button" className={`avp-cell ${group === 'bot' ? 'bot' : ''}`} aria-pressed={current === `preset:${p.id}`} aria-label={p.label} title={p.label} disabled={busy} data-testid={`avatar-${p.id}`} onClick={() => onPick(p.id)}>
-            <img src={`/avatars/${p.id}.webp`} alt="" loading="lazy" decoding="async" />
+          <button key={p.id} type="button" className={`avp-cell ${group === 'bot' || group === 'brain' ? 'bot' : ''}`} aria-pressed={current === `preset:${p.id}`} aria-label={p.label} title={p.label} disabled={busy} data-testid={`avatar-${p.id}`} onClick={() => onPick(p.id)}>
+            <img src={avatarSrc(`preset:${p.id}`) ?? ''} alt="" loading="lazy" decoding="async" />
           </button>
         ))}
       </div>
@@ -86,16 +89,10 @@ export function AvatarPicker({ name, target, current, onChanged, onClose }: { na
           </div>
         </div>
         {error ? <Alert>{error}</Alert> : null}
-        {person ? (
-          <>
-            <Group group="man" items={AVATAR_PRESETS.filter((p) => p.group === 'man')} current={value} busy={busy} onPick={pick} />
-            <Group group="woman" items={AVATAR_PRESETS.filter((p) => p.group === 'woman')} current={value} busy={busy} onPick={pick} />
-            <Group group="hijab" items={AVATAR_PRESETS.filter((p) => p.group === 'hijab')} current={value} busy={busy} onPick={pick} />
-          </>
-        ) : (
-          <Group group="bot" items={BOT_AVATAR_PRESETS} current={value} busy={busy} onPick={pick} />
-        )}
-        <p className="avp-credit">Pictures by Flaticon.</p>
+        {(person ? PERSON_GROUPS : BOT_GROUPS).map((g) => (
+          <Group key={g} group={g} items={OFFERED_AVATAR_PRESETS.filter((p) => p.group === g)} current={value} busy={busy} onPick={pick} />
+        ))}
+        <p className="avp-credit" data-testid="avatar-credit">{creditLine(person, value)}</p>
       </div>
     </Dialog>
   );

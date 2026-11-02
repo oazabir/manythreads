@@ -1,10 +1,22 @@
 # Third-party assets
 
-## Profile pictures
+## Profile picture library (50 SVG pictures, P14-24)
 
-The 40 built-in profile pictures in `clients/web/public/avatars/` come from [Flaticon](https://www.flaticon.com), chosen by the owner (2026-11-01). Each was fetched from Flaticon's image server at 512 pixels
-and re-saved at 160 pixels as WebP. Flaticon's free licence asks for **credit to Flaticon and the icon's author** wherever the pictures are shown, which is why the picker says "Pictures by Flaticon"
-and why this page exists. The owner must confirm that this licence (or a paid plan, if any of these icons is a premium one) covers the way manythreads is distributed before it is shared outside the
+The built-in pictures in `clients/web/public/avatars/<id>.svg` came from the owner's `avatars/` folder (added 2026-11-02). The picker shows a credit line, and `clients/web/public/avatars/CREDITS.txt` repeats this.
+
+| Pictures | Made by | Licence |
+|---|---|---|
+| People: `man-20-casual` … `man-60-formal-shaven` (15), `modest-20-formal` … `modest-60-formal` (5), `hijab-20-casual` … `hijab-60-casual` (5) | DiceBear's **Avataaars** style, designed by Pablo Stanley (https://avataaars.com/), generated with `https://api.dicebear.com/9.x/avataaars/svg` | "Free for personal and commercial use", as DiceBear's styles page says; the author's credit is inside each file's metadata and in the picker. **The owner must read DiceBear's licence page (https://www.dicebear.com/licenses/) before the pictures leave the owner's own deployment.** |
+| Animals: `bot-noto-bear` … `bot-noto-tiger` (19) | **Noto Emoji** by Google (https://github.com/googlefonts/noto-emoji), fetched from `fonts.gstatic.com/s/e/notoemoji` | Apache License 2.0 for the image resources. **The licence text is kept beside the files** in `clients/web/public/avatars/LICENSE-noto-emoji.txt`. |
+| Brain: `bot-brain`, `bot-brain-chip`, `bot-brain-circuit`, `bot-brain-glow`, `bot-brain-neural`, `bot-brain-orb` (6) | Original artwork drawn for this project | None to credit. |
+
+The files in `avatars/` at the repo root are the unconverted sources (`avatars/LICENSES.md` records how each folder was made); the web app serves the copies under the ids above.
+
+## First picture library (Flaticon, no longer offered)
+
+The 40 built-in profile pictures of the first library in `clients/web/public/avatars/` come from [Flaticon](https://www.flaticon.com), chosen by the owner (2026-11-01). Each was fetched from Flaticon's image server at 512 pixels
+and re-saved at 160 pixels as WebP. Flaticon's free licence asks for **credit to Flaticon and the icon's author** wherever the pictures are shown, which is why the picker says "Earlier pictures by Flaticon" while someone still has one of them
+and why this page exists. They stay valid (anyone who chose one keeps it) but are no longer offered; this credit stays while any such value can exist. The owner must confirm that this licence (or a paid plan, if any of these icons is a premium one) covers the way manythreads is distributed before it is shared outside the
 owner's own deployment.
 
 | File | Flaticon icon |

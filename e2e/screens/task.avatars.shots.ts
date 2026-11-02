@@ -47,8 +47,8 @@ test('Rafi picks a picture, uploads a photo and goes back to initials', async ({
     await expect(dialog.locator('.avp-cell img').first()).toBeVisible(T);
     await expect.poll(() => dialog.locator('.avp-cell img').evaluateAll((els) => els.every((e) => (e as HTMLImageElement).complete && (e as HTMLImageElement).naturalWidth > 0)), T).toBe(true);
     await shoot(page, '2-picker');
-    await dialog.getByTestId('avatar-man-7').click();
-    await expect(dialog.getByTestId('avatar-current')).toHaveText('Man with glasses and a beard', T);
+    await dialog.getByTestId('avatar-man-50-formal').click();
+    await expect(dialog.getByTestId('avatar-current')).toHaveText('Man in his 50s, formal, with glasses and a white beard', T);
     await shoot(page, '3-picked');
     await dialog.getByTestId('avatar-file').setInputFiles(PHOTO);
     await expect(dialog.getByTestId('avatar-current')).toHaveText('Profile photo', T);
@@ -74,13 +74,15 @@ test('Omar sees it in the roster, chooses a bot picture, and Rafi goes back to i
     await expect(first).toBeVisible(T);
     const slug = await first.getAttribute('data-bot');
     await page.goto(`/t/engineering/bots/${slug}`);
+    // every bot is given a random animal when it is created: remember it, so the check leaves the bot as it found it
+    const original = await page.locator('[data-landmark="bot-head"] .av').getAttribute('data-avatar');
     await page.getByTestId('bot-change-picture').click();
     const dialog = page.getByTestId('avatar-picker');
-    await expect(dialog.locator('.avp-cell')).toHaveCount(20, T);
-    await expect(dialog.getByTestId('avatar-man-1')).toHaveCount(0);
+    await expect(dialog.locator('.avp-cell')).toHaveCount(25, T);
+    await expect(dialog.getByTestId('avatar-man-20-casual')).toHaveCount(0);
     await expect.poll(() => dialog.locator('.avp-cell img').evaluateAll((els) => els.every((e) => (e as HTMLImageElement).complete && (e as HTMLImageElement).naturalWidth > 0)), T).toBe(true);
     await shoot(page, '7-bot-picker');
-    await dialog.getByTestId('avatar-bot-fox-2').click();
+    await dialog.getByTestId('avatar-bot-noto-fox').click();
     await expect(dialog.getByTestId('avatar-current')).toHaveText('Fox', T);
     await dialog.getByRole('button', { name: 'Done' }).click();
     await shoot(page, '8-bot-page');
@@ -90,8 +92,13 @@ test('Omar sees it in the roster, chooses a bot picture, and Rafi goes back to i
     // put both back
     await page.goto(`/t/engineering/bots/${slug}`);
     await page.getByTestId('bot-change-picture').click();
-    await page.getByTestId('avatar-remove').click();
-    await expect(page.getByTestId('avatar-current')).toContainText('initials', T);
+    if (original?.startsWith('preset:')) {
+      await page.getByTestId(`avatar-${original.slice(7)}`).click();
+      await expect(page.getByTestId('avatar-current')).not.toContainText('initials', T);
+    } else {
+      await page.getByTestId('avatar-remove').click();
+      await expect(page.getByTestId('avatar-current')).toContainText('initials', T);
+    }
   } finally {
     await context.close();
   }

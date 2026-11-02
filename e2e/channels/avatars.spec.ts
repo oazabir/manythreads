@@ -42,18 +42,18 @@ test.describe('desktop', () => {
       const dialog = page.getByTestId('avatar-picker');
       await expect(dialog).toBeVisible(T);
       // the three people groups and no bot pictures
-      await expect(dialog.getByRole('region', { name: 'Men', exact: true }).locator('.avp-cell')).toHaveCount(10);
+      await expect(dialog.getByRole('region', { name: 'Men', exact: true }).locator('.avp-cell')).toHaveCount(15);
       await expect(dialog.getByRole('region', { name: 'Women', exact: true }).locator('.avp-cell')).toHaveCount(5);
       await expect(dialog.getByRole('region', { name: 'Women with a hijab' }).locator('.avp-cell')).toHaveCount(5);
-      await expect(dialog.getByTestId('avatar-bot-panda')).toHaveCount(0);
+      await expect(dialog.getByTestId('avatar-bot-noto-panda')).toHaveCount(0);
 
       // a built-in picture is saved at once, shown, and read by the others
-      await dialog.getByTestId('avatar-man-4').click();
-      await expect(dialog.getByTestId('avatar-current')).toHaveText('Man with curly hair', T);
-      expect(await mineInRoster(rafi)).toBe('preset:man-4');
-      await expect(dialog.locator('.avp-now .av img')).toHaveAttribute('src', '/avatars/man-4.webp');
+      await dialog.getByTestId('avatar-man-40-casual').click();
+      await expect(dialog.getByTestId('avatar-current')).toHaveText('Man in his 40s, casual, with a moustache', T);
+      expect(await mineInRoster(rafi)).toBe('preset:man-40-casual');
+      await expect(dialog.locator('.avp-now .av img')).toHaveAttribute('src', '/avatars/man-40-casual.svg');
       const omar = await apiAs('omar');
-      expect(await mineInRoster(omar)).toBe('preset:man-4');
+      expect(await mineInRoster(omar)).toBe('preset:man-40-casual');
 
       // a photo
       await dialog.getByTestId('avatar-file').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: PNG });

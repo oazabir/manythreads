@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import type { BotRun, BotSummary } from '@manythreads/shared';
+import { BRAIN_BOT_SLUG, type BotRun, type BotSummary } from '@manythreads/shared';
+import { isAdmin, useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { AvatarPicker } from '../../avatars/AvatarPicker';
@@ -110,6 +111,9 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [picking, setPicking] = useState(false);
+  // Brain's picture is a workspace admin's to change (the server checks as well); every other bot's is a lead's or an admin's
+  const session = useSession();
+  const canPick = canEdit && (bot.slug !== BRAIN_BOT_SLUG || isAdmin(session));
   // the picture shows at once after a lead or admin chooses it; `bot.avatar` is the roster's copy from the last load
   const [picture, setPicture] = useState<string | null>(bot.avatar);
 
@@ -160,14 +164,14 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           {canOfferTest({ canEdit, status: bot.status, conversational: bot.conversational, runtime: bot.runtime }) ? (
             <button type="button" className="btn s" aria-expanded={testing} onClick={() => setTesting((v) => !v)} data-testid="open-test">Test</button>
           ) : null}
-          {canEdit ? <button type="button" className="btn s" onClick={() => setPicking(true)} data-testid="bot-change-picture">Change picture</button> : null}
+          {canPick ? <button type="button" className="btn s" onClick={() => setPicking(true)} data-testid="bot-change-picture">Change picture</button> : null}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
           <Link className="btn s" to={`/t/${slug}/proposals`} data-testid="bot-proposals">Proposals</Link>
         </div>
       </header>
 
-      {picking ? <AvatarPicker name={bot.name} target={{ kind: 'bot', slug, botSlug: bot.slug }} current={picture} onChanged={setPicture} onClose={() => setPicking(false)} /> : null}
+      {picking && canPick ? <AvatarPicker name={bot.name} target={{ kind: 'bot', slug, botSlug: bot.slug }} current={picture} onChanged={setPicture} onClose={() => setPicking(false)} /> : null}
 
       {invalid ? (
         <div className="b-banner" role="alert" data-testid="bot-invalid-banner">

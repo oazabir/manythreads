@@ -1,0 +1,8 @@
+Pictures in this folder and where they come from (full notes: docs/third-party-assets.md)
+
+man-*, modest-*, hijab-*  (.svg)  DiceBear "Avataaars" style, designed by Pablo Stanley (https://avataaars.com/),
+                                  "free for personal and commercial use". Generated with https://api.dicebear.com/9.x/avataaars/svg.
+bot-noto-*  (.svg)               Noto Emoji by Google, Apache License 2.0. The licence is in LICENSE-noto-emoji.txt, beside the files.
+bot-brain*  (.svg)               Original artwork made for manythreads. No third-party licence.
+man-1 ... woman-5, bot-<animal>  (.webp)  The first library, from Flaticon (https://www.flaticon.com). Kept so that a picture someone already
+                                  chose keeps drawing; no longer offered.

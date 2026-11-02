@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { botPlacementProblem, type BotRunnersProvider, type PluginContext, type PluginEvent, type PluginTx, type RepoProvider } from '@manythreads/sdk';
 import { BOT_SLUG_RE, RepoRepoCommittedEvent, botSlugProblem, parseBotMd } from '@manythreads/shared';
+import { newBotAvatar } from './avatar.ts';
 import { modelAliasesOf } from './backfill.ts';
 
 // The loader (PLAN P5-04, extended by P5-10): a `repo.repo.committed` subscription that rebuilds a team's bot from `bots/<slug>/BOT.md`, in the
@@ -124,13 +125,15 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   // the bases the bot may search, and which of them it answers only from (the knowledge tool reads this projection)
   const knowledge = (fm.knowledge ?? []).map((k) => ({ base: k.base, answer_only_from: k.answer_only_from === true }));
   // What the previous load compiled: the grants this one has to resync. Read after the parse, so an invalid file changes nothing.
-  const previousNative = (
-    await tx.query<{ native: string[] }>('SELECT native FROM app.bots WHERE team_id = $1 AND slug = $2', [commit.teamId, slug])
-  ).rows[0]?.native ?? [];
+  const previous = (await tx.query<{ native: string[] }>('SELECT native FROM app.bots WHERE team_id = $1 AND slug = $2', [commit.teamId, slug])).rows[0];
+  const previousNative = previous?.native ?? [];
+  // The picture (P14-24) is chosen only for a row that does not exist yet and is not in the conflict's update list below: a reload never re-rolls it, and a
+  // picture a person chose (or "use initials") stays as it is.
+  const avatar = previous === undefined ? newBotAvatar(slug) : null;
 
   const row = await tx.query<{ id: string }>(
-    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds, run_timeout_known, knowledge)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16, true, $17::jsonb)
+    `INSERT INTO app.bots AS b (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status, placement, may_tag, triggers, native, model_aliases, approvers, run_timeout_seconds, run_timeout_known, knowledge, avatar)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $11, $12::jsonb, $13::jsonb, $14::text[], $15::text[], $16, true, $17::jsonb, $18::text)
      ON CONFLICT (team_id, slug) DO UPDATE SET
        -- the display fields follow the definition (PLAN P5-05): the roster draws the row, never the file
        name           = EXCLUDED.name,
@@ -174,6 +177,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
       // BOT.md `limits.timeoutSeconds`: what the stale-run reaper measures a run against
       fm.limits?.timeoutSeconds === undefined ? null : Math.min(fm.limits.timeoutSeconds, 604_800),
       JSON.stringify(knowledge),
+      avatar,
     ],
   );
   const botId = row.rows[0]!.id;
