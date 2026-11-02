@@ -78,6 +78,10 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/admin/bot-runners/:id/test` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `PUT /api/admin/bot-runners/default` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/admin/bot-runners/old-connections/:connectionId/adopt` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
+| `POST /api/teams/:slug/connections` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
+| `PATCH /api/connections/:id` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
+| `PUT /api/connections/:id/credentials/:name` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
+| `DELETE /api/connections/:id` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/mcp/runs` | 60 per 60 s (wrong tokens not counted apart) | 60 per 60 s | 60 s | address | wrong pairing tokens count in the failures counter below |
 | `POST /api/mcp/bots/:botId` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot token in a minute and onward: `429` |
 | `POST /mcp` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot or run token in a minute and onward: `429` |

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { isApiError } from '../api/client';
 import { changePassword, fetchSessions, requestPasswordReset, revokeSession, signOut, signOutEverywhere, updateAccount } from '../api/endpoints';
 import { useSession, useSessionState } from '../app/session';
@@ -148,6 +148,14 @@ export function Account() {
       <NotificationSettings />
 
       <PresenceSettings />
+
+      <section className="block" aria-labelledby="acc-connections" data-landmark="connections">
+        <h2 className="bh" id="acc-connections">Connections</h2>
+        <div className="block-body">
+          <p className="note-row">The outside services that are yours alone, such as your own mailbox. Nobody else sees them.</p>
+          <Link to="/account/connections" className="btn" data-testid="account-connections-link">Your connections</Link>
+        </div>
+      </section>
 
       <section className="block" aria-labelledby="acc-sessions" data-landmark="sessions">
         <h2 className="bh" id="acc-sessions">Sessions</h2>

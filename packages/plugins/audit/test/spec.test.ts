@@ -56,6 +56,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'hermes.connection.created': { teamId: id(20), connectionId: id(71), name: 'office-gateway', kind: 'external', actorId: id(13), at: AT },
   'hermes.connection.updated': { teamId: id(20), connectionId: id(71), name: 'office-gateway', baseUrlChanged: true, keyChanged: true, actorId: id(13), at: AT },
   'hermes.connection.deleted': { teamId: id(20), connectionId: id(71), name: 'office-gateway', actorId: id(13), at: AT },
+  'connections.connection.changed': { teamId: id(20), connectionId: id(74), slug: 'support-mail', kind: 'email', scope: 'team', change: 'credential_set', actorId: id(13), at: AT },
   'bot_runner.runner.created': { runnerId: id(73), name: 'host', kind: 'hermes_gateway', adopted: true, actorId: id(13), at: AT },
   'bot_runner.runner.updated': { runnerId: id(73), name: 'host', changed: ['address', 'key'], actorId: id(13), at: AT },
   'bot_runner.runner.deleted': { runnerId: id(73), name: 'host', kind: 'hermes_gateway', actorId: id(13), at: AT },

@@ -216,10 +216,10 @@ describe("Brain's scenario set", () => {
 describe('every shipped definition', () => {
   it('is the bot the template lists: same name and role, a bot of the template, in a folder of its own slug', () => {
     expect(shipped.length).toBeGreaterThanOrEqual(8);
-    // every bot a template lists has a definition, except the Enquiry bot, which has no definition yet
+    // every bot a template lists has a definition
     for (const t of templates) {
       const have = new Set(shipped.filter((s) => s.template.id === t.id).map((s) => s.slug));
-      expect(t.bots.map((b) => b.slug).filter((slug) => !have.has(slug)), t.id).toEqual(t.id === 'customer-support' ? ['enquiry-bot'] : []);
+      expect(t.bots.map((b) => b.slug).filter((slug) => !have.has(slug)), t.id).toEqual([]);
     }
     for (const s of shipped) {
       const listed = s.template.bots.find((b) => b.slug === s.slug);
@@ -233,6 +233,7 @@ describe('every shipped definition', () => {
     expect(shipped.map((s) => `${s.template.id}/${s.slug}`).sort()).toEqual(
       [
         'customer-support/brain',
+        'customer-support/enquiry-bot',
         'customer-support/escalation-router',
         'customer-support/kb-gardener',
         'customer-support/support-responder',
@@ -360,6 +361,11 @@ describe('every shipped definition', () => {
         'I am going to dispute this',
       ],
       ['What does the manual say about changing a delivery address?', 'How do I reset my password?', 'Sue from accounting asked about delivery'],
+    );
+    check(
+      'enquiry-bot',
+      ['How much does the pro plan cost? I need a quote', 'Can you give us a discount if we sign for a year?', 'Please send the contract for review', 'Our lawyer has a question about liability'],
+      ['We run three bakeries and want to try the ordering system.', 'Do you work with restaurants too?', 'Sort this new enquiry and open a card for it.'],
     );
     check(
       'content-drafter',
@@ -591,6 +597,79 @@ describe('every shipped definition', () => {
         const s = shipped.find((x) => x.slug === slug)!;
         expect(s.fm.evals?.set, slug).toBe(slug);
         expect(setOf(s).cases.length, slug).toBeGreaterThanOrEqual(3);
+      }
+    });
+  });
+
+  describe('the Enquiry bot and the setup prompts of the customer support bots', () => {
+    const enquiry = (): Shipped => shipped.find((s) => s.template.id === 'customer-support' && s.slug === 'enquiry-bot')!;
+    const setOfEnquiry = (): BotEvalSet => {
+      const parsed = parseBotEvalSet(enquiry().template.files?.[botEvalSetPath('enquiry-bot', 'enquiry-bot')] ?? '');
+      if (!parsed.ok) throw new Error(parsed.message);
+      return parsed.set;
+    };
+
+    it('is the bot the template lists: a drafter that opens a card, wakes on #enquiries and a conversation, and holds no outside tool', () => {
+      const s = enquiry();
+      expect(s.fm.name).toBe('Enquiry bot');
+      expect(s.fm.kind).toBe('agent');
+      expect(s.fm.triggers).toEqual([{ type: 'mention', source: { channels: ['#enquiries'] } }, { type: 'conversation' }]);
+      expect(s.fm.placement?.gateway).toEqual({ connection: 'managed' });
+      // it reads, classifies, writes one card and one note: no page, no file, no runtime tool, no connection (a mailbox is the team's to connect)
+      expect(s.fm.capabilities?.native).toEqual(['tasks.read', 'tasks.create', 'messages.post', 'messages.search', 'knowledge.search', 'memory.recall']);
+      expect(s.fm.capabilities?.runtime).toBeUndefined();
+      expect(s.fm.capabilities?.connections).toBeUndefined();
+      // like the Support responder: customer-facing, answers only from the manuals, sending or forwarding waits for a person
+      expect(s.fm.guard?.preset).toBe('customer-facing');
+      expect(s.fm.knowledge).toEqual([{ base: 'manuals', answer_only_from: true }]);
+      expect(s.fm.approvals?.needsApproval).toEqual(['email.send', 'email.forward']);
+      expect(s.fm.handover).toEqual({ mayTag: ['support-responder'], toPerson: ['role:support-lead'] });
+    });
+
+    it('writes the typed record with the six lines, drafts and never sends, prices or invents', () => {
+      const body = enquiry().body;
+      for (const line of ['**Class**', '**Who**', '**Wants**', '**Urgency**', '**Contact**', '**Source**']) expect(body, line).toContain(line);
+      expect(body).toContain('## What is not built yet');
+      for (const never of ['You never send, forward or promise', 'You never quote a price', 'You never invent a name', 'You never open a second card']) expect(body, never).toContain(never);
+    });
+
+    it('has a scenario set of its own: cases a program can check, calls the bot holds, and a forbidden call it does not hold', () => {
+      const set = setOfEnquiry();
+      expect(enquiry().fm.evals).toEqual({ set: 'enquiry-bot', minScore: 1 });
+      expect(set.cases.length).toBeGreaterThanOrEqual(3);
+      const granted = new Set([...(enquiry().fm.capabilities?.native ?? []), 'tasks.handoff']);
+      for (const c of set.cases) {
+        expect(c.rationale.length, c.id).toBeGreaterThan(20);
+        for (const call of c.expect.toolCalls?.required ?? []) expect(granted.has(call), `${c.id}: ${call}`).toBe(true);
+      }
+      const forbidden = set.cases.flatMap((c) => c.expect.toolCalls?.forbidden ?? []);
+      expect(forbidden).toEqual(expect.arrayContaining(['email.send', 'email.forward']));
+      expect(forbidden.some((call) => !granted.has(call))).toBe(true);
+      // the cases that matter most: one enquiry is one card, nothing is invented, no send or price
+      expect(set.cases.map((c) => c.id)).toEqual(expect.arrayContaining(['one-enquiry-is-one-card', 'does-not-invent-the-lead', 'never-sends-or-prices']));
+      expect(set.cases.find((c) => c.id === 'one-enquiry-is-one-card')?.expect.toolCalls?.forbidden).toEqual(['tasks.create']);
+    });
+
+    it('has a setup prompt for itself and for the Support responder: plain words a person can give the Add a bot helper, with no secret and no plan wording', async () => {
+      const retired = String.fromCharCode(109, 97, 106, 108, 105, 115);
+      const template = templates.find((t) => t.id === 'customer-support')!;
+      for (const slug of ['enquiry-bot', 'support-responder']) {
+        const text = await readFile(`${TEMPLATES_DIR}customer-support/setup/${slug}.md`, 'utf8');
+        const bot = shipped.find((s) => s.template.id === 'customer-support' && s.slug === slug)!;
+        expect(text.length, slug).toBeGreaterThan(400);
+        expect(text.length, slug).toBeLessThan(3000);
+        // it asks for the bot the template lists, by the name the team sees
+        expect(text, slug).toContain(bot.fm.name);
+        // every channel the definition wakes on is a channel the prompt names, and every tag it hands to is one the template defines
+        for (const trigger of bot.fm.triggers ?? []) {
+          if ('source' in trigger && trigger.source) for (const c of trigger.source.channels) expect(text, `${slug}: ${c}`).toContain(c);
+        }
+        for (const p of bot.fm.handover?.toPerson ?? []) expect(template.roleTags, `${slug}: ${p}`).toContain(p);
+        // the prompt states what the bot never does, and the send waits for a person
+        expect(text, slug).toMatch(/must never|must not/);
+        expect(text, slug).toMatch(/approval|draft/);
+        expect(text.toLowerCase().includes(retired), slug).toBe(false);
+        expect(text, slug).not.toMatch(/\bP\d-\d{2}\b|\bPLAN\b|\bSPEC\b|\bphase \d\b|\{\{|TODO|FIXME|api[_ -]?key|password|secret/i);
       }
     });
   });

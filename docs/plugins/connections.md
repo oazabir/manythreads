@@ -2,7 +2,7 @@
 
 A team's links to outside services, and the tools a bot gets from them. A **connection** is a named place (a mailbox, later a code host or a drive) with the credentials that open it, kept sealed. A **grant** says which bot may call which of its tools. This plugin is the **source** those tools come from: the bot's tool list is made of it, and a call is handed to it. It is the first source of tools that is not a built-in capability (PLAN Phase 8, P8-01 and P8-28).
 
-Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe']`, `dependsOn: ['teams', 'bots']`, migrations `connections/0001_connections.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded` and `bots.bot.removed`; emits no events yet.
+Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit']`, `dependsOn: ['teams', 'bots']`, migrations `connections/0001_connections.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded`, `bots.bot.removed` and its own `connections.connection.changed`; emits `connections.connection.changed`.
 
 ## What it is made of
 
@@ -72,8 +72,35 @@ The MCP gateway ([gateway-mcp.md](./gateway-mcp.md)) asks the registry of tool s
 
 For every source there is one shared test that proves the rule in four states (granted or not, visible to the asker or not): `describeToolSourceIntersection` in `packages/test-utils/src/tool-source-intersection.ts`. A new source (drives, a code host, knowledge) runs it as its first test. Connections run it for `email.read` (a read) and `email.draft` (a write).
 
+## The routes (P8-06)
+
+| Route | Who | What |
+|---|---|---|
+| `GET /api/teams/:slug/connections` | members of the team | The team's connections, never a credential (`hasCredentials` says only that one is stored). |
+| `GET /api/me/connections` | the signed-in person | Their own connections and nobody else's. |
+| `POST /api/teams/:slug/connections` | workspace admin | Adds one: `kind`, `name`, optional short name (`slug`, made from the name when left out, with `-2`, `-3` for a repeat), `environment`, `expiresAt`. It starts switched off with nothing stored. A short name already taken answers 409; an unknown kind 400; a kind that is not available yet (Kubernetes) 409 with its reason. |
+| `PATCH /api/connections/:id` | workspace admin (team), the owner (person) | Name, switch (`enabled`/`disabled`), environment, end date. Switching on with nothing stored answers 409 ("Put the credential in first"). The kind, short name and team never change. |
+| `PUT /api/connections/:id/credentials/:name` | same | Stores or replaces one credential, sealed. The answer is the connection, not the value. A name the kind does not have answers 400. |
+| `DELETE /api/connections/:id` | same | Removes the connection, its sealed credentials and the broker rows that came from it (a subscriber of `connections.connection.changed` with `change: deleted` removes the `capability_grants` that named it). |
+
+Everyone who is not a workspace admin and tries to add or change a team's connection gets 403 with one sentence (`CONNECTION_ADMIN_ONLY` in `@manythreads/shared`): "Only a workspace admin can add or change a team's connections. Ask one of them to set it up." The screens show the same sentence.
+
+**A connection is made in three calls.** The credential is sealed in a separate transaction (the table is closed to the application role), which cannot see a connection the request has not committed yet, so the client creates the connection, then puts the credential in, then switches it on. The Add connection dialog does the three in a row and, if a later one fails, says which step is still to do; Change finishes it.
+
+**The kinds a person can choose** are in `@manythreads/shared` (`CONNECTION_KINDS`): the Mailbox (available; its tools are in `CONNECTION_KIND_TOOLS`, kept equal to this plugin's `TOOLS` by a test) and the Kubernetes cluster, which is listed but shut, with its reason, until the cluster broker exists. The plugin has no Kubernetes kind.
+
+### Events and audit
+
+Every add, change, switch, credential put and removal emits `connections.connection.changed` (v1): the ids, the short name, the kind, the scope, the actor and `change` (`created`, `updated`, `switched`, `credential_set`, `deleted`). It has no field for a credential or a display name. The audit plugin turns it into `connection.created`, `connection.updated`, `connection.switched`, `connection.credential_set` and `connection.deleted` lines. The event is emitted before the credential is written, so a failed write leaves a line rather than a silent change.
+
+### The screens
+
+* Team settings → **Connections** (`/settings/team/:slug/connections`): the list for every member of the team; Add connection, Change, switch and Remove for a workspace admin only; the sentence above for everyone else.
+* Account → **Connections** (`/account/connections`): a person's own connections, with Remove, and the mail option that says mail arrives with the mail transport. There is no way to add a person's own connection yet.
+* The bot page's **Capabilities** tab shows, under each connection named in the definition, whether the team has a connection of that name and whether it is on, off, expired or has no credential yet.
+
 ## Not yet
 
-* Creating a connection and putting credentials in: no route yet (P8-03). The functions exist (`putConnectionSecret`, `deleteConnectionAndSecrets`) for the code that will.
-* `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02).
-* A real mail transport (P8-29), audit lines and events for connection changes (P8-06), the Connections screen.
+* `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02); adding a person's own connection.
+* A real mail transport (P8-29).
+* A Kubernetes kind (the cluster broker).

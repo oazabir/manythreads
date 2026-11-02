@@ -350,6 +350,22 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('runner', uuid(e['runnerId'])),
     reason: `Ended ${plural(num(e['revoked']), 'connection')}`,
   }),
+  // A connection to an outside service (P8-06): who changed it, which one (by short name), and what kind of change. A credential is never in the event, so none can be here.
+  'connections.connection.changed': (e) => ({
+    action:
+      e['change'] === 'created'
+        ? 'connection.created'
+        : e['change'] === 'switched'
+          ? 'connection.switched'
+          : e['change'] === 'credential_set'
+            ? 'connection.credential_set'
+            : e['change'] === 'deleted'
+              ? 'connection.deleted'
+              : 'connection.updated',
+    who: actor(e['actorId']),
+    teamId: team(e['teamId']),
+    target: of('connection', uuid(e['connectionId']), code(e['slug'])),
+  }),
   'hermes.connection.created': (e) => ({
     action: 'hermes.connection_created',
     who: actor(e['actorId']),

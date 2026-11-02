@@ -43,15 +43,20 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 | Template | Definitions | Scenario sets |
 |---|---|---|
 | Engineering | Brain, Engineer, Plan reviewer, Coder, Code reviewer, Tester, Committer, Deployer, Web smoke tester, Alert triage, Standup relay | `brain`, `engineer`, `plan-reviewer`, `code-reviewer`, `tester`, `committer`, `deployer`, `web-smoke-tester`, `alert-triage`, `standup-relay` |
-| Customer support | Brain, Support responder, Escalation router, KB gardener | `brain`, `support-responder`, `escalation-router`, `kb-gardener` |
+| Customer support | Brain, Support responder, Enquiry bot, Escalation router, KB gardener | `brain`, `support-responder`, `enquiry-bot`, `escalation-router`, `kb-gardener` |
 | Marketing | Brain, Content drafter, Social scheduler, Analytics digest, Brand reviewer | `brain`, `content-drafter`, `social-scheduler`, `analytics-digest`, `brand-reviewer` |
 | Research | Brain, Literature scout, Summariser, Experiment tracker, Citation checker | `brain`, `literature-scout`, `summariser`, `experiment-tracker`, `citation-checker` |
 | Product design | Brain, Spec writer, Feedback synthesiser, Design critique, Figma watcher | `brain`, `spec-writer`, `feedback-synthesiser`, `design-critique`, `figma-watcher` |
 
-The one bot a template lists that has no definition yet is the Enquiry bot (Customer support); the Archivist (SPEC §12.2) arrives with the
-team inbox. No template bot has a setup prompt of its own: SPEC §13 asks for one on every template bot, and the only setup prompt there is
-today is the Workshop's shared "Add a bot" profile (`templates/_setup/PROFILE.md`), which does not know the template bots by name. Every
-shipped bot has a scenario set.
+Every bot a template lists has a definition; the Archivist (SPEC §12.2) arrives with the team inbox. The Enquiry bot's folder is
+`bots/enquiry-bot/`, named like its slug in `template.yaml`.
+
+**Setup prompts.** SPEC §13 asks every template bot for a setup prompt: the plain-words brief a person can give the "Add a bot" helper
+(`templates/_setup/PROFILE.md`) to get this bot made. The two customer support bots with an outside reach have one, in
+`templates/customer-support/setup/<slug>.md` (`enquiry-bot.md`, `support-responder.md`). They sit outside `bots/<slug>/` on purpose: the
+loader refuses any file but `BOT.md` and `evals/` in a bot folder, and a setup prompt is not part of the team's repository. Nothing reads
+them yet (the helper does not offer a template bot by name); a test holds them to the house style (the bot's name, its channels and tags, what it
+must never do, no secret, no plan wording). The other template bots have none yet.
 
 ## The other team bots
 
@@ -259,6 +264,23 @@ so a team made from the template needs no gateway of its own. The flow, asked in
 Time limits are generous for the slow steps: Coder 1800 s, Tester and Deployer 2400 s, Web smoke tester 1800 s, Plan reviewer 1200 s. Every bot recalls from and
 retains to the team's shared memory. Deployer holds no `tasks.deploy`: the preview namespace is a test sandbox, and production releases are
 not part of this template's flow.
+
+## The Enquiry bot (Customer support)
+
+The first reader of a new enquiry in `#enquiries`. It classifies the message as one of five kinds (sales lead, support question, partner or press, job or vendor, noise),
+writes a **typed record** of six lines (class, who, wants, urgency, contact, source; a line it cannot fill says "not stated"), drafts a first reply from the manuals,
+opens one card (`tasks.create`, after `tasks.read` shows there is none) and posts the record, the card and the draft in the channel for a person to review and send.
+
+| | Enquiry bot |
+|---|---|
+| Wakes on | mention in `#enquiries`, `conversation` |
+| Native | `tasks.read`, `tasks.create`, `messages.post`, `messages.search`, `knowledge.search`, `memory.recall` (plus `tasks.handoff`, which the loader adds for `handover`) |
+| Waits for a person | `email.send`, `email.forward` (recorded; the bot holds no mail tool and no connection until a mailbox exists) |
+| Guard | `customer-facing` + a gate on price, discount, contract and legal words |
+| Hands over to | support-responder; `role:support-lead` |
+| Scenario set | `enquiry-bot` (`minScore` 1): sorts and opens one card, one enquiry is one card, does not invent the lead, never sends or prices, hands a support question on |
+
+It does not watch a mailbox yet: a person, or a rule of the team, puts the email into `#enquiries`.
 
 ## The three minimal bots
 

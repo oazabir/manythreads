@@ -1,5 +1,5 @@
 import { definePlugin, type PluginEvent } from '@manythreads/sdk';
-import { compileBot, dropBot, type Declared } from './compile.ts';
+import { compileBot, compileTeam, dropBot, type Declared } from './compile.ts';
 import { registerRoutes } from './routes.ts';
 import { createConnectionsSource } from './source.ts';
 
@@ -20,8 +20,8 @@ export default definePlugin({
     kind: 'server',
     migrations: 'migrations',
     // tool.source: this plugin offers tools to bots; secret.seal: credentials are sealed by the platform's secret service; event.subscribe: the compile
-    extends: ['tool.source', 'secret.seal', 'event.subscribe'],
-    events: { emits: [], consumes: ['bots.bot.loaded', 'bots.bot.removed'] },
+    extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit'],
+    events: { emits: ['connections.connection.changed'], consumes: ['bots.bot.loaded', 'bots.bot.removed', 'connections.connection.changed'] },
     // Every tool a connection can serve is a capability the broker knows by name. None is destructive: a tool that deletes outside data is not offered through a
     // connection (the compile refuses a destructive tool, and the broker never grants one).
     capabilities: [
@@ -46,6 +46,17 @@ export default definePlugin({
       const { workspaceId, botId } = event as PluginEvent & { workspaceId?: unknown; botId?: unknown };
       if (typeof workspaceId !== 'string' || typeof botId !== 'string') return;
       await dropBot(tx, { workspaceId, botId });
+    });
+
+    // A connection that appears may be the one a definition was waiting for: compile the team's bots again once it is committed. One that goes takes the broker's
+    // rows that came from it (the grants of its own table go with it by cascade); the source refuses a call to a connection that is gone either way.
+    ctx.events.subscribe('connections.connection.changed', async (event: PluginEvent, tx) => {
+      const { workspaceId, teamId, slug, change } = event as PluginEvent & { workspaceId?: unknown; teamId?: unknown; slug?: unknown; change?: unknown };
+      if (typeof workspaceId !== 'string' || typeof teamId !== 'string') return;
+      if (change === 'created') await compileTeam(tx, declared, { workspaceId, teamId });
+      if (change === 'deleted' && typeof slug === 'string') {
+        await tx.query(`DELETE FROM app.capability_grants WHERE team_id = $1 AND constraints->>'connection' = $2`, [teamId, slug]);
+      }
     });
 
     registerRoutes(ctx);

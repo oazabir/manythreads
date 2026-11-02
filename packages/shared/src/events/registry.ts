@@ -60,6 +60,7 @@ import { HermesProfilesChangedEvent } from './hermes.profiles.changed.ts';
 import { BotRunnerCreatedEvent } from './bot_runner.runner.created.ts';
 import { BotRunnerUpdatedEvent } from './bot_runner.runner.updated.ts';
 import { BotRunnerDeletedEvent } from './bot_runner.runner.deleted.ts';
+import { ConnectionsConnectionChangedEvent } from './connections.connection.changed.ts';
 import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
@@ -280,6 +281,7 @@ export const eventRegistry = {
   'bot_runner.runner.created': { 1: BotRunnerCreatedEvent },
   'bot_runner.runner.updated': { 1: BotRunnerUpdatedEvent },
   'bot_runner.runner.deleted': { 1: BotRunnerDeletedEvent },
+  'connections.connection.changed': { 1: ConnectionsConnectionChangedEvent },
   'bot_runner.runner.tested': { 1: BotRunnerTestedEvent },
   'bot_runner.availability.changed': { 1: BotRunnerAvailabilityChangedEvent },
   'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },

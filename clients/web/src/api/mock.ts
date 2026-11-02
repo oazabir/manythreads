@@ -90,6 +90,7 @@ import {
   type WorkspaceRole,
 } from '@manythreads/shared';
 import type { Transport } from './client';
+import { installConnectionsMock } from './mock-connections';
 import { installSetupMock } from './mock-setup';
 import { installTerminalMock } from './mock-terminal';
 import { installWorkshopMock } from './mock-workshop';
@@ -1010,6 +1011,22 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     const t = teamOf(params.slug);
     manage(t);
     return { invitations: invitations.filter((i) => i.teamSlug === t.slug).map(invitationBody) };
+  });
+
+  // Connections (P8-06): a team's links to outside services, in mock-connections.ts
+  installConnectionsMock(on, {
+    workspaceId: WORKSPACE_ID,
+    isAdmin: () => isAdmin(me()),
+    actorId: () => uuid('d', Number(me().id.slice(-4))),
+    team: (slug) => {
+      const t = teamOf(slug);
+      return { id: t.id, slug: t.slug };
+    },
+    nextId: () => nextId('6'),
+    now: NOW,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
   });
 
   // "Add a bot" (P7-04): a scripted helper and the proposals it files, in mock-setup.ts

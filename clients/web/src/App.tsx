@@ -7,6 +7,8 @@ import { SettingsFrame } from './components/frames';
 import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/states';
 import { DevTokens } from './pages/DevTokens';
 import { Account } from './screens/Account';
+import { AccountConnections } from './screens/connections/AccountConnections';
+import { TeamConnections } from './screens/connections/TeamConnections';
 import { AdminOnly } from './screens/AdminOnly';
 import { Bootstrap } from './screens/Bootstrap';
 import { Invite } from './screens/Invite';
@@ -94,6 +96,7 @@ function AppRoutes() {
             <Route path="/t/:team/dm/:id" element={<RequireTeam><DirectMessageView /></RequireTeam>} />
           </Route>
           <Route path="/account" element={<Account />} />
+          <Route path="/account/connections" element={<AccountConnections />} />
           <Route element={<SettingsFrame />}>
             <Route element={<AdminOnly />}>
               <Route path="/onboarding" element={<Onboarding />} />
@@ -121,6 +124,7 @@ function AppRoutes() {
               <Route path="roster" element={<Roster />} />
               <Route path="template" element={<TeamTemplate />} />
               <Route path="channels" element={<TeamChannels />} />
+              <Route path="connections" element={<TeamConnections />} />
               <Route path="usage" element={<TeamUsage />} />
             </Route>
           </Route>

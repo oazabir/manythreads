@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { DEFAULT_CONVERSATION_PROMPTS, MAX_CONVERSATION_PROMPTS, type BotFrontmatter, type BotRun, type BotSummary } from '@manythreads/shared';
 import { Time } from '../../components/ui';
+import { useQuery } from '../../app/useQuery';
+import { fetchTeamConnections } from '../connections/api';
+import { botConnectionStanding } from '../connections/words';
 import { ChipsField, NumberField, SelectField, SwitchRow, TextField } from './fields';
 import { EvalRunPanel } from './evals';
 import { KnowledgeBasePanel } from './knowledge';
@@ -200,7 +203,11 @@ function AddTrigger({ onAdd, existing }: { onAdd: (type: TriggerType) => void; e
 }
 
 // ---- Capabilities -------------------------------------------------------------------------------------------------------
-export function CapabilitiesTab({ draft, canEdit }: TabProps) {
+export function CapabilitiesTab({ draft, canEdit, slug }: TabProps) {
+  // Which connections the team has and where each stands, so the list below says whether the tools a bot was given can be offered right now.
+  // A team member can always read them; if the read fails the tab still works and says the standing is unknown.
+  const teamConnections = useQuery(`bot-connections:${slug}`, () => fetchTeamConnections(slug).then((r) => r.connections.filter((c) => c.scope === 'team'), () => null));
+  const standingOf = (name: string) => botConnectionStanding(name, teamConnections.status === 'ok' ? teamConnections.data : null);
   const caps = fm(draft).capabilities ?? {};
   const native = caps.native ?? [];
   const runtime = caps.runtime ?? [];
@@ -230,6 +237,9 @@ export function CapabilitiesTab({ draft, canEdit }: TabProps) {
         {connections.length === 0 ? <NotSet>No connection tools are granted to this bot.</NotSet> : null}
         {connections.map((c, i) => (
           <Row key={`${c.name}-${String(i)}`} label={c.name} hint={c.name === 'person:*' ? "the asking person's own connections" : undefined}>
+            {teamConnections.status === 'loading' ? null : (
+              <p className={`cn-standing ${standingOf(c.name).tone}`} data-testid="bot-connection-standing" data-connection={c.name}>{standingOf(c.name).text}</p>
+            )}
             <ChipsField label="Tools" values={c.tools} readOnly={!canEdit} valid={capabilityOk} onChange={(tools) => setConnectionTools(i, tools)} />
             {canEdit ? (
               <button type="button" className="btn s" onClick={() => draft.patch((d) => ({ ...d, capabilities: { ...d.capabilities, connections: connections.filter((_x, j) => j !== i) } }))}>
@@ -238,6 +248,10 @@ export function CapabilitiesTab({ draft, canEdit }: TabProps) {
             ) : null}
           </Row>
         ))}
+        <p className="cn-manage">
+          <Link to={`/settings/team/${slug}/connections`} data-testid="bot-connections-manage">The team’s connections</Link>
+          {' '}are added and switched on there by a workspace admin. A person’s own connections are on <Link to="/account/connections">their account page</Link>.
+        </p>
       </Block>
       <Block title="Never bot-writable">
         <p className="b-notset">

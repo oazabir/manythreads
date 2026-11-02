@@ -108,6 +108,7 @@ export function SettingsFrame() {
         { to: `/settings/team/${activeTeam.slug}/roster`, label: 'Roster' },
         { to: `/settings/team/${activeTeam.slug}/template`, label: 'Template' },
         { to: `/settings/team/${activeTeam.slug}/channels`, label: 'Channels' },
+        { to: `/settings/team/${activeTeam.slug}/connections`, label: 'Connections' },
         { to: `/settings/team/${activeTeam.slug}/usage`, label: 'Usage' },
       ],
     });

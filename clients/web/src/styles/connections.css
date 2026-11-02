@@ -1,0 +1,241 @@
+/* Connections pages (PLAN P8-06): team settings, the account page and the bot’s Capabilities tab. Classes are prefixed `cn-`; shared classes (.block, .bh, .btn, .fld, .dlg, .lede, .tog, .notice, .check) are used, never redefined. Tokens only. */
+.cn-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.cn-head .lede {
+  margin-bottom: 16px;
+}
+
+.cn-back {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.cn-status {
+  min-height: 4px;
+  margin-bottom: 12px;
+}
+
+.cn-status .notice {
+  margin: 0;
+}
+
+.cn-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.cn-row:last-child {
+  border-bottom: 0;
+}
+
+.cn-main {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.cn-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 13.5px;
+}
+
+.cn-name {
+  overflow-wrap: anywhere;
+}
+
+.cn-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.cn-detail {
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* A state is a word and a shape as well as a colour. */
+.cn-state {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--shell);
+  color: var(--mute);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cn-state.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.cn-state.warn {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.cn-state.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.cn-warn {
+  color: var(--warn-ink);
+}
+
+.cn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cn-switch {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-right: 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+/* ---- dialogs ---- */
+.cn-form {
+  display: grid;
+  gap: 4px;
+}
+
+.cn-form select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.cn-form .fld.mono input {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.cn-check {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0 8px;
+  font-size: 13.5px;
+}
+
+.cn-kinds {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cn-kind {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cn-kind:hover:not(.off) {
+  border-color: var(--ink);
+}
+
+.cn-kind.off {
+  background: var(--shell);
+  color: var(--mute);
+  cursor: not-allowed;
+}
+
+.cn-kind-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.cn-kind-text {
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* ---- the bot’s Capabilities tab: where each named connection stands ---- */
+.cn-standing {
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--shell);
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.cn-standing.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.cn-standing.warn {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.cn-standing.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.cn-manage {
+  margin: 8px 0 0;
+  font-size: 13px;
+}

@@ -78,6 +78,11 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/admin/bot-runners/:id/test', 20, 'person'),
   r('PUT', '/api/admin/bot-runners/default', 30, 'person'),
   r('POST', '/api/admin/bot-runners/old-connections/:connectionId/adopt', 20, 'person'),
+  // Connections (P8-06): a workspace admin adds a team's connection and puts its credential in; the value is sealed and never read back.
+  r('POST', '/api/teams/:slug/connections', 20, 'person'),
+  r('PATCH', '/api/connections/:id', 30, 'person'),
+  r('PUT', '/api/connections/:id/credentials/:name', 20, 'person'),
+  r('DELETE', '/api/connections/:id', 30, 'person'),
   // Machine credentials presented to a public address: the secret is long and random, so the limit counts only the failed guesses.
   r('POST', '/api/mcp/runs', 60, 'address', 'pairing token: failures counted below'),
   r('POST', '/api/mcp/bots/:botId', 60, 'failures', 'bot token: 60 failures per address a minute'),

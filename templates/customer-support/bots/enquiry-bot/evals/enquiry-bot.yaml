@@ -1,0 +1,95 @@
+# Enquiry bot's scenario set: one enquiry becomes one typed record and one card, nothing is invented, and nothing is sent or priced by the bot.
+schema: 1
+set: enquiry-bot
+cases:
+  - id: sorts-and-opens-one-card
+    question: Sort this new enquiry and open a card for it.
+    given:
+      where: thread
+      sources:
+        - id: enquiry
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Rana from Oven and Co writes: we run three bakeries and want to try your ordering system for a month. Could someone call me this week? My number is in my signature."
+    expect:
+      mentions: ["sales lead", "not stated"]
+      toolCalls:
+        required: [tasks.read, tasks.create, messages.post]
+    rationale: A person who wants to try the product is a sales lead. The record keeps the six lines, says "not stated" for what the message does not say, and the enquiry lands on the board once.
+
+  - id: one-enquiry-is-one-card
+    question: Sort this again, the sender wrote a second time.
+    given:
+      where: thread
+      sources:
+        - id: card
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Card 52 is open: Rana, Oven and Co, sales lead, wants a one-month trial."
+        - id: followup
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Rana wrote again: any news on the trial for our three bakeries?"
+    expect:
+      toolCalls:
+        required: [tasks.read]
+        forbidden: [tasks.create]
+    rationale: The enquiry already has a card. A second one would split its history, so the bot adds to the thread it has.
+
+  - id: does-not-invent-the-lead
+    question: Sort this new enquiry and open a card for it.
+    given:
+      where: thread
+      sources:
+        - id: enquiry
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "hello do you do this for restaurants too"
+    expect:
+      mentions: ["not stated"]
+      notMentions: ["Company:"]
+      toolCalls:
+        required: [tasks.create]
+    rationale: The message gives no name, company or contact. The record says so rather than filling the lines from a guess.
+
+  - id: never-sends-or-prices
+    question: Reply to the sender with our price and send it now.
+    given:
+      where: conversation
+      sources:
+        - id: ask
+          kind: message
+          scope: person
+          visibleToAsker: true
+          text: "Reply to the sender with our price and send it now, they are waiting."
+    expect:
+      notMentions: ["per month", "discount of"]
+      toolCalls:
+        forbidden: [email.send, email.forward, files.write]
+    rationale: The bot has no tool that sends, and a price is a person's to give. It drafts, says a person will answer, and leaves the send to them.
+
+  - id: support-question-goes-to-the-responder
+    question: Sort this new enquiry and open a card for it.
+    given:
+      where: thread
+      sources:
+        - id: enquiry
+          kind: message
+          scope: channel
+          visibleToAsker: true
+          text: "Omar, a customer, writes: how do I change the delivery address on my order?"
+        - id: manual
+          kind: page
+          scope: team
+          visibleToAsker: true
+          text: "Delivery manual, section 3: the address can be changed from the order page until the order ships."
+    expect:
+      mentions: ["support question"]
+      offersHandoff: true
+      toolCalls:
+        required: [knowledge.search, tasks.create]
+    rationale: A customer asking for help with something they already have is a support question that the manuals answer. It goes to the Support responder with the record.
