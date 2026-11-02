@@ -97,7 +97,8 @@
     "searchMode": {
       "type": "string",
       "enum": [
-        "lexical"
+        "lexical",
+        "hybrid"
       ]
     }
   },

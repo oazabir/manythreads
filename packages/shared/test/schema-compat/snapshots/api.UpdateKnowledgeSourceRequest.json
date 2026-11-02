@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "syncMinutes": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 10080
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "syncMinutes"
+  ],
+  "additionalProperties": false
+}

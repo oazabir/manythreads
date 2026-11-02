@@ -80,8 +80,49 @@ export interface SearchOptions {
   limit: number;
 }
 
-/** Passages that answer `query`, best first, each with where it came from. Row-level security decides which team's passages the caller sees at all. */
-export async function searchKnowledge(tx: PluginTx, options: SearchOptions): Promise<KnowledgeHit[]> {
+/** The passages whose meaning is nearest to `queryVector` (a pgvector literal), among those that have been embedded. Same visibility rules as the word search. */
+async function vectorSearch(tx: PluginTx, options: SearchOptions, queryVector: string): Promise<KnowledgeHit[]> {
+  const slugs = options.baseSlugs === null ? null : [...options.baseSlugs];
+  if (slugs !== null && slugs.length === 0) return [];
+  const res = await tx.query<HitRow & { sim: number }>(
+    `SELECT ${HIT_COLUMNS}, 0::float8 AS rank, (1 - (c.embedding <=> $1::vector))::float8 AS sim ${HIT_FROM}
+      WHERE c.team_id = $2 AND d.status = 'indexed' AND c.version = d.version AND c.embedding IS NOT NULL
+        AND ($3::text[] IS NULL OR b.slug = ANY ($3))
+      ORDER BY c.embedding <=> $1::vector, c.id
+      LIMIT $4`,
+    [queryVector, options.teamId, slugs, options.limit],
+  );
+  return res.rows.filter((row) => row.sim >= MIN_SIMILARITY).map((row) => toHit(row, row.sim));
+}
+
+/** A passage less alike than this (cosine) is not an answer, whatever its rank. */
+const MIN_SIMILARITY = 0.35;
+
+/**
+ * Passages that answer `query`, best first, each with where it came from. Words decide; when `queryVector` is given (the question embedded by the
+ * workspace's model) the passages nearest in meaning join them and the two lists are merged by reciprocal rank. Row-level security decides which
+ * team's passages the caller sees at all.
+ */
+export async function searchKnowledge(tx: PluginTx, options: SearchOptions, queryVector: string | null = null): Promise<KnowledgeHit[]> {
+  const lexical = await searchByWords(tx, options);
+  if (queryVector === null) return lexical;
+  const semantic = await vectorSearch(tx, options, queryVector);
+  if (semantic.length === 0) return lexical;
+  const merged = new Map<string, { hit: KnowledgeHit; rrf: number }>();
+  for (const list of [lexical, semantic]) {
+    for (const [rank, hit] of list.entries()) {
+      const seen = merged.get(hit.chunkId);
+      const add = 1 / (60 + rank);
+      if (seen) {
+        seen.rrf += add;
+        if (hit.score > seen.hit.score) seen.hit = hit;
+      } else merged.set(hit.chunkId, { hit, rrf: add });
+    }
+  }
+  return [...merged.values()].sort((a, b) => b.rrf - a.rrf || a.hit.chunkId.localeCompare(b.hit.chunkId)).slice(0, options.limit).map((m) => m.hit);
+}
+
+async function searchByWords(tx: PluginTx, options: SearchOptions): Promise<KnowledgeHit[]> {
   const terms = queryTerms(options.query);
   const slugs = options.baseSlugs === null ? null : [...options.baseSlugs];
   if (slugs !== null && slugs.length === 0) return [];

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "llm.cost_micro",
+    "llm.tokens",
+    "run.count",
+    "tool.call",
+    "approval.requested",
+    "approval.decided",
+    "approval.wait_seconds",
+    "answer.scoped",
+    "answer.full",
+    "answer.citations",
+    "answer.dropped",
+    "answer.reached",
+    "knowledge.hit",
+    "signin.ok",
+    "signin.failed"
+  ]
+}

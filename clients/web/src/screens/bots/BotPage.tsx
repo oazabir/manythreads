@@ -168,6 +168,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
           <Link className="btn s" to={`/t/${slug}/proposals`} data-testid="bot-proposals">Proposals</Link>
+          <Link className="btn s" to={`/t/${slug}/bots/${bot.slug}/usage`} data-testid="bot-usage">Usage</Link>
         </div>
       </header>
 

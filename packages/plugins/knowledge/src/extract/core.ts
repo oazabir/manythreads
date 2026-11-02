@@ -5,7 +5,7 @@
 // Nothing here parses nested structure with recursion: Markdown is read line by line (headings and code fences only), CSV is a single character
 // scan, and a PDF is handed to pdfjs with its script and font features turned off.
 
-export type ExtractKind = 'markdown' | 'text' | 'csv' | 'pdf';
+export type ExtractKind = 'markdown' | 'text' | 'csv' | 'pdf' | 'html';
 
 /** Where a part of the text starts: a heading, a page or a range of rows. A chunk is labelled with the last section that starts at or before it. */
 export interface ExtractSection {
@@ -268,6 +268,163 @@ export async function extractPdf(bytes: Uint8Array, limits: ExtractLimits): Prom
   }
 }
 
+
+const NAMED_ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '-', mdash: '-', hellip: '...', copy: '(c)', rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"' };
+
+function decodeEntities(raw: string): string {
+  if (!raw.includes('&')) return raw;
+  return raw.replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z]{2,8});/gi, (whole, body: string) => {
+    if (body.startsWith('#')) {
+      const code = body[1] === 'x' || body[1] === 'X' ? Number.parseInt(body.slice(2), 16) : Number.parseInt(body.slice(1), 10);
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff || (code >= 0xd800 && code < 0xe000)) return ' ';
+      return String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
+  });
+}
+
+const SKIP_RAW = new Set(['script', 'style', 'noscript', 'template', 'svg', 'iframe', 'object', 'textarea', 'select']);
+const SKIP_NESTED = new Set(['nav', 'aside', 'footer', 'form', 'dialog']);
+const BLOCK = new Set(['p', 'div', 'section', 'article', 'main', 'header', 'br', 'ul', 'ol', 'table', 'tr', 'blockquote', 'pre', 'hr', 'dl', 'dt', 'dd', 'figure', 'figcaption', 'details', 'summary', 'address']);
+
+/**
+ * A web page as Markdown: headings, list items and paragraphs are kept, scripts, styles, navigation and forms are dropped, entities are decoded.
+ * One left-to-right scan; a tag is looked for at most 4,096 characters ahead (a `<` with no `>` that near is text), a skipped element is skipped with
+ * one search for its end, nesting is a counter, and the output stops at the limit. The result is then read as Markdown, so headings become sections.
+ */
+export function extractHtml(bytes: Uint8Array, limits: ExtractLimits): ExtractResult {
+  const src = decodeText(bytes);
+  const out: string[] = [];
+  let outLen = 0;
+  let title: string | null = null;
+  let pre = 0;
+  let pos = 0;
+  let atLineStart = true;
+  let pendingSpace = false;
+  let gtAt = -1;
+  let gtGone = false;
+  const emit = (piece: string): void => {
+    if (piece.length === 0 || outLen >= limits.maxChars) return;
+    out.push(piece);
+    outLen += piece.length;
+    atLineStart = piece.endsWith('\n');
+    pendingSpace = false;
+  };
+  const newline = (count: number): void => {
+    if (outLen === 0) return;
+    const tail = out.length > 0 ? out[out.length - 1]! : '';
+    const have = /\n*$/.exec(tail)?.[0].length ?? 0;
+    if (have < count) emit('\n'.repeat(count - have));
+  };
+  const text = (raw: string): void => {
+    const decoded = decodeEntities(raw);
+    if (pre > 0) {
+      emit(decoded);
+      return;
+    }
+    const words = decoded.split(/\s+/);
+    const startsBlank = /^\s/.test(decoded);
+    const endsBlank = /\s$/.test(decoded);
+    let first = true;
+    for (const w of words) {
+      if (w.length === 0) continue;
+      if (first) {
+        emit(!atLineStart && (startsBlank || pendingSpace) ? ` ${w}` : w);
+        first = false;
+      } else emit(` ${w}`);
+      if (outLen >= limits.maxChars) return;
+    }
+    if (endsBlank && !first) pendingSpace = true;
+    else if (endsBlank && first) pendingSpace = true;
+  };
+  const indexOfClose = (name: string, from: number): number => {
+    const re = new RegExp(`</${name}[\\s>/]`, 'gi');
+    re.lastIndex = from;
+    const m = re.exec(src);
+    return m ? m.index : -1;
+  };
+
+  while (pos < src.length && outLen < limits.maxChars) {
+    const lt = src.indexOf('<', pos);
+    if (lt === -1) {
+      text(src.slice(pos));
+      break;
+    }
+    if (lt > pos) text(src.slice(pos, lt));
+    if (src.startsWith('<!--', lt)) {
+      const end = src.indexOf('-->', lt + 4);
+      pos = end === -1 ? src.length : end + 3;
+      continue;
+    }
+    // the nearest ">" after this "<"; remembered, so a run of "<" with no ">" (or a far one) is scanned once, not once per "<"
+    if (!gtGone && gtAt <= lt) {
+      gtAt = src.indexOf('>', lt + 1);
+      if (gtAt === -1) gtGone = true;
+    }
+    const gt = gtGone ? -1 : gtAt;
+    if (gt === -1 || gt - lt > 4096) {
+      // not a tag: a stray "<" is text
+      text('<');
+      pos = lt + 1;
+      continue;
+    }
+    const tag = /^<(\/?)([a-zA-Z][a-zA-Z0-9-]*)/.exec(src.slice(lt, Math.min(gt + 1, lt + 64)));
+    pos = gt + 1;
+    if (!tag) continue;
+    const closing = tag[1] === '/';
+    const name = (tag[2] ?? '').toLowerCase();
+    const selfClosed = src[gt - 1] === '/';
+    if (!closing && name === 'title' && title === null) {
+      const end = indexOfClose('title', pos);
+      const raw = src.slice(pos, end === -1 ? Math.min(src.length, pos + 500) : Math.min(end, pos + 500));
+      const t = decodeEntities(raw).replace(/\s+/g, ' ').trim();
+      if (t.length > 0) title = clip(t, 200);
+      pos = end === -1 ? src.length : end;
+      continue;
+    }
+    if (!closing && SKIP_RAW.has(name) && !selfClosed) {
+      const end = indexOfClose(name, pos);
+      pos = end === -1 ? src.length : end;
+      continue;
+    }
+    if (!closing && SKIP_NESTED.has(name) && !selfClosed) {
+      const re = new RegExp(`<(/?)${name}[\\s>/]`, 'gi');
+      re.lastIndex = pos;
+      let depth = 1;
+      let m: RegExpExecArray | null;
+      // one pass over the rest of the page at most (the regex advances), so the nesting costs a counter
+      while (depth > 0 && (m = re.exec(src)) !== null) depth += m[1] === '/' ? -1 : 1;
+      pos = depth > 0 ? src.length : src.indexOf('>', re.lastIndex - 1) + 1 || src.length;
+      continue;
+    }
+    const heading = /^h([1-6])$/.exec(name);
+    if (heading) {
+      newline(2);
+      if (!closing) emit(`${'#'.repeat(Number(heading[1]))} `);
+      else newline(2);
+    } else if (name === 'li') {
+      newline(1);
+      if (!closing) emit('- ');
+    } else if (name === 'pre') {
+      newline(2);
+      pre += closing ? -1 : 1;
+      if (pre < 0) pre = 0;
+    } else if (name === 'td' || name === 'th') {
+      if (closing) emit(' | ');
+    } else if (BLOCK.has(name)) {
+      newline(name === 'br' || name === 'tr' ? 1 : 2);
+    }
+  }
+  let md = out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  let truncated = outLen >= limits.maxChars || pos < src.length;
+  if (md.length > limits.maxChars) {
+    md = md.slice(0, limits.maxChars);
+    truncated = true;
+  }
+  const read = extractMarkdown(new TextEncoder().encode(md.length === 0 ? ' ' : md), limits, true);
+  return { text: read.text, metadata: { ...read.metadata, title: title ?? read.metadata.title, truncated: truncated || read.metadata.truncated } };
+}
+
 /** The one entry point: bytes and a kind in, text and metadata out. Rejects with an `ExtractError` carrying a plain reason. */
 export async function extract(bytes: Uint8Array, kind: ExtractKind, limits: ExtractLimits = DEFAULT_LIMITS): Promise<ExtractResult> {
   try {
@@ -280,6 +437,8 @@ export async function extract(bytes: Uint8Array, kind: ExtractKind, limits: Extr
         return extractCsv(bytes, limits);
       case 'pdf':
         return await extractPdf(bytes, limits);
+      case 'html':
+        return extractHtml(bytes, limits);
     }
   } catch (err) {
     if (err instanceof ExtractError) throw err;

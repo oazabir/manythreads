@@ -10,6 +10,8 @@ import {
   type AnswerUnsupportedCitation,
 } from '@manythreads/shared';
 import { fileContentUrl } from '../api/endpoints';
+import { useQuery } from '../app/useQuery';
+import { fetchKnowledgeBase } from '../screens/bots/api';
 import { messageLocation } from '../shell/messageLink';
 import { ago } from './format';
 import { Markdown } from './MessageMarkdown';
@@ -90,8 +92,46 @@ export function kindCount(kind: string, count: number): string {
   return `${count} ${count === 1 ? names[0] : names[1]}`;
 }
 
-const KIND_LABEL: Record<string, string> = { message: 'Message', thread: 'Thread', page: 'Page', file: 'File', run: 'Run', memory: 'Memory' };
+const KIND_LABEL: Record<string, string> = { message: 'Message', thread: 'Thread', page: 'Page', file: 'File', run: 'Run', memory: 'Memory', knowledge: 'Knowledge' };
 const kindLabel = (kind: string): string => KIND_LABEL[kind] ?? 'Source';
+
+/**
+ * A knowledge passage the run read is logged as `<base>/<document> v<version>` (by the knowledge plugin's search tool). Null for anything else.
+ * The base is the text before the first slash, the version the number after the last " v".
+ */
+export function parseKnowledgeRef(ref: string): { base: string; document: string; version: number } | null {
+  const m = /^([^/\s]+)\/(.+) v(\d{1,9})$/.exec(ref);
+  if (!m) return null;
+  return { base: m[1] as string, document: m[2] as string, version: Number(m[3]) };
+}
+
+/** What the base says of a document now, against the version the answer read: a newer version, no longer there, or null when it is the same. */
+export function knowledgeSince(read: { document: string; version: number }, documents: ReadonlyArray<{ name: string; version: number }>): { state: 'changed'; now: number } | { state: 'gone' } | null {
+  const doc = documents.find((d) => d.name === read.document);
+  if (!doc) return { state: 'gone' };
+  return doc.version > read.version ? { state: 'changed', now: doc.version } : null;
+}
+
+/**
+ * "The source has changed since" (PLAN P8-08): the answer is a snapshot, the document is not. Asks the base for the document's current version as the
+ * reader (a reader who may not open the base, or a base that was deleted, is told nothing rather than something wrong) and says so when it moved on.
+ */
+function KnowledgeSince({ team, read }: { team: string; read: { base: string; document: string; version: number } }) {
+  const q = useQuery(`answer-knowledge:${team}:${read.base}`, () => fetchKnowledgeBase(team, read.base));
+  if (q.status !== 'ok') return null;
+  const since = knowledgeSince(read, q.data.documents);
+  if (!since) return null;
+  return (
+    <span className="an-mark an-changed" data-testid="answer-source-changed" data-state={since.state}>
+      {since.state === 'changed' ? `the source has changed since: now version ${String(since.now)}` : 'the source is no longer in the knowledge base'}
+    </span>
+  );
+}
+
+function KnowledgeSinceFor({ team, reference }: { team: string; reference: string }) {
+  const read = parseKnowledgeRef(reference);
+  return read ? <KnowledgeSince team={team} read={read} /> : null;
+}
 
 const SOURCE_NOUN: Record<string, string> = { message: 'message', thread: 'thread', page: 'page', file: 'file', run: 'run', drive: 'Drive', memory: 'memory item' };
 
@@ -311,7 +351,8 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
               <li key={`${s.kind}:${s.ref}:${i}`} className="an-src" data-testid="answer-reached-row" data-marker={s.marker}>
                 <span className={`an-dot ${s.marker}`} aria-hidden="true" />
                 <span className="an-src-kind">{kindLabel(s.kind)}</span>
-                {s.label ? <span className="an-src-label">{s.label}</span> : null}
+                {s.label ? <span className="an-src-label">{s.label}</span> : s.kind === 'knowledge' ? <span className="an-src-label">{s.ref}</span> : null}
+                {s.kind === 'knowledge' && slug !== '' ? <KnowledgeSinceFor team={slug} reference={s.ref} /> : null}
                 {s.marker === 'scoped' ? <span className="an-mark">through the asker’s own connection</span> : null}
               </li>
             ))}

@@ -17,9 +17,12 @@ export interface BaseRef {
   slug: string;
 }
 
+/** What a document's kind column holds: the kinds of file a person can upload. A web page is read as `html` and stored as `markdown`. */
+export type DocumentKind = Exclude<ExtractKind, 'html'>;
+
 export interface IngestFile {
   name: string;
-  kind: ExtractKind;
+  kind: DocumentKind;
   /** How to read the bytes when that differs from the document's kind (an edited converted copy of a PDF is Markdown). */
   extractAs?: ExtractKind;
   bytes: Uint8Array;
@@ -27,7 +30,9 @@ export interface IngestFile {
   size: number;
   /** Where the original is in blob storage (an upload); null for a file that lives in the repo. */
   blobKey: string | null;
-  source: 'upload' | 'repo';
+  source: 'upload' | 'repo' | 'url';
+  /** The source row, for a `url` source (a base has many); the other kinds have one row each. */
+  sourceId?: string;
   /** For a repo file: its path and git blob id. */
   repoPath?: string;
   repoSha?: string;
@@ -46,14 +51,17 @@ const NEWER_UNREADABLE = 'The newer file could not be read';
 /** The converted copy in the repo is skipped over this many bytes (the repo writer takes 1 MB). */
 const REPO_COPY_MAX_BYTES = 1_000_000;
 
-const EXTENSIONS: Record<string, ExtractKind> = { md: 'markdown', markdown: 'markdown', txt: 'text', text: 'text', log: 'text', csv: 'csv', pdf: 'pdf' };
+const EXTENSIONS: Record<string, DocumentKind> = { md: 'markdown', markdown: 'markdown', txt: 'text', text: 'text', log: 'text', csv: 'csv', pdf: 'pdf' };
 
 /** The kind a file name stands for, or null when no extractor reads it yet. */
-export function kindOfName(name: string): ExtractKind | null {
+export function kindOfName(name: string): DocumentKind | null {
   const dot = name.lastIndexOf('.');
   if (dot < 0) return null;
   return EXTENSIONS[name.slice(dot + 1).toLowerCase()] ?? null;
 }
+
+/** The actor to record as the maker of a row; the system role (a scheduled read) is no row of `actors`, so it is nobody. */
+export const actorOrNull = (tx: PluginTx): string | null => (tx.actor.kind === 'system' ? null : tx.actor.id);
 
 export const sha256Hex = (bytes: Uint8Array | string): string => createHash('sha256').update(bytes).digest('hex');
 
@@ -75,7 +83,7 @@ export async function attempt<T>(tx: PluginTx, fn: () => Promise<T>): Promise<{ 
   }
 }
 
-export async function sourceIdOf(tx: PluginTx, baseId: string, kind: 'upload' | 'repo'): Promise<string> {
+export async function sourceIdOf(tx: PluginTx, baseId: string, kind: 'upload' | 'repo' | 'url'): Promise<string> {
   const row = (await tx.query<{ id: string }>('SELECT id FROM app.knowledge_sources WHERE base_id = $1 AND kind = $2', [baseId, kind])).rows[0];
   if (!row) throw new Error(`knowledge base ${baseId} has no ${kind} source`);
   return row.id;
@@ -128,8 +136,8 @@ const noteOf = (parts: Array<string | null>): string | null => {
 };
 
 /** The converted file: a small header (so the file says where it came from) and the text exactly as it was indexed. */
-export function convertedFile(name: string, sha: string, version: number, text: string): string {
-  const header = `---\ntitle: ${JSON.stringify(name)}\nsource_sha256: ${sha}\nversion: ${version}\n---\n\n`;
+export function convertedFile(name: string, source: IngestFile['source'], sha: string, version: number, text: string): string {
+  const header = `---\ntitle: ${JSON.stringify(name)}\nsource: ${source}\nsource_sha256: ${sha}\nversion: ${version}\n---\n\n`;
   return header + text;
 }
 
@@ -276,13 +284,13 @@ export async function ingest(ctx: PluginContext, tx: PluginTx, base: BaseRef, fi
       if (existing.sha256 !== file.sha256 || existing.reason !== row.reason) await emitAdded(ctx, tx, base, row, true);
       return { outcome: 'failed', document: row, blobsToDelete };
     }
-    const sourceId = await sourceIdOf(tx, base.id, file.source);
+    const sourceId = file.sourceId ?? (await sourceIdOf(tx, base.id, file.source));
     const slug = await slugFor(tx, base.id, file.name, null);
     const inserted = (
       await tx.query<{ id: string }>(
         `INSERT INTO app.knowledge_documents (base_id, team_id, source_id, name, slug, kind, size, sha256, status, reason, blob_key, repo_path, repo_sha, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'failed', $9, $10, $11, $12, $13) RETURNING id`,
-        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, reason.slice(0, 400), file.blobKey, file.repoPath ?? null, file.repoSha ?? null, tx.actor.id],
+        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, reason.slice(0, 400), file.blobKey, file.repoPath ?? null, file.repoSha ?? null, actorOrNull(tx)],
       )
     ).rows[0] as { id: string };
     const row = (await findDocument(tx, base.id, { id: inserted.id })) as DocRow;
@@ -305,13 +313,13 @@ export async function ingest(ctx: PluginContext, tx: PluginTx, base: BaseRef, fi
       [existing.id, file.sha256, file.size, file.blobKey, file.kind, version, chunked.chunks.length],
     );
   } else {
-    const sourceId = await sourceIdOf(tx, base.id, file.source);
+    const sourceId = file.sourceId ?? (await sourceIdOf(tx, base.id, file.source));
     const slug = await slugFor(tx, base.id, file.name, null);
     docId = (
       await tx.query<{ id: string }>(
         `INSERT INTO app.knowledge_documents (base_id, team_id, source_id, name, slug, kind, size, sha256, version, status, blob_key, repo_path, repo_sha, chunk_count, indexed_at, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, 'indexed', $9, $10, $11, $12, now(), $13) RETURNING id`,
-        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, file.blobKey, file.repoPath ?? null, file.repoSha ?? null, chunked.chunks.length, tx.actor.id],
+        [base.id, base.teamId, sourceId, file.name, slug, file.kind, file.size, file.sha256, file.blobKey, file.repoPath ?? null, file.repoSha ?? null, chunked.chunks.length, actorOrNull(tx)],
       )
     ).rows[0]!.id;
   }
@@ -320,9 +328,9 @@ export async function ingest(ctx: PluginContext, tx: PluginTx, base: BaseRef, fi
 
   // The converted copy in the team repo (an uploaded file; a repo file already is one). It is a convenience: a refusal is noted, not fatal.
   let doc = (await findDocument(tx, base.id, { id: docId })) as DocRow;
-  if (file.source === 'upload') {
+  if (file.source !== 'repo') {
     const path = doc.repo_path ?? (await freeRepoPath(ctx, tx, base, doc.slug));
-    const content = convertedFile(file.name, file.sha256, version, extracted.text);
+    const content = convertedFile(file.name, file.source, file.sha256, version, extracted.text);
     if (Buffer.byteLength(content) > REPO_COPY_MAX_BYTES) {
       notes.push('Too large to keep a readable copy in the team files.');
       await tx.query('UPDATE app.knowledge_documents SET repo_path = NULL, repo_sha = NULL WHERE id = $1', [docId]);

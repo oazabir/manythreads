@@ -81,6 +81,7 @@ describe('upload, version and search', () => {
     expect(blob.status, JSON.stringify(blob.body)).toBe(200);
     expect(blob.body.content).toContain('Refunds are paid within 14 days');
     expect(blob.body.content).toContain('version: 1');
+    expect(blob.body.content).toContain('source: upload');
     const sources = await world.call<{ content: string }>(omar, 'GET', '/api/teams/engineering/repo/blob?path=knowledge%2Fhandbook%2Fsources.yaml');
     expect(sources.body.content).toContain('Refund policy.md');
   });

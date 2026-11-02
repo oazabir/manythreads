@@ -1,10 +1,20 @@
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
-import type { KnowledgeDocument, KnowledgeHit } from '@manythreads/shared';
+import type { KnowledgeDocument, KnowledgeHit, KnowledgeSource } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { Time } from '../../components/ui';
-import { askKnowledgeBase, createKnowledgeBase, deleteKnowledgeDocument, fetchKnowledgeBase, resyncKnowledgeBase, uploadKnowledgeDocument } from './api';
+import {
+  addKnowledgeUrlSource,
+  askKnowledgeBase,
+  createKnowledgeBase,
+  deleteKnowledgeDocument,
+  deleteKnowledgeSource,
+  fetchKnowledgeBase,
+  resyncKnowledgeBase,
+  setKnowledgeSourceRhythm,
+  uploadKnowledgeDocument,
+} from './api';
 import { Mono } from './parts';
 
 /*
@@ -24,6 +34,107 @@ export function formatSize(bytes: number): string {
 const problemOf = (err: unknown): string => (isApiError(err) ? err.message : err instanceof Error ? err.message : 'Something went wrong. Try again.');
 
 type Notice = { tone: 'ok' | 'bad'; text: string } | null;
+
+/** How often a source is read again: the choices in the Sources list (minutes; null is only when someone presses Read again). */
+export const RHYTHMS: ReadonlyArray<{ minutes: number | null; label: string }> = [
+  { minutes: null, label: 'Only when I press Read again' },
+  { minutes: 15, label: 'Every 15 minutes' },
+  { minutes: 60, label: 'Every hour' },
+  { minutes: 360, label: 'Every 6 hours' },
+  { minutes: 1440, label: 'Every day' },
+  { minutes: 10080, label: 'Every week' },
+];
+
+const SOURCE_NAME: Record<KnowledgeSource['kind'], string> = { upload: 'Uploaded files', repo: 'The base’s folder in the team repo', url: 'Web page' };
+
+/** The words for a source's last read: when it was, or why it failed. */
+export function sourceLine(s: Pick<KnowledgeSource, 'lastSyncedAt' | 'error'>): string {
+  if (s.error) return `Could not be read: ${s.error}`;
+  return s.lastSyncedAt ? 'Read' : 'Not read yet';
+}
+
+function SourcesList({ team, base, sources, writer, busy, run }: { team: string; base: string; sources: KnowledgeSource[]; writer: boolean; busy: string | null; run: (what: string, work: () => Promise<string>) => void }) {
+  const [address, setAddress] = useState('');
+  const [minutes, setMinutes] = useState<number | null>(1440);
+  return (
+    <section className="b-kb-sources" aria-label="Sources" data-testid="knowledge-sources">
+      <div className="b-kb-name">Sources</div>
+      <ul className="b-kb-docs">
+        {sources.map((s) => (
+          <li key={s.id} className="b-kb-doc" data-testid="knowledge-source" data-kind={s.kind} data-error={s.error ? 'true' : undefined}>
+            <div className="b-kb-name">{s.kind === 'url' ? (s.label ?? s.url ?? 'Web page') : SOURCE_NAME[s.kind]}</div>
+            {s.kind === 'url' && s.url ? <div className="b-kb-sub"><Mono>{s.url}</Mono></div> : null}
+            <div className={`b-kb-reason${s.error ? ' bad' : ''}`}>
+              {sourceLine(s)}
+              {s.lastSyncedAt && !s.error ? <> <Time iso={s.lastSyncedAt} /></> : null}
+            </div>
+            {writer ? (
+              <div className="b-add-row">
+                <select
+                  aria-label={`How often ${s.kind === 'url' ? (s.label ?? s.url ?? 'this page') : SOURCE_NAME[s.kind]} is read again`}
+                  value={s.syncMinutes === null ? '' : String(s.syncMinutes)}
+                  disabled={busy !== null}
+                  data-testid="knowledge-rhythm"
+                  onChange={(e) => {
+                    const next = e.target.value === '' ? null : Number(e.target.value);
+                    run('rhythm', async () => {
+                      await setKnowledgeSourceRhythm(team, base, s.id, next);
+                      return 'The rhythm was saved.';
+                    });
+                  }}
+                >
+                  {RHYTHMS.map((r) => (
+                    <option key={String(r.minutes)} value={r.minutes === null ? '' : String(r.minutes)}>{r.label}</option>
+                  ))}
+                </select>
+                {s.kind === 'url' ? (
+                  <button
+                    type="button"
+                    className="btn s"
+                    disabled={busy !== null}
+                    aria-label={`Remove ${s.label ?? s.url ?? 'this page'}`}
+                    data-testid="knowledge-source-remove"
+                    onClick={() => run('remove', async () => {
+                      const res = await deleteKnowledgeSource(team, base, s.id);
+                      return `The page was removed with its ${String(res.documents)} ${res.documents === 1 ? 'document' : 'documents'}.`;
+                    })}
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="b-kb-sub">{s.syncMinutes === null ? 'Read only when a lead presses Read again.' : (RHYTHMS.find((r) => r.minutes === s.syncMinutes)?.label ?? `Every ${String(s.syncMinutes)} minutes`)}</div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {writer ? (
+        <form
+          className="b-add-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const url = address.trim();
+            if (url.length < 8) return;
+            run('add', async () => {
+              const res = await addKnowledgeUrlSource(team, base, { url, syncMinutes: minutes });
+              setAddress('');
+              return res.source.error ? `The page was added but could not be read: ${res.source.error}` : 'The page was added and read.';
+            });
+          }}
+        >
+          <input aria-label="Web page address" placeholder="https://docs.example.com/guide" value={address} onChange={(e) => setAddress(e.target.value)} data-testid="knowledge-url" />
+          <select aria-label="How often to read it again" value={minutes === null ? '' : String(minutes)} onChange={(e) => setMinutes(e.target.value === '' ? null : Number(e.target.value))}>
+            {RHYTHMS.map((r) => (
+              <option key={String(r.minutes)} value={r.minutes === null ? '' : String(r.minutes)}>{r.label}</option>
+            ))}
+          </select>
+          <button type="submit" className="btn s" disabled={busy !== null || address.trim().length < 8} data-testid="knowledge-url-add">{busy === 'add' ? 'Reading the page…' : 'Add a web page'}</button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
 
 export function KnowledgeBasePanel({ team, base, canEdit }: { team: string; base: string; canEdit: boolean }) {
   const q = useQuery(`knowledge:${team}:${base}`, () => fetchKnowledgeBase(team, base));
@@ -67,7 +178,16 @@ export function KnowledgeBasePanel({ team, base, canEdit }: { team: string; base
 
   const { base: info, documents } = q.data;
   const writer = q.data.canWrite;
-  const state = info.state === 'ready' ? 'Ready: every document can be searched' : info.state === 'attention' ? 'Needs attention: some documents could not be read' : 'Empty: add a document to start';
+  const state = info.state === 'ready' ? 'Ready: every document can be searched' : info.state === 'attention' ? 'Needs attention: a document or a source could not be read' : 'Empty: add a document to start';
+  // one place for the busy flag and the notice of a source action; the base is loaded again afterwards
+  const runSource = (what: string, work: () => Promise<string>): void => {
+    setBusy(what);
+    setNotice(null);
+    work().then(
+      (text) => { setBusy(null); setNotice({ tone: 'ok', text }); q.reload(); },
+      (e: unknown) => { setBusy(null); setNotice({ tone: 'bad', text: problemOf(e) }); },
+    );
+  };
 
   const upload = (file: File): void => {
     setBusy('upload');
@@ -98,7 +218,10 @@ export function KnowledgeBasePanel({ team, base, canEdit }: { team: string; base
           {info.lastIndexedAt ? <> · last read <Time iso={info.lastIndexedAt} /></> : null}
         </span>
       </p>
-      <p className="b-kb-sub">Searched by the words in a question. Meaning-based search needs an embedding model, which this workspace has not been given. Converted copies are in <Mono>{info.repoFolder}</Mono>.</p>
+      <p className="b-kb-sub" data-testid="knowledge-search-mode" data-mode={q.data.searchMode}>
+        {q.data.searchMode === 'hybrid' ? 'Searched by the words in a question and by their meaning.' : 'Searched by the words in a question. Meaning-based search needs an embedding model, which this workspace has not been given.'} Converted copies are in <Mono>{info.repoFolder}</Mono>.
+      </p>
+      <SourcesList team={team} base={base} sources={q.data.sources} writer={writer} busy={busy} run={runSource} />
 
       {documents.length === 0 ? <p className="b-notset" data-testid="knowledge-empty">No documents yet. Upload a Markdown, text, CSV or PDF file.</p> : null}
       <ul className="b-kb-docs">

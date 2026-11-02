@@ -30,7 +30,8 @@
       "type": "string",
       "enum": [
         "upload",
-        "repo"
+        "repo",
+        "url"
       ]
     },
     "size": {

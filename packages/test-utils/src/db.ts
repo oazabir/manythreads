@@ -491,3 +491,9 @@ export const knowledgeMigrationSource: MigrationSource = {
   namespace: 'knowledge',
   dir: fileURLToPath(new URL('../../plugins/knowledge/migrations/', import.meta.url)),
 };
+
+/** Migrations of the analytics plugin (`analytics_events` and its monthly partitions, `analytics_daily`, `analytics_progress`); they read only kernel tables, so they can be passed in `sources` anywhere after the kernel's. */
+export const analyticsMigrationSource: MigrationSource = {
+  namespace: 'analytics',
+  dir: fileURLToPath(new URL('../../plugins/analytics/migrations/', import.meta.url)),
+};

@@ -1,4 +1,4 @@
-import { KnowledgeBase, KnowledgeDocument, type KnowledgeDocumentKind } from '@manythreads/shared';
+import { KnowledgeBase, KnowledgeDocument, KnowledgeSource, type KnowledgeDocumentKind } from '@manythreads/shared';
 
 // Database rows and how they become the API's shapes.
 
@@ -7,6 +7,7 @@ export type BaseRow = {
   team_id: string;
   slug: string;
   name: string;
+  status: 'empty' | 'ready' | 'attention';
   created_at: Date;
   document_count: number;
   indexed_count: number;
@@ -17,7 +18,7 @@ export type BaseRow = {
 
 /** A base with its counts; `WHERE` and ordering are the caller's. Counts run under the caller's own row-level security. */
 export const BASE_SELECT = `
-  SELECT b.id, b.team_id, b.slug, b.name, b.created_at,
+  SELECT b.id, b.team_id, b.slug, b.name, b.status, b.created_at,
          (SELECT count(*) FROM app.knowledge_documents d WHERE d.base_id = b.id)::int AS document_count,
          (SELECT count(*) FROM app.knowledge_documents d WHERE d.base_id = b.id AND d.status = 'indexed')::int AS indexed_count,
          (SELECT count(*) FROM app.knowledge_documents d WHERE d.base_id = b.id AND d.status = 'failed')::int AS failed_count,
@@ -33,7 +34,7 @@ export function toBase(row: BaseRow): KnowledgeBase {
     teamId: row.team_id,
     slug: row.slug,
     name: row.name,
-    state: row.document_count === 0 ? 'empty' : row.failed_count > 0 ? 'attention' : 'ready',
+    state: row.status,
     documentCount: row.document_count,
     indexedCount: row.indexed_count,
     failedCount: row.failed_count,
@@ -49,7 +50,7 @@ export type DocRow = {
   base_id: string;
   team_id: string;
   source_id: string;
-  source_kind: 'upload' | 'repo';
+  source_kind: 'upload' | 'repo' | 'url';
   name: string;
   slug: string;
   kind: KnowledgeDocumentKind;
@@ -86,5 +87,29 @@ export function toDocument(row: DocRow): KnowledgeDocument {
     repoPath: row.repo_path,
     indexedAt: row.indexed_at ? row.indexed_at.toISOString() : null,
     updatedAt: row.updated_at.toISOString(),
+  });
+}
+
+export type SourceRow = {
+  id: string;
+  base_id: string;
+  kind: 'upload' | 'repo' | 'url';
+  url: string | null;
+  label: string | null;
+  sync_minutes: number | null;
+  last_synced_at: Date | null;
+  error: string | null;
+}
+export const SOURCE_COLUMNS = 's.id, s.base_id, s.kind, s.url, s.label, s.sync_minutes, s.last_synced_at, s.error';
+
+export function toSource(row: SourceRow): KnowledgeSource {
+  return KnowledgeSource.parse({
+    id: row.id,
+    kind: row.kind,
+    url: row.url,
+    label: row.label,
+    syncMinutes: row.sync_minutes,
+    lastSyncedAt: row.last_synced_at ? row.last_synced_at.toISOString() : null,
+    error: row.error,
   });
 }

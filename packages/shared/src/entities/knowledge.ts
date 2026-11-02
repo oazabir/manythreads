@@ -28,17 +28,41 @@ export type KnowledgeDocumentKind = z.infer<typeof KnowledgeDocumentKind>;
 export const KnowledgeDocumentStatus = z.enum(['indexed', 'failed']);
 export type KnowledgeDocumentStatus = z.infer<typeof KnowledgeDocumentStatus>;
 
-/** `upload`: a file a person uploaded. `repo`: a Markdown or text file someone put in the base's folder in the team repo. */
-export const KnowledgeSourceKind = z.enum(['upload', 'repo']);
+/**
+ * `upload`: a file a person uploaded. `repo`: a Markdown or text file someone put in the base's folder in the team repo. `url`: one public web page or
+ * file (a docs-site page, a PDF) the platform fetches again on a rhythm; Drive, SharePoint and Notion wait for the connections of phase 8.
+ */
+export const KnowledgeSourceKind = z.enum(['upload', 'repo', 'url']);
 export type KnowledgeSourceKind = z.infer<typeof KnowledgeSourceKind>;
 
-/** How the base is searched. `lexical` is word matching (always available); `semantic` needs an embedding model, which this workspace has not been given. */
-export const KnowledgeSearchMode = z.enum(['lexical']);
+/** How the base is searched. `lexical` is word matching (always available); `hybrid` adds meaning-based matching once a workspace has an embedding model. */
+export const KnowledgeSearchMode = z.enum(['lexical', 'hybrid']);
 export type KnowledgeSearchMode = z.infer<typeof KnowledgeSearchMode>;
 
 /** The state of a base as a person reads it: no documents yet, all searchable, or some documents could not be read. */
 export const KnowledgeBaseState = z.enum(['empty', 'ready', 'attention']);
 export type KnowledgeBaseState = z.infer<typeof KnowledgeBaseState>;
+
+/** What became of a question no base could answer: posted to the team's #kb-updates, or not (no such channel, no bot to write it). */
+export const KnowledgeGapOutcome = z.enum(['posted', 'no_channel', 'no_author']);
+export type KnowledgeGapOutcome = z.infer<typeof KnowledgeGapOutcome>;
+
+/** How often a source is read again, in minutes; null means only when someone presses Re-sync. */
+export const KnowledgeSyncMinutes = z.number().int().min(15).max(10080);
+
+/** One place a base's documents come from, with how often it is read again and how the last read went. */
+export const KnowledgeSource = z.object({
+  id: z.uuid(),
+  kind: KnowledgeSourceKind,
+  /** For a `url` source: the address and the name its document shows; null for the others. */
+  url: z.string().max(2048).nullable(),
+  label: z.string().max(120).nullable(),
+  syncMinutes: KnowledgeSyncMinutes.nullable(),
+  lastSyncedAt: IsoDateTime.nullable(),
+  /** Why the last read failed, in plain words; null when it did not. */
+  error: z.string().max(400).nullable(),
+});
+export type KnowledgeSource = z.infer<typeof KnowledgeSource>;
 
 export const KnowledgeBase = z.object({
   id: KnowledgeBaseId,

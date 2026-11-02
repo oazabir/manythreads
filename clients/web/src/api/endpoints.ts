@@ -1,4 +1,13 @@
 import {
+  BotUsageResponse,
+  TeamUsageResponse,
+  UsageQuery,
+  WorkspaceUsageResponse,
+  botUsageRoute,
+  teamUsageRoute,
+  workspaceUsageRoute,
+} from '@manythreads/shared';
+import {
   AddCustomEmojiRequest,
   AddCustomEmojiResponse,
   BroadcastReach,
@@ -1063,3 +1072,9 @@ export function uploadImportArchive(
     xhr.send(input.file);
   });
 }
+
+// ---- usage pages (PLAN P8-11): counts and amounts of what the workspace, a team and a bot did; never what was said ----
+export const fetchWorkspaceUsage = (days: number) => call(workspaceUsageRoute, { request: UsageQuery, response: WorkspaceUsageResponse }, UsageQuery.parse({ days }));
+export const fetchTeamUsage = (slug: string, days: number) => call(teamUsageRoute, { request: UsageQuery, response: TeamUsageResponse }, UsageQuery.parse({ days }), { slug });
+export const fetchBotUsage = (slug: string, botSlug: string, days: number) =>
+  call(botUsageRoute, { request: UsageQuery, response: BotUsageResponse }, UsageQuery.parse({ days }), { slug, botSlug });

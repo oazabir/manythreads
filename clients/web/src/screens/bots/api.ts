@@ -4,7 +4,14 @@ import {
   BotTestStarted,
   botTestResultRoute,
   botTestRoute,
+  AddKnowledgeUrlSourceRequest,
   CreateKnowledgeBaseRequest,
+  DeleteKnowledgeSourceResponse,
+  KnowledgeSourceResponse,
+  UpdateKnowledgeSourceRequest,
+  addKnowledgeUrlSourceRoute,
+  deleteKnowledgeSourceRoute,
+  updateKnowledgeSourceRoute,
   GetBotEvalsResponse,
   GetKnowledgeBaseResponse,
   KnowledgeBaseResponse,
@@ -102,6 +109,15 @@ export const resyncKnowledgeBase = (slug: string, base: string) => call(resyncKn
 
 export const deleteKnowledgeDocument = (slug: string, base: string, documentId: string) =>
   call(deleteKnowledgeDocumentRoute, { response: DeleteKnowledgeDocumentResponse }, undefined, { slug, base, documentId });
+
+export const addKnowledgeUrlSource = (slug: string, base: string, body: AddKnowledgeUrlSourceRequest) =>
+  call(addKnowledgeUrlSourceRoute, { request: AddKnowledgeUrlSourceRequest, response: KnowledgeSourceResponse }, body, { slug, base });
+
+export const setKnowledgeSourceRhythm = (slug: string, base: string, sourceId: string, syncMinutes: number | null) =>
+  call(updateKnowledgeSourceRoute, { request: UpdateKnowledgeSourceRequest, response: KnowledgeSourceResponse }, { syncMinutes }, { slug, base, sourceId });
+
+export const deleteKnowledgeSource = (slug: string, base: string, sourceId: string) =>
+  call(deleteKnowledgeSourceRoute, { response: DeleteKnowledgeSourceResponse }, undefined, { slug, base, sourceId });
 
 export const askKnowledgeBase = (slug: string, base: string, q: string) =>
   call(searchKnowledgeRoute, { request: SearchKnowledgeQuery, response: SearchKnowledgeResponse }, { q, limit: 5 } as SearchKnowledgeQuery, { slug, base });

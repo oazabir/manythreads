@@ -5,7 +5,7 @@ import { DEFAULT_LIMITS, extract, ExtractError } from './core.ts';
 
 interface Job {
   bytes: Uint8Array;
-  kind: 'markdown' | 'text' | 'csv' | 'pdf';
+  kind: 'markdown' | 'text' | 'csv' | 'pdf' | 'html';
   maxChars: number;
 }
 

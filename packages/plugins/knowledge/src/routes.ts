@@ -1,7 +1,9 @@
 import { BlobTooLargeError, HttpError, conflict, invalid, json, notFound, requireManage, requireTeam, route, type BlobStorage, type PluginContext, type PluginTx, type TeamRow } from '@manythreads/sdk';
 import {
+  AddKnowledgeUrlSourceRequest,
   CreateKnowledgeBaseRequest,
   DeleteKnowledgeBaseResponse,
+  DeleteKnowledgeSourceResponse,
   DeleteKnowledgeDocumentResponse,
   GetKnowledgeBaseResponse,
   GetKnowledgeChunkResponse,
@@ -9,26 +11,35 @@ import {
   KnowledgeBaseResponse,
   KnowledgeChunkParams,
   KnowledgeDocumentParams,
+  KnowledgeSourceParams,
+  KnowledgeSourceResponse,
   KnowledgeTeamParams,
   ListKnowledgeBasesResponse,
   ResyncKnowledgeBaseResponse,
   SearchKnowledgeQuery,
   SearchKnowledgeResponse,
+  UpdateKnowledgeSourceRequest,
   UploadKnowledgeDocumentQuery,
   UploadKnowledgeDocumentResponse,
+  addKnowledgeUrlSourceRoute,
   createKnowledgeBaseRoute,
   deleteKnowledgeBaseRoute,
+  deleteKnowledgeSourceRoute,
   deleteKnowledgeDocumentRoute,
   getKnowledgeBaseRoute,
   getKnowledgeChunkRoute,
   listKnowledgeBasesRoute,
   resyncKnowledgeBaseRoute,
   searchKnowledgeRoute,
+  updateKnowledgeSourceRoute,
   uploadKnowledgeDocumentRoute,
 } from '@manythreads/shared';
-import { ingest, kindOfName, removeFromRepo, type BaseRef } from './ingest.ts';
-import { maxExtractBytes } from './extract/index.ts';
-import { BASE_SELECT, DOC_COLUMNS, DOC_FROM, toBase, toDocument, type BaseRow, type DocRow } from './rows.ts';
+import { findDocument, ingest, kindOfName, removeFromRepo, sha256Hex, type BaseRef } from './ingest.ts';
+import { ExtractError, maxExtractBytes } from './extract/index.ts';
+import { embedderOf } from './embed.ts';
+import { queryVector } from './capability.ts';
+import { BASE_SELECT, DOC_COLUMNS, DOC_FROM, SOURCE_COLUMNS, toBase, toDocument, toSource, type BaseRow, type DocRow, type SourceRow } from './rows.ts';
+import { fetchFailureWords, fetchSourcePage, nameOfSource } from './web.ts';
 import { getChunk, searchKnowledge } from './search.ts';
 import { readBlob, resyncBase } from './sync.ts';
 
@@ -141,6 +152,15 @@ async function documentsOf(tx: PluginTx, baseId: string): Promise<DocRow[]> {
   return (await tx.query<DocRow>(`SELECT ${DOC_COLUMNS} FROM ${DOC_FROM} WHERE d.base_id = $1 ORDER BY lower(d.name), d.id`, [baseId])).rows;
 }
 
+async function sourcesOf(tx: PluginTx, baseId: string): Promise<SourceRow[]> {
+  return (
+    await tx.query<SourceRow>(
+      `SELECT ${SOURCE_COLUMNS} FROM app.knowledge_sources s WHERE s.base_id = $1 ORDER BY CASE s.kind WHEN 'upload' THEN 0 WHEN 'repo' THEN 1 ELSE 2 END, s.created_at, s.id`,
+      [baseId],
+    )
+  ).rows;
+}
+
 function requireWritable(team: TeamRow): void {
   if (team.archived_at) throw conflict('This team is archived, so its knowledge cannot be changed.');
 }
@@ -152,6 +172,7 @@ export function registerRoutes(ctx: PluginContext): void {
     return storage;
   };
   const now = (): string => ctx.runtime.now().toISOString();
+  const searchModeNow = (): 'lexical' | 'hybrid' => (embedderOf(ctx) ? 'hybrid' : 'lexical');
 
   ctx.http.route({
     ...listKnowledgeBasesRoute,
@@ -161,7 +182,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const { slug } = KnowledgeTeamParams.parse(req.params);
       const team = await requireTeam(tx, slug);
       const rows = await tx.query<BaseRow>(`${BASE_SELECT} WHERE b.team_id = $1 ORDER BY lower(b.name), b.id`, [team.id]);
-      return json({ bases: rows.rows.map(toBase), canWrite: await canWrite(tx, team), searchMode: 'lexical' });
+      return json({ bases: rows.rows.map(toBase), canWrite: await canWrite(tx, team), searchMode: searchModeNow() });
     }),
   });
 
@@ -209,7 +230,13 @@ export function registerRoutes(ctx: PluginContext): void {
       const params = KnowledgeBaseParams.parse(req.params);
       const team = await requireTeam(tx, params.slug);
       const base = await requireBase(tx, team, params.base);
-      return json({ base: toBase(base), documents: (await documentsOf(tx, base.id)).map(toDocument), canWrite: await canWrite(tx, team), searchMode: 'lexical' });
+      return json({
+        base: toBase(base),
+        documents: (await documentsOf(tx, base.id)).map(toDocument),
+        sources: (await sourcesOf(tx, base.id)).map(toSource),
+        canWrite: await canWrite(tx, team),
+        searchMode: searchModeNow(),
+      });
     }),
   });
 
@@ -340,6 +367,106 @@ export function registerRoutes(ctx: PluginContext): void {
   });
 
   ctx.http.route({
+    ...addKnowledgeUrlSourceRoute,
+    schema: { body: AddKnowledgeUrlSourceRequest, response: KnowledgeSourceResponse },
+    rateLimit: { limit: 20, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const params = KnowledgeBaseParams.parse(req.params);
+      const body = AddKnowledgeUrlSourceRequest.parse(req.body);
+      const team = await requireTeam(tx, params.slug);
+      await requireManage(tx, team);
+      requireWritable(team);
+      const base = await requireBase(tx, team, params.base);
+      let address: URL;
+      try {
+        address = new URL(body.url);
+      } catch {
+        throw invalid('That is not a web address. Use one that starts with https://');
+      }
+      if (address.protocol !== 'https:' && address.protocol !== 'http:') throw invalid('Only http and https addresses can be read.');
+      address.hash = '';
+      const taken = await tx.query('SELECT 1 FROM app.knowledge_sources WHERE base_id = $1 AND kind = $2 AND url = $3', [base.id, 'url', address.href]);
+      if (taken.rows.length > 0) throw conflict('This base already reads that address.');
+      // The first read happens now, so a wrong address is refused to the lead who typed it, not found out at the next rhythm.
+      let page;
+      try {
+        page = await fetchSourcePage(ctx, tx, team.workspace_id, team.id, address.href);
+      } catch (err) {
+        throw invalid(err instanceof ExtractError ? err.message : fetchFailureWords(err));
+      }
+      const made = (
+        await tx.query<SourceRow>(
+          `INSERT INTO app.knowledge_sources (base_id, team_id, kind, url, label, sync_minutes, last_synced_at)
+           VALUES ($1, $2, 'url', $3, $4, $5, $6) RETURNING id, base_id, kind, url, label, sync_minutes, last_synced_at, error`,
+          [base.id, team.id, address.href, body.label ?? null, body.syncMinutes ?? null, ctx.runtime.now()],
+        )
+      ).rows[0] as SourceRow;
+      let name = nameOfSource(made);
+      for (let n = 2; (await findDocument(tx, base.id, { name })) !== undefined && n < 50; n++) name = `${nameOfSource(made).slice(0, 190)} (${String(n)})`;
+      const storage = ctx.providers.get<BlobStorage>('storage');
+      const result = await ingest(ctx, tx, refOf(team, base), { name, kind: page.kind, bytes: page.bytes, sha256: sha256Hex(page.bytes), size: page.bytes.length, blobKey: null, source: 'url', sourceId: made.id });
+      if (storage) for (const key of result.blobsToDelete) await storage.delete(key).catch(() => false);
+      return json({ source: toSource(made) }, 201);
+    }),
+  });
+
+  ctx.http.route({
+    ...updateKnowledgeSourceRoute,
+    schema: { body: UpdateKnowledgeSourceRequest, response: KnowledgeSourceResponse },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const params = KnowledgeSourceParams.parse(req.params);
+      const body = UpdateKnowledgeSourceRequest.parse(req.body);
+      const team = await requireTeam(tx, params.slug);
+      await requireManage(tx, team);
+      requireWritable(team);
+      const base = await requireBase(tx, team, params.base);
+      const updated = (
+        await tx.query<SourceRow>(
+          `UPDATE app.knowledge_sources s SET sync_minutes = $3 WHERE s.base_id = $1 AND s.id = $2
+             RETURNING ${SOURCE_COLUMNS}`,
+          [base.id, params.sourceId, body.syncMinutes],
+        )
+      ).rows[0];
+      if (!updated) throw notFound('That source is not in this knowledge base.');
+      return json({ source: toSource(updated) });
+    }),
+  });
+
+  ctx.http.route({
+    ...deleteKnowledgeSourceRoute,
+    schema: { response: DeleteKnowledgeSourceResponse },
+    rateLimit: { limit: 30, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const params = KnowledgeSourceParams.parse(req.params);
+      const team = await requireTeam(tx, params.slug);
+      await requireManage(tx, team);
+      requireWritable(team);
+      const base = await requireBase(tx, team, params.base);
+      const source = (await tx.query<SourceRow>(`SELECT ${SOURCE_COLUMNS} FROM app.knowledge_sources s WHERE s.base_id = $1 AND s.id = $2`, [base.id, params.sourceId])).rows[0];
+      if (!source) throw notFound('That source is not in this knowledge base.');
+      if (source.kind !== 'url') throw conflict('Only a web-page source can be removed; uploads and the team folder are part of every base.');
+      const docs = (await tx.query<DocRow>(`SELECT ${DOC_COLUMNS} FROM ${DOC_FROM} WHERE d.source_id = $1`, [source.id])).rows;
+      for (const doc of docs) {
+        await tx.query('DELETE FROM app.knowledge_documents WHERE id = $1', [doc.id]);
+        await ctx.audit.emit(tx, {
+          type: 'knowledge.document.removed',
+          workspaceId: team.workspace_id,
+          teamId: team.id,
+          baseId: base.id,
+          documentId: doc.id,
+          removedBy: tx.actor.id,
+          at: now(),
+        });
+      }
+      await tx.query('DELETE FROM app.knowledge_sources WHERE id = $1', [source.id]);
+      for (const doc of docs) await removeFromRepo(ctx, tx, refOf(team, base), doc.repo_path);
+      if (docs.length === 0) await removeFromRepo(ctx, tx, refOf(team, base), null);
+      return json({ removed: true, documents: docs.length });
+    }),
+  });
+
+  ctx.http.route({
     ...resyncKnowledgeBaseRoute,
     schema: { response: ResyncKnowledgeBaseResponse },
     rateLimit: { limit: 10, windowMs: 60_000 },
@@ -364,8 +491,9 @@ export function registerRoutes(ctx: PluginContext): void {
       const q = SearchKnowledgeQuery.parse(req.query);
       const team = await requireTeam(tx, params.slug);
       const base = await requireBase(tx, team, params.base);
-      const hits = await searchKnowledge(tx, { teamId: team.id, baseSlugs: [base.slug], query: q.q, limit: q.limit });
-      return json({ mode: 'lexical', hits });
+      const vector = await queryVector(ctx, tx, q.q);
+      const hits = await searchKnowledge(tx, { teamId: team.id, baseSlugs: [base.slug], query: q.q, limit: q.limit }, vector);
+      return json({ mode: vector === null ? 'lexical' : 'hybrid', hits });
     }),
   });
 

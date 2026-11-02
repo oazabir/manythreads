@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
-import { knowledgeSearch } from './capability.ts';
+import { knowledgeSearchFor } from './capability.ts';
+import { registerJobs } from './jobs.ts';
 import { registerRoutes } from './routes.ts';
 
 /**
@@ -13,7 +14,7 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     migrations: 'migrations',
-    extends: ['event.emit'],
+    extends: ['event.emit', 'job.register', 'hook.pre_egress'],
     events: {
       emits: ['knowledge.base.created', 'knowledge.base.deleted', 'knowledge.document.added', 'knowledge.document.removed', 'knowledge.base.resynced'],
       consumes: [],
@@ -23,7 +24,8 @@ export default definePlugin({
     dependsOn: ['teams', 'bots', 'repo-git'],
   },
   register(ctx) {
-    ctx.capabilities.register('knowledge.search', knowledgeSearch);
+    ctx.capabilities.register('knowledge.search', knowledgeSearchFor(ctx));
     registerRoutes(ctx);
+    registerJobs(ctx);
   },
 });

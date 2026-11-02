@@ -180,6 +180,13 @@ a.an-cite:hover {
   font-size: 10.5px;
 }
 
+/* a knowledge passage whose document has a newer version (or is gone) since the answer read it */
+.an-mark.an-changed {
+  background: var(--warn-wash);
+  border-color: var(--warn-border);
+  color: var(--ink);
+}
+
 .an-dot {
   flex: none;
   width: 8px;

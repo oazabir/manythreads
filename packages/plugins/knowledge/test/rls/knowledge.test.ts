@@ -15,11 +15,15 @@ import {
   type Persona,
   type TestDatabase,
 } from '@manythreads/test-utils';
+import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 // P8-07: who may read a team's knowledge bases (the people of the team, not a guest), who may write them (team leads and workspace admins), and the
 // rules the database keeps whatever the code does: the caps, the shape of a chunk, and a child row that cannot name another team's parent.
+
+import { backfillEmbeddings, EMBEDDING_DIMENSIONS } from '../../src/embed.ts';
+import { searchKnowledge } from '../../src/search.ts';
 
 const { omar, nadia, priya, sameera, tariq, lena } = personas;
 const ENG = TEAM_IDS.Engineering;
@@ -204,5 +208,76 @@ describe('knowledge tables keep their own rules', () => {
   it('the word index is filled by the database from the text', async () => {
     const hits = await as(nadia, async (tx) => (await tx.query<{ text: string }>(`SELECT text FROM app.knowledge_chunks WHERE tsv @@ to_tsquery('simple', 'refunds')`)).rows);
     expect(hits.map((h) => h.text)).toEqual(['Refunds are paid within 14 days.']);
+  });
+
+  it('has a partial vector index for embedded passages, the word index and the trigram index', async () => {
+    const defs = (await sys((tx) => tx.query<{ indexdef: string }>(`SELECT indexdef FROM pg_indexes WHERE schemaname = 'app' AND tablename = 'knowledge_chunks'`))).rows.map((r) => r.indexdef);
+    expect(defs.some((d) => d.includes('USING hnsw (embedding vector_cosine_ops)') && d.includes('WHERE (embedding IS NOT NULL)'))).toBe(true);
+    expect(defs.some((d) => d.includes('USING gin (tsv)'))).toBe(true);
+    expect(defs.some((d) => d.includes('gin_trgm_ops'))).toBe(true);
+    // a vector can be stored and found by distance, and a reader of the team sees only its own team's
+    const vec = `[${Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0)).join(',')}]`;
+    await sys((tx) => tx.query('UPDATE app.knowledge_chunks SET embedding = $2::vector WHERE id = $1', [eng.chunk, vec]));
+    const near = await as(nadia, async (tx) => (await tx.query<{ id: string }>('SELECT id FROM app.knowledge_chunks WHERE embedding IS NOT NULL ORDER BY embedding <=> $1::vector LIMIT 5', [vec])).rows);
+    expect(near.map((r) => r.id)).toEqual([eng.chunk]);
+  });
+
+  describe('the embedding door (nothing in the gateway offers one yet; a fake stands in)', () => {
+    const unit = (axis: number): number[] => Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === axis ? 1 : 0));
+    const literal = (axis: number): string => `[${unit(axis).join(',')}]`;
+    const ctxWith = (embed?: (tx: PluginTx, req: { workspaceId: string; texts: string[]; purpose: string }) => Promise<unknown>): PluginContext =>
+      ({ providers: { get: () => (embed ? { id: 'llm', embed } : { id: 'llm' }) } }) as unknown as PluginContext;
+
+    it('does nothing without an embedding model, and fills only the current passages of the workspace with one', async () => {
+      await sys((tx) => tx.query('UPDATE app.knowledge_chunks SET embedding = NULL'));
+      const none = await sys((tx) => backfillEmbeddings(ctxWith(), tx as unknown as PluginTx, omar.workspaceId));
+      expect(none).toEqual({ filled: 0, stoppedBecause: 'no embedding model' });
+      const calls: Array<{ texts: string[]; purpose: string }> = [];
+      const fake = async (_tx: PluginTx, req: { workspaceId: string; texts: string[]; purpose: string }) => {
+        calls.push({ texts: req.texts, purpose: req.purpose });
+        return { ok: true, vectors: req.texts.map((t) => unit(/refund/i.test(t) ? 0 : 1)) };
+      };
+      const done = await sys((tx) => backfillEmbeddings(ctxWith(fake), tx as unknown as PluginTx, omar.workspaceId));
+      expect(done.stoppedBecause).toBeNull();
+      expect(done.filled).toBeGreaterThan(0);
+      expect(calls.every((c) => c.purpose === 'passage')).toBe(true);
+      expect(await sys((tx) => tx.query("SELECT 1 FROM app.knowledge_chunks c JOIN app.knowledge_documents d ON d.id = c.document_id WHERE c.embedding IS NULL AND c.version = d.version AND d.status = 'indexed'"))).toMatchObject({ rows: [] });
+      // a second pass has nothing left to do and does not call the model
+      calls.length = 0;
+      expect((await sys((tx) => backfillEmbeddings(ctxWith(fake), tx as unknown as PluginTx, omar.workspaceId))).filled).toBe(0);
+      expect(calls).toEqual([]);
+    });
+
+    it('stops without writing when the model refuses, answers the wrong count, or answers vectors of the wrong length', async () => {
+      const bad: Array<[string, (tx: PluginTx, req: { texts: string[] }) => Promise<unknown>, string]> = [
+        ['refused', async () => ({ ok: false, reason: 'refused', detail: 'budget' }), 'refused'],
+        ['count', async () => ({ ok: true, vectors: [unit(0)] }), 'the model answered with the wrong number of vectors'],
+        ['length', async (_tx, req) => ({ ok: true, vectors: req.texts.map(() => [1, 2, 3]) }), `the model's vectors are not ${String(EMBEDDING_DIMENSIONS)} numbers long`],
+        ['nan', async (_tx, req) => ({ ok: true, vectors: req.texts.map(() => Array.from({ length: EMBEDDING_DIMENSIONS }, () => Number.NaN)) }), `the model's vectors are not ${String(EMBEDDING_DIMENSIONS)} numbers long`],
+      ];
+      for (const [name, embed, because] of bad) {
+        await sys((tx) => tx.query('UPDATE app.knowledge_chunks SET embedding = NULL'));
+        const out = await sys((tx) => backfillEmbeddings(ctxWith(embed as never), tx as unknown as PluginTx, omar.workspaceId));
+        expect(out, name).toMatchObject({ filled: 0, stoppedBecause: because });
+        expect((await sys((tx) => tx.query("SELECT 1 FROM app.knowledge_chunks WHERE embedding IS NOT NULL"))).rows, name).toEqual([]);
+      }
+    });
+
+    it('finds a passage by meaning when the words do not match, only in the asker\'s team, and merges with the word search', async () => {
+      await sys((tx) => tx.query("UPDATE app.knowledge_chunks SET embedding = CASE WHEN text LIKE 'Refunds%' THEN $1::vector ELSE $2::vector END", [literal(0), literal(1)]));
+      const opts = { teamId: ENG, baseSlugs: null, query: 'zzzz qqqq', limit: 3 } as const;
+      const byWords = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, opts));
+      expect(byWords).toEqual([]);
+      const byMeaning = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, opts, literal(0)));
+      expect(byMeaning.map((h) => h.text)).toEqual(['Refunds are paid within 14 days.']);
+      // a passage that points the other way is not an answer
+      const orthogonal = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, opts, literal(5)));
+      expect(orthogonal).toEqual([]);
+      // the other team's passages never appear for this reader, whatever the vector
+      expect((await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, { ...opts, teamId: MKT }, literal(0)))).length).toBe(0);
+      // words and meaning together: the passage both lists hold comes first
+      const both = await as(nadia, (tx) => searchKnowledge(tx as unknown as PluginTx, { ...opts, query: 'shipping days' }, literal(0)));
+      expect(both.map((h) => h.text)).toEqual(expect.arrayContaining(['Shipping takes two days.', 'Refunds are paid within 14 days.']));
+    });
   });
 });

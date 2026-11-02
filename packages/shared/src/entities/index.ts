@@ -47,3 +47,4 @@ export * from './setup.ts';
 export * from './terminal.ts';
 export * from './workshop.ts';
 export * from './replay.ts';
+export * from './analytics.ts';

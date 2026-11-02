@@ -1,7 +1,7 @@
 import { deflateSync } from 'node:zlib';
 import { expectLinear } from '@manythreads/test-utils/linear';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_LIMITS, ExtractError, extract, extractCsv, extractMarkdown } from '../src/extract/core.ts';
+import { DEFAULT_LIMITS, ExtractError, extract, extractCsv, extractHtml, extractMarkdown } from '../src/extract/core.ts';
 import { extractText } from '../src/extract/index.ts';
 
 // P8-32: the extractor. One interface, bounded in size and time, off the request path. The hostile-input block is the point: a huge file, deep
@@ -67,6 +67,66 @@ describe('the extractor, on honest files', () => {
     expect(out.text).toBe('# Title\n\nBody.');
     const pdf = await extractText(minimalPdf('Hello from a PDF.'), 'pdf');
     expect(pdf.text).toContain('Hello from a PDF.');
+  });
+});
+
+describe('the extractor, on web pages', () => {
+  it('keeps headings, paragraphs and list items; drops scripts, styles, navigation, footers and comments; decodes entities', async () => {
+    const page = '<!doctype html><html><head><title>Docs &amp; more</title><style>.a{color:red}</style><script>alert("x < y")</script></head><body><nav><ul><li>Home</li></ul></nav>' +
+      '<h1>Refund <em>policy</em></h1><p>Refunds are paid&nbsp;within 14 days &lt;of&gt; the request.</p><!-- hidden --><h2>Exceptions</h2><ul><li>Gift cards</li><li>Sale items</li></ul>' +
+      '<pre>line one\n  line two</pre><footer>(c) nobody</footer></body></html>';
+    const out = await extract(enc(page), 'html');
+    expect(out.metadata.title).toBe('Docs & more');
+    expect(out.text).toContain('# Refund policy');
+    expect(out.text).toContain('Refunds are paid within 14 days <of> the request.');
+    expect(out.text).toContain('## Exceptions\n\n- Gift cards\n- Sale items');
+    expect(out.text).toContain('line one\n  line two');
+    expect(out.text).not.toMatch(/alert|color:red|Home|hidden|nobody/);
+    expect(out.metadata.sections.map((s) => s.label)).toEqual(['Refund policy', 'Refund policy > Exceptions']);
+  });
+
+  it('refuses a page with no text in plain words', async () => {
+    await expect(extract(enc('<html><body><script>1</script></body></html>'), 'html')).rejects.toThrow(/No text was found/);
+  });
+});
+
+describe('the extractor, on hostile web pages', () => {
+  it('reads unclosed tags, a stray "<" and tags with no end without hanging or recursing', () => {
+    const nasty = `<div`.repeat(30_000) + `a < b <<<<<${'<p'.repeat(20_000)}<script>never closed ${'x'.repeat(100_000)}`;
+    const out = extractHtml(enc(`<p>start</p>${nasty}`), DEFAULT_LIMITS);
+    expect(out.text).toContain('start');
+  });
+
+  it('reads 50,000 nested elements and a skipped element nested as deep, as a counter and not as recursion', () => {
+    const deep = `<p>kept</p><nav>${'<nav>'.repeat(50_000)}hidden${'</nav>'.repeat(50_000)}</nav><div>${'<div>'.repeat(50_000)}after${'</div>'.repeat(50_000)}</div>`;
+    const out = extractHtml(enc(deep), DEFAULT_LIMITS);
+    expect(out.text).toContain('kept');
+    expect(out.text).toContain('after');
+    expect(out.text).not.toContain('hidden');
+  });
+
+  it('cuts a huge page at the character limit and says so', () => {
+    const out = extractHtml(enc(`<p>${'word '.repeat(400_000)}</p>`), DEFAULT_LIMITS);
+    expect(out.metadata.truncated).toBe(true);
+    expect(out.text.length).toBeLessThanOrEqual(DEFAULT_LIMITS.maxChars);
+  });
+
+  it('survives entity bombs and impossible code points', () => {
+    const out = extractHtml(enc(`<p>${'&#x110000;&#0;&#xD800;&bogus;&amp;'.repeat(50_000)}ok</p>`), DEFAULT_LIMITS);
+    expect(out.text).toContain('ok');
+  });
+
+  it.each([
+    ['many small tags', (n: number) => enc('<p>a</p>'.repeat(n / 8))],
+    ['one very long text node', (n: number) => enc(`<p>${'a '.repeat(n / 2)}</p>`)],
+    ['many unclosed angle brackets', (n: number) => enc(`<p>x</p>${'<'.repeat(n)}`)],
+    ['many angle brackets with one far closer', (n: number) => enc(`<p>x</p>${'<'.repeat(n)}>`)],
+    ['many open tags with no end', (n: number) => enc('<div '.repeat(n / 5))],
+    ['skipped elements', (n: number) => enc(`<p>x</p>${'<script>x</script><style>y</style>'.repeat(n / 34)}`)],
+    ['deeply nested skipped elements', (n: number) => enc(`<p>x</p><nav>${'<nav>'.repeat(n / 11)}${'</nav>'.repeat(n / 11)}</nav>`)],
+    ['many entities', (n: number) => enc(`<p>${'&amp;&#65;'.repeat(n / 10)}</p>`)],
+  ])('costs the same per byte whatever the shape: %s', (label, build) => {
+    expectLinear(build, (bytes) => extractHtml(bytes, DEFAULT_LIMITS), { n: 40_000, label: `html ${label}` });
   });
 });
 

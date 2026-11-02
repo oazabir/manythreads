@@ -18,6 +18,7 @@ import { Shell } from './shell/Shell';
 import { WorkspaceHttps } from './screens/https/WorkspaceHttps';
 import { SystemHealth } from './screens/health/SystemHealth';
 import { Audit } from './screens/audit/Audit';
+import { BotUsage, TeamUsage, WorkspaceUsage } from './screens/usage/UsageScreens';
 import { ImportScreen } from './screens/import/ImportScreen';
 import { Guardrails } from './screens/guardrails/Guardrails';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
@@ -86,6 +87,7 @@ function AppRoutes() {
             <Route path="/t/:team/bots/:botSlug" element={<RequireTeam><BotPage /></RequireTeam>} />
             <Route path="/t/:team/proposals" element={<RequireTeam><ProposalsList /></RequireTeam>} />
             <Route path="/t/:team/proposals/:proposalId" element={<RequireTeam><ProposalPage /></RequireTeam>} />
+            <Route path="/t/:team/bots/:botSlug/usage" element={<RequireTeam><BotUsage /></RequireTeam>} />
             <Route path="/t/:team/bots/:botSlug/chat" element={<RequireTeam><ConversationView /></RequireTeam>} />
             <Route path="/t/:team/chat/:channelId" element={<RequireTeam><ConversationRedirect /></RequireTeam>} />
             <Route path="/t/:team/c/:channel" element={<RequireTeam><ChannelView /></RequireTeam>} />
@@ -111,6 +113,7 @@ function AppRoutes() {
               <Route path="health" element={<SystemHealth />} />
               <Route path="guardrails" element={<Guardrails />} />
               <Route path="audit" element={<Audit />} />
+              <Route path="usage" element={<WorkspaceUsage />} />
               <Route path="import" element={<ImportScreen />} />
             </Route>
             <Route path="/settings/team/:slug">
@@ -118,6 +121,7 @@ function AppRoutes() {
               <Route path="roster" element={<Roster />} />
               <Route path="template" element={<TeamTemplate />} />
               <Route path="channels" element={<TeamChannels />} />
+              <Route path="usage" element={<TeamUsage />} />
             </Route>
           </Route>
         </Route>

@@ -9,6 +9,8 @@ import {
   KnowledgeDocumentId,
   KnowledgeHit,
   KnowledgeSearchMode,
+  KnowledgeSource,
+  KnowledgeSyncMinutes,
 } from '../../entities/knowledge.ts';
 import type { ApiRoute } from '../client/route.ts';
 import { TeamSlug } from '../teams/common.ts';
@@ -49,6 +51,8 @@ export const createKnowledgeBaseRoute = { method: 'POST', path: '/api/teams/:slu
 export const GetKnowledgeBaseResponse = z.object({
   base: KnowledgeBase,
   documents: z.array(KnowledgeDocument),
+  /** Where the documents come from and how often each source is read again. */
+  sources: z.array(KnowledgeSource),
   canWrite: z.boolean(),
   searchMode: KnowledgeSearchMode,
 });
@@ -104,3 +108,27 @@ export const searchKnowledgeRoute = { method: 'GET', path: '/api/teams/:slug/kno
 export const GetKnowledgeChunkResponse = z.object({ hit: KnowledgeHit });
 export type GetKnowledgeChunkResponse = z.infer<typeof GetKnowledgeChunkResponse>;
 export const getKnowledgeChunkRoute = { method: 'GET', path: '/api/teams/:slug/knowledge-chunks/:chunkId' } as const satisfies ApiRoute;
+
+export const KnowledgeSourceParams = z.object({ slug: TeamSlug, base: KnowledgeBaseSlug, sourceId: z.uuid() });
+export type KnowledgeSourceParams = z.infer<typeof KnowledgeSourceParams>;
+
+/** Add a web page or file the platform reads again on a rhythm (a docs-site page, a hosted PDF). The address is vetted again at every read. */
+export const AddKnowledgeUrlSourceRequest = z.strictObject({
+  url: z.string().trim().min(8).max(2048),
+  label: z.string().trim().min(1).max(120).optional(),
+  syncMinutes: KnowledgeSyncMinutes.nullable().optional(),
+});
+export type AddKnowledgeUrlSourceRequest = z.infer<typeof AddKnowledgeUrlSourceRequest>;
+export const KnowledgeSourceResponse = z.object({ source: KnowledgeSource });
+export type KnowledgeSourceResponse = z.infer<typeof KnowledgeSourceResponse>;
+export const addKnowledgeUrlSourceRoute = { method: 'POST', path: '/api/teams/:slug/knowledge/:base/sources' } as const satisfies ApiRoute;
+
+/** Set how often a source is read again (`null`: only on Re-sync). */
+export const UpdateKnowledgeSourceRequest = z.strictObject({ syncMinutes: KnowledgeSyncMinutes.nullable() });
+export type UpdateKnowledgeSourceRequest = z.infer<typeof UpdateKnowledgeSourceRequest>;
+export const updateKnowledgeSourceRoute = { method: 'PATCH', path: '/api/teams/:slug/knowledge/:base/sources/:sourceId' } as const satisfies ApiRoute;
+
+export const DeleteKnowledgeSourceResponse = z.object({ removed: z.literal(true), documents: z.number().int().min(0) });
+export type DeleteKnowledgeSourceResponse = z.infer<typeof DeleteKnowledgeSourceResponse>;
+/** Only a `url` source can be removed; it takes its document with it. */
+export const deleteKnowledgeSourceRoute = { method: 'DELETE', path: '/api/teams/:slug/knowledge/:base/sources/:sourceId' } as const satisfies ApiRoute;

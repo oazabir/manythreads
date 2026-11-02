@@ -619,6 +619,11 @@
   font-weight: 400;
 }
 
+.b-kb-sources {
+  display: grid;
+  gap: 6px;
+}
+
 .b-kb-docs,
 .b-kb-hits {
   display: grid;
