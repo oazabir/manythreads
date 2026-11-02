@@ -72,6 +72,7 @@ export class ExtensionRegistries {
     'mcp.tools': new ExtensionRegistry(),
     presence: new ExtensionRegistry(),
     'bot.runners': new ExtensionRegistry(),
+    'runner.nodes': new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

@@ -109,19 +109,66 @@ export async function kindOf(tx: PluginTx, query: { teamId: string; runner: stri
 /** The workspace default runner when this team may use it and it is enabled and of a kind that runs bots; and the team's usable pod runners. */
 export async function teamRunners(ctx: PluginContext, query: { teamId: string }): Promise<TeamRunnerInfo> {
   return ctx.db.system(async (tx) => {
-    const rows = await tx.query<{ name: string; kind: string; is_default: boolean }>(
-      `SELECT r.name, r.kind, r.is_default
+    const rows = await tx.query<{ name: string; kind: string; is_default: boolean; node: string | null }>(
+      `SELECT r.name, r.kind, r.is_default, r.node
          FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $1::uuid
         WHERE r.enabled AND r.kind IN ('hermes_gateway', 'hermes_pod')
           AND (r.all_teams OR EXISTS (SELECT 1 FROM app.bot_runner_teams rt WHERE rt.runner_id = r.id AND rt.team_id = t.id))
         ORDER BY r.name`,
       [query.teamId],
     );
+    const pods = rows.rows.filter((r) => r.kind === 'hermes_pod');
+    // One pod per team, however many pod runners the team may use: the default runner's machine wins, then the first name (the rows are in name order).
     return {
       defaultRunner: rows.rows.find((r) => r.is_default)?.name ?? null,
-      podRunners: rows.rows.filter((r) => r.kind === 'hermes_pod').map((r) => r.name),
+      podRunners: pods.map((r) => r.name),
+      podNode: pickPodNode(pods),
     };
   });
+}
+
+/** One team, one pod: the default pod runner decides the machine, then the first name (the rows are in name order). A pod runner with no machine chosen has no say. */
+export function pickPodRunner<T extends { is_default: boolean; node: string | null }>(podRunners: readonly T[]): T | null {
+  const pinned = podRunners.filter((r) => r.node !== null);
+  return pinned.find((r) => r.is_default) ?? pinned[0] ?? null;
+}
+
+export function pickPodNode(podRunners: readonly { is_default: boolean; node: string | null }[]): string | null {
+  return pickPodRunner(podRunners)?.node ?? null;
+}
+
+/**
+ * The runner that decides the machine of each of `teamIds` (null: every team of the workspace), and the machine, by the rule of `pickPodRunner`. `override` stands in for
+ * one runner's machine (the value it is about to get, or `'*'` for "any machine"), so the caller can ask which teams that runner governs. Only enabled pod runners the
+ * team may use count.
+ */
+export async function podNodesByTeam(
+  tx: PluginTx,
+  workspaceId: string,
+  teamIds: readonly string[] | null,
+  override?: { runnerId: string; node: string | null },
+): Promise<Map<string, { runnerId: string; node: string }>> {
+  const rows = await tx.query<{ team_id: string; id: string; is_default: boolean; node: string | null }>(
+    `SELECT t.id AS team_id, r.id, r.is_default, r.node
+       FROM app.teams t JOIN app.bot_runners r ON r.workspace_id = t.workspace_id
+      WHERE t.workspace_id = $1::uuid AND ($2::uuid[] IS NULL OR t.id = ANY($2::uuid[]))
+        AND r.enabled AND r.kind = 'hermes_pod'
+        AND (r.all_teams OR EXISTS (SELECT 1 FROM app.bot_runner_teams rt WHERE rt.runner_id = r.id AND rt.team_id = t.id))
+      ORDER BY r.name`,
+    [workspaceId, teamIds === null ? null : [...teamIds]],
+  );
+  const byTeam = new Map<string, { id: string; is_default: boolean; node: string | null }[]>();
+  for (const r of rows.rows) {
+    const list = byTeam.get(r.team_id) ?? [];
+    list.push({ id: r.id, is_default: r.is_default, node: override && r.id === override.runnerId ? override.node : r.node });
+    byTeam.set(r.team_id, list);
+  }
+  const out = new Map<string, { runnerId: string; node: string }>();
+  for (const [team, list] of byTeam) {
+    const pick = pickPodRunner(list);
+    if (pick !== null && pick.node !== null) out.set(team, { runnerId: pick.id, node: pick.node });
+  }
+  return out;
 }
 
 export function createBotRunnersProvider(ctx: PluginContext): BotRunnersProvider {

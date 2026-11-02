@@ -36,11 +36,6 @@
       "maxLength": 80,
       "pattern": "^[A-Za-z0-9._{}-]+$"
     },
-    "node": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 253
-    },
     "modelAlias": {
       "type": "string",
       "minLength": 1,

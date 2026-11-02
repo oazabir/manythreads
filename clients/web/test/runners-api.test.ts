@@ -7,8 +7,10 @@ import {
   deleteBotRunner,
   fetchBotRunners,
   fetchOldConnections,
+  fetchRunnerNodes,
   setBotRunnerTeams,
   setDefaultBotRunner,
+  setRunnerNode,
   testBotRunner,
   updateBotRunner,
 } from '../src/screens/admin/runners/api';
@@ -55,6 +57,10 @@ describe('the runner calls reach the routes the plugin mounts', () => {
     { name: 'clears the default', run: () => setDefaultBotRunner(null), method: 'PUT', url: '/api/admin/bot-runners/default', body: { runnerId: null } },
     { name: 'sets the default', run: () => setDefaultBotRunner(RUNNER), method: 'PUT', url: '/api/admin/bot-runners/default', body: { runnerId: RUNNER } },
     { name: 'lists old connections', run: fetchOldConnections, method: 'GET', url: '/api/admin/bot-runners/old-connections' },
+    { name: 'lists the machines', run: () => fetchRunnerNodes(), method: 'GET', url: '/api/admin/bot-runners/nodes' },
+    { name: 'lists the machines for one runner', run: () => fetchRunnerNodes(RUNNER), method: 'GET', url: '/api/admin/bot-runners/nodes' },
+    { name: 'chooses a machine', run: () => setRunnerNode(RUNNER, 'ubuntu-vm'), method: 'PUT', url: `/api/admin/bot-runners/${RUNNER}/node`, body: { node: 'ubuntu-vm' } },
+    { name: 'lets the cluster choose', run: () => setRunnerNode(RUNNER, null), method: 'PUT', url: `/api/admin/bot-runners/${RUNNER}/node`, body: { node: null } },
     { name: 'adopts', run: () => adoptOldConnection(CONNECTION, { name: 'laptop' }), method: 'POST', url: `/api/admin/bot-runners/old-connections/${CONNECTION}/adopt`, body: { name: 'laptop' } },
   ];
   for (const c of cases) {
@@ -69,6 +75,10 @@ describe('the runner calls reach the routes the plugin mounts', () => {
   it('refuses a body the schema does not know before it leaves the browser (a kind-changing patch, a key that is too short)', async () => {
     await expect(updateBotRunner(RUNNER, { kind: 'codex_cli' } as never)).rejects.toThrow();
     await expect(createBotRunner({ name: 'x', label: 'x', kind: 'hermes_gateway', apiKey: 'tiny' })).rejects.toThrow();
+    // a machine goes through its own route only: the create and the patch no longer carry one
+    await expect(updateBotRunner(RUNNER, { node: 'ubuntu-vm' } as never)).rejects.toThrow();
+    await expect(createBotRunner({ name: 'x', label: 'x', kind: 'hermes_pod', node: 'ubuntu-vm' } as never)).rejects.toThrow();
+    await expect(setRunnerNode(RUNNER, 'not a machine')).rejects.toThrow();
     expect(seen).toHaveLength(0);
   });
 });
@@ -127,5 +137,37 @@ describe('the mock transport answers like the server', () => {
     expect(runner).toMatchObject({ name: 'laptop', kind: 'hermes_gateway', allTeams: false, botCount: 1 });
     expect(runner.teams.map((t) => t.slug)).toEqual(['marketing']);
     expect((await fetchOldConnections()).items).toEqual([]);
+  });
+});
+
+describe('the mock answers the machine routes like the server (P19-08)', () => {
+  beforeEach(() => setTransport(createMockTransport({ latencyMs: 0 })));
+
+  it('lists the machines, one of them not Ready, and says nothing of a runner until one is asked for', async () => {
+    const all = await fetchRunnerNodes();
+    expect(all).toMatchObject({ available: true, singleNode: false, placement: null, note: null });
+    expect(all.nodes.map((n) => [n.name, n.ready])).toEqual([['ubuntu-vm', true], ['worker-2', true], ['worker-3', false]]);
+    expect(all.nodes.every((n) => !n.hasWorkVolume)).toBe(true);
+  });
+
+  it('chooses a machine for a pod runner, refuses one that is not Ready or not there, and tells a move from a first choice', async () => {
+    const pod = (await createBotRunner({ name: 'pods', label: 'Pods', kind: 'hermes_pod', teams: { all: true } })).runner;
+    expect(pod.node).toBeNull();
+    expect((await fetchRunnerNodes(pod.id)).placement).toEqual({ state: 'idle', node: null, reason: null });
+    await expect(setRunnerNode(pod.id, 'worker-3')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('not Ready') });
+    await expect(setRunnerNode(pod.id, 'no-such-machine')).rejects.toMatchObject({ status: 400 });
+    const first = await setRunnerNode(pod.id, 'ubuntu-vm');
+    expect(first).toMatchObject({ recreatesWorkVolume: false, runner: { node: 'ubuntu-vm' } });
+    const placed = await fetchRunnerNodes(pod.id);
+    expect(placed.placement).toEqual({ state: 'running', node: 'ubuntu-vm', reason: null });
+    expect(placed.nodes.filter((n) => n.hasWorkVolume).map((n) => n.name)).toEqual(['ubuntu-vm']);
+    expect(await setRunnerNode(pod.id, 'worker-2')).toMatchObject({ recreatesWorkVolume: true, runner: { node: 'worker-2' } });
+    expect(await setRunnerNode(pod.id, null)).toMatchObject({ recreatesWorkVolume: false, runner: { node: null } });
+  });
+
+  it('refuses a runner that is not a pod runner', async () => {
+    const host = (await fetchBotRunners()).items.find((r) => r.kind === 'hermes_gateway')!;
+    await expect(setRunnerNode(host.id, 'ubuntu-vm')).rejects.toMatchObject({ status: 400, message: 'A machine can be chosen for a pod runner only.' });
+    await expect(fetchRunnerNodes(host.id)).rejects.toMatchObject({ status: 400 });
   });
 });

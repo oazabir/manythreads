@@ -38,6 +38,8 @@ export const EXTENSION_POINTS = [
   'provider.presence',
   // Where a bot's run goes, by runner name (bot-runners, P19-02): read by runtime-hermes so that a runner's address and key are resolved in one place only.
   'provider.bot.runners',
+  // The machines (nodes) of the cluster and where the team Hermes pods stand on them (hermes-pods, P19-08): read by bot-runners for the admin's node picker.
+  'provider.runner.nodes',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

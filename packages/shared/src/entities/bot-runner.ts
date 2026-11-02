@@ -26,6 +26,43 @@ export type BotRunnerStatus = z.infer<typeof BotRunnerStatus>;
 export const BotRunnerName = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,62}$/, 'lowercase letters, digits, ".", "_" or "-"');
 export type BotRunnerName = z.infer<typeof BotRunnerName>;
 
+/**
+ * A machine of the cluster by the value of its `kubernetes.io/hostname` label, which is what a pod's `nodeSelector` names. A label value is at most 63
+ * characters of letters, digits, "-", "_" and ".", beginning and ending with a letter or digit (P19-08).
+ */
+export const RunnerNodeName = z.string().regex(/^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$/, 'a machine name: letters, digits, "-", "_" and ".", at most 63 characters');
+export type RunnerNodeName = z.infer<typeof RunnerNodeName>;
+
+/** One machine of the cluster as the node picker shows it (admin only). */
+export const RunnerNode = z.object({
+  name: RunnerNodeName,
+  ready: z.boolean(),
+  architecture: z.string().nullable(),
+  /** What the machine offers to pods (its allocatable CPU, in thousandths of a CPU). Not what is left over. */
+  cpuAllocatableMillis: z.number().int().min(0).nullable(),
+  memoryAllocatableBytes: z.number().int().min(0).nullable(),
+  /** At least one of this runner's team pods keeps its work volume on this machine. */
+  hasWorkVolume: z.boolean(),
+  /** How many of this runner's team pods keep their work volume here. */
+  workVolumes: z.number().int().min(0),
+});
+export type RunnerNode = z.infer<typeof RunnerNode>;
+
+/**
+ * Where a pod runner's pods stand now, in the words of the page. `idle`: no pod exists yet (`node` is the machine chosen, or null). `running`: the pods run (on
+ * `node`, where they really are). `waiting`: a pod is not placed or not started (`reason` says why). `moving`: the work volumes are being recreated on `node`.
+ */
+export const RunnerPlacementState = z.enum(['idle', 'running', 'waiting', 'moving']);
+export type RunnerPlacementState = z.infer<typeof RunnerPlacementState>;
+export const RunnerPlacement = z.object({
+  state: RunnerPlacementState,
+  /** The machine the state is about: the one chosen for the runner while idle, waiting or moving; the one the pods really run on while running. Null: none chosen. */
+  node: RunnerNodeName.nullable(),
+  /** `node_not_ready`: the chosen machine is not Ready or not in the cluster. `not_placed`: a pod waits for another reason. `starting`: placed, not yet started. `move_not_confirmed`: the machine for a team's pod changed and nobody has confirmed the move, so nothing was changed. Null otherwise. */
+  reason: z.enum(['node_not_ready', 'not_placed', 'starting', 'move_not_confirmed']).nullable(),
+});
+export type RunnerPlacement = z.infer<typeof RunnerPlacement>;
+
 /** The words on screen. */
 export const BotRunnerLabel = z.string().trim().min(1).max(80);
 

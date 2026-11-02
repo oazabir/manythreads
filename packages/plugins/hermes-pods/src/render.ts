@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { GatewayProfileSpec } from '@manythreads/sdk';
-import { isRepoOriginAllowed } from '@manythreads/shared';
+import { isRepoOriginAllowed, RunnerNodeName } from '@manythreads/shared';
 import type { K8sObject } from './k8s.ts';
 
 // Pure builders: the Kubernetes objects of one team's pod, from plain values. No network, no clock, no randomness (the one
@@ -33,6 +33,8 @@ export interface PodConfig {
    * with this address. Empty or absent = only the in-cluster file.
    */
   hostApiServer?: string;
+  /** The machines an admin may choose (the Helm value `botRunners.allowedNodes`, as `MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES`); a move goes only to one of these. Absent or empty: every machine. */
+  allowedNodes?: string[];
 }
 
 /** A namespace where one team's deployer bot has full control of what runs in it (a preview install of the platform). */
@@ -329,11 +331,32 @@ export function buildDeployerSecretFor(cfg: PodConfig, team: Team, names: Names,
   return buildDeployerSecret(cfg, team, names, buildDeployerKubeconfig(login), host !== '' ? buildDeployerKubeconfig({ ...login, server: host }) : undefined);
 }
 
-export function buildPvc(cfg: PodConfig, team: Team, name: string, size: string): K8sObject {
+/** The label a node carries with its own name; a pod's `nodeSelector` on it pins the pod to that machine (P19-08). */
+export const HOSTNAME_LABEL = 'kubernetes.io/hostname';
+/** On a volume claim: the machine this controller asked the volume to live on. Read back to tell a move from a first start. */
+export const NODE_ANNOTATION = 'manythreads.io/node';
+/** On the Deployment while the controller is recreating the pod's volumes on another machine; its value is the machine moved to. */
+export const MOVING_ANNOTATION = 'manythreads.io/moving';
+/**
+ * On both volume claims of a team, written by the admin's "confirm the move" (bot-runners, through the `runner.nodes` provider): `<machine>@<epoch milliseconds>`. The
+ * controller deletes a team's volumes only when this mark names the machine it is moving to and is not older than the confirmation window (src/move.ts).
+ */
+export const MOVE_CONFIRMED_ANNOTATION = 'manythreads.io/move-confirmed';
+/** On the Deployment while the wanted machine differs from the one the volumes are tied to and the move is not confirmed; its value is the machine wanted. Nothing else is changed. */
+export const MOVE_HELD_ANNOTATION = 'manythreads.io/move-held';
+/** Set by the scheduler on a volume claim bound to a machine (storage classes that wait for the first pod, such as local-path). */
+export const SELECTED_NODE_ANNOTATION = 'volume.kubernetes.io/selected-node';
+
+/** A node name that may be a `nodeSelector` value (a Kubernetes label value). Anything else is ignored, never sent. */
+export function isNodeLabelValue(node: string | null | undefined): node is string {
+  return typeof node === 'string' && RunnerNodeName.safeParse(node).success;
+}
+
+export function buildPvc(cfg: PodConfig, team: Team, name: string, size: string, node: string | null = null): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'PersistentVolumeClaim',
-    metadata: { name, namespace: cfg.namespace, labels: labelsFor(team) },
+    metadata: { name, namespace: cfg.namespace, labels: labelsFor(team), ...(isNodeLabelValue(node) ? { annotations: { [NODE_ANNOTATION]: node } } : {}) },
     spec: { accessModes: ['ReadWriteOnce'], storageClassName: cfg.storageClass, resources: { requests: { storage: size } } },
   };
 }
@@ -350,13 +373,31 @@ export function buildService(cfg: PodConfig, team: Team, names: Names): K8sObjec
   };
 }
 
-export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: { replicas: number; withDeployer: boolean }): K8sObject {
+export interface DeploymentOptions {
+  replicas: number;
+  withDeployer: boolean;
+  /** The machine the pod must stand on (`nodeSelector: kubernetes.io/hostname`); null or absent: the cluster chooses. A value that is not a label value is ignored. */
+  node?: string | null;
+  /** The pod's volumes are being recreated on `node`: the Deployment says so (annotation) so the admin page can show "Moving". */
+  moving?: boolean;
+  /** The wanted machine, when a move waits for the admin's confirmation (annotation, so the admin page can say so). The pod itself stays where its volumes are. */
+  held?: string | null;
+}
+
+export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: DeploymentOptions): K8sObject {
   const podLabels = labelsFor(team, { 'manythreads.io/pod': names.base });
   const ro = (name: string, mountPath: string, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ name, mountPath, readOnly: true, ...extra });
+  const node = isNodeLabelValue(opts.node) ? opts.node : null;
   return {
     apiVersion: 'apps/v1',
     kind: 'Deployment',
-    metadata: { name: names.base, namespace: cfg.namespace, labels: labelsFor(team) },
+    metadata: {
+      name: names.base,
+      namespace: cfg.namespace,
+      labels: labelsFor(team),
+      ...(opts.moving === true && node !== null ? { annotations: { [MOVING_ANNOTATION]: node } } : {}),
+      ...(isNodeLabelValue(opts.held) ? { annotations: { [MOVE_HELD_ANNOTATION]: opts.held } } : {}),
+    },
     spec: {
       replicas: opts.replicas,
       // both volumes are ReadWriteOnce: the old pod lets go of them before the new one starts
@@ -367,6 +408,8 @@ export function buildDeployment(cfg: PodConfig, team: Team, names: Names, opts: 
         spec: {
           // no ServiceAccount token in the pod: neither Hermes nor a bot can talk to the Kubernetes API with the pod's identity
           automountServiceAccountToken: false,
+          // The admin chose a machine for the runner (P19-08): the pod stands on it or waits for it, it is never placed elsewhere.
+          ...(node !== null ? { nodeSelector: { [HOSTNAME_LABEL]: node } } : {}),
           enableServiceLinks: false,
           terminationGracePeriodSeconds: 30,
           initContainers: [

@@ -53,5 +53,6 @@ export function configFrom(env: NodeJS.ProcessEnv): PodConfig {
     resources,
     deployTargets: parseDeployTargets(env['MANYTHREADS_HERMES_PODS_DEPLOY_TARGETS']),
     hostApiServer: get('HOST_API_SERVER', ''),
+    allowedNodes: (env['MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES'] ?? '').split(/[\s,]+/).filter((n) => n !== ''),
   };
 }

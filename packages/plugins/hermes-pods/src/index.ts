@@ -1,6 +1,7 @@
-import { definePlugin, type GatewayProfileSpec, type HermesProfilesProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
+import { definePlugin, type BotRunnersProvider, type GatewayProfileSpec, type HermesProfilesProvider, type PluginContext, type PluginLogger } from '@manythreads/sdk';
 import { configFrom } from './config.ts';
 import { HttpK8s, type K8s } from './k8s.ts';
+import { createRunnerNodesProvider } from './nodes.ts';
 import { Reconciler, type ProfileSource } from './reconcile.ts';
 import type { ProjectRepo } from './project-repos.ts';
 import { PushCredentials } from './push-credentials.ts';
@@ -10,6 +11,7 @@ export { Reconciler } from './reconcile.ts';
 export { HttpK8s } from './k8s.ts';
 export { configFrom } from './config.ts';
 export { PushCredentials } from './push-credentials.ts';
+export { createRunnerNodesProvider, parseCpuMillis, parseMemoryBytes, toClusterNode } from './nodes.ts';
 
 /**
  * hermes-pods: the controller that gives every team with managed bots its own Hermes pod (`hermes-<team>`) in this namespace. It reads the
@@ -21,12 +23,14 @@ export default definePlugin({
     name: 'hermes-pods',
     version: '0.1.0',
     kind: 'server',
-    extends: ['provider.project.credentials'],
+    // `provider.runner.nodes`: the cluster's machines and where the pods stand on them, for the admin's node picker (bot-runners; P19-08).
+    extends: ['provider.project.credentials', 'provider.runner.nodes'],
     events: { emits: [], consumes: [] },
     dependsOn: ['teams', 'projects'],
   },
   register(ctx) {
     registerPushCredentials(ctx, process.env);
+    registerRunnerNodes(ctx, process.env);
     startController(ctx, process.env);
   },
 });
@@ -59,7 +63,32 @@ export function registerPushCredentials(ctx: PluginContext, env: NodeJS.ProcessE
   }, 60_000).unref();
 }
 
+/**
+ * The node-lister for the admin's node picker (P19-08). Present only where the controller is (the chart turned it on, in a cluster) or, with NODE_ENV=test,
+ * where `MANYTHREADS_HERMES_PODS_TEST_K8S_URL` points at a local double of the Kubernetes API. Elsewhere `ctx.providers.get('runner.nodes')` is undefined and the
+ * bot-runners routes say that machines cannot be listed here.
+ */
+export function registerRunnerNodes(ctx: PluginContext, env: NodeJS.ProcessEnv, k8sOverride?: HttpK8s): void {
+  const testUrl = env['NODE_ENV'] === 'test' ? (env['MANYTHREADS_HERMES_PODS_TEST_K8S_URL'] ?? '').trim() : '';
+  const controllerOn = env['MANYTHREADS_HERMES_PODS'] === '1' && !env['MANYTHREADS_HERMES_PODS_STATIC'];
+  if (!controllerOn && testUrl === '' && !k8sOverride) return;
+  const cfg = configFrom(env);
+  let k8s: HttpK8s | null = k8sOverride ?? null;
+  const client = (): HttpK8s => (k8s ??= testUrl !== '' ? new HttpK8s({ baseUrl: testUrl, token: 'test' }) : HttpK8s.inCluster(env));
+  ctx.providers.register('runner.nodes', createRunnerNodesProvider({ k8s: client, nodes: () => client().listNodes(), namespace: cfg.namespace }));
+}
+
 const FIRST_PASS_DELAY_MS = 20_000;
+
+/**
+ * The machine the team's pod is pinned to, from the `bot.runners` provider. If that provider is not loaded the pass fails: "no machine" would mean "not pinned", and a
+ * pass that cannot tell must not reach for the pod at all.
+ */
+export async function nodeOfTeam(ctx: Pick<PluginContext, 'providers'>, teamId: string): Promise<string | null> {
+  const p = ctx.providers.get<BotRunnersProvider>('bot.runners');
+  if (!p) throw new Error('the bot.runners provider is not loaded (bot-runners)');
+  return (await p.teamRunners({ teamId })).podNode ?? null;
+}
 
 /** Teams with at least one active bot on their own pod. The rule (managed connection, `runs_on` on a pod runner, the default pod runner) lives in runtime-hermes, which answers it. */
 async function teamsWithManagedBots(ctx: PluginContext): Promise<Team[]> {
@@ -148,6 +177,7 @@ export function startController(ctx: PluginContext, env: NodeJS.ProcessEnv): voi
           },
           reposForTeam: (id) => projectReposOf(ctx, id),
           publishersForTeam: (id) => publisherSlugsOf(ctx, id),
+          nodeForTeam: (id) => nodeOfTeam(ctx, id),
           setManagedGateway: async (id, input) => {
             await provider()?.setManagedGateway(id, input);
           },

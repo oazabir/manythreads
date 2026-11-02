@@ -85,6 +85,18 @@
                   }
                 ]
               },
+              "botName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "teamName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "spentUsd": {
                 "type": "number",
                 "minimum": 0
@@ -97,6 +109,8 @@
             },
             "required": [
               "botId",
+              "botName",
+              "teamName",
               "spentUsd",
               "calls"
             ]

@@ -18,6 +18,16 @@ import {
   describeTeams,
   emptyForm,
   hasNoTeams,
+  hasNodeChoice,
+  moveWarning,
+  nodeOption,
+  nodeSavedWords,
+  offerWords,
+  isChangingPlacement,
+  needsMoveConfirm,
+  placementLine,
+  singleNodeLine,
+  volumesElsewhere,
   stateLook,
   suggestName,
   switchMode,
@@ -316,5 +326,86 @@ describe('the edit form and the add message', () => {
     expect(addedWords({ label: 'X', kind: 'hermes_gateway', allTeams: false, teams: [] })).toBe('X was added. It is not open to any team yet: choose its teams.');
     expect(addedWords({ label: 'X', kind: 'hermes_gateway', allTeams: true, teams: [] })).toBe('X was added. Run Test to check it.');
     expect(addedWords({ label: 'X', kind: 'llm_gateway', allTeams: true, teams: [] })).toBe('X was added.');
+  });
+});
+
+describe('the machine a pod runner stands on (P19-08)', () => {
+  const node = (over: Partial<Parameters<typeof nodeOption>[0]> = {}) => ({
+    name: 'ubuntu-vm', ready: true, architecture: 'amd64', cpuAllocatableMillis: 4000, memoryAllocatableBytes: 16 * 1024 ** 3, hasWorkVolume: false, workVolumes: 0, ...over,
+  });
+
+  it('only the team Hermes pod has a machine to choose', () => {
+    expect(hasNodeChoice({ kind: 'hermes_pod' })).toBe(true);
+    for (const kind of ['hermes_gateway', 'llm_gateway', 'claude_cli', 'codex_cli'] as const) expect(hasNodeChoice({ kind })).toBe(false);
+  });
+
+  it('puts the state in the three plain sentences, and names the machine in each', () => {
+    expect(placementLine('ubuntu-vm', { state: 'running', node: 'ubuntu-vm', reason: null })).toEqual({ text: 'Running on ubuntu-vm', tone: 'ok' });
+    expect(placementLine('worker-3', { state: 'waiting', node: 'worker-3', reason: 'node_not_ready' })).toEqual({ text: 'Waiting: node worker-3 is not Ready', tone: 'warn' });
+    expect(placementLine('worker-2', { state: 'moving', node: 'worker-2', reason: null })?.text).toMatch(/^Moving to worker-2\./);
+    expect(placementLine(null, { state: 'idle', node: null, reason: null })).toEqual({ text: 'The cluster chooses the machine. No team pod has started yet.', tone: 'idle' });
+    expect(placementLine('ubuntu-vm', { state: 'waiting', node: 'ubuntu-vm', reason: 'not_placed' })?.text).toBe('Waiting: no pod can be placed on ubuntu-vm yet');
+    expect(placementLine('ubuntu-vm', { state: 'waiting', node: 'ubuntu-vm', reason: 'starting' })?.text).toBe('Waiting: the pod is starting on ubuntu-vm');
+  });
+
+  it('says a machine changed by something else is waiting for the admin\'s word, and that nothing was moved', () => {
+    const held = { state: 'waiting', node: 'worker-2', reason: 'move_not_confirmed' } as const;
+    expect(placementLine('worker-2', held)).toEqual({
+      text: 'Waiting: the machine for this pod changed, and nothing has been moved. Open Machine and confirm the move.',
+      tone: 'warn',
+    });
+    expect(needsMoveConfirm(held)).toBe(true);
+    expect(needsMoveConfirm({ state: 'waiting', node: 'worker-2', reason: 'starting' })).toBe(false);
+    expect(needsMoveConfirm(null)).toBe(false);
+  });
+
+  it('looks again by itself only while a pod is changing by itself; a move that waits for the admin changes nothing', () => {
+    expect(isChangingPlacement({ state: 'moving', node: 'a', reason: null })).toBe(true);
+    expect(isChangingPlacement({ state: 'waiting', node: 'a', reason: 'starting' })).toBe(true);
+    expect(isChangingPlacement({ state: 'waiting', node: 'a', reason: 'node_not_ready' })).toBe(true);
+    expect(isChangingPlacement({ state: 'waiting', node: 'a', reason: 'move_not_confirmed' })).toBe(false);
+    expect(isChangingPlacement({ state: 'running', node: 'a', reason: null })).toBe(false);
+    expect(isChangingPlacement({ state: 'idle', node: null, reason: null })).toBe(false);
+    expect(isChangingPlacement(null)).toBe(false);
+  });
+
+  it('says what the cluster could not be asked only when a machine is chosen', () => {
+    expect(placementLine(null, null)).toBeNull();
+    expect(placementLine('ubuntu-vm', null)).toEqual({ text: 'Set to run on ubuntu-vm.', tone: 'idle' });
+  });
+
+  it('says "offers", never "free", because a machine\'s allocatable is not what is left', () => {
+    expect(offerWords(node())).toBe('offers 4 CPUs and 16 GiB of memory');
+    expect(offerWords(node({ cpuAllocatableMillis: 1000, memoryAllocatableBytes: 1.5 * 1024 ** 3 }))).toBe('offers 1 CPU and 1.5 GiB of memory');
+    expect(offerWords(node({ cpuAllocatableMillis: null, memoryAllocatableBytes: null }))).toBeNull();
+    expect(nodeOption(node())).toBe('ubuntu-vm (amd64, offers 4 CPUs and 16 GiB of memory)');
+    expect(nodeOption(node({ ready: false, workVolumes: 1, architecture: null, cpuAllocatableMillis: null, memoryAllocatableBytes: null }))).toBe('ubuntu-vm (not Ready, has the work volume)');
+    expect(nodeOption(node({ architecture: null, cpuAllocatableMillis: null, memoryAllocatableBytes: null }))).toBe('ubuntu-vm');
+    expect(nodeOption(node())).not.toMatch(/free/i);
+  });
+
+  it('shows the one machine of a one-machine install and says there is nothing to choose', () => {
+    expect(singleNodeLine([{ name: 'ubuntu-vm' }], true)).toBe('This install has one machine, ubuntu-vm. There is nothing to choose; every pod runs there.');
+    expect(singleNodeLine([{ name: 'a' }, { name: 'b' }], false)).toBeNull();
+    expect(singleNodeLine([], true)).toBeNull();
+  });
+
+  it('asks to confirm only when a work volume sits on another machine, and says what is lost and what is kept', () => {
+    const nodes = [{ name: 'ubuntu-vm', workVolumes: 2 }, { name: 'worker-2', workVolumes: 0 }];
+    expect(volumesElsewhere(nodes, 'worker-2')).toEqual(['ubuntu-vm']);
+    expect(volumesElsewhere(nodes, 'ubuntu-vm')).toEqual([]);
+    expect(volumesElsewhere(nodes, null)).toEqual([]);
+    expect(volumesElsewhere([{ name: 'a', workVolumes: 0 }], 'a')).toEqual([]);
+    expect(moveWarning('Pods', [], 'worker-2')).toBeNull();
+    const text = moveWarning('Pods', ['ubuntu-vm'], 'worker-2')!;
+    expect(text).toContain('deleted and made again, empty, on worker-2');
+    expect(text).toContain('not yet pushed');
+    expect(text).toContain('The keys are kept');
+  });
+
+  it('says what happened after a save', () => {
+    expect(nodeSavedWords('Pods', 'worker-2', false)).toBe('Pods will run on worker-2.');
+    expect(nodeSavedWords('Pods', 'worker-2', true)).toContain('made again there');
+    expect(nodeSavedWords('Pods', null, false)).toContain('Pods already placed stay where they are');
   });
 });

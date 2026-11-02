@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "running",
+        "waiting",
+        "moving"
+      ]
+    },
+    "node": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "node_not_ready",
+            "not_placed",
+            "starting",
+            "move_not_confirmed"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "state",
+    "node",
+    "reason"
+  ],
+  "additionalProperties": false
+}

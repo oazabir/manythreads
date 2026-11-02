@@ -267,6 +267,12 @@ demo:
   enabled: false
   image: manythreads/demo-fakes
 
+# Runners (docs/plugins/bot-runners.md). `allowedNodes`: the machines (names as `kubectl get nodes` shows them) an admin may choose for a pod runner on
+# the Runners page. Empty = every machine of the cluster. Listing machines needs the read-only ClusterRole in templates/hermes-pods.yaml
+# (get and list on `nodes`), which exists only when hermesPods.enabled is true.
+botRunners:
+  allowedNodes: []
+
 # Managed Hermes pods ("mode B", docs/plugins/hermes-pods.md): the platform runs one pod per team (`hermes-<team>`) holding the team's bots.
 # The server's hermes-pods plugin creates and updates them through the Kubernetes API (a ServiceAccount of its own with a Role in THIS
 # namespace only). Off in the base values; values-live.yaml turns it on. The two images are built by tools/devbox/deploy.sh

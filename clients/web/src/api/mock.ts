@@ -26,8 +26,10 @@ import {
   listBotRunnersRoute,
   listLlmAliasesRoute,
   listOldConnectionsRoute,
+  listRunnerNodesRoute,
   setBotRunnerTeamsRoute,
   setDefaultBotRunnerRoute,
+  setRunnerNodeRoute,
   testBotRunnerRoute,
   updateBotRunnerRoute,
   createProjectRoute,
@@ -800,6 +802,53 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     if (target && !target['enabled']) throw new MockHttpError(409, 'conflict', 'A runner that is switched off cannot be the default.');
     for (const r of runners) r['isDefault'] = r === target;
     return { defaultRunnerId: target?.id ?? null };
+  });
+  // The machines of the cluster for pod runners (P19-08): three in memory, one of them not Ready. The words of every refusal are the server's (nodes.ts of
+  // the bot-runners plugin). A pod "starts" on the machine it was first given, and a later change to another machine says the work volume is made again.
+  const MOCK_NODES = [
+    { name: 'ubuntu-vm', ready: true, architecture: 'amd64', cpuAllocatableMillis: 4000, memoryAllocatableBytes: 16 * 1024 ** 3 },
+    { name: 'worker-2', ready: true, architecture: 'arm64', cpuAllocatableMillis: 8000, memoryAllocatableBytes: 32 * 1024 ** 3 },
+    { name: 'worker-3', ready: false, architecture: 'amd64', cpuAllocatableMillis: 2000, memoryAllocatableBytes: 8 * 1024 ** 3 },
+  ];
+  const volumeNode = new Map<string, string>();
+  const podRunnerOf = (id: string | undefined): MockRunner => {
+    const r = runnerOf(id);
+    if (r['kind'] !== 'hermes_pod') throw new MockHttpError(400, 'validation_failed', 'A machine can be chosen for a pod runner only.');
+    return r;
+  };
+  on(listRunnerNodesRoute, ({ query }) => {
+    requireAdmin();
+    seedRunners();
+    const runnerId = query.get('runnerId');
+    const r = runnerId ? podRunnerOf(runnerId) : null;
+    const held = r ? volumeNode.get(r.id) : undefined;
+    const nodes = MOCK_NODES.map((n) => ({ ...n, hasWorkVolume: n.name === held, workVolumes: n.name === held ? 1 : 0 }));
+    const chosen = r ? ((r['node'] as string | null) ?? null) : null;
+    const target = chosen ? MOCK_NODES.find((n) => n.name === chosen) : undefined;
+    const placement = r
+      ? held === undefined
+        ? { state: 'idle', node: chosen, reason: null }
+        : chosen !== null && target && !target.ready
+          ? { state: 'waiting', node: chosen, reason: 'node_not_ready' }
+          : { state: 'running', node: held, reason: null }
+      : null;
+    return { available: true, nodes, singleNode: false, placement, note: null };
+  });
+  on(setRunnerNodeRoute, ({ params, body }) => {
+    requireAdmin();
+    const r = podRunnerOf(params.id);
+    const node = body['node'] as string | null;
+    let recreates = false;
+    if (node !== null) {
+      const chosen = MOCK_NODES.find((n) => n.name === node);
+      if (!chosen) throw new MockHttpError(400, 'validation_failed', 'That machine is not one this install may use. Pick one from the list.');
+      if (!chosen.ready) throw new MockHttpError(409, 'conflict', 'That machine is not Ready, so a pod could not start on it. Pick a machine that is Ready.');
+      const held = volumeNode.get(r.id);
+      recreates = held !== undefined && held !== node;
+      if (held === undefined || recreates) volumeNode.set(r.id, node);
+    }
+    r['node'] = node;
+    return { runner: runnerBody(r), recreatesWorkVolume: recreates };
   });
   on(listOldConnectionsRoute, () => (requireAdmin(), seedRunners(), { items: oldConnections ?? [] }));
   on(adoptConnectionRoute, ({ params, body }) => {

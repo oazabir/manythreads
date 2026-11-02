@@ -28,6 +28,7 @@ export default definePlugin({
         'bot_runner.runner.tested',
         'bot_runner.availability.changed',
         'bot_runner.default.changed',
+        'bot_runner.node.changed',
         'bot_runner.terms.accepted',
       ],
       consumes: [],

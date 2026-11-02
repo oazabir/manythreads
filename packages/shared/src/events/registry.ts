@@ -63,6 +63,7 @@ import { BotRunnerDeletedEvent } from './bot_runner.runner.deleted.ts';
 import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
+import { BotRunnerNodeChangedEvent } from './bot_runner.node.changed.ts';
 import { BotRunnerTermsAcceptedEvent } from './bot_runner.terms.accepted.ts';
 import { BotRunnerRunRefusedEvent } from './bot_runner.run.refused.ts';
 import { BotRunnerRunUnmeteredEvent } from './bot_runner.run.unmetered.ts';
@@ -277,6 +278,7 @@ export const eventRegistry = {
   'bot_runner.runner.tested': { 1: BotRunnerTestedEvent },
   'bot_runner.availability.changed': { 1: BotRunnerAvailabilityChangedEvent },
   'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },
+  'bot_runner.node.changed': { 1: BotRunnerNodeChangedEvent },
   'bot_runner.terms.accepted': { 1: BotRunnerTermsAcceptedEvent },
   'bot_runner.run.refused': { 1: BotRunnerRunRefusedEvent },
   'bot_runner.run.unmetered': { 1: BotRunnerRunUnmeteredEvent },

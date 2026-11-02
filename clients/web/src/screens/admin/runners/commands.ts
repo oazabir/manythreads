@@ -8,6 +8,8 @@ import {
   type BotRunnerKind,
   type BotRunnerStatus,
   type OldConnection,
+  type RunnerNode,
+  type RunnerPlacement,
   type SetBotRunnerTeamsRequest,
   type TeamId,
   type TestBotRunnerResponse,
@@ -347,4 +349,90 @@ export function adoptWords(c: Pick<OldConnection, 'kind' | 'teamName'>): string 
   return c.kind === 'managed'
     ? `Adopting adds ${c.teamName} to the shared team pod runner. Nothing changes for its bots.`
     : `Adopting makes a runner with the same address and its own copy of the key, for ${c.teamName} only. Nothing changes for its bots.`;
+}
+
+// ---- the machine a pod runner stands on (P19-08) -------------------------------------------------------------
+
+/** The value of the "let the cluster choose" option in the machine select. */
+export const NODE_AUTO = '';
+
+/** Only the team Hermes pod has a machine to choose; the other kinds run elsewhere. */
+export const hasNodeChoice = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'hermes_pod';
+
+/**
+ * The state line under a pod runner: where its pods stand now, in plain words. `placement` comes from the server live (the cluster is asked); `chosen` is the
+ * machine stored on the runner. Null when there is nothing worth saying (the cluster cannot be asked and no machine is chosen).
+ */
+export function placementLine(chosen: string | null, placement: RunnerPlacement | null): { text: string; tone: 'ok' | 'warn' | 'idle' } | null {
+  if (placement === null) return chosen === null ? null : { text: `Set to run on ${chosen}.`, tone: 'idle' };
+  const at = placement.node ?? chosen;
+  switch (placement.state) {
+    case 'running':
+      return { text: at ? `Running on ${at}` : 'Running', tone: 'ok' };
+    case 'moving':
+      return { text: at ? `Moving to ${at}. The work volumes are being made again there.` : 'Moving. The work volumes are being made again.', tone: 'warn' };
+    case 'waiting':
+      if (placement.reason === 'move_not_confirmed') return { text: 'Waiting: the machine for this pod changed, and nothing has been moved. Open Machine and confirm the move.', tone: 'warn' };
+      if (placement.reason === 'node_not_ready') return { text: `Waiting: node ${at ?? 'chosen'} is not Ready`, tone: 'warn' };
+      if (placement.reason === 'starting') return { text: at ? `Waiting: the pod is starting on ${at}` : 'Waiting: the pod is starting', tone: 'warn' };
+      return { text: at ? `Waiting: no pod can be placed on ${at} yet` : 'Waiting: no pod can be placed yet', tone: 'warn' };
+    case 'idle':
+      return { text: at ? `Set to run on ${at}. No team pod has started yet.` : 'The cluster chooses the machine. No team pod has started yet.', tone: 'idle' };
+  }
+}
+
+/**
+ * Is the pod's state changing by itself, so the page should look again? A move under way and a pod that is starting or waiting for a machine are. A move that waits for the
+ * admin's word is not: nothing changes until someone acts, so there is nothing to poll for.
+ */
+export const isChangingPlacement = (p: RunnerPlacement | null): boolean => p !== null && (p.state === 'moving' || (p.state === 'waiting' && p.reason !== 'move_not_confirmed'));
+
+/** Does the pod's machine need the admin's confirmation (the machine changed without a move being confirmed)? */
+export const needsMoveConfirm = (p: RunnerPlacement | null): boolean => p !== null && p.state === 'waiting' && p.reason === 'move_not_confirmed';
+
+/** "offers 4 CPUs and 16 GiB of memory": what a machine can give to pods. It is not what is left over, so the word is "offers". */
+export function offerWords(n: Pick<RunnerNode, 'cpuAllocatableMillis' | 'memoryAllocatableBytes'>): string | null {
+  const parts: string[] = [];
+  if (n.cpuAllocatableMillis !== null) {
+    const cpus = Math.round(n.cpuAllocatableMillis / 100) / 10;
+    parts.push(`${cpus} ${cpus === 1 ? 'CPU' : 'CPUs'}`);
+  }
+  if (n.memoryAllocatableBytes !== null) {
+    const gib = Math.round((n.memoryAllocatableBytes / 1024 ** 3) * 10) / 10;
+    parts.push(`${gib} GiB of memory`);
+  }
+  return parts.length === 0 ? null : `offers ${parts.join(' and ')}`;
+}
+
+/** The text of one choice in the machine select: its name, and in a few words what is worth knowing before picking it. */
+export function nodeOption(n: RunnerNode): string {
+  const notes = [n.ready ? null : 'not Ready', n.workVolumes > 0 ? 'has the work volume' : null, n.architecture, offerWords(n)].filter((x): x is string => Boolean(x));
+  return notes.length === 0 ? n.name : `${n.name} (${notes.join(', ')})`;
+}
+
+/** The sentence under the select when the install has exactly one machine, or null. */
+export const singleNodeLine = (nodes: ReadonlyArray<Pick<RunnerNode, 'name'>>, singleNode: boolean): string | null =>
+  singleNode && nodes.length === 1 ? `This install has one machine, ${nodes[0]!.name}. There is nothing to choose; every pod runs there.` : null;
+
+/** The machines a pod's work volume sits on now, other than `target`. A change to `target` recreates the volume when this is not empty. */
+export const volumesElsewhere = (nodes: ReadonlyArray<Pick<RunnerNode, 'name' | 'workVolumes'>>, target: string | null): string[] =>
+  target === null ? [] : nodes.filter((n) => n.workVolumes > 0 && n.name !== target).map((n) => n.name);
+
+/**
+ * The confirm text of a machine change, or null when nothing is lost. Said plainly because it cannot be undone: the pod's two volumes are made again,
+ * empty, on the new machine. The Secrets (keys) are kept, so the pod comes back up and clones its repositories again.
+ */
+export function moveWarning(label: string, from: readonly string[], to: string): string | null {
+  if (from.length === 0) return null;
+  return (
+    `${label}’s work volumes now sit on ${from.join(' and ')}. A volume stays on one machine, so they will be deleted and made again, empty, on ${to}. ` +
+    'The bots’ working copies and any work not yet pushed to its repository are lost, and each Hermes profile starts with an empty history. ' +
+    'The keys are kept, and the repositories are cloned again when the pod starts.'
+  );
+}
+
+/** What the admin reads after saving the machine. */
+export function nodeSavedWords(label: string, node: string | null, recreates: boolean): string {
+  if (node === null) return `${label} can now run on any machine. Pods already placed stay where they are.`;
+  return recreates ? `${label} will run on ${node}. Its work volumes are being made again there.` : `${label} will run on ${node}.`;
 }

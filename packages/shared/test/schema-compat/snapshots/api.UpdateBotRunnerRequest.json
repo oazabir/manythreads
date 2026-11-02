@@ -22,18 +22,6 @@
       "maxLength": 80,
       "pattern": "^[A-Za-z0-9._{}-]+$"
     },
-    "node": {
-      "anyOf": [
-        {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 253
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "modelAlias": {
       "type": "string",
       "minLength": 1,

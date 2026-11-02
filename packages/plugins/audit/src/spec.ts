@@ -386,6 +386,18 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('bot_runner', uuid(e['runnerId'])),
     reason: uuid(e['runnerId']) === null ? 'No default runner now' : null,
   }),
+  // The machine's name is not in the event, so it is not in the row: only whether one is chosen and whether the pods' work volumes start empty.
+  'bot_runner.node.changed': (e) => ({
+    action: 'bot_runner.node_changed',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason:
+      e['isPinned'] === true
+        ? e['recreatesWorkVolume'] === true
+          ? 'A machine was chosen; the work volumes start empty there'
+          : 'A machine was chosen'
+        : 'The cluster chooses the machine again',
+  }),
   'bot_runner.terms.accepted': (e) => ({ action: 'bot_runner.terms_accepted', who: actor(e['acceptedBy']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
   'bot_runner.run.refused': (e) => ({
     action: 'bot_runner.run_refused',

@@ -5,6 +5,9 @@ import {
   BotRunnerLabel,
   BotRunnerName,
   OldConnection,
+  RunnerNode,
+  RunnerNodeName,
+  RunnerPlacement,
   TeamBotRunner,
 } from '../../entities/bot-runner.ts';
 import { HermesBaseUrl } from '../hermes/connections.ts';
@@ -48,8 +51,6 @@ export const CreateBotRunnerRequest = z.strictObject({
   /** Hermes gateway: its key. */
   apiKey: BotRunnerApiKey.optional(),
   profileRule: BotRunnerProfileRule.optional(),
-  /** Pod kinds: the node, a Kubernetes host name (P19-08). */
-  node: z.string().min(1).max(253).optional(),
   /** LLM gateway: the alias from the LLM page. */
   modelAlias: z.string().min(1).max(40).optional(),
   enabled: z.boolean().optional(),
@@ -66,7 +67,6 @@ export const UpdateBotRunnerRequest = z.strictObject({
   baseUrl: HermesBaseUrl.optional(),
   apiKey: BotRunnerApiKey.optional(),
   profileRule: BotRunnerProfileRule.optional(),
-  node: z.string().min(1).max(253).nullable().optional(),
   modelAlias: z.string().min(1).max(40).optional(),
   enabled: z.boolean().optional(),
 });
@@ -112,6 +112,36 @@ export type SetDefaultBotRunnerRequest = z.infer<typeof SetDefaultBotRunnerReque
 export const SetDefaultBotRunnerResponse = z.object({ defaultRunnerId: BotRunnerId.nullable() });
 export type SetDefaultBotRunnerResponse = z.infer<typeof SetDefaultBotRunnerResponse>;
 export const setDefaultBotRunnerRoute = { method: 'PUT', path: '/api/admin/bot-runners/default' } as const;
+
+/**
+ * The machines of the cluster the operator allows (Helm `botRunners.allowedNodes`, empty: all), for the node picker (P19-08). `runnerId` asks for one pod runner:
+ * then every node also says whether that runner's work volume is there, and `placement` says where the runner's pods stand. Without it those fields are zero/null.
+ * Admin only.
+ */
+export const ListRunnerNodesQuery = z.object({ runnerId: BotRunnerId.optional() });
+export type ListRunnerNodesQuery = z.infer<typeof ListRunnerNodesQuery>;
+export const ListRunnerNodesResponse = z.object({
+  /** False when this install cannot list machines (no cluster behind the server). `nodes` is then empty and `note` says so. */
+  available: z.boolean(),
+  nodes: z.array(RunnerNode),
+  /** The cluster has exactly one allowed machine: the picker shows it and says that there is nothing to choose. */
+  singleNode: z.boolean(),
+  placement: RunnerPlacement.nullable(),
+  /** One plain sentence when something is worth saying (no cluster, the cluster did not answer). */
+  note: z.string().nullable(),
+});
+export type ListRunnerNodesResponse = z.infer<typeof ListRunnerNodesResponse>;
+export const listRunnerNodesRoute = { method: 'GET', path: '/api/admin/bot-runners/nodes' } as const;
+
+/**
+ * Choose the machine a pod runner's pods stand on, or `null` to let the cluster choose. A name must be allowed by the operator and Ready. Changing the machine
+ * recreates the pods' work volumes empty on the new one (the Secrets stay); the page asks to confirm first.
+ */
+export const SetRunnerNodeRequest = z.strictObject({ node: RunnerNodeName.nullable() });
+export type SetRunnerNodeRequest = z.infer<typeof SetRunnerNodeRequest>;
+export const SetRunnerNodeResponse = z.object({ runner: BotRunner, recreatesWorkVolume: z.boolean() });
+export type SetRunnerNodeResponse = z.infer<typeof SetRunnerNodeResponse>;
+export const setRunnerNodeRoute = { method: 'PUT', path: '/api/admin/bot-runners/:id/node' } as const;
 
 export const ListOldConnectionsResponse = z.object({ items: z.array(OldConnection) });
 export type ListOldConnectionsResponse = z.infer<typeof ListOldConnectionsResponse>;

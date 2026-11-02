@@ -218,7 +218,9 @@ describe('a team lead and a member read nothing of a runner by any route', () =>
   it('every admin route answers 403, and no answer or error carries an address, a key or a node', async () => {
     const made = await adminCreate({ name: 'secret-host', label: 'Secret host', kind: 'hermes_gateway', baseUrl: gw.url, apiKey: KEY, teams: { all: true } });
     const id = made.body.runner.id;
-    await w.call(omar, 'POST', '/api/admin/bot-runners', { name: 'noded', label: 'On a node', kind: 'hermes_pod', node: 'worker-17.internal' });
+    const noded = await adminCreate({ name: 'noded', label: 'On a node', kind: 'hermes_pod' });
+    // a node is set only by the node route; here the row is written directly so the answers below have a node to leak
+    await w.system((tx) => tx.query("UPDATE app.bot_runners SET node = 'worker-17.internal' WHERE name = 'noded'"));
     const routes: Array<[string, string, unknown?]> = [
       ['GET', '/api/admin/bot-runners'],
       ['POST', '/api/admin/bot-runners', { name: 'x', label: 'x', kind: 'hermes_pod' }],
@@ -228,6 +230,8 @@ describe('a team lead and a member read nothing of a runner by any route', () =>
       ['PUT', `/api/admin/bot-runners/${id}/teams`, { all: true }],
       ['PUT', '/api/admin/bot-runners/default', { runnerId: id }],
       ['GET', '/api/admin/bot-runners/old-connections'],
+      ['GET', '/api/admin/bot-runners/nodes'],
+      ['PUT', `/api/admin/bot-runners/${noded.body.runner.id}/node`, { node: 'worker-17.internal' }],
       ['POST', '/api/admin/bot-runners/old-connections/00000000-0000-7000-8000-00000000dead/adopt', {}],
     ];
     for (const who of [tariq, nadia]) {

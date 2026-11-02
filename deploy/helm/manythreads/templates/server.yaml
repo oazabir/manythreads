@@ -100,6 +100,8 @@ spec:
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: vapid-private-key, optional: true } }
             - name: MANYTHREADS_KMS_PREVIOUS_KEYS
               valueFrom: { secretKeyRef: { name: manythreads-server-secrets, key: kms-previous-keys, optional: true } }
+            # The machines an admin may choose for a pod runner (values.yaml botRunners.allowedNodes); empty = every machine of the cluster.
+            - { name: MANYTHREADS_BOT_RUNNERS_ALLOWED_NODES, value: {{ join "," (.Values.botRunners.allowedNodes | default list) | quote }} }
             {{- if .Values.testAuth.enabled }}
             # TEST ENVIRONMENT ONLY (see values.yaml testAuth)
             - name: MANYTHREADS_TEST_AUTH_TOKEN

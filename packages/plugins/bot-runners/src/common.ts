@@ -21,8 +21,9 @@ export async function requireAllowedAddress(baseUrl: string): Promise<void> {
   }
 }
 
-export async function loadRunner(tx: PluginTx, id: string): Promise<RunnerRow> {
-  const row = (await tx.query<RunnerRow>(`SELECT ${RUNNER_SELECT} WHERE r.id = $1::uuid`, [id])).rows[0];
+/** `lock`: the row stays locked until the transaction ends (two admins changing one runner's machine at once take turns). */
+export async function loadRunner(tx: PluginTx, id: string, lock = false): Promise<RunnerRow> {
+  const row = (await tx.query<RunnerRow>(`SELECT ${RUNNER_SELECT} WHERE r.id = $1::uuid${lock ? ' FOR UPDATE OF r' : ''}`, [id])).rows[0];
   if (!row) throw notFound('No such runner');
   return row;
 }

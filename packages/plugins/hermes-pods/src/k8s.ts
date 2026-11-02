@@ -19,6 +19,10 @@ export interface K8s {
   list(kind: string, namespace: string, labelSelector: string): Promise<K8sObject[]>;
   /** Delete the object; one that does not exist is not an error. */
   delete(kind: string, namespace: string, name: string): Promise<void>;
+  /** Set (a string) or remove (null) annotations on an existing object with a merge patch; other fields, and the fields this controller applied, are untouched. Optional: a test double may not have it. */
+  annotate?(kind: string, namespace: string, name: string, annotations: Record<string, string | null>): Promise<void>;
+  /** The cluster's node objects (a cluster-wide read). Optional for the same reason. */
+  listNodes?(): Promise<K8sObject[]>;
 }
 
 const PATHS: Record<string, { prefix: string; plural: string }> = {
@@ -116,6 +120,21 @@ export class HttpK8s implements K8s {
   async delete(kind: string, namespace: string, name: string): Promise<void> {
     const res = await this.call('DELETE', resourcePath(kind, namespace, name));
     if (res.status !== 404 && (res.status < 200 || res.status >= 300)) throw new K8sError(res.status, `delete ${kind}/${name}: ${res.status} ${statusMessage(res.text)}`);
+  }
+
+  async annotate(kind: string, namespace: string, name: string, annotations: Record<string, string | null>): Promise<void> {
+    const res = await this.call('PATCH', resourcePath(kind, namespace, name), JSON.stringify({ metadata: { annotations } }), 'application/merge-patch+json');
+    if (res.status < 200 || res.status >= 300) throw new K8sError(res.status, `annotate ${kind}/${name}: ${res.status} ${statusMessage(res.text)}`);
+  }
+
+  /**
+   * The cluster's nodes (P19-08). The one cluster-wide read this plugin makes: `get` and `list` on `nodes` through a ClusterRole, nothing else outside the pods namespace.
+   * Only the fields the node picker shows are read by the caller; an answer is never logged.
+   */
+  async listNodes(): Promise<K8sObject[]> {
+    const res = await this.call('GET', '/api/v1/nodes');
+    if (res.status !== 200) throw new K8sError(res.status, `list nodes: ${res.status} ${statusMessage(res.text)}`);
+    return (JSON.parse(res.text) as { items?: K8sObject[] }).items ?? [];
   }
 
   async list(kind: string, namespace: string, labelSelector: string): Promise<K8sObject[]> {

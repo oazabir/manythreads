@@ -53,6 +53,11 @@ export interface TeamRunnerInfo {
   defaultRunner: string | null;
   /** Names of the enabled `hermes_pod` runners the team may use: a bot placed on one has a profile on the team's pod. */
   podRunners: string[];
+  /**
+   * The machine the team's Hermes pod is pinned to (P19-08): the node of the pod runner the team uses, in the order default runner, then name. Null: the cluster chooses.
+   * Several pod runners share one pod per team, so when they name different machines the first in that order wins.
+   */
+  podNode?: string | null;
 }
 
 export interface BotRunnersProvider extends ProviderImpl {

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import type { BotRunner, OldConnection } from '@manythreads/shared';
+import type { BotRunner, OldConnection, RunnerPlacement } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
 import { fetchLlmAliases, fetchTeams } from '../../../api/endpoints';
 import { useQuery } from '../../../app/useQuery';
 import { QueryView } from '../../../components/states';
 import { Alert, Toggle } from '../../../components/ui';
-import { fetchBotRunners, fetchOldConnections, setDefaultBotRunner, testBotRunner, updateBotRunner } from './api';
+import { fetchBotRunners, fetchOldConnections, fetchRunnerNodes, setDefaultBotRunner, testBotRunner, updateBotRunner } from './api';
 import {
   addedWords,
   boundAliases,
@@ -17,14 +17,17 @@ import {
   describeOld,
   describeTeams,
   hasNoTeams,
+  hasNodeChoice,
+  isChangingPlacement,
   kindWords,
+  placementLine,
   stateLook,
   switchWords,
   teamOptions,
   teamsSavedWords,
   testWords,
 } from './commands';
-import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, TeamsDialog, TestDialog } from './dialogs';
+import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
 
 /*
  * Workspace → Runners (PLAN P19-04, docs/plugins/bot-runners.md). A runner is a place where bots run; a workspace admin sets them up here once and a team lead
@@ -40,6 +43,7 @@ type Dialogs =
   | { kind: 'add' }
   | { kind: 'edit'; runner: BotRunner }
   | { kind: 'teams'; runner: BotRunner }
+  | { kind: 'node'; runner: BotRunner }
   | { kind: 'test'; runner: BotRunner }
   | { kind: 'delete'; runner: BotRunner }
   | { kind: 'adopt'; connection: OldConnection }
@@ -56,7 +60,14 @@ export function RunnersScreen() {
       // The model names only matter for an LLM gateway runner; the list of runners must not wait on, or fail with, the LLM page.
       fetchLlmAliases().catch(() => ({ aliases: [] })),
     ]);
-    return { runners: runners.items, old: old.items, teams: teams.teams.map((t) => ({ id: t.id as string, name: t.name })), aliases: boundAliases(aliases.aliases) };
+    // Where each pod runner's pods stand comes from the cluster, live. A runner whose answer fails shows no state line; it must not fail the page.
+    const placements: Record<string, RunnerPlacement | null> = {};
+    await Promise.all(
+      runners.items.filter(hasNodeChoice).map(async (r) => {
+        placements[r.id] = await fetchRunnerNodes(r.id).then((n) => n.placement, () => null);
+      }),
+    );
+    return { runners: runners.items, placements, old: old.items, teams: teams.teams.map((t) => ({ id: t.id as string, name: t.name })), aliases: boundAliases(aliases.aliases) };
   });
   const heading = useRef<HTMLHeadingElement>(null);
   const [dialog, setDialog] = useState<Dialogs>(null);
@@ -88,6 +99,26 @@ export function RunnersScreen() {
     heading.current?.focus();
   }, [listed, dialog]);
   const close = (): void => setDialog(null);
+
+  // A pod that waits or moves is changing: look again every few seconds while any is, so the state line does not go stale.
+  // Only while one is changing by itself (a pod that waits for the admin's word is not), and not while the tab is hidden: the page looks again when it comes back.
+  const changing = listed !== null && Object.values(listed.placements).some(isChangingPlacement);
+  const reload = q.reload;
+  useEffect(() => {
+    if (!changing) return undefined;
+    const visible = (): boolean => document.visibilityState !== 'hidden';
+    const timer = setInterval(() => {
+      if (visible()) reload();
+    }, 8000);
+    const back = (): void => {
+      if (visible()) reload();
+    };
+    document.addEventListener('visibilitychange', back);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', back);
+    };
+  }, [changing, reload]);
 
   const working = useRef(new Set<string>());
   async function act(key: string, work: () => Promise<string>): Promise<void> {
@@ -135,6 +166,7 @@ export function RunnersScreen() {
                     <RunnerRow
                       key={r.id}
                       runner={r}
+                      placement={data.placements[r.id] ?? null}
                       busy={busy.has(r.id)}
                       onTest={() => {
                         if (r.kind === 'hermes_gateway') return setDialog({ kind: 'test', runner: r });
@@ -142,6 +174,7 @@ export function RunnersScreen() {
                       }}
                       onEdit={() => setDialog({ kind: 'edit', runner: r })}
                       onTeams={() => setDialog({ kind: 'teams', runner: r })}
+                      onNode={() => setDialog({ kind: 'node', runner: r })}
                       onDelete={() => setDialog({ kind: 'delete', runner: r })}
                       onSwitch={(on) => void act(r.id, async () => switchWords((await updateBotRunner(r.id, { enabled: on })).runner, on))}
                       onDefault={() =>
@@ -191,6 +224,17 @@ export function RunnersScreen() {
                 onDone={(r) => {
                   close();
                   say(teamsSavedWords(r));
+                  q.reload();
+                }}
+              />
+            ) : null}
+            {dialog?.kind === 'node' ? (
+              <NodeDialog
+                runner={dialog.runner}
+                onClose={close}
+                onDone={(_r, text) => {
+                  close();
+                  say(text);
                   q.reload();
                 }}
               />
@@ -264,19 +308,23 @@ function StateBadge({ runner }: { runner: BotRunner }) {
 
 function RunnerRow({
   runner: r,
+  placement,
   busy,
   onTest,
   onEdit,
   onTeams,
+  onNode,
   onDelete,
   onSwitch,
   onDefault,
 }: {
   runner: BotRunner;
+  placement: RunnerPlacement | null;
   busy: boolean;
   onTest: () => void;
   onEdit: () => void;
   onTeams: () => void;
+  onNode: () => void;
   onDelete: () => void;
   onSwitch: (on: boolean) => void;
   onDefault: () => void;
@@ -285,6 +333,7 @@ function RunnerRow({
   const stuckOn = cannotSwitchOff(r);
   const stuckId = `rn-stuck-${r.id}`;
   const gateway = describeGateway(r);
+  const where = hasNodeChoice(r) ? placementLine(r.node, placement) : null;
   return (
     <li className="rn-row" data-runner={r.name} data-testid="runner-row" aria-busy={busy || undefined}>
       <div className="rn-main">
@@ -315,6 +364,7 @@ function RunnerRow({
         </div>
         {gateway ? <div className="rn-detail mono">{gateway}</div> : null}
         {r.kind === 'llm_gateway' ? <div className="rn-detail">Model name: <span className="mono">{r.modelAlias ?? 'none chosen'}</span></div> : null}
+        {where ? <div className={`rn-detail rn-place ${where.tone}`} data-testid="runner-place" data-state={placement?.state ?? 'unknown'}>{where.text}</div> : null}
         {r.status !== 'ready' && r.status !== 'off' && r.statusDetail ? <div className="rn-detail">{r.statusDetail}</div> : null}
         {stuckOn ? <div className="rn-detail faint" id={stuckId}>{stuckOn}</div> : null}
       </div>
@@ -325,6 +375,9 @@ function RunnerRow({
         </span>
         <button type="button" className="btn sm" onClick={onTest} disabled={busy} data-testid="runner-test" aria-label={`Test ${r.label}`}>Test</button>
         <button type="button" className="btn sm" onClick={onTeams} disabled={busy} data-testid="runner-teams-open" aria-label={`Teams for ${r.label}`}>Teams</button>
+        {hasNodeChoice(r) ? (
+          <button type="button" className="btn sm" onClick={onNode} disabled={busy} data-testid="runner-node-open" aria-label={`Machine for ${r.label}`}>Machine</button>
+        ) : null}
         <button type="button" className="btn sm" onClick={onEdit} disabled={busy} data-testid="runner-edit-open" aria-label={`Change ${r.label}`}>Change</button>
         <button type="button" className="btn sm" onClick={onDelete} disabled={busy} data-testid="runner-delete" aria-label={`Delete ${r.label}`}>Delete</button>
       </div>

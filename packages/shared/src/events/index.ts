@@ -131,6 +131,7 @@ export * from './bot_runner.runner.deleted.ts';
 export * from './bot_runner.runner.tested.ts';
 export * from './bot_runner.availability.changed.ts';
 export * from './bot_runner.default.changed.ts';
+export * from './bot_runner.node.changed.ts';
 export * from './bot_runner.terms.accepted.ts';
 export * from './bot_runner.run.refused.ts';
 export * from './bot_runner.run.unmetered.ts';

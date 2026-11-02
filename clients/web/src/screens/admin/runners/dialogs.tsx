@@ -1,12 +1,21 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Link } from 'react-router';
-import type { BotRunner, BotRunnerKind, OldConnection } from '@manythreads/shared';
+import type { BotRunner, BotRunnerKind, ListRunnerNodesResponse, OldConnection } from '@manythreads/shared';
 import { isApiError } from '../../../api/client';
+import { useQuery } from '../../../app/useQuery';
 import { Dialog } from '../../../components/Dialog';
 import { Field } from '../../../components/ui';
-import { adoptOldConnection, createBotRunner, deleteBotRunner, setBotRunnerTeams, testBotRunner, updateBotRunner } from './api';
+import { adoptOldConnection, createBotRunner, deleteBotRunner, fetchRunnerNodes, setBotRunnerTeams, setRunnerNode, testBotRunner, updateBotRunner } from './api';
 import {
   KIND_CARDS,
+  NODE_AUTO,
+  moveWarning,
+  needsMoveConfirm,
+  nodeOption,
+  nodeSavedWords,
+  placementLine,
+  singleNodeLine,
+  volumesElsewhere,
   adoptWords,
   choiceOf,
   deleteWarning,
@@ -380,6 +389,115 @@ export function DeleteDialog({ runner, onClose, onDone }: { runner: BotRunner; o
       {warning ? <p className="dlg-text rn-warn" data-testid="runner-delete-warning">{warning}</p> : null}
       <FormError text={error} />
     </Dialog>
+  );
+}
+
+// ---- node ------------------------------------------------------------------------------------------------------
+
+/**
+ * Choose the machine a pod runner's pods stand on (P19-08). The select lists the machines the operator allows; a machine that is not Ready is shown but cannot be
+ * picked. A change that leaves a work volume on another machine asks to confirm first, because the volumes are made again, empty.
+ */
+export function NodeDialog({ runner, onClose, onDone }: { runner: BotRunner; onClose: () => void; onDone: (r: BotRunner, text: string) => void }) {
+  const q = useQuery(`runner-nodes-dialog-${runner.id}`, () => fetchRunnerNodes(runner.id));
+  const [choice, setChoice] = useState(runner.node ?? NODE_AUTO);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const sending = useRef(false);
+  const target = choice === NODE_AUTO ? null : choice;
+  const unchanged = target === (runner.node ?? null);
+  const listed = q.status === 'ok' ? q.data : null;
+  const warning = listed ? moveWarning(runner.label, volumesElsewhere(listed.nodes, target), target ?? '') : null;
+  // The machine was changed by something else (Make default, Enable, the Teams list) and the pod stayed where its volumes are: the same machine can be confirmed again here.
+  const waitingForWord = listed !== null && needsMoveConfirm(listed.placement) && unchanged && warning !== null;
+  // After the select is replaced by the warning, the keyboard goes to the button that goes on; going back, to the select.
+  const selectRef = useRef<HTMLSelectElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const wasConfirming = useRef(false);
+  useEffect(() => {
+    if (confirming) confirmRef.current?.focus();
+    else if (wasConfirming.current) selectRef.current?.focus();
+    wasConfirming.current = confirming;
+  }, [confirming]);
+
+  async function save(): Promise<void> {
+    if (sending.current) return;
+    if (warning && !confirming) return setConfirming(true);
+    sending.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await setRunnerNode(runner.id, target);
+      onDone(res.runner, nodeSavedWords(runner.label, target, res.recreatesWorkVolume));
+    } catch (err) {
+      setError(message(err));
+      setConfirming(false);
+      sending.current = false;
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title={confirming ? `Move ${runner.label} to ${target}?` : `Machine for ${runner.label}`}
+      onClose={onClose}
+      wide
+      testId="runner-node-dialog"
+      footer={
+        confirming ? (
+          <>
+            <button type="button" className="btn" onClick={() => setConfirming(false)} disabled={busy}>Back</button>
+            <button type="button" className="btn danger" ref={confirmRef} onClick={() => void save()} disabled={busy} data-testid="runner-node-confirm">Move and make the volumes again</button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="button" className="btn primary" onClick={() => void save()} disabled={busy || (unchanged && !waitingForWord) || listed === null} data-testid="runner-node-save">{waitingForWord ? 'Review the move' : 'Save'}</button>
+          </>
+        )
+      }
+    >
+      {confirming ? (
+        <>
+          <p className="dlg-text rn-warn" data-testid="runner-node-warning">{warning}</p>
+          <p className="dlg-text">Nothing else changes. Teams, keys and bots stay as they are.</p>
+        </>
+      ) : q.status === 'loading' ? (
+        <p className="loading" aria-busy="true">Loading…</p>
+      ) : q.status === 'error' ? (
+        <p className="dlg-error" role="alert">{q.error.message}</p>
+      ) : (
+        <NodePick runner={runner} data={q.data} value={choice} onChange={setChoice} selectRef={selectRef} />
+      )}
+      <FormError text={error} />
+    </Dialog>
+  );
+}
+
+function NodePick({ runner, data, value, onChange, selectRef }: { runner: BotRunner; data: ListRunnerNodesResponse; value: string; onChange: (v: string) => void; selectRef: RefObject<HTMLSelectElement | null> }) {
+  const one = singleNodeLine(data.nodes, data.singleNode);
+  const line = placementLine(runner.node, data.placement);
+  // a machine saved earlier that the list no longer holds stays in the select, so the dialog does not silently show "let the cluster choose"
+  const missing = runner.node !== null && !data.nodes.some((n) => n.name === runner.node);
+  return (
+    <div className="rn-field">
+      {data.note ? <p className="dlg-text rn-warn" data-testid="runner-node-note">{data.note}</p> : null}
+      <div className="fld">
+        <label htmlFor="runner-node">Machine</label>
+        <select id="runner-node" ref={selectRef} value={value} onChange={(e) => onChange(e.target.value)} aria-describedby="runner-node-hint" data-testid="runner-node-select" data-autofocus="">
+          <option value={NODE_AUTO}>Let the cluster choose</option>
+          {missing ? <option value={runner.node ?? ''}>{runner.node} (not in the list)</option> : null}
+          {data.nodes.map((n) => (
+            <option key={n.name} value={n.name} disabled={!n.ready && n.name !== runner.node}>{nodeOption(n)}</option>
+          ))}
+        </select>
+        <div className="fld-hint" id="runner-node-hint">
+          {one ?? 'Every team’s Hermes pod of this runner runs on the machine you choose. Each pod keeps its files on one machine, so moving it starts its volumes again, empty.'}
+        </div>
+      </div>
+      {line ? <p className={`rn-place ${line.tone}`} data-testid="runner-node-state">{line.text}</p> : null}
+    </div>
   );
 }
 

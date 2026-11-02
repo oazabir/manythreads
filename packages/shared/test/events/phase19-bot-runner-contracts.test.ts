@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BotRunner, CreateBotRunnerRequest, TeamBotRunner, eventRegistry, latestVersion, parseEvent } from '../../src/index.ts';
+import { BotRunner, CreateBotRunnerRequest, SetRunnerNodeRequest, TeamBotRunner, UpdateBotRunnerRequest, eventRegistry, latestVersion, parseEvent } from '../../src/index.ts';
 import { uuid } from '../fixtures.ts';
 
 // Event contract of P19-02 (`pnpm test:events`): the seven runner events have a registered v1 schema that accepts the documented payload and refuses what breaks
@@ -15,6 +15,7 @@ const samples = {
   'bot_runner.runner.tested': { ...base, type: 'bot_runner.runner.tested', runnerId: uuid(2), name: 'host', ok: true, actorId: uuid(4) },
   'bot_runner.availability.changed': { ...base, type: 'bot_runner.availability.changed', runnerId: uuid(2), name: 'host', enabled: true, allTeams: false, teamCount: 3, actorId: uuid(4) },
   'bot_runner.default.changed': { ...base, type: 'bot_runner.default.changed', runnerId: uuid(2), previousRunnerId: null, actorId: uuid(4) },
+  'bot_runner.node.changed': { ...base, type: 'bot_runner.node.changed', runnerId: uuid(2), name: 'team-pod', wasPinned: false, isPinned: true, recreatesWorkVolume: true, actorId: uuid(4) },
   'bot_runner.terms.accepted': { ...base, type: 'bot_runner.terms.accepted', runnerId: uuid(2), name: 'claude-max', acceptedBy: uuid(4) },
   'bot_runner.run.refused': { ...base, type: 'bot_runner.run.refused', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'host', reason: 'disabled' },
   'bot_runner.run.unmetered': { ...base, type: 'bot_runner.run.unmetered', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'team-pod' },
@@ -83,5 +84,25 @@ describe('the runner shapes', () => {
     expect(CreateBotRunnerRequest.safeParse({ ...ok, kind: 'made_up' }).success).toBe(false);
     expect(CreateBotRunnerRequest.safeParse({ ...ok, apiKey: 'short' }).success).toBe(false);
     expect(CreateBotRunnerRequest.safeParse({ ...ok, baseUrl: 'http://u:p@host' }).success).toBe(false);
+  });
+});
+
+describe('the node routes (P19-08)', () => {
+  it('bot_runner.node.changed carries three booleans and no machine name', () => {
+    const parsed = parseEvent({ ...samples['bot_runner.node.changed'], node: 'ubuntu-vm', from: 'a', to: 'b' }) as unknown as Record<string, unknown>;
+    for (const key of ['node', 'from', 'to']) expect(parsed[key], key).toBeUndefined();
+    expect(parsed['wasPinned']).toBe(false);
+  });
+
+  it('a machine name is a label value: letters, digits, "-", "_" and ".", at most 63 characters', () => {
+    for (const ok of ['ubuntu-vm', 'node1', 'a', 'worker_1.lan']) expect(SetRunnerNodeRequest.safeParse({ node: ok }).success, ok).toBe(true);
+    for (const bad of ['', '-x', 'x-', 'a b', 'a/b', 'x'.repeat(64), 'node;rm', '{"a":1}']) expect(SetRunnerNodeRequest.safeParse({ node: bad }).success, bad).toBe(false);
+    expect(SetRunnerNodeRequest.safeParse({ node: null }).success).toBe(true);
+    expect(SetRunnerNodeRequest.safeParse({ node: 'ubuntu-vm', extra: 1 }).success).toBe(false);
+  });
+
+  it('a runner is no longer made or changed with a node by the generic routes', () => {
+    expect(CreateBotRunnerRequest.safeParse({ name: 'pod', label: 'Pod', kind: 'hermes_pod', node: 'ubuntu-vm' }).success).toBe(false);
+    expect(UpdateBotRunnerRequest.safeParse({ node: 'ubuntu-vm' }).success).toBe(false);
   });
 });

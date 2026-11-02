@@ -45,6 +45,10 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [delete]
+  # a team's volume claims are deleted only to move a pod to another machine the admin chose (P19-08: reconcile.ts, finishMove), after its pod has stopped
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [delete]
   - apiGroups: [""]
     resources: [pods]
     verbs: [get, list]
@@ -55,6 +59,30 @@ metadata:
   name: manythreads-hermes-pods-controller
   namespace: {{ $bots }}
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: manythreads-hermes-pods-controller }
+subjects:
+  - { kind: ServiceAccount, name: manythreads-server, namespace: {{ $rel }} }
+---
+# The one cluster-wide right of the server (P19-08): READ the cluster's machines, so an admin can pick the node a pod runner stands on. `get` and `list` on
+# `nodes`, nothing else: no verb that writes, no other resource, no `watch`. Everything else the server may do is in the Roles above (namespace-only).
+# docs/plugins/security.md, "The one cluster-wide permission".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $rel }}-manythreads-nodes-reader
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $rel }}-manythreads-nodes-reader
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ $rel }}-manythreads-nodes-reader }
 subjects:
   - { kind: ServiceAccount, name: manythreads-server, namespace: {{ $rel }} }
 ---

@@ -74,6 +74,8 @@ export const PROVIDER_KINDS = [
   'presence',
   /** Where a bot's run goes, by runner name (bot-runners): `BotRunnersProvider` in ./bot-runners.ts. */
   'bot.runners',
+  /** The cluster's machines and where the team Hermes pods stand on them (hermes-pods): `RunnerNodesProvider` in ./runner-nodes.ts. */
+  'runner.nodes',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

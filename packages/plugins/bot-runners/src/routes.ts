@@ -30,6 +30,7 @@ import {
   type BotRunnerTeams,
 } from '@manythreads/shared';
 import { registerAdoptionRoutes } from './adopt.ts';
+import { registerNodeRoutes } from './nodes.ts';
 import { loadRunner, presentOne, presentRunners, requireAllowedAddress, requireWorkspaceAdmin } from './common.ts';
 import { DEFAULT_PROFILE_RULE } from './resolve.ts';
 import { effectiveStatus, placementsOf, RUNNER_SELECT, type RunnerRow } from './rows.ts';
@@ -72,12 +73,11 @@ async function writeTeams(tx: PluginTx, runnerId: string, teams: BotRunnerTeams)
 }
 
 /** Which settings belong to which kind: a setting on the wrong kind is refused rather than stored and ignored. */
-function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown; profileRule?: unknown; node?: unknown; modelAlias?: unknown }): void {
+function checkSettingsFit(kind: string, s: { baseUrl?: unknown; apiKey?: unknown; profileRule?: unknown; modelAlias?: unknown }): void {
   const gateway = kind === 'hermes_gateway';
   const pod = kind === 'hermes_pod';
   if ((s.baseUrl !== undefined || s.apiKey !== undefined) && !gateway) throw invalid('An address and a key belong to a Hermes gateway runner only.');
   if (s.profileRule !== undefined && !gateway && !pod) throw invalid('A profile rule belongs to a Hermes runner only.');
-  if (s.node !== undefined && s.node !== null && !pod) throw invalid('A node belongs to a pod runner only.');
   if (s.modelAlias !== undefined && kind !== 'llm_gateway') throw invalid('A model alias belongs to an LLM gateway runner only.');
 }
 
@@ -128,8 +128,8 @@ export function registerRoutes(ctx: PluginContext): void {
         ({ status, detail } = await llmAliasStatus(tx, workspaceId, requireAlias(body.modelAlias)));
       }
       const inserted = await tx.query<{ id: string }>(
-        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, base_url, secret_id, profile_rule, node, model_alias, status, status_detail)
-         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11, $12) RETURNING id`,
+        `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, base_url, secret_id, profile_rule, model_alias, status, status_detail)
+         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10, $11) RETURNING id`,
         [
           workspaceId,
           body.name,
@@ -139,7 +139,6 @@ export function registerRoutes(ctx: PluginContext): void {
           body.baseUrl ?? null,
           secretId,
           body.kind === 'hermes_gateway' || body.kind === 'hermes_pod' ? (body.profileRule ?? DEFAULT_PROFILE_RULE) : null,
-          body.node ?? null,
           body.modelAlias ?? null,
           status,
           detail,
@@ -168,7 +167,7 @@ export function registerRoutes(ctx: PluginContext): void {
       await requireWorkspaceAdmin(tx);
       const current = await loadRunner(tx, id);
       checkSettingsFit(current.kind, body);
-      const changed: Array<'label' | 'address' | 'key' | 'profile_rule' | 'node' | 'model_alias' | 'enabled'> = [];
+      const changed: Array<'label' | 'address' | 'key' | 'profile_rule' | 'model_alias' | 'enabled'> = [];
       const sets: string[] = [];
       const values: unknown[] = [id];
       const set = (column: string, value: unknown): void => {
@@ -198,10 +197,6 @@ export function registerRoutes(ctx: PluginContext): void {
       if (body.profileRule !== undefined && body.profileRule !== current.profile_rule) {
         set('profile_rule', body.profileRule);
         changed.push('profile_rule');
-      }
-      if (body.node !== undefined && body.node !== current.node) {
-        set('node', body.node);
-        changed.push('node');
       }
       if (body.modelAlias !== undefined && body.modelAlias !== current.model_alias) {
         const alias = requireAlias(body.modelAlias);
@@ -373,4 +368,5 @@ export function registerRoutes(ctx: PluginContext): void {
   });
 
   registerAdoptionRoutes(ctx);
+  registerNodeRoutes(ctx);
 }

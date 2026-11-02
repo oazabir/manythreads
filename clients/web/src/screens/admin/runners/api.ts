@@ -6,10 +6,14 @@ import {
   DeleteBotRunnerResponse,
   ListBotRunnersResponse,
   ListOldConnectionsResponse,
+  ListRunnerNodesQuery,
+  ListRunnerNodesResponse,
   SetBotRunnerTeamsRequest,
   SetBotRunnerTeamsResponse,
   SetDefaultBotRunnerRequest,
   SetDefaultBotRunnerResponse,
+  SetRunnerNodeRequest,
+  SetRunnerNodeResponse,
   TestBotRunnerRequest,
   TestBotRunnerResponse,
   UpdateBotRunnerRequest,
@@ -19,8 +23,10 @@ import {
   deleteBotRunnerRoute,
   listBotRunnersRoute,
   listOldConnectionsRoute,
+  listRunnerNodesRoute,
   setBotRunnerTeamsRoute,
   setDefaultBotRunnerRoute,
+  setRunnerNodeRoute,
   testBotRunnerRoute,
   updateBotRunnerRoute,
 } from '@manythreads/shared';
@@ -53,6 +59,14 @@ export const setDefaultBotRunner = (runnerId: string | null) =>
   call(setDefaultBotRunnerRoute, { request: SetDefaultBotRunnerRequest, response: SetDefaultBotRunnerResponse }, { runnerId });
 
 export const fetchOldConnections = () => call(listOldConnectionsRoute, { response: ListOldConnectionsResponse });
+
+/** The machines the operator allows for pod runners; with `runnerId`, also where that runner's work volume is and where its pods stand. */
+export const fetchRunnerNodes = (runnerId?: string) =>
+  call(listRunnerNodesRoute, { request: ListRunnerNodesQuery, response: ListRunnerNodesResponse }, runnerId ? ({ runnerId } as ListRunnerNodesQuery) : {});
+
+/** `null` lets the cluster choose. A new machine recreates the pods' work volumes empty on it (the page asks first). */
+export const setRunnerNode = (id: string, node: string | null) =>
+  call(setRunnerNodeRoute, { request: SetRunnerNodeRequest, response: SetRunnerNodeResponse }, { node }, { id });
 
 export const adoptOldConnection = (connectionId: string, body: AdoptConnectionRequest = {}) =>
   call(adoptConnectionRoute, { request: AdoptConnectionRequest, response: AdoptConnectionResponse }, body, { connectionId });

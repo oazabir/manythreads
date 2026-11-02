@@ -312,6 +312,30 @@
   color: var(--alert-ink);
 }
 
+/* ---- the machine a pod runner stands on (P19-08): the state line under a pod row and in the machine dialog ---- */
+.rn-place {
+  font-weight: 600;
+}
+
+.rn-place.ok {
+  color: var(--ok-ink);
+}
+
+.rn-place.warn {
+  color: var(--warn-ink);
+}
+
+.rn-place.idle {
+  color: var(--mute);
+  font-weight: 400;
+}
+
+p.rn-place {
+  margin: 10px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 /* ---- phone ---- */
 @media (width <= 760px) {
   .rn-row {
