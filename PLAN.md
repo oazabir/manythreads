@@ -123,7 +123,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
-| 7 | 14 | Messaging parity and moving in | XL | 6 | 16 of 23 built, 5 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 18 of 23 built, 3 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 0 of 13 built |
 | 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
