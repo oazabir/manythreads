@@ -31,6 +31,7 @@ import {
 } from '@manythreads/shared';
 import { GatewayRefused, type GatewayTarget } from './gateway.ts';
 import { ensureProfileSecrets, readProfileApiKey, reenableProfileSecrets } from './profile-secrets.ts';
+import { podPlacementParams, podPlacementWhere } from './profiles.ts';
 
 // Hermes connections: the gateways a team's bots were placed on (`placement.gateway.connection`). Since Phase 19 a workspace admin makes the places bots run
 // as RUNNERS (`bot-runners`); a team lead can no longer make, change or remove a connection (those routes answer 403 with the reason), and the address of a
@@ -95,20 +96,26 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
   if (!answer.ok) {
     // A name that is no connection of the team may still be a runner: a runner the team may not use is then the same as a name that is nothing at all.
     if (options.unlistedIsAbsent && (answer.reason === 'unknown' || answer.reason === 'not_available_to_team')) return null;
-    throw new GatewayRefused(answer.message);
+    throw new GatewayRefused(answer.message, { runner, reason: answer.reason });
   }
   const { target } = answer;
-  if (target.address === null) return null;
+  // The runner took the team and the state, but there is nothing to call (no address or key, or the bot's own access to the pod was turned off by a person). For a bot placed on the runner
+  // by name that is a refusal with a plain line that names the runner by its label (the team may use it: the catalog said so); for a name that only might be a runner it is "absent".
+  const cannot = (why: string): null => {
+    if (options.unlistedIsAbsent) return null;
+    throw new GatewayRefused(`This bot runs on ${target.label}, ${why}`, { runner, reason: 'not_set_up' });
+  };
+  if (target.address === null) return cannot('which is not set up yet.');
   if (target.kind === 'hermes_gateway') {
-    if (target.key === null) return null;
-    return { baseUrl: target.address, apiKey: target.key, guarded: target.guard, kind: 'external', agent: target.agent };
+    if (target.key === null) return cannot('which is not set up yet. An admin has to give it a key.');
+    return { baseUrl: target.address, apiKey: target.key, guarded: target.guard, kind: 'external', agent: target.agent, profileRule: target.profileRule };
   }
   if (target.kind === 'hermes_pod') {
-    if (!bot) return null;
+    if (!bot) return cannot('but the bot could not be found on this team.');
     const secrets = await ensureProfileSecrets(ctx, bot);
-    return 'revoked' in secrets ? null : { baseUrl: target.address, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
+    return 'revoked' in secrets ? cannot("but this bot's access to the pod was turned off. A lead of the team can turn it back on.") : { baseUrl: target.address, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
   }
-  return null;
+  return cannot('which cannot run bots yet.');
 }
 
 const botOf = (ctx: PluginContext, teamId: string, botId: string): Promise<BotRef | null> =>
@@ -142,7 +149,10 @@ export async function resolveTarget(
   return ctx.db.system(async (tx) => ({ baseUrl, apiKey: await ctx.secrets.get(tx, secretId), guarded: true, kind: 'external' as const, agent }));
 }
 
-/** The target of a bot placed straight on a runner (`placement.runs_on`, P19-03): the same answer as a connection that was adopted into it. */
+/**
+ * The target of a bot placed straight on a runner (`placement.runs_on`, or the workspace default runner, P19-03): the same answer as a connection that was adopted into it.
+ * Refuses, with a plain sentence and the reason, a runner that is switched off, not open to the team, not ready, not set up or gone; the caller then starts nothing.
+ */
 export async function resolveRunnerTarget(ctx: PluginContext, query: { teamId: string; botId: string; runner: string }): Promise<GatewayTarget | null> {
   return targetOfRunner(ctx, query.teamId, query.runner, await botOf(ctx, query.teamId, query.botId));
 }
@@ -228,10 +238,11 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
       const { slug, botSlug } = req.params as { slug: string; botSlug: string };
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
+      const placement = await podPlacementParams(ctx, team.id);
       const bot = (
         await tx.query<{ id: string; workspace_id: string; team_id: string }>(
-          `SELECT id, workspace_id, team_id FROM app.bots WHERE team_id = $1::uuid AND slug = $2 AND status = 'active' AND placement -> 'gateway' ->> 'connection' = 'managed'`,
-          [team.id, botSlug],
+          `SELECT id, workspace_id, team_id FROM app.bots WHERE team_id = $1::uuid AND slug = $2 AND status = 'active' AND ${podPlacementWhere(3)}`,
+          [team.id, botSlug, ...placement],
         )
       ).rows[0];
       if (!bot) throw notFound(`No active bot "${botSlug}" on the managed gateway`);

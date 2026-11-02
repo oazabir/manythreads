@@ -61,17 +61,11 @@ export function registerPushCredentials(ctx: PluginContext, env: NodeJS.ProcessE
 
 const FIRST_PASS_DELAY_MS = 20_000;
 
-/** Teams with at least one active bot placed on the managed gateway. */
+/** Teams with at least one active bot on their own pod. The rule (managed connection, `runs_on` on a pod runner, the default pod runner) lives in runtime-hermes, which answers it. */
 async function teamsWithManagedBots(ctx: PluginContext): Promise<Team[]> {
-  return ctx.db.system(async (tx) => {
-    const res = await tx.query<{ id: string; slug: string }>(
-      `SELECT DISTINCT t.id, t.slug
-         FROM app.teams t JOIN app.bots b ON b.team_id = t.id
-        WHERE t.archived_at IS NULL AND b.status = 'active' AND b.placement -> 'gateway' ->> 'connection' = 'managed'
-        ORDER BY t.slug`,
-    );
-    return res.rows;
-  });
+  const provider = ctx.providers.get<HermesProfilesProvider>('hermes.profiles');
+  if (!provider) throw new Error('the hermes.profiles provider is not loaded (runtime-hermes)');
+  return provider.teamsWithPodBots();
 }
 
 /** The team's projects (the projects plugin's table) as repositories of record. */

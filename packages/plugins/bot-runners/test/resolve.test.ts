@@ -16,7 +16,7 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { resolveRunner } from '../src/resolve.ts';
+import { checkPlacement, resolveRunner, teamRunners } from '../src/resolve.ts';
 
 // resolveRunner is the one place a runner's name becomes a place to run. It refuses what the admin has not allowed, and answers with the address and key only to
 // the server code that calls it. The context here is the two things it needs: the system transaction and the secret reader.
@@ -98,5 +98,60 @@ describe('resolveRunner', () => {
 
   it('a team of another workspace gets "unknown", not "not available"', async () => {
     expect(await resolve('gw', '00000000-0000-7000-8000-00000000dead')).toMatchObject({ ok: false, reason: 'unknown' });
+  });
+});
+
+describe('the run-start refusals (P19-03)', () => {
+  it('say who the bot runs on and why, in one plain sentence, with no address or key', async () => {
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = false WHERE name = 'gw'"));
+    const off = await resolve('gw');
+    expect(off).toMatchObject({ ok: false, reason: 'disabled', message: 'This bot runs on Label of gw, which an admin has switched off.' });
+    expect(JSON.stringify(off)).not.toMatch(/hermes\.example|resolver-key/);
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = true WHERE name = 'gw'"));
+  });
+
+  it('turn a run away in every state a runner cannot serve, and let ready and not-set-up (with an address and key) through', async () => {
+    for (const status of ['waiting_for_sign_in', 'starting', 'needs_sign_in', 'waiting_for_node', 'moving', 'paused']) {
+      await sys((tx) => tx.query('UPDATE app.bot_runners SET status = $1 WHERE name = $2', [status, 'gw']));
+      const answer = await resolve('gw');
+      expect(answer, status).toMatchObject({ ok: false, reason: 'not_ready' });
+      expect(JSON.stringify(answer)).not.toMatch(/hermes\.example|resolver-key/);
+    }
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET status = 'not_set_up' WHERE name = 'gw'"));
+    expect(await resolve('gw')).toMatchObject({ ok: true });
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET status = 'ready' WHERE name = 'gw'"));
+    expect(await resolve('gw')).toMatchObject({ ok: true });
+  });
+});
+
+describe("checkPlacement (the loader's question)", () => {
+  const check = (runner: string, teamId: string = TEAM_IDS.Engineering) => sys((tx) => checkPlacement(tx as never, { teamId, runner }));
+
+  it('passes a runner the team may use, also when it is switched off', async () => {
+    expect(await check('gw')).toEqual({ ok: true });
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = false WHERE name = 'gw'"));
+    expect(await check('gw')).toEqual({ ok: true });
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = true WHERE name = 'gw'"));
+  });
+
+  it('refuses a name that is no runner and a runner the team is not on, in the same words', async () => {
+    const missing = await check('does-not-exist');
+    const hidden = await check('gw', TEAM_IDS.Marketing);
+    expect(missing.ok).toBe(false);
+    expect(hidden.ok).toBe(false);
+    expect(JSON.stringify(hidden)).not.toMatch(/Label of gw|hermes\.example/);
+    expect((hidden as { message: string }).message.replace('"gw"', '"X"')).toBe((missing as { message: string }).message.replace('"does-not-exist"', '"X"'));
+  });
+});
+
+describe('teamRunners', () => {
+  it('names the default runner only when the team may use it, and the pod runners the team may use', async () => {
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET is_default = true WHERE name = 'gw'"));
+    expect(await teamRunners(ctx, { teamId: TEAM_IDS.Engineering })).toMatchObject({ defaultRunner: 'gw' });
+    expect((await teamRunners(ctx, { teamId: TEAM_IDS.Marketing })).defaultRunner).toBeNull();
+    expect((await teamRunners(ctx, { teamId: TEAM_IDS.Marketing })).podRunners).toContain('everyone');
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = false WHERE name = 'gw'"));
+    expect((await teamRunners(ctx, { teamId: TEAM_IDS.Engineering })).defaultRunner).toBeNull();
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET enabled = true, is_default = false WHERE name = 'gw'"));
   });
 });

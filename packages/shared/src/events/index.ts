@@ -132,6 +132,7 @@ export * from './bot_runner.runner.tested.ts';
 export * from './bot_runner.availability.changed.ts';
 export * from './bot_runner.default.changed.ts';
 export * from './bot_runner.terms.accepted.ts';
+export * from './bot_runner.run.refused.ts';
 export * from './bots.pairing.rotated.ts';
 export * from './proposals.proposal.created.ts';
 export * from './proposals.proposal.applied.ts';

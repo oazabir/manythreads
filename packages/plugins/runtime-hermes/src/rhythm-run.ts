@@ -96,6 +96,8 @@ export async function finishRhythmRun(input: {
   scope: BotRuntimeScope;
   reply: string;
   ok: boolean;
+  /** The runner's own sentence when it turned the run away: it becomes the firing's reason in place of the general one. */
+  failureReason?: string;
 }): Promise<void> {
   const { ctx, tx, log, run, payload, scope, reply, ok } = input;
   const rhythm = payload.rhythm!;
@@ -106,7 +108,7 @@ export async function finishRhythmRun(input: {
   }
 
   let status: 'done' | 'failed' = ok ? 'done' : 'failed';
-  let reason = ok ? '' : 'The run failed before it produced an answer.';
+  let reason = ok ? '' : (input.failureReason?.trim().slice(0, 300) || 'The run failed before it produced an answer.');
   let commitSha: string | null = null;
   const text = reply.trim();
 

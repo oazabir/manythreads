@@ -1,8 +1,8 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { definePlugin, type RunnerDoor } from '@manythreads/sdk';
+import { definePlugin, type BotRunnersProvider, type RunnerDoor } from '@manythreads/sdk';
 import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
-import { registerConnectionRoutes, resolveTarget } from './connections.ts';
+import { registerConnectionRoutes, resolveRunnerTarget, resolveTarget } from './connections.ts';
 import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
 import { registerProfileChanges } from './profile-changes.ts';
 import { registerApprovalResume, registerRouter, registerRunJob } from './router.ts';
@@ -51,6 +51,7 @@ export default definePlugin({
         'hermes.connection.deleted',
         'hermes.connection.tested',
         'hermes.profiles.changed',
+        'bot_runner.run.refused',
       ],
       consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'rhythms.rhythm.ran', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed'],
     },
@@ -77,7 +78,12 @@ export default definePlugin({
         // Looked up per run: the runners plugin may load after this one.
         runners: () => ctx.providers.get<RunnerDoor>('runner'),
         // The Hermes gateways of the team's connections (`placement.gateway`), looked up per run.
-        gateways: { resolve: (query) => resolveTarget(ctx, query) },
+        gateways: {
+          resolve: (query) => resolveTarget(ctx, query),
+          // `placement.runs_on` and the workspace default runner (P19-03): the runner catalog decides, never a team connection of the same name.
+          resolveRunner: (query) => resolveRunnerTarget(ctx, query),
+          defaultRunner: async (teamId) => (await ctx.providers.get<BotRunnersProvider>('bot.runners')?.teamRunners({ teamId }))?.defaultRunner ?? null,
+        },
       }),
     );
     const profiles = createProfilesProvider(

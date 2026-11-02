@@ -82,6 +82,29 @@ describe('BotFrontmatter', () => {
     expect(over.error?.issues[0]?.message).toBe('A bot can list at most 50 knowledge bases.');
   });
 
+  describe('placement.runs_on (a runner by name)', () => {
+    const placed = (placement: Record<string, unknown>) => BotFrontmatter.safeParse({ ...coder, placement });
+    it('accepts a runner name, alone or with requires and isolation', () => {
+      expect(placed({ runs_on: 'host' }).success).toBe(true);
+      expect(placed({ runs_on: 'team-pod', requires: ['chrome'], isolation: 'shared' }).success).toBe(true);
+    });
+    it('refuses a name that is not a runner name', () => {
+      for (const bad of ['Host', 'two words', 'https://gw.example', '', 'a'.repeat(64), '-x']) expect(placed({ runs_on: bad }).success).toBe(false);
+    });
+    it('refuses runs_on together with gateway, node or runner, naming the field', () => {
+      for (const other of [{ gateway: { connection: 'managed' } }, { node: 'build-01' }, { runner: 'server-1' }]) {
+        const r = placed({ runs_on: 'host', ...other });
+        expect(r.success).toBe(false);
+        expect(r.error?.issues.some((i) => i.path.join('.') === 'placement.runs_on' && /cannot be combined/.test(i.message))).toBe(true);
+      }
+    });
+    it('keeps the older placements valid on their own', () => {
+      expect(placed({ gateway: { connection: 'managed' } }).success).toBe(true);
+      expect(placed({ node: 'build-01' }).success).toBe(true);
+      expect(placed({ runner: 'server-1' }).success).toBe(true);
+    });
+  });
+
   it('allows at most one team-bank grant', () => {
     const grants = [
       { bank: 'team:engineering', access: 'read' },

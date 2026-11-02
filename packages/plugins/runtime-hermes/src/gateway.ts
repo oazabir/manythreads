@@ -2,7 +2,7 @@ import type { BotRuntimeEvent, BotRuntimeHandle, BotRuntimeInput, BotRuntimeScop
 import { AGENT_BRIDGE_RUN_KEY, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
 import { guardedFetch } from './outbound.ts';
 import { withOutputStyle } from './output-style.ts';
-import { refusedRun } from './refused.ts';
+import { refusedRun, runnerRefusedRun } from './refused.ts';
 
 // The gateway transport: a bot's run as one request to a Hermes gateway (`api_server`, v0.21.5), instead of a process this server starts.
 //
@@ -28,11 +28,19 @@ export interface GatewayTarget {
   kind: 'managed' | 'external';
   /** What answers behind the address. `claude-code` and `codex` are the agent bridge, which gets a token for the run; `hermes` never does. */
   agent: HermesConnectionAgent;
+  /** How a profile is named on a Hermes gateway runner (`{bot}` stands for the bot's slug). Set only for a placement on a runner; a connection's profile is named in the BOT.md. */
+  profileRule?: string;
 }
 
-/** Thrown by `resolve` when a runner will not take the bot; the message is one plain sentence a person may read (the runner's own refusal). */
+/**
+ * Thrown by `resolve` when a runner will not take the bot; the message is one plain sentence a person may read (the runner's own refusal). `runner` and `reason` are set
+ * when the refusal came from the runner catalog: they let the run job say it once in the thread and write the `bot_runner.run.refused` event (names and words, no address).
+ */
 export class GatewayRefused extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly refusal?: { runner: string; reason: string },
+  ) {
     super(message);
     this.name = 'GatewayRefused';
   }
@@ -165,20 +173,21 @@ export async function runOnGateway(
   const runId = input.endpoint?.runId ?? '?';
   const requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
   const retryUnitMs = options.retryUnitMs ?? 1000;
-  const profile = profileFor(input.bot.slug, placement);
 
   let target: GatewayTarget | null;
   try {
     target = await options.resolve({ teamId: input.bot.teamId, botId: input.bot.id, botSlug: input.bot.slug, connection: placement.connection });
   } catch (err) {
     // A runner that refuses the bot (switched off, not shared with the team) says why in one plain sentence; nothing else is let through.
-    if (err instanceof GatewayRefused) return refusedRun(err.message);
+    if (err instanceof GatewayRefused) return err.refusal ? runnerRefusedRun(err.message, err.refusal) : refusedRun(err.message);
     scope.log(`runtime-hermes: run ${runId}: the connection "${placement.connection}" could not be read: ${err instanceof Error ? err.message : String(err)}`);
     return refusedRun(`the Hermes connection "${placement.connection}" could not be read`);
   }
   if (!target) {
     return refusedRun(`bot ${input.bot.slug} is placed on the Hermes connection "${placement.connection}", which this team does not have`);
   }
+  // The profile a bot runs as: the one its BOT.md names (mode A), else on a runner the runner's naming rule (`{bot}` by default), else `mt-<slug>` on the team's own pod.
+  const profile = placement.profile ?? (target.profileRule !== undefined ? target.profileRule.split('{bot}').join(input.bot.slug) : profileFor(input.bot.slug, placement));
   const doFetch = options.fetch ?? (target.guarded === true ? guardedFetch : fetch);
   const base = `${target.baseUrl.replace(/\/+$/, '')}/p/${encodeURIComponent(profile)}/v1`;
   const headers = { authorization: `Bearer ${target.apiKey}` };

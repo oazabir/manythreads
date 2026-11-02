@@ -64,6 +64,7 @@ import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
 import { BotRunnerTermsAcceptedEvent } from './bot_runner.terms.accepted.ts';
+import { BotRunnerRunRefusedEvent } from './bot_runner.run.refused.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
 import { BotsEvalRunFinishedEvent } from './bots.eval.run.finished.ts';
 import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
@@ -276,6 +277,7 @@ export const eventRegistry = {
   'bot_runner.availability.changed': { 1: BotRunnerAvailabilityChangedEvent },
   'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },
   'bot_runner.terms.accepted': { 1: BotRunnerTermsAcceptedEvent },
+  'bot_runner.run.refused': { 1: BotRunnerRunRefusedEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
   'bots.eval.run.finished': { 1: BotsEvalRunFinishedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },

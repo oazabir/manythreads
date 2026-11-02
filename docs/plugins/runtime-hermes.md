@@ -424,6 +424,19 @@ placement:
 `node`/`runner` cannot be combined with `gateway`. `connection` is the name of a *Hermes connection* of the team (below); `managed` is the
 reserved name of the team's own pod, which takes no `profile`.
 
+### Placing a bot on a runner (`runs_on`)
+
+Since PLAN P19-03 a bot is placed on a runner of the catalog ([bot-runners](./bot-runners.md)) with `placement: { runs_on: <runner name> }`. The order in `createHermesProvider.run` is: `gateway`, then `runs_on`, then the legacy `runner`, then (for a bot with no `node`) the workspace default runner when one is set and the team may use it, else the host's own process as before. Existing bots keep working: a bot with an old placement is never moved by itself.
+
+**The run-start check.** Before anything starts, `resolveRunnerTarget` asks the catalog (`resolveRunner`): the runner must exist, be switched on, be open to the team, be a kind that can run bots (`hermes_gateway`, `hermes_pod`) and be in a state that runs (`ready`; `not_set_up` only with an address and key; see bot-runners). When it refuses, the run starts **no process and makes no gateway call**: it ends as failed with `failure: 'runner_refused'` and a `refusal { runner, reason, line }`. The run job then
+
+- posts the runner's own one-line sentence once in the thread, as the bot ("This bot runs on <label>, which an admin has switched off."; the category fixed text in `FAILURE_NOTICE.runner_refused` is only the fallback). The line is built from the runner's label, never from a remote answer, and holds no address or key. The usual once-per-run rule applies (message meta `runFailure` + `runId`);
+- emits `bot_runner.run.refused` (`workspaceId`, `teamId`, `botId`, `runId`, `runner`, `reason`, `at`; ids and words only), which the audit plugin records as `bot_runner.run_refused` with outcome `denied`.
+
+A runner that took the team and the state but has nothing to call (a gateway runner with no address or key, a pod runner whose bot had its access turned off by a lead) refuses in the same way, with a line that names the runner by its label ("This bot runs on <label>, but this bot's access to the pod was turned off. A lead of the team can turn it back on."), reason `not_set_up`. A scheduled firing turned away by its runner records the same event (and audit row) and its ledger reason is the runner's sentence; it posts nothing into a channel.
+
+**Profiles.** A `hermes_gateway` runner names the profile by its profile rule (`{bot}` stands for the bot's slug; the default rule is the bot's slug), unless the BOT.md names one. A `hermes_pod` runner is the team's own pod: the profile is `mt-<slug>` as in mode B. For that, `hermes.profiles.profilesForTeam` also includes the active bots whose `runs_on` names a pod runner the team may use, and bots with no place of their own when the default runner is a pod (`podPlacementWhere` in `profiles.ts`; the Hermes runtime only, and only a bot with none of `runs_on`, `gateway`, `node`, `runner`). The same rule decides which teams the pods controller reconciles: `hermes.profiles` also offers `teamsWithPodBots()`, so a team whose pod bots are all `runs_on` or default ones gets its pod, and a team that moves its last pod bot away is scaled down by the controller as before.
+
 ### Hermes connections (mode A)
 
 Since PLAN P19-02 a connection is **set up by a workspace admin**, not by the team lead: an admin adds the place bots run under Runners ([bot-runners](./bot-runners.md)). The routes
@@ -581,6 +594,6 @@ definition grants `shell` and `MANYTHREADS_MANAGED_SSH_HOST` (`_USER`, `_CWD`) i
 ### Tests for the gateway path
 
 `test/gateway.test.ts` (the transport against `tools/fake-hermes-gateway`: start, events, replay, 429, drop, stop, ceiling, refusals),
-`test/gateway-profile.test.ts` (the renderer), `test/gateway-run.test.ts` (connections, a run end to end with real tool calls at the bot endpoint,
+`test/gateway-profile.test.ts` (the renderer), the `runs_on` refusal cases in `test/gateway.test.ts` and `test/runner-placement.test.ts` (no process and no call on a refusal; the default runner is used only by a bot with no place of its own), `test/gateway-run.test.ts` (connections, a run end to end with real tool calls at the bot endpoint,
 memory recalled across threads, serial runs per bot, mode B credentials). Run the fake as a dev stand-in with
 `npx tsx tools/fake-hermes-gateway/src/cli.ts [key]`.

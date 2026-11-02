@@ -2,7 +2,7 @@ import { AgentBridgeRunExtension, parseBotMd } from '@manythreads/shared';
 import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway } from '../../../../tools/fake-hermes-gateway/src/server.ts';
-import { MAX_FRAME_BYTES, profileFor, readLimitedText, runOnGateway, sessionIdFor, sseFrames, type GatewayRuntimeOptions } from '../src/gateway.ts';
+import { GatewayRefused, MAX_FRAME_BYTES, profileFor, readLimitedText, runOnGateway, sessionIdFor, sseFrames, type GatewayRuntimeOptions } from '../src/gateway.ts';
 import { withOutputStyle } from '../src/output-style.ts';
 
 // The gateway transport against a server that speaks the measured wire of Hermes' api_server: profile in the path, the profile's own key,
@@ -228,6 +228,38 @@ describe('a run that cannot start says why, with the right category', () => {
     hop.close();
     expect(result).toMatchObject({ ok: false, failure: 'hermes_unreachable' });
     expect(gw.calls).toHaveLength(0);
+  });
+});
+
+describe('a runner that refuses the run (P19-03)', () => {
+  const LINE = 'This bot runs on Main Hermes, which an admin has switched off.';
+
+  it("ends the run with the runner's own sentence and the typed refusal, and makes no call to any gateway", async () => {
+    const handle = await runOnGateway(
+      options({
+        resolve: async () => {
+          throw new GatewayRefused(LINE, { runner: 'main', reason: 'disabled' });
+        },
+      }),
+      input(),
+      scope,
+      { connection: 'main' },
+    );
+    const result = resultOf(await collect(handle.events));
+    expect(result).toMatchObject({ ok: false, failure: 'runner_refused', refusal: { runner: 'main', reason: 'disabled', line: LINE } });
+    expect(gw.calls).toEqual([]);
+  });
+
+  it("names the profile by the runner's rule when the BOT.md names none", async () => {
+    gw.setScript(() => [{ type: 'finish', output: 'ok' }]);
+    const handle = await runOnGateway(
+      options({ resolve: async () => ({ baseUrl: gw.url, apiKey: 'other-key-0123456789', kind: 'managed', agent: 'hermes', profileRule: 'custom' }) }),
+      input(),
+      scope,
+      { connection: 'main' },
+    );
+    expect(resultOf(await collect(handle.events))).toMatchObject({ ok: true });
+    expect(gw.calls.some((c) => c.method === 'POST' && c.path === '/p/custom/v1/runs')).toBe(true);
   });
 });
 

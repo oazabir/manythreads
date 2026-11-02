@@ -6,6 +6,7 @@ import { ChipsField, NumberField, SelectField, SwitchRow, TextField } from './fi
 import { EvalRunPanel } from './evals';
 import { KnowledgeBasePanel } from './knowledge';
 import { Block, Mono, NotSet, Row } from './parts';
+import { RunsOn } from './RunsOn';
 import type { DefinitionDraft } from './store';
 
 /*
@@ -503,16 +504,15 @@ export function HandoverTab({ draft, canEdit, bot }: TabProps) {
 }
 
 // ---- Placement & limits -------------------------------------------------------------------------------------------------
-export function PlacementTab({ draft, canEdit }: TabProps) {
+export function PlacementTab({ draft, canEdit, slug }: TabProps) {
   const p = fm(draft).placement ?? {};
   const l = fm(draft).limits ?? {};
   const setPlacement = (patch: Partial<NonNullable<BotFrontmatter['placement']>>): void => draft.patch((d) => ({ ...d, placement: { ...d.placement, ...patch } }));
   const setLimits = (patch: Partial<NonNullable<BotFrontmatter['limits']>>): void => draft.patch((d) => ({ ...d, limits: { ...d.limits, ...patch } }));
   return (
     <>
-      <Block title="Placement" count="where the runtime starts">
-        <TextField label="Node" value={p.node ?? ''} readOnly={!canEdit} placeholder="build-01" onChange={(node) => setPlacement({ node: node === '' ? undefined : node, runner: undefined })} hint="An in-cluster node (nodeSelector)." />
-        <TextField label="Runner" value={p.runner ?? ''} readOnly={!canEdit} placeholder="test-server-01" onChange={(runner) => setPlacement({ runner: runner === '' ? undefined : runner, node: undefined })} hint="A server outside the cluster, dialling in with its own capabilities." />
+      <Block title="Placement" count="where the bot runs">
+        <RunsOn slug={slug} canEdit={canEdit} placement={fm(draft).placement} onChange={(placement) => draft.patch((d) => ({ ...d, placement }))} />
         <ChipsField
           label="Requires"
           values={p.requires ?? []}

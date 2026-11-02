@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { RunnerUnavailableError, type BotRuntimeInput, type BotRuntimeScope, type PluginContext, type RunnerDispatch, type RunnerDoor, type RunnerJob } from '@manythreads/sdk';
 import { parseBotMd } from '@manythreads/shared';
 import { parse as parseYaml } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { GatewayRefused } from '../src/gateway.ts';
 import { createHermesProvider, type HermesRuntimeOptions } from '../src/hermes.ts';
 import { buildScope, type LoadedDefinition, type RunBotRow, type RunPayload } from '../src/run-job.ts';
 import { renderConfig } from '../src/profile.ts';
@@ -212,6 +216,76 @@ describe('the hermes provider with a runner', () => {
     // the local path would try to write a profile and start a process: it is the door that must stay untouched
     await provider.run(input('', GATEWAY), scope()).catch(() => undefined);
     expect(f.calls).toEqual([]);
+  });
+});
+
+describe('a bot placed on a runner of the catalog (P19-03)', () => {
+  const SCRATCH = mkdtempSync(join(tmpdir(), 'manythreads-runs-on-'));
+  afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
+  /** A spawn that records the call and fails at once: what a run that stays on this host would have started. */
+  const spawner = (started: string[]): NonNullable<HermesRuntimeOptions['spawn']> =>
+    ((command: string) => {
+      started.push(command);
+      throw new Error('spawn stubbed by the test');
+    }) as never;
+  const refuse = (asked: { runner: string }[]) => async (query: { runner: string }) => {
+    asked.push({ runner: query.runner });
+    throw new GatewayRefused('This bot runs on Main Hermes, which an admin has switched off.', { runner: query.runner, reason: 'disabled' });
+  };
+  const lastEvent = async (handle: { events: AsyncIterable<unknown> }): Promise<Record<string, unknown>> => (await drain(handle.events)).at(-1)!;
+
+  it('asks the catalog for the runner it names, and a refusal starts no process and calls no gateway', async () => {
+    const f = fakeDoor();
+    const asked: { runner: string }[] = [];
+    let fetched = 0;
+    const provider = createHermesProvider(
+      options(f.door, {
+        bin: '/nonexistent/hermes',
+        dataRoot: SCRATCH,
+        gateways: {
+          resolve: async () => null,
+          resolveRunner: refuse(asked),
+          fetch: (async () => {
+            fetched += 1;
+            return new Response('{}');
+          }) as typeof fetch,
+        },
+      }),
+    );
+    const result = await lastEvent(await provider.run(input('placement: { runs_on: main }\n', null), scope()));
+    expect(asked).toEqual([{ runner: 'main' }]);
+    expect(result).toMatchObject({ type: 'result', ok: false, failure: 'runner_refused', refusal: { runner: 'main', reason: 'disabled' } });
+    expect(fetched).toBe(0);
+    expect(f.calls).toEqual([]);
+  });
+
+  it('a bot with no place of its own goes to the default runner when there is one, and runs as it always did when there is none', async () => {
+    const asked: { runner: string }[] = [];
+    const withDefault = createHermesProvider(options(undefined, { dataRoot: SCRATCH, gateways: { resolve: async () => null, resolveRunner: refuse(asked), defaultRunner: async () => 'house' } }));
+    expect(await lastEvent(await withDefault.run(input('', null), scope()))).toMatchObject({ failure: 'runner_refused', refusal: { runner: 'house' } });
+    expect(asked).toEqual([{ runner: 'house' }]);
+
+    asked.length = 0;
+    const started: string[] = [];
+    const noDefault = createHermesProvider(options(undefined, { bin: '/nonexistent/hermes', dataRoot: SCRATCH, spawn: spawner(started), gateways: { resolve: async () => null, resolveRunner: refuse(asked), defaultRunner: async () => null } }));
+    await noDefault.run(input('', GATEWAY), scope()).catch(() => undefined);
+    // it ran on this host (a process was tried) and the catalog was never asked
+    expect(started).toEqual(['/nonexistent/hermes']);
+    expect(asked).toEqual([]);
+  });
+
+  it('a bot that names its own place (a node here) is not moved to the default runner', async () => {
+    const asked: { runner: string }[] = [];
+    const started: string[] = [];
+    const provider = createHermesProvider(options(undefined, { bin: '/nonexistent/hermes', dataRoot: SCRATCH, spawn: spawner(started), gateways: { resolve: async () => null, resolveRunner: refuse(asked), defaultRunner: async () => 'house' } }));
+    await provider.run(input('placement: { node: build-01 }\n', GATEWAY), scope()).catch(() => undefined);
+    expect(started).toEqual(['/nonexistent/hermes']);
+    expect(asked).toEqual([]);
+  });
+
+  it('refuses plainly when the server has no catalog at all', async () => {
+    const provider = createHermesProvider(options(undefined, { dataRoot: SCRATCH }));
+    expect(await lastEvent(await provider.run(input('placement: { runs_on: main }\n', null), scope()))).toMatchObject({ ok: false });
   });
 });
 

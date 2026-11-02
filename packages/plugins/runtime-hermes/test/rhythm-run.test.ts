@@ -480,6 +480,22 @@ describe('the ledger and the guards', () => {
     }
   });
 
+  it('a firing turned away by its runner is recorded as a refusal (event and audit), says why in the ledger and posts nothing', async () => {
+    await ownerSql(`INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, status) VALUES ($1, 'rh-off', 'Sleepy host', 'hermes_gateway', false, true, 'ready')`, [omar.workspaceId]);
+    const bot = await loadBot('rh-refused', botMd({ name: 'RhRefused', model: 'smart', capabilities: 'messages.post, pages.write', triggers: ['  - type: routine'], extra: ['placement:', '  runs_on: rh-off'] }));
+    const rhythmId = await makeRhythm({ bot: 'rh-refused', name: 'Refused beat', kind: 'heartbeat' });
+    await w.call(omar, 'POST', `${TEAM}/rhythms/${rhythmId}/run`);
+    const firing = await settled(rhythmId);
+    expect(firing.status).toBe('failed');
+    expect(firing.reason).toBe('This bot runs on Sleepy host, which an admin has switched off.');
+    const events = await ownerSql(`SELECT payload FROM app.events WHERE type = 'bot_runner.run.refused' AND payload ->> 'botId' = $1`, [bot.botId]);
+    expect(events).toHaveLength(1);
+    expect(events[0]!['payload']).toMatchObject({ runner: 'rh-off', reason: 'disabled', runId: firing.run_id });
+    expect(JSON.stringify(events)).not.toContain('Sleepy');
+    await until(async () => (await ownerSql(`SELECT 1 FROM app.audit_events WHERE action = 'bot_runner.run_refused'`)).length > 0, 20_000, 'the audit row');
+    expect((await bodiesIn(await homeChannelId())).filter((m) => m.authorId === bot.actorId)).toEqual([]);
+  });
+
   it('a failed scheduled run posts no notice into the channel', async () => {
     const bot = await loadBot('rh-crash', rhythmBot('RhCrash'));
     const rhythmId = await makeRhythm({ bot: 'rh-crash', name: 'CRASH beat', kind: 'heartbeat' });

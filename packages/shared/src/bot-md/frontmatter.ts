@@ -169,6 +169,8 @@ export type BotHandover = z.infer<typeof BotHandover>;
  *    by the platform.
  * `node` and `runner` are LEGACY (a process started on the server's host, or on a runner machine) and stay valid only until bots are switched
  * to a gateway; they cannot be combined with `gateway`.
+ * `runs_on` (Phase 19) is the way forward: the NAME of a runner an admin set up (`bot-runners`), never an address. It cannot be combined with
+ * `gateway`, `node` or `runner`; the bot loader checks that the runner exists and that the bot's team may use it.
  */
 export const BotGatewayPlacement = z
   .strictObject({
@@ -187,6 +189,8 @@ export const BotPlacement = z
     /** LEGACY: the runner machine that runs this bot's process. Use `gateway` instead. */
     runner: Slug.optional(),
     gateway: BotGatewayPlacement.optional(),
+    /** The runner this bot runs on, by the name an admin gave it (docs/plugins/bot-runners.md). A bot with none of `runs_on`, `gateway`, `node`, `runner` uses the workspace's default runner, if one is set. */
+    runs_on: Slug.max(63).optional(),
     requires: z.array(Slug).optional(),
     isolation: Slug.optional(),
   })
@@ -197,6 +201,14 @@ export const BotPlacement = z
   .refine((p) => p.gateway === undefined || (p.node === undefined && p.runner === undefined), {
     message: 'a gateway placement cannot be combined with node or runner',
     path: ['gateway'],
+  })
+  .refine((p) => p.runs_on === undefined || p.gateway === undefined, {
+    message: 'runs_on cannot be combined with gateway; pick one place for the bot',
+    path: ['runs_on'],
+  })
+  .refine((p) => p.runs_on === undefined || (p.node === undefined && p.runner === undefined), {
+    message: 'runs_on cannot be combined with node or runner; pick one place for the bot',
+    path: ['runs_on'],
   });
 export type BotPlacement = z.infer<typeof BotPlacement>;
 

@@ -27,6 +27,8 @@ export interface GatewayProfileSpec {
 
 export interface HermesProfilesProvider extends ProviderImpl {
   id: 'hermes.profiles';
+  /** The teams (not archived) with at least one active bot on their own pod: placed on `managed`, on a pod runner by `runs_on`, or with no place of its own while the workspace default is a pod runner. The pods controller reconciles exactly these. */
+  teamsWithPodBots(): Promise<Array<{ id: string; slug: string }>>;
   /** Every active bot of the team that is placed on the managed gateway, rendered. Idempotent: credentials are created on first use and then stable. */
   profilesForTeam(teamId: string): Promise<GatewayProfileSpec[]>;
   /**

@@ -1,4 +1,4 @@
-import type { GatewayProfileSpec, HermesProfilesProvider, McpToolsProvider, PluginContext, PluginLogger } from '@manythreads/sdk';
+import type { BotRunnersProvider, GatewayProfileSpec, HermesProfilesProvider, McpToolsProvider, PluginContext, PluginLogger } from '@manythreads/sdk';
 import { MANAGED_CONNECTION_NAME, mcpUrlOf } from '@manythreads/shared';
 import { GATEWAY_ENV, renderGatewayProfile } from './gateway-profile.ts';
 import { managedProfileName } from './gateway.ts';
@@ -36,19 +36,55 @@ export function managedEnvFrom(env: NodeJS.ProcessEnv): ManagedEnv {
   };
 }
 
+/**
+ * Which of a team's bots live on the team's own pod: the ones placed on the reserved connection `managed`, the ones placed by `runs_on` on a pod runner the team may use, and (when
+ * the workspace default runner is a pod runner) the Hermes bots with no place of their own (P19-03). The WHERE fragment takes three parameters from `$first`; `podPlacementParams` gives them.
+ */
+export const podPlacementWhere = (first: number): string =>
+  `(placement -> 'gateway' ->> 'connection' = $${first}
+     OR placement ->> 'runs_on' = ANY($${first + 1}::text[])
+     OR ($${first + 2}::boolean AND runtime = 'hermes' AND NOT (coalesce(placement, '{}'::jsonb) ?| ARRAY['runs_on', 'gateway', 'node', 'runner'])))`;
+
+/** The three parameters of `podPlacementWhere`, from what the catalog says about the team (pure). */
+export function podPlacementParamsOf(info: { defaultRunner: string | null; podRunners: readonly string[] } | undefined): [string, string[], boolean] {
+  const pods = [...(info?.podRunners ?? [])];
+  return [MANAGED_CONNECTION_NAME, pods, info?.defaultRunner != null && pods.includes(info.defaultRunner)];
+}
+
+export async function podPlacementParams(ctx: PluginContext, teamId: string): Promise<[string, string[], boolean]> {
+  return podPlacementParamsOf(await ctx.providers.get<BotRunnersProvider>('bot.runners')?.teamRunners({ teamId }));
+}
+
+/** The teams with at least one active bot on their own pod, by the one rule above (the pods controller reconciles exactly these). */
+export async function teamsWithPodBots(ctx: PluginContext): Promise<Array<{ id: string; slug: string }>> {
+  const teams = await ctx.db.system(async (tx) => (await tx.query<{ id: string; slug: string }>('SELECT id, slug FROM app.teams WHERE archived_at IS NULL ORDER BY slug')).rows);
+  const out: Array<{ id: string; slug: string }> = [];
+  for (const team of teams) {
+    const placement = await podPlacementParams(ctx, team.id);
+    const has = await ctx.db.system(async (tx) =>
+      (await tx.query(`SELECT 1 FROM app.bots WHERE team_id = $1::uuid AND status = 'active' AND ${podPlacementWhere(2)} LIMIT 1`, [team.id, ...placement])).rows.length > 0,
+    );
+    if (has) out.push(team);
+  }
+  return out;
+}
+
 export function createProfilesProvider(ctx: PluginContext, log: PluginLogger, env: ManagedEnv): HermesProfilesProvider & { notify(teamId: string): void } {
   const listeners = new Set<(change: { teamId: string }) => void>();
   return {
     id: 'hermes.profiles',
 
+    teamsWithPodBots: () => teamsWithPodBots(ctx),
+
     async profilesForTeam(teamId: string): Promise<GatewayProfileSpec[]> {
+      const placement = await podPlacementParams(ctx, teamId);
       return ctx.db.system(async (tx) => {
         const bots = await tx.query<RunBotRow>(
           `SELECT id, slug, name, runtime, definition_sha, team_id, workspace_id, status
              FROM app.bots
-            WHERE team_id = $1::uuid AND status = 'active' AND placement -> 'gateway' ->> 'connection' = $2
+            WHERE team_id = $1::uuid AND status = 'active' AND ${podPlacementWhere(2)}
             ORDER BY slug`,
-          [teamId, MANAGED_CONNECTION_NAME],
+          [teamId, ...placement],
         );
         const llm = ctx.providers.get<LlmDoor>('llm');
         const teamName = (await tx.query<{ name: string }>('SELECT name FROM app.teams WHERE id = $1::uuid', [teamId])).rows[0]?.name ?? 'the team';

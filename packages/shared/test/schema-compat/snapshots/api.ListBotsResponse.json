@@ -108,6 +108,11 @@
                     ],
                     "additionalProperties": false
                   },
+                  "runs_on": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
                   "requires": {
                     "type": "array",
                     "items": {

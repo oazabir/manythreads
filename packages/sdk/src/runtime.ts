@@ -101,7 +101,9 @@ export type BotRuntimeEvent =
       ok: boolean;
       error?: string;
       /** Why a failed run failed, when the runtime knows it better than the error text says: the runner was not there, or the clock ran out. */
-      failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout';
+      failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'runner_refused';
+      /** With `failure: 'runner_refused'`: the runner catalog turned the run away before anything started. `line` is the one plain sentence to post; `reason` is from a fixed list. */
+      refusal?: { runner: string; reason: string; line: string };
       /** What the model reported for this turn, when the runtime knows (a Hermes `result` record carries it). */
       tokens?: { input: number; output: number; total: number } | null;
     };

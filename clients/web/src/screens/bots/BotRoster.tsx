@@ -21,6 +21,7 @@ import { useBots } from './store';
 const placeOf = (bot: BotSummary): string => {
   const p = bot.placement;
   if (!p) return 'any node';
+  if (typeof p.runs_on === 'string') return p.runs_on;
   if (typeof p.node === 'string') return p.node;
   if (typeof p.runner === 'string') return p.runner;
   return 'any node';

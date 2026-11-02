@@ -305,4 +305,63 @@ describe('the BOT.md loader', () => {
     expect(fixed['invalid_reason']).toBeNull();
     expect(fixed['name']).toBe('Paused again');
   });
+
+  describe('placement.runs_on (P19-03)', () => {
+    const withRunsOn = (name: string, runner: string): string => validMd(name, []).replace('handover:', `placement:\n  runs_on: ${runner}\nhandover:`);
+    const addRunner = (name: string, teams: string[]): Promise<void> =>
+      w.system(async (tx) => {
+        const id = (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, status) VALUES ($1, $2, $3, 'hermes_pod', true, false, 'ready') RETURNING id`,
+            [personas.omar.workspaceId, name, `Runner ${name}`],
+          )
+        ).rows[0]!.id;
+        for (const team of teams) await tx.query('INSERT INTO app.bot_runner_teams (runner_id, team_id) VALUES ($1, $2)', [id, team]);
+      });
+
+    it('loads a bot placed on a runner its team may use, and keeps runs_on in the stored placement', async () => {
+      await addRunner('l-open', [ENG]);
+      expect((await commit('bots/p1903-on/BOT.md', withRunsOn('On', 'l-open'), 'Place on a runner')).status).toBe(201);
+      const row = await until(() => botRow('p1903-on'), 10_000);
+      expect(row).toMatchObject({ status: 'active', invalid_reason: null, placement: { runs_on: 'l-open' } });
+    });
+
+    it('a runner that does not exist is an invalid definition with the reason on the field, and no half row', async () => {
+      expect((await commit('bots/p1903-ghost/BOT.md', withRunsOn('Ghost', 'no-such-runner'), 'Place on nothing')).status).toBe(201);
+      const event = await invalidEventFor('p1903-ghost');
+      expect(event.fieldPath).toBe('placement.runs_on');
+      expect(event.message).toMatch(/no runner called "no-such-runner" that this team may use/);
+      expect(event.botId).toBeNull();
+      expect(await botRow('p1903-ghost')).toBeUndefined();
+    });
+
+    it('a runner the team is not on is refused in the same words, and a loaded bot keeps its previous definition as invalid', async () => {
+      await addRunner('l-other', [TEAM_IDS.Marketing]);
+      expect((await commit('bots/p1903-on/BOT.md', withRunsOn('On', 'l-other'), 'Move to a runner of another team')).status).toBe(201);
+      const kept = await until(async () => {
+        const row = await botRow('p1903-on');
+        return row?.['invalid_reason'] ? row : null;
+      }, 10_000);
+      expect(kept).toMatchObject({ status: 'invalid', placement: { runs_on: 'l-open' } });
+      expect(kept['invalid_reason']).toMatchObject({ fieldPath: 'placement.runs_on' });
+      expect(JSON.stringify(kept['invalid_reason'])).not.toContain('Runner l-other');
+    });
+
+    it('runs_on on a rules bot is refused (a rules bot runs inside the server and has no runner)', async () => {
+      await addRunner('l-rules', [ENG]);
+      const md = withRunsOn('Rules', 'l-rules').replace('runtime: hermes', 'runtime: rules');
+      expect((await commit('bots/p1903-rules/BOT.md', md, 'Place a rules bot on a runner')).status).toBe(201);
+      const event = await invalidEventFor('p1903-rules');
+      expect(event.fieldPath).toBe('placement.runs_on');
+      expect(event.message).toMatch(/for bots that run on Hermes/);
+      expect(await botRow('p1903-rules')).toBeUndefined();
+    });
+
+    it('a switched-off runner is not a reason to refuse the definition (a run is refused instead)', async () => {
+      await addRunner('l-off', [ENG]);
+      await w.system((tx) => tx.query("UPDATE app.bot_runners SET enabled = false WHERE name = 'l-off'"));
+      expect((await commit('bots/p1903-off/BOT.md', withRunsOn('Off', 'l-off'), 'Place on a switched-off runner')).status).toBe(201);
+      expect(await until(() => botRow('p1903-off'), 10_000)).toMatchObject({ status: 'active', invalid_reason: null });
+    });
+  });
 });

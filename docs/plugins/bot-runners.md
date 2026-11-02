@@ -57,17 +57,19 @@ teams, for example `3 bots still placed on "Office Hermes" (teams: Engineering, 
 
 `resolveRunner(ctx, { teamId, runner })` is the only code that turns a runner name into where to send a run. It is offered to other plugins as the provider `bot.runners` (`provider.bot.runners`; the SDK type is `BotRunnersProvider`), so
 `runtime-hermes` never imports this plugin. It works in a system transaction and answers either a target
-`{ runner, kind, address, key, agent, guard, profileRule, status }` or a refusal with a fixed reason: `unknown`, `disabled`, `not_available_to_team`, `not_runnable` (a kind that cannot run a bot yet), `not_set_up`. The refusal words hold no address or key, and
+`{ runner, kind, address, key, agent, guard, profileRule, status }` or a refusal with a fixed reason: `unknown`, `disabled`, `not_available_to_team`, `not_runnable` (a kind that cannot run a bot yet), `not_set_up`, `not_ready`. The refusal words hold no address or key, and
 a team of another workspace gets `unknown`.
 
 - `hermes_gateway`: the address from the row, the key opened from the secret (only here, only for the call), `guard: true` so the outbound guard still runs on every request.
 - `hermes_pod`: the address of the team's own pod (the team's `managed` connection row), no key, `guard: false` because the platform registered that address.
 
-Whether a runner must be `ready` before a run starts is decided by the picker work (P19-03); today an enabled runner on the team's list that has an address and key runs.
+**Which states run (P19-03).** `ready` runs. `not_set_up` runs only when the runner has an address and key (a runner that was set up before states existed keeps working); without them it is refused as `not_set_up`. `waiting_for_sign_in`, `starting`, `needs_sign_in`, `waiting_for_node`, `moving` and `paused` are refused as `not_ready`. A switched-off runner is `disabled`. The sentence is one plain line that names the runner by its label, for example "This bot runs on Main Hermes, which an admin has switched off." A team that may not use a runner, or a name that is no runner, hears the same line that names nothing ("This bot runs on a runner this team may not use. An admin can add the team to its list.").
+
+The provider has two more members: `checkPlacement(tx, { teamId, runner })` is the bot loader's question (does the runner exist and may the team use it; a switched-off runner still passes, it is judged when a run starts) and runs on the caller's transaction, because the loader works inside the outbox consumer's transaction; `teamRunners({ teamId })` answers the workspace default runner (only when it is enabled, can run bots and the team may use it) and the names of the pod runners the team may use.
 
 ## How runtime-hermes uses it
 
-**A runner can be named like a connection.** When a bot's `placement.gateway.connection` (`gateway: host` in `BOT.md`) matches no connection of the team, runtime-hermes asks `resolveRunner` for a runner of that name, with the same refusals a `runs_on` placement will use. So on a fresh install an admin makes a `hermes_gateway` runner called `host`, lists the team, and `gateway: host` works with no team connection. A runner the team is not listed on answers like a name that is nothing at all, and the sentence never names the runner, so a team learns nothing about runners it may not use. A connection of the team with that name wins over a runner.
+**A runner can be named like a connection.** When a bot's `placement.gateway.connection` (`gateway: host` in `BOT.md`) matches no connection of the team, runtime-hermes asks `resolveRunner` for a runner of that name, with the same refusals a `runs_on` placement uses. See [runtime-hermes](./runtime-hermes.md#placing-a-bot-on-a-runner-runs_on). So on a fresh install an admin makes a `hermes_gateway` runner called `host`, lists the team, and `gateway: host` works with no team connection. A runner the team is not listed on answers like a name that is nothing at all, and the sentence never names the runner, so a team learns nothing about runners it may not use. A connection of the team with that name wins over a runner.
 
 [runtime-hermes](./runtime-hermes.md) keeps its Hermes connection routes. A connection that has been adopted carries `runner_name`; a run on it asks `resolveRunner` and uses the runner's address and key, so rotating the key on the runner is
 enough, and switching the runner off or taking the team off its list stops the run with a plain failure notice (without calling the gateway). A connection that has not been adopted works as before. `resolveRunnerTarget` in runtime-hermes is also what a
@@ -88,7 +90,7 @@ connections still works for the team, but the address is shown only to workspace
 
 ## Events and audit
 
-`bot_runner.runner.created|updated|deleted|tested`, `bot_runner.availability.changed`, `bot_runner.default.changed`, `bot_runner.terms.accepted`. Event names have three parts, so they differ from the shorter names in the plan. They say that something happened and to
+`bot_runner.runner.created|updated|deleted|tested`, `bot_runner.availability.changed`, `bot_runner.default.changed`, `bot_runner.terms.accepted`, and `bot_runner.run.refused` (emitted by runtime-hermes, not by this plugin: a run was turned away at its start; it holds ids, the runner name and one reason word from `unknown|disabled|not_available_to_team|not_runnable|not_set_up|not_ready`). Event names have three parts, so they differ from the shorter names in the plan. They say that something happened and to
 which runner (id and name); never an address, key, node or sign-in, and `updated` lists the names of the settings that changed from a fixed list. The audit plugin records each as a `settings` row with the actor and the runner name
 (see [audit](./audit.md)). `bot_runner.terms.accepted` is registered and audited but nothing emits it yet; it waits for the Claude and Codex runners.
 

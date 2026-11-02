@@ -1,4 +1,4 @@
-import type { BotRunnersProvider, PluginContext, RunnerResolution, RunnerTarget } from '@manythreads/sdk';
+import type { BotRunnersProvider, PluginContext, PluginTx, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
 import { BotRunnerName } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 
@@ -15,6 +15,28 @@ const refuse = (reason: Extract<RunnerResolution, { ok: false }>['reason'], mess
 /** The name as a sentence may carry it: only what the name rule allows, so a hostile BOT.md cannot put text into a message by way of it. */
 const shown = (name: string): string => (BotRunnerName.safeParse(name).success ? `"${name}"` : 'that name');
 
+/** The kinds that run a bot today. The others (Claude Code, Codex, the LLM gateway) are listed to admins and teams but answer `not_runnable` until their tasks are built. */
+const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod']);
+
+/**
+ * The states in which a runner turns a run away, in the words a thread may carry. `ready` runs; so does `not_set_up` when the runner has an address and a key (an admin changed
+ * something and has not pressed Test yet; a bot that worked a minute ago keeps working). Every other state cannot serve a run.
+ */
+const UNREADY_STATES: Readonly<Record<string, string>> = {
+  waiting_for_sign_in: 'waiting for a sign-in',
+  starting: 'still starting',
+  needs_sign_in: 'needing a new sign-in',
+  waiting_for_node: 'waiting for its machine',
+  moving: 'being moved',
+  paused: 'paused',
+};
+
+/** Is the runner open to the team: every team, or the team is on its list. The list is the permission. */
+async function openToTeam(tx: PluginTx, runner: { id: string; all_teams: boolean }, teamId: string): Promise<boolean> {
+  if (runner.all_teams) return true;
+  return (await tx.query('SELECT 1 FROM app.bot_runner_teams WHERE runner_id = $1::uuid AND team_id = $2::uuid', [runner.id, teamId])).rows.length > 0;
+}
+
 export async function resolveRunner(ctx: PluginContext, query: { teamId: string; runner: string }): Promise<RunnerResolution> {
   return ctx.db.system(async (tx) => {
     const team = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
@@ -22,34 +44,63 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
     const runner = (
       await tx.query<RunnerRow>(`SELECT ${RUNNER_SELECT} WHERE r.workspace_id = $1::uuid AND r.name = $2`, [team.workspace_id, query.runner])
     ).rows[0];
-    if (!runner) return refuse('unknown', `There is no runner called ${shown(query.runner)}. An admin may have removed it.`);
+    if (!runner) return refuse('unknown', `This bot runs on a runner called ${shown(query.runner)}, which does not exist. An admin may have removed it.`);
     // The team's list is judged first, and in words that do not name the runner: a team that is not on the list learns nothing about it, not even that it exists or is off.
-    if (!runner.all_teams) {
-      const listed = (await tx.query('SELECT 1 FROM app.bot_runner_teams WHERE runner_id = $1::uuid AND team_id = $2::uuid', [runner.id, query.teamId])).rows.length > 0;
-      if (!listed) return refuse('not_available_to_team', 'This team may not use that runner. An admin can add the team to its list.');
-    }
-    if (!runner.enabled) return refuse('disabled', `The runner "${runner.label}" has been switched off by an admin.`);
+    if (!(await openToTeam(tx, runner, query.teamId))) return refuse('not_available_to_team', 'This bot runs on a runner this team may not use. An admin can add the team to its list.');
+    if (!runner.enabled) return refuse('disabled', `This bot runs on ${runner.label}, which an admin has switched off.`);
+    if (!RUNNABLE_KINDS.has(runner.kind)) return refuse('not_runnable', `This bot runs on ${runner.label}, which cannot run bots yet.`);
     const status = effectiveStatus(runner);
-    const base = { runner: runner.name, status, profileRule: runner.profile_rule ?? DEFAULT_PROFILE_RULE } as const;
+    const unready = UNREADY_STATES[status];
+    if (unready !== undefined) return refuse('not_ready', `This bot runs on ${runner.label}, which is not ready: it is ${unready}.`);
+    const base = { runner: runner.name, label: runner.label, status, profileRule: runner.profile_rule ?? DEFAULT_PROFILE_RULE } as const;
 
     if (runner.kind === 'hermes_gateway') {
-      if (runner.base_url === null || runner.secret_id === null) return refuse('not_set_up', `The runner "${runner.label}" is not set up yet. An admin has to give it an address and a key.`);
+      if (runner.base_url === null || runner.secret_id === null) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not set up yet. An admin has to give it an address and a key.`);
       const key = await ctx.secrets.get(tx, runner.secret_id);
       const target: RunnerTarget = { ...base, kind: 'hermes_gateway', address: runner.base_url, key, agent: 'hermes', guard: true };
       return { ok: true, target };
     }
-    if (runner.kind === 'hermes_pod') {
-      // The pod is the team's own: its address is where the platform registered it (the reserved connection `managed`), and each bot's profile has its own key,
-      // which only runtime-hermes holds. So the address comes back, the key does not.
-      const pod = (await tx.query<{ base_url: string | null }>("SELECT base_url FROM app.hermes_connections WHERE team_id = $1::uuid AND name = 'managed'", [query.teamId])).rows[0];
-      if (!pod || pod.base_url === null) return refuse('not_set_up', `The team's Hermes pod behind "${runner.label}" is not running yet.`);
-      const target: RunnerTarget = { ...base, kind: 'hermes_pod', address: pod.base_url, key: null, agent: 'hermes', guard: false };
-      return { ok: true, target };
-    }
-    return refuse('not_runnable', `The runner "${runner.label}" cannot run bots yet.`);
+    // The pod is the team's own: its address is where the platform registered it (the reserved connection `managed`), and each bot's profile has its own key,
+    // which only runtime-hermes holds. So the address comes back, the key does not.
+    const pod = (await tx.query<{ base_url: string | null }>("SELECT base_url FROM app.hermes_connections WHERE team_id = $1::uuid AND name = 'managed'", [query.teamId])).rows[0];
+    if (!pod || pod.base_url === null) return refuse('not_set_up', `This bot runs on ${runner.label}, but the team's Hermes pod is not running yet.`);
+    const target: RunnerTarget = { ...base, kind: 'hermes_pod', address: pod.base_url, key: null, agent: 'hermes', guard: false };
+    return { ok: true, target };
+  });
+}
+
+/**
+ * The loader's question (P19-03): may a bot of this team name this runner in `placement.runs_on`? Answers on the caller's transaction. Existence and the team list only: a switched-off or
+ * not-ready runner is no reason to refuse the definition (an admin may switch it back on), it is a reason to refuse a run. The sentence never says whether a runner the team may not use exists.
+ */
+export async function checkPlacement(tx: PluginTx, query: { teamId: string; runner: string }): Promise<RunnerPlacementCheck> {
+  const team = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
+  if (!team) return { ok: false, message: 'The team of this bot could not be found.' };
+  const runner = (await tx.query<{ id: string; all_teams: boolean }>('SELECT id, all_teams FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [team.workspace_id, query.runner])).rows[0];
+  if (!runner || !(await openToTeam(tx, runner, query.teamId))) {
+    return { ok: false, message: `There is no runner called "${query.runner}" that this team may use. Pick one from the Runs on list on the bot's page, or ask an admin to add the team to it.` };
+  }
+  return { ok: true };
+}
+
+/** The workspace default runner when this team may use it and it is enabled and of a kind that runs bots; and the team's usable pod runners. */
+export async function teamRunners(ctx: PluginContext, query: { teamId: string }): Promise<TeamRunnerInfo> {
+  return ctx.db.system(async (tx) => {
+    const rows = await tx.query<{ name: string; kind: string; is_default: boolean }>(
+      `SELECT r.name, r.kind, r.is_default
+         FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $1::uuid
+        WHERE r.enabled AND r.kind IN ('hermes_gateway', 'hermes_pod')
+          AND (r.all_teams OR EXISTS (SELECT 1 FROM app.bot_runner_teams rt WHERE rt.runner_id = r.id AND rt.team_id = t.id))
+        ORDER BY r.name`,
+      [query.teamId],
+    );
+    return {
+      defaultRunner: rows.rows.find((r) => r.is_default)?.name ?? null,
+      podRunners: rows.rows.filter((r) => r.kind === 'hermes_pod').map((r) => r.name),
+    };
   });
 }
 
 export function createBotRunnersProvider(ctx: PluginContext): BotRunnersProvider {
-  return { id: 'bot.runners', resolveRunner: (query) => resolveRunner(ctx, query) };
+  return { id: 'bot.runners', resolveRunner: (query) => resolveRunner(ctx, query), checkPlacement: (tx, query) => checkPlacement(tx, query), teamRunners: (query) => teamRunners(ctx, query) };
 }

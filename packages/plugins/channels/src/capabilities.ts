@@ -128,7 +128,7 @@ const ProviderMeta = z.strictObject({
   /** The tasks plugin's mark on the message announcing a card handover: bot routers read the key's presence and start no run from it. */
   handoff: z.strictObject({ taskId: z.uuid() }).optional(),
   /** The category of the short notice a failed run leaves in the thread (runtime-hermes): at most one per run, found again by this key. */
-  runFailure: z.enum(['gateway', 'runner_offline', 'hermes_unreachable', 'timeout', 'limit', 'approval', 'not_allowed', 'not_on_team', 'other']).optional(),
+  runFailure: z.enum(['gateway', 'runner_offline', 'runner_refused', 'hermes_unreachable', 'timeout', 'limit', 'approval', 'not_allowed', 'not_on_team', 'other']).optional(),
 });
 
 /**

@@ -23,6 +23,7 @@ import {
   GetRepoBlobQuery,
   GetRepoBlobResponse,
   ListBotsResponse,
+  ListTeamBotRunnersResponse,
   McpToolsStatus,
   RunEvalsRequest,
   RunEvalsResponse,
@@ -31,6 +32,7 @@ import {
   getBotRoute,
   getRepoBlobRoute,
   listBotsRoute,
+  listTeamBotRunnersRoute,
   mcpToolsStatusRoute,
   runEvalsRoute,
 } from '@manythreads/shared';
@@ -46,6 +48,9 @@ import { createProposal } from '../proposals/api';
 export const fetchBots = (slug: string) => call(listBotsRoute, { response: ListBotsResponse }, undefined, { slug });
 
 export const fetchBot = (slug: string, botSlug: string) => call(getBotRoute, { response: GetBotResponse }, undefined, { slug, botSlug });
+
+/** The runners available to a team (P19-03): name, label, kind, state, default, and for a subscription runner the owner's name and plan. Never an address, a key or a node. */
+export const fetchTeamRunners = (slug: string) => call(listTeamBotRunnersRoute, { response: ListTeamBotRunnersResponse }, undefined, { slug });
 
 /** Whether the Hermes behind a bot has the tools the bot has now (PLAN P14-22): the digest of its last `tools/list` against the current one. */
 export const fetchMcpTools = (slug: string, botSlug: string) => call(mcpToolsStatusRoute, { response: McpToolsStatus }, undefined, { slug, botSlug });

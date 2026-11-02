@@ -15,6 +15,8 @@ import {
   type PluginTx,
 } from '@manythreads/sdk';
 import {
+  BotRunnerName,
+  BotRunnerRunRefusedReason,
   GUARD_RULE_DLP_APPROVAL,
   LlmAliasName,
   botMdPath,
@@ -152,9 +154,13 @@ export async function reportFailure(input: {
   botId: string;
   category?: FailureCategory;
   error?: string | undefined;
-  failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout' | undefined;
+  failure?: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | undefined;
+  /** With `failure: 'runner_refused'`: which runner turned the run away and why, and the one sentence to say it with. */
+  refusal?: RunnerRefusal | undefined;
 }): Promise<void> {
   const { ctx, tx, log, run, payload, botId } = input;
+  // A run the runner catalog turned away at the start (P19-03): the fact is written down whoever was waiting, and the thread hears one plain line.
+  if (input.refusal) await recordRunnerRefusal(ctx, tx, run, botId, input.refusal, log);
   if (looksLikeRejectedKey(input.error)) {
     const llm = ctx.providers.get<LlmDoor>('llm');
     try {
@@ -174,7 +180,36 @@ export async function reportFailure(input: {
     log.info(`runtime-hermes: run ${run.runId}: no failure notice (the run already posted into its thread)`);
     return;
   }
-  await postFailureNotice(ctx, tx, run, payload, input.category ?? classifyFailure(input.error, input.failure), (line) => log.warn(line));
+  await postFailureNotice(ctx, tx, run, payload, input.category ?? classifyFailure(input.error, input.failure), (line) => log.warn(line), input.refusal?.line);
+}
+
+/** What a runner said when it turned a run away: its name, a reason from the fixed list, and the plain sentence. */
+export type RunnerRefusal = { runner: string; reason: string; line: string };
+
+/** The `bot_runner.run.refused` event: ids, the runner's name and a reason from a fixed list; never an address, a key, a node or the sentence. A reason or a name outside the contract is not written. */
+export async function recordRunnerRefusal(ctx: PluginContext, tx: PluginTx, run: BotRunHandle, botId: string, refusal: RunnerRefusal, log: PluginLogger): Promise<void> {
+  const reason = BotRunnerRunRefusedReason.safeParse(refusal.reason);
+  if (!reason.success || !BotRunnerName.safeParse(refusal.runner).success) {
+    log.warn(`runtime-hermes: run ${run.runId}: a runner refusal with an unknown reason or name was not recorded`);
+    return;
+  }
+  try {
+    await tx.query('SAVEPOINT run_runner_refused');
+    await ctx.audit.emit(tx, {
+      type: 'bot_runner.run.refused',
+      workspaceId: run.workspaceId,
+      teamId: run.teamId,
+      botId,
+      runId: run.runId,
+      runner: refusal.runner,
+      reason: reason.data,
+      at: ctx.runtime.now().toISOString(),
+    });
+    await tx.query('RELEASE SAVEPOINT run_runner_refused');
+  } catch (err) {
+    await tx.query('ROLLBACK TO SAVEPOINT run_runner_refused').catch(() => undefined);
+    log.warn(`runtime-hermes: run ${run.runId}: the refusal could not be recorded: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 type ParsedDefinition = Extract<ReturnType<typeof parseBotMd>, { ok: true }>;
@@ -456,7 +491,7 @@ export async function postReply(input: {
   reply: string;
   ok: boolean;
   /** Why a failed run failed; with `botId` and `log` it lets the asker be told (`reportFailure`). Without them a failed run closes silently. */
-  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout' | undefined };
+  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | undefined; refusal?: RunnerRefusal | undefined };
 }): Promise<void> {
   const { ctx, tx, run, payload, scope, reply, ok, failed } = input;
   const answered = ok && (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId));
@@ -470,7 +505,7 @@ export async function postReply(input: {
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
   const waiting = approvals ? await approvals.pendingForRun(tx, run.runId) : 0;
   // A failed run says so once (never the half answer above); one that is waiting for a person has its card in the thread already.
-  if (!ok && waiting === 0 && failed) await reportFailure({ ctx, tx, log: failed.log, run, payload, botId: failed.botId, error: failed.error, failure: failed.failure });
+  if (!ok && waiting === 0 && failed) await reportFailure({ ctx, tx, log: failed.log, run, payload, botId: failed.botId, error: failed.error, failure: failed.failure, refusal: failed.refusal });
   await ctx.runs.close(run.runId, waiting > 0 ? 'stopped' : ok ? 'done' : 'failed');
 }
 
@@ -665,7 +700,8 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let reply = '';
         let ok = false;
         let error: string | undefined;
-        let failure: 'runner_offline' | 'hermes_unreachable' | 'timeout' | undefined;
+        let failure: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | undefined;
+        let refusal: RunnerRefusal | undefined;
         for await (const event of handle.events) {
           // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
           // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
@@ -679,6 +715,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           ok = event.ok;
           error = event.error;
           failure = event.failure;
+          refusal = event.refusal;
           if (event.tokens) job.log.info(`runtime-hermes: run ${run.runId} used ${event.tokens.total} tokens over ${toolCalls} tool calls`);
           if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
         }
@@ -686,10 +723,14 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
 
         // 3. Post the reply and close the run (one short transaction).
         if (payload.rhythm) {
-          await job.transaction((tx) => finishRhythmRun({ ctx, tx, log: job.log, run, payload, scope, reply, ok }));
+          // A firing turned away by its runner is written down like any refused run (event and audit); its ledger line is the runner's own sentence.
+          await job.transaction(async (tx) => {
+            if (!ok && refusal) await recordRunnerRefusal(ctx, tx, run, bot.id, refusal, job.log);
+            await finishRhythmRun({ ctx, tx, log: job.log, run, payload, scope, reply, ok, ...(!ok && refusal ? { failureReason: refusal.line } : {}) });
+          });
           return;
         }
-        await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure } }));
+        await job.transaction((tx) => postReply({ ctx, tx, run, payload, scope, reply, ok, failed: { botId: bot.id, log: job.log, error, failure, refusal } }));
       } catch (err) {
         if (!opened) {
           // Nothing started: let the queue retry. A scheduled run that keeps failing before it opens (a missing BOT.md, no repo) settles its firing

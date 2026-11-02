@@ -16,6 +16,7 @@ const samples = {
   'bot_runner.availability.changed': { ...base, type: 'bot_runner.availability.changed', runnerId: uuid(2), name: 'host', enabled: true, allTeams: false, teamCount: 3, actorId: uuid(4) },
   'bot_runner.default.changed': { ...base, type: 'bot_runner.default.changed', runnerId: uuid(2), previousRunnerId: null, actorId: uuid(4) },
   'bot_runner.terms.accepted': { ...base, type: 'bot_runner.terms.accepted', runnerId: uuid(2), name: 'claude-max', acceptedBy: uuid(4) },
+  'bot_runner.run.refused': { ...base, type: 'bot_runner.run.refused', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'host', reason: 'disabled' },
 } as const;
 
 describe.each(Object.entries(samples))('%s', (type, valid) => {
@@ -50,6 +51,15 @@ describe('the names of the events', () => {
 
   it('bot_runner.default.changed may name no runner at all (no default now)', () => {
     expect(parseEvent({ ...samples['bot_runner.default.changed'], runnerId: null, previousRunnerId: uuid(2) })).toMatchObject({ runnerId: null });
+  });
+});
+
+describe('bot_runner.run.refused (P19-03)', () => {
+  it('names a reason from a fixed list only', () => {
+    expect(() => parseEvent({ ...samples['bot_runner.run.refused'], reason: 'http://10.0.0.5 refused' })).toThrow();
+    for (const reason of ['unknown', 'disabled', 'not_available_to_team', 'not_runnable', 'not_set_up', 'not_ready']) {
+      expect(parseEvent({ ...samples['bot_runner.run.refused'], reason })).toMatchObject({ reason });
+    }
   });
 });
 

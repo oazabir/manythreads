@@ -375,7 +375,7 @@ describe('a connection an admin adopted into a runner keeps working, and the run
     try {
       const rootId = await post('@adopt-bot are you off?');
       const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
-      expect(notice.body).toBe(FAILURE_NOTICE.runner_offline);
+      expect(notice.body).toMatch(/^This bot runs on .+, which an admin has switched off\.$/);
       expect(await closedRun(bot.botId)).toMatchObject({ status: 'failed' });
       expect(gatewayRuns()).toBe(before);
     } finally {
@@ -468,7 +468,7 @@ describe('a runner an admin made available to the team works as `gateway: <name>
     try {
       const rootId = await post('@direct-bot are you off?');
       const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
-      expect(notice.body).toBe(FAILURE_NOTICE.runner_offline);
+      expect(notice.body).toBe('This bot runs on Direct host, which an admin has switched off.');
       expect(gatewayRuns()).toBe(before);
     } finally {
       expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: true })).status).toBe(200);
@@ -658,6 +658,79 @@ describe('mode B: the team’s own pod (profiles for a controller)', () => {
     expect(healed!.secrets.API_SERVER_KEY).toBe(spec!.secrets.API_SERVER_KEY);
     expect((await rpc(bot.botId, healed!.secrets.MCP_TOKEN, 'tools/list')).status).toBe(200);
     expect(await w.system(async (tx) => (await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM app.bot_pairing_tokens WHERE bot_id = $1 AND revoked_at IS NULL`, [bot.botId])).rows[0]!.n)).toBe(1);
+  });
+});
+
+describe('which bots the team’s pod holds (P19-03)', () => {
+  const provider = (): HermesProfilesProvider => w.server.host.registries.providers['hermes.profiles'].list()[0]!.value as HermesProfilesProvider;
+  const engineering = (): Promise<string> => w.system(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.teams WHERE slug = 'engineering'`)).rows[0]!.id);
+  const giveKey = async (botId: string): Promise<void> => {
+    const secretId = await withSystem((tx) => putSecret(tx, `sk-virtual-${botId}`), { pool: w.server.pools.system, workspaceId: omar.workspaceId as never });
+    await w.system((tx) => tx.query(`INSERT INTO app.llm_keys (bot_id, workspace_id, secret_id, key_prefix) VALUES ($1, $2, $3, 'sk-test1234')`, [botId, omar.workspaceId, secretId]));
+  };
+  const onPod = async (): Promise<string[]> => (await provider().profilesForTeam(await engineering())).map((p) => p.profile).sort();
+  const bots: Record<string, LoadedBot> = {};
+
+  it('a bot with nothing set is not on the pod unless the workspace default is a pod runner; runs_on on a pod runner is; a gateway or node placement never is', async () => {
+    await w.system((tx) =>
+      tx.query(`INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, status) VALUES ($1, 'pp-pod', 'Pod of pods', 'hermes_pod', true, true, 'ready')`, [omar.workspaceId]),
+    );
+    bots['none'] = await loadBot('pp-none', ['  requires: [chrome]'], undefined, false);
+    bots['runson'] = await loadBot('pp-runson', ['  runs_on: pp-pod'], undefined, false);
+    bots['gateway'] = await loadBot('pp-gateway', ['  gateway:', '    connection: host', '    profile: pp-gateway'], undefined, false);
+    bots['node'] = await loadBot('pp-node', ['  node: build-01'], undefined, false);
+    for (const bot of Object.values(bots)) await giveKey(bot.botId);
+
+    const without = await onPod();
+    expect(without).toContain('mt-pp-runson');
+    expect(without).not.toContain('mt-pp-none');
+    expect(without).not.toContain('mt-pp-gateway');
+    expect(without).not.toContain('mt-pp-node');
+
+    // the default runner is the pod runner: the bot with no place of its own follows it, the others do not move
+    await w.system((tx) => tx.query(`UPDATE app.bot_runners SET is_default = true WHERE name = 'pp-pod'`));
+    const withDefault = await onPod();
+    expect(withDefault).toContain('mt-pp-none');
+    expect(withDefault).toContain('mt-pp-runson');
+    expect(withDefault).not.toContain('mt-pp-gateway');
+    expect(withDefault).not.toContain('mt-pp-node');
+
+    // a bot on the runtime `rules` is never put on a pod by the default
+    await w.system((tx) => tx.query(`UPDATE app.bots SET runtime = 'rules' WHERE id = $1`, [bots['none']!.botId]));
+    expect(await onPod()).not.toContain('mt-pp-none');
+    await w.system((tx) => tx.query(`UPDATE app.bots SET runtime = 'hermes' WHERE id = $1`, [bots['none']!.botId]));
+
+    // the default is read from the real catalog: switched off, it no longer holds anything
+    await w.system((tx) => tx.query(`UPDATE app.bot_runners SET enabled = false WHERE name = 'pp-pod'`));
+    const off = await onPod();
+    expect(off).not.toContain('mt-pp-none');
+    expect(off).not.toContain('mt-pp-runson');
+    await w.system((tx) => tx.query(`UPDATE app.bot_runners SET enabled = true WHERE name = 'pp-pod'`));
+  });
+
+  it('the pods controller reconciles a team whose pod bots are only runs_on or default ones, and not a team with none', async () => {
+    const teams = (await provider().teamsWithPodBots()).map((t) => t.slug);
+    expect(teams).toContain('engineering');
+    expect(teams).not.toContain('marketing');
+  });
+
+  it('the re-enable route finds a runs_on bot of the pod, and does not find a bot placed elsewhere', async () => {
+    await onPod(); // makes the credentials of the pod bots
+    expect((await w.call(omar, 'POST', '/api/teams/engineering/bots/pp-runson/hermes/reenable', {})).status).toBe(200);
+    expect((await w.call(omar, 'POST', '/api/teams/engineering/bots/pp-node/hermes/reenable', {})).status).toBe(404);
+  });
+
+  it('a bot on the pod whose access a lead turned off is turned away with a line that names the runner by its label, and the refusal is recorded', async () => {
+    expect((await w.call(omar, 'DELETE', '/api/teams/engineering/bots/pp-runson/pairing-tokens')).status).toBe(200);
+    const before = gw.runs.length;
+    const rootId = await post('@pp-runson are you there?');
+    const notice = await until(async () => (await messagesBy(rootId, bots['runson']!.actorId))[0], 30_000, 'the failure notice');
+    expect(notice.body).toMatch(/^This bot runs on Pod of pods, but this bot's access to the pod was turned off\./);
+    expect(gw.runs.length).toBe(before);
+    const events = await w.system(async (tx) => (await tx.query(`SELECT payload FROM app.events WHERE type = 'bot_runner.run.refused' AND payload ->> 'botId' = $1`, [bots['runson']!.botId])).rows);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.payload).toMatchObject({ runner: 'pp-pod', reason: 'not_set_up' });
+    await w.system((tx) => tx.query(`UPDATE app.bot_runners SET is_default = false WHERE name = 'pp-pod'`));
   });
 });
 

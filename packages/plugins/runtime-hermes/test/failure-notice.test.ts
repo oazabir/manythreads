@@ -4,6 +4,8 @@ import type { RunPayload } from '../src/run-job.ts';
 
 describe('classifyFailure', () => {
   it('reads a refused-model text as the gateway even when it mentions a grant or an allowlist, and never as not_allowed (that category comes from a typed error, not from text)', () => {
+    expect(classifyFailure('This bot runs on Main Hermes, which an admin has switched off.', 'runner_refused')).toBe('runner_refused');
+    expect(FAILURE_NOTICE.runner_refused).not.toMatch(/https?:|key/i);
     expect(classifyFailure('Error code: 429 rate limit')).toBe('gateway');
     expect(classifyFailure('HTTP 403 from the proxy: key not allowed')).toBe('gateway');
     expect(classifyFailure('HTTP 403: no model grant in the allowlist')).toBe('gateway');

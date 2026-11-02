@@ -10,7 +10,7 @@ import {
 } from '@manythreads/sdk';
 import { childEnv, removeProfileDir, startGroupProcess, writeProfile, type ProcessExit } from '@manythreads/sdk/process';
 import { chatArgs, renderProfile } from './profile.ts';
-import { runOnGateway, type GatewayRuntimeOptions } from './gateway.ts';
+import { runOnGateway, type GatewayRuntimeOptions, type GatewayTarget } from './gateway.ts';
 import { refusedRun } from './refused.ts';
 import { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 
@@ -57,7 +57,15 @@ export interface HermesRuntimeOptions {
    * The Hermes gateways a bot can be placed on (`placement.gateway`): resolves the connection a bot names to an address and a key. Absent in a
    * deployment with none; a bot placed on a gateway then fails with a clear reason instead of running somewhere else.
    */
-  gateways?: Pick<GatewayRuntimeOptions, 'resolve' | 'fetch' | 'retryUnitMs' | 'requestTimeoutMs'>;
+  gateways?: Pick<GatewayRuntimeOptions, 'resolve' | 'fetch' | 'retryUnitMs' | 'requestTimeoutMs'> & {
+    /**
+     * A bot placed on a runner of the catalog by NAME (`placement.runs_on`, or the workspace default runner, P19-03). Resolved through the runner catalog only: a team connection
+     * of the same name is never consulted. Throws `GatewayRefused` (with the runner and the reason) when the runner will not take the run, before any process or gateway call.
+     */
+    resolveRunner?: (query: { teamId: string; botId: string; botSlug: string; runner: string }) => Promise<GatewayTarget | null>;
+    /** The workspace default runner for a bot with no placement of its own, when this team may use it; null when there is none (the bot then runs as it always did). */
+    defaultRunner?: (teamId: string) => Promise<string | null>;
+  };
 }
 
 export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeProvider {
@@ -76,11 +84,35 @@ export function createHermesProvider(options: HermesRuntimeOptions): BotRuntimeP
         if (!gateways) return refusedRun(`bot ${input.bot.slug} is placed on a Hermes gateway, but this server has none configured`);
         return runOnGateway({ ...gateways, killGraceSeconds: options.killGraceSeconds }, input, scope, placement.gateway);
       }
+      const runsOn = placement?.runs_on;
+      if (runsOn !== undefined) return runOnCatalogRunner(options, input, scope, runsOn);
       const runner = placement?.runner;
       if (runner !== undefined) return runOnRunner(options, input, scope, runner);
+      // A bot with no place of its own (no runs_on, gateway, node or runner) uses the workspace default runner when an admin set one and this team may use it; otherwise it
+      // runs as it always did, in this process's host.
+      if (placement?.node === undefined) {
+        const fallback = await options.gateways?.defaultRunner?.(input.bot.teamId).catch(() => null);
+        if (fallback) return runOnCatalogRunner(options, input, scope, fallback);
+      }
       return runHere(options, input, scope);
     },
   };
+}
+
+/**
+ * A run on a runner of the catalog, by name (P19-03). The runner is judged first (switched off, not open to this team, not ready, gone: the run is turned away with one plain
+ * line and nothing is started or called), then the run goes to the runner's Hermes gateway or to the team's pod like any gateway placement.
+ */
+async function runOnCatalogRunner(options: HermesRuntimeOptions, input: BotRuntimeInput, scope: BotRuntimeScope, runner: string): Promise<BotRuntimeHandle> {
+  const gateways = options.gateways;
+  if (!gateways?.resolveRunner) return refusedRun(`bot ${input.bot.slug} is placed on a runner, but this server has no runner catalog`, 'runner_offline');
+  const resolveRunner = gateways.resolveRunner;
+  return runOnGateway(
+    { ...gateways, killGraceSeconds: options.killGraceSeconds, resolve: (query) => resolveRunner({ teamId: query.teamId, botId: query.botId, botSlug: query.botSlug, runner: query.connection }) },
+    input,
+    scope,
+    { connection: runner },
+  );
 }
 
 /** "Out of time" for a run that ended unanswered: the ceiling fired, or the run's own budget had already passed when it ended. */
