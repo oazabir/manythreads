@@ -32,21 +32,29 @@ type FieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> & {
   label: string;
   hint?: ReactNode;
   suffix?: ReactNode;
+  /** A problem sentence under the field: the input is marked invalid and points at it, so a screen reader reads it with the field. */
+  error?: string | undefined;
 };
 
 /** A labelled input; the label is always a real <label for>. */
-export function Field({ label, hint, suffix, className, ...input }: FieldProps) {
+export function Field({ label, hint, suffix, className, error, ...input }: FieldProps) {
   const id = useId();
+  const described = [hint ? `${id}-hint` : null, error ? `${id}-err` : null].filter(Boolean).join(' ') || undefined;
   return (
     <div className={`fld ${className ?? ''}`}>
       <label htmlFor={id}>{label}</label>
       <div className="fld-row">
-        <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} {...input} />
+        <input id={id} aria-describedby={described} aria-invalid={error ? true : undefined} {...input} />
         {suffix ? <span className="fld-suffix">{suffix}</span> : null}
       </div>
       {hint ? (
         <div id={`${id}-hint`} className="fld-hint">
           {hint}
+        </div>
+      ) : null}
+      {error ? (
+        <div id={`${id}-err`} className="fld-err" role="alert">
+          {error}
         </div>
       ) : null}
     </div>
@@ -87,7 +95,8 @@ export function PasswordField({ label = 'Password', value, onChange, autoComplet
 }
 
 /** `busy` marks a switch whose change is being saved: it keeps keyboard focus (a disabled button loses it) and ignores clicks until the save ends. */
-export function Toggle({ checked, onChange, label, disabled, busy }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; busy?: boolean }) {
+/** `locked` is for a switch that cannot be changed right now but must stay in the Tab order so its reason (named by `describedBy`) can be heard: it is `aria-disabled` and ignores clicks. */
+export function Toggle({ checked, onChange, label, disabled, busy, locked, describedBy }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; busy?: boolean; locked?: boolean; describedBy?: string }) {
   return (
     <button
       type="button"
@@ -95,10 +104,12 @@ export function Toggle({ checked, onChange, label, disabled, busy }: { checked: 
       aria-checked={checked}
       aria-label={label}
       aria-busy={busy || undefined}
+      aria-disabled={locked || undefined}
+      aria-describedby={describedBy}
       disabled={disabled}
       className={`tog ${checked ? 'on' : ''}`}
       onClick={() => {
-        if (!busy) onChange(!checked);
+        if (!busy && !locked) onChange(!checked);
       }}
     />
   );

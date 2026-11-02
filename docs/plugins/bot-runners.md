@@ -2,7 +2,7 @@
 
 bot-runners is the **runner catalog**: the list of places a bot can run, set up once by a workspace admin and chosen from by everyone who edits a bot. A **runner** is one place: a Hermes gateway on a machine the company owns, the team Hermes pod inside the
 cluster, or (later) the Claude Code pod, the Codex pod and the LLM gateway. The admin types the address and the key once, decides which teams may use the runner, and may mark one runner as the default. A team lead no longer types addresses
-or keys; they only pick a runner by its name. PLAN P19-02 (backend); the admin screen is P19-04 and the picker in the bot editor is P19-03, both later.
+or keys; they only pick a runner by its name. PLAN P19-02 (backend); the admin screen (Settings > Workspace > Runners, clients/web/src/screens/admin/runners) is P19-04, built; the picker in the bot editor is P19-03, later.
 
 Words used on this page. A **Hermes gateway** is the program that runs Hermes, an open-source agent, and answers on an address with an API key. A **kind** says what sort of runner it is. A **state** says whether the runner is ready to run bots. A
 **guard** is the check on outbound addresses (loopback, cluster-internal and cloud metadata addresses are refused); see [runtime-hermes](./runtime-hermes.md#hermes-connections-mode-a). **Adopting** means turning a connection that a team lead made in the old way

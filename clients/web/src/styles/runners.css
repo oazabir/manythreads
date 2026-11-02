@@ -1,0 +1,332 @@
+/* Runners page (PLAN P19-04). Classes are prefixed `rn-`; shared classes (.block, .bh, .btn, .fld, .dlg, .lede, .tog, .notice) are used, never redefined. Tokens only. */
+.rn-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.rn-head .lede {
+  margin-bottom: 14px;
+}
+
+.rn-status {
+  min-height: 4px;
+  margin-bottom: 10px;
+}
+
+.rn-status .notice {
+  margin: 0;
+}
+
+.rn-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.rn-row:last-child {
+  border-bottom: 0;
+}
+
+.rn-main {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.rn-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 13.5px;
+}
+
+.rn-label {
+  overflow-wrap: anywhere;
+}
+
+.rn-default-word {
+  color: var(--warn-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.rn-star {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.rn-star.on {
+  color: var(--warn);
+}
+
+.rn-star[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.rn-star:hover:not([aria-disabled="true"]) {
+  border-color: var(--rule);
+  background: var(--shell);
+}
+
+.rn-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.rn-detail {
+  margin-top: 3px;
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* A state is a word and a shape as well as a colour. */
+.rn-state {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--shell);
+  color: var(--mute);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rn-state.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.rn-state.warn {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.rn-state.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.rn-warn {
+  color: var(--warn-ink);
+}
+
+.rn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.rn-switch {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-right: 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.rn-steps {
+  max-width: 62ch;
+  margin: 0 0 14px;
+  padding-left: 20px;
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+/* ---- dialogs ---- */
+.rn-form {
+  display: grid;
+  gap: 4px;
+}
+
+.rn-form select,
+.rn-teams select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.rn-form .fld.mono input {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.rn-problem {
+  display: block;
+  margin: -6px 0 10px;
+  color: var(--alert-ink);
+  font-size: 12px;
+}
+
+.rn-kinds {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rn-kind {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rn-kind:hover:not(.off) {
+  border-color: var(--ink);
+}
+
+.rn-kind.off {
+  background: var(--shell);
+  color: var(--mute);
+  cursor: not-allowed;
+}
+
+.rn-kind-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.rn-kind-text {
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.rn-teams {
+  margin: 0 0 8px;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+}
+
+.rn-teams legend {
+  padding: 0 4px;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.rn-teams-opt {
+  padding: 4px 0;
+}
+
+.rn-teams-opt .check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13.5px;
+}
+
+.rn-teams-opt .fld-hint {
+  display: block;
+  margin: 0 0 2px 22px;
+}
+
+.rn-teams-pick {
+  margin: 4px 0 4px 22px;
+}
+
+.rn-teams-list {
+  display: grid;
+  gap: 4px;
+  max-height: 200px;
+  margin: 4px 0 4px 22px;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.rn-teams-list .check {
+  font-size: 13px;
+}
+
+.rn-result {
+  margin: 6px 0 0;
+  padding: 7px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+.rn-result.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.rn-result.bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+/* ---- phone ---- */
+@media (width <= 760px) {
+  .rn-row {
+    padding: 12px;
+  }
+
+  .rn-main {
+    flex-basis: 100%;
+  }
+
+  .rn-actions {
+    width: 100%;
+  }
+
+  .rn-head > .btn {
+    margin-bottom: 14px;
+  }
+}

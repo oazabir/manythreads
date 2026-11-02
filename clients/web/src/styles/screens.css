@@ -213,6 +213,12 @@ a.btn.primary {
   font-size: 11.5px;
 }
 
+.fld-err {
+  margin-top: 4px;
+  color: var(--alert-ink);
+  font-size: 12px;
+}
+
 .rule.ok {
   color: var(--ok);
 }
@@ -884,7 +890,8 @@ a.btn.primary {
   left: 17px;
 }
 
-.tog:disabled {
+.tog:disabled,
+.tog[aria-disabled="true"] {
   opacity: 0.5;
   cursor: not-allowed;
 }

@@ -21,6 +21,7 @@ import { Audit } from './screens/audit/Audit';
 import { ImportScreen } from './screens/import/ImportScreen';
 import { Guardrails } from './screens/guardrails/Guardrails';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
+import { RunnersScreen } from './screens/admin/runners/RunnersScreen';
 import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
 import { ApprovalsScreen } from './screens/approvals/ApprovalsScreen';
@@ -103,6 +104,7 @@ function AppRoutes() {
               <Route path="members" element={<Members />} />
               <Route path="roles" element={<Roles />} />
               <Route path="llm" element={<LlmSettings />} />
+              <Route path="runners" element={<RunnersScreen />} />
               <Route path="https" element={<WorkspaceHttps />} />
               <Route path="health" element={<SystemHealth />} />
               <Route path="guardrails" element={<Guardrails />} />

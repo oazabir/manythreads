@@ -20,6 +20,16 @@ import {
   changePasswordRoute,
   checkBootstrapRoute,
   createHermesConnectionRoute,
+  adoptConnectionRoute,
+  createBotRunnerRoute,
+  deleteBotRunnerRoute,
+  listBotRunnersRoute,
+  listLlmAliasesRoute,
+  listOldConnectionsRoute,
+  setBotRunnerTeamsRoute,
+  setDefaultBotRunnerRoute,
+  testBotRunnerRoute,
+  updateBotRunnerRoute,
   createProjectRoute,
   deleteProjectRoute,
   listProjectsRoute,
@@ -694,6 +704,117 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     c['lastError'] = null;
     return { ok: true, error: null, tools: null, manythreadsTools: null, checkedAt: NOW };
   });
+  // Runners (P19-04): the catalog of places a bot runs, in memory. One gateway and one old connection are there so the page has something to show.
+  const MOCK_ALIASES = ['smart', 'fast'];
+  type MockRunner = Record<string, unknown> & { id: string; name: string; teamIds: string[] };
+  const runners: MockRunner[] = [];
+  let oldConnections: Array<Record<string, unknown>> | null = null;
+  const teamRef = (t: TeamState) => ({ teamId: t.id, slug: t.slug, name: t.name });
+  const runnerBody = (r: MockRunner): Record<string, unknown> => {
+    const { teamIds, ...rest } = r;
+    const enabled = Boolean(r['enabled']);
+    return { ...rest, teams: r['allTeams'] ? [] : teamIds.map((id) => teamRef(teams.find((t) => t.id === id)!)), status: enabled ? r['status'] : 'off' };
+  };
+  const runnerOf = (id: string | undefined): MockRunner => {
+    const r = runners.find((x) => x.id === id);
+    if (!r) throw new MockHttpError(404, 'not_found', 'No such runner.');
+    return r;
+  };
+  const newRunner = (init: { name: string; label: string; kind: string; baseUrl?: unknown; profileRule?: unknown; modelAlias?: unknown; status?: string; teamIds?: string[]; allTeams?: boolean; botCount?: number }): MockRunner => ({
+    id: nextId('8'), workspaceId: WORKSPACE_ID, name: init.name, label: init.label, kind: init.kind, enabled: true, isDefault: false, allTeams: init.allTeams ?? false,
+    teamIds: init.teamIds ?? [], baseUrl: (init.baseUrl as string | undefined) ?? null, hasKey: init.kind === 'hermes_gateway', profileRule: (init.profileRule as string | undefined) ?? (init.kind === 'hermes_gateway' || init.kind === 'hermes_pod' ? '{bot}' : null),
+    node: null, modelAlias: (init.modelAlias as string | undefined) ?? null, ownerActorId: null, ownerName: null, planLabel: null, credentialsExpiresAt: null, uploadedAt: null, termsAcceptedBy: null,
+    termsAcceptedAt: null, maxConcurrent: null, status: init.status ?? 'not_set_up', statusDetail: null, pausedUntil: null, lastCheckedAt: null, botCount: init.botCount ?? 0, createdAt: NOW, updatedAt: NOW,
+  });
+  const teamIdsFrom = (body: Record<string, unknown>): { allTeams: boolean; teamIds: string[] } => {
+    if (body['all'] === true) return { allTeams: true, teamIds: [] };
+    const ids = (body['teams'] as string[] | undefined) ?? [];
+    for (const id of ids) if (!teams.some((t) => t.id === id)) throw new MockHttpError(400, 'validation_failed', 'One of the teams does not exist.');
+    return { allTeams: false, teamIds: ids };
+  };
+  const seedRunners = (): void => {
+    if (runners.length > 0 || oldConnections) return;
+    const eng = teams.find((t) => t.slug === 'engineering');
+    runners.push(newRunner({ name: 'host', label: 'Office Hermes', kind: 'hermes_gateway', baseUrl: 'https://hermes.office.example:8642', status: 'ready', teamIds: eng ? [eng.id] : [], botCount: 2 }));
+    runners[0]!['isDefault'] = true;
+    const mkt = teams.find((t) => t.slug === 'marketing');
+    oldConnections = mkt
+      ? [{ id: uuid('e', 950), teamId: mkt.id, teamSlug: mkt.slug, teamName: mkt.name, name: 'laptop', kind: 'external', agent: 'hermes', baseUrl: 'http://192.168.1.20:8642', adoptable: true, adoptableReason: null, botCount: 1 }]
+      : [];
+  };
+  on(listBotRunnersRoute, () => (requireAdmin(), seedRunners(), { items: runners.map(runnerBody) }));
+  on(createBotRunnerRoute, ({ body }) => {
+    requireAdmin();
+    seedRunners();
+    if (body['kind'] === 'claude_cli' || body['kind'] === 'codex_cli') throw new MockHttpError(409, 'conflict', 'Claude Code and Codex runners are not available yet.');
+    if (runners.some((r) => r.name === body['name'])) throw new MockHttpError(409, 'conflict', 'A runner with that name already exists. Names are used in bot files, so pick a different one.');
+    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], modelAlias: body['modelAlias'], ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
+    runners.push(r);
+    return created({ runner: runnerBody(r) });
+  });
+  on(updateBotRunnerRoute, ({ params, body }) => {
+    requireAdmin();
+    const r = runnerOf(params.id);
+    const changed = (['label', 'baseUrl', 'profileRule', 'modelAlias', 'enabled'] as const).filter((k) => body[k] !== undefined && body[k] !== r[k]);
+    if (body['apiKey'] !== undefined) changed.push('enabled');
+    if (changed.length === 0) throw new MockHttpError(400, 'validation_failed', 'Nothing to change');
+    if (body['enabled'] === false && r['isDefault']) throw new MockHttpError(409, 'conflict', 'This is the default runner. Make another runner the default (or none) before switching it off.');
+    for (const k of ['label', 'baseUrl', 'profileRule', 'modelAlias', 'enabled'] as const) if (body[k] !== undefined) r[k] = body[k];
+    if (body['apiKey'] !== undefined) r['hasKey'] = true;
+    if (body['baseUrl'] !== undefined || body['apiKey'] !== undefined) r['status'] = 'not_set_up';
+    if (body['modelAlias'] !== undefined && r['kind'] === 'llm_gateway') r['status'] = MOCK_ALIASES.includes(String(body['modelAlias'])) ? 'ready' : 'not_set_up';
+    return { runner: runnerBody(r) };
+  });
+  on(deleteBotRunnerRoute, ({ params }) => {
+    requireAdmin();
+    const r = runnerOf(params.id);
+    if (Number(r['botCount']) > 0) {
+      const names = teams.filter((t) => r.teamIds.includes(t.id)).map((t) => t.name).join(', ');
+      const bots = Number(r['botCount']) === 1 ? '1 bot is' : `${r['botCount']} bots are`;
+      throw new MockHttpError(409, 'conflict', `${bots} still placed on "${r['label']}" (teams: ${names || 'none'}). Move them to another runner first.`);
+    }
+    runners.splice(runners.indexOf(r), 1);
+    return { deleted: true };
+  });
+  on(testBotRunnerRoute, ({ params, body }) => {
+    requireAdmin();
+    const r = runnerOf(params.id);
+    const ok = r['kind'] !== 'hermes_gateway' || body['profile'] === 'probe';
+    if (r['kind'] === 'hermes_gateway') {
+      r['status'] = ok ? 'ready' : 'not_set_up';
+      r['statusDetail'] = ok ? null : 'The gateway did not answer as a Hermes gateway for that profile.';
+      r['lastCheckedAt'] = NOW;
+    }
+    return { ok, error: ok ? null : String(r['statusDetail']), status: r['enabled'] ? r['status'] : 'off', checkedAt: NOW };
+  });
+  on(setBotRunnerTeamsRoute, ({ params, body }) => {
+    requireAdmin();
+    const r = runnerOf(params.id);
+    Object.assign(r, teamIdsFrom(body));
+    return { runner: runnerBody(r) };
+  });
+  on(setDefaultBotRunnerRoute, ({ body }) => {
+    requireAdmin();
+    seedRunners();
+    const target = body['runnerId'] === null ? null : runnerOf(String(body['runnerId']));
+    if (target && !target['enabled']) throw new MockHttpError(409, 'conflict', 'A runner that is switched off cannot be the default.');
+    for (const r of runners) r['isDefault'] = r === target;
+    return { defaultRunnerId: target?.id ?? null };
+  });
+  on(listOldConnectionsRoute, () => (requireAdmin(), seedRunners(), { items: oldConnections ?? [] }));
+  on(adoptConnectionRoute, ({ params, body }) => {
+    requireAdmin();
+    seedRunners();
+    const c = (oldConnections ?? []).find((x) => x['id'] === params.connectionId);
+    if (!c) throw new MockHttpError(404, 'not_found', 'No such connection.');
+    const name = typeof body['name'] === 'string' ? body['name'] : String(c['name']);
+    if (runners.some((r) => r.name === name)) throw new MockHttpError(409, 'conflict', 'A runner with that name already exists. Pick a different name for this one.');
+    const r = newRunner({ name, label: `${String(c['name'])} (${String(c['teamName'])})`, kind: 'hermes_gateway', baseUrl: c['baseUrl'], status: 'not_set_up', teamIds: [String(c['teamId'])], botCount: Number(c['botCount']) });
+    runners.push(r);
+    oldConnections = (oldConnections ?? []).filter((x) => x !== c);
+    return created({ runner: runnerBody(r) });
+  });
+  on(listLlmAliasesRoute, () => (requireAdmin(), { aliases: [{ alias: 'smart', providerId: null, model: 'anthropic/claude-sonnet-4', fallbacks: [], updatedAt: NOW }, { alias: 'fast', providerId: null, model: 'anthropic/claude-haiku-4', fallbacks: [], updatedAt: NOW }] }));
   // Projects: a team's repositories, each tied to at most one channel; they live in memory.
   const projects = new Map<string, Array<Record<string, unknown>>>();
   const projectsOf = (t: TeamState): Array<Record<string, unknown>> => {
