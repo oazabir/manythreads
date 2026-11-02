@@ -25,7 +25,7 @@ ingress:
 
 postgres:
   mode: cnpg
-  image: registry.local:5000/platform/postgres-cnpg:19beta4-202609281634-u999@sha256:2baddfe22d0422a54cb06ecd15ff342cb9956ac1c286dd89bfc365179ad54c2d   # the same pinned build as the live release
+  image: registry.local:5000/platform/postgres-cnpg:19beta4-202609281634-u999@sha256:bbbca16250b87aec1e6fe9c078d0dc0f0b10d6bbe563d0bef92e909a55da77d4   # the same pinned build as the live release
   instances: 1
   storage:
     size: 2Gi
