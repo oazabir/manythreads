@@ -72,6 +72,12 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/teams/:slug/repo/app-token', 120, 'person'),
   r('PUT', '/api/teams/:slug/projects/:projectId/push-credential', 20, 'person'),
   r('POST', '/api/teams/:slug/hermes/connections', 20, 'person'),
+  // Runners (P19-02): a workspace admin makes, changes, tests and adopts a place bots run; a Hermes gateway's key is written here and never read back.
+  r('POST', '/api/admin/bot-runners', 20, 'person'),
+  r('PATCH', '/api/admin/bot-runners/:id', 30, 'person'),
+  r('POST', '/api/admin/bot-runners/:id/test', 20, 'person'),
+  r('PUT', '/api/admin/bot-runners/default', 30, 'person'),
+  r('POST', '/api/admin/bot-runners/old-connections/:connectionId/adopt', 20, 'person'),
   // Machine credentials presented to a public address: the secret is long and random, so the limit counts only the failed guesses.
   r('POST', '/api/mcp/runs', 60, 'address', 'pairing token: failures counted below'),
   r('POST', '/api/mcp/bots/:botId', 60, 'failures', 'bot token: 60 failures per address a minute'),

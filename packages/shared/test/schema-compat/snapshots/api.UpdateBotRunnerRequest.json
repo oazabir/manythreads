@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "baseUrl": {
+      "type": "string",
+      "maxLength": 500,
+      "format": "uri"
+    },
+    "apiKey": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 500
+    },
+    "profileRule": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._{}-]+$"
+    },
+    "node": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "modelAlias": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

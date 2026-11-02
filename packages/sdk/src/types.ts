@@ -72,6 +72,8 @@ export const PROVIDER_KINDS = [
   'mcp.tools',
   /** When a person was last seen (presence): `PresenceProvider` in ./presence.ts. */
   'presence',
+  /** Where a bot's run goes, by runner name (bot-runners): `BotRunnersProvider` in ./bot-runners.ts. */
+  'bot.runners',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

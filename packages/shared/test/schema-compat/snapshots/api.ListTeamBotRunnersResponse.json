@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "hermes_gateway",
+              "hermes_pod",
+              "claude_cli",
+              "codex_cli",
+              "llm_gateway"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_set_up",
+              "waiting_for_sign_in",
+              "starting",
+              "ready",
+              "needs_sign_in",
+              "waiting_for_node",
+              "moving",
+              "paused",
+              "off"
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "ownerName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "planLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sharedWith": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "kind",
+          "status",
+          "isDefault",
+          "ownerName",
+          "planLabel",
+          "sharedWith"
+        ]
+      }
+    }
+  },
+  "required": [
+    "items"
+  ]
+}

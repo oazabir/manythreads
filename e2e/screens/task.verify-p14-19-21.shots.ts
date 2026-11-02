@@ -253,11 +253,6 @@ test('cleanup', async () => {
     const r = await page.request.post('/api/teams/engineering/repo/commit', { headers: await csrf(), data: { message: 'verify P14-19: remove scratch page', changes: [{ op: 'delete', path, baseBlobSha: b.blobSha }] } });
     log(`delete page ${path} ${r.status()}`);
   }
-  if (pagePath && false) {
-    const b = (await (await page.request.get(`/api/teams/engineering/repo/blob?path=${encodeURIComponent(pagePath)}`)).json()) as any;
-    const r = await page.request.post('/api/teams/engineering/repo/commit', { headers: await csrf(), data: { message: 'verify P14-19: remove scratch page', changes: [{ op: 'delete', path: pagePath, baseBlobSha: b.blobSha }] } });
-    log(`delete page ${r.status()} ${(await r.text()).slice(0, 150)}`);
-  }
 });
 
 test.afterAll(async () => {

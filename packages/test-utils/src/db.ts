@@ -90,6 +90,12 @@ export const runtimeHermesMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/runtime-hermes/migrations/', import.meta.url)),
 };
 
+/** Migrations of the bot-runners plugin (`bot_runners`, `bot_runner_teams`, `app.bot_runners_for_team`); pass it after `teamsMigrationSource` (add `runtimeHermesMigrationSource` first when adoption of connections is under test). */
+export const botRunnersMigrationSource: MigrationSource = {
+  namespace: 'bot-runners',
+  dir: fileURLToPath(new URL('../../plugins/bot-runners/migrations/', import.meta.url)),
+};
+
 /** Migrations of the runners plugin (`runner_tokens`); pass it after `tasksMigrationSource` (the token table references `runners`). */
 export const runnersMigrationSource: MigrationSource = {
   namespace: 'runners',

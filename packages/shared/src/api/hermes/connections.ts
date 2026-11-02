@@ -3,7 +3,7 @@ import { HermesConnection, HermesConnectionAgent, HermesConnectionName } from '.
 import { HermesConnectionId } from '../../ids.ts';
 import { TeamSlug } from '../teams/common.ts';
 
-// The Hermes connection routes (lead or workspace admin of the team). A connection is a gateway the team's bots are placed on
+// The Hermes connection routes. Since P19-02 a workspace admin sets connections up as runners (docs/plugins/bot-runners.md): list and test stay for the team; create, change and delete answer 403. A connection is a gateway the team's bots are placed on
 // (`placement.gateway.connection` in BOT.md). Only `external` connections are made here; the team's own pod (`managed`) is registered by
 // the platform. The API key is accepted on create and update and never returned.
 

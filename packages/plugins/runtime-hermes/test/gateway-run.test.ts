@@ -71,7 +71,7 @@ const botMd = (name: string, placement: string[], native = 'messages.post, memor
   ].join('\n');
 
 /** Commit a BOT.md, wait for the loader, mint the bot's token, and tell the fake gateway where this profile's MCP server is. */
-async function loadBot(slug: string, placement: string[], profile?: string): Promise<LoadedBot> {
+async function loadBot(slug: string, placement: string[], profile?: string, mint = true): Promise<LoadedBot> {
   const committed = await w.commit(omar, 'engineering', [{ op: 'put', path: `bots/${slug}/BOT.md`, content: botMd(slug, placement) }], `Add ${slug}`);
   expect(committed.status, JSON.stringify(committed.body)).toBe(201);
   const botId = await until(
@@ -80,6 +80,11 @@ async function loadBot(slug: string, placement: string[], profile?: string): Pro
     `the loader to load ${slug}`,
   );
   const actorId = await until(() => w.system(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.actors WHERE kind = 'bot' AND ref_id = $1`, [botId])).rows[0]?.id ?? null), 5_000, `the actor of ${slug}`);
+  // A bot whose profile never calls the bot endpoint needs no token (the mint route has a per-minute limit that the last tests of this file need).
+  if (!mint) {
+    if (profile !== undefined) gw.setProfile(profile, { apiKey: API_KEY });
+    return { botId, slug, actorId, token: '' };
+  }
   const minted = await w.call<{ token: string }>(omar, 'POST', `/api/teams/engineering/bots/${slug}/pairing-tokens`, {});
   expect(minted.status, JSON.stringify(minted.body)).toBe(201);
   const token = minted.body.token;
@@ -148,70 +153,80 @@ afterAll(async () => {
   if (scratch !== '') rmSync(scratch, { recursive: true, force: true });
 });
 
-describe('Hermes connections (the lead’s routes)', () => {
+/** Make or change a team's connection the way the platform does (a lead cannot any more): a workspace admin adopts it as a runner, or an old row is already there. */
+async function seedConnection(team: string, name: string, baseUrl: string, apiKey: string, agent = 'hermes'): Promise<string> {
+  const secretId = await withSystem((tx) => putSecret(tx, apiKey), { pool: w.server.pools.system, workspaceId: omar.workspaceId as never });
+  const row = await w.system(
+    async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.hermes_connections (workspace_id, team_id, name, kind, agent, base_url, secret_id)
+           SELECT t.workspace_id, t.id, $2, 'external', $3, $4, $5::uuid FROM app.teams t WHERE t.slug = $1 RETURNING id`,
+          [team, name, agent, baseUrl, secretId],
+        )
+      ).rows[0],
+  );
+  return row!.id;
+}
+
+async function changeConnection(name: string, patch: { baseUrl?: string; apiKey?: string }): Promise<void> {
+  if (patch.baseUrl !== undefined) await w.system((tx) => tx.query('UPDATE app.hermes_connections SET base_url = $2 WHERE name = $1 AND team_id = (SELECT id FROM app.teams WHERE slug = $3)', [name, patch.baseUrl, 'engineering']));
+  if (patch.apiKey !== undefined) {
+    const secretId = await withSystem((tx) => putSecret(tx, patch.apiKey as string), { pool: w.server.pools.system, workspaceId: omar.workspaceId as never });
+    await w.system((tx) => tx.query('UPDATE app.hermes_connections SET secret_id = $2::uuid WHERE name = $1 AND team_id = (SELECT id FROM app.teams WHERE slug = $3)', [name, secretId, 'engineering']));
+  }
+}
+
+describe('Hermes connections (a lead lists and tests; a workspace admin makes the places bots run)', () => {
   let connectionId = '';
+  const { tariq } = personas;
 
-  it('a lead adds a gateway; the key is never returned, and a member cannot see or change any of it', async () => {
-    const created = await w.call<{ connection: Record<string, unknown> }>(omar, 'POST', '/api/teams/engineering/hermes/connections', { name: 'host', baseUrl: gw.url, apiKey: API_KEY });
-    expect(created.status, JSON.stringify(created.body)).toBe(201);
-    connectionId = created.body.connection['id'] as string;
-    expect(created.body.connection).toMatchObject({ name: 'host', kind: 'external', agent: 'hermes', baseUrl: gw.url, hasApiKey: true, status: 'unknown' });
-    expect(JSON.stringify(created.body)).not.toContain(API_KEY);
+  it('a lead can no longer make, change or remove a connection; only an admin reads an address; the key is never returned', async () => {
+    connectionId = await seedConnection('engineering', 'host', gw.url, API_KEY);
+    await seedConnection('marketing', 'mkt-host', gw.url, API_KEY);
 
-    const listed = await w.call(omar, 'GET', '/api/teams/engineering/hermes/connections');
+    // Omar is the team lead and a workspace admin: he reads the address, and the key never leaves
+    const listed = await w.call<{ items: Record<string, unknown>[] }>(omar, 'GET', '/api/teams/engineering/hermes/connections');
     expect(listed.status).toBe(200);
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0]).toMatchObject({ name: 'host', kind: 'external', agent: 'hermes', baseUrl: gw.url, hasApiKey: true });
     expect(JSON.stringify(listed.body)).not.toContain(API_KEY);
-    expect((listed.body as { items: unknown[] }).items).toHaveLength(1);
 
-    // the key is stored encrypted, not in the row
-    const row = await w.system(async (tx) => (await tx.query<{ secret_id: string }>('SELECT secret_id FROM app.hermes_connections WHERE id = $1', [connectionId])).rows[0]);
-    expect(row?.secret_id).toBeTruthy();
+    // Tariq leads Marketing and is not an admin: he sees the connection exists, not where it points
+    const lead = await w.call<{ items: Record<string, unknown>[] }>(tariq, 'GET', '/api/teams/marketing/hermes/connections');
+    expect(lead.status).toBe(200);
+    expect(lead.body.items[0]).toMatchObject({ name: 'mkt-host', hasApiKey: true, baseUrl: null });
+    expect(JSON.stringify(lead.body)).not.toContain(gw.url);
+    expect(JSON.stringify(lead.body)).not.toContain(API_KEY);
 
-    // a plain member of the team: no list, no create, no test, no delete
-    expect((await w.call(nadia, 'GET', '/api/teams/engineering/hermes/connections')).status).toBe(403);
-    expect((await w.call(nadia, 'POST', '/api/teams/engineering/hermes/connections', { name: 'mine', baseUrl: gw.url, apiKey: API_KEY })).status).toBe(403);
-    expect((await w.call(nadia, 'POST', `/api/teams/engineering/hermes/connections/${connectionId}/test`, {})).status).toBe(403);
-    expect((await w.call(nadia, 'DELETE', `/api/teams/engineering/hermes/connections/${connectionId}`)).status).toBe(403);
+    // making, changing and removing answer 403 with the reason, for a lead, for an admin lead, and for a member
+    const base = '/api/teams/engineering/hermes/connections';
+    for (const who of [omar, nadia]) {
+      for (const [method, path, body] of [['POST', base, { name: 'mine', baseUrl: gw.url, apiKey: API_KEY }], ['PATCH', `${base}/${connectionId}`, { baseUrl: gw.url }], ['DELETE', `${base}/${connectionId}`, undefined]] as const) {
+        const res = await w.call<{ error?: { message?: string }; message?: string }>(who, method, path, body);
+        expect(res.status, `${who === omar ? 'omar' : 'nadia'} ${method}`).toBe(403);
+      }
+    }
+    const reason = await w.call<any>(tariq, 'POST', '/api/teams/marketing/hermes/connections', { name: 'mine', baseUrl: gw.url, apiKey: API_KEY });
+    expect(reason.status).toBe(403);
+    expect(JSON.stringify(reason.body)).toContain('workspace admin');
+    expect(JSON.stringify(reason.body)).not.toContain(gw.url);
+    expect(await w.system(async (tx) => (await tx.query("SELECT 1 FROM app.hermes_connections WHERE name = 'mine'")).rows.length)).toBe(0);
+
+    // a plain member of the team: no list, no test
+    expect((await w.call(nadia, 'GET', base)).status).toBe(403);
+    expect((await w.call(nadia, 'POST', `${base}/${connectionId}/test`, {})).status).toBe(403);
     // a lead of another team sees nothing of this one
-    expect((await w.call(omar, 'GET', '/api/teams/customer-support/hermes/connections')).status).toBe(200);
     expect(((await w.call(omar, 'GET', '/api/teams/customer-support/hermes/connections')).body as { items: unknown[] }).items).toHaveLength(0);
     expect((await w.call(omar, 'POST', `/api/teams/customer-support/hermes/connections/${connectionId}/test`, {})).status).toBe(404);
   });
 
-  it('a connection can name the agent behind it, change it later, and refuses an agent that is not one', async () => {
-    const base = '/api/teams/engineering/hermes/connections';
-    const made = await w.call<{ connection: { id: string; agent: string } }>(omar, 'POST', base, { name: 'bridge', baseUrl: gw.url, apiKey: API_KEY, agent: 'claude-code' });
-    expect(made.status, JSON.stringify(made.body)).toBe(201);
-    expect(made.body.connection.agent).toBe('claude-code');
-    const changed = await w.call<{ connection: { agent: string } }>(omar, 'PATCH', `${base}/${made.body.connection.id}`, { agent: 'codex' });
-    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
-    expect(changed.body.connection.agent).toBe('codex');
-    expect((await w.call(omar, 'POST', base, { name: 'bad-agent', baseUrl: gw.url, apiKey: API_KEY, agent: 'gpt' })).status).toBe(400);
-    expect((await w.call(omar, 'DELETE', `${base}/${made.body.connection.id}`)).status).toBe(200);
+  it('the key is stored encrypted, not in the row', async () => {
+    const row = await w.system(async (tx) => (await tx.query<{ secret_id: string }>('SELECT secret_id FROM app.hermes_connections WHERE id = $1', [connectionId])).rows[0]);
+    expect(row?.secret_id).toBeTruthy();
   });
 
-  it('refuses the reserved name, an address with a credential in it, and a key that is too short', async () => {
-    const bad = (body: unknown) => w.call(omar, 'POST', '/api/teams/engineering/hermes/connections', body);
-    expect((await bad({ name: 'managed', baseUrl: gw.url, apiKey: API_KEY })).status).toBe(400);
-    expect((await bad({ name: 'x1', baseUrl: 'http://user:pw@10.0.0.1:8642', apiKey: API_KEY })).status).toBe(400);
-    expect((await bad({ name: 'x2', baseUrl: 'ftp://10.0.0.1', apiKey: API_KEY })).status).toBe(400);
-    expect((await bad({ name: 'x3', baseUrl: gw.url, apiKey: 'short' })).status).toBe(400);
-    expect((await bad({ name: 'host', baseUrl: gw.url, apiKey: API_KEY })).status).toBe(409);
-
-    // with no allow list the addresses a lead may not point this server at are refused when saved (and again at every request)
-    const listed = process.env['MANYTHREADS_HERMES_ALLOWED_HOSTS'];
-    delete process.env['MANYTHREADS_HERMES_ALLOWED_HOSTS'];
-    try {
-      for (const url of ['http://169.254.169.254/latest', 'http://127.0.0.1:8642', 'http://localhost:8642', 'http://manythreads-postgres:5432', 'http://kubernetes.default.svc']) {
-        const r = await bad({ name: 'evil', baseUrl: url, apiKey: API_KEY });
-        expect(r.status, url).toBe(400);
-      }
-    } finally {
-      process.env['MANYTHREADS_HERMES_ALLOWED_HOSTS'] = listed;
-    }
-  });
-
-  it('tests the connection against the profile: reachable, a wrong key, a profile that is not there, a dead address', async () => {
+  it('tests the connection against the profile: reachable, a profile that is not there, a wrong key, a dead address; the answer is recorded', async () => {
     gw.setProfile('probe-profile', { apiKey: API_KEY });
     const ok = await w.call<Record<string, unknown>>(omar, 'POST', `/api/teams/engineering/hermes/connections/${connectionId}/test`, { profile: 'probe-profile' });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
@@ -224,37 +239,34 @@ describe('Hermes connections (the lead’s routes)', () => {
     expect(ghost.body).toMatchObject({ ok: false });
     expect(ghost.body.error).toContain('did not answer as a Hermes gateway for that profile');
 
-    // a key change goes back to "unknown" until the next test, and a wrong key is named as such
-    const rekeyed = await w.call<{ connection: { status: string } }>(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${connectionId}`, { apiKey: 'a-different-key-0123456789' });
-    expect(rekeyed.status).toBe(200);
-    expect(rekeyed.body.connection.status).toBe('unknown');
-    const wrong = await w.call<{ ok: boolean; error: string }>(omar, 'POST', `/api/teams/engineering/hermes/connections/${connectionId}/test`, { profile: 'probe-profile' });
+    // a lead who is not an admin can test too, and the platform writes the answer
+    const mkt = (await w.call<{ items: { id: string }[] }>(tariq, 'GET', '/api/teams/marketing/hermes/connections')).body.items[0]!.id;
+    gw.setProfile('mkt-profile', { apiKey: API_KEY });
+    const lead = await w.call<{ ok: boolean }>(tariq, 'POST', `/api/teams/marketing/hermes/connections/${mkt}/test`, { profile: 'mkt-profile' });
+    expect(lead.body.ok).toBe(true);
+    expect((await w.call<{ items: { status: string }[] }>(tariq, 'GET', '/api/teams/marketing/hermes/connections')).body.items[0]!.status).toBe('ok');
+
+    // a wrong key is named as such and never echoed
+    const wrongId = await seedConnection('engineering', 'wrong-key', gw.url, 'a-different-key-0123456789');
+    const wrong = await w.call<{ ok: boolean; error: string }>(omar, 'POST', `/api/teams/engineering/hermes/connections/${wrongId}/test`, { profile: 'probe-profile' });
     expect(wrong.body.ok).toBe(false);
     expect(wrong.body.error).toContain('refused the API key');
     expect(JSON.stringify(wrong.body)).not.toContain('a-different-key');
 
-    // put the right key back, then point it at a dead address
-    expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${connectionId}`, { apiKey: API_KEY })).status).toBe(200);
+    // a dead address
     const dead = await startFakeHermesGateway({ profiles: {} });
     const deadUrl = dead.url;
     await dead.close();
-    expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${connectionId}`, { baseUrl: deadUrl })).status).toBe(200);
-    const down = await w.call<{ ok: boolean; error: string }>(omar, 'POST', `/api/teams/engineering/hermes/connections/${connectionId}/test`, { profile: 'probe-profile' });
+    const deadId = await seedConnection('engineering', 'dead-end', deadUrl, API_KEY);
+    const down = await w.call<{ ok: boolean; error: string }>(omar, 'POST', `/api/teams/engineering/hermes/connections/${deadId}/test`, { profile: 'probe-profile' });
     expect(down.body.ok).toBe(false);
     expect(down.body.error).toContain('did not answer');
-    expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${connectionId}`, { baseUrl: gw.url })).status).toBe(200);
-    expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${connectionId}`, {})).status).toBe(400);
+    expect(JSON.stringify(down.body)).not.toContain(deadUrl);
   });
 
-  it('removes a connection and its secret, and writes the events that say so', async () => {
-    const made = await w.call<{ connection: { id: string } }>(omar, 'POST', '/api/teams/engineering/hermes/connections', { name: 'scratch', baseUrl: gw.url, apiKey: API_KEY });
-    const id = made.body.connection.id;
-    const secret = await w.system(async (tx) => (await tx.query<{ secret_id: string }>('SELECT secret_id FROM app.hermes_connections WHERE id = $1', [id])).rows[0]!.secret_id);
-    expect((await w.call(omar, 'DELETE', `/api/teams/engineering/hermes/connections/${id}`)).status).toBe(200);
-    expect((await w.call(omar, 'DELETE', `/api/teams/engineering/hermes/connections/${id}`)).status).toBe(404);
-    await until(async () => (await w.system(async (tx) => (await tx.query('SELECT 1 FROM app.secrets WHERE id = $1', [secret])).rows.length)) === 0, 10_000, 'the secret to be removed');
+  it('the events of the test are written; no event of a connection made by a lead exists any more', async () => {
     const types = await w.system(async (tx) => (await tx.query<{ type: string }>(`SELECT DISTINCT type FROM app.events WHERE type LIKE 'hermes.connection.%'`)).rows.map((r) => r.type));
-    expect(types.sort()).toEqual(['hermes.connection.created', 'hermes.connection.deleted', 'hermes.connection.tested', 'hermes.connection.updated']);
+    expect(types).toEqual(['hermes.connection.tested']);
   });
 });
 
@@ -300,9 +312,7 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
     const dead = await startFakeHermesGateway({ profiles: {} });
     const deadUrl = dead.url;
     await dead.close();
-    const listed = await w.call<{ items: { id: string; name: string }[] }>(omar, 'GET', '/api/teams/engineering/hermes/connections');
-    const id = listed.body.items.find((c) => c.name === 'host')!.id;
-    expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${id}`, { baseUrl: deadUrl })).status).toBe(200);
+    await changeConnection('host', { baseUrl: deadUrl });
     try {
       const rootId = await post('@ext-bot are you there?');
       const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 15_000, 'the failure notice').catch((e) => {
@@ -313,20 +323,155 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
       expect(notice.body).not.toContain(deadUrl);
       expect(await closedRun(bot.botId)).toMatchObject({ status: 'failed' });
     } finally {
-      expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${id}`, { baseUrl: gw.url })).status).toBe(200);
+      await changeConnection('host', { baseUrl: gw.url });
     }
   });
 
   it('a gateway that refuses the key fails the run without echoing it; the notice is the generic one', async () => {
-    const listed = await w.call<{ items: { id: string; name: string }[] }>(omar, 'GET', '/api/teams/engineering/hermes/connections');
-    const id = listed.body.items.find((c) => c.name === 'host')!.id;
-    expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${id}`, { apiKey: 'not-the-gateway-key-0123' })).status).toBe(200);
+    await changeConnection('host', { apiKey: 'not-the-gateway-key-0123' });
     try {
       const rootId = await post('@ext-bot try again');
       const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
       expect(notice.body).toBe(FAILURE_NOTICE.other);
     } finally {
-      expect((await w.call(omar, 'PATCH', `/api/teams/engineering/hermes/connections/${id}`, { apiKey: API_KEY })).status).toBe(200);
+      await changeConnection('host', { apiKey: API_KEY });
+    }
+  });
+});
+
+describe('a connection an admin adopted into a runner keeps working, and the runner now decides', () => {
+  let bot: LoadedBot;
+  let runnerId = '';
+  const answer = (text: string) => gw.setScript(() => [{ type: 'finish', output: text }]);
+  const ask = async (text: string): Promise<string> => {
+    const rootId = await post(text);
+    const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the reply');
+    return reply.body;
+  };
+  const gatewayRuns = (): number => gw.runs.filter((r) => r.profile === 'adopt-bot').length;
+
+  it('adopting the connection changes no BOT.md, and the next mention runs on the same gateway', async () => {
+    bot = await loadBot('adopt-bot', ['  gateway:', '    connection: host', '    profile: adopt-bot'], 'adopt-bot');
+    answer('before adoption');
+    expect(await ask('@adopt-bot hello')).toBe('before adoption');
+
+    const old = await w.call<{ items: { id: string; name: string; teamSlug: string; botCount: number }[] }>(omar, 'GET', '/api/admin/bot-runners/old-connections');
+    expect(old.status, JSON.stringify(old.body)).toBe(200);
+    const host = old.body.items.find((c) => c.name === 'host' && c.teamSlug === 'engineering')!;
+    expect(host.botCount).toBeGreaterThan(0);
+    const adopted = await w.call<{ runner: { id: string; name: string } }>(omar, 'POST', `/api/admin/bot-runners/old-connections/${host.id}/adopt`, {});
+    expect(adopted.status, JSON.stringify(adopted.body)).toBe(201);
+    runnerId = adopted.body.runner.id;
+    expect(await w.system(async (tx) => (await tx.query<{ definition_sha: string }>(`SELECT definition_sha FROM app.bots WHERE id = $1`, [bot.botId])).rows.length)).toBe(1);
+
+    answer('after adoption');
+    expect(await ask('@adopt-bot hello again')).toBe('after adoption');
+    expect(gatewayRuns()).toBe(2);
+  });
+
+  it('a runner that is switched off, or that does not list the team, refuses the run without calling the gateway', async () => {
+    const before = gatewayRuns();
+    expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: false })).status).toBe(200);
+    try {
+      const rootId = await post('@adopt-bot are you off?');
+      const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
+      expect(notice.body).toBe(FAILURE_NOTICE.runner_offline);
+      expect(await closedRun(bot.botId)).toMatchObject({ status: 'failed' });
+      expect(gatewayRuns()).toBe(before);
+    } finally {
+      expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: true })).status).toBe(200);
+    }
+    expect((await w.call(omar, 'PUT', `/api/admin/bot-runners/${runnerId}/teams`, { teams: [] })).status).toBe(200);
+    try {
+      const rootId = await post('@adopt-bot is my team still listed?');
+      await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
+      expect(gatewayRuns()).toBe(before);
+    } finally {
+      const team = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id);
+      expect((await w.call(omar, 'PUT', `/api/admin/bot-runners/${runnerId}/teams`, { teams: [team] })).status).toBe(200);
+    }
+    answer('listed again');
+    expect(await ask('@adopt-bot back?')).toBe('listed again');
+  });
+
+  it('the runner\'s own key rules: a new key on the runner is used, whatever the old connection row still holds', async () => {
+    gw.setProfile('adopt-bot', { apiKey: 'rotated-key-0123456789abcdef', mcp: { url: `${w.server.url}/mcp`, token: bot.token } });
+    expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { apiKey: 'rotated-key-0123456789abcdef' })).status).toBe(200);
+    try {
+      answer('with the rotated key');
+      expect(await ask('@adopt-bot new key?')).toBe('with the rotated key');
+    } finally {
+      gw.setProfile('adopt-bot', { apiKey: API_KEY, mcp: { url: `${w.server.url}/mcp`, token: bot.token } });
+      expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { apiKey: API_KEY })).status).toBe(200);
+    }
+  });
+
+  it('the connection test goes through the runner too, and a lead who is not an admin still reads no address', async () => {
+    const list = await w.call<{ items: { id: string; name: string; baseUrl: string | null }[] }>(omar, 'GET', '/api/teams/engineering/hermes/connections');
+    const host = list.body.items.find((c) => c.name === 'host')!;
+    gw.setProfile('probe-adopted', { apiKey: API_KEY });
+    const ok = await w.call<{ ok: boolean }>(omar, 'POST', `/api/teams/engineering/hermes/connections/${host.id}/test`, { profile: 'probe-adopted' });
+    expect(ok.body.ok).toBe(true);
+    expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: false })).status).toBe(200);
+    const off = await w.call<{ ok: boolean; error: string }>(omar, 'POST', `/api/teams/engineering/hermes/connections/${host.id}/test`, { profile: 'probe-adopted' });
+    expect(off.body.ok).toBe(false);
+    expect(off.body.error).toContain('switched off');
+    expect(JSON.stringify(off.body)).not.toContain(gw.url);
+    expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: true })).status).toBe(200);
+  });
+});
+
+describe('a runner an admin made available to the team works as `gateway: <name>` with no connection of that name', () => {
+  let bot: LoadedBot;
+  let runnerId = '';
+  let engineeringId = '';
+  const answer = (text: string) => gw.setScript(() => [{ type: 'finish', output: text }]);
+  const ask = async (text: string): Promise<string> => {
+    const rootId = await post(text);
+    const reply = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the reply');
+    return reply.body;
+  };
+  const gatewayRuns = (): number => gw.runs.filter((r) => r.profile === 'direct-bot').length;
+
+  it('runs through the runner when the team is on its list', async () => {
+    engineeringId = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'engineering'")).rows[0]!.id);
+    expect(await w.system(async (tx) => (await tx.query("SELECT 1 FROM app.hermes_connections WHERE name = 'direct-host'")).rows.length)).toBe(0);
+    const made = await w.call<{ runner: { id: string } }>(omar, 'POST', '/api/admin/bot-runners', { name: 'direct-host', label: 'Direct host', kind: 'hermes_gateway', baseUrl: gw.url, apiKey: API_KEY });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    runnerId = made.body.runner.id;
+    expect((await w.call(omar, 'PUT', `/api/admin/bot-runners/${runnerId}/teams`, { teams: [engineeringId] })).status).toBe(200);
+    bot = await loadBot('direct-bot', ['  gateway:', '    connection: direct-host', '    profile: direct-bot'], 'direct-bot', false);
+    answer('through the runner');
+    expect(await ask('@direct-bot hello')).toBe('through the runner');
+    expect(gatewayRuns()).toBe(1);
+  });
+
+  it('refuses the run, without calling the gateway, once the team is not on the runner\'s list, and the notice names no runner', async () => {
+    const marketingId = await w.system(async (tx) => (await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'marketing'")).rows[0]!.id);
+    expect((await w.call(omar, 'PUT', `/api/admin/bot-runners/${runnerId}/teams`, { teams: [marketingId] })).status).toBe(200);
+    try {
+      const rootId = await post('@direct-bot am I still allowed?');
+      const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
+      expect(notice.body).not.toContain('direct-host');
+      expect(await closedRun(bot.botId)).toMatchObject({ status: 'failed' });
+      expect(gatewayRuns()).toBe(1);
+    } finally {
+      expect((await w.call(omar, 'PUT', `/api/admin/bot-runners/${runnerId}/teams`, { teams: [engineeringId] })).status).toBe(200);
+    }
+    answer('allowed again');
+    expect(await ask('@direct-bot and now?')).toBe('allowed again');
+  });
+
+  it('a runner switched off refuses the run even though the team is listed', async () => {
+    const before = gatewayRuns();
+    expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: false })).status).toBe(200);
+    try {
+      const rootId = await post('@direct-bot are you off?');
+      const notice = await until(async () => (await messagesBy(rootId, bot.actorId))[0], 30_000, 'the failure notice');
+      expect(notice.body).toBe(FAILURE_NOTICE.runner_offline);
+      expect(gatewayRuns()).toBe(before);
+    } finally {
+      expect((await w.call(omar, 'PATCH', `/api/admin/bot-runners/${runnerId}`, { enabled: true })).status).toBe(200);
     }
   });
 });

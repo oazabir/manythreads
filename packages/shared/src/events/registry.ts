@@ -57,6 +57,13 @@ import { HermesConnectionUpdatedEvent } from './hermes.connection.updated.ts';
 import { HermesConnectionDeletedEvent } from './hermes.connection.deleted.ts';
 import { HermesConnectionTestedEvent } from './hermes.connection.tested.ts';
 import { HermesProfilesChangedEvent } from './hermes.profiles.changed.ts';
+import { BotRunnerCreatedEvent } from './bot_runner.runner.created.ts';
+import { BotRunnerUpdatedEvent } from './bot_runner.runner.updated.ts';
+import { BotRunnerDeletedEvent } from './bot_runner.runner.deleted.ts';
+import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
+import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
+import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
+import { BotRunnerTermsAcceptedEvent } from './bot_runner.terms.accepted.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
 import { BotsEvalRunFinishedEvent } from './bots.eval.run.finished.ts';
 import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
@@ -262,6 +269,13 @@ export const eventRegistry = {
   'hermes.connection.deleted': { 1: HermesConnectionDeletedEvent },
   'hermes.connection.tested': { 1: HermesConnectionTestedEvent },
   'hermes.profiles.changed': { 1: HermesProfilesChangedEvent },
+  'bot_runner.runner.created': { 1: BotRunnerCreatedEvent },
+  'bot_runner.runner.updated': { 1: BotRunnerUpdatedEvent },
+  'bot_runner.runner.deleted': { 1: BotRunnerDeletedEvent },
+  'bot_runner.runner.tested': { 1: BotRunnerTestedEvent },
+  'bot_runner.availability.changed': { 1: BotRunnerAvailabilityChangedEvent },
+  'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },
+  'bot_runner.terms.accepted': { 1: BotRunnerTermsAcceptedEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
   'bots.eval.run.finished': { 1: BotsEvalRunFinishedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },

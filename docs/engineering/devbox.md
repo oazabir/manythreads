@@ -23,7 +23,7 @@ Where code is built, tested and deployed, and the machine facts that break a pip
 - The devbox has two checkouts: `/root/manythreads` (the Windows dev loop's, `Sync-Up.ps1`) and `/root/ci` (the
   pipeline's scratch copy, rewritten by every CI run). Never rsync over the first while another agent works in it.
 - **Every bot of a team on this host's Hermes gateway (mode A).** Run `DEMO_EMAIL=... DEMO_PASSWORD=... node tools/devbox/provision-host-bots.mjs engineering customer-support marketing [--dry] [--force]`.
-  The caller is a workspace admin, and each team needs a Hermes connection named `host` (override with `HERMES_CONNECTION`).
+  The caller is a workspace admin, and each team needs a Hermes connection named `host`, or a runner named `host` that an admin made available to the team under Runners (override the name with `HERMES_CONNECTION`). On a fresh install make the runner: it needs the gateway's address and API key, and the team in its list.
   It adds the template bots the repo lacks, sets each bot's `placement` to `host` with profile `mt-<team>-<bot>`, and writes `$HERMES_HOME/profiles/mt-<team>-<bot>/`.
   A profile is a directory with `config.yaml` and `.env` (dir 0700, files 0600); the gateway key and model key are copied from `$HERMES_HOME/.env`, and shell bots get cwd `/srv/hostdev`.
   An existing bot gets its profile before its placement is committed. A new bot is added first, because a token can only be minted for a bot that exists.

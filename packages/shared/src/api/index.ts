@@ -26,6 +26,7 @@ export * from './ops/index.ts';
 export * from './tasks/index.ts';
 export * from './runners/index.ts';
 export * from './hermes/index.ts';
+export * from './bot-runners/index.ts';
 export * from './projects/index.ts';
 export * from './webhooks/index.ts';
 export * from './integrations/index.ts';

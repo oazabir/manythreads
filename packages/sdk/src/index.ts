@@ -15,6 +15,7 @@ export * from './answer-share.ts';
 export * from './egress.ts';
 export * from './runtime.ts';
 export * from './runner.ts';
+export * from './bot-runners.ts';
 export * from './hermes-profiles.ts';
 export * from './project-credentials.ts';
 export * from './http.ts';

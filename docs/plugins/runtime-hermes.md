@@ -426,17 +426,20 @@ reserved name of the team's own pod, which takes no `profile`.
 
 ### Hermes connections (mode A)
 
-A lead or workspace admin of the team manages them (`GET|POST /api/teams/:slug/hermes/connections`, `PATCH|DELETE …/:connectionId`,
-`POST …/:connectionId/test`). A connection is a name, the gateway's address (plain `http(s)`, no credentials in it) and its API key. The key
-is encrypted and **write-only**: nothing returns it, only `hasApiKey`. The server never follows a redirect from the gateway's address. Events:
-`hermes.connection.created|updated|deleted|tested`.
+Since PLAN P19-02 a connection is **set up by a workspace admin**, not by the team lead: an admin adds the place bots run under Runners ([bot-runners](./bot-runners.md)). The routes
+`GET /api/teams/:slug/hermes/connections` (the list, which shows the address only to a workspace admin) and `POST …/:connectionId/test` stay; `POST /api/teams/:slug/hermes/connections` and `PATCH|DELETE …/:connectionId` answer `403` for everyone with
+"Runners are set up by a workspace admin now. Ask an admin to add or change this under Runners." (the table's own write policy, migration `0004_adopted_connections.sql`, allows only workspace admins and the system). A connection is a name, the gateway's address (plain `http(s)`, no
+credentials in it) and its API key. The key is encrypted and **write-only**: nothing returns it, only `hasApiKey`. The server never follows a redirect from the gateway's address. Events: `hermes.connection.created|updated|deleted|tested`.
+
+**Adopted connections.** An admin can turn an existing connection into a runner (`POST /api/admin/bot-runners/old-connections/:connectionId/adopt`, see [bot-runners](./bot-runners.md)). The connection row then carries `runner_name`, and every run, and the connection test, asks the
+`bot.runners` provider (`resolveRunner`) for the address and key, so the runner decides: switching it off, or taking the team off its list, refuses the run before the gateway is called (the thread shows the "runner offline" notice). `resolveRunnerTarget` is the same door for a `runs_on` placement. A connection never adopted works as before.
 
 *Test* answers in one of three fixed sentences: it answered, it did not answer (or not as a Hermes gateway for that profile), or it refused the
 key. Nothing the remote side said is returned or logged — only status codes. The gateway's API lists no MCP tools, so `tools` and
 `manythreadsTools` are always null.
 
-**Where a connection may point (the outbound guard).** A lead types the address, and this server will call it, so every request passes
-`src/outbound.ts` at the moment it is made (not only when the address is saved): the name is judged, then every address it resolves to, and the
+**Where a connection may point (the outbound guard).** An admin types the address, and this server will call it, so every request passes
+`hermes-outbound` (in `@manythreads/sdk`; `src/outbound.ts` re-exports it) at the moment it is made (not only when the address is saved): the name is judged, then every address it resolves to, and the
 socket connects to the address that was checked (a name that answers differently a second later cannot slip past). Always refused unless the operator
 lists them: loopback, link-local (including the cloud metadata address 169.254.169.254), unspecified and multicast addresses, the Kubernetes API
 address, and this deployment's own names (`manythreads-*`, `*.svc.cluster.local`, `kubernetes.default*`, `localhost`). Public hosts and private

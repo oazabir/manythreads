@@ -146,6 +146,10 @@ export type BotEvalRunId = z.infer<typeof BotEvalRunId>;
 export const HermesConnectionId = z.uuid().brand<'HermesConnectionId'>();
 export type HermesConnectionId = z.infer<typeof HermesConnectionId>;
 
+/** One place bots can run (`bot_runners`, PLAN P19-02). */
+export const BotRunnerId = z.uuid().brand<'BotRunnerId'>();
+export type BotRunnerId = z.infer<typeof BotRunnerId>;
+
 export const RhythmId = z.uuid().brand<'RhythmId'>();
 export type RhythmId = z.infer<typeof RhythmId>;
 

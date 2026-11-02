@@ -30,6 +30,14 @@ export interface GatewayTarget {
   agent: HermesConnectionAgent;
 }
 
+/** Thrown by `resolve` when a runner will not take the bot; the message is one plain sentence a person may read (the runner's own refusal). */
+export class GatewayRefused extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GatewayRefused';
+  }
+}
+
 /** The largest single event the stream may carry, and the largest document a gateway may answer a request with. A gateway is not trusted to be polite. */
 export const MAX_FRAME_BYTES = 1024 * 1024;
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -163,6 +171,8 @@ export async function runOnGateway(
   try {
     target = await options.resolve({ teamId: input.bot.teamId, botId: input.bot.id, botSlug: input.bot.slug, connection: placement.connection });
   } catch (err) {
+    // A runner that refuses the bot (switched off, not shared with the team) says why in one plain sentence; nothing else is let through.
+    if (err instanceof GatewayRefused) return refusedRun(err.message);
     scope.log(`runtime-hermes: run ${runId}: the connection "${placement.connection}" could not be read: ${err instanceof Error ? err.message : String(err)}`);
     return refusedRun(`the Hermes connection "${placement.connection}" could not be read`);
   }

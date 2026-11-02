@@ -115,6 +115,17 @@ const changedParts = (e: Fields): string | null => {
   return parts.length === 0 ? null : `Changed: ${parts.join(' and ')}`;
 };
 
+const RUNNER_SETTINGS: Readonly<Record<string, string>> = { label: 'name', address: 'address', key: 'key', profile_rule: 'profile rule', node: 'node', model_alias: 'model alias', enabled: 'on/off switch' };
+/** The settings of a runner that changed, by fixed name (the event carries names, never values). */
+const runnerChanged = (e: Fields): string | null => {
+  const list = Array.isArray(e['changed']) ? e['changed'].map((c) => (typeof c === 'string' ? RUNNER_SETTINGS[c] : undefined)).filter((c): c is string => c !== undefined) : [];
+  return list.length === 0 ? null : `Changed: ${list.join(', ')}`;
+};
+const runnerAvailability = (e: Fields): string => {
+  const on = e['enabled'] === true ? 'switched on' : 'switched off';
+  return e['allTeams'] === true ? `Every team may use it; ${on}` : `${plural(num(e['teamCount']), 'team')} may use it; ${on}`;
+};
+
 type Mapper = (e: Fields) => Mapped | null;
 
 /** The mapping of every event type the console shows, by event type. An event type not listed here is not audited. */
@@ -344,6 +355,38 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     teamId: team(e['teamId']),
     target: of('connection', uuid(e['connectionId']), typeof e['name'] === 'string' ? clip(e['name']) : null),
   }),
+  'bot_runner.runner.created': (e) => ({
+    action: 'bot_runner.created',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason: e['adopted'] === true ? 'Made from a team\'s old connection' : null,
+  }),
+  'bot_runner.runner.updated': (e) => ({
+    action: 'bot_runner.updated',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason: runnerChanged(e),
+  }),
+  'bot_runner.runner.deleted': (e) => ({ action: 'bot_runner.deleted', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'bot_runner.runner.tested': (e) => ({
+    action: 'bot_runner.tested',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    outcome: e['ok'] === true ? undefined : 'failed',
+  }),
+  'bot_runner.availability.changed': (e) => ({
+    action: 'bot_runner.availability_changed',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason: runnerAvailability(e),
+  }),
+  'bot_runner.default.changed': (e) => ({
+    action: 'bot_runner.default_changed',
+    who: actor(e['actorId']),
+    target: of('bot_runner', uuid(e['runnerId'])),
+    reason: uuid(e['runnerId']) === null ? 'No default runner now' : null,
+  }),
+  'bot_runner.terms.accepted': (e) => ({ action: 'bot_runner.terms_accepted', who: actor(e['acceptedBy']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
   'webhooks.hook.created': (e) => ({ action: 'webhook.created', who: actor(e['actorId']), teamId: team(e['teamId']), target: of('webhook', uuid(e['webhookId'])) }),
   'webhooks.hook.revoked': (e) => ({ action: 'webhook.revoked', who: actor(e['actorId']), teamId: team(e['teamId']), target: of('webhook', uuid(e['webhookId'])) }),
   'webhooks.hook.rotated': (e) => ({ action: 'webhook.rotated', who: actor(e['actorId']), teamId: team(e['teamId']), target: of('webhook', uuid(e['webhookId'])) }),

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "not_set_up",
+        "waiting_for_sign_in",
+        "starting",
+        "ready",
+        "needs_sign_in",
+        "waiting_for_node",
+        "moving",
+        "paused",
+        "off"
+      ]
+    },
+    "checkedAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "ok",
+    "error",
+    "status",
+    "checkedAt"
+  ]
+}

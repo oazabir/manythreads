@@ -36,6 +36,8 @@ export const EXTENSION_POINTS = [
   'provider.mcp.tools',
   // When a person was last seen (presence, P14-09): read by notifications to know who has been away long enough for an email digest, so it never reads the heartbeat table.
   'provider.presence',
+  // Where a bot's run goes, by runner name (bot-runners, P19-02): read by runtime-hermes so that a runner's address and key are resolved in one place only.
+  'provider.bot.runners',
   // Seal a small secret in the platform's encrypted store (`ctx.secrets`) without being a sign-in, model or Hermes-profile provider: the tasks plugin's private note on a handover.
   'secret.seal',
   'command.register',

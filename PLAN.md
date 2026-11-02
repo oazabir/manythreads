@@ -124,7 +124,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
 | 7 | 14 | Messaging parity and moving in | XL | 6 | 18 of 23 built, 3 partly |
-| 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 0 of 13 built |
+| 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 1 of 13 built |
 | 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
 | 11 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
@@ -147,7 +147,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-10-31)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **99 of 294 tasks (the 293 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 158 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **100 of 294 tasks (the 293 rows of this plan plus the follow-up P14-01b) are built, 37 are partly built, 157 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -171,7 +171,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 16 · Connectors to the tools a company already uses | 0 | 0 | 12 | 0 |
 | 17 · Video calls, screen sharing and the meeting assistant | 0 | 0 | 12 | 0 |
 | 18 · Workflow automation and a team that runs itself | 0 | 0 | 14 | 0 |
-| 19 · Runners: where a bot runs, set up by an admin | 0 | 0 | 13 | 0 |
+| 19 · Runners: where a bot runs, set up by an admin | 1 | 0 | 12 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -545,12 +545,12 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P18-13 | Automation analytics: per recipe runs, failures, approval wait … | Not built |  | no plugins/analytics plugin |
 | P18-14 | Seed v18, event contracts, docs per recipe with every YAML tested … | Not built |  | nothing exists for this row |
 
-### Phase 19 · Runners: where a bot runs, set up by an admin — 0 built, 0 partly, 13 not built
+### Phase 19 · Runners: where a bot runs, set up by an admin — 1 built, 0 partly, 12 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
 | P19-01 | Spike: does the whole sign-in file, as uploaded, run `claude` and `codex` in a pod, what exactly does a refresh rewrite, does a refresh there break the source machine's copy, the egress host list, two teams in one pod, how host-gateway profiles are made … | Not built | - (tried 2026-11-01 on the devbox; the tool-permission classifier refused to copy a credential to a scratch folder, so nothing is measured) | `docs/spikes/claude-pod.md`; needs a second Claude login, never the owner's working one |
-| P19-02 | The runner catalog: `bot_runners` (hermes_gateway, hermes_pod, claude_cli, llm_gateway), admin API, teams list, default, one `resolveRunner`, Adopt for old team connections, a team sees only name, kind and state … | Not built | packages/plugins/runtime-hermes/src/connections.ts (team-owned connections, `resolveTarget`, two kinds) | no `bot-runners` plugin, no catalog tables, no admin routes; a team lead can still create connections |
+| P19-02 | The runner catalog: `bot_runners` (hermes_gateway, hermes_pod, claude_cli, llm_gateway), admin API, teams list, default, one `resolveRunner`, Adopt for old team connections, a team sees only name, kind and state … | Built | packages/plugins/bot-runners (tables, admin and team routes, `resolveRunner`, adopt, delete guard), runtime-hermes connections (403 for lead writes, `runner_name`), docs/plugins/bot-runners.md | backend only: the admin screen is P19-04 and the picker is P19-03; claude_cli/codex_cli answer 409 until their pods exist; `bot_runner.terms.accepted` has no emitter yet; event names have three parts |
 | P19-03 | Placing a bot: `placement.runs_on`, the Runs on select in the create-a-bot flow and the Placement tab, the run-start check … | Not built | packages/shared/src/bot-md/frontmatter.ts (`gateway`, `node`, `runner` only); clients/web/src/screens/bots/tabs.tsx (free-text Node and Runner fields) | no `runs_on`, no picker, no per-team availability check |
 | P19-04 | The admin page Runners: list, add by kind, test, teams, default, disable, delete guard, adopt … | Not built | clients/web/src/screens/admin/llm (the pattern: providers and aliases pages) | no runners screen |
 | P19-05 | The Claude Code image and pod: `claude` pinned, bridge as entry point, one Deployment, Service, volumes and NetworkPolicy per runner, Helm values … | Not built | tools/agent-bridge (the bridge runs by hand on the host: docs/agent-bridge.md); packages/plugins/hermes-pods (the pattern to follow) | no `deploy/images/claude-pod`, no `claude-pods` plugin |

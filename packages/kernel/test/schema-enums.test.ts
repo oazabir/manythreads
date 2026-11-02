@@ -31,6 +31,8 @@ import {
   KnowledgeDocumentKind,
   KnowledgeDocumentStatus,
   KnowledgeSourceKind,
+  BotRunnerKind,
+  BotRunnerStatus,
   HermesConnectionAgent,
   HermesConnectionKind,
   HermesConnectionStatus,
@@ -93,6 +95,7 @@ import {
   auditMigrationSource,
   guardrailsDlpMigrationSource,
   rhythmsMigrationSource,
+  botRunnersMigrationSource,
   runtimeHermesMigrationSource,
   tasksMigrationSource,
   teamsMigrationSource,
@@ -178,6 +181,8 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'hermes_connections.kind': HermesConnectionKind,
   'hermes_connections.agent': HermesConnectionAgent,
   'hermes_connections.status': HermesConnectionStatus,
+  'bot_runners.kind': BotRunnerKind,
+  'bot_runners.status': BotRunnerStatus,
   'rhythms.kind': RhythmKind,
   'rhythms.effort': RhythmEffort,
   'rhythm_runs.status': RhythmRunStatus,
@@ -210,7 +215,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

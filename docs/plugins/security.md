@@ -66,6 +66,10 @@ system actor's; the database refuses anyone else) and `get` is system-only, so a
 through `provider.llm` at call time, never through a route. A route never returns a secret; it answers only whether one is
 stored.
 
+## The runner catalog: `provider.bot.runners`
+
+`bot-runners` (PLAN P19-02) holds the places bots run and offers one provider, `bot.runners`, whose only call is `resolveRunner({ teamId, runner })`: it answers where a run goes (address, key, agent, whether the outbound guard applies) or a plain refusal. It is the one door through which an address or a key leaves the catalog, and only `runtime-hermes` asks. It needs `secret.seal` to store a gateway's key; the key is read back in a system transaction, never in a route. A team member reads runners only through `app.bot_runners_for_team`, which returns name, label, kind, state, default, owner name and plan label. Plugins are trusted code that runs inside the server process, so the provider call is not hardened against a hostile plugin: anything that can register a `bot.runners` provider or hold `secret.seal` is reviewed like a migration. See [bot-runners](./bot-runners.md).
+
 ## The janitor's door: `run.close`
 
 A plugin that extends `run.close` and not `tool.invoke` gets a `ctx.runs` of which one member works: `close(runId, status)` — end a run through the run service (which revokes its tokens and emits `bots.run.closed`). Every other member (`open`, `asBot`, `asReader`, `asApproved`, `authorize`, `may`, `invoke`, `logSource`, `inheritSources`) throws, naming `tool.invoke`. It exists so the bots plugin's stale-run reaper can end a run whose worker died without being handed the whole run door. A plugin with both gets the full door.

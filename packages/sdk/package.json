@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./process": "./src/process.ts",
+    "./hermes-outbound": "./src/hermes-outbound.ts",
     "./safe-fetch": "./src/safe-fetch/index.ts"
   },
   "scripts": {

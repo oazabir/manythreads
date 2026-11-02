@@ -405,9 +405,15 @@ async function doTeam(team) {
   if (!existsSync(templateDir)) throw new Error(`no template at ${templateDir}`);
   const slugs = readdirSync(templateDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
   const conns = await api('GET', `/api/teams/${team}/hermes/connections`);
-  const conn = conns.json?.items?.find((c) => c.name === CONNECTION);
-  if (!conn) throw new Error(`no Hermes connection named "${CONNECTION}"`);
-  console.log(`\n== ${team}: ${slugs.length} bot(s), connection ${CONNECTION}`);
+  let conn = conns.json?.items?.find((c) => c.name === CONNECTION);
+  // Since the runner catalog (P19-02) the place may be a runner an admin made available to the team instead of a connection of the team.
+  let runner = null;
+  if (!conn) {
+    const runners = await api('GET', '/api/admin/bot-runners');
+    runner = runners.json?.items?.find((r) => r.name === CONNECTION && r.enabled && (r.allTeams || r.teams.some((t) => t.slug === team))) ?? null;
+    if (!runner) throw new Error(`no Hermes connection or runner named "${CONNECTION}" for this team`);
+  }
+  console.log(`\n== ${team}: ${slugs.length} bot(s), ${conn ? 'connection' : 'runner'} ${CONNECTION}`);
 
   // Plan: what the repo needs, per bot. One broken file fails that bot only.
   const infos = [];
@@ -515,7 +521,9 @@ async function doTeam(team) {
   for (const info of infos.filter((i) => !i.failed)) {
     let r = { status: 0, json: null };
     for (let i = 0; i < 8; i++) {
-      r = await api('POST', `/api/teams/${team}/hermes/connections/${conn.id}/test`, { profile: info.profile });
+      r = conn
+        ? await api('POST', `/api/teams/${team}/hermes/connections/${conn.id}/test`, { profile: info.profile })
+        : await api('POST', `/api/admin/bot-runners/${runner.id}/test`, { profile: info.profile });
       if (r.status === 200 && r.json?.ok) break;
       await sleep(r.status === 429 ? 15_000 : 3_000); // the test route has a per-minute limit
     }

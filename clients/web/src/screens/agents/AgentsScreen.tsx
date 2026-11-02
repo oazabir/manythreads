@@ -1,14 +1,14 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import type { BotSummary, HermesConnection, HermesConnectionAgent } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
-import { Alert, Field, Notice, Time } from '../../components/ui';
+import { Alert, Notice, Time } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
 import { fetchBots } from '../bots/api';
 import { useBotPerms } from '../bots/store';
-import { createConnection, deleteConnection, fetchConnections, testConnection, updateConnection } from './api';
+import { fetchConnections, testConnection } from './api';
 import {
   AGENT_CHOICES,
   agentLabel,
@@ -19,15 +19,12 @@ import {
   kindLabel,
   mcpAddress,
   statusLine,
-  validateEdit,
-  bridgeSwitchWarning,
-  validateNew,
-  type FormErrors,
 } from './commands';
 
 /*
  * Agents: which agent runs this team's bots. A connection is a way to reach one agent over HTTP (a Hermes gateway, or the agent bridge
- * that starts the Claude Code or Codex command-line tool). A lead or a workspace admin manages them; everyone else reads the list.
+ * that starts the Claude Code or Codex command-line tool). A workspace admin sets them up under Runners (PLAN P19-02); here a lead or member reads the list
+ * and can run a check. Adding, changing and removing is not offered: the server answers 403 for it.
  */
 
 const message = (e: unknown): string => (isApiError(e) || e instanceof Error ? e.message : 'Something went wrong. Try again.');
@@ -78,7 +75,7 @@ export function HowToConnect({ agent, origin, listen }: { agent: HermesConnectio
       </ol>
       <CopyBlock id="bridge-cmd" text={bridgeCommand(listen)} />
       <ol start={3}>
-        <li>Add a connection here with the bridge&apos;s address and the key you gave it.</li>
+        <li>Give a workspace admin the bridge&apos;s address and the key you gave it. An admin adds it under Runners.</li>
       </ol>
       <p className="fld-hint">
         Each run gets the bot&apos;s BOT.md as an added system prompt and a token that works for that one run, for <span className="mono">{mcpAddress(origin)}</span>.
@@ -89,142 +86,11 @@ export function HowToConnect({ agent, origin, listen }: { agent: HermesConnectio
   );
 }
 
-function AgentPicker({ value, onChange, name }: { value: HermesConnectionAgent; onChange: (a: HermesConnectionAgent) => void; name: string }) {
-  return (
-    <fieldset className="ag-pick" data-testid="agents-pick">
-      <legend className="fld-label">Agent</legend>
-      {AGENT_CHOICES.map((c) => (
-        <label key={c.id} className={`ag-opt ${value === c.id ? 'on' : ''}`} data-agent={c.id}>
-          <input type="radio" name={name} value={c.id} checked={value === c.id} onChange={() => onChange(c.id)} />
-          <span><b>{c.label}</b><span className="d">{c.hint}</span></span>
-        </label>
-      ))}
-    </fieldset>
-  );
-}
-
-const defaultAddress = (a: HermesConnectionAgent): string => (a === 'hermes' ? '' : 'http://localhost:8650');
-
-function AddForm({ slug, origin, onDone }: { slug: string; origin: string; onDone: () => void }) {
-  const [name, setName] = useState('');
-  const [agent, setAgent] = useState<HermesConnectionAgent>('hermes');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    const v = validateNew({ name, agent, baseUrl, apiKey });
-    setErrors(v.ok ? {} : v.errors);
-    if (!v.ok) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await createConnection(slug, v.body);
-      onDone();
-    } catch (err) {
-      setError(message(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="box" onSubmit={(e) => void submit(e)} data-testid="agents-add" aria-labelledby="ag-add-h">
-      <h2 className="box-h" id="ag-add-h">Add a connection</h2>
-      {error ? <Alert>{error}</Alert> : null}
-      <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="our-hermes" autoComplete="off"
-        hint={errors.name ?? 'A bot names this connection in its Placement settings.'} aria-invalid={errors.name ? true : undefined} />
-      <AgentPicker value={agent} onChange={(a) => { setAgent(a); if (baseUrl === '' || baseUrl === defaultAddress(agent)) setBaseUrl(defaultAddress(a)); }} name="ag-new-agent" />
-      <Field label="Address" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://hermes.example.com" autoComplete="off"
-        hint={errors.baseUrl ?? (agent === 'hermes' ? 'Where the Hermes server answers.' : 'Where the bridge answers. It must be reachable from this workspace.')} aria-invalid={errors.baseUrl ? true : undefined} />
-      <Field label="API key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="new-password"
-        hint={errors.apiKey ?? 'Stored without being shown again.'} aria-invalid={errors.apiKey ? true : undefined} />
-      <div className="form-actions">
-        <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Adding…' : 'Add connection'}</button>
-        <button type="button" className="btn" onClick={onDone}>Cancel</button>
-      </div>
-      <h3 className="ag-sub">How to connect</h3>
-      <HowToConnect agent={agent} origin={origin} listen={hostPort(baseUrl)} />
-    </form>
-  );
-}
-
-/** The bridge listens on the very address the connection names (a private one), never on every interface; loopback until one is typed. */
-function hostPort(address: string): string {
-  try {
-    const u = new URL(address);
-    return `${u.hostname}:${u.port || '8650'}`;
-  } catch {
-    return '127.0.0.1:8650';
-  }
-}
-
-function EditForm({ slug, c, onDone }: { slug: string; c: HermesConnection; onDone: () => void }) {
-  const [agent, setAgent] = useState(c.agent);
-  const [baseUrl, setBaseUrl] = useState(c.baseUrl ?? '');
-  const [apiKey, setApiKey] = useState('');
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [warning, setWarning] = useState<string | null>(null);
-
-  const submit = async (e: FormEvent, confirmed = false) => {
-    e.preventDefault();
-    const v = validateEdit(c, { agent, baseUrl, apiKey });
-    setErrors(v.ok ? {} : v.errors);
-    if (!v.ok) return;
-    if (!v.changed) return onDone();
-    const warn = bridgeSwitchWarning(c.agent, agent, baseUrl);
-    if (warn !== null && !confirmed) {
-      setWarning(warn);
-      return;
-    }
-    setWarning(null);
-    setBusy(true);
-    setError(null);
-    try {
-      await updateConnection(slug, c.id, v.body);
-      onDone();
-    } catch (err) {
-      setError(message(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="ag-edit" onSubmit={(e) => void submit(e)} data-testid="agents-edit">
-      {error ? <Alert>{error}</Alert> : null}
-      <AgentPicker value={agent} onChange={setAgent} name={`ag-agent-${c.id}`} />
-      <Field label="Address" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} autoComplete="off" hint={errors.baseUrl} aria-invalid={errors.baseUrl ? true : undefined} />
-      <Field label="New API key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} autoComplete="new-password"
-        placeholder={c.hasApiKey ? 'Leave empty to keep the current key' : ''} hint={errors.apiKey} aria-invalid={errors.apiKey ? true : undefined} />
-      {warning ? (
-        <Alert>
-          <span role="alert" data-testid="agents-switch-confirm">{warning}</span>{' '}
-          <button type="button" className="btn s" onClick={(e) => void submit(e as unknown as FormEvent, true)}>Switch anyway</button>
-          <button type="button" className="btn s" onClick={() => setWarning(null)}>Keep as is</button>
-        </Alert>
-      ) : null}
-      <div className="form-actions">
-        <button type="submit" className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
-        <button type="button" className="btn" onClick={onDone}>Cancel</button>
-      </div>
-    </form>
-  );
-}
-
 function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; c: HermesConnection; bots: BotSummary[]; canManage: boolean; onChanged: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const used = botsOnConnection(bots, c.name);
-  const managed = c.kind === 'managed';
 
   const test = async () => {
     setBusy(true);
@@ -240,25 +106,11 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
       setBusy(false);
     }
   };
-  const remove = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await deleteConnection(slug, c.id);
-      onChanged();
-    } catch (e) {
-      setError(message(e));
-      setConfirming(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="ag-row" data-testid="agents-row" data-connection={c.name} data-status={c.status}>
       <div className="ag-main">
         <div className="ag-name"><span className="mono">{c.name}</span> <span className="kind ag">{agentLabel(c.agent)}</span> <span className="ag-kind">{kindLabel(c.kind)}</span></div>
-        <div className="ag-addr mono" data-vt-mask>{c.baseUrl ?? 'Inside this cluster'}</div>
+        <div className="ag-addr mono" data-vt-mask>{c.baseUrl ?? (c.kind === 'managed' ? 'Inside this cluster' : 'Set by an admin')}</div>
         <div className="ag-state">
           <span className={`ag-st ${c.status}`}>{statusLine(c)}</span>
           {c.lastCheckedAt ? <span className="d"> · last checked <Time iso={c.lastCheckedAt} /></span> : null}
@@ -273,20 +125,10 @@ function ConnectionRow({ slug, c, bots, canManage, onChanged }: { slug: string; 
         </div>
         {result ? <div className={`ag-result ${result.ok ? 'ok' : 'bad'}`} role="status" data-vt-mask>{result.text}</div> : null}
         {error ? <Alert>{error}</Alert> : null}
-        {editing ? <EditForm slug={slug} c={c} onDone={() => { setEditing(false); onChanged(); }} /> : null}
       </div>
       {canManage ? (
         <div className="ag-act">
           <button type="button" className="btn s" onClick={() => void test()} disabled={busy}>Test</button>
-          {!managed ? <button type="button" className="btn s" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>Edit</button> : null}
-          {!managed && !confirming ? <button type="button" className="btn s danger" onClick={() => setConfirming(true)}>Remove</button> : null}
-          {confirming ? (
-            <span className="ag-confirm" role="group" aria-label={`Remove ${c.name}`}>
-              {used.length > 0 ? `${used.length} ${used.length === 1 ? 'bot uses' : 'bots use'} it. ` : ''}Remove?
-              <button type="button" className="btn s danger" onClick={() => void remove()} disabled={busy}>Yes, remove</button>
-              <button type="button" className="btn s" onClick={() => setConfirming(false)}>Keep</button>
-            </span>
-          ) : null}
         </div>
       ) : null}
     </div>
@@ -298,7 +140,6 @@ export function AgentsScreen() {
   useHeaderTopic('Agents');
   const conns = useQuery(`agents:${slug}`, () => fetchConnections(slug));
   const bots = useQuery(`agents-bots:${slug}`, () => fetchBots(slug));
-  const [adding, setAdding] = useState(false);
   const [how, setHow] = useState<HermesConnectionAgent>('hermes');
   const origin = typeof window === 'undefined' ? '' : window.location.origin;
   const reload = () => conns.reload();
@@ -310,21 +151,19 @@ export function AgentsScreen() {
           <h2 className="ag-title">Agents</h2>
           <p className="ag-lede">
             The agent that runs this team&apos;s bots. Connect a Hermes server, or the Claude Code or Codex command-line tool on your own machine.
-            A bot picks one of these connections in its Placement settings.
+            A bot picks one of these connections in its Placement settings. A workspace admin sets them up under Runners.
           </p>
         </div>
         <div className="ag-head-links">
           <Link className="btn s" to={`/t/${slug}/projects`} data-testid="agents-projects-link">Projects</Link>
-          {canEdit && !adding ? <button type="button" className="btn primary" onClick={() => setAdding(true)} data-testid="agents-add-open">Add connection</button> : null}
         </div>
       </div>
-      {!canEdit ? <Notice tone="warn">Only a team lead or a workspace admin can change these. You can see what is set.</Notice> : null}
-      {adding ? <AddForm slug={slug} origin={origin} onDone={() => { setAdding(false); reload(); }} /> : null}
+      <Notice tone="warn">An admin sets this up. Ask a workspace admin to add or change a connection under Runners. You can see what is set and run a check.</Notice>
       <QueryView q={conns}>
         {({ items }) => (
           <section className="box ag-list" aria-labelledby="ag-list-h" data-landmark="agents-list">
             <h2 className="box-h" id="ag-list-h">Connections</h2>
-            {items.length === 0 ? <p className="d" data-testid="agents-empty">No connections yet. Add one to run bots on your own agent.</p> : null}
+            {items.length === 0 ? <p className="d" data-testid="agents-empty">No connections yet. An admin sets this up under Runners.</p> : null}
             {items.map((c) => (
               <ConnectionRow key={c.id} slug={slug} c={c} bots={bots.status === 'ok' ? bots.data.bots : []} canManage={canEdit} onChanged={reload} />
             ))}

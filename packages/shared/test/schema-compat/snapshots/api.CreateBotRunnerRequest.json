@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "hermes_gateway",
+        "hermes_pod",
+        "claude_cli",
+        "codex_cli",
+        "llm_gateway"
+      ]
+    },
+    "baseUrl": {
+      "type": "string",
+      "maxLength": 500,
+      "format": "uri"
+    },
+    "apiKey": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 500
+    },
+    "profileRule": {
+      "type": "string",
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9._{}-]+$"
+    },
+    "node": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253
+    },
+    "modelAlias": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "teams": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "teams": {
+              "maxItems": 500,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            }
+          },
+          "required": [
+            "teams"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "label",
+    "kind"
+  ],
+  "additionalProperties": false
+}

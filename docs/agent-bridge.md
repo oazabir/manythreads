@@ -63,7 +63,7 @@ Security).
 
 ## Add it in manythreads
 
-1. In the team's Hermes connections, add a connection: **agent** `claude-code` or `codex`, **base URL** the address of the bridge (for example
+1. A workspace admin adds it, not a team lead (the runner catalog, `docs/plugins/bot-runners.md`; Claude Code and Codex runners are not available there yet, so a connection made before keeps working and new ones wait for those tasks): **agent** `claude-code` or `codex`, **base URL** the address of the bridge (for example
    `https://bridge.example.com:8650`, or whatever reaches it), and its **API key**.
 2. In the bot's `BOT.md`, set `placement.gateway.connection` to the connection's name. `placement.gateway.profile` is optional and picks a
    profile of the config file.

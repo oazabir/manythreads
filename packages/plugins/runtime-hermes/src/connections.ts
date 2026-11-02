@@ -7,11 +7,12 @@ import {
   requireManage,
   requireTeam,
   route,
+  type BotRunnersProvider,
   type PluginContext,
   type PluginTx,
 } from '@manythreads/sdk';
+import { checkHermesGateway } from '@manythreads/sdk/hermes-outbound';
 import {
-  CreateHermesConnectionRequest,
   CreateHermesConnectionResponse,
   DeleteHermesConnectionResponse,
   HermesConnection,
@@ -21,7 +22,6 @@ import {
   reenableHermesProfileRoute,
   TestHermesConnectionRequest,
   TestHermesConnectionResponse,
-  UpdateHermesConnectionRequest,
   UpdateHermesConnectionResponse,
   createHermesConnectionRoute,
   deleteHermesConnectionRoute,
@@ -29,14 +29,14 @@ import {
   testHermesConnectionRoute,
   updateHermesConnectionRoute,
 } from '@manythreads/shared';
-import type { GatewayTarget } from './gateway.ts';
-import { assertAllowedUrl, guardedFetch, OutboundBlockedError } from './outbound.ts';
+import { GatewayRefused, type GatewayTarget } from './gateway.ts';
 import { ensureProfileSecrets, readProfileApiKey, reenableProfileSecrets } from './profile-secrets.ts';
 
-// Hermes connections: the gateways a team's bots are placed on (`placement.gateway.connection`). A lead or workspace admin of the team adds an
-// `external` one (a Hermes the customer runs), changes its address or key, removes it and tests it. The team's own pod is the reserved connection
-// `managed`, registered by the platform through the `hermes.profiles` provider (`profiles.ts`). The API key is encrypted in `app.secrets` and
-// is write-only here: nothing in this file returns it.
+// Hermes connections: the gateways a team's bots were placed on (`placement.gateway.connection`). Since Phase 19 a workspace admin makes the places bots run
+// as RUNNERS (`bot-runners`); a team lead can no longer make, change or remove a connection (those routes answer 403 with the reason), and the address of a
+// connection is shown to a workspace admin only. What stays: the lead lists the team's connections and tests one with its three fixed sentences, the
+// platform writes the reserved connection `managed` for the team's own pod (`profiles.ts`), and a connection an admin ADOPTED into a runner keeps its row
+// (so a BOT.md naming it still finds it) but is resolved through the runner of that name. The API key is encrypted in `app.secrets` and is never returned.
 
 /** A row as the SQL columns come back; PostgreSQL returns timestamptz as Date. */
 export interface ConnectionRow extends Record<string, unknown> {
@@ -51,6 +51,7 @@ export interface ConnectionRow extends Record<string, unknown> {
   status: string;
   last_checked_at: Date | null;
   last_error: string | null;
+  runner_name: string | null;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -59,7 +60,7 @@ export interface ConnectionRow extends Record<string, unknown> {
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
 
 /** The one mapper of `app.hermes_connections`: a row to the shared type. The key is never read here, only whether there is one. */
-export function toHermesConnection(r: ConnectionRow): HermesConnection {
+export function toHermesConnection(r: ConnectionRow, options: { showAddress?: boolean } = {}): HermesConnection {
   return HermesConnection.parse({
     id: r.id,
     workspaceId: r.workspace_id,
@@ -67,7 +68,7 @@ export function toHermesConnection(r: ConnectionRow): HermesConnection {
     name: r.name,
     kind: r.kind,
     agent: r.agent,
-    baseUrl: r.base_url,
+    baseUrl: options.showAddress === false ? null : r.base_url,
     hasApiKey: r.secret_id !== null,
     status: r.status,
     lastCheckedAt: iso(r.last_checked_at),
@@ -79,86 +80,80 @@ export function toHermesConnection(r: ConnectionRow): HermesConnection {
 }
 
 export const CONNECTION_COLUMNS =
-  'id, workspace_id, team_id, name, kind, agent, base_url, secret_id, status, last_checked_at, last_error, created_by, created_at, updated_at';
+  'id, workspace_id, team_id, name, kind, agent, base_url, secret_id, status, last_checked_at, last_error, runner_name, created_by, created_at, updated_at';
+
+type BotRef = { id: string; workspace_id: string; team_id: string };
 
 /**
- * The address and key a run of `botId` should use for the team's connection `name`. An external connection has one key for the whole gateway;
- * the managed pod has one key per profile (the bot's `API_SERVER_KEY`). Runs as the system actor: this is the only reader of a key.
+ * Where a run goes, from what the runner catalog resolved (`bot-runners`, the `bot.runners` provider). A Hermes gateway has one key for the whole gateway;
+ * the team's own pod has one key per profile (the bot's `API_SERVER_KEY`), made here on first use. Runs as the system actor.
+ */
+async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string, bot: BotRef | null, options: { unlistedIsAbsent?: boolean } = {}): Promise<GatewayTarget | null> {
+  const provider = ctx.providers.get<BotRunnersProvider>('bot.runners');
+  if (!provider) throw new GatewayRefused('Runners are not available on this server, so the bot cannot be placed on one.');
+  const answer = await provider.resolveRunner({ teamId, runner });
+  if (!answer.ok) {
+    // A name that is no connection of the team may still be a runner: a runner the team may not use is then the same as a name that is nothing at all.
+    if (options.unlistedIsAbsent && (answer.reason === 'unknown' || answer.reason === 'not_available_to_team')) return null;
+    throw new GatewayRefused(answer.message);
+  }
+  const { target } = answer;
+  if (target.address === null) return null;
+  if (target.kind === 'hermes_gateway') {
+    if (target.key === null) return null;
+    return { baseUrl: target.address, apiKey: target.key, guarded: target.guard, kind: 'external', agent: target.agent };
+  }
+  if (target.kind === 'hermes_pod') {
+    if (!bot) return null;
+    const secrets = await ensureProfileSecrets(ctx, bot);
+    return 'revoked' in secrets ? null : { baseUrl: target.address, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
+  }
+  return null;
+}
+
+const botOf = (ctx: PluginContext, teamId: string, botId: string): Promise<BotRef | null> =>
+  ctx.db.system(async (tx) => (await tx.query<BotRef>('SELECT id, workspace_id, team_id FROM app.bots WHERE id = $1::uuid AND team_id = $2::uuid', [botId, teamId])).rows[0] ?? null);
+
+/**
+ * The address and key a run of `botId` should use for the team's connection `name`, or for the runner of that name when the team has no such connection. A connection an admin adopted into a runner is resolved through that
+ * runner, so its on/off switch, its team list and its current key rule; one nobody adopted is read as it always was. Runs as the system actor: this is the
+ * only reader of a key.
  */
 export async function resolveTarget(
   ctx: PluginContext,
   query: { teamId: string; botId: string; botSlug: string; connection: string },
 ): Promise<GatewayTarget | null> {
-  return ctx.db.system(async (tx) => {
-    const row = (
-      await tx.query<ConnectionRow>(`SELECT ${CONNECTION_COLUMNS} FROM app.hermes_connections WHERE team_id = $1::uuid AND name = $2`, [query.teamId, query.connection])
-    ).rows[0];
-    if (!row || row.base_url === null) return null;
-    if (row.kind === 'managed') {
-      // The first run of a managed bot can come before any controller asked for its profile: the key is created here, and stable afterwards.
-      const bot = (await tx.query<{ id: string; workspace_id: string; team_id: string }>('SELECT id, workspace_id, team_id FROM app.bots WHERE id = $1::uuid AND team_id = $2::uuid', [query.botId, query.teamId])).rows[0];
-      if (!bot) return null;
-      const secrets = await ensureProfileSecrets(ctx, bot);
-      return 'revoked' in secrets ? null : { baseUrl: row.base_url, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
-    }
-    if (row.secret_id === null) return null;
-    return { baseUrl: row.base_url, apiKey: await ctx.secrets.get(tx, row.secret_id), guarded: true, kind: 'external', agent: row.agent as HermesConnectionAgent };
-  });
+  const row = await ctx.db.system(async (tx) => (await tx.query<ConnectionRow>(`SELECT ${CONNECTION_COLUMNS} FROM app.hermes_connections WHERE team_id = $1::uuid AND name = $2`, [query.teamId, query.connection])).rows[0]);
+  const bot = await botOf(ctx, query.teamId, query.botId);
+  // No connection of that name: the name may be a runner an admin made available to this team (`gateway: host`), resolved with the same refusals as a `runs_on` placement.
+  if (!row) return targetOfRunner(ctx, query.teamId, query.connection, bot, { unlistedIsAbsent: true });
+  if (row.runner_name !== null) return targetOfRunner(ctx, query.teamId, row.runner_name, bot);
+  if (row.base_url === null) return null;
+  if (row.kind === 'managed') {
+    // The first run of a managed bot can come before any controller asked for its profile: the key is created here, and stable afterwards.
+    if (!bot) return null;
+    const secrets = await ensureProfileSecrets(ctx, bot);
+    return 'revoked' in secrets ? null : { baseUrl: row.base_url, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
+  }
+  if (row.secret_id === null) return null;
+  const secretId = row.secret_id;
+  const baseUrl = row.base_url;
+  const agent = row.agent as HermesConnectionAgent;
+  return ctx.db.system(async (tx) => ({ baseUrl, apiKey: await ctx.secrets.get(tx, secretId), guarded: true, kind: 'external' as const, agent }));
 }
 
-/**
- * Delete a secret once the request's transaction has committed. The row that referenced it is changed in that very transaction, so a delete from
- * another connection would wait for the row's lock, and the request waits for the delete: it must not be awaited inside the handler.
- */
-function dropSecretAfterCommit(ctx: PluginContext, workspaceId: string, secretId: string, attempt = 0): void {
-  const timer = setTimeout(() => {
-    ctx.db.system((sys) => ctx.secrets.delete(sys, secretId), { workspaceId }).catch(() => {
-      if (attempt < 4) dropSecretAfterCommit(ctx, workspaceId, secretId, attempt + 1);
-    });
-  }, 300 * (attempt + 1));
-  timer.unref?.();
+/** The target of a bot placed straight on a runner (`placement.runs_on`, P19-03): the same answer as a connection that was adopted into it. */
+export async function resolveRunnerTarget(ctx: PluginContext, query: { teamId: string; botId: string; runner: string }): Promise<GatewayTarget | null> {
+  return targetOfRunner(ctx, query.teamId, query.runner, await botOf(ctx, query.teamId, query.botId));
 }
 
-const CONNECT_TIMEOUT_MS = 10_000;
-
-/**
- * Check a gateway. The answer is one of three fixed sentences — it answered, it did not (or not as a Hermes gateway for that profile), or it
- * refused the key — and never anything the remote side said: a lead must not be able to read the body of whatever sits at an address they typed.
- * The gateway's API lists no MCP tools, so `tools` and `manythreadsTools` stay null.
- */
+/** Check a gateway: the SDK's check (three fixed sentences, never anything the remote side said), kept here under its old name for the connection test. */
 export async function checkGateway(
   target: GatewayTarget,
   profile: string | undefined,
   options: { fetch?: typeof fetch },
 ): Promise<Pick<TestHermesConnectionResponse, 'ok' | 'error' | 'tools' | 'manythreadsTools'>> {
-  const doFetch = options.fetch ?? (target.guarded === true ? guardedFetch : fetch);
-  const root = target.baseUrl.replace(/\/+$/, '');
-  const prefix = profile === undefined ? '' : `/p/${encodeURIComponent(profile)}`;
-  const none = { tools: null, manythreadsTools: null } as const;
-  let res: Response;
-  try {
-    res = await doFetch(`${root}${prefix}/v1/models`, {
-      headers: { authorization: `Bearer ${target.apiKey}` },
-      redirect: 'error',
-      signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS),
-    });
-  } catch {
-    return { ok: false, error: 'The gateway did not answer. Check the address and that the gateway\'s API server is running.', ...none };
-  }
-  await res.body?.cancel().catch(() => undefined);
-  if (res.status === 401 || res.status === 403) return { ok: false, error: "The gateway refused the API key. Use the key in the profile's .env (API_SERVER_KEY).", ...none };
-  if (!res.ok) return { ok: false, error: 'The gateway did not answer as a Hermes gateway for that profile.', ...none };
-  return { ok: true, error: null, ...none };
-}
-
-/** Refuse, when a lead saves an address, one the guard would refuse at use (the guard still runs at every request). */
-async function requireAllowedAddress(baseUrl: string): Promise<void> {
-  try {
-    await assertAllowedUrl(new URL(baseUrl));
-  } catch (err) {
-    if (err instanceof OutboundBlockedError) throw invalid('That address cannot be used: it is not allowed from this server.');
-    throw invalid('That address could not be resolved.');
-  }
+  return checkHermesGateway({ baseUrl: target.baseUrl, apiKey: target.apiKey, guarded: target.guarded === true }, profile, options);
 }
 
 async function requireConnection(tx: PluginTx, teamId: string, connectionId: string): Promise<ConnectionRow> {
@@ -171,6 +166,9 @@ export interface ConnectionRouteOptions {
   fetch?: typeof fetch;
 }
 
+/** What a lead is told when they try to make, change or remove a connection: the plain reason and who to ask. */
+export const CONNECTIONS_ADMIN_ONLY = 'Runners are set up by a workspace admin now. Ask an admin to add or change this under Runners.';
+
 export function registerConnectionRoutes(ctx: PluginContext, options: ConnectionRouteOptions = {}, notify: (teamId: string) => void = () => undefined): void {
   const at = (): string => ctx.runtime.now().toISOString();
 
@@ -182,39 +180,22 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
       const { slug } = req.params as { slug: string };
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
+      // Only a workspace admin reads an address: a lead sees that a connection exists, is OK or not, and nothing about where it points.
+      const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
+      const showAddress = role === 'owner' || role === 'admin';
       const rows = await tx.query<ConnectionRow>(`SELECT ${CONNECTION_COLUMNS} FROM app.hermes_connections WHERE team_id = $1::uuid ORDER BY name`, [team.id]);
-      return json(ListHermesConnectionsResponse.parse({ items: rows.rows.map(toHermesConnection) }));
+      return json(ListHermesConnectionsResponse.parse({ items: rows.rows.map((r) => toHermesConnection(r, { showAddress })) }));
     }),
   });
 
+  // Make, change and remove: a workspace admin does these as a runner now. The routes stay so an old client gets the reason, not a missing page; the body is not read.
   ctx.http.route({
     method: createHermesConnectionRoute.method,
     path: createHermesConnectionRoute.path,
     rateLimit: { limit: 20, windowMs: 60_000 },
-    schema: { body: CreateHermesConnectionRequest, response: CreateHermesConnectionResponse },
-    handler: route(async (req, tx) => {
-      const { slug } = req.params as { slug: string };
-      const body = CreateHermesConnectionRequest.parse(req.body);
-      const team = await requireTeam(tx, slug);
-      await requireManage(tx, team);
-      await requireAllowedAddress(body.baseUrl);
-      // The key is encrypted by the system actor (only an admin's or the system's transaction may write a secret), in its own transaction; if the
-      // row then fails to insert, the secret is removed again so no orphan is left.
-      const secretId = await ctx.db.system((sys) => ctx.secrets.put(sys, body.apiKey), { workspaceId: team.workspace_id });
-      try {
-        const inserted = await tx.query<ConnectionRow>(
-          `INSERT INTO app.hermes_connections (workspace_id, team_id, name, kind, agent, base_url, secret_id, created_by)
-           VALUES ($1::uuid, $2::uuid, $3, 'external', $7, $4, $5::uuid, $6::uuid) RETURNING ${CONNECTION_COLUMNS}`,
-          [team.workspace_id, team.id, body.name, body.baseUrl, secretId, tx.actor.id, body.agent ?? 'hermes'],
-        );
-        const row = inserted.rows[0];
-        if (!row) throw new Error('the connection insert answered no row');
-        await ctx.audit.emit(tx, { type: 'hermes.connection.created', workspaceId: team.workspace_id, teamId: team.id, connectionId: row.id, name: row.name, kind: 'external', agent: body.agent ?? 'hermes', actorId: tx.actor.id, at: at() });
-        return json(CreateHermesConnectionResponse.parse({ connection: toHermesConnection(row) }), 201);
-      } catch (err) {
-        dropSecretAfterCommit(ctx, team.workspace_id, secretId);
-        throw err;
-      }
+    schema: { response: CreateHermesConnectionResponse },
+    handler: route(async () => {
+      throw forbidden(CONNECTIONS_ADMIN_ONLY);
     }),
   });
 
@@ -222,47 +203,9 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
     method: updateHermesConnectionRoute.method,
     path: updateHermesConnectionRoute.path,
     rateLimit: { limit: 30, windowMs: 60_000 },
-    schema: { body: UpdateHermesConnectionRequest, response: UpdateHermesConnectionResponse },
-    handler: route(async (req, tx) => {
-      const { slug, connectionId } = req.params as { slug: string; connectionId: string };
-      const body = UpdateHermesConnectionRequest.parse(req.body);
-      const team = await requireTeam(tx, slug);
-      await requireManage(tx, team);
-      const current = await requireConnection(tx, team.id, connectionId);
-      if (current.kind !== 'external') throw conflict("The team's own Hermes pod is managed by the platform; it cannot be edited here.");
-      if (body.baseUrl === undefined && body.apiKey === undefined && body.agent === undefined) throw invalid('Nothing to change');
-      if (body.baseUrl !== undefined) await requireAllowedAddress(body.baseUrl);
-      let newSecret: string | null = null;
-      if (body.apiKey !== undefined) newSecret = await ctx.db.system((sys) => ctx.secrets.put(sys, body.apiKey as string), { workspaceId: team.workspace_id });
-      try {
-        // A changed address or key invalidates the last check: the status goes back to "unknown" until the next test.
-        const updated = await tx.query<ConnectionRow>(
-          `UPDATE app.hermes_connections SET
-             base_url = coalesce($3, base_url), secret_id = coalesce($4::uuid, secret_id), agent = coalesce($5, agent),
-             status = 'unknown', last_error = NULL, last_checked_at = NULL, updated_at = now()
-           WHERE id = $1::uuid AND team_id = $2::uuid RETURNING ${CONNECTION_COLUMNS}`,
-          [connectionId, team.id, body.baseUrl ?? null, newSecret, body.agent ?? null],
-        );
-        const row = updated.rows[0];
-        if (!row) throw forbidden('You do not have permission to do that');
-        await ctx.audit.emit(tx, {
-          type: 'hermes.connection.updated',
-          workspaceId: team.workspace_id,
-          teamId: team.id,
-          connectionId,
-          name: row.name,
-          baseUrlChanged: body.baseUrl !== undefined && body.baseUrl !== current.base_url,
-          keyChanged: body.apiKey !== undefined,
-          agent: row.agent as HermesConnectionAgent,
-          actorId: tx.actor.id,
-          at: at(),
-        });
-        if (newSecret !== null && current.secret_id !== null) dropSecretAfterCommit(ctx, team.workspace_id, current.secret_id as string);
-        return json(UpdateHermesConnectionResponse.parse({ connection: toHermesConnection(row) }));
-      } catch (err) {
-        if (newSecret !== null) dropSecretAfterCommit(ctx, team.workspace_id, newSecret as string);
-        throw err;
-      }
+    schema: { response: UpdateHermesConnectionResponse },
+    handler: route(async () => {
+      throw forbidden(CONNECTIONS_ADMIN_ONLY);
     }),
   });
 
@@ -271,17 +214,8 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
     path: deleteHermesConnectionRoute.path,
     rateLimit: { limit: 30, windowMs: 60_000 },
     schema: { response: DeleteHermesConnectionResponse },
-    handler: route(async (req, tx) => {
-      const { slug, connectionId } = req.params as { slug: string; connectionId: string };
-      const team = await requireTeam(tx, slug);
-      await requireManage(tx, team);
-      const current = await requireConnection(tx, team.id, connectionId);
-      if (current.kind !== 'external') throw conflict("The team's own Hermes pod is managed by the platform; it cannot be removed here.");
-      const gone = await tx.query('DELETE FROM app.hermes_connections WHERE id = $1::uuid AND team_id = $2::uuid RETURNING id', [connectionId, team.id]);
-      if (gone.rows.length !== 1) throw forbidden('You do not have permission to do that');
-      await ctx.audit.emit(tx, { type: 'hermes.connection.deleted', workspaceId: team.workspace_id, teamId: team.id, connectionId, name: current.name, actorId: tx.actor.id, at: at() });
-      if (current.secret_id !== null) dropSecretAfterCommit(ctx, team.workspace_id, current.secret_id as string);
-      return json(DeleteHermesConnectionResponse.parse({ deleted: true }));
+    handler: route(async () => {
+      throw forbidden(CONNECTIONS_ADMIN_ONLY);
     }),
   });
 
@@ -326,27 +260,42 @@ export function registerConnectionRoutes(ctx: PluginContext, options: Connection
         // The pod's profiles each have their own key; without one named there is nothing to authenticate with.
         throw invalid('Name a profile (mt-<bot slug>) to test the managed pod.');
       }
-      const key =
-        current.kind === 'managed'
-          ? await ctx.db.system(async (sys) => {
-              const botSlug = (body.profile as string).replace(/^mt-/, '');
-              const bot = (await sys.query<{ id: string }>('SELECT id FROM app.bots WHERE team_id = $1::uuid AND slug = $2', [team.id, botSlug])).rows[0];
-              return bot ? readProfileApiKey(ctx, sys, bot.id) : null;
-            })
-          : current.secret_id === null
-            ? null
-            : await ctx.db.system((sys) => ctx.secrets.get(sys, current.secret_id as string));
-      if (key === null) outcome = { ok: false, error: 'This connection has no API key yet.', tools: null, manythreadsTools: null };
-      else {
-        outcome = await checkGateway({ baseUrl: current.base_url, apiKey: key, guarded: current.kind === 'external', kind: current.kind === 'managed' ? 'managed' : 'external', agent: current.agent as HermesConnectionAgent }, body.profile, options.fetch ? { fetch: options.fetch } : {});
+      const check = (target: GatewayTarget) => checkGateway(target, body.profile, options.fetch ? { fetch: options.fetch } : {});
+      if (current.runner_name !== null && current.kind === 'external') {
+        // An adopted connection is asked where its runner points now, with the runner's key; if the runner will not serve the team, it says so in its own words.
+        let target: GatewayTarget | null = null;
+        let refused: string | null = null;
+        try {
+          target = await targetOfRunner(ctx, team.id, current.runner_name, null);
+        } catch (err) {
+          if (!(err instanceof GatewayRefused)) throw err;
+          refused = err.message;
+        }
+        outcome = target === null ? { ok: false, error: refused ?? 'This connection has no API key yet.', tools: null, manythreadsTools: null } : await check(target);
+      } else {
+        const key =
+          current.kind === 'managed'
+            ? await ctx.db.system(async (sys) => {
+                const botSlug = (body.profile as string).replace(/^mt-/, '');
+                const bot = (await sys.query<{ id: string }>('SELECT id FROM app.bots WHERE team_id = $1::uuid AND slug = $2', [team.id, botSlug])).rows[0];
+                return bot ? readProfileApiKey(ctx, sys, bot.id) : null;
+              })
+            : current.secret_id === null
+              ? null
+              : await ctx.db.system((sys) => ctx.secrets.get(sys, current.secret_id as string));
+        outcome =
+          key === null
+            ? { ok: false, error: 'This connection has no API key yet.', tools: null, manythreadsTools: null }
+            : await check({ baseUrl: current.base_url, apiKey: key, guarded: current.kind === 'external', kind: current.kind === 'managed' ? 'managed' : 'external', agent: current.agent as HermesConnectionAgent });
       }
-      await tx.query(
-        `UPDATE app.hermes_connections SET status = $3, last_checked_at = now(), last_error = $4, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid`,
-        [connectionId, team.id, outcome.ok ? 'ok' : 'error', outcome.error],
+      // A lead cannot write the row any more: the platform records the answer.
+      await ctx.db.system(
+        (sys) =>
+          sys.query(`UPDATE app.hermes_connections SET status = $3, last_checked_at = now(), last_error = $4, updated_at = now() WHERE id = $1::uuid AND team_id = $2::uuid`, [connectionId, team.id, outcome.ok ? 'ok' : 'error', outcome.error]),
+        { workspaceId: team.workspace_id },
       );
       await ctx.audit.emit(tx, { type: 'hermes.connection.tested', workspaceId: team.workspace_id, teamId: team.id, connectionId, name: current.name, ok: outcome.ok, actorId: tx.actor.id, at: checkedAt });
       return json(TestHermesConnectionResponse.parse({ ...outcome, checkedAt }));
     }),
   });
 }
-
