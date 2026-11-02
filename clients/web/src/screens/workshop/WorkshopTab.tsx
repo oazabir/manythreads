@@ -11,6 +11,7 @@ import { endWorkshop, fetchWorkshop, listWorkshop, sayInWorkshop, startWorkshop 
 import { announcement, asRule, messagesLeft, modeInfo, modeOf, usageLine } from './model';
 import { Compose, EarlierList, ModeTabs, Transcript, ViewTabs, viewPanelProps } from './parts';
 import { ReassessmentNotices, ReplayPanel } from './Replay';
+import { TerminalView } from './terminal/TerminalView';
 
 /*
  * The Workshop tab of a bot (PLAN P7-05, P7-06; mockup sections `workshop` and `setup`), at `/t/:team/bots/:botSlug/chat?view=workshop`.
@@ -19,6 +20,8 @@ import { ReassessmentNotices, ReplayPanel } from './Replay';
  *   Live      ask about what the bot really did, from the runs you may see.
  * A conversation is the person's own and the answer is written in the background, so the tab sends a message and then reads the conversation again until it is ready. The address keeps
  * the mode (`mode=`) and the conversation (`ws=`), so reloading comes back to the same place.
+ * A workspace admin also sees "Open a terminal" (PLAN P7-09): `terminal=1` swaps the conversations for the Terminal view of a throwaway test sandbox. Anyone else who opens that address is told
+ * it is for admins; the server refuses them as well.
  */
 
 const errorText = (err: unknown): string => (err instanceof Error && err.message ? err.message : 'That did not work. Try again.');
@@ -91,8 +94,12 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
   const [params, setParams] = useSearchParams();
   const { team } = useShell();
   const session0 = useSession();
+  const admin = isAdmin(session0);
+  const terminal = params.get('terminal') === '1';
   const canRehearse = team === null || team === undefined || isAdmin(session0) || team.myRole === 'lead';
-  const mode = modeOf(params.get('mode'));
+  const asked = modeOf(params.get('mode'));
+  // a person who may not rehearse lands on Build when the address asks for Rehearse: the tab stays greyed, and none of Rehearse's own words show
+  const mode = asked === 'rehearse' && !canRehearse ? 'build' : asked;
   const id = params.get('ws');
   const [listTick, setListTick] = useState(0);
   const list = useQuery(`workshop-list:${slug}:${botSlug}:${String(listTick)}`, () => listWorkshop(slug, botSlug));
@@ -110,6 +117,7 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
     (next: { mode?: WorkshopMode; ws?: string | null }): void => {
       const q = new URLSearchParams(params);
       q.set('view', 'workshop');
+      q.delete('terminal');
       if (next.mode !== undefined) q.set('mode', next.mode);
       if (next.ws !== undefined) {
         if (next.ws === null) q.delete('ws');
@@ -202,13 +210,25 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
         <p className="ws-back"><Link to={`/t/${slug}/bots`}>← All bots</Link></p>
         <h2 className="ws-title">{botName} <span className="ws-sub">· Workshop</span></h2>
         <ViewTabs view="workshop" onChange={onView} />
+        {admin && !terminal ? (
+          <button type="button" className="btn s" data-testid="ws-terminal-open" onClick={() => { const q = new URLSearchParams(params); q.set('view', 'workshop'); q.set('terminal', '1'); setParams(q, { replace: false }); }}>
+            Open a terminal
+          </button>
+        ) : null}
       </div>
 
       <p className="ws-sr" role="status" aria-live="polite" data-testid="ws-announce">{said}</p>
 
-      <ModeTabs mode={mode} panelId={panelId} rehearseReason={canRehearse ? undefined : REHEARSE_LEADS_ONLY} onChange={(m) => { setError(null); go({ mode: m, ws: null }); }} />
+      {terminal && !admin ? (
+        <p className="ws-hint" role="status" data-testid="ws-terminal-denied">The terminal is for workspace admins only.</p>
+      ) : null}
+      {terminal && admin ? (
+        <TerminalView slug={slug} botSlug={botSlug} botName={botName} onBack={() => go({})} />
+      ) : null}
 
-      <div className="ws-body" id={panelId} role="tabpanel" aria-label={`${info.label} conversations`}>
+      {terminal ? null : <ModeTabs mode={mode} panelId={panelId} rehearseReason={canRehearse ? undefined : REHEARSE_LEADS_ONLY} onChange={(m) => { setError(null); go({ mode: m, ws: null }); }} />}
+
+      {terminal ? null : <div className="ws-body" id={panelId} role="tabpanel" aria-label={`${info.label} conversations`}>
         <p className="ws-lead" data-testid="ws-lead">{info.lead}</p>
         <p className="ws-hint">{info.hint}</p>
 
@@ -298,7 +318,7 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
             )}
           </section>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

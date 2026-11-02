@@ -1,4 +1,4 @@
-import type { AuditOutcome, KnownAuditAction } from '@manythreads/shared';
+import { TERMINAL_END_WORDS, type AuditOutcome, type KnownAuditAction } from '@manythreads/shared';
 
 // What each event type becomes in the audit console (PLAN P10-05). Every mapping below reads only the fields it names and builds its words from
 // fixed phrases, ids, numbers and enum values. It never copies a field that can hold something a person wrote or a secret: a message, a file's name or
@@ -259,6 +259,20 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('proposal', uuid(e['proposalId']), pathLabel(e['path'])),
     outcome: e['reason'] === 'withdrawn' ? 'ok' : 'denied',
     reason: e['reason'] === 'withdrawn' ? 'Withdrawn by its author' : 'Turned down by a reviewer',
+  }),
+  'workshop.terminal.opened': (e) => ({
+    action: 'terminal.opened',
+    who: actor(e['adminId']),
+    teamId: team(e['teamId']),
+    target: of('bot', uuid(e['botId']), null, 'bot'),
+    reason: `A test terminal; ${plural(num(e['credentialsRevoked']), 'credential')} revoked as it opened`,
+  }),
+  'workshop.terminal.closed': (e) => ({
+    action: 'terminal.closed',
+    who: actor(e['adminId']),
+    teamId: team(e['teamId']),
+    target: of('bot', uuid(e['botId']), null, 'bot'),
+    reason: typeof e['reason'] === 'string' && Object.hasOwn(TERMINAL_END_WORDS, e['reason']) ? (TERMINAL_END_WORDS as Record<string, string>)[e['reason']]! : null,
   }),
   'files.file.uploaded': (e) => {
     const mime = typeof e['mime'] === 'string' && /^[a-z0-9][\w.+-]{0,60}\/[\w.+-]{1,80}$/i.test(e['mime']) ? e['mime'] : null;

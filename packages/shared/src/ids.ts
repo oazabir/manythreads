@@ -180,3 +180,6 @@ export type WorkshopSessionId = z.infer<typeof WorkshopSessionId>;
 /** One "check this again" notice on a bot: something it depends on changed, or its eval score dropped (`bot_reassessments`, PLAN P7-07). */
 export const BotReassessmentId = z.uuid().brand<'BotReassessmentId'>();
 export type BotReassessmentId = z.infer<typeof BotReassessmentId>;
+/** One recorded terminal into a bot's sandbox (`terminal_sessions`, PLAN P7-09). */
+export const TerminalSessionId = z.uuid().brand<'TerminalSessionId'>();
+export type TerminalSessionId = z.infer<typeof TerminalSessionId>;

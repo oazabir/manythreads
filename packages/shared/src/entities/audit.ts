@@ -97,6 +97,8 @@ export const AUDIT_ACTIONS = {
   'approval.requested': { category: 'approvals', label: 'Asked for approval' },
   'approval.decided': { category: 'approvals', label: 'Decided an approval' },
   'approval.resumed': { category: 'approvals', label: 'Ran an approved action' },
+  'terminal.opened': { category: 'bots', label: 'Opened a test terminal for a bot' },
+  'terminal.closed': { category: 'bots', label: 'Closed a test terminal for a bot' },
   'bot.loaded': { category: 'bots', label: 'Loaded a bot definition' },
   'bot.removed': { category: 'bots', label: 'Removed a bot' },
   'bot.pairing_rotated': { category: 'bots', label: 'Reset a bot pairing' },

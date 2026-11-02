@@ -33,7 +33,25 @@ export interface McpToolsProvider extends ProviderImpl {
   sandboxCall(run: BotRunHandle, name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean; held: boolean }>;
   /** Ends the sandbox run and revokes its token. */
   closeSandbox(run: BotRunHandle, status: 'done' | 'failed' | 'stopped'): Promise<void>;
+
+  // The terminal into a sandbox (PLAN P7-09). The shell must hold no credential of the bot's run, so the run is opened (which mints its endpoint token) and the token is revoked at once, before the
+  // function answers (the run has no asker: it holds no person's rights, and the admin at the keyboard is named in the terminal's own record); the answer carries the run for the record and the number of credentials that were revoked. The token itself never leaves the gateway.
+
+  /**
+   * Opens a rehearsal run for the terminal and revokes every credential minted for it before returning. Proves the revocation (no live token row is left, and the token is refused by `resolve`)
+   * and throws if it cannot. `runId` attaches to an existing rehearsal run of this bot instead: a run that is not a rehearsal throws `NotASandboxError`; a rehearsal that is still running is closed
+   * (its tokens revoked), which is the only way a credential of an open sandbox run is taken away.
+   */
+  openTerminalSandbox(input: { workspaceId: string; teamId: string; botId: string; runId?: string }): Promise<{ run: BotRunHandle; credentialsRevoked: number }>;
 }
 
 /** The name of the write that exists only in the sandbox. A real bot cannot call it (nothing implements it outside `sandboxCall`). */
 export const SANDBOX_TEST_WRITE = 'test.write';
+
+/** A terminal was asked for a run that is not a throwaway: a real run of a bot (any trigger but a rehearsal's conversation) or a run of another bot or team. */
+export class NotASandboxError extends Error {
+  constructor(message = 'That run is not a test sandbox') {
+    super(message);
+    this.name = 'NotASandboxError';
+  }
+}

@@ -420,6 +420,8 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           ...(definition.handler
             ? { handler: (request: HttpRequest, tx: PluginTx) => definition.handler!(request, guardPluginTx(tx)) }
             : {}),
+          // the same guard on the transaction as the handler has: a route's `guard` runs as the caller before a socket upgrade
+          ...(definition.guard ? { guard: (request: HttpRequest, tx: PluginTx) => definition.guard!(request, guardPluginTx(tx)) } : {}),
           fullPath,
         });
       },

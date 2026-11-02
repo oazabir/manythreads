@@ -72,6 +72,8 @@ import { BotsEvalRunFinishedEvent } from './bots.eval.run.finished.ts';
 import { WorkshopReassessmentCreatedEvent } from './workshop.reassessment.created.ts';
 import { WorkshopReassessmentClosedEvent } from './workshop.reassessment.closed.ts';
 import { WorkshopReplayStartedEvent } from './workshop.replay.started.ts';
+import { WorkshopTerminalOpenedEvent } from './workshop.terminal.opened.ts';
+import { WorkshopTerminalClosedEvent } from './workshop.terminal.closed.ts';
 import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
 import { RunnersRunnerConnectedEvent } from './runners.runner.connected.ts';
 import { RunnersRunnerDisconnectedEvent } from './runners.runner.disconnected.ts';
@@ -290,6 +292,8 @@ export const eventRegistry = {
   'workshop.reassessment.created': { 1: WorkshopReassessmentCreatedEvent },
   'workshop.reassessment.closed': { 1: WorkshopReassessmentClosedEvent },
   'workshop.replay.started': { 1: WorkshopReplayStartedEvent },
+  'workshop.terminal.opened': { 1: WorkshopTerminalOpenedEvent },
+  'workshop.terminal.closed': { 1: WorkshopTerminalClosedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 
@@ -375,7 +379,9 @@ export type AnyEvent =
   | z.infer<typeof TasksTaskClaimedEvent>
   | z.infer<typeof TasksTaskCompletedEvent>
   | z.infer<typeof TasksTaskHandedOffEvent>
-  | z.infer<typeof RhythmsRhythmRanEvent>;
+  | z.infer<typeof RhythmsRhythmRanEvent>
+  | z.infer<typeof WorkshopTerminalOpenedEvent>
+  | z.infer<typeof WorkshopTerminalClosedEvent>;
 
 /** The newest version of every event: what `upcast` returns and emitters write. */
 export type LatestEvent =
@@ -454,7 +460,9 @@ export type LatestEvent =
   | z.infer<typeof TasksTaskClaimedEvent>
   | z.infer<typeof TasksTaskCompletedEvent>
   | z.infer<typeof TasksTaskHandedOffEvent>
-  | z.infer<typeof RhythmsRhythmRanEvent>;
+  | z.infer<typeof RhythmsRhythmRanEvent>
+  | z.infer<typeof WorkshopTerminalOpenedEvent>
+  | z.infer<typeof WorkshopTerminalClosedEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

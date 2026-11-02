@@ -341,7 +341,7 @@ async function recordCorrection(env: WsEnv, args: unknown): Promise<WsToolResult
       if (!planned.ok) return refused(planned.message, what);
       const { plan } = planned;
       for (const r of plan.results) if (r.status === 'refused') env.record({ kind: 'refusal', text: short(`Not recorded: “${short(r.lesson, 80)}”. ${r.reason ?? ''}`, 600) });
-      const shownResults = plan.results.map((r) => ({ lesson: r.lesson, status: r.status, reason: r.reason, told: r.told, rule: r.rule, ruleReason: r.ruleReason, evalCase: r.evalCase }));
+      const shownResults = plan.results.map((r) => ({ lesson: r.lesson, status: r.status, reason: r.reason, told: r.told, rule: r.rule, ruleReason: r.ruleReason, evalCase: r.evalCase, lessonLine: r.lessonLine }));
       if (plan.files.length === 0) return refused('Nothing was recorded. Read each reason, fix what can be fixed and call again.', what, { results: shownResults, warnings: plan.warnings });
       const waiting = await waitingOn(tx, env.team.id, plan.files.map((f) => f.path));
       if (waiting.length > 0) return refused(waitingMessage(waiting), what, { results: shownResults });

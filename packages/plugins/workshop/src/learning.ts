@@ -145,6 +145,19 @@ export function withLesson(content: string | null, line: string, slug: string): 
   return `${content.replace(/\s+$/, '')}\n${line}\n`;
 }
 
+/**
+ * A lesson told again in other words is not written a second time. The line that already says it is kept, with the oldest date, and gets the count `(told N times)` instead; the count is what
+ * turns a repeat into a rule. The rest of the file is left exactly as it was.
+ */
+export function withRepeat(content: string, at: LessonLine): string {
+  const lines = content.split('\n');
+  const raw = lines[at.line];
+  if (raw === undefined || !raw.startsWith('- ')) return content;
+  const tail = raw.endsWith('\r') ? '\r' : '';
+  lines[at.line] = `- ${at.date ? `${at.date}: ` : ''}${at.text} (told ${String(Math.min(at.times + 1, 999))} times)${tail}`;
+  return lines.join('\n');
+}
+
 /** How many lines the file has (a final empty line is not one). */
 export const lineCount = (content: string): number => (content === '' ? 0 : content.replace(/\n$/, '').split('\n').length);
 

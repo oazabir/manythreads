@@ -22,6 +22,8 @@ import {
   MemorySourceKind,
   MemoryStore,
   AuditActorKind,
+  TerminalEndReason,
+  TerminalStatus,
   DlpDetectorSetting,
   DlpRuleSetting,
   AuditCategory,
@@ -200,6 +202,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'setup_sessions.status': SetupStatus,
   'workshop_sessions.status': WorkshopStatus,
   'workshop_sessions.mode': WorkshopMode,
+  'terminal_sessions.status': TerminalStatus,
+  'terminal_sessions.end_reason': TerminalEndReason,
+  // (terminal_sessions.sandbox_kind has one value, so Postgres stores its CHECK as `= 'rehearsal'`, not `IN (...)`: there is no list for the rule to compare)
   'audit_events.actor_kind': AuditActorKind,
   'audit_events.category': AuditCategory,
   'audit_events.outcome': AuditOutcome,

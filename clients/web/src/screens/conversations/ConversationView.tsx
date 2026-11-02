@@ -175,14 +175,20 @@ export function ConversationView() {
     [params, setParams],
   );
 
+  // A person who came back to Chat with the Chat | Workshop tabs (the arrow keys or Home) stays on the Chat tab: the message box takes focus only when the page opens by itself. The mark is
+  // for this bot's page alone (another bot opens with the message box focused again) and for one visit to Chat.
+  const pageKey = `${team}/${botSlug}`;
+  const [viaTabs, setViaTabs] = useState<string | null>(null);
   const changeView = useCallback(
     (next: View): void => {
       const q = new URLSearchParams(params);
       if (next === 'workshop') q.set('view', 'workshop');
-      else for (const k of ['view', 'mode', 'ws']) q.delete(k);
+      else for (const k of ['view', 'mode', 'ws', 'terminal']) q.delete(k);
+      // the mark belongs to one visit to Chat: going to Workshop clears it, so coming back by the browser's Back button (not by the tabs) focuses the message box again
+      setViaTabs(next === 'chat' ? pageKey : null);
       void setParams(q, { replace: false });
     },
-    [params, setParams],
+    [params, setParams, pageKey],
   );
 
   const [failed, setFailed] = useState<{ body: string; attachments: FileSummary[]; message: string } | null>(null);
@@ -334,7 +340,7 @@ export function ConversationView() {
                     people={people}
                     channelNames={channelNames}
                     onSend={(body, attachments) => void start(body, attachments)}
-                    autoFocus={!narrow}
+                    autoFocus={!narrow && viaTabs !== pageKey}
                   />
                 </div>
                 <p className="cv-hint">Sending starts a thread. There is no “new conversation” button; the message is the button.</p>

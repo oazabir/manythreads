@@ -371,7 +371,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<Fas
     mountTestAuth(app, { token: options.testAuthToken, sessions, pool: options.systemPool });
   }
   mountAppTokenRoute(app, { tokens: appTokens, ...(options.pool ? { pool: options.pool } : {}) });
-  await mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions);
+  await mountPluginRoutes(app, options.host, poolOpt, options.systemPool, sessions, trackSocket);
   await options.routes?.(app);
   return app;
 }
@@ -394,6 +394,7 @@ async function mountPluginRoutes(
   poolOpt: { pool?: pg.Pool },
   systemPool: pg.Pool | undefined,
   sessions: SessionService | undefined,
+  trackSocket: (sessionId: string, end: () => void) => () => void,
 ): Promise<void> {
   if (!host) return;
   /** The same request the HTTP handler sees, built from the Fastify request (a socket upgrade has no body). */
@@ -428,6 +429,7 @@ async function mountPluginRoutes(
     on(event: 'close', cb: () => void): void;
     on(event: 'error', cb: (err: Error) => void): void;
   }
+  type Listener = (value?: unknown) => void;
   const mount = (target: FastifyInstance, plugin: string, def: MountedRoute): void => {
     if (def.ws) {
       // A plugin's own live protocol: the hooks above have already authenticated the upgrade, and the frame bytes are handed over untouched.
@@ -436,11 +438,25 @@ async function mountPluginRoutes(
         url: def.fullPath,
         websocket: true,
         config: routeConfig(def),
+        // Before the upgrade, so a refusal is a real HTTP answer and no socket is ever opened: a page of another origin (its upgrade would carry the cookie), then the route's own
+        // `guard` (for instance "workspace admins only") as the caller.
+        preHandler: async (req: FastifyRequest) => {
+          const origin = req.headers.origin;
+          if (origin !== undefined && !sameHost(origin, req.host)) throw new HttpError(403, 'forbidden', 'Origin not allowed');
+          if (!def.guard) return undefined;
+          const actor = req.actor ?? ANONYMOUS;
+          const pool = actor.kind === 'system' ? systemPool : poolOpt.pool;
+          await withActor(actor, (tx) => Promise.resolve(def.guard!(requestOf(req, def), tx)), pool ? { pool } : {});
+          return undefined;
+        },
         handler: (raw: RawSocket, req: FastifyRequest) => {
           const socket = raw;
           const request = requestOf(req, def);
-          const deliver = (event: 'message' | 'close' | 'error', listener: (value?: unknown) => void): void => {
-            if (event === 'message') {
+          const sessionEnded: Listener[] = [];
+          const deliver = (event: 'message' | 'close' | 'error' | 'sessionEnded', listener: Listener): void => {
+            if (event === 'sessionEnded') {
+              sessionEnded.push(listener);
+            } else if (event === 'message') {
               socket.on('message', (data, isBinary) => listener(isBinary ? new Uint8Array(data) : data.toString()));
             } else if (event === 'close') {
               socket.on('close', () => listener());
@@ -463,8 +479,23 @@ async function mountPluginRoutes(
                 /* already closing */
               }
             },
-            on: (event, listener) => deliver(event, listener as (value?: unknown) => void),
+            on: (event, listener) => deliver(event, listener as Listener),
           };
+          // A socket that rode in on a cookie session ends with the session (sign-out, revoke, suspension, expiry): the same re-check the platform's own socket gets.
+          if (req.authSession && sessions) {
+            const untrack = trackSocket(req.authSession.sessionId, () => {
+              // tell the plugin first (it can record that the sign-in ended), then close
+              for (const listener of sessionEnded) {
+                try {
+                  listener();
+                } catch {
+                  // a plugin's listener never stops the close
+                }
+              }
+              peer.close(1008, 'session ended');
+            });
+            socket.on('close', untrack);
+          }
           void Promise.resolve(def.ws!(peer, request)).catch((err: unknown) => {
             req.log.error({ err, plugin }, 'plugin socket failed');
             peer.close(1011, 'server error');

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "closed",
+    "ended_by_admin",
+    "idle",
+    "max_duration",
+    "output_limit",
+    "input_limit",
+    "session_ended",
+    "server_stop",
+    "unused",
+    "error"
+  ]
+}

@@ -15,6 +15,7 @@ import {
   withEvalCase,
   withEvalsBlock,
   withLesson,
+  withRepeat,
   withRule,
   RULES_HEADING,
 } from '../src/learning.ts';
@@ -338,6 +339,60 @@ describe('a batch of corrections', () => {
     const notAsked = planCorrections({ ...base, latestPerson: 'That is wrong.', corrections: [{ ...one, rule: 'Always cite pages.' }] });
     if (!notAsked.ok) throw new Error(notAsked.message);
     expect(notAsked.plan.results[0]).toMatchObject({ rule: 'none' });
+  });
+
+  it('a lesson told again in other words is NOT written a second time: the line that says it counts one more, and the rule logic still runs', () => {
+    const lessons = '# Lessons\n\n- 2026-10-20: When you quote the manual, cite the page number\n- 2026-10-21: Reply in the language of the customer\n';
+    const out = planCorrections({ ...base, lessons, corrections: [one] });
+    if (!out.ok) throw new Error(out.message);
+    expect(out.plan.results[0]).toMatchObject({ rule: 'filed', ruleReason: 'repeated', told: 2, lessonLine: 'repeat_counted' });
+    const file = out.plan.files.find((f) => f.role === 'lessons')!;
+    // one line per lesson: the old line, with its date, now says it was told twice; nothing else moved
+    expect(file.content).toBe('# Lessons\n\n- 2026-10-20: When you quote the manual, cite the page number (told 2 times)\n- 2026-10-21: Reply in the language of the customer\n');
+    expect(lessonLines(file.content).filter((l) => l.text.includes('page number'))).toHaveLength(1);
+    expect(file.title).toBe('Count 1 repeated lesson for Manual helper');
+    // told a third time (the count carries on, no new line)
+    const third = planCorrections({ ...base, lessons: file.content, corrections: [{ ...one, lesson: 'Always cite the page number when quoting the manual' }] });
+    if (!third.ok) throw new Error(third.message);
+    expect(third.plan.results[0]).toMatchObject({ told: 3, lessonLine: 'repeat_counted' });
+    expect(third.plan.files.find((f) => f.role === 'lessons')!.content).toContain('cite the page number (told 3 times)');
+  });
+
+  it('a new lesson is still written as a new line, and a batch can have both', () => {
+    const lessons = '# Lessons\n\n- 2026-10-20: When you quote the manual, cite the page number\n';
+    const fresh: CorrectionArg = { lesson: 'Answer in a friendly tone', question: 'Hello?', mustMention: ['hello'] };
+    const out = planCorrections({ ...base, lessons, corrections: [one, fresh] });
+    if (!out.ok) throw new Error(out.message);
+    expect(out.plan.results.map((r) => r.lessonLine)).toEqual(['repeat_counted', 'added']);
+    const text = out.plan.files.find((f) => f.role === 'lessons')!.content;
+    expect(text).toContain('(told 2 times)');
+    expect(text).toContain('- 2026-11-02: Answer in a friendly tone');
+    expect(lessonLines(text)).toHaveLength(2);
+  });
+
+  it('withRepeat leaves every other line alone, and keeps windows line ends', () => {
+    const file = '# L\r\n\r\n- 2026-10-01: Be brief\r\n- 2026-10-02: Cite sources (told 4 times)\r\n';
+    const at = lessonLines(file)[1]!;
+    expect(withRepeat(file, at)).toBe('# L\r\n\r\n- 2026-10-01: Be brief\r\n- 2026-10-02: Cite sources (told 5 times)\r\n');
+  });
+
+  it('the count stops at 999 and never grows the line past it', () => {
+    const file = '# L\n\n- 2026-10-01: Cite sources (told 999 times)\n';
+    const at = lessonLines(file)[0]!;
+    expect(at.times).toBe(999);
+    expect(withRepeat(file, at)).toBe('# L\n\n- 2026-10-01: Cite sources (told 999 times)\n');
+    // a hand-written count above the limit is read as the largest the file format holds
+    const big = '# L\n\n- 2026-10-01: Cite sources (told 5000 times)\n';
+    expect(lessonLines(big)[0]?.times).toBeLessThanOrEqual(999);
+  });
+
+  it('when several earlier lines say the same thing, the OLDEST one is the one that counts (it keeps the oldest date)', () => {
+    const lessons = '# Lessons\n\n- 2026-09-01: Cite the page number when you quote the manual\n- 2026-10-20: When you quote the manual, cite the page number\n';
+    const out = planCorrections({ ...base, lessons, corrections: [one] });
+    if (!out.ok) throw new Error(out.message);
+    const text = out.plan.files.find((f) => f.role === 'lessons')!.content;
+    expect(text).toContain('- 2026-09-01: Cite the page number when you quote the manual (told 2 times)');
+    expect(text).toContain('- 2026-10-20: When you quote the manual, cite the page number\n');
   });
 
   it('a rule that is already there is not added twice', () => {

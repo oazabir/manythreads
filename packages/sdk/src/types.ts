@@ -165,6 +165,8 @@ export interface PluginSocket {
   on(event: 'message', listener: (data: string | Uint8Array) => void): void;
   on(event: 'close', listener: () => void): void;
   on(event: 'error', listener: (err: Error) => void): void;
+  /** The platform is closing this socket because the sign-in behind it ended (sign-out, revoke, suspension, expiry). Runs just before the close, so a plugin can record the real reason. */
+  on(event: 'sessionEnded', listener: () => void): void;
 }
 
 /** A route that upgrades instead of answering: `GET` only, no schema (`body` and `query` are the plugin's to validate). */
@@ -243,6 +245,11 @@ export interface HttpRouteDefinition {
    * its own (`ctx.db`) when it needs the database.
    */
   ws?: PluginSocketHandler;
+  /**
+   * Runs in a transaction as the caller BEFORE the route is answered, and before a socket is upgraded: throw `HttpError` (for instance `forbidden()`) to refuse with that status. On a
+   * `ws` route this is what makes a refusal a real HTTP 403 on the upgrade request instead of a socket that opens and closes. The caller is never null on a private route.
+   */
+  guard?(request: HttpRequest, tx: PluginTx): void | Promise<void>;
   handler?(request: HttpRequest, tx: PluginTx): HttpResponse | Promise<HttpResponse>;
 }
 

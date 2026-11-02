@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startFakeLlm, type FakeLlm } from '../../tools/fake-llm/src/server.ts';
-import { addBot, conversationStackEnv } from '../conversations/support.ts';
+import { addBot, brainMd, conversationStackEnv } from '../conversations/support.ts';
 import { startStack, type Stack } from '../fixtures/stack.ts';
 import { PHONE, apiOn, noSidewaysScroll, openOn } from '../support/stack-browser.ts';
 
@@ -215,7 +215,12 @@ test('a plain member cannot rehearse: the Rehearse tab is switched off with the 
     // the tab is there, says it is off, and says why where anyone can read it
     await expect(page.getByTestId('ws-mode-rehearse')).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByTestId('ws-mode-rehearse-why')).toHaveText('Only a team lead or an admin can rehearse a bot.');
-    await expect(page.getByTestId('ws-send')).toHaveAttribute('aria-disabled', 'true');
+    // the address asked for Rehearse, but this person lands on Build: Rehearse stays switched off, is not the chosen tab, and none of its own words show
+    await expect(page.getByTestId('ws-mode-rehearse')).toHaveAttribute('aria-selected', 'false');
+    await expect(page.getByTestId('ws-mode-build')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('workshop-tab')).toHaveAttribute('data-mode', 'build');
+    await expect(page.getByTestId('ws-lead')).toContainText('proposal');
+    await expect(page.getByTestId('workshop-tab')).not.toContainText('Try the bot as it really is');
     expect(await noSidewaysScroll(page)).toBe(true);
     // the other tabs are not switched off; choosing the off tab chooses nothing
     await expect(page.getByTestId('ws-mode-build')).not.toHaveAttribute('aria-disabled', 'true');
@@ -234,6 +239,37 @@ test('a plain member cannot rehearse: the Rehearse tab is switched off with the 
       expect(await refused.text()).toContain('Only a team lead or an admin can rehearse a bot');
     } finally {
       await api.ctx.dispose();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test('coming back to Chat from the Workshop tab by keyboard (ArrowLeft, Home) keeps focus on the Chat tab, not in the message box', async ({ browser, isMobile, playwright }) => {
+  test.setTimeout(120_000);
+  // a bot that answers conversations, so its Chat side has a message box that could take focus
+  const admin = await apiOn(playwright, stack, 'omar');
+  try {
+    await addBot(stack, admin, 'chatty', brainMd(['Hello?']).replace('name: Brain', 'name: Chatty'));
+  } finally {
+    await admin.ctx.dispose();
+  }
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/chatty/chat?view=workshop', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    for (const key of ['ArrowLeft', 'Home']) {
+      await expect(page.getByTestId('workshop-tab')).toBeVisible();
+      await page.getByTestId('ws-view-workshop').focus();
+      await page.keyboard.press(key);
+      await expect(page.getByTestId('ws-view-chat')).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByTestId('ws-view-chat')).toBeFocused();
+      // and a moment later, once the message box has appeared, focus is still on the tab
+      await page.waitForTimeout(600);
+      await expect(page.getByTestId('ws-view-chat')).toBeFocused();
+      await expect(page.getByTestId('composer')).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'Message Chatty' })).not.toBeFocused();
+      // on to the Workshop again with the keyboard, for the next key
+      await page.keyboard.press('End');
+      await expect(page.getByTestId('ws-view-workshop')).toBeFocused();
     }
   } finally {
     await context.close();

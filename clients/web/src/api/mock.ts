@@ -91,6 +91,7 @@ import {
 } from '@manythreads/shared';
 import type { Transport } from './client';
 import { installSetupMock } from './mock-setup';
+import { installTerminalMock } from './mock-terminal';
 import { installWorkshopMock } from './mock-workshop';
 import { installReplayMock } from './mock-replay';
 
@@ -1038,6 +1039,16 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       throw new MockHttpError(status, code, message);
     },
     begin: workshop.begin,
+  });
+
+  // The Terminal view (P7-09): the routes of a terminal into a bot's sandbox, for a workspace admin, in mock-terminal.ts
+  installTerminalMock(on, {
+    isAdmin: () => isAdmin(me()),
+    adminName: () => me().name,
+    adminId: () => me().id,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
   });
 
   return async (req) => {

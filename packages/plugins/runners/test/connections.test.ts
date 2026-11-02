@@ -29,7 +29,7 @@ class FakeSocket implements PluginSocket {
     this.closed = { ...(code === undefined ? {} : { code }), ...(reason === undefined ? {} : { reason }) };
     this.onClose?.();
   }
-  on(event: 'message' | 'close' | 'error', listener: never): void {
+  on(event: 'message' | 'close' | 'error' | 'sessionEnded', listener: never): void {
     if (event === 'message') this.onMessage = listener;
     if (event === 'close') this.onClose = listener;
   }

@@ -143,4 +143,6 @@ export * from './bots.eval.run.finished.ts';
 export * from './workshop.reassessment.created.ts';
 export * from './workshop.reassessment.closed.ts';
 export * from './workshop.replay.started.ts';
+export * from './workshop.terminal.opened.ts';
+export * from './workshop.terminal.closed.ts';
 export * from './audit.export.created.ts';

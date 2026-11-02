@@ -1441,9 +1441,15 @@ importers:
       '@types/pg':
         specifier: ^8
         version: 8.23.1
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
       pg:
         specifier: ^8
         version: 8.23.1
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
 
   packages/runner:
     dependencies:

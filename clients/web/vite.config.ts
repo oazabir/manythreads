@@ -6,7 +6,7 @@ import { devFixtures } from './vite.dev-fixtures';
 const api = process.env['MANYTHREADS_API_ORIGIN'] ?? 'http://localhost:3000';
 
 const proxy = {
-  '/api': api,
+  '/api': { target: api, ws: true },
   '/hooks': api,
   '/healthz': api,
   '/readyz': api,

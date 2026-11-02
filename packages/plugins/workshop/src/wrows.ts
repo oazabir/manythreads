@@ -114,5 +114,17 @@ export async function failStuckWorkshop(tx: PluginTx): Promise<number> {
   return res.rows.length;
 }
 
-/** The title of a conversation: the first words the person wrote. */
-export const titleOf = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, 80);
+/** How long a conversation's title may be (the column allows 120). */
+export const TITLE_CHARS = 80;
+
+/** The title of a conversation: the first words the person wrote. A long first message is cut after a whole word and ends in an ellipsis, never in the middle of a word. */
+export function titleOf(text: string): string {
+  const chars = [...text.replace(/\s+/g, ' ').trim()];
+  if (chars.length <= TITLE_CHARS) return chars.join('');
+  const head = chars.slice(0, TITLE_CHARS - 1);
+  // the cut already falls between two words when the next character is a space; otherwise it falls inside one, so back up to the space before it. Only when there is no space at all
+  // (one word longer than the limit) is the word itself cut, at the limit.
+  const space = head.lastIndexOf(' ');
+  const keep = chars[head.length] === ' ' ? head : space > 0 ? head.slice(0, space) : head;
+  return `${keep.join('').replace(/[\s,;:.-]+$/, '')}…`;
+}

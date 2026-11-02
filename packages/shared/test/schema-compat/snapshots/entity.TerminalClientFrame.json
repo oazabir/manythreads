@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "string",
+          "const": "in"
+        },
+        "d": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "t",
+        "d"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "string",
+          "const": "size"
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 300
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 120
+        }
+      },
+      "required": [
+        "t",
+        "cols",
+        "rows"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

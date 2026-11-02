@@ -16,6 +16,7 @@ import {
   withEvalCase,
   withEvalsBlock,
   withLesson,
+  withRepeat,
   withRule,
   type GateContext,
 } from './learning.ts';
@@ -72,6 +73,8 @@ export interface CorrectionResult {
   rule: RuleOutcome;
   ruleReason?: 'asked' | 'repeated';
   evalCase: 'added' | 'already_there' | 'none';
+  /** `added` the lesson is a new line of lessons.md; `repeat_counted` a line already says it, so no second copy is written and that line's count went up. */
+  lessonLine: 'added' | 'repeat_counted' | 'none';
 }
 
 export interface Plan {
@@ -106,6 +109,7 @@ export function planCorrections(input: PlanInput): { ok: true; plan: Plan } | { 
   let evalText = input.evalSet;
   let casesAdded = 0;
   let lessonsAdded = 0;
+  let lessonsCounted = 0;
   let rulesAdded = 0;
   const results: CorrectionResult[] = [];
   const warnings: string[] = [];
@@ -114,7 +118,7 @@ export function planCorrections(input: PlanInput): { ok: true; plan: Plan } | { 
 
   for (const c of input.corrections) {
     const lesson = c.lesson.replace(/\s+/g, ' ').trim();
-    const base: CorrectionResult = { lesson: clip(lesson, 120), status: 'refused', told: 1, rule: 'none', evalCase: 'none' };
+    const base: CorrectionResult = { lesson: clip(lesson, 120), status: 'refused', told: 1, rule: 'none', evalCase: 'none', lessonLine: 'none' };
     if (lesson.length < 8 || lesson.length > LESSON_MAX_CHARS) {
       results.push({ ...base, status: 'needs_fix', reason: `A lesson is one sentence of 8 to ${String(LESSON_MAX_CHARS)} characters.` });
       continue;
@@ -164,8 +168,17 @@ export function planCorrections(input: PlanInput): { ok: true; plan: Plan } | { 
         rule = 'filed';
       }
     }
-    lessons = withLesson(lessons, lessonLine(input.today, lesson), input.slug);
-    lessonsAdded += 1;
+    // a lesson that is already there (told again, perhaps in other words) is not written a second time: the line that says it counts one more
+    const again = earlier.length > 0 && lessons !== null ? earlier[0] : undefined; // the oldest line that says it: it keeps the oldest date
+    let written: 'added' | 'repeat_counted' = 'added';
+    if (again !== undefined && lessons !== null) {
+      lessons = withRepeat(lessons, again);
+      lessonsCounted += 1;
+      written = 'repeat_counted';
+    } else {
+      lessons = withLesson(lessons, lessonLine(input.today, lesson), input.slug);
+      lessonsAdded += 1;
+    }
     evalText = added.content;
     if (added.added) casesAdded += 1;
     results.push({
@@ -175,6 +188,7 @@ export function planCorrections(input: PlanInput): { ok: true; plan: Plan } | { 
       rule,
       ...(ruleReason !== null ? { ruleReason } : {}),
       evalCase: added.added ? 'added' : 'already_there',
+      lessonLine: written,
     });
   }
 
@@ -230,13 +244,15 @@ export function planCorrections(input: PlanInput): { ok: true; plan: Plan } | { 
       title: clip(
         compacted !== null
           ? `Add ${String(lessonsAdded)} lesson${lessonsAdded === 1 ? '' : 's'} to ${input.botName} and shorten its notes`
-          : `Add ${String(lessonsAdded)} lesson${lessonsAdded === 1 ? '' : 's'} for ${input.botName}`,
+          : lessonsAdded === 0
+            ? `Count ${String(lessonsCounted)} repeated lesson${lessonsCounted === 1 ? '' : 's'} for ${input.botName}`
+            : `Add ${String(lessonsAdded)} lesson${lessonsAdded === 1 ? '' : 's'} for ${input.botName}`,
         120,
       ),
       note:
         compacted !== null
           ? `The lessons file went past its limit of ${String(max)} lines, so lessons that say the same thing are joined (${String(compacted.merged)}) and the oldest are dropped (${String(compacted.dropped)}) to leave room. ${droppedNote(compacted.droppedTexts)}Nothing is applied until you approve.`
-          : 'Comes from a correction made in the Workshop. Nothing is applied until you approve.',
+          : `Comes from a correction made in the Workshop.${lessonsCounted > 0 ? ` ${lessonsCounted === 1 ? 'A lesson that is already in the file is not written again: its line only counts one more time it was told.' : 'Lessons that are already in the file are not written again: their lines only count one more time they were told.'}` : ''} Nothing is applied until you approve.`,
     });
     return finish(files, results, warnings, compacted, evalText, input, set, casesAdded);
   }
