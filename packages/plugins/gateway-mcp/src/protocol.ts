@@ -109,7 +109,26 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   let input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the
   // handler will write, and a call that names none is refused rather than judged blind.
-  const decision = await ctx.runs.authorize(run, params.name, authorizeContext(input));
+  const authContext = authorizeContext(input);
+  const decision = await ctx.runs.authorize(run, params.name, authContext);
+  // What the door decided is kept (content-blind: the tool, where it aimed, the broker's own reason) so the Workshop can replay it against the grants of the day. The paths are what
+  // the broker judged (a place in the team's files, never what would be written there), so the replay asks it about the same places.
+  const places = decisionPlaces(params.name, definition.kind, input, authContext);
+  await recordDecision(ctx, run, {
+    kind: 'tool',
+    subject: params.name,
+    outcome: !decision.allowed ? 'denied' : decision.needsApproval ? 'needs_approval' : 'allowed',
+    target: places.target,
+    messageId: null,
+    detail: {
+      reason: decision.reason.slice(0, 300),
+      tool: definition.kind,
+      ...(places.path !== undefined ? { path: places.path } : {}),
+      ...(places.paths !== undefined ? { paths: places.paths } : {}),
+      // some place the call named was left out of the record (too many, too long, or not shaped like a path of the team's files): the replay then does not judge this line
+      ...(places.truncated ? { truncated: true } : {}),
+    },
+  });
   if (!decision.allowed) return toolResult({ ok: false, code: 'forbidden', message: decision.reason }, true);
   const unknown = ctx.runs.catalog().some((t) => t.name === params.name);
   if (!unknown) {
@@ -120,6 +139,16 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   let holdForPerson = false;
   if (definition.kind !== 'stub') {
     const checked = await guarded(ctx, run, input, 'mcp');
+    if (checked.rules.length > 0 || checked.outcome !== 'allow') {
+      await recordDecision(ctx, run, {
+        kind: 'guard',
+        subject: 'mcp',
+        outcome: checked.unchecked ? 'block' : checked.outcome,
+        target: null,
+        messageId: null,
+        detail: { tool: params.name, rules: checked.rules.slice(0, 20), unchecked: checked.unchecked === true },
+      });
+    }
     if (checked.unchecked) {
       return toolResult({ ok: false, code: 'blocked_by_guardrail', message: 'This call was not made: the data-loss check could not read it (too large, too deeply nested, or the check is not working).' }, true);
     }
@@ -178,6 +207,92 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
     // A run that ended under the call is control flow (the caller turns it into `run_ended` / 401), not a tool answer.
     if (err instanceof RunEndedError) throw err;
     return toolResult(thrownAnswer(params.name, err), true);
+  }
+}
+
+/** How many decision lines this process could not keep (it is logged each time too). A line that is lost leaves a hole in a later replay, so the number is exposed. */
+let lostDecisions = 0;
+export const lostDecisionCount = (): number => lostDecisions;
+
+// ---- what a decision line may say about WHERE a call aimed -----------------------------------------------------------------------------------------------------------------------
+// A decision line is content-blind. A path or an id in a tool's arguments is written by the model, so it can hold anything (a secret it was shown, a sentence). A place is kept
+// only when it has the shape of one: a path of the team's files (a known first folder, plain characters, no long opaque string) or an id / slug of the platform.
+const REPO_ROOTS = new Set(['TEAM.md', 'apps', 'bots', 'knowledge', 'memory', 'pages', 'routines', 'skills']);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const OPAQUE_RUN = /[A-Za-z0-9]{24,}/;
+const PLACE_PATH_MAX = 200;
+const PLACE_PATHS_MAX = 5;
+
+/** The path as it may be kept, or null when it is not shaped like a path of the team's files. */
+export function keepablePath(value: unknown): string | null {
+  if (typeof value !== 'string' || value === '' || value.length > PLACE_PATH_MAX) return null;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value) || value.includes('..') || value.includes('//')) return null;
+  const segments = value.split('/');
+  if (!REPO_ROOTS.has(segments[0] as string)) return null;
+  return segments.some((seg) => OPAQUE_RUN.test(seg)) ? null : value;
+}
+
+/** What a tool call aimed at, in the form a decision line may carry. */
+export function decisionPlaces(
+  tool: string,
+  kind: string,
+  input: Record<string, unknown>,
+  context: { path?: string; paths?: readonly string[] },
+): { target: string | null; path?: string; paths?: string[]; truncated: boolean } {
+  // only a change to the team's files is judged by place (the broker asks for the path of a files.* or pages.* mutation)
+  const byPlace = kind !== 'read' && (tool.startsWith('files.') || tool.startsWith('pages.'));
+  let truncated = false;
+  let path: string | undefined;
+  let paths: string[] | undefined;
+  if (byPlace && context.path !== undefined) {
+    const kept = keepablePath(context.path);
+    if (kept === null) truncated = true;
+    else path = kept;
+  }
+  if (byPlace && context.paths !== undefined) {
+    if (context.paths.length > PLACE_PATHS_MAX) truncated = true;
+    const kept = context.paths.slice(0, PLACE_PATHS_MAX).flatMap((p) => {
+      const k = keepablePath(p);
+      if (k === null) truncated = true;
+      return k === null ? [] : [k];
+    });
+    paths = kept;
+  }
+  // the one place shown on the Test page's list of held steps: a path, or an id / slug the platform itself would have issued
+  let target: string | null = path ?? paths?.[0] ?? null;
+  if (target === null) {
+    for (const key of ['channelId', 'taskId', 'messageId'] as const) {
+      const value = input[key];
+      if (typeof value === 'string' && UUID.test(value)) {
+        target = value;
+        break;
+      }
+    }
+  }
+  if (target === null) {
+    for (const key of ['toBotSlug', 'team'] as const) {
+      const value = input[key];
+      if (typeof value === 'string' && SLUG.test(value) && !OPAQUE_RUN.test(value)) {
+        target = value;
+        break;
+      }
+    }
+  }
+  return { target, ...(path !== undefined ? { path } : {}), ...(paths !== undefined ? { paths } : {}), truncated };
+}
+
+/**
+ * Keeps one line of what the gate, guard or tool door decided (`run_decisions`). Recording is never allowed to change the outcome of the call it describes: a failure is
+ * logged and the call goes on. A run that ended under it is control flow, as everywhere in this file.
+ */
+async function recordDecision(ctx: PluginContext, run: BotRunHandle, decision: Parameters<PluginContext['runs']['logDecision']>[1]): Promise<void> {
+  try {
+    await ctx.runs.asBot(run, (tx) => ctx.runs.logDecision(tx, decision));
+  } catch (err) {
+    if (err instanceof RunEndedError) throw err;
+    lostDecisions += 1;
+    faultLog(`gateway-mcp: a decision of ${decision.subject} could not be recorded: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
   }
 }
 

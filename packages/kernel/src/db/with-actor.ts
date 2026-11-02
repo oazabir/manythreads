@@ -40,6 +40,8 @@ export function systemActor(workspaceId: WorkspaceId = NIL_UUID as WorkspaceId):
 export interface WithActorOptions {
   /** Defaults to the shared manythreads_app pool, or the manythreads_system pool for the system actor. */
   pool?: pg.Pool;
+  /** Open the transaction `READ ONLY`: any write in it fails with 25006 (the actor settings below are session settings, not data). */
+  readOnly?: boolean;
 }
 
 /**
@@ -54,7 +56,7 @@ export async function withActor<T>(
   const client = await (options.pool ?? (actor.kind === 'system' ? getSystemPool() : getAppPool())).connect();
   let released = false;
   try {
-    await client.query('BEGIN');
+    await client.query(options.readOnly ? 'BEGIN READ ONLY' : 'BEGIN');
     await client.query(
       `SELECT set_config('app.actor_id', $1, true),
               set_config('app.actor_kind', $2, true),

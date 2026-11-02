@@ -46,7 +46,8 @@ const stripSqlComments = (text: string): string =>
 
 /**
  * STOPGAP, not a sandbox. Throws for SQL that sets session state (`set_config`, `SET`, `RESET`, `SET ROLE`),
- * changes roles/databases (`ALTER ROLE|USER|DATABASE|SYSTEM`), or hides statements from this check (`DO`, `EXECUTE`).
+ * changes roles/databases (`ALTER ROLE|USER|DATABASE|SYSTEM`), ends or restarts the transaction the server opened (`COMMIT`, `END`, `ABORT`, `BEGIN`,
+ * `START TRANSACTION`, `PREPARE TRANSACTION`, a plain `ROLLBACK`; savepoints are fine), or hides statements from this check (`DO`, `EXECUTE`).
  * Matching is case-insensitive on the text with comments removed. The real defences are database roles and RLS
  * (see docs/plugins/security.md); this only stops the obvious ways to spoof app.actor_id / app.workspace_id.
  */
@@ -56,6 +57,8 @@ export function assertSafePluginSql(text: string): void {
     /\bset_config\b/i.test(sql) ||
     /(^|;)\s*(set|reset|do|execute)\b/i.test(sql) ||
     /(^|;)\s*alter\s+(role|user|database|system)\b/i.test(sql) ||
+    // ending or restarting the server-opened transaction (a READ ONLY one included); a savepoint and `ROLLBACK TO SAVEPOINT` stay allowed
+    /(^|;)\s*(commit|end|abort|begin|start\s+transaction|prepare\s+transaction|rollback(?!\s+to\b))\b/i.test(sql) ||
     /\bset\s+(local\s+|session\s+)?(role|session\s+authorization)\b/i.test(sql);
   if (forbidden) throw new ForbiddenPluginSqlError(sql.trim());
 }

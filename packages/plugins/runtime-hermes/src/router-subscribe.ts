@@ -175,6 +175,7 @@ export function registerRouter(ctx: PluginContext): void {
         runThreadId: message.thread_root_id,
         prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
         text: message.body.slice(0, 40_000),
+        messageId: message.id,
         ...(rehearsal && trigger === 'conversation' ? { rehearsal: true as const } : {}),
       };
       await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` });
@@ -269,6 +270,7 @@ async function routeDelegation(ctx: PluginContext, tx: PluginTx, workspaceId: st
         runThreadId: message.thread_root_id,
         prompt: buildPrompt({ authorName: message.author_name, channelName: message.channel_name, body: message.body, project }),
         text: message.body.slice(0, 40_000),
+        messageId: message.id,
         delegation: { fromBotId: author.id, depth },
       } satisfies RunPayload,
       { dedupeKey: `runtime-hermes:${bot.id}:${message.id}` },

@@ -280,6 +280,32 @@ describe('broker: allowlist, person scope, approvals', () => {
   });
 });
 
+describe('broker: preview (PLAN P7-07, the Workshop replay)', () => {
+  it('answers exactly as the door does, and leaves no denial behind', async () => {
+    const { broker, denials } = setup(['files.write', 'tasks.claim'], ['tasks.claim']);
+    const actor = bot('conversation');
+    // the same decision as `authorize`, for a denial, a grant that waits for a person, a guarded path and a mutation with no path
+    for (const [capability, context] of [
+      ['gmail.read', {}],
+      ['tasks.claim', {}],
+      ['files.write', { path: 'bots/x/BOT.md' }],
+      ['files.write', {}],
+      ['files.write', { path: 'docs/notes.md' }],
+      ['files.purge', {}],
+    ] as const) {
+      const asked = await broker.preview(actor, capability, context);
+      const door = await broker.authorize(actor, capability, context);
+      expect(asked, capability).toEqual(door);
+    }
+    const afterDoor = denials.length;
+    expect(afterDoor).toBeGreaterThan(0);
+    // asking again through preview adds nothing to the audit trail
+    await broker.preview(actor, 'gmail.read');
+    await broker.preview(actor, 'files.write', { path: 'bots/x/BOT.md' });
+    expect(denials).toHaveLength(afterDoor);
+  });
+});
+
 describe('capability registry and grants', () => {
   it('rejects destructive and unknown capabilities at grant time', () => {
     const { registry } = setup();

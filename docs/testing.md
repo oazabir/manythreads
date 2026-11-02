@@ -152,6 +152,16 @@ It writes in two parts, each **once**. Two commits in the team's repository hist
 
 The bot's row is made by the running server from `bots/coder/BOT.md`; the seed waits up to 20 s for it (`workOptions.botWaitMs`). If the bot or `#dev` is missing, only the bot part is left out, `SeedResult.work.notes` says so, and the next run does it.
 
+### Seed v7: the Content drafter's brief, a failing scenario set and a repeated lesson (part of `--repo`, so on by default)
+
+`packages/test-utils/src/seed-repo-content.ts` (`repoSteps('marketing')`), applied by the same step runner as seed v4, so it is idempotent by commit message: three **new** steps with messages of their own after the earlier ones, written through the real repo writer (as a stand-in for an applied proposal). A repository seeded before gets them on the next run and nothing else changes; the other two teams are untouched. It exists so the Workshop has a bot that is going wrong to show.
+
+- **A brief**, `bots/content-drafter/BRIEF.md` (commit "Add the brief of the Content drafter bot", Omar): what the bot is for, who asks, what it may and may not do, and the score it is held to, in plain words. The team repo has no other place for the words a bot was set up from, so this is a file of the bot's own folder; the Workshop does not read it yet.
+- **A failing scenario set**, `bots/content-drafter/evals/launch-posts.yaml`, named in the `evals:` block of the bot's `BOT.md` with `minScore: 0.8` (commit "Give the Content drafter bot a scenario set", Omar; `BOT.md` now also grants `messages.post`). Three cases: one the definition satisfies, one that requires `pages.write`, which it does not grant, and one about wording that only a model can judge. The free (static) run scores 1 of 2 judged cases, 0.5, under 0.8, so the Evals tab flags it and the re-assessment notice for a score under the minimum has something to show once an eval run is recorded.
+- **A lesson told twice**, `bots/content-drafter/lessons.md` (commit "Record what the team told the Content drafter bot", Tariq): three lines, the first and third being the same lesson in nearly the same words, which the Workshop's rule (`REPEAT_SIMILARITY` 0.6) reads as one lesson told twice, so a new correction of it gets a rule proposal.
+
+`SEED_V7_EVAL_SET`, `SEED_V7_MIN_SCORE` and `SEED_V7_LESSONS` are exported from `@manythreads/test-utils` for the tests. Checked by `packages/plugins/workshop/test/seed-v7.test.ts` (no database: the set loads with the Workshop's own loader and the free harness gives 0.5; the repeat is found by the Workshop's own function) and by `packages/test-utils/test/seed-repo.test.ts` (the bot folder of each team, the authors, the commit count, a second run adds nothing).
+
 ## Isolated stacks for api specs, and ports
 
 The Playwright `api` project shares one server (`api/support/start-server.ts`, personas only). Specs on it must not change what a persona

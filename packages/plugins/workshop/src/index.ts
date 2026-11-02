@@ -3,6 +3,8 @@ import { registerSetupRoutes } from './routes.ts';
 import { registerSetupJob } from './session.ts';
 import { registerWorkshopJob } from './wsession.ts';
 import { registerWorkshopRoutes } from './wroutes.ts';
+import { registerReplayRoutes } from './replay.ts';
+import { registerReassessmentRoutes, registerReassessmentSubscribers } from './reassess.ts';
 
 export { checkBotProposal, checkSkill, checkTeamMdChange } from './policy.ts';
 export { gradeAll, gradeRequirement, questionsForGaps } from './grade.ts';
@@ -18,12 +20,26 @@ export { runTurn } from './turn.ts';
 export default definePlugin({
   manifest: {
     name: 'workshop',
-    version: '0.1.0',
+    version: '0.2.0',
     kind: 'server',
     // `job.register`: a model call takes a minute and must not hold a request open (the handler is read like a migration, docs/plugins/security.md). `capability.call`: the helper's tools are
     // the platform's own `knowledge.search` and `proposals.propose`, called in the PERSON's transaction; the narrow door adds no actor.
-    extends: ['job.register', 'capability.call'],
+    // `event.subscribe` and `event.emit` (P7-07): the re-assessment notices follow the platform's events for knowledge bases, runners and eval results and say so with their own events; no model is called there.
+    extends: ['job.register', 'capability.call', 'event.subscribe', 'event.emit'],
     calls: ['knowledge.search', 'proposals.propose'],
+    events: {
+      emits: ['workshop.reassessment.created', 'workshop.reassessment.closed', 'workshop.replay.started'],
+      consumes: [
+        'knowledge.base.created',
+        'knowledge.base.deleted',
+        'bot_runner.runner.created',
+        'bot_runner.runner.updated',
+        'bot_runner.runner.deleted',
+        'bot_runner.availability.changed',
+        'bot_runner.default.changed',
+        'bots.eval.run.finished',
+      ],
+    },
     // teams, channels and bots: the tables read for the inventory; proposals and knowledge: the capabilities the tools call; bot-runners: the placement question; gateway-llm: the model; repo-git: TEAM.md and the skills folder; gateway-mcp: the sandbox where a bot is rehearsed (P7-05).
     dependsOn: ['teams', 'channels', 'bots', 'proposals', 'knowledge', 'bot-runners', 'gateway-llm', 'repo-git', 'gateway-mcp'],
     migrations: 'migrations',
@@ -33,5 +49,8 @@ export default definePlugin({
     registerSetupJob(ctx);
     registerWorkshopRoutes(ctx);
     registerWorkshopJob(ctx);
+    registerReplayRoutes(ctx);
+    registerReassessmentRoutes(ctx);
+    registerReassessmentSubscribers(ctx);
   },
 });

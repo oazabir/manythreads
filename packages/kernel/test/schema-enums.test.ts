@@ -68,6 +68,10 @@ import {
   ReadTargetType,
   EvalMode,
   EvalRunStatus,
+  ReassessmentReason,
+  ReassessmentStatus,
+  RunDecisionKind,
+  RunDecisionOutcome,
   EvalTrigger,
   OnboardingMarkKind,
   OnboardingMarkStep,
@@ -205,6 +209,10 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'bot_eval_runs.trigger': EvalTrigger,
   'bot_eval_runs.mode': EvalMode,
   'bot_eval_runs.status': EvalRunStatus,
+  'run_decisions.kind': RunDecisionKind,
+  'run_decisions.outcome': RunDecisionOutcome,
+  'bot_reassessments.reason': ReassessmentReason,
+  'bot_reassessments.status': ReassessmentStatus,
 };
 
 /**

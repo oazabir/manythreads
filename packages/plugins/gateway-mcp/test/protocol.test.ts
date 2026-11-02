@@ -2,7 +2,7 @@ import { HttpError, RunEndedError, type BotRunHandle, type PluginContext, type P
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { toolsDigest } from '../src/digest.ts';
-import { handleBotRpc, handleRpc, offeredTools, setFaultLog, type BotEndpoint, type PairedBotHandle } from '../src/protocol.ts';
+import { decisionPlaces, handleBotRpc, handleRpc, keepablePath, offeredTools, setFaultLog, type BotEndpoint, type PairedBotHandle } from '../src/protocol.ts';
 import { createMcpSessions } from '../src/session.ts';
 
 // The JSON-RPC face without a database: what a run is offered, what a call does, and which failures are answers
@@ -70,6 +70,8 @@ function fakeContext(options: {
       logged.push(source);
       return Promise.resolve(logged.length);
     },
+    // P7-07: the content-blind decision line; the database side is in decisions.test.ts
+    logDecision: () => Promise.resolve(0),
   };
   const providers = { get: (kind: string) => (kind === 'approvals' ? options.approvals : undefined) };
   const warned: string[] = [];
@@ -505,5 +507,52 @@ describe('a bot’s own address (PLAN P14-22)', () => {
     expect(JSON.stringify((await body(res)).result)).toContain('no_open_run');
     const ambiguous = await handleBotRpc(ctx, BOT, 'ambiguous', { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'messages.search', arguments: {} } }, e);
     expect(JSON.stringify((await body(ambiguous)).result)).toContain('ambiguous_run');
+  });
+});
+
+describe('what a decision line may say about where a call aimed', () => {
+  it('keeps a path only when it is shaped like a path of the team’s files', () => {
+    expect(keepablePath('pages/handbook/onboarding.md')).toBe('pages/handbook/onboarding.md');
+    expect(keepablePath('TEAM.md')).toBe('TEAM.md');
+    for (const bad of [
+      'pages/sk-live-abcdefghijklmnopqrstuvwx1234.md',
+      'a sentence that is not a path',
+      '../etc/passwd',
+      'pages//double.md',
+      'pages/../x',
+      '/absolute/path',
+      'unknown-root/file.md',
+      `pages/${'a'.repeat(201)}`,
+      '',
+      42,
+      null,
+    ]) {
+      expect(keepablePath(bad)).toBeNull();
+    }
+  });
+
+  it('records paths for a change to the team’s files only, and marks what was left out', () => {
+    expect(decisionPlaces('pages.write', 'write', {}, { path: 'pages/a.md' })).toEqual({ target: 'pages/a.md', path: 'pages/a.md', truncated: false });
+    // a read names no place, even when the broker was handed one
+    expect(decisionPlaces('pages.read', 'read', {}, { path: 'pages/a.md' })).toEqual({ target: null, truncated: false });
+    expect(decisionPlaces('messages.post', 'write', { body: 'text' }, {})).toEqual({ target: null, truncated: false });
+    // more than five places, or one that is not shaped like a path, is kept in part and says so
+    const many = Array.from({ length: 7 }, (_, i) => `pages/p${String(i)}.md`);
+    expect(decisionPlaces('files.commit', 'write', {}, { paths: many })).toMatchObject({ paths: many.slice(0, 5), truncated: true });
+    expect(decisionPlaces('files.commit', 'write', {}, { paths: ['pages/a.md', 'a secret sk-live-abcdefghijklmnopqrstuvwx1234'] })).toEqual({
+      target: 'pages/a.md',
+      paths: ['pages/a.md'],
+      truncated: true,
+    });
+    expect(decisionPlaces('pages.write', 'write', {}, { path: 'pages/' + 'x'.repeat(250) })).toEqual({ target: null, truncated: true });
+  });
+
+  it('names a target from the model’s arguments only if it is an id or a slug the platform would have issued', () => {
+    const id = '00000000-0000-7000-8000-000000000001';
+    expect(decisionPlaces('tasks.claim', 'write', { taskId: id }, {}).target).toBe(id);
+    expect(decisionPlaces('tasks.claim', 'write', { taskId: 'sk-live-abcdefghijklmnopqrstuvwx1234' }, {}).target).toBeNull();
+    expect(decisionPlaces('bots.message', 'write', { toBotSlug: 'support-bot' }, {}).target).toBe('support-bot');
+    expect(decisionPlaces('bots.message', 'write', { toBotSlug: 'a secret sentence' }, {}).target).toBeNull();
+    expect(decisionPlaces('bots.message', 'write', { toBotSlug: 'abcdefghijklmnopqrstuvwxyz0123456789' }, {}).target).toBeNull();
   });
 });

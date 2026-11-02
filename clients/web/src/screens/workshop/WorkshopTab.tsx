@@ -10,6 +10,7 @@ import { pollDelay, stopsPolling } from '../setup/model';
 import { endWorkshop, fetchWorkshop, listWorkshop, sayInWorkshop, startWorkshop } from './api';
 import { announcement, asRule, messagesLeft, modeInfo, modeOf, usageLine } from './model';
 import { Compose, EarlierList, ModeTabs, Transcript, ViewTabs, viewPanelProps } from './parts';
+import { ReassessmentNotices, ReplayPanel } from './Replay';
 
 /*
  * The Workshop tab of a bot (PLAN P7-05, P7-06; mockup sections `workshop` and `setup`), at `/t/:team/bots/:botSlug/chat?view=workshop`.
@@ -210,6 +211,20 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
       <div className="ws-body" id={panelId} role="tabpanel" aria-label={`${info.label} conversations`}>
         <p className="ws-lead" data-testid="ws-lead">{info.lead}</p>
         <p className="ws-hint">{info.hint}</p>
+
+        {/* what changed under this bot (a knowledge base, a runner, its test score) and, in Live, the free replay of its earlier decisions (P7-07) */}
+        <ReassessmentNotices slug={slug} botSlug={botSlug} canManage={canRehearse} compact={mode !== 'live'} onOpen={() => { setError(null); go({ mode: 'live', ws: null }); }} />
+        {mode === 'live' ? (
+          <ReplayPanel
+            slug={slug}
+            botSlug={botSlug}
+            canManage={canRehearse}
+            onStarted={(started) => {
+              setListTick((t) => t + 1);
+              go({ mode: 'rehearse', ws: started.id });
+            }}
+          />
+        ) : null}
 
         <div className="ws-grid">
           <aside className="ws-side" aria-label="Earlier conversations">

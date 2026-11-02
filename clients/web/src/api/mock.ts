@@ -92,6 +92,7 @@ import {
 import type { Transport } from './client';
 import { installSetupMock } from './mock-setup';
 import { installWorkshopMock } from './mock-workshop';
+import { installReplayMock } from './mock-replay';
 
 /*
  * Mock transport (P2-10a, kept on the real shared schemas in P2-10b). Enabled with `?mock=1` (remembered for the tab)
@@ -1020,14 +1021,23 @@ export function createMockTransport(options: MockOptions = {}): Transport {
   });
 
   // The Workshop tab (P7-05): a scripted helper, a pretend rehearsal and pretend run records, in mock-workshop.ts
-  installWorkshopMock(on, {
-    canRehearse: (slug) => {
-      const p = me();
-      return isAdmin(p) || teamOf(slug).members.find((m) => m.personId === p.id)?.role === 'lead';
-    },
+  const leadsTeam = (slug: string): boolean => {
+    const p = me();
+    return isAdmin(p) || teamOf(slug).members.find((m) => m.personId === p.id)?.role === 'lead';
+  };
+  const workshop = installWorkshopMock(on, {
+    canRehearse: leadsTeam,
     fail: (status, code, message) => {
       throw new MockHttpError(status, code, message);
     },
+  });
+  // Replay and re-assessment (P7-07): pretend run records and notices, in mock-replay.ts
+  installReplayMock(on, {
+    canManage: leadsTeam,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+    begin: workshop.begin,
   });
 
   return async (req) => {

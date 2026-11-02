@@ -794,6 +794,18 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
     expect(approval!.args_preview['rules']).toEqual(['api-key']);
     expect(String(approval!.args_preview['message'])).toContain('[redacted:api-key]');
     expect(JSON.stringify(approval!.args_preview)).not.toContain('sk-proj-');
+    // the guard's decision is kept for the Workshop's replay: the model alias, the outcome and the names of the rules, never the secret (PLAN P7-07)
+    const guardLines = await w.system(
+      async (tx) =>
+        (
+          await tx.query<{ subject: string; outcome: string; message_id: string | null; detail: Record<string, unknown> }>(
+            `SELECT d.subject, d.outcome, d.message_id, d.detail FROM app.run_decisions d JOIN app.bot_runs r ON r.id = d.run_id WHERE r.bot_id = $1 AND d.kind = 'guard' ORDER BY d.seq`,
+            [bot.botId],
+          )
+        ).rows,
+    );
+    expect(guardLines[0]).toMatchObject({ subject: 'smart', outcome: 'require_approval', message_id: rootId, detail: { rules: ['api-key'], allowed: false } });
+    expect(JSON.stringify(guardLines)).not.toContain('sk-proj-');
 
     // the person who asked cannot release their own message; the on-call person can
     expect((await decide(nadia, approval!.id, 'approve')).status).toBe(403);
@@ -892,6 +904,16 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
             (r) => r.payload,
           ),
       );
+    const decisionsOf = (botId: string) =>
+      w.system(
+        async (tx) =>
+          (
+            await tx.query<{ kind: string; subject: string; outcome: string; message_id: string | null; detail: Record<string, unknown> }>(
+              `SELECT d.kind, d.subject, d.outcome, d.message_id, d.detail FROM app.run_decisions d JOIN app.bot_runs r ON r.id = d.run_id WHERE r.bot_id = $1 ORDER BY d.created_at, d.seq`,
+              [botId],
+            )
+          ).rows,
+      );
     const bindLocal = (): Promise<void> =>
       w.system(async (tx) => {
         const provider = (
@@ -942,6 +964,13 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       expect(approval!.args_preview).toMatchObject({ stage: 'exact', entry: 'credential rotation' });
       expect(String(approval!.args_preview['message'])).toContain('[redacted:api-key]');
       expect(JSON.stringify(approval!.args_preview)).not.toContain('sk-proj-');
+
+      // the gate's decision is kept for the Workshop's replay: the outcome, the stage and the entry, the id of the message and never its text (PLAN P7-07)
+      const kept = (await decisionsOf(bot.botId)).filter((d) => d.kind === 'gate');
+      expect(kept).toHaveLength(1);
+      expect(kept[0]).toMatchObject({ subject: 'gate', outcome: 'held', message_id: rootId, detail: { stage: 'exact', entry: 'credential rotation' } });
+      expect(JSON.stringify(kept)).not.toContain('sk-proj-');
+      expect(JSON.stringify(kept)).not.toContain('old key');
 
       // the audit event names the stage and the entry, and carries no message text
       const [event] = await gateEvents(bot.botId);
@@ -1014,6 +1043,10 @@ describe('a run that waits for a person (PLAN P5-20)', () => {
       expect(spoolLines()).toHaveLength(before + 1);
       expect(await approvalsOf(bot.botId)).toEqual([]);
       expect(await gateEvents(bot.botId)).toEqual([]);
+      // a message that passed is kept too: a replay needs the ones that went through to tell what would now be held
+      expect((await decisionsOf(bot.botId)).filter((d) => d.kind === 'gate')).toEqual([
+        expect.objectContaining({ subject: 'gate', outcome: 'passed', message_id: rootId, detail: expect.objectContaining({ stage: 'none' }) }),
+      ]);
     });
 
     it('fails closed: a classifier that errors, an answer that is not a plain YES or NO, and a `local` alias nobody bound all hold the message', async () => {

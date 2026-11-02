@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "answer": {
+      "type": "string",
+      "enum": [
+        "done",
+        "dismissed"
+      ]
+    }
+  },
+  "required": [
+    "answer"
+  ],
+  "additionalProperties": false
+}

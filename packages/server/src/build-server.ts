@@ -487,7 +487,7 @@ async function mountPluginRoutes(
         const actor = req.actor ?? ANONYMOUS;
         const pool = actor.kind === 'system' ? systemPool : poolOpt.pool;
         const request = requestOf(req, def);
-        const res = await withActor(actor, (tx) => Promise.resolve(def.handler!(request, tx)), pool ? { pool } : {}).catch(
+        const res = await withActor(actor, (tx) => Promise.resolve(def.handler!(request, tx)), { ...(pool ? { pool } : {}), ...(def.readOnly ? { readOnly: true } : {}) }).catch(
           (err: unknown) => {
             if (err instanceof Error && !(err instanceof z.ZodError) && !(err instanceof HttpError)) {
               req.log.error({ err, plugin }, 'plugin route failed');

@@ -32,13 +32,13 @@ const ENTRIES_FULL = 140;
 /** What of a rehearsal reply is carried into the Build conversation. */
 const ABOUT_EXCERPT_CHARS = 1200;
 
-type BotRef = {
+export type BotRef = {
   id: string;
   slug: string;
   status: string;
 };
 
-async function botOf(tx: PluginTx, team: TeamRow, botSlug: string): Promise<BotRef> {
+export async function botOf(tx: PluginTx, team: TeamRow, botSlug: string): Promise<BotRef> {
   const bot = (await tx.query<BotRef>('SELECT id, slug, status FROM app.bots WHERE team_id = $1::uuid AND slug = $2', [team.id, botSlug])).rows[0];
   if (!bot) throw notFound('No such bot');
   return bot;
@@ -74,6 +74,34 @@ async function aboutOf(tx: PluginTx, team: TeamRow, botSlug: string, about: Work
   return { sessionId: about.sessionId, entryId: about.entryId, excerpt: entry.text.slice(0, ABOUT_EXCERPT_CHARS) };
 }
 
+/**
+ * Starts a conversation for the person of `tx`, with the checks every start has (the team is open, the person may use the mode, the bot can be rehearsed, a model is there, the person
+ * has room for another open conversation) and, with a first message, queues the turn. Shared with the full replay (`replay.ts`), which starts a Rehearse conversation the same way.
+ */
+export async function startSession(ctx: PluginContext, tx: PluginTx, team: TeamRow, bot: BotRef, mode: WorkshopMode, text: string | undefined): Promise<WsRow> {
+  if (team.archived_at) throw conflict('This team is archived');
+  await mayUse(tx, team, mode);
+  if (mode === 'rehearse' && bot.status !== 'active') throw conflict('This bot is switched off or does not load, so it cannot be rehearsed');
+  if (!ctx.providers.get('llm')) throw new HttpError(503, 'internal', 'The model gateway is not available, so the helper cannot run');
+  // One start at a time per person: the count and the insert are one step, so parallel requests cannot all pass the limit. A stuck conversation does not count.
+  await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`workshop.session:${tx.actor.id}`]);
+  await failStuckWorkshop(tx);
+  const open = (await tx.query<{ n: string }>("SELECT count(*) AS n FROM app.workshop_sessions WHERE owner_id = (SELECT app.actor()) AND status IN ('working', 'ready')")).rows[0]?.n ?? '0';
+  if (Number(open) >= WORKSHOP_MAX_OPEN) throw conflict('You already have Workshop conversations open. End one first.');
+  const at = new Date().toISOString();
+  const first = text === undefined ? [] : [{ id: 'e1', at, kind: 'person', text }];
+  const history = text === undefined ? [] : [{ role: 'user', content: text }];
+  const row = (
+    await tx.query<WsRow>(
+      `INSERT INTO app.workshop_sessions (workspace_id, team_id, bot_id, bot_slug, owner_id, mode, status, title, entries, history, message_count, turn)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, (SELECT app.actor()), $5, $6, $7, $8::jsonb, $9::jsonb, $10::int, $11::int) RETURNING ${WS_COLUMNS}`,
+      [team.workspace_id, team.id, bot.id, bot.slug, mode, text === undefined ? 'ready' : 'working', text === undefined ? '' : titleOf(text), JSON.stringify(first), JSON.stringify(history), text === undefined ? 0 : 1, text === undefined ? 0 : 1],
+    )
+  ).rows[0] as WsRow;
+  if (text !== undefined) await enqueueTurn(ctx, tx, team.workspace_id, row.id, row.turn);
+  return row;
+}
+
 export function registerWorkshopRoutes(ctx: PluginContext): void {
   ctx.http.route({
     method: createWorkshopSessionRoute.method,
@@ -84,27 +112,8 @@ export function registerWorkshopRoutes(ctx: PluginContext): void {
       const { slug, botSlug } = WorkshopBotParams.parse(req.params);
       const body = CreateWorkshopSessionRequest.parse(req.body);
       const team = await requireTeam(tx, slug);
-      if (team.archived_at) throw conflict('This team is archived');
       const bot = await botOf(tx, team, botSlug);
-      await mayUse(tx, team, body.mode);
-      if (body.mode === 'rehearse' && bot.status !== 'active') throw conflict('This bot is switched off or does not load, so it cannot be rehearsed');
-      if (!ctx.providers.get('llm')) throw new HttpError(503, 'internal', 'The model gateway is not available, so the helper cannot run');
-      // One start at a time per person: the count and the insert are one step, so parallel requests cannot all pass the limit. A stuck conversation does not count.
-      await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`workshop.session:${tx.actor.id}`]);
-      await failStuckWorkshop(tx);
-      const open = (await tx.query<{ n: string }>("SELECT count(*) AS n FROM app.workshop_sessions WHERE owner_id = (SELECT app.actor()) AND status IN ('working', 'ready')")).rows[0]?.n ?? '0';
-      if (Number(open) >= WORKSHOP_MAX_OPEN) throw conflict('You already have Workshop conversations open. End one first.');
-      const at = new Date().toISOString();
-      const first = body.text === undefined ? [] : [{ id: 'e1', at, kind: 'person', text: body.text }];
-      const history = body.text === undefined ? [] : [{ role: 'user', content: body.text }];
-      const row = (
-        await tx.query<WsRow>(
-          `INSERT INTO app.workshop_sessions (workspace_id, team_id, bot_id, bot_slug, owner_id, mode, status, title, entries, history, message_count, turn)
-           VALUES ($1::uuid, $2::uuid, $3::uuid, $4, (SELECT app.actor()), $5, $6, $7, $8::jsonb, $9::jsonb, $10::int, $11::int) RETURNING ${WS_COLUMNS}`,
-          [team.workspace_id, team.id, bot.id, bot.slug, body.mode, body.text === undefined ? 'ready' : 'working', body.text === undefined ? '' : titleOf(body.text), JSON.stringify(first), JSON.stringify(history), body.text === undefined ? 0 : 1, body.text === undefined ? 0 : 1],
-        )
-      ).rows[0] as WsRow;
-      if (body.text !== undefined) await enqueueTurn(ctx, tx, team.workspace_id, row.id, row.turn);
+      const row = await startSession(ctx, tx, team, bot, body.mode, body.text);
       return json(WorkshopSessionResponse.parse({ session: toWorkshopSession(row) }), 201);
     }),
   });

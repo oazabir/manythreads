@@ -45,3 +45,4 @@ export * from './knowledge.ts';
 export * from './avatar.ts';
 export * from './setup.ts';
 export * from './workshop.ts';
+export * from './replay.ts';

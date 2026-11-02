@@ -25,7 +25,9 @@ plugin handlers (event subscribers, hooks, commands, HTTP routes, capability han
 
 - `set_config(...)` anywhere;
 - a statement starting with `SET`, `RESET`, `DO` or `EXECUTE` (including after a `;`), `SET ROLE`, `SET SESSION AUTHORIZATION`;
-- `ALTER ROLE|USER|DATABASE|SYSTEM`.
+- `ALTER ROLE|USER|DATABASE|SYSTEM`;
+- a statement starting with `COMMIT`, `END`, `ABORT`, `BEGIN`, `START TRANSACTION`, `PREPARE TRANSACTION` or a plain `ROLLBACK` (ending or restarting the transaction the
+  server opened, which would also end a READ ONLY one); `SAVEPOINT`, `RELEASE SAVEPOINT` and `ROLLBACK TO SAVEPOINT` stay allowed.
 
 This stops the obvious spoofing paths and is easy to bypass (for example through a function that calls `set_config`
 internally). The durable fix is a dedicated plugin database role with a signed, non-settable identity; until then treat

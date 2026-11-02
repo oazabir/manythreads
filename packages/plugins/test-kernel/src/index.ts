@@ -74,6 +74,19 @@ export default definePlugin({
       },
     });
 
+    // Two GET routes that try to write: one opened READ ONLY by the server (`readOnly`), one ordinary. The first must fail and leave nothing; the second proves the write itself is valid.
+    for (const [path, readOnly] of [['/api/test/readonly-write', true], ['/api/test/plain-write', false]] as const) {
+      ctx.http.route({
+        method: 'GET',
+        path,
+        ...(readOnly ? { readOnly: true } : {}),
+        handler: async (_req, tx) => {
+          await tx.query('INSERT INTO app.test_kernel_deliveries (workspace_id, event) VALUES ($1, $2::jsonb)', [tx.actor.workspaceId, JSON.stringify({ note: `probe-${readOnly ? 'readonly' : 'plain'}` })]);
+          return { body: { wrote: true } };
+        },
+      });
+    }
+
     // Team-scoped stub resource (0002_stub_resources): proves team-level denial through app.can().
     ctx.http.route({
       method: 'POST',

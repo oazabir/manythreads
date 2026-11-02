@@ -125,7 +125,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
 | 7 | 14 | Messaging parity and moving in | XL | 6 | 19 of 25 built, 3 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 3 of 13 built, 2 partly |
-| 9 | 7 | Self-setup and the Workshop | L | 14 | 5 of 11 built, 3 partly |
+| 9 | 7 | Self-setup and the Workshop | L | 14 | 6 of 11 built, 4 partly |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
 | 11 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
 | 12 | 16 | Connectors to the tools a company already uses | XL | 15 | 0 of 12 built |
@@ -147,7 +147,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-10-31)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **116 of 296 tasks (the 295 rows of this plan plus the follow-up P14-01b) are built, 34 are partly built, 145 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **117 of 296 tasks (the 295 rows of this plan plus the follow-up P14-01b) are built, 35 are partly built, 143 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -159,7 +159,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 4 · Files and the team repo | 12 | 0 | 1 | 0 |
 | 5 · Bots, gateways, conversations and Brain | 27 | 1 | 0 | 0 |
 | 6 · Tasks, boards, orchestration, rhythms and pages | 7 | 6 | 0 | 0 |
-| 7 · Self-setup and the Workshop | 5 | 3 | 3 | 0 |
+| 7 · Self-setup and the Workshop | 6 | 4 | 1 | 0 |
 | 8 · Connections, knowledge, email bots, team inbox and memory sharing | 2 | 6 | 28 | 0 |
 | 9 · Surfaces | 0 | 0 | 9 | 0 |
 | 10 · Onboarding, admin and deployment | 3 | 11 | 2 | 0 |
@@ -297,7 +297,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P6-11 | Seed v6 (board, rhythms, page, production); event contracts | Built | packages/test-utils/src/seed-cli.ts (seed v6 work: board, rhythms, page, production); shared/src/events tasks.*, rhythms.rhythm.ran | seed lives in test-utils, not e2e/fixtures |
 | P6-12 | Engineering template bots: Orchestrator, Reviewer, Tester, Deploy … | Built | templates/engineering/bots/{engineer,code-reviewer,tester,deployer,alert-triage,standup-relay}/BOT.md with evals/*.yaml | roles renamed (Orchestrator=engineer, Reviewer=code-reviewer, Deploy=deployer); no separate setup prompt found |
 
-### Phase 7 · Self-setup and the Workshop — 5 built, 3 partly, 3 not built
+### Phase 7 · Self-setup and the Workshop — 6 built, 4 partly, 1 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
@@ -307,10 +307,10 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P7-04 | Web: Add a bot flow (brief, discovery with grades, proposal with … | Partly built | clients/web/src/screens/setup (SetupScreen, parts, Proposal, model, api), styles/setup.css, `/t/:team/bots/new`, Add a bot button in BotRoster, mock-setup.ts; clients/web/test/setup-*.test.ts; e2e/bots/add-a-bot.spec.ts | no template picker, no connections wizard, "Edit on the bot page" is "Review in Proposals"; no list of earlier setup conversations (the Workshop tab itself is P7-05); Approve applies the proposals one after the other and the loader applies the grants when the file lands (no separate grant step) |
 | P7-05 | Workshop tab (Build · Rehearse · Live) in the conversation view … | Partly built | packages/plugins/workshop (wsession.ts, wroutes.ts, wtools.ts, turn.ts, rehearse.ts, prompts.ts, migration 0002_workshop_sessions), gateway-mcp `src/sandbox.ts` (openSandbox/sandboxCall, `test.write`), shared/entities/workshop.ts, shared/api/workshop; clients/web/src/screens/workshop, styles/workshop.css, mock-workshop.ts, ConversationView `view=workshop`; tests: workshop-session.test.ts (hostile scripted model), rls/workshop-sessions.test.ts, clients/web/test/workshop-flow.test.ts; e2e/bots/workshop-tab.spec.ts | Rehearse runs the bot's instructions on its model through the model gateway, not on its Hermes or Claude pod, so tools of those runtimes (shell, browser) are never exercised; Live reads run records, not the admin audit table; no replay against past work; proved with scripted model stand-ins only, not against a live model; the sandbox members of gateway-mcp are tested only through the workshop plugin |
 | P7-06 | Learning loop: correction files a lesson to lessons.md (proposal) … | Partly built | packages/plugins/workshop (learning.ts, learn-plan.ts, wtools.ts `record_correction`, `propose_rule`, `propose_compaction`); docs/plugins/workshop.md (repeat definition: Jaccard 0.6) | the eval case is filed but only runs when a lead runs the set (P7-08) and the set's `evals` block is approved; the gate and guard contradiction check is on words and cautious, English only (other scripts are refused, not passed), not a policy engine, so a paraphrase can pass it and the approval is the guard; a correction that touches a file with an open proposal is refused (the Workshop keeps one open proposal per file itself, under a lock on team and path; the proposals service does not); proved with scripted model stand-ins only; compaction is by merge and drop of the oldest, not a model summary |
-| P7-07 | Record and replay of guard and gate decisions only (free); full model … | Not built |  | no record/replay of guard and gate decisions, no re-assessment |
+| P7-07 | Record and replay of guard and gate decisions only (free); full model … | Partly built | packages/plugins/workshop (replay.ts, replay-eval.ts, reassess.ts, migration 0004_bot_reassessments); bots migration 0020_run_decisions (content-blind lines written by runtime-hermes `run-job.ts` and gateway-mcp `protocol.ts` through the new `ctx.runs.logDecision`); kernel `ctx.capabilities.preview` and the route option `readOnly` (`BEGIN READ ONLY`); shared/entities/replay.ts, shared/api/replay, events `workshop.reassessment.created/closed`, `workshop.replay.started`; clients/web/src/screens/workshop (Replay.tsx, replay-model.ts, replay-api.ts, mock-replay.ts); e2e/bots/replay.spec.ts; docs/plugins/workshop.md | the full model replay is one run at a time, for a lead or admin, behind the cost estimate and an exact confirmation, in the Rehearse sandbox (no batch, no comparison with the old answer); the free replay is by guard preset and cannot re-ask the local model's topic check, the content scan or budgets; runs older than the recording have nothing to replay; a lead cannot replay another person's private conversation runs; connection added/revoked notices have their reasons and texts but no events to subscribe to until Phase 8 |
 | P7-08 | Eval harness: EvalCase and EvalResult schemas, scenarios in … | Built | tools/evals/src/cli.ts (pnpm test:evals); shared/entities/eval.ts; bots migration 0016_eval_runs, bots/src/evals.ts (on_demand/on_commit/nightly) … |  |
 | P7-09 | Terminal into a sandbox: admin-only, never on production placements … | Not built |  | no sandbox terminal, no PTY over WS |
-| P7-10 | Seed v7 (brief for Content drafter, failing eval, repeated lesson) … | Not built | packages/test-utils/src/seed-repo-content.ts (content-drafter bot, lessons.md "None yet") | no seed v7 brief, failing eval or repeated lesson |
+| P7-10 | Seed v7 (brief for Content drafter, failing eval, repeated lesson) … | Built | packages/test-utils/src/seed-repo-content.ts (three new Marketing steps: `bots/content-drafter/BRIEF.md`, `evals/launch-posts.yaml` with `evals:` in BOT.md at minScore 0.8 scoring 0.5 in the free mode, `lessons.md` with one lesson told twice); plugins/workshop/test/seed-v7.test.ts; test-utils/test/seed-repo.test.ts; docs/testing.md "Seed v7"; event contracts packages/shared/test/events/phase7-replay-contracts.test.ts | the "brief" is a file in the bot's folder (the plan names no place for it; owner may want another); seed lives in test-utils, not e2e/fixtures |
 | P7-11 | The bot page's Test action: one question in the bot's own … | Built | clients/web/src/screens/bots/test-panel.tsx, test-run.ts; bots migration 0018_rehearsal.sql (rehearsal_intercepts); e2e/bots/test-action.spec.ts | lives in bots plugin, no workshop plugin |
 
 ### Phase 8 · Connections, knowledge, email bots, team inbox and memory sharing — 2 built, 6 partly, 28 not built

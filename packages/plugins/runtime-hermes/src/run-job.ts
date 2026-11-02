@@ -70,6 +70,11 @@ export const RunPayload = z.strictObject({
   /** Set when this run is a gate-held message a person has since approved: the gate does not look at it again. */
   gateApprovalId: z.uuid().optional(),
   /**
+   * The id of the message that started the run, when a message did (PLAN P7-07). The gate's decision is kept with this id and never with the text: the Workshop's replay reads the
+   * message again through the viewer's own access and asks the bot's current gate the same question.
+   */
+  messageId: z.uuid().optional(),
+  /**
    * Set when this run answers a bot-authored mention (a delegation): the authoring bot and how deep the chain in this
    * thread already is. Absent (or 0 on the row) when a person asked.
    */
@@ -118,7 +123,7 @@ export interface LlmDoor {
       text: string;
       dlpMode?: 'preset' | 'hold' | 'approved';
     },
-  ): Promise<{ allowed: boolean; message: string | null; text: string; outcome: string; rules: string[] }>;
+  ): Promise<{ allowed: boolean; message: string | null; text: string; outcome: string; rules: string[]; preset?: string; reason?: string | null }>;
   /** One turn of a run on an LLM gateway runner (P19-10); optional: an older gateway has none. */
   chat?(
     run: <T>(fn: (tx: PluginTx) => Promise<T>) => Promise<T>,
@@ -286,6 +291,18 @@ export async function loadDefinition(ctx: PluginContext, tx: PluginTx, bot: RunB
   };
 }
 
+/**
+ * Keeps one line of what the gate or the guard decided for this run (`run_decisions`, PLAN P7-07), content-blind. Recording never changes the outcome of the check it describes:
+ * a failure is logged and the run goes on.
+ */
+async function recordDecision(ctx: PluginContext, log: PluginLogger, run: BotRunHandle, decision: Parameters<PluginContext['runs']['logDecision']>[1]): Promise<void> {
+  try {
+    await ctx.runs.asBot(run, (tx) => ctx.runs.logDecision(tx, decision));
+  } catch (err) {
+    log.warn(`runtime-hermes: run ${run.runId}: a ${decision.kind} decision could not be recorded: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
+  }
+}
+
 // The gate (SPEC §7.3, P5-11): before anything is sent to a model, a bot with a `guard.gate` list checks the message against it — the list
 // first, then the local classifier. A hit holds the message for a person and stops the run (`stopped`); the model is never called. A run
 // a person already released (past the gate or past the DLP check, which comes after it) is not asked again. A runtime with no model has
@@ -311,6 +328,20 @@ export async function checkGate(input: {
       text,
       run: { workspaceId: bot.workspace_id, botId: bot.id, teamId: bot.team_id, runId: run.runId },
       llm: ctx.providers.get<LlmDoor>('llm'),
+    });
+    await recordDecision(ctx, log, run, {
+      kind: 'gate',
+      subject: 'gate',
+      outcome: verdict.kind === 'pass' ? 'passed' : verdict.kind === 'hold' ? 'held' : 'refused',
+      target: null,
+      messageId: payload.messageId ?? null,
+      detail: {
+        stage: verdict.kind === 'hold' ? verdict.stage : 'none',
+        entry: verdict.kind === 'hold' ? verdict.entry : null,
+        entries: gateEntries.length,
+        // whether stage two (a model) was part of the decision, so a replay knows what it cannot redo
+        topics: gateEntries.filter((e) => !(e.length > 1 && e.startsWith('/'))).length,
+      },
     });
     if (verdict.kind === 'refused') {
       log.warn(`runtime-hermes: run ${run.runId} refused at the gate: ${verdict.detail}`);
@@ -409,6 +440,14 @@ export async function checkPreflight(input: {
         alias,
         text: payload.prompt,
         ...(dlpMode ? { dlpMode } : {}),
+      });
+      await recordDecision(ctx, log, run, {
+        kind: 'guard',
+        subject: alias,
+        outcome: !decision.allowed && (decision.reason === 'budget' || decision.reason === 'rate') ? 'refused' : decision.outcome,
+        target: null,
+        messageId: payload.messageId ?? null,
+        detail: { preset: decision.preset ?? null, reason: decision.reason ?? null, rules: decision.rules.slice(0, 20), allowed: decision.allowed },
       });
       if (!decision.allowed && decision.outcome === 'require_approval') {
         const filed = await holdForApproval(ctx, tx, { run, payload, alias, rules: decision.rules, excerpt: decision.text, approvers });

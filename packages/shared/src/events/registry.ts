@@ -69,6 +69,9 @@ import { BotRunnerRunRefusedEvent } from './bot_runner.run.refused.ts';
 import { BotRunnerRunUnmeteredEvent } from './bot_runner.run.unmetered.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
 import { BotsEvalRunFinishedEvent } from './bots.eval.run.finished.ts';
+import { WorkshopReassessmentCreatedEvent } from './workshop.reassessment.created.ts';
+import { WorkshopReassessmentClosedEvent } from './workshop.reassessment.closed.ts';
+import { WorkshopReplayStartedEvent } from './workshop.replay.started.ts';
 import { RunnersJobRefusedEvent } from './runners.job.refused.ts';
 import { RunnersRunnerConnectedEvent } from './runners.runner.connected.ts';
 import { RunnersRunnerDisconnectedEvent } from './runners.runner.disconnected.ts';
@@ -284,6 +287,9 @@ export const eventRegistry = {
   'bot_runner.run.unmetered': { 1: BotRunnerRunUnmeteredEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
   'bots.eval.run.finished': { 1: BotsEvalRunFinishedEvent },
+  'workshop.reassessment.created': { 1: WorkshopReassessmentCreatedEvent },
+  'workshop.reassessment.closed': { 1: WorkshopReassessmentClosedEvent },
+  'workshop.replay.started': { 1: WorkshopReplayStartedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 

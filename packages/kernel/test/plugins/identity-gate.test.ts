@@ -78,7 +78,7 @@ describe('ctx.identity', () => {
     const ctx = createPluginContext(reaper.manifest, { ...base, runs });
     await expect(ctx.runs.close('run-1', 'failed')).resolves.toBe(true);
     expect(closed).toEqual([['run-1', 'failed']]);
-    for (const member of ['open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'logIntercept', 'inheritSources'] as const) {
+    for (const member of ['open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'logIntercept', 'logDecision', 'inheritSources'] as const) {
       expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.close.*tool\.invoke/);
     }
     const plain = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
@@ -102,9 +102,27 @@ describe('ctx.identity', () => {
     const ctx = createPluginContext(proxy.manifest, { ...base, runs });
     await expect(ctx.runs.resolve(Buffer.from('ab', 'hex'))).resolves.toEqual({ runId: 'run-1' });
     expect(seen).toEqual(['ab']);
-    for (const member of ['close', 'open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'logIntercept', 'inheritSources'] as const) {
+    for (const member of ['close', 'open', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'invoke', 'logSource', 'logIntercept', 'logDecision', 'inheritSources'] as const) {
       expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.resolve.*tool\.invoke/);
     }
+  });
+
+  it('ctx.capabilities.preview needs capability.call: another plugin is refused before the broker is reached', async () => {
+    const asked: string[] = [];
+    const broker = {
+      authorize: () => Promise.reject(new Error('unused')),
+      preview: (_actor: unknown, capability: string) => {
+        asked.push(capability);
+        return Promise.resolve({ allowed: true, needsApproval: false, reason: 'granted' });
+      },
+    } as never;
+    const tx = { actor: { kind: 'person', id: 'p', workspaceId: 'w' } } as never;
+    const plain = definePlugin({ manifest: { name: 'plain', version: '0.1.0', kind: 'server' }, register: () => undefined });
+    await expect(createPluginContext(plain.manifest, { ...base, broker }).capabilities.preview(tx, 'bot-1', 'pages.write')).rejects.toThrow(/capability\.call/);
+    expect(asked).toEqual([]);
+    const helper = definePlugin({ manifest: { name: 'helper', version: '0.1.0', kind: 'server', extends: ['capability.call'], calls: ['knowledge.search'] }, register: () => undefined });
+    await expect(createPluginContext(helper.manifest, { ...base, broker }).capabilities.preview(tx, 'bot-1', 'pages.write')).resolves.toMatchObject({ allowed: true });
+    expect(asked).toEqual(['pages.write']);
   });
 
   it('capability.call is a door of its own: invoke (in the caller\'s own transaction) and catalog work, every other member of ctx.runs is refused', async () => {
@@ -127,7 +145,7 @@ describe('ctx.identity', () => {
     // the door is as wide as the manifest's `calls`: another capability is refused, and the real invoke is not reached
     expect(() => ctx.runs.invoke(tx, 'files.delete', {})).toThrow(/may call only knowledge\.search.*not "files\.delete"/);
     expect(seen).toHaveLength(1);
-    for (const member of ['close', 'open', 'resolve', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'logSource', 'logIntercept', 'inheritSources', 'openRunOf'] as const) {
+    for (const member of ['close', 'open', 'resolve', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'logSource', 'logIntercept', 'logDecision', 'inheritSources', 'openRunOf'] as const) {
       expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/capability\.call.*tool\.invoke/);
     }
     // the manifest must say what the door may call, and the door does not mix with the other doors of ctx.runs

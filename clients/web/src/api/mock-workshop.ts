@@ -37,7 +37,7 @@ const uuid = (kind: string, n: number): string => `00000000-0000-7000-8000-00000
 
 type Held = { session: WorkshopSession; reads: number; pending: { text: string; about: boolean } | null };
 
-export function installWorkshopMock(on: On, hooks: WorkshopMockHooks): void {
+export function installWorkshopMock(on: On, hooks: WorkshopMockHooks): { begin: (slug: string, botSlug: string, mode: WorkshopMode, text?: string) => WorkshopSession } {
   const sessions = new Map<string, Held>();
   let counter = 0;
   let proposalCounter = 0;
@@ -55,23 +55,26 @@ export function installWorkshopMock(on: On, hooks: WorkshopMockHooks): void {
   };
   const open = (): number => [...sessions.values()].filter((h) => h.session.status === 'working' || h.session.status === 'ready').length;
 
-  on(createWorkshopSessionRoute, ({ params, body }) => {
-    const slug = params['slug'] as string;
-    const mode = body['mode'] as WorkshopMode;
+  // one way to start a conversation: the create route and a confirmed full replay (mock-replay.ts) both use it
+  const begin = (slug: string, botSlug: string, mode: WorkshopMode, text?: string): Held => {
     if (mode === 'rehearse' && !hooks.canRehearse(slug)) hooks.fail(403, 'forbidden', 'Only a team lead or an admin can rehearse a bot');
     if (open() >= 3) hooks.fail(409, 'conflict', 'You already have Workshop conversations open. End one first.');
     counter += 1;
     const session: WorkshopSession = WorkshopSessionResponse.parse({
       session: {
-        id: uuid('a', counter), teamId: uuid('b', 1), botSlug: params['botSlug'], mode, status: 'ready', title: '', entries: [], messageCount: 0,
+        id: uuid('a', counter), teamId: uuid('b', 1), botSlug, mode, status: 'ready', title: '', entries: [], messageCount: 0,
         usage: { calls: 0, promptTokens: 0, completionTokens: 0, label: mode === 'rehearse' ? 'rehearsal' : 'workshop' }, message: null, createdAt: NOW, updatedAt: NOW,
       },
     }).session;
     const h: Held = { session, reads: 0, pending: null };
     sessions.set(session.id, h);
-    if (typeof body['text'] === 'string') say(h, body['text'], false);
-    return created({ session: h.session });
-  });
+    if (text !== undefined) say(h, text, false);
+    return h;
+  };
+
+  on(createWorkshopSessionRoute, ({ params, body }) =>
+    created({ session: begin(params['slug'] as string, params['botSlug'] as string, body['mode'] as WorkshopMode, typeof body['text'] === 'string' ? body['text'] : undefined).session }),
+  );
 
   function say(h: Held, text: string, about: boolean): void {
     push(h, (id) => ({ id, at: NOW, kind: 'person', text }));
@@ -154,4 +157,5 @@ export function installWorkshopMock(on: On, hooks: WorkshopMockHooks): void {
     if (h.session.status === 'working' || h.session.status === 'ready') h.session = { ...h.session, status: h.session.status === 'working' ? 'cancelled' : 'ended' };
     return view(h);
   });
+  return { begin: (slug, botSlug, mode, text) => begin(slug, botSlug, mode, text).session };
 }

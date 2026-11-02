@@ -57,7 +57,10 @@ export interface ContextDeps {
   /** Secret storage for plugins that extend `provider.identity` (default: the kernel's KMS-backed one). */
   secrets?: SecretService;
   /** The capability broker behind `ctx.capabilities.authorize`; without one the call rejects (fail closed). */
-  broker?: { authorize(actor: Actor, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision> };
+  broker?: {
+    authorize(actor: Actor, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+    preview?(actor: Actor, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+  };
   /** `ctx.runs`, the MCP gateway's run/tool door (PLAN P5-09); absent when the host has no database pools. */
   runs?: PluginRuns;
   /** The app pool (`ctx.db.as`) and the system pool (`ctx.db.system`); absent when the host has no database. */
@@ -274,6 +277,13 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
         if (!deps.broker) throw new PluginError(`Plugin "${name}": no capability broker is wired into the host`, { plugin: name });
         return deps.broker.authorize(tx.actor as unknown as Actor, capability, context);
       },
+      async preview(tx: PluginTx, botActorId: string, capability: string, context: CapabilityAuthorizeContext = {}) {
+        // Reading what a bot may do is the caller's door (`capability.call`), not every plugin's: it shows a bot's grants to a plugin that asks.
+        use('capability.call');
+        if (!deps.broker?.preview) throw new PluginError(`Plugin "${name}": no capability broker is wired into the host`, { plugin: name });
+        // The answer a bot would get now. Nothing is logged and nothing runs; the workspace is the caller's own, never a parameter.
+        return deps.broker.preview({ kind: 'bot', id: botActorId as Actor['id'], workspaceId: tx.actor.workspaceId as Actor['workspaceId'], ...(context.trigger ? { trigger: context.trigger } : {}) }, capability, context);
+      },
       register(capability: string, handler: CapabilityHandler) {
         if (!manifest.capabilities.some((c) => c.name === capability)) {
           throw new PluginError(
@@ -307,6 +317,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           invoke: refuse('invoke'),
           logSource: refuse('logSource'),
           logIntercept: refuse('logIntercept'),
+          logDecision: refuse('logDecision'),
           inheritSources: refuse('inheritSources'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);
@@ -334,6 +345,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           invoke: refuse('invoke'),
           logSource: refuse('logSource'),
           logIntercept: refuse('logIntercept'),
+          logDecision: refuse('logDecision'),
           inheritSources: refuse('inheritSources'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);
@@ -368,6 +380,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           may: refuse('may'),
           logSource: refuse('logSource'),
           logIntercept: refuse('logIntercept'),
+          logDecision: refuse('logDecision'),
           inheritSources: refuse('inheritSources'),
           openRunOf: refuse('openRunOf'),
         } as PluginRuns);

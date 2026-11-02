@@ -67,6 +67,15 @@ export class CapabilityBroker {
     return this.decide(actor, capability, context, false);
   }
 
+  /**
+   * What `authorize` would answer for `actor` right now, with NO audit line and no effect: a replay of an earlier decision against today's grants (PLAN P7-07). The same
+   * `decide` as `authorize` (the path guard, the destructive tag, person scopes, the allowlist), so a replay can never disagree with the door it replays. A mutation
+   * with no path is judged as the real door would: refused.
+   */
+  preview(actor: Actor, capability: string, context: AuthorizeContext = {}): Promise<Decision> {
+    return this.decide(actor, capability, context);
+  }
+
   private async decide(actor: Actor, capability: string, context: AuthorizeContext, requirePath = true): Promise<Decision> {
     const deny = (reason: string): Decision => ({ allowed: false, reason, needsApproval: false });
     const trigger = context.trigger ?? actor.trigger;

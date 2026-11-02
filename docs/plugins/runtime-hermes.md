@@ -408,6 +408,10 @@ flag `i` only. BOT.md **load** refuses (the definition becomes `invalid` with `g
 repetition (`(a+)+`, the shape that hangs every other engine the pattern is pasted into), a pattern over 200 instructions, a list over 1,000 instructions of patterns together, an entry over 200
 characters, a list over 50 entries.
 
+### What the gate and the guard leave behind (P7-07)
+
+The router puts the id of the message that started the run in the run payload (`messageId`). The run job writes one content-blind line per decision to `app.run_decisions` through `ctx.runs.logDecision`: the gate's (`gate`, passed or held, the stage that decided, the id of the message, never its text) and the guard's before the model call (`guard`, the preset and the names of the rules that fired). The Workshop's free replay asks today's list and preset the same question ([workshop.md](./workshop.md#replay-and-re-assessment-p7-07)). A line the log cannot take (the 300th of a run) is not an error: the decision stands. `test/run.test.ts` asserts the gate lines (held with stage `exact`, passed) and the guard line (`require_approval`, rule `api-key`).
+
 ## Hermes gateways
 
 A Hermes *gateway* is a Hermes program with its HTTP API switched on. It can serve many *profiles* (a profile is a directory with `SOUL.md`,

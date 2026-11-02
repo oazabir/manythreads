@@ -46,7 +46,7 @@ describe('seedWorld with repo (seed v4)', () => {
   it('fills every team repository through the writer, as the right people, and a second run changes nothing', async () => {
     const first = await seedWorld(server.db, { content: true, repo: true });
     expect(first.repo).toMatchObject({ skipped: null, teams: 3, attachments: 3 });
-    expect(first.repo?.commits).toBeGreaterThanOrEqual(27);
+    expect(first.repo?.commits).toBeGreaterThanOrEqual(30);
 
     for (const [slug, teamId] of [['engineering', TEAM_IDS.Engineering], ['customer-support', TEAM_IDS['Customer support']], ['marketing', TEAM_IDS.Marketing]] as const) {
       const paths = (await entries(teamId)).map((e) => e.path);
@@ -57,7 +57,10 @@ describe('seedWorld with repo (seed v4)', () => {
       expect(paths.some((p) => p.startsWith('memory/facts/') && p.endsWith('.md'))).toBe(true);
       expect(paths.some((p) => p.startsWith('memory/journal/') && p.endsWith('.md'))).toBe(true);
       const bot = paths.filter((p) => p.startsWith('bots/') && !p.endsWith('.gitkeep'));
-      expect(bot.map((p) => p.split('/').pop()).sort()).toEqual(['BOT.md', 'lessons.md', 'memory.md']);
+      // (seed v7: Marketing's Content drafter also holds its brief and a scenario set)
+      expect(bot.map((p) => p.replace(/^bots\/[^/]+\//, '')).sort()).toEqual(
+        slug === 'marketing' ? ['BOT.md', 'BRIEF.md', 'evals/launch-posts.yaml', 'lessons.md', 'memory.md'] : ['BOT.md', 'lessons.md', 'memory.md'],
+      );
 
       // the runbook has history: two commits by two people (Customer support's by one), none by the system
       const runbook = await sql<{ author: string | null; message: string }>(
@@ -77,6 +80,14 @@ describe('seedWorld with repo (seed v4)', () => {
     expect(await authorOf(TEAM_IDS.Engineering, 'bots/coder/BOT.md')).toBe(personas.omar.actorId);
     expect(await authorOf(TEAM_IDS['Customer support'], 'pages/runbook.md')).toBe(personas.sameera.actorId);
     expect(await authorOf(TEAM_IDS.Engineering, 'memory/journal/2026-03-06.md')).toBeNull(); // the built-in routine, not a person
+
+    // Seed v7: the Content drafter's bot folder is written by an admin, its lessons by the team lead; BOT.md names the scenario set that is there
+    expect(await authorOf(TEAM_IDS.Marketing, 'bots/content-drafter/BRIEF.md')).toBe(personas.omar.actorId);
+    expect(await authorOf(TEAM_IDS.Marketing, 'bots/content-drafter/lessons.md')).toBe(personas.tariq.actorId);
+    const botMd = await sql<{ text_plain: string | null }>(`SELECT text_plain FROM app.repo_entries WHERE team_id = $1 AND path = 'bots/content-drafter/BOT.md'`, [TEAM_IDS.Marketing]);
+    expect(botMd[0]?.text_plain).toMatch(/evals:\n\s+set: launch-posts\n\s+minScore: 0\.8/);
+    const lessons = await sql<{ text_plain: string | null }>(`SELECT text_plain FROM app.repo_entries WHERE team_id = $1 AND path = 'bots/content-drafter/lessons.md'`, [TEAM_IDS.Marketing]);
+    expect((lessons[0]?.text_plain ?? '').split('\n').filter((l) => l.startsWith('- '))).toHaveLength(3);
 
     // The app is a single file that loads the bridge and holds no network code
     const app = await sql<{ text_plain: string | null }>(`SELECT text_plain FROM app.repo_entries WHERE team_id = $1 AND path = 'apps/release-checklist/index.html'`, [TEAM_IDS.Engineering]);

@@ -137,6 +137,10 @@ because a bot actor cannot see its own run's lines under the table's SELECT poli
 reached" and the retention rule — a run retains memory no wider than the narrowest source it read (SPEC §12.1) — read
 later. What the gateway does **not** log is the query itself or anything a stub touched, because neither is a source.
 
+## What the run decided (P7-07)
+
+Next to the source log, every tool call and every guard check on a tool's answer leaves one **content-blind** line in `app.run_decisions` (the bots plugin's table, [bots.md](./bots.md); written through `ctx.runs.logDecision`): `kind` `tool` with the capability name and the broker's outcome (`allowed`, `needs_approval`, `denied`), or `kind` `guard` with the preset and the names of the rules that fired. The line never holds the arguments, the answer or a matched snippet. The one thing it keeps of where a call aimed is a path of the team's files, and only for a change made by a `files.*` or `pages.*` tool, and only if the string is shaped like one (a known first folder, plain characters, no long opaque string); any other string the model wrote there, a secret included, is dropped and the line is marked `truncated: true`, which is also set when a call named more than five places or a place longer than 200 characters. A `target` is such a path, or an id or slug of the platform's own shape (a UUID, a short slug). A line that cannot be written is logged and counted (`lostDecisionCount()`), and a detail over 1500 bytes becomes `{ "truncated": true }` before it reaches the table; the replay never judges either as same. The Workshop's replay reads these lines and asks the broker the same question again through `ctx.capabilities.preview` (the same decision as `call`, no audit row, no effect). `test/decisions.test.ts` checks the lines for an allowed call, a call that waits for a person, a refusal and a guarded answer, that no argument text reaches the table, and that a secret-looking path or id is not stored.
+
 ## Not yet
 
 - Connections (`person:*` tools, `needsApproval` per connection) are P8.

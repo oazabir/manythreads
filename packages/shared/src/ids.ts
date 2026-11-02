@@ -176,3 +176,7 @@ export type SetupSessionId = z.infer<typeof SetupSessionId>;
 /** One Workshop conversation on a bot's page: Build, Rehearse or Live (`workshop_sessions`, PLAN P7-05). */
 export const WorkshopSessionId = z.uuid().brand<'WorkshopSessionId'>();
 export type WorkshopSessionId = z.infer<typeof WorkshopSessionId>;
+
+/** One "check this again" notice on a bot: something it depends on changed, or its eval score dropped (`bot_reassessments`, PLAN P7-07). */
+export const BotReassessmentId = z.uuid().brand<'BotReassessmentId'>();
+export type BotReassessmentId = z.infer<typeof BotReassessmentId>;

@@ -31,6 +31,16 @@ describe('server against a fresh database with the test plugin', () => {
     expect(await good.json()).toEqual({ echoed: 'hi', count: 1 });
   });
 
+  it('a route opened read only cannot write, whatever its handler tries; the same write works on an ordinary route', async () => {
+    const seen = async (probe: string) => ((await (await get(`/api/test/deliveries?note=${probe}`)).json()) as { deliveries: unknown[] }).deliveries.length;
+    const refused = await get('/api/test/readonly-write');
+    expect(refused.status).toBeGreaterThanOrEqual(500);
+    expect(await seen('probe-readonly')).toBe(0);
+    const plain = await get('/api/test/plain-write');
+    expect(plain.status).toBe(200);
+    expect(await seen('probe-plain')).toBe(1);
+  });
+
   it('ping emits one event and the subscriber records exactly one delivery', async () => {
     const note = `n-${Date.now()}`;
     const event = await captureEvent('kernel.test.pinged', async () => {

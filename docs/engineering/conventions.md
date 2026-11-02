@@ -38,7 +38,7 @@ The binding rules every change follows: how data, events, plugins and screens ar
   `ctx.readState`, `ctx.links`, `ctx.realtime.pushToPerson`, `ctx.jobs.register/enqueue` (extension `job.register`),
   `ctx.providers.get('storage')`, `ctx.providers.get<RepoProvider>('repo')` (team repo: write/restore/blob/tree/list — the only git writer),
   `ctx.access.readableTeamIds/readableChannelIds`, `ctx.realtime.pushToPeople/pushMany` (one statement per fan-out),
-  `ctx.capabilities.authorize`, `ctx.jobs.register({ cron })`. Plugins can't import each other: reuse another plugin's behaviour via its HTTP route
+  `ctx.capabilities.authorize`, `ctx.capabilities.preview` (the broker's decision with no audit row and no effect; for "what would happen" questions; needs the manifest door `capability.call`), `ctx.runs.logDecision` (one content-blind decision line of the run), `ctx.jobs.register({ cron })`. A route that must never write says so with `readOnly: true`: the server opens its transaction `BEGIN READ ONLY`, so a write fails with 25006; the SDK statement filter refuses `SET`, `set_config` and statements that end or restart the transaction (`COMMIT`, `END`, `ABORT`, `BEGIN`, a plain `ROLLBACK`), and it is a stopgap, not a sandbox. Plugins can't import each other: reuse another plugin's behaviour via its HTTP route
   shape or an SDK service, never by copying.
 - Server-side text processing must be linear-time (no nested regex quantifiers); add hostile-input timing tests.
 - Plugins import only `@manythreads/sdk` and `@manythreads/shared`, never kernel internals. Plugin HTTP routes mount at

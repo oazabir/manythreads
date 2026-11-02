@@ -217,6 +217,12 @@ export interface HttpRouteDefinition {
    */
   rateLimitBy?: 'address';
   /**
+   * The route can only read: its whole transaction is opened `READ ONLY`, so a query of the handler (its own, a helper's or a bug's) that writes a row fails with the
+   * database's own refusal; the SDK's statement filter refuses `SET`, `set_config` and the statements that end or restart a transaction (a stopgap, not a sandbox).
+   * For a route whose promise is "this changes nothing" (the Workshop's replay of past decisions).
+   */
+  readOnly?: boolean;
+  /**
    * Reachable without an actor (sign-in, health-like or test routes). Default false: the route answers 401 unless the
    * request carries a valid session cookie (or, only under NODE_ENV=test, a dev-header actor).
    */
@@ -409,6 +415,15 @@ export interface PluginRuns {
    */
   logIntercept(tx: PluginTx, intercept: { capability: string; target: string | null; wouldWait: boolean }): Promise<number>;
   /**
+   * Records one decision of a run's gate, guard or tool door (`run_decisions`, PLAN P7-07); must be called inside `asBot`. Content-blind: what it was about (a tool name, a
+   * model alias, `gate`), the outcome, the place a call aimed at, the id of the message the gate read (never its text) and a few fixed facts. The Workshop's replay asks the
+   * current rules the same question later. Answers the seq.
+   */
+  logDecision(
+    tx: PluginTx,
+    decision: { kind: 'gate' | 'guard' | 'tool'; subject: string; outcome: string; target: string | null; messageId: string | null; detail: Record<string, unknown> },
+  ): Promise<number>;
+  /**
    * Gives `run` the source log of `fromRunId` (a run of the same bot and team): every distinct line the stopped run had logged, in one set-based
    * statement, with no cap — a rule that reads a run's history must never see a truncated one. For the re-run of an approved call (a new run with an
    * empty log, SPEC §12.1: no wider than the narrowest source read). Rejects when the two runs are not the same bot's. Answers how many lines were copied.
@@ -468,6 +483,13 @@ export interface PluginContext {
      * host has no broker wired in.
      */
     authorize(tx: PluginTx, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
+    /**
+     * What the broker would answer for a BOT's actor right now (its allowlist, the path guard, the destructive tag, person scopes), without an audit line and without
+     * running anything: the Workshop's replay of an earlier tool decision (PLAN P7-07). Needs the manifest door `capability.call` (it shows what a bot may do, so it is the
+     * caller's door, not every plugin's). The bot's actor id is read by the caller through its own access first; the workspace is the transaction's. Fails closed when the host
+     * has no broker.
+     */
+    preview(tx: PluginTx, botActorId: string, capability: string, context?: CapabilityAuthorizeContext): Promise<CapabilityDecision>;
   };
   /**
    * The MCP gateway's run and tool door (PLAN P5-09). Only for plugins whose manifest extends `tool.invoke`;

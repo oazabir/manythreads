@@ -5,7 +5,7 @@ read (SPEC section 7, PLAN P5-03/P5-04). Code: `packages/plugins/bots`. Schemas:
 `packages/shared/src/entities/bot.ts`, route schemas in `packages/shared/src/api/bots/`. Migrations:
 `migrations/0001_bots.sql` (namespace `bots`, ordered after `channels` through the manifest's
 `dependsOn: ['channels']`, because `bot_runs` references `app.threads`) and `migrations/0002_pairing.sql` (the three
-SECURITY DEFINER functions over `bot_pairing_tokens`).
+SECURITY DEFINER functions over `bot_pairing_tokens`). `migrations/0020_run_decisions.sql` (P7-07) adds `run_decisions`.
 
 `register` wires two things (both extend `event.subscribe` + `event.emit`): the **loader**, a `repo.repo.committed`
 subscription, and the **pairing routes**. Runs themselves (`bot_runs`) follow in P5-07.
@@ -93,6 +93,7 @@ in `packages/shared/src/events/registry.ts`.
 | `bot_eval_runs` | one run of a bot's scenario set (P7-08, migration 0016) | `bot_id`, `bot_slug`, `set_name`, `commit_sha?`, `trigger` (`on_demand` \| `on_commit` \| `nightly`), `mode` (`static` \| `model`), `status` (`running` \| `finished` \| `failed`), `min_score`, `total` / `judged` / `passed`, `score?`, `ok?`, `cost_tokens`, `error?`, `results` (jsonb, at most 100 verdicts), `requested_by?` | `(bot_id, id DESC)`; `(workspace_id)`; `(team_id)`; partial `(started_at) WHERE status = 'running'` |
 | `rehearsal_questions` | the one message a lead or admin asked as a rehearsal (P7-11, migration 0018) | `message_id` (PK, the question), `team_id`, `bot_id`, `asked_by` | `(bot_id, asked_by, created_at DESC)`; `(workspace_id)`; `(team_id)`; `(asked_by)` |
 | `rehearsal_intercepts` | one line per write a rehearsal run tried and the gateway held back: the tool name and where it aimed, **never the text** (P7-11, migration 0018) | PK `(run_id, seq)`, `capability`, `target?`, `would_wait` | PK |
+| `run_decisions` | what a run's gate, guard and tool door decided, kept so the Workshop can check the decisions again against today's rules (P7-07, migration 0020, [workshop.md](./workshop.md)). **Content-blind**: kind, a subject (a tool name, an alias, the gate), the outcome, a target, the id of the message the gate read (its text is read again through the viewer's own access), a few fixed facts (guard preset, rule names, a path only if it is shaped like a path of the team's files). At most 300 lines a run; the 301st decision is made but not kept. A detail over 1500 bytes is stored as `{ "truncated": true }` (the table's own check is 2000), and the replay never judges such a line | PK `(run_id, seq)`, `kind` (`gate` \| `guard` \| `tool`), `subject`, `outcome`, `target?`, `message_id?`, `detail` (jsonb, at most 2000 bytes) | PK; brin `(created_at)` |
 | `run_source_log` | what a run read: the evidence behind "Sources reached" | `run_id`, `seq`, `source_type` (open set: `message`, `page`, `file`, `memory`, ...), `source_ref`, `scope` (`team` \| `channel` \| `person`) | PK `(run_id, seq)` |
 
 The run list of the bot page carries `markdownRepairs: { paths, fences }` for each run (P14-19): the sum of the `channel.markdown.repaired` events the channels plugin wrote for that run, both zero for a run that wrote clean Markdown. The Audit tab prints "Formatting fixed by the server: …" under a run that has any.
@@ -127,6 +128,8 @@ kernel's `schema-enums` test fails if SQL and Zod ever list different values.
    conversation run's lines follow the run: its asker only), and
    appended to only by the run itself: the INSERT check is `run_id = app.run_id()`, the GUC `withActor` sets from the
    actor's `runId` (kernel `with-actor.ts`). Another writer is the system role.
+
+5. **`run_decisions` — `rls: team`, read with the run.** The SELECT policy is the run's own: the line is readable when its run is among the `bot_runs` the caller may read, so a conversation run's lines are its asker's alone. Appended only through the definer function `app.run_decision_append`, which takes the run from `app.run_id()` (a caller cannot name another run); the app role has no INSERT. Written by the runtime (`runtime-hermes`: gate and guard, with the `messageId` the router puts in the run payload), by the MCP gateway (every tool call and every guard check on a tool's answer) and by the kernel door `ctx.runs.logDecision`. `test/rls/run-decisions.test.ts` covers the policy, the append door and the 300 cap.
 
 Read plans are hoisted: `bots`, `bot_runs` and `run_source_log` are checked by
 `findPerRowPolicyCalls` in `test/rls/bots.test.ts`, which fails the moment a policy calls a per-row helper.

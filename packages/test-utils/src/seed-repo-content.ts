@@ -401,6 +401,122 @@ const botLessons = (v: TeamVoice): string => `# ${v.bot.name}: lessons
 Corrections from the team are collected here by the Workshop. None yet.
 `;
 
+// Seed v7 (PLAN P7-10): the Marketing team's Content drafter gets what the Workshop needs to show a bot that is going wrong: the brief it was set up
+// from, a scenario set that fails (its score is under the minimum it asks for) and a lesson the team had to give twice.
+
+/** The set BOT.md names, and the minimum score it asks of it. */
+export const SEED_V7_EVAL_SET = 'launch-posts';
+export const SEED_V7_MIN_SCORE = 0.8;
+
+/** The two lines of lessons.md that say the same thing: the Workshop reads them as one lesson told twice and proposes a rule. */
+export const SEED_V7_LESSONS = [
+  '- 2026-03-02: Open a launch post with what changed for the reader, not with a question.',
+  '- 2026-03-05: Open a launch post with what changed for the reader and not with a question.',
+] as const;
+
+const draftingBrief = (v: TeamVoice): string => `# Brief: ${v.bot.name}
+
+Written by the team lead when the bot was set up. It is what the Add a bot helper was asked to build, in the lead's own words.
+
+## What it is for
+
+Draft launch posts, campaign briefs and short announcements for the ${v.team} team in the brand voice (see the page \`memory/facts/brand-voice.md\`).
+A person always reads a draft before it is published. The bot never publishes by itself.
+
+## Who asks, and where
+
+Anybody on the team asks by mentioning the bot in #campaigns, or in a private conversation with it. It answers in the place it was asked.
+
+## What it may do
+
+- Post its draft as a reply, and say which facts the draft rests on.
+- Read the brand voice and the launch calendar rules before it writes.
+
+## What it may not do
+
+- Send mail, or post anywhere it was not asked.
+- Save a page. Whether it may file approved briefs itself is not decided yet.
+- Promise a date. The launch calendar decides dates, and a person confirms them.
+
+## How the team will know it works
+
+The scenario set \`${SEED_V7_EVAL_SET}\` (in \`evals/\`) holds three cases and asks for a score of at least ${SEED_V7_MIN_SCORE * 100}%.
+`;
+
+const draftingBotMd = (v: TeamVoice): string => `---
+schema: 1
+name: ${v.bot.name}
+role: ${v.bot.role}
+kind: agent
+runtime: hermes
+model:
+  aliases: [smart]
+triggers:
+  - type: ${v.bot.trigger}
+  - type: conversation
+capabilities:
+  native:
+    - messages.post
+memory:
+  file: memory.md
+  maxLines: 200
+evals:
+  set: ${SEED_V7_EVAL_SET}
+  minScore: ${SEED_V7_MIN_SCORE}
+---
+
+# ${v.bot.name}
+
+Drafts posts and briefs for the ${v.team} team in the brand voice. ${v.bot.role}.
+
+## Behaviour
+
+Answer in the channel where you were asked. Say what you did and link what you changed. Ask before anything that cannot be undone. A person reads every draft before it is published.
+`;
+
+/**
+ * The scenario set. Static (free) mode can judge only the calls a case requires against what BOT.md grants: the first case holds, the second requires
+ * a page to be saved, which the brief says the bot may not do and BOT.md does not grant, and the third needs a model to be judged. Score: 1 of 2 judged.
+ */
+const draftingEvals = `schema: 1
+set: ${SEED_V7_EVAL_SET}
+cases:
+  - id: posts-the-draft-as-a-reply
+    question: Draft a launch post for the spring signup campaign.
+    given:
+      where: channel
+    expect:
+      toolCalls:
+        required: [messages.post]
+    rationale: The draft has to come back in the place it was asked, as a reply a person can read before anything is published.
+  - id: saves-the-approved-brief
+    question: The brief is approved. Save it as a page in the team repository.
+    given:
+      where: conversation
+    expect:
+      toolCalls:
+        required: [pages.write]
+    rationale: Written when the team wanted the bot to file approved briefs itself. The bot has not been given that, so this case fails until the team decides.
+  - id: leads-with-the-change
+    question: Write the first line of the announcement for the new export button.
+    given:
+      where: channel
+    expect:
+      mentions: [export]
+      notMentions: ['!']
+    rationale: The brand voice allows no exclamation marks in headlines, and a draft names the thing that changed.
+`;
+
+const draftingLessons = (v: TeamVoice): string => `# ${v.bot.name}: lessons
+
+Corrections from the team, collected by the Workshop.
+
+${SEED_V7_LESSONS[0]}
+- 2026-03-04: Write product names as the product writes them.
+${SEED_V7_LESSONS[1]}
+`;
+
+
 const factMd = (f: { title: string; body: string }): string => `---
 type: Fact
 title: ${JSON.stringify(f.title)}
@@ -418,7 +534,7 @@ ${f.body}
 export function repoSteps(slug: string): RepoStep[] {
   const v = VOICES.find((x) => x.slug === slug);
   if (!v) throw new Error(`seed: no repo content for team "${slug}"`);
-  return [
+  const steps: RepoStep[] = [
     { actor: v.a, message: `Add the ${v.runbook.title.toLowerCase()}`, files: [{ path: 'pages/runbook.md', content: v.runbook.v1 }] },
     {
       actor: v.b,
@@ -467,4 +583,20 @@ export function repoSteps(slug: string): RepoStep[] {
       files: [{ path: 'memory/journal/2026-03-06.md', content: `---\ntype: Journal\n---\n\n# 2026-03-06\n\n${v.journal}\n` }],
     },
   ];
+  // Seed v7: only Marketing. New steps with their own messages, so a repository seeded earlier gets them on the next run and nothing else changes.
+  if (v.slug === 'marketing') {
+    steps.push(
+      { actor: v.botOwner, message: `Add the brief of the ${v.bot.name} bot`, files: [{ path: `bots/${v.bot.slug}/BRIEF.md`, content: draftingBrief(v) }] },
+      {
+        actor: v.botOwner,
+        message: `Give the ${v.bot.name} bot a scenario set`,
+        files: [
+          { path: `bots/${v.bot.slug}/BOT.md`, content: draftingBotMd(v) },
+          { path: `bots/${v.bot.slug}/evals/${SEED_V7_EVAL_SET}.yaml`, content: draftingEvals },
+        ],
+      },
+      { actor: v.lead, message: `Record what the team told the ${v.bot.name} bot`, files: [{ path: `bots/${v.bot.slug}/lessons.md`, content: draftingLessons(v) }] },
+    );
+  }
+  return steps;
 }

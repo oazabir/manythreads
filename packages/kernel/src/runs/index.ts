@@ -29,6 +29,8 @@ import type { BotRunHandle, OpenRunInput } from '@manythreads/sdk';
 /** The default lifetime of a run's endpoint, when the caller does not say (matches `MCP_RUN_TTL_SECONDS`). */
 export const DEFAULT_RUN_TTL_SECONDS = 900;
 export const MAX_RUN_TTL_SECONDS = 3600;
+/** The most JSON bytes a decision line's detail may hold (the table's CHECK is 2000 bytes of the stored form; this leaves room for it). */
+export const DECISION_DETAIL_MAX_BYTES = 1500;
 
 export interface RunServiceOptions {
   /** manythreads_app pool: the transactions tool calls run in. */
@@ -324,6 +326,28 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       ]);
       const seq = res.rows[0]?.seq;
       if (seq === undefined) throw new Error('the rehearsal intercept append answered no row');
+      return seq;
+    },
+
+    async logDecision(
+      tx: PluginTx,
+      decision: { kind: 'gate' | 'guard' | 'tool'; subject: string; outcome: string; target: string | null; messageId: string | null; detail: Record<string, unknown> },
+    ): Promise<number> {
+      // The same shape as `logIntercept`: one definer statement that takes the run from `app.run_id()`, so a caller cannot write a decision of another run.
+      // The table refuses a detail over 2000 bytes (a CHECK), and a refused insert would lose the whole line. So the detail is capped here, well under that: a detail that does not fit
+      // is replaced by `{ truncated: true }`, which the replay reads as "not all of this was kept" and never judges.
+      let detail = JSON.stringify(decision.detail);
+      if (Buffer.byteLength(detail, 'utf8') > DECISION_DETAIL_MAX_BYTES) detail = JSON.stringify({ truncated: true });
+      const res = await tx.query<{ seq: number }>('SELECT app.run_decision_append($1, $2, $3, $4, $5::uuid, $6::jsonb) AS seq', [
+        decision.kind,
+        decision.subject,
+        decision.outcome,
+        decision.target,
+        decision.messageId,
+        detail,
+      ]);
+      const seq = res.rows[0]?.seq;
+      if (seq === undefined) throw new Error('the run decision append answered no row');
       return seq;
     },
 
