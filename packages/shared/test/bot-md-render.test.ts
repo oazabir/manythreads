@@ -112,3 +112,29 @@ describe('hostile BOT.md input (parse is linear-time and bounded)', () => {
     if (!within.ok) expect(within.failure.message).not.toMatch(/alias/i);
   });
 });
+
+describe('a BOT.md never carries a model provider key or address (P19-10)', () => {
+  const head = 'schema: 1\nname: Coder\nrole: r\nkind: agent\nruntime: hermes\n';
+  const file = (extra: string): string => `---\n${head}${extra}---\n\nbody\n`;
+
+  it.each([
+    ['api_key: sk-secret\n', 'api_key'],
+    ['model:\n  aliases: [fast]\n  base_url: https://api.openai.com/v1\n', 'model.base_url'],
+    ['placement:\n  gateway:\n    connection: host\n    OPENAI_API_KEY: x\n', 'placement.gateway.OPENAI_API_KEY'],
+    ['env:\n  ANTHROPIC_API_KEY: x\n', 'env'],
+    ['provider: openai\n', 'provider'],
+  ])('refuses %j with a plain reason that names the line', (extra, path) => {
+    const parsed = parseBotMd(file(extra));
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.failure.fieldPath).toBe(path);
+      expect(parsed.failure.message).toMatch(/never carries a model provider's key or address/);
+      expect(parsed.failure.message).not.toMatch(/sk-secret|openai\.com/);
+    }
+  });
+
+  it('still accepts an ordinary definition and a value that merely mentions a provider', () => {
+    expect(parseBotMd(file('model:\n  aliases: [fast]\n')).ok).toBe(true);
+    expect(parseBotMd(file('skills: [openai-notes]\n')).ok).toBe(true);
+  });
+});

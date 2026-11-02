@@ -97,7 +97,7 @@ async function guarded(ctx: PluginContext, run: BotRunHandle, value: unknown, wh
 }
 
 /** Runs one `tools/call`, from the grant check to the source log. */
-async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams): Promise<McpToolResult> {
+export async function callTool(ctx: PluginContext, run: BotRunHandle, params: McpToolCallParams): Promise<McpToolResult> {
   const definition = definitionOf(params.name);
   let input = withRunTeam(params.name, params.arguments ?? {}, run.teamId);
   // A mutation is authorized against the path its input names: the broker's guard has to see the same path the

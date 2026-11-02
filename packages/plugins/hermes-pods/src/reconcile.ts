@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { GatewayProfileSpec, PluginLogger } from '@manythreads/sdk';
+import { assertGatewayOnly, profileViolation } from './gateway-only.ts';
 import type { K8s, K8sObject } from './k8s.ts';
 import { withProjectRepos, type ProjectRepo } from './project-repos.ts';
 import {
@@ -94,7 +95,13 @@ export class Reconciler {
 
   async reconcileTeam(team: Team, profilesOverride?: GatewayProfileSpec[]): Promise<TeamResult> {
     const { cfg, k8s } = this;
-    const profiles = profilesOverride ?? (await this.source.profilesForTeam(team.id));
+    // A profile that names a model provider's key or address is left out: a Hermes pod reaches models only through the platform's gateway (P19-10).
+    const profiles = (profilesOverride ?? (await this.source.profilesForTeam(team.id))).filter((p) => {
+      const why = profileViolation(p);
+      // The logger of a plugin has no error level, so the line says plainly that a live bot lost its profile (the name is the bot's `mt-<slug>`; no key or value is in it).
+      if (why !== null) this.log.warn(`hermes-pods: ERROR: ${team.slug}: the pod profile ${p.profile} was DROPPED and its bot has no profile in the pod until this is fixed. ${why}`);
+      return why === null;
+    });
     const names = await this.resolveNames(team);
 
     // stable per-pod state: uids already handed out, the gateway key already drawn
@@ -162,6 +169,7 @@ export class Reconciler {
       buildService(cfg, team, names),
       buildDeployment(cfg, team, names, { replicas: users.length > 0 ? 1 : 0, withDeployer }),
     ];
+    assertGatewayOnly(objects);
     for (const obj of objects) await k8s.apply(obj);
 
     const gatewayUrl = `http://${names.base}.${cfg.namespace}.svc:${GATEWAY_PORT}`;

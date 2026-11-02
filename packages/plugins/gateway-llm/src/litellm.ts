@@ -66,6 +66,37 @@ export interface LlmGateway {
    * `LiteLlmError` for any non-2xx answer or an answer with no text.
    */
   complete(input: LiteLlmCompletion): Promise<{ text: string; promptTokens: number; completionTokens: number; model: string | null }>;
+  /**
+   * One chat turn with tools, made by the platform with the master key for a bot's run (the `model` runtime). The answer is the model's text (null when it only asked for tools) and the
+   * tools it asked for. Throws `LiteLlmError` for any non-2xx answer or an answer with neither text nor a tool call.
+   */
+  chat(input: LiteLlmChat): Promise<LiteLlmChatAnswer>;
+}
+
+export interface LiteLlmChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+  toolCallId?: string;
+}
+
+export interface LiteLlmChat {
+  model: string;
+  messages: LiteLlmChatMessage[];
+  tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+  maxTokens: number;
+  metadata: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export interface LiteLlmChatAnswer {
+  text: string | null;
+  toolCalls: Array<{ id: string; name: string; arguments: string }>;
+  promptTokens: number;
+  completionTokens: number;
+  model: string | null;
+  /** The model stopped because it ran out of room to write (`finish_reason: length`): the text is cut off. */
+  truncated: boolean;
 }
 
 export interface LiteLlmCompletion {
@@ -293,6 +324,64 @@ export function createLiteLlmClient(options: LiteLlmClientOptions): LlmGateway {
         promptTokens: count(body.usage?.['prompt_tokens']),
         completionTokens: count(body.usage?.['completion_tokens']),
         model: typeof body.model === 'string' ? body.model : null,
+      };
+    },
+
+    async chat(input) {
+      const path = '/chat/completions';
+      const result = ok(
+        path,
+        await send(
+          'POST',
+          path,
+          {
+            model: input.model,
+            messages: input.messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              ...(m.toolCalls && m.toolCalls.length > 0
+                ? { tool_calls: m.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.arguments } })) }
+                : {}),
+              ...(m.toolCallId !== undefined ? { tool_call_id: m.toolCallId } : {}),
+            })),
+            ...(input.tools.length > 0
+              ? { tools: input.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } })), tool_choice: 'auto' }
+              : {}),
+            max_tokens: input.maxTokens,
+            temperature: 0,
+            stream: false,
+            metadata: input.metadata,
+          },
+          input.timeoutMs === undefined ? undefined : { timeoutMs: input.timeoutMs },
+        ),
+      );
+      const body = (result.body ?? {}) as {
+        choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown }; finish_reason?: unknown }>;
+        usage?: Record<string, unknown>;
+        model?: unknown;
+      };
+      const message = body.choices?.[0]?.message;
+      const text = typeof message?.content === 'string' && message.content !== '' ? message.content : null;
+      const toolCalls: Array<{ id: string; name: string; arguments: string }> = [];
+      if (Array.isArray(message?.tool_calls)) {
+        for (const raw of message.tool_calls as Array<{ id?: unknown; function?: { name?: unknown; arguments?: unknown } }>) {
+          if (typeof raw?.function?.name !== 'string') continue;
+          toolCalls.push({
+            id: typeof raw.id === 'string' && raw.id !== '' ? raw.id : `call_${toolCalls.length + 1}`,
+            name: raw.function.name,
+            arguments: typeof raw.function.arguments === 'string' ? raw.function.arguments : JSON.stringify(raw.function.arguments ?? {}),
+          });
+        }
+      }
+      if (text === null && toolCalls.length === 0) throw new LiteLlmError(path, { status: result.status, body: 'the completion has no text and no tool call' });
+      const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0);
+      return {
+        text,
+        toolCalls,
+        promptTokens: count(body.usage?.['prompt_tokens']),
+        completionTokens: count(body.usage?.['completion_tokens']),
+        model: typeof body.model === 'string' ? body.model : null,
+        truncated: body.choices?.[0]?.finish_reason === 'length',
       };
     },
   };

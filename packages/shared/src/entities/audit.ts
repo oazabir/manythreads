@@ -114,6 +114,7 @@ export const AUDIT_ACTIONS = {
   'bot_runner.default_changed': { category: 'settings', label: 'Changed the default bot runner' },
   'bot_runner.terms_accepted': { category: 'settings', label: 'Accepted the terms for a bot runner' },
   'bot_runner.run_refused': { category: 'bots', label: "A bot's run was refused by its runner" },
+  'bot_runner.run_unmetered': { category: 'bots', label: 'A pod run left no spend line at the model gateway' },
   'webhook.created': { category: 'access', label: 'Created a webhook' },
   'webhook.revoked': { category: 'access', label: 'Revoked a webhook' },
   'webhook.rotated': { category: 'access', label: 'Replaced a webhook secret' },

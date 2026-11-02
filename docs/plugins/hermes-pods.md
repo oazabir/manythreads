@@ -215,5 +215,7 @@ kubectl -n manythreads-bots exec deploy/hermes-<team> -c hermes -- curl -s -H "A
 kubectl -n manythreads-bots exec deploy/hermes-<team> -c workbench -- runuser -u bot-<bot> -- npx playwright --version
 ```
 
+**Gateway only (P19-10).** A pod never holds a model provider's key. `src/gateway-only.ts` checks what the controller is about to apply: a bot profile whose secrets or environment would set a provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY` and their kin, or a provider base address) is left out of the pod (the log line starts `hermes-pods: ERROR:` and names the pod profile `mt-<slug>` and the reason, never a value; the plugin logger has no error level, and the bot has no profile in the pod until the cause is fixed), and `assertGatewayOnly` refuses to apply a Secret, ConfigMap or Deployment that holds one. The only model credential a pod may hold is the bot's own gateway key (`LLM_KEY`). The test renders profiles with the real `renderGatewayProfile`, runs them through the reconciler with canary provider keys in the process environment, and proves no provider variable, address or canary appears in any written object. The list of provider addresses is one constant (`MODEL_PROVIDER_ADDRESS` in `@manythreads/sdk`) shared by the renderer and this guard.
+
 Tests: `packages/plugins/hermes-pods/test` runs the controller against a fake Kubernetes API (an in-memory store with apply semantics) and a stand-in for
 the provider, and the HTTP client against a local server. No cluster needed.

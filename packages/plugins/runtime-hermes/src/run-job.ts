@@ -5,9 +5,15 @@ import {
   requestToolApproval,
   type ApprovalProvider,
   type BotRunHandle,
+  type BotRuntimeFailure,
   type BotRuntimeHandle,
   type JobInfo,
+  type McpToolsProvider,
+  type ModelMessage,
+  type ModelToolSpec,
+  type ModelTurnResult,
   type BotRuntimeInput,
+  type BotRunnersProvider,
   type BotRuntimeProvider,
   type BotRuntimeScope,
   type PluginContext,
@@ -28,6 +34,7 @@ import { hasGate, runGate, type ClassifierDoor } from './gate.ts';
 import { holdForApproval, holdForGate, postNotice, previewText } from './holds.ts';
 import { classifyFailure, looksLikeRejectedKey, postFailureNotice, postNotOnTeamNotice, type FailureCategory } from './failure-notice.ts';
 import { MAX_DELEGATION_DEPTH } from './match.ts';
+import { meterPodRun } from './metering.ts';
 import { rehearsalBlocker, withRehearsalNote } from './rehearsal.ts';
 import { rhythmOverrideProblem, applyRhythmOverrides, emitRhythmFinished, emitRhythmStarted, finishRhythmRun } from './rhythm-run.ts';
 
@@ -112,6 +119,23 @@ export interface LlmDoor {
       dlpMode?: 'preset' | 'hold' | 'approved';
     },
   ): Promise<{ allowed: boolean; message: string | null; text: string; outcome: string; rules: string[] }>;
+  /** One turn of a run on an LLM gateway runner (P19-10); optional: an older gateway has none. */
+  chat?(
+    run: <T>(fn: (tx: PluginTx) => Promise<T>) => Promise<T>,
+    request: {
+      workspaceId: string;
+      botId: string;
+      teamId: string;
+      runId: string;
+      alias: string;
+      messages: ModelMessage[];
+      tools: ModelToolSpec[];
+      maxTokens: number;
+      firstTurn: boolean;
+      checkedUpTo: number;
+      timeoutMs?: number;
+    },
+  ): Promise<ModelTurnResult>;
 }
 
 /** The repo door, structurally: what `repo-git` registers (docs/plugins/repo-git.md). */
@@ -154,7 +178,7 @@ export async function reportFailure(input: {
   botId: string;
   category?: FailureCategory;
   error?: string | undefined;
-  failure?: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | undefined;
+  failure?: BotRuntimeFailure | undefined;
   /** With `failure: 'runner_refused'`: which runner turned the run away and why, and the one sentence to say it with. */
   refusal?: RunnerRefusal | undefined;
 }): Promise<void> {
@@ -210,6 +234,18 @@ export async function recordRunnerRefusal(ctx: PluginContext, tx: PluginTx, run:
     await tx.query('ROLLBACK TO SAVEPOINT run_runner_refused').catch(() => undefined);
     log.warn(`runtime-hermes: run ${run.runId}: the refusal could not be recorded: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** The id of the provider that answers a bot placed on an LLM gateway runner: registered by `bot-runners`, chosen here by the runner's kind (never by `bots.runtime`). */
+export const MODEL_RUNTIME_ID = 'model';
+
+/** Is the runner this bot's `runs_on` names an LLM gateway runner? Asked of the runner catalog on the job's transaction; false when there is no `runs_on` or no catalog. */
+async function runsOnModelRunner(ctx: PluginContext, tx: PluginTx, bot: RunBotRow, runsOn: string | undefined): Promise<boolean> {
+  // Only a Hermes bot has a runner to choose: a rules bot runs inside the server and must never be redirected.
+  if (runsOn === undefined || bot.runtime !== 'hermes') return false;
+  const runners = ctx.providers.get<BotRunnersProvider>('bot.runners');
+  if (!runners) return false;
+  return (await runners.kindOf(tx, { teamId: bot.team_id, runner: runsOn }))?.kind === 'llm_gateway';
 }
 
 type ParsedDefinition = Extract<ReturnType<typeof parseBotMd>, { ok: true }>;
@@ -469,6 +505,32 @@ export function buildScope(input: {
     logSource: (source) => ctx.runs.asBot(run, (inner) => ctx.runs.logSource(inner, source)),
     log: (line) => log.info(line),
   };
+  // The `model` runtime has no process: it calls the model and the tools through these two doors, as the run's bot. No other runtime is handed them.
+  if (provider.id === MODEL_RUNTIME_ID) {
+    const llm = ctx.providers.get<LlmDoor>('llm');
+    if (llm?.chat) {
+      const chat = llm.chat.bind(llm);
+      scope.model = {
+        // The gateway opens its own short system transactions for the check and for the spend line; none is open while the proxy answers (that can take minutes).
+        turn: (turn) =>
+          chat((fn) => ctx.db.system(fn), {
+            workspaceId: bot.workspace_id,
+            botId: bot.id,
+            teamId: bot.team_id,
+            runId: run.runId,
+            alias: turn.alias,
+            messages: turn.messages,
+            tools: turn.tools,
+            maxTokens: turn.maxTokens,
+            firstTurn: turn.firstTurn,
+            checkedUpTo: turn.checkedUpTo,
+            ...(turn.timeoutMs === undefined ? {} : { timeoutMs: turn.timeoutMs }),
+          }),
+      };
+    }
+    const mcp = ctx.providers.get<McpToolsProvider>('mcp.tools');
+    if (mcp) scope.tools = { list: () => mcp.offered(run), call: (name, args) => mcp.call(run, name, args) };
+  }
   return { input: built, scope };
 }
 
@@ -491,7 +553,7 @@ export async function postReply(input: {
   reply: string;
   ok: boolean;
   /** Why a failed run failed; with `botId` and `log` it lets the asker be told (`reportFailure`). Without them a failed run closes silently. */
-  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | undefined; refusal?: RunnerRefusal | undefined };
+  failed?: { botId: string; log: PluginLogger; error?: string | undefined; failure?: BotRuntimeFailure | undefined; refusal?: RunnerRefusal | undefined };
 }): Promise<void> {
   const { ctx, tx, run, payload, scope, reply, ok, failed } = input;
   const answered = ok && (await runPostedReply(tx, run.runId, payload.channelId, payload.replyRootId));
@@ -538,6 +600,8 @@ interface PreparedRun {
   run: BotRunHandle;
   input: BotRuntimeInput;
   scope: BotRuntimeScope;
+  /** The gateway alias the definition names first; the alias a pod run's spend line is written under. */
+  alias: string | null;
 }
 
 /**
@@ -599,7 +663,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           if (!bot || bot.status !== 'active') return null; // a disabled, invalid or removed bot does not answer
           if (bot.team_id !== payload.teamId) return null;
 
-          const provider = ctx.providers.get<BotRuntimeProvider>('bot_runtime', bot.runtime);
+          let provider = ctx.providers.get<BotRuntimeProvider>('bot_runtime', bot.runtime);
           if (!provider) {
             job.log.warn(`runtime-hermes: no bot_runtime provider is loaded for "${bot.runtime}" (bot ${bot.slug})`);
             return null;
@@ -617,6 +681,16 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           }
           const { frontmatter, alias, holdOnDetection } = definition;
           approvers = definition.approvers;
+
+          // A bot placed (`runs_on`) on an LLM gateway runner is answered by a loop of model calls through the platform's gateway, not by Hermes (P19-10). Every other bot keeps its runtime.
+          if (await runsOnModelRunner(ctx, tx, bot, frontmatter.placement?.runs_on)) {
+            const model = ctx.providers.get<BotRuntimeProvider>('bot_runtime', MODEL_RUNTIME_ID);
+            if (!model) {
+              job.log.warn(`runtime-hermes: bot ${bot.slug} is placed on an LLM gateway runner, but no "${MODEL_RUNTIME_ID}" runtime is loaded`);
+              return null;
+            }
+            provider = model;
+          }
 
           // The token outlives the run's own budget (plus the kill grace): a run whose token expired mid-turn would lose its tools
           // for the rest of the turn. The kernel clamps this to its maximum.
@@ -680,7 +754,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
             key: preflight.key,
             approvers,
           });
-          return { bot, provider, run, input, scope };
+          return { bot, provider, run, input, scope, alias };
         });
         if (!result) {
           // A scheduled run that never opened (the bot went inactive, its definition moved on, no runtime is loaded) must not leave its firing queued.
@@ -692,7 +766,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           return;
         }
         prepared = result;
-        const { bot, provider, run, input, scope } = prepared;
+        const { bot, provider, run, input, scope, alias: runAlias } = prepared;
 
         // 2. The model turn: no transaction held.
         let toolCalls = 0;
@@ -700,8 +774,10 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let reply = '';
         let ok = false;
         let error: string | undefined;
-        let failure: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | undefined;
+        let failure: BotRuntimeFailure | undefined;
         let refusal: RunnerRefusal | undefined;
+        let viaPod: { runner: string } | undefined;
+        let tokens: { input: number; output: number; total: number } | null | undefined;
         for await (const event of handle.events) {
           // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
           // whether it was refused, so a run that quietly stopped using its tools can be read from the log instead of guessed at.
@@ -716,10 +792,20 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           error = event.error;
           failure = event.failure;
           refusal = event.refusal;
+          viaPod = event.viaPod;
+          tokens = event.tokens;
           if (event.tokens) job.log.info(`runtime-hermes: run ${run.runId} used ${event.tokens.total} tokens over ${toolCalls} tool calls`);
           if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
         }
         await handle.stop();
+
+        // 2b. A run the team's pod served is counted at the model gateway: one spend line under the bot, or the `bot_runner.run.unmetered` event (P19-10).
+        if (viaPod) {
+          const pod = viaPod;
+          await job.transaction((tx) => meterPodRun({ ctx, tx, log: job.log, run, botId: bot.id, runner: pod.runner, ok, alias: runAlias, tokens })).catch((err: unknown) => {
+            job.log.warn(`runtime-hermes: run ${run.runId}: the pod run could not be metered: ${err instanceof Error ? err.message : String(err)}`);
+          });
+        }
 
         // 3. Post the reply and close the run (one short transaction).
         if (payload.rhythm) {

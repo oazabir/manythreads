@@ -17,6 +17,7 @@ const samples = {
   'bot_runner.default.changed': { ...base, type: 'bot_runner.default.changed', runnerId: uuid(2), previousRunnerId: null, actorId: uuid(4) },
   'bot_runner.terms.accepted': { ...base, type: 'bot_runner.terms.accepted', runnerId: uuid(2), name: 'claude-max', acceptedBy: uuid(4) },
   'bot_runner.run.refused': { ...base, type: 'bot_runner.run.refused', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'host', reason: 'disabled' },
+  'bot_runner.run.unmetered': { ...base, type: 'bot_runner.run.unmetered', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'team-pod' },
 } as const;
 
 describe.each(Object.entries(samples))('%s', (type, valid) => {

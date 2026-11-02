@@ -7,6 +7,13 @@ import type { ProviderImpl } from './types.ts';
 // `mt-<bot slug>`. The platform renders that profile (identity, tools, model, the MCP address) and owns the three credentials it needs;
 // the controller only writes the files and the secrets into the pod and keeps the pod's gateway serving them.
 
+/**
+ * The addresses of the well-known model providers. A Hermes pod's profile never points at one: it reaches models only through the platform's gateway. One list, used by the profile
+ * renderer (runtime-hermes) and by the guard before a pod is written (hermes-pods), so the two cannot drift apart.
+ */
+export const MODEL_PROVIDER_ADDRESS =
+  /(?:api\.openai\.com|api\.anthropic\.com|openrouter\.ai|generativelanguage\.googleapis\.com|api\.mistral\.ai|api\.groq\.com|api\.deepseek\.com|api\.x\.ai|api\.cohere\.(?:ai|com)|api\.together\.xyz|api\.perplexity\.ai|api\.fireworks\.ai|api-inference\.huggingface\.co|openai\.azure\.com|bedrock-runtime\.[a-z0-9-]+\.amazonaws\.com)/i;
+
 /** One bot's profile as the pod must hold it. */
 export interface GatewayProfileSpec {
   /** The profile's directory name in the pod: `mt-<bot slug>`. Requests reach it at `/p/<profile>/v1/...`. */

@@ -125,4 +125,18 @@ describe('renderGatewayProfile', () => {
     expect(() => renderGatewayProfile(definition(), input({ mcpTokenVar: 'bad name' }))).toThrow(/environment variable/);
     expect(() => renderGatewayProfile(definition(), input({ model: { baseUrl: 'x', apiKeyVar: 'lower', alias: 'code' } }))).toThrow(/environment variable/);
   });
+
+  it('writes the gateway address and the bot key variable, and refuses a provider key variable or a provider address (P19-10)', () => {
+    process.env['OPENAI_API_KEY'] = 'canary-provider-key-7f3a91c2';
+    try {
+      const files = renderGatewayProfile(definition(), input());
+      for (const [name, text] of Object.entries(files)) expect(text, name).not.toMatch(/canary-provider-key|OPENAI_API_KEY|api\.openai\.com/);
+      expect(files['config.yaml']).toContain('http://manythreads-litellm:4000/v1');
+      expect(files['config.yaml']).toContain(`\${${GATEWAY_ENV.llmKey}}`);
+    } finally {
+      delete process.env['OPENAI_API_KEY'];
+    }
+    expect(() => renderGatewayProfile(definition(), input({ model: { baseUrl: 'http://manythreads-litellm:4000/v1', apiKeyVar: 'OPENAI_API_KEY', alias: 'code' } }))).toThrow(/never written into a profile/);
+    expect(() => renderGatewayProfile(definition(), input({ model: { baseUrl: 'https://api.openai.com/v1', apiKeyVar: GATEWAY_ENV.llmKey, alias: 'code' } }))).toThrow(/never written into a profile/);
+  });
 });

@@ -64,6 +64,7 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'bot_runner.default.changed': { runnerId: id(73), previousRunnerId: null, actorId: id(13), at: AT },
   'bot_runner.terms.accepted': { runnerId: id(73), name: 'host', acceptedBy: id(13), at: AT },
   'bot_runner.run.refused': { teamId: id(20), botId: id(14), runId: id(15), runner: 'host', reason: 'disabled', at: AT },
+  'bot_runner.run.unmetered': { teamId: id(20), botId: id(14), runId: id(15), runner: 'team-pod', at: AT },
   'webhooks.hook.created': { teamId: id(20), channelId: id(40), webhookId: id(72), actorId: id(13), at: AT },
   'webhooks.hook.revoked': { teamId: id(20), channelId: id(40), webhookId: id(72), actorId: id(13), at: AT },
   'webhooks.hook.rotated': { teamId: id(20), channelId: id(40), webhookId: id(72), actorId: id(13), at: AT },

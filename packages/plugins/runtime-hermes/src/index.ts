@@ -52,6 +52,7 @@ export default definePlugin({
         'hermes.connection.tested',
         'hermes.profiles.changed',
         'bot_runner.run.refused',
+        'bot_runner.run.unmetered',
       ],
       consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'rhythms.rhythm.ran', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed'],
     },

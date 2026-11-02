@@ -16,7 +16,7 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { checkPlacement, resolveRunner, teamRunners } from '../src/resolve.ts';
+import { checkPlacement, kindOf, modelRunnerRefusal, resolveRunner, teamRunners } from '../src/resolve.ts';
 
 // resolveRunner is the one place a runner's name becomes a place to run. It refuses what the admin has not allowed, and answers with the address and key only to
 // the server code that calls it. The context here is the two things it needs: the system transaction and the secret reader.
@@ -89,15 +89,52 @@ describe('resolveRunner', () => {
 
   it('the kinds that cannot run a bot yet are refused as such; a gateway without a key is "not set up"', async () => {
     await insertRunner('later-claude', { kind: 'claude_cli', allTeams: true });
-    await insertRunner('model', { kind: 'llm_gateway', allTeams: true });
     await insertRunner('half-made', { kind: 'hermes_gateway', allTeams: true, baseUrl: 'http://x.example.test' });
     expect(await resolve('later-claude')).toMatchObject({ ok: false, reason: 'not_runnable' });
-    expect(await resolve('model')).toMatchObject({ ok: false, reason: 'not_runnable' });
     expect(await resolve('half-made')).toMatchObject({ ok: false, reason: 'not_set_up' });
   });
 
   it('a team of another workspace gets "unknown", not "not available"', async () => {
     expect(await resolve('gw', '00000000-0000-7000-8000-00000000dead')).toMatchObject({ ok: false, reason: 'unknown' });
+  });
+});
+
+describe('an LLM gateway runner (P19-10)', () => {
+  it('runs bots once it names a model alias: no address, no key, not guarded, the alias in the answer', async () => {
+    await insertRunner('model', { kind: 'llm_gateway', allTeams: true });
+    expect(await resolve('model')).toMatchObject({ ok: false, reason: 'not_set_up' });
+    await sys((tx) => tx.query("UPDATE app.bot_runners SET model_alias = 'smart' WHERE name = 'model'"));
+    const answer = await resolve('model');
+    expect(answer).toMatchObject({ ok: true, target: { runner: 'model', kind: 'llm_gateway', address: null, key: null, guard: false, modelAlias: 'smart' } });
+  });
+
+  it('is never what a Hermes runner answers: the others carry no model alias', async () => {
+    expect(await resolve('gw')).toMatchObject({ ok: true, target: { modelAlias: null } });
+  });
+
+  it('is not a default or a pod runner for any team', async () => {
+    const info = await teamRunners(ctx, { teamId: TEAM_IDS.Engineering });
+    expect(info.podRunners).not.toContain('model');
+    expect(info.defaultRunner).not.toBe('model');
+  });
+
+  it('says what kind a runner is, with its alias, and nothing for a name that is not one', async () => {
+    expect(await sys((tx) => kindOf(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'model' }))).toEqual({ kind: 'llm_gateway', modelAlias: 'smart' });
+    expect(await sys((tx) => kindOf(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'gw' }))).toEqual({ kind: 'hermes_gateway', modelAlias: null });
+    expect(await sys((tx) => kindOf(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'nope' }))).toBeNull();
+  });
+
+  it('cannot take a bot that asks for a shell, files or a browser: the placement check refuses it in plain words, and passes it when it asks for none', async () => {
+    const refused = await sys((tx) => checkPlacement(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'model', runtimeGrants: ['shell', 'files'] }));
+    expect(refused).toEqual({ ok: false, message: modelRunnerRefusal('Label of model', ['shell', 'files']) });
+    expect((refused as { message: string }).message).toContain('only calls a model');
+    expect((refused as { message: string }).message).toContain('shell, files');
+    expect(await sys((tx) => checkPlacement(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'model', runtimeGrants: [] }))).toEqual({ ok: true });
+    expect(await sys((tx) => checkPlacement(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'model' }))).toEqual({ ok: true });
+  });
+
+  it('leaves a Hermes runner as it was for a bot that asks for a shell', async () => {
+    expect(await sys((tx) => checkPlacement(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'gw', runtimeGrants: ['shell'] }))).toEqual({ ok: true });
   });
 });
 

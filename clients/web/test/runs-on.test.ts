@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TeamBotRunner } from '@manythreads/shared';
-import { DEFAULT_CANNOT_RUN, canRunBots, chosenNote, defaultApplies, hasOldPlacement, moveTarget, movedPlacement, oldPlacement, optionText, pickedPlacement, planLine } from '../src/screens/bots/runs-on';
+import { DEFAULT_CANNOT_RUN, canChoose, canRunBots, chosenNote, defaultApplies, hasOldPlacement, modelOnlyProblem, moveTarget, movedPlacement, oldPlacement, optionText, pickedPlacement, planLine } from '../src/screens/bots/runs-on';
 
 const runner = (over: Partial<TeamBotRunner> = {}): TeamBotRunner =>
   ({ name: 'gw', label: 'Main Hermes', kind: 'hermes_gateway', status: 'ready', isDefault: false, ownerName: null, planLabel: null, sharedWith: 1, ...over }) as TeamBotRunner;
@@ -34,6 +34,32 @@ describe('the Runs on list', () => {
   it('never carries an address, key or node in what it draws', () => {
     const text = JSON.stringify([optionText(runner()), chosenNote(runner())]);
     expect(text).not.toMatch(/https?:|key|node/i);
+  });
+});
+
+describe('a Model API runner', () => {
+  const model = runner({ kind: 'llm_gateway', label: 'Brain model', name: 'brain' });
+  it('can be chosen for a bot that asks for no shell, files or browser, and says it only calls a model', () => {
+    expect(canChoose(model, [])).toBe(true);
+    expect(canChoose(model)).toBe(true);
+    expect(optionText(model)).toBe('◎ Brain model · Model API · model only');
+    expect(chosenNote(model)).toEqual({ text: 'Brain model is ready.', tone: 'ok' });
+  });
+  it('is disabled and explained for a bot whose definition asks for a shell, files or a browser', () => {
+    expect(canChoose(model, ['shell'])).toBe(false);
+    expect(modelOnlyProblem(model, ['shell', 'browser'])).toContain('only calls a model');
+    expect(modelOnlyProblem(model, ['shell', 'browser'])).toContain('shell, browser');
+    expect(optionText(model, ['files'])).toContain('this bot needs one');
+    expect(chosenNote(model, ['files']).tone).toBe('warn');
+  });
+  it('changes nothing for a Hermes runner whatever the bot asks for', () => {
+    expect(modelOnlyProblem(runner(), ['shell'])).toBeNull();
+    expect(canChoose(runner(), ['shell'])).toBe(true);
+    expect(optionText(runner(), ['shell'])).toBe(optionText(runner()));
+  });
+  it('is never the default and is never what "Move to a runner" picks', () => {
+    expect(defaultApplies({ kind: 'llm_gateway', status: 'ready' })).toBe(false);
+    expect(moveTarget([model])).toBeNull();
   });
 });
 

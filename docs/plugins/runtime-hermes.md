@@ -235,6 +235,8 @@ can carry a key's first characters, a hash, an address or a stack trace; that te
 | `runner_offline` | the bot's runner is not connected, or the server has no runners service | the team's runner is offline |
 | `timeout` | the run hit its time limit and was stopped | it ran out of time |
 | `limit` | a budget, rate limit or safety rule refused the call before anything was sent | a limit stopped it |
+| `steps` | a bot on an LLM gateway runner used all the steps it is allowed for one question (P19-10) | it used up its steps; a narrower question may fit |
+| `too_long` | a bot on an LLM gateway runner wrote an answer the model had to cut off at its length limit (P19-10) | the answer would have been cut off; a narrower question may fit |
 | `approval` | the call was held for approval but nobody could be asked | held for approval, nobody here can approve |
 | `not_allowed` | the bot's own allowlist refused its reply (its loaded definition has no `messages.post`) | this bot is not set up to post messages; tell a lead to check its definition |
 | `not_on_team` | a person who is not on the bot's team mentioned it (a run reads as its asker, so none opens); the line is posted from a run with no asker, once per job | I only answer people on the team, and you are not on it; ask a lead to add you |
@@ -437,6 +439,8 @@ A runner that took the team and the state but has nothing to call (a gateway run
 
 **Profiles.** A `hermes_gateway` runner names the profile by its profile rule (`{bot}` stands for the bot's slug; the default rule is the bot's slug), unless the BOT.md names one. A `hermes_pod` runner is the team's own pod: the profile is `mt-<slug>` as in mode B. For that, `hermes.profiles.profilesForTeam` also includes the active bots whose `runs_on` names a pod runner the team may use, and bots with no place of their own when the default runner is a pod (`podPlacementWhere` in `profiles.ts`; the Hermes runtime only, and only a bot with none of `runs_on`, `gateway`, `node`, `runner`). The same rule decides which teams the pods controller reconciles: `hermes.profiles` also offers `teamsWithPodBots()`, so a team whose pod bots are all `runs_on` or default ones gets its pod, and a team that moves its last pod bot away is scaled down by the controller as before.
 
+**A bot on an LLM gateway runner (P19-10).** Before the Hermes provider is chosen, the run job asks the catalog what kind of runner the bot's `runs_on` names (`bot.runners.kindOf`). For an `llm_gateway` runner the run is handed to the `model` provider that [bot-runners](./bot-runners.md#the-model-runtime-a-bot-on-an-llm-gateway-runner-p19-10) registers: there is no profile, no gateway call and no process. The run job gives that provider two doors in its scope: `scope.model.turn` (one model call through `provider.llm.chat`, as the run's bot, so the guard, budgets and spend ledger apply; the run job opens a short system transaction for the check and another for the spend line and holds none while the proxy answers) and `scope.tools` (`offered`/`call` of `provider.mcp.tools`, the MCP gateway's own door). The provider's result is posted like any run's: the closing text is the reply, a failure is the one fixed notice. A typed `failure` on the result (`limit`, `gateway`, `timeout`, `steps`, `too_long`, `runner_refused`) is what chooses the notice; the error text is never read for that. A bot with no `runs_on`, or on any other kind, goes through the Hermes provider exactly as before.
+
 ### Hermes connections (mode A)
 
 Since PLAN P19-02 a connection is **set up by a workspace admin**, not by the team lead: an admin adds the place bots run under Runners ([bot-runners](./bot-runners.md)). The routes
@@ -591,9 +595,19 @@ server to the pod use the profile's `API_SERVER_KEY`. `config.yaml` points the m
 definition grants `shell` and `MANYTHREADS_MANAGED_SSH_HOST` (`_USER`, `_CWD`) is set, the profile's terminal is that ssh host. The renderer is
 `renderGatewayProfile` (pure; tested byte for byte in `test/gateway-profile.test.ts`).
 
+### Every model call of a pod goes through the gateway (P19-10)
+
+A Hermes pod reaches models only through the platform's model gateway. Three checks keep that true:
+
+- **The profile carries the gateway and the bot's own key, nothing else.** `renderGatewayProfile` writes the gateway address and `${MANYTHREADS_LLM_KEY}` (the bot's own virtual key) and refuses, by throwing, any other key variable or a base address that is a model provider's host. The pods plugin ([hermes-pods](./hermes-pods.md)) filters a profile whose secrets or environment would set a provider key (`OPENAI_API_KEY` and its kin) out of the pod, and refuses to apply a rendered object (a Secret, a ConfigMap, a Deployment) that holds one. `parseBotMd` refuses a `BOT.md` that sets a provider key, base address or `OPENAI_API_KEY`-style key anywhere in its front matter (invalid, with the reason "a bot never carries a model provider's key or address").
+- **A pod run is counted.** The pod's gateway `result` carries the tokens Hermes reported. After a run on a `hermes_pod` runner (`viaPod` on the result), `meterPodRun` (`src/metering.ts`) writes one line in the spend ledger under the bot and the run from those tokens (cost zero, as for every platform call), then counts the run's lines.
+- **A run with no line is reported.** An ok run that ends with no line raises one `bot_runner.run.unmetered` event (an audit row, outcome failed). A run that failed is owed nothing. There is no admin alert mechanism in the platform to reuse, so the event and the audit row are the whole signal; an admin finds them in the audit log.
+
+Honest limits: the count relies on the usage Hermes reports, not on an independent count at the proxy, and a run whose model call went around the gateway but still reported tokens would pass. The ledger line for a pod run is new, so spend pages now show pod runs.
+
 ### Tests for the gateway path
 
 `test/gateway.test.ts` (the transport against `tools/fake-hermes-gateway`: start, events, replay, 429, drop, stop, ceiling, refusals),
-`test/gateway-profile.test.ts` (the renderer), the `runs_on` refusal cases in `test/gateway.test.ts` and `test/runner-placement.test.ts` (no process and no call on a refusal; the default runner is used only by a bot with no place of its own), `test/gateway-run.test.ts` (connections, a run end to end with real tool calls at the bot endpoint,
+`test/gateway-profile.test.ts` (the renderer, and that it refuses a provider key or address), `test/metering.test.ts` (a pod run with a spend line passes; one without raises exactly one `bot_runner.run.unmetered`; a failed run raises none), `test/model-run.test.ts` (a bot on an LLM gateway runner, end to end), the `runs_on` refusal cases in `test/gateway.test.ts` and `test/runner-placement.test.ts` (no process and no call on a refusal; the default runner is used only by a bot with no place of its own), `test/gateway-run.test.ts` (connections, a run end to end with real tool calls at the bot endpoint,
 memory recalled across threads, serial runs per bot, mode B credentials). Run the fake as a dev stand-in with
 `npx tsx tools/fake-hermes-gateway/src/cli.ts [key]`.

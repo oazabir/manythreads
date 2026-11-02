@@ -1,4 +1,4 @@
-import { authorizeContext, type BotRunHandle, type MessageProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
+import { authorizeContext, type BotRunHandle, type BotRuntimeFailure, type MessageProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import type { RunPayload } from './run-job.ts';
 
 // When a run that answers a message ends without an answer, the person who asked would otherwise wait for a reply that never comes. This
@@ -6,7 +6,7 @@ import type { RunPayload } from './run-job.ts';
 // never the error text (it can carry a key's first characters, a hash, an address or a stack trace), never the model's half answer.
 
 /** The causes a notice can name. `limit` and `approval` are raised by the run job where it knows them; the rest are read off a failed run. */
-export type FailureCategory = 'gateway' | 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | 'limit' | 'approval' | 'not_allowed' | 'other';
+export type FailureCategory = 'gateway' | 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout' | 'limit' | 'steps' | 'too_long' | 'approval' | 'not_allowed' | 'other';
 
 /** The whole text a person sees, per category. Fixed strings: nothing from the failure is ever put into them. */
 export const FAILURE_NOTICE: Record<FailureCategory, string> = {
@@ -17,6 +17,8 @@ export const FAILURE_NOTICE: Record<FailureCategory, string> = {
   hermes_unreachable: "I couldn't answer: this bot's Hermes is unreachable. Try again once it is back; if it stays down, tell a lead of this team.",
   timeout: "I couldn't answer: I ran out of time before I finished. A shorter or narrower question may fit.",
   limit: "I couldn't answer: a budget, rate limit or safety rule stopped the call before anything was sent to a model.",
+  steps: "I couldn't answer: I used up the steps I am allowed for one question before I finished. A narrower question may fit.",
+  too_long: "I couldn't answer: my answer was longer than I am allowed to write in one go, so it would have been cut off. A narrower question may fit.",
   approval: "I couldn't answer: this was held for approval, and nobody here can approve it.",
   not_allowed: "I couldn't answer: this bot is not set up to post messages. Tell a lead of this team to check its definition.",
   other: "I couldn't answer: something went wrong on our side. Try again; if it keeps happening, tell a workspace admin.",
@@ -41,7 +43,7 @@ export function looksLikeRejectedKey(error: string | undefined): boolean {
  * The category of a failed run. The runtime's own word (`failure`) wins; otherwise the error text is read for the few shapes that name the model
  * gateway, a clock that ran out, or an absent runner. Reading is internal: only the category leaves this function.
  */
-export function classifyFailure(error: string | undefined, failure?: 'runner_offline' | 'runner_refused' | 'hermes_unreachable' | 'timeout'): FailureCategory {
+export function classifyFailure(error: string | undefined, failure?: BotRuntimeFailure): FailureCategory {
   if (failure !== undefined) return failure;
   const text = error ?? '';
   if (looksLikeRejectedKey(text) || /\b(403|429|5\d\d)\b|litellm|proxy server|model gateway|rate.?limit|overloaded|api[ _-]?error|connection error/i.test(text)) return 'gateway';

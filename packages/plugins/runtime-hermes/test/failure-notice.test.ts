@@ -15,6 +15,18 @@ describe('classifyFailure', () => {
     expect(classifyFailure('x', 'timeout')).toBe('timeout');
     expect(classifyFailure('boom')).toBe('other');
   });
+  it('reads the typed failures of the model runtime: the step limit and a model limit have their own sentences', () => {
+    expect(classifyFailure('the run used all 12 of its steps', 'steps')).toBe('steps');
+    expect(FAILURE_NOTICE.steps).toMatch(/steps/);
+    expect(FAILURE_NOTICE.steps).not.toMatch(/https?:|key|12/i);
+    expect(classifyFailure('refused: x', 'limit')).toBe('limit');
+    expect(classifyFailure('unbound: x', 'gateway')).toBe('gateway');
+  });
+  it('has its own sentence for an answer that would have been cut off at the length limit', () => {
+    expect(classifyFailure('the answer was cut off at the length limit', 'too_long')).toBe('too_long');
+    expect(FAILURE_NOTICE.too_long).toMatch(/longer than I am allowed to write/);
+    expect(FAILURE_NOTICE.too_long).not.toMatch(/https?:|key/i);
+  });
   it('says plainly, in one sentence, that the bot is not set up to post', () => {
     expect(FAILURE_NOTICE.not_allowed).toMatch(/^I couldn't answer: [^.]*\. [^.]*\.$/);
   });

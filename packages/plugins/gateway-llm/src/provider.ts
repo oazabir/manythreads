@@ -1,6 +1,7 @@
 import type { PluginContext, PluginTx, ProviderImpl } from '@manythreads/sdk';
 import { requestKeyCheck } from './keys.ts';
 import { classify, type LlmClassifyRequest, type LlmClassifyResult } from './complete.ts';
+import { chat, type ChatTx, type LlmChatRequest, type LlmChatResult } from './chat.ts';
 import { evalComplete, type LlmEvalRequest, type LlmEvalResult } from './eval-complete.ts';
 import { createSlidingWindow, preflight, recordSpend, type LlmCallDecision, type LlmCallRequest, type LlmSpendRecord } from './limits.ts';
 
@@ -35,6 +36,11 @@ export interface LlmProviderServices extends ProviderImpl {
    * check, the master key and the spend ledger. Not a hit on the bot's rate limit, still counted against its budgets. Never throws for an unavailable model.
    */
   evalComplete(tx: PluginTx, request: LlmEvalRequest): Promise<LlmEvalResult>;
+  /**
+   * One turn of a bot's run on an LLM gateway runner (P19-10): the conversation so far and the bot's tools, on the runner's alias. The pre-call check, the master key and the spend
+   * ledger (under the bot and the run) are inside; the run's first turn is a hit on the bot's rate limit. Never throws for an unavailable model.
+   */
+  chat(run: ChatTx, request: LlmChatRequest): Promise<LlmChatResult>;
 }
 
 export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
@@ -56,6 +62,7 @@ export function registerLlmProvider(ctx: PluginContext): LlmProviderServices {
     recordSpend: (tx, record) => recordSpend(tx, record),
     classify: (tx, request) => classify(ctx, tx, window.hit, request),
     evalComplete: (tx, request) => evalComplete(ctx, tx, request),
+    chat: (run, request) => chat(ctx, run, window.hit, request),
   };
   ctx.providers.register('llm', impl);
   return impl;

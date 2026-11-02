@@ -644,6 +644,26 @@ describe('mode B: the team’s own pod (profiles for a controller)', () => {
     // the body of BOT.md goes with the run, also to the team's own pod, so an edit is followed by the next turn of any thread
     expect((podRun!.body as { instructions?: string }).instructions).toEqual(expect.stringMatching(/\S/));
 
+    // Every model call of a pod goes through the gateway (P19-10): the run that just ended left one spend line under the bot and the run, and raised no `bot_runner.run.unmetered`.
+    const metered = await closedRun(bot.botId);
+    expect(metered.status).toBe('done');
+    const lines = (runId: string) => w.system(async (tx) => (await tx.query<{ bot_id: string; prompt_tokens: number; completion_tokens: number }>('SELECT bot_id, prompt_tokens, completion_tokens FROM app.llm_spend WHERE run_id = $1', [runId])).rows);
+    const unmetered = (runId: string) => w.system(async (tx) => (await tx.query(`SELECT 1 FROM app.events WHERE type = 'bot_runner.run.unmetered' AND payload ->> 'runId' = $1`, [runId])).rows.length);
+    expect(await lines(metered.id)).toEqual([{ bot_id: bot.botId, prompt_tokens: 10, completion_tokens: 5 }]);
+    expect(await unmetered(metered.id)).toBe(0);
+
+    // A pod run that reports no usage at all leaves no line: exactly one `bot_runner.run.unmetered` event, and the reply still arrives.
+    gw.setScript(() => [{ type: 'finish', output: 'Answered with no usage.', usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } }]);
+    const rootId2 = await post('@pod-bot a second question');
+    expect((await until(async () => (await messagesBy(rootId2, bot.actorId))[0], 30_000, 'the second pod reply')).body).toBe('Answered with no usage.');
+    const second = await until(async () => {
+      const rows = await runsOf(bot.botId);
+      const last = rows[rows.length - 1];
+      return last && last.id !== metered.id && last.status !== 'running' ? last : null;
+    }, 30_000, 'the second run to close');
+    expect(await lines(second.id)).toEqual([]);
+    expect(await unmetered(second.id)).toBe(1);
+
     // a lead revokes the bot's tokens by hand: that is a decision, not a fault. The platform does not undo it: the old token is dead, no new one is
     // minted, the bot drops out of the pod's profile set, and only an explicit re-enable brings it back with a fresh token.
     expect((await w.call(omar, 'DELETE', '/api/teams/engineering/bots/pod-bot/pairing-tokens')).status).toBe(200);

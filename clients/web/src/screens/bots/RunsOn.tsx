@@ -2,7 +2,7 @@ import { useId } from 'react';
 import type { BotFrontmatter, TeamBotRunner } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { fetchTeamRunners } from './api';
-import { DEFAULT_CANNOT_RUN, KIND_ICON, KIND_LABEL, STATUS_LABEL, canRunBots, chosenNote, defaultApplies, hasOldPlacement, moveTarget, movedPlacement, oldPlacement, optionText, pickedPlacement, planLine } from './runs-on';
+import { DEFAULT_CANNOT_RUN, KIND_ICON, KIND_LABEL, STATUS_LABEL, canChoose, chosenNote, defaultApplies, hasOldPlacement, moveTarget, movedPlacement, oldPlacement, optionText, pickedPlacement, planLine } from './runs-on';
 
 /*
  * Where a bot runs (PLAN P19-03). One choice, "Runs on": the runners an admin set up and this team may use, each with its kind mark and its state. The default runner is
@@ -38,8 +38,8 @@ function RunnerState({ runner }: { runner: TeamBotRunner }) {
   );
 }
 
-function ChosenRunner({ runner }: { runner: TeamBotRunner }) {
-  const note = chosenNote(runner);
+function ChosenRunner({ runner, runtimeGrants }: { runner: TeamBotRunner; runtimeGrants: ReadonlyArray<string> }) {
+  const note = chosenNote(runner, runtimeGrants);
   const plan = planLine(runner);
   return (
     <div className="b-runner" data-testid="runs-on-chosen">
@@ -55,7 +55,7 @@ function ChosenRunner({ runner }: { runner: TeamBotRunner }) {
   );
 }
 
-export function RunsOn({ slug, canEdit, placement, onChange }: { slug: string; canEdit: boolean; placement: Placement; onChange: (next: Placement) => void }) {
+export function RunsOn({ slug, canEdit, placement, runtimeGrants = [], onChange }: { slug: string; canEdit: boolean; placement: Placement; runtimeGrants?: ReadonlyArray<string>; onChange: (next: Placement) => void }) {
   const id = useId();
   const q = useQuery(`team-runners:${slug}`, () => fetchTeamRunners(slug));
   const runners: ReadonlyArray<TeamBotRunner> = q.status === 'ok' ? q.data.items : [];
@@ -124,13 +124,13 @@ export function RunsOn({ slug, canEdit, placement, onChange }: { slug: string; c
       >
         <option value="">{defaultRunner !== null ? `Workspace default · ${defaultRunner.label}` : defaultIgnored ? 'No runner chosen · runs on the host' : 'No runner chosen · runs where it always ran'}</option>
         {runners.map((r) => (
-          <option key={r.name} value={r.name} disabled={!canRunBots(r) && r.name !== chosenName}>{optionText(r)}</option>
+          <option key={r.name} value={r.name} disabled={!canChoose(r, runtimeGrants) && r.name !== chosenName}>{optionText(r, runtimeGrants)}</option>
         ))}
         {chosenName !== undefined && !runners.some((r) => r.name === chosenName) ? <option value={chosenName}>{chosenName} · not available to this team</option> : null}
       </select>
       {q.status === 'error' ? <div className="b-warnline" role="alert">The list of runners could not be read.</div> : null}
       {q.status === 'ok' && runners.length === 0 ? <div className="b-hint" data-testid="runs-on-none">No runner is available to this team yet. Ask a workspace admin to set one up under Runners.</div> : null}
-      {chosen !== null ? <ChosenRunner runner={chosen} /> : null}
+      {chosen !== null ? <ChosenRunner runner={chosen} runtimeGrants={runtimeGrants} /> : null}
       {chosenName === undefined && defaultIgnored ? <div className="b-warnline" role="status" data-testid="runs-on-default-ignored">{DEFAULT_CANNOT_RUN}</div> : null}
       {chosenName !== undefined && chosen === null && q.status === 'ok' ? (
         <div className="b-warnline" role="status" data-testid="runs-on-note">This team may not use "{chosenName}", so the bot cannot be saved on it. Pick another runner.</div>

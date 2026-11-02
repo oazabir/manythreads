@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { BotRuntimeDefinition } from '@manythreads/sdk';
+import { MODEL_PROVIDER_ADDRESS, type BotRuntimeDefinition } from '@manythreads/sdk';
 import { hermesToolsets } from './toolsets.ts';
 
 // The profile of a managed bot (mode B): the three files that make a bot a profile in the team's Hermes pod. Pure — the same input gives the same
@@ -77,6 +77,13 @@ export const soulOf = (botName: string, teamName: string): string =>
 export function renderGatewayProfile(definition: BotRuntimeDefinition, input: GatewayProfileInput): GatewayProfileFiles {
   for (const name of [input.mcpTokenVar, input.model.apiKeyVar]) {
     if (!ENV_NAME.test(name)) throw new Error(`"${name}" is not a usable environment variable name`);
+  }
+  // Hermes pods reach models only through the platform's gateway with the bot's own virtual key (P19-10): no provider key variable, no provider address.
+  if (input.model.apiKeyVar !== GATEWAY_ENV.llmKey) {
+    throw new Error(`A profile's model key must be ${GATEWAY_ENV.llmKey}, the bot's key at the manythreads model gateway; a model provider's key is never written into a profile`);
+  }
+  if (MODEL_PROVIDER_ADDRESS.test(input.model.baseUrl)) {
+    throw new Error("A profile's model address must be the manythreads model gateway; a model provider's address is never written into a profile");
   }
   const effort = definition.frontmatter.model?.effort;
   const granted = hermesToolsets(definition.frontmatter.capabilities?.runtime);

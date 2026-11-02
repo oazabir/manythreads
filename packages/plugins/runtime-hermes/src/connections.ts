@@ -113,7 +113,7 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
   if (target.kind === 'hermes_pod') {
     if (!bot) return cannot('but the bot could not be found on this team.');
     const secrets = await ensureProfileSecrets(ctx, bot);
-    return 'revoked' in secrets ? cannot("but this bot's access to the pod was turned off. A lead of the team can turn it back on.") : { baseUrl: target.address, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes' };
+    return 'revoked' in secrets ? cannot("but this bot's access to the pod was turned off. A lead of the team can turn it back on.") : { baseUrl: target.address, apiKey: secrets.apiKey, kind: 'managed', agent: 'hermes', runner };
   }
   return cannot('which cannot run bots yet.');
 }

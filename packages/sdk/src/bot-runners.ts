@@ -31,6 +31,8 @@ export interface RunnerTarget {
   profileRule: string;
   /** The state the runner was last found in (`off` when disabled). A run is refused in every state a runner cannot serve (see `resolveRunner`). */
   status: string;
+  /** `llm_gateway`: the model alias the runner answers with (`smart`, `fast`, ...). Null for every other kind. */
+  modelAlias: string | null;
 }
 
 /** Why a runner cannot be used for a run. `message` is one plain sentence, safe to post in a thread. */
@@ -64,7 +66,12 @@ export interface BotRunnersProvider extends ProviderImpl {
    * For the bot loader (P19-03): is `runner` a runner of the team's workspace, and is the team allowed to use it? Runs on the CALLER's transaction (the outbox consumer's), because
    * a subscriber must not read on a connection of its own while its transaction is open. Answers in one plain sentence that names nothing the team may not know.
    */
-  checkPlacement(tx: PluginTx, query: { teamId: string; runner: string }): Promise<RunnerPlacementCheck>;
+  checkPlacement(tx: PluginTx, query: { teamId: string; runner: string; runtimeGrants?: readonly string[] }): Promise<RunnerPlacementCheck>;
+  /**
+   * What kind of runner `runner` is for a bot of `teamId` (and the model alias, for an LLM gateway runner), or null when there is no such runner. Runs on the CALLER's transaction. The run job
+   * asks it to pick the `model` runtime for a bot placed on an LLM gateway runner; whether the run may start is `resolveRunner`'s question, not this one's.
+   */
+  kindOf(tx: PluginTx, query: { teamId: string; runner: string }): Promise<{ kind: RunnerTarget['kind']; modelAlias: string | null } | null>;
   /** The default runner and the pod runners that apply to a team (P19-03). Runs as the system actor. */
   teamRunners(query: { teamId: string }): Promise<TeamRunnerInfo>;
 }

@@ -30,6 +30,8 @@ export interface GatewayTarget {
   agent: HermesConnectionAgent;
   /** How a profile is named on a Hermes gateway runner (`{bot}` stands for the bot's slug). Set only for a placement on a runner; a connection's profile is named in the BOT.md. */
   profileRule?: string;
+  /** The name of the runner of the catalog this target came from (a pod runner), when it came from one. Used to name the runner in the unmetered-run event. */
+  runner?: string;
 }
 
 /**
@@ -455,6 +457,16 @@ export async function runOnGateway(
       clearTimeout(ceiling);
       await stop();
     },
-    events: events(),
+    events: markPodResult(events(), target),
   };
+}
+
+/** The name a pod's runs are reported under when the pod was reached by a connection and not through a runner of the catalog (the runner an adopted pod connection becomes). */
+export const DEFAULT_POD_RUNNER = 'team-pod';
+
+/** A run served by the team's own pod says so on its `result`, so the run job can check that the model gateway counted it (P19-10). A gateway of the customer's own is not marked. */
+async function* markPodResult(events: AsyncGenerator<BotRuntimeEvent>, target: GatewayTarget): AsyncGenerator<BotRuntimeEvent> {
+  for await (const event of events) {
+    yield event.type === 'result' && target.kind === 'managed' ? { ...event, viaPod: { runner: target.runner ?? DEFAULT_POD_RUNNER } } : event;
+  }
 }

@@ -146,6 +146,8 @@ use), writes the URL and (as a bearer header) the token into the Hermes profile 
 run's bot transaction. The loader compiles a `BOT.md`'s `capabilities.native` into `app.capability_grants` (bots migration
 0005), so the tools a bot is offered come from its own file.
 
+The `model` bot runtime (P19-10, [bot-runners](./bot-runners.md#the-model-runtime-a-bot-on-an-llm-gateway-runner-p19-10)) is a second caller that makes no HTTP request: the run job reaches the same code through the provider `mcp.tools` (`McpToolsProvider` in `@manythreads/sdk`). `offered(run)` answers the tools the run may be offered (the list `tools/list` returns, grants and approval notes included) and `call(run, name, args)` runs one tool through `callTool`, so the grant check, the data-loss check, the rehearsal hold, approvals and the source log are the ones a Hermes bot meets; the answer is the tool's text and whether it was an error.
+
 ## The one address, `/mcp`
 
 Every URL the platform hands out is `<publicUrl>/mcp` (inside the cluster, `http://manythreads-server:3000/mcp`). The bearer token alone says who is

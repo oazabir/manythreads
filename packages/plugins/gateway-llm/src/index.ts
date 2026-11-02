@@ -16,6 +16,8 @@ export type { LlmProviderServices } from './provider.ts';
 export { classify } from './complete.ts';
 export { MAX_PROXY_BODY_BYTES, runProxyHandlers, type RunProxyDeps } from './run-proxy.ts';
 export type { LlmClassifyRequest, LlmClassifyResult } from './complete.ts';
+export { chat } from './chat.ts';
+export type { ChatTx, LlmChatRequest, LlmChatResult } from './chat.ts';
 export { evalComplete } from './eval-complete.ts';
 export type { LlmEvalRequest, LlmEvalResult } from './eval-complete.ts';
 export { createSlidingWindow, decide, loadEgress, loadFallbackChain, loadLimits, loadSettings, preflight, rateKey, recordSpend, spendSummary, windowStart } from './limits.ts';

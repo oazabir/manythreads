@@ -122,7 +122,7 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   if (runsOn !== undefined) {
     const runners = ctx.providers.get<BotRunnersProvider>('bot.runners');
     const verdict = runners
-      ? await runners.checkPlacement(tx, { teamId: commit.teamId, runner: runsOn })
+      ? await runners.checkPlacement(tx, { teamId: commit.teamId, runner: runsOn, runtimeGrants: fm.capabilities?.runtime ?? [] })
       : { ok: false as const, message: 'Runners are not available on this server, so "runs_on" cannot be used.' };
     if (!verdict.ok) {
       await invalidate(ctx, tx, commit, { slug, path, definitionSha, fieldPath: 'placement.runs_on', message: verdict.message });

@@ -82,6 +82,19 @@ export interface BotRuntimeInput {
  * carries the run's bot (for a write) or the asking person (for a read) and the run id the source log insists on.
  */
 export interface BotRuntimeScope {
+  /**
+   * One model turn through the platform's LLM gateway, for a runtime that has no model of its own (the `model` runtime, P19-10). The run job makes the call as the run's bot: the
+   * pre-call guard, the budgets and rate limits and the spend ledger all apply, and the spend lands under the bot and the run. Absent when the gateway is not loaded.
+   */
+  model?: { turn(request: ModelTurnRequest): Promise<ModelTurnResult> };
+  /**
+   * The bot's tools as the MCP gateway offers them (the same list and the same door: grants, approvals, the data-loss check, the source log), for a runtime that calls tools itself.
+   * Absent when the MCP gateway is not loaded.
+   */
+  tools?: {
+    list(): Promise<ModelToolSpec[]>;
+    call(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>;
+  };
   /** Call a capability the run may use, through the broker (`ctx.runs.invoke` in the run's own transaction). */
   invoke(capability: string, input: Record<string, unknown>): Promise<unknown>;
   /** Record something the run read (`run_source_log`); answers the line's position. */
@@ -89,6 +102,64 @@ export interface BotRuntimeScope {
   /** One line to the server log (`job.log`): run metrics, never secrets. */
   log(message: string): void;
 }
+
+/** Why a run failed, when the runtime knows it better than the error text says. `limit` is a budget, rate limit or safety rule; `gateway` a model gateway that did not answer; `steps` a loop that used up its steps; `too_long` an answer the model could not finish within its length limit. */
+export type BotRuntimeFailure = 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'runner_refused' | 'limit' | 'gateway' | 'steps' | 'too_long';
+
+/** A tool as a model is told about it. */
+export interface ModelToolSpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** A tool the model asked to call. `arguments` is the JSON text the model wrote. */
+export interface ModelToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+/** One message of a model conversation, in the shape every chat model takes. */
+export interface ModelMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  /** On an assistant message: the tools it asked for. */
+  toolCalls?: ModelToolCall[];
+  /** On a tool message: which call it answers. */
+  toolCallId?: string;
+}
+
+export interface ModelTurnRequest {
+  /** The gateway alias to call (`smart`, `fast`, ...). */
+  alias: string;
+  messages: ModelMessage[];
+  tools: ModelToolSpec[];
+  maxTokens: number;
+  /** The first turn of a run counts as one request against the bot's per-minute limit; the turns after it do not (budgets count every token). */
+  firstTurn: boolean;
+  /**
+   * How many leading messages the gateway has already checked and redacted on an earlier turn. Every user and tool message after that point is checked this turn, so a secret in any of
+   * them (several parallel tool answers, say) is caught once and never sent again in clear text.
+   */
+  checkedUpTo: number;
+  timeoutMs?: number;
+}
+
+export type ModelTurnResult =
+  | {
+      ok: true;
+      text: string | null;
+      toolCalls: ModelToolCall[];
+      promptTokens: number;
+      completionTokens: number;
+      /** The conversation as it was sent, with any redaction applied: the caller keeps THIS as its history, so a redacted secret is never sent again in clear text. Same length and order as the request's. */
+      messages: ModelMessage[];
+      /** The model stopped because it ran out of room to write (its answer is cut off), not because it was done. */
+      truncated: boolean;
+    }
+  /** `refused`: a budget, a rate limit or a guardrail said no. `unbound`: the alias is not bound to a model here. `unavailable`: the model did not answer. `timeout`: the clock ran out. */
+  | { ok: false; reason: 'refused' | 'unbound' | 'unavailable' | 'timeout'; detail: string };
 
 /** One event off a run's stream. `result` is the terminal one and carries the final text. */
 export type BotRuntimeEvent =
@@ -101,11 +172,16 @@ export type BotRuntimeEvent =
       ok: boolean;
       error?: string;
       /** Why a failed run failed, when the runtime knows it better than the error text says: the runner was not there, or the clock ran out. */
-      failure?: 'runner_offline' | 'hermes_unreachable' | 'timeout' | 'runner_refused';
+      failure?: BotRuntimeFailure;
       /** With `failure: 'runner_refused'`: the runner catalog turned the run away before anything started. `line` is the one plain sentence to post; `reason` is from a fixed list. */
       refusal?: { runner: string; reason: string; line: string };
       /** What the model reported for this turn, when the runtime knows (a Hermes `result` record carries it). */
       tokens?: { input: number; output: number; total: number } | null;
+      /**
+       * Set when the run was served by a team's Hermes pod: every model call of a pod goes through the platform's model gateway, so the run job expects a spend
+       * line for it (and raises `bot_runner.run.unmetered` when there is none). `runner` is the pod runner's name.
+       */
+      viaPod?: { runner: string };
     };
 
 export interface BotRuntimeHandle {

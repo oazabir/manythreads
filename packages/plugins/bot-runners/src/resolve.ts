@@ -15,8 +15,8 @@ const refuse = (reason: Extract<RunnerResolution, { ok: false }>['reason'], mess
 /** The name as a sentence may carry it: only what the name rule allows, so a hostile BOT.md cannot put text into a message by way of it. */
 const shown = (name: string): string => (BotRunnerName.safeParse(name).success ? `"${name}"` : 'that name');
 
-/** The kinds that run a bot today. The others (Claude Code, Codex, the LLM gateway) are listed to admins and teams but answer `not_runnable` until their tasks are built. */
-const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod']);
+/** The kinds that run a bot today. The others (Claude Code, Codex) are listed to admins and teams but answer `not_runnable` until their tasks are built. */
+const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod', 'llm_gateway']);
 
 /**
  * The states in which a runner turns a run away, in the words a thread may carry. `ready` runs; so does `not_set_up` when the runner has an address and a key (an admin changed
@@ -52,12 +52,18 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
     const status = effectiveStatus(runner);
     const unready = UNREADY_STATES[status];
     if (unready !== undefined) return refuse('not_ready', `This bot runs on ${runner.label}, which is not ready: it is ${unready}.`);
-    const base = { runner: runner.name, label: runner.label, status, profileRule: runner.profile_rule ?? DEFAULT_PROFILE_RULE } as const;
+    const base = { runner: runner.name, label: runner.label, status, profileRule: runner.profile_rule ?? DEFAULT_PROFILE_RULE, modelAlias: null } as const;
 
     if (runner.kind === 'hermes_gateway') {
       if (runner.base_url === null || runner.secret_id === null) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not set up yet. An admin has to give it an address and a key.`);
       const key = await ctx.secrets.get(tx, runner.secret_id);
       const target: RunnerTarget = { ...base, kind: 'hermes_gateway', address: runner.base_url, key, agent: 'hermes', guard: true };
+      return { ok: true, target };
+    }
+    // An LLM gateway runner has no address or key of its own: the run is a loop of model calls made through the platform's gateway on the runner's alias (`model-runtime.ts`).
+    if (runner.kind === 'llm_gateway') {
+      if (runner.model_alias === null) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not set up yet. An admin has to pick its model alias.`);
+      const target: RunnerTarget = { ...base, kind: 'llm_gateway', address: null, key: null, agent: 'hermes', guard: false, modelAlias: runner.model_alias };
       return { ok: true, target };
     }
     // The pod is the team's own: its address is where the platform registered it (the reserved connection `managed`), and each bot's profile has its own key,
@@ -73,14 +79,36 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
  * The loader's question (P19-03): may a bot of this team name this runner in `placement.runs_on`? Answers on the caller's transaction. Existence and the team list only: a switched-off or
  * not-ready runner is no reason to refuse the definition (an admin may switch it back on), it is a reason to refuse a run. The sentence never says whether a runner the team may not use exists.
  */
-export async function checkPlacement(tx: PluginTx, query: { teamId: string; runner: string }): Promise<RunnerPlacementCheck> {
+export async function checkPlacement(tx: PluginTx, query: { teamId: string; runner: string; runtimeGrants?: readonly string[] }): Promise<RunnerPlacementCheck> {
   const team = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
   if (!team) return { ok: false, message: 'The team of this bot could not be found.' };
-  const runner = (await tx.query<{ id: string; all_teams: boolean }>('SELECT id, all_teams FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [team.workspace_id, query.runner])).rows[0];
+  const runner = (await tx.query<{ id: string; all_teams: boolean; kind: string; label: string }>('SELECT id, all_teams, kind, label FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [team.workspace_id, query.runner])).rows[0];
   if (!runner || !(await openToTeam(tx, runner, query.teamId))) {
     return { ok: false, message: `There is no runner called "${query.runner}" that this team may use. Pick one from the Runs on list on the bot's page, or ask an admin to add the team to it.` };
   }
+  // A model-only runner has no shell, no files and no browser (P19-10): a bot that is granted any of those cannot be placed on it, and is told which.
+  const grants = query.runtimeGrants ?? [];
+  if (runner.kind === 'llm_gateway' && grants.length > 0) {
+    return { ok: false, message: modelRunnerRefusal(runner.label, grants) };
+  }
   return { ok: true };
+}
+
+/** The sentence for a bot whose definition asks for a shell, files or a browser and is placed on a runner that only calls a model. Names the runner's label and the capability words (slugs). */
+export function modelRunnerRefusal(label: string, grants: readonly string[]): string {
+  const list = grants.slice(0, 5).join(', ');
+  return `${label} only calls a model: it has no shell, files or browser to give this bot (the bot asks for: ${list}). Take those out of the bot's runtime capabilities, or pick a Hermes runner.`;
+}
+
+/** What kind of runner `runner` is for a team's workspace, and its model alias; null when there is none. On the caller's transaction. */
+export async function kindOf(tx: PluginTx, query: { teamId: string; runner: string }): Promise<{ kind: RunnerTarget['kind']; modelAlias: string | null } | null> {
+  const row = (
+    await tx.query<{ kind: RunnerTarget['kind']; model_alias: string | null }>(
+      `SELECT r.kind, r.model_alias FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $1::uuid WHERE r.name = $2`,
+      [query.teamId, query.runner],
+    )
+  ).rows[0];
+  return row ? { kind: row.kind, modelAlias: row.model_alias } : null;
 }
 
 /** The workspace default runner when this team may use it and it is enabled and of a kind that runs bots; and the team's usable pod runners. */
@@ -102,5 +130,5 @@ export async function teamRunners(ctx: PluginContext, query: { teamId: string })
 }
 
 export function createBotRunnersProvider(ctx: PluginContext): BotRunnersProvider {
-  return { id: 'bot.runners', resolveRunner: (query) => resolveRunner(ctx, query), checkPlacement: (tx, query) => checkPlacement(tx, query), teamRunners: (query) => teamRunners(ctx, query) };
+  return { id: 'bot.runners', resolveRunner: (query) => resolveRunner(ctx, query), checkPlacement: (tx, query) => checkPlacement(tx, query), kindOf: (tx, query) => kindOf(tx, query), teamRunners: (query) => teamRunners(ctx, query) };
 }

@@ -357,6 +357,41 @@ describe('the BOT.md loader', () => {
       expect(await botRow('p1903-rules')).toBeUndefined();
     });
 
+    describe('on a runner that only calls a model (P19-10)', () => {
+      const addModelRunner = (name: string): Promise<void> =>
+        w.system(async (tx) => {
+          await tx.query(
+            `INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, status, model_alias) VALUES ($1, $2, $3, 'llm_gateway', true, true, 'ready', 'smart')`,
+            [personas.omar.workspaceId, name, `Model ${name}`],
+          );
+        });
+      const withRuntimeGrant = (md: string, grants: string): string => md.replace('  native: [messages.post]', `  native: [messages.post]\n  runtime: [${grants}]`);
+
+      it('loads a bot that asks for no shell, files or browser', async () => {
+        await addModelRunner('l-model');
+        expect((await commit('bots/p1910-brain/BOT.md', withRunsOn('Brain', 'l-model'), 'Place a Brain bot on the model runner')).status).toBe(201);
+        expect(await until(() => botRow('p1910-brain'), 10_000)).toMatchObject({ status: 'active', invalid_reason: null, placement: { runs_on: 'l-model' } });
+      });
+
+      it('refuses a bot whose definition grants a shell, files or a browser, in plain words on the placement field, and no row is made', async () => {
+        const md = withRuntimeGrant(withRunsOn('Shelly', 'l-model'), 'shell, files');
+        expect((await commit('bots/p1910-shell/BOT.md', md, 'Place a shell bot on the model runner')).status).toBe(201);
+        const event = await invalidEventFor('p1910-shell');
+        expect(event.fieldPath).toBe('placement.runs_on');
+        expect(event.message).toMatch(/only calls a model: it has no shell, files or browser/);
+        expect(event.message).toContain('shell, files');
+        expect(event.message).not.toContain('smart');
+        expect(await botRow('p1910-shell')).toBeUndefined();
+      });
+
+      it('lets the same grants stand on a Hermes runner, as before', async () => {
+        await addRunner('l-hermes', [ENG]);
+        const md = withRuntimeGrant(withRunsOn('Shelly Hermes', 'l-hermes'), 'shell');
+        expect((await commit('bots/p1910-hermes/BOT.md', md, 'Place a shell bot on a Hermes runner')).status).toBe(201);
+        expect(await until(() => botRow('p1910-hermes'), 10_000)).toMatchObject({ status: 'active', invalid_reason: null });
+      });
+    });
+
     it('a switched-off runner is not a reason to refuse the definition (a run is refused instead)', async () => {
       await addRunner('l-off', [ENG]);
       await w.system((tx) => tx.query("UPDATE app.bot_runners SET enabled = false WHERE name = 'l-off'"));

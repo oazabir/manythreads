@@ -42,6 +42,38 @@ const issuePath = (issue: { path: readonly PropertyKey[]; code: string }): strin
   return formatPath(issue.path);
 };
 
+/** Words that name a model provider's key, address or sign-in once the key is lower-cased and its dashes and underscores are dropped. */
+const PROVIDER_KEY_PARTS = ['apikey', 'baseurl', 'apibase', 'apiurl', 'openai', 'anthropic', 'secretkey', 'accesskey', 'bearer', 'authtoken'];
+/** Whole key names that point a bot at a provider or hand it environment variables. */
+const PROVIDER_KEY_NAMES = new Set(['provider', 'providers', 'env', 'environment', 'endpoint', 'endpoints', 'apihost', 'host']);
+
+/** Section keys searched for a provider key or address: the document, the model block and the placement (with its gateway). Deeper nesting is not searched. */
+const PROVIDER_SCAN_DEPTH = 3;
+
+const isProviderKey = (key: string): boolean => {
+  const flat = key.toLowerCase().replace(/[-_\s]/g, '');
+  return PROVIDER_KEY_NAMES.has(flat) || PROVIDER_KEY_PARTS.some((part) => flat.includes(part));
+};
+
+/**
+ * The path of the first key in the frontmatter that sets a model provider's key, address or environment (`api_key`, `OPENAI_API_KEY`, `base_url`,
+ * `provider`, `env`), or null. A bot never holds one: every model call goes through the platform's gateway, with the bot's own virtual key. A bounded,
+ * single pass over the keys, so a hostile file costs time linear in its size.
+ */
+export function findProviderCredential(doc: unknown): string | null {
+  const walk = (value: unknown, path: string, depth: number): string | null => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value) || depth > PROVIDER_SCAN_DEPTH) return null;
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      const here = path === '' ? key : `${path}.${key}`;
+      if (isProviderKey(key)) return here;
+      const found = walk(child, here, depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return walk(doc, '', 0);
+}
+
 /**
  * Split a BOT.md into its frontmatter and its body. Line-scanned, so a hostile file cannot trap the matcher; a byte-order mark is
  * stripped because it is invisible in an editor and would otherwise fail the fence check, and nothing else is lenient.
@@ -76,6 +108,16 @@ export function parseBotMd(content: string): BotMd {
     doc = parseYaml(split.frontmatter, { maxAliasCount: 20 });
   } catch (err) {
     return { ok: false, failure: { fieldPath: null, message: `frontmatter: ${err instanceof Error ? err.message : String(err)}` } };
+  }
+  const credential = findProviderCredential(doc);
+  if (credential !== null) {
+    return {
+      ok: false,
+      failure: {
+        fieldPath: credential,
+        message: `${credential}: a bot never carries a model provider's key or address. Bots reach models through the manythreads model gateway, which an admin sets up once; remove this line.`,
+      },
+    };
   }
   const parsed = BotFrontmatter.safeParse(doc);
   if (parsed.success) return { ok: true, frontmatter: parsed.data, body: split.body };
