@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <rect x="14" y="72" width="12" height="24" rx="6" fill="#78909c"/><rect x="102" y="72" width="12" height="24" rx="6" fill="#78909c"/>
+  <rect x="22" y="52" width="84" height="62" rx="20" fill="#b0bec5"/>
+  <rect x="31" y="61" width="66" height="44" rx="13" fill="#102027"/>
+  <circle cx="50" cy="80" r="7.5" fill="#00e5ff"/><circle cx="78" cy="80" r="7.5" fill="#00e5ff"/>
+  <circle cx="52.5" cy="77.5" r="2.2" fill="#e0ffff"/><circle cx="80.5" cy="77.5" r="2.2" fill="#e0ffff"/>
+  <path d="M52 94Q64 102 76 94" stroke="#00e5ff" stroke-width="3.5" stroke-linecap="round"/>
+  <rect x="36" y="48" width="56" height="8" rx="4" fill="#78909c"/>
+  <g fill="#0d2a6b" stroke="#00e5ff" stroke-width="1.6">
+    <circle cx="48" cy="37" r="13"/><circle cx="64" cy="30" r="14"/><circle cx="80" cy="37" r="13"/><circle cx="55" cy="45" r="10"/><circle cx="73" cy="45" r="10"/>
+  </g>
+  <g stroke="#00e5ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 18V30L58 36V46"/><path d="M50 30H44L40 36"/><path d="M78 30H84L88 36"/><path d="M64 30L72 36V46"/><path d="M46 44H54"/><path d="M74 44H82"/>
+  </g>
+  <g fill="#00e5ff"><circle cx="64" cy="18" r="2.4"/><circle cx="40" cy="36" r="2.2"/><circle cx="88" cy="36" r="2.2"/><circle cx="58" cy="46" r="2.2"/><circle cx="72" cy="46" r="2.2"/></g>
+  <path d="M32 52Q30 12 64 12Q98 12 96 52Z" fill="#e3f2fd" fill-opacity=".25" stroke="#80deea" stroke-width="2.5"/>
+</svg>
