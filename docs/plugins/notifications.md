@@ -131,8 +131,56 @@ only owners and admins write it), `notification_keywords` (RLS **P**), `push_sub
 **Where people find it.** Account settings, section Notifications: what tells you (mentions, replies, direct messages), the default for team channels (admins change it), the channels they set themself, the
 keywords, and this browser (alerts while open, push). In a channel, the bell in the header sets that channel's level.
 
-**Not done.** The email digest (this plugin sends no mail yet), the sidebar's unread dots following the level (P14-15), and a delivery check against a real push service (only the encryption and the request are
-tested here).
+**Not done.** The sidebar's unread dots following the level (P14-15), and a delivery check against a real push service (only the encryption and the request are tested here).
+
+## Email digest (P14-09, migration `0005`)
+
+A person who has been away for a while and still has unread mentions, replies or direct messages gets **one** email that lists them, sent through the system mailer (the one that sends password resets and
+invitations; set `MANYTHREADS_SMTP_URL`, see [docs/deploy](../deploy.md)). Every mail ends with a link that turns the digest off in one click.
+
+**Who and when.**
+
+| Rule | What happens |
+|---|---|
+| On or off | A person with no setting has the digest **on**. It needs a verified email address that is the one they sign in with, so a bot, and anyone without one, gets nothing. |
+| Away | The presence plugin's heartbeat is older than the person's delay (30 minutes to 24 hours, default 1 hour), or there is none. Asked through the `presence` provider (`PresenceProvider` in the SDK), not by reading the table. Without the presence plugin nothing is sent. |
+| What is listed | Unread `mention`, `reply` and `dm` notifications that arrived after the last digest (first digest: the last 24 hours; never older than 7 days). Rows held by Do not disturb are not listed, and a person with any held row waits until they are delivered. |
+| Still allowed | Checked again when the mail is made: the channel is one the person can still read (a private channel or direct message they left gives nothing), the channel is not muted, its level (or the workspace default) still allows the kind, and the per-kind switch in Notifications is on. Do not disturb that is on **now** sends nothing. The digest never lists what the app would not have told the person about. |
+| Never twice | One digest per person per delay. The last-digest time (the watermark) is moved in the same transaction that decides to send, so a second run, or a second server, finds nothing to do; if the mailer fails it is put back and the next minute tries again. A mail that was handed to the mailer is not repeated (at most once). |
+| Everything read | Nothing is sent. |
+| Turned back on | Switching the digest on again starts a fresh window (a trigger moves the watermark to now), so what piled up while it was off is not mailed. |
+
+**What the mail says.** Subject "N unread messages are waiting for you". At most **10** items, mentions first, then direct messages, then replies, the newest first within each kind, grouped by channel or conversation; each
+has the sender, the place (`#channel` or "Direct message"), an excerpt of at most 140 characters on one line (control characters, direction marks and zero-width characters removed, markup escaped in the HTML part) and a
+link to the message (`/open?channel=…&message=…`, ids only). More than 10 shows "and N more". The footer has the unsubscribe link and a link to the settings.
+
+**The job.** `notifications.digest`, every minute (`* * * * *`), detached (it holds no transaction while it talks to the mail server), one workspace at a time, at most 200 people per round and 5 rounds per run.
+A run that finds nothing is a few indexed queries. There is no per-item mail: the digest is the only mail this plugin sends.
+
+**Table** `notification_digest` (migration `0005`, RLS **P**): `person_id` (key), `enabled`, `delay_minutes` (CHECK 30 to 1440), `last_digest_at`, `unsubscribe_key`. A person has the defaults until a row exists (made when they
+change a setting or when the first digest is claimed). Column grants let the person role read and write `enabled` and `delay_minutes` only: it cannot read `unsubscribe_key` and cannot move the watermark. Rows are
+never deleted by a person, because the key must not change.
+
+**The unsubscribe link.** `https://<site>/api/notifications/digest/unsubscribe/<token>` with `token = v1.<person id>.<base64url HMAC-SHA256>`. The MAC is over the person's id with the person's own random
+`unsubscribe_key`, made once and never changed. There is no clock in it, so an old mail's link works as long as the person exists, and no deployment secret has to stay the same. It names one person and can do one thing: turn that person's digest off. The path
+starts with `/api/` because that is what the web server proxies without a sign-in. The mail also carries `List-Unsubscribe: <that link>` and `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (RFC 8058), so
+mail programs offer their own "Unsubscribe" button, which sends the POST.
+
+- `GET` shows a small page "Stop these emails?" with one button and **changes nothing**: link scanners and previews open links, and must not unsubscribe anyone. If the digest is already off it shows "You will no longer get these emails" with "Turn them back on", a link to Account → Notifications.
+- `POST` (the button, or a mail program's one-click POST, with or without a session and CSRF token) turns the digest off and answers the same page, or `{ "unsubscribed": true }` to a client that does not ask for HTML. It can be repeated. The event is written once.
+- A token that is malformed, signed with another key, names another person or an unknown person answers 404 with a plain page and the same words for each case.
+- 30 requests a minute per client address. This is not in the abuse limits table because it is not a credential route: a token is a 256-bit MAC and cannot be guessed.
+- The page is server-written HTML with no script, `Content-Security-Policy: default-src 'none'`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`.
+
+**Settings routes** (the caller; a bot gets 403): `GET /api/notifications/digest` → `{ enabled, delayMinutes, emailAvailable, lastSentAt }`; `PUT /api/notifications/digest` with `{ enabled, delayMinutes }` (400 with a sentence for a delay outside 30 to 1440 minutes).
+Account → Notifications has the section **Email me what I missed**: a switch, and "How long away" (30 minutes, 1, 2, 4, 8, 24 hours). With no verified address it says so and explains why nothing is sent.
+
+**Events** (v1, both in the audit log, neither with a message or an address): `notifications.digest.sent` `{ personId, itemCount, shownCount, channelCount }` (audit: "Sent an email digest", category system; one row a person
+a digest, so a large workspace adds up: watch the audit volume) and `notifications.digest.unsubscribed` `{ personId, via: 'link' | 'settings' }` (audit: "Turned off the email digest", category settings). The job and the
+route are the only writers.
+
+**Known limits.** The mail is plain English (no translations yet). It is sent from the address in `MANYTHREADS_MAIL_FROM`; for the one-click unsubscribe to count with large mailbox providers the sending domain needs SPF and
+DKIM like any other bulk mail. The local e2e stack has no mail catcher, so `e2e/notifications/email-digest.spec.ts` runs a small SMTP server of its own.
 
 ## Reminders (P14-04, migration `0004`)
 
@@ -151,11 +199,13 @@ own rules. See [reminders.md](./reminders.md).
 
 ## Manifest
 
-`notifications` / `0.1.0` / `server`, `dependsOn: ['channels']`, `extends: ['event.emit', 'event.subscribe']` (and the detached job `notifications.push`), emits `notifications.notification.created`, consumes `channel.mention.created`,
-`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `reminders.reminder.due`.
+`notifications` / `0.1.0` / `server`, `dependsOn: ['channels', 'presence']`, `extends: ['event.emit', 'event.subscribe', 'job.register']` (the jobs `notifications.release_held`, `notifications.push` and `notifications.digest`), emits
+`notifications.notification.created`, `notifications.digest.sent`, `notifications.digest.unsubscribed`, consumes `channel.mention.created`,
+`channel.message.posted`, `channel.message.deleted`, `channel.member.removed`, `presence.dnd.changed`, `reminders.reminder.due`.
 
 ## Tests
 
 `test/notifications-api.test.ts` (mention for the target only, private-channel and forged-event cases, removal and deletion cleanup, replies and follows, DMs, muting and settings, paging and mark-read,
 live push, replay), `test/rls/notifications-rls.test.ts` (harness, visibility, write refusals, the update guard, the upsert rank, prefs), `test/events/notifications-events.test.ts`,
 `test/prefs.test.ts`, `test/levels-keywords-push.test.ts` (levels, keywords, DnD, push end to end with a stand-in push service), `test/webpush.test.ts` (encryption, signing, endpoint rules, payload privacy), `packages/shared/test/notification-level.test.ts`, `clients/web/test/notification-settings.test.ts` (settings rules and the service worker), `e2e/api/notifications/inbox.spec.ts` (`pnpm e2e --project=api`).
+The email digest (P14-09): `test/digest-plan.test.ts` (planning, caps, escaping, the mail and its headers, the signed token), `test/digest.test.ts` (database-backed: who gets a mail and who does not, the window, Do not disturb, lost access, a failing mailer, the settings routes, the unsubscribe link), the digest cases in `test/rls/notifications-rls.test.ts` and `test/events/notifications-events.test.ts`, `packages/plugins/presence/test/provider.test.ts`, `packages/kernel/test/mail.test.ts` (the headers), and `e2e/notifications/email-digest.spec.ts` (a real mail into a small SMTP server of its own, the one-click link, Account).

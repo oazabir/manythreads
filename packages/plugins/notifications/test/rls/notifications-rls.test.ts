@@ -81,7 +81,7 @@ describe('the notifications tables pass the RLS harness', () => {
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);
-      for (const table of ['notifications', 'notification_prefs', 'notification_levels', 'notification_workspace_settings', 'notification_keywords', 'push_subscriptions']) {
+      for (const table of ['notifications', 'notification_prefs', 'notification_levels', 'notification_workspace_settings', 'notification_keywords', 'push_subscriptions', 'notification_digest']) {
         expect(await findPerRowPolicyCalls(admin, table), `${table} calls a helper per row`).toEqual([]);
       }
       const plan = await admin.query("SELECT relrowsecurity AS on, relforcerowsecurity AS forced FROM pg_class WHERE oid = 'app.notifications'::regclass");
@@ -302,5 +302,47 @@ describe('levels, keywords and push subscriptions (migration 0003)', () => {
     expect(await as(rafi, async (tx) => (await tx.query('DELETE FROM app.push_subscriptions WHERE person_id = $1', [nadia.personId])).rowCount)).toBe(0);
     expect(await as(rafi, async (tx) => (await tx.query('DELETE FROM app.push_subscriptions WHERE person_id = $1', [rafi.personId])).rowCount)).toBe(1);
     expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.push_subscriptions')).rows.length)).toBe(1);
+  });
+});
+
+describe('the email digest settings (migration 0005, policy P)', () => {
+  const insert = (p: Persona, enabled: boolean, delay: number): Promise<unknown> =>
+    as(p, (tx) => tx.query('INSERT INTO app.notification_digest (person_id, workspace_id, enabled, delay_minutes) VALUES ($1, $2, $3, $4)', [p.personId, p.workspaceId, enabled, delay]));
+
+  it('a person writes and reads only their own row, with the delay inside 30 minutes to 24 hours', async () => {
+    await insert(rafi, true, 60);
+    await insert(nadia, false, 240);
+    expect((await q<{ person_id: string; enabled: boolean }>(rafi, 'SELECT person_id, enabled FROM app.notification_digest')).map((r) => [r.person_id, r.enabled])).toEqual([[rafi.personId, true]]);
+    expect(await q(omar, 'SELECT person_id FROM app.notification_digest')).toEqual([]);
+    expect(await code(insert(priya, true, 29))).toBe('23514');
+    expect(await code(insert(priya, true, 1441))).toBe('23514');
+    // not for somebody else
+    expect(await code(as(priya, (tx) => tx.query('INSERT INTO app.notification_digest (person_id, workspace_id) VALUES ($1, $2)', [omar.personId, omar.workspaceId])))).toBe('42501');
+    expect(await as(rafi, async (tx) => (await tx.query('UPDATE app.notification_digest SET enabled = false WHERE person_id = $1', [nadia.personId])).rowCount)).toBe(0);
+    expect(await code(as(rafi, (tx) => tx.query('DELETE FROM app.notification_digest WHERE person_id = $1', [rafi.personId])))).toBe('42501');   // a row is kept (its key must not change)
+  });
+
+  it('a person cannot read the unsubscribe key, nor set the watermark or the key, even on their own row', async () => {
+    expect(await code(as(rafi, (tx) => tx.query('SELECT unsubscribe_key FROM app.notification_digest')))).toBe('42501');
+    expect(await code(as(rafi, (tx) => tx.query('SELECT * FROM app.notification_digest')))).toBe('42501');
+    expect(await code(as(rafi, (tx) => tx.query('UPDATE app.notification_digest SET last_digest_at = now() WHERE person_id = $1', [rafi.personId])))).toBe('42501');
+    expect(await code(as(rafi, (tx) => tx.query(`UPDATE app.notification_digest SET unsubscribe_key = repeat('a', 64) WHERE person_id = $1`, [rafi.personId])))).toBe('42501');
+    expect(await code(as(priya, (tx) => tx.query(`INSERT INTO app.notification_digest (person_id, workspace_id, unsubscribe_key) VALUES ($1, $2, repeat('b', 64))`, [priya.personId, priya.workspaceId])))).toBe('42501');
+    expect(await code(as(priya, (tx) => tx.query(`INSERT INTO app.notification_digest (person_id, workspace_id, last_digest_at) VALUES ($1, $2, now())`, [priya.personId, priya.workspaceId])))).toBe('42501');
+  });
+
+  it('the system reads every row and the key (64 characters, different for each person); switching it back on starts a fresh window', async () => {
+    const rows = await sys(async (tx) =>
+      (await tx.query<{ person_id: string; unsubscribe_key: string; last_digest_at: Date | null }>('SELECT person_id, unsubscribe_key, last_digest_at FROM app.notification_digest ORDER BY person_id')).rows,
+    );
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.unsubscribe_key)).size).toBe(2);
+    expect(rows.every((r) => /^[0-9a-f]{64}$/.test(r.unsubscribe_key))).toBe(true);
+    // nadia's digest is off: she switches it on, and the watermark moves to now, so what piled up while it was off is not mailed
+    expect(rows.find((r) => r.person_id === nadia.personId)?.last_digest_at).toBeNull();
+    await as(nadia, (tx) => tx.query('UPDATE app.notification_digest SET enabled = true WHERE person_id = $1', [nadia.personId]));
+    const after = await sys(async (tx) => (await tx.query<{ last_digest_at: Date | null }>('SELECT last_digest_at FROM app.notification_digest WHERE person_id = $1', [nadia.personId])).rows[0]);
+    expect(after?.last_digest_at).not.toBeNull();
+    expect(Math.abs(Date.now() - after!.last_digest_at!.getTime())).toBeLessThan(60_000);
   });
 });

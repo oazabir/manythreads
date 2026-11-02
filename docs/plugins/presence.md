@@ -80,7 +80,9 @@ Errors come from the closed set: 400 `validation_failed` (the reason is a plain 
 
 ## Manifest
 
-`presence` / `0.1.0` / `server`, `dependsOn: ['channels']`, `extends: ['event.emit']`, emits `presence.dnd.changed`, consumes nothing.
+`presence` / `0.1.0` / `server`, `dependsOn: ['channels']`, `extends: ['event.emit', 'provider.presence']`, emits `presence.dnd.changed`, consumes nothing.
+
+**The `presence` provider (P14-09).** `ctx.providers.get<PresenceProvider>('presence')` (extension point `provider.presence`, `PresenceProvider` in the SDK): `lastSeen(tx, personIds)` answers, as the transaction's actor, when each person's latest heartbeat arrived (people who never sent one are absent from the map). It is how the notifications plugin's email digest decides who has been away, without reading `app.presence` itself. Read-only; it takes no `extends` to use. Test: `test/provider.test.ts`.
 
 ## Tests
 

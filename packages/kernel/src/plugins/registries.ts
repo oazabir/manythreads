@@ -70,6 +70,7 @@ export class ExtensionRegistries {
     'project.credentials': new ExtensionRegistry(),
     'role.groups': new ExtensionRegistry(),
     'mcp.tools': new ExtensionRegistry(),
+    presence: new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();

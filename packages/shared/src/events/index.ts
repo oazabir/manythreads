@@ -52,6 +52,8 @@ export * from './channel.poll.created.ts';
 export * from './channel.poll.voted.ts';
 export * from './channel.poll.closed.ts';
 export * from './notifications.notification.created.ts';
+export * from './notifications.digest.sent.ts';
+export * from './notifications.digest.unsubscribed.ts';
 export * from './presence.dnd.changed.ts';
 export * from './reminders.reminder.due.ts';
 export * from './reminders.reminder.changed.ts';

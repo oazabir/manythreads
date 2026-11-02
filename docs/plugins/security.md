@@ -99,6 +99,12 @@ post is refused with a 429 and nothing is written. The first-name rule and the r
 authority. `mention-groups` is rate limited (120 a minute) and answers only for a channel the caller can read. `ctx.audit.emitMany` is the batch form of `ctx.audit.emit` (the same event checks for each event, then three statements
 whatever their number).
 
+## Who has been away: `provider.presence`
+
+The presence plugin registers `ctx.providers.get<PresenceProvider>('presence')` (extension point `provider.presence`): `lastSeen(tx, personIds)` answers when each person's latest heartbeat arrived, as the transaction's actor
+(the table's own row rules apply). It answers a time and nothing else: no tab, device or status text. The notifications plugin uses it to decide who has been away for the email digest, so it never reads the presence table
+itself. It is read-only and takes no `extends` to use.
+
 ## The token checker's door: `run.resolve`
 
 A plugin that extends `run.resolve` (and not `tool.invoke`) gets a `ctx.runs` of which one member works: `resolve(sha256)`, which turns a presented run token into the run it opens (or null for an unknown, revoked, expired or finished one). Every other member throws, naming `tool.invoke`. It exists for an endpoint that takes a run's token as its credential without acting for the run: `gateway-llm`'s run-scoped model proxy (`/api/llm/runs/<runId>/v1`, [runners.md](./runners.md)) authenticates an agent on a runner this way, then calls the model with the bot's own key as the system. It cannot open a run, enter a transaction as the bot, or call a tool.

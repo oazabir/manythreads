@@ -98,6 +98,22 @@ describe('mailers', () => {
     expect((sent[0] as { text: string; html: string }).html).toContain('<a href=');
   });
 
+  it('the SMTP mailer passes the one-click unsubscribe headers of a digest to the transport (RFC 8058)', async () => {
+    const transport = nodemailer.createTransport({ jsonTransport: true });
+    const mailer = createSmtpMailer({ url: 'smtp://localhost:1025', transport });
+    const sent: Array<{ headers?: Record<string, string> }> = [];
+    const original = transport.sendMail.bind(transport);
+    transport.sendMail = ((message: { headers?: Record<string, string> }) => {
+      sent.push(message);
+      return original(message as never);
+    }) as typeof transport.sendMail;
+    const url = 'https://x.example/api/notifications/digest/unsubscribe/v1.abc';
+    await mailer.send(
+      renderMail({ template: 'digest', to: 'nadia@kahf.example', name: 'Nadia', groups: [{ title: '#dev', items: [{ sender: 'Rafi', excerpt: 'hi', url: 'https://x.example/open?channel=c&message=m' }] }], more: 0, openUrl: 'https://x.example/', unsubscribeUrl: url, settingsUrl: 'https://x.example/account' }),
+    );
+    expect(sent[0]?.headers).toEqual({ 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' });
+  });
+
   it('a failed SMTP send rejects so the caller decides what the person learns', async () => {
     const transport = nodemailer.createTransport({ jsonTransport: true });
     transport.sendMail = (() => Promise.reject(new Error('connection refused'))) as typeof transport.sendMail;

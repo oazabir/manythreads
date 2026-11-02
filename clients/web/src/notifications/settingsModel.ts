@@ -1,9 +1,12 @@
 import {
+  DIGEST_DELAY_CHOICES,
   KEYWORD_MAX_COUNT,
   KEYWORD_PROBLEM_TEXT,
+  digestDelayLabel,
   effectiveLevel,
   normalizeKeyword,
   type ChannelLevelEntry,
+  type DigestSettings,
   type GetNotificationLevelsResponse,
   type NotificationLevel,
 } from '@manythreads/shared';
@@ -66,6 +69,23 @@ export function withChannelLevel(levels: GetNotificationLevelsResponse, channel:
 /** The title of a channel in the list of the person's own choices: `#name`, or "Direct message". */
 export const channelTitle = (c: Pick<ChannelLevelEntry, 'channelName' | 'channelKind'>): string =>
   c.channelName ? `#${c.channelName.replace(/^#/, '')}` : c.channelKind === 'dm' ? 'Direct message' : 'Conversation';
+
+// Email digest ----------------------------------------------------------------------------------------------------------------------
+
+/** The "how long away" choices for a select: the usual ones, plus the person's current value if an older setting is not among them (kept in order). */
+export function digestDelayOptions(current: number): Array<{ minutes: number; label: string }> {
+  const minutes = DIGEST_DELAY_CHOICES.includes(current as (typeof DIGEST_DELAY_CHOICES)[number]) ? [...DIGEST_DELAY_CHOICES] : [...DIGEST_DELAY_CHOICES, current].sort((a, b) => a - b);
+  return minutes.map((m) => ({ minutes: m, label: digestDelayLabel(m) }));
+}
+
+/** The sentence under the switch: what the digest does now, in plain words, and why it cannot work when there is no address. */
+export function digestHelp(s: Pick<DigestSettings, 'enabled' | 'delayMinutes' | 'emailAvailable'>): string {
+  if (!s.emailAvailable) return 'You have no verified email address, so there is nowhere to send this. Verify one in your account first.';
+  const when = digestDelayLabel(s.delayMinutes).toLowerCase();
+  return s.enabled
+    ? `If you have been away for ${when} and still have unread mentions or direct messages, you get one email listing them. Never more than one per ${when}.`
+    : 'Off. You will not get an email about what you missed.';
+}
 
 // Browser push ----------------------------------------------------------------------------------------------------------------------
 

@@ -1,12 +1,12 @@
 import { useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
-import { LEVEL_LABEL, type NotificationLevel } from '@manythreads/shared';
-import { fetchNotificationKeywords, saveNotificationKeywords } from '../api/endpoints';
+import { LEVEL_LABEL, type DigestSettings, type NotificationLevel } from '@manythreads/shared';
+import { fetchDigestSettings, fetchNotificationKeywords, saveDigestSettings, saveNotificationKeywords } from '../api/endpoints';
 import { isApiError } from '../api/client';
 import { isAdmin, useSession } from '../app/session';
 import { Alert, Toggle } from '../components/ui';
 import { levelsStore } from './levelsStore';
 import { disablePush, enablePush, inDesktopApp, readPushStatus, registerWorker, type PushStatus } from './push';
-import { LEVEL_HELP, LEVEL_ORDER, PUSH_SUPPORT_TEXT, addKeyword, channelTitle } from './settingsModel';
+import { LEVEL_HELP, LEVEL_ORDER, PUSH_SUPPORT_TEXT, addKeyword, channelTitle, digestDelayOptions, digestHelp } from './settingsModel';
 import { browserAlerts, notificationStore } from './store';
 import { useNotifications } from './Bell';
 
@@ -233,6 +233,65 @@ function BrowserBlock() {
   );
 }
 
+/** "Email me what I missed": one email of unread mentions and direct messages after a while away (PLAN P14-09). */
+function DigestBlock() {
+  const [settings, setSettings] = useState<DigestSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchDigestSettings().then((s) => live && setSettings(s), () => live && setError('Could not load this setting.'));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const save = async (enabled: boolean, delayMinutes: number): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try {
+      setSettings(await saveDigestSettings({ enabled, delayMinutes }));
+    } catch (e) {
+      setError(isApiError(e) ? e.message : 'Could not save the setting.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="nset-group" data-testid="notification-digest">
+      <h3 className="nset-h">Email me what I missed</h3>
+      {error ? <Alert>{error}</Alert> : null}
+      {settings === null ? (
+        <p className="nset-help" aria-busy={!error || undefined}>{error ? '' : 'Loading…'}</p>
+      ) : (
+        <>
+          <div className="nset-row">
+            <div>
+              <div>Send me an email</div>
+              <div className="nset-help" data-testid="digest-help">{digestHelp(settings)}</div>
+            </div>
+            <Toggle label="Send me an email about what I missed" checked={settings.enabled} disabled={busy} onChange={(on) => void save(on, settings.delayMinutes)} />
+          </div>
+          <div className="nset-row">
+            <div>
+              <div>How long away</div>
+              <div className="nset-help">The email is sent once you have not been in manythreads for this long.</div>
+            </div>
+            <select
+              className="nset-select"
+              aria-label="How long away before the email"
+              value={settings.delayMinutes}
+              disabled={busy || !settings.enabled}
+              onChange={(e) => void save(settings.enabled, Number(e.target.value))}
+            >
+              {digestDelayOptions(settings.delayMinutes).map((o) => <option key={o.minutes} value={o.minutes}>{o.label}</option>)}
+            </select>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** The Notifications section of the account settings (PLAN P14-09). */
 export function NotificationSettings() {
   return (
@@ -243,6 +302,7 @@ export function NotificationSettings() {
         <ChannelsBlock />
         <KeywordsBlock />
         <BrowserBlock />
+        <DigestBlock />
       </div>
     </section>
   );

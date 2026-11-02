@@ -139,6 +139,8 @@ export const AUDIT_ACTIONS = {
   'import.started': { category: 'content', label: 'Started an import' },
   'import.finished': { category: 'content', label: 'An import ended' },
   'import.person_claimed': { category: 'content', label: 'Someone took over their imported messages' },
+  'digest.sent': { category: 'system', label: 'Sent an email digest' },
+  'digest.unsubscribed': { category: 'settings', label: 'Turned off the email digest' },
   'retention.sweep_completed': { category: 'system', label: 'Ran the retention sweep' },
   'audit.exported': { category: 'system', label: 'Exported the audit log' },
 } as const satisfies Record<string, { category: AuditCategory; label: string }>;

@@ -23,6 +23,7 @@ export function createSmtpMailer(options: SmtpMailerOptions): Mailer {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        ...(message.headers ? { headers: message.headers } : {}),
       });
     },
   };

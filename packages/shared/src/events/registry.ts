@@ -14,6 +14,8 @@ import { ChannelCustomEmojiChangedEvent } from './channel.custom_emoji.changed.t
 import { ChannelPollCreatedEvent } from './channel.poll.created.ts';
 import { ChannelPollVotedEvent } from './channel.poll.voted.ts';
 import { ChannelPollClosedEvent } from './channel.poll.closed.ts';
+import { NotificationsDigestSentEvent } from './notifications.digest.sent.ts';
+import { NotificationsDigestUnsubscribedEvent } from './notifications.digest.unsubscribed.ts';
 import { NotificationsNotificationCreatedEvent } from './notifications.notification.created.ts';
 import { PresenceDndChangedEvent } from './presence.dnd.changed.ts';
 import { RemindersReminderDueEvent } from './reminders.reminder.due.ts';
@@ -143,6 +145,8 @@ export const eventRegistry = {
   'channel.poll.voted': { 1: ChannelPollVotedEvent },
   'channel.poll.closed': { 1: ChannelPollClosedEvent },
   'notifications.notification.created': { 1: NotificationsNotificationCreatedEvent },
+  'notifications.digest.sent': { 1: NotificationsDigestSentEvent },
+  'notifications.digest.unsubscribed': { 1: NotificationsDigestUnsubscribedEvent },
   'presence.dnd.changed': { 1: PresenceDndChangedEvent },
   'reminders.reminder.due': { 1: RemindersReminderDueEvent },
   'reminders.reminder.changed': { 1: RemindersReminderChangedEvent },

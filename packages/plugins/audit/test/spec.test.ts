@@ -87,6 +87,8 @@ const FIXTURES: Record<string, Record<string, unknown>> = {
   'import.run.started': { runId: id(80), source: 'mattermost', teamId: id(20), startedBy: id(13), at: AT },
   'import.run.finished': { runId: id(80), source: 'slack', teamId: id(20), startedBy: id(13), outcome: 'done', channels: 3, messages: 190, matchedPeople: 2, placeholders: 2, skipped: 10, at: AT },
   'import.person.claimed': { source: 'slack', personId: id(10), placeholderActorId: id(81), messages: 12, at: AT },
+  'notifications.digest.sent': { personId: id(10), itemCount: 14, shownCount: 10, channelCount: 3 },
+  'notifications.digest.unsubscribed': { personId: id(10), via: 'link' },
   'retention.sweep.completed': { sweepId: id(80), dryRun: false, runLogCutoff: AT, memoryLogCutoff: AT, counts: { runs: 0, runsSkipped: 0, runSourceLines: 0, runTokens: 0, runMemos: 0, memoryLogLines: 0, memosRemoved: 0 }, durationMs: 5 },
   'audit.export.created': { exportedBy: id(13), rowCount: 12, truncated: false, from: null, to: null, keyId: 'abcdef0123456789', exportedAt: AT },
 };

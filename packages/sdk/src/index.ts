@@ -10,6 +10,7 @@ export * from './approvals.ts';
 export * from './messages.ts';
 export * from './role-groups.ts';
 export * from './mcp-tools.ts';
+export * from './presence.ts';
 export * from './answer-share.ts';
 export * from './egress.ts';
 export * from './runtime.ts';

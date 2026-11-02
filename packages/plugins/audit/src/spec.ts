@@ -562,6 +562,18 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('import_placeholder', uuid(e['placeholderActorId'])),
     reason: `${plural(num(e['messages']), 'message')} moved to the person who signed in`,
   }),
+  'notifications.digest.sent': (e) => ({
+    action: 'digest.sent',
+    who: 'system',
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: `${plural(num(e['shownCount']), 'item')} listed of ${num(e['itemCount'])} unread, in ${plural(num(e['channelCount']), 'conversation')}`,
+  }),
+  'notifications.digest.unsubscribed': (e) => ({
+    action: 'digest.unsubscribed',
+    who: person(e['personId']) ?? 'system',
+    target: of('person', uuid(e['personId']), null, 'person'),
+    reason: e['via'] === 'link' ? 'With the link at the foot of the mail' : 'In the account settings',
+  }),
   'retention.sweep.completed': (e) => ({
     action: 'retention.sweep_completed',
     who: 'system',

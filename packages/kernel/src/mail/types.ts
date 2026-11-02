@@ -6,6 +6,8 @@ export interface MailMessage {
   html: string;
   /** Defaults to the mailer's configured sender. */
   from?: string;
+  /** Extra header lines (the digest's `List-Unsubscribe` pair). Names and values are set by the template, never copied from a person's text. */
+  headers?: Record<string, string>;
 }
 
 /** The kernel's one way to send mail. Implementations: SMTP, in-memory (tests), unconfigured (logs, sends nothing). */

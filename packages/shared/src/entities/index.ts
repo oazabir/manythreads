@@ -12,6 +12,7 @@ export * from './message-thread.ts';
 export * from './file.ts';
 export * from './notification.ts';
 export * from './notification-level.ts';
+export * from './notification-digest.ts';
 export * from './later.ts';
 export * from './reminder.ts';
 export * from './scheduled-message.ts';

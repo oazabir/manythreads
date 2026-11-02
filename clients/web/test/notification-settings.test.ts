@@ -8,6 +8,8 @@ import {
   addKeyword,
   browserLabel,
   channelTitle,
+  digestDelayOptions,
+  digestHelp,
   keyBytes,
   levelOf,
   parseKeywordInput,
@@ -194,5 +196,20 @@ describe('the service worker (public/sw.js)', () => {
     sw.handlers['notificationclick']?.({ notification: { close: () => undefined, data: { url: '/open?channel=c&message=m' } }, waitUntil: (p: Promise<unknown>) => waits.push(p) });
     await Promise.all(waits);
     expect(sw.opened).toEqual(['/open?channel=c&message=m']);
+  });
+});
+
+describe("email digest settings", () => {
+  it("offers the usual choices, plus an older stored value in order", () => {
+    expect(digestDelayOptions(60).map((o) => o.minutes)).toEqual([30, 60, 120, 240, 480, 1440]);
+    expect(digestDelayOptions(90).map((o) => o.minutes)).toEqual([30, 60, 90, 120, 240, 480, 1440]);
+    expect(digestDelayOptions(30)[0]?.label).toBe("30 minutes");
+    expect(digestDelayOptions(60)[1]?.label).toBe("1 hour");
+    expect(digestDelayOptions(120)[2]?.label).toBe("2 hours");
+  });
+  it("says in plain words what the digest does, and why it cannot work without an address", () => {
+    expect(digestHelp({ enabled: true, delayMinutes: 120, emailAvailable: true })).toContain("away for 2 hours");
+    expect(digestHelp({ enabled: false, delayMinutes: 60, emailAvailable: true })).toMatch(/^Off\./);
+    expect(digestHelp({ enabled: true, delayMinutes: 60, emailAvailable: false })).toContain("no verified email address");
   });
 });

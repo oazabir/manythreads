@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerHeartbeatRoutes } from './heartbeat.ts';
+import { createPresenceProvider } from './provider.ts';
 import { registerStatusRoutes } from './routes.ts';
 
 /**
@@ -12,13 +13,14 @@ export default definePlugin({
     name: 'presence',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit'],
+    extends: ['event.emit', 'provider.presence'],
     events: { emits: ['presence.dnd.changed'], consumes: [] },
     // The heartbeat table `app.presence` is channels' (migration 0003): this plugin owns its routes.
     dependsOn: ['channels'],
     migrations: 'migrations',
   },
   register(ctx) {
+    ctx.providers.register('presence', createPresenceProvider());
     registerHeartbeatRoutes(ctx);
     registerStatusRoutes(ctx);
   },

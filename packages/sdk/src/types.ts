@@ -70,6 +70,8 @@ export const PROVIDER_KINDS = [
   'role.groups',
   /** What a bot's MCP tool list is right now, as a digest (gateway-mcp): `McpToolsProvider` in ./mcp-tools.ts. */
   'mcp.tools',
+  /** When a person was last seen (presence): `PresenceProvider` in ./presence.ts. */
+  'presence',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {
@@ -667,8 +669,36 @@ export interface PluginLogger {
   warn(message: string): void;
 }
 
+/** One unread message in an email digest. `excerpt` is plain text, already cut short; the template escapes it. */
+export interface DigestMailItem {
+  sender: string;
+  excerpt: string;
+  /** Opens the message on this site. */
+  url: string;
+}
+/** The unread items of one channel or conversation in an email digest. */
+export interface DigestMailGroup {
+  /** `#dev`, or "Direct message". */
+  title: string;
+  items: DigestMailItem[];
+}
+
 /** A mail built from a template; the kernel renders plain text and simple HTML. */
 export type MailTemplateMessage =
+  | {
+      template: 'digest';
+      to: string;
+      name: string;
+      groups: DigestMailGroup[];
+      /** Items that did not fit ("and N more"). */
+      more: number;
+      /** Where the person opens their notifications in the app. */
+      openUrl: string;
+      /** The signed one-click link; the mail carries it in the body and in the `List-Unsubscribe` headers. */
+      unsubscribeUrl: string;
+      /** The account settings page where the digest is switched back on. */
+      settingsUrl: string;
+    }
   | { template: 'verify'; to: string; name: string; url: string }
   | { template: 'reset'; to: string; name: string; url: string }
   | { template: 'invite'; to: string; inviterName: string; workspaceName: string; teamName: string | null; url: string }

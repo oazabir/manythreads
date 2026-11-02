@@ -1,7 +1,9 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerConsumers } from './consumers.ts';
+import { DIGEST_CRON, DIGEST_QUEUE, runDigestJob } from './digest-job.ts';
 import { RELEASE_HELD_CRON, RELEASE_HELD_QUEUE, releaseDue } from './hold.ts';
 import { PUSH_QUEUE, runPushJob } from './push.ts';
+import { registerDigestRoutes } from './routes-digest.ts';
 import { registerRoutes } from './routes.ts';
 import { registerPreferenceRoutes } from './routes-prefs.ts';
 
@@ -17,16 +19,17 @@ export default definePlugin({
     kind: 'server',
     extends: ['event.emit', 'event.subscribe', 'job.register'],
     events: {
-      emits: ['notifications.notification.created'],
+      emits: ['notifications.notification.created', 'notifications.digest.sent', 'notifications.digest.unsubscribed'],
       consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due'],
     },
-    // presence: the Do not disturb settings a message is held by (`dnd_settings`, `person_status.time_zone`).
+    // presence: the Do not disturb settings a message is held by (`dnd_settings`, `person_status.time_zone`), and who has been away (the presence provider).
     dependsOn: ['channels', 'presence'],
     migrations: 'migrations',
   },
   register(ctx) {
     registerRoutes(ctx);
     registerPreferenceRoutes(ctx);
+    registerDigestRoutes(ctx);
     registerConsumers(ctx);
     // Every minute: release what was held for people whose Do not disturb has ended by the clock (a pause ran out, a schedule closed).
     ctx.jobs.register(
@@ -37,6 +40,10 @@ export default definePlugin({
       },
       { cron: RELEASE_HELD_CRON, maxAttempts: 1 },
     );
+    // Every minute: one email digest for each person who has been away long enough and has unread mentions or direct messages. It sends mail, so it holds no transaction while it waits.
+    ctx.jobs.register(DIGEST_QUEUE, async (_payload, _unusable, job) => {
+      await runDigestJob(ctx, job);
+    }, { cron: DIGEST_CRON, detached: true, maxAttempts: 1 });
     // Browser push, one job per notification and person; it talks to the browsers' push services, so it holds no transaction while it waits.
     ctx.jobs.register(PUSH_QUEUE, async (payload, _unusable, job) => runPushJob(ctx, payload, job), { detached: true, maxAttempts: 4, concurrency: 4 });
   },

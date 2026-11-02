@@ -106,10 +106,15 @@ import {
   ListLinksRequest,
   ListLinksResponse,
   listLinksRoute,
+  GetDigestSettingsResponse,
   GetNotificationKeywordsResponse,
   GetNotificationLevelsResponse,
   GetNotificationPrefsResponse,
   GetPushStateResponse,
+  PutDigestSettingsRequest,
+  PutDigestSettingsResponse,
+  getDigestSettingsRoute,
+  putDigestSettingsRoute,
   PutChannelLevelRequest,
   PutChannelLevelResponse,
   PutNotificationKeywordsRequest,
@@ -913,7 +918,12 @@ export const saveDnd = (body: UpdateDndRequest) => call(updateDndRoute, { reques
 
 // ---- notification levels, keywords and browser push (PLAN P14-09) ---------------------------------------------
 /** The person's own level per channel and the workspace default. */
-export const fetchNotificationLevels = () => call(getNotificationLevelsRoute, { response: GetNotificationLevelsResponse });
+export const fetchDigestSettings = () => call(getDigestSettingsRoute, { response: GetDigestSettingsResponse });
+
+export const saveDigestSettings = (body: PutDigestSettingsRequest) =>
+  call(putDigestSettingsRoute, { request: PutDigestSettingsRequest, response: PutDigestSettingsResponse }, body);
+
+export const fetchNotificationLevels =() => call(getNotificationLevelsRoute, { response: GetNotificationLevelsResponse });
 /** Sets this channel's level for the caller; `null` takes the choice away so the channel follows the default again. */
 export const saveChannelLevel = (channelId: string, level: PutChannelLevelRequest['level']) =>
   call(putChannelLevelRoute, { request: PutChannelLevelRequest, response: PutChannelLevelResponse }, { level }, { channelId });

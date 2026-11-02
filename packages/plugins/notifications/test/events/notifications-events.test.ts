@@ -1,6 +1,6 @@
 import { createAppPool, eventToRaw, withActor, type EventRow } from '@manythreads/kernel';
 import { personaActor } from '@manythreads/test-utils';
-import { NotificationsNotificationCreatedEvent, eventRegistry, parseEvent } from '@manythreads/shared';
+import { NotificationsDigestSentEvent, NotificationsNotificationCreatedEvent, eventRegistry, parseEvent } from '@manythreads/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createWorld, drained, ensureChannels, eventually, personas, type Persona, type World } from '../world.ts';
 
@@ -50,7 +50,12 @@ describe('notifications events', () => {
   it('registers the event at schema version 1 and the manifest lists it (and what the plugin consumes)', async () => {
     expect(Object.keys(eventRegistry['notifications.notification.created'])).toEqual(['1']);
     const plugin = (await import('../../src/index.ts')).default;
-    expect([...plugin.manifest.events.emits]).toEqual(['notifications.notification.created']);
+    expect([...plugin.manifest.events.emits]).toEqual(['notifications.notification.created', 'notifications.digest.sent', 'notifications.digest.unsubscribed']);
+    // the email digest's two events (P14-09): counts and a way of switching off, never a message or an address
+    expect(Object.keys(eventRegistry['notifications.digest.sent'])).toEqual(['1']);
+    expect(Object.keys(eventRegistry['notifications.digest.unsubscribed'])).toEqual(['1']);
+    expect(NotificationsDigestSentEvent.shape).not.toHaveProperty('email');
+    expect(NotificationsDigestSentEvent.shape).not.toHaveProperty('preview');
     for (const type of plugin.manifest.events.consumes) expect(Object.keys(eventRegistry)).toContain(type);
   });
 

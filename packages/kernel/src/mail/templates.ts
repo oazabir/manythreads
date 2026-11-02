@@ -1,6 +1,6 @@
 import type { MailMessage } from './types.ts';
 
-export type RenderedMail = Pick<MailMessage, 'subject' | 'text' | 'html'>;
+export type RenderedMail = Pick<MailMessage, 'subject' | 'text' | 'html'> & Pick<Partial<MailMessage>, 'headers'>;
 
 const escapeHtml = (text: string): string =>
   text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -88,7 +88,97 @@ export function opsAlertMail(input: { workspaceName: string; state: 'breached' |
   });
 }
 
+/** The headers that make a mail a one-click unsubscribe (RFC 8058): the address, and the statement that a POST to it is all that is needed. */
+export function listUnsubscribeHeaders(url: string): Record<string, string> {
+  // The value goes into a header line: refuse anything that could end the line or the angle brackets.
+  if (!/^https?:\/\/[^\s<>"]{1,1000}$/.test(url)) throw new Error('the unsubscribe address is not a plain http(s) link');
+  return { 'List-Unsubscribe': `<${url}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
+}
+
+// Anything that is not printable text (control characters, the marks that reorder text, zero-width characters) is dropped from a name or an excerpt.
+// eslint-disable-next-line no-control-regex
+const UNPRINTABLE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g;
+/** One line of at most `max` characters (counted as code points) from text a person wrote; linear in the input. */
+export function oneLine(text: string, max: number): string {
+  const line = text.slice(0, max * 8).replace(UNPRINTABLE, ' ').replace(/\s+/g, ' ').trim();
+  const chars = [...line.slice(0, max * 2 + 2)];
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : chars.join('');
+}
+const httpUrl = (url: string): string => (/^https?:\/\/[^\s<>"]{1,1000}$/.test(url) ? url : '#');
+
+/**
+ * The email digest (PLAN P14-09): what a person has not read, grouped by channel, with a link to each message and a footer that unsubscribes in one
+ * click. Every name and excerpt is text somebody else wrote, so it is cut to one line, stripped of control characters and escaped in the HTML body;
+ * the plain text part carries it as text.
+ */
+export function digestMail(input: {
+  name: string;
+  groups: ReadonlyArray<{ title: string; items: ReadonlyArray<{ sender: string; excerpt: string; url: string }> }>;
+  more: number;
+  openUrl: string;
+  unsubscribeUrl: string;
+  settingsUrl: string;
+}): RenderedMail & { headers: Record<string, string> } {
+  const groups = input.groups.map((g) => ({
+    title: oneLine(g.title, 80) || 'Conversation',
+    items: g.items.map((i) => ({ sender: oneLine(i.sender, 60) || 'Someone', excerpt: oneLine(i.excerpt, 140), url: httpUrl(i.url) })),
+  }));
+  const shown = groups.reduce((n, g) => n + g.items.length, 0);
+  const total = shown + Math.max(0, Math.floor(input.more));
+  const subject = total === 1 ? '1 unread message is waiting for you' : `${total} unread messages are waiting for you`;
+  const name = oneLine(input.name, 60) || 'there';
+  const moreLine = input.more > 0 ? `and ${input.more} more` : '';
+  const intro = 'You have been away for a while. These mentions, replies and direct messages are still unread.';
+  const footer = 'You get this mail because you were away and had unread mentions or messages. It never repeats until you have been away again.';
+
+  const text = [
+    `Hi ${name}, here is what you missed`,
+    '',
+    intro,
+    '',
+    ...groups.flatMap((g) => [g.title, ...g.items.flatMap((i) => [`  ${i.sender}: ${i.excerpt}`, `  ${i.url}`]), '']),
+    ...(moreLine ? [`${moreLine}.`, ''] : []),
+    `Open manythreads: ${input.openUrl}`,
+    '',
+    '--',
+    footer,
+    `Stop these emails (one click): ${input.unsubscribeUrl}`,
+    `Turn them back on or change how long you are away first: ${input.settingsUrl}`,
+    '',
+  ].join('\n');
+
+  const html = [
+    '<!doctype html>',
+    '<html><body style="font-family: sans-serif; line-height: 1.5;">',
+    `<h2 style="font-size: 18px;">${escapeHtml(`Hi ${name}, here is what you missed`)}</h2>`,
+    `<p>${escapeHtml(intro)}</p>`,
+    ...groups.flatMap((g) => [
+      `<h3 style="font-size: 15px; margin-bottom: 4px;">${escapeHtml(g.title)}</h3>`,
+      '<ul style="margin-top: 0;">',
+      ...g.items.map((i) => `<li><strong>${escapeHtml(i.sender)}</strong>: ${escapeHtml(i.excerpt)} <a href="${escapeHtml(i.url)}">Open</a></li>`),
+      '</ul>',
+    ]),
+    ...(moreLine ? [`<p>${escapeHtml(moreLine)}.</p>`] : []),
+    `<p><a href="${escapeHtml(httpUrl(input.openUrl))}">Open manythreads</a></p>`,
+    `<p style="color: dimgray; font-size: 13px;">${escapeHtml(footer)}<br>`,
+    `<a href="${escapeHtml(httpUrl(input.unsubscribeUrl))}">Stop these emails</a> (one click) &middot; <a href="${escapeHtml(httpUrl(input.settingsUrl))}">Email settings</a></p>`,
+    '</body></html>',
+    '',
+  ].join('\n');
+  return { subject, text, html, headers: listUnsubscribeHeaders(input.unsubscribeUrl) };
+}
+
 export type MailTemplateInput =
+  | {
+      template: 'digest';
+      to: string;
+      name: string;
+      groups: ReadonlyArray<{ title: string; items: ReadonlyArray<{ sender: string; excerpt: string; url: string }> }>;
+      more: number;
+      openUrl: string;
+      unsubscribeUrl: string;
+      settingsUrl: string;
+    }
   | { template: 'verify'; to: string; name: string; url: string }
   | { template: 'reset'; to: string; name: string; url: string }
   | { template: 'invite'; to: string; inviterName: string; workspaceName: string; teamName: string | null; url: string }
@@ -97,6 +187,8 @@ export type MailTemplateInput =
 /** Renders a template into a complete `MailMessage` for `to`. */
 export function renderMail(input: MailTemplateInput): MailMessage {
   switch (input.template) {
+    case 'digest':
+      return { to: input.to, ...digestMail(input) };
     case 'verify':
       return { to: input.to, ...verifyEmailMail(input) };
     case 'reset':

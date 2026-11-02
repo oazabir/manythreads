@@ -123,7 +123,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
-| 7 | 14 | Messaging parity and moving in | XL | 6 | 14 of 23 built, 7 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 15 of 23 built, 6 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 0 of 13 built |
 | 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
@@ -433,7 +433,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI … | Not built |  | no pre-check/contrast/Tab-walk CI jobs; USER_JOURNEYS.md not generated |
 | P13-11 | Build the /dev/components gallery (Button, Chip, Card, Table row … | Not built | clients/web/src/pages/DevTokens.tsx (/dev/tokens), DevViewers; eslint.config.js raw-hex ban; stylelint.config.js color-no-hex | no /dev/components gallery, no 4px spacing lint |
 
-### Phase 14 · Messaging parity and moving in — 14 built, 7 partly, 2 not built
+### Phase 14 · Messaging parity and moving in — 15 built, 6 partly, 2 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
@@ -446,7 +446,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P14-06 | Slash commands. One registry in shared/commands (name, arguments … | Built | packages/shared/src/commands/ (registry with usage and needs; remind, status, dnd, away, poll, invite, leave, mute, topic, shrug); clients/web/src/channels/slash.ts, slashRun.ts, useSlash.ts; e2e/channels/slash-commands.spec.ts | the BOT.md `command` trigger (a bot declares a command) is skipped; `/status :shortcode:` is stored as text, not converted |
 | P14-07 | Polls. /poll and a composer action; single or multiple choice … | Built | plugins/channels migration 0014_polls.sql (RLS: an anonymous ballot is readable only by its voter; app.polls_close and app.polls_lock definer functions), polls.ts, routes-polls.ts, poll-views.ts, poll-push.ts; shared entities/poll.ts, api/channels/polls.ts, commands/poll.ts; clients/web PollCard.tsx, PollDialog.tsx, polls.ts, styles/polls.css; e2e/channels/polls.spec.ts; live check e2e/screens/task.polls.shots.ts (2026-11-01) | Left: a second option click while a vote is in flight is dropped (queue it), anonymous refusal wording in a channel |
 | P14-08 | Link previews. For a link in a posted message the server reads the … | Built | packages/plugins/link-preview (migrations 0001 and 0002, resolver.ts, safe-fetch.ts, fetch-preview.ts, jobs.ts, limits.ts, routes.ts); shared api/link-preview; clients/web linkpreview/, LinkPreviewCards.tsx; live check e2e/screens/task.link-preview.shots.ts (2026-11-01) | Left: no admin screen for the allow and deny lists (API only), blank slot for a link that never gets a card |
-| P14-09 | Notifications that reach people. Per-channel level (all · mentions · … | Partly built | notifications migration 0003 (notification_levels, keywords, push_subscriptions), src/webpush.ts, push.ts; clients/web/public/sw.js | no email digest and no one-click unsubscribe (docs/plugins/notifications.md:134) |
+| P14-09 | Notifications that reach people. Per-channel level (all · mentions · … | Built | notifications migrations 0003 and 0005_digest (notification_levels, keywords, push_subscriptions, notification_digest), src/webpush.ts, push.ts, digest.ts, digest-job.ts, digest-token.ts, routes-digest.ts; presence provider; mail List-Unsubscribe headers; clients/web NotificationSettings.tsx; e2e/notifications/email-digest.spec.ts | Left: no delivery check against a real push service; not yet checked live in the browser (a digest needs a person away for the delay) |
 | P14-10 | Quick switcher and keyboard. Ctrl/Cmd+K jumps to any channel, DM … | Built | clients/web/src/app/QuickSwitcher.tsx, quick-switcher.ts, readAll.ts; ChannelView.tsx jump-first-unread; e2e/shell/quick-switcher.spec.ts |  |
 | P14-11 | Search parity. Filters from: in: has:file has:link has:pin is:thread … | Partly built | packages/plugins/search (migrations 0004 filters_pages, 0005 saved_searches; saved.ts); packages/shared/src/api/search/syntax.ts … | has:pin not supported (pins absent); transcripts are phase 15 |
 | P14-12 | Message actions. Edit history ("edited" opens the versions); forward … | Built | channels migrations 0009 message_versions, 0010 channel_bookmarks; routes-bookmarks.ts; web ForwardDialog.tsx, BookmarksBar.tsx, MessageExtras.tsx | - (bookmarks sit beside pins, which do not exist) |

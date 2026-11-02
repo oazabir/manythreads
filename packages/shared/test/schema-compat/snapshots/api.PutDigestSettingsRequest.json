@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "delayMinutes": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 1440
+    }
+  },
+  "required": [
+    "enabled",
+    "delayMinutes"
+  ],
+  "additionalProperties": false
+}
