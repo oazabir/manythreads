@@ -35,6 +35,15 @@ describe('inputProblem', () => {
     }
   });
 
+  it('refuses a null character (U+0000) in any text, naming the field: the database cannot store it', () => {
+    const nul = String.fromCharCode(0);
+    expect(inputProblem('email.send', { body: `a${nul}b` })).toContain('body');
+    expect(inputProblem('email.draft', { to: 'a@b.co', subject: `a${nul}b`, body: 'b' })).toContain('subject');
+    expect(inputProblem('email.draft', { to: 'a@b.co', subject: 's', body: `a${nul}b` })).toContain('body');
+    expect(inputProblem('email.read', { query: `a${nul}b` })).toContain('query');
+    expect(inputProblem('email.send', { body: 'fine' })).toBeNull();
+  });
+
   it('never repeats a value it refused', () => {
     expect(inputProblem('email.send', { body: 'SENTINEL-secret'.repeat(5000) })).not.toContain('SENTINEL');
     expect(inputProblem('email.read', { SENTINEL_FIELD: 'SENTINEL-value' })).not.toContain('SENTINEL-value');

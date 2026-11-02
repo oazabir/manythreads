@@ -10,6 +10,9 @@ import { z } from 'zod';
 //   run           `bot_runs`: the run of THIS bot, started by an `inbox` trigger, answering in the post's own channel;
 //   its job       `bot_runs.job_id`, and the job's payload carries `inbox.claimId` (the runtime put it there from the event), which is the claim.
 // The first post wins: a claim already linked is left alone, so a bot that posts twice in one run does not move the link.
+// Only a TOP-LEVEL post can be the link (it is its own thread root). A reply into a thread that already exists is never linked, however the bot got there (an explicit
+// `threadRootId` is an argument the model controls): otherwise a bot steered by a mail could bind the claim to someone else's thread, and the people answering in that thread
+// would then be answering the mail. Such a post is left alone and the claim waits for the run's next top-level post.
 
 const RunId = z.uuid();
 
@@ -17,8 +20,8 @@ const RunId = z.uuid();
 export async function linkPost(tx: PluginTx, messageId: string): Promise<boolean> {
   const message = (
     await tx.query<{ channel_id: string; root: string; run_id: unknown }>(
-      `SELECT m.channel_id, coalesce(m.thread_root_id, m.id) AS root, m.meta -> 'runId' AS run_id
-         FROM app.messages m WHERE m.id = $1::uuid AND m.deleted_at IS NULL AND NOT (m.meta ? 'runFailure')`,
+      `SELECT m.channel_id, m.id AS root, m.meta -> 'runId' AS run_id
+         FROM app.messages m WHERE m.id = $1::uuid AND m.thread_root_id IS NULL AND m.deleted_at IS NULL AND NOT (m.meta ? 'runFailure')`,
       [messageId],
     )
   ).rows[0];

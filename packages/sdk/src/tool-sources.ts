@@ -34,6 +34,17 @@ export interface ToolSourceTool {
   sourcesFrom?: (result: unknown) => RunSourceLine[];
 }
 
+/**
+ * How an approval card reads for a call the SOURCE (not the grant) holds for a person: the line the inbox shows and the arguments an approver is shown. The source builds it from
+ * rows the platform owns (a recipient it read itself), never from words the model wrote, so a person approving sees where the call really goes.
+ */
+export interface ToolApprovalCard {
+  /** One line for the Approvals inbox (at most 300 characters; the platform clips it). */
+  summary: string;
+  /** What the approver is shown of the call. Plain values; the platform clips long text and hides secrets. */
+  preview: Record<string, unknown>;
+}
+
 /** A source of tools. Registered by a plugin that extends `tool.source` (`ctx.toolSources.register`). */
 export interface ToolSource {
   /** Unique among the sources (`connections`). */
@@ -53,13 +64,19 @@ export interface ToolSource {
    * throws is logged and answered as a plain "the call failed". `run` is read from the database, never from the request.
    */
   call(tx: PluginTx, run: BotRunHandle, tool: string, input: Record<string, unknown>): Promise<unknown>;
+  /**
+   * Optional. Whether this call must wait for a person whatever the grant says (a send that goes to a stranger, say), and how its card reads; null means the grant decides.
+   * Asked by the gateway for a tool that acts (a write), in a transaction as the bot, before the call is run. A call a person has already approved is not asked again (the
+   * approvals job runs it directly). It must not change anything. A source that throws is treated as "must wait": the gateway fails closed.
+   */
+  approval?(tx: PluginTx, run: BotRunHandle, tool: string, input: Record<string, unknown>): Promise<ToolApprovalCard | null>;
 }
 
 /**
  * What a plugin that looks at the sources (the gateway) gets: the source without `call`. The one door to a source's credentials is the run service
  * (`ctx.runs.invoke`), which reads the run from its own row first; a plugin holding `call` could skip that, so the kernel never hands it out.
  */
-export type ToolSourceView = Pick<ToolSource, 'id' | 'tools' | 'offered'>;
+export type ToolSourceView = Pick<ToolSource, 'id' | 'tools' | 'offered' | 'approval'>;
 
 /** `ctx.toolSources`: register a source (needs `tool.source`), and find sources (needs `tool.invoke`, the gateway's door). */
 export interface PluginToolSources {

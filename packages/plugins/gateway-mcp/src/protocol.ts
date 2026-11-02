@@ -1,4 +1,4 @@
-import { HttpError, RunEndedError, type BotRunHandle, type HttpResponse, type PluginContext } from '@manythreads/sdk';
+import { HttpError, RunEndedError, type BotRunHandle, type HttpResponse, type PluginContext, type ToolApprovalCard } from '@manythreads/sdk';
 import {
   MCP_ERROR_CODES,
   MCP_PROTOCOL_VERSION,
@@ -202,19 +202,35 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
   // from the request). A tool that is not a known read, and not the reply itself, counts as a write, so a tool added later is held back until someone says otherwise.
   // The reply itself (`rehearsalSafe`) goes through only when it would go straight out: a reply that would wait for a person would file a card in the
   // Approvals inbox, so it is held back like any write (the closing text of the run then carries the answer).
+  // A source may hold a write for a person whatever the grant says (the mail tools do inside a mail thread); the card it returns says where the call really goes.
+  let sourceCard: ToolApprovalCard | null = null;
+  if (definition.kind === 'write') {
+    const owner = ctx.toolSources.find(params.name)?.source;
+    if (owner?.approval) {
+      try {
+        sourceCard = await ctx.runs.asBot(run, (tx) => owner.approval!(tx, run, params.name, input));
+      } catch (err) {
+        if (err instanceof RunEndedError) throw err;
+        faultLog(`gateway-mcp: the approval check of “${params.name}” threw: ${err instanceof Error ? err.message : String(err)}`.slice(0, 500));
+        sourceCard = { summary: params.name, preview: {} }; // fail closed: a source that cannot say waits for a person
+      }
+    }
+  }
+  const waitsForPerson = decision.needsApproval || holdForPerson || sourceCard !== null;
+
   if (
     run.rehearsal === true &&
-    ((definition.kind !== 'read' && definition.kind !== 'stub' && (options.sandbox === true || definition.rehearsalSafe !== true || decision.needsApproval || holdForPerson)) ||
+    ((definition.kind !== 'read' && definition.kind !== 'stub' && (options.sandbox === true || definition.rehearsalSafe !== true || waitsForPerson)) ||
       // a read or a stub that the grant says a person must approve would file a card in the Approvals inbox: a rehearsal files none
-      ((definition.kind === 'read' || definition.kind === 'stub') && (decision.needsApproval || holdForPerson)))
+      ((definition.kind === 'read' || definition.kind === 'stub') && waitsForPerson))
   ) {
-    return await holdBack(ctx, run, params.name, input, decision.needsApproval || holdForPerson);
+    return await holdBack(ctx, run, params.name, input, waitsForPerson);
   }
 
-  if (decision.needsApproval || holdForPerson) {
-    // The grant says a person must approve this call: it becomes a pending approval (the approvals plugin's one handler) and the model is
+  if (waitsForPerson) {
+    // The grant (or the source) says a person must approve this call: it becomes a pending approval (the approvals plugin's one handler) and the model is
     // told. Without that plugin the call is refused outright — running it anyway is the one thing the flag exists to stop.
-    return toolResult(await askForApproval(ctx, run, params.name, definition.kind, input), true);
+    return toolResult(await askForApproval(ctx, run, params.name, definition.kind, input, sourceCard ?? undefined), true);
   }
 
   if (definition.kind === 'stub') {

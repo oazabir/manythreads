@@ -1,4 +1,4 @@
-import { requestToolApproval, type BotRunHandle, type PluginContext } from '@manythreads/sdk';
+import { requestToolApproval, type BotRunHandle, type PluginContext, type ToolApprovalCard } from '@manythreads/sdk';
 import type { ToolKind } from './catalog.ts';
 
 // A call whose grant says `needsApproval` (SPEC §7.3) does not run: it becomes a pending approval in the Approvals inbox, through the approvals
@@ -19,11 +19,12 @@ export async function askForApproval(
   tool: string,
   kind: ToolKind,
   input: Record<string, unknown>,
+  card?: ToolApprovalCard,
 ): Promise<ApprovalAnswer | { ok: false; code: 'forbidden'; message: string }> {
   if (kind === 'read') {
     return { ok: false, code: 'forbidden', message: `“${tool}” only reads, so it cannot wait for an approval; ask a lead to remove needsApproval from it.` };
   }
-  const filed = await requestToolApproval(ctx, run, tool, input);
+  const filed = await requestToolApproval(ctx, run, tool, input, card ? { card } : {});
   if (!filed) return { ok: false, code: 'approval_required', message: 'This call needs a person’s approval before it runs.' };
   // nobody but the asker could decide it in a private conversation: it was not filed, and the model says so
   if ('refused' in filed) return { ok: false, code: 'forbidden', message: filed.refused };

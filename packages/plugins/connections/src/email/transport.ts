@@ -35,6 +35,8 @@ export interface ListMailQuery {
   /** Which mails: `in` (arrived), `out` (sent), `draft`. Left out, every direction. */
   direction?: MailDirection;
   folder?: string;
+  /** Only mail of this mail thread (any direction unless `direction` narrows it). */
+  threadKey?: string;
   /** Words (all of them) that the subject, the sender or the text must contain, any case. */
   words?: string;
   /** Only mail that arrived at or after this instant. */

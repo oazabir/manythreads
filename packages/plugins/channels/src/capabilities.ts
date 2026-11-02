@@ -46,20 +46,21 @@ export interface PostMessageAnswer {
 }
 
 /**
- * Where the bot run this transaction acts for answers (its own row; a bot reads its live run), or null outside a run or for a run with no channel. `replyRootId` is null for a
- * run that answers at the top of its channel (an `inbox` or `routine` run has no thread to answer in): its posts still name the run (`meta.runId`), which is how a later reader
- * ties a post to the run that wrote it (the connections plugin links a mail to the bot's post that way).
+ * Where the bot run this transaction acts for answers (its own row; a bot reads its live run), or null outside a run or for a run with no place to answer. A run answers in a
+ * thread (`replyRootId`), or at the top of its channel when it is an `inbox` run: only then does a top-level post name the run (`meta.runId`), which is how the connections plugin
+ * ties a mail to the bot's post. Any other run with a channel but no thread (a routine, a rhythm, a task) has no place here: stamping its top-level posts would make the runtime
+ * believe the run already answered and skip its final reply.
  */
 async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: string; replyRootId: string | null } | null> {
   const here = (await tx.query<{ run_id: string | null }>(`SELECT app.run_id()::text AS run_id`)).rows[0]?.run_id ?? null;
   if (here === null) return null;
   const row = (
-    await tx.query<{ channel_id: string | null; reply_root_id: string | null }>(
-      `SELECT channel_id::text AS channel_id, reply_root_id::text AS reply_root_id FROM app.bot_runs WHERE id = $1::uuid`,
+    await tx.query<{ channel_id: string | null; reply_root_id: string | null; trigger_type: string }>(
+      `SELECT channel_id::text AS channel_id, reply_root_id::text AS reply_root_id, trigger_type FROM app.bot_runs WHERE id = $1::uuid`,
       [here],
     )
   ).rows[0];
-  if (!row?.channel_id) return null;
+  if (!row?.channel_id || (!row.reply_root_id && row.trigger_type !== 'inbox')) return null;
   return { runId: here, channelId: row.channel_id, replyRootId: row.reply_root_id };
 }
 

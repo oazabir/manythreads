@@ -13,7 +13,7 @@ export { compileBot, compileTeam, dropBot } from './compile.ts';
 export { inputProblem, kindOf, kindServes, TOOLS } from './kinds.ts';
 export { createDummyTransport } from './email/dummy.ts';
 export type { EmailTransport, ListMailQuery, MailMessage, MailSummary, OutgoingMail } from './email/transport.ts';
-export { mailBehindRun } from './email/tools.ts';
+export { claimBehindRun, mailBehindRun } from './email/tools.ts';
 export { linkPost } from './link.ts';
 export { triggerMatches, watchInbox, WATCH_QUEUE } from './watch.ts';
 export { PERSON_TOOLS } from './person-tools.ts';

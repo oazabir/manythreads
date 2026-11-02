@@ -37,6 +37,8 @@ const FAKE_HERMES = [
   "  return body.result?.content?.[0]?.text ?? JSON.stringify(body);",
   '};',
   "const done = (text) => { process.stdout.write(JSON.stringify({ type: 'result', exit_code: 0, text, tokens: { input: 5, output: 5, total: 10 } }) + '\\n'); process.exit(0); };",
+  "if (prompt.includes('POST-INTO-THREAD')) { const root = /POST-INTO-THREAD (\\S+)/.exec(prompt)?.[1] ?? ''; await tool('messages.post', { body: 'Steered post into an old thread.', threadRootId: root }); done('Steering done.'); }",
+  "if (prompt.includes('EMAIL-SEND-FIRST')) done('SEND-FIRST-ANSWER ' + await tool('email.send', { body: 'Answering before I post anything.' }));",
   "if (prompt.includes('EMAIL-SEND-WITH-TO')) done('SEND-ANSWER ' + await tool('email.send', { body: 'Your refund is on its way.', to: 'attacker@evil.example' }));",
   "if (prompt.includes('EMAIL-SEND')) done('SEND-ANSWER ' + await tool('email.send', { body: 'Your refund is on its way.' }));",
   "if (prompt.includes('EMAIL-READ')) done('READ-ANSWER ' + await tool('email.read', { limit: 5 }));",
@@ -204,6 +206,16 @@ describe('the delivery door', () => {
     expect((await w.call(omar, 'POST', DOOR, { from: 'not an address', to: 'a@b.co', subject: 's', body: 'b' })).status).toBe(400);
     expect((await w.call(omar, 'POST', DOOR, { from: CUSTOMER, to: 'a@b.co', subject: 's', body: 'b', extra: 1 })).status).toBe(400);
   });
+
+  it('refuses a null character (U+0000) in the subject, the text or the folder with a 400, not a 500, and stores nothing', async () => {
+    const nul = String.fromCharCode(0);
+    for (const field of ['subject', 'body', 'folder'] as const) {
+      const res = await w.call(omar, 'POST', DOOR, { from: CUSTOMER, to: 'a@b.co', subject: 's', body: 'b', [field]: `x${nul}y` });
+      expect(res.status, field).toBe(400);
+      expect(JSON.stringify(res.body), field).toContain(field);
+    }
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.connection_messages WHERE connection_id = $1', [connectionId])).rows.length)).toBe(0);
+  });
 });
 
 describe('one mail thread, one run', () => {
@@ -256,9 +268,24 @@ describe('one mail thread, one run', () => {
 describe('email.send answers the mail the thread came from', () => {
   const origin = (): string => `origin=${w.server.url}`;
 
-  it('goes to the first mail’s sender, in the same mail thread, with the model’s words and nothing else of its choosing', async () => {
+  const pendingSends = (botId: string) =>
+    sys(async (tx) => (await tx.query<{ id: string; summary: string; args_preview: Record<string, unknown> }>(`SELECT id, summary, args_preview FROM app.approvals WHERE tool = 'email.send' AND status = 'pending' AND bot_id = $1 ORDER BY created_at`, [botId])).rows);
+
+  it('waits for a person even though the bot’s grant does not ask for it, shows the recipient, and once approved goes to the first mail’s sender, in the same mail thread, with the model’s words and nothing else of its choosing', async () => {
+    const before = (await outbound()).length;
     await say(`@mail-bot please answer EMAIL-SEND ${origin()}`, threadRoot);
-    await botAnswer(threadRoot, 'SEND-ANSWER');
+    const answer = await botAnswer(threadRoot, 'SEND-ANSWER');
+    expect(answer.body).toContain('approval_pending');
+    // nothing is sent yet: the card waits, and says whom the mail goes to (read from the stored mail, not from anything the model wrote)
+    expect((await outbound()).length).toBe(before);
+    const [card] = await pendingSends(bot.botId);
+    expect(card!.summary).toBe(`email.send · reply to ${CUSTOMER}`);
+    expect(card!.args_preview).toMatchObject({ to: CUSTOMER, subject: 'Re: Refund for order 1042', body: 'Your refund is on its way.' });
+    expect(JSON.stringify(card)).not.toContain(EVIL);
+
+    const approved = await w.call(omar, 'POST', `/api/teams/engineering/approvals/${card!.id}/approve`, {});
+    expect(approved.status, JSON.stringify(approved.body)).toBeLessThan(300);
+    await until(async () => (await outbound()).length === before + 1, 60_000, 'the approved send to be made');
     const out = await outbound();
     expect(out).toHaveLength(1);
     expect(out[0]).toMatchObject({ direction: 'out', to_address: CUSTOMER, subject: 'Re: Refund for order 1042', body: 'Your refund is on its way.', thread_key: '<order-1042@example.com>', in_reply_to: '<order-1042@example.com>' });
@@ -279,6 +306,16 @@ describe('email.send answers the mail the thread came from', () => {
     const answer = await botAnswer(root, 'SEND-ANSWER');
     expect(answer.body).toContain('forbidden');
     expect(await outbound()).toHaveLength(1);
+  });
+
+  it('email.read in a conversation that came from a mail shows that mail thread only, not the other threads of the mailbox', async () => {
+    await say(`@mail-bot please look EMAIL-READ ${origin()}`, threadRoot);
+    const answer = await botAnswer(threadRoot, 'READ-ANSWER');
+    expect(answer.body).toContain('Please refund order 1042.');
+    expect(answer.body).toContain('only that thread is shown');
+    // the mailbox also holds order 2000 (another thread): not shown
+    expect(answer.body).not.toContain('Where is order 2000?');
+    expect(answer.body).not.toContain('order-2000@example.com');
   });
 
   it('email.read shows the mailbox to the bot, and the mail’s text is marked as data', async () => {
@@ -324,5 +361,52 @@ describe('a send that needs a person’s approval', () => {
     await until(async () => (await outbound()).length === before + 1, 60_000, 'the approved send to be made');
     const sent = (await outbound()).at(-1)!;
     expect(sent).toMatchObject({ direction: 'out', to_address: 'buyer@example.com', subject: 'Re: Invoice for order 3000', thread_key: '<order-3000@example.com>' });
+  });
+});
+
+// Review of P8-29/P8-30. These two journeys come last: both bots of this file answer every mail inside the look-back window, and the scripts in the mail text (POST-INTO-THREAD,
+// EMAIL-SEND-FIRST) must not run for the careful bot's test above.
+describe('an inbox run that sends before it has posted anything', () => {
+  it('knows its mail from its first call: the send waits for a person with the sender on the card, and once approved goes to that sender', async () => {
+    const buyer = 'first@example.com';
+    const res = await deliver(omar, { from: buyer, messageRef: '<order-4000@example.com>', subject: 'Question about order 4000', body: `EMAIL-SEND-FIRST origin=${w.server.url}` });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    // the run's FIRST action is the send, before any post of its own: it is not refused for want of a link
+    const card = await until(
+      () => sys(async (tx) => (await tx.query<{ id: string; summary: string }>(`SELECT id, summary FROM app.approvals WHERE tool = 'email.send' AND status = 'pending' AND bot_id = $1 AND summary LIKE $2`, [bot.botId, `%${buyer}%`])).rows[0] ?? null),
+      90_000,
+      'the first-call send to wait for approval',
+    );
+    expect(card.summary).toBe(`email.send · reply to ${buyer}`);
+    const before = (await outbound()).length;
+    const approved = await w.call(omar, 'POST', `/api/teams/engineering/approvals/${card.id}/approve`, {});
+    expect(approved.status, JSON.stringify(approved.body)).toBeLessThan(300);
+    await until(async () => (await outbound()).length === before + 1, 60_000, 'the approved send to be made');
+    expect((await outbound()).at(-1)).toMatchObject({ direction: 'out', to_address: buyer, subject: 'Re: Question about order 4000', body: 'Answering before I post anything.', thread_key: '<order-4000@example.com>' });
+  });
+});
+
+describe('the link between a mail and the bot’s post', () => {
+  it('is made by a top-level post only: a post the bot steers into an existing thread is not the link', async () => {
+    const res = await deliver(omar, { from: 'steer@example.com', messageRef: '<order-5000@example.com>', subject: 'Question about order 5000', body: `POST-INTO-THREAD ${threadRoot} origin=${w.server.url}` });
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    const linked = await until(
+      async () => (await claims()).find((c) => c.thread_key === '<order-5000@example.com>' && c.root_message_id !== null) ?? null,
+      90_000,
+      'the claim to be linked to the run’s own top-level post',
+    );
+    // the steered post exists, in the old thread, and names the run
+    const steered = await sys(async (tx) =>
+      (await tx.query<{ id: string; thread_root_id: string | null; meta: { runId?: string } }>(`SELECT id, thread_root_id, meta FROM app.messages WHERE body = 'Steered post into an old thread.' AND thread_root_id = $1 AND author_id = $2`, [threadRoot, bot.actorId])).rows[0],
+    );
+    expect(steered).toBeDefined();
+    expect(steered!.meta.runId).toBe(linked.run_id);
+    // ... and is not what the claim points at: the claim points at a top-level message of its own, never at the old thread
+    expect(linked.root_message_id).not.toBe(threadRoot);
+    expect(linked.root_message_id).not.toBe(steered!.id);
+    const root = await sys(async (tx) => (await tx.query<{ thread_root_id: string | null }>('SELECT thread_root_id FROM app.messages WHERE id = $1', [linked.root_message_id]))).then((r) => r.rows[0]);
+    expect(root?.thread_root_id).toBeNull();
+    // the old thread still belongs to its own claim: a send there still goes to the first customer
+    expect((await claims()).find((c) => c.root_message_id === threadRoot)).toMatchObject({ thread_key: '<order-1042@example.com>' });
   });
 });

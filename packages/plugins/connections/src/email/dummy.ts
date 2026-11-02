@@ -71,6 +71,7 @@ export function createDummyTransport(tx: PluginTx, connection: { id: string }): 
       const where: string[] = ['m.connection_id = $1'];
       if (query.direction) where.push(`m.direction = $${params.push(query.direction)}`);
       if (query.folder) where.push(`lower(m.folder) = lower($${params.push(query.folder)})`);
+      if (query.threadKey !== undefined) where.push(`m.thread_key = $${params.push(query.threadKey)}`);
       if (query.since) where.push(`m.created_at >= $${params.push(query.since)}`);
       for (const word of wordsOf(query.words)) {
         where.push(`strpos(lower(m.subject || ' ' || m.from_address || ' ' || m.body), $${params.push(word)}) > 0`);

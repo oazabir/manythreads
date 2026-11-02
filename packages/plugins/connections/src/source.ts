@@ -1,4 +1,4 @@
-import { forbidden, invalid, type BotRunHandle, type PluginTx, type ToolSource } from '@manythreads/sdk';
+import { forbidden, invalid, type BotRunHandle, type PluginTx, type ToolApprovalCard, type ToolSource } from '@manythreads/sdk';
 import { inputProblem, kindOf, kindServes, TOOLS } from './kinds.ts';
 import { createProviderApi, ProviderError } from './oauth/api.ts';
 import { PROVIDERS, serviceDef } from './oauth/providers.ts';
@@ -89,6 +89,13 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
       );
       const team = rows.rows.filter((r) => isUsable(r) && kindServes(r.kind, r.tool)).map((r) => r.tool);
       return [...team, ...(await personToolsOffered(tx, run))];
+    },
+
+    async approval(tx: PluginTx, run: BotRunHandle, tool: string, input: Record<string, unknown>): Promise<ToolApprovalCard | null> {
+      const granted = (await tx.query<ConnectionRow>(GRANTED, [run.botActorId, run.teamId, tool])).rows[0];
+      if (!granted || !isUsable(granted) || inputProblem(tool, input) !== null) return null; // the call itself is refused for that reason
+      const kind = kindOf(granted.kind);
+      return kind?.approval ? kind.approval({ tool, input, connection: granted, tx, run }) : null;
     },
 
     async call(tx: PluginTx, run: BotRunHandle, tool: string, input: Record<string, unknown>): Promise<unknown> {

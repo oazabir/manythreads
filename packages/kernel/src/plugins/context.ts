@@ -171,6 +171,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           tools: Object.freeze(source.tools.map((t) => Object.freeze({ ...t }))),
           offered: (tx, run) => source.offered(tx, run),
           call: (tx, run, tool, input) => source.call(tx, run, tool, input),
+          ...(source.approval ? { approval: (tx, run, tool, input) => source.approval!(tx, run, tool, input) } : {}),
         }),
       );
     },
@@ -545,8 +546,9 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   };
 }
 
-/** The view of a source a looking plugin gets: id, tools and `offered` only, as a fresh frozen object (no `call`, nothing to reach it through). */
-const viewOf = (source: ToolSource): ToolSourceView => Object.freeze({ id: source.id, tools: source.tools, offered: source.offered });
+/** The view of a source a looking plugin gets: id, tools, `offered` and `approval` only, as a fresh frozen object (no `call`, nothing to reach it through). */
+const viewOf = (source: ToolSource): ToolSourceView =>
+  Object.freeze({ id: source.id, tools: source.tools, offered: source.offered, ...(source.approval ? { approval: source.approval } : {}) });
 
 const kvKey = (scope: StorageScope, key: string): string => `${scope.type}:${scope.id}:${key}`;
 

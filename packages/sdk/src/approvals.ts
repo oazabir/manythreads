@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { BotRunTrigger, approvalSummary, previewArgsDetailed, type ApprovalResume, type ApprovalSource } from '@manythreads/shared';
+import type { ToolApprovalCard } from './tool-sources.ts';
 import { RunEndedError, type BotRunHandle, type CapabilityAuthorizeContext, type PluginContext, type PluginTx, type ProviderImpl } from './types.ts';
 
 // The one handler for `needsApproval` (SPEC §7.3; PLAN P5-20): `ctx.providers.get<ApprovalProvider>('approvals')`, registered by the approvals
@@ -139,7 +140,7 @@ export async function requestToolApproval(
   run: BotRunHandle,
   tool: string,
   input: Record<string, unknown>,
-  options: { approvers?: readonly string[] } = {},
+  options: { approvers?: readonly string[]; card?: ToolApprovalCard } = {},
 ): Promise<ApprovalRequestResult | ApprovalRefusal | null> {
   if (NEVER_APPROVAL_GATED.includes(tool)) return { refused: neverApprovalGatedReason(tool) };
   const approvals = ctx.providers.get<ApprovalProvider>('approvals');
@@ -148,14 +149,15 @@ export async function requestToolApproval(
   if (Object.keys(input).some((k) => /^private[_-]?note$/i.test(k))) {
     return { refused: 'This call carries a private note, which cannot wait in an approval. Make the call without the private note, or have a person do the step.' };
   }
-  const { preview, truncated } = previewArgsDetailed(input);
+  // A source that holds a call itself says how the card reads (its recipient, say); the arguments to re-run stay exactly `input`.
+  const { preview, truncated } = previewArgsDetailed(options.card ? options.card.preview : input);
   try {
     return await ctx.runs.asBot(run, (tx) =>
       approvals.request(tx, {
         runId: run.runId,
         source: 'grant',
         tool,
-        summary: approvalSummary(tool, input),
+        summary: options.card ? options.card.summary.replace(/\s+/g, ' ').trim().slice(0, 300) || tool : approvalSummary(tool, input),
         argsPreview: preview,
         argsTruncated: truncated,
         resume: { kind: 'tool', capability: tool, args: input, trigger: BotRunTrigger.parse(run.trigger) },

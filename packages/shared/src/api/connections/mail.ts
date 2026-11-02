@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ConnectionSlug } from '../../entities/connection.ts';
 import { DeliveredMail, MailAddress, MailMessageRef } from '../../entities/connection-mail.ts';
+import { hasNul, NO_NUL_MESSAGE } from '../../entities/message.ts';
 import type { ApiRoute } from '../client/route.ts';
 import { TeamSlug } from '../teams/common.ts';
 
@@ -11,17 +12,20 @@ import { TeamSlug } from '../teams/common.ts';
 export const DeliverMailParams = z.object({ slug: TeamSlug, connection: ConnectionSlug });
 export type DeliverMailParams = z.infer<typeof DeliverMailParams>;
 
+/** Text the database can store: a NUL character (U+0000) is refused up front with a 400, not left to fail the insert. */
+const noNul = (schema: z.ZodString) => schema.refine((v) => !hasNul(v), { message: NO_NUL_MESSAGE });
+
 export const DeliverMailRequest = z.strictObject({
   from: MailAddress,
   to: MailAddress,
-  subject: z.string().max(300),
-  body: z.string().max(40_000),
+  subject: noNul(z.string().max(300)),
+  body: noNul(z.string().max(40_000)),
   /** The mail's own id. Left out, the platform makes one (and a second delivery is then a second mail). The same id twice is one mail. */
   messageRef: MailMessageRef.optional(),
   /** The id of the mail this one answers: it joins that mail's thread when the mailbox holds it. */
   inReplyTo: MailMessageRef.optional(),
   /** Where it landed in the mailbox (default `INBOX`). */
-  folder: z.string().min(1).max(100).optional(),
+  folder: noNul(z.string().min(1).max(100)).optional(),
 });
 export type DeliverMailRequest = z.infer<typeof DeliverMailRequest>;
 

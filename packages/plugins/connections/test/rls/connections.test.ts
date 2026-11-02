@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { createAppPool, createSystemPool, withActor, withSystem, type Tx } from '@manythreads/kernel';
 import {
+  approvalsMigrationSource,
+  botsMigrationSource,
+  channelsMigrationSource,
   connectionsMigrationSource,
   createPersonas,
   createTestDatabase,
@@ -17,7 +20,7 @@ import {
   type TestDatabase,
 } from '@manythreads/test-utils';
 import type pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 // P8-01 and, in the last two describes, P8-29/P8-30 (the mailbox and the claims of the inbox trigger): who may see a connection (a team's to the people of the team, a workspace's to its admins, a person's to that person alone), who may set one up, that a
 // credential row is unreachable to every person-facing role, and the rules the database keeps whatever the code does (a grant names a connection of its own team and
@@ -53,7 +56,7 @@ let botMkt: string;
 let otherWs: { workspace: string; team: string; actor: string };
 
 beforeAll(async () => {
-  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, connectionsMigrationSource] });
+  db = await createTestDatabase({ sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, approvalsMigrationSource, connectionsMigrationSource] });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);
   sysPool = createSystemPool(db.systemUrl, 2);
@@ -408,10 +411,22 @@ describe('mail (connection_messages)', () => {
     expect(await code(sys((tx) => mail(tx, { connection: ids.eng!, team: otherWs.team, messageId: '<foreign@example.com>', ws: otherWs.workspace })))).toMatch(/^(23503|23514)$/);
   });
 
-  const put = (actor: string, connection: string, tool: string, replyTo: string | null, to: string | null) =>
-    asActor(actor, 'bot', async (tx) => (await tx.query<{ id: string }>('SELECT app.connection_mail_put_outbound($1::uuid, $2, $3::uuid, $4, $5, $6) AS id', [connection, tool, replyTo, to, 'Re: Refund', 'On its way.'])).rows[0]!.id);
+  // The writer answers a mail only for the run the transaction acts for, and only a mail that run answers (a claim linked to it): `bind` makes the claim, the actor gets the run.
+  const RUN = randomUUID();
+  const bind = (mailId: string, run: string = RUN): Promise<unknown> =>
+    sys((tx) =>
+      tx.query(
+        `INSERT INTO app.connection_mail_claims (workspace_id, team_id, connection_id, bot_id, thread_key, mail_id, run_id, root_message_id, linked_at)
+         SELECT m.workspace_id, m.team_id, m.connection_id, gen_random_uuid(), m.thread_key, m.id, $2::uuid, gen_random_uuid(), now() FROM app.connection_messages m WHERE m.id = $1 ON CONFLICT DO NOTHING`,
+        [mailId, run],
+      ),
+    );
+  afterEach(() => sys((tx) => tx.query('DELETE FROM app.connection_mail_claims WHERE run_id = $1', [RUN])));
+  const put = (actor: string, connection: string, tool: string, replyTo: string | null, to: string | null, run: string | null = RUN) =>
+    withActor({ kind: 'bot', id: actor as never, workspaceId: omar.workspaceId as never, ...(run ? { runId: run as never } : {}) }, async (tx) => (await tx.query<{ id: string }>('SELECT app.connection_mail_put_outbound($1::uuid, $2, $3::uuid, $4, $5, $6) AS id', [connection, tool, replyTo, to, 'Re: Refund', 'On its way.'])).rows[0]!.id, { pool: appPool });
 
   it('a send goes to the sender of the stored mail it answers; the address passed in is ignored', async () => {
+    await bind(inboundEng);
     const id = await put(botEng, ids.eng!, 'email.send', inboundEng, 'attacker@example.com');
     const row = await sys(async (tx) => (await tx.query<{ direction: string; to_address: string; from_address: string; thread_key: string; in_reply_to: string }>('SELECT direction, to_address, from_address, thread_key, in_reply_to FROM app.connection_messages WHERE id = $1', [id])).rows[0]);
     expect(row).toMatchObject({ direction: 'out', to_address: 'customer@example.com', thread_key: '<in-1@example.com>', in_reply_to: '<in-1@example.com>' });
@@ -442,6 +457,7 @@ describe('mail (connection_messages)', () => {
 
   it('a draft with a mail to answer goes to that mail’s sender; without one it needs an address, and is never sent', async () => {
     await sys((tx) => tx.query(`INSERT INTO app.connection_grants (workspace_id, connection_id, team_id, actor_id, tool) VALUES ($1, $2, $3, $4, 'email.draft') ON CONFLICT DO NOTHING`, [omar.workspaceId, ids.eng, ENG, botEng]));
+    await bind(inboundEng);
     const answered = await put(botEng, ids.eng!, 'email.draft', inboundEng, 'attacker@example.com');
     expect(await sys(async (tx) => (await tx.query<{ to_address: string; direction: string }>('SELECT to_address, direction FROM app.connection_messages WHERE id = $1', [answered])).rows[0])).toEqual({ to_address: 'customer@example.com', direction: 'draft' });
     expect(await code(put(botEng, ids.eng!, 'email.draft', null, null))).toBe('23514');
@@ -508,5 +524,176 @@ describe('mail claims (connection_mail_claims)', () => {
     );
     await sys((tx) => tx.query('DELETE FROM app.connections WHERE id = $1', [doomed.id]));
     expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.connection_mail_claims WHERE connection_id = $1', [doomed.id])).rows.length)).toBe(0);
+  });
+});
+
+// Review of P8-29/P8-30 (migration 0004): the mail writer serves the run the transaction acts for and nothing else, and only on a connection that is on.
+describe('the mail writer is bound to the run and to a connection that is on', () => {
+  let conn: string;
+  let mailA: string;
+  let mailB: string;
+  let botId: string;
+  let writer: string;
+  const RUN_A = randomUUID();
+  const RUN_B = randomUUID();
+
+  const mailIn = (messageId: string): Promise<string> =>
+    sys(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.connection_messages (workspace_id, team_id, connection_id, direction, thread_key, message_id, from_address, to_address, subject, body)
+           VALUES ($1, $2, $3, 'in', $4, $4, $5, 'support@example.com', 'Refund', 'Please refund me.') RETURNING id`,
+          [omar.workspaceId, ENG, conn, messageId, `${messageId.replace(/[<>@.]/g, '')}@customer.example`],
+        )
+      ).rows[0]!.id,
+    );
+  const claimFor = (mailId: string, f: { run?: string | null; root?: string | null; bot?: string }): Promise<unknown> =>
+    sys((tx) =>
+      tx.query(
+        `INSERT INTO app.connection_mail_claims (workspace_id, team_id, connection_id, bot_id, thread_key, mail_id, run_id, root_message_id, linked_at)
+         SELECT m.workspace_id, m.team_id, m.connection_id, $2::uuid, m.thread_key, m.id, $3::uuid, $4::uuid, CASE WHEN $3::uuid IS NULL THEN NULL ELSE now() END FROM app.connection_messages m WHERE m.id = $1`,
+        [mailId, f.bot ?? randomUUID(), f.run ?? null, f.root ?? null],
+      ),
+    );
+  const clearClaims = () => sys((tx) => tx.query('DELETE FROM app.connection_mail_claims WHERE connection_id = $1', [conn]));
+  const actorOf = (run: string | null) => ({ kind: 'bot' as const, id: writer as never, workspaceId: omar.workspaceId as never, ...(run ? { runId: run as never } : {}) });
+  const send = (replyTo: string | null, run: string | null, tool = 'email.send', body = 'On its way.') =>
+    withActor(
+      actorOf(run),
+      async (tx) => (await tx.query<{ id: string }>('SELECT app.connection_mail_put_outbound($1::uuid, $2, $3::uuid, $4, $5, $6) AS id', [conn, tool, replyTo, tool === 'email.draft' && replyTo === null ? 'someone@example.com' : null, 'Re: Refund', body])).rows[0]!.id,
+      { pool: appPool },
+    );
+  /** What `app.connection_mail_claims_of_run` answers to a transaction acting for `run`, asked about `asked`. */
+  const claimsOf = (run: string | null, asked: string, body: string | null = null): Promise<Array<{ mail_id: string; route: number }>> =>
+    withActor(actorOf(run), async (tx) => (await tx.query<{ mail_id: string; route: number }>('SELECT mail_id, route FROM app.connection_mail_claims_of_run($1::uuid, $2) ORDER BY route, mail_id', [asked, body])).rows, { pool: appPool });
+  const bot = (slug: string): Promise<string> =>
+    sys(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bots (workspace_id, team_id, slug, name, role, kind, runtime, visibility, definition_sha, status) VALUES ($1, $2, $3, $3, '', 'agent', 'rules', 'team', repeat('a', 64), 'active') RETURNING id`,
+          [omar.workspaceId, ENG, slug],
+        )
+      ).rows[0]!.id,
+    );
+  const run = (botOf: string, trigger: string, f: { job?: string | null; reply?: string | null; status?: string } = {}): Promise<string> =>
+    sys(async (tx) =>
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, status, job_id, reply_root_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [omar.workspaceId, botOf, ENG, trigger, f.status ?? 'running', f.job ?? null, f.reply ?? null],
+        )
+      ).rows[0]!.id,
+    );
+
+  beforeAll(async () => {
+    conn = (await sys((tx) => insertConnection(tx, { team: ENG, slug: 'bound-mail', scope: 'team', owner: omar.actorId }))).id;
+    await sys(async (tx) => {
+      await tx.query(`UPDATE app.connections SET status = 'enabled' WHERE id = $1`, [conn]);
+      // a bot actor of its own (a grant is one per actor and tool, and the others already hold theirs on the support mailbox)
+      writer = (await tx.query<{ id: string }>(`INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id`, [omar.workspaceId, randomUUID()])).rows[0]!.id;
+      await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')`, [ENG, writer, omar.workspaceId]);
+      await tx.query(`INSERT INTO app.connection_grants (workspace_id, connection_id, team_id, actor_id, tool) VALUES ($1, $2, $3, $4, 'email.send'), ($1, $2, $3, $4, 'email.draft')`, [omar.workspaceId, conn, ENG, writer]);
+    });
+    mailA = await mailIn('<bound-a@example.com>');
+    mailB = await mailIn('<bound-b@example.com>');
+    botId = await bot('bound-bot');
+  });
+  afterEach(clearClaims);
+
+  it('writes a reply to the mail the run is linked to, and to no other mail of the connection', async () => {
+    await claimFor(mailA, { run: RUN_A, root: randomUUID() });
+    const ok = await send(mailA, RUN_A);
+    expect((await sys(async (tx) => (await tx.query<{ to_address: string }>('SELECT to_address FROM app.connection_messages WHERE id = $1', [ok])).rows[0]))?.to_address).toBe('bound-aexamplecom@customer.example');
+    // the mail of another thread, held by the same connection and the same grant, is not this run's
+    expect(await code(send(mailB, RUN_A))).toBe('42501');
+    expect(await code(send(mailB, RUN_A, 'email.draft'))).toBe('42501');
+  });
+
+  it('refuses a reply from a transaction with no run, from another run, and while no claim is the run’s', async () => {
+    await claimFor(mailA, { run: RUN_A, root: randomUUID() });
+    expect(await code(send(mailA, null))).toBe('42501');
+    expect(await code(send(mailA, RUN_B))).toBe('42501');
+    await clearClaims();
+    expect(await code(send(mailA, RUN_A))).toBe('42501');
+    // a claim that no run was linked to yet is nobody's to answer with
+    await claimFor(mailA, {});
+    expect(await code(send(mailA, RUN_A))).toBe('42501');
+  });
+
+  it('answers an inbox run its claim by the job that started it, before any post was made', async () => {
+    const claim = (
+      await sys(async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.connection_mail_claims (workspace_id, team_id, connection_id, bot_id, thread_key, mail_id) SELECT workspace_id, team_id, connection_id, $2::uuid, thread_key, id FROM app.connection_messages WHERE id = $1 RETURNING id`,
+            [mailA, botId],
+          )
+        ).rows[0]!.id,
+      )
+    );
+    const job = await sys(async (tx) => (await tx.query<{ id: string }>(`INSERT INTO app.jobs (queue, payload) VALUES ('runtime-hermes.run', $1::jsonb) RETURNING id`, [JSON.stringify({ inbox: { claimId: claim, connectionId: conn, mailId: mailA } })])).rows[0]!.id);
+    const inbox = await run(botId, 'inbox', { job });
+    const mention = await run(botId, 'mention', { job });
+    const stranger = await run(await bot('bound-other'), 'inbox', { job });
+    expect(await claimsOf(inbox, inbox)).toEqual([{ mail_id: mailA, route: 0 }]);
+    // the same job on a run that is not an inbox run, or that belongs to another bot, gives nothing
+    expect(await claimsOf(mention, mention)).toEqual([]);
+    expect(await claimsOf(stranger, stranger)).toEqual([]);
+    // and the writer takes it: the inbox run replies before it has posted anything
+    const draft = await withActor(actorOf(inbox), async (tx) => (await tx.query<{ id: string }>('SELECT app.connection_mail_put_outbound($1::uuid, $2, $3::uuid, NULL, $4, $5) AS id', [conn, 'email.draft', mailA, 's', 'b'])).rows[0]!.id, { pool: appPool });
+    expect(draft).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('answers a run the claim of the thread it answers in, and a transaction only about its own run', async () => {
+    const root = randomUUID();
+    await claimFor(mailA, { run: RUN_A, root });
+    const mention = await run(botId, 'mention', { reply: root });
+    expect(await claimsOf(mention, mention)).toEqual([{ mail_id: mailA, route: 1 }]);
+    // asking about another run than the one the transaction acts for gives nothing
+    expect(await claimsOf(mention, RUN_A)).toEqual([]);
+    expect(await claimsOf(RUN_A, mention)).toEqual([]);
+    expect(await claimsOf(null, mention)).toEqual([]);
+  });
+
+  it('answers a person-approved send its claim through the approval, only for the exact text and only when unambiguous', async () => {
+    const origin = await run(botId, 'inbox', { status: 'stopped' });
+    await claimFor(mailA, { run: origin, root: randomUUID() });
+    const rerun = await run(botId, 'inbox');
+    const approval = (runId: string, body: string): Promise<unknown> =>
+      sys((tx) =>
+        tx.query(
+          `INSERT INTO app.approvals (workspace_id, team_id, source, status, outcome, tool, summary, args_preview, resume, approver_scope, requester_id, requester_name, bot_id, run_id, decided_at)
+           VALUES ($1, $2, 'grant', 'approved', 'running', 'email.send', 'email.send', '{}', $3::jsonb, '{"roles":[],"people":[],"leads":true}', $4, 'Nadia', $5, $6, now())`,
+          [omar.workspaceId, ENG, JSON.stringify({ kind: 'tool', capability: 'email.send', args: { body }, trigger: 'inbox' }), nadia.actorId, botId, runId],
+        ),
+      );
+    await approval(origin, 'Approved text.');
+    // no text, or other text, finds nothing: the route is for the exact call a person approved
+    expect(await claimsOf(rerun, rerun)).toEqual([]);
+    expect(await claimsOf(rerun, rerun, 'Other text.')).toEqual([]);
+    expect(await claimsOf(rerun, rerun, 'Approved text.')).toEqual([{ mail_id: mailA, route: 2 }]);
+    // a send that is not running (already ran) is not a licence
+    await sys((tx) => tx.query(`UPDATE app.approvals SET outcome = 'ran' WHERE bot_id = $1`, [botId]));
+    expect(await claimsOf(rerun, rerun, 'Approved text.')).toEqual([]);
+    await sys((tx) => tx.query(`UPDATE app.approvals SET outcome = 'running' WHERE bot_id = $1`, [botId]));
+    // two approved sends with the same text for two different mails are ambiguous: nothing is answered
+    const origin2 = await run(botId, 'inbox', { status: 'stopped' });
+    await claimFor(mailB, { run: origin2, root: randomUUID() });
+    await approval(origin2, 'Approved text.');
+    expect(await claimsOf(rerun, rerun, 'Approved text.')).toEqual([]);
+    await sys((tx) => tx.query(`DELETE FROM app.approvals WHERE bot_id = $1`, [botId]));
+  });
+
+  it('refuses a connection that is switched off or past its end, and writes again when it is on', async () => {
+    await claimFor(mailA, { run: RUN_A, root: randomUUID() });
+    const set = (sql: string) => sys((tx) => tx.query(`UPDATE app.connections SET ${sql} WHERE id = $1`, [conn]));
+    await set(`status = 'disabled'`);
+    expect(await code(send(mailA, RUN_A))).toBe('42501');
+    expect(await code(send(null, RUN_A, 'email.draft'))).toBe('42501');
+    await set(`status = 'enabled', expires_at = now() - interval '1 minute'`);
+    expect(await code(send(mailA, RUN_A))).toBe('42501');
+    await set(`expires_at = now() + interval '1 day'`);
+    expect(await code(send(mailA, RUN_A))).toBeUndefined();
+    await set(`expires_at = NULL`);
   });
 });
