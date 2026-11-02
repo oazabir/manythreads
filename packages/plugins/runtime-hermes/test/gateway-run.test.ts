@@ -727,7 +727,15 @@ describe('which bots the team’s pod holds (P19-03)', () => {
     const notice = await until(async () => (await messagesBy(rootId, bots['runson']!.actorId))[0], 30_000, 'the failure notice');
     expect(notice.body).toMatch(/^This bot runs on Pod of pods, but this bot's access to the pod was turned off\./);
     expect(gw.runs.length).toBe(before);
-    const events = await w.system(async (tx) => (await tx.query(`SELECT payload FROM app.events WHERE type = 'bot_runner.run.refused' AND payload ->> 'botId' = $1`, [bots['runson']!.botId])).rows);
+    // the event is written by the run job beside the notice, not before it: wait for it
+    const events = await until(
+      async () => {
+        const rows = await w.system(async (tx) => (await tx.query(`SELECT payload FROM app.events WHERE type = 'bot_runner.run.refused' AND payload ->> 'botId' = $1`, [bots['runson']!.botId])).rows);
+        return rows.length > 0 ? rows : undefined;
+      },
+      15_000,
+      'the refusal event',
+    );
     expect(events).toHaveLength(1);
     expect(events[0]!.payload).toMatchObject({ runner: 'pp-pod', reason: 'not_set_up' });
     await w.system((tx) => tx.query(`UPDATE app.bot_runners SET is_default = false WHERE name = 'pp-pod'`));
