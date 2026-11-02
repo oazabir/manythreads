@@ -384,6 +384,35 @@ describe('the BOT.md loader', () => {
         expect(await botRow('p1910-shell')).toBeUndefined();
       });
 
+      const withNative = (md: string, native: string): string => md.replace('  native: [messages.post]', `  native: [${native}]`);
+
+      it('refuses a bot with no way to post its reply (neither messages.post nor answer.post), naming what to add, and makes no row', async () => {
+        await addModelRunner('l-model-reply');
+        const md = withNative(withRunsOn('Silent', 'l-model-reply'), 'memory.recall');
+        expect((await commit('bots/p1910c-silent/BOT.md', md, 'Place a bot that cannot post on the model runner')).status).toBe(201);
+        const event = await invalidEventFor('p1910c-silent');
+        expect(event.fieldPath).toBe('placement.runs_on');
+        expect(event.message).toMatch(/only calls a model/);
+        expect(event.message).toContain('add messages.post (or answer.post)');
+        expect(event.message).not.toContain('smart');
+        expect(await botRow('p1910c-silent')).toBeUndefined();
+      });
+
+      it('loads a bot that can post: messages.post, answer.post, or a namespace grant', async () => {
+        await addModelRunner('l-model-ok');
+        for (const [slug, native] of [['p1910c-mp', 'messages.post'], ['p1910c-ap', 'answer.post, memory.recall'], ['p1910c-ns', 'messages.*']] as const) {
+          expect((await commit(`bots/${slug}/BOT.md`, withNative(withRunsOn(slug, 'l-model-ok'), native), `Place ${slug}`)).status).toBe(201);
+          expect(await until(() => botRow(slug), 10_000), slug).toMatchObject({ status: 'active', invalid_reason: null, placement: { runs_on: 'l-model-ok' } });
+        }
+      });
+
+      it('does not ask a Hermes runner for a way to post: the placement stays as it was', async () => {
+        await addRunner('l-hermes-silent', [ENG]);
+        const md = withNative(withRunsOn('Quiet Hermes', 'l-hermes-silent'), 'memory.recall');
+        expect((await commit('bots/p1910c-hermes/BOT.md', md, 'Place a quiet bot on a Hermes runner')).status).toBe(201);
+        expect(await until(() => botRow('p1910c-hermes'), 10_000)).toMatchObject({ status: 'active', invalid_reason: null });
+      });
+
       it('lets the same grants stand on a Hermes runner, as before', async () => {
         await addRunner('l-hermes', [ENG]);
         const md = withRuntimeGrant(withRunsOn('Shelly Hermes', 'l-hermes'), 'shell');

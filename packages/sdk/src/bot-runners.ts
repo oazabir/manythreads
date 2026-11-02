@@ -1,3 +1,4 @@
+import { runsOnProblem, type BotFrontmatter } from '@manythreads/shared';
 import type { PluginTx, ProviderImpl } from './types.ts';
 
 // The `bot.runners` provider (registered by `bot-runners`, extension point `provider.bot.runners`): the one function that answers "where does this bot's
@@ -66,7 +67,7 @@ export interface BotRunnersProvider extends ProviderImpl {
    * For the bot loader (P19-03): is `runner` a runner of the team's workspace, and is the team allowed to use it? Runs on the CALLER's transaction (the outbox consumer's), because
    * a subscriber must not read on a connection of its own while its transaction is open. Answers in one plain sentence that names nothing the team may not know.
    */
-  checkPlacement(tx: PluginTx, query: { teamId: string; runner: string; runtimeGrants?: readonly string[] }): Promise<RunnerPlacementCheck>;
+  checkPlacement(tx: PluginTx, query: { teamId: string; runner: string; runtimeGrants?: readonly string[]; nativeGrants?: readonly string[] }): Promise<RunnerPlacementCheck>;
   /**
    * What kind of runner `runner` is for a bot of `teamId` (and the model alias, for an LLM gateway runner), or null when there is no such runner. Runs on the CALLER's transaction. The run job
    * asks it to pick the `model` runtime for a bot placed on an LLM gateway runner; whether the run may start is `resolveRunner`'s question, not this one's.
@@ -74,4 +75,21 @@ export interface BotRunnersProvider extends ProviderImpl {
   kindOf(tx: PluginTx, query: { teamId: string; runner: string }): Promise<{ kind: RunnerTarget['kind']; modelAlias: string | null } | null>;
   /** The default runner and the pod runners that apply to a team (P19-03). Runs as the system actor. */
   teamRunners(query: { teamId: string }): Promise<TeamRunnerInfo>;
+}
+
+/**
+ * The one placement question for a parsed BOT.md, shared by the bot loader (when the file is committed) and the proposal check (before it is applied), so the two cannot disagree:
+ * `placement.runs_on` is for Hermes bots, the runner exists and the team may use it, and a runner that only calls a model suits the bot (no shell, files or browser asked for, and a way
+ * to post the reply). Null when the placement is fine or the definition names no runner; else one plain sentence for the `placement.runs_on` field. Reads on the caller's `tx`, which must be
+ * able to read the runner catalog (the loader's system transaction); `runners` is the `bot.runners` provider, undefined when that plugin is off.
+ */
+export async function botPlacementProblem(runners: BotRunnersProvider | undefined, tx: PluginTx, query: { teamId: string; frontmatter: Pick<BotFrontmatter, 'runtime' | 'placement' | 'capabilities'> }): Promise<string | null> {
+  const fm = query.frontmatter;
+  const rules = runsOnProblem(fm);
+  if (rules !== null) return rules;
+  const runsOn = fm.placement?.runs_on;
+  if (runsOn === undefined) return null;
+  if (!runners) return 'Runners are not available on this server, so "runs_on" cannot be used.';
+  const verdict = await runners.checkPlacement(tx, { teamId: query.teamId, runner: runsOn, runtimeGrants: fm.capabilities?.runtime ?? [], nativeGrants: fm.capabilities?.native ?? [] });
+  return verdict.ok ? null : verdict.message;
 }

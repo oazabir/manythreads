@@ -1,4 +1,4 @@
-import type { BotFrontmatter, TeamBotRunner } from '@manythreads/shared';
+import { modelRunnerProblem, type BotFrontmatter, type TeamBotRunner } from '@manythreads/shared';
 
 /*
  * The words and rules of the "Runs on" choice (a bot is placed on a runner an admin set up, by name; the page never shows an address, a key or a node).
@@ -49,15 +49,19 @@ export const canRunBots = (r: Pick<TeamBotRunner, 'kind'>): boolean => RUNNABLE.
  */
 const MODEL_ONLY: ReadonlySet<Kind> = new Set<Kind>(['llm_gateway']);
 
-/** Why a bot cannot be placed on this runner, or null. A bot whose definition asks for a shell, files or a browser (`capabilities.runtime`) cannot use a runner that only calls a model. */
-export function modelOnlyProblem(r: Pick<TeamBotRunner, 'kind' | 'label'>, runtimeGrants: ReadonlyArray<string>): string | null {
-  if (!MODEL_ONLY.has(r.kind) || runtimeGrants.length === 0) return null;
-  return `${r.label} only calls a model: it has no shell, files or browser to give this bot (the bot asks for: ${runtimeGrants.slice(0, 5).join(', ')}). Take those out of the bot's capabilities, or pick another runner.`;
+/**
+ * Why a bot cannot be placed on this runner, or null. A runner that only calls a model cannot take a bot whose definition asks for a shell, files or a browser (`capabilities.runtime`), nor a bot
+ * that has no way to post its reply (`capabilities.native` lists neither `messages.post` nor `answer.post`). `nativeGrants` left out means the page does not know them: only the first is checked.
+ * The sentences are the server's own (`modelRunnerProblem` in @manythreads/shared), the ones the bot loader saves on the bot, so a bot is never chosen here and then refused on save.
+ */
+export function modelOnlyProblem(r: Pick<TeamBotRunner, 'kind' | 'label'>, runtimeGrants: ReadonlyArray<string>, nativeGrants?: ReadonlyArray<string>): string | null {
+  if (!MODEL_ONLY.has(r.kind)) return null;
+  return modelRunnerProblem(r.label, { runtime: runtimeGrants, native: nativeGrants });
 }
 
 /** Can this runner be chosen for the bot in the picker: it runs bots, or it is a model-only runner and the bot asks for nothing it lacks. */
-export const canChoose = (r: Pick<TeamBotRunner, 'kind' | 'label'>, runtimeGrants: ReadonlyArray<string> = []): boolean =>
-  (RUNNABLE.has(r.kind) || MODEL_ONLY.has(r.kind)) && modelOnlyProblem(r, runtimeGrants) === null;
+export const canChoose = (r: Pick<TeamBotRunner, 'kind' | 'label'>, runtimeGrants: ReadonlyArray<string> = [], nativeGrants?: ReadonlyArray<string>): boolean =>
+  (RUNNABLE.has(r.kind) || MODEL_ONLY.has(r.kind)) && modelOnlyProblem(r, runtimeGrants, nativeGrants) === null;
 
 /** Does the workspace default runner really take bots that name no runner? Only when it is on and of a kind that can run bots; otherwise those bots run on the host as they always did. */
 export const defaultApplies = (r: Pick<TeamBotRunner, 'kind' | 'status'>): boolean => canRunBots(r) && r.status !== 'off';
@@ -73,11 +77,11 @@ export function planLine(r: Pick<TeamBotRunner, 'ownerName' | 'planLabel' | 'sha
 }
 
 /** What a person reads in the list for one runner. A runner that is not Ready can be chosen, and says so; one that cannot run bots yet cannot. */
-export function optionText(r: TeamBotRunner, runtimeGrants: ReadonlyArray<string> = []): string {
+export function optionText(r: TeamBotRunner, runtimeGrants: ReadonlyArray<string> = [], nativeGrants?: ReadonlyArray<string>): string {
   const parts = [`${KIND_ICON[r.kind]} ${r.label}`, KIND_LABEL[r.kind]];
   const plan = planLine(r);
   if (plan !== null) parts.push(plan);
-  if (modelOnlyProblem(r, runtimeGrants) !== null) parts.push('no shell, files or browser: this bot needs one');
+  if (modelOnlyProblem(r, runtimeGrants, nativeGrants) !== null) parts.push(runtimeGrants.length > 0 ? 'no shell, files or browser: this bot needs one' : 'this bot cannot post a reply: add messages.post');
   else if (MODEL_ONLY.has(r.kind)) {
     parts.push('model only');
     if (r.status !== 'ready') parts.push(STATUS_LABEL[r.status]);
@@ -88,8 +92,8 @@ export function optionText(r: TeamBotRunner, runtimeGrants: ReadonlyArray<string
 }
 
 /** The sentence under the select for the runner that is chosen: what it is, and a plain warning when it is not Ready. */
-export function chosenNote(r: TeamBotRunner, runtimeGrants: ReadonlyArray<string> = []): { text: string; tone: 'ok' | 'warn' } {
-  const problem = modelOnlyProblem(r, runtimeGrants);
+export function chosenNote(r: TeamBotRunner, runtimeGrants: ReadonlyArray<string> = [], nativeGrants?: ReadonlyArray<string>): { text: string; tone: 'ok' | 'warn' } {
+  const problem = modelOnlyProblem(r, runtimeGrants, nativeGrants);
   if (problem !== null) return { text: problem, tone: 'warn' };
   if (!canRunBots(r) && !MODEL_ONLY.has(r.kind)) return { text: `${r.label} cannot run bots yet. Pick another runner.`, tone: 'warn' };
   if (r.status === 'ready') return { text: `${r.label} is ready.`, tone: 'ok' };

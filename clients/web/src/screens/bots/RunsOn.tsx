@@ -38,8 +38,8 @@ function RunnerState({ runner }: { runner: TeamBotRunner }) {
   );
 }
 
-function ChosenRunner({ runner, runtimeGrants }: { runner: TeamBotRunner; runtimeGrants: ReadonlyArray<string> }) {
-  const note = chosenNote(runner, runtimeGrants);
+function ChosenRunner({ runner, runtimeGrants, nativeGrants }: { runner: TeamBotRunner; runtimeGrants: ReadonlyArray<string>; nativeGrants: ReadonlyArray<string> | undefined }) {
+  const note = chosenNote(runner, runtimeGrants, nativeGrants);
   const plan = planLine(runner);
   return (
     <div className="b-runner" data-testid="runs-on-chosen">
@@ -55,7 +55,7 @@ function ChosenRunner({ runner, runtimeGrants }: { runner: TeamBotRunner; runtim
   );
 }
 
-export function RunsOn({ slug, canEdit, placement, runtimeGrants = [], onChange }: { slug: string; canEdit: boolean; placement: Placement; runtimeGrants?: ReadonlyArray<string>; onChange: (next: Placement) => void }) {
+export function RunsOn({ slug, canEdit, placement, runtimeGrants = [], nativeGrants, onChange }: { slug: string; canEdit: boolean; placement: Placement; runtimeGrants?: ReadonlyArray<string>; nativeGrants?: ReadonlyArray<string>; onChange: (next: Placement) => void }) {
   const id = useId();
   const q = useQuery(`team-runners:${slug}`, () => fetchTeamRunners(slug));
   const runners: ReadonlyArray<TeamBotRunner> = q.status === 'ok' ? q.data.items : [];
@@ -124,13 +124,13 @@ export function RunsOn({ slug, canEdit, placement, runtimeGrants = [], onChange 
       >
         <option value="">{defaultRunner !== null ? `Workspace default · ${defaultRunner.label}` : defaultIgnored ? 'No runner chosen · runs on the host' : 'No runner chosen · runs where it always ran'}</option>
         {runners.map((r) => (
-          <option key={r.name} value={r.name} disabled={!canChoose(r, runtimeGrants) && r.name !== chosenName}>{optionText(r, runtimeGrants)}</option>
+          <option key={r.name} value={r.name} disabled={!canChoose(r, runtimeGrants, nativeGrants) && r.name !== chosenName}>{optionText(r, runtimeGrants, nativeGrants)}</option>
         ))}
         {chosenName !== undefined && !runners.some((r) => r.name === chosenName) ? <option value={chosenName}>{chosenName} · not available to this team</option> : null}
       </select>
       {q.status === 'error' ? <div className="b-warnline" role="alert">The list of runners could not be read.</div> : null}
       {q.status === 'ok' && runners.length === 0 ? <div className="b-hint" data-testid="runs-on-none">No runner is available to this team yet. Ask a workspace admin to set one up under Runners.</div> : null}
-      {chosen !== null ? <ChosenRunner runner={chosen} runtimeGrants={runtimeGrants} /> : null}
+      {chosen !== null ? <ChosenRunner runner={chosen} runtimeGrants={runtimeGrants} nativeGrants={nativeGrants} /> : null}
       {chosenName === undefined && defaultIgnored ? <div className="b-warnline" role="status" data-testid="runs-on-default-ignored">{DEFAULT_CANNOT_RUN}</div> : null}
       {chosenName !== undefined && chosen === null && q.status === 'ok' ? (
         <div className="b-warnline" role="status" data-testid="runs-on-note">This team may not use "{chosenName}", so the bot cannot be saved on it. Pick another runner.</div>

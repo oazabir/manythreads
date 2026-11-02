@@ -148,6 +148,15 @@ export const LlmSpendSummary = z.object({
   promptTokens: z.number().int().nonnegative(),
   completionTokens: z.number().int().nonnegative(),
   byTeam: z.array(z.object({ teamId: z.uuid().nullable(), spentUsd: z.number().nonnegative(), calls: z.number().int().nonnegative() })),
-  byBot: z.array(z.object({ botId: BotId.nullable(), spentUsd: z.number().nonnegative(), calls: z.number().int().nonnegative() })),
+  /** `botName` and `teamName` are the bot's name and its team's name when the viewer can see the bot (RLS decides); null for a deleted bot, a line with no bot, or a bot the viewer cannot read. */
+  byBot: z.array(
+    z.object({
+      botId: BotId.nullable(),
+      botName: z.string().nullable(),
+      teamName: z.string().nullable(),
+      spentUsd: z.number().nonnegative(),
+      calls: z.number().int().nonnegative(),
+    }),
+  ),
 });
 export type LlmSpendSummary = z.infer<typeof LlmSpendSummary>;

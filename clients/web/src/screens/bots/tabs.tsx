@@ -512,7 +512,7 @@ export function PlacementTab({ draft, canEdit, slug }: TabProps) {
   return (
     <>
       <Block title="Placement" count="where the bot runs">
-        <RunsOn slug={slug} canEdit={canEdit} placement={fm(draft).placement} runtimeGrants={fm(draft).capabilities?.runtime ?? []} onChange={(placement) => draft.patch((d) => ({ ...d, placement }))} />
+        <RunsOn slug={slug} canEdit={canEdit} placement={fm(draft).placement} runtimeGrants={fm(draft).capabilities?.runtime ?? []} nativeGrants={fm(draft).capabilities?.native ?? []} onChange={(placement) => draft.patch((d) => ({ ...d, placement }))} />
         <ChipsField
           label="Requires"
           values={p.requires ?? []}

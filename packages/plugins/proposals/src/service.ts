@@ -155,7 +155,7 @@ export async function createProposal(ctx: PluginContext, tx: PluginTx, team: Tea
   if (op === 'put' && content === cur.text) throw invalid('This does not change the file, so there is nothing to propose.');
 
   const d = toUnifiedDiff(path, cur.text, content);
-  const checks = runChecks(path, op, content);
+  const checks = await runChecks(ctx, tx, team.id, path, op, content);
   const needsAdmin = isBotDefinitionPath(path) && (op === 'delete' || cur.blobSha === null);
   const made = await tx.query<{ id: string }>('SELECT app.proposals_create($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb) AS id', [
     team.id,
@@ -202,7 +202,7 @@ export async function applyProposal(ctx: PluginContext, tx: PluginTx, row: Propo
   await lockProposal(tx, row.id);
   const why = (await tx.query<{ why: string | null }>('SELECT app.proposals_why_not($1::uuid, $2) AS why', [row.id, how.self])).rows[0]?.why ?? null;
   if (why !== null) throw forbidden(why);
-  const checks = runChecks(row.path, row.op, row.content);
+  const checks = await runChecks(ctx, tx, row.team_id, row.path, row.op, row.content);
   const failed = failedChecks(checks);
   if (failed !== null) throw new HttpError(422, 'validation_failed', `A check failed, so this cannot be applied. ${failed}`);
   const repo = repoOf(ctx);

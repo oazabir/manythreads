@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { BotRunnersProvider, PluginContext, PluginEvent, PluginTx, RepoProvider } from '@manythreads/sdk';
+import { botPlacementProblem, type BotRunnersProvider, type PluginContext, type PluginEvent, type PluginTx, type RepoProvider } from '@manythreads/sdk';
 import { BOT_SLUG_RE, RepoRepoCommittedEvent, botSlugProblem, parseBotMd } from '@manythreads/shared';
 import { modelAliasesOf } from './backfill.ts';
 
@@ -114,20 +114,10 @@ async function loadBot(ctx: PluginContext, tx: PluginTx, commit: Commit, slug: s
   const fm = parsed.frontmatter;
   // `placement.runs_on` names a runner an admin set up (P19-03): it must exist and the team must be allowed to use it. A miss is an invalid definition with the reason on the bot,
   // never a half row. The question is asked on this transaction (a subscriber must not read on a connection of its own). A runner that is switched off is not a miss: that is judged when a run starts.
-  const runsOn = fm.placement?.runs_on;
-  if (runsOn !== undefined && fm.runtime !== 'hermes') {
-    await invalidate(ctx, tx, commit, { slug, path, definitionSha, fieldPath: 'placement.runs_on', message: 'placement.runs_on is for bots that run on Hermes. A rules bot runs inside the server and has no runner to choose.' });
+  const placementProblem = await botPlacementProblem(ctx.providers.get<BotRunnersProvider>('bot.runners'), tx, { teamId: commit.teamId, frontmatter: fm });
+  if (placementProblem !== null) {
+    await invalidate(ctx, tx, commit, { slug, path, definitionSha, fieldPath: 'placement.runs_on', message: placementProblem });
     return;
-  }
-  if (runsOn !== undefined) {
-    const runners = ctx.providers.get<BotRunnersProvider>('bot.runners');
-    const verdict = runners
-      ? await runners.checkPlacement(tx, { teamId: commit.teamId, runner: runsOn, runtimeGrants: fm.capabilities?.runtime ?? [] })
-      : { ok: false as const, message: 'Runners are not available on this server, so "runs_on" cannot be used.' };
-    if (!verdict.ok) {
-      await invalidate(ctx, tx, commit, { slug, path, definitionSha, fieldPath: 'placement.runs_on', message: verdict.message });
-      return;
-    }
   }
   const native = fm.capabilities?.native ?? [];
   const triggers = fm.triggers ?? [];

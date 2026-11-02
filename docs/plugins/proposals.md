@@ -29,7 +29,7 @@ A bot never applies, and cannot ask to (`applyNow` from a bot is refused). The M
 
 ## Checks
 
-Every proposal carries `checks` (name, ok, message). For `bots/<slug>/BOT.md` the check **"BOT.md loads"** runs the strict BOT.md parser the bots loader uses, plus the folder name rule. A failed check is stored with the loader's own error text, shown on the proposal, and **cannot be applied**; the checks run again on apply. Other files have no check yet.
+Every proposal carries `checks` (name, ok, message). For `bots/<slug>/BOT.md` the check **"BOT.md loads"** runs the strict BOT.md parser the bots loader uses, plus the folder name rule, plus the loader's placement question when the file names a runner (`placement.runs_on`: the runner exists, the team may use it, a runner that only calls a model suits the bot, and a rules bot has no runner to choose; P19-10c). The placement question is read only and runs on a system transaction, because a team lead who proposes cannot read the runner list; it is the same function the loader calls (`botPlacementProblem`), so the sentence is the loader's own, prefixed with `placement.runs_on:`. A failed check is stored with the loader's own error text, shown on the proposal, and **cannot be applied**; the checks run again on apply. Other files have no check yet.
 
 ## Data and access
 

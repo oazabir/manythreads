@@ -16,7 +16,8 @@ import {
 } from '@manythreads/test-utils';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { checkPlacement, kindOf, modelRunnerRefusal, resolveRunner, teamRunners } from '../src/resolve.ts';
+import { modelRunnerNoReply, modelRunnerRefusal } from '@manythreads/shared';
+import { checkPlacement, kindOf, resolveRunner, teamRunners } from '../src/resolve.ts';
 
 // resolveRunner is the one place a runner's name becomes a place to run. It refuses what the admin has not allowed, and answers with the address and key only to
 // the server code that calls it. The context here is the two things it needs: the system transaction and the secret reader.
@@ -131,6 +132,21 @@ describe('an LLM gateway runner (P19-10)', () => {
     expect((refused as { message: string }).message).toContain('shell, files');
     expect(await sys((tx) => checkPlacement(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'model', runtimeGrants: [] }))).toEqual({ ok: true });
     expect(await sys((tx) => checkPlacement(tx as never, { teamId: TEAM_IDS.Engineering, runner: 'model' }))).toEqual({ ok: true });
+  });
+
+  it('cannot take a bot with no way to post its reply: refused with what to add, accepted with messages.post, answer.post or a namespace grant, and not asked when the grants are not given', async () => {
+    const team = TEAM_IDS.Engineering;
+    const refused = await sys((tx) => checkPlacement(tx as never, { teamId: team, runner: 'model', runtimeGrants: [], nativeGrants: ['memory.recall'] }));
+    expect(refused).toEqual({ ok: false, message: modelRunnerNoReply('Label of model') });
+    expect((refused as { message: string }).message).toContain('add messages.post (or answer.post)');
+    for (const native of [['messages.post'], ['answer.post'], ['messages.*'], ['answer.*']]) {
+      expect(await sys((tx) => checkPlacement(tx as never, { teamId: team, runner: 'model', nativeGrants: native })), native.join()).toEqual({ ok: true });
+    }
+    expect(await sys((tx) => checkPlacement(tx as never, { teamId: team, runner: 'model', nativeGrants: [] }))).toMatchObject({ ok: false });
+    // a shell is named first when both problems stand
+    expect(await sys((tx) => checkPlacement(tx as never, { teamId: team, runner: 'model', runtimeGrants: ['shell'], nativeGrants: [] }))).toEqual({ ok: false, message: modelRunnerRefusal('Label of model', ['shell']) });
+    // a Hermes runner is never asked
+    expect(await sys((tx) => checkPlacement(tx as never, { teamId: team, runner: 'gw', nativeGrants: [] }))).toEqual({ ok: true });
   });
 
   it('leaves a Hermes runner as it was for a bot that asks for a shell', async () => {

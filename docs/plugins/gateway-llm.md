@@ -170,7 +170,7 @@ limit is the courtesy one.
 `recordSpend(tx, line)` appends to `app.llm_spend` *after* a call (prompt tokens, completion tokens, dollars, the alias
 and the model). The ledger is append-only: the application role has no UPDATE or DELETE grant, and the policy set gives no
 role an UPDATE policy, so neither a caller nor an admin can rewrite what a call cost. `GET /spend` rolls it up for the
-workspace page; the default range is the current month.
+workspace page; the default range is the current month. The by-bot rows carry `botName` and `teamName` beside the bot id (P19-10c): the summary looks them up on the caller's own transaction, so row-level security decides which bots the viewer may read, and a bot that was deleted or cannot be read stays a bare id (both names null). The page is for workspace admins, who read every bot and every spend line; anyone else reads no spend line at all. The Spend section of Workspace > LLM shows the name and the team, with the whole id as the cell's title, and the short id when no name came back.
 
 A budget is checked against what has been recorded, so a single call can still cross the line (the platform never
 estimates a model call's price). That is the honest reading of "enforced before the call": the next call is refused.

@@ -1,4 +1,4 @@
-import { createAppPool, createPluginContext, createSecretService, createSystemPool, ExtensionRegistries, createMemoryKv, withSystem, type Tx } from '@manythreads/kernel';
+import { createAppPool, createPluginContext, createSecretService, createSystemPool, ExtensionRegistries, createMemoryKv, withActor, withSystem, type Tx } from '@manythreads/kernel';
 import type { PluginEvent, PluginTx } from '@manythreads/sdk';
 import { LlmBudgetExceededEvent, LlmGuardDecidedEvent, type LlmAliasName } from '@manythreads/shared';
 import {
@@ -10,6 +10,7 @@ import {
   gatewayLlmMigrationSource,
   guardrailsDlpMigrationSource,
   guardrailsEgressMigrationSource,
+  personaActor,
   personas,
   TEAM_IDS,
   teamsMigrationSource,
@@ -635,5 +636,24 @@ describe('recordSpend', () => {
       tx.query<{ cost_usd: string }>('SELECT cost_usd FROM app.llm_spend WHERE id = $1', [id]),
     );
     expect(Number(line.rows[0]?.cost_usd)).toBeCloseTo(0.042, 6);
+  });
+
+  it('names the bot and its team in the by-bot rows, and leaves a bot nobody can read (deleted, or hidden from the viewer) as a bare id', async () => {
+    const botId = await sys((tx) => makeBot(tx, 'preflight-named'));
+    const goneId = await sys((tx) => makeBot(tx, 'preflight-gone'));
+    const line = (id: string) => ({ workspaceId: omar.workspaceId, teamId: ENG, botId: id, sessionId: null, runId: null, alias: 'smart' as LlmAliasName, model: null, promptTokens: 1, completionTokens: 1, costUsd: 0.001 });
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line(botId)));
+    await sys((tx) => gateway.recordSpend(tx as unknown as PluginTx, line(goneId)));
+    await sys((tx) => tx.query('DELETE FROM app.bots WHERE id = $1', [goneId]));
+    const range = { since: new Date(0), until: new Date(Date.now() + 60_000) };
+    const asSystem = await sys((tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, range));
+    expect(asSystem.byBot.find((row) => row.botId === botId)).toMatchObject({ botName: 'preflight-named', teamName: 'Engineering' });
+    expect(asSystem.byBot.find((row) => row.botId === goneId)).toMatchObject({ botName: null, teamName: null });
+    // the page's own viewer, a workspace admin, reads the same names through the app role
+    const asAdmin = await withActor(personaActor(omar), (tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, range), { pool: appPool });
+    expect(asAdmin.byBot.find((row) => row.botId === botId)).toMatchObject({ botName: 'preflight-named', teamName: 'Engineering' });
+    // a member who is no admin reads no spend line at all, so no bot name can leave through this summary
+    const asMember = await withActor(personaActor(personas.tariq), (tx) => spendSummary(tx as unknown as PluginTx, omar.workspaceId, range), { pool: appPool });
+    expect(asMember.byBot).toEqual([]);
   });
 });

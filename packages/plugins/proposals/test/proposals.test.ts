@@ -189,6 +189,61 @@ describe('applying', () => {
     expect(slug.body.proposal.proposal.checks[0]).toMatchObject({ ok: false, message: expect.stringContaining('lowercase slug') });
   });
 
+  describe('the check also asks the loader’s placement question (the runner a bot names)', () => {
+    const placed = (runner: string, extra: { native?: string; runtime?: string } = {}): string =>
+      botMd('Placed').replace(
+        'capabilities:\n  native: [messages.post]',
+        `placement:\n  runs_on: ${runner}\ncapabilities:\n  native: [${extra.native ?? 'messages.post'}]${extra.runtime ? `\n  runtime: [${extra.runtime}]` : ''}`,
+      );
+    const checkOf = async (who: Who, team: string, slug: string, content: string) => {
+      const res = await propose(who, team, { path: `bots/${slug}/BOT.md`, content });
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      return res.body.proposal;
+    };
+
+    it('passes a bot on a model runner that has a way to post, and refuses (in the loader’s words) one that has none, one that asks for a shell, an unknown runner and a rules bot', async () => {
+      await w.system((tx) =>
+        tx.query(`INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, status, model_alias) VALUES ($1, 'pc-model', 'Model pc', 'llm_gateway', true, true, 'ready', 'smart')`, [omar.workspaceId]),
+      );
+      const ok = await checkOf(omar, 'engineering', 'pc-ok', placed('pc-model'));
+      expect(ok.proposal.checks).toEqual([expect.objectContaining({ name: 'BOT.md loads', ok: true })]);
+      expect((await checkOf(omar, 'engineering', 'pc-answer', placed('pc-model', { native: 'answer.post' }))).proposal.checks[0]).toMatchObject({ ok: true });
+
+      const silent = await checkOf(omar, 'engineering', 'pc-silent', placed('pc-model', { native: 'memory.recall' }));
+      expect(silent.proposal.checks[0]).toMatchObject({ name: 'BOT.md loads', ok: false, message: expect.stringContaining('placement.runs_on: Model pc only calls a model') });
+      expect(silent.proposal.checks[0]?.message).toContain('add messages.post (or answer.post)');
+      expect(silent.canApply).toBe(false);
+
+      const shell = await checkOf(omar, 'engineering', 'pc-shell', placed('pc-model', { runtime: 'shell' }));
+      expect(shell.proposal.checks[0]).toMatchObject({ ok: false, message: expect.stringContaining('no shell, files or browser') });
+
+      const unknown = await checkOf(omar, 'engineering', 'pc-unknown', placed('pc-nothing'));
+      expect(unknown.proposal.checks[0]).toMatchObject({ ok: false, message: expect.stringContaining('There is no runner called "pc-nothing"') });
+
+      const rules = await checkOf(omar, 'engineering', 'pc-rules', placed('pc-model').replace('runtime: hermes', 'runtime: rules'));
+      expect(rules.proposal.checks[0]).toMatchObject({ ok: false, message: expect.stringContaining('for bots that run on Hermes') });
+    });
+
+    it('a team lead who cannot read the runner catalog gets the same answer, and a runner the team may not use reads as no runner', async () => {
+      await w.system((tx) =>
+        tx.query(`INSERT INTO app.bot_runners (workspace_id, name, label, kind, enabled, all_teams, status) VALUES ($1, 'pc-closed', 'Closed pc', 'hermes_pod', true, false, 'ready')`, [omar.workspaceId]),
+      );
+      const open = await checkOf(tariq, 'marketing', 'pc-lead-ok', placed('pc-model'));
+      expect(open.proposal.checks[0]).toMatchObject({ ok: true });
+      const closed = await checkOf(tariq, 'marketing', 'pc-lead-closed', placed('pc-closed'));
+      expect(closed.proposal.checks[0]).toMatchObject({ ok: false, message: expect.stringContaining('There is no runner called "pc-closed" that this team may use') });
+      expect(closed.proposal.checks[0]?.message).not.toContain('Closed pc');
+    });
+
+    it('applying refuses the same proposal with the check’s words, and writes nothing', async () => {
+      const bad = await checkOf(omar, 'engineering', 'pc-apply', placed('pc-model', { native: 'memory.recall' }));
+      const res = await act(omar, 'engineering', bad.proposal.id, 'approve');
+      expect(res.status).toBe(422);
+      expect(res.body.error?.message).toContain('add messages.post (or answer.post)');
+      expect(await blobOf('engineering', 'bots/pc-apply/BOT.md')).toBeNull();
+    });
+  });
+
   it('adding a bot is a workspace admin’s: a lead who is not an admin cannot apply it, an admin can; a lead can change a bot that exists', async () => {
     // Marketing: Tariq leads, Omar is the workspace admin
     const add = await propose(tariq, 'marketing', { path: 'bots/newcomer/BOT.md', content: botMd('Newcomer') });

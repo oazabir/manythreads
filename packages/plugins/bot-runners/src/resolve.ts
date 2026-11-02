@@ -1,5 +1,5 @@
 import type { BotRunnersProvider, PluginContext, PluginTx, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
-import { BotRunnerName } from '@manythreads/shared';
+import { BotRunnerName, modelRunnerProblem } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 
 // `resolveRunner`: the one place that turns a runner's NAME into where a run goes (PLAN P19-02). A connection, a team pod and a runner all answer "where does
@@ -79,25 +79,20 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
  * The loader's question (P19-03): may a bot of this team name this runner in `placement.runs_on`? Answers on the caller's transaction. Existence and the team list only: a switched-off or
  * not-ready runner is no reason to refuse the definition (an admin may switch it back on), it is a reason to refuse a run. The sentence never says whether a runner the team may not use exists.
  */
-export async function checkPlacement(tx: PluginTx, query: { teamId: string; runner: string; runtimeGrants?: readonly string[] }): Promise<RunnerPlacementCheck> {
+export async function checkPlacement(tx: PluginTx, query: { teamId: string; runner: string; runtimeGrants?: readonly string[]; nativeGrants?: readonly string[] }): Promise<RunnerPlacementCheck> {
   const team = (await tx.query<{ workspace_id: string }>('SELECT workspace_id FROM app.teams WHERE id = $1::uuid', [query.teamId])).rows[0];
   if (!team) return { ok: false, message: 'The team of this bot could not be found.' };
   const runner = (await tx.query<{ id: string; all_teams: boolean; kind: string; label: string }>('SELECT id, all_teams, kind, label FROM app.bot_runners WHERE workspace_id = $1::uuid AND name = $2', [team.workspace_id, query.runner])).rows[0];
   if (!runner || !(await openToTeam(tx, runner, query.teamId))) {
     return { ok: false, message: `There is no runner called "${query.runner}" that this team may use. Pick one from the Runs on list on the bot's page, or ask an admin to add the team to it.` };
   }
-  // A model-only runner has no shell, no files and no browser (P19-10): a bot that is granted any of those cannot be placed on it, and is told which.
-  const grants = query.runtimeGrants ?? [];
-  if (runner.kind === 'llm_gateway' && grants.length > 0) {
-    return { ok: false, message: modelRunnerRefusal(runner.label, grants) };
+  // A model-only runner has no shell, no files and no browser (P19-10), and the platform posts the reply for the bot (so the bot needs a way to post): a bot that asks for a shell,
+  // files or a browser, or (when its native capabilities are given) has no way to post, cannot be placed on it, and is told which.
+  if (runner.kind === 'llm_gateway') {
+    const problem = modelRunnerProblem(runner.label, { runtime: query.runtimeGrants ?? [], native: query.nativeGrants });
+    if (problem !== null) return { ok: false, message: problem };
   }
   return { ok: true };
-}
-
-/** The sentence for a bot whose definition asks for a shell, files or a browser and is placed on a runner that only calls a model. Names the runner's label and the capability words (slugs). */
-export function modelRunnerRefusal(label: string, grants: readonly string[]): string {
-  const list = grants.slice(0, 5).join(', ');
-  return `${label} only calls a model: it has no shell, files or browser to give this bot (the bot asks for: ${list}). Take those out of the bot's runtime capabilities, or pick a Hermes runner.`;
 }
 
 /** What kind of runner `runner` is for a team's workspace, and its model alias; null when there is none. On the caller's transaction. */

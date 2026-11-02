@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TeamBotRunner } from '@manythreads/shared';
+import { modelRunnerNoReply, modelRunnerRefusal, type TeamBotRunner } from '@manythreads/shared';
 import { DEFAULT_CANNOT_RUN, canChoose, canRunBots, chosenNote, defaultApplies, hasOldPlacement, modelOnlyProblem, moveTarget, movedPlacement, oldPlacement, optionText, pickedPlacement, planLine } from '../src/screens/bots/runs-on';
 
 const runner = (over: Partial<TeamBotRunner> = {}): TeamBotRunner =>
@@ -52,7 +52,25 @@ describe('a Model API runner', () => {
     expect(optionText(model, ['files'])).toContain('this bot needs one');
     expect(chosenNote(model, ['files']).tone).toBe('warn');
   });
+  it('is disabled and explained for a bot that cannot post its reply, with the same sentence the bot loader saves', () => {
+    expect(canChoose(model, [], ['memory.recall'])).toBe(false);
+    expect(modelOnlyProblem(model, [], ['memory.recall'])).toBe(modelRunnerNoReply('Brain model'));
+    expect(modelOnlyProblem(model, [], ['memory.recall'])).toContain('add messages.post (or answer.post)');
+    expect(optionText(model, [], [])).toContain('this bot cannot post a reply');
+    expect(chosenNote(model, [], []).tone).toBe('warn');
+    expect(chosenNote(model, [], []).text).toContain('only calls a model');
+  });
+  it('accepts a bot with messages.post, answer.post or a namespace grant, and one whose native capabilities are not known', () => {
+    for (const native of [['messages.post'], ['answer.post'], ['messages.*'], ['answer.*', 'memory.recall']]) expect(canChoose(model, [], native)).toBe(true);
+    expect(canChoose(model, [])).toBe(true);
+    expect(modelOnlyProblem(model, [], undefined)).toBeNull();
+  });
+  it('names a shell, files or browser first when both problems stand', () => {
+    expect(modelOnlyProblem(model, ['shell'], [])).toBe(modelRunnerRefusal('Brain model', ['shell']));
+  });
   it('changes nothing for a Hermes runner whatever the bot asks for', () => {
+    expect(canChoose(runner(), [], [])).toBe(true);
+    expect(modelOnlyProblem(runner(), [], [])).toBeNull();
     expect(modelOnlyProblem(runner(), ['shell'])).toBeNull();
     expect(canChoose(runner(), ['shell'])).toBe(true);
     expect(optionText(runner(), ['shell'])).toBe(optionText(runner()));

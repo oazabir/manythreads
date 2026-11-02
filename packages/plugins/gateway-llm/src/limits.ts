@@ -224,6 +224,17 @@ export async function spendSummary(
       [workspaceId, range.since, range.until],
     )
   ).rows;
+  // The bots' names and their teams' names, read on the caller's own transaction: row-level security decides which bots the viewer may read, so a bot the viewer cannot see stays a bare id
+  // (the page is for workspace admins, who read every bot, but the rule is the database's and not this query's). A deleted bot has no row and stays a bare id too.
+  const botIds = byBot.flatMap((r) => (r.bot_id === null ? [] : [r.bot_id]));
+  const names = new Map<string, { bot: string; team: string | null }>();
+  if (botIds.length > 0) {
+    const found = await tx.query<{ id: string; name: string; team_name: string | null }>(
+      `SELECT b.id, b.name, t.name AS team_name FROM app.bots b LEFT JOIN app.teams t ON t.id = b.team_id WHERE b.workspace_id = $1 AND b.id = ANY ($2::uuid[])`,
+      [workspaceId, botIds],
+    );
+    for (const row of found.rows) names.set(row.id, { bot: row.name, team: row.team_name });
+  }
   return LlmSpendSummary.parse({
     since: range.since.toISOString(),
     until: range.until.toISOString(),
@@ -232,7 +243,7 @@ export async function spendSummary(
     promptTokens: Number(total?.prompt_tokens ?? 0),
     completionTokens: Number(total?.completion_tokens ?? 0),
     byTeam: byTeam.map((r) => ({ teamId: r.team_id, spentUsd: Number(r.spent), calls: Number(r.calls) })),
-    byBot: byBot.map((r) => ({ botId: r.bot_id, spentUsd: Number(r.spent), calls: Number(r.calls) })),
+    byBot: byBot.map((r) => ({ botId: r.bot_id, botName: names.get(r.bot_id ?? '')?.bot ?? null, teamName: names.get(r.bot_id ?? '')?.team ?? null, spentUsd: Number(r.spent), calls: Number(r.calls) })),
   });
 }
 

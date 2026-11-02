@@ -18,6 +18,17 @@ import { spendRange } from './spendRange';
 const usd = (n: number) => `$${n.toFixed(2)}`;
 const short = (id: string) => `${id.slice(0, 8)}…`;
 
+/** A bot in the by-bot table: its name and team when the server could name it, else the short id (the whole id is the cell's title either way). */
+export function BotCell({ id, name, team }: { id: string; name: string | null; team: string | null }) {
+  if (name === null) return <span className="mono" title={id}>{short(id)}</span>;
+  return (
+    <span title={id}>
+      {name}
+      {team !== null ? <span className="faint"> · {team}</span> : null}
+    </span>
+  );
+}
+
 export function SpendSection({ teams }: { teams: TeamSummary[] }) {
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
@@ -90,7 +101,9 @@ export function SpendSection({ teams }: { teams: TeamSummary[] }) {
                     <tbody>
                       {summary.byBot.map((row) => (
                         <tr key={row.botId ?? 'none'}>
-                          <td data-label="Bot" className="mono">{row.botId ? short(row.botId) : <span className="faint">no bot</span>}</td>
+                          <td data-label="Bot" data-testid="llm-spend-bot">
+                            {row.botId === null ? <span className="faint">no bot</span> : <BotCell id={row.botId} name={row.botName} team={row.teamName} />}
+                          </td>
                           <td data-label="Spent" className="d-cell">{usd(row.spentUsd)}</td>
                           <td data-label="Calls" className="d-cell">{row.calls}</td>
                         </tr>
