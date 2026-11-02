@@ -153,7 +153,8 @@ export function Account() {
         <h2 className="bh" id="acc-connections">Connections</h2>
         <div className="block-body">
           <p className="note-row">The outside services that are yours alone, such as your own mailbox. Nobody else sees them.</p>
-          <Link to="/account/connections" className="btn" data-testid="account-connections-link">Your connections</Link>
+          <Link to="/account/connections" className="btn" data-testid="account-connections-link">Your connections</Link>{' '}
+          <Link to="/settings/connections" className="btn" data-testid="account-connected-accounts-link">Connected accounts</Link>
         </div>
       </section>
 

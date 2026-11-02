@@ -91,6 +91,8 @@ import {
 } from '@manythreads/shared';
 import type { Transport } from './client';
 import { installConnectionsMock } from './mock-connections';
+import { installInboxMock } from './mock-inbox';
+import { installPersonConnectionsMock } from './mock-person-connections';
 import { installSetupMock } from './mock-setup';
 import { installTerminalMock } from './mock-terminal';
 import { installWorkshopMock } from './mock-workshop';
@@ -1023,6 +1025,32 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       return { id: t.id, slug: t.slug };
     },
     nextId: () => nextId('6'),
+    now: NOW,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+  });
+
+  // The connected-accounts page (P8-02): Google, Microsoft and Notion for the signed-in person, in mock-person-connections.ts
+  installPersonConnectionsMock(on, {
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+  });
+
+  // The Memory screen's Inbox tab (P8-21): a team's drops and the concepts they became, in mock-inbox.ts
+  installInboxMock(on, {
+    team: (slug) => {
+      const t = teamOf(slug);
+      return { id: t.id, slug: t.slug };
+    },
+    me: () => ({ actorId: uuid('d', Number(me().id.slice(-4))), name: me().name }),
+    canManage: (slug) => {
+      const p = me();
+      return isAdmin(p) || teamOf(slug).members.find((m) => m.personId === p.id)?.role === 'lead';
+    },
+    emailAddress: (slug) => (slug === 'engineering' ? 'engineering@inbox.kahf.example' : null),
+    nextId: () => nextId('7'),
     now: NOW,
     fail: (status, code, message) => {
       throw new MockHttpError(status, code, message);

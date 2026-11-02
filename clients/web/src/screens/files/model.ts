@@ -125,6 +125,16 @@ export function sortRows(rows: readonly FileRow[], order: 'recent' | 'name'): Fi
 /** Files of a folder as the tree shows them: git files yes, a channel's attachments no (they would drown the tree). */
 export const treeShows = (row: FileRow): boolean => row.kind === 'folder' || row.store === 'git';
 
+/**
+ * The team's inbox, drawn as a folder at the top of the tree (PLAN P8-21). It is not in the repo: its items wait in storage until the platform files them
+ * into `memory/`. Opening the row opens the Memory screen's Inbox tab.
+ */
+export const INBOX_FOLDER = 'inbox';
+export const inboxRow = (): FileRow => ({
+  path: INBOX_FOLDER, name: INBOX_FOLDER, kind: 'folder', store: 'git', size: null, mime: null, modifiedAt: null, by: null, where: 'Memory inbox', readOnly: true, readOnlyReason: null,
+  managedBy: null, fileId: null, channelId: null, blobSha: null, contentUrl: null,
+});
+
 export const READ_ONLY_COPY = 'Change by proposal';
 export const GIT_TEXT_ONLY_COPY = 'This folder is stored in git, which holds text only. Upload attachments to a channel folder.';
 export const MEMORY_COPY = 'OKF memory bundle';

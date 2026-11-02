@@ -8,6 +8,7 @@ import { ExpiredLinkPage, ForbiddenPage, NotFoundPage } from './components/state
 import { DevTokens } from './pages/DevTokens';
 import { Account } from './screens/Account';
 import { AccountConnections } from './screens/connections/AccountConnections';
+import { PersonConnections } from './screens/connections/PersonConnections';
 import { TeamConnections } from './screens/connections/TeamConnections';
 import { AdminOnly } from './screens/AdminOnly';
 import { Bootstrap } from './screens/Bootstrap';
@@ -97,6 +98,7 @@ function AppRoutes() {
           </Route>
           <Route path="/account" element={<Account />} />
           <Route path="/account/connections" element={<AccountConnections />} />
+          <Route path="/settings/connections" element={<PersonConnections />} />
           <Route element={<SettingsFrame />}>
             <Route element={<AdminOnly />}>
               <Route path="/onboarding" element={<Onboarding />} />

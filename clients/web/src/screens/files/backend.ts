@@ -30,7 +30,7 @@ import { isMockMode } from '../../api/setup';
 import { httpSource, type ContentSource } from '../../viewers/source';
 import { repoFile } from '../../viewers/repoFile';
 import { mockBackend } from './mockBackend';
-import { baseName, channelNameOf, parentOf, type Actor, type Commit, type FileDiff, type FileRow, type Listing } from './model';
+import { INBOX_FOLDER, ROOT, baseName, channelNameOf, inboxRow, parentOf, type Actor, type Commit, type FileDiff, type FileRow, type Listing } from './model';
 
 /** What the signed-in person may do in this team; the server enforces it again on every write. */
 export type Perms = {
@@ -300,7 +300,19 @@ export function serverBackend(slug: string, perms: Perms): FilesBackend {
 
 /** The store for this page load: the mock in `?mock=1`, the server otherwise. */
 export function createBackend(slug: string, perms: Perms): FilesBackend {
-  return isMockMode() ? mockBackend(slug, perms) : serverBackend(slug, perms);
+  return withInboxRow(isMockMode() ? mockBackend(slug, perms) : serverBackend(slug, perms));
+}
+
+/** The top of the tree lists the team's `inbox/` as a folder (it opens the Memory inbox); a repo that has a folder of that name keeps its own row. */
+function withInboxRow(backend: FilesBackend): FilesBackend {
+  return {
+    ...backend,
+    async list(folder) {
+      const listing = await backend.list(folder);
+      if (folder !== ROOT || listing.rows.some((r) => r.path === INBOX_FOLDER)) return listing;
+      return { ...listing, rows: [...listing.rows, inboxRow()] };
+    },
+  };
 }
 
 export { sha7 };

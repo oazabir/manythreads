@@ -239,3 +239,66 @@
   margin: 8px 0 0;
   font-size: 13px;
 }
+
+/* The connected-accounts page (PLAN P8-02, `/settings/connections`): one card per provider. Classes are prefixed `cp-`. */
+.cp-list {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.cp-services {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.cp-legend {
+  margin-bottom: 4px;
+  padding: 0;
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cp-service {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+}
+
+.cp-box {
+  margin-top: 3px;
+}
+
+.cp-desc {
+  display: block;
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.cp-granted {
+  color: var(--ok-ink);
+  font-size: 12px;
+}
+
+.cp-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.cp-error {
+  margin: 8px 0 0;
+  color: var(--alert);
+  font-size: 12.5px;
+}

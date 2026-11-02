@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
 import { dmParticipants, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
+import { InboxNotices } from '../screens/memory/InboxNotices';
 import { PushBridge } from '../notifications/OpenLink';
 import { DndLive } from '../presence/DndIndicators';
 import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
@@ -131,6 +132,7 @@ export function Shell() {
           )}
           <section className="region content" data-landmark="content" aria-busy={teamsLoading || undefined}>
             <PushBridge />
+            <InboxNotices />
             <Outlet />
           </section>
         </main>

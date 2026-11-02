@@ -13,7 +13,8 @@ import { useProposalPerms } from '../proposals/store';
 import { NewFileDialog, NewFolderDialog } from './dialogs';
 import { FileList, rowId, type Filters } from './FileList';
 import { FileView } from './FileView';
-import { GIT_TEXT_ONLY_COPY, ROOT, acceptsUploads, parentOf, segments, type FileRow } from './model';
+import { inboxLink } from '../memory/inboxWords';
+import { GIT_TEXT_ONLY_COPY, INBOX_FOLDER, ROOT, acceptsUploads, parentOf, segments, type FileRow } from './model';
 import { bumpFiles, useTeamFiles } from './store';
 import { Tree } from './Tree';
 import { useFolders } from './useFolders';
@@ -34,6 +35,11 @@ export function FilesScreen() {
 
   const open = params.get('open');
   const folder = open ? parentOf(open) : (params.get('path') ?? ROOT);
+  // a link to `?path=inbox` lands on the Memory inbox, which is where that folder lives
+  const inboxSlug = folder === INBOX_FOLDER && !open ? (files?.slug ?? null) : null;
+  useEffect(() => {
+    if (inboxSlug) void navigate(inboxLink(inboxSlug), { replace: true });
+  }, [inboxSlug, navigate]);
   const top = panel.entries.at(-1);
   const current = top?.type === 'file' ? top.id : null;
 
@@ -90,13 +96,21 @@ export function FilesScreen() {
     [loc.pathname, loc.search, loc.state, navigate],
   );
 
-  const toggle = (path: string): void =>
+  const toggle = (path: string): void => {
+    // the inbox is not a repo folder: it has nothing to expand
+    if (path === INBOX_FOLDER) return;
     setExpanded((prev) => {
       const next = new Set(prev);
       if (!next.delete(path)) next.add(path);
       return next;
     });
+  };
   const enterFolder = (path: string): void => {
+    // the inbox row opens the Memory screen's Inbox tab
+    if (path === INBOX_FOLDER && files) {
+      void navigate(inboxLink(files.slug));
+      return;
+    }
     setExpanded((prev) => (prev.has(path) || path === ROOT ? prev : new Set(prev).add(path)));
     setDialog(null);
     go({ folder: path });

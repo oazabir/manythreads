@@ -26,6 +26,9 @@ export function AccountConnections() {
         These connections are yours alone. Nobody else can see them, and a bot uses them only when you are the one asking. Credentials are stored sealed and cannot be
         shown again.
       </p>
+      <p className="cn-back" data-testid="account-connected-link">
+        To let a bot use your Google, Microsoft or Notion account, see <Link to="/settings/connections">your connected accounts</Link>.
+      </p>
       <div className="cn-status" role="status" aria-live="polite" data-testid="connection-status">{note ? <p className="notice ok">{note}</p> : null}</div>
 
       <QueryView q={q}>

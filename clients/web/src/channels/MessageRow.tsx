@@ -11,6 +11,8 @@ import { useDismiss } from '../shell/useDismiss';
 import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
 import { ForwardDialog } from './ForwardDialog';
+import { SendToMemoryDialog } from './SendToMemoryDialog';
+import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
 import { copyText, messageLinkUrl } from './messageActions';
@@ -107,6 +109,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const [confirmFor, setConfirmFor] = useState<string | null>(null);
   const needsConfirm = confirmFor !== null && confirmFor === (editing ?? '').trim();
   const [forwarding, setForwarding] = useState(false);
+  const [sendingToMemory, setSendingToMemory] = useState(false);
   const [reminding, setReminding] = useState(false);
   // a short line in the header of the row after an action that has no other sign ("Link copied")
   const [done, setDone] = useState<string | null>(null);
@@ -220,6 +223,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             <RowMenu className="more-menu" label="Message">
               <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyLink(); }}>Copy link</button>
               <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setForwarding(true); }}>Forward…</button>
+              {teamSlug !== null && teamSlug !== GUEST_SLUG ? (
+                <button type="button" role="menuitem" className="menu-item" data-testid="send-to-memory" onClick={() => { setMenu(null); setSendingToMemory(true); }}>Send to memory…</button>
+              ) : null}
               {actions.markUnread ? (
                 <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
               ) : null}
@@ -338,6 +344,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : null}
       </div>
       {reminding ? <RemindDialog messageId={m.id} say={setDone} onClose={() => setReminding(false)} /> : null}
+      {sendingToMemory ? <SendToMemoryDialog message={m} onClose={() => setSendingToMemory(false)} onDone={setDone} /> : null}
       {forwarding ? <ForwardDialog message={m} selfPersonId={people.me?.personId ?? null} onClose={() => setForwarding(false)} onDone={(label) => setDone(`Forwarded to ${label}`)} /> : null}
     </div>
   );
