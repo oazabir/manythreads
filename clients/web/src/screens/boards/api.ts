@@ -44,6 +44,9 @@ import {
   moveTaskRoute,
   releaseTaskRoute,
   reworkTaskRoute,
+  TickTaskRequest,
+  TickTaskResponse,
+  tickTaskRoute,
   runRhythmRoute,
   updateRhythmRoute,
 } from '@manythreads/shared';
@@ -102,6 +105,10 @@ export const completeTask = (slug: string, taskId: string, body: CompleteTaskReq
 
 export const reworkTask = (slug: string, taskId: string, body: ReworkTaskRequest) =>
   call(reworkTaskRoute, { request: ReworkTaskRequest, response: ReworkTaskResponse }, body, { slug, taskId });
+
+/** Tick or untick one box of a card's description checklist: the server changes that one character and adds a line to the card's history. */
+export const tickTask = (slug: string, taskId: string, body: TickTaskRequest) =>
+  call(tickTaskRoute, { request: TickTaskRequest, response: TickTaskResponse }, body, { slug, taskId });
 
 export const handoffTask = (slug: string, taskId: string, body: HandoffTaskRequest) =>
   call(handoffTaskRoute, { request: HandoffTaskRequest, response: HandoffTaskResponse }, body, { slug, taskId });

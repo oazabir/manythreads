@@ -35,6 +35,7 @@ export * from './identity.password.changed.ts';
 export * from './workspace.settings.updated.ts';
 export * from './workspace.member.role_changed.ts';
 export * from './reading.state.changed.ts';
+export * from './channel.markdown.repaired.ts';
 export * from './channel.message.edited.ts';
 export * from './channel.message.deleted.ts';
 export * from './channel.reaction.changed.ts';

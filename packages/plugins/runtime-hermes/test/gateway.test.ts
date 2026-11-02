@@ -3,6 +3,7 @@ import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythr
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeHermesGateway, type FakeHermesGateway } from '../../../../tools/fake-hermes-gateway/src/server.ts';
 import { MAX_FRAME_BYTES, profileFor, readLimitedText, runOnGateway, sessionIdFor, sseFrames, type GatewayRuntimeOptions } from '../src/gateway.ts';
+import { withOutputStyle } from '../src/output-style.ts';
 
 // The gateway transport against a server that speaks the measured wire of Hermes' api_server: profile in the path, the profile's own key,
 // 202 + run id, a server-sent-event stream, stop, the idempotency replay and the 429.
@@ -70,10 +71,10 @@ describe('what a run carries to the gateway', () => {
 
   it('sends the definition body as instructions on every connection, the team’s own pod included (a pod’s SOUL.md is frozen per thread, instructions are not)', async () => {
     await collect((await runOnGateway(options(external('hermes')), input(), scope, { connection: 'host', profile: 'mt-coder' })).events);
-    expect(bodyOf()['instructions']).toBe('soul');
+    expect(bodyOf()['instructions']).toBe(withOutputStyle('soul'));
     gw.calls.length = 0;
     await collect((await runOnGateway(options(), input(), scope, { connection: 'managed' })).events);
-    expect(bodyOf()['instructions']).toBe('soul');
+    expect(bodyOf()['instructions']).toBe(withOutputStyle('soul'));
   });
 
   it('sends the run extension only to a bridge agent, with the run token', async () => {
@@ -121,7 +122,7 @@ describe('a run on a gateway', () => {
     const post = gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!;
     expect(post.authorized).toBe(true);
     expect(post.idempotencyKey).toBe(RUN_ID);
-    expect(post.body).toEqual({ input: 'Nadia in #dev:\n\n@coder what changed?', instructions: 'soul', session_id: `${BOT_ID}:${THREAD}` });
+    expect(post.body).toEqual({ input: 'Nadia in #dev:\n\n@coder what changed?', instructions: withOutputStyle('soul'), session_id: `${BOT_ID}:${THREAD}` });
 
     expect(events.map((e) => e.type)).toEqual(['tool', 'tool_result', 'text', 'text', 'result']);
     expect(events[0]).toMatchObject({ type: 'tool', name: 'mcp__manythreads__memory_recall' });

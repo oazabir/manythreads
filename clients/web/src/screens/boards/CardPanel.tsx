@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Board, BotSummary, RosterMember, Task, TaskEvent, TaskState } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { Markdown } from '../../channels/MessageMarkdown';
 import { Alert, Time } from '../../components/ui';
 import { STATE_LABEL, dropTargets, eventLine, ownerLabel, refusalText } from './board';
-import { claimTask, completeTask, fetchTaskEvents, handoffTask, releaseTask, reworkTask } from './api';
+import { claimTask, completeTask, fetchTask, fetchTaskEvents, handoffTask, releaseTask, reworkTask, tickTask } from './api';
+import { taskItemAt } from '../../channels/markdown';
 
 /*
  * One card (SPEC §6.5, PLAN P6-07): the facts the substrate keeps — owner, branch, the two shas, the blocker, the two bounds — its
@@ -24,12 +25,15 @@ type Props = {
   onMove: (task: Task, to: TaskState) => Promise<void>;
   /** Tell the board this card (and the columns) changed. */
   onChanged: () => void;
+  /** Re-read the board's cards without remounting this panel (a tick keeps its place and its message). */
+  onRefresh: () => void;
 };
 
 const SHA_RE = /^[0-9a-f]{7,64}$/;
 
-export function CardPanel({ slug, task, board, roster, bots, revision, onMove, onChanged }: Props) {
-  const eventsQ = useQuery(`task-events:${slug}:${task.id}:${revision}`, () => fetchTaskEvents(slug, task.id));
+export function CardPanel({ slug, task, board, roster, bots, revision, onMove, onChanged, onRefresh }: Props) {
+  const [ticks, setTicks] = useState(0);
+  const eventsQ = useQuery(`task-events:${slug}:${task.id}:${revision}:${ticks}`, () => fetchTaskEvents(slug, task.id));
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [filed, setFiled] = useState<string | null>(null);
@@ -38,6 +42,11 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
   const [botSlug, setBotSlug] = useState(bots[0]?.slug ?? '');
   const [strict, setStrict] = useState(false);
   const [to, setTo] = useState<TaskState | ''>(dropTargets(task, board)[0] ?? '');
+  // The description as the server last said it: a tick shows at once, from the server's answer, and a refused tick brings the card back as it is.
+  const [description, setDescription] = useState(task.description);
+  const [ticking, setTicking] = useState(false);
+  // The card the board last read can move on (a bot rewrote the list): the panel follows it, without being made again.
+  useEffect(() => setDescription(task.description), [task.description]);
 
   const nameOf = (id: string | null): string => ownerLabel(id, roster, bots);
   const targets = dropTargets(task, board);
@@ -54,6 +63,29 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
       setProblem(refusalText(err));
     } finally {
       setBusy(null);
+    }
+  };
+
+  // A box of the description checklist. The server changes that one character and writes a line in the card's history; the box's text travels with the
+  // tick so a list a bot rewrote meanwhile never ticks another line.
+  const tick = async (nth: number, checked: boolean): Promise<void> => {
+    const box = taskItemAt(description, nth);
+    if (box === null || ticking) return;
+    setTicking(true);
+    setProblem(null);
+    try {
+      const res = await tickTask(slug, task.id, { nth, checked, text: box.text });
+      setDescription(res.task.description);
+      setTicks((n) => n + 1);
+      onRefresh();
+    } catch (err) {
+      // say why, then show the list as it is now; the message stays (the panel is not made again)
+      setProblem(refusalText(err));
+      await fetchTask(slug, task.id).then((r) => setDescription(r.task.description), () => undefined);
+      setTicks((n) => n + 1);
+      onRefresh();
+    } finally {
+      setTicking(false);
     }
   };
 
@@ -86,7 +118,11 @@ export function CardPanel({ slug, task, board, roster, bots, revision, onMove, o
         <span className="bd-state-pill">{STATE_LABEL[task.state]}</span>
       </div>
       <h3 className="bd-panel-title" data-testid="card-title">{task.title}</h3>
-      {task.description ? <div className="bd-panel-body" data-testid="card-description"><Markdown source={task.description} teamSlug={slug} /></div> : null}
+      {description ? (
+        <div className="bd-panel-body" data-testid="card-description">
+          <Markdown source={description} teamSlug={slug} busy={ticking} {...(task.state === 'done' ? {} : { toggle: (nth: number, checked: boolean) => void tick(nth, checked) })} />
+        </div>
+      ) : null}
 
       <dl className="bd-facts">
         <dt>Owner</dt>

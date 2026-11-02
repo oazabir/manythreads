@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { ownerSql, seedRepo } from '@manythreads/test-utils';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { GetBotResponse, ListBotsResponse, BotSummary } from '@manythreads/shared';
@@ -104,6 +105,29 @@ describe('the bot roster and bot page', () => {
     // a teammate, and the team's lead who is also a workspace admin, read the mention run and nothing of the conversation
     expect(await triggersFor(rafi)).toEqual(['mention']);
     expect(await triggersFor(omar)).toEqual(['mention']);
+  });
+
+  it('each run says what the server repaired in its Markdown (channel.markdown.repaired), summed, and nothing for a clean run', async () => {
+    const bot = (await getBot(nadia, 'p516-chatty')).body.bot;
+    const ids = await w.system(async (tx) => {
+      const made = await tx.query<{ id: string }>(
+        `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, status, ended_at) VALUES
+           ($1, $2, $3, 'mention', $4, 'done', now()), ($1, $2, $3, 'mention', $4, 'done', now()) RETURNING id`,
+        [omar.workspaceId, bot.id, bot.teamId, nadia.actorId],
+      );
+      const [slipped, clean] = made.rows.map((r) => r.id) as [string, string];
+      for (const [paths, fences] of [[2, 1], [3, 0]] as const) {
+        await tx.query(
+          `INSERT INTO app.events (workspace_id, team_id, actor_id, type, schema_version, payload)
+           VALUES ($1, $2, $3, 'channel.markdown.repaired', 1, $4::jsonb)`,
+          [omar.workspaceId, bot.teamId, nadia.actorId, JSON.stringify({ channelId: randomUUID(), messageId: randomUUID(), botActorId: nadia.actorId, runId: slipped, via: 'post', paths, fences })],
+        );
+      }
+      return { slipped, clean };
+    });
+    const runs = (await getBot(nadia, 'p516-chatty')).body.runs;
+    expect(runs.find((r) => r.id === ids.slipped)?.markdownRepairs).toEqual({ paths: 5, fences: 1 });
+    expect(runs.find((r) => r.id === ids.clean)?.markdownRepairs).toEqual({ paths: 0, fences: 0 });
   });
 
   it('the bot page answers the definition path and the (empty) run list', async () => {

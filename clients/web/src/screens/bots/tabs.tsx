@@ -614,6 +614,14 @@ export function EvalsTab({ draft, canEdit, slug, bot }: TabProps) {
   );
 }
 
+/** What the server fixed in the Markdown a run wrote, in words: a bot that keeps showing this line is not following its output style. */
+export function repairLine(r: { paths: number; fences: number }): string {
+  const parts: string[] = [];
+  if (r.paths > 0) parts.push(`${r.paths} file ${r.paths === 1 ? 'name' : 'names'} put in backticks`);
+  if (r.fences > 0) parts.push(`${r.fences} code ${r.fences === 1 ? 'block' : 'blocks'} closed`);
+  return `Formatting fixed by the server: ${parts.join(', ')}.`;
+}
+
 // ---- Audit --------------------------------------------------------------------------------------------------------------
 export function AuditTab({ bot, runs, slug }: TabProps) {
   return (
@@ -630,6 +638,9 @@ export function AuditTab({ bot, runs, slug }: TabProps) {
                   {r.status === 'running' ? 'running now' : 'ended '}
                   {r.endedAt ? <Time iso={r.endedAt} /> : null}
                 </div>
+                {r.markdownRepairs.paths + r.markdownRepairs.fences > 0 ? (
+                  <div className="d" data-testid="run-repairs">{repairLine(r.markdownRepairs)}</div>
+                ) : null}
               </div>
               <span className={`b-state ${r.status === 'failed' ? 'bad' : r.status === 'done' ? 'ok' : ''}`}>{r.status}</span>
             </div>

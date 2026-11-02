@@ -97,7 +97,7 @@ to the contract's page with `pages.write` and a "wrote <page> · diff" line foll
 `render` is pure, so a definition's profile can be asserted in a test instead of inspected in a container. A profile is a
 `HERMES_HOME` directory under `MANYTHREADS_RUNTIME_DIR` (one per run, mode 0700 with 0600 files, removed when the run ends — also when the spawn itself fails — and swept at startup when a dead server left it behind for more than two hours: only a directory named `<bot slug>-<run id>` that carries the `.manythreads-profile` marker this code writes first is ever swept, so a `MANYTHREADS_RUNTIME_DIR` that shares a directory with anything else loses nothing) holding two files:
 
-* **`SOUL.md`** — the `BOT.md` body, verbatim. The behaviour of a bot is its file's prose, versioned in the team repo.
+* **`SOUL.md`** — the `BOT.md` body, followed by the output style (below). The behaviour of a bot is its file's prose, versioned in the team repo.
 * **`config.yaml`** — the model and the tools, and nothing else:
   * `model.provider: manythreads` + `model.default: <aliases[0]>`, with a named custom provider pointing at the workspace's
     LiteLLM gateway (`MANYTHREADS_LITELLM_URL`) using the bot's **own virtual key** (`provider.llm`'s `botKey`). Aliases,
@@ -462,8 +462,10 @@ The address is the same for every bot (the older `/api/mcp/bots/<bot id>` still 
 replaced with `POST …/pairing-tokens/rotate`. A profile reads its MCP settings when the gateway starts serving it, so after a rotation restart that
 profile (`hermes -p <profile> gateway restart`). One key per connection: it must be the `API_SERVER_KEY` of the profiles you place on it.
 
+**The output style (P14-19).** `src/output-style.ts` holds one short text that says how every bot writes: file names and paths in backticks, every command and piece of code in a fenced block with its language, plans and statuses as a `- [ ]` / `- [x]` list that is edited in place and never rewritten as prose, one heading level per kind of section. `withOutputStyle(body)` appends it after the bot's own instructions, so a bot from any template, or written by hand, gets it, and the instructions of a run are never empty. It is added in both places the body goes: the `instructions` of a gateway run and the `SOUL.md` of a local profile. The templates repeat the same rules in plain words; this copy is the one that cannot be forgotten. What a bot still gets wrong is repaired on the way out (channels plugin, `messages.post` and `messages.update`) and counted on the bot's page.
+
 **The bot's definition travels with the run.** For every connection, the team's own pod included, each run carries the file's prose (its body,
-trimmed) as `instructions` in the start request. Hermes adds `instructions` to its system prompt on every model call, also in a thread that
+trimmed, then the output style) as `instructions` in the start request. Hermes adds `instructions` to its system prompt on every model call, also in a thread that
 already has turns, so the next turn of any thread follows an edit of `BOT.md` with nothing restarted and nothing copied into the profile. The
 team's pod therefore keeps no copy of the body: its `SOUL.md` is one fixed line, `You are <name>, a bot of <team> on manythreads; your
 instructions come with each request.` (Hermes freezes `SOUL.md` for the life of a thread, so a body written there would go stale; see the table below.)

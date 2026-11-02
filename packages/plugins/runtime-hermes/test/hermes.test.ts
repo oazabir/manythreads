@@ -7,6 +7,7 @@ import type { BotRuntimeEvent, BotRuntimeInput, BotRuntimeScope } from '@manythr
 import { parseBotMd } from '@manythreads/shared';
 import { afterAll, describe, expect, it } from 'vitest';
 import { childEnv, createHermesProvider, passthroughNames, PROFILE_MARKER, sweepStaleProfiles, type HermesRuntimeOptions } from '../src/hermes.ts';
+import { withOutputStyle } from '../src/output-style.ts';
 
 // Starting and stopping a run (PLAN P5-10: "start and stop in the Hermes container"). `MANYTHREADS_HERMES_BIN` is whatever
 // runs a turn — the CLI in development, a container's entry point in a deployment — and these tests use the provider's own
@@ -163,7 +164,7 @@ describe('the hermes provider: one process per run', () => {
     // The profile exists before anything is launched, and the child's whole world is that directory.
     const home = join(root, `run-1/coder-${runInput.endpoint!.runId}`);
     expect(existsSync(join(home, 'SOUL.md'))).toBe(true);
-    expect(readFileSync(join(home, 'SOUL.md'), 'utf8')).toBe(`${BODY}\n`);
+    expect(readFileSync(join(home, 'SOUL.md'), 'utf8')).toBe(`${withOutputStyle(BODY)}\n`);
     expect(h.argsOf()).toEqual(['hermes', 'chat', '--query-file', '-', '--oneshot', '--format', 'stream-json', '--run-budget', '300']);
     expect(h.optionsOf().cwd).toBe(home);
     expect(h.optionsOf().env?.['HERMES_HOME']).toBe(home);

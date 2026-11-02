@@ -1,6 +1,7 @@
 import type { BotRuntimeEvent, BotRuntimeHandle, BotRuntimeInput, BotRuntimeScope } from '@manythreads/sdk';
 import { AGENT_BRIDGE_RUN_KEY, type AgentBridgeRunExtension, type HermesConnectionAgent } from '@manythreads/shared';
 import { guardedFetch } from './outbound.ts';
+import { withOutputStyle } from './output-style.ts';
 import { refusedRun } from './refused.ts';
 
 // The gateway transport: a bot's run as one request to a Hermes gateway (`api_server`, v0.21.5), instead of a process this server starts.
@@ -193,8 +194,8 @@ export async function runOnGateway(
   // The definition's body (what the bot is and how it behaves) goes with every run, on every connection, as `instructions`, which Hermes adds to its system
   // prompt on each model call, also in a thread that already exists. It is never read from the profile's `SOUL.md`: Hermes freezes that file per thread
   // (PLAN P14-22), so a body edit would reach only new threads, and the team's pod would also wait for its Secret to refresh.
-  const instructions = input.definition.body.trim();
-  if (instructions !== '') runBody['instructions'] = instructions;
+  // The runtime's one output style follows the body for every bot (output-style.ts), so the instructions are never empty.
+  runBody['instructions'] = withOutputStyle(input.definition.body);
   // The agent bridge starts a fresh process per run and has no bot credential of its own, so what that process needs travels in the request,
   // including the token of this one run. A Hermes agent never gets the token: it reaches the platform with its profile's own credential.
   if (target.agent !== 'hermes') {

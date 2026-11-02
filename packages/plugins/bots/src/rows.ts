@@ -77,8 +77,9 @@ export type BotRunRow = {
   ended_at: Date | null;
 };
 export const BOT_RUN_COLUMNS = 'id, workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, status, started_at, ended_at';
-export const toBotRun = (r: BotRunRow): BotRun =>
+export const toBotRun = (r: BotRunRow, markdownRepairs: { paths: number; fences: number } = { paths: 0, fences: 0 }): BotRun =>
   BotRun.parse({
+    markdownRepairs,
     id: r.id,
     botId: r.bot_id,
     teamId: r.team_id,

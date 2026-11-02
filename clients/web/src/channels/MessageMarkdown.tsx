@@ -142,7 +142,33 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 /** What a tick does when the text may be edited: the number of the box among all the boxes of the text, and the new state. */
 export type TaskToggle = (nth: number, checked: boolean) => void;
 
-function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker, cited: ReadonlySet<number> = NONE, toggle?: TaskToggle, counter: { n: number } = { n: 0 }): ReactNode[] {
+/** The words of an item without its marks, for the name a screen reader gives its checkbox. */
+function plainText(list: Inline[]): string {
+  return list
+    .map((n): string => {
+      switch (n.t) {
+        case 'text':
+        case 'code':
+          return n.v;
+        case 'br':
+          return ' ';
+        case 'strong':
+        case 'em':
+        case 'del':
+        case 'link':
+          return plainText(n.c);
+        case 'mention':
+          return `@${n.handle}`;
+        case 'channel':
+          return `#${n.name}`;
+      }
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker, cited: ReadonlySet<number> = NONE, toggle?: TaskToggle, counter: { n: number } = { n: 0 }, busy = false): ReactNode[] {
   return list.map((b, i) => {
     switch (b.t) {
       case 'p':
@@ -152,13 +178,13 @@ function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker,
       case 'code':
         return <CodeBlock key={i} lang={b.lang} code={b.v} />;
       case 'quote':
-        return <blockquote key={i}>{blocks(b.c, teamSlug, marker, cited, toggle, counter)}</blockquote>;
+        return <blockquote key={i}>{blocks(b.c, teamSlug, marker, cited, toggle, counter, busy)}</blockquote>;
       case 'list': {
         if (b.checks) {
           const done = b.checks.filter((c) => c === true).length;
           const total = b.checks.filter((c) => c !== null).length;
           return (
-            <div key={i} className="md-tasklist" data-testid="md-tasklist">
+            <div key={i} className="md-tasklist" data-testid="md-tasklist" aria-busy={busy || undefined}>
               <p className="md-taskcount">{done} of {total} done</p>
               <ul className="md-tasks">
                 {b.items.map((it, j) => {
@@ -167,7 +193,18 @@ function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker,
                   return (
                     <li key={j} className={box === true ? 'md-task done' : 'md-task'} data-checked={box === null ? undefined : String(box)}>
                       {box === null ? null : (
-                        <input type="checkbox" className="md-task-box" checked={box} disabled={!toggle} onChange={(e) => toggle?.(nth, e.target.checked)} aria-label={box ? 'Done' : 'Not done'} />
+                        <input
+                          type="checkbox"
+                          className="md-task-box"
+                          checked={box}
+                          disabled={!toggle}
+                          aria-busy={busy || undefined}
+                          onChange={(e) => {
+                            // a box stays focusable while a tick is saved (a disabled one would drop the keyboard's place); a second click waits
+                            if (!busy) toggle?.(nth, e.target.checked);
+                          }}
+                          aria-label={`${box ? 'Done' : 'Not done'}: ${plainText(it) || 'item'}`}
+                        />
                       )}
                       <span className="md-task-text">{inline(it, teamSlug, '', marker, cited)}</span>
                     </li>
@@ -184,8 +221,8 @@ function blocks(list: Block[], teamSlug: string | null, marker?: CitationMarker,
   });
 }
 
-export const Markdown = memo(function Markdown({ source, teamSlug = null, marker, cited, toggle }: { source: string; teamSlug?: string | null; marker?: CitationMarker; /** The citation numbers a `[n]` may become; none when absent. */ cited?: ReadonlySet<number>; /** When given, the boxes of a task list can be ticked; each tick calls it. Absent: the boxes are shown, not changeable. */ toggle?: TaskToggle }) {
+export const Markdown = memo(function Markdown({ source, teamSlug = null, marker, cited, toggle, busy = false }: { source: string; teamSlug?: string | null; marker?: CitationMarker; /** The citation numbers a `[n]` may become; none when absent. */ cited?: ReadonlySet<number>; /** When given, the boxes of a task list can be ticked; each tick calls it. Absent: the boxes are shown, not changeable. */ toggle?: TaskToggle; /** A tick is being saved: the boxes say so and ignore a second click, but keep the keyboard's place. */ busy?: boolean }) {
   const { byName } = useCustomEmoji();
   drawing = byName;
-  return <div className="md">{blocks(read(source), teamSlug, marker, cited, toggle)}</div>;
+  return <div className="md">{blocks(read(source), teamSlug, marker, cited, toggle, undefined, busy)}</div>;
 });

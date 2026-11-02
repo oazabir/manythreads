@@ -67,6 +67,21 @@ export type UpdateTaskResponse = z.infer<typeof UpdateTaskResponse>;
 export const updateTaskRoute = { method: 'PATCH', path: '/api/teams/:slug/tasks/:taskId' } as const;
 
 /**
+ * Tick or untick one box of the card's description checklist (PLAN P14-19). `nth` is the box's number among all the boxes of the description (the first is 0)
+ * and `text` the text after it as the person saw it: the server refuses the tick (409) when the box with that number now says something else, so a
+ * list a bot rewrote while the card was open never ticks the wrong line. A person only; a bot rewrites the description with `tasks.describe`.
+ */
+export const TickTaskRequest = z.strictObject({
+  nth: z.number().int().min(0).max(1000),
+  checked: z.boolean(),
+  text: z.string().max(8000),
+});
+export type TickTaskRequest = z.infer<typeof TickTaskRequest>;
+export const TickTaskResponse = z.object({ task: Task });
+export type TickTaskResponse = z.infer<typeof TickTaskResponse>;
+export const tickTaskRoute = { method: 'POST', path: '/api/teams/:slug/tasks/:taskId/tick' } as const;
+
+/**
  * What the `tasks.pull_request` tool takes: the pull request a bot opened with `mt-publish` for its card. `testedSha` is the commit it published,
  * `project` the project's name and `number` the pull request number (`mt-publish`'s output). Nothing else comes from the bot: the platform asks GitHub
  * (with the project's own token) whether that pull request is open, comes from this card's branch at that commit and is aimed at the project's

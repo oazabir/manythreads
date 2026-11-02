@@ -33,6 +33,10 @@ import {
   ReleaseTaskResponse,
   ReworkTaskRequest,
   ReworkTaskResponse,
+  TickTaskRequest,
+  TickTaskResponse,
+  setTaskChecked,
+  taskItemAt,
   TasksTaskClaimedEvent,
   UpdateEnvironmentRequest,
   UpdateEnvironmentResponse,
@@ -67,6 +71,7 @@ import {
   updateGoalRoute,
   updateRunnerRoute,
   updateTaskRoute,
+  tickTaskRoute,
   Handoff,
   Task,
 } from '@manythreads/shared';
@@ -205,6 +210,43 @@ export function registerRoutes(ctx: PluginContext): void {
       const after = await taskOf(tx, team.id, taskId);
       await emitUpdated(ctx, tx, before, after);
       return json(UpdateTaskResponse.parse({ task: after }));
+    }),
+  });
+
+  // Tick a box of the description (a one-character edit with a line in the card's history) ---------------------
+  ctx.http.route({
+    ...tickTaskRoute,
+    rateLimit: { limit: 120, windowMs: 60_000 },
+    schema: { body: TickTaskRequest, response: TickTaskResponse },
+    handler: route(async (req, tx) => {
+      const { slug, taskId } = req.params as { slug: string; taskId: string };
+      const team = await requireTeam(tx, slug);
+      const body = TickTaskRequest.parse(req.body ?? {});
+      const before = await taskOf(tx, team.id, taskId);
+      const stale = 'The checklist changed while you had it open. It is shown again as it is now.';
+      // Two people ticking different boxes at once both land: when the door finds the text moved on between our read and its write, read it again and work the
+      // new text out once more from the same box number and the same item text (a box that no longer says that still answers 409).
+      for (let attempt = 0; ; attempt += 1) {
+        const current = attempt === 0 ? before : await taskOf(tx, team.id, taskId);
+        const box = taskItemAt(current.description, body.nth);
+        // the box the person ticked must still be the same line; otherwise the list changed under them and nothing is written
+        if (box === null || box.text !== body.text.trimEnd()) throw conflict(stale);
+        if (box.checked === body.checked) break;
+        const next = setTaskChecked(current.description, body.nth, body.checked);
+        const outcome = (
+          await tx.query<{ outcome: string }>('SELECT app.tasks_tick($1::uuid, $2, $3, $4::int, $5::boolean) AS outcome', [taskId, current.description, next, body.nth, body.checked])
+        ).rows[0]?.outcome;
+        if (outcome === 'ticked') break;
+        if (outcome === 'changed' && attempt === 0) continue;
+        if (outcome === 'not_found') throw notFound('No such card');
+        if (outcome === 'already_done') throw conflict('This card is done, so its checklist is closed.');
+        if (outcome === 'changed') throw conflict(stale);
+        if (outcome === 'not_person') throw forbidden('Only a person ticks a box; a bot rewrites the description.');
+        throw conflict('The box could not be changed.');
+      }
+      const after = await taskOf(tx, team.id, taskId);
+      if (after.description !== before.description) await emitUpdated(ctx, tx, before, after);
+      return json(TickTaskResponse.parse({ task: after }));
     }),
   });
 

@@ -32,6 +32,25 @@ async function botRows(tx: PluginTx, teamId: string, slug?: string): Promise<Bot
   return res.rows;
 }
 
+/**
+ * run id -> what the server repaired in the Markdown that run wrote (`channel.markdown.repaired`, written by the channels plugin; counts only). Runs with
+ * nothing repaired are absent. One grouped read over the team's events from the oldest listed run on (the events table is ordered by time-based ids).
+ */
+async function markdownRepairsOf(tx: PluginTx, teamId: string, runIds: readonly string[]): Promise<Map<string, { paths: number; fences: number }>> {
+  const out = new Map<string, { paths: number; fences: number }>();
+  const oldest = runIds[runIds.length - 1];
+  if (oldest === undefined) return out;
+  const res = await tx.query<{ run_id: string; paths: string; fences: string }>(
+    `SELECT payload->>'runId' AS run_id, sum((payload->>'paths')::int)::text AS paths, sum((payload->>'fences')::int)::text AS fences
+       FROM app.events
+      WHERE team_id = $1::uuid AND id >= $2::uuid AND type = 'channel.markdown.repaired' AND payload->>'runId' = ANY ($3::text[])
+      GROUP BY 1`,
+    [teamId, oldest, [...runIds]],
+  );
+  for (const r of res.rows) out.set(r.run_id, { paths: Number(r.paths), fences: Number(r.fences) });
+  return out;
+}
+
 export function registerBotRoutes(ctx: PluginContext): void {
   // A bot's picture: one of the bot set, or none. A lead of the team or a workspace admin (the SQL function checks), no proposal: it is not in BOT.md.
   ctx.http.route({
@@ -79,7 +98,8 @@ export function registerBotRoutes(ctx: PluginContext): void {
           ORDER BY id DESC LIMIT 20`,
         [row.id],
       );
-      return json({ bot: toBotSummary(row, (await botActorIds(tx, team.id)).get(row.id) ?? null), path: botMdPath(row.slug), runs: runs.rows.map(toBotRun) });
+      const repairs = await markdownRepairsOf(tx, team.id, runs.rows.map((r) => r.id));
+      return json({ bot: toBotSummary(row, (await botActorIds(tx, team.id)).get(row.id) ?? null), path: botMdPath(row.slug), runs: runs.rows.map((r) => toBotRun(r, repairs.get(r.id))) });
     }),
   });
 }

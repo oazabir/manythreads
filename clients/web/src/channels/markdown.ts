@@ -9,7 +9,7 @@
  * text) so hostile input cannot make it slow (see test/markdown.test.ts).
  */
 
-import { pathTokenLength } from '@manythreads/shared';
+import { cleanText, pathTokenLength } from '@manythreads/shared';
 
 export type Inline =
   | { t: 'text'; v: string }
@@ -188,13 +188,9 @@ const HEADING = /^ {0,3}(#{1,6}) +(.*?)\s*#*\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const TASK = /^\[([ xX])\] +(.*)$/;
 
-/**
- * The text as it may be drawn: no control characters (except newline and tab), no bidirectional overrides or isolates (they reorder what a reader sees:
- * `txt.exe` shown as `exe.txt`), no line or paragraph separators, no byte-order mark. The joiners emoji and some scripts need stay.
- */
-// eslint-disable-next-line no-control-regex
-const UNSAFE_CHARS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069\u2028\u2029\ufeff\ufff9-\ufffb]/g;
-export const cleanText = (text: string): string => text.replace(UNSAFE_CHARS, '');
+// The text as it may be drawn (no control characters, bidirectional overrides or line separators) is `cleanText` in `@manythreads/shared`, which the
+// task-list scanner shares so a box has the same number here and on the server.
+export { cleanText };
 
 export function parseMarkdown(source: string, depth = 0): Block[] {
   if (depth === 0) {
@@ -277,30 +273,5 @@ export function parseMarkdown(source: string, depth = 0): Block[] {
   return blocks;
 }
 
-/**
- * The text with the box of the `nth` task item (counted over the whole text, outside code blocks) set to `checked`; the text unchanged when there is no
- * such item. Only the one character between the brackets changes, so a person's tick is a one-character edit with a history entry.
- */
-export function setTaskChecked(source: string, nth: number, checked: boolean): string {
-  const lines = source.split('\n');
-  let seen = 0;
-  let fence: string | null = null;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? '';
-    const f = FENCE.exec(line);
-    if (f?.[1]) {
-      if (fence === null) fence = f[1];
-      else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-      continue;
-    }
-    if (fence !== null) continue;
-    const m = /^( {0,3}[-*+] +\[)([ xX])(\] +)/.exec(line);
-    if (!m) continue;
-    if (seen === nth) {
-      lines[i] = `${m[1] ?? ''}${checked ? 'x' : ' '}${line.slice((m[1] ?? '').length + 1)}`;
-      return lines.join('\n');
-    }
-    seen += 1;
-  }
-  return source;
-}
+// A tick is a one-character edit of the source text; the rule lives in `@manythreads/shared` so the server applies the same one to a card.
+export { setTaskChecked, taskItemAt } from '@manythreads/shared';

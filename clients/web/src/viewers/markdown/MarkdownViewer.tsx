@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { Markdown } from '@tiptap/markdown';
+import { tickInPage } from '@manythreads/shared';
 import type { ViewerProps } from '../../kernel/viewers';
 import { SaveFooter, ViewerBar, useSave } from '../common';
 import { bodyToDoc, contentExtensions, docToText } from './codec';
@@ -24,6 +25,8 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   const [saved, setSaved] = useState(text);
   const saver = useSave(onSave);
   const programmatic = useRef(false);
+  // A click on a checklist box (see `tickBox` below). The editor is made once, so it reads the current handler through this ref.
+  const tickRef = useRef<((nth: number, checked: boolean, boxes: number, text: string) => boolean) | null>(null);
 
   const editor = useEditor(
     {
@@ -31,7 +34,25 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
       content: initial?.doc ?? '',
       editable: !readOnly,
       shouldRerenderOnTransaction: true,
-      editorProps: { attributes: { class: 'md-prose', 'aria-label': 'Page content', role: 'textbox', 'aria-multiline': 'true' } },
+      editorProps: {
+        attributes: { class: 'md-prose', 'aria-label': 'Page content', role: 'textbox', 'aria-multiline': 'true' },
+        handleDOMEvents: {
+          click: (view, event) => {
+            const box = event.target;
+            if (!(box instanceof HTMLInputElement) || box.type !== 'checkbox') return false;
+            const item = box.closest('li[data-type="taskItem"]');
+            const items = Array.from(view.dom.querySelectorAll('li[data-type="taskItem"]'));
+            const nth = item === null ? -1 : items.indexOf(item);
+            if (nth < 0 || tickRef.current === null) return false;
+            // the box already shows its new state while the click is handled
+            // the words of the item as the editor shows them (its content area, not the hidden label of the box), so the tick is matched on text as well as number
+            const text = item?.querySelector(':scope > div')?.textContent ?? '';
+            if (!tickRef.current(nth, box.checked, items.length, text)) return false;
+            event.preventDefault();
+            return true;
+          },
+        },
+      },
       onUpdate: ({ editor: ed, transaction }) => {
         if (!transaction.docChanged || programmatic.current) return;
         setCurrent(docToText(frontmatter, ed.getJSON()));
@@ -60,6 +81,28 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
   const doSave = async () => {
     if (await saver.save(current)) setSaved(current);
   };
+  // Ticking a box of a task list on a page that has no other unsaved change writes the `[x]` or `[ ]` back to the page's own text and saves it: one
+  // character of the source changes, the rest of the page keeps its bytes, and the save is a commit like any other edit, with the person as author.
+  // Anything else (unsaved edits, live editing, a box the text and the editor count differently) is left to the editor and the Save button.
+  const tickBox = (nth: number, checked: boolean, boxes: number, text: string): boolean => {
+    if (readOnly || live || mode !== 'rich' || dirty || saver.status === 'saving') return false;
+    const next = tickInPage(current, nth, checked, boxes, text);
+    if (next === null || next === current) return false;
+    void (async () => {
+      if (!(await saver.save(next))) return;
+      setCurrent(next);
+      setSaved(next);
+      if (editor && !big) {
+        programmatic.current = true;
+        editor.commands.setContent(bodyToDoc(next).doc, { emitUpdate: false });
+        programmatic.current = false;
+      }
+    })();
+    return true;
+  };
+  useEffect(() => {
+    tickRef.current = tickBox;
+  });
   // Leaving live editing: the server has committed the source, so the viewer shows exactly that text (no refetch, no second save).
   const leaveLive = (finalText: string) => {
     setLive(false);

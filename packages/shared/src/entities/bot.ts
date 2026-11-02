@@ -81,6 +81,11 @@ export const BotRun = z.object({
   status: BotRunStatus,
   startedAt: IsoDateTime,
   endedAt: IsoDateTime.nullable(),
+  /**
+   * What the server repaired in the messages this run wrote (PLAN P14-19): file names or paths wrapped in backticks, code blocks closed. Both zero for a
+   * run that wrote clean Markdown. A bot whose runs keep showing numbers here is not following its output style.
+   */
+  markdownRepairs: z.object({ paths: z.number().int().nonnegative(), fences: z.number().int().nonnegative() }).default({ paths: 0, fences: 0 }),
 });
 export type BotRun = z.infer<typeof BotRun>;
 

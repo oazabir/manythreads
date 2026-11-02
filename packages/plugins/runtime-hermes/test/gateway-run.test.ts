@@ -11,6 +11,7 @@ import { startFakeHindsight, type FakeHindsight } from '../../../../tools/fake-h
 import { createRepoWorld, personas, type RepoWorld } from '../../repo-git/test/world.ts';
 import { FAILURE_NOTICE } from '../src/failure-notice.ts';
 import { settleEarlierAttempt } from '../src/run-job.ts';
+import { withOutputStyle } from '../src/output-style.ts';
 
 // A bot that is a profile on a Hermes gateway (mode A: a gateway of the customer's own; mode B: the team's pod), end to end: a mention opens a run,
 // the run is POSTed to the gateway with the run id as its idempotency key and the thread as its session, and the profile's model calls
@@ -277,7 +278,7 @@ describe('mode A: a bot placed on the customer’s gateway', () => {
     expect(gw.runs.filter((r) => r.profile === 'ext-bot')).toHaveLength(1);
     const call = gw.calls.find((c) => c.profile === 'ext-bot' && c.method === 'POST' && c.path.endsWith('/v1/runs'))!;
     expect(call).toMatchObject({ authorized: true, idempotencyKey: run.id });
-    expect(call.body).toEqual({ input: 'Nadia in #dev:\n\n@ext-bot what changed?', instructions: '# ext-bot\n\nSoul text.', session_id: `${bot.botId}:${rootId}` });
+    expect(call.body).toEqual({ input: 'Nadia in #dev:\n\n@ext-bot what changed?', instructions: withOutputStyle('# ext-bot\n\nSoul text.'), session_id: `${bot.botId}:${rootId}` });
 
     // The tool call came over HTTP with the bot's token and was posted as the bot, into the run's thread, stamped with THIS run's id.
     expect(observed?.ok, JSON.stringify(observed)).toBe(true);

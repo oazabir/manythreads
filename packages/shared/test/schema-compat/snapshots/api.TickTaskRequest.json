@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "nth": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000
+    },
+    "checked": {
+      "type": "boolean"
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 8000
+    }
+  },
+  "required": [
+    "nth",
+    "checked",
+    "text"
+  ],
+  "additionalProperties": false
+}

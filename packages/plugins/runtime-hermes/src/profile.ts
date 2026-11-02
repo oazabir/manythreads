@@ -1,6 +1,7 @@
 import type { BotRuntimeInput, BotRuntimeProfile } from '@manythreads/sdk';
 import { hermesChatArgs } from '@manythreads/sdk/process';
 import { hermesToolsets } from './toolsets.ts';
+import { withOutputStyle } from './output-style.ts';
 
 // The profile a Hermes run executes in (SPEC §7.1, §10.2; PLAN P5-10: "render profile from BOT.md (body is SOUL.md)").
 //
@@ -89,7 +90,7 @@ export function renderProfile(input: BotRuntimeInput): BotRuntimeProfile {
   return {
     home: profileHome(input),
     files: {
-      'SOUL.md': `${input.definition.body.trimEnd()}\n`,
+      'SOUL.md': `${withOutputStyle(input.definition.body)}\n`,
       'config.yaml': renderConfig(input),
     },
   };

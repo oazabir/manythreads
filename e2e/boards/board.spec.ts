@@ -20,6 +20,7 @@ const codeTitle = `Fix the redirect ${suffix}`;
 let boardId = '';
 let contentId = '';
 let codeId = '';
+let checklistId = '';
 
 type Made = { board: { id: string } };
 type Card = { task: { id: string } };
@@ -45,6 +46,14 @@ test.beforeAll(async () => {
       branch: `task/fix-${suffix}`,
     })) as Card;
     codeId = code.task.id;
+    const checklist = (await omar.post('/api/teams/engineering/tasks', {
+      title: `Release checklist ${suffix}`,
+      description: ['Before the release:', '', '- [ ] run `pnpm lint`', '- [x] read `docs/deploy.md`', '- [ ] tell the team'].join('\n'),
+      kind: 'content',
+      priority: 'normal',
+      branch: `task/checklist-${suffix}`,
+    })) as Card;
+    checklistId = checklist.task.id;
   } finally {
     await omar.ctx.dispose();
   }
@@ -123,6 +132,39 @@ test('a code card cannot reach Done without its tested commit, on the screen or 
     await page.getByTestId('card-complete').click();
     await expect(cardIn(page, 'done', codeId)).toBeVisible();
     await expect(page.getByTestId('card-history')).toContainText('completed it, tested at abcdef1');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a person ticks a box of the card description: it is written back to the text and kept in the history', async ({ browser }) => {
+  const { page, context } = await openAs(browser, 'nadia', `/t/engineering/boards?board=${boardId}&card=${checklistId}`);
+  try {
+    const list = page.getByTestId('card-description').getByTestId('md-tasklist');
+    await expect(list).toContainText('1 of 3 done');
+    await list.getByRole('checkbox', { name: /^Not done: run pnpm lint/ }).click();
+    // the box changes when the server has answered, not at the click, so the name that says "Done" is what to wait for
+    await expect(list.getByRole('checkbox', { name: /^Done: run pnpm lint/ })).toBeChecked();
+    await expect(list).toContainText('2 of 3 done');
+    await expect(page.getByTestId('card-history')).toContainText('ticked box 1 of the checklist');
+
+    // after a reload the box is still ticked: the server holds the text, not the page
+    await page.reload();
+    await expect(page.getByTestId('card-description').getByTestId('md-tasklist')).toContainText('2 of 3 done');
+    const nadia = await apiAs('nadia');
+    try {
+      const card = (await nadia.get(`/api/teams/engineering/tasks/${checklistId}`)) as { task: { description: string } };
+      expect(card.task.description).toContain('- [x] run `pnpm lint`');
+      expect(card.task.description).toContain('- [x] read `docs/deploy.md`');
+      expect(card.task.description).toContain('- [ ] tell the team');
+    } finally {
+      await nadia.ctx.dispose();
+    }
+
+    // and it can be unticked again
+    await page.getByTestId('card-description').getByRole('checkbox', { name: /^Done: run pnpm lint/ }).click();
+    await expect(page.getByTestId('card-description').getByRole('checkbox', { name: /^Not done: run pnpm lint/ })).not.toBeChecked();
+    await expect(page.getByTestId('card-description').getByTestId('md-tasklist')).toContainText('1 of 3 done');
   } finally {
     await context.close();
   }

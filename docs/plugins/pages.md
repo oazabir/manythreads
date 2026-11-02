@@ -35,6 +35,10 @@ transaction. The plugin looks the provider up per request (`ctx.providers.get('r
 
 Refusals are returned as the error envelope without rolling the transaction back (see repo-git: a refusal never undoes work the request had to do first); the 409 body is `RepoConflictResponse`.
 
+## Ticking a checklist box (P14-19)
+
+In the Markdown viewer (a page under `pages/`, or any `.md` file the person may change) a click on a task-list checkbox, with no other unsaved edit and not in live editing, writes the `[x]` or `[ ]` into the file's own text (`setTaskChecked`, one character, boxes counted at any indentation outside code) and saves it at once through the same save path as the Save button: a commit by the person, the rest of the file keeping its bytes. If the viewer cannot match the box to a line of the text (its count of boxes differs from the text's), or there are unsaved edits, the click is left to the editor and the Save button as before. A person who may not change the file sees the boxes but cannot tick them.
+
 ## Live editing (P6-09)
 
 `GET /api/teams/:slug/pages/live?path=pages/…` upgrades to a WebSocket (a plugin socket route; the kernel's `HttpRouteDefinition.ws`). Frames are binary and speak the

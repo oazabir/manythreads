@@ -78,6 +78,30 @@
           "type": "null"
         }
       ]
+    },
+    "markdownRepairs": {
+      "default": {
+        "paths": 0,
+        "fences": 0
+      },
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "fences": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "paths",
+        "fences"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -89,7 +113,8 @@
     "threadId",
     "status",
     "startedAt",
-    "endedAt"
+    "endedAt",
+    "markdownRepairs"
   ],
   "additionalProperties": false
 }

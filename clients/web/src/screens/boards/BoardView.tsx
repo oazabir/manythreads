@@ -362,6 +362,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
           revision={revision}
           onMove={move}
           onChanged={changed}
+          onRefresh={q.reload}
         />
       ) : board && selectedCard ? (
         <aside className="bd-panel">

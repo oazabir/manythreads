@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { countTaskItems } from '@manythreads/shared';
 import { parseInline, parseMarkdown, setTaskChecked } from '../src/channels/markdown';
 import { PANEL_DEFAULT, PANEL_MIN, clampPanelWidth, maxPanelWidth, widthFromPointer } from '../src/kernel/panel/panelSize';
 import { describeToken } from '../src/screens/projects/commands';
@@ -85,3 +86,20 @@ describe('images in pages come from this site only', () => {
     }
   });
 });
+
+describe('the renderer and the tick scanner count the same boxes', () => {
+  const drawn = (src: string): number => {
+    const count = (blocks: ReturnType<typeof parseMarkdown>): number =>
+      blocks.reduce((n, b) => n + (b.t === 'list' ? (b.checks ?? []).filter((c) => c !== null).length : b.t === 'quote' ? count(b.c) : 0), 0);
+    return count(parseMarkdown(src));
+  };
+  it.each([
+    ['a fence inside a quote', ['> ```', '> - [ ] in code', '> ```', '- [ ] real'].join('\n')],
+    ['a lone carriage return', '- [ ] one\r- [x] two\r\n- [ ] three'],
+    ['stripped control characters', '- [ ] a\u0007\n- [ ] \u202eb'],
+    ['a box in a quote', ['> - [ ] quoted', '- [ ] plain', '```', '- [ ] code', '```', '- [x] last'].join('\n')],
+  ])('%s', (_name, src) => {
+    expect(countTaskItems(src)).toBe(drawn(src));
+  });
+});
+

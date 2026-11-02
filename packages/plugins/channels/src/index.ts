@@ -38,6 +38,7 @@ export default definePlugin({
       emits: [
         'channel.message.posted',
         'channel.message.edited',
+        'channel.markdown.repaired',
         'channel.message.deleted',
         'channel.reaction.changed',
         'channel.channel.created',

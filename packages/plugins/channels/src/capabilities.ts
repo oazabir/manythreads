@@ -3,7 +3,7 @@ import { AnswerPayload, importChannelName, isSubsequence, repairBotMarkdown } fr
 import { z } from 'zod';
 import { conflict, forbidden, invalid } from './http.ts';
 import { CHANNEL_COLUMNS, type ChannelRow } from './rows.ts';
-import { editChannelMessage, postChannelMessage, pushChannelCreated, reactToMessage, type Deps } from './service.ts';
+import { editChannelMessage, postChannelMessage, pushChannelCreated, reactToMessage, requireChannel, type Deps } from './service.ts';
 
 // What a bot may do with channel messages (SPEC §7.1 lists `messages.*` among a bot's native capabilities; PLAN P5-10). A
 // capability is how one plugin calls another's behaviour — plugins never import each other — so the reply a runtime posts
@@ -59,6 +59,31 @@ async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: 
   return { runId: here, channelId: row.channel_id, replyRootId: row.reply_root_id };
 }
 
+/**
+ * When the repair changed a bot's text, write `channel.markdown.repaired` (counts only) as the bot, with the run it belongs to, so the bot's page can say how
+ * often it slips. Nothing is written for text that needed no repair. The record is part of the same transaction as the message.
+ */
+async function recordRepair(
+  deps: Deps,
+  tx: PluginTx,
+  input: { channelId: string; messageId: string; via: 'post' | 'update'; counts: { paths: number; fences: number } },
+): Promise<void> {
+  if (input.counts.paths === 0 && input.counts.fences === 0) return;
+  const runId = (await tx.query<{ run_id: string | null }>(`SELECT app.run_id()::text AS run_id`)).rows[0]?.run_id ?? null;
+  const teamId = (await requireChannel(tx, input.channelId)).team_id;
+  await deps.ctx.audit.emit(tx, {
+    type: 'channel.markdown.repaired',
+    channelId: input.channelId,
+    teamId,
+    messageId: input.messageId,
+    botActorId: tx.actor.id,
+    runId,
+    via: input.via,
+    paths: input.counts.paths,
+    fences: input.counts.fences,
+  });
+}
+
 export function registerMessageCapabilities(deps: Deps): void {
   const { ctx } = deps;
   ctx.capabilities.register('messages.post', async (input: Record<string, unknown>, tx: PluginTx): Promise<PostMessageAnswer> => {
@@ -77,6 +102,7 @@ export function registerMessageCapabilities(deps: Deps): void {
       threadRootId,
       ...(place === null ? {} : { meta: { runId: place.runId } }),
     });
+    await recordRepair(deps, tx, { channelId: posted.channelId, messageId: posted.id, via: 'post', counts: fixed });
     return { ok: true, messageId: posted.id, channelId: posted.channelId, threadRootId: posted.threadRootId };
   });
   // Only the bot's own messages (editChannelMessage refuses any other author), audited as `channel.message.edited` like a person's edit and
@@ -85,7 +111,9 @@ export function registerMessageCapabilities(deps: Deps): void {
     const parsed = UpdateMessageInput.parse(input);
     const channelId = parsed.channelId ?? (await runReplyPlace(tx))?.channelId;
     if (channelId === undefined) throw invalid('channelId: name the channel the message is in');
-    const edited = await editChannelMessage(deps, tx, { channelId, messageId: parsed.messageId, body: repairBotMarkdown(parsed.body).text, syncRefs: false });
+    const fixed = repairBotMarkdown(parsed.body);
+    const edited = await editChannelMessage(deps, tx, { channelId, messageId: parsed.messageId, body: fixed.text, syncRefs: false });
+    await recordRepair(deps, tx, { channelId: edited.channelId, messageId: edited.id, via: 'update', counts: fixed });
     return { ok: true, messageId: edited.id, channelId: edited.channelId, threadRootId: edited.threadRootId };
   });
 }

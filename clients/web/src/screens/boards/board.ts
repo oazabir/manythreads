@@ -192,6 +192,11 @@ export function eventLine(e: TaskEvent, nameOf: (id: string | null) => string): 
       return `opened pull request #${String(d['number'] ?? '')}; it waits for a person to merge it`;
     case 'pull_request_closed':
       return text(d, 'reason') ? `pull request #${String(d['pullRequest'] ?? '')} was closed: ${text(d, 'reason')}` : `pull request #${String(d['pullRequest'] ?? '')} was closed`;
+    case 'described': {
+      const tick = d['tick'] as { nth?: unknown; checked?: unknown } | undefined;
+      if (tick && typeof tick.nth === 'number') return `${tick.checked === true ? 'ticked' : 'unticked'} box ${tick.nth + 1} of the checklist`;
+      return 'rewrote the description';
+    }
     case 'deployed':
       return `deployed to ${text(d, 'environment') ?? 'an environment'}`;
     default:

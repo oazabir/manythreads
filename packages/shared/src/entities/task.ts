@@ -40,7 +40,7 @@ export const TaskEventType = z.enum([
   'pull_request_opened',
   /** The pull request was closed without a merge (`data.reason`); the card went back to its owner. A merge is a `completed` line with `data.mergeSha`. */
   'pull_request_closed',
-  /** The owner rewrote the card's description (`data` has the lengths before and after and a sha256 of the new text, never the text). */
+  /** The description changed: its owner rewrote it, or a person ticked a checklist box (`data.tick` has the box's number and new state). `data` has the lengths before and after and a sha256 of the new text, never the text. */
   'described',
 ]);
 export type TaskEventType = z.infer<typeof TaskEventType>;

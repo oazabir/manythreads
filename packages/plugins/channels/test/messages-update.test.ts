@@ -135,3 +135,37 @@ describe('messages.update', () => {
     expect(await events('channel.mention.created', id)).toBe(0);
   });
 });
+
+describe('the Markdown repair record (PLAN P14-19)', () => {
+  const repairs = (messageId: string) =>
+    w.system(async (tx) =>
+      (await tx.query<{ actor_id: string; payload: Record<string, unknown> }>("SELECT actor_id, payload FROM app.events WHERE type = 'channel.markdown.repaired' AND payload ->> 'messageId' = $1 ORDER BY id", [messageId])).rows,
+    );
+
+  it('wraps a bare path and closes a fence, and writes one record with the counts, the bot and the run, never the text', async () => {
+    const run = await open(orch);
+    const posted = await call(run, 'messages.post', { channelId: dev, body: 'See bots/coder/BOT.md and TEAM.md\n```bash\npnpm lint' });
+    const id = posted['messageId'] as string;
+    expect((await row(id)).body).toBe('See `bots/coder/BOT.md` and `TEAM.md`\n```bash\npnpm lint\n```');
+    const rows = await repairs(id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actor_id).toBe(orch.actorId);
+    expect(rows[0]?.payload).toMatchObject({ via: 'post', paths: 2, fences: 1, runId: run.runId, botActorId: orch.actorId, channelId: dev });
+    expect(JSON.stringify(rows[0]?.payload)).not.toContain('BOT.md');
+  });
+
+  it('writes nothing for text that needed no repair', async () => {
+    const run = await open(orch);
+    const id = (await call(run, 'messages.post', { channelId: dev, body: 'Edit `TEAM.md` and run:\n```bash\npnpm lint\n```' }))['messageId'] as string;
+    expect(await repairs(id)).toHaveLength(0);
+  });
+
+  it('records a repair made on an update as an update', async () => {
+    const run = await open(orch);
+    const id = (await call(run, 'messages.post', { channelId: dev, body: '- [ ] one' }))['messageId'] as string;
+    await call(run, 'messages.update', { channelId: dev, messageId: id, body: '- [x] one, in docs/engineering/conventions.md' });
+    const rows = await repairs(id);
+    expect(rows.map((r) => r.payload['via'])).toEqual(['update']);
+    expect(rows[0]?.payload).toMatchObject({ paths: 1, fences: 0 });
+  });
+});

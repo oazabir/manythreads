@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ChannelMessagePostedEvent } from './channel.message.posted.ts';
+import { ChannelMarkdownRepairedEvent } from './channel.markdown.repaired.ts';
 import { ChannelMessageEditedEvent } from './channel.message.edited.ts';
 import { ChannelMessageDeletedEvent } from './channel.message.deleted.ts';
 import { ChannelReactionChangedEvent } from './channel.reaction.changed.ts';
@@ -135,6 +136,7 @@ import { KernelTestPingedEventV2, upcastKernelTestPingedV1ToV2 } from './kernel.
 export const eventRegistry = {
   'channel.message.posted': { 1: ChannelMessagePostedEvent },
   'channel.message.edited': { 1: ChannelMessageEditedEvent },
+  'channel.markdown.repaired': { 1: ChannelMarkdownRepairedEvent },
   'channel.message.deleted': { 1: ChannelMessageDeletedEvent },
   'channel.reaction.changed': { 1: ChannelReactionChangedEvent },
   'channel.channel.created': { 1: ChannelChannelCreatedEvent },
@@ -302,6 +304,7 @@ export type AnyEvent =
   | z.infer<typeof WorkspaceMemberRoleChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof ChannelMessageEditedEvent>
+  | z.infer<typeof ChannelMarkdownRepairedEvent>
   | z.infer<typeof ChannelMessageDeletedEvent>
   | z.infer<typeof ChannelReactionChangedEvent>
   | z.infer<typeof ChannelChannelCreatedEvent>
@@ -383,6 +386,7 @@ export type LatestEvent =
   | z.infer<typeof WorkspaceMemberRoleChangedEvent>
   | z.infer<typeof ChannelMessagePostedEvent>
   | z.infer<typeof ChannelMessageEditedEvent>
+  | z.infer<typeof ChannelMarkdownRepairedEvent>
   | z.infer<typeof ChannelMessageDeletedEvent>
   | z.infer<typeof ChannelReactionChangedEvent>
   | z.infer<typeof ChannelChannelCreatedEvent>

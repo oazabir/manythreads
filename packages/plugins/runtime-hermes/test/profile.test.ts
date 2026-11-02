@@ -3,6 +3,7 @@ import type { BotRuntimeInput } from '@manythreads/sdk';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { chatArgs, profileHome, renderConfig, renderProfile } from '../src/profile.ts';
+import { withOutputStyle } from '../src/output-style.ts';
 
 // The profile a run executes in (PLAN P5-10): the BOT.md body is SOUL.md, and config.yaml points at two endpoints — the
 // workspace's model gateway with the bot's own key, and the run's MCP endpoint with the run token. Nothing else. The tests
@@ -47,9 +48,10 @@ const input = (overrides: Partial<BotRuntimeInput> = {}): BotRuntimeInput => {
 };
 
 describe('renderProfile', () => {
-  it('writes the BOT.md body as SOUL.md, verbatim', () => {
+  it('writes the BOT.md body as SOUL.md, followed by the output style', () => {
     const profile = renderProfile(input());
-    expect(profile.files['SOUL.md']).toBe(`${BODY}\n`);
+    expect(profile.files['SOUL.md']).toBe(`${withOutputStyle(BODY)}\n`);
+    expect(profile.files['SOUL.md']?.startsWith(`${BODY}\n\n`)).toBe(true);
     expect(profile.files['SOUL.md']).toContain('You own a task until you hand it over.');
   });
 

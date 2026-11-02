@@ -93,6 +93,8 @@ in `packages/shared/src/events/registry.ts`.
 | `rehearsal_intercepts` | one line per write a rehearsal run tried and the gateway held back: the tool name and where it aimed, **never the text** (P7-11, migration 0018) | PK `(run_id, seq)`, `capability`, `target?`, `would_wait` | PK |
 | `run_source_log` | what a run read: the evidence behind "Sources reached" | `run_id`, `seq`, `source_type` (open set: `message`, `page`, `file`, `memory`, ...), `source_ref`, `scope` (`team` \| `channel` \| `person`) | PK `(run_id, seq)` |
 
+The run list of the bot page carries `markdownRepairs: { paths, fences }` for each run (P14-19): the sum of the `channel.markdown.repaired` events the channels plugin wrote for that run, both zero for a run that wrote clean Markdown. The Audit tab prints "Formatting fixed by the server: …" under a run that has any.
+
 `bot_runs` has a composite foreign key `(bot_id, team_id) → bots (id, team_id)`, so a run cannot name a bot of another team, and
 its INSERT policy admits only a run that starts `running` with no `ended_at` (migration 0006).
 
