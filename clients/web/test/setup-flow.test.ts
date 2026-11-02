@@ -150,6 +150,22 @@ describe('the parts', () => {
     expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-testid="setup-start"/);
   });
 
+  it('the brief form lists template bots as examples to start from, as buttons with a state, and none when there are none', () => {
+    expect(html(createElement(BriefForm, { slug: 'engineering', busy: false, error: null, onStart: noop }))).not.toContain('setup-examples');
+    const out = html(
+      createElement(BriefForm, {
+        slug: 'engineering',
+        busy: false,
+        error: null,
+        onStart: noop,
+        examples: [{ key: 'reviewer', template: 'Engineering', name: 'Reviewer', role: 'Reviews a change.' }],
+      }),
+    );
+    expect(out).toContain('Start from an example');
+    expect(out).toMatch(/<button[^>]*aria-pressed="false"[^>]*data-testid="setup-example"[^>]*>Reviewer<\/button>/);
+    expect(out).toContain('from the Engineering template');
+  });
+
   it('the feasibility list shows each grade as words, not only colour', () => {
     const out = html(
       createElement(Feasibility, {

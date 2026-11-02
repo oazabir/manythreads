@@ -177,7 +177,7 @@ test('a plain member reads the notices and replays what they may see, and is tol
     await expect(page.getByTestId('ws-reassess')).toContainText('A team lead or an admin closes this notice.');
     await page.getByTestId('ws-replay-run').click();
     // the run was Omar's: Nadia replays only what she asked herself, which is nothing
-    await expect(page.getByTestId('ws-replay-summary')).toContainText('There are no runs of this bot in the last 30 days that you can replay.', { timeout: 30_000 });
+    await expect(page.getByTestId('ws-replay-summary')).toContainText('There are no runs of this bot in the last 7 days that you can replay.', { timeout: 30_000 });
     await expect(page.getByTestId('ws-full-lead-only')).toContainText('Only a team lead or an admin');
     await expect(page.getByTestId('ws-full-ask')).toHaveCount(0);
     expect(await noSidewaysScroll(page)).toBe(true);

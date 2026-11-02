@@ -297,6 +297,12 @@
   overflow-wrap: anywhere;
 }
 
+.su-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .su-options {
   display: flex;
   flex-wrap: wrap;

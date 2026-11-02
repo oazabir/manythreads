@@ -2,6 +2,7 @@ import type { FullReplayEstimate, Reassessment, ReplayResult, WorkshopSession } 
 import { useRef, useState } from 'react';
 import { useQuery } from '../../app/useQuery';
 import { Alert } from '../../components/ui';
+import { useFocusWhen } from './focus-when';
 import { askFullReplay, closeReassessment, fetchReplay, listReassessments } from './replay-api';
 import { DAY_CHOICES, KIND_WORDS, REASON_WORDS, VERDICT_WORDS, changeLine, confirmLabel, estimateLines, kindLine, noticesLine, summaryLine } from './replay-model';
 
@@ -16,7 +17,7 @@ const errorText = (err: unknown): string => (err instanceof Error && err.message
 const when = (iso: string): string => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 export function ReplayPanel({ slug, botSlug, canManage, onStarted }: { slug: string; botSlug: string; canManage: boolean; onStarted: (session: WorkshopSession) => void }) {
-  const [days, setDays] = useState<number>(30);
+  const [days, setDays] = useState<number>(7);
   const [result, setResult] = useState<ReplayResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +26,9 @@ export function ReplayPanel({ slug, botSlug, canManage, onStarted }: { slug: str
   const resultRef = useRef<HTMLHeadingElement>(null);
   const estimateRef = useRef<HTMLHeadingElement>(null);
   const triggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  // Focus follows the state that makes each heading appear, after it has rendered (a timer set beside the state can fire first and find no element).
+  useFocusWhen(resultRef, result);
+  useFocusWhen(estimateRef, asking);
 
   const run = async (): Promise<void> => {
     if (busy) return;
@@ -35,7 +39,6 @@ export function ReplayPanel({ slug, botSlug, canManage, onStarted }: { slug: str
       const { replay } = await fetchReplay(slug, botSlug, days);
       setResult(replay);
       setSaid(summaryLine(replay));
-      window.setTimeout(() => resultRef.current?.focus(), 0);
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -51,7 +54,6 @@ export function ReplayPanel({ slug, botSlug, canManage, onStarted }: { slug: str
       const answer = await askFullReplay(slug, botSlug, runId);
       if (answer.status === 'needs_confirmation') {
         setAsking({ runId, at, estimate: answer.estimate });
-        window.setTimeout(() => estimateRef.current?.focus(), 0);
       }
     } catch (err) {
       setError(errorText(err));

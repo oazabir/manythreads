@@ -1,13 +1,15 @@
 import type { SetupSession } from '@manythreads/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useSession } from '../../app/session';
 import { isApiError } from '../../api/client';
+import { fetchTemplates } from '../../api/endpoints';
+import { useQuery } from '../../app/useQuery';
 import { Alert } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
 import { useProposalPerms } from '../proposals/store';
 import { answerSetup, cancelSetup, fetchSetup, retrySetup, startSetup } from './api';
-import { announcement, answersFrom, FOCUS_ID, pollDelay, stepOf, stopsPolling, workingLine, type Draft } from './model';
+import { announcement, answersFrom, examplesFrom, FOCUS_ID, pollDelay, stepOf, stopsPolling, workingLine, type Draft } from './model';
 import { BriefForm, Feasibility, InventoryPanel, Questions } from './parts';
 import { ProposalStep } from './Proposal';
 
@@ -93,6 +95,10 @@ export function SetupScreen() {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>({});
   useHeaderTopic('Add a bot');
+  // the bots of the team templates, offered as starting points for the brief; if they cannot be loaded the box simply has no examples
+  const templates = useQuery('setup-examples', fetchTemplates);
+  const templateList = templates.status === 'ok' ? templates.data.templates : null;
+  const examples = useMemo(() => (templateList ? examplesFrom(templateList) : []), [templateList]);
   // while an earlier conversation is being fetched there is nothing to show yet: not the empty brief box
   const step = id === null ? 'brief' : session === null ? 'loading' : stepOf(session);
 
@@ -201,7 +207,7 @@ export function SetupScreen() {
 
       <p className="su-sr" role="status" aria-live="polite" data-testid="setup-announce">{said}</p>
 
-      {step === 'brief' ? <BriefForm slug={slug} busy={busy} error={error ?? readError} onStart={(b, n) => void begin(b, n)} /> : null}
+      {step === 'brief' ? <BriefForm slug={slug} busy={busy} error={error ?? readError} examples={examples} onStart={(b, n) => void begin(b, n)} /> : null}
 
       {session && step !== 'brief' && step !== 'loading' ? (
         <div className="su-stack">

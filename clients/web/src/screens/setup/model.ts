@@ -59,6 +59,31 @@ export const answeredCount = (questions: ReadonlyArray<Pick<SetupQuestion, 'id'>
 export const BRIEF_MIN = 8;
 export const briefReady = (brief: string): boolean => brief.trim().length >= BRIEF_MIN;
 
+/** A bot that ships in a team template, offered as a starting point for the brief. */
+export interface Example {
+  readonly key: string;
+  readonly template: string;
+  readonly name: string;
+  readonly role: string;
+}
+
+/** The bots of the team templates the person can start from. Brain is left out (every team already has one); a bot that two templates share is listed once. */
+export function examplesFrom(templates: ReadonlyArray<{ name: string; bots: ReadonlyArray<{ slug: string; name: string; role: string }> }>): Example[] {
+  const seen = new Set<string>();
+  const out: Example[] = [];
+  for (const t of templates) {
+    for (const b of t.bots) {
+      if (b.slug === 'brain' || b.role.trim() === '' || seen.has(b.slug)) continue;
+      seen.add(b.slug);
+      out.push({ key: b.slug, template: t.name, name: b.name, role: b.role.trim() });
+    }
+  }
+  return out;
+}
+
+/** The brief a picked example starts the box with: what the bot is for, in the template's own words, for the person to change. */
+export const briefFromExample = (e: Pick<Example, 'name' | 'role'>): string => `Like the ${e.name} bot. ${/[.!?]$/.test(e.role) ? e.role : `${e.role}.`}`;
+
 /**
  * The order the proposals are approved in: the team file and the skills first, the bot last, so that when the bot's definition is read everything it names is already there.
  * A conversation that proposed only the bot has one step.

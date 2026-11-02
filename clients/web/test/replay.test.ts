@@ -136,7 +136,12 @@ describe('the markup', () => {
     expect(out).toContain('aria-labelledby="ws-replay-h"');
     expect(out).toContain('Replay guard and gate decisions');
     expect(out).toContain('data-testid="ws-replay-days"');
-    expect(out).toContain('Replay decisions · last 30 days');
+    expect(out).toContain('Replay decisions · last 7 days');
+    // the look-back starts at a week; the other two choices stay
+    expect(out).toMatch(/<option value="7"[^>]*>7 days<\/option>/);
+    expect(out).toContain('14 days');
+    expect(out).toContain('30 days');
+    expect(out).not.toMatch(/last 30 days/);
     expect(out).toContain('role="status"');
     expect(out).not.toContain('ws-replay-result');
     // a free replay says so up front

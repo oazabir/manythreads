@@ -2,15 +2,17 @@ import type { GradedRequirement, SetupInventory, SetupQuestion } from '@manythre
 import { useId, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { Alert } from '../../components/ui';
-import { GRADE_WORDS, GUARD_WORDS, RUNTIME_WORDS, TRIGGER_WORDS, answeredCount, briefReady, feasibilitySummary, sortedByGrade, type Draft } from './model';
+import { GRADE_WORDS, GUARD_WORDS, RUNTIME_WORDS, TRIGGER_WORDS, answeredCount, briefFromExample, briefReady, feasibilitySummary, sortedByGrade, type Draft, type Example } from './model';
 
 /*
  * The pieces of the "Add a bot" screen (mockup section `setup`): the brief, what the helper found, the grades, the questions. Every class is prefixed `su-`.
  */
 
-export function BriefForm({ slug, busy, error, onStart }: { slug: string; busy: boolean; error: string | null; onStart: (brief: string, name: string) => void }) {
+export function BriefForm({ slug, busy, error, onStart, examples = [] }: { slug: string; busy: boolean; error: string | null; onStart: (brief: string, name: string) => void; examples?: ReadonlyArray<Example> }) {
   const [brief, setBrief] = useState('');
   const [name, setName] = useState('');
+  const [picked, setPicked] = useState<string | null>(null);
+  const exampleId = useId();
   const briefId = useId();
   const nameId = useId();
   const submit = (e: FormEvent): void => {
@@ -20,6 +22,31 @@ export function BriefForm({ slug, busy, error, onStart }: { slug: string; busy: 
   return (
     <div className="su-brief-grid">
       <form className="su-card" onSubmit={submit} data-testid="setup-brief-form" data-landmark="setup-brief">
+        {examples.length > 0 ? (
+          <div className="su-examples" role="group" aria-labelledby={`${exampleId}-h`} data-testid="setup-examples">
+            <p className="su-label" id={`${exampleId}-h`}>Start from an example <span className="su-opt">(optional)</span></p>
+            <p className="su-hint" id={`${exampleId}-hint`}>These bots come with the team templates. Pick one to fill in the box below, then change it to fit.</p>
+            <div className="su-options">
+              {examples.map((e) => (
+                <button
+                  key={e.key}
+                  type="button"
+                  className="su-option"
+                  aria-pressed={picked === e.key}
+                  aria-describedby={`${exampleId}-hint`}
+                  title={`${e.name}, from the ${e.template} template`}
+                  data-testid="setup-example"
+                  onClick={() => {
+                    setPicked(e.key);
+                    setBrief(briefFromExample(e));
+                  }}
+                >
+                  {e.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <label className="su-label" htmlFor={briefId}>What should this bot do?</label>
         <p className="su-hint" id={`${briefId}-hint`}>A few sentences. It will work out the rest and ask you about anything it can't find.</p>
         <textarea
@@ -30,7 +57,10 @@ export function BriefForm({ slug, busy, error, onStart }: { slug: string; busy: 
           value={brief}
           aria-describedby={`${briefId}-hint`}
           data-testid="setup-brief"
-          onChange={(e) => setBrief(e.target.value)}
+          onChange={(e) => {
+            setBrief(e.target.value);
+            setPicked(null);
+          }}
         />
         <label className="su-label" htmlFor={nameId}>Name <span className="su-opt">(optional — it will suggest one)</span></label>
         <input id={nameId} className="su-input" value={name} maxLength={80} data-testid="setup-name" onChange={(e) => setName(e.target.value)} />

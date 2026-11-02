@@ -10,7 +10,9 @@ import {
   answersFrom,
   approvalOrder,
   botSlugOf,
+  briefFromExample,
   briefReady,
+  examplesFrom,
   feasibilitySummary,
   pollDelay,
   sortedByGrade,
@@ -45,6 +47,23 @@ describe('the brief', () => {
     expect(briefReady('')).toBe(false);
     expect(briefReady('   short ')).toBe(false);
     expect(briefReady('Answer questions from the manuals')).toBe(true);
+  });
+
+  it('offers the bots of the team templates as examples: not Brain, nothing without a role, a shared bot once', () => {
+    const bot = (slug: string, name: string, role: string) => ({ slug, name, role });
+    const list = examplesFrom([
+      { name: 'Customer support', bots: [bot('brain', 'Brain', 'Team memory.'), bot('support-responder', 'Support responder', 'Drafts answers from the manuals.'), bot('quiet', 'Quiet', '  ')] },
+      { name: 'Engineering', bots: [bot('brain', 'Brain', 'Team memory.'), bot('support-responder', 'Support responder', 'Again.'), bot('reviewer', 'Reviewer', 'Reviews a change')] },
+    ]);
+    expect(list.map((e) => e.key)).toEqual(['support-responder', 'reviewer']);
+    expect(list[0]).toMatchObject({ template: 'Customer support', name: 'Support responder', role: 'Drafts answers from the manuals.' });
+    expect(examplesFrom([])).toEqual([]);
+  });
+
+  it('turns a picked example into a brief long enough to send, ending in a full stop', () => {
+    expect(briefFromExample({ name: 'Reviewer', role: 'Reviews a change' })).toBe('Like the Reviewer bot. Reviews a change.');
+    expect(briefFromExample({ name: 'Reviewer', role: 'Reviews a change.' })).toBe('Like the Reviewer bot. Reviews a change.');
+    expect(briefReady(briefFromExample({ name: 'A', role: 'B' }))).toBe(true);
   });
 });
 
