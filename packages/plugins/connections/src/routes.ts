@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { conflict, forbidden, invalid, json, notFound, requireTeam, route, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
   CONNECTION_ADMIN_ONLY,
@@ -7,6 +8,9 @@ import {
   CreateConnectionRequest,
   CreateConnectionResponse,
   DeleteConnectionResponse,
+  DeliverMailParams,
+  DeliverMailRequest,
+  DeliverMailResponse,
   ListConnectionsResponse,
   PutConnectionCredentialRequest,
   PutConnectionCredentialResponse,
@@ -16,6 +20,7 @@ import {
   connectionKindInfo,
   createConnectionRoute,
   deleteConnectionRoute,
+  deliverMailRoute,
   listConnectionsRoute,
   listMyConnectionsRoute,
   putConnectionCredentialRoute,
@@ -23,6 +28,7 @@ import {
 } from '@manythreads/shared';
 import { CONNECTION_COLUMNS, toConnection, type ConnectionRow } from './rows.ts';
 import { deleteConnectionAndSecrets, putConnectionSecret } from './secrets.ts';
+import { WATCH_QUEUE } from './watch.ts';
 
 // The routes of connections (PLAN P8-28, P8-06). Reading: the connections of a team, and a person's own, as the caller's row-level security lets them see them. Writing: a
 // workspace admin adds a team's connection (switched off, nothing stored), puts a credential in, switches it on and off, and removes it; a person removes their own.
@@ -224,6 +230,47 @@ export function registerRoutes(ctx: PluginContext): void {
       const gone = await deleteConnectionAndSecrets({ db: ctx.db, secrets: ctx.secrets }, { workspaceId: current.workspace_id, connectionId: current.id });
       if (!gone) throw notFound('No such connection');
       return json(DeleteConnectionResponse.parse({ deleted: true }));
+    }),
+  });
+
+  ctx.http.route({
+    ...deliverMailRoute,
+    schema: { body: DeliverMailRequest, response: DeliverMailResponse },
+    rateLimit: { limit: 60, windowMs: 60_000 },
+    handler: route(async (req, tx) => {
+      const params = DeliverMailParams.parse(req.params);
+      const body = DeliverMailRequest.parse(req.body);
+      const team = await requireTeam(tx, params.slug);
+      const role = (await tx.query<{ role: string | null }>('SELECT app.workspace_role() AS role')).rows[0]?.role;
+      if (role !== 'owner' && role !== 'admin') throw forbidden('Only workspace admins can put mail into a mailbox.');
+      if (team.archived_at) throw conflict('This team is archived, so its mailbox takes no mail.');
+      const connection = (
+        await tx.query<{ id: string; kind: string }>(`SELECT id, kind FROM app.connections WHERE team_id = $1 AND scope = 'team' AND slug = $2`, [team.id, params.connection])
+      ).rows[0];
+      if (!connection) throw notFound(`This team has no connection called “${params.connection}”.`);
+      if (connection.kind !== 'email') throw invalid(`The connection “${params.connection}” is not a mail connection.`);
+
+      const messageRef = body.messageRef ?? `<${randomUUID()}@mail.manythreads.invalid>`;
+      // a mail that answers one the mailbox holds joins its thread; any other starts its own
+      const parent = body.inReplyTo
+        ? (await tx.query<{ thread_key: string }>('SELECT thread_key FROM app.connection_messages WHERE connection_id = $1 AND message_id = $2 ORDER BY seq LIMIT 1', [connection.id, body.inReplyTo])).rows[0]
+        : undefined;
+      const threadKey = parent?.thread_key ?? messageRef;
+      const inserted = (
+        await tx.query<{ id: string }>(
+          `INSERT INTO app.connection_messages (workspace_id, team_id, connection_id, direction, folder, thread_key, message_id, in_reply_to, from_address, to_address, subject, body)
+           VALUES ($1, $2, $3, 'in', $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (connection_id, direction, message_id) DO NOTHING RETURNING id`,
+          [team.workspace_id, team.id, connection.id, body.folder ?? 'INBOX', threadKey, messageRef, body.inReplyTo ?? null, body.from, body.to, body.subject, body.body],
+        )
+      ).rows[0];
+      // the same mail twice is one mail: the answer names the row that is already there
+      const row = inserted
+        ? { id: inserted.id, thread_key: threadKey }
+        : (await tx.query<{ id: string; thread_key: string }>(`SELECT id, thread_key FROM app.connection_messages WHERE connection_id = $1 AND direction = 'in' AND message_id = $2`, [connection.id, messageRef])).rows[0];
+      if (!row) throw conflict('That mail could not be stored.');
+      if (inserted) await ctx.jobs.enqueue(tx, WATCH_QUEUE, { workspaceId: team.workspace_id, connectionId: connection.id });
+      return json({ mail: { id: row.id, connectionId: connection.id, threadKey: row.thread_key, messageRef, duplicate: !inserted } }, inserted ? 201 : 200);
     }),
   });
 }

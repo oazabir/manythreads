@@ -53,6 +53,8 @@ export const BotTrigger = z.discriminatedUnion('type', [
     connection: Slug.optional(),
     folder: z.string().min(1).optional(),
     filter: z.string().min(1).optional(),
+    /** Where the bot's post about a new mail thread goes (P8-30). Left out, the first public channel of the team the bot may post in. */
+    channel: ChannelRef.optional(),
   }),
   z.strictObject({ type: z.literal('channel_message'), source: Source.optional() }),
   z.strictObject({ type: z.literal('webhook'), connection: Slug.optional(), event: z.string().min(1).optional() }),

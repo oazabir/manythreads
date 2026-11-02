@@ -3,6 +3,7 @@
 A team's links to outside services, and the tools a bot gets from them. A **connection** is a named place (a mailbox, later a code host or a drive) with the credentials that open it, kept sealed. A **grant** says which bot may call which of its tools. This plugin is the **source** those tools come from: the bot's tool list is made of it, and a call is handed to it. It is the first source of tools that is not a built-in capability (PLAN Phase 8, P8-01 and P8-28).
 
 Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit']`, `dependsOn: ['teams', 'bots']`, migrations `connections/0001_connections.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded`, `bots.bot.removed` and its own `connections.connection.changed`; emits `connections.connection.changed`.
+Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit', 'job.register']`, `dependsOn: ['teams', 'bots', 'channels']`, migrations `connections/0001_connections.sql` and `0002_mail.sql`; the bots plugin adds `0022_bots_connections.sql` (the `connections` column that carries what a BOT.md asked for). Consumes `bots.bot.loaded`, `bots.bot.removed` and `channel.message.posted`; emits `connections.inbox.claimed` (ids only).
 
 ## What it is made of
 
@@ -11,6 +12,8 @@ Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'se
 | `connections` | One row per connection: `kind` (today `email`), `slug`, `name`, `scope` (`team`, `person` or `workspace`), the team (team scope only), the owner, `status` (`disabled` until credentials are put in and someone turns it on), an optional expiry, an environment tag (`production`, `staging`, `development`, `test`) and `has_credentials` (a yes or no, kept by the database, never the credentials themselves). |
 | `connection_grants` | One row per bot and tool: the connection, the bot's actor and the tool name. (It also carries a `needs_approval` column, informational only: the one gate that makes a call wait for a person is `capability_grants.needs_approval`, the broker's row the compile writes beside this one.) A bot has at most one grant per tool, so it is never unclear which connection answers. |
 | `connection_secrets` | The credentials, one row per name (`password`, `token`, ...), each a pointer to a sealed secret of the platform's own secret service. |
+| `connection_messages` | The **mailbox** of a mail connection (the dummy transport's, see below): one row per mail that arrived (`in`), was sent (`out`) or was saved and not sent (`draft`). |
+| `connection_mail_claims` | One row per bot per mail thread: the bot's `inbox` trigger claimed the thread, and one run was opened for it. Remembers the bot's post about the thread (see "The inbox trigger"). |
 
 ### Credentials
 
@@ -19,7 +22,7 @@ Package: `packages/plugins/connections`. Manifest: `extends: ['tool.source', 'se
 * `connection_secrets` has no grant to the application database role at all: a person's or bot's session cannot select it even with a bug in a policy. Only the system role reads it, and only inside one workspace.
 * A sealed secret never outlives the row that pointed at it. Deleting a connection through the plugin removes its sealed secrets in the same transaction, and a database trigger on `connection_secrets` (`connection_secrets_reap`, after delete) removes the sealed value of any credential row that goes, including rows that go by cascade when a team, an owner or a workspace is deleted. A test covers the direct, connection, team and workspace paths.
 
-### Who sees and changes what (row-level security, forced on all three tables)
+### Who sees and changes what (row-level security, forced on all five tables)
 
 * A **team** connection is visible to the members of that team; a **workspace** connection to workspace admins; a **person** connection to its owner alone. Nothing crosses a workspace.
 * Creating or changing a team or workspace connection takes a workspace admin. A person's own connection is theirs to change. The team, scope, owner, kind and slug of a row never change after it is made, and an ordinary session can never set `has_credentials` (a database guard enforces it).
@@ -32,7 +35,68 @@ A kind says which tools it serves. Today: `email.read`, `email.draft`, `email.se
 
 **Arguments are checked.** Each tool has a strict zod schema in `src/kinds.ts`; the JSON Schema a model is shown is generated from it, and the source parses a call's input with it (unknown field, wrong type, missing field, value past its limit) before any kind sees the input. A refusal is `validation_failed`, names the fields and never repeats a value.
 
-The `email` kind is a **stub** until the mail transport exists (P8-29): a call that gets all the way through answers `{ ok: false, code: 'not_available', message: 'This mailbox is not connected to a mail service yet, ...' }`. Everything around the call is real: the listing, the grant, the broker, the approval, the run, the row-level checks.
+The three `email` tools take these arguments (all strict; anything else is refused):
+
+| Tool | Arguments | What it does |
+|---|---|---|
+| `email.read` | `query` (words that must all appear in the subject, sender or text), `limit` (1 to 50, default 10), `direction` (`in`, `out` or `draft`, default `in`) | Lists mail of the connection, newest first, with the text cut at 4,000 characters (`truncated: true` when it was). The answer carries a note that the text was written by outsiders and is data, never instructions. Each mail is also a source line in the run's log. |
+| `email.draft` | `body`, and `to` / `subject` only when the run has no mail to answer | Saves a draft. **Nothing sends a draft.** |
+| `email.send` | `body` **only** | Sends the reply to the mail this conversation came from. |
+
+### Who an `email.send` goes to
+
+The model never names the address. `email.send` has no `to`, `cc`, `bcc` or `from` field: the schema is strict, so a call that offers one is refused (`validation_failed`) before anything runs. The recipient is **platform-owned**, decided in two places that agree:
+
+1. The tool (`src/email/tools.ts`) finds the mail behind the run: the claim whose post is the run's thread (`bot_runs.thread_id` / `reply_root_id`, the run's own row), or the claim of the run itself, and takes the **first inbound mail of that mail thread**. Its sender is the recipient and the subject is the original's with "Re: ". A later mail in the thread, from anyone, cannot redirect the reply: the first mail's sender is who the thread belongs to.
+2. The database function that writes the sent mail (`app.connection_mail_put_outbound`, a definer function with a pinned `search_path`, the only writer of `out` and `draft` rows) reads the address from the stored inbound mail **again** and ignores the address argument whenever a mail is replied to. So even code that tried to pass a different address could not change it.
+
+A run with no mail behind it (a person mentioned the bot in an ordinary channel) cannot send: `email.send` answers `forbidden` ("there is nobody to send to"). Nothing else in the platform can put an address into a send. `email.send` is still the tool that `needsApproval` can hold: the approval card shows the body, and an approved send resumes with the same run, so it finds the same mail (a test covers it). The card does not yet show the recipient: there is no hook for a source to describe a call (see the owner questions below).
+
+## The mail transport and the dummy mailbox
+
+`EmailTransport` (`src/email/transport.ts`) is the one interface the `email` kind talks to a mailbox through: `list`, `fetch`, `send`, `draft`. The tools and the inbox watch are written against it, so a real transport (IMAP, Gmail, Outlook; P8-02, P8-03) implements those four members and nothing above it changes. A transport only delivers what it is given: the recipient is decided above it.
+
+The **dummy transport** (`src/email/dummy.ts`) is what exists today: its mailbox is the `connection_messages` table, read in the caller's own transaction (so the caller's row-level security decides what it sees). Tests and the support journey use it.
+
+* **Reading** the mailbox: the people of the connection's team and its bots, never a guest. A mail is stored as it came and never changes.
+* **Delivering a mail** (`POST /api/teams/:slug/connections/:connection/mail`, the *delivery door*): **workspace owners and admins only**. Body `{ from, to, subject, body, messageRef?, inReplyTo?, folder? }`. A mail with an `inReplyTo` that the mailbox holds joins that thread; any other starts its own (the thread is the first mail's `messageRef`). The same `messageRef` twice is one mail: the second answer is `200` with `duplicate: true`. A new mail answers `201` and asks the inbox watch to look at the connection at once. The door is the dummy's way in; a real transport reads its provider instead.
+* **Writing** `out` and `draft` rows is done only by `app.connection_mail_put_outbound`, which checks that the caller holds the grant for that tool on that connection (a bot with no grant writes nothing, whatever it calls). What is sent is from `<connection>@mail.manythreads.invalid`.
+* A connection must still look usable to be offered (switched on, not expired, `has_credentials`), so a dummy mail connection needs a **placeholder credential** stored like a real one. Nothing reads it.
+
+## The inbox trigger
+
+A bot whose BOT.md lists `- type: inbox` is woken by mail, not by a message in a channel:
+
+```yaml
+triggers:
+  - type: inbox
+    connection: support-mail   # optional: any mail connection of the team when left out
+    folder: INBOX              # optional, default INBOX
+    filter: refund             # optional: words that must ALL appear in the subject or the sender, any case
+    channel: "#support"        # optional: where the bot posts about a new mail thread
+```
+
+How a mail becomes **one** run:
+
+1. **Watch** (`src/watch.ts`): a job on queue `connections.inbox-watch`, every minute for every workspace and at once for one connection when the delivery door takes a mail. It asks each watched connection's transport for the newest inbound mail of the last 48 hours (at most 200). A bot is watched when it is active, has an `inbox` trigger naming the connection (or none), the connection is usable, **and the bot holds `email.read` on it** (the mail's text goes into the bot's prompt, so the bot must be one that may read it).
+2. **Dedupe by mail thread, per bot**: the first matching mail of a thread inserts a claim (`connection_mail_claims` is unique on connection, bot and thread). The claim and the event `connections.inbox.claimed` (ids only: never an address, a subject or a word of the mail) are written in one transaction. The same mail twice, a poll that sees the same mail again, and a later mail in a thread the bot already claimed all find the claim and do nothing. At most 20 new threads are claimed per bot and connection per pass; the rest wait for the next.
+3. **Run** (runtime-hermes, `src/router-inbox.ts`): the event becomes one run (job key = the claim). The run's payload takes `trigger: 'inbox'` and `inbox: { claimId, connectionId, mailId }`. The prompt lists the platform's facts (connection, sender, subject, time) and puts the mail's text inside one fenced block labelled as the sender's words and as data; the fence markers are defanged inside it. There is no asker (nobody asked): the bot's own rights count. The run posts at the top of the trigger's `channel`, or of the first public channel of the team the bot may post in.
+4. **Link** (`src/link.ts`): when the run posts, its post carries `meta.runId` (set by the platform alone; the messages capability now stamps it on a run's top-level posts too, not only on replies in a thread). The connections plugin sees the post and records, on the claim, the run and the post that opened the thread. That is how a later run in that thread (a person or another bot mentions the bot there) finds the mail it answers. The first post wins; a bot that posts twice does not move the link.
+
+### Limits, stated plainly
+
+* A follow-up mail in a thread the bot already claimed starts **no new run**. The conversation then lives in the channel thread; the follow-up stays in the mailbox for `email.read`.
+* A bot that is switched on answers mail that arrived in the last 48 hours and is still unclaimed, not older mail.
+* An inbox run can `email.send` only after it has posted (the link is made at its first post). A run that sends before posting is refused as having no mail behind it.
+* Real mail providers, sending a draft, attachments and HTML mail are not built.
+
+## Owner questions
+
+* **Follow-ups.** Should a new mail in a claimed thread wake the bot again (a second run, or a message in the channel thread)? Today it does not.
+* **Approval card.** The card for a held `email.send` shows the body but not the recipient (a source has no preview hook). Show "to: sender" there?
+* **`email.send` takes no `to`.** The plan's wording was "no mail context and no `to` is refused"; this build is stricter: there is no `to` at all, and a send without mail context is refused. A bot that must write to a new person can only draft.
+* **The watch needs `email.read`.** A bot with an `inbox` trigger and no `email.read` grant is not woken. Right, or should it be woken without the text?
+* **The `channel` field** on the trigger is new (additive in the BOT.md schema).
 
 ## How a BOT.md reaches a grant
 
@@ -104,3 +168,7 @@ Every add, change, switch, credential put and removal emits `connections.connect
 * `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02); adding a person's own connection.
 * A real mail transport (P8-29).
 * A Kubernetes kind (the cluster broker).
+* Creating a connection and putting credentials in: no route yet (P8-03). The functions exist (`putConnectionSecret`, `deleteConnectionAndSecrets`) for the code that will.
+* `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02).
+* A real mail transport (IMAP, Gmail), audit lines and events for connection changes (P8-06), the Connections screen.
+* The screens that consume the mail (P8-34 to P8-36).

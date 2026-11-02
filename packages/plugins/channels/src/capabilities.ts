@@ -45,8 +45,12 @@ export interface PostMessageAnswer {
   threadRootId: string | null;
 }
 
-/** Where the bot run this transaction acts for answers (its own row; a bot reads its live run), or null outside a run or for a run with no reply place. */
-async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: string; replyRootId: string } | null> {
+/**
+ * Where the bot run this transaction acts for answers (its own row; a bot reads its live run), or null outside a run or for a run with no channel. `replyRootId` is null for a
+ * run that answers at the top of its channel (an `inbox` or `routine` run has no thread to answer in): its posts still name the run (`meta.runId`), which is how a later reader
+ * ties a post to the run that wrote it (the connections plugin links a mail to the bot's post that way).
+ */
+async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: string; replyRootId: string | null } | null> {
   const here = (await tx.query<{ run_id: string | null }>(`SELECT app.run_id()::text AS run_id`)).rows[0]?.run_id ?? null;
   if (here === null) return null;
   const row = (
@@ -55,7 +59,7 @@ async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: 
       [here],
     )
   ).rows[0];
-  if (!row?.channel_id || !row.reply_root_id) return null;
+  if (!row?.channel_id) return null;
   return { runId: here, channelId: row.channel_id, replyRootId: row.reply_root_id };
 }
 

@@ -108,6 +108,7 @@ import { KnowledgeBaseDeletedEvent } from './knowledge.base.deleted.ts';
 import { KnowledgeDocumentAddedEvent } from './knowledge.document.added.ts';
 import { KnowledgeDocumentRemovedEvent } from './knowledge.document.removed.ts';
 import { KnowledgeBaseResyncedEvent } from './knowledge.base.resynced.ts';
+import { ConnectionsInboxClaimedEvent } from './connections.inbox.claimed.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
 import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
 import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
@@ -212,6 +213,7 @@ export const eventRegistry = {
   'knowledge.document.added': { 1: KnowledgeDocumentAddedEvent },
   'knowledge.document.removed': { 1: KnowledgeDocumentRemovedEvent },
   'knowledge.base.resynced': { 1: KnowledgeBaseResyncedEvent },
+  'connections.inbox.claimed': { 1: ConnectionsInboxClaimedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
   'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },

@@ -75,3 +75,5 @@ export const putConnectionCredentialRoute = { method: 'PUT', path: '/api/connect
 export const DeleteConnectionResponse = z.strictObject({ deleted: z.literal(true) });
 export type DeleteConnectionResponse = z.infer<typeof DeleteConnectionResponse>;
 export const deleteConnectionRoute = { method: 'DELETE', path: '/api/connections/:id' } as const satisfies ApiRoute;
+
+export * from './mail.ts';

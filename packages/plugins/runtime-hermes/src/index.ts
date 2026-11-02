@@ -54,7 +54,7 @@ export default definePlugin({
         'bot_runner.run.refused',
         'bot_runner.run.unmetered',
       ],
-      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'rhythms.rhythm.ran', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed'],
+      consumes: ['channel.message.posted', 'approvals.approval.decided', 'tasks.task.handed_off', 'tasks.task.completed', 'rhythms.rhythm.ran', 'connections.inbox.claimed', 'bots.bot.loaded', 'bots.bot.removed', 'llm.key.changed'],
     },
     // `bots` owns the rows this routes (and compiles what it needs into them); `channels` owns the messages it reacts to.
     // `guardrails-dlp` redacts the message an approver is shown when the gate holds one (a preview that cannot be redacted is not shown).

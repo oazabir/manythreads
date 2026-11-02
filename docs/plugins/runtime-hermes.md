@@ -36,7 +36,7 @@ routes, and what each honestly means today:
 Never fires: a private channel (a bot conversation is the one exception, and only for the bot it is with: no other bot of the
 team is considered there, and a `mention` or `channel_message` rule never wakes a bot inside somebody's conversation with
 it), a DM, an archived channel. One message starts at most one run per bot (the job's dedupe key `runtime-hermes:<botId>:<messageId>`) and the
-highest-priority trigger wins: conversation, then mention, then channel_message. A `routine`, `inbox` or `webhook` trigger is in
+highest-priority trigger wins: conversation, then mention, then channel_message. An `inbox` trigger is routed from the connections plugin's event, not from a message: see **The inbox trigger** below. A `webhook` trigger is in
 `BOT.md` but not routed by this plugin yet.
 
 **Delegation** — the one way a bot answers a bot. A bot-authored message fires a run only as an explicit `@mention` in a
@@ -256,8 +256,7 @@ Not yet done, deliberately:
   the runtime's token counts into `llm_spend` is a follow-up.
 * **`memory.*`, `files.search`, `knowledge.search` and `tasks.*`** are the capability set of the plugins that own them
   (`knowledge.search` and `tasks.*` answer as stubs today — see [gateway-mcp.md](./gateway-mcp.md)).
-* **`routine`, `inbox` and `webhook` triggers** are not routed; they arrive with the board, the mail
-  connections and P6.
+* **The `webhook` trigger** is not routed yet.
 * **The per-bot channel** and the conversation view are P5-16; this plugin only reacts to it.
 
 ## Configuration
@@ -615,3 +614,11 @@ Honest limits: the count relies on the usage Hermes reports, not on an independe
 `test/gateway-profile.test.ts` (the renderer, and that it refuses a provider key or address), `test/metering.test.ts` (a pod run with a spend line passes; one without raises exactly one `bot_runner.run.unmetered`; a failed run raises none), `test/model-run.test.ts` (a bot on an LLM gateway runner, end to end), the `runs_on` refusal cases in `test/gateway.test.ts` and `test/runner-placement.test.ts` (no process and no call on a refusal; the default runner is used only by a bot with no place of its own), `test/gateway-run.test.ts` (connections, a run end to end with real tool calls at the bot endpoint,
 memory recalled across threads, serial runs per bot, mode B credentials). Run the fake as a dev stand-in with
 `npx tsx tools/fake-hermes-gateway/src/cli.ts [key]`.
+
+## The inbox trigger (PLAN P8-30)
+
+A mail is not a channel message, so the `inbox` trigger has its own router (`router-inbox.ts`). The connections plugin's watch claims a mail thread for a bot and emits `connections.inbox.claimed` (ids only); this plugin subscribes and turns the event into **one** run: a durable latch on the claim's id plus the job's dedupe key `runtime-hermes:<botId>:inbox:<claimId>`. The ids are only a pointer: the bot, the claim, the mail and the connection are read again and must agree with each other and the event, and a bot that is no longer active or no longer lists an `inbox` trigger gets no run.
+
+The run payload takes `trigger: 'inbox'` and `inbox: { claimId, connectionId, mailId }`; it has no asker and no reply root (the bot's post opens the thread). It posts in the trigger's `channel` (a `#name` in the bot's team that the bot may post in) or, with none, the first public channel the bot may post in; with no channel at all, no run starts and a line is logged. The prompt (`buildInboxPrompt`) lists the platform's facts, then puts the mail's text, cut at 8,000 characters, inside one fenced block that says it is the sender's words and data, never instructions. The claim and the link from the mail to the bot's post are in [connections.md](./connections.md).
+
+One platform detail the trigger needed: the `messages.post` capability stamps `meta.runId` on a run's posts even when the run has no reply thread (an `inbox` or `routine` run), where before it did so only for runs that answer in a thread. Such a run's top-level posts now count as the run having spoken.

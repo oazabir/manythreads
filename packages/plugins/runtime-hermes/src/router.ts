@@ -1,6 +1,7 @@
 // Thin facade over the router's focused modules: every name this file's importers use
 // (`index.ts`, `test/router.test.ts`) still resolves here, so no caller changes.
 export {
+  buildInboxPrompt,
   buildPrompt,
   buildTaskPrompt,
   type CardFacts,

@@ -3,14 +3,16 @@ import { inputProblem, TOOLS } from '../src/index.ts';
 
 // The arguments of a source's tool are the model's. They are held to the schema the model was shown, before a kind sees them. No database.
 
-const MAIL = { to: ['a@b.c'], subject: 's', body: 'b' };
+const DRAFT = { to: 'a@b.co', subject: 's', body: 'b' };
 
 describe('inputProblem', () => {
   it('accepts what the schema describes', () => {
     expect(inputProblem('email.read', {})).toBeNull();
     expect(inputProblem('email.read', { query: 'refund', limit: 5 })).toBeNull();
-    expect(inputProblem('email.draft', MAIL)).toBeNull();
-    expect(inputProblem('email.send', MAIL)).toBeNull();
+    expect(inputProblem('email.read', { direction: 'out' })).toBeNull();
+    expect(inputProblem('email.draft', DRAFT)).toBeNull();
+    expect(inputProblem('email.draft', { body: 'b' })).toBeNull();
+    expect(inputProblem('email.send', { body: 'b' })).toBeNull();
   });
 
   it('refuses a field the schema does not name, a wrong type, a missing field and a value past its limit', () => {
@@ -18,16 +20,23 @@ describe('inputProblem', () => {
     expect(inputProblem('email.read', { limit: '5' })).toMatch(/^limit:/);
     expect(inputProblem('email.read', { limit: 51 })).toMatch(/^limit:/);
     expect(inputProblem('email.read', { query: 'x'.repeat(201) })).toMatch(/^query:/);
-    expect(inputProblem('email.send', { to: ['a@b.c'], subject: 's' })).toMatch(/body/);
-    expect(inputProblem('email.send', { ...MAIL, to: [] })).toMatch(/^to:/);
-    expect(inputProblem('email.send', { ...MAIL, to: Array.from({ length: 21 }, () => 'a@b.c') })).toMatch(/^to:/);
-    expect(inputProblem('email.send', { ...MAIL, body: 'x'.repeat(40_001) })).toMatch(/^body:/);
+    expect(inputProblem('email.read', { direction: 'sideways' })).toMatch(/^direction:/);
+    expect(inputProblem('email.send', {})).toMatch(/body/);
+    expect(inputProblem('email.draft', { to: 'not an address', body: 'b' })).toMatch(/^to:/);
+    expect(inputProblem('email.draft', { to: ['a@b.c'], body: 'b' })).toMatch(/^to:/);
+    expect(inputProblem('email.send', { body: 'x'.repeat(40_001) })).toMatch(/^body:/);
     expect(inputProblem('email.read', null)).not.toBeNull();
     expect(inputProblem('email.read', [])).not.toBeNull();
   });
 
+  it('email.send names no recipient: any address field is refused, so the model cannot choose who a mail goes to', () => {
+    for (const field of ['to', 'cc', 'bcc', 'recipient', 'from', 'replyTo']) {
+      expect(inputProblem('email.send', { body: 'b', [field]: 'attacker@example.com' }), field).toMatch(/unexpected field/);
+    }
+  });
+
   it('never repeats a value it refused', () => {
-    expect(inputProblem('email.send', { ...MAIL, body: 'SENTINEL-secret'.repeat(5000) })).not.toContain('SENTINEL');
+    expect(inputProblem('email.send', { body: 'SENTINEL-secret'.repeat(5000) })).not.toContain('SENTINEL');
     expect(inputProblem('email.read', { SENTINEL_FIELD: 'SENTINEL-value' })).not.toContain('SENTINEL-value');
   });
 
@@ -39,8 +48,8 @@ describe('inputProblem', () => {
     const send = TOOLS.find((t) => t.name === 'email.send')!.inputSchema as { type: string; required: string[]; additionalProperties: boolean; properties: Record<string, unknown>; $schema?: string };
     expect(send.type).toBe('object');
     expect(send.additionalProperties).toBe(false);
-    expect([...send.required].sort()).toEqual(['body', 'subject', 'to']);
-    expect(Object.keys(send.properties).sort()).toEqual(['body', 'subject', 'to']);
+    expect([...send.required].sort()).toEqual(['body']);
+    expect(Object.keys(send.properties).sort()).toEqual(['body']);
     expect(send.$schema).toBeUndefined();
     for (const tool of TOOLS) expect(tool.inputSchema, tool.name).toMatchObject({ type: 'object', additionalProperties: false });
   });

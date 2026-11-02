@@ -120,4 +120,6 @@ export async function dropBot(tx: PluginTx, ids: { workspaceId: string; botId: s
   const actors = `SELECT id FROM app.actors WHERE kind = 'bot' AND workspace_id = $1 AND ref_id = $2`;
   await tx.query(`DELETE FROM app.connection_grants WHERE actor_id IN (${actors})`, [ids.workspaceId, ids.botId]);
   await tx.query(`DELETE FROM app.capability_grants WHERE constraints ? 'connection' AND actor_id IN (${actors})`, [ids.workspaceId, ids.botId]);
+  // the bot's claims on mail threads go with it (no foreign key: the bots plugin's table is not this plugin's to reference)
+  await tx.query('DELETE FROM app.connection_mail_claims WHERE workspace_id = $1 AND bot_id = $2', [ids.workspaceId, ids.botId]);
 }

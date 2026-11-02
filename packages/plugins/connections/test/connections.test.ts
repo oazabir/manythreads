@@ -10,8 +10,9 @@ import { compileBot, putConnectionSecret, readConnectionSecret, deleteConnection
 import type { Declared } from '../src/compile.ts';
 
 // P8-28: the connections slice end to end, on a real server. A BOT.md names a connection and its tools; the loader projects it, the connections plugin compiles it into
-// grants on the event, the MCP gateway lists those tools for the bot and hands a call to the connections source after the broker allowed it. The kind is the email STUB
-// (no transport until P8-29): a call that gets through answers `not_available`, and that is the success this file looks for. Everything around the call is real.
+// grants on the event, the MCP gateway lists those tools for the bot and hands a call to the connections source after the broker allowed it. The kind is `email` over the
+// dummy transport (P8-29): a call that gets through answers from an empty mailbox, and that is the success this file looks for. The mail journey itself (a delivered mail,
+// the inbox run, the answer that goes to the sender) is in inbox.test.ts. Everything around the call is real.
 
 vi.setConfig({ testTimeout: 120_000 });
 
@@ -294,9 +295,9 @@ Soul text.
     expect(tools.find((t) => t.name === 'email.read')?.description).not.toContain('Needs a person’s approval');
   });
 
-  it('a call that gets through runs the connection’s kind (the stub answers not_available); the credential is not in the answer', async () => {
+  it('a call that gets through runs the connection’s kind (an empty mailbox answers no messages); the credential is not in the answer', async () => {
     const answer = await called(run, 'email.read', { query: 'refund' });
-    expect(answer).toMatchObject({ ok: false, code: 'not_available' });
+    expect(answer).toMatchObject({ ok: true, messages: [] });
     expect(JSON.stringify(answer)).not.toContain(SECRET);
   });
 
@@ -308,11 +309,11 @@ Soul text.
   });
 
   it('a tool the bot has no grant for is refused by the broker, as for any other capability', async () => {
-    expect(await called(run, 'email.draft', { to: ['a@b.c'], subject: 's', body: 'b' })).toMatchObject({ ok: false, code: 'forbidden' });
+    expect(await called(run, 'email.draft', { to: 'a@b.c', subject: 's', body: 'b' })).toMatchObject({ ok: false, code: 'forbidden' });
   });
 
   it('a send that needs approval waits in the Approvals inbox and does not run', async () => {
-    const answer = await called(run, 'email.send', { to: ['customer@example.com'], subject: 'Your refund', body: 'It is on its way.' });
+    const answer = await called(run, 'email.send', { body: 'It is on its way.' });
     expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
     const row = await sys(async (tx) => (await tx.query<{ tool: string; status: string; resume: { capability: string } }>('SELECT tool, status, resume FROM app.approvals WHERE id = $1', [answer['approvalId']])).rows[0]);
     expect(row).toMatchObject({ tool: 'email.send', status: 'pending', resume: { capability: 'email.send' } });
@@ -325,10 +326,11 @@ Soul text.
     const read = async () => sys(async (tx) => (await tx.query<{ outcome: string; outcome_detail: string | null }>('SELECT outcome, outcome_detail FROM app.approvals WHERE id = $1', [pending])).rows[0]!);
     await until(async () => ['ran', 'failed'].includes((await read()).outcome), 30_000, 'the approved call to be made');
     const row = await read();
-    // The stub answers `not_available` (nothing was sent), which the approvals job records as a failed call with the stub's own sentence: the call reached the
-    // connections source, which is the point. A call the run service could not route would say "no plugin implements the capability".
+    // The run behind this send came from no mail, so the source refuses it (nothing to answer, nobody to send to) and the approvals job records a failed call with the
+    // source's own sentence: the call reached the connections source, which is the point. A call the run service could not route would say "no plugin implements the
+    // capability". A send that does have a mail behind it, approved the same way, is in inbox.test.ts.
     expect(row.outcome).toBe('failed');
-    expect(row.outcome_detail).toContain('not connected to a mail service');
+    expect(row.outcome_detail).toContain('nobody to send to');
     expect(JSON.stringify(row)).not.toContain(SECRET);
   });
 

@@ -50,7 +50,7 @@ export const RunPayload = z.strictObject({
   botId: z.uuid(),
   teamId: z.uuid(),
   channelId: z.uuid(),
-  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned', 'routine']),
+  trigger: z.enum(['conversation', 'mention', 'channel_message', 'task_assigned', 'routine', 'inbox']),
   askerActorId: z.uuid().nullable(),
   /**
    * Where the reply goes: the thread root when the message is inside one, else the message itself (the reply opens the thread). Null for a run
@@ -93,6 +93,12 @@ export const RunPayload = z.strictObject({
       effort: z.enum(['low', 'medium', 'high']).nullable(),
     })
     .optional(),
+  /**
+   * Set when this run is the answer to a mail (an `inbox` trigger, PLAN P8-30): the claim that makes it the one run of this bot for this mail thread, the connection and the
+   * mail. Only the ids travel; the mail is read from its row. The connections plugin finds the claim from this payload (the run's job) when the run posts, and links the
+   * mail to that post. Such a run has no reply root (the post it makes opens the thread) and no asker.
+   */
+  inbox: z.strictObject({ claimId: z.uuid(), connectionId: z.uuid(), mailId: z.uuid() }).optional(),
   /** Marks the payload stored with a gate hold, so that approving it resumes the run past the gate (not past the DLP check). */
   gateHold: z.literal(true).optional(),
   /**

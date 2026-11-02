@@ -50,6 +50,8 @@ export function createConnectionsSource(deps: SecretDeps): ToolSource {
         tool,
         input,
         connection: granted,
+        tx,
+        run,
         credential: (name) => readConnectionSecret(deps, { workspaceId: run.workspaceId, connectionId: granted.id, name }),
       });
     },

@@ -19,7 +19,7 @@ import {
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-// P8-01: who may see a connection (a team's to the people of the team, a workspace's to its admins, a person's to that person alone), who may set one up, that a
+// P8-01 and, in the last two describes, P8-29/P8-30 (the mailbox and the claims of the inbox trigger): who may see a connection (a team's to the people of the team, a workspace's to its admins, a person's to that person alone), who may set one up, that a
 // credential row is unreachable to every person-facing role, and the rules the database keeps whatever the code does (a grant names a connection of its own team and
 // a bot that is a member of it; a secret belongs to the connection's workspace; nobody forges `has_credentials`).
 
@@ -92,7 +92,7 @@ afterAll(async () => {
   if (db) await dropTestDatabase(db);
 });
 
-const TABLES = ['connections', 'connection_grants', 'connection_secrets'];
+const TABLES = ['connections', 'connection_grants', 'connection_secrets', 'connection_messages', 'connection_mail_claims'];
 
 describe('connections tables follow the RLS rules', () => {
   it('pass the harness and read without a per-row policy helper', async () => {
@@ -105,7 +105,7 @@ describe('connections tables follow the RLS rules', () => {
         `SELECT relname, relforcerowsecurity AS force, relrowsecurity AS enabled FROM pg_class WHERE relnamespace = 'app'::regnamespace AND relname = ANY ($1)`,
         [TABLES],
       );
-      expect(rls.rows).toHaveLength(3);
+      expect(rls.rows).toHaveLength(TABLES.length);
       for (const row of rls.rows) expect(row, row.relname).toMatchObject({ force: true, enabled: true });
     } finally {
       await client.end();
@@ -359,5 +359,154 @@ describe('connection secrets', () => {
     expect(await code(insert(mine))).toBeUndefined();
     expect(await code(insert(await sys((tx) => seal(tx, omar.workspaceId))))).toBe('23505');
     expect(await code(insert(await sys((tx) => seal(tx, omar.workspaceId)), 'Bad Name'))).toBe('23514');
+  });
+});
+
+// P8-29/P8-30: the dummy mailbox and the claims of the inbox trigger.
+describe('mail (connection_messages)', () => {
+  const mail = (tx: Tx, f: { connection: string; team: string; direction?: string; messageId: string; from?: string; thread?: string; ws?: string }) =>
+    tx.query<{ id: string }>(
+      `INSERT INTO app.connection_messages (workspace_id, team_id, connection_id, direction, thread_key, message_id, from_address, to_address, subject, body)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'support@example.com', 'Refund', 'Please refund me.') RETURNING id`,
+      [f.ws ?? omar.workspaceId, f.team, f.connection, f.direction ?? 'in', f.thread ?? f.messageId, f.messageId, f.from ?? 'customer@example.com'],
+    );
+  const seen = (p: Persona): Promise<string[]> => as(p, async (tx) => (await tx.query<{ message_id: string }>('SELECT message_id FROM app.connection_messages WHERE direction = $1 ORDER BY message_id', ['in'])).rows.map((r) => r.message_id));
+  let inboundEng: string;
+
+  it('only a workspace admin puts a mail in (the delivery door); a lead, a member, a guest and a bot cannot, and nobody can put in a sent or saved one', async () => {
+    expect(await code(as(omar, (tx) => mail(tx, { connection: ids.eng!, team: ENG, messageId: '<in-1@example.com>' })))).toBeUndefined();
+    for (const person of [nadia, tariq, sameera, lena]) {
+      expect(await code(as(person, (tx) => mail(tx, { connection: ids.eng!, team: ENG, messageId: `<try-${person.key}@example.com>` }))), person.name).toBe('42501');
+    }
+    expect(await code(asActor(botEng, 'bot', (tx) => mail(tx, { connection: ids.eng!, team: ENG, messageId: '<bot@example.com>' })))).toBe('42501');
+    for (const direction of ['out', 'draft']) {
+      expect(await code(as(omar, (tx) => mail(tx, { connection: ids.eng!, team: ENG, direction, messageId: `<${direction}@example.com>` }))), direction).toBe('42501');
+    }
+    inboundEng = (await sys(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.connection_messages WHERE message_id = '<in-1@example.com>'`)).rows[0]!)).id;
+  });
+
+  it('is read by the people of the connection’s team and its bots, and by nobody else', async () => {
+    await sys((tx) => mail(tx, { connection: ids.mkt!, team: MKT, messageId: '<press-1@example.com>' }));
+    expect(await seen(nadia)).toEqual(['<in-1@example.com>']);
+    expect(await seen(tariq)).toEqual(['<press-1@example.com>']);
+    expect(await seen(priya)).toEqual(['<in-1@example.com>', '<press-1@example.com>']);
+    expect(await seen(sameera)).toEqual([]);
+    expect(await seen(lena)).toEqual([]);
+    expect(await asActor(botEng, 'bot', async (tx) => (await tx.query('SELECT 1 FROM app.connection_messages')).rows.length)).toBe(1);
+  });
+
+  it('is immutable to every person-facing role: no update, no delete', async () => {
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.connection_messages SET body = 'changed'`)))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('DELETE FROM app.connection_messages')))).toBe('42501');
+  });
+
+  it('refuses the same mail twice on a connection, a connection of another team and a workspace that is not the connection’s', async () => {
+    expect(await code(sys((tx) => mail(tx, { connection: ids.eng!, team: ENG, messageId: '<in-1@example.com>' })))).toBe('23505');
+    // the same Message-ID on another connection is another mail
+    expect(await code(sys((tx) => mail(tx, { connection: ids.mkt!, team: MKT, messageId: '<in-1@example.com>' })))).toBeUndefined();
+    expect(await code(sys((tx) => mail(tx, { connection: ids.eng!, team: MKT, messageId: '<crossed@example.com>' })))).toBe('23503');
+    expect(await code(sys((tx) => mail(tx, { connection: ids.eng!, team: otherWs.team, messageId: '<foreign@example.com>', ws: otherWs.workspace })))).toMatch(/^(23503|23514)$/);
+  });
+
+  const put = (actor: string, connection: string, tool: string, replyTo: string | null, to: string | null) =>
+    asActor(actor, 'bot', async (tx) => (await tx.query<{ id: string }>('SELECT app.connection_mail_put_outbound($1::uuid, $2, $3::uuid, $4, $5, $6) AS id', [connection, tool, replyTo, to, 'Re: Refund', 'On its way.'])).rows[0]!.id);
+
+  it('a send goes to the sender of the stored mail it answers; the address passed in is ignored', async () => {
+    const id = await put(botEng, ids.eng!, 'email.send', inboundEng, 'attacker@example.com');
+    const row = await sys(async (tx) => (await tx.query<{ direction: string; to_address: string; from_address: string; thread_key: string; in_reply_to: string }>('SELECT direction, to_address, from_address, thread_key, in_reply_to FROM app.connection_messages WHERE id = $1', [id])).rows[0]);
+    expect(row).toMatchObject({ direction: 'out', to_address: 'customer@example.com', thread_key: '<in-1@example.com>', in_reply_to: '<in-1@example.com>' });
+    expect(row?.from_address).toMatch(/^support-mail@/);
+  });
+
+  it('a send needs a mail to answer, and the mail must be an inbound one of the same connection', async () => {
+    expect(await code(put(botEng, ids.eng!, 'email.send', null, 'someone@example.com'))).toBe('23514');
+    const pressMail = await sys(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.connection_messages WHERE message_id = '<press-1@example.com>' AND connection_id = $1`, [ids.mkt])).rows[0]!.id);
+    expect(await code(put(botEng, ids.eng!, 'email.send', pressMail, null))).toBe('P0002');
+    const sent = await sys(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.connection_messages WHERE direction = 'out' AND connection_id = $1`, [ids.eng])).rows[0]!);
+    expect(await code(put(botEng, ids.eng!, 'email.send', sent.id, null))).toBe('P0002');
+  });
+
+  it('writes nothing for a caller with no grant for the tool on that connection (another team’s bot, a tool not granted, a person)', async () => {
+    expect(await code(put(botMkt, ids.eng!, 'email.send', inboundEng, null))).toBe('42501');
+    // a bot of the same team with no grant at all
+    const bare = await sys(async (tx) => {
+      const actor = (await tx.query<{ id: string }>(`INSERT INTO app.actors (kind, workspace_id, ref_id) VALUES ('bot', $1, $2) RETURNING id`, [omar.workspaceId, randomUUID()])).rows[0]!.id;
+      await tx.query(`INSERT INTO app.team_members (team_id, actor_id, workspace_id, role) VALUES ($1, $2, $3, 'member')`, [ENG, actor, omar.workspaceId]);
+      return actor;
+    });
+    expect(await code(put(bare, ids.eng!, 'email.send', inboundEng, null))).toBe('42501');
+    expect(await code(put(bare, ids.eng!, 'email.draft', inboundEng, 'x@example.com'))).toBe('42501');
+    expect(await code(put(botEng, ids.eng!, 'email.read', inboundEng, null))).toBe('23514');
+    expect(await code(as(omar, async (tx) => tx.query('SELECT app.connection_mail_put_outbound($1::uuid, $2, $3::uuid, $4, $5, $6)', [ids.eng, 'email.send', inboundEng, null, 's', 'b'])))).toBe('42501');
+  });
+
+  it('a draft with a mail to answer goes to that mail’s sender; without one it needs an address, and is never sent', async () => {
+    await sys((tx) => tx.query(`INSERT INTO app.connection_grants (workspace_id, connection_id, team_id, actor_id, tool) VALUES ($1, $2, $3, $4, 'email.draft') ON CONFLICT DO NOTHING`, [omar.workspaceId, ids.eng, ENG, botEng]));
+    const answered = await put(botEng, ids.eng!, 'email.draft', inboundEng, 'attacker@example.com');
+    expect(await sys(async (tx) => (await tx.query<{ to_address: string; direction: string }>('SELECT to_address, direction FROM app.connection_messages WHERE id = $1', [answered])).rows[0])).toEqual({ to_address: 'customer@example.com', direction: 'draft' });
+    expect(await code(put(botEng, ids.eng!, 'email.draft', null, null))).toBe('23514');
+    const loose = await put(botEng, ids.eng!, 'email.draft', null, 'someone@example.com');
+    expect((await sys(async (tx) => (await tx.query<{ to_address: string }>('SELECT to_address FROM app.connection_messages WHERE id = $1', [loose])).rows[0]))?.to_address).toBe('someone@example.com');
+  });
+
+  it('go when their connection goes', async () => {
+    const doomed = await sys((tx) => insertConnection(tx, { team: ENG, slug: 'doomed-mail', scope: 'team', owner: omar.actorId }));
+    await sys((tx) => mail(tx, { connection: doomed.id, team: ENG, messageId: '<doomed@example.com>' }));
+    await sys((tx) => tx.query('DELETE FROM app.connections WHERE id = $1', [doomed.id]));
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.connection_messages WHERE connection_id = $1', [doomed.id])).rows.length)).toBe(0);
+  });
+});
+
+describe('mail claims (connection_mail_claims)', () => {
+  let mailId: string;
+  const claim = (tx: Tx, f: { bot: string; thread: string; run?: string | null; root?: string | null }) =>
+    tx.query<{ id: string }>(
+      `INSERT INTO app.connection_mail_claims (workspace_id, team_id, connection_id, bot_id, thread_key, mail_id, run_id, root_message_id, linked_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $7::uuid IS NULL THEN NULL ELSE now() END) RETURNING id`,
+      [omar.workspaceId, ENG, ids.eng, f.bot, f.thread, mailId, f.run ?? null, f.root ?? null],
+    );
+  const claimsSeenBy = (p: Persona): Promise<number> => as(p, async (tx) => (await tx.query('SELECT 1 FROM app.connection_mail_claims')).rows.length);
+
+  it('are written by the system only, and read by the people of the team', async () => {
+    mailId = (await sys(async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.connection_messages WHERE message_id = '<in-1@example.com>' AND connection_id = $1`, [ids.eng])).rows[0]!)).id;
+    expect(await code(sys((tx) => claim(tx, { bot: randomUUID(), thread: '<in-1@example.com>' })))).toBeUndefined();
+    for (const person of [omar, nadia]) expect(await code(as(person, (tx) => claim(tx, { bot: randomUUID(), thread: '<x@example.com>' }))), person.name).toBe('42501');
+    expect(await code(asActor(botEng, 'bot', (tx) => claim(tx, { bot: randomUUID(), thread: '<y@example.com>' })))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.connection_mail_claims SET run_id = gen_random_uuid()`)))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query('DELETE FROM app.connection_mail_claims')))).toBe('42501');
+    expect(await claimsSeenBy(nadia)).toBe(1);
+    expect(await claimsSeenBy(tariq)).toBe(0);
+    expect(await claimsSeenBy(sameera)).toBe(0);
+    expect(await claimsSeenBy(lena)).toBe(0);
+  });
+
+  it('allow one claim per bot per mail thread (the same mail twice is one run), a thread of its own per bot, and a link that is whole or absent', async () => {
+    const botId = randomUUID();
+    expect(await code(sys((tx) => claim(tx, { bot: botId, thread: '<t@example.com>' })))).toBeUndefined();
+    expect(await code(sys((tx) => claim(tx, { bot: botId, thread: '<t@example.com>' })))).toBe('23505');
+    expect(await code(sys((tx) => claim(tx, { bot: randomUUID(), thread: '<t@example.com>' })))).toBeUndefined();
+    // a run without a post, a post without a run: refused by the table
+    expect(await code(sys((tx) => tx.query(`UPDATE app.connection_mail_claims SET run_id = gen_random_uuid() WHERE bot_id = $1`, [botId])))).toBe('23514');
+    const run = randomUUID();
+    const root = randomUUID();
+    expect(await code(sys((tx) => tx.query(`UPDATE app.connection_mail_claims SET run_id = $2, root_message_id = $3, linked_at = now() WHERE bot_id = $1`, [botId, run, root])))).toBeUndefined();
+    // a run and a post each belong to one claim
+    expect(await code(sys((tx) => claim(tx, { bot: randomUUID(), thread: '<u@example.com>', run, root: randomUUID() })))).toBe('23505');
+    expect(await code(sys((tx) => claim(tx, { bot: randomUUID(), thread: '<v@example.com>', run: randomUUID(), root })))).toBe('23505');
+  });
+
+  it('go with their mail', async () => {
+    const doomed = await sys((tx) => insertConnection(tx, { team: ENG, slug: 'doomed-claims', scope: 'team', owner: omar.actorId }));
+    const mailRow = await sys((tx) =>
+      tx.query<{ id: string }>(
+        `INSERT INTO app.connection_messages (workspace_id, team_id, connection_id, direction, thread_key, message_id, from_address, to_address) VALUES ($1, $2, $3, 'in', 'k', 'k', 'a@b.c', 'd@e.f') RETURNING id`,
+        [omar.workspaceId, ENG, doomed.id],
+      ),
+    );
+    await sys((tx) =>
+      tx.query(`INSERT INTO app.connection_mail_claims (workspace_id, team_id, connection_id, bot_id, thread_key, mail_id) VALUES ($1, $2, $3, $4, 'k', $5)`, [omar.workspaceId, ENG, doomed.id, randomUUID(), mailRow.rows[0]!.id]),
+    );
+    await sys((tx) => tx.query('DELETE FROM app.connections WHERE id = $1', [doomed.id]));
+    expect(await sys(async (tx) => (await tx.query('SELECT 1 FROM app.connection_mail_claims WHERE connection_id = $1', [doomed.id])).rows.length)).toBe(0);
   });
 });

@@ -147,3 +147,4 @@ export * from './workshop.replay.started.ts';
 export * from './workshop.terminal.opened.ts';
 export * from './workshop.terminal.closed.ts';
 export * from './audit.export.created.ts';
+export * from './connections.inbox.claimed.ts';
