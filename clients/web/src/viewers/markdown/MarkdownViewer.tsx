@@ -40,8 +40,8 @@ export default function MarkdownViewer({ path, text = '', readOnly, onSave, cont
           click: (view, event) => {
             const box = event.target;
             if (!(box instanceof HTMLInputElement) || box.type !== 'checkbox') return false;
-            const item = box.closest('li[data-type="taskItem"]');
-            const items = Array.from(view.dom.querySelectorAll('li[data-type="taskItem"]'));
+            const item = box.closest('li[data-checked]');
+            const items = Array.from(view.dom.querySelectorAll('li[data-checked]'));
             const nth = item === null ? -1 : items.indexOf(item);
             if (nth < 0 || tickRef.current === null) return false;
             // the box already shows its new state while the click is handled
