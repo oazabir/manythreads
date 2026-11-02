@@ -7,3 +7,4 @@ export * from './render.ts';
 
 export * from './gate.ts';
 export * from './placement.ts';
+export * from './setup-profile.ts';

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "capability",
+        "runtime",
+        "connection",
+        "knowledge",
+        "skill",
+        "runner",
+        "trigger",
+        "model",
+        "other"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "grade": {
+      "type": "string",
+      "enum": [
+        "covered",
+        "grantable",
+        "missing",
+        "blocked",
+        "unclear"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 500
+    }
+  },
+  "required": [
+    "id",
+    "text",
+    "kind",
+    "grade",
+    "reason"
+  ],
+  "additionalProperties": false
+}

@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import type { PluginTemplates } from '@manythreads/sdk';
 import type { TeamTemplate } from '@manythreads/shared';
-import { loadTemplates } from './load.ts';
+import { loadSetupProfile, loadTemplates } from './load.ts';
 
 /** `templates/` at the repository root unless `MANYTHREADS_TEMPLATES_DIR` says otherwise. */
 export const defaultTemplatesDir = (): string =>
@@ -20,8 +20,16 @@ export function createTemplateService(dir: string | (() => string) = defaultTemp
     });
     return loaded;
   };
+  let profile: ReturnType<PluginTemplates['setupProfile']> | undefined;
   return {
     list,
     get: async (id) => (await list()).find((t) => t.id === id),
+    setupProfile: () => {
+      profile ??= loadSetupProfile(typeof dir === 'function' ? dir() : dir);
+      profile.catch(() => {
+        profile = undefined;
+      });
+      return profile;
+    },
   };
 }

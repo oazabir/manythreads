@@ -41,6 +41,8 @@ Every proposal carries `checks` (name, ok, message). For `bots/<slug>/BOT.md` th
 - **Bot page**: the footer has **Save as proposal** and, for a lead or admin, **Propose and apply**. A member reads the definition and proposes from Files.
 - **Files**: the four places are read-only for everyone ("Change by proposal"); **Propose a change** (file menu, the note, History) opens the dialog with the whole file, the lines that change, and the same two buttons; **Propose a file** adds a new file in such a folder; History offers **Propose this version** in place of Restore.
 
+- **Add a bot** (`/t/:team/bots/new`): a person describes a bot, a helper proposes it, and the proposals it files are these ordinary proposals (a `bots/<slug>/BOT.md`, optionally a skill and a `TEAM.md` change), applied from the same page or from the Add a bot screen. See [workshop.md](./workshop.md). The helper calls `proposals.propose` as the person, so their rights decide what can be filed.
+
 ## Not yet
 
 - Nobody is notified when a proposal waits (the Proposals link on the Bots roster shows the count).

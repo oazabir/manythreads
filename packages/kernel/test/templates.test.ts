@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { loadTemplates, TemplateLoadError } from '../src/templates/index.ts';
+import { loadSetupProfile, loadTemplates, TemplateLoadError } from '../src/templates/index.ts';
 
 const templatesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../templates');
 
@@ -71,6 +71,14 @@ describe('shipped templates', () => {
       'product-design': ['bots/brain/BOT.md'],
       research: ['bots/brain/BOT.md'],
     });
+  });
+
+  it('the "Add a bot" helper profile loads, is not a team template, and offers only its four tools', async () => {
+    const { profile, prompt } = await loadSetupProfile(templatesDir);
+    expect(profile.tools).toEqual(['describe_self', 'knowledge_search', 'ask_clarification', 'propose_config']);
+    expect(profile.model.aliases).toEqual(['smart', 'fast']);
+    expect(prompt).toContain('describe_self');
+    expect((await loadTemplates(templatesDir)).map((t) => t.id)).not.toContain('_setup');
   });
 
   it('channel sets match SPEC §13', async () => {
@@ -212,5 +220,15 @@ roleTags: []
       await put('t1', `${valid}files: {}\n`);
       await expect(loadTemplates(tmp)).rejects.toThrow(/files: come from the bots\/ folder/);
     });
+  });
+
+  it('skips a folder whose name starts with an underscore (the helper profile lives in one) and names the file of a bad profile', async () => {
+    await fresh();
+    await put('t1', valid);
+    await putFile('_setup', 'PROFILE.md', 'no frontmatter at all');
+    expect((await loadTemplates(tmp)).map((t) => t.id)).toEqual(['t1']);
+    await expect(loadSetupProfile(tmp)).rejects.toThrow(/_setup[/\\]PROFILE\.md/);
+    await putFile('_setup', 'PROFILE.md', '---\nname: H\nrole: r\nmodel: {aliases: [smart]}\ntools: [describe_self, shell]\n---\n\nprompt\n');
+    await expect(loadSetupProfile(tmp)).rejects.toBeInstanceOf(TemplateLoadError);
   });
 });

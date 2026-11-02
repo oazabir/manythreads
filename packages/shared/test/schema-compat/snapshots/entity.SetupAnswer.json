@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questionId": {
+      "type": "string"
+    },
+    "requirementId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$"
+    },
+    "question": {
+      "type": "string",
+      "maxLength": 400
+    },
+    "answer": {
+      "type": "string",
+      "maxLength": 1000
+    }
+  },
+  "required": [
+    "questionId",
+    "requirementId",
+    "question",
+    "answer"
+  ],
+  "additionalProperties": false
+}

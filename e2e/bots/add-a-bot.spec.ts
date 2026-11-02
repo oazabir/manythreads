@@ -1,0 +1,205 @@
+import { expect, test, type Page } from '@playwright/test';
+import { startFakeLlm, type FakeLlm } from '../../tools/fake-llm/src/server.ts';
+import { conversationStackEnv } from '../conversations/support.ts';
+import { startStack, type Stack } from '../fixtures/stack.ts';
+import { PHONE, apiOn, noSidewaysScroll, openOn } from '../support/stack-browser.ts';
+
+/*
+ * "Add a bot" in the browser (PLAN P7-02 to P7-04): a person writes a brief, a helper looks at what the team has, the platform grades each need, the helper asks one list of questions,
+ * and proposes the bot as a diff that waits for Approve. The model is a stand-in that answers with the tool calls this spec scripts (the helper's choices); everything else is the
+ * real server: the grading, the refusals, the proposals and the approval. Both layouts. Runs on a stack of its own because approving commits a bot.
+ */
+test.describe.configure({ mode: 'serial' });
+
+type Call = { name: string; args: unknown };
+let script: Call[] = [];
+let fake: FakeLlm;
+let stack: Stack;
+
+test.beforeAll(async ({ playwright }) => {
+  fake = await startFakeLlm({
+    masterKey: 'sk-fake',
+    completion: () => {
+      const next = script.shift();
+      if (!next) return 'done';
+      return {
+        status: 200,
+        body: {
+          id: 'chatcmpl-e2e',
+          model: 'smart',
+          choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: `call_${script.length}`, type: 'function', function: { name: next.name, arguments: JSON.stringify(next.args) } }] }, finish_reason: 'tool_calls' }],
+          usage: { prompt_tokens: 30, completion_tokens: 8, total_tokens: 38 },
+        },
+      };
+    },
+  });
+  stack = await startStack({ ...conversationStackEnv(), MANYTHREADS_LITELLM_URL: fake.url, MANYTHREADS_LITELLM_MASTER_KEY: 'sk-fake' });
+  const api = await apiOn(playwright, stack, 'omar');
+  const headers = await api.headers();
+  const created = await api.ctx.post('/api/workspace/llm/providers', { data: { name: 'OpenAI', kind: 'openai', apiKey: ['sk-e2e', 'setup-key-0001'].join('') }, headers });
+  expect(created.status(), await created.text()).toBeLessThan(300);
+  const providerId = ((await created.json()) as { provider: { id: string } }).provider.id;
+  const bound = await api.ctx.put('/api/workspace/llm/aliases/smart', { data: { providerId, model: 'gpt-4o', fallbacks: [] }, headers });
+  expect(bound.status(), await bound.text()).toBe(200);
+  // a save reaches the proxy a moment later: move it into the past instead of waiting
+  await stack.sql(`UPDATE app.llm_aliases SET updated_at = updated_at - interval '1 minute'`);
+  await stack.sql(`UPDATE app.llm_providers SET updated_at = updated_at - interval '1 minute'`);
+});
+
+test.afterAll(async () => {
+  await stack?.stop();
+  await fake?.close();
+});
+
+const REQ = [
+  { id: 'post', text: 'Answer in channels', kind: 'capability', name: 'messages.post' },
+  { id: 'mail', text: 'Watch the support mailbox', kind: 'connection', name: 'mailbox' },
+  { id: 'tone', text: 'Friendly but short', kind: 'other' },
+];
+
+const botMd = (name: string): string =>
+  ['---', 'schema: 1', `name: ${name}`, 'role: Answers questions about the release checklist.', 'kind: agent', 'runtime: hermes', 'model:', '  aliases: [smart]', 'triggers:', '  - type: mention', 'capabilities:', '  native: [messages.post]', '---', '', 'You answer questions about the release checklist. If you do not know, say so and ask a person.', ''].join('\n');
+
+const BRIEF = 'A bot that answers questions about our release checklist and watches the support mailbox.';
+
+/** Writes the brief, starts the helper and waits for its one list of questions. */
+async function askAndWait(page: Page): Promise<void> {
+  await page.getByTestId('setup-brief').fill(BRIEF);
+  await page.getByTestId('setup-name').fill('Release helper');
+  await page.getByTestId('setup-start').click();
+  await expect(page.getByTestId('setup-questions')).toBeVisible({ timeout: 60_000 });
+}
+
+test('an admin (who also leads Engineering) writes a brief, sees the grades and the questions, answers them by keyboard, and approves: the bot exists only then', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(240_000);
+  script = [
+    { name: 'describe_self', args: {} },
+    { name: 'ask_clarification', args: { summary: 'A release checklist helper.', requirements: REQ } },
+    { name: 'propose_config', args: { slug: 'release-helper', name: 'Release helper', summary: 'Answers release checklist questions when mentioned.', botMd: botMd('Release helper'), requirements: REQ } },
+  ];
+  const api = await apiOn(playwright, stack, 'omar');
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    // ---- the way in: a button on the Bots page
+    await page.getByTestId('roster-add-bot').click();
+    await expect(page).toHaveURL(/\/t\/engineering\/bots\/new$/);
+    await expect(page.getByTestId('setup-screen')).toBeVisible();
+    await expect(page.getByLabel('What should this bot do?')).toBeVisible();
+    await expect(page.getByText('What happens next')).toBeVisible();
+    await expect(page.getByTestId('setup-start')).toBeDisabled();
+    expect(await noSidewaysScroll(page)).toBe(true);
+
+    // ---- discovery: what the team has, each need graded by the platform, one question for each gap
+    await askAndWait(page);
+    await expect(page).toHaveURL(/[?&]s=/);
+    await expect(page.getByTestId('setup-inventory')).toContainText('What Engineering has');
+    const chips = page.locator('[data-testid="setup-feasibility"] [data-requirement]');
+    await expect(chips).toHaveCount(3);
+    await expect(page.locator('[data-requirement="post"] [data-grade]')).toHaveAttribute('data-grade', 'covered');
+    await expect(page.locator('[data-requirement="mail"] [data-grade]')).toHaveAttribute('data-grade', 'missing');
+    await expect(page.locator('[data-requirement="tone"] [data-grade]')).toHaveAttribute('data-grade', 'unclear');
+    await expect(page.locator('[data-testid="setup-questions"] [data-question]')).toHaveCount(2);
+    await expect(page.getByTestId('setup-send')).toBeDisabled();
+    expect(await noSidewaysScroll(page)).toBe(true);
+    // nothing was filed while the helper only asked
+    expect((await api.ctx.get('/api/teams/engineering/proposals')).ok()).toBe(true);
+    const before = await api.get<{ proposals: Array<{ path: string }> }>('/api/teams/engineering/proposals');
+    expect(before.proposals.some((p) => p.path === 'bots/release-helper/BOT.md')).toBe(false);
+
+    // ---- answering by keyboard: focus an option, press Enter; type into the other box
+    const first = page.locator('[data-question="q1"] [data-testid="setup-option"]').first();
+    await first.focus();
+    await page.keyboard.press('Enter');
+    await expect(first).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#su-a-q2').fill('Short answers');
+    await expect(page.getByTestId('setup-send')).toBeEnabled();
+    await page.locator('#su-a-q2').press('Enter');
+
+    // ---- the proposal: the file as a diff, what it will not do, and a button that waits for a person
+    await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('setup-file').first()).toContainText('bots/release-helper/BOT.md');
+    await expect(page.getByTestId('proposal-diff')).toContainText('name: Release helper');
+    await expect(page.getByTestId('setup-limits')).toContainText('mailbox');
+    expect(await noSidewaysScroll(page)).toBe(true);
+    const missing = await api.ctx.get('/api/teams/engineering/bots/release-helper');
+    expect(missing.status()).toBe(404);
+
+    // ---- Approve creates the bot
+    await page.getByTestId('setup-approve').click();
+    await expect(page.getByTestId('setup-created')).toBeVisible({ timeout: 30_000 });
+    await expect.poll(async () => (await api.ctx.get('/api/teams/engineering/bots/release-helper')).status(), { timeout: 30_000 }).toBe(200);
+    await page.getByTestId('setup-open-bot').click();
+    await expect(page.getByTestId('bot-page')).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a team lead who is not an admin gets the same help, but the approval waits for an admin: the proposal is filed and the page says so', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(240_000);
+  // Tariq leads Marketing and is a plain member of the workspace: the one real "lead only" person in the fixtures
+  script = [
+    { name: 'describe_self', args: {} },
+    { name: 'ask_clarification', args: { requirements: [REQ[1], REQ[2]] } },
+    { name: 'propose_config', args: { slug: 'lead-helper', name: 'Lead helper', botMd: botMd('Lead helper'), requirements: [REQ[1], REQ[2]] } },
+  ];
+  const { page, context } = await openOn(browser, playwright, stack, 'tariq', '/t/marketing/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await askAndWait(page);
+    await page.locator('[data-question="q1"] [data-testid="setup-option"]').first().click();
+    await page.locator('#su-a-q2').fill('Short answers');
+    await page.getByTestId('setup-send').click();
+    await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('setup-file').first()).toContainText('bots/lead-helper/BOT.md');
+    await expect(page.getByTestId('setup-approve')).toHaveCount(0);
+    await expect(page.getByTestId('setup-cannot-approve')).toBeVisible();
+    expect(await noSidewaysScroll(page)).toBe(true);
+    const api = await apiOn(playwright, stack, 'omar');
+    expect((await api.ctx.get('/api/teams/marketing/bots/lead-helper')).status()).toBe(404);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a member gets the same help, but the approval is for an admin: the proposal waits and the page says so', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(240_000);
+  script = [
+    { name: 'describe_self', args: {} },
+    { name: 'ask_clarification', args: { requirements: [REQ[1], REQ[2]] } },
+    { name: 'propose_config', args: { slug: 'wait-helper', name: 'Wait helper', botMd: botMd('Wait helper'), requirements: [REQ[1], REQ[2]] } },
+  ];
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await askAndWait(page);
+    await page.locator('[data-question="q1"] [data-testid="setup-option"]').first().click();
+    await page.locator('#su-a-q2').fill('Short answers');
+    await page.getByTestId('setup-send').click();
+    await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('setup-approve')).toHaveCount(0);
+    await expect(page.getByTestId('setup-cannot-approve')).toBeVisible();
+    await expect(page.getByTestId('setup-edit')).toBeVisible();
+    expect(await noSidewaysScroll(page)).toBe(true);
+    const api = await apiOn(playwright, stack, 'omar');
+    expect((await api.ctx.get('/api/teams/engineering/bots/wait-helper')).status()).toBe(404);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a helper that cannot finish says so in one sentence and offers to start again', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(120_000);
+  // the stand-in answers in plain words twice: the helper must finish with a tool, so it gives up
+  script = [];
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await page.getByTestId('setup-brief').fill(BRIEF);
+    await page.getByTestId('setup-start').click();
+    await expect(page.getByTestId('setup-failed')).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId('setup-failed')).toContainText('did not finish');
+    await page.getByTestId('setup-again').click();
+    await expect(page.getByTestId('setup-brief')).toBeVisible();
+    expect(await noSidewaysScroll(page)).toBe(true);
+  } finally {
+    await context.close();
+  }
+});

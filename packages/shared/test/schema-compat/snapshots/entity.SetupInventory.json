@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "team": {
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "asker": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "enum": [
+            "member",
+            "lead",
+            "admin"
+          ]
+        },
+        "canGrantDestructive": {
+          "type": "boolean"
+        },
+        "canAddBot": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "role",
+        "canGrantDestructive",
+        "canAddBot"
+      ],
+      "additionalProperties": false
+    },
+    "bots": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "role",
+          "kind",
+          "runtime",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "knowledge": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "skills": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "runners": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "kind",
+          "status",
+          "isDefault"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "alias"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "channels": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "roleTags": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "capabilities": {
+      "maxItems": 300,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "destructive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "destructive"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "triggers": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "available"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "runtimeAllowed": {
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "guardDefault": {
+      "type": "string"
+    },
+    "connections": {
+      "maxItems": 50,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "tools": {
+            "maxItems": 50,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "tools"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "connectionsNote": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "team",
+    "asker",
+    "bots",
+    "knowledge",
+    "skills",
+    "runners",
+    "models",
+    "channels",
+    "roleTags",
+    "capabilities",
+    "triggers",
+    "runtimeAllowed",
+    "guardDefault",
+    "connections",
+    "connectionsNote"
+  ],
+  "additionalProperties": false
+}

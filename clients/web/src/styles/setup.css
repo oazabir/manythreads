@@ -1,0 +1,399 @@
+/* The "Add a bot" screen (PLAN P7-04, mockup section `setup`). Every class here is prefixed `su-` so nothing collides with a shared class; the diff reuses `.diff` of the Files
+ * screen through the Proposals parts. Colours come from tokens.css only. Phone width (390px) is the narrowest it is made for: every row wraps, nothing scrolls sideways. */
+
+.su-screen {
+  padding: 18px 20px 28px;
+  overflow: auto;
+  max-width: 1100px;
+}
+
+.su-back {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+}
+
+.su-head {
+  margin-bottom: 14px;
+}
+
+.su-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.su-sub {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.su-brief-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.su-side,
+.su-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.su-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.su-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.su-count {
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.su-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.su-opt {
+  color: var(--mute);
+  font-weight: 400;
+}
+
+.su-hint {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.su-why {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--warn-ink);
+  font-size: 12.5px;
+}
+
+.su-summary {
+  margin: 0;
+  font-size: 13.5px;
+  overflow-wrap: anywhere;
+}
+
+.su-textarea,
+.su-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+}
+
+.su-textarea {
+  resize: vertical;
+}
+
+.su-textarea:focus-visible,
+.su-input:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.su-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.su-steps,
+.su-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.su-steps li,
+.su-list li {
+  margin-bottom: 4px;
+}
+
+.su-who {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.su-brief-text {
+  margin: 0;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.su-working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 13.5px;
+}
+
+.su-spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--human);
+  border-radius: 50%;
+  animation: su-turn 0.9s linear infinite;
+}
+
+@keyframes su-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .su-spin {
+    animation: none;
+  }
+}
+
+.su-inv {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.su-inv-row {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.su-inv-row dt {
+  color: var(--mute);
+}
+
+.su-inv-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.su-feas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.su-feas-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.su-feas-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.su-feas-why {
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.su-grade {
+  flex: none;
+  min-width: 7.5rem;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 11.5px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.su-grade.covered {
+  background: var(--ok-wash);
+  border-color: var(--ok-border);
+  color: var(--ok-ink);
+}
+
+.su-grade.grantable {
+  background: var(--human-wash);
+  border-color: var(--human-border);
+  color: var(--human);
+}
+
+.su-grade.missing,
+.su-grade.unclear {
+  background: var(--warn-wash);
+  border-color: var(--warn-border);
+  color: var(--warn-ink);
+}
+
+.su-grade.blocked {
+  background: var(--alert-wash);
+  border-color: var(--alert-border);
+  color: var(--alert-ink);
+}
+
+.su-qs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.su-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.su-legend {
+  padding: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.su-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.su-option {
+  min-height: 34px;
+  padding: 4px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.su-option:hover {
+  background: var(--msg-hover);
+}
+
+.su-option[aria-pressed="true"] {
+  background: var(--human-wash);
+  border-color: var(--human);
+  color: var(--human);
+}
+
+.su-option:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.su-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.su-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.su-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: 13px;
+}
+
+.su-path {
+  overflow-wrap: anywhere;
+}
+
+.su-file-tag {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.su-limits {
+  background: var(--warn-wash);
+  border-color: var(--warn-border);
+}
+
+@media (width <= 760px) {
+  .su-screen {
+    padding: 14px 16px 24px;
+  }
+
+  .su-brief-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .su-inv-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .su-feas-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .su-grade {
+    min-width: 0;
+  }
+
+  .su-actions .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

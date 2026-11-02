@@ -74,6 +74,7 @@ import {
   ProposalAuthorKind,
   ProposalOp,
   ProposalStatus,
+  SetupStatus,
   RunSourceScope,
   ScopedKvScopeType,
   TeamRole,
@@ -92,6 +93,7 @@ import {
   memoryMigrationSource,
   onboardingMigrationSource,
   proposalsMigrationSource,
+  workshopMigrationSource,
   auditMigrationSource,
   guardrailsDlpMigrationSource,
   rhythmsMigrationSource,
@@ -189,6 +191,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'proposals.author_kind': ProposalAuthorKind,
   'proposals.op': ProposalOp,
   'proposals.status': ProposalStatus,
+  'setup_sessions.status': SetupStatus,
   'audit_events.actor_kind': AuditActorKind,
   'audit_events.category': AuditCategory,
   'audit_events.outcome': AuditOutcome,
@@ -215,7 +218,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

@@ -90,6 +90,7 @@ import {
   type WorkspaceRole,
 } from '@manythreads/shared';
 import type { Transport } from './client';
+import { installSetupMock } from './mock-setup';
 
 /*
  * Mock transport (P2-10a, kept on the real shared schemas in P2-10b). Enabled with `?mock=1` (remembered for the tab)
@@ -1006,6 +1007,15 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     const t = teamOf(params.slug);
     manage(t);
     return { invitations: invitations.filter((i) => i.teamSlug === t.slug).map(invitationBody) };
+  });
+
+  // "Add a bot" (P7-04): a scripted helper and the proposals it files, in mock-setup.ts
+  installSetupMock(on, {
+    canApprove: () => isAdmin(me()),
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+    teamName: (slug) => teamOf(slug).name,
   });
 
   return async (req) => {

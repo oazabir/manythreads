@@ -123,9 +123,9 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 4 | 4 | Files and the team repo | L | 3 | 12 of 13 built |
 | 5 | 5 | Bots, gateways, conversations and Brain | XXL | 4 | 27 of 28 built, 1 partly |
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
-| 7 | 14 | Messaging parity and moving in | XL | 6 | 18 of 23 built, 3 partly |
+| 7 | 14 | Messaging parity and moving in | XL | 6 | 19 of 24 built, 3 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 3 of 13 built, 2 partly |
-| 9 | 7 | Self-setup and the Workshop | L | 14 | 3 of 11 built |
+| 9 | 7 | Self-setup and the Workshop | L | 14 | 5 of 11 built, 1 partly |
 | 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 2 of 36 built, 6 partly |
 | 11 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8 | 0 of 25 built |
 | 12 | 16 | Connectors to the tools a company already uses | XL | 15 | 0 of 12 built |
@@ -147,7 +147,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-10-31)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **102 of 294 tasks (the 293 rows of this plan plus the follow-up P14-01b) are built, 39 are partly built, 153 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **116 of 295 tasks (the 294 rows of this plan plus the follow-up P14-01b) are built, 32 are partly built, 146 are not built and 1 was built as something else.** The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -159,14 +159,14 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 4 · Files and the team repo | 12 | 0 | 1 | 0 |
 | 5 · Bots, gateways, conversations and Brain | 27 | 1 | 0 | 0 |
 | 6 · Tasks, boards, orchestration, rhythms and pages | 7 | 6 | 0 | 0 |
-| 7 · Self-setup and the Workshop | 3 | 0 | 8 | 0 |
+| 7 · Self-setup and the Workshop | 5 | 1 | 5 | 0 |
 | 8 · Connections, knowledge, email bots, team inbox and memory sharing | 2 | 6 | 28 | 0 |
 | 9 · Surfaces | 0 | 0 | 9 | 0 |
 | 10 · Onboarding, admin and deployment | 3 | 11 | 2 | 0 |
 | 11 · Mobile client | 0 | 0 | 10 | 0 |
 | 12 · Full persona end-to-end automation and user manual | 0 | 0 | 7 | 1 |
 | 13 · Screenshot UI review | 0 | 0 | 11 | 0 |
-| 14 · Messaging parity and moving in | 12 | 7 | 4 | 0 |
+| 14 · Messaging parity and moving in | 19 | 3 | 2 | 0 |
 | 15 · Voice rooms, meeting transcripts and meeting memory | 0 | 0 | 25 | 0 |
 | 16 · Connectors to the tools a company already uses | 0 | 0 | 12 | 0 |
 | 17 · Video calls, screen sharing and the meeting assistant | 0 | 0 | 12 | 0 |
@@ -297,14 +297,14 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P6-11 | Seed v6 (board, rhythms, page, production); event contracts | Built | packages/test-utils/src/seed-cli.ts (seed v6 work: board, rhythms, page, production); shared/src/events tasks.*, rhythms.rhythm.ran | seed lives in test-utils, not e2e/fixtures |
 | P6-12 | Engineering template bots: Orchestrator, Reviewer, Tester, Deploy … | Built | templates/engineering/bots/{engineer,code-reviewer,tester,deployer,alert-triage,standup-relay}/BOT.md with evals/*.yaml | roles renamed (Orchestrator=engineer, Reviewer=code-reviewer, Deploy=deployer); no separate setup prompt found |
 
-### Phase 7 · Self-setup and the Workshop — 3 built, 0 partly, 8 not built
+### Phase 7 · Self-setup and the Workshop — 5 built, 1 partly, 5 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
 | P7-01 | Schema: Proposal (target path, diff, base sha, author, status … | Built | packages/plugins/proposals (migration 0001, service.ts apply commits as approver); shared/entities/proposal.ts; BotPage.tsx save-as-proposal; kernel … |  |
-| P7-02 | Setup profile with a tiny toolset only: describe_self, read-only … | Not built |  | no templates/_setup, no plugins/workshop, no describe_self/propose_config/ask_clarification tools |
-| P7-03 | Requirement grading Grade enum (covered · grantable · missing · … | Not built |  | no Grade enum, no requirement grading, no propose_config |
-| P7-04 | Web: Add a bot flow (brief, discovery with grades, proposal with … | Not built | clients/web/src/screens/bots/BotRoster.tsx (no add-bot flow); no screens/setup | no Add a bot flow (brief, discovery, diff proposal, approve creates bot) |
+| P7-02 | Setup profile with a tiny toolset only: describe_self, read-only … | Built | templates/_setup/PROFILE.md (loader skips `_` dirs, `ctx.templates.setupProfile()`); packages/plugins/workshop (tools.ts, session.ts, loop.ts, inventory.ts, migration 0001 setup_sessions); gateway-llm `chat` with no bot/run (`purpose: setup`); kernel `capability.call` door; docs/plugins/workshop.md | the helper has its own small tool loop over `provider.llm.chat`, not the `model` runtime or Hermes (neither can host a session before a bot exists; reasoning in workshop.md); proved with a scripted model stand-in only, not against a live model; no connections in `describe_self` (none exist); no audit entry or `workshop.*` event |
+| P7-03 | Requirement grading Grade enum (covered · grantable · missing · … | Built | shared/entities/setup.ts (Grade); workshop/src/grade.ts, policy.ts, team-defaults.ts, tools.ts (propose_config files proposals through P7-01) | grading and refusals are code, not model-trusted; new `TEAM.md` keys `defaults.botRuntime` and `defaults.guardPreset` (owner decision: a missing key is the documented default, a key that cannot be read is the strictest); skills filed at `skills/<slug>/SKILL.md` (no reader for skills yet); connections and `inbox`/`webhook` triggers always grade missing |
+| P7-04 | Web: Add a bot flow (brief, discovery with grades, proposal with … | Partly built | clients/web/src/screens/setup (SetupScreen, parts, Proposal, model, api), styles/setup.css, `/t/:team/bots/new`, Add a bot button in BotRoster, mock-setup.ts; clients/web/test/setup-*.test.ts; e2e/bots/add-a-bot.spec.ts | no template picker, no connections wizard, "Edit on the bot page" is "Review in Proposals"; no Workshop tab or list of earlier setup conversations (P7-05); Approve applies the proposals one after the other and the loader applies the grants when the file lands (no separate grant step) |
 | P7-05 | Workshop tab (Build · Rehearse · Live) in the conversation view … | Not built |  | no Workshop tab (Build/Rehearse/Live), no plugins/workshop, no test.write; only the Test action of P7-11 exists |
 | P7-06 | Learning loop: correction files a lesson to lessons.md (proposal) … | Not built | packages/plugins/memory/src/platform.ts (lessons.md path helper only) | no correction-to-lesson, eval-case, rule proposal or compaction proposal |
 | P7-07 | Record and replay of guard and gate decisions only (free); full model … | Not built |  | no record/replay of guard and gate decisions, no re-assessment |
@@ -433,7 +433,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P13-10 | Keep the pre-checks, spacing lint, contrast check and Tab-walk in CI … | Not built |  | no pre-check/contrast/Tab-walk CI jobs; USER_JOURNEYS.md not generated |
 | P13-11 | Build the /dev/components gallery (Button, Chip, Card, Table row … | Not built | clients/web/src/pages/DevTokens.tsx (/dev/tokens), DevViewers; eslint.config.js raw-hex ban; stylelint.config.js color-no-hex | no /dev/components gallery, no 4px spacing lint |
 
-### Phase 14 · Messaging parity and moving in — 15 built, 6 partly, 2 not built
+### Phase 14 · Messaging parity and moving in — 19 built, 3 partly, 2 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|

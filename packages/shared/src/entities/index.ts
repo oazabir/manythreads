@@ -43,3 +43,4 @@ export * from './audit.ts';
 export * from './guardrails.ts';
 export * from './knowledge.ts';
 export * from './avatar.ts';
+export * from './setup.ts';

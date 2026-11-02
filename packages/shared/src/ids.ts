@@ -168,3 +168,7 @@ export type AuditEventId = z.infer<typeof AuditEventId>;
 /** A custom data-loss rule an admin wrote (guardrails-dlp). */
 export const DlpRuleId = z.uuid().brand<'DlpRuleId'>();
 export type DlpRuleId = z.infer<typeof DlpRuleId>;
+
+/** One "Add a bot" conversation: a person's brief, what was found out and the proposals it ended in (`setup_sessions`, PLAN P7-02). */
+export const SetupSessionId = z.uuid().brand<'SetupSessionId'>();
+export type SetupSessionId = z.infer<typeof SetupSessionId>;

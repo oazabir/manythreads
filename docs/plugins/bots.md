@@ -58,6 +58,8 @@ emits `bots.bot.loaded` again, which the gateway turns into the bot's LLM key. A
 costs one blob read a day. There is no server-start hook for a non-identity plugin, so the first run is the next 03:11 UTC; recommitting
 a `BOT.md` does the same at once.
 
+**Adding a bot by describing it (P7-02 to P7-04).** The roster has an **Add a bot** button (`/t/:team/bots/new`). A helper drafts the `bots/<slug>/BOT.md` from a brief, within the team's defaults and what the asker may grant, and files it as a proposal; the loader above reads it once an admin approves. See [workshop.md](./workshop.md).
+
 ## Pairing (SPEC §7.6)
 
 A bot never holds a credential — its runtime holds a **pairing token**: 256 random bits, base64url, **shown once**;

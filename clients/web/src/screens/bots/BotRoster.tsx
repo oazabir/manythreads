@@ -3,6 +3,7 @@ import type { BotSummary, HermesConnection } from '@manythreads/shared';
 import { QueryView } from '../../components/states';
 import { Avatar } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
+import { useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { fetchProposals } from '../proposals/api';
 import { botAvailability, useAgentConnections } from './availability';
@@ -76,6 +77,8 @@ function ProposalsLink({ slug }: { slug: string }) {
 export function BotRoster() {
   const { slug, q } = useBots();
   const connections = useAgentConnections();
+  // a guest has no team to set a bot up for: no way in for them
+  const guest = useSession().role === 'guest';
   useHeaderTopic('Bots');
   return (
     <div className="bots-screen" data-testid="bots-roster">
@@ -95,6 +98,7 @@ export function BotRoster() {
                   </p>
                 </div>
                 <div className="b-head-act">
+                  {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-add-bot">Add a bot</Link>}
                   <ProposalsLink slug={slug} />
                   <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
                 </div>
@@ -103,10 +107,11 @@ export function BotRoster() {
                 <div className="b-empty" data-testid="roster-empty">
                   <p className="b-empty-title">No bots yet</p>
                   <p className="b-empty-body">
-                    A bot is a folder in the team repo: <span className="mono">bots/&lt;slug&gt;/BOT.md</span>. Add one from a team template, or propose the file
-                    in Files — once a workspace admin applies it, a valid definition appears here within seconds.
+                    A bot is a folder in the team repo: <span className="mono">bots/&lt;slug&gt;/BOT.md</span>. Describe what you want and a helper drafts it for
+                    you to approve, or propose the file yourself in Files — once a workspace admin applies it, a valid definition appears here within seconds.
                   </p>
-                  <Link className="btn primary" to={`/t/${slug}/files?path=bots`}>Open bots/ in Files</Link>
+                  {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-empty-add">Add a bot</Link>}
+                  <Link className="btn" to={`/t/${slug}/files?path=bots`}>Open bots/ in Files</Link>
                 </div>
               ) : (
                 <div className="b-list" data-landmark="bot-roster">

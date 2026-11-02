@@ -1,7 +1,8 @@
 import type { Dirent } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { TEMPLATE_FILE_MAX_CHARS, TeamTemplate, botEvalSetPath, parseBotEvalSet, parseBotMd } from '@manythreads/shared';
+import { TEMPLATE_FILE_MAX_CHARS, TeamTemplate, botEvalSetPath, parseBotEvalSet, parseBotMd, parseSetupProfile } from '@manythreads/shared';
+import type { SetupProfile } from '@manythreads/shared';
 import { parse } from 'yaml';
 import type { z } from 'zod';
 
@@ -109,10 +110,11 @@ function checkBotFiles(templateDir: string, files: Record<string, string>): void
 /**
  * Loads every `<dir>/<id>/template.yaml` + `TEAM.md` pair and validates it as a TeamTemplate, together with the bot files under
  * `<dir>/<id>/bots/` (BOT.md and scenario sets, validated with the shared schemas). Sorted by id. Throws TemplateLoadError on the first problem
- * (file + field named); ids must be unique and must match their folder name.
+ * (file + field named); ids must be unique and must match their folder name. A folder whose name starts with `_` is not a team template (it holds
+ * something else the platform ships, like `_setup/` for the "Add a bot" helper) and is skipped.
  */
 export async function loadTemplates(dir: string): Promise<TeamTemplate[]> {
-  const entries = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('_')).sort((a, b) => a.name.localeCompare(b.name));
   const templates: TeamTemplate[] = [];
   const seen = new Map<string, string>();
   for (const entry of entries) {
@@ -148,4 +150,12 @@ export async function loadTemplates(dir: string): Promise<TeamTemplate[]> {
     templates.push(template);
   }
   return templates;
+}
+
+/** The "Add a bot" helper's profile: `<dir>/_setup/PROFILE.md`, checked with the shared schema. Throws TemplateLoadError naming the file. */
+export async function loadSetupProfile(dir: string): Promise<{ profile: SetupProfile; prompt: string }> {
+  const file = path.join(dir, '_setup', 'PROFILE.md');
+  const parsed = parseSetupProfile(await readText(file));
+  if (!parsed.ok) throw new TemplateLoadError(file, null, parsed.message);
+  return { profile: parsed.profile, prompt: parsed.prompt };
 }

@@ -12,10 +12,15 @@ import { loadEgress, preflight, recordSpend, type LlmCallDecision, type RateHit 
 
 export interface LlmChatRequest {
   workspaceId: string;
-  botId: string;
+  /** The bot the call is made for. Null for a call no bot makes: the "Add a bot" helper (PLAN P7-02) works before the bot exists, and its spend is under the team and its session. */
+  botId: string | null;
   teamId: string;
-  /** The run this turn belongs to: the ledger attributes the call to it. */
-  runId: string;
+  /** The run this turn belongs to: the ledger attributes the call to it. Null with `sessionId` for a call outside a run. */
+  runId: string | null;
+  /** What groups the calls in the ledger when there is no run (a setup session's id). A run's calls are grouped by `runId`. */
+  sessionId?: string;
+  /** What the call is for, as the proxy records it. `run` unless the caller says otherwise. */
+  purpose?: 'run' | 'setup';
   /** The alias the runner names. */
   alias: string;
   messages: LiteLlmChatMessage[];
@@ -68,6 +73,7 @@ export async function chat(
     return { ok: false, reason: 'unbound', detail: `The model alias "${request.alias}" is not one of ${ALL_ALIASES.join(', ')}.` };
   }
   const alias = named.data;
+  const sessionId = request.runId ?? request.sessionId ?? null;
   // The check: the alias must be bound, then every user and tool message added since the last turn passes the pre-call check one by one (parallel tool calls bring several at once). A
   // redaction rewrites the message in the copy that is sent AND in the copy handed back, which the caller keeps as its history: a secret is redacted once and never goes out again.
   const checked = await run(async (tx): Promise<{ messages: LiteLlmChatMessage[] } | LlmChatResult> => {
@@ -83,7 +89,7 @@ export async function chat(
         workspaceId: request.workspaceId,
         botId: request.botId,
         teamId: request.teamId,
-        sessionId: request.runId,
+        sessionId,
         alias,
         text: message.content!,
       });
@@ -104,7 +110,12 @@ export async function chat(
       messages,
       tools: request.tools,
       maxTokens: request.maxTokens,
-      metadata: { manythreads_workspace: request.workspaceId, manythreads_bot: request.botId, manythreads_run: request.runId, purpose: 'run' },
+      metadata: {
+        manythreads_workspace: request.workspaceId,
+        ...(request.botId === null ? {} : { manythreads_bot: request.botId }),
+        ...(request.runId === null ? {} : { manythreads_run: request.runId }),
+        purpose: request.purpose ?? 'run',
+      },
       ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
     });
     await run((tx) =>
@@ -112,7 +123,7 @@ export async function chat(
         workspaceId: request.workspaceId,
         teamId: request.teamId,
         botId: request.botId,
-        sessionId: request.runId,
+        sessionId,
         runId: request.runId,
         alias,
         model: answer.model,

@@ -224,6 +224,8 @@ A turn is three steps and **no database connection is held while the proxy answe
 
 The answer is either `{ ok: true, text, toolCalls, promptTokens, completionTokens, messages, truncated }` (a turn with tool calls may have no text; a turn with neither is `unavailable`) or `{ ok: false, reason }` with `refused` (a budget, a rate limit, the preset or a detection; the decision is returned), `unbound`, `unavailable` (no proxy URL, an error from the proxy, an empty answer; the detail is scrubbed) or `timeout`. It never throws for an unavailable model. The tools go to the proxy in the OpenAI function form; the proxy translates them for each provider.
 
+**A call no bot makes (P7-02).** `botId` and `runId` may be `null`, with a `sessionId` and `purpose: 'setup'`: the "Add a bot" helper of the [workshop](./workshop.md) plugin works before the bot exists. Everything above is the same (alias, pre-call check on each new message, the master key, the spend line). The spend line is grouped by the session id instead of a run and names no bot; the proxy metadata leaves out the bot and the run and says `purpose: setup`. The guard preset of a bot cannot apply (there is none), so the workspace-level rules and budgets are what bind it.
+
 ## Without a proxy
 
 With `MANYTHREADS_LITELLM_URL` unset the gateway mints and stores keys and records the config, but pushes nothing (the

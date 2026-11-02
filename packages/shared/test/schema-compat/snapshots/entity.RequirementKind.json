@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "capability",
+    "runtime",
+    "connection",
+    "knowledge",
+    "skill",
+    "runner",
+    "trigger",
+    "model",
+    "other"
+  ]
+}

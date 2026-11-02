@@ -57,6 +57,12 @@ export const proposalsMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/proposals/migrations/', import.meta.url)),
 };
 
+/** Migrations of the workshop plugin (`setup_sessions`, the "Add a bot" conversations); pass it in `sources` after `teamsMigrationSource`. */
+export const workshopMigrationSource: MigrationSource = {
+  namespace: 'workshop',
+  dir: fileURLToPath(new URL('../../plugins/workshop/migrations/', import.meta.url)),
+};
+
 /** Migrations of the gateway-llm plugin (`llm_providers`, `llm_aliases`, `llm_keys`); pass it in `sources` after the kernel's. */
 export const gatewayLlmMigrationSource: MigrationSource = {
   namespace: 'gateway-llm',

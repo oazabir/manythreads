@@ -106,4 +106,41 @@ describe('ctx.identity', () => {
       expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/run\.resolve.*tool\.invoke/);
     }
   });
+
+  it('capability.call is a door of its own: invoke (in the caller\'s own transaction) and catalog work, every other member of ctx.runs is refused', async () => {
+    const seen: Array<[unknown, string, unknown]> = [];
+    const runs = {
+      invoke: (tx: unknown, capability: string, input: unknown) => {
+        seen.push([tx, capability, input]);
+        return Promise.resolve({ ok: true });
+      },
+      catalog: () => [{ name: 'knowledge.search', destructive: false }],
+      asBot: () => Promise.reject(new Error('the real asBot must not be reached')),
+      open: () => Promise.reject(new Error('the real open must not be reached')),
+    } as never;
+    const helper = definePlugin({ manifest: { name: 'helper', version: '0.1.0', kind: 'server', extends: ['capability.call'], calls: ['knowledge.search'] }, register: () => undefined });
+    const ctx = createPluginContext(helper.manifest, { ...base, runs });
+    const tx = { actor: 'the caller' } as never;
+    await expect(ctx.runs.invoke(tx, 'knowledge.search', { query: 'x' })).resolves.toEqual({ ok: true });
+    expect(seen).toEqual([[tx, 'knowledge.search', { query: 'x' }]]);
+    expect(ctx.runs.catalog()).toEqual([{ name: 'knowledge.search', destructive: false }]);
+    // the door is as wide as the manifest's `calls`: another capability is refused, and the real invoke is not reached
+    expect(() => ctx.runs.invoke(tx, 'files.delete', {})).toThrow(/may call only knowledge\.search.*not "files\.delete"/);
+    expect(seen).toHaveLength(1);
+    for (const member of ['close', 'open', 'resolve', 'asBot', 'asReader', 'asApproved', 'authorize', 'may', 'logSource', 'logIntercept', 'inheritSources', 'openRunOf'] as const) {
+      expect(() => (ctx.runs[member] as unknown as () => unknown)(), member).toThrow(/capability\.call.*tool\.invoke/);
+    }
+    // the manifest must say what the door may call, and the door does not mix with the other doors of ctx.runs
+    const manifest = (extra: Record<string, unknown>) => () => definePlugin({ manifest: { name: 'mix', version: '0.1.0', kind: 'server', ...extra }, register: () => undefined });
+    expect(manifest({ extends: ['capability.call'] })).toThrow(/must name the capabilities it may call/);
+    expect(manifest({ extends: ['job.register'], calls: ['knowledge.search'] })).toThrow(/only for a plugin that extends/);
+    for (const other of ['run.close', 'run.resolve', 'tool.invoke']) {
+      expect(manifest({ extends: ['capability.call', other], calls: ['knowledge.search'] }), other).toThrow(/cannot be combined with/);
+    }
+    expect(manifest({ extends: ['capability.call'], calls: ['not a name'] })).toThrow();
+    expect(manifest({ extends: ['capability.call'], calls: ['knowledge.search', 'proposals.propose'] })).not.toThrow();
+    // a plugin that declares neither door has no ctx.runs at all
+    const plain = definePlugin({ manifest: { name: 'plain2', version: '0.1.0', kind: 'server' }, register: () => undefined });
+    expect(() => createPluginContext(plain.manifest, { ...base, runs }).runs).toThrow(/tool\.invoke/);
+  });
 });

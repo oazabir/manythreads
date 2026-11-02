@@ -62,6 +62,10 @@ export const EXTENSION_POINTS = [
   // Also not in section 3: the right to resolve a presented run token to its run (`ctx.runs.resolve`) and nothing else of `ctx.runs`. For an endpoint that takes the
   // run's token as its credential without acting for the run (the run-scoped model proxy of gateway-llm, P6-06); the full run door is `tool.invoke`.
   'run.resolve',
+  // Also not in section 3: the right to call a capability handler another plugin registered (`ctx.runs.invoke`) in a transaction the caller already holds, and to list the
+  // capabilities that have one (`ctx.runs.catalog`) — and nothing else of `ctx.runs`. It adds no actor: the handler runs as whoever the caller's transaction is. For a plugin
+  // that does one person's work through the platform's own tools (the "Add a bot" helper, P7-02); the full run door is `tool.invoke`. docs/plugins/security.md.
+  'capability.call',
 ] as const;
 
 export const ExtensionPoint = z.enum(EXTENSION_POINTS);
@@ -108,6 +112,27 @@ export const PluginManifest = z.strictObject({
   dependsOn: z.array(PluginName).default([]),
   /** Directory of numbered `.sql` files, relative to the plugin package. Omit when the plugin has no tables. */
   migrations: z.string().min(1).optional(),
+  /**
+   * The capabilities a plugin that extends `capability.call` may call through `ctx.runs.invoke`, by name. The kernel refuses any other name, so the narrow door is as wide as this list and no wider.
+   * Present exactly when `capability.call` is in `extends`.
+   */
+  calls: z.array(CapabilityName).default([]),
+}).superRefine((m, ctx) => {
+  const callDoor = m.extends.includes('capability.call');
+  if (callDoor && m.calls.length === 0) {
+    ctx.addIssue({ code: 'custom', path: ['calls'], message: 'a plugin that extends "capability.call" must name the capabilities it may call in "calls"' });
+  }
+  if (!callDoor && m.calls.length > 0) {
+    ctx.addIssue({ code: 'custom', path: ['extends'], message: '"calls" is only for a plugin that extends "capability.call"' });
+  }
+  // each narrow door of ctx.runs is its own; one plugin takes at most one, and tool.invoke is the whole of them
+  if (callDoor) {
+    for (const other of ['run.close', 'run.resolve', 'tool.invoke'] as const) {
+      if (m.extends.includes(other)) {
+        ctx.addIssue({ code: 'custom', path: ['extends'], message: `"capability.call" cannot be combined with "${other}": each of them opens a different part of ctx.runs` });
+      }
+    }
+  }
 });
 export type PluginManifest = z.infer<typeof PluginManifest>;
 export type PluginManifestInput = z.input<typeof PluginManifest>;

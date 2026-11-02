@@ -154,7 +154,7 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     expect(sent.model).toBe('smart');
     expect(sent.metadata).toMatchObject({ manythreads_bot: botId, manythreads_run: r.runId, manythreads_workspace: omar.workspaceId, purpose: 'run' });
     expect(sent.messages.map((m) => m.role)).toEqual(['system', 'user']);
-    const rows = await spendOf(r.runId);
+    const rows = await spendOf(r.runId!);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ bot_id: botId, team_id: ENG, alias: 'smart', prompt_tokens: 12, completion_tokens: 7, session_id: r.runId });
     expect(Number(rows[0]!.cost_usd)).toBe(0);
@@ -178,7 +178,7 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     expect(sent.tools).toHaveLength(1);
     expect(sent.tools[0]).toMatchObject({ type: 'function', function: { name: 'brain.search' } });
     expect(sent.tool_choice).toBe('auto');
-    expect(await spendOf(r.runId)).toHaveLength(1);
+    expect(await spendOf(r.runId!)).toHaveLength(1);
   });
 
   it('sends a tool answer back as a tool message tied to the call, and each turn is its own spend line under the same run', async () => {
@@ -199,7 +199,7 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     expect(sent.messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'tool']);
     expect(sent.messages[2]!.tool_calls).toHaveLength(1);
     expect(sent.messages[3]!.tool_call_id).toBe('call_9');
-    expect(await spendOf(first.runId)).toHaveLength(2);
+    expect(await spendOf(first.runId!)).toHaveLength(2);
   });
 
   it('refuses without sending anything when a budget is spent, writes no spend line, and says why in the decision', async () => {
@@ -214,7 +214,7 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     expect(result).toMatchObject({ ok: false, reason: 'refused' });
     if (!result.ok && result.reason === 'refused') expect(result.decision.reason).toBe('budget');
     expect(chatCalls()).toHaveLength(before);
-    expect(await spendOf(r.runId)).toHaveLength(0);
+    expect(await spendOf(r.runId!)).toHaveLength(0);
     expect(emitted.some((e) => e['type'] === 'llm.budget.exceeded')).toBe(true);
   });
 
@@ -321,12 +321,26 @@ describe('provider.llm chat (one turn of a model-runtime run)', () => {
     const result = await turn(r);
     expect(result).toMatchObject({ ok: false, reason: 'unavailable' });
     expect(JSON.stringify(result)).not.toContain('sk-secret-token-1234');
-    expect(await spendOf(r.runId)).toHaveLength(0);
+    expect(await spendOf(r.runId!)).toHaveLength(0);
   });
 
   it('answers "unavailable" when the proxy returns neither text nor a tool call', async () => {
     answer = { status: 200, body: { id: 'x', model: 'smart', choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 0 } } };
     const botId = await sys((tx) => makeBot(tx, 'chat-empty'));
     expect(await turn(request(botId))).toMatchObject({ ok: false, reason: 'unavailable' });
+  });
+
+  it('a call no bot makes (the "Add a bot" helper) is tagged with its purpose and no bot or run, and its spend is under the team and the session', async () => {
+    const sessionId = randomUUID();
+    const before = chatCalls().length;
+    const result = await turn(request('x', { botId: null, runId: null, sessionId, purpose: 'setup' }));
+    expect(result).toMatchObject({ ok: true, text: 'plain answer' });
+    expect(chatCalls()).toHaveLength(before + 1);
+    const sent = chatCalls().at(-1)!.body as { metadata: Record<string, string> };
+    expect(sent.metadata).toMatchObject({ manythreads_workspace: omar.workspaceId, purpose: 'setup' });
+    expect(sent.metadata).not.toHaveProperty('manythreads_bot');
+    expect(sent.metadata).not.toHaveProperty('manythreads_run');
+    const rows = await sys(async (tx) => (await tx.query<{ bot_id: string | null; team_id: string; run_id: string | null }>('SELECT bot_id, team_id, run_id FROM app.llm_spend WHERE session_id = $1', [sessionId])).rows);
+    expect(rows).toEqual([{ bot_id: null, team_id: ENG, run_id: null }]);
   });
 });

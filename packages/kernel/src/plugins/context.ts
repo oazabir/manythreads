@@ -93,6 +93,7 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   let approvedDoor: PluginRuns | undefined;
   let closeOnlyDoor: PluginRuns | undefined;
   let resolveOnlyDoor: PluginRuns | undefined;
+  let callOnlyDoor: PluginRuns | undefined;
 
   const mount = (path: string): string => {
     if (!path.startsWith('/')) throw new PluginError(`Plugin "${name}": http route path "${path}" must start with "/"`, { plugin: name });
@@ -331,6 +332,40 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
           may: refuse('may'),
           catalog: refuse('catalog'),
           invoke: refuse('invoke'),
+          logSource: refuse('logSource'),
+          logIntercept: refuse('logIntercept'),
+          inheritSources: refuse('inheritSources'),
+          openRunOf: refuse('openRunOf'),
+        } as PluginRuns);
+      }
+      // `capability.call` alone is the caller's door: `invoke` (a capability handler in a transaction the caller already holds, so as the caller) and `catalog` work, every
+      // other member refuses. It is for a plugin that does one person's work through the platform's tools (the "Add a bot" helper, P7-02).
+      if (!manifest.extends.includes('tool.invoke') && manifest.extends.includes('capability.call')) {
+        if (!deps.runs) {
+          throw new PluginError(`Plugin "${name}": ctx.runs is only available when the plugin host has database pools`, { plugin: name });
+        }
+        const runs = deps.runs;
+        const refuse = (member: string) => (): never => {
+          throw new PluginError(`Plugin "${name}" extends "capability.call" only: ctx.runs.${member} needs "tool.invoke"`, { plugin: name });
+        };
+        const allowed = new Set(manifest.calls);
+        return (callOnlyDoor ??= {
+          invoke: (tx, capability, input) => {
+            // the door is as wide as the manifest's `calls` list and no wider
+            if (!allowed.has(capability)) {
+              throw new PluginError(`Plugin "${name}" may call only ${[...allowed].join(', ')} through "capability.call", not "${capability}"`, { plugin: name });
+            }
+            return runs.invoke(tx, capability, input);
+          },
+          catalog: () => runs.catalog(),
+          resolve: refuse('resolve'),
+          close: refuse('close'),
+          open: refuse('open'),
+          asBot: refuse('asBot'),
+          asApproved: refuse('asApproved'),
+          asReader: refuse('asReader'),
+          authorize: refuse('authorize'),
+          may: refuse('may'),
           logSource: refuse('logSource'),
           logIntercept: refuse('logIntercept'),
           inheritSources: refuse('inheritSources'),

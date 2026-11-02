@@ -82,6 +82,11 @@ proposal (`POST …/proposals` with `baseBlobSha`; P7-01, docs/plugins/proposals
 - `bots/` (BOT.md): a team lead edits a bot that already exists; only a workspace admin adds or removes one (SPEC §3
   set by owner request). In the Files screen `bots/` stays admin-only for everyone — a bot is edited on its Bots page.
   `TEAM.md`, `skills/` and `routines/` stay lead-or-admin.
+- PROPOSED, for the owner to confirm or reverse (P7-02): the `workshop` plugin (the Add a bot helper) runs its own small tool loop
+  (`packages/plugins/workshop/src/loop.ts`), a third agent loop beside the `model` runtime and Hermes. Why: both of those serve a
+  bot's run and need a bot, a runner and a run; while a bot is being set up none exists, and a throwaway bot would put an actor
+  in the roster nobody approved. Only about 30 lines overlap with the model runtime, so no code is shared. If the owner prefers
+  one loop, the alternative is a platform-owned setup bot with its own runner assignment.
 - Mobile = web app inside Capacitor (not React Native). The RN benchmark gate is replaced by a Capacitor
   WebView check in phase 11.
 - Owner asked for free-form ops workflows (any command / any SQL); the permission classifier blocks committing
