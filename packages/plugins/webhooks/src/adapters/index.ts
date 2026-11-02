@@ -7,6 +7,7 @@ import { LIMITS, clip, codeBlock, compose, defang, stripControl, stripHtml } fro
 import { isObj, type Adapted, type Incoming } from './types.ts';
 
 export type { Adapted, Incoming } from './types.ts';
+export { blocksToMarkdown, cleanBody, slackToMarkdown } from './slack.ts';
 
 /**
  * Turns one call into the Markdown a message carries (PLAN P14-14). Pure: the same call always gives the same answer, nothing is read or written.
@@ -28,7 +29,7 @@ export function adapt(input: Incoming): Adapted {
 function adaptUnsafe(input: Incoming): Adapted {
   const github = input.headers['x-github-event'];
   const gitlab = input.headers['x-gitlab-event'];
-  const done = (r: Adapted): Adapted => (r.kind === 'post' ? finish(r.text) : r);
+  const done = (r: Adapted): Adapted => (r.kind === 'post' ? finish(r.text, r.skipped) : r);
   if (github !== undefined) {
     if (input.json === undefined) return { kind: 'reject', reason: 'A GitHub call must carry a JSON body.' };
     return done(adaptGithub(github.toLowerCase().trim(), input.json));
@@ -55,9 +56,9 @@ function adaptUnsafe(input: Incoming): Adapted {
   return done({ kind: 'post', text });
 }
 
-function finish(text: string): Adapted {
-  const repaired = repairBotMarkdown(clip(text, LIMITS.message)).text;
-  return { kind: 'post', text: repaired };
+function finish(text: string, skipped?: number, max: number = LIMITS.message): Adapted {
+  const repaired = clip(repairBotMarkdown(clip(text, max)).text, max);
+  return { kind: 'post', text: repaired, ...(skipped === undefined ? {} : { skipped }) };
 }
 
 /**
@@ -76,4 +77,21 @@ export function parseBody(contentType: string, raw: string): unknown {
     return undefined;
   }
   return undefined;
+}
+
+/** The most a message written through the Slack-shaped API may hold: the channel's own limit is 40,000 characters. */
+export const SLACK_API_MAX_TEXT = 40_000;
+
+/**
+ * A message of the Slack-shaped API (`chat.postMessage`, `chat.update`): `text` as Slack's mrkdwn, plus `blocks` (the Block Kit subset) and `attachments`.
+ * Always read the Slack way, even with only a `text`. Nothing to show is a reject (the API answers `no_text`). Pure, never throws.
+ */
+export function adaptSlackMessage(o: Record<string, unknown>): Adapted {
+  try {
+    const adapted = adaptGeneric(o, { slack: true, textMax: SLACK_API_MAX_TEXT - 1_000 });
+    if (adapted === null || adapted.kind !== 'post') return { kind: 'reject', reason: 'The message has no text, blocks or attachments to show.' };
+    return finish(adapted.text, adapted.skipped, SLACK_API_MAX_TEXT);
+  } catch {
+    return { kind: 'reject', reason: 'The message could not be read.' };
+  }
 }

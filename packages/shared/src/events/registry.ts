@@ -68,6 +68,10 @@ import { WebhooksHookRotatedEvent } from './webhooks.hook.rotated.ts';
 import { WebhooksHookRevokedEvent } from './webhooks.hook.revoked.ts';
 import { WebhooksHookSigningChangedEvent } from './webhooks.hook.signing_changed.ts';
 import { WebhooksHookUseFailedEvent } from './webhooks.hook.use_failed.ts';
+import { WebhooksTokenChangedEvent } from './webhooks.token.changed.ts';
+import { WebhooksTokenUsedEvent } from './webhooks.token.used.ts';
+import { WebhooksOutgoingChangedEvent } from './webhooks.outgoing.changed.ts';
+import { WebhooksOutgoingDeliveredEvent } from './webhooks.outgoing.delivered.ts';
 import { ProposalsProposalCreatedEvent } from './proposals.proposal.created.ts';
 import { ProposalsProposalAppliedEvent } from './proposals.proposal.applied.ts';
 import { ProposalsProposalRejectedEvent } from './proposals.proposal.rejected.ts';
@@ -244,6 +248,10 @@ export const eventRegistry = {
   'webhooks.hook.revoked': { 1: WebhooksHookRevokedEvent },
   'webhooks.hook.signing_changed': { 1: WebhooksHookSigningChangedEvent },
   'webhooks.hook.use_failed': { 1: WebhooksHookUseFailedEvent },
+  'webhooks.token.changed': { 1: WebhooksTokenChangedEvent },
+  'webhooks.token.used': { 1: WebhooksTokenUsedEvent },
+  'webhooks.outgoing.changed': { 1: WebhooksOutgoingChangedEvent },
+  'webhooks.outgoing.delivered': { 1: WebhooksOutgoingDeliveredEvent },
   'proposals.proposal.created': { 1: ProposalsProposalCreatedEvent },
   'proposals.proposal.applied': { 1: ProposalsProposalAppliedEvent },
   'proposals.proposal.rejected': { 1: ProposalsProposalRejectedEvent },

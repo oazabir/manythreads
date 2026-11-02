@@ -4,6 +4,10 @@ Spike-only plugin: a Slack-shaped inbound door for the Hermes agent runtime. See
 `docs/spikes/slack-compat.md` for the setup, the proof and the decision. This page documents what the
 code does; nothing here is product API.
 
+**The product's Slack-shaped Web API is not this plugin.** `POST /api/slack/chat.postMessage`, `chat.update`, `reactions.add`, `reactions.remove` and `auth.test`,
+with a token per integration, live in the `webhooks` plugin (PLAN P14-14, [webhooks.md](webhooks.md)). This spike keeps its own pairing-token door for the Hermes
+runtime and is untouched.
+
 ## Routes
 
 - `POST /api/slack-compat/chat.postMessage` — **public** (no session). Body: `token` (a pairing token

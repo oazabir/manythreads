@@ -101,7 +101,7 @@ whatever their number).
 
 ## Who has been away: `provider.presence`
 
-The presence plugin registers `ctx.providers.get<PresenceProvider>('presence')` (extension point `provider.presence`): `lastSeen(tx, personIds)` answers when each person's latest heartbeat arrived, as the transaction's actor
+The presence plugin registers `ctx.providers.get<PresenceProvider>('presence')` (extension point `provider.presence`): `lastSeen(tx, personIds)` answers when each person's latest heartbeat arrived (`seenSince` lists the people of a workspace seen after a time, `warmSince` when the heartbeat data started), as the transaction's actor
 (the table's own row rules apply). It answers a time and nothing else: no tab, device or status text. The notifications plugin uses it to decide who has been away for the email digest, so it never reads the presence table
 itself. It is read-only and takes no `extends` to use.
 

@@ -4,7 +4,10 @@ import { clearWebhookSigningSecret, createWebhook, fetchWebhooks, revokeWebhook,
 import { useQuery } from '../app/useQuery';
 import { Dialog } from '../components/Dialog';
 import { HookIcon } from '../shell/icons';
-import { PLACEHOLDER_URL, curlExample, useLine } from './model';
+import { CopyBox } from './CopyBox';
+import { OutgoingPanel } from './OutgoingPanel';
+import { TokensPanel } from './TokensPanel';
+import { PLACEHOLDER_URL, curlExample, messageOf, useLine } from './model';
 
 /*
  * The webhooks of one channel (PLAN P14-14): a lead makes a secret web address, copies it once, and points a build server, GitHub or a script at it.
@@ -12,29 +15,6 @@ import { PLACEHOLDER_URL, curlExample, useLine } from './model';
  */
 
 type Shown = { kind: 'address'; webhookId: string; name: string; value: string } | { kind: 'signing'; webhookId: string; name: string; value: string };
-
-const messageOf = (err: unknown): string => (err instanceof Error && err.message ? err.message : 'That did not work. Try again.');
-
-function CopyBox({ value, label, testId }: { value: string; label: string; testId: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = (): void => {
-    void (async () => {
-      try {
-        await navigator.clipboard.writeText(value);
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1_500);
-      } catch {
-        // the clipboard may be blocked; the text stays selectable
-      }
-    })();
-  };
-  return (
-    <div className="wh-copy">
-      <code className="wh-copy-value" data-testid={testId} tabIndex={0} aria-label={label}>{value}</code>
-      <button type="button" className="btn" onClick={copy} data-testid={`${testId}-copy`}>{copied ? 'Copied' : 'Copy'}</button>
-    </div>
-  );
-}
 
 function HookRow({ hook, base, onChange, onShow, onNote }: { hook: Webhook; base: string; onChange: () => void; onShow: (s: Shown) => void; onNote: (n: { ok: boolean; text: string }) => void }) {
   const [busy, setBusy] = useState(false);
@@ -152,7 +132,7 @@ function HookRow({ hook, base, onChange, onShow, onNote }: { hook: Webhook; base
   );
 }
 
-export function WebhooksDialog({ channelId, channelName, onClose }: { channelId: string; channelName: string; onClose: () => void }) {
+function IncomingPanel({ channelId }: { channelId: string }) {
   const list = useQuery(`webhooks:${channelId}`, () => fetchWebhooks(channelId));
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('');
@@ -181,7 +161,7 @@ export function WebhooksDialog({ channelId, channelName, onClose }: { channelId:
   const hooks = list.status === 'ok' ? list.data.webhooks : [];
   const base = list.status === 'ok' ? list.data.base : '';
   return (
-    <Dialog title={`Webhooks for #${channelName}`} onClose={onClose} testId="webhooks-dialog" wide footer={<button type="button" className="btn primary" onClick={onClose}>Done</button>}>
+    <>
       <p className="wh-lead">
         A webhook is a private web address. When a program sends a message to it, such as a build server, GitHub or a script of yours, the message appears
         in this channel, written by the webhook&rsquo;s name. Anyone who has the address can post here, so keep it secret.
@@ -253,6 +233,37 @@ export function WebhooksDialog({ channelId, channelName, onClose }: { channelId:
           <li>Messages up to 1 MB are accepted, and one webhook takes 120 calls a minute.</li>
         </ul>
       </details>
+    </>
+  );
+}
+
+type Tab = 'incoming' | 'outgoing' | 'tokens';
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'incoming', label: 'Incoming webhooks' },
+  { id: 'outgoing', label: 'Outgoing webhooks' },
+  { id: 'tokens', label: 'API tokens' },
+];
+
+/**
+ * The integrations of one channel (PLAN P14-14), for a lead or a workspace admin: incoming webhooks (a program posts in), outgoing webhooks (a keyword sends a
+ * message out) and API tokens (a script that speaks Slack's Web API). One dialog, three tabs.
+ */
+export function WebhooksDialog({ channelId, channelName, onClose }: { channelId: string; channelName: string; onClose: () => void }) {
+  const [tab, setTab] = useState<Tab>('incoming');
+  return (
+    <Dialog title={`Integrations for #${channelName}`} onClose={onClose} testId="webhooks-dialog" wide footer={<button type="button" className="btn primary" onClick={onClose}>Done</button>}>
+      <div className="tabs2 wh-tabs" role="tablist" aria-label="Kinds of integration">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" role="tab" id={`wh-tab-${t.id}`} aria-selected={tab === t.id} aria-controls="wh-panel" className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} data-testid={`integrations-tab-${t.id}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div id="wh-panel" role="tabpanel" aria-labelledby={`wh-tab-${tab}`}>
+        {tab === 'incoming' ? <IncomingPanel channelId={channelId} /> : null}
+        {tab === 'outgoing' ? <OutgoingPanel channelId={channelId} /> : null}
+        {tab === 'tokens' ? <TokensPanel channelId={channelId} /> : null}
+      </div>
     </Dialog>
   );
 }
@@ -262,9 +273,9 @@ export function WebhooksButton({ channelId, channelName }: { channelId: string; 
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="btn quiet wh-open" onClick={() => setOpen(true)} data-testid="webhooks-open" aria-haspopup="dialog" aria-label="Webhooks" title="Webhooks">
+      <button type="button" className="btn quiet wh-open" onClick={() => setOpen(true)} data-testid="webhooks-open" aria-haspopup="dialog" aria-label="Integrations" title="Integrations: webhooks and API tokens">
         <span className="wh-open-icon"><HookIcon /></span>
-        <span className="wh-open-label">Webhooks</span>
+        <span className="wh-open-label">Integrations</span>
       </button>
       {open ? <WebhooksDialog channelId={channelId} channelName={channelName} onClose={() => setOpen(false)} /> : null}
     </>

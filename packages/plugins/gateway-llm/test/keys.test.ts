@@ -85,7 +85,7 @@ beforeAll(async () => {
   ctx = createPluginContext(gatewayLlm.manifest, {
     registries,
     storage: createMemoryKv(),
-    mail: { send: () => Promise.resolve() },
+    mail: { configured: true, send: () => Promise.resolve() },
     runtime: { publicUrl: 'http://localhost:3000', now: () => new Date() },
     secrets: createSecretService(),
     // Slow on purpose: an emit the caller does not await lands after the call returned, and the assertions below catch it.

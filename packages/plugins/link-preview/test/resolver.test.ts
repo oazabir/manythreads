@@ -191,7 +191,7 @@ describe('createBoundedResolver', () => {
 });
 
 describe('the fetcher does not use the thread pool for names', () => {
-  const read = (file: string): string => readFileSync(fileURLToPath(new URL(`../src/${file}`, import.meta.url)), 'utf8');
+  const read = (file: string): string => readFileSync(fileURLToPath(new URL(`../../../sdk/src/safe-fetch/${file}`, import.meta.url)), 'utf8');
 
   it('safe-fetch.ts never calls dns.lookup', () => {
     const src = read('safe-fetch.ts');

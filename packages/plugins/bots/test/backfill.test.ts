@@ -80,7 +80,7 @@ beforeAll(async () => {
   ctx = createPluginContext(bots.manifest, {
     registries,
     storage: createMemoryKv(),
-    mail: { send: () => Promise.resolve() },
+    mail: { configured: true, send: () => Promise.resolve() },
     runtime: { publicUrl: 'http://localhost:3000', now: () => new Date() },
     secrets: createSecretService(),
     emit: (_tx, event) => {

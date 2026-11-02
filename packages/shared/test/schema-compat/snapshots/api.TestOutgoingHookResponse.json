@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "delivered": {
+      "type": "boolean"
+    },
+    "statusCode": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "wouldReply": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "delivered",
+    "statusCode",
+    "reason",
+    "wouldReply"
+  ]
+}

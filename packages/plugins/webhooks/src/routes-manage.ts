@@ -61,7 +61,7 @@ export function registerManageRoutes(ctx: PluginContext): void {
       const ok = (await tx.query<{ ok: boolean }>('SELECT app.channel_can($1::uuid, $2) AS ok', [channelId, 'manage'])).rows[0]?.ok === true;
       if (!ok) throw forbidden('Only a lead of this channel’s team or a workspace admin can see its webhooks');
       const rows = (
-        await tx.query<WebhookRow>(`SELECT ${WEBHOOK_COLUMNS} FROM app.webhooks w WHERE w.channel_id = $1::uuid AND w.revoked_at IS NULL ORDER BY w.created_at, w.id`, [channelId])
+        await tx.query<WebhookRow>(`SELECT ${WEBHOOK_COLUMNS} FROM app.webhooks w WHERE w.channel_id = $1::uuid AND w.kind = 'incoming' AND w.revoked_at IS NULL ORDER BY w.created_at, w.id`, [channelId])
       ).rows;
       return json(ListWebhooksResponse.parse({ webhooks: rows.map(toWebhook), base: base() }));
     }),

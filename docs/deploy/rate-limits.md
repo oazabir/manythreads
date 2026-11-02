@@ -65,6 +65,11 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `DELETE /api/webhooks/:webhookId` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/webhooks/:webhookId/signing-secret` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `DELETE /api/webhooks/:webhookId/signing-secret` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
+| `POST /api/channels/:channelId/api-tokens` | none | 30 per 60 s | 60 s | person | none |
+| `POST /api/api-tokens/:tokenId/rotate` | none | 30 per 60 s | 60 s | person | none |
+| `DELETE /api/api-tokens/:tokenId` | none | 30 per 60 s | 60 s | person | none |
+| `POST /api/outgoing-hooks/:hookId/signing-secret` | none | 30 per 60 s | 60 s | person | none |
+| `DELETE /api/outgoing-hooks/:hookId/signing-secret` | none | 30 per 60 s | 60 s | person | none |
 | `POST /api/teams/:slug/repo/app-token` | 120 per 60 s | 120 per 60 s | 60 s | person | none |
 | `PUT /api/teams/:slug/projects/:projectId/push-credential` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `POST /api/teams/:slug/hermes/connections` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
@@ -74,6 +79,12 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/llm/runs/:runId/v1/chat/completions` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong run token in a minute and onward: `429` |
 | `GET /api/runners/connect` | 60 per 60 s | 60 per 60 s | 60 s | address | none (the socket closes at once on a wrong runner token) |
 | `POST /hooks/:webhookId/:secret` | 600 per 60 s (actor, else address) | 600 per 60 s | 60 s | address | 30 calls that name no live webhook or carry a wrong secret in 5 min lock the address 5 min (then failing calls get `429`; a call with the right secret is never refused by the lock, because senders share addresses) |
+| `POST /api/slack/chat.postMessage` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
+| `POST /api/slack/chat.update` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
+| `POST /api/slack/reactions.add` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
+| `POST /api/slack/reactions.remove` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
+| `POST /api/slack/auth.test` | none | 30 per 300 s | 300 s | failures | 30 calls with an unknown token in 5 min lock the address 5 min (then failing calls get `429`; a call with a right token is never refused by the lock). Each token also has its own limit of 60 calls a minute, answered `429` with `Retry-After` in the Slack way |
+| `GET /api/slack/auth.test` | none | 30 per 300 s | 300 s | failures | same lock as the line above |
 
 Also locked, though not a route in the table: `POST /api/test/session` (only mounted on a throwaway test server that sets
 `MANYTHREADS_TEST_AUTH_TOKEN`): 10 wrong tokens per address in 15 min lock the address 15 min; a right token never counts.

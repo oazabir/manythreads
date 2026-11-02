@@ -160,7 +160,8 @@ describe('every credential route carries its listed limit and answers 429 with r
       redirect: 'manual',
     });
 
-  const bursts = ABUSE_ROUTES.filter((r) => r.key !== 'failures' && !r.path.startsWith('/hooks/'));
+  // the public machine routes (/hooks, /api/slack) carry their own tests in the plugin that owns them: a burst of empty calls there is a locked address, not a plain limit
+  const bursts = ABUSE_ROUTES.filter((r) => r.key !== 'failures' && !r.path.startsWith('/hooks/') && !r.path.startsWith('/api/slack/'));
   it.each(bursts.map((r) => [`${r.method} ${r.path}`, r] as const))('%s: the limit passes, the next call is 429 with retry-after, the window frees it', async (_name, r) => {
     const address = freshAddress();
     const statuses: number[] = [];

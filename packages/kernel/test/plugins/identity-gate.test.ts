@@ -2,7 +2,7 @@ import { definePlugin } from '@manythreads/sdk';
 import { describe, expect, it } from 'vitest';
 import { ExtensionRegistries, createMemoryKv, createPluginContext } from '../../src/plugins/index.ts';
 
-const base = { registries: new ExtensionRegistries(), storage: createMemoryKv(), mail: { send: () => Promise.resolve() }, runtime: { publicUrl: 'http://x', now: () => new Date() } };
+const base = { registries: new ExtensionRegistries(), storage: createMemoryKv(), mail: { configured: true, send: () => Promise.resolve() }, runtime: { publicUrl: 'http://x', now: () => new Date() } };
 const identity = { runAsSystem: () => Promise.reject(new Error('unused')) } as never;
 
 describe('ctx.identity', () => {

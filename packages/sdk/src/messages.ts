@@ -80,6 +80,35 @@ export interface MessagePosted {
   createdAt: string;
 }
 
+/** What an edit needs. The editor is the transaction's actor, who must be the message's author. */
+export interface MessageEditInput {
+  channelId: string;
+  messageId: string;
+  body: string;
+}
+
+/** What an edit answers: ids only, never the text back. */
+export interface MessageEdited {
+  id: string;
+  channelId: string;
+  /** False when the new text was the text already there: nothing changed, nothing was recorded. */
+  changed: boolean;
+}
+
+/** What a reaction change needs. The reactor is the transaction's actor. */
+export interface MessageReactInput {
+  channelId: string;
+  messageId: string;
+  /** An emoji character or a `:shortcode:` (no spaces, at most 64 characters). */
+  emoji: string;
+  add: boolean;
+}
+
+export interface MessageReacted {
+  /** False when the reaction was already there (adding) or not there (removing). */
+  changed: boolean;
+}
+
 export interface MessageProvider extends ProviderImpl {
   /**
    * Writes the message exactly as the post route does: it rejects with an `Error` that carries `status` (403 not allowed to post, 404 no such
@@ -87,6 +116,15 @@ export interface MessageProvider extends ProviderImpl {
    * `channel.message.posted`, pushes it live, counts it unread for the thread's followers and records what it mentions.
    */
   post(tx: PluginTx, input: MessagePostInput): Promise<MessagePosted>;
+  /**
+   * Replaces the text of a message the transaction's actor wrote, exactly as the edit route does (the earlier text is kept as a version, the
+   * `channel.message.edited` event is written, the live push goes out). The mentions and links the message was posted with stay as they were: a name
+   * added by an edit is plain text and nobody is notified (PLAN P14-14: a script's edit never wakes anyone). Errors carry `status`: 403 not the
+   * author, 404 no such message in the channel, 409 deleted, archived channel, an answer or a poll, 400 an invalid body.
+   */
+  edit(tx: PluginTx, input: MessageEditInput): Promise<MessageEdited>;
+  /** Adds or removes the transaction's actor's own reaction, as the reaction routes do (event and live push included). 404 no such message, 409 deleted or archived. */
+  react(tx: PluginTx, input: MessageReactInput): Promise<MessageReacted>;
   /**
    * Makes a team channel exactly as the create-channel route does (a lead or workspace admin of the team; 403 otherwise; the live push to the
    * team), but for a name that may be anything: it is made valid, and unique by a numeric suffix. A private channel gets `memberPersonIds`

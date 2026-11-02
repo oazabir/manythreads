@@ -21,7 +21,6 @@ import {
   PostMessageResponse,
   ReactRequest,
   ReactResponse,
-  ReactionChangedPush,
   UnreactPathParams,
   UnreactResponse,
   deleteMessageRoute,
@@ -50,12 +49,11 @@ import {
   can,
   findChannelMessage,
   pushMessageDeleted,
-  pushReaction,
   reactionsFor,
+  reactToMessage,
   editChannelMessage,
   postChannelMessage,
   requireChannel,
-  requirePost,
   type Deps,
 } from './service.ts';
 
@@ -295,31 +293,8 @@ export function registerMessageRoutes(deps: Deps): void {
     handler: route(async (req, tx) => {
       const { channelId, messageId } = MessagePathParams.parse(req.params);
       const { emoji } = ReactRequest.parse(req.body);
-      const channel = await requireChannel(tx, channelId);
-      const message = await findChannelMessage(tx, channelId, messageId);
-      if (!message) throw notFound('No such message');
-      if (message.deletedAt) throw conflict('That message was deleted');
-      await requirePost(tx, channel);
-      const res = await tx.query(
-        `INSERT INTO app.message_reactions (message_id, actor_id, emoji, channel_id) VALUES ($1, app.actor(), $2, $3)
-         ON CONFLICT DO NOTHING RETURNING message_id`,
-        [messageId, emoji, channelId],
-      );
-      const added = res.rows.length > 0;
-      const reactions = (await reactionsFor(tx, [messageId])).get(messageId) ?? [];
-      if (added) {
-        await emit(tx, { type: 'channel.reaction.changed', channelId, teamId: channel.team_id, messageId, actorId: tx.actor.id, emoji, added: true });
-        await pushReaction(
-          deps,
-          tx,
-          await audience(tx, channelId),
-          ReactionChangedPush.parse({
-            channelId, messageId, actorId: tx.actor.id, emoji, added: true,
-            count: reactions.find((r) => r.emoji === emoji)?.count ?? 1,
-          }),
-        );
-      }
-      return json(ReactResponse.parse({ added, reactions }));
+      const done = await reactToMessage(deps, tx, { channelId, messageId, emoji, add: true });
+      return json(ReactResponse.parse({ added: done.changed, reactions: done.reactions }));
     }),
   });
 
@@ -328,26 +303,8 @@ export function registerMessageRoutes(deps: Deps): void {
     schema: { response: UnreactResponse },
     handler: route(async (req, tx) => {
       const { channelId, messageId, emoji } = UnreactPathParams.parse(req.params);
-      const channel = await requireChannel(tx, channelId);
-      const res = await tx.query(
-        'DELETE FROM app.message_reactions WHERE message_id = $1 AND channel_id = $2 AND emoji = $3 AND actor_id = app.actor() RETURNING message_id',
-        [messageId, channelId, emoji],
-      );
-      const removed = res.rows.length > 0;
-      const reactions = (await reactionsFor(tx, [messageId])).get(messageId) ?? [];
-      if (removed) {
-        await emit(tx, { type: 'channel.reaction.changed', channelId, teamId: channel.team_id, messageId, actorId: tx.actor.id, emoji, added: false });
-        await pushReaction(
-          deps,
-          tx,
-          await audience(tx, channelId),
-          ReactionChangedPush.parse({
-            channelId, messageId, actorId: tx.actor.id, emoji, added: false,
-            count: reactions.find((r) => r.emoji === emoji)?.count ?? 0,
-          }),
-        );
-      }
-      return json(UnreactResponse.parse({ removed, reactions }));
+      const done = await reactToMessage(deps, tx, { channelId, messageId, emoji, add: false });
+      return json(UnreactResponse.parse({ removed: done.changed, reactions: done.reactions }));
     }),
   });
 }

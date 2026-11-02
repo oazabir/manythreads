@@ -1,5 +1,5 @@
 import { HttpError, createLockout, json, lockedError, type HttpRequest, type PluginContext } from '@manythreads/sdk';
-import { MAX_WEBHOOK_BODY_BYTES, WEBHOOK_FAILURE_LOCK, WebhookCallResponse, addressKey, webhookCallRoute } from '@manythreads/shared';
+import { IncomingWebhookResult, MAX_WEBHOOK_BODY_BYTES, WEBHOOK_FAILURE_LOCK, addressKey, webhookCallRoute } from '@manythreads/shared';
 import { adapt, parseBody } from './adapters/index.ts';
 import { postAsWebhook, recordUse, statusOf } from './deliver.ts';
 import { loadHook, type HookWithSecrets } from './hooks.ts';
@@ -88,7 +88,7 @@ export function registerCallRoute(ctx: PluginContext, deps: CallDeps = {}): void
       const hook = await ctx.db.system((sys) => loadHook(sys, webhookId));
       // one comparison whether or not the webhook exists, so the time does not say
       const matches = secretMatches(secret, hook?.secret_hash ?? null);
-      if (!hook) throw stranger();
+      if (!hook || hook.kind !== 'incoming') throw stranger();
       if (hook.revoked_at !== null) {
         await refused(hook, 'revoked');
         throw stranger();
@@ -131,11 +131,11 @@ export function registerCallRoute(ctx: PluginContext, deps: CallDeps = {}): void
       }
       if (adapted.kind === 'ignore') {
         await recordUse(ctx, hook, 'ignored');
-        return json(WebhookCallResponse.parse({ ok: true, ignored: adapted.reason }));
+        return json(IncomingWebhookResult.parse({ ok: true, ignored: adapted.reason }));
       }
       try {
         const posted = await postAsWebhook(ctx, hook, adapted.text);
-        return json(WebhookCallResponse.parse({ ok: true, messageId: posted.messageId }));
+        return json(IncomingWebhookResult.parse({ ok: true, messageId: posted.messageId, ...(adapted.skipped ? { skippedBlocks: adapted.skipped } : {}) }));
       } catch (err) {
         await recordUse(ctx, hook, 'failed');
         const status = statusOf(err);

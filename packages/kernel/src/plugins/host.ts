@@ -291,7 +291,12 @@ export async function loadPlugins(options: LoadPluginsOptions = {}): Promise<Plu
     onStart: () => undefined,
   };
   const mailer = options.mailer ?? createMemoryMailer();
-  const mail: MailService = { send: (message) => mailer.send(renderMail(message)) };
+  const mail: MailService = {
+    get configured() {
+      return mailer.configured !== false;
+    },
+    send: (message) => mailer.send(renderMail(message)),
+  };
   const secrets = createSecretService();
   // The run/tool door of the MCP gateway (PLAN P5-09). It needs the app pool (bot and asker transactions), the
   // system pool (mint, resolve, close) and the broker; a host without those leaves `ctx.runs` unavailable rather

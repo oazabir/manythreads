@@ -10,7 +10,7 @@ const { manifest } = definePlugin({ manifest: { name: 'channels', version: '0.1.
 const ctx = createPluginContext(manifest, {
   registries: new ExtensionRegistries(),
   storage: createMemoryKv(),
-  mail: { send: () => Promise.resolve() },
+  mail: { configured: true, send: () => Promise.resolve() },
   runtime: { publicUrl: 'http://x', now: () => new Date() },
 });
 

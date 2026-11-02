@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./process": "./src/process.ts"
+    "./process": "./src/process.ts",
+    "./safe-fetch": "./src/safe-fetch/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."

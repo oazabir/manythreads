@@ -64,6 +64,11 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('DELETE', '/api/webhooks/:webhookId', 30, 'person'),
   r('POST', '/api/webhooks/:webhookId/signing-secret', 30, 'person'),
   r('DELETE', '/api/webhooks/:webhookId/signing-secret', 30, 'person'),
+  r('POST', '/api/channels/:channelId/api-tokens', 30, 'person'),
+  r('POST', '/api/api-tokens/:tokenId/rotate', 30, 'person'),
+  r('DELETE', '/api/api-tokens/:tokenId', 30, 'person'),
+  r('POST', '/api/outgoing-hooks/:hookId/signing-secret', 30, 'person'),
+  r('DELETE', '/api/outgoing-hooks/:hookId/signing-secret', 30, 'person'),
   r('POST', '/api/teams/:slug/repo/app-token', 120, 'person'),
   r('PUT', '/api/teams/:slug/projects/:projectId/push-credential', 20, 'person'),
   r('POST', '/api/teams/:slug/hermes/connections', 20, 'person'),
@@ -74,6 +79,12 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/llm/runs/:runId/v1/chat/completions', 60, 'failures', 'run token: 60 failures per address a minute'),
   r('GET', '/api/runners/connect', 60, 'address', 'runner token'),
   r('POST', '/hooks/:webhookId/:secret', 600, 'address', 'webhook secret: 256-bit address; a refused call is recorded per webhook'),
+  // The Slack-shaped API: the integration token is 256 random bits and each token has its own limit (60 calls a minute). The route has no per-address counter
+  // of its own: only a call with an unknown token counts (30 in 5 minutes lock the address for 5 minutes), so junk from a shared address never refuses a valid caller.
+  ...(['chat.postMessage', 'chat.update', 'reactions.add', 'reactions.remove', 'auth.test'] as const).map((m) =>
+    r('POST', `/api/slack/${m}`, 30, 'failures', 'API token: 30 calls with an unknown token in 5 min lock the address 5 min', 5 * MIN),
+  ),
+  r('GET', '/api/slack/auth.test', 30, 'failures', 'API token: same lock as the POST line above', 5 * MIN),
 ];
 
 /** The limit of a registered route, for `ctx.http.route({ rateLimit })`. Throws for a route that is not on the list: add it above first. */

@@ -19,11 +19,14 @@ export interface WebhookRow {
   last_status: 'posted' | 'ignored' | 'failed' | null;
   posted_count: number;
   signed: boolean;
+  /** 'incoming' (the secret address), 'api' (a token for the Slack-shaped API) or 'outgoing' (a trigger word sends a message to an address). */
+  kind: 'incoming' | 'api' | 'outgoing';
+  call_count: string | number;
   [key: string]: unknown;
 }
 
 export const WEBHOOK_COLUMNS =
-  'w.id, w.workspace_id, w.team_id, w.channel_id, w.actor_id, w.name, w.emoji, w.created_by_name, w.created_at, w.revoked_at, w.last_used_at, w.last_status, w.posted_count, w.signed';
+  'w.id, w.workspace_id, w.team_id, w.channel_id, w.actor_id, w.name, w.emoji, w.created_by_name, w.created_at, w.revoked_at, w.last_used_at, w.last_status, w.posted_count, w.signed, w.kind, w.call_count';
 
 export const toWebhook = (r: WebhookRow): Webhook =>
   Webhook.parse({
@@ -39,9 +42,9 @@ export const toWebhook = (r: WebhookRow): Webhook =>
     signed: r.signed,
   });
 
-/** A live webhook the caller may see (a lead of its team or a workspace admin), or null. */
-export async function visibleHook(tx: PluginTx, id: string): Promise<WebhookRow | null> {
-  const res = await tx.query<WebhookRow>(`SELECT ${WEBHOOK_COLUMNS} FROM app.webhooks w WHERE w.id = $1::uuid AND w.revoked_at IS NULL`, [id]);
+/** A live integration of the given kind that the caller may see (a lead of its team or a workspace admin), or null. */
+export async function visibleHook(tx: PluginTx, id: string, kind: WebhookRow['kind'] = 'incoming'): Promise<WebhookRow | null> {
+  const res = await tx.query<WebhookRow>(`SELECT ${WEBHOOK_COLUMNS} FROM app.webhooks w WHERE w.id = $1::uuid AND w.kind = $2 AND w.revoked_at IS NULL`, [id, kind]);
   return res.rows[0] ?? null;
 }
 

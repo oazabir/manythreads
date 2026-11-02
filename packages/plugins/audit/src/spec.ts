@@ -354,6 +354,38 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     target: of('webhook', uuid(e['webhookId'])),
     reason: e['enabled'] === true ? 'Signing switched on' : 'Signing switched off',
   }),
+  'webhooks.token.changed': (e) => ({
+    action: e['change'] === 'rotated' ? 'integration.token_rotated' : e['change'] === 'revoked' ? 'integration.token_revoked' : 'integration.token_created',
+    who: actor(e['actorId']),
+    teamId: team(e['teamId']),
+    target: of('integration', uuid(e['webhookId'])),
+  }),
+  'webhooks.token.used': (e) => ({
+    action: 'integration.api_called',
+    who: 'system',
+    teamId: team(e['teamId']),
+    target: of('integration', uuid(e['webhookId']), typeof e['method'] === 'string' && /^[a-zA-Z.]{1,30}$/.test(e['method']) ? e['method'] : null),
+    outcome: e['outcome'] === 'ok' ? undefined : 'denied',
+    reason: e['outcome'] === 'ok' ? null : (words(e['outcome']) ?? null),
+  }),
+  'webhooks.outgoing.changed': (e) => ({
+    action: 'integration.outgoing_changed',
+    who: actor(e['actorId']),
+    teamId: team(e['teamId']),
+    target: of('integration', uuid(e['webhookId'])),
+    reason: words(e['change']) ? sentence(words(e['change']) as string) : null,
+  }),
+  'webhooks.outgoing.delivered': (e) => {
+    if (e['outcome'] === 'retry') return null;
+    const ok = e['outcome'] === 'delivered';
+    return {
+      action: ok ? 'integration.outgoing_sent' : 'integration.outgoing_failed',
+      who: 'system',
+      teamId: team(e['teamId']),
+      target: of('integration', uuid(e['webhookId'])),
+      ...(ok ? {} : { outcome: 'failed' as const, reason: words(e['reason']) ? sentence(words(e['reason']) as string) : null }),
+    };
+  },
   'kernel.capability.denied': (e) => {
     const cap = code(e['capability']);
     const kind = e['actorKind'];

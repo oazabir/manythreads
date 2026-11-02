@@ -86,9 +86,21 @@ export function PasswordField({ label = 'Password', value, onChange, autoComplet
   );
 }
 
-export function Toggle({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
+/** `busy` marks a switch whose change is being saved: it keeps keyboard focus (a disabled button loses it) and ignores clicks until the save ends. */
+export function Toggle({ checked, onChange, label, disabled, busy }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean; busy?: boolean }) {
   return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={`tog ${checked ? 'on' : ''}`} onClick={() => onChange(!checked)} />
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={disabled}
+      className={`tog ${checked ? 'on' : ''}`}
+      onClick={() => {
+        if (!busy) onChange(!checked);
+      }}
+    />
   );
 }
 

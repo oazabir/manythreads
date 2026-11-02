@@ -10,6 +10,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** The secret segment of an incoming webhook's address, `/hooks/<webhook id>/<secret>`: whoever reads it can post into the channel. The id stays (it names the webhook in a log). */
 const WEBHOOK_SECRET_SEGMENT = /^(\/hooks\/[^/?#]*\/)[^/?#]*/;
 
+/** A `token=` value in the query string (a client that puts a credential there lands it in the access log) and any integration token (`mtat_...`) wherever it sits. One pass each, no nested quantifier. */
+const QUERY_TOKEN = /([?&]token=)[^&#]*/gi;
+const API_TOKEN_TEXT = /mtat_[A-Za-z0-9_-]+/g;
+
 /**
  * A URL as it may be logged: the per-open app token (a five-minute bearer capability for one team folder) is replaced, wherever it sits in the
  * address (L4 of the Phase 4 review: `logger: true` logged every `req.url`, `/repo/app/~mta.<token>/...` included).
@@ -18,6 +22,8 @@ export const redactUrl = (url: string): string =>
   url
     .replace(APP_TOKEN_SEGMENT, '~mta.[redacted]')
     .replace(WEBHOOK_SECRET_SEGMENT, '$1[redacted]')
+    .replace(QUERY_TOKEN, '$1[redacted]')
+    .replace(API_TOKEN_TEXT, '[redacted]')
     // Defensive: the MCP gateway no longer puts a run token in its path, but a client holding an older URL (or a typo that pastes a
     // token there) must not land one in the access log.
     .replace(MCP_RUN_SEGMENT, (_m, prefix: string, segment: string) => `${prefix}${UUID.test(segment) ? segment : '[redacted]'}`);

@@ -211,5 +211,7 @@ describe("email digest settings", () => {
     expect(digestHelp({ enabled: true, delayMinutes: 120, emailAvailable: true })).toContain("away for 2 hours");
     expect(digestHelp({ enabled: false, delayMinutes: 60, emailAvailable: true })).toMatch(/^Off\./);
     expect(digestHelp({ enabled: true, delayMinutes: 60, emailAvailable: false })).toContain("no verified email address");
+    expect(digestHelp({ enabled: true, delayMinutes: 60, emailAvailable: true, mailConfigured: false })).toContain('not available on this server');
+    expect(digestHelp({ enabled: true, delayMinutes: 60, emailAvailable: false, mailConfigured: false })).not.toContain('verified');
   });
 });

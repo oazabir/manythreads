@@ -1,9 +1,9 @@
-import type { ImportChannelInput, ImportedChannel, MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, PluginTx } from '@manythreads/sdk';
+import type { ImportChannelInput, ImportedChannel, MessageEditInput, MessageEdited, MessagePostInput as ProviderPostInput, MessagePosted, MessageProvider, MessageReactInput, MessageReacted, PluginTx } from '@manythreads/sdk';
 import { AnswerPayload, importChannelName, isSubsequence, repairBotMarkdown } from '@manythreads/shared';
 import { z } from 'zod';
 import { conflict, forbidden, invalid } from './http.ts';
 import { CHANNEL_COLUMNS, type ChannelRow } from './rows.ts';
-import { editChannelMessage, postChannelMessage, pushChannelCreated, type Deps } from './service.ts';
+import { editChannelMessage, postChannelMessage, pushChannelCreated, reactToMessage, type Deps } from './service.ts';
 
 // What a bot may do with channel messages (SPEC §7.1 lists `messages.*` among a bot's native capabilities; PLAN P5-10). A
 // capability is how one plugin calls another's behaviour — plugins never import each other — so the reply a runtime posts
@@ -257,6 +257,21 @@ export function registerMessageProvider(deps: Deps): void {
   const provider: MessageProvider = {
     id: 'channels',
     importChannel: (tx, input) => importChannel(deps, tx, input),
+    async edit(tx: PluginTx, input: MessageEditInput): Promise<MessageEdited> {
+      const body = z.string().min(1).max(40_000).safeParse(input.body);
+      if (!body.success) throw invalid('body: 1 to 40,000 characters');
+      // The same call the edit route and `messages.update` make, with the mentions and links left as they were: a script's edit never wakes anyone.
+      const before = (await tx.query<{ edited_at: Date | null }>('SELECT edited_at FROM app.messages WHERE id = $1 AND channel_id = $2', [input.messageId, input.channelId])).rows[0];
+      const edited = await editChannelMessage(deps, tx, { channelId: input.channelId, messageId: input.messageId, body: body.data, syncRefs: false });
+      const after = (await tx.query<{ edited_at: Date | null }>('SELECT edited_at FROM app.messages WHERE id = $1', [input.messageId])).rows[0];
+      return { id: edited.id, channelId: input.channelId, changed: (after?.edited_at?.getTime() ?? 0) !== (before?.edited_at?.getTime() ?? 0) };
+    },
+    async react(tx: PluginTx, input: MessageReactInput): Promise<MessageReacted> {
+      const emoji = z.string().min(1).max(64).regex(/^\S+$/).safeParse(input.emoji);
+      if (!emoji.success) throw invalid('emoji: no spaces, at most 64 characters');
+      const done = await reactToMessage(deps, tx, { channelId: input.channelId, messageId: input.messageId, emoji: emoji.data, add: input.add });
+      return { changed: done.changed };
+    },
     async post(tx: PluginTx, input: ProviderPostInput): Promise<MessagePosted> {
       if (input.imported !== undefined) {
         // History from another product (the import plugin): system pool only, never combined with a bot's bookkeeping.

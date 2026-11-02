@@ -78,7 +78,7 @@ beforeAll(async () => {
   baseDeps = {
     registries,
     storage: createMemoryKv(),
-    mail: { send: () => Promise.resolve() },
+    mail: { configured: true, send: () => Promise.resolve() },
     runtime: { publicUrl: 'http://localhost:3000', now: () => new Date() },
     secrets: createSecretService(),
     emit: async (_tx: unknown, event: PluginEvent) => void emitted.push(event),

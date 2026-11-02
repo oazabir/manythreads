@@ -477,3 +477,47 @@ export async function editChannelMessage(deps: Deps, tx: PluginTx, input: EditMe
   }
   return edited;
 }
+
+/** What adding or removing one reaction needs. */
+export interface ReactInput {
+  channelId: string;
+  messageId: string;
+  emoji: string;
+  add: boolean;
+}
+
+/**
+ * Add or remove the caller's own reaction to a message — **the one path a reaction is changed on**: the two reaction routes and the `messages` provider
+ * (the Slack-shaped API of the webhooks plugin) call it, so the event and the live push are the same. Adding needs the post permission, a live message and
+ * a channel that is not archived; removing asks only for the caller's own row. `changed` is false when nothing was there to add or remove.
+ */
+export async function reactToMessage(deps: Deps, tx: PluginTx, input: ReactInput): Promise<{ changed: boolean; reactions: ReactionSummary[] }> {
+  const { channelId, messageId, emoji } = input;
+  const channel = await requireChannel(tx, channelId);
+  if (input.add) {
+    const message = await findChannelMessage(tx, channelId, messageId);
+    if (!message) throw notFound('No such message');
+    if (message.deletedAt) throw conflict('That message was deleted');
+    await requirePost(tx, channel);
+  }
+  const res = await tx.query(
+    input.add
+      ? `INSERT INTO app.message_reactions (message_id, actor_id, emoji, channel_id) VALUES ($1, app.actor(), $2, $3) ON CONFLICT DO NOTHING RETURNING message_id`
+      : 'DELETE FROM app.message_reactions WHERE message_id = $1 AND actor_id = app.actor() AND emoji = $2 AND channel_id = $3 RETURNING message_id',
+    [messageId, emoji, channelId],
+  );
+  const changed = res.rows.length > 0;
+  const reactions = (await reactionsFor(tx, [messageId])).get(messageId) ?? [];
+  if (changed) {
+    await deps.ctx.audit.emit(tx, { type: 'channel.reaction.changed', channelId, teamId: channel.team_id, messageId, actorId: tx.actor.id, emoji, added: input.add });
+    await pushReaction(deps, tx, await audience(tx, channelId), {
+      channelId,
+      messageId,
+      actorId: tx.actor.id,
+      emoji,
+      added: input.add,
+      count: reactions.find((r) => r.emoji === emoji)?.count ?? (input.add ? 1 : 0),
+    } as ReactionChangedPush);
+  }
+  return { changed, reactions };
+}

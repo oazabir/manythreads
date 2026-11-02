@@ -241,3 +241,47 @@
   line-height: 16px;
   letter-spacing: 0.02em;
 }
+
+/* The tabs of the integrations dialog (the tab look is the shared `.tabs2`); on a phone they wrap rather than scroll sideways. */
+.wh-tabs {
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+
+.wh-word {
+  margin-right: 4px;
+}
+
+.wh-field-wide {
+  flex: 1 1 320px;
+}
+
+.wh-edit {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.wh-methods {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.wh-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+@media (width <= 640px) {
+  .wh-actions .btn {
+    flex: 1 1 auto;
+  }
+}

@@ -403,6 +403,31 @@ import {
   ListWebhooksResponse,
   RevokeWebhookResponse,
   SigningSecretResponse,
+  ApiTokenWithSecret,
+  ListApiTokensResponse,
+  RevokeApiTokenResponse,
+  TestApiTokenResponse,
+  CreateApiTokenRequest,
+  createApiTokenRoute,
+  listApiTokensRoute,
+  revokeApiTokenRoute,
+  rotateApiTokenRoute,
+  testApiTokenRoute,
+  ListOutgoingHooksResponse,
+  CreateOutgoingHookRequest,
+  UpdateOutgoingHookRequest,
+  OutgoingHook,
+  RevokeOutgoingHookResponse,
+  OutgoingSigningResponse,
+  ClearOutgoingSigningResponse,
+  TestOutgoingHookResponse,
+  listOutgoingHooksRoute,
+  createOutgoingHookRoute,
+  updateOutgoingHookRoute,
+  revokeOutgoingHookRoute,
+  setOutgoingSigningRoute,
+  clearOutgoingSigningRoute,
+  testOutgoingHookRoute,
   TestWebhookResponse,
   WebhookWithUrl,
   clearWebhookSigningRoute,
@@ -917,13 +942,15 @@ export const saveMyPresence = (body: UpdateMyPresenceRequest) => call(updateMyPr
 export const saveDnd = (body: UpdateDndRequest) => call(updateDndRoute, { request: UpdateDndRequest, response: MyPresence }, body);
 
 // ---- notification levels, keywords and browser push (PLAN P14-09) ---------------------------------------------
-/** The person's own level per channel and the workspace default. */
+/** The caller's email digest settings (on or off, how long away, whether this server can send mail at all). */
 export const fetchDigestSettings = () => call(getDigestSettingsRoute, { response: GetDigestSettingsResponse });
 
+/** Saves the digest on or off and the delay; answers the settings as they are now. */
 export const saveDigestSettings = (body: PutDigestSettingsRequest) =>
   call(putDigestSettingsRoute, { request: PutDigestSettingsRequest, response: PutDigestSettingsResponse }, body);
 
-export const fetchNotificationLevels =() => call(getNotificationLevelsRoute, { response: GetNotificationLevelsResponse });
+/** The person's own level per channel and the workspace default. */
+export const fetchNotificationLevels = () => call(getNotificationLevelsRoute, { response: GetNotificationLevelsResponse });
 /** Sets this channel's level for the caller; `null` takes the choice away so the channel follows the default again. */
 export const saveChannelLevel = (channelId: string, level: PutChannelLevelRequest['level']) =>
   call(putChannelLevelRoute, { request: PutChannelLevelRequest, response: PutChannelLevelResponse }, { level }, { channelId });
@@ -948,6 +975,24 @@ export const revokeWebhook = (webhookId: string) => call(revokeWebhookRoute, { r
 export const setWebhookSigningSecret = (webhookId: string) => call(setWebhookSigningRoute, { response: SigningSecretResponse }, undefined, { webhookId });
 export const clearWebhookSigningSecret = (webhookId: string) => call(clearWebhookSigningRoute, { response: ClearSigningResponse }, undefined, { webhookId });
 export const sendWebhookTest = (webhookId: string) => call(testWebhookRoute, { response: TestWebhookResponse }, undefined, { webhookId });
+
+// ---- API tokens and outgoing webhooks of a channel (PLAN P14-14) -------------------------------------------------
+export const fetchApiTokens = (channelId: string) => call(listApiTokensRoute, { response: ListApiTokensResponse }, undefined, { channelId });
+/** Makes a token; the answer carries its secret, which is shown once and never again. */
+export const createApiToken = (channelId: string, body: CreateApiTokenRequest) =>
+  call(createApiTokenRoute, { request: CreateApiTokenRequest, response: ApiTokenWithSecret }, body, { channelId });
+export const rotateApiToken = (tokenId: string) => call(rotateApiTokenRoute, { response: ApiTokenWithSecret }, undefined, { tokenId });
+export const revokeApiToken = (tokenId: string) => call(revokeApiTokenRoute, { response: RevokeApiTokenResponse }, undefined, { tokenId });
+export const sendApiTokenTest = (tokenId: string) => call(testApiTokenRoute, { response: TestApiTokenResponse }, undefined, { tokenId });
+export const fetchOutgoingHooks = (channelId: string) => call(listOutgoingHooksRoute, { response: ListOutgoingHooksResponse }, undefined, { channelId });
+export const createOutgoingHook = (channelId: string, body: CreateOutgoingHookRequest) =>
+  call(createOutgoingHookRoute, { request: CreateOutgoingHookRequest, response: OutgoingHook }, body, { channelId });
+export const updateOutgoingHook = (hookId: string, body: UpdateOutgoingHookRequest) =>
+  call(updateOutgoingHookRoute, { request: UpdateOutgoingHookRequest, response: OutgoingHook }, body, { hookId });
+export const revokeOutgoingHook = (hookId: string) => call(revokeOutgoingHookRoute, { response: RevokeOutgoingHookResponse }, undefined, { hookId });
+export const setOutgoingSigningSecret = (hookId: string) => call(setOutgoingSigningRoute, { response: OutgoingSigningResponse }, undefined, { hookId });
+export const clearOutgoingSigningSecret = (hookId: string) => call(clearOutgoingSigningRoute, { response: ClearOutgoingSigningResponse }, undefined, { hookId });
+export const sendOutgoingHookTest = (hookId: string) => call(testOutgoingHookRoute, { response: TestOutgoingHookResponse }, undefined, { hookId });
 
 // ---- data protection: the data-loss policy and each team's reachable hosts (workspace admins) -----------------
 export const fetchDlpPolicy = () => call(getDlpPolicyRoute, { response: DlpPolicy });

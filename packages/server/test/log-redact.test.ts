@@ -29,9 +29,20 @@ describe('log redaction (L4)', () => {
     expect(line).not.toContain('mtwh_topsecret');
   });
 
+  it('redacts a token in the query string and an integration token (mtat_) wherever it sits', () => {
+    const t = `mtat_${'A'.repeat(43)}`;
+    expect(redactUrl(`/api/slack/auth.test?token=${t}`)).toBe('/api/slack/auth.test?token=[redacted]');
+    expect(redactUrl(`/api/slack/chat.postMessage?channel=x&token=${t}&text=hi#f`)).toBe('/api/slack/chat.postMessage?channel=x&token=[redacted]&text=hi#f');
+    expect(redactUrl('/a?TOKEN=abc&x=1')).toBe('/a?TOKEN=[redacted]&x=1');
+    expect(redactUrl(`/a?next=${t}`)).toBe('/a?next=[redacted]');
+    expect(redactUrl('/a?mytoken=1&tokens=2')).toBe('/a?mytoken=1&tokens=2');
+    const line = JSON.stringify(serializeRequest({ method: 'GET', url: `/api/slack/auth.test?token=${t}`, headers: {}, host: 'h', ip: '1.2.3.4', socket: { remotePort: 1 } } as never));
+    expect(line).not.toContain(t);
+  });
+
   it('is linear on hostile input', () => {
     expectLinear(
-      (n) => [`/${'~mta.'.repeat(n)}`, `/~mta.${'a'.repeat(5 * n)}`, `/api/mcp/runs/${'/api/mcp/runs/'.repeat(n / 2)}`, `/api/mcp/runs/${'a'.repeat(5 * n)}`, `/hooks/${'/'.repeat(n)}`, `/hooks/${'a/'.repeat(n)}`],
+      (n) => [`/${'~mta.'.repeat(n)}`, `/~mta.${'a'.repeat(5 * n)}`, `/api/mcp/runs/${'/api/mcp/runs/'.repeat(n / 2)}`, `/api/mcp/runs/${'a'.repeat(5 * n)}`, `/hooks/${'/'.repeat(n)}`, `/hooks/${'a/'.repeat(n)}`, `/a?${'token=&'.repeat(n / 2)}`, `/a?token=${'a'.repeat(5 * n)}`, `/${'mtat_'.repeat(n)}`],
       (urls) => urls.forEach((url) => redactUrl(url)),
       { n: 60_000, label: 'a hostile URL' },
     );

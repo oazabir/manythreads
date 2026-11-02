@@ -6,7 +6,7 @@ You must be a lead of the channel's team or a workspace admin to make one. The p
 
 ## 1. Make the webhook
 
-1. Open the channel and press **Webhooks** in the header.
+1. Open the channel and press **Integrations** in the header (the first tab, Incoming webhooks).
 2. Type a name (it becomes the author name of the messages), optionally an emoji, and press **Make webhook**.
 3. Copy the address now. It looks like `https://your-site/hooks/<id>/<secret>`. **It is shown only once**: manythreads keeps only a fingerprint of the secret, so nobody (including you) can read it back later. If you lose it, press **New address** on that webhook; the old address stops working at once.
 4. Press **Send test message**. A note from the webhook appears in the channel.

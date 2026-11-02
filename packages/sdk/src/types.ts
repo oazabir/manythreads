@@ -698,6 +698,8 @@ export type MailTemplateMessage =
       unsubscribeUrl: string;
       /** The account settings page where the digest is switched back on. */
       settingsUrl: string;
+      /** The person's delay in minutes: the footer says there is at most one mail per delay. */
+      delayMinutes: number;
     }
   | { template: 'verify'; to: string; name: string; url: string }
   | { template: 'reset'; to: string; name: string; url: string }
@@ -705,6 +707,8 @@ export type MailTemplateMessage =
   | { template: 'ops_alert'; to: string; workspaceName: string; state: 'breached' | 'recovered'; title: string; detail: string; url: string };
 
 export interface MailService {
+  /** False when the server has no mail server set up, so `send` delivers nothing (it resolves, with a log line). Check it before work that must not be marked as sent. */
+  readonly configured: boolean;
   /** Sends one templated mail. Rejects when delivery fails; callers that must not leak that should catch it. */
   send(message: MailTemplateMessage): Promise<void>;
 }

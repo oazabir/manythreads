@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "emoji": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16
+    },
+    "url": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 2000
+    },
+    "triggerWords": {
+      "minItems": 1,
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      }
+    },
+    "match": {
+      "default": "starts",
+      "type": "string",
+      "enum": [
+        "starts",
+        "contains"
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "url",
+    "triggerWords"
+  ],
+  "additionalProperties": false
+}

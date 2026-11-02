@@ -7,7 +7,7 @@ export interface Incoming {
 }
 
 /** What an adapter decides: post this Markdown, leave it out (with the reason the caller is told), or refuse the payload as unreadable. */
-export type Adapted = { kind: 'post'; text: string } | { kind: 'ignore'; reason: string } | { kind: 'reject'; reason: string };
+export type Adapted = { kind: 'post'; text: string; /** Block Kit blocks left out because only a subset is shown. */ skipped?: number } | { kind: 'ignore'; reason: string } | { kind: 'reject'; reason: string };
 
 export type Obj = Record<string, unknown>;
 export const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
