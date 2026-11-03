@@ -38,6 +38,17 @@ export interface OAuthProviderDef {
   defaultServices: readonly string[];
   /** The access token expires and a refresh token renews it. Notion's does not expire. */
   refreshes: boolean;
+  /**
+   * The provider lives at an address of the customer's own account (Zendesk `acme.zendesk.com`, Salesforce `acme.my.salesforce.com`). The workspace's app holds the account's
+   * subdomain (the `tenant` setting); the address is built here from that one label and the provider's own domain, never taken whole from anyone (no SSRF).
+   */
+  instance: { suffix: string; label: string } | null;
+  /**
+   * A later sign-in for one more service keeps what was agreed before (Google's `include_granted_scopes`, a Microsoft token that carries every permission, Notion's
+   * settings on the integration). A provider without that (Zendesk, Intercom, HubSpot, Salesforce) gives the new token only the scopes asked for, so every sign-in asks
+   * for the services agreed before as well as the new one.
+   */
+  incremental: boolean;
 }
 
 /**
@@ -63,6 +74,8 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     // out a refresh token only when the person is asked again
     authorizeExtra: { access_type: 'offline', include_granted_scopes: 'true', prompt: 'consent' },
     refreshes: true,
+    instance: null,
+    incremental: true,
     defaultServices: ['drive', 'calendar'],
     services: catalogServices('google'),
   },
@@ -76,6 +89,8 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     scopeParam: true,
     authorizeExtra: { prompt: 'select_account' },
     refreshes: true,
+    instance: null,
+    incremental: true,
     defaultServices: ['onedrive', 'calendar'],
     services: catalogServices('microsoft'),
   },
@@ -89,6 +104,8 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     scopeParam: false,
     authorizeExtra: { owner: 'user' },
     refreshes: false,
+    instance: null,
+    incremental: true,
     defaultServices: ['notion'],
     services: catalogServices('notion'),
   },
@@ -104,6 +121,8 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     scopeParam: true,
     authorizeExtra: { audience: 'api.atlassian.com', prompt: 'consent' },
     refreshes: true,
+    instance: null,
+    incremental: true,
     defaultServices: ['issues'],
     services: catalogServices('jira'),
   },
@@ -118,6 +137,8 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     scopeParam: true,
     authorizeExtra: { prompt: 'consent' },
     refreshes: true,
+    instance: null,
+    incremental: true,
     defaultServices: ['issues'],
     services: catalogServices('linear'),
   },
@@ -133,6 +154,8 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     authorizeExtra: {},
     // an OAuth app's token does not expire; one made by a GitHub App with expiring tokens would send a refresh token, which this treats as none (the person connects again)
     refreshes: false,
+    instance: null,
+    incremental: true,
     defaultServices: ['issues'],
     services: catalogServices('githubissues'),
   },
@@ -146,8 +169,74 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     scopeParam: true,
     authorizeExtra: {},
     refreshes: true,
+    instance: null,
+    incremental: true,
     defaultServices: ['tasks'],
     services: catalogServices('asana'),
+  },
+  // Support and CRM (PLAN P16-07). Zendesk and Salesforce are at an address of the customer's own account; Intercom and HubSpot are one address for everyone.
+  zendesk: {
+    id: 'zendesk',
+    label: 'Zendesk',
+    pkce: true,
+    clientAuth: 'body',
+    tokenBody: 'json',
+    baseScopes: [],
+    scopeParam: true,
+    authorizeExtra: {},
+    // Zendesk hands out a refresh token only when the app opted in to expiring tokens; without one a token that is refused ends the sign-in, which the store already handles
+    refreshes: true,
+    instance: { suffix: '.zendesk.com', label: 'Zendesk' },
+    incremental: false,
+    defaultServices: ['tickets'],
+    services: catalogServices('zendesk'),
+  },
+  intercom: {
+    id: 'intercom',
+    label: 'Intercom',
+    pkce: false,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    baseScopes: [],
+    // what the app may do is set on the app at Intercom (like Notion), and what the person agrees to is the workspace they pick
+    scopeParam: false,
+    authorizeExtra: {},
+    refreshes: false,
+    instance: null,
+    incremental: false,
+    defaultServices: ['conversations'],
+    services: catalogServices('intercom'),
+  },
+  hubspot: {
+    id: 'hubspot',
+    label: 'HubSpot',
+    pkce: false,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    baseScopes: [],
+    scopeParam: true,
+    authorizeExtra: {},
+    refreshes: true,
+    instance: null,
+    incremental: false,
+    defaultServices: ['contacts'],
+    services: catalogServices('hubspot'),
+  },
+  salesforce: {
+    id: 'salesforce',
+    label: 'Salesforce',
+    pkce: true,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    // refresh_token is the offline grant Salesforce wants named
+    baseScopes: ['refresh_token'],
+    scopeParam: true,
+    authorizeExtra: {},
+    refreshes: true,
+    instance: { suffix: '.my.salesforce.com', label: 'Salesforce' },
+    incremental: false,
+    defaultServices: ['records'],
+    services: catalogServices('salesforce'),
   },
 };
 
@@ -172,6 +261,45 @@ export const servicesGranted = (provider: OAuthProviderDef, granted: readonly st
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
+// ---- the account address of Zendesk and Salesforce ---------------------------------------------------------------------------------------------------------
+
+/** One DNS label: lower-case letters, digits and single hyphens, not at either end, at most 63 characters. No dot, so it can never name another host or a path; no double hyphen, so it can never be a sandbox or an `xn--` name. */
+const INSTANCE_LABEL = /^[a-z0-9](?:[a-z0-9]|-(?!-)){0,61}[a-z0-9]$|^[a-z0-9]$/;
+
+/** The subdomain as it will be used (trimmed, lower-cased), or null when it is not a single plain label. */
+export function instanceLabel(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const label = raw.trim().toLowerCase();
+  return label.length <= 63 && INSTANCE_LABEL.test(label) ? label : null;
+}
+
+/** Thrown when a provider that lives at the customer's own address has no usable subdomain. The message is ours. */
+export class InstanceError extends Error {
+  constructor(label: string) {
+    super(`${label} needs the subdomain of your account first. A workspace admin enters it with the app.`);
+    this.name = 'InstanceError';
+  }
+}
+
+/** The subdomain a provider's sign-in and calls go to: the workspace app's setting, else the server's `MANYTHREADS_OAUTH_<PROVIDER>_INSTANCE`. Null when the provider has none or it is not valid. */
+export function instanceOf(id: PersonProviderId, env: Env, tenant?: string | null): string | null {
+  if (!PROVIDERS[id].instance) return null;
+  return instanceLabel(tenant ?? env[`MANYTHREADS_OAUTH_${id.toUpperCase()}_INSTANCE`]);
+}
+
+/** True when the provider is reachable now: it has no account address, or the tests' fake stands in for it, or a valid subdomain is known. */
+export function instanceReady(id: PersonProviderId, env: Env, tenant?: string | null): boolean {
+  return PROVIDERS[id].instance === null || fakeBase(id, env) !== null || instanceOf(id, env, tenant) !== null;
+}
+
+/** `https://acme.zendesk.com`: the one label and the provider's own suffix. */
+function instanceHost(id: PersonProviderId, env: Env, tenant: string | null | undefined): string {
+  const rule = PROVIDERS[id].instance;
+  const label = instanceOf(id, env, tenant);
+  if (!rule || label === null) throw new InstanceError(PROVIDERS[id].label);
+  return `https://${label}${rule.suffix}`;
+}
+
 export interface Endpoints {
   authorizeUrl: string;
   tokenUrl: string;
@@ -180,6 +308,9 @@ export interface Endpoints {
   /** The base of the provider's API; the tools add their own paths. */
   apiBase: string;
 }
+
+/** The version of the Salesforce REST API every call names. */
+export const SALESFORCE_API = 'v62.0';
 
 const TENANT = /^(?:common|organizations|consumers|[0-9a-fA-F-]{36}|[A-Za-z0-9][A-Za-z0-9.-]{0,62})$/;
 
@@ -191,7 +322,10 @@ function fakeBase(id: PersonProviderId, env: Env): string | null {
   return /^https?:\/\/[^\s/]+$/.test(raw) ? raw : null;
 }
 
-/** `tenant` is the Microsoft directory a workspace admin chose for the workspace's app; without one the server's setting (or `common`) is used. */
+/**
+ * `tenant` is the Microsoft directory a workspace admin chose for the workspace's app (without one the server's setting, or `common`, is used), or for Zendesk and Salesforce
+ * the subdomain of the account (without one the server's setting; none at all throws an `InstanceError`).
+ */
 export function endpointsFor(id: PersonProviderId, env: Env = process.env, tenant?: string | null): Endpoints {
   const fake = fakeBase(id, env);
   switch (id) {
@@ -231,6 +365,26 @@ export function endpointsFor(id: PersonProviderId, env: Env = process.env, tenan
       return fake
         ? { authorizeUrl: `${fake}/asana/-/oauth_authorize`, tokenUrl: `${fake}/asana/-/oauth_token`, revokeUrl: null, apiBase: `${fake}/asana-api/api/1.0` }
         : { authorizeUrl: 'https://app.asana.com/-/oauth_authorize', tokenUrl: 'https://app.asana.com/-/oauth_token', revokeUrl: null, apiBase: 'https://app.asana.com/api/1.0' };
+    case 'zendesk': {
+      // Zendesk has no address to revoke a token at that this helper can call (it is a DELETE by token id)
+      if (fake) return { authorizeUrl: `${fake}/oauth/authorizations/new`, tokenUrl: `${fake}/oauth/tokens`, revokeUrl: null, apiBase: `${fake}/api/v2` };
+      const host = instanceHost(id, env, tenant);
+      return { authorizeUrl: `${host}/oauth/authorizations/new`, tokenUrl: `${host}/oauth/tokens`, revokeUrl: null, apiBase: `${host}/api/v2` };
+    }
+    case 'intercom':
+      return fake
+        ? { authorizeUrl: `${fake}/oauth`, tokenUrl: `${fake}/auth/eagle/token`, revokeUrl: null, apiBase: fake }
+        : { authorizeUrl: 'https://app.intercom.com/oauth', tokenUrl: 'https://api.intercom.io/auth/eagle/token', revokeUrl: null, apiBase: 'https://api.intercom.io' };
+    case 'hubspot':
+      return fake
+        ? { authorizeUrl: `${fake}/oauth/authorize`, tokenUrl: `${fake}/oauth/v1/token`, revokeUrl: null, apiBase: fake }
+        : { authorizeUrl: 'https://app.hubspot.com/oauth/authorize', tokenUrl: 'https://api.hubapi.com/oauth/v1/token', revokeUrl: null, apiBase: 'https://api.hubapi.com' };
+    case 'salesforce': {
+      if (fake) return { authorizeUrl: `${fake}/services/oauth2/authorize`, tokenUrl: `${fake}/services/oauth2/token`, revokeUrl: `${fake}/services/oauth2/revoke`, apiBase: `${fake}/services/data/${SALESFORCE_API}` };
+      // the account's My Domain serves the sign-in and the API alike, so the instance address Salesforce answers with is never used
+      const host = instanceHost(id, env, tenant);
+      return { authorizeUrl: `${host}/services/oauth2/authorize`, tokenUrl: `${host}/services/oauth2/token`, revokeUrl: `${host}/services/oauth2/revoke`, apiBase: `${host}/services/data/${SALESFORCE_API}` };
+    }
     case 'notion':
       return fake
         ? { authorizeUrl: `${fake}/v1/oauth/authorize`, tokenUrl: `${fake}/v1/oauth/token`, revokeUrl: `${fake}/v1/oauth/revoke`, apiBase: `${fake}/v1` }

@@ -41,7 +41,7 @@ test('an admin adds a mailbox: Kubernetes is shut with its reason, the credentia
     await expect(chooser).toBeVisible();
     // the gallery lists what is built (a mailbox, SSH, Kubernetes) and, greyed with a reason, what is only planned (P16-01)
     await expect(page.getByTestId('connection-kind-kubernetes')).toBeVisible();
-    await expect(page.getByTestId('connector-soon-hubspot')).toHaveText('Not available yet');
+    await expect(page.getByTestId('connector-soon-freshdesk')).toHaveText('Not available yet');
     await page.getByTestId('connection-kind-email').click();
 
     const form = page.getByTestId('connection-add-form');

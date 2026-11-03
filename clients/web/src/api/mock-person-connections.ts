@@ -93,6 +93,7 @@ export function installPersonConnectionsMock(on: On, h: PersonConnectionsMockHoo
       clientId: mine?.clientId ?? null,
       tenant: mine?.tenant ?? null,
       supportsTenant: r.id === 'microsoft',
+      tenantKind: r.id === 'microsoft' ? 'directory' : null,
       hasSecret: mine !== undefined || r.configured,
       updatedAt: mine?.updatedAt ?? null,
     };

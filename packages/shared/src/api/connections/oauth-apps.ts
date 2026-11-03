@@ -22,10 +22,12 @@ export const OAuthAppStatus = z.strictObject({
   source: OAuthAppSource.nullable(),
   /** The client id of the app an admin entered (it is not a secret: every consent address carries it). Null for the server's environment, which is not shown, and for none. */
   clientId: z.string().max(500).nullable(),
-  /** Microsoft only: which directory people sign in to. */
+  /** Microsoft: which directory people sign in to. Zendesk and Salesforce: the account's subdomain (`acme` for acme.zendesk.com), the one place the sign-in and every call go to. */
   tenant: z.string().max(64).nullable(),
-  /** The provider has a tenant setting (Microsoft). */
+  /** The provider has a tenant setting (Microsoft, Zendesk, Salesforce). */
   supportsTenant: z.boolean(),
+  /** What the setting is: a Microsoft `directory`, or the `subdomain` of a Zendesk or Salesforce account. Null when the provider has none. Absent from an older server: null. */
+  tenantKind: z.enum(['directory', 'subdomain']).nullable().default(null),
   /** A client secret is stored. It cannot be shown. */
   hasSecret: z.boolean(),
   updatedAt: IsoDateTime.nullable(),

@@ -4,7 +4,7 @@ import { isUsable } from '../rows.ts';
 import { deleteConnectionAndSecrets, putConnectionSecretIn, readConnectionSecretIn, type SecretDeps } from '../secrets.ts';
 import { OAuthError, refreshAccess, revokeToken, sha256, type FetchLike, type TokenSet } from './flow.ts';
 import { resolveApp, resolveAppIn } from './apps.ts';
-import { endpointsFor, providerDef, type Env } from './providers.ts';
+import { endpointsFor, instanceReady, providerDef, type Env } from './providers.ts';
 
 // Where a person's provider sign-in lives in the database (PLAN P8-02): the unfinished sign-ins, the connection row of the person and what is known about it, and the
 // sealed tokens. Everything here runs as the system role inside one workspace (the credential tables give the application role nothing), and every function takes the
@@ -188,6 +188,8 @@ export async function accessTokenFor(
       const app = await resolveAppIn(deps, tx, connection.workspaceId, connection.provider);
       // no app to renew with (an admin removed it): not the provider's fault and not the person's, so nothing is counted and the person is not told
       if (!app) return { unavailable: true };
+      // Zendesk and Salesforce: no usable subdomain any more (an admin removed it) means nowhere to renew at; the same as having no app
+      if (!instanceReady(connection.provider, deps.env, app.tenant)) return { unavailable: true };
       let tokens: TokenSet;
       try {
         tokens = await refreshAccess({ provider: def, endpoints: endpointsFor(connection.provider, deps.env, app.tenant), app, fetchImpl: deps.fetchImpl }, refreshToken);

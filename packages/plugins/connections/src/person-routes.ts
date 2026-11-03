@@ -17,11 +17,11 @@ import {
 import { accountLabelFor } from './oauth/api.ts';
 import { authorizationUrl, exchangeCode, newFlowSecrets } from './oauth/flow.ts';
 import { configuredProviders, resolveApp } from './oauth/apps.ts';
-import { endpointsFor, PROVIDERS, providerIds, redirectUriFor, scopesFor, serviceDef, servicesGranted } from './oauth/providers.ts';
+import { endpointsFor, instanceReady, PROVIDERS, providerIds, redirectUriFor, scopesFor, serviceDef, servicesGranted } from './oauth/providers.ts';
 import { consumeFlow, disconnectPerson, ownConnections, recordFlow, saveSignIn, type OAuthDeps } from './oauth/store.ts';
 import { PERSON_TOOL_DEFS } from './person-tools.ts';
 
-// The routes where a person connects their own Google, Microsoft or Notion account (PLAN P8-02). One start route and one callback route serve every provider: they read
+// The routes where a person connects their own Google, Microsoft, Notion, Zendesk, Intercom, HubSpot or Salesforce account (PLAN P8-02, P16-07). One start route and one callback route serve every provider: they read
 // the provider's entry in oauth/providers.ts and run the shared flow in oauth/flow.ts. The tokens go straight to the sealed store; no route returns one.
 //
 //   GET    /api/me/connections                       the providers, which services each offers, what the caller connected, and whether the server is set up for it
@@ -103,18 +103,20 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
       const def = PROVIDERS[provider];
       const app = await resolveApp(deps, tx.actor.workspaceId, provider);
       if (!app) throw conflict(`${def.label} is not set up on this server yet. A workspace admin has to add this server’s ${def.label} app (its client id and secret) first.`);
+      // Zendesk and Salesforce live at the customer's own address: without the account's subdomain there is nowhere to send the browser
+      if (!instanceReady(provider, deps.env, app.tenant)) throw conflict(`${def.label} needs the subdomain of your account first. A workspace admin has to enter it with the ${def.label} app.`);
       const body = StartPersonConnectionRequest.parse(req.body);
       const named = [...new Set(body.services ?? def.defaultServices)];
       const unknown = named.find((s) => !serviceDef(def, s));
       if (unknown) throw invalid(`${def.label} has no service called “${unknown.slice(0, 40)}”.`);
       // Incremental scopes: ask only for what the person has not agreed to yet, so adding Calendar later does not ask about Drive again. When everything named is already
       // agreed to, the person is signing in again on purpose (to renew the sign-in), so the named services are asked as they are. A sign-in that has to be made again
-      // asks for everything it covered before as well as the new ones, so reconnecting never loses a service.
+      // asks for everything it covered before as well as the new ones, so reconnecting never loses a service. A provider whose token carries only the scopes asked for (`incremental: false`) always does.
       const mine = (await ownConnections(tx, tx.actor.id)).get(provider);
       const already = mine ? new Set(servicesGranted(def, mine.scopes)) : new Set<string>();
       const dead = mine !== undefined && mine.state !== 'ok';
       const delta = named.filter((s) => !already.has(s));
-      const services = dead ? [...new Set([...already, ...named])] : delta.length > 0 ? delta : named;
+      const services = dead || !def.incremental ? [...new Set([...already, ...named])] : delta.length > 0 ? delta : named;
       const secrets = newFlowSecrets(def);
       await recordFlow(deps, { workspaceId: tx.actor.workspaceId, ownerId: tx.actor.id, provider, services, state: secrets.state, verifier: secrets.verifier, returnTo: safeReturn(body.returnTo) });
       return json({
@@ -157,7 +159,7 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
           { provider: def, endpoints: endpointsFor(provider, deps.env, app.tenant), app, fetchImpl: deps.fetchImpl },
           { code: query.code, redirectUri: redirectUriFor(publicUrl, provider), verifier: flow.code_verifier },
         );
-        const accountLabel = await accountLabelFor(deps, provider, tokens.accessToken, tokens.accountHint);
+        const accountLabel = await accountLabelFor(deps, provider, tokens.accessToken, tokens.accountHint, app.tenant);
         await saveSignIn(deps, {
           workspaceId: tx.actor.workspaceId,
           ownerId: tx.actor.id,

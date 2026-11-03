@@ -383,6 +383,119 @@ const asana: ConnectorEntry = {
   ...built('P16-06'),
 };
 
+// ---- support and CRM: Zendesk, Intercom, HubSpot, Salesforce (P16-07) ---------------------------------------------------------------------------------------
+
+const zendesk: ConnectorEntry = {
+  id: 'zendesk',
+  label: 'Zendesk',
+  provider: 'Zendesk',
+  categories: ['tickets', 'crm'],
+  description: 'Search and read tickets, look up the customer, and add an internal note, reply or change the status. Each person signs in to their own Zendesk account; every change waits for a person to approve it.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    svc('tickets', 'Zendesk tickets (read)', 'Search tickets, read a ticket with its conversation, and look up a customer.', ['read']),
+    svc('tickets_write', 'Zendesk tickets (notes, replies and status)', 'Add an internal note, reply to the customer, or change the status of a ticket. Each one waits for your approval.', ['tickets:write']),
+  ],
+  tools: [
+    tool('zendesk.search_tickets', 'Search tickets', 'read', 'tickets'),
+    tool('zendesk.read_ticket', 'Read a ticket', 'read', 'tickets'),
+    tool('zendesk.find_customer', 'Look up a customer', 'read', 'tickets'),
+    tool('zendesk.add_note', 'Add an internal note', 'write', 'tickets_write'),
+    tool('zendesk.reply', 'Reply to the customer', 'write', 'tickets_write'),
+    tool('zendesk.set_status', 'Change the status', 'write', 'tickets_write'),
+    dangerous('zendesk.delete_ticket', 'Delete a ticket', 'tickets_write'),
+  ],
+  // a new ticket needs an identity for the run it starts (a person tool needs someone who asked) and Zendesk's webhook signature (P16-10): not built
+  triggers: [trig('ticket_created', 'A new ticket arrives')],
+  syncTargets: [],
+  ...built('P16-07'),
+};
+
+const intercom: ConnectorEntry = {
+  id: 'intercom',
+  label: 'Intercom',
+  provider: 'Intercom',
+  categories: ['tickets', 'chat'],
+  description: 'Search and read conversations, look up the customer, and add an internal note, reply or close one. Each person signs in to their own Intercom account; every change waits for a person to approve it.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    // Intercom has no scope names in the consent address: what the app may do is set on the app itself. These two words only record what the person agreed to here.
+    svc('conversations', 'Intercom conversations (read)', 'Search and read conversations, and look up a customer.', ['read_conversations']),
+    svc('conversations_write', 'Intercom conversations (notes, replies and closing)', 'Add an internal note, reply to the customer, or close or reopen a conversation. Each one waits for your approval.', ['write_conversations']),
+  ],
+  tools: [
+    tool('intercom.search_conversations', 'Search conversations', 'read', 'conversations'),
+    tool('intercom.read_conversation', 'Read a conversation', 'read', 'conversations'),
+    tool('intercom.find_customer', 'Look up a customer', 'read', 'conversations'),
+    tool('intercom.add_note', 'Add an internal note', 'write', 'conversations_write'),
+    tool('intercom.reply', 'Reply to the customer', 'write', 'conversations_write'),
+    tool('intercom.set_state', 'Close or reopen', 'write', 'conversations_write'),
+    dangerous('intercom.delete_conversation', 'Delete a conversation', 'conversations_write'),
+  ],
+  triggers: [trig('conversation_created', 'A new conversation starts')],
+  syncTargets: [],
+  ...built('P16-07'),
+};
+
+const hubspot: ConnectorEntry = {
+  id: 'hubspot',
+  label: 'HubSpot',
+  provider: 'HubSpot',
+  categories: ['crm'],
+  description: 'Look up a contact inside an answer, and add a note or change the lead status. Each person signs in to their own HubSpot account; every change waits for a person to approve it.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    svc('contacts', 'HubSpot contacts (read)', 'Find a contact by name or address and read its details.', ['crm.objects.contacts.read']),
+    svc('contacts_write', 'HubSpot contacts (notes and lead status)', 'Add a note to a contact, or change its lead status. Each one waits for your approval.', ['crm.objects.contacts.write']),
+  ],
+  tools: [
+    tool('hubspot.find_contact', 'Find a contact', 'read', 'contacts'),
+    tool('hubspot.read_contact', 'Read a contact', 'read', 'contacts'),
+    tool('hubspot.add_note', 'Add a note to a contact', 'write', 'contacts_write'),
+    tool('hubspot.set_lead_status', 'Change the lead status', 'write', 'contacts_write'),
+    dangerous('hubspot.delete_contact', 'Delete a contact', 'contacts_write'),
+  ],
+  triggers: [],
+  syncTargets: [],
+  ...built('P16-07'),
+};
+
+const salesforce: ConnectorEntry = {
+  id: 'salesforce',
+  label: 'Salesforce',
+  provider: 'Salesforce',
+  categories: ['crm', 'tickets'],
+  description: 'Look up a customer, search and read cases, and add an internal case note or change a case status. Each person signs in to their own Salesforce account; every change waits for a person to approve it.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    // Salesforce has one scope for its API; what a person may do is decided by their own profile there, and each write here waits for approval anyway.
+    svc('records', 'Salesforce accounts, contacts and cases', 'Look up accounts and contacts, search and read cases, add an internal case note, or change a case status. A note or a change waits for your approval.', ['api']),
+  ],
+  tools: [
+    tool('salesforce.find_customer', 'Look up a customer', 'read', 'records'),
+    tool('salesforce.search_cases', 'Search cases', 'read', 'records'),
+    tool('salesforce.read_case', 'Read a case', 'read', 'records'),
+    tool('salesforce.add_case_note', 'Add an internal case note', 'write', 'records'),
+    tool('salesforce.set_case_status', 'Change a case status', 'write', 'records'),
+    dangerous('salesforce.delete_record', 'Delete a record', 'records'),
+  ],
+  triggers: [],
+  syncTargets: [],
+  ...built('P16-07'),
+};
+
 // ---- connectors whose tools are not built yet: catalog data only ---------------------------------------------------------------------------------------
 
 const planned = (e: Omit<ConnectorEntry, 'kind' | 'syncTargets' | 'triggers' | 'services'> & Partial<Pick<ConnectorEntry, 'syncTargets' | 'triggers' | 'services'>>): ConnectorEntry => ({
@@ -425,25 +538,6 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
     ...soon('P8-03', 'The GitLab connection is not built yet.'),
   }),
   planned({
-    id: 'zendesk',
-    label: 'Zendesk',
-    provider: 'Zendesk',
-    categories: ['tickets', 'crm'],
-    description: 'A new ticket starts your support bot, which can look up the customer and draft a reply. Every change waits for a person.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team'],
-    services: [svc('tickets', 'Tickets', 'Read tickets and customers, and reply or update with approval.', ['read', 'write'], false)],
-    tools: [
-      tool('zendesk.search_tickets', 'Search tickets', 'read', 'tickets', false),
-      tool('zendesk.read_ticket', 'Read a ticket', 'read', 'tickets', false),
-      tool('zendesk.reply', 'Reply to a ticket', 'write', 'tickets', false),
-      dangerous('zendesk.delete_ticket', 'Delete a ticket', 'tickets'),
-    ],
-    triggers: [trig('ticket_created', 'A new ticket arrives')],
-    ...soon('P16-07', 'Support and CRM connectors arrive in a later phase.'),
-  }),
-  planned({
     id: 'freshdesk',
     label: 'Freshdesk',
     provider: 'Freshworks',
@@ -454,47 +548,7 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
     heldBy: ['team'],
     tools: [tool('freshdesk.search_tickets', 'Search tickets', 'read', null, false), tool('freshdesk.reply', 'Reply to a ticket', 'write', null, false)],
     triggers: [trig('ticket_created', 'A new ticket arrives')],
-    ...soon('P16-07', 'Support and CRM connectors arrive in a later phase.'),
-  }),
-  planned({
-    id: 'intercom',
-    label: 'Intercom',
-    provider: 'Intercom',
-    categories: ['tickets', 'chat'],
-    description: 'A new conversation starts your support bot. Replies wait for a person.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team'],
-    services: [svc('conversations', 'Conversations', 'Read conversations and customers, and reply with approval.', [], false)],
-    tools: [tool('intercom.search_conversations', 'Search conversations', 'read', 'conversations', false), tool('intercom.reply', 'Reply to a conversation', 'write', 'conversations', false)],
-    triggers: [trig('conversation_created', 'A new conversation starts')],
-    ...soon('P16-07', 'Support and CRM connectors arrive in a later phase.'),
-  }),
-  planned({
-    id: 'hubspot',
-    label: 'HubSpot',
-    provider: 'HubSpot',
-    categories: ['crm'],
-    description: 'Look up a customer inside an answer. Changes to a record wait for a person.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team'],
-    services: [svc('contacts', 'Contacts and companies', 'Look up contacts and companies, and update one with approval.', ['crm.objects.contacts.read', 'crm.objects.contacts.write'], false)],
-    tools: [tool('hubspot.find_contact', 'Find a contact', 'read', 'contacts', false), tool('hubspot.update_contact', 'Update a contact', 'write', 'contacts', false)],
-    ...soon('P16-07', 'Support and CRM connectors arrive in a later phase.'),
-  }),
-  planned({
-    id: 'salesforce',
-    label: 'Salesforce',
-    provider: 'Salesforce',
-    categories: ['crm'],
-    description: 'Look up a customer inside an answer. Changes to a record wait for a person.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team'],
-    services: [svc('records', 'Accounts and contacts', 'Look up accounts and contacts, and update one with approval.', ['api', 'refresh_token'], false)],
-    tools: [tool('salesforce.find_account', 'Find an account', 'read', 'records', false), tool('salesforce.update_record', 'Update a record', 'write', 'records', false)],
-    ...soon('P16-07', 'Support and CRM connectors arrive in a later phase.'),
+    ...soon('P16-07', 'Freshdesk signs in with a personal API key rather than a consent page, and the key-entry sign-in is not built yet.'),
   }),
   planned({
     id: 'confluence',
@@ -660,7 +714,7 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
 ];
 
 /** Every connector, in the order the gallery shows them: what works today first, then what is planned. */
-export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [...nativeEntries, google, microsoft, notion, jira, linear, githubIssues, asana, ...PLANNED_ENTRIES];
+export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [...nativeEntries, google, microsoft, notion, jira, linear, githubIssues, asana, zendesk, intercom, hubspot, salesforce, ...PLANNED_ENTRIES];
 
 // ---- reading the catalog -----------------------------------------------------------------------------------------------------------------------------------
 

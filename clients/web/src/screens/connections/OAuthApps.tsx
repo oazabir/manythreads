@@ -50,7 +50,7 @@ function AppCard({ app: a, onChanged }: { app: OAuthAppStatus; onChanged: () => 
   async function save(e: FormEvent): Promise<void> {
     e.preventDefault();
     if (sending.current) return;
-    const problem = checkApp({ clientId, clientSecret, tenant });
+    const problem = checkApp({ clientId, clientSecret, tenant, tenantKind: a.tenantKind });
     if (problem) {
       setError(problem);
       return;
@@ -117,7 +117,11 @@ function AppCard({ app: a, onChanged }: { app: OAuthAppStatus; onChanged: () => 
               onChange={(e) => setClientSecret(e.target.value)}
             />
             {a.supportsTenant ? (
-              <Field label="Directory (optional)" value={tenant} maxLength={64} placeholder="common" hint="Which directory people sign in to: your directory id or domain, or leave empty for the server’s default." onChange={(e) => setTenant(e.target.value)} />
+              a.tenantKind === 'subdomain' ? (
+                <Field label="Account address" value={tenant} maxLength={63} placeholder="acme" hint="Only the first part of your account’s address, such as acme for acme.zendesk.com. People sign in there." onChange={(e) => setTenant(e.target.value)} />
+              ) : (
+                <Field label="Directory (optional)" value={tenant} maxLength={64} placeholder="common" hint="Which directory people sign in to: your directory id or domain, or leave empty for the server’s default." onChange={(e) => setTenant(e.target.value)} />
+              )
             ) : null}
             {error ? <p className="cp-error" role="alert" data-testid="oauth-app-error">{error}</p> : null}
             <div className="cn-actions">

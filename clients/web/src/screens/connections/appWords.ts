@@ -8,9 +8,13 @@ export function appSourceLine(a: Pick<OAuthAppStatus, 'source' | 'label'>): stri
 }
 
 /** The first thing wrong with what an admin typed, in a sentence; null when it can be sent. The server checks again. */
-export function checkApp(input: { clientId: string; clientSecret: string; tenant: string }): string | null {
+export function checkApp(input: { clientId: string; clientSecret: string; tenant: string; tenantKind?: OAuthAppStatus['tenantKind'] }): string | null {
   if (input.clientId.trim() === '') return 'Enter the client id.';
   if (input.clientSecret === '') return 'Enter the client secret.';
+  if (input.tenantKind === 'subdomain') {
+    if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?!-)){0,61}[A-Za-z0-9]$|^[A-Za-z0-9]$/.test(input.tenant.trim())) return 'Enter only the first part of your account’s address, such as acme for acme.zendesk.com: letters, digits and hyphens.';
+    return null;
+  }
   if (input.tenant.trim() !== '' && !/^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$/.test(input.tenant.trim())) return 'The directory is an id, a domain, or one of common, organizations or consumers.';
   return null;
 }

@@ -13,6 +13,7 @@ import {
   type PersonProviderId,
 } from '@manythreads/shared';
 import { clearWorkspaceApp, listApps, putWorkspaceApp } from './oauth/apps.ts';
+import { instanceLabel, PROVIDERS } from './oauth/providers.ts';
 import type { OAuthDeps } from './oauth/store.ts';
 
 // The admin's side of signing people in (PLAN P16-02): the OAuth app (client id and secret) the workspace uses for Google, Microsoft and Notion.
@@ -63,14 +64,20 @@ export function registerOAuthAppRoutes(ctx: PluginContext, deps: OAuthDeps): voi
       await requireAdmin(tx);
       const { provider } = OAuthAppParams.parse(req.params);
       const body = PutOAuthAppRequest.parse(req.body);
-      if (body.tenant && provider !== 'microsoft') throw invalid('Only Microsoft has a directory setting.');
+      const def = PROVIDERS[provider];
+      let tenant = body.tenant || null;
+      if (def.instance) {
+        // Zendesk and Salesforce: the subdomain of the account, one plain label (the address is built from it and the provider's own domain, never taken whole)
+        tenant = instanceLabel(tenant);
+        if (tenant === null) throw invalid(`${def.label} needs the subdomain of your account: only its first part, such as “acme” for acme${def.instance.suffix}.`);
+      } else if (tenant && provider !== 'microsoft') throw invalid('Only Microsoft, Zendesk and Salesforce have an account setting.');
       const app = await putWorkspaceApp(deps, {
         workspaceId: tx.actor.workspaceId,
         actorId: tx.actor.id,
         provider,
         clientId: body.clientId,
         clientSecret: body.clientSecret,
-        tenant: body.tenant || null,
+        tenant,
         publicUrl,
       });
       await changed(tx, provider, 'set');

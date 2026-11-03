@@ -8,6 +8,10 @@
     "jira",
     "linear",
     "githubissues",
-    "asana"
+    "asana",
+    "zendesk",
+    "intercom",
+    "hubspot",
+    "salesforce"
   ]
 }

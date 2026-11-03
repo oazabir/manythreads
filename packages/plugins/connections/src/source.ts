@@ -1,6 +1,7 @@
 import { forbidden, invalid, type BotRunHandle, type PluginTx, type ToolApprovalCard, type ToolSource } from '@manythreads/sdk';
 import { inputProblem, kindOf, kindServes, TOOLS } from './kinds.ts';
 import { createProviderApi, ProviderError } from './oauth/api.ts';
+import { appInstance } from './oauth/apps.ts';
 import { PROVIDERS, serviceDef } from './oauth/providers.ts';
 import { ConnectionProblem, usablePersonConnection, type OAuthDeps } from './oauth/store.ts';
 import { PERSON_TOOLS, personToolDef } from './person-tools.ts';
@@ -67,7 +68,9 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
       return unavailable('not_agreed', `The person who asked has not allowed “${service?.label ?? def.service}” on their ${provider.label} connection, so “${tool}” cannot run. They can add it from their connections page.`);
     }
     try {
-      return await def.run(createProviderApi(deps, { id: connection.id, workspaceId: run.workspaceId, provider: def.provider }), input);
+      // Zendesk and Salesforce: the account's address comes from the workspace's app, read here (never from the tool's arguments)
+      const instance = await appInstance(deps, run.workspaceId, def.provider);
+      return await def.run(createProviderApi(deps, { id: connection.id, workspaceId: run.workspaceId, provider: def.provider, instance }), input);
     } catch (err) {
       if (err instanceof ProviderError) return unavailable(err.status === 401 || err.status === 403 ? 'provider_refused' : err.status === 404 ? 'not_found' : 'provider_unavailable', err.message);
       if (err instanceof ConnectionProblem) return unavailable(err.code, err.message);

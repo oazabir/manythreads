@@ -1,7 +1,7 @@
 import { SafeFetchError, safeFetch } from '@manythreads/sdk/safe-fetch';
 import type { PersonProviderId } from '@manythreads/shared';
 import { readJson, type FetchLike } from './flow.ts';
-import { endpointsFor, PROVIDERS } from './providers.ts';
+import { endpointsFor, instanceReady, PROVIDERS } from './providers.ts';
 import { accessTokenFor, type OAuthDeps } from './store.ts';
 
 // One door to a provider's API for the tools of a person's connection (PLAN P8-02). It adds the person's access token (renewed first when it is about to stop working,
@@ -47,6 +47,8 @@ export interface ProviderApi {
 const EXTRA_HEADERS: Readonly<Partial<Record<PersonProviderId, Record<string, string>>>> = {
   notion: { 'notion-version': '2022-06-28' },
   githubissues: { accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': 'manythreads' },
+  // Intercom answers in the shape of the version a call names; every call of ours names this one
+  intercom: { 'intercom-version': '2.11' },
 };
 
 function explain(provider: PersonProviderId, status: number): string {
@@ -59,8 +61,15 @@ function explain(provider: PersonProviderId, status: number): string {
   return `${label} refused the request (${status}).`;
 }
 
-export function createProviderApi(deps: OAuthDeps, connection: { id: string; workspaceId: string; provider: PersonProviderId }): ProviderApi {
-  const endpoints = endpointsFor(connection.provider, deps.env);
+export function createProviderApi(
+  deps: OAuthDeps,
+  connection: { id: string; workspaceId: string; provider: PersonProviderId; /** Zendesk and Salesforce: the subdomain of the workspace's account. */ instance?: string | null },
+): ProviderApi {
+  // a provider at the customer's own address with no usable subdomain (an admin removed it): the call is refused in our words, before anything is sent
+  if (!instanceReady(connection.provider, deps.env, connection.instance)) {
+    throw new ProviderError(409, `${PROVIDERS[connection.provider].label} needs the subdomain of your account first. A workspace admin enters it with the app.`);
+  }
+  const endpoints = endpointsFor(connection.provider, deps.env, connection.instance);
   const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
 
   const send = async (token: string, path: string, init: ApiInit): Promise<Response> => {
@@ -157,25 +166,39 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
 
 const rec = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 /** Where each provider says whose account a token is (Notion gives it with the token). */
-const IDENTITY: Readonly<Partial<Record<PersonProviderId, { path: string; graphql?: string; pick(doc: Record<string, unknown> | null): unknown }>>> = {
+const IDENTITY: Readonly<Partial<Record<PersonProviderId, { path: string; graphql?: string; /** The path is under the account's origin rather than the API base. */ origin?: boolean; pick(doc: Record<string, unknown> | null): unknown }>>> = {
   google: { path: '/oauth2/v3/userinfo', pick: (d) => d?.['email'] },
   microsoft: { path: '/me?$select=mail,userPrincipalName', pick: (d) => d?.['mail'] ?? d?.['userPrincipalName'] },
   jira: { path: '/me', pick: (d) => d?.['email'] ?? d?.['name'] },
   linear: { path: '/graphql', graphql: '{ viewer { email } }', pick: (d) => rec(rec(d?.['data'])?.['viewer'])?.['email'] },
   githubissues: { path: '/user', pick: (d) => d?.['login'] },
   asana: { path: '/users/me', pick: (d) => rec(d?.['data'])?.['email'] },
+  zendesk: { path: '/users/me.json', pick: (d) => rec(d?.['user'])?.['email'] },
+  intercom: { path: '/me', pick: (d) => d?.['email'] },
+  // HubSpot names the account by its portal number
+  hubspot: { path: '/account-info/v3/details', pick: (d) => (typeof d?.['portalId'] === 'number' ? `HubSpot account ${String(d['portalId'])}` : null) },
+  salesforce: { path: '/services/oauth2/userinfo', origin: true, pick: (d) => d?.['email'] },
 };
 
 /**
  * Whose account a fresh sign-in is, in a few words for the screen (an address, or Notion's workspace name). Asked once, with the token that was just handed over and
  * before anything is saved; a failure just means the screen has no label.
  */
-export async function accountLabelFor(deps: Pick<OAuthDeps, 'env' | 'fetchImpl'>, provider: PersonProviderId, accessToken: string, hint: string | null): Promise<string | null> {
+export async function accountLabelFor(
+  deps: Pick<OAuthDeps, 'env' | 'fetchImpl'>,
+  provider: PersonProviderId,
+  accessToken: string,
+  hint: string | null,
+  instance?: string | null,
+): Promise<string | null> {
   if (provider === 'notion') return hint;
-  const endpoints = endpointsFor(provider, deps.env);
+  if (!instanceReady(provider, deps.env, instance)) return null;
+  const endpoints = endpointsFor(provider, deps.env, instance);
   const who = IDENTITY[provider]!;
   try {
-    const res = await (deps.fetchImpl ?? ((url, init) => fetch(url, init)))(`${endpoints.apiBase}${who.path}`, {
+    // Salesforce's identity is served from the account's origin, not under the REST API path
+    const root = who.origin ? new URL(endpoints.apiBase).origin : endpoints.apiBase;
+    const res = await (deps.fetchImpl ?? ((url, init) => fetch(url, init)))(`${root}${who.path}`, {
       method: who.graphql ? 'POST' : 'GET',
       headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json', ...EXTRA_HEADERS[provider], ...(who.graphql ? { 'content-type': 'application/json' } : {}) },
       ...(who.graphql ? { body: JSON.stringify({ query: who.graphql }) } : {}),
@@ -192,3 +215,4 @@ export async function accountLabelFor(deps: Pick<OAuthDeps, 'env' | 'fetchImpl'>
     return null;
   }
 }
+

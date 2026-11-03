@@ -1,7 +1,7 @@
 import type { PluginTx } from '@manythreads/sdk';
 import type { OAuthAppStatus, PersonProviderId } from '@manythreads/shared';
 import type { SecretDeps } from '../secrets.ts';
-import { oauthApp, PROVIDERS, providerIds, redirectUriFor, type Env } from './providers.ts';
+import { instanceLabel, oauthApp, PROVIDERS, providerIds, redirectUriFor, type Env } from './providers.ts';
 
 // The OAuth app a workspace signs its people in to a provider with (PLAN P16-02). An admin enters the app's client id and secret on the admin page; the id is kept in
 // the clear (every consent address carries it), the secret is sealed by the platform's secret service and only ever read back here, to make one call to the provider.
@@ -37,6 +37,18 @@ export async function resolveAppIn(deps: Pick<AppDeps, 'secrets' | 'env'>, tx: P
   const fromEnv = oauthApp(provider, deps.env);
   return fromEnv ? { ...fromEnv, tenant: null, source: 'server' } : null;
 }
+
+/**
+ * The subdomain an admin entered with the workspace's app for Zendesk or Salesforce, or null (none entered, or not a valid label: it is checked again here, so a row
+ * written some other way can never become part of an address). Reads only that column, never the sealed secret.
+ */
+export const appInstance = (deps: Pick<AppDeps, 'db'>, workspaceId: string, provider: PersonProviderId): Promise<string | null> =>
+  PROVIDERS[provider].instance === null
+    ? Promise.resolve(null)
+    : deps.db.system(
+        async (tx) => instanceLabel((await tx.query<{ tenant: string | null }>('SELECT tenant FROM app.connection_oauth_apps WHERE workspace_id = $1 AND provider = $2', [workspaceId, provider])).rows[0]?.tenant),
+        { workspaceId },
+      );
 
 /** The same, in its own system transaction (the routes' transactions are the person's, which cannot read the sealed secret). */
 export const resolveApp = (deps: AppDeps, workspaceId: string, provider: PersonProviderId): Promise<ResolvedApp | null> =>
@@ -80,7 +92,8 @@ function statusOf(
   inEnvironment: boolean,
   publicUrl: string,
 ): OAuthAppStatus {
-  const base = { provider: id, label: PROVIDERS[id].label, redirectUri: redirectUriFor(publicUrl, id), supportsTenant: id === 'microsoft' };
+  const tenantKind = id === 'microsoft' ? ('directory' as const) : PROVIDERS[id].instance ? ('subdomain' as const) : null;
+  const base = { provider: id, label: PROVIDERS[id].label, redirectUri: redirectUriFor(publicUrl, id), supportsTenant: tenantKind !== null, tenantKind };
   if (row?.has_secret) return { ...base, source: 'workspace', clientId: row.client_id, tenant: row.tenant, hasSecret: true, updatedAt: row.updated_at.toISOString() };
   if (inEnvironment) return { ...base, source: 'server', clientId: null, tenant: null, hasSecret: true, updatedAt: null };
   return { ...base, source: null, clientId: null, tenant: null, hasSecret: false, updatedAt: null };

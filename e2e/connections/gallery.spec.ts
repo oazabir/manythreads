@@ -41,15 +41,15 @@ test('search finds a connector by what it does, a shelf narrows the list, and a 
     await expect(page.getByTestId('connector-card-ssh')).toHaveCount(0);
 
     await page.getByTestId('connector-search').fill('');
-    await page.getByTestId('connector-category-crm').click();
-    await expect(page.getByTestId('connector-category-crm')).toHaveAttribute('aria-pressed', 'true');
-    const hubspot = page.getByTestId('connector-card-hubspot');
-    await expect(hubspot).toHaveAttribute('data-status', 'planned');
-    await expect(page.getByTestId('connector-soon-hubspot')).toHaveText('Not available yet');
-    await expect(hubspot.locator('.cg-reason')).not.toBeEmpty();
+    await page.getByTestId('connector-category-tickets').click();
+    await expect(page.getByTestId('connector-category-tickets')).toHaveAttribute('aria-pressed', 'true');
+    const freshdesk = page.getByTestId('connector-card-freshdesk');
+    await expect(freshdesk).toHaveAttribute('data-status', 'planned');
+    await expect(page.getByTestId('connector-soon-freshdesk')).toHaveText('Not available yet');
+    await expect(freshdesk.locator('.cg-reason')).not.toBeEmpty();
     // a planned connector offers no button at all
-    await expect(hubspot.getByRole('button')).toHaveCount(0);
-    await expect(hubspot.getByRole('link')).toHaveCount(0);
+    await expect(freshdesk.getByRole('button')).toHaveCount(0);
+    await expect(freshdesk.getByRole('link')).toHaveCount(0);
 
     await page.getByTestId('connector-category-all').click();
     await page.getByTestId('connector-search').fill('zzzzqq');

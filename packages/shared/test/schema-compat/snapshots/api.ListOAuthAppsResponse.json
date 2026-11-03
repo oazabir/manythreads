@@ -16,7 +16,11 @@
               "jira",
               "linear",
               "githubissues",
-              "asana"
+              "asana",
+              "zendesk",
+              "intercom",
+              "hubspot",
+              "salesforce"
             ]
           },
           "label": {
@@ -65,6 +69,21 @@
           },
           "supportsTenant": {
             "type": "boolean"
+          },
+          "tenantKind": {
+            "default": null,
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "directory",
+                  "subdomain"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "hasSecret": {
             "type": "boolean"

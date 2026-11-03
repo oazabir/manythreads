@@ -16,6 +16,7 @@ export type { SeedAuthor, SeedLine } from './seed-data.ts';
 export { startFakeGithub, type FakeGithub, type FakeGithubCall, type FakePull } from './fake-github.ts';
 export { startFakeK8s, type FakeK8s } from './fake-k8s.ts';
 export { startFakeProviders, defaultAccount, type FakeProviders, type FakeProvidersOptions, type FakeProviderId, type FakeApiCall, type FakeTokenCall, type FakeAccountData, type FakeFile, type FakeMail, type FakeEvent, type FakeNotionPage } from './fake-providers.ts';
+export { startFakeSupport, defaultSupportData, soqlLiterals, type FakeSupport, type FakeSupportOptions, type FakeSupportProviderId, type FakeSupportApiCall, type FakeSupportTokenCall, type FakeSupportData, type FakeSupportWrites } from './fake-support.ts';
 export { PRODUCT_MANUALS, PRODUCT_MANUALS_NAME, PRODUCT_MANUALS_QUESTIONS, PRODUCT_MANUALS_SLUG, seedProductManuals, type ManualDocument, type ManualQuestion, type SeedProductManualsOptions, type SeedProductManualsResult } from './seed-manuals.ts';
 export { startFakeStepCa, fakeStepCaAvailable, type FakeStepCa } from './fake-step-ca.ts';
 export { SEED_INBOX, SEED_INBOX_DROPS, MEETING_NOTES, ACTION_ITEMS_CONCEPT, CUSTOMER_EML, SHARE_FILES, seedPdf, seedInboxAndShares, type SeedInboxAndSharesOptions, type SeedInboxAndSharesResult, type SeedInboxDrop, type SeedInboxKey, type SeededItem } from './seed-inbox.ts';
