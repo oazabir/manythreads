@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { PluginContext, PluginEvent, PluginTx, RepoProvider } from '@manythreads/sdk';
 import { RepoRepoCommittedEvent, SHARE_FILE_RE, ShareDefinition, nextCronRun, shareCronOf, type MemoryShareDefinedEvent } from '@manythreads/shared';
 import { parseDocument } from 'yaml';
+import { askToAccept } from './accept.ts';
 import { isWorkspaceAdmin, mayAutoApprove } from './util.ts';
 
 // The loader for `routines/shares/<slug>.yaml` (PLAN P8-22), a `repo.repo.committed` subscription in the outbox consumer's system transaction, once per commit, the
@@ -146,7 +147,7 @@ async function loadShare(ctx: PluginContext, tx: PluginTx, commit: Commit, slug:
   ).rows[0];
   if (!row) throw new Error('the share row was not written');
 
-  // The links: one per destination. A destination that was taken out of the file earlier and is named again starts over as `requested`; one its own team ended stays ended.
+  // The links: one per destination. A destination that was taken out of the file earlier and is named again starts over as `requested`; one its own team ended (`by_team`, or a denied request) stays ended: naming it again does not reopen it, a new share is the way to ask again.
   for (const team of teams) {
     await tx.query(
       `INSERT INTO app.memory_share_links AS l (workspace_id, team_id, share_id, dest_team_id, dest_slug, dest_name)
@@ -167,6 +168,12 @@ async function loadShare(ctx: PluginContext, tx: PluginTx, commit: Commit, slug:
       WHERE share_id = $1 AND NOT (dest_team_id = ANY ($2::uuid[])) AND state <> 'revoked'`,
     [row.id, teams.map((t) => t.id)],
   );
+  // Every waiting link asks its team's leads to accept (an open request is not filed twice). Best effort: the tick asks again for one that could not be filed.
+  const waiting = await tx.query<{ id: string }>(
+    `SELECT id FROM app.memory_share_links WHERE share_id = $1 AND state = 'requested' AND dest_team_id = ANY ($2::uuid[]) ORDER BY id`,
+    [row.id, teams.map((t) => t.id)],
+  );
+  for (const link of waiting.rows) await askToAccept(ctx, tx, link.id, commit.authorId);
   await emitDefined(ctx, tx, commit, slug, { status: 'active', problem: null, destinations: teams.length, mode: def.mode, approval: autoAllowed ? 'auto' : 'review' });
 }
 

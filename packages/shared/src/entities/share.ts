@@ -16,6 +16,9 @@ export const ShareLinkId = z.uuid().brand<'ShareLinkId'>();
 export type ShareLinkId = z.infer<typeof ShareLinkId>;
 export const ShareRunId = z.uuid().brand<'ShareRunId'>();
 export type ShareRunId = z.infer<typeof ShareRunId>;
+/** One digest handed to one destination team (a row of `memory_share_deliveries`). */
+export const ShareDeliveryId = z.uuid().brand<'ShareDeliveryId'>();
+export type ShareDeliveryId = z.infer<typeof ShareDeliveryId>;
 
 /** A share's name in the repo: the file name without `.yaml`. Same shape as a team slug. */
 export const SHARE_SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}$/;
@@ -252,6 +255,34 @@ export const ShareLink = z.object({
   acceptedAt: IsoDateTime.nullable(),
 });
 export type ShareLink = z.infer<typeof ShareLink>;
+
+/** The tool name of the accept row a destination team's leads see in Approvals (source `grant`): "Team X wants to share its memory with you". */
+export const MEMORY_SHARE_ACCEPT_TOOL = 'memory.share.accept';
+
+/** What the receiving team's lead does to a link that is open: pause it (nothing arrives until it is resumed), resume it, or end it. */
+export const ShareLinkAction = z.enum(['pause', 'resume', 'revoke']);
+export type ShareLinkAction = z.infer<typeof ShareLinkAction>;
+
+/** One share another team sends to this team, as the receiving team sees it. The sender's team is named here because the receiving team must know who it hears from. */
+export const ShareIncoming = z.object({
+  id: ShareLinkId,
+  shareId: ShareId,
+  fromTeamId: TeamId,
+  fromSlug: z.string(),
+  fromName: z.string(),
+  shareName: z.string(),
+  mode: ShareMode,
+  state: ShareLinkState,
+  endedReason: ShareLinkEnd.nullable(),
+  /** The Approvals row that asks this team's leads to accept, while the link is `requested`. */
+  approvalId: ApprovalId.nullable(),
+  requestedAt: IsoDateTime,
+  acceptedAt: IsoDateTime.nullable(),
+  /** When a digest last arrived, if one has. */
+  lastDeliveredAt: IsoDateTime.nullable(),
+  deliveries: z.number().int().min(0),
+});
+export type ShareIncoming = z.infer<typeof ShareIncoming>;
 
 /** The tool name of the digest's approval row (source `grant`). */
 export const MEMORY_DIGEST_SEND_TOOL = 'memory.digest.send';

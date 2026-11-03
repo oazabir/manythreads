@@ -4,7 +4,7 @@ import { InboxItemId, InboxOrigin } from '../entities/inbox.ts';
 import { ActorId, TeamId, WorkspaceId } from '../ids.ts';
 
 /** The step of the pipeline that could not finish. */
-export const InboxFailureStage = z.enum(['extract', 'distil', 'validate', 'commit']);
+export const InboxFailureStage = z.enum(['extract', 'distil', 'validate', 'commit', 'import']);
 export type InboxFailureStage = z.infer<typeof InboxFailureStage>;
 
 /** An inbox item could not be filed (PLAN P8-14, P8-17). The stage and the number of tries only: the plain-language reason is on the item, not in the log. */

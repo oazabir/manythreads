@@ -79,6 +79,8 @@ export const PROVIDER_KINDS = [
   'runner.nodes',
   /** Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): `InboxDistiller` in ./inbox.ts. */
   'inbox.distiller',
+  /** Checks a received bundle and files it under memory/shared/ (memory-share, P8-25): `InboxImporter` in ./inbox.ts. */
+  'inbox.importer',
   /** One step of the bot page's Deploy action (P8-34), registered by the plugin that owns it: `DeployStep` in ./deploy.ts. */
   'deploy.step',
   /** The media server that carries a voice room's audio (media-livekit): `MediaProvider` in ./media.ts. */

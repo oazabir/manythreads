@@ -34,12 +34,13 @@ import {
   type SelectableConcept,
   type SelectionResult,
 } from './selection.ts';
-import { attempt, egressPreset, mayAutoApprove } from './util.ts';
+import { enqueueDeliver } from './deliver.ts';
+import { attempt, egressPreset, mayAutoApprove, SHARING_OFF_REASON, sharingEnabled } from './util.ts';
 
 // Building a digest (PLAN P8-22, P8-23). `gather` + `selectConcepts` answer "what would go" from the index alone (the preview); `buildRun` goes on from there as a
 // job in the system transaction: read the chosen concepts from the team's repo, put every word through the workspace's data rules, build the bundle, check it is a
-// well-formed OKF bundle, and either file the Approvals row or, for a share a lead set to `auto`, leave the run ready. Nothing here sends anything: delivery is the
-// next task's. A run ends in exactly one of: empty, blocked, failed, awaiting_approval, ready.
+// well-formed OKF bundle, and either file the Approvals row or, for a share a lead set to `auto`, leave the run ready. Nothing here sends anything: delivery is
+// deliver.ts, started when a run becomes ready. A run ends in exactly one of: empty, blocked, failed, awaiting_approval, ready.
 
 const BLOB_MAX = 900_000;
 
@@ -367,6 +368,9 @@ export async function buildRun(ctx: PluginContext, tx: PluginTx, runId: string):
   if (!team) return settleWithout(ctx, tx, run, share, { state: 'failed', reason: 'The sending team could not be found.' });
   if (team.archived_at !== null) return settleWithout(ctx, tx, run, share, { state: 'failed', reason: 'The sending team is archived, so nothing is shared from it.' });
 
+  // The workspace's "Memory sharing" switch: off, nothing is built, so nothing is asked of a person and nothing leaves.
+  if (!(await sharingEnabled(tx, run.workspace_id))) return settleWithout(ctx, tx, run, share, { state: 'empty', reason: SHARING_OFF_REASON });
+
   const gathered = await gather(tx, share, now);
   const { baseline } = gathered;
   // Only teams that accepted the share (and are not archived) are sent to: a digest is not built for a team that has not agreed to receive it.
@@ -515,6 +519,7 @@ export async function buildRun(ctx: PluginContext, tx: PluginTx, runId: string):
       'Ready to be delivered without a review: a team lead or workspace admin set this share to go automatically.',
     ]);
     await emitBuilt(ctx, tx, run, share, 'ready', counts, withheldCounts(selection), destinations.length, null);
+    await enqueueDeliver(ctx, tx, run);
     return;
   }
 

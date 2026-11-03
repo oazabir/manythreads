@@ -332,7 +332,7 @@ export function registerRoutes(ctx: PluginContext): void {
       requireWritable(team);
       const row = await requireItem(tx, team, itemId, true);
       if (row.state !== 'failed') throw conflict('Only an item that failed can be tried again.');
-      const stage = row.failed_stage === 'extract' ? 'extract' : row.failed_stage === 'distil' ? 'distil' : 'commit';
+      const stage = row.failed_stage === 'extract' ? 'extract' : row.failed_stage === 'distil' ? 'distil' : row.failed_stage === 'import' ? 'import' : 'commit';
       const updated = (
         await tx.query<ItemRow>(
           `UPDATE app.memory_inbox_items i SET state = 'queued', stage = $2, reason = NULL, not_before = NULL, failed_stage = NULL, attempts = 0 WHERE i.id = $1 RETURNING ${ITEM_COLUMNS}`,

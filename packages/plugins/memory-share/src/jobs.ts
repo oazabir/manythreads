@@ -1,8 +1,10 @@
 import type { PluginContext, PluginEvent, PluginTx } from '@manythreads/sdk';
-import { ApprovalsApprovalDecidedEvent, MEMORY_DIGEST_SEND_TOOL, nextCronRun, type MemoryShareSettledEvent } from '@manythreads/shared';
+import { ApprovalsApprovalDecidedEvent, MEMORY_DIGEST_SEND_TOOL, MEMORY_SHARE_ACCEPT_TOOL, nextCronRun, type MemoryShareSettledEvent } from '@manythreads/shared';
+import { askMissing, settleAccept } from './accept.ts';
 import { buildRunSafely, failBuilding, pushApproval, receivingDestinations } from './build.ts';
 import type { ShareRow } from './rows.ts';
-import { BUILD_QUEUE, TICK_QUEUE, runPayload } from './util.ts';
+import { deliverReady, deliverRun, enqueueDeliver } from './deliver.ts';
+import { BUILD_QUEUE, DELIVER_QUEUE, TICK_QUEUE, runPayload, sharingEnabled } from './util.ts';
 
 // The jobs and the one subscription that move a run along: the build job (one per run), the tick that starts scheduled runs and lets an unanswered approval lapse,
 // and the subscriber that turns a decision on the digest's Approvals row into the run's state.
@@ -28,6 +30,7 @@ async function startDueRuns(ctx: PluginContext, tx: PluginTx): Promise<number> {
     // an archived sending team, or no accepted destination that is still open, has nothing to send: skip this time (the next time is already set)
     const sender = (await tx.query<{ archived_at: Date | null }>('SELECT archived_at FROM app.teams WHERE id = $1', [share.team_id])).rows[0];
     if (!sender || sender.archived_at !== null) continue;
+    if (!(await sharingEnabled(tx, share.workspace_id))) continue;
     if ((await receivingDestinations(tx, share.id)).length === 0) continue;
     const run = (
       await tx.query<{ id: string; workspace_id: string }>(
@@ -108,12 +111,25 @@ export function registerJobs(ctx: PluginContext): void {
     { concurrency: 2, serialKey: 'runId' },
   );
   ctx.jobs.register(
+    DELIVER_QUEUE,
+    async (payload, tx, job) => {
+      const p = runPayload(payload);
+      if (p) await deliverRun(ctx, tx, p.runId, job.log);
+    },
+    { concurrency: 2, serialKey: 'runId' },
+  );
+  ctx.jobs.register(
     TICK_QUEUE,
     async (_payload, tx, job) => {
       const stuck = await failStuckBuilds(ctx, tx);
       const started = await startDueRuns(ctx, tx);
       const expired = await expireUnanswered(ctx, tx);
-      if (started > 0 || expired > 0 || stuck > 0) job.log.info(`memory-share: ${started} scheduled run(s) started, ${expired} digest(s) expired, ${stuck} unfinished build(s) given up`);
+      const asked = await askMissing(ctx, tx, job.log);
+      // approved digests that have not gone yet: a hand-over that failed, or sharing that was switched off and is on again
+      await deliverReady(ctx, tx);
+      if (started > 0 || expired > 0 || stuck > 0 || asked > 0) {
+        job.log.info(`memory-share: ${started} scheduled run(s) started, ${expired} digest(s) expired, ${stuck} unfinished build(s) given up, ${asked} team(s) asked to accept`);
+      }
     },
     { cron: '* * * * *' },
   );
@@ -123,7 +139,10 @@ export function registerJobs(ctx: PluginContext): void {
 export function registerSettle(ctx: PluginContext): void {
   ctx.events.subscribe('approvals.approval.decided', async (raw: PluginEvent, tx: PluginTx) => {
     const event = ApprovalsApprovalDecidedEvent.parse(raw);
-    if (event.tool !== MEMORY_DIGEST_SEND_TOOL || event.source !== 'grant') return;
+    if (event.source !== 'grant') return;
+    // the destination team's leads decided whether to accept a share
+    if (event.tool === MEMORY_SHARE_ACCEPT_TOOL) return settleAccept(ctx, tx, event.approvalId, event.decision);
+    if (event.tool !== MEMORY_DIGEST_SEND_TOOL) return;
     const moved = await tx.query<{ o_run_id: string; o_share_id: string; o_team_id: string; o_workspace_id: string; o_outcome: string; o_decider: string | null }>(
       'SELECT * FROM app.memory_share_settle($1::uuid, $2)',
       [event.approvalId, event.decision],
@@ -139,6 +158,8 @@ export function registerSettle(ctx: PluginContext): void {
         row.o_decider,
       );
       await pushApproval(ctx, tx, event.approvalId);
+      // an approved digest goes to the teams that accepted it
+      if (row.o_outcome === 'ready') await enqueueDeliver(ctx, tx, { id: row.o_run_id, workspace_id: row.o_workspace_id });
     }
   });
 }

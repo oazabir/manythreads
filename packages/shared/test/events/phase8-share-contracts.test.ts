@@ -174,3 +174,22 @@ describe('ShareDefinition', () => {
     expect(ShareDefinition.safeParse(value).success).toBe(false);
   });
 });
+
+describe('the delivery and receiving events (P8-24, P8-25)', () => {
+  const events = {
+    'memory.share.linked': { type: 'memory.share.linked', ...base, destTeamId: uuid(5), shareId: uuid(6), linkId: uuid(7), from: 'requested', to: 'accepted', endedReason: null, changedBy: uuid(4) },
+    'memory.sharing.switched': { type: 'memory.sharing.switched', schemaVersion: 1, workspaceId: uuid(1), enabled: false, changedBy: uuid(4), at: AT },
+    'memory.digest.delivered': { type: 'memory.digest.delivered', ...base, destTeamId: uuid(5), shareId: uuid(6), slug: 'release-notes', runId: uuid(8), deliveryId: uuid(9), itemId: uuid(10), files: 3, bytes: 1200 },
+    'memory.digest.imported': { type: 'memory.digest.imported', ...base, itemId: uuid(10), fromTeamId: uuid(5), outcome: 'refused', reason: 'unsafe_path', files: 0, bytes: 0 },
+  };
+  it.each(Object.entries(events))('%s is registered and parses', (type, payload) => {
+    expect(eventRegistry).toHaveProperty([type]);
+    expect(parseEvent(payload)).toMatchObject({ type });
+  });
+  it('refuses a reason code that is not one of the known codes, and an unknown key is stripped, never carried', () => {
+    expect(failsAt({ ...events['memory.digest.imported'], reason: 'because I said so' })).toContain('reason');
+    expect(failsAt({ ...events['memory.share.linked'], to: 'open' })).toContain('to');
+    expect(failsAt({ ...events['memory.sharing.switched'], enabled: 'yes' })).toContain('enabled');
+    expect(failsAt({ ...events['memory.digest.delivered'], files: -1 })).toContain('files');
+  });
+});

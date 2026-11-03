@@ -42,6 +42,8 @@ export const EXTENSION_POINTS = [
   'provider.runner.nodes',
   // Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): read by memory-inbox, which has a plain fallback while no plugin provides it.
   'provider.inbox.distiller',
+  // Checks a received bundle (another team's digest, or an OKF bundle) and files it under memory/shared/ without a model (memory-share, P8-25): read by memory-inbox.
+  'provider.inbox.importer',
   // One step of the bot page's Deploy action (P8-34): the owner of a step (proposals: the definition, knowledge: the bases, connections: the connections) registers it; the workshop plugin composes the action.
   'provider.deploy.step',
   // The media server that carries a voice room's audio (P15-02): registered by media-livekit (or the test-only media-fake), read by meetings.

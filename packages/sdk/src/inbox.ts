@@ -58,3 +58,34 @@ export interface InboxDistiller extends ProviderImpl {
    */
   distil(db: InboxDistillDb, input: InboxDistillInput): Promise<InboxDistillResult>;
 }
+
+// The fast path of a received bundle (PLAN P8-25). Another team's digest, or an OKF bundle dropped from outside, is already memory-shaped: it needs no model. The
+// inbox hands it to a plugin that registers a provider of kind `inbox.importer` (memory-share), which checks the whole bundle, refuses it whole if anything is
+// wrong, and otherwise files it under `memory/shared/`. With none registered the item fails with a plain sentence (it is never filed unchecked).
+
+/** One received bundle, as data. A digest delivered by a team has no bytes (`bytes` is null): the importer reads it from the delivery record by `itemId`. */
+export interface InboxImportInput {
+  workspaceId: string;
+  teamId: string;
+  itemId: string;
+  origin: string;
+  kind: string;
+  name: string;
+  sha256: string;
+  /** The original's bytes, for a bundle dropped as a file; null for a delivered digest. */
+  bytes: Uint8Array | null;
+}
+
+/**
+ *  `filed`    every file passed and was committed in one commit; `paths` are the files written (the bundle's own index and log are regenerated, not copied);
+ *  `refused`  nothing was filed: `code` is a short code for the audit trail, `message` the plain reason shown on the item.
+ */
+export type InboxImportResult =
+  | { outcome: 'filed'; paths: string[]; commitSha: string; files: number; bytes: number; fromTeamId: string | null }
+  | { outcome: 'refused'; code: string; message: string; fromTeamId: string | null };
+
+export interface InboxImporter extends ProviderImpl {
+  id: 'inbox.importer';
+  /** Runs in the inbox's job transaction (system actor); the commit goes through the repo writer in that transaction. */
+  import(tx: PluginTx, input: InboxImportInput): Promise<InboxImportResult>;
+}

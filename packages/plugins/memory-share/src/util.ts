@@ -30,7 +30,16 @@ export function runPayload(payload: Record<string, unknown>): { workspaceId: str
   return isUuid(payload['workspaceId']) && isUuid(payload['runId']) ? { workspaceId: payload['workspaceId'], runId: payload['runId'] } : null;
 }
 
+/** Whether the workspace's "Memory sharing" switch is on. No row means on. */
+export async function sharingEnabled(tx: PluginTx, workspaceId: string): Promise<boolean> {
+  const row = (await tx.query<{ enabled: boolean }>('SELECT enabled FROM app.memory_sharing_settings WHERE workspace_id = $1::uuid', [workspaceId])).rows[0];
+  return row?.enabled ?? true;
+}
+
+export const SHARING_OFF_REASON = 'Memory sharing is switched off for this workspace. A workspace owner or admin can switch it back on.';
+
 export const BUILD_QUEUE = 'memory-share.build';
+export const DELIVER_QUEUE = 'memory-share.deliver';
 export const TICK_QUEUE = 'memory-share.tick';
 export const EXPIRE_QUEUE = 'memory-share.expire';
 

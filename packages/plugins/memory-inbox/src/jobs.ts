@@ -1,8 +1,8 @@
 import type { BlobStorage, JobInfo, PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
 import { commitStep, removedNote } from './commit.ts';
 import { loadInboxConfig } from './config.ts';
-import { distilStep, extractStep, holdStep } from './pipeline.ts';
-import { COMMIT_QUEUE, DISTIL_QUEUE, EXTRACT_QUEUE, HOLD_QUEUE, KEEP_QUEUE, SWEEP_QUEUE } from './receive.ts';
+import { distilStep, extractStep, holdStep, importStep } from './pipeline.ts';
+import { COMMIT_QUEUE, DISTIL_QUEUE, EXTRACT_QUEUE, HOLD_QUEUE, IMPORT_QUEUE, KEEP_QUEUE, SWEEP_QUEUE } from './receive.ts';
 import type { ItemRow } from './rows.ts';
 import { enqueueStep, failItem, FAILURE_STAGES, type PipelineStage } from './states.ts';
 import { attempt, payloadOf } from './util.ts';
@@ -53,6 +53,14 @@ export function registerJobs(ctx: PluginContext): void {
     { concurrency: 2, serialKey: 'itemId' },
   );
   ctx.jobs.register(
+    IMPORT_QUEUE,
+    async (payload, tx) => {
+      const p = payloadOf(payload);
+      if (p) await importStep(ctx, tx, p.itemId);
+    },
+    { concurrency: 2, serialKey: 'itemId' },
+  );
+  ctx.jobs.register(
     SWEEP_QUEUE,
     async (_payload, tx) => {
       await sweep(ctx, tx);
@@ -90,7 +98,7 @@ export async function sweep(ctx: PluginContext, tx: PluginTx): Promise<number> {
   const due = (
     await tx.query<ItemRow>(
       `SELECT i.* FROM app.memory_inbox_items i
-        WHERE i.state = 'queued' AND i.stage IN ('hold', 'extract', 'distil', 'commit') AND (i.not_before IS NULL OR i.not_before <= now())
+        WHERE i.state = 'queued' AND i.stage IN ('hold', 'extract', 'distil', 'commit', 'import') AND (i.not_before IS NULL OR i.not_before <= now())
           AND i.updated_at < now() - interval '2 minutes'
         ORDER BY i.updated_at LIMIT $1`,
       [SWEEP_BATCH],
@@ -98,7 +106,7 @@ export async function sweep(ctx: PluginContext, tx: PluginTx): Promise<number> {
   ).rows;
   for (const row of due) {
     moved += 1;
-    await enqueueStep(ctx, tx, row.stage as 'hold' | 'extract' | 'distil' | 'commit', row);
+    await enqueueStep(ctx, tx, row.stage as PipelineStage, row);
   }
   return moved;
 }

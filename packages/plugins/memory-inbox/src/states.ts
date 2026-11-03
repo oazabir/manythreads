@@ -1,27 +1,27 @@
 import type { PluginContext, PluginTx } from '@manythreads/sdk';
 import type { InboxHoldReason, InboxOrigin } from '@manythreads/shared';
-import { COMMIT_QUEUE, DISTIL_QUEUE, EXTRACT_QUEUE, HOLD_QUEUE } from './receive.ts';
+import { COMMIT_QUEUE, DISTIL_QUEUE, EXTRACT_QUEUE, HOLD_QUEUE, IMPORT_QUEUE } from './receive.ts';
 import type { ItemRow } from './rows.ts';
 import { lockItem, notifyDropper } from './util.ts';
 
 // The moves an item makes that more than one step needs: held, failed, and "come back later". Each writes the row, the event and the dropper's push in the
 // caller's transaction, so what the list shows and what the log says cannot differ.
 
-export const FAILURE_STAGES = { hold: 'extract', extract: 'extract', distil: 'distil', commit: 'commit' } as const;
+export const FAILURE_STAGES = { hold: 'extract', extract: 'extract', distil: 'distil', commit: 'commit', import: 'import' } as const;
 export type PipelineStage = keyof typeof FAILURE_STAGES;
 
 const cut = (text: string, max = 400): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 
-const QUEUES: Readonly<Record<'hold' | 'extract' | 'distil' | 'commit', string>> = { hold: HOLD_QUEUE, extract: EXTRACT_QUEUE, distil: DISTIL_QUEUE, commit: COMMIT_QUEUE };
+const QUEUES: Readonly<Record<PipelineStage, string>> = { hold: HOLD_QUEUE, extract: EXTRACT_QUEUE, distil: DISTIL_QUEUE, commit: COMMIT_QUEUE, import: IMPORT_QUEUE };
 export const queueOfStage = (stage: string): string | null => (stage in QUEUES ? QUEUES[stage as keyof typeof QUEUES] : null);
 
 /** The next try of a step, `seconds` from now (a job that runs again, not a retry of a failed one). */
-export async function enqueueIn(ctx: PluginContext, tx: PluginTx, stage: 'hold' | 'extract' | 'distil' | 'commit', row: Pick<ItemRow, 'id' | 'workspace_id'>, seconds: number): Promise<void> {
+export async function enqueueIn(ctx: PluginContext, tx: PluginTx, stage: PipelineStage, row: Pick<ItemRow, 'id' | 'workspace_id'>, seconds: number): Promise<void> {
   await ctx.jobs.enqueue(tx, QUEUES[stage], { workspaceId: row.workspace_id, itemId: row.id }, { runAt: new Date(ctx.runtime.now().getTime() + seconds * 1000) });
 }
 
 /** The first run of a step, once: asking twice for the same step of the same item while the first waits returns the first. */
-export async function enqueueStep(ctx: PluginContext, tx: PluginTx, stage: 'hold' | 'extract' | 'distil' | 'commit', row: Pick<ItemRow, 'id' | 'workspace_id'>): Promise<void> {
+export async function enqueueStep(ctx: PluginContext, tx: PluginTx, stage: PipelineStage, row: Pick<ItemRow, 'id' | 'workspace_id'>): Promise<void> {
   await ctx.jobs.enqueue(tx, QUEUES[stage], { workspaceId: row.workspace_id, itemId: row.id }, { dedupeKey: `${stage}:${row.id}` });
 }
 
@@ -42,7 +42,7 @@ export async function holdItem(ctx: PluginContext, tx: PluginTx, row: ItemRow, r
 }
 
 /** The item stopped with a reason a person can read. `stage` is the step that failed (Retry starts again there). */
-export async function failItem(ctx: PluginContext, tx: PluginTx, row: ItemRow, stage: 'extract' | 'distil' | 'validate' | 'commit', message: string): Promise<void> {
+export async function failItem(ctx: PluginContext, tx: PluginTx, row: ItemRow, stage: 'extract' | 'distil' | 'validate' | 'commit' | 'import', message: string): Promise<void> {
   await tx.query(`UPDATE app.memory_inbox_items SET state = 'failed', failed_stage = $2, reason = $3, not_before = NULL, drop_run_id = NULL WHERE id = $1`, [row.id, stage, cut(message)]);
   await ctx.audit.emit(tx, {
     type: 'memory.item.failed',
@@ -69,7 +69,7 @@ export const BUSY_RETRY_SECONDS = 10;
  * `queued` item moves to `running` only if the team has fewer than two items running and its own wait (`not_before`) is over; otherwise the step is queued
  * again for later and `wait` says so. Takes the item's row lock and the team's lock, in that order, so two claims of one team take turns.
  */
-export async function claim(ctx: PluginContext, tx: PluginTx, itemId: string, stage: 'extract' | 'distil' | 'commit', running: 'extracting' | 'filing'): Promise<Claim> {
+export async function claim(ctx: PluginContext, tx: PluginTx, itemId: string, stage: 'extract' | 'distil' | 'commit' | 'import', running: 'extracting' | 'filing'): Promise<Claim> {
   const row = await lockItem(tx, itemId);
   if (!row || row.stage !== stage || (row.state !== 'queued' && row.state !== running)) return { kind: 'skip' };
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`memory_inbox_run:${row.team_id}`]);

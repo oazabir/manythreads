@@ -55,7 +55,7 @@ Two items of one team are worked on at the same time at most; a third waits ten 
 Checked in this order; the first that applies holds the item. A lead or workspace admin **releases** it (the check is then skipped) or **discards** it.
 
 | code | when |
-|---|---|
+| `foreign_bundle` | the file looks like a memory bundle from elsewhere (a `.zip` or `.okf`). It is held until a lead releases it, then the bundle importer (the memory-share plugin, P8-25) checks the whole bundle and files it under `memory/shared/external/<name>/`, or refuses it whole. A digest another team delivered (origin `share`) is not held for this reason |
 | `foreign_bundle` | the file looks like a memory bundle from elsewhere (a `.zip`). Importing a bundle is not built, so it is held whatever the team says |
 | `oversize` | the item is larger than the team's `maxBytes` |
 | `failed_sender_check` | an email whose sender check failed |
@@ -177,7 +177,7 @@ The Files garbage collector treats `memory_inbox_items.blob_key` as referenced, 
 - The Archivist's run for a drop is not wired to the distil step (see "The Archivist bot").
 - No Files `inbox/` folder: dragging onto it, and the move of a filed original to `inbox/filed/<yyyy-mm>/`, are not built. The Reference names that path, the blob stays where it was stored.
 - Pictures, recordings and scanned PDFs are accepted but not read (no vision, transcription or OCR model is set up).
-- Importing a memory bundle is not built; a bundle is held.
+- Importing a bundle needs the memory-share plugin (it registers the `inbox.importer`); with none registered the item fails with a plain sentence and is never filed unchecked. A single hand-dropped `digest.md` is not a bundle and goes through the normal path. The import stage is `import` (jobs `memory-inbox.import`).
 - The commit's author is the system, with the dropper as co-author. When the Archivist exists the commit should be authored as the Archivist.
 - A notification is a live push to open pages only; a person who is away is not told until they look.
 - The keep-originals job scans at most 500 teams per run.

@@ -1,13 +1,13 @@
-import type { InboxDistiller, InboxDistillResult, JobInfo, PluginContext, PluginTx } from '@manythreads/sdk';
+import type { InboxDistiller, InboxDistillResult, InboxImporter, JobInfo, PluginContext, PluginTx } from '@manythreads/sdk';
 import { ExtractError, extractText } from '@manythreads/sdk/extract';
-import type { InboxHoldReason, InboxKind } from '@manythreads/shared';
+import type { InboxHoldReason, InboxKind, InboxOrigin } from '@manythreads/shared';
 import { OkfActor, OkfProposal } from '@manythreads/shared';
 import { loadInboxConfig, type InboxConfig } from './config.ts';
 import { extractKindOf, kindOfName, slugOf, unreadableReason } from './kinds.ts';
 import { HOLD_QUEUE } from './receive.ts';
 import type { ItemRow } from './rows.ts';
 import { claim, enqueueIn, enqueueStep, failItem, holdItem } from './states.ts';
-import { attempt, egressPreset, lockItem, notifyDropper, readBlob, sha256Hex, storageOf } from './util.ts';
+import { attempt, egressPreset, lockItem, notifyDropper, readBlob, sha256Hex, statusOf, storageOf } from './util.ts';
 
 // Steps 2 to 4 of the pipeline (SPEC §12.2): the hold check, extraction, and distilling. Receive is receive.ts; the commit is commit.ts. Each step is one job; it
 // checks that the item is where the step expects it (`stage`, `state`) before it does anything and again before it writes, so a job that runs twice, runs late
@@ -45,7 +45,10 @@ const senderAllowed = (sender: string | null, allow: readonly string[]): boolean
  */
 export function holdVerdict(facts: HoldFacts, config: InboxConfig, released: boolean): { reason: InboxHoldReason; message: string } | null {
   if (released) return null;
-  if (facts.kind === 'bundle') return { reason: 'foreign_bundle', message: 'This looks like a memory bundle from somewhere else. A lead or admin decides whether it is let in.' };
+  // A digest another team delivered (origin `share`) came through a link its own leads accepted: it is authenticated, so it is neither a "foreign" bundle nor held by
+  // `review: all`. It is still held when it is over the team's size cap.
+  const delivered = facts.origin === 'share';
+  if (facts.kind === 'bundle' && !delivered) return { reason: 'foreign_bundle', message: 'This looks like a memory bundle from somewhere else. A lead or admin decides whether it is let in.' };
   if (Number(facts.size) > config.maxBytes) {
     return { reason: 'oversize', message: `This is larger than the ${Math.max(1, Math.floor(config.maxBytes / 1024 / 1024))} MB this team allows for one drop. A lead or admin decides whether it is let in.` };
   }
@@ -55,7 +58,7 @@ export function holdVerdict(facts: HoldFacts, config: InboxConfig, released: boo
       return { reason: 'unknown_sender', message: 'This email is from someone who is not on this team. A lead or admin decides whether it is let in.' };
     }
   }
-  if (config.review === 'all') return { reason: 'review_all', message: config.unreadable ? 'This team’s inbox settings could not be read, so every drop waits for a lead or admin.' : 'This team asks a lead or admin to look at every drop first.' };
+  if (config.review === 'all' && !delivered) return { reason: 'review_all', message: config.unreadable ? 'This team’s inbox settings could not be read, so every drop waits for a lead or admin.' : 'This team asks a lead or admin to look at every drop first.' };
   return null;
 }
 
@@ -68,8 +71,74 @@ export async function holdStep(ctx: PluginContext, tx: PluginTx, itemId: string)
     await holdItem(ctx, tx, row, verdict.reason, verdict.message);
     return;
   }
-  await tx.query(`UPDATE app.memory_inbox_items SET stage = 'extract', not_before = NULL WHERE id = $1`, [row.id]);
-  await enqueueStep(ctx, tx, 'extract', row);
+  // A bundle (a delivered digest, or an OKF bundle a lead let in) is already memory-shaped: it takes the import path, with no model and no text extraction.
+  const next = row.origin === 'share' || row.kind === 'bundle' ? 'import' : 'extract';
+  await tx.query(`UPDATE app.memory_inbox_items SET stage = $2, not_before = NULL WHERE id = $1`, [row.id, next]);
+  await enqueueStep(ctx, tx, next, row);
+}
+
+// ---- import ---------------------------------------------------------------------------------------------------------------------------
+
+/** The most a bundle dropped as a file may be: the team's cap already applies (hold check); this is the memory the importer allocates for it. */
+const IMPORT_READ_MAX = 64 * 1024 * 1024;
+
+/**
+ * Files a received bundle with the importer plugin (memory-share), in one transaction. The importer checks the whole bundle and either files all of it or none of it;
+ * a refusal fails the item with the reason, and Retry runs this step again. With no importer registered nothing is filed: the item fails with a plain sentence.
+ */
+export async function importStep(ctx: PluginContext, tx: PluginTx, itemId: string): Promise<void> {
+  const taken = await claim(ctx, tx, itemId, 'import', 'filing');
+  if (taken.kind !== 'go') return;
+  const row = taken.row;
+  const importer = ctx.providers.get<InboxImporter>('inbox.importer');
+  if (!importer) {
+    await failItem(ctx, tx, row, 'import', 'Receiving a bundle is not switched on in this workspace, so this was not filed.');
+    return;
+  }
+  let bytes: Uint8Array | null = null;
+  if (row.blob_key !== null) {
+    bytes = await readBlob(storageOf(ctx), row.blob_key, Math.min(Number(row.size) + 1, IMPORT_READ_MAX));
+    if (bytes === null) {
+      await failItem(ctx, tx, row, 'import', 'The original could not be read from storage.');
+      return;
+    }
+  }
+  const done = await attempt(tx, () =>
+    importer.import(tx, { workspaceId: row.workspace_id, teamId: row.team_id, itemId: row.id, origin: row.origin, kind: row.kind, name: row.name, sha256: row.sha256, bytes }),
+  );
+  if (!done.ok) {
+    const status = statusOf(done.error);
+    if (status !== null && status >= 400 && status < 500) {
+      await failItem(ctx, tx, row, 'import', 'The team’s memory refused the write. Retry tries again.');
+      return;
+    }
+    throw done.error;
+  }
+  const result = done.value;
+  if (result.outcome === 'refused') {
+    await failItem(ctx, tx, row, 'import', result.message);
+    return;
+  }
+  const at = ctx.runtime.now().toISOString();
+  await tx.query(
+    `UPDATE app.memory_inbox_items
+        SET state = 'filed', stage = 'done', filed_paths = $2::text[], commit_sha = $3, filed_at = now(), failed_stage = NULL, reason = NULL, not_before = NULL
+      WHERE id = $1`,
+    [itemId, result.paths.slice(0, 200), result.commitSha],
+  );
+  await ctx.audit.emit(tx, {
+    type: 'memory.item.filed',
+    workspaceId: row.workspace_id,
+    teamId: row.team_id,
+    itemId,
+    origin: row.origin as InboxOrigin,
+    concepts: result.files,
+    commitSha: result.commitSha,
+    distilled: false,
+    droppedBy: row.dropper_id,
+    at,
+  });
+  await notifyDropper(ctx, tx, row, 'filed');
 }
 
 // ---- extract --------------------------------------------------------------------------------------------------------------------------

@@ -274,7 +274,13 @@ export function checkOkfBundle(files: Readonly<Record<string, string>>, options:
     if (!split.ok) add('index.md', split.reason);
     else {
       const doc = parseDocument(split.frontmatter, { uniqueKeys: true, version: '1.2', logLevel: 'silent' });
-      const value: unknown = doc.errors.length > 0 ? null : doc.toJS({ maxAliasCount: 0 });
+      // an alias (a hostile index.md) makes toJS throw: the root index may not use one, so it is a problem, not a crash
+      let value: unknown = null;
+      try {
+        value = doc.errors.length > 0 ? null : doc.toJS({ maxAliasCount: 0 });
+      } catch {
+        value = null;
+      }
       const keys = value !== null && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : [];
       if (keys.length !== 1 || keys[0] !== 'okf_version') add('index.md', 'the root index.md must have okf_version and nothing else in its frontmatter');
       else if (String((value as Record<string, unknown>)['okf_version']) !== OKF_VERSION) add('index.md', `okf_version must be "${OKF_VERSION}"`);

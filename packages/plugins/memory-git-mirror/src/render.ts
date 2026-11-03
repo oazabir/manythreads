@@ -121,9 +121,15 @@ export function renderConcept(input: ConceptInput): ConceptItem {
   const tags = ['okf', 'kind:concept', tag('type', fm.type), tag('trust', trust), tag('status', status)];
   if (origin !== '') tags.push(tag('origin', origin));
   for (const t of (fm.tags ?? []).slice(0, 8)) tags.push(tag('tag', t));
+  // a concept another team shared lives under memory/shared/<team>/ (PLAN P8-25): it is tagged with the team it came from, so a recall can say whose it is
+  const sharedFrom = /^memory\/shared\/(external\/[^/]+|[^/]+)\//.exec(input.path)?.[1]?.split('/').join(':') ?? '';
+  if (sharedFrom !== '') tags.push(tag('from', sharedFrom));
   const unique = [...new Set(tags)].slice(0, 20);
+  const fromTeam = typeof fm['from'] === 'string' ? fm['from'] : '';
 
   const metadata = meta({
+    shared_from: sharedFrom,
+    from_team: sharedFrom === '' ? '' : fromTeam,
     feed_kind: 'concept',
     feed_id: input.path,
     concept_path: input.path,
@@ -143,7 +149,7 @@ export function renderConcept(input: ConceptInput): ConceptItem {
     timestamp: input.committedAt,
     tags: unique,
     metadata,
-    hashInput: JSON.stringify([content, unique, fm.type, status, trust, origin, fm.stale_after ?? null]),
+    hashInput: JSON.stringify([content, unique, fm.type, status, trust, origin, fm.stale_after ?? null, fromTeam]),
     trust,
   };
 }

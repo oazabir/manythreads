@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ShareRun, ShareRunId, ShareSlug, ShareView, SharePreview, ShareDestination } from '../../entities/share.ts';
+import { ShareIncoming, ShareLinkAction, ShareLinkId, ShareRun, ShareRunId, ShareSlug, ShareView, SharePreview, ShareDestination } from '../../entities/share.ts';
 import type { ApiRoute } from '../client/route.ts';
 import { TeamSlug } from '../teams/common.ts';
 
@@ -43,3 +43,26 @@ export const listShareRunsRoute = { method: 'GET', path: '/api/teams/:slug/share
 export const GetShareRunResponse = z.object({ run: ShareRun });
 export type GetShareRunResponse = z.infer<typeof GetShareRunResponse>;
 export const getShareRunRoute = { method: 'GET', path: '/api/teams/:slug/shares/:shareSlug/runs/:runId' } as const satisfies ApiRoute;
+
+// The receiving side (PLAN P8-24). The sending team cannot pause or end a link from here: that is the receiving team's call (the sender ends one by taking the
+// destination out of the share's file).
+
+/** The shares other teams send to this team. Anyone who can read the team sees the list; a lead or workspace admin changes a link. */
+export const ListIncomingSharesResponse = z.object({ incoming: z.array(ShareIncoming), canManage: z.boolean() });
+export type ListIncomingSharesResponse = z.infer<typeof ListIncomingSharesResponse>;
+export const listIncomingSharesRoute = { method: 'GET', path: '/api/teams/:slug/shares/incoming' } as const satisfies ApiRoute;
+
+export const IncomingLinkParams = z.object({ slug: TeamSlug, linkId: ShareLinkId, action: ShareLinkAction });
+export type IncomingLinkParams = z.infer<typeof IncomingLinkParams>;
+export const IncomingActionResponse = z.object({ link: ShareIncoming });
+export type IncomingActionResponse = z.infer<typeof IncomingActionResponse>;
+/** `:action` is `pause`, `resume` or `revoke`. */
+export const actOnIncomingShareRoute = { method: 'POST', path: '/api/teams/:slug/shares/incoming/:linkId/:action' } as const satisfies ApiRoute;
+
+/** The workspace-wide "Memory sharing" switch. Off, no team sends a digest and none is delivered; it is on by default. */
+export const MemorySharingSetting = z.object({ enabled: z.boolean(), canChange: z.boolean(), changedAt: z.string().nullable() });
+export type MemorySharingSetting = z.infer<typeof MemorySharingSetting>;
+export const getMemorySharingRoute = { method: 'GET', path: '/api/workspace/memory-sharing' } as const satisfies ApiRoute;
+export const SetMemorySharingBody = z.strictObject({ enabled: z.boolean() });
+export type SetMemorySharingBody = z.infer<typeof SetMemorySharingBody>;
+export const setMemorySharingRoute = { method: 'PUT', path: '/api/workspace/memory-sharing' } as const satisfies ApiRoute;

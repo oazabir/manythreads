@@ -75,6 +75,7 @@ export class ExtensionRegistries {
     'bot.runners': new ExtensionRegistry(),
     'runner.nodes': new ExtensionRegistry(),
     'inbox.distiller': new ExtensionRegistry(),
+    'inbox.importer': new ExtensionRegistry(),
     'deploy.step': new ExtensionRegistry(),
     media: new ExtensionRegistry(),
   };

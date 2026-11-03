@@ -10,6 +10,7 @@ export const HOLD_QUEUE = 'memory-inbox.hold';
 export const EXTRACT_QUEUE = 'memory-inbox.extract';
 export const DISTIL_QUEUE = 'memory-inbox.distil';
 export const COMMIT_QUEUE = 'memory-inbox.commit';
+export const IMPORT_QUEUE = 'memory-inbox.import';
 export const SWEEP_QUEUE = 'memory-inbox.sweep';
 export const KEEP_QUEUE = 'memory-inbox.keep';
 

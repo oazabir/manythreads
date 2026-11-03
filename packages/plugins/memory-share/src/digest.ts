@@ -106,7 +106,7 @@ function summaryLine(c: SelectableConcept, id: string): string {
   return `- ${oneLine(conceptName(c), 160)}${description} [^${id}]`;
 }
 
-const fingerprint = (files: Readonly<Record<string, string>>): string => {
+export const fingerprint = (files: Readonly<Record<string, string>>): string => {
   const hash = createHash('sha256');
   for (const path of Object.keys(files).sort()) {
     const text = files[path] ?? '';

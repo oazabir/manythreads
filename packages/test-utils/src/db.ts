@@ -498,7 +498,7 @@ export const memoryInboxMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/memory-inbox/migrations/', import.meta.url)),
 };
 
-/** Migrations of the memory-share plugin (`memory_shares`, `memory_share_links`, `memory_share_runs`, the digest approval doors); needs the kernel's, teams, channels, files, bots, approvals and memory migrations. */
+/** Migrations of the memory-share plugin (`memory_shares`, `memory_share_links`, `memory_share_runs`, the digest approval doors, deliveries, the Memory sharing switch, accept/pause/revoke); needs the kernel's, teams, channels, files, bots, approvals, memory and memory-inbox migrations (deliveries point at inbox items). */
 export const memoryShareMigrationSource: MigrationSource = {
   namespace: 'memory-share',
   dir: fileURLToPath(new URL('../../plugins/memory-share/migrations/', import.meta.url)),

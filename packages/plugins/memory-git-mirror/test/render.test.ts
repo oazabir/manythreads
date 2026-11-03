@@ -23,6 +23,27 @@ const input = (frontmatter: string, over: Partial<ConceptInput> = {}): ConceptIn
   ...over,
 });
 
+describe('renderConcept: what another team shared (P8-25)', () => {
+  const FROM = '0190a000-0000-7000-8000-000000000002';
+  it('tags a concept under memory/shared/<team>/ with the team it came from, and keeps the team id in the metadata', () => {
+    const item = renderConcept(input(`type: Decision\norigin: share\nfrom: ${FROM}`, { path: 'memory/shared/engineering/decisions/a.md' }));
+    expect(item.tags).toContain('from:engineering');
+    expect(item.metadata['shared_from']).toBe('engineering');
+    expect(item.metadata['from_team']).toBe(FROM);
+    const outside = renderConcept(input('type: Decision', { path: 'memory/shared/external/notes/a.md' }));
+    expect(outside.tags).toContain('from:external-notes');
+    expect(outside.metadata['from_team']).toBeUndefined();
+  });
+
+  it('adds no origin tag to the team’s own concepts, and a received concept is a different document from the same text', () => {
+    const own = renderConcept(input('type: Decision'));
+    expect(own.tags.some((t) => t.startsWith('from:'))).toBe(false);
+    expect(own.metadata['shared_from']).toBeUndefined();
+    const received = renderConcept(input('type: Decision', { path: 'memory/shared/engineering/decisions/use-postgres.md' }));
+    expect(received.hashInput).not.toBe(own.hashInput);
+  });
+});
+
 describe('renderConcept', () => {
   it('says what the concept is, then its title, description and body', () => {
     const item = renderConcept(input('type: Decision\ntitle: Use Postgres\ndescription: Why the database is Postgres'));

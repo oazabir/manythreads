@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { registerActions } from './actions.ts';
 import { inboxDropFor, inboxRead } from './capability.ts';
+import { registerDelivered } from './delivered.ts';
 import { registerEmailDoor } from './email-door.ts';
 import { registerJobs } from './jobs.ts';
 import { registerRoutes } from './routes.ts';
@@ -16,10 +17,10 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     migrations: 'migrations',
-    extends: ['event.emit', 'job.register', 'hook.pre_egress'],
+    extends: ['event.emit', 'event.subscribe', 'job.register', 'hook.pre_egress'],
     events: {
       emits: ['memory.item.dropped', 'memory.item.filed', 'memory.item.held', 'memory.item.failed', 'memory.item.released', 'memory.item.discarded'],
-      consumes: [],
+      consumes: ['memory.digest.delivered'],
     },
     capabilities: [
       { name: 'inbox.read', destructive: false },
@@ -35,6 +36,7 @@ export default definePlugin({
     ctx.capabilities.register('inbox.drop', inboxDropFor(ctx));
     registerRoutes(ctx);
     registerEmailDoor(ctx);
+    registerDelivered(ctx);
     registerActions(ctx);
     registerJobs(ctx);
   },

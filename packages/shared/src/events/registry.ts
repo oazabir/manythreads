@@ -127,6 +127,10 @@ import { MemoryItemDiscardedEvent } from './memory.item.discarded.ts';
 import { MemoryShareDefinedEvent } from './memory.share.defined.ts';
 import { MemoryShareBuiltEvent } from './memory.share.built.ts';
 import { MemoryShareSettledEvent } from './memory.share.settled.ts';
+import { MemoryShareLinkedEvent } from './memory.share.linked.ts';
+import { MemorySharingSwitchedEvent } from './memory.sharing.switched.ts';
+import { MemoryDigestDeliveredEvent } from './memory.digest.delivered.ts';
+import { MemoryDigestImportedEvent } from './memory.digest.imported.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
 import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
 import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
@@ -243,6 +247,10 @@ export const eventRegistry = {
   'memory.share.defined': { 1: MemoryShareDefinedEvent },
   'memory.share.built': { 1: MemoryShareBuiltEvent },
   'memory.share.settled': { 1: MemoryShareSettledEvent },
+  'memory.share.linked': { 1: MemoryShareLinkedEvent },
+  'memory.sharing.switched': { 1: MemorySharingSwitchedEvent },
+  'memory.digest.delivered': { 1: MemoryDigestDeliveredEvent },
+  'memory.digest.imported': { 1: MemoryDigestImportedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
   'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },

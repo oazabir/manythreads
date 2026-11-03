@@ -7,7 +7,9 @@ import {
   createTestDatabase,
   dropTestDatabase,
   explainRlsViolations,
+  filesMigrationSource,
   findPerRowPolicyCalls,
+  memoryInboxMigrationSource,
   memoryShareMigrationSource,
   personaActor,
   personas,
@@ -91,7 +93,7 @@ const start = (p: Persona, shareId: string, over: { team?: string; trigger?: str
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, botsMigrationSource, approvalsMigrationSource, memoryShareMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, approvalsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource],
   });
   await createPersonas(db);
   appPool = createAppPool(db.appUrl, 4);

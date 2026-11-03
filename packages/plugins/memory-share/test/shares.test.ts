@@ -3,8 +3,8 @@ import { eventually, ensureChannels } from '../../channels/test/world.ts';
 import { createWorld, personas, type FilesWorld, type Persona } from '../../files/test/world.ts';
 
 // P8-22 and P8-23 through the real server: a lead commits routines/shares/<slug>.yaml, the loader makes the share and its links, the preview counts what would go,
-// "Run now" builds the digest (a job), the data rules look at it, an Approvals row waits for a person who is not the requester, and the run ends in `ready`
-// (or `denied`). Nothing here delivers the digest: that is the next task.
+// "Run now" builds the digest (a job), the data rules look at it, an Approvals row waits for a person who is not the requester, and the run ends in `sent` (approved, then delivered to the teams that accepted)
+// (or `denied`). Delivery and the receiving side are in the P8-24 and P8-25 tests below.
 
 const { omar, nadia, rafi, sameera, lena, tariq } = personas;
 vi.setConfig({ testTimeout: 120_000 });
@@ -289,10 +289,10 @@ describe('running a share, with review', () => {
     expect((await runOf('release-notes', first.id)).state).toBe('awaiting_approval');
   });
 
-  it('the named approver approves: the run is ready, the digest is a valid OKF bundle in the run and is not readable through the API', async () => {
+  it('the named approver approves: the run is delivered, the digest is a valid OKF bundle in the run and is not readable through the API', async () => {
     expect((await decide(nadia, approvalId, 'approve')).status).toBe(200);
-    const run = await settled('release-notes', first.id, ['ready', 'denied']);
-    expect(run.state).toBe('ready');
+    const run = await settled('release-notes', first.id, ['sent', 'denied']);
+    expect(run.state).toBe('sent');
     expect(JSON.stringify(run)).not.toContain('"bundle"');
     const stored = await world.system(async (tx) => (await tx.query<{ bundle: Record<string, string>; settled_by: string }>('SELECT bundle, settled_by FROM app.memory_share_runs WHERE id = $1', [first.id])).rows[0]);
     expect(Object.keys(stored?.bundle ?? {}).sort()).toEqual(['digest.md', 'index.md', 'log.md']);
@@ -309,8 +309,32 @@ describe('running a share, with review', () => {
     expect(events.rows.map((r) => `${r.type}:${String(r.payload['state'] ?? r.payload['outcome'])}`)).toEqual(expect.arrayContaining(['memory.share.built:awaiting_approval', 'memory.share.settled:ready']));
   });
 
+  it('the digest reaches the team that accepted as an inbox item, and the receiving side files it under memory/shared/team-<sender>/ with no model (P8-24, P8-25)', async () => {
+    const SUPPORT_ID = '00000000-0000-7000-8000-0000000b0002';
+    const delivered = await world.system(async (tx) => (await tx.query<{ item_id: string; dest_team_id: string; from_slug: string }>('SELECT item_id, dest_team_id, from_slug FROM app.memory_share_deliveries WHERE run_id = $1', [first.id])).rows);
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ dest_team_id: SUPPORT_ID, from_slug: 'engineering' });
+    const events = await world.system((tx) => tx.query<{ type: string }>(`SELECT type FROM app.events WHERE type IN ('memory.digest.delivered', 'memory.digest.imported') ORDER BY id`));
+    expect(events.rows.map((r) => r.type)).toContain('memory.digest.delivered');
+    const item = await eventually(async () => {
+      const row = (await world.system((tx) => tx.query<{ state: string; origin: string; stage: string; filed_paths: string[] | null; message: string | null }>('SELECT state, origin, stage, filed_paths, reason AS message FROM app.memory_inbox_items WHERE id = $1', [delivered[0]!.item_id]))).rows[0];
+      return row !== undefined && (row.state === 'filed' || row.state === 'failed') ? row : false;
+    }, 60_000, 'the delivered digest to be filed');
+    expect(item, JSON.stringify(item)).toMatchObject({ state: 'filed', origin: 'share' });
+    expect(item.filed_paths).toEqual(expect.arrayContaining(['memory/shared/team-engineering/digest.md']));
+    // the index follows the repository a moment later
+    const concept = await eventually(
+      async () => (await world.system((tx) => tx.query<{ origin: string; trust_tier: string; from_team: string | null }>(`SELECT origin, trust_tier, from_team FROM app.memory_concepts WHERE team_id = $1 AND path = 'memory/shared/team-engineering/digest.md'`, [SUPPORT_ID]))).rows[0] ?? false,
+      30_000,
+      'the delivered concept in the index',
+    );
+    expect(concept).toMatchObject({ origin: 'share', trust_tier: 'unverified', from_team: TEAM_ID });
+    // nothing of the sender's own folder changed, and the sender's references never travel
+    expect((await world.system((tx) => tx.query(`SELECT 1 FROM app.memory_concepts WHERE team_id = $1 AND path LIKE 'memory/shared/%' AND path NOT LIKE 'memory/shared/team-engineering/%'`, [SUPPORT_ID]))).rowCount).toBe(0);
+  });
+
   it('then only what changed goes: after a delivery, a new concept is the whole digest, and no change is an empty run', async () => {
-    // the delivery is the next task's; here the system marks the ready run sent, the way it will
+    // the first digest was delivered when it was approved; a run that was already sent stays sent
     await world.system((tx) => tx.query(`UPDATE app.memory_share_runs SET state = 'sent', sent_at = now() WHERE id = $1`, [first.id]));
     const quiet = await runNow('release-notes');
     const empty = await settled('release-notes', quiet.body.run.id, ['empty', 'awaiting_approval', 'failed']);
@@ -353,14 +377,14 @@ describe('running a share, with review', () => {
 });
 
 describe('a share set to go without review', () => {
-  it('is honoured when a workspace admin wrote it: the run is ready with no Approvals row', async () => {
+  it('is honoured when a workspace admin wrote it: the run goes out with no Approvals row', async () => {
     await putShare('auto-notes', { name: 'Auto notes', approval: 'auto', select: '{ paths: [playbooks/] }' });
     const view = await loadedAccepted('auto-notes');
     expect(view.approval).toBe('auto');
     expect(view.approvalEffective).toBe('auto');
     const res = await runNow('auto-notes');
-    const run = await settled('auto-notes', res.body.run.id, ['ready', 'awaiting_approval', 'failed', 'empty']);
-    expect(run.state, run.reason ?? '').toBe('ready');
+    const run = await settled('auto-notes', res.body.run.id, ['sent', 'awaiting_approval', 'failed', 'empty']);
+    expect(run.state, run.reason ?? '').toBe('sent');
     expect(run.approvalId).toBeNull();
   });
 
@@ -514,5 +538,77 @@ describe('the tick', () => {
     expect(['awaiting_approval', 'empty']).toContain(started.state);
     const next = (await shareOf('weekly')) as View & { nextRunAt?: string | null };
     expect(next.nextRunAt === undefined || next.nextRunAt === null || new Date(next.nextRunAt).getTime() > Date.now()).toBe(true);
+  });
+});
+
+describe('the receiving team decides (P8-24)', () => {
+  const MARKETING_ID = '00000000-0000-7000-8000-0000000b0003';
+  interface Incoming {
+    id: string;
+    state: string;
+    fromSlug: string;
+    shareName: string;
+  }
+  const incoming = (who: Persona) => world.call<{ incoming: Incoming[]; canManage: boolean }>(who, 'GET', '/api/teams/marketing/shares/incoming');
+  const linkState = async (id: string): Promise<string> => (await world.system(async (tx) => (await tx.query<{ state: string }>('SELECT state FROM app.memory_share_links WHERE id = $1', [id])).rows[0]))?.state ?? '';
+
+  it('naming a team files an accept row for its leads; the writer cannot decide it; the lead accepts; the team can pause, resume and end the share', async () => {
+    await putShare('accept-marketing', { name: 'Accept marketing', to: '[marketing]', select: '{ paths: [playbooks/] }' });
+    await loaded('accept-marketing');
+    const row = await eventually(async () => {
+      const r = (await world.system((tx) => tx.query<{ id: string; team_id: string; status: string; link_id: string }>(
+        `SELECT a.id, a.team_id, a.status, l.id AS link_id FROM app.approvals a JOIN app.memory_share_links l ON l.approval_id = a.id
+          JOIN app.memory_shares s ON s.id = l.share_id WHERE a.tool = 'memory.share.accept' AND s.slug = 'accept-marketing' AND s.team_id = $1`, [TEAM_ID]))).rows[0];
+      return r ?? false;
+    }, 30_000, 'the accept row');
+    expect(row).toMatchObject({ team_id: MARKETING_ID, status: 'pending' });
+    // nothing is delivered while the link waits
+    expect(await linkState(row.link_id)).toBe('requested');
+    const seen = await incoming(tariq);
+    expect(seen.status).toBe(200);
+    expect(seen.body.canManage).toBe(true);
+    expect(seen.body.incoming.find((i) => i.id === row.link_id)).toMatchObject({ state: 'requested', fromSlug: 'engineering', shareName: 'Accept marketing' });
+    // the person who wrote the share, a member of the sending team and a lead of nowhere cannot accept it
+    const accept = (who: Persona, how: 'approve' | 'deny') => world.call(who, 'POST', `/api/teams/marketing/approvals/${row.id}/${how}`, {});
+    expect((await accept(omar, 'approve')).status).toBe(403);
+    expect((await accept(nadia, 'approve')).status).toBeGreaterThanOrEqual(400);
+    expect((await accept(sameera, 'approve')).status).toBeGreaterThanOrEqual(400);
+    expect(await linkState(row.link_id)).toBe('requested');
+    expect((await accept(tariq, 'approve')).status).toBe(200);
+    await eventually(async () => (await linkState(row.link_id)) === 'accepted', 30_000, 'the link to be accepted');
+
+    const act = (who: Persona, action: string) => world.call<{ link: { state: string } }>(who, 'POST', `/api/teams/marketing/shares/incoming/${row.link_id}/${action}`, {});
+    for (const who of [nadia, sameera, lena]) expect((await act(who, 'pause')).status, who.name).toBeGreaterThanOrEqual(400);
+    expect(await linkState(row.link_id)).toBe('accepted');
+    expect((await act(tariq, 'pause')).body.link.state).toBe('paused');
+    expect((await act(tariq, 'pause')).status).toBe(409);
+    expect((await act(tariq, 'resume')).body.link.state).toBe('accepted');
+    expect((await act(tariq, 'revoke')).body.link.state).toBe('revoked');
+    expect((await act(tariq, 'resume')).status).toBe(409);
+    // the sending team no longer lists the team that ended it
+    const mine = await shareOf('accept-marketing');
+    expect(mine?.destinations.map((d) => d.slug)).not.toContain('marketing');
+  });
+
+  it('the Memory sharing switch: everyone can read it, only an owner or admin changes it, and off stops a run from starting', async () => {
+    const get = (who: Persona) => world.call<{ enabled: boolean; canChange: boolean }>(who, 'GET', '/api/workspace/memory-sharing');
+    const put = (who: Persona, enabled: boolean) => world.call<{ enabled: boolean }>(who, 'PUT', '/api/workspace/memory-sharing', { enabled });
+    expect((await get(tariq)).body).toMatchObject({ enabled: true, canChange: false });
+    expect((await get(omar)).body).toMatchObject({ enabled: true, canChange: true });
+    expect((await put(tariq, false)).status).toBe(403);
+    expect((await get(omar)).body.enabled).toBe(true);
+    expect((await put(omar, false)).body.enabled).toBe(false);
+    try {
+      expect((await get(nadia)).body.enabled).toBe(false);
+      await putShare('switch-off', { name: 'Switch off', select: '{ paths: [playbooks/] }' });
+      await loadedAccepted('switch-off');
+      const res = await runNow('switch-off');
+      expect(res.status).toBe(409);
+    } finally {
+      expect((await put(omar, true)).body.enabled).toBe(true);
+    }
+    const again = await runNow('switch-off');
+    expect(again.status).toBe(202);
+    await settledAny('switch-off', again.body.run.id, ['awaiting_approval', 'empty', 'failed', 'sent']);
   });
 });
