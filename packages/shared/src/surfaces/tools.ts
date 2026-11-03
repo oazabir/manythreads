@@ -58,7 +58,8 @@ export function describeSurfaceParts(registry: SurfaceRegistry): string {
       const def = registry.get(name)!;
       const events = Object.keys(def.events);
       const args = def.args.map((a) => (a === def.children ? `${a}: [parts]` : a)).join(', ');
-      return `${def.name}(${args}) - ${def.summary}${events.length > 0 ? ` Events: ${events.join(', ')}.` : ''}`;
+      const bindable = def.bindable.length > 0 ? ` Can be bound to data: ${def.bindable.join(', ')}.` : '';
+      return `${def.name}(${args}) - ${def.summary}${events.length > 0 ? ` Events: ${events.join(', ')}.` : ''}${bindable}`;
     })
     .join(' ');
 }

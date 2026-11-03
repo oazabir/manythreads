@@ -7,6 +7,7 @@ import {
   SurfaceEventToolInput,
   SurfaceRenderInput,
   SurfaceUpdateInput,
+  describeSurfaceBinding,
   describeSurfaceParts,
 } from '@manythreads/shared';
 import { z } from 'zod';
@@ -262,6 +263,8 @@ export const TOOLS: Readonly<Record<string, ToolDefinition>> = {
     description:
       'Draw a screen in the thread you were asked in, instead of describing it in text: a small page the person can look at and press. Write it in OpenUI Lang, one statement per line, `name = Part(value, ...)`; the part named `root` is drawn first and a part is placed by naming it inside its parent. Parts: ' +
       describeSurfaceParts(SURFACE_REGISTRY) +
+      ' ' +
+      describeSurfaceBinding() +
       ' Example: `root = Stack([title, go])`, `title = Heading("Deploy staging?")`, `go = Button("Deploy", "primary")`. A screen that does not parse is refused with the reason and nothing is posted: read it, fix it and send it again. The answer carries the surfaceId and the version. Draw one screen and change it with surface.update rather than drawing a new one each time. A screen can only show things and send an answer back; it cannot call a tool, and what a person presses reaches you only as data you read with surface.event.',
     inputSchema: SURFACE_RENDER_SCHEMA,
     kind: 'write',

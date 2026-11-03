@@ -1,10 +1,11 @@
 import { definePlugin, type McpToolsProvider, type PluginContext, type PluginEvent, type PluginTx } from '@manythreads/sdk';
 import { STUB_CAPABILITIES, TOOLS } from './catalog.ts';
-import { callTool, offeredTools } from './protocol.ts';
+import { callTool, offeredTools, reportFault } from './protocol.ts';
 import { registerMcpRoutes } from './routes.ts';
 import { sandboxMembers } from './sandbox.ts';
 import { createMcpSessions, sessionSecretFromEnv } from './session.ts';
 import { createStreamHub, type StreamHub } from './streams.ts';
+import { readForViewer } from './viewer.ts';
 import { currentToolsDigest, readVersions, refreshPushedDigest, stillValidTokens } from './tools-state.ts';
 
 export { TOOLS, STUB_CAPABILITIES, definitionOf, withRunTeam } from './catalog.ts';
@@ -128,6 +129,7 @@ export default definePlugin({
         const text = result.content.map((c) => c.text).join('\n');
         return { text, isError: result.isError === true };
       },
+      readForViewer: (tx, name, args) => readForViewer(ctx, reportFault, tx, name, args),
       ...sandboxMembers(ctx),
     };
     ctx.providers.register('mcp.tools', provider);

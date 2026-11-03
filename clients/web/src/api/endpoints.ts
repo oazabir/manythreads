@@ -478,9 +478,12 @@ import {
 } from '@manythreads/shared';
 import {
   GetSurfaceResponse,
+  PostSurfaceDataRequest,
   PostSurfaceEventRequest,
   PostSurfaceEventResponse,
+  SurfaceDataResponse,
   getSurfaceRoute,
+  postSurfaceDataRoute,
   postSurfaceEventRoute,
 } from '@manythreads/shared';
 import { CSRF_HEADER, ApiError, buildPath, call, readCsrfCookie } from './client';
@@ -1034,6 +1037,10 @@ export const fetchSurface = (channelId: string, surfaceId: string) => call(getSu
 /** A press or a form sent back to the bot: data about a part of the screen, never a command. */
 export const sendSurfaceEvent = (channelId: string, surfaceId: string, body: PostSurfaceEventRequest) =>
   call(postSurfaceEventRoute, { request: PostSurfaceEventRequest, response: PostSurfaceEventResponse }, body, { channelId, surfaceId });
+
+/** A bound part reads its data (P9-06). Only the screen's version goes up: the tool and its arguments are the ones written on the screen, and the call runs as this person. */
+export const fetchSurfaceData = (channelId: string, surfaceId: string, nodeId: string, body: PostSurfaceDataRequest) =>
+  call(postSurfaceDataRoute, { request: PostSurfaceDataRequest, response: SurfaceDataResponse }, body, { channelId, surfaceId, nodeId });
 
 // ---- import from Slack and Mattermost (workspace admins) -----------------------------------------------------
 export const fetchImports = () => call(listImportsRoute, { response: ListImportsResponse });

@@ -194,12 +194,16 @@ export function createPluginContext(manifest: PluginManifest, deps: ContextDeps)
   const db: PluginDb = {
     getOneOrCreate: <R extends Record<string, unknown>>(tx: PluginTx, input: GetOneOrCreateInput) =>
       getOneOrCreate<R>(guardPluginTx(tx) as unknown as Tx, input),
-    as: async <T>(caller: HttpCaller | null, fn: (tx: PluginTx) => Promise<T>): Promise<T> => {
+    as: async <T>(caller: HttpCaller | null, fn: (tx: PluginTx) => Promise<T>, options: { readOnly?: boolean; statementTimeoutMs?: number } = {}): Promise<T> => {
       if (!deps.pool) throw new PluginError(`Plugin "${name}": ctx.db.as needs a database pool`, { plugin: name });
       const actor: Actor = caller
         ? { kind: caller.kind, id: caller.actorId as Actor['id'], workspaceId: caller.workspaceId as Actor['workspaceId'] }
         : { kind: 'person', id: NIL_UUID as Actor['id'], workspaceId: NIL_UUID as Actor['workspaceId'] };
-      return withActor(actor, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), { pool: deps.pool });
+      return withActor(actor, (tx) => fn(guardPluginTx(tx as unknown as PluginTx)), {
+        pool: deps.pool,
+        ...(options.readOnly === true ? { readOnly: true } : {}),
+        ...(options.statementTimeoutMs !== undefined ? { statementTimeoutMs: options.statementTimeoutMs } : {}),
+      });
     },
     system: async <T>(fn: (tx: PluginTx) => Promise<T>, options: { workspaceId?: string } = {}): Promise<T> => {
       if (!deps.systemPool) throw new PluginError(`Plugin "${name}": ctx.db.system needs a database pool`, { plugin: name });

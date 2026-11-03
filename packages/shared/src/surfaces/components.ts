@@ -4,7 +4,8 @@ import { createSurfaceRegistry, defineSurfaceComponent } from './registry.ts';
 // The parts every client draws (PLAN P9-02, P9-05): the primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart, List, Badge, Button, Callout, Code,
 // Divider) and the manythreads parts (EntityCard, PersonChip, ChannelLink, ApprovalCard, DiffView), one definition each; the web client adds a drawing for
 // each name (clients/web/src/surfaces/views.tsx). Every value is checked here, with a size cap on everything a bot can make long: a part's values may not
-// exceed SURFACE_MAX_PROP_CHARS in all (openui.ts), so the caps below sit under that on purpose. No value is ever an address, an image or markup: the
+// exceed SURFACE_MAX_PROP_CHARS in all (openui.ts), so the caps below sit under that on purpose. Text, Stat, Table, Chart, List and Badge can be bound to data
+// (`bindable`, PLAN P9-06, ./bind.ts): their values are filled from a read tool as the viewer, and judged by the same schema. No value is ever an address, an image or markup: the
 // manythreads parts take an id and a label, and the client looks the id up as the person who is looking.
 
 const Gap = z.enum(['none', 'small', 'medium', 'large']);
@@ -32,6 +33,7 @@ export const TextComponent = defineSurfaceComponent({
   summary: 'A paragraph of plain text. Nothing in it is read as markup.',
   args: ['text', 'tone'],
   props: z.object({ text: z.string().max(5000), tone: z.enum(['normal', 'muted', 'strong']).optional() }),
+  bindable: ['text'],
 });
 
 const Tone = z.enum(['neutral', 'good', 'warn', 'bad', 'info']);
@@ -69,6 +71,7 @@ export const StatComponent = defineSurfaceComponent({
     delta: z.string().min(1).max(40).optional(),
     tone: Tone.optional(),
   }),
+  bindable: ['value', 'delta'],
 });
 
 export const TABLE_MAX_COLUMNS = 10;
@@ -87,6 +90,7 @@ export const TableComponent = defineSurfaceComponent({
       caption: z.string().min(1).max(200).optional(),
     })
     .refine((p) => p.rows.every((r) => r.length <= p.columns.length), { message: 'a row has more values than there are columns', path: ['rows'] }),
+  bindable: ['columns', 'rows'],
 });
 
 export const CHART_MAX_POINTS = 40;
@@ -105,6 +109,7 @@ export const ChartComponent = defineSurfaceComponent({
       unit: z.string().min(1).max(20).optional(),
     })
     .refine((p) => p.labels.length === p.values.length, { message: 'needs one label for each value', path: ['labels'] }),
+  bindable: ['labels', 'values'],
 });
 
 /** A bulleted or numbered list of plain lines. */
@@ -113,6 +118,7 @@ export const ListComponent = defineSurfaceComponent({
   summary: 'A list of plain lines, bulleted or (with ordered) numbered. At most 100 items.',
   args: ['items', 'ordered'],
   props: z.object({ items: z.array(z.string().min(1).max(500)).min(1).max(100), ordered: z.boolean().optional() }),
+  bindable: ['items'],
 });
 
 /** A short coloured label. */
@@ -121,6 +127,7 @@ export const BadgeComponent = defineSurfaceComponent({
   summary: 'A short coloured label ("Open", "Late").',
   args: ['text', 'tone'],
   props: z.object({ text: z.string().min(1).max(40), tone: Tone.optional() }),
+  bindable: ['text'],
 });
 
 /**

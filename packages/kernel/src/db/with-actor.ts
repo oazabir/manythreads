@@ -42,6 +42,8 @@ export interface WithActorOptions {
   pool?: pg.Pool;
   /** Open the transaction `READ ONLY`: any write in it fails with 25006 (the actor settings below are session settings, not data). */
   readOnly?: boolean;
+  /** A whole number of milliseconds: any one statement of the transaction that runs longer is cancelled by the database (`SET LOCAL statement_timeout`). */
+  statementTimeoutMs?: number;
 }
 
 /**
@@ -57,6 +59,10 @@ export async function withActor<T>(
   let released = false;
   try {
     await client.query(options.readOnly ? 'BEGIN READ ONLY' : 'BEGIN');
+    if (options.statementTimeoutMs !== undefined) {
+      // an integer by construction (never text from a caller), so it can be written into the statement: SET does not take a bind parameter
+      await client.query(`SET LOCAL statement_timeout = ${Math.max(1, Math.min(600_000, Math.trunc(options.statementTimeoutMs)))}`);
+    }
     await client.query(
       `SELECT set_config('app.actor_id', $1, true),
               set_config('app.actor_kind', $2, true),

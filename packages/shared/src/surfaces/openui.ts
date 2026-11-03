@@ -1,5 +1,6 @@
 import { SURFACE_SOURCE_MAX, type SurfaceRejectionCode } from '../entities/surface.ts';
-import type { SurfaceRegistry } from './registry.ts';
+import { checkSurfaceBind, type SurfaceBind } from './bind.ts';
+import { SURFACE_BIND_ARG, type SurfaceRegistry } from './registry.ts';
 
 // OpenUI Lang, the text a bot writes to draw a surface (PLAN P9-03, SPEC §14), and the checker that stands between that text and the screen.
 //
@@ -367,7 +368,16 @@ export interface SurfaceProblem {
 
 /** What to draw. A `component` has passed its schema: `props` are the schema's output, `children` are already checked. */
 export type SurfaceNode =
-  | { kind: 'component'; key: string; id: string; name: string; props: Record<string, unknown>; children: SurfaceNode[] }
+  | {
+      kind: 'component';
+      key: string;
+      id: string;
+      name: string;
+      props: Record<string, unknown>;
+      children: SurfaceNode[];
+      /** The data binding the part declared (PLAN P9-06), already checked: a tool a screen may bind, plain arguments, selectors for values the part lets a binding fill. */
+      bind?: SurfaceBind;
+    }
   | { kind: 'rejected'; key: string; id: string; name: string | null; code: SurfaceRejectionCode; message: string }
   | { kind: 'pending'; key: string; id: string };
 
@@ -473,6 +483,7 @@ function resolveCall(call: Extract<Ast, { t: 'call' }>, id: string, ctx: Ctx, ke
     return reject(ctx, key, id, def.name, 'invalid_props', `${def.name} takes at most ${def.args.length} values, but ${call.args.length} were given`);
   }
   const raw: Record<string, unknown> = {};
+  let rawBind: unknown;
   let childAsts: Ast[] = [];
   const budget = { left: SURFACE_MAX_PROP_CHARS };
   for (let idx = 0; idx < def.args.length; idx++) {
@@ -488,7 +499,14 @@ function resolveCall(call: Extract<Ast, { t: 'call' }>, id: string, ctx: Ctx, ke
       if (r.pending) return { kind: 'pending', key, id };
       return reject(ctx, key, id, def.name, r.code, `${def.name}, "${arg}": ${r.message}`);
     }
-    raw[arg] = r.value;
+    if (arg === SURFACE_BIND_ARG && def.bindable.length > 0) rawBind = r.value;
+    else raw[arg] = r.value;
+  }
+  let bind: SurfaceBind | undefined;
+  if (rawBind !== undefined) {
+    const checked = checkSurfaceBind(def, rawBind);
+    if (!checked.ok) return reject(ctx, key, id, def.name, 'invalid_props', `${def.name}, "${SURFACE_BIND_ARG}": ${checked.message}`);
+    bind = checked.bind;
   }
   const parsed = def.props.safeParse(raw);
   if (!parsed.success) {
@@ -525,7 +543,7 @@ function resolveCall(call: Extract<Ast, { t: 'call' }>, id: string, ctx: Ctx, ke
     }
     children.push(resolveChild(a, j));
   }
-  return { kind: 'component', key, id, name: def.name, props: parsed.data as Record<string, unknown>, children };
+  return { kind: 'component', key, id, name: def.name, props: parsed.data as Record<string, unknown>, children, ...(bind !== undefined ? { bind } : {}) };
 }
 
 /** Check what has arrived so far and say what to draw. Safe to call after every piece of text. */

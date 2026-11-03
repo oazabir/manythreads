@@ -1,4 +1,4 @@
-import type { BotRunHandle, ProviderImpl } from './types.ts';
+import type { BotRunHandle, PluginTx, ProviderImpl } from './types.ts';
 
 // What a bot's MCP tool list is right now, as one digest (P14-22), registered by gateway-mcp (`provider.mcp.tools`): `ctx.providers.get<McpToolsProvider>('mcp.tools')`.
 // The digest covers exactly what `tools/list` answers the bot (names, descriptions, input schemas, whether each needs approval), so anything that
@@ -19,6 +19,14 @@ export interface McpToolsProvider extends ProviderImpl {
    * model should read and whether it is an error. A run that has ended throws (`RunEndedError`).
    */
   call(run: BotRunHandle, name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }>;
+  /**
+   * One read tool called AS A PERSON, for a screen that binds a part to data (PLAN P9-06). There is no run and no bot: `tx` must be a person's transaction (any other actor is
+   * refused `forbidden`), and the call is made in a transaction of its own as that same person, read-only, with a statement time limit, so what comes back is what the person may
+   * read and nothing more, whatever any bot is granted. Only the tools in `SURFACE_BINDABLE_TOOLS` (shared) whose catalog kind is `read` are served, with arguments that pass the
+   * tool's own binding schema; the answer is the tool's JSON, refused when over 65,536 characters. It never throws for a refusal: read `ok`. Not covered, on purpose: the
+   * data-loss check (there is no model to protect; the person already reads these rows) and the source log (no run).
+   */
+  readForViewer(tx: PluginTx, name: string, args: Record<string, unknown>): Promise<ViewerReadResult>;
 
   // The sandbox (PLAN P7-05, the Workshop's Rehearse mode). A plugin that is not a runtime cannot open a run (`capability.call` is not `tool.invoke`), and it must not be able to make a
   // rehearsal that is not one. So the broker offers a closed set of four members: a run that is ALWAYS a rehearsal, its tool list, one call through the hold, and its end. The hold is
@@ -44,6 +52,9 @@ export interface McpToolsProvider extends ProviderImpl {
    */
   openTerminalSandbox(input: { workspaceId: string; teamId: string; botId: string; runId?: string }): Promise<{ run: BotRunHandle; credentialsRevoked: number }>;
 }
+
+export type ViewerReadCode = 'forbidden' | 'not_bindable' | 'invalid_args' | 'too_large' | 'timeout' | 'unavailable';
+export type ViewerReadResult = { ok: true; data: unknown } | { ok: false; code: ViewerReadCode; message: string };
 
 /** The name of the write that exists only in the sandbox. A real bot cannot call it (nothing implements it outside `sandboxCall`). */
 export const SANDBOX_TEST_WRITE = 'test.write';

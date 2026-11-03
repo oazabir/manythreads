@@ -404,6 +404,8 @@ let faultLog: (line: string) => void = (line) => void process.stderr.write(`${li
 export function setFaultLog(fn: (line: string) => void): void {
   faultLog = fn;
 }
+/** The same log, for the parts of this plugin that live in other files. */
+export const reportFault = (line: string): void => faultLog(line);
 
 /**
  * A handler that throws is still a tool answer, so the model reads why. Only the platform's own errors carry their sentence (an `HttpError`

@@ -18,6 +18,7 @@ import {
   postSurfaceEventRoute,
 } from '@manythreads/shared';
 import { SURFACE_COLUMNS, SURFACE_EVENT_COLUMNS, toSurface, toSurfaceEvent, type SurfaceEventRow, type SurfaceRow } from './mappers.ts';
+import { registerDataRoute } from './data.ts';
 import { eventTeamId, pushChanged } from './notify.ts';
 
 // The routes the web app uses (PLAN P9-04, docs/plugins/surfaces.md). Reading is judged by the row-level security of the tables, through the channel: hide the
@@ -33,6 +34,7 @@ async function requireReadable(tx: PluginTx, channelId: string): Promise<void> {
 }
 
 export function registerRoutes(ctx: PluginContext): void {
+  registerDataRoute(ctx);
   ctx.http.route({
     ...listSurfacesRoute,
     schema: { query: ListSurfacesQuery, response: ListSurfacesResponse },

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SurfaceChangedPush, WS_SURFACE_CHANGED, type Surface as SurfaceDto } from '@manythreads/shared';
 import { isApiError } from '../api/client';
-import { fetchSurface, sendSurfaceEvent } from '../api/endpoints';
+import { fetchSurface, fetchSurfaceData, sendSurfaceEvent } from '../api/endpoints';
 import { isMockMode } from '../api/setup';
 import { realtimeClient } from '../realtime';
 import { Surface } from './Surface';
+import { SurfaceDataContext, type SurfaceData } from './BoundPart';
+import { failureOf } from './bound';
 import { SurfaceActionsContext, type SurfaceActions } from './views';
 
 /*
@@ -27,6 +29,8 @@ export function pressFailure(e: unknown): string {
 
 const NONE: ReadonlySet<string> = new Set();
 
+const statusOf = (e: unknown): number | null => (isApiError(e) ? e.status : null);
+
 export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: string; surfaceId: string; canPost: boolean }): ReactNode {
   const [surface, setSurface] = useState<SurfaceDto | null>(null);
   const [missing, setMissing] = useState<'gone' | 'failed' | null>(null);
@@ -34,6 +38,8 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
   const [error, setError] = useState<string | null>(null);
   // The presses that went through, per version: a new version of the screen starts clean.
   const [answered, setAnswered] = useState<{ version: number; ids: ReadonlySet<string> }>({ version: 0, ids: NONE });
+  // How many answers went through since the page opened: a bound part with `refreshOn: ["answered"]` reads again each time it goes up.
+  const [answeredCount, setAnsweredCount] = useState(0);
   const alive = useRef(true);
 
   const load = useCallback(async () => {
@@ -83,7 +89,10 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
       setError(null);
       try {
         await sendSurfaceEvent(channelId, surfaceId, { nodeId, name, version, payload });
-        if (alive.current) setAnswered((prev) => ({ version, ids: new Set([...(prev.version === version ? prev.ids : NONE), nodeId]) }));
+        if (alive.current) {
+          setAnswered((prev) => ({ version, ids: new Set([...(prev.version === version ? prev.ids : NONE), nodeId]) }));
+          setAnsweredCount((n) => n + 1);
+        }
       } catch (e) {
         if (alive.current) {
           setError(pressFailure(e));
@@ -94,6 +103,23 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
       }
     },
     [channelId, surfaceId, version, load],
+  );
+
+  // A bound part reads its data as this person, for the version being shown; a screen that has moved on (409) is read again and the part waits for the new version.
+  const readData = useCallback(
+    async (nodeId: string) => {
+      try {
+        return await fetchSurfaceData(channelId, surfaceId, nodeId, { version });
+      } catch (e) {
+        if (isApiError(e) && e.status === 409) void load();
+        throw e;
+      }
+    },
+    [channelId, surfaceId, version, load],
+  );
+  const dataValue: SurfaceData = useMemo(
+    () => ({ read: isMockMode() || version === 0 ? null : readData, version, answered: answeredCount, explain: (e) => failureOf(e, statusOf) }),
+    [readData, version, answeredCount],
   );
 
   if (surface === null) {
@@ -110,7 +136,9 @@ export function SurfaceMessage({ channelId, surfaceId, canPost }: { channelId: s
     <div className="sf-message" data-testid="surface-message" data-version={surface.version}>
       <div className="sf-message-title">{surface.title}</div>
       <SurfaceActionsContext.Provider value={actions}>
-        <Surface source={surface.source} ended />
+        <SurfaceDataContext.Provider value={dataValue}>
+          <Surface source={surface.source} ended />
+        </SurfaceDataContext.Provider>
       </SurfaceActionsContext.Provider>
       {error ? (
         <div className="sf-message-error" role="alert">

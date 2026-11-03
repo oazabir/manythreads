@@ -4,6 +4,7 @@ import { readSurfaceEvents, renderSurface, updateSurface } from './tools.ts';
 
 export { allowCall, resetCallLimits } from './limits.ts';
 export { readSurfaceEvents, renderSurface, updateSurface } from './tools.ts';
+export { DATA_IN_FLIGHT_PER_PERSON, resetDataCalls } from './data.ts';
 
 /**
  * Surfaces (PLAN P9-01 to P9-04): screens a bot draws in OpenUI Lang instead of plain text, and the history of what happened to each. The bot draws and changes

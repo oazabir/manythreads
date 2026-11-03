@@ -40,6 +40,11 @@ export interface SurfaceComponentDef {
    * The shape is the part's own, so what the bot receives is exactly what the part allows.
    */
   readonly events: Readonly<Record<string, SurfaceEventDef>>;
+  /**
+   * The values (props) a data binding may fill in (PLAN P9-06, ./bind.ts). A part with some has one more position at the end of `args`, named `bind`, where a bot may
+   * declare which registered read tool feeds them. The value written in the part itself stays as the placeholder, checked by `props` like any other.
+   */
+  readonly bindable: readonly string[];
 }
 
 export interface SurfaceComponentInput<S extends z.ZodRawShape> {
@@ -50,7 +55,12 @@ export interface SurfaceComponentInput<S extends z.ZodRawShape> {
   props: z.ZodObject<S>;
   /** The events a viewer may send back from this part: name to the shape of its payload. */
   events?: Record<string, z.ZodObject<z.ZodRawShape>>;
+  /** The props a data binding may fill in (see `SurfaceComponentDef.bindable`). The part gets a last position named `bind`. */
+  bindable?: readonly string[];
 }
+
+/** The name of the position that carries a data binding. A part cannot use it for anything else. */
+export const SURFACE_BIND_ARG = 'bind';
 
 /** Check a part's definition (fails at load, never at run time) and return it. */
 export function defineSurfaceComponent<S extends z.ZodRawShape>(input: SurfaceComponentInput<S>): SurfaceComponentDef {
@@ -65,6 +75,11 @@ export function defineSurfaceComponent<S extends z.ZodRawShape>(input: SurfaceCo
   for (const k of keys) if (!args.includes(k)) throw new Error(`${name}: prop "${k}" has no position`);
   for (const a of args) if (a !== children && !keys.includes(a)) throw new Error(`${name}: value "${a}" has no schema`);
   if (children !== null && keys.includes(children)) throw new Error(`${name}: "${children}" is the children slot and cannot also be a prop`);
+  const bindable = [...(input.bindable ?? [])];
+  if (args.includes(SURFACE_BIND_ARG)) throw new Error(`${name}: "${SURFACE_BIND_ARG}" is reserved for data binding`);
+  for (const b of bindable) if (!keys.includes(b)) throw new Error(`${name}: "${b}" cannot be bound because it is not a prop`);
+  if (new Set(bindable).size !== bindable.length) throw new Error(`${name}: a bindable value is listed twice`);
+  if (bindable.length > 0 && args.length + 1 > SURFACE_MAX_ARGS) throw new Error(`${name}: no room for the "${SURFACE_BIND_ARG}" value`);
   const events: Record<string, SurfaceEventDef> = {};
   const eventNames = Object.keys(input.events ?? {});
   if (eventNames.length > SURFACE_MAX_EVENTS_PER_COMPONENT) throw new Error(`${name}: at most ${SURFACE_MAX_EVENTS_PER_COMPONENT} events`);
@@ -72,7 +87,15 @@ export function defineSurfaceComponent<S extends z.ZodRawShape>(input: SurfaceCo
     if (!EVENT_NAME.test(e)) throw new Error(`${name}: "${e}" is not an event name (lowercase letters, digits and underscores)`);
     events[e] = { payload: input.events![e]!.strict() as unknown as z.ZodObject<z.ZodRawShape> };
   }
-  return { name, summary: input.summary, args: [...args], children, props: props as unknown as z.ZodObject<z.ZodRawShape>, events };
+  return {
+    name,
+    summary: input.summary,
+    args: bindable.length > 0 ? [...args, SURFACE_BIND_ARG] : [...args],
+    children,
+    props: props as unknown as z.ZodObject<z.ZodRawShape>,
+    events,
+    bindable,
+  };
 }
 
 /** A set of parts, by name. */

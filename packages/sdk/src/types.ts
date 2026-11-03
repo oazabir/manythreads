@@ -571,9 +571,10 @@ export interface PluginDb {
   /**
    * One transaction as the caller, for work that has no request of its own: a socket frame, a timer, a connection's own bookkeeping. RLS and
    * the plugin's SQL guard apply exactly as in a route. The caller is the authenticated actor the socket was opened with; `null` is the
-   * anonymous actor (which sees and writes nothing). Absent only when the host has no database.
+   * anonymous actor (which sees and writes nothing). Absent only when the host has no database. `readOnly` opens the transaction `READ ONLY` (a write fails);
+   * `statementTimeoutMs` makes the database cancel any one statement that runs longer (a bound read that must not hold a connection).
    */
-  as<T>(caller: HttpCaller | null, fn: (tx: PluginTx) => Promise<T>): Promise<T>;
+  as<T>(caller: HttpCaller | null, fn: (tx: PluginTx) => Promise<T>, options?: { readOnly?: boolean; statementTimeoutMs?: number }): Promise<T>;
   /**
    * One transaction as the system actor (no RLS): the platform's own bookkeeping — folding a live document into a commit, sweeping what a dead
    * process left behind. A plugin that reaches for this to answer a person's request is wrong; routes and sockets have the actor already.

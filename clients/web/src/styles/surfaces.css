@@ -131,6 +131,24 @@
   overflow-wrap: anywhere;
 }
 
+/* a part whose values come from a read tool: the part itself, with one plain line under it for loading, nothing to show, or a failed refresh */
+.sf-bound {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sf-bound-note {
+  color: var(--mute);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.sf-bound-error {
+  color: var(--alert-ink);
+}
+
 /* a button on a screen: wraps instead of widening the screen, and keeps a touch-sized target on a phone */
 .sf-button {
   align-self: flex-start;

@@ -8,6 +8,7 @@ import {
   type SurfaceTree,
 } from '@manythreads/shared';
 import { advanceSurfaceFeed, type SurfaceFeed } from './stream';
+import { BoundPart } from './BoundPart';
 import { SURFACE_VIEWS, type SurfaceView } from './views';
 
 /*
@@ -75,11 +76,14 @@ function ViewHost({ view, props, nodeId, children }: { view: SurfaceView; props:
 function Part({ node, view, views }: { node: Extract<SurfaceNode, { kind: 'component' }>; view: SurfaceView; views: ReadonlyMap<string, SurfaceView> }): ReactNode {
   const children = node.children.map((c) => <PartView key={c.key} node={c} views={views} />);
   // A view that throws costs that one part, not the screen.
+  const draw = (props: Record<string, unknown>): ReactNode => (
+    <ViewHost view={view} props={props} nodeId={node.id}>
+      {children}
+    </ViewHost>
+  );
   return (
     <PartBoundary label={node.name}>
-      <ViewHost view={view} props={node.props} nodeId={node.id}>
-        {children}
-      </ViewHost>
+      {node.bind ? <BoundPart draw={draw} name={node.name} nodeId={node.id} props={node.props} bind={node.bind} /> : draw(node.props)}
     </PartBoundary>
   );
 }

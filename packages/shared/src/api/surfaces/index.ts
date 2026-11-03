@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IsoDateTime } from '../../common/time.ts';
 import { SURFACE_NODE_ID_MAX, Surface, SurfaceEvent } from '../../entities/surface.ts';
 import { ChannelId, MessageId, SurfaceId } from '../../ids.ts';
 import type { ApiRoute } from '../client/route.ts';
@@ -41,6 +42,25 @@ export type PostSurfaceEventRequest = z.infer<typeof PostSurfaceEventRequest>;
 export const PostSurfaceEventResponse = z.object({ event: SurfaceEvent });
 export type PostSurfaceEventResponse = z.infer<typeof PostSurfaceEventResponse>;
 export const postSurfaceEventRoute = { method: 'POST', path: '/api/channels/:channelId/surfaces/:surfaceId/events' } as const satisfies ApiRoute;
+
+/**
+ * A bound part asks for its data (PLAN P9-06). The request names only the screen's version the person is looking at: the tool, its arguments and the selectors are
+ * the ones written on the screen, which the server reads itself, so a person (or a script) cannot ask for any other call. 409 when the screen has changed since.
+ * The answer is `state: 'ok'` with the values to put over the part's placeholders (`props`), `'empty'` (the tool answered and there is nothing to show), or `'error'`
+ * with a plain sentence. The call runs as the person asking, never as the bot.
+ */
+export const SurfaceDataPathParams = z.object({ channelId: ChannelId, surfaceId: SurfaceId, nodeId: z.string().min(1).max(SURFACE_NODE_ID_MAX) });
+export type SurfaceDataPathParams = z.infer<typeof SurfaceDataPathParams>;
+export const PostSurfaceDataRequest = z.strictObject({ version: z.number().int().min(1) });
+export type PostSurfaceDataRequest = z.infer<typeof PostSurfaceDataRequest>;
+export const SurfaceDataErrorCode = z.enum(['missing', 'shape', 'too_large', 'forbidden', 'unavailable', 'timeout']);
+export const SurfaceDataResponse = z.discriminatedUnion('state', [
+  z.object({ state: z.literal('ok'), props: z.record(z.string(), z.unknown()), fetchedAt: IsoDateTime }),
+  z.object({ state: z.literal('empty'), fetchedAt: IsoDateTime }),
+  z.object({ state: z.literal('error'), code: SurfaceDataErrorCode, message: z.string().max(400), fetchedAt: IsoDateTime }),
+]);
+export type SurfaceDataResponse = z.infer<typeof SurfaceDataResponse>;
+export const postSurfaceDataRoute = { method: 'POST', path: '/api/channels/:channelId/surfaces/:surfaceId/data/:nodeId' } as const satisfies ApiRoute;
 
 /** The live push that says a surface was drawn, changed or answered: the page that shows it reads it again. */
 export const WS_SURFACE_CHANGED = 'surfaces.changed';
