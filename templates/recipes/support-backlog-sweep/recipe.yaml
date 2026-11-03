@@ -1,0 +1,14 @@
+# Support backlog sweep: Once a day, lists the support threads and cards that went quiet, oldest first, with a suggested next step for each.
+id: support-backlog-sweep
+name: Support backlog sweep
+summary: Once a day, lists the support threads and cards that went quiet, oldest first, with a suggested next step for each.
+category: customers
+version: 1
+schedule:
+  cron: 0 10 * * mon-fri
+  label: Weekdays at 10:00 UTC
+channels:
+  - "#support"
+needs:
+  - "A channel called #support"
+botSlug: backlog-sweeper

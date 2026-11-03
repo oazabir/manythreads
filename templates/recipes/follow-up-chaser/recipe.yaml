@@ -1,0 +1,13 @@
+# Follow-up chaser: Finds questions and promises in public channels that nobody answered, and lists them for the people involved.
+id: follow-up-chaser
+name: Follow-up chaser
+summary: Finds questions and promises in public channels that nobody answered, and lists them for the people involved.
+category: rhythm
+version: 1
+schedule:
+  cron: 0 9 * * mon-fri
+  label: Weekdays at 09:00 UTC
+channels: []
+needs:
+  - Nothing beyond the channels the team already uses
+botSlug: follow-up-chaser

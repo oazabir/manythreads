@@ -1,0 +1,5 @@
+name: First-week pages
+prompt: "For each person who joined in the last week, add a first-week section built from the team handbook: channels, people to know, and a checklist for days one to five."
+output:
+  page: pages/recipes/first-week.md
+  mode: replace

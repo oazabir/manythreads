@@ -1,4 +1,4 @@
-import type { ErrorCode, ExtensionPoint, PluginManifest, SetupProfile, TeamTemplate } from '@manythreads/shared';
+import type { ErrorCode, ExtensionPoint, PluginManifest, Recipe, SetupProfile, TeamTemplate } from '@manythreads/shared';
 import type { ZodType } from 'zod';
 import type { PluginAccess, PluginLinks, PluginReadState, PluginRealtime } from './cohesion.ts';
 import type { EgressDecision, EgressHook, EgressInput } from './egress.ts';
@@ -600,6 +600,8 @@ export interface PluginTemplates {
   /** Every template, sorted by id. Read once and cached; an invalid template file fails here, naming file and field. */
   list(): Promise<readonly TeamTemplate[]>;
   get(id: string): Promise<TeamTemplate | undefined>;
+  /** The recipe gallery (`templates/recipes/`, PLAN P18-01): every recipe checked by the shared rules, sorted by id. Read once and cached; a broken recipe fails here, naming file and field. */
+  recipes(): Promise<readonly Recipe[]>;
   /** The "Add a bot" helper's profile (`templates/_setup/PROFILE.md`): what it is told and which of its fixed tools it may use. Read once and cached. */
   setupProfile(): Promise<{ profile: SetupProfile; prompt: string }>;
 }

@@ -1,0 +1,5 @@
+name: Goals check-in
+prompt: Compare each written team goal with the cards and messages of the last week and say what moved, what did not, and what you cannot tell.
+output:
+  page: pages/recipes/goals-check-in.md
+  mode: replace

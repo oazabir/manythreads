@@ -1,0 +1,61 @@
+# Bug triager's scenario set: Each morning sorts new bug reports into cards with steps, severity and a suggested owner, and flags duplicates.
+schema: 1
+set: bug-triager
+cases:
+  - id: cards-a-new-bug
+    question: Triage the new bugs.
+    given:
+      where: conversation
+      sources:
+        - id: u1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Kim in #bugs: Exporting a report with more than 500 rows hangs the page. Steps: open Reports, choose last year, click Export. Expected a file, got a spinner."
+    expect:
+      mentions:
+        - 500 rows
+      toolCalls:
+        required:
+          - messages.search
+          - tasks.create
+    rationale: A clear report becomes a card with the reporter's steps.
+  - id: flags-a-duplicate
+    question: Is the export hang a duplicate?
+    given:
+      where: conversation
+      sources:
+        - id: u2
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "Export hangs on large reports" is open on the board.
+        - id: u3
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Kim in #bugs: Exporting a report with more than 500 rows hangs the page."
+    expect:
+      mentions:
+        - duplicate
+      toolCalls:
+        forbidden:
+          - tasks.complete
+    rationale: A bug that already has a card is linked, not filed twice.
+  - id: does-not-invent-steps
+    question: Write the card for the crash.
+    given:
+      where: conversation
+      sources:
+        - id: u4
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Joe in #bugs: It crashed."
+    expect:
+      notMentions:
+        - click Save
+      toolCalls:
+        required:
+          - tasks.create
+    rationale: A report with no steps gets a card that asks for them.

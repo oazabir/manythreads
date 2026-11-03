@@ -7,6 +7,7 @@ import { registerReplayRoutes } from './replay.ts';
 import { registerReassessmentRoutes, registerReassessmentSubscribers } from './reassess.ts';
 import { registerTerminalRoutes } from './terminal/routes.ts';
 import { registerDeployRoute } from './deploy.ts';
+import { registerRecipeRoutes } from './recipes.ts';
 
 export { checkBotProposal, checkSkill, checkTeamMdChange } from './policy.ts';
 export { gradeAll, gradeRequirement, questionsForGaps } from './grade.ts';
@@ -56,5 +57,6 @@ export default definePlugin({
     registerReassessmentSubscribers(ctx);
     registerTerminalRoutes(ctx);
     registerDeployRoute(ctx);
+    registerRecipeRoutes(ctx);
   },
 });

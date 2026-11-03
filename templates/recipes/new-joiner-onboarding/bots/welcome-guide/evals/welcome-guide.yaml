@@ -1,0 +1,36 @@
+# Welcome guide's scenario set: Prepares a first-week page for each new member: where things are, who to ask, and a checklist from the team's own files.
+schema: 1
+set: welcome-guide
+cases:
+  - id: builds-a-checklist-from-the-handbook
+    question: What should I do in my first week?
+    given:
+      where: conversation
+      sources:
+        - id: j1
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Handbook: Day 1 set up your laptop and join #general. Day 2 meet your buddy. Day 3 read the engineering guide."
+    expect:
+      mentions:
+        - buddy
+      minCitations: 1
+      toolCalls:
+        required:
+          - knowledge.search
+    rationale: The checklist is the handbook's, with its source named.
+  - id: says-when-the-handbook-is-silent
+    question: How many days of leave do I get?
+    given:
+      where: conversation
+      sources:
+        - id: j2
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Handbook: Expenses are filed through the finance form."
+    expect:
+      statesUnknown: true
+      maxCitations: 0
+    rationale: No policy is made up when the handbook does not cover it.

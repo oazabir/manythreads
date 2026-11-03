@@ -260,7 +260,7 @@ describe('the platform’s door', () => {
 
   it('a finished run has no memory door: its token is refused', async () => {
     const run = await openRun(A);
-    const closed = await fetch(`${world.server.url}${new URL(run.url).pathname}/close`, {
+    const closed = await fetch(`${world.server.url}/api/mcp/runs/${run.runId}/close`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${run.token}` },
       body: JSON.stringify({ status: 'done' }),
@@ -440,7 +440,7 @@ describe('app.memory_run_scope()', () => {
   it('answers nothing once the run is closed, and nothing for an unknown run', async () => {
     const run = await openRun(A);
     expect(await scopeFor({ kind: 'bot', id: bots[A]!.actorId }, run.runId)).toHaveLength(1);
-    const closed = await fetch(`${world.server.url}${new URL(run.url).pathname}/close`, {
+    const closed = await fetch(`${world.server.url}/api/mcp/runs/${run.runId}/close`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${run.token}` },
       body: JSON.stringify({ status: 'done' }),

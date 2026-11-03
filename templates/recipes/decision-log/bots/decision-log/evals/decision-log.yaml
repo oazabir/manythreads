@@ -1,0 +1,38 @@
+# Decision log's scenario set: Keeps one running page of decisions the team made in channels, each with who, when and a link.
+schema: 1
+set: decision-log
+cases:
+  - id: records-a-stated-decision
+    question: Add this week's decisions.
+    given:
+      where: conversation
+      sources:
+        - id: d1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Sam in #product: Agreed, we are going with the monthly plan only. Decision made."
+    expect:
+      mentions:
+        - monthly plan
+      toolCalls:
+        required:
+          - messages.search
+    rationale: A sentence that states a decision becomes a line with who and where.
+  - id: skips-a-suggestion
+    question: Add this week's decisions.
+    given:
+      where: conversation
+      sources:
+        - id: d2
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Lena in #product: What if we dropped the free tier? Just thinking out loud."
+    expect:
+      notMentions:
+        - dropped the free tier
+      toolCalls:
+        required:
+          - messages.search
+    rationale: A thought is not a decision.

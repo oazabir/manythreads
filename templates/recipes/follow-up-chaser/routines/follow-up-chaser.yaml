@@ -1,0 +1,5 @@
+name: Follow-up list
+prompt: List the questions and promises from the last two weeks of public channels that are still open, oldest first.
+output:
+  page: pages/recipes/follow-ups.md
+  mode: replace

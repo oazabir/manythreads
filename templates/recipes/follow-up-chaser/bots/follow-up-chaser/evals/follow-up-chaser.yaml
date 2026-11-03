@@ -1,0 +1,38 @@
+# Follow-up chaser's scenario set: Finds questions and promises in public channels that nobody answered, and lists them for the people involved.
+schema: 1
+set: follow-up-chaser
+cases:
+  - id: lists-an-unanswered-question
+    question: What is still waiting for an answer?
+    given:
+      where: conversation
+      sources:
+        - id: f1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Kofi in #ops, 9 days ago: @Dana can you confirm the backup window? (no reply)"
+    expect:
+      mentions:
+        - backup window
+      toolCalls:
+        required:
+          - messages.search
+    rationale: "The list is built from the thread: a question with no reply."
+  - id: skips-an-answered-one
+    question: What is still waiting for an answer?
+    given:
+      where: conversation
+      sources:
+        - id: f2
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Kofi in #ops: Who owns the DNS change? Dana replied: I do, done on Monday."
+    expect:
+      notMentions:
+        - DNS change
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: A question that was answered is not open.

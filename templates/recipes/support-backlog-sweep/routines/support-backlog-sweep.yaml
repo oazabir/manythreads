@@ -1,0 +1,5 @@
+name: Support backlog sweep
+prompt: List the support threads and cards with no reply or movement for two working days, oldest first, with a suggested next step from the manuals.
+output:
+  page: pages/recipes/support-backlog.md
+  mode: replace

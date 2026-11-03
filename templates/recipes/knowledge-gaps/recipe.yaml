@@ -1,0 +1,14 @@
+# Knowledge gaps: Finds questions the team keeps answering by hand and drafts a short manual page for each, for a lead to approve.
+id: knowledge-gaps
+name: Knowledge gaps
+summary: Finds questions the team keeps answering by hand and drafts a short manual page for each, for a lead to approve.
+category: customers
+version: 1
+schedule:
+  cron: 0 11 * * fri
+  label: Fridays at 11:00 UTC
+channels:
+  - "#support"
+needs:
+  - "A channel called #support where questions are answered"
+botSlug: gap-finder

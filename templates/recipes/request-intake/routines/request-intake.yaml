@@ -1,0 +1,5 @@
+name: Request intake
+prompt: "Read the new messages in #requests since the last run. Make one board card for each request that has none, and list the unclear ones."
+output:
+  page: pages/recipes/request-intake.md
+  mode: replace

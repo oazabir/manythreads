@@ -111,10 +111,10 @@ function checkBotFiles(templateDir: string, files: Record<string, string>): void
  * Loads every `<dir>/<id>/template.yaml` + `TEAM.md` pair and validates it as a TeamTemplate, together with the bot files under
  * `<dir>/<id>/bots/` (BOT.md and scenario sets, validated with the shared schemas). Sorted by id. Throws TemplateLoadError on the first problem
  * (file + field named); ids must be unique and must match their folder name. A folder whose name starts with `_` is not a team template (it holds
- * something else the platform ships, like `_setup/` for the "Add a bot" helper) and is skipped.
+ * something else the platform ships, like `_setup/` for the "Add a bot" helper) and is skipped; so is `recipes/`, the recipe gallery (`loadRecipes`).
  */
 export async function loadTemplates(dir: string): Promise<TeamTemplate[]> {
-  const entries = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('_')).sort((a, b) => a.name.localeCompare(b.name));
+  const entries = (await readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('_') && e.name !== 'recipes').sort((a, b) => a.name.localeCompare(b.name));
   const templates: TeamTemplate[] = [];
   const seen = new Map<string, string>();
   for (const entry of entries) {

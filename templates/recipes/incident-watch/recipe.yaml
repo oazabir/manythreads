@@ -1,0 +1,16 @@
+# Incident timeline: During an incident keeps a timeline page from the incident channel and, when it is over, drafts the postmortem.
+id: incident-watch
+name: Incident timeline
+summary: During an incident keeps a timeline page from the incident channel and, when it is over, drafts the postmortem.
+category: engineering
+version: 1
+schedule:
+  cron: "*/15 * * * *"
+  label: Every 15 minutes (UTC)
+channels:
+  - "#incidents"
+needs:
+  - "A channel called #incidents where incidents are handled"
+  - A person on call who runs the incident
+  - "Best turned on while an incident is open: a run with no open incident ends in one line"
+botSlug: incident-scribe

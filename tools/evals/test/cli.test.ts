@@ -59,4 +59,14 @@ describe('pnpm test:evals', () => {
     expect((await run(['--bot=demo'], root)).code).toBe(0);
     expect((await run(['--bot=demo', `--root=${join(root, 'templates', 'one')}`], tmpdir())).code).toBe(0);
   });
+
+  it('also finds a bot that ships inside a gallery recipe under templates/recipes/', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'evals-cli-'));
+    const dir = join(root, 'templates', 'recipes', 'daily', 'bots', 'demo');
+    await mkdir(join(dir, 'evals'), { recursive: true });
+    await writeFile(join(dir, 'BOT.md'), botMd('answer.post', 1));
+    await writeFile(join(dir, 'evals', 'qa.yaml'), set);
+    expect(await findBotFolders('demo', root)).toEqual([join(root, 'templates', 'recipes', 'daily')]);
+    expect((await run(['--bot=demo'], root)).code).toBe(0);
+  });
 });

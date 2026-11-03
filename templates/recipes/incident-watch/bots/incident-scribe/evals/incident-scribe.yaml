@@ -1,0 +1,60 @@
+# Incident scribe's scenario set: During an incident keeps a timeline page from the incident channel and, when it is over, drafts the postmortem.
+schema: 1
+set: incident-scribe
+cases:
+  - id: writes-the-timeline
+    question: Write the timeline so far.
+    given:
+      where: conversation
+      sources:
+        - id: n1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "14:02 Raj in #incidents: Checkout is returning 500 errors."
+        - id: n2
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "14:09 Mei in #incidents: Rolled back the 13:55 deploy. Errors dropping."
+    expect:
+      mentions:
+        - 14:09
+      toolCalls:
+        required:
+          - messages.search
+    rationale: The timeline follows the messages, with times and people.
+  - id: no-invented-cause
+    question: What caused the incident?
+    given:
+      where: conversation
+      sources:
+        - id: n3
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "14:09 Mei in #incidents: Rolled back the 13:55 deploy. Errors dropping."
+    expect:
+      notMentions:
+        - database
+      toolCalls:
+        forbidden:
+          - tasks.complete
+    rationale: Nobody named a cause yet, so the page says the cause is not known.
+  - id: files-follow-ups
+    question: The incident is over. Draft the postmortem.
+    given:
+      where: conversation
+      sources:
+        - id: n4
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "15:20 Raj in #incidents: Incident over. Follow-up: add a canary step to the deploy."
+    expect:
+      mentions:
+        - canary
+      toolCalls:
+        required:
+          - tasks.create
+    rationale: Follow-up work becomes cards, so it is not lost in a page.

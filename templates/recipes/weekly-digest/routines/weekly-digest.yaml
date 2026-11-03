@@ -1,0 +1,5 @@
+name: Weekly team digest
+prompt: "Write this week's team digest: shipped, decided, still open, each with a link to its source."
+output:
+  page: pages/recipes/weekly-digest.md
+  mode: replace

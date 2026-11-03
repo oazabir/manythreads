@@ -1,0 +1,5 @@
+name: On-call hand-off
+prompt: "Write the on-call hand-off: alerts that fired, incidents, open work and things to watch, each linked to its source."
+output:
+  page: pages/recipes/on-call-handoff.md
+  mode: replace

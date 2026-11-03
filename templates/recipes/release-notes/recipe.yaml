@@ -1,0 +1,15 @@
+# Release notes: Drafts release notes from the cards that reached Done and the release channel, grouped by what users notice.
+id: release-notes
+name: Release notes
+summary: Drafts release notes from the cards that reached Done and the release channel, grouped by what users notice.
+category: engineering
+version: 1
+schedule:
+  cron: 0 14 * * thu
+  label: Thursdays at 14:00 UTC
+channels:
+  - "#releases"
+needs:
+  - "A channel called #releases"
+  - Cards that move to Done when work ships
+botSlug: release-notes

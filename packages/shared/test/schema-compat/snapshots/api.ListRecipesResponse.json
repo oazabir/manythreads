@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "requests",
+              "rhythm",
+              "customers",
+              "engineering",
+              "people",
+              "content"
+            ]
+          },
+          "categoryLabel": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "cron": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cron",
+              "label"
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "bot": {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "automation"
+                ]
+              },
+              "runtime": {
+                "type": "string",
+                "enum": [
+                  "hermes",
+                  "rules"
+                ]
+              }
+            },
+            "required": [
+              "slug",
+              "name",
+              "kind",
+              "runtime"
+            ]
+          },
+          "abilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputPage": {
+            "type": "string"
+          },
+          "evals": {
+            "type": "object",
+            "properties": {
+              "cases": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "minScore": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "cases",
+              "minScore"
+            ]
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "available",
+              "waiting",
+              "installed"
+            ]
+          },
+          "openProposals": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "scheduled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "summary",
+          "category",
+          "categoryLabel",
+          "schedule",
+          "channels",
+          "needs",
+          "bot",
+          "abilities",
+          "outputPage",
+          "evals",
+          "paths",
+          "state",
+          "openProposals",
+          "scheduled"
+        ]
+      }
+    },
+    "canInstall": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "recipes",
+    "canInstall"
+  ]
+}

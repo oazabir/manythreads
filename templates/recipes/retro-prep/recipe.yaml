@@ -1,0 +1,13 @@
+# Retro prep: Before a retrospective, collects what went well and badly from the period into a page the team can discuss.
+id: retro-prep
+name: Retro prep
+summary: Before a retrospective, collects what went well and badly from the period into a page the team can discuss.
+category: rhythm
+version: 1
+schedule:
+  cron: 0 12 * * thu
+  label: Thursdays at 12:00 UTC
+channels: []
+needs:
+  - Nothing beyond the channels and the board the team already uses
+botSlug: retro-prep

@@ -1,0 +1,44 @@
+# Backlog sweeper's scenario set: Once a day, lists the support threads and cards that went quiet, oldest first, with a suggested next step for each.
+schema: 1
+set: backlog-sweeper
+cases:
+  - id: lists-the-quiet-thread
+    question: What has gone quiet in support?
+    given:
+      where: conversation
+      sources:
+        - id: b1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Customer Fabrikam in #support, 4 days ago: Our API key stopped working. (no reply)"
+        - id: b2
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Manual: If an API key stops working, rotate it from Settings and confirm the old one is revoked."
+    expect:
+      mentions:
+        - Fabrikam
+      toolCalls:
+        required:
+          - messages.search
+          - knowledge.search
+    rationale: The sweep finds the quiet thread and ties the suggestion to a manual.
+  - id: says-needs-a-person
+    question: What should we do about the Adatum thread?
+    given:
+      where: conversation
+      sources:
+        - id: b3
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Customer Adatum in #support, 3 days ago: Invoices show the wrong VAT rate. (no reply)"
+    expect:
+      mentions:
+        - VAT
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: When no manual covers it, the page says a person is needed instead of guessing.

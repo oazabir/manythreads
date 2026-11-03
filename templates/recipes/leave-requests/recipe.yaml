@@ -1,0 +1,14 @@
+# Leave requests: Gathers time-off requests from one channel into a calendar page and flags clashes inside the team.
+id: leave-requests
+name: Leave requests
+summary: Gathers time-off requests from one channel into a calendar page and flags clashes inside the team.
+category: requests
+version: 1
+schedule:
+  cron: 0 7 * * mon
+  label: Mondays at 07:00 UTC
+channels:
+  - "#time-off"
+needs:
+  - "A channel called #time-off where people post their leave"
+botSlug: leave-tracker

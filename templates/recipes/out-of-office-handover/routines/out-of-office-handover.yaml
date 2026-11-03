@@ -1,0 +1,5 @@
+name: Out-of-office hand-over
+prompt: For each person away in the next two weeks, list their open cards and threads and suggest who could cover each.
+output:
+  page: pages/recipes/handover.md
+  mode: replace

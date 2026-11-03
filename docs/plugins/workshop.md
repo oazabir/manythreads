@@ -247,6 +247,18 @@ One button on the bot page (a lead or a workspace admin) and one route, `POST /a
 
 **How it is composed without a cycle.** The SDK has a provider kind `deploy.step` (manifest extension `provider.deploy.step`). `proposals` registers the `definition` step, `knowledge` the `knowledge` step and `connections` the `connection` step; the workshop plugin looks them up when the request runs and composes them. The workshop plugin lists `connections` in `dependsOn`; no plugin depends on the workshop.
 
+## The recipe gallery (P18-01)
+
+About twenty ready automations live as files in `templates/recipes/<id>/`: `recipe.yaml` (name, one-line summary, category, schedule with a plain label, channels it reads, what it needs), `bots/<slug>/BOT.md`, `bots/<slug>/evals/<slug>.yaml` and `routines/<id>.yaml`. The kernel loads them with `loadRecipes` (cached as `ctx.templates.recipes()`); `loadTemplates` skips the folder, so a recipe is never taken for a team template.
+
+* **One validator, `recipeProblems` (shared).** It is the same call for the loader, the routes and the tests. A recipe passes only if its BOT.md parses under the strict BOT.md schema, its routine parses as a `RoutineContract` and writes under `pages/recipes/`, the bot is a Hermes bot on the managed gateway holding platform tools only (the allowed list is `RECIPE_TOOLS`; it must hold `messages.post` and `pages.write`), the routine trigger names the contract, the schedule never fires more often than every 15 minutes, there are 3 to 6 example questions, and the scenario set has at least two cases, one of which requires a call the bot is granted. No plan or phase wording, no placeholders.
+* **Rules bots are not shipped.** A routine page is the bot's reply, and a rules bot has no reply, so the validator refuses a rules recipe.
+* **List.** `GET /api/teams/:slug/recipes` returns a card per recipe (what it does, schedule, abilities in plain words, the page it writes, how many scenarios check it) and its state in this team: available, waiting (an open proposal on one of its files) or installed (the bot exists); `scheduled` says a rhythm uses its contract. `canInstall` is true for people who can post in a team that is not archived.
+* **Install is a proposal, never a commit.** `POST /api/teams/:slug/recipes/:recipeId/install` files one proposal per file (BOT.md, scenario set, routine) as the signed-in person, in one transaction: all three or none. The usual rule decides who applies them: a bot is added by a workspace admin, the others by a lead or an admin. A second press while proposals are open, or when the bot already exists, answers 409 in words.
+* **The schedule is a separate step.** After the bot is applied, a lead turns the schedule on in Rhythms (`POST /api/teams/:slug/rhythms`, kind `routine`, the recipe's cron and `routines/<id>.yaml`). The card shows the cron and the path.
+* **Free check.** `pnpm test:evals --bot=<slug>` finds a bot in `templates/recipes/*` and runs its set in free mode (no model).
+* **Not built:** the web gallery screen ("Describe your own" opens the Workshop from it), recipes for outside tools (merged pull requests, mail), and turning the schedule on from the card.
+
 ## Decisions the owner should know about
 
 * **Deploy answers 200 with the three outcomes, even when a part is refused.** A 409 would be the plainer HTTP, but the page could not show which part and why.

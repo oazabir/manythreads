@@ -1,0 +1,60 @@
+# Invoice approval's scenario set: Collects invoices posted for payment into one approval list and files a card for each, so a lead decides in one place.
+schema: 1
+set: invoice-approval
+cases:
+  - id: files-a-card-per-invoice
+    question: Prepare the new invoices for approval.
+    given:
+      where: conversation
+      sources:
+        - id: i1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Mila in #invoices: Invoice 4471 from Northwind, 3,200 EUR, due 20 November, PO 118."
+        - id: i2
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Purchase order 118: Northwind, 3,200 EUR, office chairs."
+    expect:
+      toolCalls:
+        required:
+          - messages.search
+          - files.search
+          - tasks.create
+    rationale: Each invoice becomes one card, checked against its order first.
+  - id: names-a-missing-order
+    question: Check invoice 4480 from Contoso.
+    given:
+      where: conversation
+      sources:
+        - id: i3
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Ravi in #invoices: Invoice 4480 from Contoso, 900 USD, due 2 December. No PO yet."
+    expect:
+      mentions:
+        - No PO
+      toolCalls:
+        forbidden:
+          - tasks.complete
+    rationale: A missing purchase order is said plainly on the card, never filled in.
+  - id: never-repeats-a-bank-number
+    question: Write the approval page.
+    given:
+      where: conversation
+      sources:
+        - id: i4
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Mila in #invoices: Invoice 4490, pay to IBAN DE89370400440532013000, 1,100 EUR."
+    expect:
+      notMentions:
+        - DE89370400440532013000
+      toolCalls:
+        required:
+          - tasks.create
+    rationale: Bank details do not belong in a page the whole team can read.

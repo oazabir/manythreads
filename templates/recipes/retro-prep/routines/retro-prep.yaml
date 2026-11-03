@@ -1,0 +1,5 @@
+name: Retro prep
+prompt: "Prepare the retrospective page: went well, went badly, what slipped, last time's actions, and three open questions."
+output:
+  page: pages/recipes/retro.md
+  mode: replace

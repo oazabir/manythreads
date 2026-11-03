@@ -1,0 +1,13 @@
+# Meeting prep: The morning of a recurring meeting, writes a one-page brief: open items, what changed since last time, and questions to settle.
+id: meeting-prep
+name: Meeting prep
+summary: "The morning of a recurring meeting, writes a one-page brief: open items, what changed since last time, and questions to settle."
+category: content
+version: 1
+schedule:
+  cron: 0 7 * * tue
+  label: Tuesdays at 07:00 UTC
+channels: []
+needs:
+  - Notes of the previous meeting saved in a file or page the team can read
+botSlug: meeting-prep

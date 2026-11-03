@@ -1,0 +1,14 @@
+# Weekly team digest: A Friday page of what the team shipped, decided and left open this week, with links.
+id: weekly-digest
+name: Weekly team digest
+summary: A Friday page of what the team shipped, decided and left open this week, with links.
+category: rhythm
+version: 1
+schedule:
+  cron: 0 15 * * fri
+  label: Fridays at 15:00 UTC
+channels:
+  - "#general"
+needs:
+  - "At least one channel where the team talks (every team has #general)"
+botSlug: weekly-digest

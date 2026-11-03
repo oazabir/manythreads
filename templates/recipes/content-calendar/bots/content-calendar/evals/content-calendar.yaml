@@ -1,0 +1,44 @@
+# Content calendar's scenario set: Keeps one calendar page of planned posts and drafts from the content channel and the board, and flags gaps.
+schema: 1
+set: content-calendar
+cases:
+  - id: orders-by-date
+    question: What is planned for next week?
+    given:
+      where: conversation
+      sources:
+        - id: p1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Ana in #content: Newsletter on 12 November, I am drafting."
+        - id: p2
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: 'Card "Blog: year in review" due 14 November, no draft attached.'
+    expect:
+      mentions:
+        - Newsletter
+      toolCalls:
+        required:
+          - messages.search
+          - tasks.read
+    rationale: The calendar merges the channel and the board into one dated list.
+  - id: flags-a-missing-draft
+    question: Which post has no draft?
+    given:
+      where: conversation
+      sources:
+        - id: p3
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: 'Card "Blog: year in review" due 14 November, no draft attached.'
+    expect:
+      mentions:
+        - year in review
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: A dated post without a draft is the gap the recipe exists to show.

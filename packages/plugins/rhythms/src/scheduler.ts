@@ -1,23 +1,10 @@
 import type { PluginContext, PluginTx, RepoProvider } from '@manythreads/sdk';
-import { RhythmsRhythmRanEvent, nextCronRun } from '@manythreads/shared';
+import { RhythmsRhythmRanEvent, RoutineContract, nextCronRun } from '@manythreads/shared';
 import { parse as parseYaml } from 'yaml';
-import { z } from 'zod';
 import { toRhythmRun, type RhythmRow, type RhythmRunRow } from './rows.ts';
 
-/** The routine contract at `routines/<slug>.yaml` (SPEC §6.5): a name, a prompt and where its output goes. */
-export const RoutineContract = z.object({
-  name: z.string().min(1).max(80),
-  prompt: z.string().min(1).max(20_000).optional(),
-  output: z.object({
-    page: z
-      .string()
-      .max(300, 'the output page path is at most 300 characters')
-      .regex(/^pages\//, 'the output page lives under pages/')
-      .refine((p) => !p.split('/').some((seg) => seg === '..' || seg === '.' || seg === ''), 'the output page path must not contain empty, . or .. parts'),
-    mode: z.enum(['create', 'replace', 'append']).default('replace'),
-  }),
-});
-export type RoutineContract = z.infer<typeof RoutineContract>;
+// The contract schema lives in @manythreads/shared (entities/routine.ts) so the recipe gallery checks its routines with the same rules; re-exported here for this plugin's callers.
+export { RoutineContract };
 
 export const TICK_QUEUE = 'rhythms.tick';
 

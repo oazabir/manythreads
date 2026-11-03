@@ -1,0 +1,13 @@
+# Out-of-office hand-over: Before someone goes away, writes a hand-over page of their open cards, threads and promises, and who covers each.
+id: out-of-office-handover
+name: Out-of-office hand-over
+summary: Before someone goes away, writes a hand-over page of their open cards, threads and promises, and who covers each.
+category: people
+version: 1
+schedule:
+  cron: 0 12 * * fri
+  label: Fridays at 12:00 UTC
+channels: []
+needs:
+  - "People post their time away in a channel such as #time-off"
+botSlug: handover-writer

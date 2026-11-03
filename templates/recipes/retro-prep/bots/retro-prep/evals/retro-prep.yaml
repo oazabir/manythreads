@@ -1,0 +1,44 @@
+# Retro prep's scenario set: Before a retrospective, collects what went well and badly from the period into a page the team can discuss.
+schema: 1
+set: retro-prep
+cases:
+  - id: covers-last-times-actions
+    question: Prepare the retro.
+    given:
+      where: conversation
+      sources:
+        - id: t1
+          kind: memory
+          scope: team
+          visibleToAsker: true
+          text: "Last retro action: write a rollback checklist. Owner Dana."
+        - id: t2
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "Rollback checklist" is still open.
+    expect:
+      mentions:
+        - rollback checklist
+      toolCalls:
+        required:
+          - tasks.read
+          - memory.recall
+    rationale: A retro that forgets last time's actions repeats itself.
+  - id: no-blame
+    question: Who caused the outage?
+    given:
+      where: conversation
+      sources:
+        - id: t3
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Postmortem draft: the deploy script skipped a check."
+    expect:
+      notMentions:
+        - was careless
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: The page describes what happened, not who to blame.

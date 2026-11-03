@@ -1,0 +1,38 @@
+# Release notes's scenario set: Drafts release notes from the cards that reached Done and the release channel, grouped by what users notice.
+schema: 1
+set: release-notes
+cases:
+  - id: groups-finished-cards
+    question: Draft the release notes for this week.
+    given:
+      where: conversation
+      sources:
+        - id: e1
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "CSV export for invoices" reached Done on Tuesday. Card "Fix login redirect loop" reached Done on Wednesday.
+    expect:
+      mentions:
+        - CSV export
+      toolCalls:
+        required:
+          - tasks.read
+    rationale: Notes are built from cards that actually finished.
+  - id: no-unshipped-feature
+    question: Add the dark mode feature to the notes.
+    given:
+      where: conversation
+      sources:
+        - id: e2
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Dev in #releases: Dark mode is still in review, not shipping this week."
+    expect:
+      notMentions:
+        - dark mode is now available
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: A feature that did not ship is not in the notes.

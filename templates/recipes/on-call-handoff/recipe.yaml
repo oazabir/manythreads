@@ -1,0 +1,16 @@
+# On-call hand-off: Before the on-call person changes, writes a hand-off page: what fired, what is open, and what to watch.
+id: on-call-handoff
+name: On-call hand-off
+summary: "Before the on-call person changes, writes a hand-off page: what fired, what is open, and what to watch."
+category: engineering
+version: 1
+schedule:
+  cron: 0 15 * * fri
+  label: Fridays at 15:00 UTC
+channels:
+  - "#alerts"
+  - "#incidents"
+needs:
+  - "Channels called #alerts and #incidents"
+  - A weekly on-call rotation
+botSlug: on-call-handoff

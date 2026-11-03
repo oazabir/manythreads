@@ -161,9 +161,26 @@ BOT.md has a new trigger, `drop` (`triggers: [{ type: drop }]`), which is how th
 
 Discard is refused while a step is running (409). A discard deletes the original and the working text and keeps the row (so a sha can be dropped again). The database enforces the reading rules (forced row-level security), that a drop is never rewritten (a guard trigger: bytes, name, dropper, origin and sender never change), and that people can only make the allowed moves (release, retry, discard).
 
+## Routes and jobs
+
+Every route reads the team through the caller's own access; each carries its own inline `rateLimit` and none is a credential or session route.
+
+| route | who | answer |
+|---|---|---|
+| `GET /api/teams/:slug/inbox/items[?state=&limit=]` | the team | the items the caller may see, `canManage`, the team's size cap |
+| `GET /api/teams/:slug/inbox/items/:itemId` | the team | one item (a held item only to its dropper and the managers) |
+| `POST /api/teams/:slug/inbox/items/:itemId/release` | lead or admin | a held item goes on; `.released` |
+| `POST /api/teams/:slug/inbox/items/:itemId/discard` | lead or admin | deletes the original and the working text, keeps the row; `409` while a step runs |
+| `POST /api/teams/:slug/inbox/items/:itemId/retry` | lead or admin | puts a failed item back at the step that failed |
+| `GET` and `POST /api/teams/:slug/inbox/items/:itemId/actions` | the team (record: a person of the team) | the action lines of the item's Action Items concepts; record which card an action became |
+| `GET /api/teams/:slug/inbox/email` | the team | the team's inbox address, when the mail door is set up |
+| `POST /api/workspace/inbox-mail` | workspace admin | sets up the mail door on an email connection |
+
+The drop, note, send-to-memory and mail-delivery routes are in "The doors". The jobs, one queue each (`serialKey` is the item, so one item is never worked on twice at once): `memory-inbox.hold`, `memory-inbox.extract`, `memory-inbox.distil`, `memory-inbox.commit`, `memory-inbox.import` (a bundle, handed to the `inbox.importer` of memory-share), and two crons, `memory-inbox.sweep` (every minute) and `memory-inbox.keep` (daily, the keep-originals rule).
+
 ## Events
 
-`memory.item.dropped` (origin, kind, size, `duplicate`), `.filed` (concepts written, commit, whether an Archivist distilled), `.held` (reason code), `.failed` (stage and tries), `.released`, `.discarded`. They carry ids, codes and counts, never a name, text or sentence. They have no audit-log mapper yet.
+`memory.item.dropped` (origin, kind, size, `duplicate`), `.filed` (concepts written, commit, whether an Archivist distilled), `.held` (reason code), `.failed` (stage and tries), `.released`, `.discarded`. A bundle that arrives here is judged by memory-share, which emits `memory.digest.imported` (see [memory-share.md](./memory-share.md)). They carry ids, codes and counts, never a name, text or sentence. They have no audit-log mapper yet.
 
 ## Files and cleanup
 

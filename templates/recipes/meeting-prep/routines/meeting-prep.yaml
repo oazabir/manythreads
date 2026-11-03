@@ -1,0 +1,5 @@
+name: Meeting prep
+prompt: "Prepare the one-page brief for the next recurring meeting: last time's action items and their state, what changed, and up to five questions to settle."
+output:
+  page: pages/recipes/meeting-brief.md
+  mode: replace

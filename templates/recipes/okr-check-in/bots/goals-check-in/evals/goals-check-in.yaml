@@ -1,0 +1,44 @@
+# Goals check-in's scenario set: Each week, compares the team's written goals with what moved on the board and flags the ones with no movement.
+schema: 1
+set: goals-check-in
+cases:
+  - id: one-row-per-goal
+    question: Check the goals.
+    given:
+      where: conversation
+      sources:
+        - id: g1
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Goals Q4: 1) Launch pricing page. 2) Cut support response time to 4 hours."
+        - id: g2
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "Pricing page" moved to Verify on Wednesday.
+    expect:
+      mentions:
+        - Pricing page
+      toolCalls:
+        required:
+          - files.search
+          - tasks.read
+    rationale: Each goal gets a row with the evidence for it.
+  - id: no-invented-percentage
+    question: How far are we on the response time goal?
+    given:
+      where: conversation
+      sources:
+        - id: g3
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Goals Q4: Cut support response time to 4 hours."
+    expect:
+      notMentions:
+        - 75 percent
+      toolCalls:
+        required:
+          - files.search
+    rationale: Without a figure the answer is "cannot tell".

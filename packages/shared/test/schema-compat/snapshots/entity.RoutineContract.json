@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "page": {
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^pages\\/"
+        },
+        "mode": {
+          "default": "replace",
+          "type": "string",
+          "enum": [
+            "create",
+            "replace",
+            "append"
+          ]
+        }
+      },
+      "required": [
+        "page",
+        "mode"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "name",
+    "output"
+  ],
+  "additionalProperties": false
+}

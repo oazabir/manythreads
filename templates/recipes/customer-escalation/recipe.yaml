@@ -1,0 +1,15 @@
+# Customer escalation: Watches the support channel for angry or stuck customers, files an escalation card and writes a short brief for the owner.
+id: customer-escalation
+name: Customer escalation
+summary: Watches the support channel for angry or stuck customers, files an escalation card and writes a short brief for the owner.
+category: customers
+version: 1
+schedule:
+  cron: "*/30 8-18 * * mon-fri"
+  label: Every 30 minutes, 08:00 to 18:30 on weekdays (UTC)
+channels:
+  - "#support"
+needs:
+  - "A channel called #support where customer problems are posted"
+  - A person who owns escalations (a lead)
+botSlug: escalation-watch

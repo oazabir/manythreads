@@ -1,0 +1,5 @@
+name: Knowledge gaps
+prompt: Find the questions answered by hand three or more times this month that no manual covers, and draft a short manual page for each from the staff replies.
+output:
+  page: pages/recipes/knowledge-gaps.md
+  mode: replace

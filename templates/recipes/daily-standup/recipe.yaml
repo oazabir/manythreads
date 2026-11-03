@@ -1,0 +1,14 @@
+# Daily stand-up: Writes one stand-up each morning from the board and the channels: done, in progress, blocked.
+id: daily-standup
+name: Daily stand-up
+summary: "Writes one stand-up each morning from the board and the channels: done, in progress, blocked."
+category: rhythm
+version: 1
+schedule:
+  cron: 30 8 * * mon-fri
+  label: Weekdays at 08:30 UTC
+channels:
+  - "#standup"
+needs:
+  - "A channel called #standup for the daily note"
+botSlug: standup-writer

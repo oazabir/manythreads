@@ -39,6 +39,17 @@ export async function findBotFolders(slug: string, cwd: string, root?: string): 
   }
   for (const name of names) {
     const dir = join(cwd, 'templates', name);
+    if (name !== 'recipes' && (await has(dir))) found.push(dir);
+  }
+  // the recipe gallery keeps one folder per recipe under templates/recipes/ (PLAN P18-01)
+  let recipes: string[] = [];
+  try {
+    recipes = (await readdir(join(cwd, 'templates', 'recipes'), { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+  } catch {
+    recipes = [];
+  }
+  for (const name of recipes) {
+    const dir = join(cwd, 'templates', 'recipes', name);
     if (await has(dir)) found.push(dir);
   }
   return found;

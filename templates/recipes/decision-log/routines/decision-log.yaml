@@ -1,0 +1,5 @@
+name: Decision log
+prompt: "Find the decisions stated in public channels this week that are not in the log yet, and give them as new lines: date, decision, who, link."
+output:
+  page: pages/recipes/decision-log.md
+  mode: append

@@ -1,0 +1,15 @@
+# Invoice approval: Collects invoices posted for payment into one approval list and files a card for each, so a lead decides in one place.
+id: invoice-approval
+name: Invoice approval
+summary: Collects invoices posted for payment into one approval list and files a card for each, so a lead decides in one place.
+category: requests
+version: 1
+schedule:
+  cron: 0 8 * * mon-fri
+  label: Weekdays at 08:00 UTC
+channels:
+  - "#invoices"
+needs:
+  - "A channel called #invoices where invoices are posted"
+  - A lead who decides on each invoice card
+botSlug: invoice-approval

@@ -1,0 +1,5 @@
+name: Release notes draft
+prompt: "Draft the release notes from the cards finished since the last notes and the messages in #releases: New, Improved, Fixed, then the cards with no description."
+output:
+  page: pages/recipes/release-notes.md
+  mode: replace

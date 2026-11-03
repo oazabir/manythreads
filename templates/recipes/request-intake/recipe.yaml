@@ -1,0 +1,15 @@
+# Request intake: Turns requests posted in one channel into board cards with a clear ask, and lists what is still unclear.
+id: request-intake
+name: Request intake
+summary: Turns requests posted in one channel into board cards with a clear ask, and lists what is still unclear.
+category: requests
+version: 1
+schedule:
+  cron: "*/30 8-18 * * mon-fri"
+  label: Every 30 minutes, 08:00 to 18:30 on weekdays (UTC)
+channels:
+  - "#requests"
+needs:
+  - "A channel called #requests where people post what they need"
+  - A board for the team (every team has one)
+botSlug: request-intake

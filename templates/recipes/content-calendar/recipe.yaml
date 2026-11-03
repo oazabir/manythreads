@@ -1,0 +1,15 @@
+# Content calendar: Keeps one calendar page of planned posts and drafts from the content channel and the board, and flags gaps.
+id: content-calendar
+name: Content calendar
+summary: Keeps one calendar page of planned posts and drafts from the content channel and the board, and flags gaps.
+category: content
+version: 1
+schedule:
+  cron: 0 9 * * mon
+  label: Mondays at 09:00 UTC
+channels:
+  - "#content"
+needs:
+  - "A channel called #content where posts are planned"
+  - Cards or files for drafts
+botSlug: content-calendar

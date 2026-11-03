@@ -1,0 +1,14 @@
+# Bug triage: Each morning sorts new bug reports into cards with steps, severity and a suggested owner, and flags duplicates.
+id: bug-triage
+name: Bug triage
+summary: Each morning sorts new bug reports into cards with steps, severity and a suggested owner, and flags duplicates.
+category: engineering
+version: 1
+schedule:
+  cron: 0 8 * * mon-fri
+  label: Weekdays at 08:00 UTC
+channels:
+  - "#bugs"
+needs:
+  - "A channel called #bugs where bugs are reported"
+botSlug: bug-triager

@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import type { PluginTemplates } from '@manythreads/sdk';
-import type { TeamTemplate } from '@manythreads/shared';
+import type { Recipe, TeamTemplate } from '@manythreads/shared';
 import { loadSetupProfile, loadTemplates } from './load.ts';
+import { loadRecipes } from './recipes.ts';
 
 /** `templates/` at the repository root unless `MANYTHREADS_TEMPLATES_DIR` says otherwise. */
 export const defaultTemplatesDir = (): string =>
@@ -21,9 +22,17 @@ export function createTemplateService(dir: string | (() => string) = defaultTemp
     return loaded;
   };
   let profile: ReturnType<PluginTemplates['setupProfile']> | undefined;
+  let recipes: Promise<readonly Recipe[]> | undefined;
   return {
     list,
     get: async (id) => (await list()).find((t) => t.id === id),
+    recipes: () => {
+      recipes ??= loadRecipes(typeof dir === 'function' ? dir() : dir);
+      recipes.catch(() => {
+        recipes = undefined;
+      });
+      return recipes;
+    },
     setupProfile: () => {
       profile ??= loadSetupProfile(typeof dir === 'function' ? dir() : dir);
       profile.catch(() => {

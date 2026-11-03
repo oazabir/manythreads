@@ -1,0 +1,5 @@
+name: Leave calendar
+prompt: "Rebuild the team leave calendar from #time-off and flag any week where more than a third of the team is away."
+output:
+  page: pages/recipes/leave-calendar.md
+  mode: replace

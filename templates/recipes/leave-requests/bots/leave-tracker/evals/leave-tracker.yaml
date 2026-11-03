@@ -1,0 +1,44 @@
+# Leave tracker's scenario set: Gathers time-off requests from one channel into a calendar page and flags clashes inside the team.
+schema: 1
+set: leave-tracker
+cases:
+  - id: builds-the-calendar
+    question: Who is away next week?
+    given:
+      where: conversation
+      sources:
+        - id: l1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Nina in #time-off: I am off 17 to 21 November."
+        - id: l2
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Omar in #time-off: Off 19 November, confirmed by Sam."
+    expect:
+      mentions:
+        - Nina
+      toolCalls:
+        required:
+          - messages.search
+    rationale: The page is built from the posts, with names and dates as written.
+  - id: does-not-invent-a-reason
+    question: Why is Nina away?
+    given:
+      where: conversation
+      sources:
+        - id: l3
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Nina in #time-off: I am off 17 to 21 November."
+    expect:
+      notMentions:
+        - holiday
+        - sick
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: Nobody gave a reason, so none is written.

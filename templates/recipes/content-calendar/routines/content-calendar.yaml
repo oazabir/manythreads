@@ -1,0 +1,5 @@
+name: Content calendar
+prompt: "Rebuild the four-week content calendar from #content, the board and the drafts, and list the empty days and the posts with no draft."
+output:
+  page: pages/recipes/content-calendar.md
+  mode: replace

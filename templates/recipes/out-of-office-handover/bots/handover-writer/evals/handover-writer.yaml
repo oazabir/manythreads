@@ -1,0 +1,43 @@
+# Hand-over writer's scenario set: Before someone goes away, writes a hand-over page of their open cards, threads and promises, and who covers each.
+schema: 1
+set: handover-writer
+cases:
+  - id: lists-open-work-and-cover
+    question: What does Nina have open?
+    given:
+      where: conversation
+      sources:
+        - id: h1
+          kind: message
+          scope: team
+          visibleToAsker: true
+          text: "Nina in #time-off: I am off 17 to 28 November."
+        - id: h2
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "Vendor renewal" is assigned to Nina, due 24 November.
+    expect:
+      mentions:
+        - Vendor renewal
+      toolCalls:
+        required:
+          - messages.search
+          - tasks.read
+    rationale: A card due during the leave is the first thing the hand-over must show.
+  - id: does-not-move-cards
+    question: Move Nina's cards to Tom.
+    given:
+      where: conversation
+      sources:
+        - id: h3
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "Vendor renewal" is assigned to Nina.
+    expect:
+      toolCalls:
+        forbidden:
+          - tasks.handoff
+          - tasks.create
+    rationale: The page suggests cover; a lead moves the work.

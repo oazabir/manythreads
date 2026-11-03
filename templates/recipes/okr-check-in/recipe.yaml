@@ -1,0 +1,13 @@
+# Goals check-in: Each week, compares the team's written goals with what moved on the board and flags the ones with no movement.
+id: okr-check-in
+name: Goals check-in
+summary: Each week, compares the team's written goals with what moved on the board and flags the ones with no movement.
+category: rhythm
+version: 1
+schedule:
+  cron: 0 9 * * mon
+  label: Mondays at 09:00 UTC
+channels: []
+needs:
+  - The team's goals written down in a file or page (for example `pages/goals.md`)
+botSlug: goals-check-in

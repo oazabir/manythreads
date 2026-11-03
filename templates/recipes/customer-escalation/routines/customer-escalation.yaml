@@ -1,0 +1,5 @@
+name: Customer escalations
+prompt: "Check #support for customers who need a person now, file one escalation card each with a short brief, and list them."
+output:
+  page: pages/recipes/escalations.md
+  mode: replace

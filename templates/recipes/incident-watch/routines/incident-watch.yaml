@@ -1,0 +1,5 @@
+name: Incident timeline
+prompt: "If an incident is open in #incidents, update the timeline and the current state; if it was closed since the last run, add the postmortem draft and file its follow-ups as cards."
+output:
+  page: pages/recipes/incident.md
+  mode: replace

@@ -1,0 +1,5 @@
+name: Daily stand-up
+prompt: "Write today's stand-up from the board and yesterday's messages: done, in progress, blocked."
+output:
+  page: pages/recipes/standup.md
+  mode: replace

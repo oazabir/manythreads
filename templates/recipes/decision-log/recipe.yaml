@@ -1,0 +1,13 @@
+# Decision log: Keeps one running page of decisions the team made in channels, each with who, when and a link.
+id: decision-log
+name: Decision log
+summary: Keeps one running page of decisions the team made in channels, each with who, when and a link.
+category: rhythm
+version: 1
+schedule:
+  cron: 0 16 * * fri
+  label: Fridays at 16:00 UTC
+channels: []
+needs:
+  - Nothing beyond the channels the team already uses
+botSlug: decision-log

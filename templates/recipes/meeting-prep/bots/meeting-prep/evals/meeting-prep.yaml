@@ -1,0 +1,44 @@
+# Meeting prep's scenario set: The morning of a recurring meeting, writes a one-page brief: open items, what changed since last time, and questions to settle.
+schema: 1
+set: meeting-prep
+cases:
+  - id: checks-last-times-actions
+    question: Prepare the brief for tomorrow.
+    given:
+      where: conversation
+      sources:
+        - id: m1
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Meeting notes 28 October: Action: Dana drafts the pricing proposal by 4 November."
+        - id: m2
+          kind: task
+          scope: team
+          visibleToAsker: true
+          text: Card "Pricing proposal" is in Verify.
+    expect:
+      mentions:
+        - pricing proposal
+      toolCalls:
+        required:
+          - files.search
+          - tasks.read
+    rationale: The brief shows each action item with what happened since.
+  - id: no-invented-agenda
+    question: What should we discuss tomorrow?
+    given:
+      where: conversation
+      sources:
+        - id: m3
+          kind: file
+          scope: team
+          visibleToAsker: true
+          text: "Meeting notes 28 October: No open questions."
+    expect:
+      notMentions:
+        - reorganisation
+      toolCalls:
+        forbidden:
+          - tasks.create
+    rationale: With nothing raised, the brief says so.

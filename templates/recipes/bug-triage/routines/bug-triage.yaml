@@ -1,0 +1,5 @@
+name: Bug triage
+prompt: "Triage the new bug reports in #bugs: make a card for each new bug with steps and severity, and list the duplicates."
+output:
+  page: pages/recipes/bug-triage.md
+  mode: replace

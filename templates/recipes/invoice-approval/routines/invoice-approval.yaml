@@ -1,0 +1,5 @@
+name: Invoice approval list
+prompt: "List the invoices posted in #invoices since the last run, check each against its purchase order, and file one approval card per new invoice."
+output:
+  page: pages/recipes/invoice-approval.md
+  mode: replace
