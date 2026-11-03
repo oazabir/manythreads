@@ -46,6 +46,7 @@
 
 .b-head-act {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 

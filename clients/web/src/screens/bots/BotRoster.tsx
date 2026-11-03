@@ -99,6 +99,7 @@ export function BotRoster() {
                 </div>
                 <div className="b-head-act">
                   {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-add-bot">Add a bot</Link>}
+                  <Link className="btn s ag-roster-link" to={`/t/${slug}/recipes`} data-testid="roster-recipes">Browse recipes</Link>
                   <ProposalsLink slug={slug} />
                   <Link className="btn s ag-roster-link" to={`/t/${slug}/agents`} data-testid="roster-agents">Agents</Link>
                 </div>
@@ -111,6 +112,7 @@ export function BotRoster() {
                     you to approve, or propose the file yourself in Files — once a workspace admin applies it, a valid definition appears here within seconds.
                   </p>
                   {guest ? null : <Link className="btn primary" to={`/t/${slug}/bots/new`} data-testid="roster-empty-add">Add a bot</Link>}
+                  <Link className="btn" to={`/t/${slug}/recipes`} data-testid="roster-empty-recipes">Browse recipes</Link>
                   <Link className="btn" to={`/t/${slug}/files?path=bots`}>Open bots/ in Files</Link>
                 </div>
               ) : (

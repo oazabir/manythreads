@@ -1,0 +1,297 @@
+/* The recipe gallery (PLAN P18-01): shelves, cards and the details dialog. Every class here is prefixed `rg` so nothing collides with a shared class
+ * (`.btn`, `.linkish`, `.dlg` belong to other stylesheets and are not redefined). Colours come from tokens.css only. */
+
+.rg-screen {
+  padding: 18px 20px 28px;
+  overflow: auto;
+}
+
+.rg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.rg-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.rg-sub {
+  max-width: 62ch;
+  margin: 3px 0 0;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.rg-head-act {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rg-chip {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.rg-chip:hover {
+  border-color: var(--ink);
+}
+
+.rg-chip:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.rg-chip.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.rg-count {
+  opacity: 0.7;
+  font-size: 11.5px;
+}
+
+.rg-found {
+  margin: 10px 0 8px;
+  font-size: 12.5px;
+}
+
+.rg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rg-item {
+  display: flex;
+  min-width: 0;
+}
+
+.rg-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rg-card:hover {
+  border-color: var(--ink);
+}
+
+.rg-card:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.rg-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 10px;
+  width: 100%;
+}
+
+.rg-name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.rg-summary {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.rg-needs,
+.rg-meta {
+  color: var(--mute);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.rg-meta {
+  margin-top: auto;
+  color: var(--faint);
+}
+
+.rg-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--mute);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.rg-state.ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.rg-state.warn {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.rg-glyph {
+  font-weight: 600;
+}
+
+.rg-empty,
+.rg-gone {
+  padding: 14px;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.rg-empty-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.rg-empty-body {
+  margin: 0 0 10px;
+}
+
+/* ---- the details dialog ---- */
+.rg-dlg-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.rg-lede {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+}
+
+.rg-fact {
+  margin-top: 12px;
+}
+
+.rg-fact-title {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.rg-p {
+  margin: 0 0 4px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.rg-words,
+.rg-files {
+  margin: 0 0 4px;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.rg-files {
+  padding-left: 0;
+  list-style: none;
+}
+
+.rg-files li {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.rg-role {
+  font-weight: 600;
+}
+
+.rg-path,
+.rg-cron {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.rg-why {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 12.5px;
+}
+
+.rg-filed {
+  padding: 10px 12px;
+  border: 1px solid var(--ok-border);
+  border-radius: 8px;
+  background: var(--ok-wash);
+  font-size: 13px;
+}
+
+.rg-filed-title {
+  margin: 0 0 6px;
+  color: var(--ok-ink);
+  font-weight: 600;
+}
+
+.rg-bad {
+  color: var(--alert-ink);
+}
+
+@media (width <= 600px) {
+  .rg-screen {
+    padding: 14px 16px 24px;
+  }
+
+  .rg-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rg-head-act .btn,
+  .rg-chip {
+    min-height: 36px;
+  }
+}

@@ -38,7 +38,7 @@ export function navCount(item: NavContribution, counts: Readonly<Record<string, 
 
 export const channelPath = (teamSlug: string, name: string): string => `/t/${teamSlug}/c/${encodeURIComponent(name.replace(/^#/, ''))}`;
 
-const SECTIONS = ['threads', 'files', 'boards', 'org', 'rhythms', 'approvals', 'bots'] as const;
+const SECTIONS = ['threads', 'files', 'boards', 'org', 'rhythms', 'approvals', 'bots', 'recipes'] as const;
 
 /** Switching teams keeps the section (`/t/a/files` to `/t/b/files`); a channel or DM is a team's own, so it lands on Threads. */
 export function teamSwitchPath(pathname: string, toSlug: string): string {
@@ -47,7 +47,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Rhythms', approvals: 'Approvals', bots: 'Bots' };
+const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Rhythms', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {
