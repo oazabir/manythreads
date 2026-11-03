@@ -45,6 +45,12 @@ export interface SurfaceComponentDef {
    * declare which registered read tool feeds them. The value written in the part itself stays as the placeholder, checked by `props` like any other.
    */
   readonly bindable: readonly string[];
+  /**
+   * The platform draws this part itself (PLAN P9-07: the Answer states whom a reply was for and what it rests on, which a bot must not be able to claim). A registry
+   * made for bot input (`createSurfaceRegistry(defs, { botInput: true })`) refuses it with a plain reason, and the bot's tool help leaves it out; the page's own
+   * registry still lists it so stored answers are drawn by it.
+   */
+  readonly platformOnly: boolean;
 }
 
 export interface SurfaceComponentInput<S extends z.ZodRawShape> {
@@ -57,6 +63,8 @@ export interface SurfaceComponentInput<S extends z.ZodRawShape> {
   events?: Record<string, z.ZodObject<z.ZodRawShape>>;
   /** The props a data binding may fill in (see `SurfaceComponentDef.bindable`). The part gets a last position named `bind`. */
   bindable?: readonly string[];
+  /** The platform alone draws this part: a registry for a bot's text refuses it (see `SurfaceComponentDef.platformOnly`). */
+  platformOnly?: boolean;
 }
 
 /** The name of the position that carries a data binding. A part cannot use it for anything else. */
@@ -95,6 +103,7 @@ export function defineSurfaceComponent<S extends z.ZodRawShape>(input: SurfaceCo
     props: props as unknown as z.ZodObject<z.ZodRawShape>,
     events,
     bindable,
+    platformOnly: input.platformOnly === true,
   };
 }
 
@@ -104,10 +113,12 @@ export interface SurfaceRegistry {
   has(name: string): boolean;
   get(name: string): SurfaceComponentDef | undefined;
   names(): string[];
+  /** True for the registry that judges what a BOT wrote: a platform-only part is refused in it. The page's registry draws such parts. */
+  readonly botInput: boolean;
 }
 
 /** Make a registry from definitions. A name used twice fails at load. */
-export function createSurfaceRegistry(defs: readonly SurfaceComponentDef[]): SurfaceRegistry {
+export function createSurfaceRegistry(defs: readonly SurfaceComponentDef[], options: { botInput?: boolean } = {}): SurfaceRegistry {
   const byName = new Map<string, SurfaceComponentDef>();
   for (const d of defs) {
     if (byName.has(d.name)) throw new Error(`Component "${d.name}" is registered twice`);
@@ -118,5 +129,6 @@ export function createSurfaceRegistry(defs: readonly SurfaceComponentDef[]): Sur
     has: (name) => byName.has(name),
     get: (name) => byName.get(name),
     names: () => [...byName.keys()].sort(),
+    botInput: options.botInput === true,
   };
 }

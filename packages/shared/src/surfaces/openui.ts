@@ -58,6 +58,12 @@ export interface SurfaceStatement {
   text: string;
 }
 
+/** What a bot is told when it writes a part only the platform draws (the Answer, PLAN P9-07). */
+export const platformOnlyMessage = (name: string): string => `${name} is drawn only by the platform; use Callout or Text for your own text`;
+
+/** True for the problem `platformOnlyMessage` made: the surface tools refuse a screen that has one anywhere, not only at its root. */
+export const isPlatformOnlyProblem = (p: { code: string; message: string }): boolean => p.code === 'unknown_component' && / is drawn only by the platform; use Callout or Text/.test(p.message);
+
 /** Where the checker is in a stream of text. A plain object: keep the latest one, hand it back to `feedSurface`. */
 export interface SurfaceStreamState {
   /** The text received after the last finished statement. */
@@ -479,6 +485,7 @@ function resolveCall(call: Extract<Ast, { t: 'call' }>, id: string, ctx: Ctx, ke
   if (ctx.nodes > SURFACE_MAX_RENDER_NODES) return reject(ctx, key, id, call.name, 'too_large', `A surface can draw at most ${SURFACE_MAX_RENDER_NODES} parts`);
   const def = ctx.registry.get(call.name);
   if (!def) return reject(ctx, key, id, call.name, 'unknown_component', `"${shown(call.name)}" is not a part this app can draw`);
+  if (def.platformOnly && ctx.registry.botInput) return reject(ctx, key, id, def.name, 'unknown_component', platformOnlyMessage(def.name));
   if (call.args.length > def.args.length) {
     return reject(ctx, key, id, def.name, 'invalid_props', `${def.name} takes at most ${def.args.length} values, but ${call.args.length} were given`);
   }

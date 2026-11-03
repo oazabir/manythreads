@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import type { AnswerPayloadView } from '@manythreads/shared';
 import { useShell } from '../shell/context';
-import { Answer, type TeamSlugOf } from './Answer';
+import { AnswerSurface } from '../surfaces/answerView';
+import type { TeamSlugOf } from './Answer';
 import { AnswerActions, type AnswerTools } from './AnswerShare';
 
 /**
@@ -15,6 +16,6 @@ export function AnswerMessage({ payload, teamSlug, messageId, tools }: { payload
     const slugs = new Map(teams.map((t) => [t.id as string, t.slug] as const));
     return (teamId) => slugs.get(teamId) ?? null;
   }, [teams]);
-  if (!tools || !messageId) return <Answer payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} />;
+  if (!tools || !messageId) return <AnswerSurface payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} />;
   return <AnswerActions payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} messageId={messageId} tools={tools} />;
 }

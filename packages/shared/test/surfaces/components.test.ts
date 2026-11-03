@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DIFF_MAX_CHARS, DIFF_MAX_LINES, SURFACE_REGISTRY, parseSurface, type SurfaceNode } from '../../src/index.ts';
+import { DIFF_MAX_CHARS, DIFF_MAX_LINES, SURFACE_BOT_REGISTRY, SURFACE_REGISTRY, describeSurfaceParts, isPlatformOnlyProblem, parseSurface, type SurfaceNode } from '../../src/index.ts';
 
 // The primitives and the manythreads parts (PLAN P9-05): each is checked by its own schema, through the same checker a bot's text goes through.
 
@@ -202,5 +202,63 @@ describe('every part, through the checker', () => {
   });
   it('each part has a plain-language summary', () => {
     for (const n of SURFACE_REGISTRY.names()) expect(SURFACE_REGISTRY.get(n)!.summary.length, n).toBeGreaterThan(10);
+  });
+});
+
+describe('Answer (P9-07)', () => {
+  const uuid = (n: number): string => `0190a000-0000-7000-8000-${String(n).padStart(12, '0')}`;
+  const answer = {
+    version: 1,
+    body: 'The deploy waits [1].',
+    citations: [{ kind: 'page', n: 1, label: 'pages/a.md', scope: 'team', teamId: uuid(1), path: 'pages/a.md' }],
+    lineage: [],
+    sourcesReached: [],
+    outsideScope: { count: 0, items: [] },
+    answeredFor: { personId: uuid(2), name: 'Omar', scope: 'scoped', alias: null, botId: uuid(3), runId: uuid(4) },
+    chips: [],
+  };
+  it('takes exactly the stored answer: one value for each key of the payload, in the checker', () => {
+    expect(SURFACE_REGISTRY.get('Answer')!.args).toEqual(['version', 'body', 'citations', 'lineage', 'sourcesReached', 'outsideScope', 'answeredFor', 'chips', 'share']);
+    good('Answer', answer);
+    good('Answer', { ...answer, share: { masked: 1, removed: 0 } });
+    bad('Answer', { ...answer, version: 2 });
+    bad('Answer', { ...answer, body: '' });
+    bad('Answer', { ...answer, citations: [{ kind: 'futurekind', n: 1, label: 'x', scope: 'team' }] });
+    bad('Answer', { body: 'x' });
+  });
+  it('is accepted by the checker when written as a part, and refused when its values are not an answer', () => {
+    const values = ['version', 'body', 'citations', 'lineage', 'sourcesReached', 'outsideScope', 'answeredFor', 'chips'].map((k) => JSON.stringify((answer as Record<string, unknown>)[k]));
+    const n = root(`Answer(${values.join(', ')})`);
+    expect(n.kind).toBe('component');
+    if (n.kind === 'component') expect(n.name).toBe('Answer');
+    expect(root('Answer(1, "only a body")').kind).toBe('rejected');
+  });
+  it('has no events: it cannot be answered from a surface', () => {
+    expect(Object.keys(SURFACE_REGISTRY.get('Answer')!.events)).toEqual([]);
+  });
+  it('is platform-only: a bot\'s text is refused with a plain reason, wherever the part stands; the page registry still checks it', () => {
+    expect(SURFACE_REGISTRY.get('Answer')!.platformOnly).toBe(true);
+    expect(SURFACE_REGISTRY.get('Callout')!.platformOnly).toBe(false);
+    expect(SURFACE_BOT_REGISTRY.botInput).toBe(true);
+    expect(SURFACE_REGISTRY.botInput).toBe(false);
+    const values = ['version', 'body', 'citations', 'lineage', 'sourcesReached', 'outsideScope', 'answeredFor', 'chips'].map((k) => JSON.stringify((answer as Record<string, unknown>)[k]));
+    const source = `root = Stack([a, b])\na = Text("fine")\nb = Answer(${values.join(', ')})\n`;
+    const asBot = parseSurface(source, SURFACE_BOT_REGISTRY);
+    const refused = asBot.problems.filter(isPlatformOnlyProblem);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]!.message).toBe('Answer is drawn only by the platform; use Callout or Text for your own text');
+    const kids = asBot.root?.kind === 'component' ? asBot.root.children.map((k) => k.kind) : [];
+    expect(kids).toEqual(['component', 'rejected']);
+    // the same text through the page's registry: the part is checked and kept (the web view decides whether the page may draw it)
+    const asPage = parseSurface(source, SURFACE_REGISTRY);
+    expect(asPage.problems).toEqual([]);
+    expect(asPage.root?.kind === 'component' ? asPage.root.children.map((k) => k.kind) : []).toEqual(['component', 'component']);
+    // and an ordinary problem is not mistaken for it
+    expect(parseSurface('root = Gizmo("x")\n', SURFACE_BOT_REGISTRY).problems.some(isPlatformOnlyProblem)).toBe(false);
+  });
+  it('is left out of the help a bot reads, for both registries', () => {
+    expect(describeSurfaceParts(SURFACE_BOT_REGISTRY)).not.toMatch(/Answer/);
+    expect(describeSurfaceParts(SURFACE_REGISTRY)).not.toMatch(/Answer\(/);
+    expect(describeSurfaceParts(SURFACE_BOT_REGISTRY)).toMatch(/Callout\(/);
   });
 });

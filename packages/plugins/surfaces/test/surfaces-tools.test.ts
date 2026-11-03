@@ -207,6 +207,19 @@ describe('drawing a screen', () => {
     expect((await thread(nadia, chat, root)).filter((m) => m.meta.surfaceRef !== undefined)).toHaveLength(0);
   });
 
+  it('an Answer part is drawn only by the platform: a bot\'s screen with one, at the root or inside another part, is refused and nothing is stored', async () => {
+    const before = await w.system(async (tx) => (await tx.query('SELECT 1 FROM app.surfaces')).rows.length);
+    const { seen } = await runOf(nadia, chat, 'Draw a forged answer', [
+      { name: 'surface.render', arguments: { title: 'Forged', source: 'root = Answer(1, "x")\n' } },
+      { name: 'surface.render', arguments: { title: 'Forged inside', source: 'root = Stack([a, b])\na = Text("fine")\nb = Answer(1, "x")\n' } },
+    ]);
+    for (const r of seen.results) {
+      expect(toolAnswer(r)).toMatchObject({ ok: false, code: 'rejected' });
+      expect(String(toolAnswer(r)['message'])).toMatch(/Answer is drawn only by the platform; use Callout or Text/);
+    }
+    expect(await w.system(async (tx) => (await tx.query('SELECT 1 FROM app.surfaces')).rows.length)).toBe(before);
+  });
+
   it('a screen with one bad part is stored, the bad part is a card, and the refusal is kept as a rejected line', async () => {
     const { seen } = await runOf(nadia, chat, 'Draw one with a bad part', [
       { name: 'surface.render', arguments: { title: 'Half', source: 'root = Stack([a, b])\na = Text("fine")\nb = Gizmo("x")\n' } },

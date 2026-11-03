@@ -5,7 +5,8 @@ import { isApiError } from '../api/client';
 import { Dialog } from '../components/Dialog';
 import { handoffAnswer, fetchShareTargets, previewAnswerShare, saveAnswerAsPage, shareAnswer } from '../screens/conversations/api';
 import { channelPath } from '../shell/nav';
-import { Answer, maskedLine, type TeamSlugOf } from './Answer';
+import { maskedLine, type TeamSlugOf } from './Answer';
+import { AnswerSurface } from '../surfaces/answerView';
 import { channelStore } from './store';
 
 /*
@@ -295,7 +296,7 @@ function ShareDialog({ mode, tools, messageId, who, onClose, onDone }: { mode: M
 
 /**
  * The answer with what a person can do with it: the toolbar (Share to channel, Save as page), the chips as buttons, and the dialogs. Used for an
- * answer in the reader's own conversation that was for them; any other answer is drawn by `Answer` alone.
+ * answer in the reader's own conversation that was for them; any other answer is drawn by the registered `Answer` part alone (surfaces/answerView.tsx).
  */
 export function AnswerActions({
   payload,
@@ -340,7 +341,7 @@ export function AnswerActions({
 
   return (
     <div className="an-wrap" data-testid="answer-with-actions">
-      <Answer payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} onChip={onChip} />
+      <AnswerSurface payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} onChip={onChip} />
       <div className="an-acts" data-testid="answer-actions">
         <button type="button" className="btn s" data-testid="answer-share-open" onClick={() => { setDone(null); setDialog('channel'); }}>Share to channel</button>
         <button type="button" className="btn s" data-testid="answer-save-open" onClick={() => { setDone(null); setDialog('page'); }}>Save as page</button>

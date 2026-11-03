@@ -129,7 +129,7 @@ the model printed after the tool call ([runtime-hermes.md](./runtime-hermes.md#t
 ## The component
 
 `Answer` (`clients/web/src/channels/Answer.tsx`) is drawn by `MessageRow` for any message whose `meta.answer` is present — the conversation
-view, a channel and a thread panel alike. Following `[proto §12]` plate 2:
+view, a channel and a thread panel alike, through the registered surface part `Answer` (PLAN P9-07, `clients/web/src/surfaces/answerView.tsx`: the one drawing, with the conversation lending acting chips and a thread lending none). Following `[proto §12]` plate 2:
 
 - the text (`meta.answer.body` — the platform keeps it equal to the message's own body, and the client draws the payload's), with `[n]`
   becoming the number of its source (a link to it; muted when the answer left it out). Only a number the answer has a place for is a marker:

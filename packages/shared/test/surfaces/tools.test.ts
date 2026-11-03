@@ -46,7 +46,11 @@ describe('tool arguments', () => {
   });
   it('the description of the parts is built from the registry', () => {
     const text = describeSurfaceParts(SURFACE_REGISTRY);
-    for (const name of SURFACE_REGISTRY.names()) expect(text).toContain(`${name}(`);
+    // a part only the platform draws (the Answer, P9-07) is not shown to a bot
+    for (const name of SURFACE_REGISTRY.names()) {
+      if (SURFACE_REGISTRY.get(name)!.platformOnly) expect(text).not.toContain(`${name}(`);
+      else expect(text).toContain(`${name}(`);
+    }
     expect(text).toContain('Events: press.');
   });
 });

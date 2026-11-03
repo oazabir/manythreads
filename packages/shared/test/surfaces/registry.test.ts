@@ -55,6 +55,7 @@ describe('createSurfaceRegistry', () => {
 describe('the registry the app uses', () => {
   it('lists the parts every client draws', () => {
     expect(SURFACE_REGISTRY.names()).toEqual([
+      'Answer',
       'ApprovalCard',
       'Badge',
       'Button',

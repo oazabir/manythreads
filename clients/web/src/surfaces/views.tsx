@@ -21,6 +21,7 @@ import {
   TextComponent,
 } from '@manythreads/shared';
 import { CHART_H, CHART_W, chartShape, classifyDiff, fitText, formatValue } from './draw';
+import { answerView } from './answerView';
 import { useSurfaceHost } from './host';
 
 // How each registered part is drawn (PLAN P9-03). A view gets props the checker already passed through the part's own schema, and reads them through that
@@ -371,4 +372,5 @@ export const SURFACE_VIEWS: ReadonlyMap<string, SurfaceView> = new Map<string, S
   ['ChannelLink', channelLink],
   ['ApprovalCard', approvalCard],
   ['DiffView', diffView],
+  ['Answer', answerView],
 ]);

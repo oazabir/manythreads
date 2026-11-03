@@ -1,13 +1,14 @@
 import { type MessageProvider, type PluginContext, type PluginTx } from '@manythreads/sdk';
 import {
+  SURFACE_BOT_REGISTRY,
   SURFACE_EVENT_TOOL_MAX,
   SURFACE_NODE_ID_MAX,
-  SURFACE_REGISTRY,
   SurfaceEventToolInput,
   SurfaceRenderInput,
   SurfaceUpdateInput,
   SurfacesSurfaceRenderedEvent,
   SurfacesSurfaceUpdatedEvent,
+  isPlatformOnlyProblem,
   mergeSurfacePatch,
   parseSurface,
   problemKey,
@@ -78,7 +79,10 @@ export async function renderSurface(ctx: PluginContext, tx: PluginTx, input: Rec
   const { title, source } = parsed.data;
 
   // The same checker the page uses. A screen with no part to draw at its root is not stored: there would be nothing to show (and no history to hang the reason on).
-  const tree = parseSurface(source, SURFACE_REGISTRY);
+  const tree = parseSurface(source, SURFACE_BOT_REGISTRY);
+  // A part only the platform draws (the Answer) is refused wherever it stands, so it can never be stored in a bot's screen.
+  const platformOnly = tree.problems.find(isPlatformOnlyProblem);
+  if (platformOnly !== undefined) return refuse('rejected', `Nothing was drawn: ${clip(platformOnly.message, 300)}`, { problems: problemList([platformOnly]) });
   if (tree.root === null || tree.root.kind !== 'component') {
     const why = tree.problems.length > 0 ? tree.problems : [{ code: 'unresolved_ref' as const, id: 'root', message: 'The screen has no "root" part that can be drawn' }];
     return refuse('rejected', `Nothing was drawn: ${clip(why[0]!.message, 300)}`, { problems: problemList(why) });
@@ -165,8 +169,8 @@ export async function updateSurface(ctx: PluginContext, tx: PluginTx, input: Rec
   if (!merged.changed) return { ok: true, changed: false, surfaceId: row.id, version: row.version, message: 'The patch matches what the screen already says, so nothing changed.' };
 
   // A change may leave a screen as imperfect as it was, never worse: a part the old text drew that the new text would turn into a refusal card stops the patch.
-  const before = new Set(parseSurface(row.source, SURFACE_REGISTRY).problems.map(problemKey));
-  const after = parseSurface(merged.source, SURFACE_REGISTRY);
+  const before = new Set(parseSurface(row.source, SURFACE_BOT_REGISTRY).problems.map(problemKey));
+  const after = parseSurface(merged.source, SURFACE_BOT_REGISTRY);
   if (after.root === null || after.root.kind !== 'component') {
     return reject('With this patch the screen would have nothing to draw at its root', problemList(after.problems), 'root');
   }

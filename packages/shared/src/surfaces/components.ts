@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AnswerPayload } from '../entities/answer.ts';
 import { createSurfaceRegistry, defineSurfaceComponent } from './registry.ts';
 
 // The parts every client draws (PLAN P9-02, P9-05): the primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart, List, Badge, Button, Callout, Code,
@@ -224,6 +225,20 @@ export const DiffViewComponent = defineSurfaceComponent({
   }),
 });
 
+/**
+ * The Answer (PLAN P9-07): the finished-reply card the answer plugin stores on a message (`meta.answer`), as a registered part. Its values ARE the
+ * stored `AnswerPayload`, key for key and in the same order, so nothing about the stored format changes and a stored answer is drawn by the very view a
+ * surface uses. The platform writes it (it stamps whom the answer was for and re-reads every source as the asker); a bot does not draw it by hand.
+ */
+export const AnswerComponent = defineSurfaceComponent({
+  name: 'Answer',
+  summary:
+    'The finished-reply card with numbered sources, written by the platform from a stored answer (use the answer tool to reply with one; do not draw it by hand).',
+  args: ['version', 'body', 'citations', 'lineage', 'sourcesReached', 'outsideScope', 'answeredFor', 'chips', 'share'],
+  props: AnswerPayload,
+  platformOnly: true,
+});
+
 /** Every part a surface may use. */
 export const SURFACE_COMPONENTS = [
   StackComponent,
@@ -245,7 +260,11 @@ export const SURFACE_COMPONENTS = [
   ChannelLinkComponent,
   ApprovalCardComponent,
   DiffViewComponent,
+  AnswerComponent,
 ] as const;
 
 /** The registry the web client and the server use. */
 export const SURFACE_REGISTRY = createSurfaceRegistry(SURFACE_COMPONENTS);
+
+/** The same parts, judged as a BOT's text: a part only the platform draws (the Answer) is refused. The surface tools check what a bot writes with this one. */
+export const SURFACE_BOT_REGISTRY = createSurfaceRegistry(SURFACE_COMPONENTS, { botInput: true });

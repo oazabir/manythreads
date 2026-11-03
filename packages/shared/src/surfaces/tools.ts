@@ -54,6 +54,7 @@ export type SurfaceEventToolInput = z.infer<typeof SurfaceEventToolInput>;
 export function describeSurfaceParts(registry: SurfaceRegistry): string {
   return registry
     .names()
+    .filter((name) => !registry.get(name)!.platformOnly)
     .map((name) => {
       const def = registry.get(name)!;
       const events = Object.keys(def.events);
