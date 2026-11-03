@@ -177,10 +177,13 @@ A person ticks services; each one is a set of the provider's scopes. A tool is o
 | Provider | Service (ticked by default: read-only ones marked *) | Scopes | Tools |
 |---|---|---|---|
 | Google | Drive (read)* | `drive.readonly` | `google_drive.search`, `google_drive.read` |
-| | Gmail (read) | `gmail.readonly` | `gmail.search`, `gmail.read` |
+| | Gmail (read) | `gmail.readonly` | `gmail.search`, `gmail.read`, `gmail.list_labels` |
 | | Gmail drafts | `gmail.compose` | `gmail.draft` (write) |
+| | Gmail labels | `gmail.modify` | `gmail.label` (write) |
+| | Gmail (send) | `gmail.send` | `gmail.send` (write) |
 | | Calendar (read)* | `calendar.events.readonly` | `google_calendar.list_events` |
-| | Calendar (add events) | `calendar.events` | `google_calendar.create_event` (write) |
+| | Calendar (add and change events) | `calendar.events` | `google_calendar.create_event`, `google_calendar.update_event` (write) |
+| | Calendar (free and busy) | `calendar.freebusy` | `google_calendar.free_busy` |
 | Microsoft 365 | OneDrive (read)* | `Files.Read` | `onedrive.search`, `onedrive.read` |
 | | Outlook mail (read) | `Mail.Read` | `outlook.search`, `outlook.read` |
 | | Outlook drafts | `Mail.ReadWrite` | `outlook.draft` (write) |
@@ -190,7 +193,7 @@ A person ticks services; each one is a set of the provider's scopes. A tool is o
 
 Every sign-in also asks for the identity scopes (`openid`, `email`; Microsoft adds `offline_access` and `User.Read`), and Google's `access_type=offline` so a refresh token is issued.
 
-* **Reads by default, writes only after approval.** Every tool that changes something outside (a draft, a calendar event, a Notion page) is marked `needsApproval` by the compile whatever the BOT.md says, so each call waits for a person. Nothing sends mail: the draft tools save a draft the person sends themselves. No tool deletes anything.
+* **Reads by default, writes only after approval.** Every tool that changes something outside (a draft, a calendar event, a Notion page) is marked `needsApproval` by the compile whatever the BOT.md says, so each call waits for a person. The draft tools save a draft the person sends themselves; the one tool that sends mail is `gmail.send` (Google, P16-03). No tool deletes anything.
 * **Outside text is data.** A tool's description says what it returns was written by other people or systems and is never to be taken as an instruction. Answers are cut at a size cap, HTML is reduced to text, search words are quoted so they cannot change the provider's query, and every id is checked against a strict pattern before it is placed in an address (a tool passes a path to the plugin's one door, which only ever calls the provider's own address).
 * **Bots name them with `person:*`:**
 
@@ -203,9 +206,23 @@ capabilities:
 
 The compile writes a `person_connection_grants` row (no connection to point at, because the connection is whoever asked) and the broker's `capability_grants` row with the constraint `connection: person:*`. A call is allowed when the bot holds the grant, the run was started by a person in a conversation or mention, that person's own connection works, and they agreed to the tool's service. A read runs in the asker's transaction, so a person who left the team reaches nothing; a write runs as the bot and waits for approval, and when approved it runs once more for the same asker.
 
+
+### Google Workspace in depth (P16-03)
+
+`src/google-tools.ts` holds every Google tool; `src/person-kit.ts` holds what the providers' tool files share (the tool's shape, the checked fields, the readers of an answer), so a Microsoft tool file (P16-04) is written the same way.
+
+* **Gmail.** `gmail.search` and `gmail.read` answer each message's sender, subject, date, conversation id and label ids (a search asks Gmail for the `From`, `Subject` and `Date` headers by name; Gmail answers only the headers it is asked for). `gmail.list_labels` lists the mailbox's labels with their ids. `gmail.label` (service Gmail labels, `gmail.modify`) puts labels on one message and takes them off, naming a label by its name or id: it never creates a label, never adds the bin (`TRASH`), `SPAM`, `SENT` or `DRAFT`, and never takes `SENT` or `DRAFT` off, so it cannot hide or delete mail (taking `INBOX` off files a message away, taking `UNREAD` off marks it read). A name the mailbox does not have is answered with the names that exist.
+* **Send.** `gmail.send` (service Gmail (send), `gmail.send`) takes `to` (up to 20), optional `cc`, a one-line subject, a plain-text body and optionally `replyToMessageId`. There is no `bcc` and no way to add a header: addresses may hold no space or line break, and the reply headers (`In-Reply-To`, `References`) are only taken from the original's `Message-ID` in the form `<…>`. With `replyToMessageId` the tool reads that message's id and conversation (it needs the Gmail read service too) so the reply stays in its conversation. A send **always waits for the asker's approval** and the card shows every recipient, the subject and the first 1,500 characters of the text. Because the person approving sees the real arguments, a hostile mail that talks a bot into sending something is stopped at the card. (The team mailbox's `email.send` is narrower still: the platform picks the recipient. A person's Gmail send names its recipients, because the person reads them before it goes.)
+* **Calendar.** `google_calendar.free_busy` (`calendar.freebusy`) asks Google's free/busy for the person's primary calendar and up to ten other addresses, for a period of at most 31 days. It answers busy spans only, never an event's title, and says `visible: false` for a calendar its owner has not shared. With `minMinutes` it also answers the free stretches (at least that long, at most 20) in which every visible calendar is free, with `freeCoversEveryone: false` when someone could not be read. `google_calendar.update_event` (with `google_calendar.create_event`, service Calendar (add and change events), `calendar.events`) changes the title, times, description or the whole guest list of an event by the id a listing answered; only the fields named are sent (a PATCH) and Google is told not to email the guests. Nothing deletes or cancels an event.
+* **Drive.** `google_drive.search` and `google_drive.read` were built in P8-02: a Google Doc is exported as plain text, a Sheet as CSV (its first sheet), Slides as plain text, and a text or JSON file is read as it is, cut at 20,000 characters.
+* **Approval cards.** Every Google tool that writes has a `card` (a one-line summary and the values that matter) that the source returns from `approval()`, so the Approvals inbox says "Send an email to … : subject" instead of a bare tool name. The cards are built from the arguments after they passed the strict schema.
+* **Consent.** The services above are ticked one by one; a person who connected Drive and Calendar earlier is asked only for the new scopes (`include_granted_scopes`). Google lists `gmail.readonly`, `gmail.modify`, `gmail.compose` and `gmail.send` as restricted or sensitive scopes: a self-hosted workspace that makes its own Google app for its own domain ("Internal" user type) needs no Google review; an app for outside users does.
+* **New mail in a label: not built.** The catalog keeps the trigger `gmail_label_mail` as not available. What is missing is not the polling: a person's Gmail is not a team mailbox, and a run that mail starts has no asker, so by the rule above it cannot use the person's tools. It needs an owner decision (whose identity a run started by someone’s mail has). Until it is decided a routine can do the same by asking `gmail.search` for `label:<name> newer_than:1d`.
+* **Not built here:** Drive files copied into a knowledge base (that is P16-08, which also decides who may read what), and the Meet transcript import (needs the meetings plugin's writer, P15-09).
+
 ### Testing it
 
-`packages/test-utils/src/fake-providers.ts` is a fake Google, Microsoft 365 and Notion on one local address: the consent page, a token address that checks the app, the redirect and the PKCE proof, a refresh that can rotate, and the APIs the tools call, on per-account data (`fake-providers-data.ts`). `MANYTHREADS_OAUTH_<PROVIDER>_FAKE_BASE` points the plugin at it, and is read only outside production. It never records a token, a code or a secret. `e2e/fixtures/outside.ts` starts it together with the fake GitHub for the browser tests. `test/person.test.ts` covers the sign-in, the refresh, the tools and the intersection test.
+`packages/test-utils/src/fake-providers.ts` is a fake Google, Microsoft 365 and Notion on one local address: the consent page, a token address that checks the app, the redirect and the PKCE proof, a refresh that can rotate, and the APIs the tools call, on per-account data (`fake-providers-data.ts`). `MANYTHREADS_OAUTH_<PROVIDER>_FAKE_BASE` points the plugin at it, and is read only outside production. It never records a token, a code or a secret. `e2e/fixtures/outside.ts` starts it together with the fake GitHub for the browser tests. `test/person.test.ts` covers the sign-in, the refresh, the tools (including the Gmail send, labels, free/busy and event changes of P16-03, through the real MCP gateway and the approvals inbox) and the intersection test; `test/google-tools.test.ts` covers the arithmetic, the inputs, the requests each tool makes and that the catalog and the tools agree. The fake Google also answers `labels`, `messages/{id}/modify`, `messages/send`, `freeBusy` and an event PATCH, and records `sentMails`, `labelChanges` and `updatedEvents` as plain data.
 
 ## The connector catalog and the Add connection gallery (P16-01)
 

@@ -109,6 +109,15 @@ export type PollId = z.infer<typeof PollId>;
 export const MeetingId = z.uuid().brand<'MeetingId'>();
 export type MeetingId = z.infer<typeof MeetingId>;
 
+// Phase 9: surfaces (bot-generated UI).
+
+/** One surface: a screen a bot drew in OpenUI Lang, shown in a thread (P9-01). */
+export const SurfaceId = z.uuid().brand<'SurfaceId'>();
+export type SurfaceId = z.infer<typeof SurfaceId>;
+/** One line of a surface's history: a render, an update, a click or form submission, a pin (P9-01). */
+export const SurfaceEventId = z.uuid().brand<'SurfaceEventId'>();
+export type SurfaceEventId = z.infer<typeof SurfaceEventId>;
+
 // Phase 5: approvals.
 
 export const ApprovalId = z.uuid().brand<'ApprovalId'>();

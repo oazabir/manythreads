@@ -92,6 +92,9 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
     },
 
     async approval(tx: PluginTx, run: BotRunHandle, tool: string, input: Record<string, unknown>): Promise<ToolApprovalCard | null> {
+      // a write through a person's own connection waits whatever the definition says (the compile sets it); here the approver is shown what will really be sent or changed
+      const person = personToolDef(tool);
+      if (person) return person.kind === 'write' && person.card && inputProblem(tool, input) === null ? person.card(input) : null;
       const granted = (await tx.query<ConnectionRow>(GRANTED, [run.botActorId, run.teamId, tool])).rows[0];
       if (!granted || !isUsable(granted) || inputProblem(tool, input) !== null) return null; // the call itself is refused for that reason
       const kind = kindOf(granted.kind);

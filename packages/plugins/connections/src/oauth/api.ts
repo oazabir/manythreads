@@ -23,8 +23,9 @@ export class ProviderError extends Error {
 }
 
 export interface ApiInit {
-  method?: 'GET' | 'POST';
-  query?: Record<string, string | number | undefined>;
+  method?: 'GET' | 'POST' | 'PATCH';
+  /** A list value is sent as the same parameter repeated (Gmail's `metadataHeaders`). */
+  query?: Record<string, string | number | readonly string[] | undefined>;
   body?: unknown;
   headers?: Record<string, string>;
 }
@@ -55,7 +56,10 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
     // a path is ours (a tool's template with encoded values): it must begin with a slash and carry no scheme, so the call can only go to the provider's own address
     if (!path.startsWith('/') || path.startsWith('//')) throw new ProviderError(400, 'That request is not one a tool may make.');
     const url = new URL(`${endpoints.apiBase}${path}`);
-    for (const [k, v] of Object.entries(init.query ?? {})) if (v !== undefined) url.searchParams.set(k, String(v));
+    for (const [k, v] of Object.entries(init.query ?? {})) {
+      if (typeof v === 'string' || typeof v === 'number') url.searchParams.set(k, String(v));
+      else if (v !== undefined) for (const one of v) url.searchParams.append(k, one);
+    }
     const headers: Record<string, string> = { authorization: `Bearer ${token}`, accept: 'application/json', ...(connection.provider === 'notion' ? { 'notion-version': '2022-06-28' } : {}), ...init.headers };
     let body: string | undefined;
     if (init.body !== undefined) {
@@ -65,7 +69,7 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
     try {
       return await fetchImpl(url.toString(), { method: init.method ?? 'GET', headers, ...(body !== undefined ? { body } : {}), signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'manual' });
     } catch {
-      throw new ProviderError(503, `${PROVIDERS[connection.provider].label} did not answer.`);
+      throw new ProviderError(503, `${PROVIDERS[connection.provider].label} did not answer${(init.method ?? 'GET') === 'GET' ? '' : ', so the change may or may not have gone through'}.`);
     }
   };
 

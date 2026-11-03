@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "syntax",
+    "unknown_component",
+    "invalid_props",
+    "unresolved_ref",
+    "cycle",
+    "too_deep",
+    "too_large",
+    "duplicate"
+  ]
+}

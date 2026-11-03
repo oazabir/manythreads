@@ -1,0 +1,105 @@
+/* Surfaces: screens a bot drew (PLAN P9-03, SPEC §14). Every class of this file is prefixed `sf`, so nothing in it can collide with a shared one.
+ * Colours come from tokens.css only; it lays out at 390 px wide. */
+
+.sf {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 720px;
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--agent-border);
+  border-radius: 8px;
+  background: var(--agent-wash);
+}
+
+.sf-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sf-gap-none {
+  gap: 0;
+}
+
+.sf-gap-small {
+  gap: 4px;
+}
+
+.sf-gap-medium {
+  gap: 10px;
+}
+
+.sf-gap-large {
+  gap: 18px;
+}
+
+.sf-heading {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sf-heading-1 {
+  font-size: 1.25em;
+}
+
+.sf-heading-2 {
+  font-size: 1.1em;
+}
+
+.sf-heading-3 {
+  font-size: 1em;
+}
+
+.sf-text {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sf-tone-muted {
+  color: var(--mute);
+}
+
+.sf-tone-strong {
+  font-weight: 600;
+}
+
+/* a part that has not arrived yet */
+.sf-pending {
+  display: block;
+  width: 100%;
+  min-height: 14px;
+  border-radius: 4px;
+  background: var(--hairline);
+}
+
+/* a part the checker refused: the reason, in place of that part only */
+.sf-reject {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--alert-border);
+  border-radius: 6px;
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+  font-size: 0.9em;
+}
+
+.sf-reject-title {
+  font-weight: 600;
+}
+
+.sf-reject-why {
+  overflow-wrap: anywhere;
+}
+
+.sf-reject-name {
+  margin-top: 2px;
+  color: var(--mute);
+  font-family: var(--mono);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}

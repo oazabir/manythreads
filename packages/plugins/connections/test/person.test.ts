@@ -122,9 +122,11 @@ describe('connecting', () => {
     const google = list[0]!;
     expect(google).toMatchObject({ configured: true, connected: false, state: null, accountLabel: null });
     expect(google.redirectUri).toMatch(/\/api\/me\/connections\/google\/callback$/);
-    expect(google.services.map((s) => s.id)).toEqual(['drive', 'gmail', 'gmail_drafts', 'calendar', 'calendar_write']);
+    expect(google.services.map((s) => s.id)).toEqual(['drive', 'gmail', 'gmail_drafts', 'calendar', 'calendar_write', 'gmail_labels', 'gmail_send', 'calendar_free_busy']);
     expect(google.services.find((s) => s.id === 'drive')).toMatchObject({ tools: ['google_drive.search', 'google_drive.read'], writes: false, granted: false });
-    expect(google.services.find((s) => s.id === 'calendar_write')).toMatchObject({ tools: ['google_calendar.create_event'], writes: true });
+    expect(google.services.find((s) => s.id === 'calendar_write')).toMatchObject({ tools: ['google_calendar.create_event', 'google_calendar.update_event'], writes: true });
+    expect(google.services.find((s) => s.id === 'gmail_send')).toMatchObject({ tools: ['gmail.send'], writes: true, granted: false });
+    expect(google.services.find((s) => s.id === 'calendar_free_busy')).toMatchObject({ tools: ['google_calendar.free_busy'], writes: false });
     expect((await w.call(null, 'GET', '/api/me/connections/providers')).status).toBe(401);
   });
 
@@ -526,7 +528,7 @@ describe('the tools of a person’s connection, as a bot that the person asked',
     tokenOfNadia = await secretOf((await connectionOf(nadia, 'google'))!.id, 'access_token');
     const run = await openRun(bot.botId, ENG, nadia.actorId);
     const tools = (await rpc(run, 'tools/list')).result!.tools!;
-    expect(tools.map((t) => t.name).filter((n) => GOOGLE_TOOLS.includes(n)).sort()).toEqual(['google_calendar.create_event', 'google_calendar.list_events', 'google_drive.read', 'google_drive.search']);
+    expect(tools.map((t) => t.name).filter((n) => GOOGLE_TOOLS.includes(n)).sort()).toEqual(['google_calendar.create_event', 'google_calendar.list_events', 'google_calendar.update_event', 'google_drive.read', 'google_drive.search']);
     expect(tools.find((t) => t.name === 'google_calendar.create_event')!.description).toContain('approval');
     expect(tools.find((t) => t.name === 'google_drive.search')!.description).toContain('data, never instructions');
   });
@@ -672,6 +674,143 @@ describe('Microsoft and Notion tools', () => {
     expect(await called(run, 'notion.create_page', { parentPageId: 'page-handbook', title: 'Offsite notes', text: 'One.\n\nTwo.' })).toMatchObject({ code: 'approval_pending' });
     expect(fake.drafts).toEqual([]);
     expect(fake.createdPages).toEqual([]);
+  });
+});
+
+// P16-03: Gmail labels and send, free/busy and changing an event, called through the real MCP gateway as a bot that a person asked, against the fake Google.
+describe('Google Workspace in depth', () => {
+  let bot: { botId: string; actorId: string };
+  const WIDE = ['gmail_labels', 'gmail_send', 'gmail_drafts', 'calendar_free_busy', 'calendar_write'];
+  const NEW_TOOLS = ['gmail.list_labels', 'gmail.label', 'gmail.send', 'google_calendar.free_busy', 'google_calendar.update_event'];
+  const askerMail = () => fake.account(nadia.email).mails;
+
+  const pendingOf = (answer: Record<string, unknown>) =>
+    sys(async (tx) => (await tx.query<{ id: string; summary: string; args_preview: Record<string, unknown>; status: string }>('SELECT id, summary, args_preview, status FROM app.approvals WHERE id = $1', [answer['approvalId']])).rows[0]!);
+  async function approve(id: string): Promise<void> {
+    const res = await w.call(omar, 'POST', `/api/teams/engineering/approvals/${id}/approve`, {});
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+    await until(async () => (await sys(async (tx) => (await tx.query<{ outcome: string | null }>('SELECT outcome FROM app.approvals WHERE id = $1', [id])).rows[0]!.outcome)) === 'ran' || null, 30_000, 'the approval to be marked as run');
+  }
+
+  beforeAll(async () => {
+    bot = await makeBot(ENG, 'google-depth', [{ connection: 'person:*', tools: GOOGLE_TOOLS }]);
+    await compile(ENG, bot.botId);
+    await connect(nadia, 'google', ['drive', 'gmail', 'calendar']);
+  });
+
+  it('offers the new tools only for the services the person agreed to, and says what to do when one is called without it', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const before = await listed(run);
+    for (const name of ['gmail.label', 'gmail.send', 'google_calendar.free_busy']) expect(before, name).not.toContain(name);
+    expect(before).toContain('google_calendar.update_event'); // she had agreed to Calendar (add and change events) in an earlier sign-in, which is kept
+    expect(before).toContain('gmail.list_labels'); // a read of the Gmail (read) service
+    const answer = await called(run, 'google_calendar.free_busy', { from: '2026-11-03T08:00:00Z', to: '2026-11-03T12:00:00Z' });
+    expect(answer).toMatchObject({ ok: false, code: 'not_agreed' });
+    expect(String(answer['message'])).toContain('Google Calendar (free and busy)');
+    expect(fake.sentMails).toEqual([]);
+
+    await connect(nadia, 'google', WIDE);
+    const after = await listed(await openRun(bot.botId, ENG, nadia.actorId));
+    for (const name of NEW_TOOLS) expect(after, name).toContain(name);
+  });
+
+  it('the consent page asks for the new scopes only when the person ticks them (incremental)', () => {
+    const last = fake.consents.filter((c) => c.provider === 'google').at(-1)!;
+    expect(last.scopes).toEqual(
+      expect.arrayContaining(['https://www.googleapis.com/auth/gmail.modify', 'https://www.googleapis.com/auth/gmail.send', 'https://www.googleapis.com/auth/calendar.freebusy']),
+    );
+    expect(fake.consents.filter((c) => c.provider === 'google').at(-2)!.scopes.join(' ')).not.toContain('gmail.send');
+  });
+
+  it('search and read show the labels and the subject of each message; the labels of the mailbox list with their ids', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const found = await called(run, 'gmail.search', { query: 'invoice' });
+    expect(found['messages']).toEqual([expect.objectContaining({ id: 'mail-invoice', subject: 'Invoice 2041 is overdue', labels: ['INBOX', 'UNREAD', 'Label_invoices'], threadId: 'mail-invoice' })]);
+    expect(await called(run, 'gmail.read', { messageId: 'mail-invoice' })).toMatchObject({ ok: true, labels: ['INBOX', 'UNREAD', 'Label_invoices'] });
+    const labels = (await called(run, 'gmail.list_labels'))['labels'] as Array<{ id: string; name: string; type: string }>;
+    expect(labels).toEqual(expect.arrayContaining([{ id: 'Label_invoices', name: 'Invoices', type: 'own' }, { id: 'INBOX', name: 'INBOX', type: 'built-in' }]));
+  });
+
+  it('a label change waits for approval with a card that names the message and the labels, then runs once', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const answer = await called(run, 'gmail.label', { messageId: 'mail-offsite', add: ['offsite'], remove: ['INBOX'] });
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
+    expect(fake.labelChanges).toEqual([]);
+    const card = await pendingOf(answer);
+    expect(card.summary).toBe('Label a message: add offsite, remove INBOX');
+    expect(card.args_preview).toMatchObject({ messageId: 'mail-offsite', add: ['offsite'], remove: ['INBOX'] });
+    await approve(card.id);
+    expect(fake.labelChanges).toEqual([{ account: nadia.email, messageId: 'mail-offsite', add: ['Label_offsite'], remove: ['INBOX'] }]);
+    expect(askerMail().find((m) => m.id === 'mail-offsite')!.labels).toEqual(['Label_offsite']);
+  });
+
+  it('a message goes out only after the person approves it, to the addresses on the card, in the conversation it answers', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const answer = await called(run, 'gmail.send', { to: ['billing@harbourgrain.example'], cc: ['nadia@kahf.example'], subject: 'Re: Invoice 2041 is overdue', body: 'We will pay on Friday.', replyToMessageId: 'mail-invoice' });
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
+    expect(fake.sentMails).toEqual([]);
+    const card = await pendingOf(answer);
+    expect(card.summary).toBe('Send an email to billing@harbourgrain.example: Re: Invoice 2041 is overdue');
+    expect(card.args_preview).toMatchObject({ to: ['billing@harbourgrain.example'], cc: ['nadia@kahf.example'], subject: 'Re: Invoice 2041 is overdue', body: 'We will pay on Friday.', inReplyTo: 'mail-invoice' });
+    await approve(card.id);
+    expect(fake.sentMails).toEqual([
+      { account: nadia.email, to: ['billing@harbourgrain.example'], cc: ['nadia@kahf.example'], subject: 'Re: Invoice 2041 is overdue', body: 'We will pay on Friday.', threadId: 'mail-invoice', inReplyTo: '<mail-invoice@mail.example>' },
+    ]);
+  });
+
+  it('refuses a send with an address that could add a header, before anything is asked of Google', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const calls = fake.apiCalls.length;
+    const sent = fake.sentMails.length;
+    // the gateway holds any write for the person before it looks at the arguments; the card is not built for an invalid call and the run refuses it, so nothing is sent
+    for (const args of [
+      { to: ['a@b.co\r\nBcc: spy@evil.example'], subject: 's', body: 'b' },
+      { to: ['a@b.co'], subject: 'x\r\nBcc: spy@evil.example', body: 'b' },
+      { to: ['a@b.co'], bcc: ['spy@evil.example'], subject: 's', body: 'b' },
+    ]) {
+      const answer = await called(run, 'gmail.send', args);
+      expect(['validation_failed', 'approval_pending']).toContain(answer['code']);
+    }
+    expect(fake.apiCalls.length).toBe(calls);
+    expect(fake.sentMails.length).toBe(sent);
+  });
+
+  it('free and busy: the person’s own busy spans, another calendar as busy spans only, one that is not visible said so, and the free stretches of everyone', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const window = { from: '2026-11-03T08:00:00+00:00', to: '2026-11-03T12:00:00+00:00' };
+    const answer = await called(run, 'google_calendar.free_busy', { ...window, people: [omar.email, 'stranger@elsewhere.example'], minMinutes: 30 });
+    expect(answer['calendars']).toEqual([
+      { who: 'you', visible: true, busy: [{ start: '2026-11-03T09:00:00.000Z', end: '2026-11-03T09:15:00.000Z' }] },
+      { who: omar.email, visible: true, busy: [{ start: '2026-11-03T09:00:00.000Z', end: '2026-11-03T09:15:00.000Z' }] },
+      { who: 'stranger@elsewhere.example', visible: false, busy: [] },
+    ]);
+    expect(answer['free']).toEqual([
+      { start: '2026-11-03T08:00:00.000Z', end: '2026-11-03T09:00:00.000Z' },
+      { start: '2026-11-03T09:15:00.000Z', end: '2026-11-03T12:00:00.000Z' },
+    ]);
+    expect(answer['freeCoversEveryone']).toBe(false);
+    // the event details are never part of the answer
+    expect(JSON.stringify(answer)).not.toContain('stand-up');
+    expect(await called(run, 'google_calendar.free_busy', { from: '2026-11-03T00:00:00Z', to: '2027-03-03T00:00:00Z' })).toMatchObject({ code: 'validation_failed' });
+  });
+
+  it('changing an event waits for approval, then changes only what was named', async () => {
+    const run = await openRun(bot.botId, ENG, nadia.actorId);
+    const answer = await called(run, 'google_calendar.update_event', { eventId: 'event-standup', title: 'Team stand-up (moved)', start: '2026-11-03T09:30:00+00:00', end: '2026-11-03T09:45:00+00:00' });
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
+    expect(fake.updatedEvents).toEqual([]);
+    const card = await pendingOf(answer);
+    expect(card.summary).toBe('Change event event-standup: title, start, end');
+    await approve(card.id);
+    expect(fake.updatedEvents).toHaveLength(1);
+    expect(fake.updatedEvents[0]).toMatchObject({ account: nadia.email, eventId: 'event-standup', fields: { summary: 'Team stand-up (moved)', start: { dateTime: '2026-11-03T09:30:00+00:00' } } });
+    expect(fake.updatedEvents[0]!.fields).not.toHaveProperty('attendees');
+    expect(fake.updatedEvents[0]!.fields).not.toHaveProperty('description');
+  });
+
+  it('a token appears in no answer and no card', async () => {
+    const cards = await sys(async (tx) => JSON.stringify((await tx.query('SELECT summary, args_preview FROM app.approvals')).rows));
+    expect(`${answers.join('\n')}\n${cards}`).not.toMatch(/(access|refresh)-[A-Za-z0-9_-]{20}/);
   });
 });
 

@@ -123,8 +123,15 @@ describe('scopes per tool (incremental sign-in)', () => {
   });
 
   it('a tool that is not built, is destructive or is unknown asks for nothing', () => {
-    expect(scopesForTools(google, ['gmail.send', 'google_drive.delete', 'nope.nothing'])).toEqual([]);
-    expect(scopesForServices(google, ['gmail_send', 'nope'])).toEqual([]);
+    expect(scopesForTools(google, ['google_drive.delete', 'nope.nothing'])).toEqual([]);
+    expect(scopesForServices(google, ['meet', 'nope'])).toEqual([]);
+  });
+
+  it('sending and labelling ask for their own scopes, and only when they are ticked (P16-03)', () => {
+    expect(scopesForTools(google, ['gmail.send'])).toEqual(['https://www.googleapis.com/auth/gmail.send']);
+    expect(scopesForServices(google, ['gmail_labels'])).toEqual(['https://www.googleapis.com/auth/gmail.modify']);
+    expect(scopesForServices(google, ['calendar_free_busy'])).toEqual(['https://www.googleapis.com/auth/calendar.freebusy']);
+    expect(toolsOfService(google, 'calendar_write')).toEqual(['google_calendar.create_event', 'google_calendar.update_event']);
   });
 });
 

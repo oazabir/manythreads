@@ -54,3 +54,4 @@ export * from './connection.ts';
 export * from './connection-kinds.ts';
 export * from './connection-mail.ts';
 export * from './meeting.ts';
+export * from './surface.ts';

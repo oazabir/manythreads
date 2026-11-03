@@ -110,6 +110,7 @@ import {
   WorkshopMode,
   WorkshopStatus,
   RunSourceScope,
+  SurfaceEventKind,
   ScopedKvScopeType,
   TeamRole,
   WorkspaceRole,
@@ -126,6 +127,7 @@ import {
   knowledgeMigrationSource,
   connectionsMigrationSource,
   meetingsMigrationSource,
+  surfacesMigrationSource,
   memoryInboxMigrationSource,
   memoryMigrationSource,
   memoryShareMigrationSource,
@@ -212,6 +214,7 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'meeting_participants.consent_transcribe': MeetingConsent,
   'meeting_participants.consent_record': MeetingConsent,
   'meeting_segments.source': MeetingSegmentSource,
+  'surface_events.kind': SurfaceEventKind,
   'memory_inbox_items.origin': InboxOrigin,
   'memory_inbox_items.state': InboxState,
   'memory_inbox_items.kind': InboxKind,
@@ -296,7 +299,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

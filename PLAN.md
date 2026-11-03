@@ -358,9 +358,9 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
-| P9-01 | Schema: surfaces (bot, run, thread, OpenUI source, version, pinned … | Not built |  | no surfaces/surface_events tables or 0070 migration (shared/src/surfaces is client nav/app-token, unrelated) |
-| P9-02 | Component registry in shared: name plus Zod props schema, read by … | Not built |  | no component registry |
-| P9-03 | OpenUI renderer (MIT): streams OpenUI Lang, validates each node … | Not built |  | no OpenUI renderer; no openui reference in code |
+| P9-01 | Schema: surfaces (bot, run, thread, OpenUI source, version, pinned … | Built |  | plugins/surfaces/migrations/0001_surfaces.sql (surfaces, surface_events), shared/entities/surface.ts; docs/plugins/surfaces.md |
+| P9-02 | Component registry in shared: name plus Zod props schema, read by … | Built |  | shared/src/surfaces/registry.ts, components.ts (Stack, Heading, Text), openui.ts checker |
+| P9-03 | OpenUI renderer (MIT): streams OpenUI Lang, validates each node … | Built |  | clients/web/src/surfaces (own parser in shared; not yet mounted in a screen) |
 | P9-04 | surface.render/update/event at the MCP gateway; update patches by … | Not built |  | no plugins/surfaces, no surface.render/update/event tools |
 | P9-05 | Primitives (Stack, Row, Grid, Heading, Text, Stat, Table, Chart … | Not built |  | no primitives or manythreads components |
 | P9-06 | Data binding: a node declares a registered read tool; the call runs … | Not built |  | no data binding |

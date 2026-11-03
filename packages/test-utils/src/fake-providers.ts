@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { defaultAccount, type FakeAccountData } from './fake-providers-data.ts';
 
-export type { FakeAccountData, FakeEvent, FakeFile, FakeMail, FakeNotionPage } from './fake-providers-data.ts';
+export type { FakeAccountData, FakeEvent, FakeFile, FakeLabel, FakeMail, FakeNotionPage } from './fake-providers-data.ts';
 export { defaultAccount } from './fake-providers-data.ts';
 
 // A local double of Google, Microsoft 365 and Notion, for the connections plugin's tests and for the e2e fixtures (PLAN P8-02 and P8-12). One small HTTP server stands
@@ -15,7 +15,7 @@ export { defaultAccount } from './fake-providers-data.ts';
 //     token; Microsoft and Notion style rotation (a new refresh token each time, the old one dead) is on by default for Microsoft.
 //   * The APIs answer the tools' calls from per-account data (fake-providers-data.ts), and only for an access token it issued and has not been told to expire.
 //   * It never records a token, a code, a verifier or a client secret: `calls` holds the method, the path and whether the call was authorized; `tokenCalls` holds the
-//     grant, whether the PKCE proof held and how the app proved itself. Writes a tool makes (`drafts`, `createdEvents`, `createdPages`) are kept as plain data.
+//     grant, whether the PKCE proof held and how the app proved itself. Writes a tool makes (`drafts`, `sentMails`, `labelChanges`, `createdEvents`, `updatedEvents`, `createdPages`) are kept as plain data.
 
 export type FakeProviderId = 'google' | 'microsoft' | 'notion';
 
@@ -53,7 +53,13 @@ export interface FakeProviders {
   /** Every revoke call: which provider, and what kind of token it named (`unknown`: one this server did not issue). Never the token itself. */
   revoked: Array<{ provider: FakeProviderId; kind: 'refresh' | 'access' | 'unknown' }>;
   drafts: Array<{ provider: FakeProviderId; account: string; to: string[]; subject: string; body: string }>;
+  /** Messages Gmail was asked to send (the MIME is parsed back into plain fields). */
+  sentMails: Array<{ account: string; to: string[]; cc: string[]; subject: string; body: string; threadId: string | null; inReplyTo: string | null }>;
+  /** Every Gmail label change that was asked for: the message and the label ids added and removed. */
+  labelChanges: Array<{ account: string; messageId: string; add: string[]; remove: string[] }>;
   createdEvents: Array<{ provider: FakeProviderId; account: string; title: string; start: string; end: string; guests: string[] }>;
+  /** Every change to a Google Calendar event, as the fields that were sent. */
+  updatedEvents: Array<{ account: string; eventId: string; fields: Record<string, unknown> }>;
   createdPages: Array<{ account: string; parent: string; title: string }>;
   /** The data of one account; replace or edit it to change what the APIs answer. */
   account(email: string): FakeAccountData;
@@ -133,6 +139,9 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
   const revoked: FakeProviders['revoked'] = [];
   const drafts: FakeProviders['drafts'] = [];
   const createdEvents: FakeProviders['createdEvents'] = [];
+  const sentMails: FakeProviders['sentMails'] = [];
+  const labelChanges: FakeProviders['labelChanges'] = [];
+  const updatedEvents: FakeProviders['updatedEvents'] = [];
   const createdPages: FakeProviders['createdPages'] = [];
   let nextId = 1;
 
@@ -314,14 +323,29 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         if (file[2] || q.get('alt') === 'media') return text(200, f.text);
         return send(200, { id: f.id, name: f.name, mimeType: f.mimeType, modifiedTime: f.modified, webViewLink: `https://drive.example/${f.id}` });
       }
+      // Gmail reads work with the read-only scope or the wider modify scope, as at Google
+      const needMailRead = (): boolean => {
+        if (token.scopes.some((s) => s.endsWith('/gmail.readonly') || s.endsWith('/gmail.modify'))) return true;
+        send(403, { error: 'insufficient_scope' });
+        return false;
+      };
+      const labelsOf = (m: FakeAccountData['mails'][number]): string[] => m.labels ?? ['INBOX'];
+      if (method === 'GET' && path === '/gmail/v1/users/me/labels') {
+        if (!needMailRead()) return;
+        const builtIn = ['INBOX', 'UNREAD', 'STARRED', 'IMPORTANT', 'TRASH', 'SPAM', 'SENT', 'DRAFT'].map((id) => ({ id, name: id, type: 'system' }));
+        return send(200, { labels: [...builtIn, ...(data.labels ?? []).map((l) => ({ id: l.id, name: l.name, type: 'user' }))] });
+      }
       if (method === 'GET' && path === '/gmail/v1/users/me/messages') {
-        if (!need('gmail.readonly')) return;
+        if (!needMailRead()) return;
         const words = q.get('q') ?? '';
-        return send(200, { messages: data.mails.filter((m) => matches(`${m.subject} ${m.from} ${m.text}`, words)).map((m) => ({ id: m.id, threadId: m.id })) });
+        const wanted = q.getAll('labelIds');
+        const max = Number(q.get('maxResults') ?? 100);
+        const found = data.mails.filter((m) => matches(`${m.subject} ${m.from} ${m.text}`, words) && wanted.every((l) => labelsOf(m).includes(l))).slice(0, max);
+        return send(200, { messages: found.map((m) => ({ id: m.id, threadId: m.threadId ?? m.id })) });
       }
       const mail = /^\/gmail\/v1\/users\/me\/messages\/([^/]+)$/.exec(path);
       if (method === 'GET' && mail) {
-        if (!need('gmail.readonly')) return;
+        if (!needMailRead()) return;
         const m = data.mails.find((x) => x.id === decodeURIComponent(mail[1]!));
         if (!m) return send(404, { error: 'not_found' });
         const headers = [
@@ -329,12 +353,49 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
           { name: 'To', value: m.to },
           { name: 'Subject', value: m.subject },
           { name: 'Date', value: m.date },
+          { name: 'Message-ID', value: `<${m.id}@mail.example>` },
         ];
+        // as at Google, a metadata read answers only the headers that were asked for
+        const wantedHeaders = q.getAll('metadataHeaders').map((h) => h.toLowerCase());
+        const shown = q.get('format') === 'metadata' && wantedHeaders.length > 0 ? headers.filter((h) => wantedHeaders.includes(h.name.toLowerCase())) : headers;
         return send(200, {
           id: m.id,
+          threadId: m.threadId ?? m.id,
+          labelIds: labelsOf(m),
           snippet: m.text.slice(0, 120),
-          payload: q.get('format') === 'full' ? { mimeType: 'text/plain', headers, body: { data: Buffer.from(m.text, 'utf8').toString('base64url') } } : { headers },
+          payload: q.get('format') === 'full' ? { mimeType: 'text/plain', headers, body: { data: Buffer.from(m.text, 'utf8').toString('base64url') } } : { headers: shown },
         });
+      }
+      const modify = /^\/gmail\/v1\/users\/me\/messages\/([^/]+)\/modify$/.exec(path);
+      if (method === 'POST' && modify) {
+        if (!need('gmail.modify')) return;
+        const m = data.mails.find((x) => x.id === decodeURIComponent(modify[1]!));
+        if (!m) return send(404, { error: 'not_found' });
+        const b = JSON.parse(body || '{}') as { addLabelIds?: string[]; removeLabelIds?: string[] };
+        const add = b.addLabelIds ?? [];
+        const remove = b.removeLabelIds ?? [];
+        m.labels = [...new Set([...labelsOf(m).filter((l) => !remove.includes(l)), ...add])];
+        labelChanges.push({ account: data.email, messageId: m.id, add, remove });
+        return send(200, { id: m.id, threadId: m.threadId ?? m.id, labelIds: m.labels });
+      }
+      if (method === 'POST' && path === '/gmail/v1/users/me/messages/send') {
+        if (!need('gmail.send')) return;
+        const b = JSON.parse(body || '{}') as { raw?: string; threadId?: string };
+        const mime = Buffer.from(b.raw ?? '', 'base64url').toString('utf8');
+        const list = (name: string): string[] => new RegExp(`^${name}: (.*)$`, 'm').exec(mime)?.[1]?.split(',').map((x) => x.trim()) ?? [];
+        const encoded = /^Subject: =\?UTF-8\?B\?(.*)\?=\s*$/m.exec(mime)?.[1] ?? '';
+        const content = mime.split('\r\n\r\n')[1] ?? '';
+        const id = `sent-${nextId++}`;
+        sentMails.push({
+          account: data.email,
+          to: list('To'),
+          cc: list('Cc'),
+          subject: Buffer.from(encoded, 'base64').toString('utf8'),
+          body: Buffer.from(content.replace(/\s+/g, ''), 'base64').toString('utf8'),
+          threadId: b.threadId ?? null,
+          inReplyTo: /^In-Reply-To: (.*)$/m.exec(mime)?.[1]?.trim() ?? null,
+        });
+        return send(200, { id, threadId: b.threadId ?? id, labelIds: ['SENT'] });
       }
       if (method === 'POST' && path === '/gmail/v1/users/me/drafts') {
         if (!need('gmail.compose')) return;
@@ -345,6 +406,35 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         const content = mime.split('\r\n\r\n')[1] ?? '';
         drafts.push({ provider, account: data.email, to, subject: Buffer.from(encoded, 'base64').toString('utf8'), body: Buffer.from(content.replace(/\s+/g, ''), 'base64').toString('utf8') });
         return send(200, { id: `draft-${nextId++}` });
+      }
+      if (method === 'POST' && path === '/calendar/v3/freeBusy') {
+        if (!token.scopes.some((sc) => sc.endsWith('/calendar.freebusy') || sc.endsWith('/calendar.readonly'))) {
+          send(403, { error: 'insufficient_scope' });
+          return;
+        }
+        const b = JSON.parse(body || '{}') as { timeMin: string; timeMax: string; items?: Array<{ id: string }> };
+        const calendars: Record<string, unknown> = {};
+        for (const { id } of b.items ?? []) {
+          // 'primary' is the signed-in account; another address answers only when the fake knows the account (its calendar is "shared"); the rest is "not found", as at Google
+          const owner = id === 'primary' ? data : accounts.get(id);
+          calendars[id] = owner
+            ? { busy: owner.events.filter((e) => e.end > b.timeMin && e.start < b.timeMax).map((e) => ({ start: e.start, end: e.end })) }
+            : { busy: [], errors: [{ domain: 'global', reason: 'notFound' }] };
+        }
+        return send(200, { kind: 'calendar#freeBusy', timeMin: b.timeMin, timeMax: b.timeMax, calendars });
+      }
+      const patched = /^\/calendar\/v3\/calendars\/primary\/events\/([^/]+)$/.exec(path);
+      if (method === 'PATCH' && patched) {
+        if (!need('calendar.events')) return;
+        const e = data.events.find((x) => x.id === decodeURIComponent(patched[1]!));
+        if (!e) return send(404, { error: 'not_found' });
+        const b = JSON.parse(body || '{}') as { summary?: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees?: Array<{ email: string }>; description?: string };
+        if (b.summary !== undefined) e.title = b.summary;
+        if (b.start) e.start = b.start.dateTime;
+        if (b.end) e.end = b.end.dateTime;
+        if (b.attendees) e.guests = b.attendees.map((a) => a.email);
+        updatedEvents.push({ account: data.email, eventId: e.id, fields: b as Record<string, unknown> });
+        return send(200, { id: e.id, htmlLink: `https://calendar.example/${e.id}` });
       }
       if (path === '/calendar/v3/calendars/primary/events') {
         if (method === 'GET') {
@@ -499,7 +589,10 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
     consents,
     revoked,
     drafts,
+    sentMails,
+    labelChanges,
     createdEvents,
+    updatedEvents,
     createdPages,
     account(email) {
       let a = accounts.get(email);

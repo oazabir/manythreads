@@ -17,6 +17,10 @@ export interface FakeMail {
   date: string;
   /** The body as plain text. */
   text: string;
+  /** Gmail label ids on it (default: INBOX). */
+  labels?: string[];
+  /** Gmail's conversation id (default: the mail's own id). */
+  threadId?: string;
 }
 
 export interface FakeEvent {
@@ -35,9 +39,17 @@ export interface FakeNotionPage {
   blocks: string[];
 }
 
+/** A Gmail label of an account. The built-in ones (INBOX, UNREAD, STARRED, IMPORTANT, TRASH, SPAM, SENT, DRAFT) are always there. */
+export interface FakeLabel {
+  id: string;
+  name: string;
+}
+
 export interface FakeAccountData {
   /** The address the provider reports for the account. */
   email: string;
+  /** The account's own Gmail labels; default: Invoices and Offsite. */
+  labels?: FakeLabel[];
   files: FakeFile[];
   mails: FakeMail[];
   events: FakeEvent[];
@@ -51,6 +63,10 @@ export const SHEET = 'application/vnd.google-apps.spreadsheet';
 export function defaultAccount(email = 'omar@kahf.example'): FakeAccountData {
   return {
     email,
+    labels: [
+      { id: 'Label_invoices', name: 'Invoices' },
+      { id: 'Label_offsite', name: 'Offsite' },
+    ],
     files: [
       {
         id: 'file-roadmap',
@@ -75,6 +91,7 @@ export function defaultAccount(email = 'omar@kahf.example'): FakeAccountData {
         from: 'billing@harbourgrain.example',
         to: email,
         subject: 'Invoice 2041 is overdue',
+        labels: ['INBOX', 'UNREAD', 'Label_invoices'],
         date: 'Fri, 30 Oct 2026 10:12:00 +0000',
         text: 'Hello,\n\nInvoice 2041 for 1,980 dollars was due on the 25th. Please confirm the payment date.\n\nHarbour Grain billing\n',
       },

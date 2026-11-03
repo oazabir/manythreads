@@ -521,3 +521,9 @@ export const meetingsMigrationSource: MigrationSource = {
   namespace: 'meetings',
   dir: fileURLToPath(new URL('../../plugins/meetings/migrations/', import.meta.url)),
 };
+
+/** Migrations of the surfaces plugin (`surfaces`, `surface_events`); needs the kernel's, teams, channels, files and bots migrations. */
+export const surfacesMigrationSource: MigrationSource = {
+  namespace: 'surfaces',
+  dir: fileURLToPath(new URL('../../plugins/surfaces/migrations/', import.meta.url)),
+};
