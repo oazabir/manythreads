@@ -194,6 +194,25 @@ export function incomingChoices(link: Pick<ShareIncoming, 'state' | 'approvalId'
   }
 }
 
+/** Why a request is not answered here, said up front (the same sentence the Approvals row uses for the person who asked). */
+export const ASKED_BY_YOU_WHY = 'You asked for this, so someone else has to decide it.';
+export const SHARING_OFF_WHY = 'Memory sharing is switched off for this workspace. A workspace admin has to switch it on before this can be answered.';
+
+/**
+ * The reason Accept and Decline cannot be pressed on a request right now, or null when they can. The person who filed the request (the Approvals row says so) never
+ * decides it, and nothing is answered while workspace sharing is switched off. Both are shown before the press, so the server never has to refuse it.
+ */
+export function requestHold(opts: { sharingOn: boolean; askedByMe: boolean }): string | null {
+  if (opts.askedByMe) return ASKED_BY_YOU_WHY;
+  if (!opts.sharingOn) return SHARING_OFF_WHY;
+  return null;
+}
+
+/** The pending Approvals rows that this person asked for themself, by id: the rows the list marks as blocked for the requester. */
+export function askedByMeIds(rows: ReadonlyArray<{ id: string; canDecide: boolean; blockReason: string | null }>): Set<string> {
+  return new Set(rows.filter((r) => !r.canDecide && r.blockReason === 'requester').map((r) => r.id));
+}
+
 export const CHOICE_WORDS: Record<IncomingChoice, { label: string; busy: string; done: (from: string) => string }> = {
   accept: { label: 'Accept', busy: 'Accepting…', done: (from) => `Accepted. ${from} can now send its digests here.` },
   decline: { label: 'Decline', busy: 'Declining…', done: (from) => `Declined. ${from} will not send anything here.` },

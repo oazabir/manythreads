@@ -90,3 +90,6 @@ export function checksLine(c: Pick<RecipeCard, 'evals'>): string {
 export function filedLine(n: number): string {
   return `${String(n)} ${n === 1 ? 'proposal is' : 'proposals are'} filed. Nothing is added to the team until a team lead or workspace admin approves ${n === 1 ? 'it' : 'them'}.`;
 }
+
+/** What the top bar says beside the title "Recipes" (it must not repeat it). */
+export const RECIPES_TOPIC = 'Ready-made automations';

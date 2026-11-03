@@ -3,8 +3,8 @@
 export const CHART_W = 320;
 export const CHART_H = 140;
 const PAD_X = 8;
-const PAD_TOP = 8;
-const PAD_BOTTOM = 8;
+const PAD_TOP = 16;
+const PAD_BOTTOM = 28;
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 
@@ -21,7 +21,26 @@ export interface ChartShape {
   /** The `points` of a line, `x,y x,y ...`. */
   line: string;
   dots: Array<{ x: number; y: number }>;
+  /** The width of the room each number has, along the bottom. */
+  slot: number;
+  /** The centre x of each number, and the y where its value is written (above a rise, below a fall). */
+  marks: Array<{ x: number; valueY: number }>;
+  /** The y of the category names under the drawing. */
+  labelY: number;
 }
+
+const CHAR_W = 5;
+
+/** A name or value cut to what fits in `room` units wide (about 5 per character at the drawing's text size); empty when not even two characters fit. */
+export function fitText(text: string, room: number): string {
+  const chars = Math.floor(room / CHAR_W);
+  if (chars < 2) return '';
+  const glyphs = [...text];
+  return glyphs.length <= chars ? text : `${glyphs.slice(0, chars - 1).join('')}…`;
+}
+
+/** A number as it is written beside a bar: grouped thousands, at most two decimals. */
+export const formatValue = (v: number): string => v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
 /** Where each number goes in the drawing. Values are already finite and within +-1e12 (the part's schema). */
 export function chartShape(values: readonly number[]): ChartShape {
@@ -36,13 +55,16 @@ export function chartShape(values: readonly number[]): ChartShape {
   const barW = r2(Math.max(1, slot * 0.7));
   const bars: ChartBar[] = [];
   const dots: Array<{ x: number; y: number }> = [];
+  const marks: Array<{ x: number; valueY: number }> = [];
   values.forEach((v, i) => {
     const cx = r2(PAD_X + slot * i + slot / 2);
     const top = y(v);
-    bars.push({ x: r2(cx - barW / 2), y: Math.min(top, zeroY), w: barW, h: r2(Math.max(1, Math.abs(zeroY - top))) });
+    const bar = { x: r2(cx - barW / 2), y: Math.min(top, zeroY), w: barW, h: r2(Math.max(1, Math.abs(zeroY - top))) };
+    bars.push(bar);
     dots.push({ x: cx, y: top });
+    marks.push({ x: cx, valueY: r2(v < 0 ? bar.y + bar.h + 10 : bar.y - 3) });
   });
-  return { zeroY, bars, line: dots.map((d) => `${d.x},${d.y}`).join(' '), dots };
+  return { zeroY, bars, line: dots.map((d) => `${d.x},${d.y}`).join(' '), dots, slot: r2(slot), marks, labelY: CHART_H - 6 };
 }
 
 export type DiffLineKind = 'add' | 'del' | 'hunk' | 'meta' | 'ctx';

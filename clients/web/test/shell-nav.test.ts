@@ -95,6 +95,7 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/org')).toBe('Org chart');
     expect(viewTitle('/t/engineering/rhythms')).toBe('Rhythms');
     expect(viewTitle('/')).toBe('Home');
+    expect(viewTitle('/t/engineering/memory')).toBe('Memory');
   });
 
   it('keeps the section when switching teams from a conversation with a bot', () => {

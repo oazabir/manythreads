@@ -295,6 +295,7 @@
   background: var(--surface);
 }
 
+/* columns keep a readable width: a narrow screen scrolls the box sideways instead of squeezing a word apart */
 .sf-table {
   width: 100%;
   border-collapse: collapse;
@@ -313,7 +314,9 @@
   border-top: 1px solid var(--hairline);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  min-width: 11ch;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .sf-table th {
@@ -341,6 +344,19 @@
   width: 100%;
   max-width: 100%;
   height: auto;
+}
+
+/* the value above each bar and the name under it are text in the drawing, so they scale with it and a reader finds them */
+.sf-chart-label,
+.sf-chart-value {
+  fill: var(--txt);
+  font-size: 9px;
+  text-anchor: middle;
+}
+
+.sf-chart-value {
+  fill: var(--ink);
+  font-weight: 600;
 }
 
 .sf-chart-zero {
@@ -381,11 +397,22 @@
 
 .sf-list {
   margin: 0;
-  padding-left: 1.4em;
+  padding-left: 1.6em;
   min-width: 0;
+  list-style-position: outside;
+}
+
+/* spelled out for each kind: a list shows its markers whatever a wider rule says */
+ul.sf-list {
+  list-style-type: disc;
+}
+
+ol.sf-list {
+  list-style-type: decimal;
 }
 
 .sf-li {
+  display: list-item;
   overflow-wrap: anywhere;
 }
 

@@ -20,7 +20,7 @@ import {
   TableComponent,
   TextComponent,
 } from '@manythreads/shared';
-import { CHART_H, CHART_W, chartShape, classifyDiff } from './draw';
+import { CHART_H, CHART_W, chartShape, classifyDiff, fitText, formatValue } from './draw';
 import { useSurfaceHost } from './host';
 
 // How each registered part is drawn (PLAN P9-03). A view gets props the checker already passed through the part's own schema, and reads them through that
@@ -151,6 +151,24 @@ const chart: SurfaceView = ({ props }) => {
             ))}
           </>
         )}
+        {shape.marks.map((m, i) => {
+          const value = fitText(formatValue(p.values[i]!), shape.slot * 1.3);
+          const label = fitText(p.labels[i]!, shape.slot);
+          return (
+            <g key={i} data-testid="surface-chart-mark">
+              {value ? (
+                <text className="sf-chart-value" x={m.x} y={m.valueY}>
+                  {value}
+                </text>
+              ) : null}
+              {label ? (
+                <text className="sf-chart-label" x={m.x} y={shape.labelY}>
+                  {label}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
       </svg>
       <details className="sf-chart-data">
         <summary>Show the numbers</summary>

@@ -3,14 +3,23 @@ import { createPortal } from 'react-dom';
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** The element that takes focus when a dialog opens: its own heading when the dialog asks to start at the top, else `[data-autofocus]`, the first field, then the first button. */
+export function initialFocusTarget(root: Pick<ParentNode, 'querySelector'> | null, top: boolean): HTMLElement | null {
+  if (!root) return null;
+  if (top) return root.querySelector<HTMLElement>('.dlg-title');
+  return root.querySelector<HTMLElement>('[data-autofocus]') ?? root.querySelector<HTMLElement>('input, textarea, select') ?? root.querySelector<HTMLElement>('button');
+}
+
 /**
  * A modal dialog: scrim, focus kept inside, Esc and a press on the scrim close it. Esc is taken in the capture phase and marked handled so the
- * right panel behind it stays open until the next press. Focus starts on `[data-autofocus]`, else the first field, else the first button.
+ * right panel behind it stays open until the next press. Focus starts on `[data-autofocus]`, else the first field, else the first button;
+ * `startAtTop` puts it on the heading instead, so a tall dialog on a phone opens showing its top rather than scrolled down to a button in the footer.
  */
-export function Dialog({ title, onClose, children, footer, testId, wide, sheet }: { title: string; onClose: () => void; children?: ReactNode; footer?: ReactNode; testId?: string; wide?: boolean; sheet?: boolean }) {
+export function Dialog({ title, onClose, children, footer, testId, wide, sheet, startAtTop }: { title: string; onClose: () => void; children?: ReactNode; footer?: ReactNode; testId?: string; wide?: boolean; sheet?: boolean; startAtTop?: boolean }) {
   const titleId = useId();
   const box = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
+  const startTop = useRef(startAtTop === true);
   useEffect(() => {
     closeRef.current = onClose;
   });
@@ -18,7 +27,7 @@ export function Dialog({ title, onClose, children, footer, testId, wide, sheet }
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
     const root = box.current;
-    const first = root?.querySelector<HTMLElement>('[data-autofocus]') ?? root?.querySelector<HTMLElement>('input, textarea, select') ?? root?.querySelector<HTMLElement>('button');
+    const first = initialFocusTarget(root, startTop.current);
     first?.focus();
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape' && !e.defaultPrevented) {
@@ -31,7 +40,8 @@ export function Dialog({ title, onClose, children, footer, testId, wide, sheet }
       const head = items[0];
       const tail = items.at(-1);
       if (!head || !tail) return;
-      if (e.shiftKey && document.activeElement === head) {
+      // the heading is not a tab stop, but it can hold focus: Shift+Tab from it goes to the last control
+      if (e.shiftKey && (document.activeElement === head || document.activeElement === root.querySelector('.dlg-title'))) {
         e.preventDefault();
         tail.focus();
       } else if (!e.shiftKey && document.activeElement === tail) {

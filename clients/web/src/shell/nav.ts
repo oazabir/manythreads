@@ -47,7 +47,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Rhythms', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes' };
+const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Rhythms', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

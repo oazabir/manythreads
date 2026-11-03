@@ -10,7 +10,7 @@ import { useHeaderTopic } from '../../shell/topic';
 import { useProposalPerms } from '../proposals/store';
 import { fetchRecipes, installRecipe } from './api';
 import { Filed, GateNote, RecipeFacts, RecipeTile, StatePill } from './parts';
-import { installGate, onShelf, shelfFrom, shelves } from './words';
+import { RECIPES_TOPIC, installGate, onShelf, shelfFrom, shelves } from './words';
 
 /*
  * The recipe gallery (PLAN P18-01, docs/plugins/workshop.md "The recipe gallery"): ready-made automations a team can ask for. A card says what a recipe does, what it needs and where it
@@ -76,7 +76,7 @@ function RecipeDialog({ card, slug, canInstall, canApply, guest, onClose, onFile
   );
 
   return (
-    <Dialog title={shown.name} onClose={onClose} wide sheet testId="recipe-dialog" footer={footer}>
+    <Dialog title={shown.name} onClose={onClose} wide sheet startAtTop testId="recipe-dialog" footer={footer}>
       <p className="rg-dlg-state"><StatePill card={shown} /> <span className="faint">{shown.categoryLabel}</span></p>
       {result !== null ? <Filed slug={slug} result={result} /> : null}
       {result === null ? <GateNote gate={gate} id={whyId} /> : null}
@@ -89,7 +89,7 @@ function RecipeDialog({ card, slug, canInstall, canApply, guest, onClose, onFile
 export function RecipesScreen() {
   const { slug, canApply } = useProposalPerms();
   const guest = useSession().role === 'guest';
-  useHeaderTopic('Recipes');
+  useHeaderTopic(RECIPES_TOPIC);
   const [params, setParams] = useSearchParams();
   const q = useQuery(`recipes:${slug}`, () => fetchRecipes(slug));
   const shelf = shelfFrom(params.get('shelf'));

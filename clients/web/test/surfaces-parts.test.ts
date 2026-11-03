@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SURFACE_REGISTRY } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
-import { CHART_H, CHART_W, chartShape, classifyDiff } from '../src/surfaces/draw';
+import { CHART_H, CHART_W, chartShape, classifyDiff, fitText, formatValue } from '../src/surfaces/draw';
 import { SurfaceHostContext, type SurfaceHost } from '../src/surfaces/host';
 import { Surface } from '../src/surfaces/Surface';
 import { SURFACE_VIEWS, SurfaceActionsContext, type SurfaceActions } from '../src/surfaces/views';
@@ -273,5 +274,88 @@ describe('DiffView', () => {
     expect(out).toContain('data-code="invalid_props"');
     expect(out).toContain('>still here<');
     expect(out).not.toContain('sf-diff-body');
+  });
+});
+
+// ---- polish found on the live site: numerals, a table that scrolls, labelled bars ----
+
+const CSS = readFileSync(new URL('../src/styles/surfaces.css', import.meta.url), 'utf8');
+/** The declarations of the one rule whose selector is exactly `selector`. */
+const rule = (selector: string): string => {
+  const at = CSS.split('\n').findIndex((l) => l === `${selector} {`);
+  if (at < 0) throw new Error(`no rule ${selector}`);
+  const body: string[] = [];
+  for (const l of CSS.split('\n').slice(at + 1)) {
+    if (l === '}') break;
+    body.push(l.trim());
+  }
+  return body.join(' ');
+};
+
+describe('List shows numerals when ordered, bullets when not', () => {
+  it('draws <ol> for an ordered list and <ul> for the other, each with its own marker style', () => {
+    const out = html('root = Stack([a, b])\na = List(["one", "two"])\nb = List(["first", "second"], true)\n');
+    expect(out).toContain('<ul class="sf-list">');
+    expect(out).toContain('<ol class="sf-list">');
+    expect(rule('ol.sf-list')).toContain('list-style-type: decimal');
+    expect(rule('ul.sf-list')).toContain('list-style-type: disc');
+    expect(rule('.sf-list')).not.toContain('list-style: none');
+    expect(rule('.sf-li')).toContain('display: list-item');
+  });
+});
+
+describe('Table keeps its columns readable and scrolls inside its own box', () => {
+  it('scrolls sideways in the wrapper, gives cells a minimum width and never breaks a word anywhere', () => {
+    expect(rule('.sf-table-wrap')).toContain('overflow-x: auto');
+    const cells = rule('.sf-table td');
+    expect(cells).toMatch(/min-width: \d+ch/);
+    expect(cells).not.toContain('overflow-wrap: anywhere');
+    expect(cells).not.toContain('word-break: break-all');
+  });
+});
+
+describe('Chart bars carry their names and numbers as text', () => {
+  it('writes the value for each bar and the name under it, in the drawing', () => {
+    const out = html('root = Chart("bar", ["Mon", "Tue", "Wed"], [3, 5, -2], "Visits", "k")\n');
+    expect(count(out, 'data-testid="surface-chart-mark"')).toBe(3);
+    expect(out).toMatch(/<text class="sf-chart-label" x="[\d.]+" y="[\d.]+">Tue<\/text>/);
+    expect(out).toMatch(/<text class="sf-chart-value" x="[\d.]+" y="[\d.]+">5<\/text>/);
+    expect(out).toMatch(/<text class="sf-chart-value" x="[\d.]+" y="[\d.]+">-2<\/text>/);
+    expect(out).toContain('<details class="sf-chart-data">');
+    expect(out).toContain('Show the numbers');
+  });
+  it('a line chart is labelled the same way', () => {
+    const out = html('root = Chart("line", ["a", "b"], [1, 2])\n');
+    expect(out).toContain('class="sf-chart-label"');
+    expect(out).toContain('class="sf-chart-value"');
+  });
+  it('a name with markup stays text', () => {
+    const out = html(`root = Chart("bar", ["${PAYLOAD}"], [1])\n`);
+    expect(out).not.toContain('<img');
+    expect(out).toContain('class="sf-chart-label"');
+  });
+  it('writes a value above a rise and below a fall, names along the bottom, inside the box', () => {
+    const s = chartShape([10, -10, 4]);
+    expect(s.marks[0]!.valueY).toBeLessThan(s.bars[0]!.y);
+    expect(s.marks[1]!.valueY).toBeGreaterThan(s.bars[1]!.y + s.bars[1]!.h);
+    for (const m of s.marks) {
+      expect(m.valueY).toBeGreaterThan(0);
+      expect(m.valueY).toBeLessThan(s.labelY);
+    }
+    expect(s.labelY).toBeLessThanOrEqual(CHART_H);
+    expect(s.bars[1]!.y + s.bars[1]!.h).toBeLessThan(s.labelY - 9);
+  });
+  it('fits a name to its slot and leaves it out when there is no room', () => {
+    expect(fitText('Mon', 100)).toBe('Mon');
+    expect(fitText('A very long category name', 30)).toBe('A ver…');
+    expect(fitText('Mon', 8)).toBe('');
+    expect(formatValue(1234567.891)).toBe('1,234,567.89');
+    expect(formatValue(-2)).toBe('-2');
+  });
+  it('many bars drop the names that cannot fit but keep the numbers in the table', () => {
+    const labels = Array.from({ length: 40 }, (_, i) => `Item ${String(i)}`);
+    const out = html(`root = Chart("bar", ${JSON.stringify(labels)}, ${JSON.stringify(labels.map((_, i) => i))})\n`);
+    expect(count(out, 'class="sf-chart-label"')).toBe(0);
+    expect(out).toContain('<td>Item 39</td><td>39</td>');
   });
 });

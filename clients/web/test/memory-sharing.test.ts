@@ -1,9 +1,14 @@
 import { createRequire } from 'node:module';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { MEMORY_DIGEST_SEND_TOOL, MEMORY_SHARE_ACCEPT_TOOL, ShareDefinition, type ShareIncoming, type ShareView } from '@manythreads/shared';
+import { MEMORY_DIGEST_SEND_TOOL, MEMORY_SHARE_ACCEPT_TOOL, ShareDefinition, ShareIncoming, type ShareView } from '@manythreads/shared';
 import { setTransport, type TransportRequest } from '../src/api/client';
 import { createMockTransport } from '../src/api/mock';
 import { switchWords } from '../src/screens/admin/memory/words';
+import { fetchApprovals } from '../src/screens/approvals/api';
+import { IncomingCard } from '../src/screens/memory/IncomingCard';
 import { approvalRowLabel, acceptView, digestView, isShareApproval, selectWords, shareKind, shareOutcomeLine } from '../src/screens/approvals/shareApproval';
 import { TABS, nextTab, tabFromParams } from '../src/screens/memory/memoryTabs';
 import {
@@ -19,10 +24,13 @@ import {
   setMemorySharing,
 } from '../src/screens/memory/shareApi';
 import {
+  ASKED_BY_YOU_WHY,
   CHOICE_WORDS,
   SCHEDULES,
+  SHARING_OFF_WHY,
   acceptedLine,
   approvalWords,
+  askedByMeIds,
   conceptsFromTeam,
   definitionYaml,
   destinationSentence,
@@ -44,6 +52,7 @@ import {
   proposalTitle,
   receivedLinks,
   requestedLinks,
+  requestHold,
   runIsMoving,
   runLook,
   runNow,
@@ -576,5 +585,79 @@ describe('the Memory tabs and the workspace switch', () => {
     expect(switchWords(false).state).toBe('off');
     expect(switchWords(false).done).toMatch(/Nothing will be sent or received/);
     expect(switchWords(true).help).toMatch(/only after a lead approves it/);
+  });
+});
+
+describe('a request is held up front when the person cannot answer it', () => {
+  const as = (who: string) => setTransport(createMockTransport({ latencyMs: 0, as: who }));
+  const request = (over: Partial<ShareIncoming> = {}): ShareIncoming =>
+    ShareIncoming.parse({
+      id: LINK, shareId: LINK, fromTeamId: LINK, fromSlug: 'engineering', fromName: 'Engineering', shareName: 'Release notes', mode: 'summary', state: 'requested',
+      endedReason: null, approvalId: APPROVAL, requestedAt: '2026-10-01T08:00:00.000Z', acceptedAt: null, lastDeliveredAt: null, deliveries: 0, ...over,
+    });
+  const card = (props: { askedByMe?: boolean; sharingOn?: boolean; canManage?: boolean; link?: ShareIncoming }): string =>
+    renderToStaticMarkup(
+      createElement(MemoryRouter, null, createElement(IncomingCard, { slug: 'marketing', link: props.link ?? request(), canManage: props.canManage ?? true, onChanged: () => undefined, ...props })),
+    );
+  const button = (html: string, id: string): string => new RegExp(`<button[^>]*data-testid="${id}"[^>]*>`).exec(html)?.[0] ?? '';
+
+  it('says why, in the person’s words', () => {
+    expect(ASKED_BY_YOU_WHY).toBe('You asked for this, so someone else has to decide it.');
+    expect(requestHold({ sharingOn: true, askedByMe: true })).toBe(ASKED_BY_YOU_WHY);
+    expect(requestHold({ sharingOn: false, askedByMe: false })).toBe(SHARING_OFF_WHY);
+    expect(requestHold({ sharingOn: false, askedByMe: true })).toBe(ASKED_BY_YOU_WHY);
+    expect(requestHold({ sharingOn: true, askedByMe: false })).toBeNull();
+  });
+
+  it('reads the requests this person filed from the waiting Approvals rows', () => {
+    const rows = [
+      { id: 'a', canDecide: false, blockReason: 'requester' },
+      { id: 'b', canDecide: false, blockReason: 'not_approver' },
+      { id: 'c', canDecide: true, blockReason: null },
+    ];
+    expect([...askedByMeIds(rows)]).toEqual(['a']);
+  });
+
+  it('disables Accept and Decline with the reason when the person filed the request themself', () => {
+    const out = card({ askedByMe: true });
+    expect(out).toContain('data-testid="incoming-hold"');
+    expect(out).toContain(ASKED_BY_YOU_WHY);
+    for (const id of ['incoming-accept', 'incoming-decline']) {
+      expect(button(out, id)).toContain('disabled=""');
+      expect(button(out, id)).toContain('aria-describedby=');
+    }
+  });
+
+  it('disables them with the reason while workspace sharing is off', () => {
+    const out = card({ sharingOn: false });
+    expect(out).toContain(SHARING_OFF_WHY);
+    expect(button(out, 'incoming-accept')).toContain('disabled=""');
+    expect(button(out, 'incoming-decline')).toContain('disabled=""');
+  });
+
+  it('leaves them live for a lead when nothing holds the request', () => {
+    const out = card({});
+    expect(out).not.toContain('data-testid="incoming-hold"');
+    expect(button(out, 'incoming-accept')).not.toContain('disabled');
+    expect(button(out, 'incoming-decline')).not.toContain('disabled');
+  });
+
+  it('does not hold the buttons of a share that is already open', () => {
+    const out = card({ link: request({ state: 'accepted', approvalId: null }), sharingOn: false });
+    expect(out).not.toContain('data-testid="incoming-hold"');
+    expect(button(out, 'incoming-pause')).not.toContain('disabled');
+  });
+
+  it('the mock marks the request the person filed as theirs, and not the one filed by another', async () => {
+    as('omar');
+    const mine = (await fetchApprovals('marketing', 'pending')).items;
+    expect(askedByMeIds(mine).size).toBe(1);
+    expect(mine[0]).toMatchObject({ canDecide: false, blockReason: 'requester' });
+    const incoming = (await fetchIncomingShares('marketing')).incoming.find((l) => l.fromSlug === 'engineering');
+    expect(askedByMeIds(mine).has(incoming?.approvalId ?? '')).toBe(true);
+    as('tariq');
+    const theirs = (await fetchApprovals('marketing', 'pending')).items;
+    expect(theirs[0]).toMatchObject({ canDecide: true, blockReason: null });
+    expect(askedByMeIds(theirs).size).toBe(0);
   });
 });

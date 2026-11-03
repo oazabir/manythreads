@@ -800,6 +800,11 @@
   overflow-wrap: anywhere;
 }
 
+/* a dialog that starts at the top holds focus on its heading: it is not something to press, so no ring */
+.dlg-title:focus {
+  outline: none;
+}
+
 .dlg-text {
   margin: 0;
   color: var(--mute);

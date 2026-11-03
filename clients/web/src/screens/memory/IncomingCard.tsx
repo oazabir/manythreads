@@ -5,7 +5,7 @@ import { Time } from '../../components/ui';
 import { announceApprovalsChanged } from '../approvals/live';
 import { message } from './inboxWords';
 import { actOnIncoming, decideRequest } from './shareApi';
-import { CHOICE_WORDS, digestStateWords, incomingChoices, incomingLook, incomingSentence, modeWords, type IncomingChoice } from './shareWords';
+import { CHOICE_WORDS, digestStateWords, incomingChoices, incomingLook, incomingSentence, modeWords, requestHold, type IncomingChoice } from './shareWords';
 
 type Digest = { period: string; state: Parameters<typeof digestStateWords>[0]; at: string; concepts: number; reason: string | null };
 
@@ -17,6 +17,10 @@ type Props = {
   digests?: readonly Digest[];
   /** How many concepts in this team's memory came from the sender. */
   concepts?: number;
+  /** The person filed this request themself (its Approvals row says so): Accept and Decline wait for someone else. */
+  askedByMe?: boolean;
+  /** Workspace memory sharing is on; while it is off a request cannot be answered. */
+  sharingOn?: boolean;
   onChanged: (said: string) => void;
 };
 
@@ -24,7 +28,7 @@ type Props = {
  * One share another team sends to this one. While it is only a request, Accept and Decline answer it (the same answer the Approvals row takes); once open,
  * Pause, Resume and Stop receiving. Everyone on the team reads it; only a lead or a workspace admin changes it.
  */
-export function IncomingCard({ slug, link, canManage, digests = [], concepts = 0, onChanged }: Props) {
+export function IncomingCard({ slug, link, canManage, digests = [], concepts = 0, askedByMe = false, sharingOn = true, onChanged }: Props) {
   const headId = useId();
   const [busy, setBusy] = useState<IncomingChoice | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -32,6 +36,9 @@ export function IncomingCard({ slug, link, canManage, digests = [], concepts = 0
   const look = incomingLook(link);
   const { choices, why } = incomingChoices(link, canManage);
   const isRequest = link.state === 'requested';
+  // only the answer to a request can be held back; the reason is shown up front and tied to the buttons
+  const hold = isRequest && choices.length > 0 ? requestHold({ sharingOn, askedByMe }) : null;
+  const holdId = useId();
 
   const run = async (choice: IncomingChoice): Promise<void> => {
     if (choice === 'end' && !confirmEnd) {
@@ -97,6 +104,7 @@ export function IncomingCard({ slug, link, canManage, digests = [], concepts = 0
           </div>
         ) : null}
         {why ? <p className="ms-why" data-testid="incoming-why">{why}</p> : null}
+        {hold ? <p className="ms-why" id={holdId} data-testid="incoming-hold">{hold}</p> : null}
         {error ? <p className="mi-error" role="alert" data-testid="incoming-error">{error}</p> : null}
         {isRequest && link.approvalId ? (
           <p className="ms-hint">
@@ -119,7 +127,8 @@ export function IncomingCard({ slug, link, canManage, digests = [], concepts = 0
                 key={c}
                 type="button"
                 className={`btn s ${c === 'accept' ? 'primary' : ''}`}
-                disabled={busy !== null}
+                disabled={busy !== null || (hold !== null && (c === 'accept' || c === 'decline'))}
+                aria-describedby={hold !== null && (c === 'accept' || c === 'decline') ? holdId : undefined}
                 aria-label={`${CHOICE_WORDS[c].label} ${link.fromName}’s share ${link.shareName}`}
                 onClick={() => void run(c)}
                 data-testid={`incoming-${c}`}

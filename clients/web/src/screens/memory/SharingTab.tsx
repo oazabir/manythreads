@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { fetchTeams } from '../../api/endpoints';
+import { fetchApprovals } from '../approvals/api';
 import { useQuery } from '../../app/useQuery';
 import { isAdmin as isWorkspaceAdmin, useSession } from '../../app/session';
 import { IncomingCard } from './IncomingCard';
@@ -8,7 +9,7 @@ import { fetchConcepts, fetchInboxItems } from './inboxApi';
 import { fetchIncomingShares, fetchMemorySharing, fetchShares } from './shareApi';
 import { ShareCard } from './ShareCard';
 import { ShareDialog } from './ShareDialog';
-import { conceptsFromTeam, digestsFrom, receivedLinks, requestedLinks, runIsMoving } from './shareWords';
+import { askedByMeIds, conceptsFromTeam, digestsFrom, receivedLinks, requestedLinks, runIsMoving } from './shareWords';
 
 /** How often the list is read again while a digest is being built or sent, and after a new share is saved (the server loads its file a moment later). */
 const POLL_MS = 3_000;
@@ -26,6 +27,8 @@ export function SharingTab({ slug }: { slug: string }) {
   const setting = useQuery('memory-sharing', fetchMemorySharing);
   const inbox = useQuery(`shares-inbox:${slug}`, () => fetchInboxItems(slug).catch(() => null));
   const concepts = useQuery(`shares-concepts:${slug}`, () => fetchConcepts(slug).catch(() => null));
+  // the team's waiting Approvals rows say which requests this person filed themself; if they cannot be read, the server still refuses the answer
+  const waiting = useQuery(`shares-approvals:${slug}`, () => fetchApprovals(slug, 'pending').catch(() => null));
   const teams = useQuery('shares-teams', () => fetchTeams());
   const [creating, setCreating] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
@@ -36,6 +39,7 @@ export function SharingTab({ slug }: { slug: string }) {
   const canManageIn = incoming.status === 'ok' ? incoming.data.canManage : false;
   const list = useMemo(() => (shares.status === 'ok' ? shares.data.shares : []), [shares]);
   const links = useMemo(() => (incoming.status === 'ok' ? incoming.data.incoming : []), [incoming]);
+  const mine = useMemo(() => (waiting.status === 'ok' && waiting.data ? askedByMeIds(waiting.data.items) : new Set<string>()), [waiting]);
   const requests = requestedLinks(links);
   const received = receivedLinks(links);
   const thisTeam = teams.status === 'ok' ? teams.data.teams.find((t) => t.slug === slug) : undefined;
@@ -48,6 +52,7 @@ export function SharingTab({ slug }: { slug: string }) {
   const { reload: reloadShares } = shares;
   const { reload: reloadIncoming } = incoming;
   const { reload: reloadInbox } = inbox;
+  const { reload: reloadWaiting } = waiting;
   const moving = list.some((s) => runIsMoving(s.lastRun?.state));
   // read again while a digest is being built or handed over, and for a short while after a new share is saved
   useEffect(() => {
@@ -56,19 +61,21 @@ export function SharingTab({ slug }: { slug: string }) {
       reloadShares();
       reloadIncoming();
       reloadInbox();
+      reloadWaiting();
     }, POLL_MS);
     const stop = watchUntil > Date.now() ? window.setTimeout(() => window.clearInterval(t), watchUntil - Date.now()) : undefined;
     return () => {
       window.clearInterval(t);
       if (stop !== undefined) window.clearTimeout(stop);
     };
-  }, [moving, watchUntil, reloadShares, reloadIncoming, reloadInbox]);
+  }, [moving, watchUntil, reloadShares, reloadIncoming, reloadInbox, reloadWaiting]);
 
   const changed = (line: string): void => {
     setSaid(line);
     reloadShares();
     reloadIncoming();
     reloadInbox();
+    reloadWaiting();
   };
 
   return (
@@ -114,7 +121,7 @@ export function SharingTab({ slug }: { slug: string }) {
         {requests.length > 0 ? (
           <ul className="mi-list" data-testid="request-list">
             {requests.map((l) => (
-              <IncomingCard key={l.id} slug={slug} link={l} canManage={canManageIn} onChanged={changed} />
+              <IncomingCard key={l.id} slug={slug} link={l} canManage={canManageIn} askedByMe={l.approvalId !== null && mine.has(l.approvalId)} sharingOn={sharingOn} onChanged={changed} />
             ))}
           </ul>
         ) : null}

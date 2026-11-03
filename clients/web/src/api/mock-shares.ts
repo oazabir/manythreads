@@ -8,6 +8,7 @@ import {
   getMemorySharingRoute,
   getShareRoute,
   getShareRunRoute,
+  listApprovalsRoute,
   listIncomingSharesRoute,
   listShareRunsRoute,
   listSharesRoute,
@@ -277,6 +278,32 @@ export function installSharesMock(on: On, h: SharesMockHooks): void {
       }),
     };
   };
+  // the team's waiting requests, as Approvals rows: who asked decides what the caller may do with each (the same rule as the answer above)
+  on(listApprovalsRoute, ({ params, query }) => {
+    seed();
+    const team = h.team(params['slug']);
+    if (query.get('status') === 'decided') return { items: [], waiting: 0 };
+    const me = h.me();
+    const items = links
+      .filter((l) => l.dest === team.slug && l.state === 'requested' && l.approvalId !== null)
+      .flatMap((l) => {
+        const s = shares.find((x) => x.id === l.shareId);
+        if (!s || s.status !== 'active') return [];
+        const from = h.named(s.team);
+        const mine = l.requester === me.name;
+        const canDecide = !mine && h.canManage(team.slug);
+        return [
+          Approval.parse({
+            id: l.approvalId, workspaceId: h.workspaceId, teamId: h.named(team.slug).id, source: 'grant', status: 'pending', outcome: 'none', outcomeDetail: '',
+            expiresAt: '2026-10-08T14:02:00.000Z', startedAt: null, tool: 'memory.share.accept', summary: `Let ${from.name} share its memory with ${team.name}: “${s.name}”`,
+            argsPreview: { from: from.name, share: s.name, mode: s.mode }, argsTruncated: false, botId: null, botSlug: null, botName: null, requesterId: me.actorId, requesterName: l.requester ?? 'someone',
+            channelId: null, threadRootId: null, approvers: { roles: [], people: [], leads: true }, canDecide, blockReason: canDecide ? null : mine ? 'requester' : 'not_approver',
+            decision: null, createdAt: h.now,
+          }),
+        ];
+      });
+    return { items, waiting: items.length };
+  });
   on(approveApprovalRoute, decide('approved'));
   on(denyApprovalRoute, decide('denied'));
 

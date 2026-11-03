@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { setTransport, type TransportRequest } from '../src/api/client';
 import { fetchRecipes, installRecipe } from '../src/screens/recipes/api';
 import { Filed, GateNote, RecipeFacts, RecipeTile, StatePill } from '../src/screens/recipes/parts';
-import { checksLine, filedLine, fileRole, installGate, needsLine, onShelf, shelfFrom, shelves, stateLook } from '../src/screens/recipes/words';
+import { RECIPES_TOPIC, checksLine, filedLine, fileRole, installGate, needsLine, onShelf, shelfFrom, shelves, stateLook } from '../src/screens/recipes/words';
 import { teamSwitchPath, viewTitle } from '../src/shell/nav';
 
 // The recipe gallery (PLAN P18-01): the calls reach the routes the workshop plugin mounts, the plain words and rules read as a person expects, and the parts draw the
@@ -200,5 +200,9 @@ describe('the shell knows the screen', () => {
   it('titles it and keeps it when switching teams', () => {
     expect(viewTitle('/t/marketing/recipes')).toBe('Recipes');
     expect(teamSwitchPath('/t/marketing/recipes', 'sales')).toBe('/t/sales/recipes');
+  });
+  it('the top bar title is not said twice', () => {
+    expect(RECIPES_TOPIC).not.toBe(viewTitle('/t/marketing/recipes'));
+    expect(RECIPES_TOPIC.toLowerCase()).not.toContain('recipes');
   });
 });
