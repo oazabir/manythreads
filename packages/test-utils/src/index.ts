@@ -17,3 +17,4 @@ export { startFakeGithub, type FakeGithub, type FakeGithubCall, type FakePull } 
 export { startFakeK8s, type FakeK8s } from './fake-k8s.ts';
 export { startFakeProviders, defaultAccount, type FakeProviders, type FakeProvidersOptions, type FakeProviderId, type FakeApiCall, type FakeTokenCall, type FakeAccountData, type FakeFile, type FakeMail, type FakeEvent, type FakeNotionPage } from './fake-providers.ts';
 export { PRODUCT_MANUALS, PRODUCT_MANUALS_NAME, PRODUCT_MANUALS_QUESTIONS, PRODUCT_MANUALS_SLUG, seedProductManuals, type ManualDocument, type ManualQuestion, type SeedProductManualsOptions, type SeedProductManualsResult } from './seed-manuals.ts';
+export { startFakeStepCa, fakeStepCaAvailable, type FakeStepCa } from './fake-step-ca.ts';

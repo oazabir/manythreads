@@ -193,6 +193,38 @@ describe('a note dropped into a team with an Archivist', () => {
     expect(after).toBeNull();
   });
 
+  it('the Archivist reaches inbox.read and memory.recall through the gateway with only the bot token while its drop run is open (live p0712: both answered no_open_run)', async () => {
+    const minted = await w.call<{ token: string }>(omar, 'POST', `${TEAM}/bots/archivist/pairing-tokens`, {});
+    expect(minted.status, JSON.stringify(minted.body)).toBe(201);
+    const id = await drop('Slow tools', 'The launch moves to Friday.');
+    await until(
+      () => w.system(async (tx) => (await tx.query<{ drop_run_id: string | null }>('SELECT drop_run_id FROM app.memory_inbox_items WHERE id = $1', [id])).rows[0]?.drop_run_id ?? null),
+      30_000,
+      'the run to be bound to the item',
+    );
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const res = await fetch(`${w.server.url}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${minted.body.token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { result: { content: Array<{ text: string }>; isError?: boolean } };
+      return { isError: body.result.isError === true, answer: JSON.parse(body.result.content[0]!.text) as Record<string, unknown> };
+    };
+    const read = await call('inbox.read', {});
+    expect(read.answer, JSON.stringify(read.answer)).toMatchObject({ ok: true, item: { name: 'Slow tools' } });
+    expect(read.isError).toBe(false);
+    const recall = await call('memory.recall', { query: 'launch' });
+    // This world has no memory engine, so the tool itself answers `not_configured` (a normal answer of the tool); what must NOT happen is the gateway refusing the call.
+    expect(recall.answer, JSON.stringify(recall.answer)).not.toMatchObject({ code: expect.stringMatching(/^(no_open_run|ambiguous_run|forbidden|unknown_tool|run_ended)$/) });
+    // both calls were judged like any other: the decision is on the run's record, as allowed
+    const decisions = await w.system(async (tx) => (await tx.query<{ subject: string; outcome: string }>(`SELECT d.subject, d.outcome FROM app.run_decisions d JOIN app.bot_runs r ON r.id = d.run_id WHERE r.trigger_type = 'drop' AND d.kind = 'tool'`)).rows);
+    expect(decisions).toEqual(expect.arrayContaining([{ subject: 'inbox.read', outcome: 'allowed' }, { subject: 'memory.recall', outcome: 'allowed' }]));
+    const item = await settle(id, ['filed', 'failed', 'needs_review']);
+    expect(item.state, item.reason ?? '').toBe('filed');
+  });
+
   it('files only the Reference when the Archivist answers with an empty list', async () => {
     const id = await drop('Empty one', 'Nothing here is worth keeping.');
     const item = await settle(id, ['filed', 'failed', 'needs_review']);

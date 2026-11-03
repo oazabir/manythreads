@@ -57,6 +57,16 @@ export function toolResult(answer: unknown, isError = false): McpToolResult {
 }
 
 /**
+ * A call the gateway itself turned into an error answer (no grant, an unknown tool, a guardrail, no open run, an ended run, a tool's thrown `HttpError`) — as against a
+ * handler's own `{ ok: false }` answer. The model reads the reason, and the server log keeps one line too, so "the tool reported an error" on the runtime's side can always be
+ * traced here (live bug p0712: a drop run's calls were all answered `no_open_run` with nothing in any log). Ids, the tool name, the code and the reason sentence only; never the arguments.
+ */
+function refusal(run: Pick<BotRunHandle, 'runId' | 'trigger'> | null, tool: string, answer: { ok: false; code: string; message: string }): McpToolResult {
+  faultLog(`gateway-mcp: ${tool} refused (${answer.code})${run ? ` run=${run.runId} trigger=${run.trigger}` : ''}: ${answer.message}`.slice(0, 500));
+  return toolResult(answer, true);
+}
+
+/**
  * How a tool is described and how a call to it behaves: the descriptor of the source that owns it (a connection's tool, `ctx.toolSources`), else the catalog's
  * own entry. A source's tool is never a `stub` and never rehearsal-safe: it is a read or a write, and a write is held back in a rehearsal.
  */
@@ -163,10 +173,10 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
       ...(places.truncated ? { truncated: true } : {}),
     },
   });
-  if (!decision.allowed) return toolResult({ ok: false, code: 'forbidden', message: decision.reason }, true);
+  if (!decision.allowed) return refusal(run, params.name, { ok: false, code: 'forbidden', message: decision.reason });
   const unknown = ctx.runs.catalog().some((t) => t.name === params.name);
   if (!unknown) {
-    return toolResult({ ok: false, code: 'unknown_tool', message: `Nothing implements “${params.name}”.` }, true);
+    return refusal(run, params.name, { ok: false, code: 'unknown_tool', message: `Nothing implements “${params.name}”.` });
   }
 
   // The data-loss check (PLAN P10-04): what the call carries out is read before anything runs. A stub sends nothing anywhere, so it is not read.
@@ -184,15 +194,15 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
       });
     }
     if (checked.unchecked) {
-      return toolResult({ ok: false, code: 'blocked_by_guardrail', message: 'This call was not made: the data-loss check could not read it (too large, too deeply nested, or the check is not working).' }, true);
+      return refusal(run, params.name, { ok: false, code: 'blocked_by_guardrail', message: 'This call was not made: the data-loss check could not read it (too large, too deeply nested, or the check is not working).' });
     }
     if (checked.outcome === 'block') {
-      return toolResult({ ok: false, code: 'blocked_by_guardrail', message: `This call was not made: it carries ${describeFinding(checked.rules)}. Take it out and try again.` }, true);
+      return refusal(run, params.name, { ok: false, code: 'blocked_by_guardrail', message: `This call was not made: it carries ${describeFinding(checked.rules)}. Take it out and try again.` });
     }
     if (checked.outcome === 'redact' || checked.outcome === 'require_approval') input = checked.value as Record<string, unknown>;
     holdForPerson = checked.outcome === 'require_approval';
     if (holdForPerson && definition.kind === 'read') {
-      return toolResult({ ok: false, code: 'blocked_by_guardrail', message: `This call was not made: it carries ${describeFinding(checked.rules)}, and a read cannot wait for a person.` }, true);
+      return refusal(run, params.name, { ok: false, code: 'blocked_by_guardrail', message: `This call was not made: it carries ${describeFinding(checked.rules)}, and a read cannot wait for a person.` });
     }
   }
 
@@ -252,22 +262,30 @@ export async function callTool(ctx: PluginContext, run: BotRunHandle, params: Mc
     } catch (err) {
       // A run that ended under the call is control flow; a refusal of the tool's own (a source's `forbidden`) is an answer the model reads.
       if (err instanceof RunEndedError) throw err;
-      return toolResult(thrownAnswer(params.name, err), true);
+      return refusal(run, params.name, thrownAnswer(params.name, err));
     }
     // What a read answers with is checked before the bot sees it: a secret that sits in a page or a file stays out of the model's context.
     const shown = await guarded(ctx, run, answer, 'mcp_result');
     if (shown.unchecked || shown.outcome === 'block' || shown.outcome === 'require_approval') {
-      return toolResult({ ok: false, code: 'withheld_by_guardrail', message: `The answer was held back: it carries ${describeFinding(shown.rules)}, which the data-loss policy does not let through.` }, true);
+      return refusal(run, params.name, { ok: false, code: 'withheld_by_guardrail', message: `The answer was held back: it carries ${describeFinding(shown.rules)}, which the data-loss policy does not let through.` });
     }
     return toolResult(shown.outcome === 'redact' ? shown.value : answer);
   }
   try {
     const answer = await ctx.runs.asBot(run, (tx) => ctx.runs.invoke(tx, params.name, input));
+    // A tool source's write can answer with outside text too (the output of a command run on a server): it is checked like a read's answer.
+    if (ctx.toolSources.find(params.name) && !isRefusal(answer)) {
+      const shown = await guarded(ctx, run, answer, 'mcp_result');
+      if (shown.unchecked || shown.outcome === 'block' || shown.outcome === 'require_approval') {
+        return refusal(run, params.name, { ok: false, code: 'withheld_by_guardrail', message: `The answer was held back: it carries ${describeFinding(shown.rules)}, which the data-loss policy does not let through.` });
+      }
+      return toolResult(shown.outcome === 'redact' ? shown.value : answer);
+    }
     return toolResult(answer, isRefusal(answer));
   } catch (err) {
     // A run that ended under the call is control flow (the caller turns it into `run_ended` / 401), not a tool answer.
     if (err instanceof RunEndedError) throw err;
-    return toolResult(thrownAnswer(params.name, err), true);
+    return refusal(run, params.name, thrownAnswer(params.name, err));
   }
 }
 
@@ -415,7 +433,8 @@ export async function handleRpc(ctx: PluginContext, run: BotRunHandle, raw: unkn
     if (!(err instanceof RunEndedError)) throw err;
     const request = McpRequest.safeParse(raw);
     if (request.success && request.data.method === 'tools/call') {
-      return reply(request.data.id, toolResult({ ok: false, code: 'run_ended', message: 'This run has ended; open a new one.' }, true));
+      const called = McpToolCallParams.safeParse(request.data.params);
+      return reply(request.data.id, refusal(run, called.success ? called.data.name : '(unknown tool)', { ok: false, code: 'run_ended', message: 'This run has ended; open a new one.' }));
     }
     throw new HttpError(401, 'unauthenticated', 'This run has ended');
   }
@@ -532,12 +551,13 @@ export async function handleBotRpc(
   }
   if (request.success && method === 'tools/call') {
     // More than one run of this bot open: attributing a call to either could be wrong, so no call is made (fail closed). With none open, nothing waits for the bot.
-    return reply(
-      request.data.id,
+    const called = McpToolCallParams.safeParse(request.data.params);
+    const answer =
       run === 'ambiguous'
-        ? toolResult({ ok: false, code: 'ambiguous_run', message: 'More than one conversation is open for this bot, so the call cannot be attributed. Try again shortly.' }, true)
-        : toolResult({ ok: false, code: 'no_open_run', message: 'No conversation is waiting for this bot, so there is nothing to act for. Tools work only while the bot is answering a message.' }, true),
-    );
+        ? { ok: false as const, code: 'ambiguous_run', message: 'More than one conversation is open for this bot, so the call cannot be attributed. Try again shortly.' }
+        : { ok: false as const, code: 'no_open_run', message: 'No conversation is waiting for this bot, so there is nothing to act for. Tools work only while the bot is answering a message.' };
+    faultLog(`gateway-mcp: ${called.success ? called.data.name : '(unknown tool)'} refused (${answer.code}) bot=${bot.botId}: ${answer.message}`.slice(0, 500));
+    return reply(request.data.id, toolResult(answer, true));
   }
   const listing = listingHandleOf(bot);
   if (endpoint && request.success && method === 'tools/list') {

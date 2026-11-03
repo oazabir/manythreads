@@ -1,0 +1,137 @@
+{{- if .Values.media.enabled }}
+{{- /*
+  Voice rooms (P15-00, docs/spikes/voice.md): the LiveKit media server. Off by default. The manythreads server mints short tokens and calls the room API with the
+  key below (MANYTHREADS_LIVEKIT_*); LiveKit calls back http://manythreads-server/api/meetings/media-webhook, signed with the same key.
+  The pod uses the node's network: the audio ports are UDP and TCP on the node itself, so no Service can carry them and the node's firewall must allow
+  rtcPortStart-rtcPortEnd (UDP) and rtcTcpPort (TCP). Signalling (7880) is plain inside the cluster; the ingress or load balancer in front of `publicUrl` does TLS.
+*/ -}}
+{{- if not .Values.media.publicUrl }}{{ fail "media.enabled needs media.publicUrl (the wss:// address browsers connect to)" }}{{ end }}
+{{- if and .Values.media.turn.enabled (not .Values.media.turn.domain) }}{{ fail "media.turn.enabled needs media.turn.domain" }}{{ end }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "manythreads-media-secrets" }}
+{{- $data := dict }}
+{{- if $existing }}{{ $data = $existing.data | default dict }}{{ end }}
+{{- $key := "" }}{{- $secret := "" }}
+{{- if hasKey $data "api-key" }}{{ $key = index $data "api-key" }}{{ else }}{{ $key = printf "API%s" (randAlphaNum 12) | b64enc }}{{ end }}
+{{- if hasKey $data "api-secret" }}{{ $secret = index $data "api-secret" }}{{ else }}{{ $secret = randAlphaNum 48 | b64enc }}{{ end }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: manythreads-media-secrets
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+type: Opaque
+data:
+  api-key: {{ $key | quote }}
+  api-secret: {{ $secret | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: manythreads-media-config
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+data:
+  livekit.yaml: |
+    port: 7880
+    log_level: info
+    rtc:
+      port_range_start: {{ .Values.media.rtcPortStart }}
+      port_range_end: {{ .Values.media.rtcPortEnd }}
+      tcp_port: {{ .Values.media.rtcTcpPort }}
+      use_external_ip: true
+    room:
+      auto_create: false
+      empty_timeout: 300
+      max_participants: 50
+    webhook:
+      api_key: __API_KEY__
+      urls:
+        - http://manythreads-server:{{ .Values.server.port }}/api/meetings/media-webhook
+    {{- if .Values.media.turn.enabled }}
+    turn:
+      enabled: true
+      domain: {{ .Values.media.turn.domain | quote }}
+      tls_port: {{ .Values.media.turn.tlsPort }}
+      external_tls: true
+    {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: manythreads-media
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+    app.kubernetes.io/component: media
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: media
+  template:
+    metadata:
+      labels:
+        {{- include "manythreads.labels" . | nindent 8 }}
+        app.kubernetes.io/component: media
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      initContainers:
+        # The key goes into the config file at start so it is never in the ConfigMap.
+        - name: render-config
+          image: busybox:1.36
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: LIVEKIT_API_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-media-secrets, key: api-key } }
+          command: ["sh", "-c", "sed \"s|__API_KEY__|$LIVEKIT_API_KEY|\" /in/livekit.yaml > /out/livekit.yaml"]
+          volumeMounts:
+            - { name: config, mountPath: /in, readOnly: true }
+            - { name: rendered, mountPath: /out }
+      containers:
+        - name: livekit
+          image: {{ .Values.media.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--config", "/etc/livekit/livekit.yaml"]
+          ports: [{ name: signal, containerPort: 7880 }]
+          env:
+            - name: LIVEKIT_API_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-media-secrets, key: api-key } }
+            - name: LIVEKIT_API_SECRET
+              valueFrom: { secretKeyRef: { name: manythreads-media-secrets, key: api-secret } }
+            - { name: LIVEKIT_KEYS, value: "$(LIVEKIT_API_KEY): $(LIVEKIT_API_SECRET)" }
+          readinessProbe:
+            httpGet: { path: /, port: signal }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /, port: signal }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 3
+          volumeMounts:
+            - { name: rendered, mountPath: /etc/livekit, readOnly: true }
+          {{- with .Values.media.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: config
+          configMap: { name: manythreads-media-config }
+        - name: rendered
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: manythreads-media
+  labels:
+    {{- include "manythreads.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/component: media
+  ports:
+    - { name: signal, port: 7880, targetPort: signal }
+{{- end }}

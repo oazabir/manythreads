@@ -119,6 +119,15 @@ spec:
             - name: MANYTHREADS_HINDSIGHT_API_KEY
               valueFrom: { secretKeyRef: { name: manythreads-llm-secrets, key: hindsight-api-key } }
             {{- end }}
+            {{- /* Voice rooms: with media.enabled the server talks to the in-cluster LiveKit; off, the server answers "not set up" (docs/plugins/media-livekit.md). */}}
+            {{- if .Values.media.enabled }}
+            - { name: MANYTHREADS_LIVEKIT_URL, value: {{ .Values.media.publicUrl | quote }} }
+            - { name: MANYTHREADS_LIVEKIT_API_URL, value: "http://manythreads-media:7880" }
+            - name: MANYTHREADS_LIVEKIT_API_KEY
+              valueFrom: { secretKeyRef: { name: manythreads-media-secrets, key: api-key } }
+            - name: MANYTHREADS_LIVEKIT_API_SECRET
+              valueFrom: { secretKeyRef: { name: manythreads-media-secrets, key: api-secret } }
+            {{- end }}
             {{- with .Values.hermesPods }}
             {{- if .enabled }}
             - { name: MANYTHREADS_HERMES_PODS, value: "1" }

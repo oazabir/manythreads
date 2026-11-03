@@ -56,14 +56,11 @@ describe('adding a connection', () => {
     expect(again.slug).toBe('support-mailbox-2');
   });
 
-  it('refuses a short name that is taken, a kind that is unknown, and a kind that is not available yet (Kubernetes), each with words', async () => {
+  it('refuses a short name that is taken, and a kind that is unknown, each with words', async () => {
     const taken = await create(omar, { kind: 'email', name: 'Another', slug: 'support-mailbox' });
     expect(taken.status).toBe(409);
     expect(taken.body.error?.message).toMatch(/short name/);
     expect((await create(omar, { kind: 'telepathy', name: 'Mind' })).status).toBe(400);
-    const k8s = await create(omar, { kind: 'kubernetes', name: 'Prod cluster' });
-    expect(k8s.status).toBe(409);
-    expect(k8s.body.error?.message).toMatch(/not available yet/);
   });
 });
 
@@ -177,6 +174,6 @@ describe('a person’s own connections', () => {
 
 describe('the kinds list', () => {
   it('names exactly the tools the plugin serves', () => {
-    expect([...(CONNECTION_KIND_TOOLS['email'] ?? [])].sort()).toEqual(TOOLS.map((t) => t.name).sort());
+    expect(Object.values(CONNECTION_KIND_TOOLS).flat().sort()).toEqual(TOOLS.map((t) => t.name).sort());
   });
 });

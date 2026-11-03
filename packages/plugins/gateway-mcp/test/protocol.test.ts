@@ -157,13 +157,17 @@ describe('gateway-mcp protocol', () => {
   });
 
   it('a denied tool call is an answer, not an error, and nothing runs', async () => {
-    const { ctx, invoked, logged } = fakeContext({ tools: [SEARCH_TOOL] });
+    const { ctx, invoked, logged, warned } = fakeContext({ tools: [SEARCH_TOOL] });
     const res = await handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'messages.search', arguments: { query: 'deploy' } } });
     const { result } = (await body(res)) as { result: { content: Array<{ text: string }>; isError?: boolean } };
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({ ok: false, code: 'forbidden' });
     expect(invoked).toEqual([]);
     expect(logged).toEqual([]);
+    // every error answer the gateway makes itself leaves one line in the server log (ids, tool, code and reason; never the arguments)
+    expect(warned).toHaveLength(1);
+    expect(warned[0]).toContain(`messages.search refused (forbidden) run=${RUN.runId} trigger=${RUN.trigger}`);
+    expect(warned[0]).not.toContain('deploy');
   });
 
   it('accepts the `_meta` MCP reserves on params, so a real client’s call is a call and not bad params', async () => {
@@ -397,7 +401,7 @@ describe('gateway-mcp protocol', () => {
   });
 
   it('a run that ended under the call is a tool answer for a call and a 401 for anything else, never a 500', async () => {
-    const { ctx } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
+    const { ctx, warned } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
     const ended = () => Promise.reject(new RunEndedError(RUN.runId));
     (ctx.runs as unknown as Record<string, unknown>)['authorize'] = ended;
     (ctx.runs as unknown as Record<string, unknown>)['may'] = ended;
@@ -408,6 +412,7 @@ describe('gateway-mcp protocol', () => {
     expect(answered.id).toBe(31);
     expect(answered.result.isError).toBe(true);
     expect(JSON.parse(answered.result.content[0]!.text)).toMatchObject({ ok: false, code: 'run_ended' });
+    expect(warned.some((line) => line.includes('messages.search refused (run_ended)'))).toBe(true);
 
     await expect(handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 32, method: 'tools/list' })).rejects.toMatchObject({ status: 401 });
     await expect(handleRpc(ctx, RUN, { jsonrpc: '2.0', id: 32, method: 'tools/list' })).rejects.toBeInstanceOf(HttpError);
@@ -443,7 +448,10 @@ describe('gateway-mcp protocol', () => {
     const bad = z.object({ title: z.string() }).safeParse({});
     thrown = bad.error;
     expect(await call(64)).toMatchObject({ code: 'validation_failed', message: expect.stringContaining('title') });
-    expect(warned).toEqual([]);
+    // a platform error is an answer the model reads, and still leaves one line (its code) in the log: no refusal is silent
+    expect(warned).toHaveLength(5);
+    expect(warned[0]).toContain('pages.write refused (validation_failed)');
+    expect(warned.join(' ')).not.toContain('pages/x.md');
 
     // a database-shaped error: nothing of its text reaches the model, the real text is logged
     thrown = Object.assign(new Error('invalid input syntax for type uuid: "x" (constraint tasks_owner_fk on relation app.tasks)'), { code: '22P02' });
@@ -535,12 +543,16 @@ describe('a bot’s own address (PLAN P14-22)', () => {
   });
 
   it('a call with no run open is still an answer, with the endpoint on as well', async () => {
-    const { ctx } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
+    const { ctx, warned } = fakeContext({ tools: [SEARCH_TOOL], decisions: { 'messages.search': ALLOWED } });
     const { endpoint: e } = endpoint();
     const res = await handleBotRpc(ctx, BOT, null, { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'messages.search', arguments: {} } }, e);
     expect(JSON.stringify((await body(res)).result)).toContain('no_open_run');
     const ambiguous = await handleBotRpc(ctx, BOT, 'ambiguous', { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'messages.search', arguments: {} } }, e);
     expect(JSON.stringify((await body(ambiguous)).result)).toContain('ambiguous_run');
+    // both are logged: a call that ends in "no open run" must never be a silent isError (live p0712)
+    expect(warned).toHaveLength(2);
+    expect(warned[0]).toContain(`messages.search refused (no_open_run) bot=${UUIDS.bot}`);
+    expect(warned[1]).toContain('messages.search refused (ambiguous_run)');
   });
 });
 

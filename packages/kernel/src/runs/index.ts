@@ -220,6 +220,9 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
       }, system);
     },
 
+    // The bot's one open run, for a gateway profile that holds only the bot's token. A run of a queue job counts, and so does a `drop` run (the Archivist's, opened in-process with
+    // no job: `inbox.read` / `memory.recall` reach it only through this); the other jobless runs (a failure notice, an approval's re-run, a rehearsal) call with their own token.
+    // Leaving `drop` out answered every tool call of an Archivist `no_open_run` (live, p0712).
     async openRunOf(botId: string): Promise<BotRunHandle | null> {
       return withSystem(async (tx) => {
         const rows = (
@@ -228,7 +231,7 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
                FROM app.bot_runs r
                JOIN app.mcp_run_tokens t ON t.run_id = r.id AND t.revoked_at IS NULL AND t.expires_at > now()
                JOIN app.actors a ON a.kind = 'bot' AND a.ref_id = r.bot_id
-              WHERE r.bot_id = $1::uuid AND r.status = 'running' AND r.ended_at IS NULL AND r.job_id IS NOT NULL
+              WHERE r.bot_id = $1::uuid AND r.status = 'running' AND r.ended_at IS NULL AND (r.job_id IS NOT NULL OR r.trigger_type = 'drop')
               ORDER BY r.started_at DESC, r.id DESC LIMIT 2`,
             [botId],
           )

@@ -47,3 +47,4 @@ export * from './workshop/index.ts';
 export * from './replay/index.ts';
 export * from './analytics/index.ts';
 export * from './connections/index.ts';
+export * from './meetings/index.ts';

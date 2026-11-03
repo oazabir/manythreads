@@ -90,9 +90,10 @@ describe('the kinds the Add connection flow shows', () => {
     for (const k of CONNECTION_KINDS) expect(k.available === (k.unavailableReason === undefined), k.kind).toBe(true);
   });
 
-  it('are found by kind, and Kubernetes is listed but not yet available', () => {
+  it('are found by kind, and the SSH and Kubernetes brokers are available', () => {
     expect(connectionKindInfo('email')?.available).toBe(true);
-    expect(connectionKindInfo('kubernetes')?.available).toBe(false);
+    expect(connectionKindInfo('kubernetes')?.available).toBe(true);
+    expect(connectionKindInfo('ssh')?.available).toBe(true);
     expect(connectionKindInfo('nothing')).toBeUndefined();
   });
 });

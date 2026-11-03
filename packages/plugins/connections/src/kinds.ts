@@ -3,6 +3,8 @@ import { hasNul, MailAddress, NO_NUL_MESSAGE } from '@manythreads/shared';
 import { z } from 'zod';
 import { callEmail, emailApproval } from './email/tools.ts';
 import { personToolDef } from './person-tools.ts';
+import { kubernetesKind, KUBERNETES_DESCRIPTIONS, KUBERNETES_INPUTS } from './kind-kubernetes.ts';
+import { sshKind, SSH_DESCRIPTIONS, SSH_INPUTS } from './kind-ssh.ts';
 import type { ConnectionRow } from './rows.ts';
 
 // The kinds of connection the platform knows (PLAN P8-28). A kind says which tools a connection of that kind can serve and what a call to one does. The
@@ -28,6 +30,8 @@ export interface ConnectionKindImpl {
   kind: string;
   /** The tools a connection of this kind can serve, by name; each is also in `TOOLS` and in the plugin manifest. */
   tools: readonly string[];
+  /** The names its credentials may be stored under; absent = any name. A name outside the list is refused when credentials are put in. */
+  credentials?: readonly string[];
   call(args: KindCall): Promise<unknown>;
   /** Whether a call must wait for a person whatever the grant says, and how its card reads (see `emailApproval`); null leaves it to the grant. Changes nothing. */
   approval?(args: Omit<KindCall, 'credential'>): Promise<ToolApprovalCard | null>;
@@ -57,6 +61,8 @@ const INPUTS: Readonly<Record<string, z.ZodType<Record<string, unknown>>>> = {
   'email.send': z.strictObject({
     body: noNul(z.string().min(1).max(40_000)).describe('The text of the reply.'),
   }),
+  ...SSH_INPUTS,
+  ...KUBERNETES_INPUTS,
 };
 
 const jsonSchemaOf = (tool: string): Record<string, unknown> => {
@@ -112,6 +118,8 @@ export const TOOLS: readonly ToolSourceTool[] = [
     inputSchema: jsonSchemaOf('email.send'),
     kind: 'write',
   },
+  { name: 'ssh.run', description: SSH_DESCRIPTIONS['ssh.run'], inputSchema: jsonSchemaOf('ssh.run'), kind: 'write' },
+  { name: 'kubernetes.get', description: KUBERNETES_DESCRIPTIONS['kubernetes.get'], inputSchema: jsonSchemaOf('kubernetes.get'), kind: 'read' },
 ];
 
 const emailKind: ConnectionKindImpl = {
@@ -121,9 +129,12 @@ const emailKind: ConnectionKindImpl = {
   approval: emailApproval,
 };
 
-const KINDS: ReadonlyMap<string, ConnectionKindImpl> = new Map([emailKind].map((k) => [k.kind, k]));
+const KINDS: ReadonlyMap<string, ConnectionKindImpl> = new Map([emailKind, sshKind, kubernetesKind].map((k) => [k.kind, k]));
 
 export const kindOf = (kind: string): ConnectionKindImpl | undefined => KINDS.get(kind);
 
 /** True when a connection of `kind` serves `tool`. A kind nobody implements serves nothing. */
 export const kindServes = (kind: string, tool: string): boolean => kindOf(kind)?.tools.includes(tool) === true;
+
+/** The credential names a kind accepts, or undefined for a kind that takes any (or that nobody implements: the caller refuses it first). */
+export const kindCredentialNames = (kind: string): readonly string[] | undefined => kindOf(kind)?.credentials;

@@ -41,6 +41,11 @@ import {
   ConnectionStatus,
   PersonConnectionState,
   InboxFailureStage,
+  MeetingConsent,
+  MeetingEndReason,
+  MeetingSegmentSource,
+  MeetingState,
+  MeetingTranscription,
   InboxHoldReason,
   InboxKind,
   InboxOrigin,
@@ -119,6 +124,7 @@ import {
   gatewayLlmMigrationSource,
   knowledgeMigrationSource,
   connectionsMigrationSource,
+  meetingsMigrationSource,
   memoryInboxMigrationSource,
   memoryMigrationSource,
   memoryShareMigrationSource,
@@ -197,6 +203,12 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'connections.environment': ConnectionEnvironment,
   'connection_messages.direction': MailDirection,
   'connection_oauth.state': PersonConnectionState,
+  'meetings.state': MeetingState,
+  'meetings.end_reason': MeetingEndReason,
+  'meetings.transcription': MeetingTranscription,
+  'meeting_participants.consent_transcribe': MeetingConsent,
+  'meeting_participants.consent_record': MeetingConsent,
+  'meeting_segments.source': MeetingSegmentSource,
   'memory_inbox_items.origin': InboxOrigin,
   'memory_inbox_items.state': InboxState,
   'memory_inbox_items.kind': InboxKind,
@@ -281,7 +293,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

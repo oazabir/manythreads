@@ -515,3 +515,9 @@ export const connectionsMigrationSource: MigrationSource = {
   namespace: 'connections',
   dir: fileURLToPath(new URL('../../plugins/connections/migrations/', import.meta.url)),
 };
+
+/** Migrations of the meetings plugin (`meetings`, `meeting_participants`, `meeting_segments`, `meeting_presence`); needs the kernel's, teams, channels, files and bots migrations. */
+export const meetingsMigrationSource: MigrationSource = {
+  namespace: 'meetings',
+  dir: fileURLToPath(new URL('../../plugins/meetings/migrations/', import.meta.url)),
+};

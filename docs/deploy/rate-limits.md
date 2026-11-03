@@ -85,6 +85,10 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/me/connections/:provider/start` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `GET /api/me/connections/:provider/callback` | 30 per 60 s | 30 per 60 s | 60 s | person | one-time state: single use, bound to the person who started it, ten minutes |
 | `DELETE /api/me/connections/:provider` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
+| `POST /api/channels/:channelId/meetings` | none | 10 per 60 s | 60 s | person | none |
+| `POST /api/meetings/:meetingId/join` | none | 60 per 60 s | 60 s | person | none |
+| `POST /api/meetings/:meetingId/token` | none | 60 per 60 s | 60 s | person | none |
+| `POST /api/meetings/media-webhook` | none | 120 per 60 s | 60 s | address | media server signature: a call without a valid signature answers `401` and changes nothing |
 | `POST /api/mcp/runs` | 60 per 60 s (wrong tokens not counted apart) | 60 per 60 s | 60 s | address | wrong pairing tokens count in the failures counter below |
 | `POST /api/mcp/bots/:botId` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot token in a minute and onward: `429` |
 | `POST /mcp` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot or run token in a minute and onward: `429` |

@@ -81,6 +81,8 @@ export const PROVIDER_KINDS = [
   'inbox.distiller',
   /** One step of the bot page's Deploy action (P8-34), registered by the plugin that owns it: `DeployStep` in ./deploy.ts. */
   'deploy.step',
+  /** The media server that carries a voice room's audio (media-livekit): `MediaProvider` in ./media.ts. */
+  'media',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {
@@ -386,8 +388,8 @@ export interface PluginRuns {
   resolve(tokenHash: Buffer): Promise<BotRunHandle | null>;
   /**
    * The run a bot is working on right now, for an endpoint that is addressed by the bot and not by the run (a Hermes gateway profile holds one
-   * fixed MCP address and token): the newest `running` run of the bot that has a live endpoint and was not opened through the public mint
-   * (`webhook`). The runtime serialises runs per bot, so at most one qualifies. Null when the bot has no run open.
+   * fixed MCP address and token): the newest `running` run of the bot that has a live endpoint and belongs to a queue job, or is a `drop` run (the Archivist's,
+   * opened in-process with no job). The runtime serialises runs per bot, so at most one qualifies. Null when the bot has no run open.
    */
   openRunOf(botId: string): Promise<BotRunHandle | null>;
   /** Ends a run and revokes its token. False when it had already ended. */

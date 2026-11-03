@@ -82,7 +82,7 @@ export function resolveTestAuthToken(explicit: string | null | undefined, env: N
 export const pluginsDir = fileURLToPath(new URL('../../plugins/', import.meta.url));
 
 /** Packages under packages/plugins that only exist for tests and examples; loaded when MANYTHREADS_TEST_PLUGINS=1. */
-export const TEST_ONLY_PLUGIN_DIRS: ReadonlySet<string> = new Set(['test-kernel', 'example-hello']);
+export const TEST_ONLY_PLUGIN_DIRS: ReadonlySet<string> = new Set(['test-kernel', 'example-hello', 'media-fake']);
 
 /**
  * Spike plugins (docs/spikes): never loaded in a real deployment unless the entry point opts in (`spikePlugins`, which `main.ts` sets from

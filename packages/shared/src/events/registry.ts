@@ -61,6 +61,13 @@ import { BotRunnerCreatedEvent } from './bot_runner.runner.created.ts';
 import { BotRunnerUpdatedEvent } from './bot_runner.runner.updated.ts';
 import { BotRunnerDeletedEvent } from './bot_runner.runner.deleted.ts';
 import { ConnectionsConnectionChangedEvent } from './connections.connection.changed.ts';
+import { MeetingsMeetingStartedEvent } from './meetings.meeting.started.ts';
+import { MeetingsMeetingEndedEvent } from './meetings.meeting.ended.ts';
+import { MeetingsParticipantJoinedEvent } from './meetings.participant.joined.ts';
+import { MeetingsParticipantLeftEvent } from './meetings.participant.left.ts';
+import { MeetingsConsentChangedEvent } from './meetings.consent.changed.ts';
+import { MeetingsTranscriptWrittenEvent } from './meetings.transcript.written.ts';
+import { MeetingsNotesWrittenEvent } from './meetings.notes.written.ts';
 import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
@@ -316,6 +323,13 @@ export const eventRegistry = {
   'workshop.replay.started': { 1: WorkshopReplayStartedEvent },
   'workshop.terminal.opened': { 1: WorkshopTerminalOpenedEvent },
   'workshop.terminal.closed': { 1: WorkshopTerminalClosedEvent },
+  'meetings.meeting.started': { 1: MeetingsMeetingStartedEvent },
+  'meetings.meeting.ended': { 1: MeetingsMeetingEndedEvent },
+  'meetings.participant.joined': { 1: MeetingsParticipantJoinedEvent },
+  'meetings.participant.left': { 1: MeetingsParticipantLeftEvent },
+  'meetings.consent.changed': { 1: MeetingsConsentChangedEvent },
+  'meetings.transcript.written': { 1: MeetingsTranscriptWrittenEvent },
+  'meetings.notes.written': { 1: MeetingsNotesWrittenEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 
@@ -403,7 +417,14 @@ export type AnyEvent =
   | z.infer<typeof TasksTaskHandedOffEvent>
   | z.infer<typeof RhythmsRhythmRanEvent>
   | z.infer<typeof WorkshopTerminalOpenedEvent>
-  | z.infer<typeof WorkshopTerminalClosedEvent>;
+  | z.infer<typeof WorkshopTerminalClosedEvent>
+  | z.infer<typeof MeetingsMeetingStartedEvent>
+  | z.infer<typeof MeetingsMeetingEndedEvent>
+  | z.infer<typeof MeetingsParticipantJoinedEvent>
+  | z.infer<typeof MeetingsParticipantLeftEvent>
+  | z.infer<typeof MeetingsConsentChangedEvent>
+  | z.infer<typeof MeetingsTranscriptWrittenEvent>
+  | z.infer<typeof MeetingsNotesWrittenEvent>;
 
 /** The newest version of every event: what `upcast` returns and emitters write. */
 export type LatestEvent =
@@ -484,7 +505,14 @@ export type LatestEvent =
   | z.infer<typeof TasksTaskHandedOffEvent>
   | z.infer<typeof RhythmsRhythmRanEvent>
   | z.infer<typeof WorkshopTerminalOpenedEvent>
-  | z.infer<typeof WorkshopTerminalClosedEvent>;
+  | z.infer<typeof WorkshopTerminalClosedEvent>
+  | z.infer<typeof MeetingsMeetingStartedEvent>
+  | z.infer<typeof MeetingsMeetingEndedEvent>
+  | z.infer<typeof MeetingsParticipantJoinedEvent>
+  | z.infer<typeof MeetingsParticipantLeftEvent>
+  | z.infer<typeof MeetingsConsentChangedEvent>
+  | z.infer<typeof MeetingsTranscriptWrittenEvent>
+  | z.infer<typeof MeetingsNotesWrittenEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

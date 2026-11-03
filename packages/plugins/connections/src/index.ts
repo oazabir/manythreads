@@ -19,6 +19,10 @@ export { claimBehindRun, mailBehindRun } from './email/tools.ts';
 export { linkPost } from './link.ts';
 export { triggerMatches, watchInbox, WATCH_QUEUE } from './watch.ts';
 export { PERSON_TOOLS } from './person-tools.ts';
+export { CHECK_NAME, evaluatePull, publishReport, type GithubTarget, type PullReport } from './github-pr-evals.ts';
+export { issueKubernetesToken, readKubernetes } from './brokers/kubernetes.ts';
+export { issueSshCredential, runSshCommand, stepCaSigner } from './brokers/ssh.ts';
+export { clampLifetime, MAX_CREDENTIAL_SECONDS } from './brokers/limits.ts';
 export { deleteConnectionAndSecrets, putConnectionSecret, readConnectionSecret } from './secrets.ts';
 
 /**
@@ -50,6 +54,9 @@ export default definePlugin({
       { name: 'email.send', destructive: false },
       // the tools of a person's own Google, Microsoft and Notion connection (person-tools.ts); the ones that write always wait for approval
       ...PERSON_TOOL_DEFS.map((t) => ({ name: t.name, destructive: false })),
+      // not destructive by construction: ssh.run starts only commands an administrator listed word for word; kubernetes.get only reads
+      { name: 'ssh.run', destructive: false },
+      { name: 'kubernetes.get', destructive: false },
     ],
     // app.connection_grants references app.team_members (teams); the compile and the watch read app.bots and its projection (bots); the link reads the posts (channels)
     dependsOn: ['teams', 'bots', 'channels'],

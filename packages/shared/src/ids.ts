@@ -105,6 +105,9 @@ export type CustomEmojiId = z.infer<typeof CustomEmojiId>;
 /** One poll of a channel (P14-07). */
 export const PollId = z.uuid().brand<'PollId'>();
 export type PollId = z.infer<typeof PollId>;
+/** One voice room: a live or finished meeting (P15-01). */
+export const MeetingId = z.uuid().brand<'MeetingId'>();
+export type MeetingId = z.infer<typeof MeetingId>;
 
 // Phase 5: approvals.
 

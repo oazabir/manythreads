@@ -14,6 +14,14 @@ export interface FakeK8s {
   pods: Record<string, unknown>[];
   deployments: Record<string, unknown>[];
   claims: Record<string, unknown>[];
+  /** The `TokenRequest` calls (P8-04): who asked for a token of which service account, for how long. */
+  tokenRequests: Array<{ namespace: string; serviceAccount: string; expirationSeconds: number; bearer: string }>;
+  /** Tokens it has handed out, with their end. A request that carries a `fake-token-…` which is not here, or has ended, answers 401. */
+  issued: Map<string, number>;
+  /** The container log of a pod, by `<namespace>/<pod>`. */
+  logs: Map<string, string>;
+  /** When set, a token is given this many seconds of life whatever was asked for (a cluster that stretches token life). */
+  tokenLifetimeOverride: number | null;
   /** Every request as `METHOD path`, for assertions about what was (not) asked. */
   calls: string[];
   /** Make the next `count` requests answer 500; with `method`, only requests of that method count (and are failed). */
@@ -28,6 +36,10 @@ export async function startFakeK8s(): Promise<FakeK8s> {
   const pods: FakeK8s['pods'] = [];
   const deployments: FakeK8s['deployments'] = [];
   const claims: FakeK8s['claims'] = [];
+  const tokenRequests: FakeK8s['tokenRequests'] = [];
+  const issued: FakeK8s['issued'] = new Map();
+  const logs: FakeK8s['logs'] = new Map();
+  const state: { override: number | null } = { override: null };
   let failing = 0;
   let failingMethod: string | null = null;
   const server: Server = createServer((req, res) => {
@@ -42,6 +54,23 @@ export async function startFakeK8s(): Promise<FakeK8s> {
       if (failing > 0 && (failingMethod === null || failingMethod === req.method)) {
         failing--;
         return send(500, { kind: 'Status', message: 'forced failure' });
+      }
+      const tokenPath = /^\/api\/v1\/namespaces\/([^/]+)\/serviceaccounts\/([^/]+)\/token$/.exec(path);
+      if (tokenPath && req.method === 'POST') {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { spec?: { expirationSeconds?: number } };
+        const asked = body.spec?.expirationSeconds ?? 3600;
+        tokenRequests.push({ namespace: decodeURIComponent(tokenPath[1]!), serviceAccount: decodeURIComponent(tokenPath[2]!), expirationSeconds: asked, bearer: String(req.headers.authorization ?? '') });
+        const token = `fake-token-${issued.size + 1}`;
+        const end = Date.now() + (state.override ?? asked) * 1000;
+        issued.set(token, end);
+        return send(201, { kind: 'TokenRequest', status: { token, expirationTimestamp: new Date(end).toISOString() } });
+      }
+      const bearer = /^Bearer (fake-token-[\w-]+)$/.exec(String(req.headers.authorization ?? ''))?.[1];
+      if (bearer !== undefined && !((issued.get(bearer) ?? 0) > Date.now())) return send(401, { kind: 'Status', message: 'unauthorized' });
+      const logPath = /^\/api\/v1\/namespaces\/([^/]+)\/pods\/([^/]+)\/log$/.exec(path);
+      if (logPath && req.method === 'GET') {
+        const text = logs.get(`${decodeURIComponent(logPath[1]!)}/${decodeURIComponent(logPath[2]!)}`);
+        return text === undefined ? send(404, { kind: 'Status', message: 'not found' }) : void res.writeHead(200, { 'content-type': 'text/plain' }).end(text);
       }
       if (req.method === 'GET') {
         if (path === '/api/v1/nodes') return send(200, { kind: 'NodeList', items: nodes });
@@ -90,6 +119,15 @@ export async function startFakeK8s(): Promise<FakeK8s> {
     pods,
     deployments,
     claims,
+    tokenRequests,
+    issued,
+    logs,
+    get tokenLifetimeOverride() {
+      return state.override;
+    },
+    set tokenLifetimeOverride(v: number | null) {
+      state.override = v;
+    },
     calls,
     failNext: (count = 1, method) => {
       failing = count;

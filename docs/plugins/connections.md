@@ -234,12 +234,28 @@ Every add, change, switch, credential put and removal emits `connections.connect
 * Account → **Connections** (`/account/connections`): a person's own connections, with Remove, and the mail option that says mail arrives with the mail transport. There is no way to add a person's own connection yet.
 * The bot page's **Capabilities** tab shows, under each connection named in the definition, whether the team has a connection of that name and whether it is on, off, expired or has no credential yet.
 
+## The two brokers (P8-04)
+
+A **broker** hands a task a credential that lives at most one hour and is made for that call alone, instead of keeping a long-lived key anywhere a bot could reach. Both are kinds of connection, in `src/brokers/` and `src/kind-ssh.ts`, `src/kind-kubernetes.ts`. (PLAN names `gateway-mcp/brokers`; plugins cannot import each other and the credentials live here, so the code sits with the connections. The gateway reaches it through the tool-source registry like every other source.)
+
+* **Lifetime.** `clampLifetime` holds every request between 10 minutes (the least a cluster accepts) and 1 hour. What the other side answers is checked too: a certificate or token that lives longer than an hour (plus a minute of clock difference) is thrown away and the call fails (`too_long_lived`); some clusters stretch token life, so this is not theory.
+* **`ssh` kind, tool `ssh.run`** (a write: runs as the bot, held back in a rehearsal, can wait for approval). Credentials: `ca_url`, `provisioner`, `provisioner_key` (the step-ca JWK provisioner's P-256 key), `user`, `hosts`, `known_hosts`, `commands`, optional `ca_cert`. Each call makes a fresh Ed25519 key in memory, has step-ca sign it for the one account `user` (the certificate is checked: it vouches for that key, names only that account, is a user certificate, ends within the hour), writes the key into a private temporary folder, runs `ssh` with agent, forwarding, proxy and password login off and the host key checked against `known_hosts`, and removes the folder. The command must be one of the lines the administrator wrote in `commands`, word for word, on a host listed in `hosts`; anything else is refused before a certificate is asked for. That list is why the tool is not tagged destructive: a model cannot add a line. Output is cut at 20 000 characters; a command that runs past 30 s is stopped.
+* **`kubernetes` kind, tool `kubernetes.get`** (a read). Credentials: `api_url`, `token` (the bootstrap token, allowed only to ask for tokens of the service account), `service_account`, `namespace`, optional `namespaces` (comma list the tool may read; default `namespace`) and `ca_cert`. Each call asks the cluster for a `TokenRequest` token of `service_account`, reads once with it and drops it. Readable: pods (and their logs), services, events, deployments, replicasets, statefulsets, jobs, ingresses, namespaces, nodes. Never secrets or config maps, nothing that writes. What the token may do is also the service account's own role in the cluster, which is where an administrator limits it.
+* A connection missing a credential its kind needs answers `{ ok: false, code: 'not_set_up', message }` naming the credential names that are missing; one that cannot be reached answers `unreachable`. Nothing is run or asked until it is whole.
+* **step-ca only.** The signer is an interface (`SshSigner`); Teleport would be a second implementation. Teleport is not built.
+* Tests: `test/brokers.test.ts` (against a local step-ca double that signs with a real `ssh-keygen` authority, a cluster double, and, when the machine is root with `sshd`, a real OpenSSH server), `test/kind-ssh.test.ts`, `test/setup-brokers.test.ts` (routes plus a bot reading a cluster through the MCP endpoint). `MANYTHREADS_TEST_SSH_BIN` (only with `NODE_ENV=test`) points the kind at a stand-in `ssh`.
+
+## The eval check on a pull request (P8-05, first half)
+
+`src/github-pr-evals.ts`: `evaluatePull` lists the files a pull request on the team's GitHub repository changes (`GET /pulls/:n/files`), keeps those that are a bot's `BOT.md` or a scenario file under `bots/<slug>/evals/`, reads them **at the head commit** through the contents API (never checked out, never run), loads each bot with the shared `loadBotEval` and runs the set in the quick mode (the shared judge, no model: a case fails when the new BOT.md lacks a capability it requires; wording assertions are left to the full run on the bot's page). A BOT.md that does not load, or a set that cannot be read, fails with the reason. `publishReport` writes the verdict on the head commit: a **check run** (`manythreads / bot evals`) when the token is a GitHub App's, a **commit status** when it is a personal token (GitHub lets only apps write checks). A pull request that touches no bot writes nothing.
+
+Not built: the webhook that calls it, the GitHub App credentials, and "merge reloads the bot" (the platform's own repository is where a bot is loaded from, and nothing yet brings a merge on GitHub back into it; see the owner question in the PLAN row).
+
 ## Not yet
 
 * `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02); adding a person's own connection.
 * A real mail transport (P8-29).
-* A Kubernetes kind (the cluster broker).
-* Creating a connection and putting credentials in: no route yet (P8-03). The functions exist (`putConnectionSecret`, `deleteConnectionAndSecrets`) for the code that will.
+* The Activepieces team project, the GitHub App (hourly tokens), the GitHub and GitLab MCP servers and the team repo push (P8-03), and the Add connection screen.
 * `person:*` (a person's own connections for a conversation or a mention) and workspace-scoped grants to a bot (P8-02).
 * A real mail transport (IMAP, Gmail), audit lines and events for connection changes (P8-06), the Connections screen.
 * The screens that consume the mail (P8-34 to P8-36).

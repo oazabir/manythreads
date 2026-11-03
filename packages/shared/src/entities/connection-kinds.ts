@@ -33,13 +33,36 @@ export const CONNECTION_KINDS: readonly ConnectionKindInfo[] = [
     credentials: [{ name: 'password', label: 'Mailbox password or app password', hint: 'Stored sealed. Nobody, including you, can read it back after saving.' }],
   },
   {
+    kind: 'ssh',
+    label: 'Servers over SSH',
+    description: 'Lets a bot run a short list of commands you wrote on your servers, with a certificate made for each call that expires within an hour.',
+    scopes: ['team'],
+    available: true,
+    credentials: [
+      { name: 'ca_url', label: 'Certificate authority address', hint: 'The step-ca address, for example https://ca.example.com.' },
+      { name: 'provisioner', label: 'Provisioner name', hint: 'The step-ca JWK provisioner the platform signs in with.' },
+      { name: 'provisioner_key', label: 'Provisioner key', hint: 'Stored sealed. The provisioner’s private key (JWK).' },
+      { name: 'user', label: 'Account on the servers', hint: 'The one account the certificate is made for.' },
+      { name: 'hosts', label: 'Servers', hint: 'One per line: the servers a bot may reach.' },
+      { name: 'known_hosts', label: 'Known hosts', hint: 'The servers’ public host keys, in known_hosts format.' },
+      { name: 'commands', label: 'Allowed commands', hint: 'One per line. A bot can run only these, word for word.' },
+      { name: 'ca_cert', label: 'CA certificate (optional)', hint: 'Only when the authority uses a private certificate.' },
+    ],
+  },
+  {
     kind: 'kubernetes',
     label: 'Kubernetes cluster',
-    description: 'A cluster a bot may look at and change through short-lived access that expires within an hour.',
+    description: 'A cluster a bot may look at (read only) through short-lived access that expires within an hour.',
     scopes: ['team'],
-    available: false,
-    unavailableReason: 'Kubernetes access is not available yet: it arrives with the cluster broker, which hands a bot a short-lived key for each task.',
-    credentials: [{ name: 'token', label: 'Service account token', hint: 'Stored sealed. Nobody can read it back after saving.' }],
+    available: true,
+    credentials: [
+      { name: 'api_url', label: 'Cluster address', hint: 'The API server address, for example https://cluster.example.com:6443.' },
+      { name: 'token', label: 'Bootstrap token', hint: 'Stored sealed. Allowed only to ask for tokens of the service account below.' },
+      { name: 'service_account', label: 'Service account', hint: 'The account whose role limits what a bot can read.' },
+      { name: 'namespace', label: 'Namespace', hint: 'Where the service account lives.' },
+      { name: 'namespaces', label: 'Namespaces a bot may read (optional)', hint: 'Comma separated. Default: the namespace above.' },
+      { name: 'ca_cert', label: 'CA certificate (optional)', hint: 'Only when the cluster uses a private certificate.' },
+    ],
   },
 ];
 
@@ -51,4 +74,6 @@ export const CONNECTION_ADMIN_ONLY = 'Only a workspace admin can add or change a
 /** The tools each kind serves, by kind: shown on the Add connection and bot pages. Kept in step with the plugin's `TOOLS` by a test. */
 export const CONNECTION_KIND_TOOLS: Readonly<Record<string, readonly string[]>> = {
   email: ['email.read', 'email.draft', 'email.send'],
+  ssh: ['ssh.run'],
+  kubernetes: ['kubernetes.get'],
 };

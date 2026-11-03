@@ -131,6 +131,23 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
+  # Voice rooms (profile `media`, PLAN P15-00, docs/spikes/voice.md): a LiveKit media server (not verified on a live box yet). NOT started by `pnpm db:up`; start it with
+  # `docker compose -f deploy/compose/docker-compose.dev.yml --profile media up -d livekit`. Point the server at it with MANYTHREADS_LIVEKIT_URL=ws://localhost:7880
+  # MANYTHREADS_LIVEKIT_API_KEY=devkey MANYTHREADS_LIVEKIT_API_SECRET=<the secret below> (dev.env.example). The key pair below is a fixed development value: the ports are
+  # on loopback only, and a deployment sets its own (the chart generates one). The webhook reaches the server on the host through host.docker.internal.
+  livekit:
+    profiles: ["media"]
+    image: livekit/livekit-server:v1.8.4
+    command: ["--bind", "0.0.0.0", "--config-body", "port: 7880\nrtc:\n  tcp_port: 7881\n  port_range_start: 50000\n  port_range_end: 50100\n  use_external_ip: false\n  node_ip: 127.0.0.1\nwebhook:\n  api_key: devkey\n  urls:\n    - http://host.docker.internal:3000/api/meetings/media-webhook\n"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
+      - "127.0.0.1:50000-50100:50000-50100/udp"
+    environment:
+      LIVEKIT_KEYS: "devkey: secret-for-local-development-only-0123456789"
+
   # Optional (profile `app`): the server image against the dev Postgres, with the same environment the Helm chart sets
   # (KMS key, public URL, proxy trust, mail through mailpit). `docker compose -f deploy/compose/docker-compose.dev.yml
   # --profile app up -d --build server`; `pnpm db:up` does not start it. Set MANYTHREADS_KMS_KEY first (see dev.env.example).

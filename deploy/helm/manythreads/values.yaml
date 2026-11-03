@@ -258,6 +258,23 @@ hindsight:
   # (the check would fail and the pod never become ready); set "false" once a provider is configured.
   skipLlmVerification: "true"
   resources: {}
+# Voice rooms (docs/spikes/voice.md, docs/plugins/meetings.md): a self-hosted LiveKit media server. OFF by default; with it off nothing here renders and the
+# server answers "not set up" to a voice-room start. Keys are generated once into the Secret manythreads-media-secrets (kept across upgrades).
+# People's browsers connect to `publicUrl` (wss://, through the ingress or a load balancer you set up) and send audio over UDP `rtcPortStart`-`rtcPortEnd`
+# (and TCP `rtcTcpPort`) straight to the node: the pod uses the node's network (hostNetwork) and those ports must be open on the node's firewall.
+# NOT verified on a live cluster yet (P15-00): turn it on in values-live.yaml only after docs/spikes/voice.md "Deferred to the live site" is done.
+media:
+  enabled: false
+  image: livekit/livekit-server:v1.8.4
+  publicUrl: ""            # wss://media.example.org : what browsers connect to (required when enabled)
+  rtcPortStart: 50000
+  rtcPortEnd: 50100        # 100 UDP ports are enough for a few dozen people; widen for more
+  rtcTcpPort: 7881         # audio over TCP when UDP is blocked
+  turn:
+    enabled: false         # TURN over TLS on 443 for networks that only allow HTTPS
+    domain: ""             # turn.example.org : a separate name; its certificate is the load balancer's (externalTls)
+    tlsPort: 5349          # the port the load balancer forwards TURN/TLS 443 to
+  resources: {}
 # Hermes runs on the host through a runner, never in the cluster: this switch only fails the render if turned on.
 hermes: { enabled: false }
 

@@ -88,6 +88,12 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/me/connections/:provider/start', 20, 'person'),
   r('GET', '/api/me/connections/:provider/callback', 30, 'person', 'one-time state: single use, bound to the person who started it, ten minutes'),
   r('DELETE', '/api/me/connections/:provider', 30, 'person'),
+  // Voice rooms (P15-03): starting a room and joining or renewing mint a media token (a credential that lets a browser into the room); the media server's signed
+  // notices come in on a public address and are believed only with a valid signature.
+  r('POST', '/api/channels/:channelId/meetings', 10, 'person'),
+  r('POST', '/api/meetings/:meetingId/join', 60, 'person'),
+  r('POST', '/api/meetings/:meetingId/token', 60, 'person'),
+  r('POST', '/api/meetings/media-webhook', 120, 'address', 'media server signature: a call without a valid signature answers 401 and changes nothing'),
   // Machine credentials presented to a public address: the secret is long and random, so the limit counts only the failed guesses.
   r('POST', '/api/mcp/runs', 60, 'address', 'pairing token: failures counted below'),
   r('POST', '/api/mcp/bots/:botId', 60, 'failures', 'bot token: 60 failures per address a minute'),

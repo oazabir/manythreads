@@ -76,6 +76,7 @@ export class ExtensionRegistries {
     'runner.nodes': new ExtensionRegistry(),
     'inbox.distiller': new ExtensionRegistry(),
     'deploy.step': new ExtensionRegistry(),
+    media: new ExtensionRegistry(),
   };
   readonly commands = new ExtensionRegistry<CommandDefinition>();
   readonly triggers = new ExtensionRegistry<TriggerDefinition>();
