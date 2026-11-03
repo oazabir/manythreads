@@ -4,6 +4,7 @@ import {
   ChannelMentionCreatedEvent,
   ChannelMessageDeletedEvent,
   ChannelMessagePostedEvent,
+  ConnectionsSignInExpiredEvent,
   PresenceDndChangedEvent,
   REMINDERS_DM_KEY_PREFIX,
   RemindersReminderDueEvent,
@@ -68,6 +69,15 @@ export function registerConsumers(ctx: PluginContext): void {
 
   ctx.events.subscribe('reminders.reminder.due', async (raw: PluginEvent, tx) => {
     const event = RemindersReminderDueEvent.parse(raw);
+    const message = await loadMessage(tx, event.messageId);
+    if (!message || message.deleted) return;
+    await deliverReminder(ctx, tx, message, event.personId);
+  });
+
+  // A person's sign-in to an outside account stopped working (P16-02): the connections plugin wrote the "Reconnect" notice into their Reminders conversation and
+  // announces it here, so it reaches the bell the way a due reminder does.
+  ctx.events.subscribe('connections.sign_in.expired', async (raw: PluginEvent, tx) => {
+    const event = ConnectionsSignInExpiredEvent.parse(raw);
     const message = await loadMessage(tx, event.messageId);
     if (!message || message.deleted) return;
     await deliverReminder(ctx, tx, message, event.personId);

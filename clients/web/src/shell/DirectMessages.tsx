@@ -10,6 +10,7 @@ import { navHref } from './nav';
 import { useDismiss } from './useDismiss';
 import { badgeText, unreadLook } from './unreadLook';
 import { PresenceDot } from '../presence/PresenceDot';
+import { LiveBadge } from '../meetings/LiveBadge';
 
 const dmPath = (slug: string, channelId: string): string => `/t/${slug}/dm/${channelId}`;
 
@@ -101,6 +102,7 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
             <span className="h"><span className={`dot ${look.bold ? 'on' : ''}`} aria-hidden="true" /></span>
             <span className="it-label">{label}</span>
             {peer ? <PresenceDot personId={peer.personId} status /> : null}
+            <LiveBadge channelId={d.channel.id} dm />
             {look.badge ? <span className={`pill ${look.badge === 'quiet' ? 'g' : ''}`} data-vt-mask>{badgeText(n)}</span> : null}
           </NavLink>
         );

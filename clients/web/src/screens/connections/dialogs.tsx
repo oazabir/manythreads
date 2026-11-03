@@ -1,7 +1,8 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { CONNECTION_KINDS, connectionKindInfo, type Connection, type ConnectionEnvironment, type ConnectionKindInfo } from '@manythreads/shared';
+import { connectionKindInfo, type Connection, type ConnectionEnvironment, type ConnectionKindInfo } from '@manythreads/shared';
 import { Dialog } from '../../components/Dialog';
 import { Field } from '../../components/ui';
+import { ConnectorGallery } from './ConnectorGallery';
 import { createConnection, deleteConnection, putConnectionCredential, updateConnection } from './api';
 import { ENVIRONMENTS, checkNew, expiryDate, expiryIso, kindLabel, message, suggestSlug, type NewErrors } from './words';
 
@@ -40,31 +41,9 @@ export function AddConnectionDialog({ teamSlug, onClose, onDone }: AddProps) {
 }
 
 function Chooser({ onClose, onPick }: { onClose: () => void; onPick: (k: ConnectionKindInfo) => void }) {
-  const kinds = CONNECTION_KINDS.filter((k) => k.scopes.includes('team'));
   return (
     <Dialog title="Add a connection" onClose={onClose} wide testId="connection-add-chooser" footer={<button type="button" className="btn" onClick={onClose}>Cancel</button>}>
-      <p className="dlg-text">A connection links this team to an outside service. Bots of the team can then be given tools that work through it. Choose what to connect.</p>
-      <ul className="cn-kinds">
-        {kinds.map((k) => (
-          <li key={k.kind}>
-            {/* aria-disabled, not disabled: a keyboard user can still reach the card and hear why it is not available yet */}
-            <button
-              type="button"
-              className={`cn-kind ${k.available ? '' : 'off'}`}
-              aria-disabled={k.available ? undefined : true}
-              aria-describedby={`cn-kind-${k.kind}`}
-              data-kind={k.kind}
-              data-testid={`connection-kind-${k.kind}`}
-              onClick={() => {
-                if (k.available) onPick(k);
-              }}
-            >
-              <span className="cn-kind-title">{k.label}</span>
-              <span className="cn-kind-text" id={`cn-kind-${k.kind}`}>{k.description}{k.available ? '' : ` ${k.unavailableReason ?? ''}`}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <ConnectorGallery onPick={onPick} onNavigate={onClose} />
     </Dialog>
   );
 }

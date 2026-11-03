@@ -1,4 +1,4 @@
-import type { PersonProviderId } from '@manythreads/shared';
+import { availableServices, connectorEntry, type ConnectorEntry, type PersonProviderId } from '@manythreads/shared';
 
 // What differs between the providers a person can connect (PLAN P8-02): their addresses, how they want the app to prove itself, and the services a person can
 // agree to one at a time. Everything else — the PKCE proof, the state, the code exchange, the refresh and the sealing of the tokens — is written once, in flow.ts and
@@ -38,7 +38,15 @@ export interface OAuthProviderDef {
   refreshes: boolean;
 }
 
-const GOOGLE = 'https://www.googleapis.com/auth';
+/**
+ * The services a person can tick, from the connector catalog (shared/connectors/catalog.ts): the catalog is the one list of them, so the gallery, the docs and this
+ * sign-in cannot disagree. A service whose tools are not built yet is not in it.
+ */
+function catalogServices(id: PersonProviderId): readonly ServiceDef[] {
+  const entry: ConnectorEntry | undefined = connectorEntry(id);
+  if (!entry) throw new Error(`the connector catalog has no entry for ${id}`);
+  return availableServices(entry).map((s) => ({ id: s.id, label: s.label, description: s.description, scopes: s.scopes }));
+}
 
 export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
   google: {
@@ -54,13 +62,7 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     authorizeExtra: { access_type: 'offline', include_granted_scopes: 'true', prompt: 'consent' },
     refreshes: true,
     defaultServices: ['drive', 'calendar'],
-    services: [
-      { id: 'drive', label: 'Google Drive (read)', description: 'Search your files and read the text of a document or sheet.', scopes: [`${GOOGLE}/drive.readonly`] },
-      { id: 'gmail', label: 'Gmail (read)', description: 'Search your mail and read a message.', scopes: [`${GOOGLE}/gmail.readonly`] },
-      { id: 'gmail_drafts', label: 'Gmail drafts', description: 'Save a draft in your mailbox. Nothing is sent, and each draft waits for your approval.', scopes: [`${GOOGLE}/gmail.compose`] },
-      { id: 'calendar', label: 'Google Calendar (read)', description: 'List your upcoming events.', scopes: [`${GOOGLE}/calendar.events.readonly`] },
-      { id: 'calendar_write', label: 'Google Calendar (add events)', description: 'Add an event to your calendar. Each event waits for your approval.', scopes: [`${GOOGLE}/calendar.events`] },
-    ],
+    services: catalogServices('google'),
   },
   microsoft: {
     id: 'microsoft',
@@ -73,13 +75,7 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     authorizeExtra: { prompt: 'select_account' },
     refreshes: true,
     defaultServices: ['onedrive', 'calendar'],
-    services: [
-      { id: 'onedrive', label: 'OneDrive (read)', description: 'Search your files and read the text of a file.', scopes: ['Files.Read'] },
-      { id: 'mail', label: 'Outlook mail (read)', description: 'Search your mail and read a message.', scopes: ['Mail.Read'] },
-      { id: 'mail_drafts', label: 'Outlook drafts', description: 'Save a draft in your mailbox. Nothing is sent, and each draft waits for your approval.', scopes: ['Mail.ReadWrite'] },
-      { id: 'calendar', label: 'Outlook calendar (read)', description: 'List your upcoming events.', scopes: ['Calendars.Read'] },
-      { id: 'calendar_write', label: 'Outlook calendar (add events)', description: 'Add an event to your calendar. Each event waits for your approval.', scopes: ['Calendars.ReadWrite'] },
-    ],
+    services: catalogServices('microsoft'),
   },
   notion: {
     id: 'notion',
@@ -92,15 +88,7 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     authorizeExtra: { owner: 'user' },
     refreshes: false,
     defaultServices: ['notion'],
-    services: [
-      {
-        id: 'notion',
-        label: 'Notion',
-        description: 'Search the pages you shared with the connection, read them, and add a page under one of them (each new page waits for your approval).',
-        // Notion has no scope names: what the integration may do is set where it is made, and what it may see is chosen by the person on the consent page.
-        scopes: ['notion'],
-      },
-    ],
+    services: catalogServices('notion'),
   },
 };
 
@@ -144,7 +132,8 @@ function fakeBase(id: PersonProviderId, env: Env): string | null {
   return /^https?:\/\/[^\s/]+$/.test(raw) ? raw : null;
 }
 
-export function endpointsFor(id: PersonProviderId, env: Env = process.env): Endpoints {
+/** `tenant` is the Microsoft directory a workspace admin chose for the workspace's app; without one the server's setting (or `common`) is used. */
+export function endpointsFor(id: PersonProviderId, env: Env = process.env, tenant?: string | null): Endpoints {
   const fake = fakeBase(id, env);
   switch (id) {
     case 'google':
@@ -158,11 +147,11 @@ export function endpointsFor(id: PersonProviderId, env: Env = process.env): Endp
           };
     case 'microsoft': {
       if (fake) return { authorizeUrl: `${fake}/oauth2/v2.0/authorize`, tokenUrl: `${fake}/oauth2/v2.0/token`, revokeUrl: null, apiBase: `${fake}/v1.0` };
-      const tenantRaw = env['MANYTHREADS_OAUTH_MICROSOFT_TENANT']?.trim();
-      const tenant = tenantRaw && TENANT.test(tenantRaw) ? tenantRaw : 'common';
+      const tenantRaw = (tenant ?? env['MANYTHREADS_OAUTH_MICROSOFT_TENANT'])?.trim();
+      const directory = tenantRaw && TENANT.test(tenantRaw) ? tenantRaw : 'common';
       return {
-        authorizeUrl: `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`,
-        tokenUrl: `https://login.microsoftonline.com/${tenant}/oauth2/v2.0/token`,
+        authorizeUrl: `https://login.microsoftonline.com/${directory}/oauth2/v2.0/authorize`,
+        tokenUrl: `https://login.microsoftonline.com/${directory}/oauth2/v2.0/token`,
         revokeUrl: null,
         apiBase: 'https://graph.microsoft.com/v1.0',
       };

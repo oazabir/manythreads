@@ -366,6 +366,14 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
     teamId: team(e['teamId']),
     target: of('connection', uuid(e['connectionId']), code(e['slug'])),
   }),
+  // The OAuth app a workspace signs people in with (P16-02): which provider (by its short id) and whether an admin set or removed it. The client id and the secret are
+  // never in the event, so none can be here.
+  'connections.oauth_app.changed': (e) => ({
+    action: e['change'] === 'cleared' ? 'connection.deleted' : 'connection.credential_set',
+    who: actor(e['actorId']),
+    teamId: null,
+    target: of('oauth_app', null, code(e['provider'])),
+  }),
   'hermes.connection.created': (e) => ({
     action: 'hermes.connection_created',
     who: actor(e['actorId']),

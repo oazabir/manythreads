@@ -1,10 +1,17 @@
 import {
+  ClearOAuthAppResponse,
   DisconnectPersonConnectionResponse,
+  ListOAuthAppsResponse,
   ListPersonConnectionsResponse,
+  PutOAuthAppRequest,
+  PutOAuthAppResponse,
   StartPersonConnectionRequest,
   StartPersonConnectionResponse,
+  clearOAuthAppRoute,
   disconnectPersonConnectionRoute,
+  listOAuthAppsRoute,
   listPersonConnectionsRoute,
+  putOAuthAppRoute,
   startPersonConnectionRoute,
   type PersonProviderId,
 } from '@manythreads/shared';
@@ -23,3 +30,9 @@ export const startPersonConnection = (provider: PersonProviderId, body: StartPer
 
 export const disconnectPersonConnection = (provider: PersonProviderId) =>
   call(disconnectPersonConnectionRoute, { response: DisconnectPersonConnectionResponse }, undefined, { provider });
+
+// The OAuth apps a workspace admin enters (P16-02). The secret goes in once and no call returns it or any part of it.
+export const fetchOAuthApps = () => call(listOAuthAppsRoute, { response: ListOAuthAppsResponse });
+export const putOAuthApp = (provider: PersonProviderId, body: PutOAuthAppRequest) =>
+  call(putOAuthAppRoute, { request: PutOAuthAppRequest, response: PutOAuthAppResponse }, body, { provider });
+export const clearOAuthApp = (provider: PersonProviderId) => call(clearOAuthAppRoute, { response: ClearOAuthAppResponse }, undefined, { provider });

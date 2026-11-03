@@ -20,7 +20,7 @@ export default definePlugin({
     extends: ['event.emit', 'event.subscribe', 'job.register'],
     events: {
       emits: ['notifications.notification.created', 'notifications.digest.sent', 'notifications.digest.unsubscribed'],
-      consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due'],
+      consumes: ['channel.mention.created', 'channel.message.posted', 'channel.message.deleted', 'channel.member.removed', 'presence.dnd.changed', 'reminders.reminder.due', 'connections.sign_in.expired'],
     },
     // presence: the Do not disturb settings a message is held by (`dnd_settings`, `person_status.time_zone`), and who has been away (the presence provider).
     dependsOn: ['channels', 'presence'],

@@ -1,9 +1,16 @@
 import {
+  ClearOAuthAppResponse,
+  ListOAuthAppsResponse,
   ListPersonConnectionsResponse,
   PersonProviderId,
+  PutOAuthAppRequest,
+  clearOAuthAppRoute,
   disconnectPersonConnectionRoute,
+  listOAuthAppsRoute,
   listPersonConnectionsRoute,
+  putOAuthAppRoute,
   startPersonConnectionRoute,
+  type OAuthAppStatus,
   type PersonConnectionProvider,
 } from '@manythreads/shared';
 
@@ -59,6 +66,8 @@ export function installPersonConnectionsMock(on: On, h: PersonConnectionsMockHoo
     id: r.id,
     label: r.label,
     configured: r.configured,
+    problem: null,
+    refreshedAt: r.connected ? '2026-11-03T08:00:00.000Z' : null,
     connected: r.connected,
     state: r.connected ? r.state : null,
     accountLabel: r.connected ? r.accountLabel : null,
@@ -71,6 +80,37 @@ export function installPersonConnectionsMock(on: On, h: PersonConnectionsMockHoo
     if (!r) h.fail(404, 'not_found', 'No such provider.');
     return r;
   };
+
+  // The OAuth apps an admin enters (P16-02): the id is kept to show, the secret is only counted. Nothing of it is ever handed back.
+  const apps = new Map<string, { clientId: string; tenant: string | null; updatedAt: string }>();
+  const appStatus = (r: Row): OAuthAppStatus => {
+    const mine = apps.get(r.id);
+    return {
+      provider: r.id,
+      label: r.label,
+      redirectUri: `https://manythreads.example/api/me/connections/${r.id}/callback`,
+      source: mine ? 'workspace' : r.configured ? 'server' : null,
+      clientId: mine?.clientId ?? null,
+      tenant: mine?.tenant ?? null,
+      supportsTenant: r.id === 'microsoft',
+      hasSecret: mine !== undefined || r.configured,
+      updatedAt: mine?.updatedAt ?? null,
+    };
+  };
+  on(listOAuthAppsRoute, () => ListOAuthAppsResponse.parse({ apps: rows.map(appStatus) }));
+  on(putOAuthAppRoute, ({ params, body: b }) => {
+    const r = find(params['provider']);
+    const parsed = PutOAuthAppRequest.safeParse(b);
+    if (!parsed.success) h.fail(400, 'validation_failed', 'Enter the client id and the client secret.');
+    if (parsed.data.tenant && r.id !== 'microsoft') h.fail(400, 'validation_failed', 'Only Microsoft has a directory setting.');
+    apps.set(r.id, { clientId: parsed.data.clientId, tenant: parsed.data.tenant || null, updatedAt: '2026-11-03T09:00:00.000Z' });
+    r.configured = true;
+    return { app: appStatus(r) };
+  });
+  on(clearOAuthAppRoute, ({ params }) => {
+    const r = find(params['provider']);
+    return ClearOAuthAppResponse.parse({ cleared: apps.delete(r.id) });
+  });
 
   on(listPersonConnectionsRoute, () => ListPersonConnectionsResponse.parse({ providers: rows.map(body) }));
 

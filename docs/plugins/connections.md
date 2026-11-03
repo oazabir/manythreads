@@ -207,6 +207,25 @@ The compile writes a `person_connection_grants` row (no connection to point at, 
 
 `packages/test-utils/src/fake-providers.ts` is a fake Google, Microsoft 365 and Notion on one local address: the consent page, a token address that checks the app, the redirect and the PKCE proof, a refresh that can rotate, and the APIs the tools call, on per-account data (`fake-providers-data.ts`). `MANYTHREADS_OAUTH_<PROVIDER>_FAKE_BASE` points the plugin at it, and is read only outside production. It never records a token, a code or a secret. `e2e/fixtures/outside.ts` starts it together with the fake GitHub for the browser tests. `test/person.test.ts` covers the sign-in, the refresh, the tools and the intersection test.
 
+## The connector catalog and the Add connection gallery (P16-01)
+
+`packages/shared/src/connectors/catalog.ts` is the one list of every connector the product shows: id, label, one of nine shelves (Mail, Calendar, Files, Tickets, CRM, Code, Chat, Finance, Design), words for search, a status (`available` or `planned`) and, for a planned one, the reason. Native entries (mailbox, SSH, Kubernetes) are generated from `CONNECTION_KINDS` and `CONNECTION_KIND_TOOLS`, and the Google, Microsoft and Notion entries from the provider list, so nothing is written twice; the plugin's provider services are read from the catalog. The connectors named in P16-03 to P16-09 (HubSpot, Jira and the rest) are data only and marked planned: the gallery greys them with "Not available yet" and their reason, and offers no button. Adding a tool to a planned connector means building its tools and flipping the status in this file.
+
+The Add connection dialog is the gallery: a search box, an "All" chip and the nine shelves with counts. A team-held connector (mailbox, SSH, Kubernetes) opens its form; a connector each person signs in to (Google, Microsoft, Notion) links to Settings, Connections.
+
+## One OAuth helper (P16-02)
+
+All three providers sign in through `src/oauth/` (store, providers, apps, refresh, notice).
+
+* **Sign-in.** Authorization code with PKCE (S256). The `state` is random, stored as a hash only, bound to the person, valid ten minutes and used once. Tokens are sealed through `ctx.secrets`; the pointer tables have no grant for the application role.
+* **Incremental scopes.** A person agrees to services one at a time. Google is asked with `include_granted_scopes`; the stored scope list is the union; a connection that needs reconnecting is asked for the union again.
+* **The workspace's own app.** A workspace admin enters a client id and a client secret per provider at `/settings/connections/apps` (Microsoft also a directory). The secret is sealed (`connection_oauth_app_secrets`, a table the application role cannot read), is never returned by any route and is removed when the app is replaced or cleared, or the workspace goes. The workspace's app wins; the server's `MANYTHREADS_OAUTH_<PROVIDER>_CLIENT_ID` and `_CLIENT_SECRET` are the fallback. Changing the client id can invalidate the refresh tokens the provider issued to the old app: people may have to reconnect.
+* **Renewal by job.** `connections.oauth_refresh` runs every ten minutes and renews sign-ins whose access token ends within twenty, through the same function a tool call uses (row locked, a rotated refresh token replaces the old one in the same transaction).
+* **Health.** `connection_oauth.failures` and `last_problem` (`unavailable`, `rejected`) are shown on the connected-accounts page and cleared by the next success. When the provider refuses a sign-in for good (`invalid_grant`, no refresh token), the connection goes to `needs_reconnect` and the person gets one notice: a message in their Reminders conversation ("Reconnect Google — access expired ...") and a notification, via the event `connections.sign_in.expired`. It is sent once per expiry (`notified_at`) and again after a later expiry. A provider that is merely down is counted but does not produce a notice.
+* **Revoke.** Disconnecting a sign-in (the person's route, or `DELETE /api/connections/:id`) deletes the sealed tokens, then asks the provider to revoke the refresh token (best effort; Microsoft has no revoke address).
+* **Routes** (workspace owner/admin): `GET /api/admin/connections/oauth-apps`, `PUT` and `DELETE /api/admin/connections/oauth-apps/:provider` (20 a minute per person). Event `connections.oauth_app.changed` (provider, change, actor; no id or secret); the audit plugin writes it as `connection.credential_set` or `connection.deleted`. Migration `0005_oauth_apps_health.sql`.
+* **What needs a real provider.** The consent screens and app registration at Google, Microsoft and Notion; the providers' real refresh-token expiry and rotation; real revoke endpoints; the scope strings of the planned connectors. Everything else runs against the fake provider (`oauth-helper.test.ts`). The notification shows in the bell as a reminder, because it is carried by the Reminders path; a notification kind of its own would change the notifications model (owner question).
+
 ## The routes (P8-06)
 
 | Route | Who | What |
@@ -260,5 +279,6 @@ Not built: the webhook that calls it, the GitHub App credentials, and "merge rel
 * A real mail transport (IMAP, Gmail), audit lines and events for connection changes (P8-06), the Connections screen.
 * The screens that consume the mail (P8-34 to P8-36).
 * Creating a connection and putting credentials in for a team connection: no route yet (P8-03). The functions exist (`putConnectionSecret`, `deleteConnectionAndSecrets`) for the code that will.
-* Workspace-scoped grants to a bot, an admin screen for the provider apps (P16-02), and the person's connections page in the web client.
+* Workspace-scoped grants to a bot.
+* The tools of the planned connectors (P16-03 to P16-09).
 * A real mail transport (P8-29), audit lines and events for connection changes (P8-06), the Connections screen.

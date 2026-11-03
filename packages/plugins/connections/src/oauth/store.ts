@@ -3,7 +3,8 @@ import type { PersonProviderId } from '@manythreads/shared';
 import { isUsable } from '../rows.ts';
 import { deleteConnectionAndSecrets, putConnectionSecretIn, readConnectionSecretIn, type SecretDeps } from '../secrets.ts';
 import { OAuthError, refreshAccess, revokeToken, sha256, type FetchLike, type TokenSet } from './flow.ts';
-import { endpointsFor, oauthApp, providerDef, type Env } from './providers.ts';
+import { resolveApp, resolveAppIn } from './apps.ts';
+import { endpointsFor, providerDef, type Env } from './providers.ts';
 
 // Where a person's provider sign-in lives in the database (PLAN P8-02): the unfinished sign-ins, the connection row of the person and what is known about it, and the
 // sealed tokens. Everything here runs as the system role inside one workspace (the credential tables give the application role nothing), and every function takes the
@@ -18,6 +19,11 @@ export interface OAuthDeps extends SecretDeps {
   env: Env;
   /** Tests only: the HTTP call to the provider. */
   fetchImpl?: FetchLike | undefined;
+  /**
+   * Called (after the transaction that found it has committed) when a person's sign-in has stopped working for good, so they can be told to reconnect (notice.ts).
+   * It is best effort: a failure here never changes the answer of the call that found the problem, and it is never given a token.
+   */
+  onNeedsReconnect?: ((input: { workspaceId: string; connectionId: string; provider: PersonProviderId }) => Promise<void>) | undefined;
 }
 
 /** The sign-in is no longer usable and the person must connect again (`needs_reconnect`), or never was (`not_connected`), or the provider is down (`unavailable`). */
@@ -122,7 +128,8 @@ export async function saveSignIn(
         `INSERT INTO app.connection_oauth (connection_id, workspace_id, provider, scopes, account_label, access_expires_at, state, refreshed_at)
          VALUES ($1, $2, $3, $4::text[], $5, $6, 'ok', $7)
          ON CONFLICT (connection_id) DO UPDATE SET scopes = EXCLUDED.scopes, account_label = COALESCE(EXCLUDED.account_label, app.connection_oauth.account_label),
-           access_expires_at = EXCLUDED.access_expires_at, state = 'ok', refreshed_at = EXCLUDED.refreshed_at`,
+           access_expires_at = EXCLUDED.access_expires_at, state = 'ok', refreshed_at = EXCLUDED.refreshed_at,
+           failures = 0, last_problem = NULL, notified_at = NULL`,
         [connectionId, input.workspaceId, input.provider, scopes, input.accountLabel, expiresAt, now],
       );
       await putConnectionSecretIn(deps.secrets, tx, { workspaceId: input.workspaceId, connectionId, name: 'access_token', plaintext: input.tokens.accessToken });
@@ -144,11 +151,18 @@ async function markDead(tx: PluginTx, connectionId: string): Promise<void> {
 /**
  * The access token for a connection, renewed first when it is about to stop working. The renewal holds the connection's row for its whole length, so two calls at
  * once renew once (a provider that rotates refresh tokens would refuse the second use of the first one). `force` renews even when the clock says the token is fine: the
- * provider just answered 401 to it. A provider that refuses the refresh token for good (`invalid_grant`) turns the connection off and asks the person to reconnect.
+ * provider just answered 401 to it. `skewMs` is how close to its end a token may be before it is renewed (the renewal job uses a wide one, so a person's next call
+ * never waits for a renewal). A provider that refuses the refresh token for good (`invalid_grant`) turns the connection off and asks the person to reconnect (once: see
+ * `onNeedsReconnect`); any other failure is counted on the connection (`failures`, `last_problem`) and shown on the connections page, and the person is not bothered.
  */
-export async function accessTokenFor(deps: OAuthDeps, connection: { id: string; workspaceId: string; provider: PersonProviderId }, options: { force?: boolean } = {}): Promise<string> {
+export async function accessTokenFor(
+  deps: OAuthDeps,
+  connection: { id: string; workspaceId: string; provider: PersonProviderId },
+  options: { force?: boolean; skewMs?: number } = {},
+): Promise<string> {
   const def = providerDef(connection.provider);
   if (!def) throw new ConnectionProblem('not_connected', 'That connection is not one this server knows.');
+  const skew = options.skewMs ?? REFRESH_SKEW_MS;
   const outcome = await deps.db.system(
     async (tx): Promise<{ token: string } | { dead: true } | { unavailable: true } | { missing: true }> => {
       const meta = (
@@ -160,7 +174,7 @@ export async function accessTokenFor(deps: OAuthDeps, connection: { id: string; 
       if (!meta) return { missing: true };
       if (meta.state === 'needs_reconnect') return { dead: true };
       const read = (name: string): Promise<string | null> => readConnectionSecretIn(deps.secrets, tx, { workspaceId: connection.workspaceId, connectionId: connection.id, name });
-      const fresh = options.force !== true && (meta.access_expires_at === null || meta.access_expires_at.getTime() - deps.now().getTime() > REFRESH_SKEW_MS);
+      const fresh = options.force !== true && (meta.access_expires_at === null || meta.access_expires_at.getTime() - deps.now().getTime() > skew);
       if (fresh) {
         const token = await read('access_token');
         if (token !== null) return { token };
@@ -171,20 +185,25 @@ export async function accessTokenFor(deps: OAuthDeps, connection: { id: string; 
         await markDead(tx, connection.id);
         return { dead: true };
       }
-      const app = oauthApp(connection.provider, deps.env);
+      const app = await resolveAppIn(deps, tx, connection.workspaceId, connection.provider);
+      // no app to renew with (an admin removed it): not the provider's fault and not the person's, so nothing is counted and the person is not told
       if (!app) return { unavailable: true };
       let tokens: TokenSet;
       try {
-        tokens = await refreshAccess({ provider: def, endpoints: endpointsFor(connection.provider, deps.env), app, fetchImpl: deps.fetchImpl }, refreshToken);
+        tokens = await refreshAccess({ provider: def, endpoints: endpointsFor(connection.provider, deps.env, app.tenant), app, fetchImpl: deps.fetchImpl }, refreshToken);
       } catch (err) {
         if (err instanceof OAuthError && err.failure === 'invalid_grant') {
           await markDead(tx, connection.id);
           return { dead: true };
         }
+        await tx.query('UPDATE app.connection_oauth SET failures = failures + 1, last_problem = $2 WHERE connection_id = $1', [
+          connection.id,
+          err instanceof OAuthError && err.failure === 'rejected' ? 'rejected' : 'unavailable',
+        ]);
         return { unavailable: true };
       }
       const now = deps.now();
-      await tx.query(`UPDATE app.connection_oauth SET access_expires_at = $2, refreshed_at = $3, state = 'ok' WHERE connection_id = $1`, [
+      await tx.query(`UPDATE app.connection_oauth SET access_expires_at = $2, refreshed_at = $3, state = 'ok', failures = 0, last_problem = NULL WHERE connection_id = $1`, [
         connection.id,
         tokens.expiresInSec === null ? null : new Date(now.getTime() + tokens.expiresInSec * 1000),
         now,
@@ -198,7 +217,15 @@ export async function accessTokenFor(deps: OAuthDeps, connection: { id: string; 
     { workspaceId: connection.workspaceId },
   );
   if ('token' in outcome) return outcome.token;
-  if ('dead' in outcome) throw new ConnectionProblem('needs_reconnect', `Your ${def.label} connection stopped working. Connect it again from your connections page.`);
+  if ('dead' in outcome) {
+    // the person is told once (the notifier claims `notified_at`); a failure to tell them never changes what this call answers
+    try {
+      await deps.onNeedsReconnect?.({ workspaceId: connection.workspaceId, connectionId: connection.id, provider: connection.provider });
+    } catch {
+      /* best effort: the connections page still says the sign-in has to be made again */
+    }
+    throw new ConnectionProblem('needs_reconnect', `Your ${def.label} connection stopped working. Connect it again from your connections page.`);
+  }
   if ('missing' in outcome) throw new ConnectionProblem('not_connected', `You have not connected ${def.label}.`);
   throw new ConnectionProblem('unavailable', `${def.label} could not be reached to renew the sign-in. Try again in a moment.`);
 }
@@ -210,29 +237,55 @@ export async function accessTokenFor(deps: OAuthDeps, connection: { id: string; 
 export async function disconnectPerson(deps: OAuthDeps, input: { workspaceId: string; ownerId: string; provider: PersonProviderId }): Promise<boolean> {
   const def = providerDef(input.provider);
   if (!def) return false;
-  const held = await deps.db.system(
-    async (tx) => {
-      const row = (
+  const id = await deps.db.system(
+    async (tx) =>
+      (
         await tx.query<{ id: string }>(`SELECT id FROM app.connections WHERE workspace_id = $1 AND owner_id = $2 AND scope = 'person' AND slug = $3`, [
           input.workspaceId,
           input.ownerId,
           input.provider,
         ])
-      ).rows[0];
-      if (!row) return null;
-      const name = def.refreshes ? 'refresh_token' : 'access_token';
-      const token = await readConnectionSecretIn(deps.secrets, tx, { workspaceId: input.workspaceId, connectionId: row.id, name });
-      return { id: row.id, token };
+      ).rows[0]?.id ?? null,
+    { workspaceId: input.workspaceId },
+  );
+  if (!id) return false;
+  const held = await revocableToken(deps, { workspaceId: input.workspaceId, connectionId: id });
+  await deleteConnectionAndSecrets(deps, { workspaceId: input.workspaceId, connectionId: id });
+  if (held) await revokeAtProvider(deps, { workspaceId: input.workspaceId, provider: input.provider, token: held.token });
+  return true;
+}
+
+/**
+ * Asks the provider to forget a token (a person disconnected, or a connection was deleted). Best effort and silent: the token is already gone from our side by then, and
+ * a provider that is down or has no revoke address must not stop that. The token goes only in the request, never into an error or a log line.
+ */
+export async function revokeAtProvider(deps: OAuthDeps, input: { workspaceId: string; provider: PersonProviderId; token: string }): Promise<void> {
+  const def = providerDef(input.provider);
+  if (!def) return;
+  try {
+    const app = await resolveApp(deps, input.workspaceId, input.provider);
+    if (!app) return;
+    await revokeToken({ provider: def, endpoints: endpointsFor(input.provider, deps.env, app.tenant), app, fetchImpl: deps.fetchImpl }, input.token);
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
+ * The token to revoke for a person's OAuth connection (the refresh token, or the access token of a provider that has no refresh token), read BEFORE the connection is
+ * deleted. Null when the connection is not a person's sign-in or holds no token.
+ */
+export async function revocableToken(deps: OAuthDeps, input: { workspaceId: string; connectionId: string }): Promise<{ provider: PersonProviderId; token: string } | null> {
+  return deps.db.system(
+    async (tx) => {
+      const row = (await tx.query<{ provider: string }>('SELECT provider FROM app.connection_oauth WHERE connection_id = $1 AND workspace_id = $2', [input.connectionId, input.workspaceId])).rows[0];
+      const def = row ? providerDef(row.provider) : undefined;
+      if (!def) return null;
+      const token = await readConnectionSecretIn(deps.secrets, tx, { workspaceId: input.workspaceId, connectionId: input.connectionId, name: def.refreshes ? 'refresh_token' : 'access_token' });
+      return token === null ? null : { provider: def.id, token };
     },
     { workspaceId: input.workspaceId },
   );
-  if (!held) return false;
-  await deleteConnectionAndSecrets(deps, { workspaceId: input.workspaceId, connectionId: held.id });
-  const app = oauthApp(input.provider, deps.env);
-  if (held.token !== null && app) {
-    await revokeToken({ provider: def, endpoints: endpointsFor(input.provider, deps.env), app, fetchImpl: deps.fetchImpl }, held.token);
-  }
-  return true;
 }
 
 // --- reading a person's connection ---------------------------------------------------------------------------------------------------------------------
@@ -243,17 +296,31 @@ export interface PersonConnectionState {
   scopes: string[];
   accountLabel: string | null;
   state: 'ok' | 'needs_reconnect';
+  /** The last renewal failed and none has worked since. */
+  problem: 'unavailable' | 'rejected' | null;
+  refreshedAt: Date | null;
 }
 
 /** The caller's own connections, by provider id. `tx` is the person's: row-level security shows them nobody else's. */
 export async function ownConnections(tx: PluginTx, ownerId: string): Promise<Map<string, PersonConnectionState>> {
-  const rows = await tx.query<{ id: string; slug: string; status: 'enabled' | 'disabled'; scopes: string[]; account_label: string | null; state: 'ok' | 'needs_reconnect' }>(
-    `SELECT c.id, c.slug, c.status, o.scopes, o.account_label, o.state
+  const rows = await tx.query<{
+    id: string;
+    slug: string;
+    status: 'enabled' | 'disabled';
+    scopes: string[];
+    account_label: string | null;
+    state: 'ok' | 'needs_reconnect';
+    last_problem: 'unavailable' | 'rejected' | null;
+    refreshed_at: Date | null;
+  }>(
+    `SELECT c.id, c.slug, c.status, o.scopes, o.account_label, o.state, o.last_problem, o.refreshed_at
        FROM app.connections c JOIN app.connection_oauth o ON o.connection_id = c.id
       WHERE c.scope = 'person' AND c.owner_id = $1`,
     [ownerId],
   );
-  return new Map(rows.rows.map((r) => [r.slug, { id: r.id, status: r.status, scopes: r.scopes, accountLabel: r.account_label, state: r.state }]));
+  return new Map(
+    rows.rows.map((r) => [r.slug, { id: r.id, status: r.status, scopes: r.scopes, accountLabel: r.account_label, state: r.state, problem: r.last_problem, refreshedAt: r.refreshed_at }]),
+  );
 }
 
 export interface UsablePersonConnection {

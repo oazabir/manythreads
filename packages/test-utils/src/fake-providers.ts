@@ -50,7 +50,8 @@ export interface FakeProviders {
   tokenCalls: FakeTokenCall[];
   /** Every consent address that was opened, as the scopes asked for (no state or challenge). */
   consents: Array<{ provider: FakeProviderId; scopes: string[]; offline: boolean; hasChallenge: boolean }>;
-  revoked: Array<{ provider: FakeProviderId }>;
+  /** Every revoke call: which provider, and what kind of token it named (`unknown`: one this server did not issue). Never the token itself. */
+  revoked: Array<{ provider: FakeProviderId; kind: 'refresh' | 'access' | 'unknown' }>;
   drafts: Array<{ provider: FakeProviderId; account: string; to: string[]; subject: string; body: string }>;
   createdEvents: Array<{ provider: FakeProviderId; account: string; title: string; start: string; end: string; guests: string[] }>;
   createdPages: Array<{ account: string; parent: string; title: string }>;
@@ -274,7 +275,7 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
       if (refresh) refresh.dead = true;
       const access = accessTokens.get(token);
       if (access) access.expired = true;
-      revoked.push({ provider });
+      revoked.push({ provider, kind: refresh ? 'refresh' : access ? 'access' : 'unknown' });
       return send(200, {});
     }
 

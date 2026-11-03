@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IsoDateTime } from '../../common/time.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // The routes of a person's own connections to outside accounts (PLAN P8-02): Google, Microsoft and Notion. A person signs in to the provider once from here; what
@@ -31,11 +32,19 @@ export type PersonConnectionService = z.infer<typeof PersonConnectionService>;
 export const PersonConnectionState = z.enum(['ok', 'needs_reconnect']);
 export type PersonConnectionState = z.infer<typeof PersonConnectionState>;
 
+/** Why the last attempt to keep a sign-in alive failed (`connection_oauth.last_problem`): the provider could not be reached, or it refused for a reason other than "no longer valid". */
+export const PersonConnectionProblem = z.enum(['unavailable', 'rejected']);
+export type PersonConnectionProblem = z.infer<typeof PersonConnectionProblem>;
+
 export const PersonConnectionProvider = z.strictObject({
   id: PersonProviderId,
   label: z.string().max(80),
   /** An admin has put this server's app credentials for the provider in place; false = the start route answers 409. */
   configured: z.boolean(),
+  /** The last renewal of the sign-in failed and has not worked since (the connection's health). Null when all is well or not connected. Absent from an older server: null. */
+  problem: PersonConnectionProblem.nullable().default(null),
+  /** When the sign-in was last renewed or made. Null when not connected. Absent from an older server: null. */
+  refreshedAt: IsoDateTime.nullable().default(null),
   /** The person has a connection to it that works (or did, see `state`). */
   connected: z.boolean(),
   /** `needs_reconnect`: the provider stopped honouring the stored sign-in, the person has to connect again. Null when not connected. */

@@ -302,3 +302,121 @@
   color: var(--alert);
   font-size: 12.5px;
 }
+
+/* ---- the Add connection gallery: search, shelves and cards ---- */
+.cg {
+  display: grid;
+  gap: 10px;
+}
+
+.cg-shelves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cg-chip {
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.cg-chip:hover {
+  border-color: var(--ink);
+}
+
+.cg-chip.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.cg-count {
+  opacity: 0.7;
+  font-size: 11.5px;
+}
+
+.cg-found {
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.cg-empty {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+.cg-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cg-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.cg-card.off {
+  background: var(--shell);
+  color: var(--mute);
+}
+
+.cg-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.cg-name {
+  font-size: 13.5px;
+}
+
+.cg-shelf {
+  font-size: 11.5px;
+}
+
+.cg-text,
+.cg-meta {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.cg-text {
+  color: var(--mute);
+}
+
+.cg-reason {
+  color: var(--ink);
+}
+
+.cg-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.cg-soon {
+  color: var(--mute);
+  font-size: 12px;
+}

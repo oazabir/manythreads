@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type RefObject } from 'react';
 import { NavLink, useLocation } from 'react-router';
+import { LiveBadge } from '../meetings/LiveBadge';
 import { IDLE_CHANNEL_DAYS, type NavChannel, type SidebarPrefs } from '@manythreads/shared';
 import { isAdmin, useSession } from '../app/session';
 import { useUnread } from '../channels/hooks';
@@ -138,6 +139,7 @@ function ChannelRow({ slug, channel, count, look, starred, personal, stars, repo
       <NavLink to={channelPath(slug, channel.name)} className={({ isActive }) => `it ${isActive ? 'on' : ''} ${look.bold ? 'unread' : ''}`} data-unread={count > 0 ? count : undefined}>
         <span className="h">{channel.isPrivate ? <LockIcon /> : '#'}</span>
         <span className="it-label">{name}</span>
+        <LiveBadge channelId={channel.id} />
         {look.badge ? <Pill n={count} tone={look.badge} /> : null}
       </NavLink>
       {personal ? (

@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { Meeting, MeetingJoin, MeetingState, MeetingSummary, MeetingTitle } from '../../entities/meeting.ts';
 import { Team } from '../../entities/team.ts';
 import { ChannelId, MeetingId } from '../../ids.ts';
+
+export * from './consent.ts';
 import type { ApiRoute } from '../client/route.ts';
 
 // Voice rooms (PLAN P15-03, plugin `meetings`, docs/plugins/meetings.md). One live room per channel; a DM call uses the DM's channel. Whoever may read the channel may

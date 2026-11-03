@@ -39,10 +39,9 @@ test('an admin adds a mailbox: Kubernetes is shut with its reason, the credentia
     await page.getByTestId('connection-add').click();
     const chooser = page.getByTestId('connection-add-chooser');
     await expect(chooser).toBeVisible();
-    await expect(page.getByTestId('connection-kind-kubernetes')).toHaveAttribute('aria-disabled', 'true');
-    await expect(page.getByTestId('connection-kind-kubernetes')).toContainText('not available yet');
-    await page.getByTestId('connection-kind-kubernetes').click();
-    await expect(chooser).toBeVisible();
+    // the gallery lists what is built (a mailbox, SSH, Kubernetes) and, greyed with a reason, what is only planned (P16-01)
+    await expect(page.getByTestId('connection-kind-kubernetes')).toBeVisible();
+    await expect(page.getByTestId('connector-soon-hubspot')).toHaveText('Not available yet');
     await page.getByTestId('connection-kind-email').click();
 
     const form = page.getByTestId('connection-add-form');

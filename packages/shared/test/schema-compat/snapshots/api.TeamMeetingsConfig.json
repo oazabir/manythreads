@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "transcribe": {
+      "default": "on-device",
+      "type": "string",
+      "enum": [
+        "on-device",
+        "server",
+        "off"
+      ]
+    }
+  }
+}

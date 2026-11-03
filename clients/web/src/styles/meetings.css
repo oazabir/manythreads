@@ -1,0 +1,560 @@
+/*
+ * Voice rooms (PLAN P15-04, P15-05): the header button (`call-start`), the sidebar badge (`live-`), the docked call bar and its card, consent prompt and settings
+ * (`call-`), and the incoming call (`ring-`). Tokens only. Shared classes (.btn, .av, .pill, .sr-only) are used, never redefined. Layout rule: a state change never
+ * moves a neighbour: the controls keep their size, the speaking ring is a box-shadow (no layout), and the clock sits in a column of fixed width.
+ */
+
+/* ---- header ---- */
+.call-start {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.call-start.live {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.call-here {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--ok-border);
+  border-radius: 12px;
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.call-face .av {
+  width: 26px;
+  height: 26px;
+  transition: box-shadow 0.12s;
+}
+
+/* ---- sidebar badge ---- */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.live-badge + .pill {
+  margin-left: 0;
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+.live-faces {
+  display: inline-flex;
+  align-items: center;
+}
+
+.live-faces .av {
+  width: 16px;
+  height: 16px;
+  margin-left: -4px;
+  border: 1.5px solid var(--surface);
+  font-size: 7px;
+}
+
+.live-faces .av:first-child {
+  margin-left: 0;
+}
+
+.live-more {
+  margin-left: 3px;
+  color: var(--mute);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+}
+
+/* ---- the docked bar ---- */
+.call-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--shell);
+}
+
+.call-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.call-id {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.call-live {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.call-live.off {
+  background: var(--dot-off);
+}
+
+.call-title {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-clock {
+  min-width: 56px;
+  color: var(--mute);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.call-faces {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.call-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+/* the speaking ring: a box-shadow, so nothing around it moves */
+.call-face.speaking .av {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ok);
+}
+
+.call-face.speaking {
+  color: var(--ink);
+}
+
+.call-face-name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-chip {
+  padding: 2px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--mute);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.call-chip.on {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.call-chip.wait {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.call-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.call-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.call-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.call-btn:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+.call-btn:hover:not(:disabled) {
+  background: var(--nav-on);
+}
+
+.call-btn.on {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.call-ptt.talking {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+  touch-action: none;
+}
+
+.call-ptt {
+  touch-action: none;
+  user-select: none;
+}
+
+.call-chat,
+.call-leave {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.call-leave {
+  border-color: var(--alert-border);
+  color: var(--alert-ink);
+}
+
+.call-unread {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--human);
+  color: var(--surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.call-notice {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+  font-size: 12.5px;
+}
+
+.call-captions {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--mute);
+  font-size: 13px;
+}
+
+/* ---- settings popover ---- */
+.call-more {
+  position: relative;
+}
+
+.call-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.call-field {
+  display: grid;
+  gap: 4px;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.call-field select {
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.call-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.call-hint {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.call-sec {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.call-end-all {
+  border-color: var(--alert-border);
+  color: var(--alert-ink);
+}
+
+/* ---- consent ---- */
+.call-consent {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--warn-border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.call-consent-title {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.call-consent-body {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--txt);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.call-consent-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+.call-consent-error {
+  margin: 0;
+  color: var(--alert-ink);
+  font-size: 12.5px;
+}
+
+.call-consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.call-consent-wait {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+/* ---- the card: not set up / could not open ---- */
+.call-card {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.call-card-text {
+  display: grid;
+  gap: 2px;
+}
+
+.call-card-title {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.call-card-body {
+  color: var(--mute);
+  font-size: 12.5px;
+}
+
+/* ---- the bottom sheet at phone width ---- */
+.call-grab {
+  display: none;
+}
+
+.call-grab:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}
+
+@media (width <= 760px) {
+  .call-dock.sheet {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 40;
+    max-height: 75vh;
+    padding: 6px 12px max(12px, env(safe-area-inset-bottom));
+    overflow: auto;
+    border: 1px solid var(--rule);
+    border-bottom: 0;
+    border-radius: 14px 14px 0 0;
+    box-shadow: var(--menu-shadow);
+  }
+
+  .call-grab {
+    display: block;
+    align-self: center;
+    width: 44px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .call-grab::after {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 8px auto;
+    border-radius: 2px;
+    background: var(--rule);
+  }
+
+  /* collapsed: the bar is one line; open: the people and the settings show too */
+  .call-dock.sheet:not(.open) .call-faces,
+  .call-dock.sheet:not(.open) .call-captions {
+    display: none;
+  }
+
+  .call-dock.sheet .call-controls {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .call-dock.sheet .call-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .call-dock.sheet .call-menu {
+    position: static;
+    width: auto;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  .call-dock.sheet .call-more {
+    position: static;
+  }
+
+  .call-start-label {
+    display: none;
+  }
+}
+
+/* ---- an incoming call ---- */
+.ring-stack {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+  display: grid;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+}
+
+.ring-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  min-width: 280px;
+  padding: 12px 14px;
+  border: 1px solid var(--ok-border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--menu-shadow);
+}
+
+.ring-text {
+  display: grid;
+  gap: 2px;
+}
+
+.ring-title {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.ring-sub {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.ring-actions {
+  display: flex;
+  gap: 8px;
+}

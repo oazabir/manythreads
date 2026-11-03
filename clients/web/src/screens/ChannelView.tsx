@@ -22,6 +22,7 @@ import { WebhooksButton } from '../webhooks/WebhooksDialog';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon, ArrowUpIcon } from '../shell/icons';
 import { useHeaderActionsSlot, useHeaderTopic } from '../shell/topic';
+import { StartButton } from '../meetings/StartButton';
 import { fetchChannelBoards } from './boards/api';
 import { boardPath, botBoardOf } from './boards/board';
 import { fetchProjects } from './projects/api';
@@ -274,6 +275,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
       {headerSlot && !dm ? createPortal(<ChannelStar channelId={channelId} channelName={name} teamSlug={teamSlug} />, headerSlot) : null}
+      {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
       {headerSlot
         ? createPortal(<ChannelBell channel={{ channelId, channelName: dm ? null : name, channelKind: dm ? 'dm' : 'channel' }} />, headerSlot)
         : null}

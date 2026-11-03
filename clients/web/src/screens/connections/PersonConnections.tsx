@@ -9,7 +9,10 @@ import {
   initialServices,
   message,
   notSetUpSentence,
+  problemSentence,
   reconnectSentence,
+  reconnectTitle,
+  renewedLine,
   resultFromQuery,
   standing,
   withoutResult,
@@ -129,12 +132,20 @@ function ProviderCard({ provider: p, onChanged }: { provider: PersonConnectionPr
         {p.connected && p.accountLabel ? <div className="cn-detail" data-testid="person-account">Signed in as {p.accountLabel}</div> : null}
         {!p.configured ? (
           <p className="cn-detail" data-testid="person-not-configured">
-            {notSetUpSentence(p.label)}
+            {notSetUpSentence(p.label)} <Link to="/settings/connections/apps">Admins: set it up here.</Link>
             <br />
             <span className="faint">The address to register at {p.label}: <code className="mono">{p.redirectUri}</code></span>
           </p>
         ) : null}
-        {p.connected && p.state === 'needs_reconnect' ? <p className="cn-detail cn-warn" data-testid="person-needs-reconnect">{reconnectSentence(p.label)}</p> : null}
+        {p.connected && p.state === 'needs_reconnect' ? (
+          <p className="cn-detail cn-warn" data-testid="person-needs-reconnect">
+            <strong>{reconnectTitle(p.label)}</strong>
+            <br />
+            {reconnectSentence(p.label)}
+          </p>
+        ) : null}
+        {p.connected && p.state === 'ok' && p.problem ? <p className="cn-detail cn-warn" data-testid="person-problem">{problemSentence(p.label, p.problem)}</p> : null}
+        {p.connected && p.state === 'ok' && !p.problem && p.refreshedAt ? <p className="cn-detail faint" data-testid="person-renewed">{renewedLine(p.refreshedAt)}</p> : null}
 
         <fieldset className="cp-services" disabled={!canStart || !idle}>
           <legend className="cp-legend">What a bot may use for you</legend>

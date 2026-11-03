@@ -116,6 +116,8 @@ import { KnowledgeDocumentAddedEvent } from './knowledge.document.added.ts';
 import { KnowledgeDocumentRemovedEvent } from './knowledge.document.removed.ts';
 import { KnowledgeBaseResyncedEvent } from './knowledge.base.resynced.ts';
 import { ConnectionsInboxClaimedEvent } from './connections.inbox.claimed.ts';
+import { ConnectionsOauthAppChangedEvent } from './connections.oauth_app.changed.ts';
+import { ConnectionsSignInExpiredEvent } from './connections.sign_in.expired.ts';
 import { MemoryItemDroppedEvent } from './memory.item.dropped.ts';
 import { MemoryItemFiledEvent } from './memory.item.filed.ts';
 import { MemoryItemHeldEvent } from './memory.item.held.ts';
@@ -230,6 +232,8 @@ export const eventRegistry = {
   'knowledge.document.removed': { 1: KnowledgeDocumentRemovedEvent },
   'knowledge.base.resynced': { 1: KnowledgeBaseResyncedEvent },
   'connections.inbox.claimed': { 1: ConnectionsInboxClaimedEvent },
+  'connections.oauth_app.changed': { 1: ConnectionsOauthAppChangedEvent },
+  'connections.sign_in.expired': { 1: ConnectionsSignInExpiredEvent },
   'memory.item.dropped': { 1: MemoryItemDroppedEvent },
   'memory.item.filed': { 1: MemoryItemFiledEvent },
   'memory.item.held': { 1: MemoryItemHeldEvent },

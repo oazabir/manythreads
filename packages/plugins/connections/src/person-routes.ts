@@ -16,7 +16,8 @@ import {
 } from '@manythreads/shared';
 import { accountLabelFor } from './oauth/api.ts';
 import { authorizationUrl, exchangeCode, newFlowSecrets } from './oauth/flow.ts';
-import { endpointsFor, oauthApp, PROVIDERS, providerIds, redirectUriFor, scopesFor, serviceDef, servicesGranted } from './oauth/providers.ts';
+import { configuredProviders, resolveApp } from './oauth/apps.ts';
+import { endpointsFor, PROVIDERS, providerIds, redirectUriFor, scopesFor, serviceDef, servicesGranted } from './oauth/providers.ts';
 import { consumeFlow, disconnectPerson, ownConnections, recordFlow, saveSignIn, type OAuthDeps } from './oauth/store.ts';
 import { PERSON_TOOL_DEFS } from './person-tools.ts';
 
@@ -38,12 +39,13 @@ export function safeReturn(raw: string | undefined): string {
 }
 
 /** `returnTo` with one query parameter set; it is a path of this site already, so the base used to parse it never shows. */
-function withParam(returnTo: string, key: string, value: string): string {
+export function withParam(returnTo: string, key: string, value: string): string {
   const url = new URL(returnTo, 'http://site.invalid');
   url.searchParams.delete('connected');
   url.searchParams.delete('connect_error');
   url.searchParams.set(key, value);
-  return `${url.pathname}${url.search}${url.hash}`;
+  // `/a/..//x` parses to `//x`, which a browser reads as another host: keep one leading slash
+  return `${url.pathname.replace(/^\/{2,}/, '/')}${url.search}${url.hash}`;
 }
 
 const redirect = (location: string): HttpResponse => ({ status: 302, headers: { location, 'cache-control': 'no-store' } });
@@ -60,6 +62,7 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
     handler: route(async (_req, tx) => {
       if (tx.actor.kind !== 'person') throw forbidden('Only a person has connections of their own.');
       const own = await ownConnections(tx, tx.actor.id);
+      const configured = await configuredProviders(deps, tx.actor.workspaceId);
       return json({
         providers: providerIds().map((id) => {
           const def = PROVIDERS[id];
@@ -68,7 +71,9 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
           return {
             id,
             label: def.label,
-            configured: oauthApp(id, deps.env) !== null,
+            configured: configured.has(id),
+            problem: mine?.problem ?? null,
+            refreshedAt: mine?.refreshedAt?.toISOString() ?? null,
             connected: mine !== undefined,
             state: mine ? mine.state : null,
             accountLabel: mine?.accountLabel ?? null,
@@ -96,16 +101,24 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
       if (tx.actor.kind !== 'person') throw forbidden('Only a person has connections of their own.');
       const provider = providerOf(req.params);
       const def = PROVIDERS[provider];
-      const app = oauthApp(provider, deps.env);
+      const app = await resolveApp(deps, tx.actor.workspaceId, provider);
       if (!app) throw conflict(`${def.label} is not set up on this server yet. A workspace admin has to add this server’s ${def.label} app (its client id and secret) first.`);
       const body = StartPersonConnectionRequest.parse(req.body);
-      const services = [...new Set(body.services ?? def.defaultServices)];
-      const unknown = services.find((s) => !serviceDef(def, s));
+      const named = [...new Set(body.services ?? def.defaultServices)];
+      const unknown = named.find((s) => !serviceDef(def, s));
       if (unknown) throw invalid(`${def.label} has no service called “${unknown.slice(0, 40)}”.`);
+      // Incremental scopes: ask only for what the person has not agreed to yet, so adding Calendar later does not ask about Drive again. When everything named is already
+      // agreed to, the person is signing in again on purpose (to renew the sign-in), so the named services are asked as they are. A sign-in that has to be made again
+      // asks for everything it covered before as well as the new ones, so reconnecting never loses a service.
+      const mine = (await ownConnections(tx, tx.actor.id)).get(provider);
+      const already = mine ? new Set(servicesGranted(def, mine.scopes)) : new Set<string>();
+      const dead = mine !== undefined && mine.state !== 'ok';
+      const delta = named.filter((s) => !already.has(s));
+      const services = dead ? [...new Set([...already, ...named])] : delta.length > 0 ? delta : named;
       const secrets = newFlowSecrets(def);
       await recordFlow(deps, { workspaceId: tx.actor.workspaceId, ownerId: tx.actor.id, provider, services, state: secrets.state, verifier: secrets.verifier, returnTo: safeReturn(body.returnTo) });
       return json({
-        url: authorizationUrl(def, endpointsFor(provider, deps.env), {
+        url: authorizationUrl(def, endpointsFor(provider, deps.env, app.tenant), {
           clientId: app.clientId,
           redirectUri: redirectUriFor(publicUrl, provider),
           scopes: scopesFor(def, services),
@@ -136,12 +149,12 @@ export function registerPersonRoutes(ctx: PluginContext, deps: OAuthDeps): void 
       // the sign-in must finish in the browser, as the person, that started it
       if (flow.owner_id !== tx.actor.id) return fail(returnTo, 'wrong_person');
       if (query.error || !query.code) return fail(returnTo, 'denied');
-      const app = oauthApp(provider, deps.env);
+      const app = await resolveApp(deps, tx.actor.workspaceId, provider);
       if (!app) return fail(returnTo, 'not_configured');
 
       try {
         const tokens = await exchangeCode(
-          { provider: def, endpoints: endpointsFor(provider, deps.env), app, fetchImpl: deps.fetchImpl },
+          { provider: def, endpoints: endpointsFor(provider, deps.env, app.tenant), app, fetchImpl: deps.fetchImpl },
           { code: query.code, redirectUri: redirectUriFor(publicUrl, provider), verifier: flow.code_verifier },
         );
         const accountLabel = await accountLabelFor(deps, provider, tokens.accessToken, tokens.accountHint);

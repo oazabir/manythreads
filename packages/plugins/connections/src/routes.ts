@@ -26,6 +26,7 @@ import {
   putConnectionCredentialRoute,
   updateConnectionRoute,
 } from '@manythreads/shared';
+import { revocableToken, revokeAtProvider, type OAuthDeps } from './oauth/store.ts';
 import { CONNECTION_COLUMNS, toConnection, type ConnectionRow } from './rows.ts';
 import { deleteConnectionAndSecrets, putConnectionSecret } from './secrets.ts';
 import { WATCH_QUEUE } from './watch.ts';
@@ -115,7 +116,7 @@ async function audit(ctx: PluginContext, tx: PluginTx, row: ConnectionRow, chang
   });
 }
 
-export function registerRoutes(ctx: PluginContext): void {
+export function registerRoutes(ctx: PluginContext, oauth: OAuthDeps): void {
   ctx.http.route({
     ...listConnectionsRoute,
     schema: { response: ListConnectionsResponse },
@@ -244,9 +245,12 @@ export function registerRoutes(ctx: PluginContext): void {
       const current = await loadConnection(tx, id);
       await requireMayChange(tx, current);
       await audit(ctx, tx, current, 'deleted');
+      // A person's sign-in to an outside account is also forgotten at the provider (as the disconnect route does); the token is read before the row goes
+      const held = current.scope === 'person' ? await revocableToken(oauth, { workspaceId: current.workspace_id, connectionId: current.id }) : null;
       // Deleting is a system act (the credentials go first); it was checked above under the caller's own rights.
       const gone = await deleteConnectionAndSecrets({ db: ctx.db, secrets: ctx.secrets }, { workspaceId: current.workspace_id, connectionId: current.id });
       if (!gone) throw notFound('No such connection');
+      if (held) await revokeAtProvider(oauth, { workspaceId: current.workspace_id, provider: held.provider, token: held.token });
       return json(DeleteConnectionResponse.parse({ deleted: true }));
     }),
   });

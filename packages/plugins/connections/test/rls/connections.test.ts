@@ -95,7 +95,7 @@ afterAll(async () => {
   if (db) await dropTestDatabase(db);
 });
 
-const TABLES = ['connections', 'connection_grants', 'connection_secrets', 'connection_messages', 'connection_mail_claims'];
+const TABLES = ['connections', 'connection_grants', 'connection_secrets', 'connection_messages', 'connection_mail_claims', 'connection_oauth_apps', 'connection_oauth_app_secrets'];
 
 describe('connections tables follow the RLS rules', () => {
   it('pass the harness and read without a per-row policy helper', async () => {

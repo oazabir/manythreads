@@ -5,6 +5,7 @@ import {
   MeetingsParticipantJoinedEvent,
   MeetingsParticipantLeftEvent,
 } from '@manythreads/shared';
+import { announceRoom } from './live.ts';
 import { bestEffort, currentMedia } from './media.ts';
 
 // What happens to a room and its people, in one place: the routes, the jobs, the media server's notices and the membership events all end up here, so a person
@@ -86,8 +87,11 @@ export async function dropParticipants(
   if (media && media.status().configured) {
     for (const r of res.rows) await bestEffort(log, 'dropping a participant', () => media.kick(r.meeting_id, r.actor_id));
   }
-  const rooms = new Map(res.rows.map((r) => [r.meeting_id, r.workspace_id]));
-  for (const [meetingId, workspaceId] of rooms) await scheduleAutoEnd(ctx, tx, meetingId, workspaceId);
+  const rooms = new Map(res.rows.map((r) => [r.meeting_id, r]));
+  for (const [meetingId, r] of rooms) {
+    await scheduleAutoEnd(ctx, tx, meetingId, r.workspace_id);
+    await announceRoom(ctx, tx, { id: meetingId, channel_id: r.channel_id, state: 'live' });
+  }
   return res.rows.length;
 }
 
@@ -134,6 +138,7 @@ export async function endRoom(
       at: m.ended_at.toISOString(),
     }),
   );
+  await announceRoom(ctx, tx, { id: meetingId, channel_id: m.channel_id, state: 'ended' });
   const media = currentMedia(ctx);
   if (media && media.status().configured) await bestEffort(log, 'closing a room', () => media.closeRoom(meetingId));
   return true;

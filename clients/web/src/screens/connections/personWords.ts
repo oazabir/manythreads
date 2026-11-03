@@ -21,6 +21,25 @@ export const notSetUpSentence = (label: string): string =>
 
 export const reconnectSentence = (label: string): string => `${label} stopped accepting the stored sign-in, so bots cannot use it until you connect again.`;
 
+/** The heading of the Reconnect prompt: the same words as the notice in the person's Reminders conversation. */
+export const reconnectTitle = (label: string): string => `Reconnect ${label} — access expired`;
+
+/** What the page says when the last renewal of a working sign-in failed (the provider was down, or refused for another reason). Null when all is well. */
+export function problemSentence(label: string, problem: PersonConnectionProvider['problem']): string | null {
+  if (problem === 'unavailable') return `${label} could not be reached the last time we tried to renew this sign-in. We will try again; nothing is needed from you unless it keeps happening.`;
+  if (problem === 'rejected') return `${label} turned down the last attempt to renew this sign-in. If it keeps happening, connect again.`;
+  return null;
+}
+
+/** When the sign-in was last renewed, in a few words ("today at 08:00"); empty when it never was. */
+export function renewedLine(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return '';
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '';
+  const time = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return at.toDateString() === now.toDateString() ? `Renewed today at ${time}` : `Renewed ${at.toLocaleDateString([], { day: 'numeric', month: 'short' })}`;
+}
+
 /**
  * The mail services (reading a mailbox, saving drafts) are opt-in: they are never ticked for a person who has not asked for them, so nothing in their mailbox is
  * reachable by accident. Everything else that only reads is ticked to begin with.

@@ -44,6 +44,7 @@ import {
 } from '@manythreads/shared';
 import { mediaFailure, mediaStatus, requireMedia, bestEffort } from './media.ts';
 import { MEETING_COLUMNS, loadMeeting, summaries, toMeeting, type MeetingRow } from './rows.ts';
+import { announceRoom, ringDirectMessage } from './live.ts';
 import { emitJoined, endRoom, scheduleAutoEnd } from './service.ts';
 
 // The routes of voice rooms (docs/plugins/meetings.md). Every route but the media server's webhook runs as the caller, so the row-level security of the tables
@@ -85,7 +86,10 @@ async function joinAndToken(ctx: PluginContext, tx: PluginTx, media: MediaProvid
       [m.id, caller.actorId],
     )
   ).rows[0]!;
-  if (!present) await emitJoined(ctx, tx, m, caller.actorId, existing !== undefined);
+  if (!present) {
+    await emitJoined(ctx, tx, m, caller.actorId, existing !== undefined);
+    await announceRoom(ctx, tx, m);
+  }
   let token;
   try {
     token = await media.token({ id: caller.actorId, kind: 'person', displayName: row.display_name }, m.id, { canPublish: true, canSubscribe: true });
@@ -172,6 +176,8 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
         }
       }
       const join = await joinAndToken(ctx, tx, media, m, caller);
+      // a new call in a direct message rings the other people for thirty seconds (a job writes "Missed call" if nobody picks up)
+      if (created) await ringDirectMessage(ctx, tx, m, { actorId: caller.actorId, personId: caller.personId });
       return json(StartMeetingResponse.parse({ meeting: toMeeting(m), created, join }), 200);
     }),
   });
@@ -250,6 +256,7 @@ export function registerMeetingRoutes(ctx: PluginContext): void {
           }),
         );
         await scheduleAutoEnd(ctx, tx, m.id, m.workspace_id);
+        await announceRoom(ctx, tx, m);
         const media = ctx.providers.get<MediaProvider>('media');
         if (media && media.status().configured) await bestEffort(undefined, 'dropping a participant', () => media.kick(m.id, caller.actorId));
       }

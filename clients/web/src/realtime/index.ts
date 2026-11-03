@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { isMockMode } from '../api/setup';
 import { channelStore } from '../channels/store';
 import { linkPreviewStore } from '../linkpreview/store';
+import { liveRooms } from '../meetings/store';
 import { refreshDmsIfUsed } from '../dms/store';
 import { notificationStore } from '../notifications/store';
 import { noteActivity, refreshDirectories } from '../shell/channelFeed';
@@ -26,6 +27,8 @@ export function useRealtime(): void {
     channelStore.attach(rt);
     notificationStore.attach(rt);
     linkPreviewStore.attach(rt);
+    const rooms = liveRooms();
+    rooms.attach(rt);
     const offHook = channelStore.onResync(() => {
       refreshDirectories();
       refreshDmsIfUsed();
@@ -44,6 +47,7 @@ export function useRealtime(): void {
     window.addEventListener('focus', back);
     window.addEventListener('online', wake);
     rt.start();
+    rooms.start();
     void channelStore.refreshSummary();
     void notificationStore.refreshSummary();
     return () => {
@@ -53,6 +57,7 @@ export function useRealtime(): void {
       window.removeEventListener('online', wake);
       offHook();
       offActivity();
+      rooms.stop();
       rt.stop();
     };
   }, []);

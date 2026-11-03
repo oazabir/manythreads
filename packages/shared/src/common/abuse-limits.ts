@@ -88,6 +88,9 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/me/connections/:provider/start', 20, 'person'),
   r('GET', '/api/me/connections/:provider/callback', 30, 'person', 'one-time state: single use, bound to the person who started it, ten minutes'),
   r('DELETE', '/api/me/connections/:provider', 30, 'person'),
+  // The OAuth app a workspace admin enters for a provider (P16-02): the client secret is sealed on the way in and never read back.
+  r('PUT', '/api/admin/connections/oauth-apps/:provider', 20, 'person'),
+  r('DELETE', '/api/admin/connections/oauth-apps/:provider', 20, 'person'),
   // Voice rooms (P15-03): starting a room and joining or renewing mint a media token (a credential that lets a browser into the room); the media server's signed
   // notices come in on a public address and are believed only with a valid signature.
   r('POST', '/api/channels/:channelId/meetings', 10, 'person'),

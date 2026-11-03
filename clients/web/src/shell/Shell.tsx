@@ -3,6 +3,7 @@ import { Outlet, useLocation, useMatch } from 'react-router';
 import { dmParticipants, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
 import { InboxNotices } from '../screens/memory/InboxNotices';
+import { MeetingHost } from '../meetings/MeetingHost';
 import { PushBridge } from '../notifications/OpenLink';
 import { DndLive } from '../presence/DndIndicators';
 import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
@@ -135,6 +136,7 @@ export function Shell() {
             <InboxNotices />
             <Outlet />
           </section>
+          <MeetingHost />
         </main>
         <RightPanel />
       </div>

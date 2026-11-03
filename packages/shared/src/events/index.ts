@@ -157,6 +157,8 @@ export * from './workshop.terminal.opened.ts';
 export * from './workshop.terminal.closed.ts';
 export * from './audit.export.created.ts';
 export * from './connections.inbox.claimed.ts';
+export * from './connections.oauth_app.changed.ts';
+export * from './connections.sign_in.expired.ts';
 export * from './meetings.meeting.started.ts';
 export * from './meetings.meeting.ended.ts';
 export * from './meetings.participant.joined.ts';

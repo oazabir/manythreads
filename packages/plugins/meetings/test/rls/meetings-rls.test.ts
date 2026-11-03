@@ -20,7 +20,7 @@ import {
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const { omar, nadia, rafi, sameera, lena } = personas;
+const { omar, nadia, rafi, sameera, lena, priya } = personas;
 
 // Who reads and writes what (pnpm test:rls): a voice room is as visible as its channel; whoever may post there starts one (a person, as themself); the people of a
 // room are written by themselves only; a room ends through app.meetings_end (the starter, a lead, an admin); the heartbeat is private to its person.
@@ -208,6 +208,9 @@ describe('transcript lines and the heartbeat', () => {
   beforeAll(async () => {
     room = await startRoom(nadia, await newChannel('meet-words', false, []));
     await join(nadia, room);
+    // a line is only taken while the room's transcription is on, and has words only from a person who said yes
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_transcription($1, 'on_device')", [room]));
+    await as(nadia, (tx) => tx.query("SELECT app.meetings_set_consent($1, 'yes')", [room]));
   });
   const segment = (p: Persona, speaker: Persona = p, source = 'device'): Promise<unknown> =>
     as(p, (tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, speaker_id, start_ms, end_ms, text, source) VALUES ($1, $2, 0, 1000, 'hello', $3)", [room, speaker.actorId, source]));
@@ -230,5 +233,87 @@ describe('transcript lines and the heartbeat', () => {
   it('the heartbeat table is UNLOGGED', async () => {
     const [row] = await sys(async (tx) => (await tx.query<{ relpersistence: string }>("SELECT relpersistence FROM pg_class WHERE oid = 'app.meeting_presence'::regclass")).rows);
     expect(row?.relpersistence).toBe('u');
+  });
+});
+
+describe('consent: transcription on or off, a person\'s answer, and words only from a yes', () => {
+  let room = '';
+  let channel = '';
+  const words = (p: Persona, text = 'hello', speaker: Persona = p): Promise<unknown> =>
+    as(p, (tx) => tx.query("INSERT INTO app.meeting_segments (meeting_id, speaker_id, start_ms, end_ms, text, source) VALUES ($1, $2, 0, 500, $3, 'device')", [room, speaker.actorId, text]));
+  const stored = (): Promise<{ speaker_id: string; text: string }[]> =>
+    sys(async (tx) => (await tx.query<{ speaker_id: string; text: string }>('SELECT speaker_id, text FROM app.meeting_segments WHERE meeting_id = $1', [room])).rows);
+  const mode = (p: Persona, m: string): Promise<unknown> => as(p, (tx) => tx.query('SELECT app.meetings_set_transcription($1, $2)', [room, m]));
+  const answer = (p: Persona, a: string): Promise<unknown> => as(p, (tx) => tx.query('SELECT app.meetings_set_consent($1, $2)', [room, a]));
+  beforeAll(async () => {
+    channel = await newChannel('meet-consent', false, []);
+    room = await startRoom(nadia, channel);
+    await join(nadia, room);
+    await join(rafi, room);
+  });
+
+  it('takes no line while transcription is off', async () => {
+    expect(await code(words(nadia))).toBe('23514');
+  });
+  it('is turned on by a person in the room, and not by one who is outside it; turning it on asks everybody again', async () => {
+    expect(await code(mode(sameera, 'on_device'))).toBe('42501'); // not in the room
+    expect(await code(mode(lena, 'on_device'))).toBe('42501');
+    await answer(rafi, 'yes');
+    await mode(rafi, 'on_device');
+    const [row] = await sys(async (tx) => (await tx.query<{ transcription: string; transcription_by: string }>('SELECT transcription, transcription_by FROM app.meetings WHERE id = $1', [room])).rows);
+    expect(row).toMatchObject({ transcription: 'on_device', transcription_by: rafi.actorId });
+    const asked = await sys(async (tx) => (await tx.query<{ consent_transcribe: string }>('SELECT consent_transcribe FROM app.meeting_participants WHERE meeting_id = $1', [room])).rows);
+    expect(asked.every((r) => r.consent_transcribe === 'unasked')).toBe(true);
+  });
+  it('turns off for the person who turned it on or the starter, not for another person present, and cannot change mode while on', async () => {
+    expect(await code(mode(nadia, 'server'))).toBe('23514');
+    await join(priya, room);
+    expect(await code(mode(priya, 'off'))).toBe('42501');
+    await mode(nadia, 'off'); // the starter
+    await mode(rafi, 'on_device');
+    expect(await code(mode(priya, 'off'))).toBe('42501');
+    await mode(rafi, 'off'); // the person who turned it on
+    await mode(rafi, 'on_device');
+  });
+  it('stores the words of a yes and only the times of anyone else', async () => {
+    await answer(nadia, 'yes');
+    await words(nadia, 'on the record');
+    await words(rafi, 'before answering'); // rafi was asked again and has not answered
+    await answer(rafi, 'no');
+    await words(rafi, 'after saying no');
+    const rows = await stored();
+    expect(rows.find((r) => r.speaker_id === nadia.actorId)?.text).toBe('on the record');
+    expect(rows.filter((r) => r.speaker_id === rafi.actorId).map((r) => r.text)).toEqual(['', '']);
+  });
+  it('blanks the words already stored when a person answers no, and keeps the times', async () => {
+    await answer(nadia, 'no');
+    const rows = await stored();
+    expect(rows.filter((r) => r.speaker_id === nadia.actorId).every((r) => r.text === '')).toBe(true);
+    expect(rows.length).toBe(3);
+  });
+  it('lets a person answer only for themself, only while they are in the room, and only yes or no', async () => {
+    expect(await code(answer(nadia, 'unasked'))).toBe('23514');
+    expect(await code(answer(sameera, 'yes'))).toBe('42501');
+    expect(await code(sys((tx) => tx.query("SELECT app.meetings_set_consent($1, 'yes')", [room])))).toBe('42501');
+    // the table itself lets a person change their own row and nobody else's (the function above is what blanks words; the reader also judges by the current answer)
+    const others = await as(nadia, (tx) => tx.query("UPDATE app.meeting_participants SET consent_transcribe = 'yes' WHERE meeting_id = $1 AND actor_id = $2", [room, rafi.actorId]));
+    expect(others.rowCount).toBe(0);
+  });
+  it('turns off and then takes no more lines; the system role may still store lines (the server fallback)', async () => {
+    await mode(nadia, 'off');
+    expect(await code(words(nadia))).toBe('23514');
+  });
+});
+
+describe('the workspace switch (meeting_settings)', () => {
+  it('passes for the admin to write and everybody in the workspace to read, and the member cannot write', async () => {
+    expect(await code(as(omar, (tx) => tx.query("INSERT INTO app.meeting_settings (workspace_id, transcribe_cap, updated_by) VALUES ($1, 'server', $2)", [omar.workspaceId, omar.actorId])))).toBeUndefined();
+    expect((await q(nadia, 'SELECT transcribe_cap FROM app.meeting_settings'))[0]).toMatchObject({ transcribe_cap: 'server' });
+    expect(await code(as(nadia, (tx) => tx.query("UPDATE app.meeting_settings SET transcribe_cap = 'off'")))).toBeUndefined(); // zero rows, no error: RLS hides the row from the write
+    expect((await q(nadia, 'SELECT transcribe_cap FROM app.meeting_settings'))[0]).toMatchObject({ transcribe_cap: 'server' });
+    expect(await code(as(nadia, (tx) => tx.query("INSERT INTO app.meeting_settings (workspace_id, transcribe_cap) VALUES ($1, 'off')", [nadia.workspaceId])))).toBe('42501');
+    expect(await code(as(omar, (tx) => tx.query("UPDATE app.meeting_settings SET transcribe_cap = 'sideways'")))).toBe('23514');
+    await as(omar, (tx) => tx.query("UPDATE app.meeting_settings SET transcribe_cap = 'off', updated_at = now()"));
+    expect((await q(rafi, 'SELECT transcribe_cap FROM app.meeting_settings'))[0]).toMatchObject({ transcribe_cap: 'off' });
   });
 });
