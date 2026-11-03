@@ -53,6 +53,8 @@ export interface SurfaceStatement {
   id: string;
   ast: Ast | null;
   error: string | null;
+  /** The statement as written (trimmed): what a patch puts in place of another statement of the same name (patch.ts). */
+  text: string;
 }
 
 /** Where the checker is in a stream of text. A plain object: keep the latest one, hand it back to `feedSurface`. */
@@ -240,12 +242,12 @@ function parseStatement(text: string, n: number): SurfaceStatement | null {
   const trimmed = text.trim();
   if (trimmed === '' || trimmed.startsWith('```')) return null;
   const head = HEAD.exec(trimmed);
-  if (!head) return { id: `line${n + 1}`, ast: null, error: 'A line starts with a name, then "=", then the part' };
+  if (!head) return { id: `line${n + 1}`, ast: null, error: 'A line starts with a name, then "=", then the part', text: trimmed };
   const id = head[1]!;
   try {
-    return { id, ast: parseExpression(trimmed, head[0].length), error: null };
+    return { id, ast: parseExpression(trimmed, head[0].length), error: null, text: trimmed };
   } catch (e) {
-    return { id, ast: null, error: e instanceof Error ? e.message : 'The statement could not be read' };
+    return { id, ast: null, error: e instanceof Error ? e.message : 'The statement could not be read', text: trimmed };
   }
 }
 

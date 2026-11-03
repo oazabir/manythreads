@@ -6,7 +6,7 @@ import { Surface, SurfaceEvent } from '@manythreads/shared';
 export const SURFACE_COLUMNS = `s.id, s.workspace_id, s.team_id, s.channel_id, s.bot_id, s.run_id, s.thread_root_id, s.title, s.source, s.version,
   s.pinned_channel_id, s.pinned_by, s.pinned_at, s.created_by, s.created_at, s.updated_at`;
 
-export interface SurfaceRow {
+export type SurfaceRow = {
   id: string;
   workspace_id: string;
   team_id: string | null;
@@ -48,7 +48,7 @@ export function toSurface(r: SurfaceRow): Surface {
 
 export const SURFACE_EVENT_COLUMNS = 'e.id, e.surface_id, e.workspace_id, e.channel_id, e.actor_id, e.kind, e.version, e.node_id, e.payload, e.created_at';
 
-export interface SurfaceEventRow {
+export type SurfaceEventRow = {
   id: string;
   surface_id: string;
   workspace_id: string;

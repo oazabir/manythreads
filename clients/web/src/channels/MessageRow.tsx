@@ -10,6 +10,7 @@ import { authorMark } from './authorMark';
 import { useDismiss } from '../shell/useDismiss';
 import { usePopoverAbove } from '../shell/usePopoverSide';
 import { AnswerMessage } from './AnswerMessage';
+import { SurfaceMessage } from '../surfaces/SurfaceMessage';
 import { ForwardDialog } from './ForwardDialog';
 import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
@@ -302,6 +303,9 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
             messageId={m.id}
             tools={answerTools !== undefined && m.channelId === answerTools.channelId && m.meta.answer.answeredFor.personId === people.me?.personId ? answerTools : undefined}
           />
+        ) : m.meta.surfaceRef ? (
+          // a screen a bot drew (P9-04): read from the server by its id, answered with data only
+          <SurfaceMessage channelId={m.channelId} surfaceId={m.meta.surfaceRef} canPost={canPost} />
         ) : m.poll ? (
           // a poll: the card replaces the text (the text is still stored, for search and for bots)
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />

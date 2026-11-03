@@ -18,6 +18,7 @@ export * from './surfaces/app-token.ts';
 export * from './surfaces/registry.ts';
 export * from './surfaces/components.ts';
 export * from './surfaces/openui.ts';
+export * from './surfaces/tools.ts';
 export * from './answer/index.ts';
 export * from './text/index.ts';
 export * from './commands/index.ts';

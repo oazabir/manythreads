@@ -68,6 +68,9 @@ import { MeetingsParticipantLeftEvent } from './meetings.participant.left.ts';
 import { MeetingsConsentChangedEvent } from './meetings.consent.changed.ts';
 import { MeetingsTranscriptWrittenEvent } from './meetings.transcript.written.ts';
 import { MeetingsNotesWrittenEvent } from './meetings.notes.written.ts';
+import { SurfacesSurfaceRenderedEvent } from './surfaces.surface.rendered.ts';
+import { SurfacesSurfaceUpdatedEvent } from './surfaces.surface.updated.ts';
+import { SurfacesSurfaceEventPostedEvent } from './surfaces.surface.event_posted.ts';
 import { BotRunnerTestedEvent } from './bot_runner.runner.tested.ts';
 import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.changed.ts';
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
@@ -342,6 +345,9 @@ export const eventRegistry = {
   'meetings.consent.changed': { 1: MeetingsConsentChangedEvent },
   'meetings.transcript.written': { 1: MeetingsTranscriptWrittenEvent },
   'meetings.notes.written': { 1: MeetingsNotesWrittenEvent },
+  'surfaces.surface.rendered': { 1: SurfacesSurfaceRenderedEvent },
+  'surfaces.surface.updated': { 1: SurfacesSurfaceUpdatedEvent },
+  'surfaces.surface.event_posted': { 1: SurfacesSurfaceEventPostedEvent },
   'kernel.test.pinged': { 1: KernelTestPingedEvent, 2: KernelTestPingedEventV2 },
 } as const;
 
@@ -436,7 +442,10 @@ export type AnyEvent =
   | z.infer<typeof MeetingsParticipantLeftEvent>
   | z.infer<typeof MeetingsConsentChangedEvent>
   | z.infer<typeof MeetingsTranscriptWrittenEvent>
-  | z.infer<typeof MeetingsNotesWrittenEvent>;
+  | z.infer<typeof MeetingsNotesWrittenEvent>
+  | z.infer<typeof SurfacesSurfaceRenderedEvent>
+  | z.infer<typeof SurfacesSurfaceUpdatedEvent>
+  | z.infer<typeof SurfacesSurfaceEventPostedEvent>;
 
 /** The newest version of every event: what `upcast` returns and emitters write. */
 export type LatestEvent =
@@ -524,7 +533,10 @@ export type LatestEvent =
   | z.infer<typeof MeetingsParticipantLeftEvent>
   | z.infer<typeof MeetingsConsentChangedEvent>
   | z.infer<typeof MeetingsTranscriptWrittenEvent>
-  | z.infer<typeof MeetingsNotesWrittenEvent>;
+  | z.infer<typeof MeetingsNotesWrittenEvent>
+  | z.infer<typeof SurfacesSurfaceRenderedEvent>
+  | z.infer<typeof SurfacesSurfaceUpdatedEvent>
+  | z.infer<typeof SurfacesSurfaceEventPostedEvent>;
 
 type Upcaster = (event: AnyEvent) => AnyEvent;
 

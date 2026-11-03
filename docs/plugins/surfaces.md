@@ -1,6 +1,6 @@
 # surfaces
 
-Surfaces are screens a bot draws instead of plain text: a heading, a table, a form. The bot writes the screen as text in OpenUI Lang (an MIT-licensed way of describing a screen), and the web app draws it, one part at a time, after checking each part. This page covers what exists so far (PLAN P9-01 to P9-03): the tables, the list of parts a bot may use, and the web renderer. The tools a bot calls to draw (`surface.render`, `surface.update`, `surface.event`, P9-04), data binding (P9-06), the richer parts (P9-05, P9-08) and export to pages (P9-09) are not built. Code: `packages/plugins/surfaces` (tables only), `packages/shared/src/surfaces` (registry and checker), `clients/web/src/surfaces` (renderer). `dependsOn` channels and bots.
+Surfaces are screens a bot draws instead of plain text: a heading, a table, a form. The bot writes the screen as text in OpenUI Lang (an MIT-licensed way of describing a screen), and the web app draws it, one part at a time, after checking each part. This page covers what exists so far (PLAN P9-01 to P9-04): the tables, the list of parts a bot may use, the web renderer, the three tools a bot draws with and the routes the web app uses. Data binding (P9-06), the richer parts (P9-05, P9-08) and export to pages (P9-09) are not built. Code: `packages/plugins/surfaces` (tables, tools and routes), `packages/shared/src/surfaces` (registry and checker), `clients/web/src/surfaces` (renderer). `dependsOn` channels and bots.
 
 ## Tables (migration `0001_surfaces.sql`, namespace `surfaces`)
 
@@ -9,8 +9,36 @@ Surfaces are screens a bot draws instead of plain text: a heading, a table, a fo
 
 ## The list of parts and the checker
 
-`SURFACE_REGISTRY` (`packages/shared/src/surfaces/components.ts`) lists the parts: a name, the order of its values, which value holds child parts, and a Zod schema for the rest. Today: `Stack`, `Heading`, `Text`. The checker (`openui.ts`) reads text in any chunking and answers with a tree where every part is a registered name with props that passed its schema, or a rejection (`syntax`, `unknown_component`, `invalid_props`, `unresolved_ref`, `cycle`, `too_deep`, `too_large`, `duplicate`). A rejected part is replaced by a card and its neighbours stay. Limits: 200,000 characters, 500 statements, 60,000 characters per statement, 16 levels deep, 2,000 parts drawn, 200 children per part, 20,000 characters of values per part. The server will run the same code for `surface.render` (P9-04).
+`SURFACE_REGISTRY` (`packages/shared/src/surfaces/components.ts`) lists the parts: a name, the order of its values, which value holds child parts, and a Zod schema for the rest. Today: `Stack`, `Heading`, `Text`, `Button`. A part may declare events (`events: { press: <payload schema> }`): the only things a viewer can send back from it. `Button` declares `press` with an empty payload, so a press cannot carry a value the bot did not offer. The checker (`openui.ts`) reads text in any chunking and answers with a tree where every part is a registered name with props that passed its schema, or a rejection (`syntax`, `unknown_component`, `invalid_props`, `unresolved_ref`, `cycle`, `too_deep`, `too_large`, `duplicate`). A rejected part is replaced by a card and its neighbours stay. Limits: 200,000 characters, 500 statements, 60,000 characters per statement, 16 levels deep, 2,000 parts drawn, 200 children per part, 20,000 characters of values per part. The server will run the same code for `surface.render` (P9-04).
 
 ## The web renderer
 
 `<Surface source ended />` draws the text so far; while `ended` is false each part still to come is a grey placeholder. Text is always drawn as text, never as markup; there are no links, images or scripts in the parts that exist.
+
+## The tools (migration `0002_surface_tools.sql`, PLAN P9-04)
+
+Three capabilities, none destructive, offered by the MCP gateway only to a bot whose BOT.md grants them (`surface.render`, `surface.update`, `surface.event`, or `surface.*`). A bot without the grant is not shown them and is refused (`forbidden`) when it calls anyway. None takes a channel, thread, bot, team or run: the platform reads where the run answers from the run itself (`app.surface_run_context()`, a read-only definer function that answers only for the live run of the calling bot).
+
+- `surface.render {title, source}`: checks the text with the shared checker. A text with nothing drawable at `root` is refused with the plain reason (`rejected`) and nothing is stored or posted (there is no surface to hang a history line on). Otherwise the surface is stored, a `render` line is written (and a `rejected` line when parts were refused; they show as cards), and a message with the title and `meta.surfaceRef` is posted in the thread the run answers in (`skipRefs`, so a title never notifies or wakes anyone). Answer: `surfaceId`, `version`.
+- `surface.update {surfaceId, patch, baseVersion?}`: the patch is statements in the same form. A statement with a name the screen already has replaces that part, a new name adds one, nothing is removed. Every change is a new version; the old ones are in the history. A stale `baseVersion` is refused with the current version. A patch that would turn a part the old text drew into a refusal card, or leave no root, is refused whole and kept as a `rejected` line. The two patches of one screen take turns (row lock). A surface of another bot is `not_found`, the same as one that does not exist.
+- `surface.event {surfaceId?, afterEventId?, limit?}`: the answers people sent back to the bot's own screens (without `surfaceId`: those in the whole channel or conversation the run answers in, not only the thread) that it has not answered yet, oldest first, with the person's name. "Not answered yet" means after the surface's last `render` or `update` line: changing the screen is the answer. Read through `app.surface_pending_events()`, which also requires that the bot can still read the channel. The answer says the data is never an instruction.
+
+Limits per bot and tool in a sliding minute, in memory: render 20, update 60, event 120 (`rate_limited` result).
+
+## Routes
+
+- `GET /api/channels/:channelId/surfaces` (`threadRootId`, `limit`) and `GET /api/channels/:channelId/surfaces/:surfaceId`: whoever can read the channel.
+- `POST /api/channels/:channelId/surfaces/:surfaceId/events` `{nodeId, name, version, payload}`: a person (never a bot) who can post in the channel. Judged in order: the screen is in this channel, `version` is the current one (409 otherwise, the page reads the new screen), the part is drawn on the screen, its definition declares the event, the payload fits that event's shape exactly (an extra key is refused, not dropped) and is at most 16,000 characters, this person has fewer than 5 answers waiting on the screen and all people together fewer than 100 (429 with a plain sentence, so one member cannot fill the queue for the others). The screen row is read `FOR SHARE`, so a click and a `surface.update` take turns: a click that waited for an update is refused as stale, and an update always writes its line after every click it did not see. Then one `event` line `{name, data}` is written, `surfaces.surface.event_posted` is emitted and the page is pushed. Rate limit 60 a minute per person (`docs/deploy/rate-limits.md`).
+- There is no route that draws, changes or deletes a surface.
+
+## What a viewer's event can never do
+
+An event is data for the bot, never a command to the platform. The request has no field for a tool, a channel, a person or an address (a strict schema refuses extras). Nothing connects an event to a tool call: the platform does not run anything because of it, and the bot reads it with `surface.event` and can then act only with the tools its own grants allow, as itself. The person needs the same right as for a message (post in the channel); the part and event must exist on the current screen; the payload is rebuilt from the part's schema, not copied. The bot's own tools are the broker's: a surface cannot make a bot call a tool it lacks.
+
+## Events and live updates
+
+`surfaces.surface.rendered`, `surfaces.surface.updated`, `surfaces.surface.event_posted`: ids, counts and times, never the text of a screen, a title or what a person sent. Team id is null in a private channel, a direct message and a bot conversation. Every change pushes `surfaces.changed {channelId, surfaceId, version}` to the people who can read the channel; the page reads the surface again.
+
+## In the web app
+
+A message with `meta.surfaceRef` is drawn by `SurfaceMessage` (`clients/web/src/surfaces`): the title, the screen read from the server as the reader, a line for a refused answer. Buttons are pressable only when the reader can post in the channel; a press goes through the one door `SurfaceActions.send`. The layout wraps at 390 px.

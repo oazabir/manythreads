@@ -97,6 +97,8 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/meetings/:meetingId/join', 60, 'person'),
   r('POST', '/api/meetings/:meetingId/token', 60, 'person'),
   r('POST', '/api/meetings/media-webhook', 120, 'address', 'media server signature: a call without a valid signature answers 401 and changes nothing'),
+  // A person answering a bot's screen (P9-04): one history line the bot reads later; the screen's own checks refuse anything the part did not declare.
+  r('POST', '/api/channels/:channelId/surfaces/:surfaceId/events', 60, 'person'),
   // Machine credentials presented to a public address: the secret is long and random, so the limit counts only the failed guesses.
   r('POST', '/api/mcp/runs', 60, 'address', 'pairing token: failures counted below'),
   r('POST', '/api/mcp/bots/:botId', 60, 'failures', 'bot token: 60 failures per address a minute'),

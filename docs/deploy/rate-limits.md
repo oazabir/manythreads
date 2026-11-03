@@ -91,6 +91,7 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/meetings/:meetingId/join` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/:meetingId/token` | none | 60 per 60 s | 60 s | person | none |
 | `POST /api/meetings/media-webhook` | none | 120 per 60 s | 60 s | address | media server signature: a call without a valid signature answers `401` and changes nothing |
+| `POST /api/channels/:channelId/surfaces/:surfaceId/events` | none | 60 per 60 s | 60 s | person | at most 100 answers wait for the bot per screen: the 101st is `429` until the bot has redrawn or updated it |
 | `POST /api/mcp/runs` | 60 per 60 s (wrong tokens not counted apart) | 60 per 60 s | 60 s | address | wrong pairing tokens count in the failures counter below |
 | `POST /api/mcp/bots/:botId` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot token in a minute and onward: `429` |
 | `POST /mcp` | 60 failures per 60 s | 60 per 60 s | 60 s | failures | 61st wrong bot or run token in a minute and onward: `429` |

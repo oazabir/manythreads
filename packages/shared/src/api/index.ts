@@ -48,3 +48,4 @@ export * from './replay/index.ts';
 export * from './analytics/index.ts';
 export * from './connections/index.ts';
 export * from './meetings/index.ts';
+export * from './surfaces/index.ts';

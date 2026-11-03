@@ -132,6 +132,8 @@ const ProviderMeta = z.strictObject({
   runId: z.uuid().optional(),
   /** The tasks plugin's mark on the message announcing a card handover: bot routers read the key's presence and start no run from it. */
   handoff: z.strictObject({ taskId: z.uuid() }).optional(),
+  /** The surface a bot drew in its run (surfaces plugin, P9-04): the client draws that surface in this message. Only a bot inside a run may set it. */
+  surfaceRef: z.uuid().optional(),
   /** The category of the short notice a failed run leaves in the thread (runtime-hermes): at most one per run, found again by this key. */
   runFailure: z.enum(['gateway', 'runner_offline', 'runner_refused', 'hermes_unreachable', 'timeout', 'limit', 'steps', 'too_long', 'approval', 'not_allowed', 'not_on_team', 'other']).optional(),
 });
@@ -333,7 +335,7 @@ export function registerMessageProvider(deps: Deps): void {
           throw invalid('copyOf: a copy of an answer carries meta.answer and no runId');
         }
         await checkAnswerCopy(tx, input.copyOf, meta.data.answer, body.data);
-      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined || meta.data.runFailure !== undefined)) {
+      } else if (meta?.success && (meta.data.runId !== undefined || meta.data.answer !== undefined || meta.data.runFailure !== undefined || meta.data.surfaceRef !== undefined)) {
         const here = (
           await tx.query<{ run_id: string | null; bot_id: string | null }>(
             `SELECT app.run_id()::text AS run_id,
@@ -341,6 +343,7 @@ export function registerMessageProvider(deps: Deps): void {
           )
         ).rows[0];
         const run = here?.run_id ?? null;
+        if (meta.data.surfaceRef !== undefined && (run === null || here?.bot_id == null)) throw forbidden('meta.surfaceRef is for a bot acting inside a run');
         if (meta.data.runFailure !== undefined && meta.data.runId === undefined) throw invalid('meta.runId: a failure notice names the run it is about');
         if (meta.data.runId !== undefined && (run === null || meta.data.runId !== run)) {
           throw forbidden('meta.runId is the run this transaction acts for, and no other');

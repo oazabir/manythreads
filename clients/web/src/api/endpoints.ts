@@ -476,6 +476,13 @@ import {
   DeleteImportResponse,
   type ImportSource,
 } from '@manythreads/shared';
+import {
+  GetSurfaceResponse,
+  PostSurfaceEventRequest,
+  PostSurfaceEventResponse,
+  getSurfaceRoute,
+  postSurfaceEventRoute,
+} from '@manythreads/shared';
 import { CSRF_HEADER, ApiError, buildPath, call, readCsrfCookie } from './client';
 
 /*
@@ -1020,6 +1027,13 @@ export const fetchLinkPreviews = (channelId: string, messageIds: readonly string
 /** The author takes a card off their message. */
 export const removeLinkPreview = (channelId: string, messageId: string, previewId: string) =>
   call(removeLinkPreviewRoute, { response: RemoveLinkPreviewResponse }, undefined, { channelId, messageId, previewId });
+
+// ---- screens a bot drew (P9-04) -----------------------------------------------------------------------
+/** One surface of a channel the person reads. */
+export const fetchSurface = (channelId: string, surfaceId: string) => call(getSurfaceRoute, { response: GetSurfaceResponse }, undefined, { channelId, surfaceId });
+/** A press or a form sent back to the bot: data about a part of the screen, never a command. */
+export const sendSurfaceEvent = (channelId: string, surfaceId: string, body: PostSurfaceEventRequest) =>
+  call(postSurfaceEventRoute, { request: PostSurfaceEventRequest, response: PostSurfaceEventResponse }, body, { channelId, surfaceId });
 
 // ---- import from Slack and Mattermost (workspace admins) -----------------------------------------------------
 export const fetchImports = () => call(listImportsRoute, { response: ListImportsResponse });

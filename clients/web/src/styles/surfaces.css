@@ -103,3 +103,44 @@
   font-size: 0.85em;
   overflow-wrap: anywhere;
 }
+
+/* a screen inside the message that announces it (P9-04): the title above, the screen, a line for a refused answer */
+.sf-message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sf-message-title {
+  min-width: 0;
+  color: var(--mute);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+.sf-message-note {
+  color: var(--mute);
+  font-size: 0.9em;
+}
+
+.sf-message-error {
+  color: var(--alert-ink);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+/* a button on a screen: wraps instead of widening the screen, and keeps a touch-sized target on a phone */
+.sf-button {
+  align-self: flex-start;
+  max-width: 100%;
+  min-height: 36px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.sf-button-done {
+  color: var(--mute);
+}

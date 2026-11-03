@@ -32,6 +32,7 @@ export const Message = z.object({
      * scope, whom it was for. Written only by the platform. A payload that does not read (a newer shape) is dropped, never the message.
      */
     answer: AnswerPayloadView.optional().catch(undefined),
+    /** The id of the surface (a screen) a bot drew in this message's place (`surface.render`, P9-04): the client reads it in its channel and draws it. Written only by the platform. */
     surfaceRef: z.string().optional(),
     /** Files attached to the message, in the order the sender listed them (rows of `files` in the same channel, uploaded by the author). */
     attachments: z.array(FileId).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),

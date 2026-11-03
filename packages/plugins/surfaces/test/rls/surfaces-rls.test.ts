@@ -315,3 +315,103 @@ describe('the history of a surface', () => {
     expect((await sys(async (tx) => (await tx.query('SELECT 1 FROM app.surface_events WHERE surface_id = $1', [id])).rows)).length).toBe(0);
   });
 });
+
+// What the three tools read without trusting the model (migration 0002): where the calling run draws, and what people sent back to the calling bot's own screens.
+describe('what the tools read', () => {
+  const newRunIn = (botId: string, channel: string | null): Promise<string> =>
+    sys(
+      async (tx) =>
+        (
+          await tx.query<{ id: string }>(
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, status, channel_id) VALUES ($1, $2, $3, 'mention', 'running', $4) RETURNING id`,
+            [WS, botId, TEAM_IDS.Engineering, channel],
+          )
+        ).rows[0]!.id,
+    );
+  const context = (actor: string, runId: string | undefined) => asBot(actor, runId, async (tx) => (await tx.query<Record<string, unknown>>('SELECT * FROM app.surface_run_context()')).rows);
+  const pending = (actor: string, runId: string | undefined, surface: string | null, after: string | null = null) =>
+    asBot(actor, runId, async (tx) => (await tx.query<{ id: string; node_id: string | null; payload: Record<string, unknown>; person_name: string | null; surface_id: string }>('SELECT * FROM app.surface_pending_events($1, $2, 20)', [surface, after])).rows);
+
+  let chRun = '';
+  let surface = '';
+  beforeAll(async () => {
+    chRun = await newRunIn(bot.id, pub);
+    surface = await asBot(bot.actor, chRun, async (tx) =>
+      (await tx.query<{ id: string }>(`INSERT INTO app.surfaces (workspace_id, channel_id, bot_id, title, source, created_by) VALUES ($1, $2, $3, 'Deploy', $4, $5) RETURNING id`, [WS, pub, bot.id, SOURCE, bot.actor])).rows[0]!.id,
+    );
+  });
+
+  it('the run context is the live run of the calling bot, with the channel the run answers in', async () => {
+    expect(await context(bot.actor, chRun)).toEqual([expect.objectContaining({ run_id: chRun, bot_id: bot.id, workspace_id: WS, team_id: TEAM_IDS.Engineering, channel_id: pub })]);
+    expect(await context(bot.actor, run)).toEqual([expect.objectContaining({ run_id: run, channel_id: null })]);
+  });
+  it('is empty for a person, for a bot outside a run, for a bot holding another bot\'s run, and for a run that has ended', async () => {
+    expect(await as(nadia, async (tx) => (await tx.query('SELECT * FROM app.surface_run_context()')).rows)).toEqual([]);
+    expect(await context(bot.actor, undefined)).toEqual([]);
+    expect(await context(bot.actor, otherRun)).toEqual([]);
+    const ended = await newRunIn(bot.id, pub);
+    await sys((tx) => tx.query("UPDATE app.bot_runs SET status = 'done', ended_at = now() WHERE id = $1", [ended]));
+    expect(await context(bot.actor, ended)).toEqual([]);
+    expect(await pending(bot.actor, ended, surface)).toEqual([]);
+  });
+
+  it('pending events are what people sent back since the last render or update, oldest first, with the person\'s name', async () => {
+    await botHistory(bot, surface, 'render');
+    const first = await history(nadia, surface, 'event', 1, 'go', { name: 'press', data: {} });
+    const second = await history(rafi, surface, 'event', 1, 'stop', { name: 'press', data: {} });
+    const rows = await pending(bot.actor, chRun, surface);
+    expect(rows.map((r) => [r.id, r.node_id])).toEqual([
+      [first, 'go'],
+      [second, 'stop'],
+    ]);
+    expect(rows.every((r) => typeof r.person_name === 'string' && r.person_name.length > 0)).toBe(true);
+    // the same without naming the screen: every screen of this bot in the channel the run answers in
+    expect((await pending(bot.actor, chRun, null)).map((r) => r.id)).toEqual(expect.arrayContaining([first, second]));
+    // after-id narrows
+    expect((await pending(bot.actor, chRun, surface, first)).map((r) => r.id)).toEqual([second]);
+  });
+  it('an update answers everything before it: the next read is empty, and a new answer is the only one pending', async () => {
+    await botHistory(bot, surface, 'update', 1);
+    expect(await pending(bot.actor, chRun, surface)).toEqual([]);
+    const later = await history(nadia, surface, 'event', 1, 'go', { name: 'press', data: {} });
+    expect((await pending(bot.actor, chRun, surface)).map((r) => r.id)).toEqual([later]);
+  });
+  it('only the bot that drew the screen reads its answers: another bot, a person and a bot outside a run read none', async () => {
+    expect(await pending(other.actor, otherRun, surface)).toEqual([]);
+    expect(await as(nadia, async (tx) => (await tx.query('SELECT * FROM app.surface_pending_events($1, NULL, 20)', [surface])).rows)).toEqual([]);
+    expect(await pending(bot.actor, undefined, surface)).toEqual([]);
+  });
+  it('a bot that cannot read the channel reads nothing from it', async () => {
+    const hidden = await sys(async (tx) => {
+      const id = (await tx.query<{ id: string }>(`INSERT INTO app.surfaces (workspace_id, channel_id, bot_id, title, source, created_by) VALUES ($1, $2, $3, 'Hidden', $4, $5) RETURNING id`, [WS, priv, bot.id, SOURCE, bot.actor])).rows[0]!.id;
+      await tx.query(`INSERT INTO app.surface_events (surface_id, workspace_id, channel_id, actor_id, kind, version, node_id, payload) VALUES ($1, $2, $3, $4, 'event', 1, 'go', '{"name":"press","data":{}}')`, [id, WS, priv, nadia.actorId]);
+      return id;
+    });
+    expect((await sys(async (tx) => (await tx.query('SELECT 1 FROM app.surface_events WHERE surface_id = $1', [hidden])).rows)).length).toBe(1);
+    expect(await pending(bot.actor, chRun, hidden)).toEqual([]);
+  });
+  it('a click holds the screen FOR SHARE as the person, and a bot update (FOR UPDATE) waits for it to commit', async () => {
+    let updateDone = false;
+    let bot_: Promise<unknown> = Promise.resolve();
+    await as(nadia, async (tx) => {
+      const rows = (await tx.query('SELECT id FROM app.surfaces WHERE id = $1 FOR SHARE OF surfaces', [surface])).rows;
+      expect(rows.length).toBe(1);
+      bot_ = asBot(bot.actor, chRun, async (btx) => {
+        await btx.query('SELECT id FROM app.surfaces WHERE id = $1 AND bot_id = $2 FOR UPDATE', [surface, bot.id]);
+        updateDone = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(updateDone).toBe(false);
+    });
+    await bot_;
+    expect(updateDone).toBe(true);
+  });
+  it('the screen of another bot is not read through the channel', async () => {
+    const theirs = await asBot(other.actor, otherRun, async (tx) =>
+      (await tx.query<{ id: string }>(`INSERT INTO app.surfaces (workspace_id, channel_id, bot_id, title, source, created_by) VALUES ($1, $2, $3, 'Theirs', $4, $5) RETURNING id`, [WS, pub, other.id, SOURCE, other.actor])).rows[0]!.id,
+    );
+    await history(nadia, theirs, 'event', 1, 'go', { name: 'press', data: {} });
+    expect((await pending(bot.actor, chRun, theirs)).length).toBe(0);
+    expect((await pending(bot.actor, chRun, null)).every((r) => r.surface_id !== theirs)).toBe(true);
+  });
+});

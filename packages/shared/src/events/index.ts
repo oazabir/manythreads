@@ -170,3 +170,6 @@ export * from './meetings.participant.left.ts';
 export * from './meetings.consent.changed.ts';
 export * from './meetings.transcript.written.ts';
 export * from './meetings.notes.written.ts';
+export * from './surfaces.surface.rendered.ts';
+export * from './surfaces.surface.updated.ts';
+export * from './surfaces.surface.event_posted.ts';

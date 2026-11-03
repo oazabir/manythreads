@@ -10,8 +10,18 @@ import { z } from 'zod';
 /** The most values one component call may carry. */
 export const SURFACE_MAX_ARGS = 16;
 
+/** The most events one part may declare. */
+export const SURFACE_MAX_EVENTS_PER_COMPONENT = 8;
+
 const NAME = /^[A-Z][A-Za-z0-9]{0,39}$/;
 const ARG = /^[a-z][A-Za-z0-9]{0,39}$/;
+const EVENT_NAME = /^[a-z][a-z0-9_]{0,31}$/;
+
+/** What a person's click or form sends back to the bot from one part: the shape of the payload. Anything not in the shape is refused, never passed on. */
+export interface SurfaceEventDef {
+  /** A strict object: a payload with a key the shape does not name is refused. */
+  readonly payload: z.ZodObject<z.ZodRawShape>;
+}
 
 /** One registered part. Make it with `defineSurfaceComponent`. */
 export interface SurfaceComponentDef {
@@ -25,6 +35,11 @@ export interface SurfaceComponentDef {
   readonly children: string | null;
   /** The shape of the plain-data values (every arg except the children slot). */
   readonly props: z.ZodObject<z.ZodRawShape>;
+  /**
+   * The events a viewer may send back from this part, by name (`press`, `submit`). A part with none cannot be answered at all: an event for it is refused.
+   * The shape is the part's own, so what the bot receives is exactly what the part allows.
+   */
+  readonly events: Readonly<Record<string, SurfaceEventDef>>;
 }
 
 export interface SurfaceComponentInput<S extends z.ZodRawShape> {
@@ -33,6 +48,8 @@ export interface SurfaceComponentInput<S extends z.ZodRawShape> {
   args: readonly string[];
   children?: string;
   props: z.ZodObject<S>;
+  /** The events a viewer may send back from this part: name to the shape of its payload. */
+  events?: Record<string, z.ZodObject<z.ZodRawShape>>;
 }
 
 /** Check a part's definition (fails at load, never at run time) and return it. */
@@ -48,7 +65,14 @@ export function defineSurfaceComponent<S extends z.ZodRawShape>(input: SurfaceCo
   for (const k of keys) if (!args.includes(k)) throw new Error(`${name}: prop "${k}" has no position`);
   for (const a of args) if (a !== children && !keys.includes(a)) throw new Error(`${name}: value "${a}" has no schema`);
   if (children !== null && keys.includes(children)) throw new Error(`${name}: "${children}" is the children slot and cannot also be a prop`);
-  return { name, summary: input.summary, args: [...args], children, props: props as unknown as z.ZodObject<z.ZodRawShape> };
+  const events: Record<string, SurfaceEventDef> = {};
+  const eventNames = Object.keys(input.events ?? {});
+  if (eventNames.length > SURFACE_MAX_EVENTS_PER_COMPONENT) throw new Error(`${name}: at most ${SURFACE_MAX_EVENTS_PER_COMPONENT} events`);
+  for (const e of eventNames) {
+    if (!EVENT_NAME.test(e)) throw new Error(`${name}: "${e}" is not an event name (lowercase letters, digits and underscores)`);
+    events[e] = { payload: input.events![e]!.strict() as unknown as z.ZodObject<z.ZodRawShape> };
+  }
+  return { name, summary: input.summary, args: [...args], children, props: props as unknown as z.ZodObject<z.ZodRawShape>, events };
 }
 
 /** A set of parts, by name. */

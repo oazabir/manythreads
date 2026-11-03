@@ -68,8 +68,8 @@ export class PartBoundary extends Component<{ children: ReactNode; label: string
   }
 }
 
-function ViewHost({ view, props, children }: { view: SurfaceView; props: Record<string, unknown>; children: ReactNode }): ReactNode {
-  return view({ props, children });
+function ViewHost({ view, props, nodeId, children }: { view: SurfaceView; props: Record<string, unknown>; nodeId: string; children: ReactNode }): ReactNode {
+  return view({ props, children, nodeId });
 }
 
 function Part({ node, view, views }: { node: Extract<SurfaceNode, { kind: 'component' }>; view: SurfaceView; views: ReadonlyMap<string, SurfaceView> }): ReactNode {
@@ -77,7 +77,7 @@ function Part({ node, view, views }: { node: Extract<SurfaceNode, { kind: 'compo
   // A view that throws costs that one part, not the screen.
   return (
     <PartBoundary label={node.name}>
-      <ViewHost view={view} props={node.props}>
+      <ViewHost view={view} props={node.props} nodeId={node.id}>
         {children}
       </ViewHost>
     </PartBoundary>
