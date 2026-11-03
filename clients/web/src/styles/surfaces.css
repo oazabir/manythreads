@@ -144,3 +144,432 @@
 .sf-button-done {
   color: var(--mute);
 }
+
+/* ---- P9-05: the primitives and the manythreads parts ---- */
+
+.sf-row {
+  display: flex;
+  flex-flow: row wrap;
+  min-width: 0;
+}
+
+.sf-align-start {
+  align-items: flex-start;
+}
+
+.sf-align-center {
+  align-items: center;
+}
+
+.sf-align-end {
+  align-items: flex-end;
+}
+
+.sf-align-between {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.sf-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (width >= 560px) {
+  .sf-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sf-cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .sf-cols-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* tones: ink colours and tints share one set of names */
+.sf-ink-good {
+  color: var(--ok-ink);
+}
+
+.sf-ink-warn {
+  color: var(--warn-ink);
+}
+
+.sf-ink-bad {
+  color: var(--alert-ink);
+}
+
+.sf-ink-info {
+  color: var(--human);
+}
+
+.sf-ink-neutral {
+  color: var(--mute);
+}
+
+.sf-tint-neutral {
+  border-color: var(--rule);
+  background: var(--hairline);
+  color: var(--ink);
+}
+
+.sf-tint-good {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.sf-tint-warn {
+  border-color: var(--warn-border);
+  background: var(--warn-wash);
+  color: var(--warn-ink);
+}
+
+.sf-tint-bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.sf-tint-info {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--ink);
+}
+
+.sf-stat {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.sf-stat-label {
+  color: var(--mute);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+.sf-stat-value {
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.sf-stat-delta {
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+
+/* a table scrolls inside its own box, so a wide one never widens the page */
+.sf-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.sf-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.sf-table caption {
+  padding: 6px 10px;
+  color: var(--mute);
+  text-align: left;
+}
+
+.sf-table th,
+.sf-table td {
+  padding: 6px 10px;
+  border-top: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.sf-table th {
+  background: var(--table-head);
+  font-weight: 600;
+}
+
+.sf-chart {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.sf-chart-title {
+  margin-bottom: 4px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sf-chart-svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+
+.sf-chart-zero {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.sf-chart-bar {
+  fill: var(--human);
+}
+
+.sf-chart-line {
+  fill: none;
+  stroke: var(--human);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.sf-chart-dot {
+  fill: var(--surface);
+  stroke: var(--human);
+  stroke-width: 1.5;
+}
+
+.sf-chart-data {
+  margin-top: 6px;
+  font-size: 0.85em;
+}
+
+.sf-chart-data summary {
+  color: var(--mute);
+  cursor: pointer;
+}
+
+.sf-chart-data .sf-table-wrap {
+  margin-top: 6px;
+}
+
+.sf-list {
+  margin: 0;
+  padding-left: 1.4em;
+  min-width: 0;
+}
+
+.sf-li {
+  overflow-wrap: anywhere;
+}
+
+.sf-badge {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-size: 0.8em;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  align-self: flex-start;
+}
+
+.sf-callout {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.sf-callout-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sf-callout-text {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sf-code {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.85em;
+  overflow-x: auto;
+}
+
+.sf-divider {
+  width: 100%;
+  height: 0;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.sf-entity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.sf-entity-type {
+  color: var(--mute);
+  font-size: 0.75em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sf-entity-label {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sf-entity-summary {
+  color: var(--txt);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.sf-chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid var(--human-border);
+  border-radius: 999px;
+  background: var(--human-wash);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+  align-self: flex-start;
+}
+
+.sf-chip-link {
+  cursor: pointer;
+}
+
+.sf-approval {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  background: var(--warn-wash);
+}
+
+.sf-approval-head {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 6px 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sf-approval-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sf-approval-summary {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sf-approval-note {
+  margin-top: 4px;
+  color: var(--mute);
+  font-size: 0.85em;
+}
+
+.sf-diff {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.sf-diff-title {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 4px 12px;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--table-head);
+  border-bottom: 1px solid var(--hairline);
+  font-size: 0.85em;
+}
+
+.sf-diff-name {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.sf-diff-count {
+  color: var(--mute);
+  font-family: var(--mono);
+}
+
+.sf-diff-body {
+  max-height: 480px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 0.8em;
+}
+
+/* a long line wraps instead of widening the page (390 px) */
+.sf-diff-line {
+  padding: 0 10px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.sf-diff-add {
+  background: var(--ok-wash);
+  color: var(--ok-ink);
+}
+
+.sf-diff-del {
+  background: var(--alert-wash);
+  color: var(--alert-ink);
+}
+
+.sf-diff-hunk {
+  background: var(--human-wash);
+  color: var(--mute);
+}
+
+.sf-diff-meta {
+  color: var(--mute);
+}
+
+/* keyboard focus on everything that can be pressed or scrolled */
+.sf-button:focus-visible,
+.sf-chip-link:focus-visible,
+.sf-table-wrap:focus-visible,
+.sf-code:focus-visible,
+.sf-diff-body:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 2px;
+}

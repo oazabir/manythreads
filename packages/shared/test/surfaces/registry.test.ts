@@ -54,7 +54,27 @@ describe('createSurfaceRegistry', () => {
 
 describe('the registry the app uses', () => {
   it('lists the parts every client draws', () => {
-    expect(SURFACE_REGISTRY.names()).toEqual(['Button', 'Heading', 'Stack', 'Text']);
+    expect(SURFACE_REGISTRY.names()).toEqual([
+      'ApprovalCard',
+      'Badge',
+      'Button',
+      'Callout',
+      'ChannelLink',
+      'Chart',
+      'Code',
+      'DiffView',
+      'Divider',
+      'EntityCard',
+      'Grid',
+      'Heading',
+      'List',
+      'PersonChip',
+      'Row',
+      'Stack',
+      'Stat',
+      'Table',
+      'Text',
+    ]);
     expect(SURFACE_COMPONENTS.length).toBe(SURFACE_REGISTRY.size);
   });
   it('checks props with the part own schema', () => {
