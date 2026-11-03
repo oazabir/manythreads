@@ -161,7 +161,7 @@ const nativeEntries: ConnectorEntry[] = CONNECTION_KINDS.map((k) => ({
   ...(k.available ? built() : soon('P8-06', k.unavailableReason ?? 'Not available yet.')),
 }));
 
-// ---- a person's own sign-ins: Google, Microsoft 365, Notion (built in P8-02; the rest of their tools in P16-03 and P16-04) --------------------------------
+// ---- a person's own sign-ins: Google, Microsoft 365, Notion (built in P8-02; Google in depth in P16-03, Microsoft 365 in depth in P16-04) --------------------------------
 
 const google: ConnectorEntry = {
   id: 'google',
@@ -209,19 +209,21 @@ const microsoft: ConnectorEntry = {
   label: 'Microsoft 365',
   provider: 'Microsoft',
   categories: ['mail', 'calendar', 'files'],
-  description: 'Outlook mail and calendar and OneDrive, each person signing in to their own account. A bot works through it only when that person is the one asking.',
+  description: 'Outlook mail and calendar, OneDrive and SharePoint, each person signing in to their own account. A bot works through it only when that person is the one asking.',
   source: 'first_party',
   auth: 'oauth',
   heldBy: ['person'],
   kind: null,
   services: [
-    svc('onedrive', 'OneDrive (read)', 'Search your files and read the text of a file.', ['Files.Read']),
-    svc('mail', 'Outlook mail (read)', 'Search your mail and read a message.', ['Mail.Read']),
+    svc('onedrive', 'OneDrive (read)', 'Search your files and read the text of a file, or the first sheet of an Excel workbook as CSV.', ['Files.Read']),
+    svc('mail', 'Outlook mail (read)', 'Search your mail by words, sender, subject, dates, folder or category, list your folders and read a message.', ['Mail.Read']),
     svc('mail_drafts', 'Outlook drafts', 'Save a draft in your mailbox. Nothing is sent, and each draft waits for your approval.', ['Mail.ReadWrite']),
     svc('calendar', 'Outlook calendar (read)', 'List your upcoming events.', ['Calendars.Read']),
-    svc('calendar_write', 'Outlook calendar (add events)', 'Add an event to your calendar. Each event waits for your approval.', ['Calendars.ReadWrite']),
-    svc('mail_send', 'Outlook (send)', 'Send a message from your mailbox. Each one waits for your approval.', ['Mail.Send'], false),
-    svc('sharepoint', 'SharePoint (read)', 'Search and read the sites you can open.', ['Sites.Read.All'], false),
+    svc('calendar_write', 'Outlook calendar (add and change events)', 'Add an event to your calendar, or change one. Outlook tells the guests. Each change waits for your approval.', ['Calendars.ReadWrite']),
+    svc('mail_categories', 'Outlook categories', 'See your colour categories and put them on a message or take them off, to sort your mail. Each change waits for your approval.', ['Mail.ReadWrite', 'MailboxSettings.Read']),
+    svc('mail_send', 'Outlook (send)', 'Send a message from your mailbox, or answer one. Each one waits for your approval. Answering a message also needs Outlook drafts.', ['Mail.Send']),
+    svc('calendar_free_busy', 'Outlook calendar (free and busy)', 'See when you and others are free, without the details of events. Work and school accounts only.', ['Calendars.ReadBasic']),
+    svc('sharepoint', 'SharePoint (read)', 'Search and read the files in the SharePoint sites you can open. Work and school accounts only; many organisations need an administrator to approve this one.', ['Sites.Read.All']),
     svc('teams_transcripts', 'Teams meeting transcripts', 'Bring the transcript of a meeting you held into manythreads.', ['OnlineMeetingTranscript.Read.All'], false),
   ],
   tools: [
@@ -229,11 +231,17 @@ const microsoft: ConnectorEntry = {
     tool('onedrive.read', 'Read a OneDrive file', 'read', 'onedrive'),
     tool('outlook.search', 'Search mail', 'read', 'mail'),
     tool('outlook.read', 'Read a message', 'read', 'mail'),
+    tool('outlook.list_folders', 'List mail folders', 'read', 'mail'),
     tool('outlook.draft', 'Save a draft', 'write', 'mail_drafts'),
+    tool('outlook.list_categories', 'List categories', 'read', 'mail_categories'),
+    tool('outlook.categorize', 'Categorise a message', 'write', 'mail_categories'),
+    tool('outlook.send', 'Send a message', 'write', 'mail_send'),
     tool('outlook_calendar.list_events', 'List events', 'read', 'calendar'),
     tool('outlook_calendar.create_event', 'Add an event', 'write', 'calendar_write'),
-    tool('outlook.send', 'Send a message', 'write', 'mail_send', false),
-    tool('sharepoint.search', 'Search SharePoint', 'read', 'sharepoint', false),
+    tool('outlook_calendar.update_event', 'Change an event', 'write', 'calendar_write'),
+    tool('outlook_calendar.free_busy', 'Find free time', 'read', 'calendar_free_busy'),
+    tool('sharepoint.search', 'Search SharePoint', 'read', 'sharepoint'),
+    tool('sharepoint.read', 'Read a SharePoint file', 'read', 'sharepoint'),
     dangerous('onedrive.delete', 'Delete a OneDrive file', 'onedrive'),
   ],
   triggers: [trig('outlook_folder_mail', 'New mail in a folder')],

@@ -814,6 +814,178 @@ describe('Google Workspace in depth', () => {
   });
 });
 
+// P16-04: Outlook mail, the Outlook calendar, OneDrive and SharePoint, called through the real MCP gateway as a bot that a person asked, against the fake Microsoft.
+describe('Microsoft 365 in depth', () => {
+  let bot: { botId: string; actorId: string };
+  const MICROSOFT_TOOLS_ALL = PERSON_TOOL_DEFS.filter((t) => t.provider === 'microsoft').map((t) => t.name);
+  const WIDE = ['mail', 'mail_drafts', 'mail_categories', 'mail_send', 'calendar', 'calendar_write', 'calendar_free_busy', 'onedrive', 'sharepoint'];
+  const NEW_TOOLS = ['outlook.list_folders', 'outlook.list_categories', 'outlook.categorize', 'outlook.send', 'outlook_calendar.free_busy', 'outlook_calendar.update_event', 'sharepoint.search', 'sharepoint.read'];
+  const asker = priya;
+  const SHEET_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  const pendingOf = (answer: Record<string, unknown>) =>
+    sys(async (tx) => (await tx.query<{ id: string; summary: string; args_preview: Record<string, unknown>; status: string }>('SELECT id, summary, args_preview, status FROM app.approvals WHERE id = $1', [answer['approvalId']])).rows[0]!);
+  async function approve(id: string): Promise<void> {
+    const res = await w.call(omar, 'POST', `/api/teams/engineering/approvals/${id}/approve`, {});
+    expect(res.status, JSON.stringify(res.body)).toBeLessThan(300);
+    await until(async () => (await sys(async (tx) => (await tx.query<{ outcome: string | null }>('SELECT outcome FROM app.approvals WHERE id = $1', [id])).rows[0]!.outcome)) === 'ran' || null, 30_000, 'the approval to be marked as run');
+  }
+
+  beforeAll(async () => {
+    fake.signInAs(asker.email);
+    const mine = fake.account(asker.email);
+    mine.mails.push({ id: 'mail-archived', from: 'billing@harbourgrain.example', to: asker.email, subject: 'Receipt for invoice 2040', date: '2026-09-30T09:00:00Z', text: 'Thanks, paid.\n', folder: 'archive', categories: ['Customer'], isRead: true });
+    mine.files.push({ id: 'file-sheet', name: 'Cost sheet.xlsx', mimeType: SHEET_MIME, modified: '2026-10-21T10:00:00.000Z', text: 'item,cost\nservers,420\nbackups,65\n' });
+    mine.siteFiles = [{ id: 'site-policy', name: 'Travel policy.md', mimeType: 'text/markdown', modified: '2026-10-02T08:00:00.000Z', text: '# Travel policy\n\nBook trains before planes.\n' }];
+    bot = await makeBot(ENG, 'microsoft-depth', [{ connection: 'person:*', tools: MICROSOFT_TOOLS_ALL }]);
+    await compile(ENG, bot.botId);
+    await connect(asker, 'microsoft', ['mail', 'onedrive', 'calendar']);
+  });
+
+  it('offers the new tools only for the services the person agreed to, and says what to do when one is called without it', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const before = await listed(run);
+    for (const name of NEW_TOOLS.filter((n) => n !== 'outlook.list_folders')) expect(before, name).not.toContain(name);
+    expect(before).toContain('outlook.search');
+    expect(before).toContain('outlook.list_folders'); // a read of the Outlook mail service
+    const answer = await called(run, 'outlook_calendar.free_busy', { from: '2026-11-03T08:00:00Z', to: '2026-11-03T12:00:00Z' });
+    expect(answer).toMatchObject({ ok: false, code: 'not_agreed' });
+    expect(fake.outlookSent).toEqual([]);
+
+    await connect(asker, 'microsoft', WIDE);
+    const after = await listed(await openRun(bot.botId, ENG, asker.actorId));
+    for (const name of NEW_TOOLS) expect(after, name).toContain(name);
+  });
+
+  it('the consent page asks for the new scopes only when the person ticks them (incremental)', () => {
+    const consents = fake.consents.filter((c) => c.provider === 'microsoft');
+    expect(consents.at(-1)!.scopes).toEqual(expect.arrayContaining(['Mail.Send', 'Mail.ReadWrite', 'MailboxSettings.Read', 'Calendars.ReadBasic', 'Calendars.ReadWrite', 'Sites.Read.All']));
+    expect(consents.at(-2)!.scopes.join(' ')).not.toContain('Mail.Send');
+  });
+
+  it('search by sender, date, subject, category and folder; the folders and the categories of the mailbox list', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const subjects = async (args: Record<string, unknown>) => ((await called(run, 'outlook.search', args))['messages'] as Array<{ subject: string }>).map((m) => m.subject);
+    expect(await subjects({ from: 'billing@harbourgrain.example', after: '2026-10-01T00:00:00Z' })).toEqual(['Invoice 2041 is overdue']);
+    expect(await subjects({ subject: 'receipt' })).toEqual(['Receipt for invoice 2040']);
+    expect(await subjects({ category: 'customer' })).toEqual(['Receipt for invoice 2040']);
+    expect(await subjects({ folder: 'archive' })).toEqual(['Receipt for invoice 2040']);
+    expect(await subjects({ unreadOnly: true, before: '2026-12-01T00:00:00Z' })).toEqual(['Invoice 2041 is overdue', 'Offsite venue']);
+    expect(await subjects({ query: 'invoice', unreadOnly: true })).toEqual(['Invoice 2041 is overdue']);
+    expect(await called(run, 'outlook.search', {})).toMatchObject({ code: 'validation_failed' });
+    expect(await called(run, 'outlook.read', { messageId: 'mail-archived' })).toMatchObject({ ok: true, categories: ['Customer'], unread: false, folderId: 'archive' });
+    const folders = (await called(run, 'outlook.list_folders'))['folders'] as Array<{ id: string; name: string }>;
+    expect(folders.map((f) => f.id)).toEqual(expect.arrayContaining(['inbox', 'archive']));
+    expect(((await called(run, 'outlook.list_categories'))['categories'] as Array<{ name: string }>).map((c) => c.name)).toEqual(['Customer', 'Urgent', 'Offsite']);
+  });
+
+  it('a category change waits for approval with a card, then runs once and keeps the other categories', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const answer = await called(run, 'outlook.categorize', { messageId: 'mail-archived', add: ['urgent'] });
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
+    expect(fake.categoryChanges).toEqual([]);
+    const card = await pendingOf(answer);
+    expect(card.summary).toBe('Categorise a message: add urgent, remove nothing');
+    await approve(card.id);
+    expect(fake.categoryChanges).toEqual([{ account: asker.email, messageId: 'mail-archived', categories: ['Customer', 'Urgent'] }]);
+  });
+
+  it('a message goes out only after the person approves it, to the addresses on the card, with no bcc', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const answer = await called(run, 'outlook.send', { to: ['billing@harbourgrain.example'], cc: [omar.email], subject: 'Invoice 2041', body: `We will pay on Friday.\n${'x'.repeat(1600)}` });
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
+    expect(fake.outlookSent).toEqual([]);
+    const card = await pendingOf(answer);
+    expect(card.summary).toContain('billing@harbourgrain.example');
+    expect(card.summary).toContain(`cc ${omar.email}`);
+    expect(card.args_preview).toMatchObject({ to: ['billing@harbourgrain.example'], cc: [omar.email], subject: 'Invoice 2041' });
+    // the approvals store keeps 300 characters of a text and says so; the card the tool builds holds 1,500 (unit-tested) and the full call is one click away
+    expect(String(card.args_preview['body']).startsWith('We will pay on Friday.')).toBe(true);
+    await approve(card.id);
+    expect(fake.outlookSent).toHaveLength(1);
+    expect(fake.outlookSent[0]).toMatchObject({ account: asker.email, to: ['billing@harbourgrain.example'], cc: [omar.email], bcc: [], replyTo: [], subject: 'Invoice 2041', viaReply: false, inReplyTo: null });
+    expect(fake.outlookSent[0]!.body.startsWith('We will pay on Friday.')).toBe(true);
+  });
+
+  it('an answer to a message goes through a reply in its conversation, and what is sent is what the card showed', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const answer = await called(run, 'outlook.send', { to: ['billing@harbourgrain.example'], subject: 'RE: Invoice 2041 is overdue', body: 'Paid on Friday.', replyToMessageId: 'mail-invoice' });
+    expect(answer).toMatchObject({ code: 'approval_pending' });
+    const card = await pendingOf(answer);
+    expect(card.args_preview).toMatchObject({ inReplyTo: 'mail-invoice' });
+    const sent = fake.outlookSent.length;
+    await approve(card.id);
+    expect(fake.outlookSent).toHaveLength(sent + 1);
+    expect(fake.outlookSent.at(-1)).toMatchObject({ account: asker.email, to: ['billing@harbourgrain.example'], cc: [], bcc: [], replyTo: [], subject: 'RE: Invoice 2041 is overdue', body: 'Paid on Friday.', viaReply: true, inReplyTo: 'mail-invoice' });
+  });
+
+  it('refuses a send that could add a header or a hidden recipient, before anything is asked of Microsoft', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const calls = fake.apiCalls.length;
+    const sent = fake.outlookSent.length;
+    for (const args of [
+      { to: ['a@b.co\r\nBcc: spy@evil.example'], subject: 's', body: 'b' },
+      { to: ['a@b.co'], subject: 'x\r\nBcc: spy@evil.example', body: 'b' },
+      { to: ['a@b.co'], bcc: ['spy@evil.example'], subject: 's', body: 'b' },
+      { to: ['a@b.co'], replyTo: ['spy@evil.example'], subject: 's', body: 'b' },
+      { to: ['é@b.co'], subject: 's', body: 'b' },
+      { to: ['a@b.co'], subject: 's', body: 'b', replyToMessageId: '..' },
+    ]) {
+      const answer = await called(run, 'outlook.send', args);
+      expect(['validation_failed', 'approval_pending']).toContain(answer['code']);
+    }
+    expect(fake.apiCalls.length).toBe(calls);
+    expect(fake.outlookSent.length).toBe(sent);
+  });
+
+  it('free and busy: busy spans only, a calendar that is not visible said so and what the provider said about it kept out', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const answer = await called(run, 'outlook_calendar.free_busy', { from: '2026-11-03T08:00:00Z', to: '2026-11-03T12:00:00Z', people: [omar.email, 'stranger@elsewhere.example'], minMinutes: 30 });
+    expect(answer['calendars']).toEqual([
+      { who: 'you', visible: true, busy: [{ start: '2026-11-03T09:00:00.000Z', end: '2026-11-03T09:15:00.000Z' }] },
+      { who: omar.email, visible: true, busy: [{ start: '2026-11-03T09:00:00.000Z', end: '2026-11-03T09:15:00.000Z' }] },
+      { who: 'stranger@elsewhere.example', visible: false, busy: [] },
+    ]);
+    expect(answer['free']).toEqual([
+      { start: '2026-11-03T08:00:00.000Z', end: '2026-11-03T09:00:00.000Z' },
+      { start: '2026-11-03T09:15:00.000Z', end: '2026-11-03T12:00:00.000Z' },
+    ]);
+    expect(answer['freeCoversEveryone']).toBe(false);
+    expect(fake.scheduleRequests.at(-1)!.schedules).toEqual([asker.email, omar.email, 'stranger@elsewhere.example']);
+    expect(JSON.stringify(answer)).not.toMatch(/stand-up|SECRET/);
+    expect(await called(run, 'outlook_calendar.free_busy', { from: '2026-11-03T00:00:00Z', to: '2027-03-03T00:00:00Z' })).toMatchObject({ code: 'validation_failed' });
+  });
+
+  it('changing an event waits for approval, then changes only what was named, in UTC', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const answer = await called(run, 'outlook_calendar.update_event', { eventId: 'event-standup', title: 'Team stand-up (moved)', start: '2026-11-03T09:30:00+00:00', end: '2026-11-03T09:45:00+00:00' });
+    expect(answer).toMatchObject({ ok: false, code: 'approval_pending' });
+    expect(fake.outlookEventUpdates).toEqual([]);
+    const card = await pendingOf(answer);
+    expect(card.summary).toBe('Change event event-standup: title, start, end');
+    await approve(card.id);
+    expect(fake.outlookEventUpdates).toEqual([
+      { account: asker.email, eventId: 'event-standup', fields: { subject: 'Team stand-up (moved)', start: { dateTime: '2026-11-03T09:30:00', timeZone: 'UTC' }, end: { dateTime: '2026-11-03T09:45:00', timeZone: 'UTC' } } },
+    ]);
+  });
+
+  it('SharePoint finds and reads a file by drive and item; a workbook in OneDrive reads as CSV', async () => {
+    const run = await openRun(bot.botId, ENG, asker.actorId);
+    const found = (await called(run, 'sharepoint.search', { query: 'travel policy' }))['files'] as Array<{ driveId: string; itemId: string; name: string }>;
+    expect(found).toEqual([expect.objectContaining({ driveId: 'b!site-docs', itemId: 'site-policy', name: 'Travel policy.md' })]);
+    expect(await called(run, 'sharepoint.read', { driveId: found[0]!.driveId, itemId: found[0]!.itemId })).toMatchObject({ ok: true, text: expect.stringContaining('Book trains before planes') });
+    expect(await called(run, 'sharepoint.read', { driveId: 'b!site-docs', itemId: 'nope' })).toMatchObject({ ok: false });
+    expect(await called(run, 'onedrive.read', { itemId: 'file-sheet' })).toMatchObject({ ok: true, type: 'text/csv', text: 'item,cost\nservers,420\nbackups,65' });
+    expect(JSON.stringify(found)).not.toContain('SECRET-SUMMARY');
+  });
+
+  it('a token appears in no answer and no card, and no mailbox text in an error', async () => {
+    const cards = await sys(async (tx) => JSON.stringify((await tx.query('SELECT summary, args_preview FROM app.approvals')).rows));
+    expect(`${answers.join('\n')}\n${cards}`).not.toMatch(/(access|refresh)-[A-Za-z0-9_-]{20}/);
+    expect(answers.join('\n')).not.toContain('SECRET-MAILBOX-TEXT');
+  });
+});
+
 // The test every source of tools must pass (bot capabilities ∩ asker visibility), run for a read and for a write of a person's connection.
 describe('intersection', () => {
   let bot: { botId: string; actorId: string };

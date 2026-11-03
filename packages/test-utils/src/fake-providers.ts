@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { defaultAccount, type FakeAccountData } from './fake-providers-data.ts';
+import { defaultAccount, type FakeAccountData, type FakeFile } from './fake-providers-data.ts';
 
-export type { FakeAccountData, FakeEvent, FakeFile, FakeLabel, FakeMail, FakeNotionPage } from './fake-providers-data.ts';
+export type { FakeAccountData, FakeCategory, FakeEvent, FakeFile, FakeLabel, FakeMail, FakeNotionPage } from './fake-providers-data.ts';
 export { defaultAccount } from './fake-providers-data.ts';
 
 // A local double of Google, Microsoft 365 and Notion, for the connections plugin's tests and for the e2e fixtures (PLAN P8-02 and P8-12). One small HTTP server stands
@@ -61,6 +61,14 @@ export interface FakeProviders {
   /** Every change to a Google Calendar event, as the fields that were sent. */
   updatedEvents: Array<{ account: string; eventId: string; fields: Record<string, unknown> }>;
   createdPages: Array<{ account: string; parent: string; title: string }>;
+  /** Messages Outlook was asked to send (P16-04): straight through `sendMail`, or as a reply draft that was sent (`viaReply`, with the id of the message it answers). */
+  outlookSent: Array<{ account: string; to: string[]; cc: string[]; bcc: string[]; replyTo: string[]; subject: string; body: string; viaReply: boolean; inReplyTo: string | null }>;
+  /** Every change of the categories of an Outlook message: the message and the whole list after the change. */
+  categoryChanges: Array<{ account: string; messageId: string; categories: string[] }>;
+  /** Every change to an Outlook calendar event, as the fields that were sent. */
+  outlookEventUpdates: Array<{ account: string; eventId: string; fields: Record<string, unknown> }>;
+  /** Every free/busy question put to Outlook: the addresses asked about. */
+  scheduleRequests: Array<{ account: string; schedules: string[] }>;
   /** The data of one account; replace or edit it to change what the APIs answer. */
   account(email: string): FakeAccountData;
   /** The account the next consent signs in as (the "person at the provider"). */
@@ -143,6 +151,12 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
   const labelChanges: FakeProviders['labelChanges'] = [];
   const updatedEvents: FakeProviders['updatedEvents'] = [];
   const createdPages: FakeProviders['createdPages'] = [];
+  const outlookSent: FakeProviders['outlookSent'] = [];
+  const categoryChanges: FakeProviders['categoryChanges'] = [];
+  const outlookEventUpdates: FakeProviders['outlookEventUpdates'] = [];
+  const scheduleRequests: FakeProviders['scheduleRequests'] = [];
+  /** Reply drafts Outlook made (`createReply`) and not yet sent, by id. */
+  const replyDrafts = new Map<string, { account: string; original: string; fields: Record<string, unknown> }>();
   let nextId = 1;
 
   const providerOfPath = (path: string): FakeProviderId | null => {
@@ -184,7 +198,8 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
       }
       const scopes = (q.get('scope') ?? '').split(' ').filter((s) => s !== '');
       const key = `${provider}:${signedInAs}`;
-      const union = new Set(q.get('include_granted_scopes') === 'true' ? (granted.get(key) ?? []) : []);
+      // Google adds what was agreed before when asked to (`include_granted_scopes`); Microsoft always does, as a token carries every permission the person gave the app
+      const union = new Set(q.get('include_granted_scopes') === 'true' || provider === 'microsoft' ? (granted.get(key) ?? []) : []);
       for (const s of scopes) union.add(s);
       granted.set(key, union);
       const offline = provider === 'google' ? q.get('access_type') === 'offline' : provider === 'microsoft' ? scopes.includes('offline_access') : false;
@@ -485,21 +500,169 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         if (item[2]) return text(200, f.text);
         return send(200, { id: f.id, name: f.name, file: { mimeType: f.mimeType.startsWith('application/vnd.google') ? 'text/plain' : f.mimeType }, lastModifiedDateTime: f.modified, webUrl: `https://onedrive.example/${f.id}` });
       }
-      if (method === 'GET' && p === '/me/messages') {
-        if (!need('Mail.Read')) return;
-        const words = (q.get('$search') ?? '').replaceAll('"', '');
+      const sendDriveItem = (f: FakeFile, tail: string | undefined, sheetId: string | undefined, lastCol: string | undefined, lastRow: string | undefined): void => {
+        if (!tail) return send(200, { id: f.id, name: f.name, size: f.text.length, file: { mimeType: f.mimeType }, lastModifiedDateTime: f.modified, webUrl: `https://sharepoint.example/${f.id}` });
+        if (tail === '/content') return text(200, f.text);
+        // a workbook: one sheet, whose cells are the CSV text of the file, on a grid of the size asked for
+        if (!sheetId) return send(200, { value: [{ id: '{00000000-0001-0000-0000-000000000000}', name: 'Sheet1' }] });
+        const rows = f.text.split('\n').filter((l) => l !== '').map((l) => l.split(',').map((c) => (c !== '' && !Number.isNaN(Number(c)) ? Number(c) : c)));
+        const cols = (lastCol ?? 'A').charCodeAt(0) - 64;
+        return send(200, { values: Array.from({ length: Number(lastRow ?? 1) }, (_, r) => Array.from({ length: cols }, (_, c) => rows[r]?.[c] ?? '')) });
+      };
+      // Outlook mail reads work with Mail.Read or the wider Mail.ReadWrite, as at Microsoft
+      const needAny = (...scopes: string[]): boolean => {
+        if (token.scopes.some((sc) => scopes.some((want) => sc === want || sc.endsWith(`/${want}`)))) return true;
+        send(403, { error: 'insufficient_scope' });
+        return false;
+      };
+      const msMail = (m: FakeAccountData['mails'][number]): Record<string, unknown> => ({
+        id: m.id,
+        subject: m.subject,
+        from: { emailAddress: { address: m.from } },
+        toRecipients: [{ emailAddress: { address: m.to } }],
+        ccRecipients: [],
+        receivedDateTime: m.date,
+        bodyPreview: m.text.slice(0, 120),
+        categories: m.categories ?? [],
+        isRead: m.isRead ?? false,
+        conversationId: m.threadId ?? m.id,
+        parentFolderId: m.folder ?? 'inbox',
+        body: { contentType: 'text', content: m.text },
+      });
+      const addrsOf = (v: unknown): string[] => (Array.isArray(v) ? v.map((r) => String(((r as { emailAddress?: { address?: string } }).emailAddress ?? {}).address ?? '')) : []);
+      const folderMail = /^\/me\/mailFolders\/([^/]+)\/messages$/.exec(p);
+      if (method === 'GET' && (p === '/me/messages' || folderMail)) {
+        if (!needAny('Mail.Read', 'Mail.ReadWrite')) return;
+        const search = q.get('$search');
+        const filter = q.get('$filter');
+        // as at Microsoft: the two cannot be asked together
+        if (search !== null && filter !== null) return send(400, { error: { code: 'ErrorInvalidRequest', message: '$filter cannot be combined with $search' } });
+        const words = (search ?? '').replaceAll('"', '');
+        let found = data.mails.filter((m) => matches(`${m.subject} ${m.from} ${m.text}`, words));
+        if (folderMail) found = found.filter((m) => (m.folder ?? 'inbox') === decodeURIComponent(folderMail[1]!).toLowerCase());
+        for (const clause of filter === null ? [] : filter.split(' and ')) {
+          const date = /^receivedDateTime (gt|lt) (\S+)$/.exec(clause);
+          const sender = /^from\/emailAddress\/address eq '((?:[^']|'')*)'$/.exec(clause);
+          const subject = /^contains\(subject,'((?:[^']|'')*)'\)$/.exec(clause);
+          const category = /^categories\/any\(c:c eq '((?:[^']|'')*)'\)$/.exec(clause);
+          if (date) {
+            const edge = Date.parse(date[2]!);
+            found = found.filter((m) => (date[1] === 'gt' ? Date.parse(m.date) > edge : Date.parse(m.date) < edge));
+          } else if (sender) {
+            const who = sender[1]!.replaceAll("''", "'").toLowerCase();
+            found = found.filter((m) => m.from.toLowerCase() === who);
+          } else if (subject) {
+            const part = subject[1]!.replaceAll("''", "'");
+            found = found.filter((m) => matches(m.subject, part));
+          } else if (category) {
+            const cat = category[1]!.replaceAll("''", "'").toLowerCase();
+            found = found.filter((m) => (m.categories ?? []).some((x) => x.toLowerCase() === cat));
+          } else if (clause === 'isRead eq false') {
+            found = found.filter((m) => !(m.isRead ?? false));
+          } else return send(400, { error: { code: 'ErrorInvalidRequest', message: 'unsupported filter' } });
+        }
+        const top = Number(q.get('$top') ?? 10);
+        return send(200, { value: found.slice(0, top).map(msMail).map((m) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== 'body' && k !== 'toRecipients'))) });
+      }
+      if (method === 'GET' && p === '/me/mailFolders') {
+        if (!needAny('Mail.Read', 'Mail.ReadWrite')) return;
+        const folders: Array<[string, string]> = [
+          ['inbox', 'Inbox'],
+          ['sentitems', 'Sent Items'],
+          ['drafts', 'Drafts'],
+          ['archive', 'Archive'],
+        ];
         return send(200, {
-          value: data.mails
-            .filter((m) => matches(`${m.subject} ${m.from} ${m.text}`, words))
-            .map((m) => ({ id: m.id, subject: m.subject, from: { emailAddress: { address: m.from } }, receivedDateTime: m.date, bodyPreview: m.text.slice(0, 120) })),
+          value: folders.map(([id, displayName]) => {
+            const inside = data.mails.filter((m) => (m.folder ?? 'inbox') === id);
+            return { id, displayName, totalItemCount: inside.length, unreadItemCount: inside.filter((m) => !(m.isRead ?? false)).length };
+          }),
         });
+      }
+      if (method === 'GET' && p === '/me/outlook/masterCategories') {
+        if (!needAny('MailboxSettings.Read', 'MailboxSettings.ReadWrite')) return;
+        const own = data.categories ?? [
+          { name: 'Customer', color: 'preset0' },
+          { name: 'Urgent', color: 'preset1' },
+          { name: 'Offsite', color: 'preset4' },
+        ];
+        return send(200, { value: own.map((c, i) => ({ id: `cat-${i}`, displayName: c.name, color: c.color })) });
       }
       const mail = /^\/me\/messages\/([^/]+)$/.exec(p);
       if (method === 'GET' && mail) {
-        if (!need('Mail.Read')) return;
+        if (!needAny('Mail.Read', 'Mail.ReadWrite')) return;
         const m = data.mails.find((x) => x.id === decodeURIComponent(mail[1]!));
         if (!m) return send(404, { error: 'not_found' });
-        return send(200, { id: m.id, subject: m.subject, from: { emailAddress: { address: m.from } }, toRecipients: [{ emailAddress: { address: m.to } }], receivedDateTime: m.date, body: { contentType: 'text', content: m.text } });
+        return send(200, msMail(m));
+      }
+      if (method === 'PATCH' && mail) {
+        if (!need('Mail.ReadWrite')) return;
+        const id = decodeURIComponent(mail[1]!);
+        const b = JSON.parse(body || '{}') as Record<string, unknown>;
+        const draft = replyDrafts.get(id);
+        if (draft) {
+          draft.fields = { ...draft.fields, ...b };
+          return send(200, { id, isDraft: true });
+        }
+        const m = data.mails.find((x) => x.id === id);
+        if (!m) return send(404, { error: 'not_found' });
+        if (Array.isArray(b['categories'])) {
+          m.categories = (b['categories'] as unknown[]).map(String);
+          categoryChanges.push({ account: data.email, messageId: m.id, categories: m.categories });
+        }
+        return send(200, { id: m.id, categories: m.categories ?? [] });
+      }
+      const reply = /^\/me\/messages\/([^/]+)\/createReply$/.exec(p);
+      if (method === 'POST' && reply) {
+        if (!need('Mail.ReadWrite')) return;
+        const original = data.mails.find((x) => x.id === decodeURIComponent(reply[1]!));
+        if (!original) return send(404, { error: 'not_found' });
+        const id = `reply-draft-${nextId++}`;
+        // as at Microsoft, the draft starts out addressed to the sender of the original
+        replyDrafts.set(id, {
+          account: data.email,
+          original: original.id,
+          fields: { subject: `RE: ${original.subject}`, toRecipients: [{ emailAddress: { address: original.from } }], ccRecipients: [], bccRecipients: [], replyTo: [], body: { contentType: 'text', content: '' } },
+        });
+        return send(201, { id, isDraft: true });
+      }
+      const sendDraft = /^\/me\/messages\/([^/]+)\/send$/.exec(p);
+      if (method === 'POST' && sendDraft) {
+        if (!need('Mail.Send')) return;
+        const draft = replyDrafts.get(decodeURIComponent(sendDraft[1]!));
+        if (!draft) return send(404, { error: 'not_found' });
+        replyDrafts.delete(decodeURIComponent(sendDraft[1]!));
+        const f = draft.fields;
+        outlookSent.push({
+          account: data.email,
+          to: addrsOf(f['toRecipients']),
+          cc: addrsOf(f['ccRecipients']),
+          bcc: addrsOf(f['bccRecipients']),
+          replyTo: addrsOf(f['replyTo']),
+          subject: String(f['subject'] ?? ''),
+          body: String(((f['body'] ?? {}) as { content?: string }).content ?? ''),
+          viaReply: true,
+          inReplyTo: draft.original,
+        });
+        res.writeHead(202);
+        return void res.end();
+      }
+      if (method === 'POST' && p === '/me/sendMail') {
+        if (!need('Mail.Send')) return;
+        const f = (JSON.parse(body || '{}') as { message?: Record<string, unknown> }).message ?? {};
+        outlookSent.push({
+          account: data.email,
+          to: addrsOf(f['toRecipients']),
+          cc: addrsOf(f['ccRecipients']),
+          bcc: addrsOf(f['bccRecipients']),
+          replyTo: addrsOf(f['replyTo']),
+          subject: String(f['subject'] ?? ''),
+          body: String(((f['body'] ?? {}) as { content?: string }).content ?? ''),
+          viaReply: false,
+          inReplyTo: null,
+        });
+        res.writeHead(202);
+        return void res.end();
       }
       if (method === 'POST' && p === '/me/messages') {
         if (!need('Mail.ReadWrite')) return;
@@ -522,6 +685,77 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
         createdEvents.push({ provider, account: data.email, title: b.subject, start: b.start.dateTime, end: b.end.dateTime, guests: (b.attendees ?? []).map((a) => a.emailAddress.address) });
         const id = `event-new-${nextId++}`;
         return send(201, { id, webLink: `https://outlook.example/${id}` });
+      }
+      if (method === 'PATCH' && /^\/me\/events\/[^/]+$/.test(p)) {
+        if (!need('Calendars.ReadWrite')) return;
+        const e = data.events.find((x) => x.id === decodeURIComponent(p.split('/')[3]!));
+        if (!e) return send(404, { error: 'not_found' });
+        const b = JSON.parse(body || '{}') as { subject?: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees?: Array<{ emailAddress: { address: string } }> };
+        if (b.subject !== undefined) e.title = b.subject;
+        // a time without an offset is UTC here, as the tools say so
+        if (b.start) e.start = new Date(`${b.start.dateTime}Z`).toISOString();
+        if (b.end) e.end = new Date(`${b.end.dateTime}Z`).toISOString();
+        if (b.attendees) e.guests = b.attendees.map((a) => a.emailAddress.address);
+        outlookEventUpdates.push({ account: data.email, eventId: e.id, fields: b as Record<string, unknown> });
+        return send(200, { id: e.id, webLink: `https://outlook.example/${e.id}` });
+      }
+      if (method === 'POST' && p === '/me/calendar/getSchedule') {
+        if (!needAny('Calendars.ReadBasic', 'Calendars.Read', 'Calendars.ReadWrite')) return;
+        const b = JSON.parse(body || '{}') as { schedules?: string[]; startTime: { dateTime: string }; endTime: { dateTime: string } };
+        const from = `${b.startTime.dateTime}Z`;
+        const to = `${b.endTime.dateTime}Z`;
+        scheduleRequests.push({ account: data.email, schedules: b.schedules ?? [] });
+        // Microsoft writes a time as `2026-11-03T09:00:00.0000000` with the zone beside it, and may add the subject of an item
+        const stamp = (iso: string): { dateTime: string; timeZone: string } => ({ dateTime: `${iso.slice(0, 19)}.0000000`, timeZone: 'UTC' });
+        return send(200, {
+          value: (b.schedules ?? []).map((id) => {
+            const owner = id.toLowerCase() === data.email.toLowerCase() ? data : accounts.get(id);
+            if (!owner) return { scheduleId: id, scheduleItems: [], error: { message: `There is no mailbox for ${id}: SECRET-MAILBOX-TEXT`, responseCode: 'ErrorMailRecipientNotFound' } };
+            return {
+              scheduleId: id,
+              availabilityView: '',
+              scheduleItems: [
+                ...owner.events.filter((e) => e.end > from && e.start < to).map((e) => ({ status: 'busy', subject: e.title, location: e.location ?? '', start: stamp(e.start), end: stamp(e.end) })),
+                // an item that is not busy time, so a reader has to leave it out
+                { status: 'free', start: stamp(from), end: stamp(from) },
+              ],
+            };
+          }),
+        });
+      }
+
+      // ---- SharePoint: the search, and files by drive and item (the signed-in account's own OneDrive is the drive `drive-<address>`)
+      if (method === 'POST' && p === '/search/query') {
+        if (!needAny('Sites.Read.All', 'Files.Read.All')) return;
+        const first = ((JSON.parse(body || '{}') as { requests?: Array<{ query?: { queryString?: string }; size?: number }> }).requests ?? [])[0] ?? {};
+        const words = (first.query?.queryString ?? '').replaceAll('"', '');
+        const own = data.files.map((f) => ({ f, drive: `drive-${data.email}` }));
+        const site = (data.siteFiles ?? []).map((f) => ({ f, drive: 'b!site-docs' }));
+        const hits = [...site, ...own]
+          .filter(({ f }) => matches(f.name, words) || matches(f.text, words))
+          .slice(0, first.size ?? 25)
+          .map(({ f, drive }, i) => ({
+            hitId: String(i + 1),
+            rank: i + 1,
+            summary: `<c0>${words}</c0> SECRET-SUMMARY`,
+            resource: { '@odata.type': '#microsoft.graph.driveItem', id: f.id, name: f.name, webUrl: `https://sharepoint.example/${drive}/${f.id}`, lastModifiedDateTime: f.modified, parentReference: { driveId: drive } },
+          }));
+        return send(200, { value: [{ searchTerms: [words], hitsContainers: [{ hits, total: hits.length, moreResultsAvailable: false }] }] });
+      }
+      const driveItem = /^\/drives\/([^/]+)\/items\/([^/]+)(\/content|\/workbook\/worksheets(?:\/([^/]+)\/range\(address='([A-Z]+)(\d+):([A-Z]+)(\d+)'\))?)?$/.exec(decodeURIComponent(p));
+      if (method === 'GET' && driveItem) {
+        if (!needAny('Sites.Read.All', 'Files.Read.All', 'Files.Read')) return;
+        const pool = driveItem[1] === `drive-${data.email}` ? data.files : driveItem[1] === 'b!site-docs' ? (data.siteFiles ?? []) : [];
+        const f = pool.find((x) => x.id === driveItem[2]);
+        if (!f) return send(404, { error: 'not_found' });
+        return sendDriveItem(f, driveItem[3], driveItem[4], driveItem[7], driveItem[8]);
+      }
+      const ownWorkbook = /^\/me\/drive\/items\/([^/]+)(\/workbook\/worksheets(?:\/([^/]+)\/range\(address='([A-Z]+)(\d+):([A-Z]+)(\d+)'\))?)$/.exec(decodeURIComponent(p));
+      if (method === 'GET' && ownWorkbook) {
+        if (!needAny('Files.Read', 'Files.Read.All')) return;
+        const f = data.files.find((x) => x.id === ownWorkbook[1]);
+        if (!f) return send(404, { error: 'not_found' });
+        return sendDriveItem(f, ownWorkbook[2], ownWorkbook[3], ownWorkbook[6], ownWorkbook[7]);
       }
     }
 
@@ -594,6 +828,10 @@ export async function startFakeProviders(options: FakeProvidersOptions = {}): Pr
     createdEvents,
     updatedEvents,
     createdPages,
+    outlookSent,
+    categoryChanges,
+    outlookEventUpdates,
+    scheduleRequests,
     account(email) {
       let a = accounts.get(email);
       if (!a) {

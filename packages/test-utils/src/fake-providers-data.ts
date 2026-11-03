@@ -21,6 +21,12 @@ export interface FakeMail {
   labels?: string[];
   /** Gmail's conversation id (default: the mail's own id). */
   threadId?: string;
+  /** Outlook: the folder it is in (default `inbox`). */
+  folder?: string;
+  /** Outlook: the colour categories on it (default none). */
+  categories?: string[];
+  /** Outlook: read or not (default: unread). */
+  isRead?: boolean;
 }
 
 export interface FakeEvent {
@@ -45,11 +51,21 @@ export interface FakeLabel {
   name: string;
 }
 
+/** An Outlook colour category of an account. */
+export interface FakeCategory {
+  name: string;
+  color: string;
+}
+
 export interface FakeAccountData {
   /** The address the provider reports for the account. */
   email: string;
   /** The account's own Gmail labels; default: Invoices and Offsite. */
   labels?: FakeLabel[];
+  /** The account's Outlook categories; default: Customer, Urgent and Offsite. */
+  categories?: FakeCategory[];
+  /** Files in SharePoint sites the account can open (found by the Microsoft search and read by drive and item id); default none. */
+  siteFiles?: FakeFile[];
   files: FakeFile[];
   mails: FakeMail[];
   events: FakeEvent[];

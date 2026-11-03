@@ -1,7 +1,8 @@
-import { z } from 'zod'
-import type { ToolApprovalCard } from '@manythreads/sdk';
+import { z } from 'zod';
 import type { ProviderApi } from './oauth/api.ts';
-import { address, asArray, asRecord, clip, DAY, draftFields, driveQuote, enc, eventFields, gmailText, headerOf, idOf, limit, listWindow, MESSAGE_ID, Q, query, rfc822, str, untrusted, when, windowOf, type PersonToolDef } from './person-kit.ts';
+import { address, asArray, asRecord, cardOf, clip, draftFields, driveQuote, enc, eventFields, freeBusyInput, freeGaps, gmailText, headerOf, idOf, limit, listWindow, mergeBusy, MESSAGE_ID, names, oneLine, Q, query, rfc822, str, untrusted, windowOf, type PersonToolDef, type Span } from './person-kit.ts';
+
+export { freeGaps, mergeBusy, type Span };
 
 // ---- shared by the Gmail and Calendar tools -----------------------------------------------------------------------------------------------------------------
 
@@ -12,11 +13,6 @@ const labelIdsOf = (doc: unknown): string[] =>
       const id = str(l, 100);
       return id === null ? [] : [id];
     });
-
-/** The card an approver reads. A value is clipped so a long text does not fill the inbox; the platform clips again and hides secrets. */
-const cardOf = (summary: string, preview: Record<string, unknown>): ToolApprovalCard => ({ summary: summary.slice(0, 280), preview });
-const oneLine = (s: unknown, max = 120): string => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-const names = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => oneLine(x, 320)) : []);
 
 /**
  * Labels the tools will not add: they hide or throw away mail (the bin and spam) or claim a mail was sent or is a draft. Taking a mail out of the Inbox or marking it read is
@@ -59,63 +55,7 @@ const sendFields = {
   replyToMessageId: idOf('message this answers').describe('Set it to answer a message: the reply stays in that message’s conversation. Needs the Gmail (read) permission too.').optional(),
 };
 
-// ---- free and busy ------------------------------------------------------------------------------------------------------------------------------------------
-
-export interface Span {
-  start: string;
-  end: string;
-}
-const MAX_WINDOW_DAYS = 31;
-
-/** The busy spans put in order and merged where they touch or overlap. Spans that cannot be read are dropped. */
-export function mergeBusy(spans: readonly Span[]): Span[] {
-  const sorted = spans
-    .map((s) => ({ a: Date.parse(s.start), b: Date.parse(s.end) }))
-    .filter((s) => Number.isFinite(s.a) && Number.isFinite(s.b) && s.b > s.a)
-    .sort((x, y) => x.a - y.a);
-  const out: Array<{ a: number; b: number }> = [];
-  for (const s of sorted) {
-    const last = out.at(-1);
-    if (last && s.a <= last.b) last.b = Math.max(last.b, s.b);
-    else out.push({ ...s });
-  }
-  return out.map((s) => ({ start: new Date(s.a).toISOString(), end: new Date(s.b).toISOString() }));
-}
-
-/** The gaps of at least `minMinutes` between the merged busy spans inside the window, soonest first, at most `max`. */
-export function freeGaps(busy: readonly Span[], window: Span, minMinutes: number, max = 20): Span[] {
-  const to = Date.parse(window.end);
-  const out: Span[] = [];
-  let cursor = Date.parse(window.start);
-  const push = (a: number, b: number): void => {
-    if (b - a >= minMinutes * 60_000 && out.length < max) out.push({ start: new Date(a).toISOString(), end: new Date(b).toISOString() });
-  };
-  for (const s of mergeBusy(busy)) {
-    const a = Date.parse(s.start);
-    const b = Date.parse(s.end);
-    if (b <= cursor) continue;
-    if (a >= to) break;
-    if (a > cursor) push(cursor, a);
-    cursor = Math.max(cursor, b);
-  }
-  if (cursor < to) push(cursor, to);
-  return out;
-}
-
-const freeBusyInput = z
-  .strictObject({
-    from: when.describe('Start of the period to look at, an ISO 8601 date and time with its offset.'),
-    to: when.describe(`End of the period, in the same form. At most ${String(MAX_WINDOW_DAYS)} days after the start.`),
-    people: z.array(address).max(10).describe('Addresses of other people whose calendars to include; yours is always included. A calendar that is not shared shows as not visible.').optional(),
-    minMinutes: z.number().int().min(5).max(480).describe('Also answer the stretches of at least this many minutes in which every calendar read is free.').optional(),
-  })
-  .refine(
-    (v) => {
-      const span = Date.parse(v.to) - Date.parse(v.from);
-      return span > 0 && span <= MAX_WINDOW_DAYS * DAY;
-    },
-    { message: `must be after from and at most ${String(MAX_WINDOW_DAYS)} days later`, path: ['to'] },
-  );
+// ---- free and busy and the event patch ----------------------------------------------------------------------------------------------------------------------
 
 const eventPatch = z
   .strictObject({
