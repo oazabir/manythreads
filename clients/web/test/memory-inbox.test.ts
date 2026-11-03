@@ -1,31 +1,38 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { InboxItemChangedPush, WS_INBOX_ITEM_CHANGED, type InboxItem } from '@manythreads/shared';
+import { InboxItemChangedPush, TaskId, WS_INBOX_ITEM_CHANGED, type InboxItem } from '@manythreads/shared';
 import { setTransport, type TransportRequest } from '../src/api/client';
 import { createMockTransport } from '../src/api/mock';
 import {
-  InboxListWithAddress,
+  addActionToBoard,
   createInboxNote,
   discardInboxItem,
   fetchConcepts,
+  fetchInboxActions,
+  fetchInboxEmail,
   fetchInboxItem,
   fetchInboxItems,
   releaseInboxItem,
+  recordInboxAction,
   retryInboxItem,
   sendToMemory,
+  setUpInboxMail,
 } from '../src/screens/memory/inboxApi';
 import { parseInboxPush } from '../src/screens/memory/inboxLive';
 import {
   FILTERS,
+  actionWhen,
   conceptLink,
   conceptName,
   countsByFilter,
   dropProblem,
-  emailAddressOf,
+  emailLine,
   filedConcepts,
   filedReference,
+  hasActionItems,
   holdSentence,
   inFilter,
   inboxLink,
+  isActionItemsType,
   isProcessing,
   itemActions,
   itemLook,
@@ -43,6 +50,7 @@ import {
 const ITEM = '00000000-0000-7000-8000-0000000d0001';
 const CHANNEL = '00000000-0000-7000-8000-0000000c0001';
 const MESSAGE = '00000000-0000-7000-8000-0000000e0001';
+const TASK = TaskId.parse('00000000-0000-7000-8000-0000000f0001');
 
 describe('the inbox calls reach the routes the plugin mounts', () => {
   let seen: TransportRequest[] = [];
@@ -73,6 +81,16 @@ describe('the inbox calls reach the routes the plugin mounts', () => {
       method: 'POST',
       url: `/api/channels/${CHANNEL}/messages/${MESSAGE}/send-to-memory`,
       body: { confirmPrivate: true, teamOnly: false, thread: true },
+    },
+    { name: 'reads the team’s email address', run: () => fetchInboxEmail('engineering'), method: 'GET', url: '/api/teams/engineering/inbox/email' },
+    { name: 'switches the workspace mailbox on', run: () => setUpInboxMail(), method: 'POST', url: '/api/workspace/inbox-mail' },
+    { name: 'lists the actions of an item', run: () => fetchInboxActions('engineering', ITEM), method: 'GET', url: `/api/teams/engineering/inbox/items/${ITEM}/actions` },
+    {
+      name: 'notes which action became a card',
+      run: () => recordInboxAction('engineering', ITEM, { conceptPath: 'memory/action-items/a.md', index: 1, taskId: TASK }),
+      method: 'POST',
+      url: `/api/teams/engineering/inbox/items/${ITEM}/actions`,
+      body: { conceptPath: 'memory/action-items/a.md', index: 1, taskId: TASK },
     },
     { name: 'lists the concepts', run: () => fetchConcepts('engineering'), method: 'GET', url: '/api/teams/engineering/memory/concepts' },
   ];
@@ -105,28 +123,47 @@ describe('the mock answers as the plugin does', () => {
     return found;
   };
 
-  it('a team member reads the queue: one drop in each place, and the email address when the team has one', async () => {
+  it('a team member reads the queue: one drop in each place', async () => {
     as('nadia');
     const list = await fetchInboxItems('engineering');
     expect(list.canManage).toBe(false);
-    expect(list.emailAddress).toBe('engineering@inbox.kahf.example');
     expect(list.items.map((i) => i.state).sort()).toEqual(['failed', 'filed', 'filing', 'held', 'needs_review']);
     const counts = countsByFilter(list.items);
     expect(counts).toEqual({ all: 5, processing: 1, needs_review: 1, held: 1, filed: 1, failed: 1 });
   });
 
-  it('a team with no email address sends none, and the page then shows nothing for it', async () => {
+  it('a team with nothing dropped has an empty queue', async () => {
     as('sameera');
-    const list = await fetchInboxItems('customer-support');
-    expect(list.emailAddress).toBeUndefined();
-    expect(emailAddressOf(list)).toBeNull();
-    expect(list.items).toEqual([]);
+    expect((await fetchInboxItems('customer-support')).items).toEqual([]);
+  });
+
+  it('the mailbox starts off: an admin is offered to switch it on, anyone else is told to ask one', async () => {
+    as('nadia');
+    const member = await fetchInboxEmail('engineering');
+    expect(member).toMatchObject({ address: null, connection: null, canSetUp: false });
+    expect(emailLine(member)).toEqual({ kind: 'none', reason: expect.stringMatching(/Ask a workspace admin/) });
+    await expect(setUpInboxMail()).rejects.toThrow(/workspace admin/);
+    as('omar');
+    const admin = await fetchInboxEmail('engineering');
+    expect(admin.canSetUp).toBe(true);
+    expect(emailLine(admin)).toMatchObject({ kind: 'setup' });
+  });
+
+  it('switching the mailbox on gives every team an address, and the second switch answers the same', async () => {
+    as('omar');
+    const first = await setUpInboxMail();
+    expect(first).toMatchObject({ created: true, connection: { slug: 'inbox' } });
+    expect((await setUpInboxMail()).created).toBe(false);
+    const answer = await fetchInboxEmail('engineering');
+    expect(answer.address).toBe('inbox+engineering@mail.kahf.example');
+    expect(emailLine(answer)).toMatchObject({ kind: 'address', address: 'inbox+engineering@mail.kahf.example', allowed: ['partner@vendor.example', '@acme.example'] });
+    expect((await fetchInboxEmail('customer-support')).address).toBe('inbox+customer-support@mail.kahf.example');
   });
 
   it('the filed item names the concepts it became, and each is in the team’s memory', async () => {
     as('nadia');
     const filed = byName((await fetchInboxItems('engineering')).items, 'Release notes 2.4.md');
-    expect(filedConcepts(filed)).toHaveLength(3);
+    expect(filedConcepts(filed)).toHaveLength(4);
     expect(filedReference(filed)).toMatch(/^memory\/references\//);
     const known = new Set((await fetchConcepts('engineering')).items.map((c) => c.path));
     for (const p of filed.filedPaths) expect(known.has(p)).toBe(true);
@@ -175,16 +212,54 @@ describe('the mock answers as the plugin does', () => {
     expect(sent.item).toMatchObject({ origin: 'message', name: 'Thread in #general' });
   });
 
-  it('a person outside the team is refused the list', async () => {
+  it('a person outside the team is refused the list and the address', async () => {
     as('lena');
     await expect(fetchInboxItems('engineering')).rejects.toThrow();
+    await expect(fetchInboxEmail('engineering')).rejects.toThrow();
   });
 
-  it('the list answer parses with and without an address', () => {
-    const base = { items: [], canManage: false, maxBytes: 1024 };
-    expect(InboxListWithAddress.parse(base).emailAddress).toBeUndefined();
-    expect(InboxListWithAddress.parse({ ...base, emailAddress: null }).emailAddress).toBeNull();
-    expect(InboxListWithAddress.parse({ ...base, emailAddress: 'team@inbox.example' }).emailAddress).toBe('team@inbox.example');
+  describe('action items', () => {
+    const filedItem = async (): Promise<InboxItem> => byName((await fetchInboxItems('engineering')).items, 'Release notes 2.4.md');
+
+    it('a filed item with an Action Items concept lists its actions, with the card body ready; an item with none lists none', async () => {
+      as('nadia');
+      const filed = await filedItem();
+      const concepts = (await fetchConcepts('engineering')).items;
+      const types = new Map(concepts.map((c) => [c.path, c.type]));
+      expect(hasActionItems(filedConcepts(filed), types)).toBe(true);
+      const { actions, canAdd } = await fetchInboxActions('engineering', filed.id);
+      expect(canAdd).toBe(true);
+      expect(actions.map((a) => a.what)).toEqual(['Run the upgrade test on a 2.3 fixture', 'Write the release announcement', 'Update the changelog']);
+      expect(actions[0]).toMatchObject({ ownerName: 'Nadia', due: '2026-11-20', done: false, taskId: null, prepared: { kind: 'other', priority: 'normal', branch: 'main' } });
+      expect(actionWhen(actions[0]!)).toBe('Owner Nadia · due 2026-11-20');
+      expect(actionWhen(actions[1]!)).toBe('Owner Rafi');
+      expect(actionWhen(actions[2]!)).toBeNull();
+      const held = byName((await fetchInboxItems('engineering')).items, 'partner-export.zip');
+      expect((await fetchInboxActions('engineering', held.id)).actions).toEqual([]);
+    });
+
+    it('Add to board makes the card as the signed-in person with the prepared body, then notes it; the action then shows as added when the list is read again', async () => {
+      as('omar');
+      const filed = await filedItem();
+      const first = (await fetchInboxActions('engineering', filed.id)).actions[0]!;
+      const done = await addActionToBoard('engineering', filed.id, first);
+      expect(done.recorded).toBe(true);
+      expect(done.action.taskId).toBe(done.taskId);
+      expect(done.action.addedBy).not.toBeNull();
+      const again = (await fetchInboxActions('engineering', filed.id)).actions;
+      expect(again[0]?.taskId).toBe(done.taskId);
+      expect(again[1]?.taskId).toBeNull();
+    });
+
+    it('an action already on the board is not noted twice, and a card that does not exist cannot be noted', async () => {
+      as('nadia');
+      const filed = await filedItem();
+      const [first, second] = (await fetchInboxActions('engineering', filed.id)).actions;
+      const added = await addActionToBoard('engineering', filed.id, first!);
+      await expect(recordInboxAction('engineering', filed.id, { conceptPath: first!.conceptPath, index: 0, taskId: added.taskId })).rejects.toThrow(/already/);
+      await expect(recordInboxAction('engineering', filed.id, { conceptPath: second!.conceptPath, index: 1, taskId: TASK })).rejects.toThrow(/does not exist/);
+      await expect(recordInboxAction('engineering', filed.id, { conceptPath: 'memory/action-items/none.md', index: 0, taskId: TASK })).rejects.toThrow(/No such action/);
+    });
   });
 });
 
@@ -264,11 +339,24 @@ describe('the words', () => {
     expect(sizeLabel(3 * 1024 * 1024)).toBe('3.0 MB');
   });
 
-  it('reads the email address only when there is one', () => {
-    expect(emailAddressOf({})).toBeNull();
-    expect(emailAddressOf({ emailAddress: null })).toBeNull();
-    expect(emailAddressOf({ emailAddress: '  ' })).toBeNull();
-    expect(emailAddressOf({ emailAddress: 'eng@inbox.example' })).toBe('eng@inbox.example');
+  it('says what the team’s email door is: an address, a way to switch it on, or why there is none', () => {
+    const base = { address: null, reason: null, rule: 'Mail from the team is filed.', canSetUp: false, allowedSenders: [] as string[] };
+    expect(emailLine(null)).toBeNull();
+    expect(emailLine({ ...base, address: ' eng@inbox.example ', allowedSenders: ['a@b.example', ' '] })).toEqual({ kind: 'address', address: 'eng@inbox.example', rule: 'Mail from the team is filed.', allowed: ['a@b.example'] });
+    expect(emailLine({ ...base, address: '  ', reason: 'Not on.', canSetUp: true })).toEqual({ kind: 'setup', reason: 'Not on.' });
+    expect(emailLine({ ...base, reason: 'Not on. Ask a workspace admin.' })).toEqual({ kind: 'none', reason: 'Not on. Ask a workspace admin.' });
+    expect(emailLine(base)).toEqual({ kind: 'none', reason: 'Email to this team is not switched on yet.' });
+  });
+
+  it('knows which concepts hold action items, without regard to case', () => {
+    expect(isActionItemsType('Action Items')).toBe(true);
+    expect(isActionItemsType(' action items ')).toBe(true);
+    expect(isActionItemsType('Fact')).toBe(false);
+    expect(isActionItemsType(undefined)).toBe(false);
+    const types = new Map([['a.md', 'Fact'], ['b.md', 'Action Items']]);
+    expect(hasActionItems(['a.md'], types)).toBe(false);
+    expect(hasActionItems(['a.md', 'b.md'], types)).toBe(true);
+    expect(hasActionItems(['c.md'], types)).toBe(false);
   });
 
   it('links to the inbox and to a concept by team and path', () => {

@@ -47,7 +47,7 @@ describe('knowledge, skill, connection, runner, trigger, model, other', () => {
     expect(grade(req('skill', 'review'))).toBe('covered');
     expect(grade(req('skill', 'triage'))).toBe('missing');
   });
-  it('a connection is missing: none exist in this release', () => expect(grade(req('connection', 'mailbox'))).toBe('missing'));
+  it('a connection is missing: the helper cannot give a bot one', () => expect(grade(req('connection', 'mailbox'))).toBe('missing'));
   it('a connection the inventory does list is covered', () => expect(grade(req('connection', 'mailbox'), inventory({ connections: [{ name: 'mailbox', tools: ['email.send'] }] }))).toBe('covered'));
   it('a runner the team may use is covered; any other is blocked in words that say nothing about it', () => {
     expect(grade(req('runner', 'fast-model'))).toBe('covered');
@@ -56,10 +56,12 @@ describe('knowledge, skill, connection, runner, trigger, model, other', () => {
     expect(other.reason).toBe('"secret-gpu-box" is not a runner this team may use.');
     expect(grade(req('runner'))).toBe('covered');
   });
-  it('a way to start the bot: the five are covered, inbox and webhook are missing (they need a connection), others are unclear', () => {
+  it('a way to start the bot: the five are covered, inbox and webhook are missing (they need a connection), drop is blocked (the Archivist owns it), others are unclear', () => {
     for (const t of ['conversation', 'mention', 'channel_message', 'task_assigned', 'routine']) expect(grade(req('trigger', t)), t).toBe('covered');
     expect(grade(req('trigger', 'inbox'))).toBe('missing');
     expect(grade(req('trigger', 'webhook'))).toBe('missing');
+    expect(grade(req('trigger', 'drop'))).toBe('blocked');
+    expect(gradeRequirement(req('trigger', 'drop'), inventory()).reason).toBe('The team Archivist starts from drops.');
     expect(grade(req('trigger', 'carrier-pigeon'))).toBe('unclear');
   });
   it('a model alias that is bound is covered; one that is not is missing', () => {

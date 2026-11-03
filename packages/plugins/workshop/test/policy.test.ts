@@ -96,6 +96,10 @@ describe('what starts it, what it reads, which model', () => {
     expect(fields(fm('', GOOD_BOT_MD.replace('- type: conversation', '- type: inbox')))).toContain('triggers');
     expect(fields(fm('', GOOD_BOT_MD.replace('- type: conversation', '- type: webhook')))).toContain('triggers');
   });
+  it('a drop trigger is refused: it belongs to the team Archivist', () => {
+    const refusals = check(fm('', GOOD_BOT_MD.replace('- type: conversation', '- type: drop')));
+    expect(refusals.find((r) => r.field === 'triggers')?.message).toMatch(/Archivist/);
+  });
   it('a knowledge base the team lacks is refused', () => expect(fields(fm('', GOOD_BOT_MD.replace('base: manuals', 'base: contracts')))).toContain('knowledge'));
   it('a skill the team lacks is refused unless the same proposal creates it', () => {
     const body = fm('skills: [triage]\n');

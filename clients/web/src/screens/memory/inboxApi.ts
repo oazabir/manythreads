@@ -2,37 +2,71 @@ import { z } from 'zod';
 import {
   CreateInboxNoteRequest,
   GetInboxItemResponse,
+  InboxEmailResponse,
   InboxItemActionResponse,
   InboxItemResponse,
+  ListInboxActionsResponse,
   ListInboxItemsQuery,
   ListInboxItemsResponse,
   ListMemoryConceptsResponse,
+  RecordInboxActionRequest,
+  RecordInboxActionResponse,
   SendToMemoryRequest,
+  SetUpInboxMailResponse,
   createInboxNoteRoute,
   discardInboxItemRoute,
+  getInboxEmailRoute,
   getInboxItemRoute,
+  listInboxActionsRoute,
   listInboxItemsRoute,
   listMemoryConceptsRoute,
+  recordInboxActionRoute,
   releaseInboxItemRoute,
   retryInboxItemRoute,
   sendToMemoryRoute,
+  setUpInboxMailRoute,
   uploadInboxItemRoute,
+  type InboxAction,
   type InboxState,
+  type TaskId,
 } from '@manythreads/shared';
 import { ApiError, CSRF_HEADER, buildPath, call, readCsrfCookie } from '../../api/client';
 import { isMockMode } from '../../api/setup';
+import { createTask } from '../boards/api';
 
 /*
- * What the Memory screen asks of the server for a team's inbox (docs/plugins/memory-inbox.md). The list answer may also carry the team's email address
- * (the email door); an older server sends none, so the field is optional and the page shows nothing for it then.
+ * What the Memory screen asks of the server for a team's inbox (docs/plugins/memory-inbox.md): the queue, the team's email address (the email door), the
+ * workspace admin's "switch it on", and the action items a filed item became (each with an "Add to board" the person clicks).
  */
 
-/** The list answer, plus the team's email address when the server has one. */
-export const InboxListWithAddress = ListInboxItemsResponse.extend({ emailAddress: z.string().max(320).nullish() });
-export type InboxListWithAddress = z.infer<typeof InboxListWithAddress>;
-
 export const fetchInboxItems = (slug: string, state?: InboxState) =>
-  call(listInboxItemsRoute, { request: ListInboxItemsQuery, response: InboxListWithAddress }, ListInboxItemsQuery.parse({ limit: 200, ...(state ? { state } : {}) }), { slug });
+  call(listInboxItemsRoute, { request: ListInboxItemsQuery, response: ListInboxItemsResponse }, ListInboxItemsQuery.parse({ limit: 200, ...(state ? { state } : {}) }), { slug });
+
+/** The team's address on the workspace mailbox, or why there is none yet and whether the signed-in person may set the mailbox up. */
+export const fetchInboxEmail = (slug: string) => call(getInboxEmailRoute, { response: InboxEmailResponse }, undefined, { slug });
+
+/** A workspace admin switches the workspace mailbox on. The same answer the second time. */
+export const setUpInboxMail = () => call(setUpInboxMailRoute, { response: SetUpInboxMailResponse }, undefined, {});
+
+/** The actions of the item's `Action Items` concepts, each with the card body ready to send. */
+export const fetchInboxActions = (slug: string, itemId: string) => call(listInboxActionsRoute, { response: ListInboxActionsResponse }, undefined, { slug, itemId });
+
+export const recordInboxAction = (slug: string, itemId: string, body: RecordInboxActionRequest) =>
+  call(recordInboxActionRoute, { request: RecordInboxActionRequest, response: RecordInboxActionResponse }, body, { slug, itemId });
+
+/**
+ * "Add to board": the card is made by the signed-in person through the tasks API (the server's `prepared` body, as it is), never by a bot or the platform; then the
+ * inbox is told which action it was so the action shows as added for everyone. If the second call fails the card exists: the caller says so instead of making another.
+ */
+export async function addActionToBoard(slug: string, itemId: string, action: InboxAction): Promise<{ action: InboxAction; taskId: TaskId; recorded: boolean; problem?: string }> {
+  const { task } = await createTask(slug, action.prepared);
+  try {
+    const answer = await recordInboxAction(slug, itemId, { conceptPath: action.conceptPath, index: action.index, taskId: task.id });
+    return { action: answer.action, taskId: task.id, recorded: true };
+  } catch (e) {
+    return { action: { ...action, taskId: task.id }, taskId: task.id, recorded: false, problem: e instanceof Error ? e.message : 'The card was made, but the inbox could not note it.' };
+  }
+}
 
 export const fetchInboxItem = (slug: string, itemId: string) => call(getInboxItemRoute, { response: GetInboxItemResponse }, undefined, { slug, itemId });
 

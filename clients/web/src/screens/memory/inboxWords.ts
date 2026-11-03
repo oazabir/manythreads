@@ -176,10 +176,37 @@ export function itemActions(item: Pick<InboxItem, 'state'>, canManage: boolean):
   };
 }
 
-/** The address the team's email door answers on, when the server told us one. */
-export function emailAddressOf(answer: { emailAddress?: string | null | undefined }): string | null {
-  const a = answer.emailAddress?.trim();
-  return a ? a : null;
+/** What the drop zone says about the team's email door. */
+export type EmailLine =
+  | { kind: 'address'; address: string; rule: string; allowed: string[] }
+  | { kind: 'setup'; reason: string }
+  | { kind: 'none'; reason: string };
+
+/**
+ * The address the team's email door answers on, or why there is none: a workspace admin is offered "Switch it on", anyone else reads the server's sentence (which says to ask an admin). `null` while the
+ * answer is not there (loading, or an older server without the door), so the page shows nothing rather than a wrong sentence.
+ */
+export function emailLine(answer: { address: string | null; reason: string | null; rule: string; canSetUp: boolean; allowedSenders: readonly string[] } | null): EmailLine | null {
+  if (answer === null) return null;
+  const address = answer.address?.trim();
+  if (address) return { kind: 'address', address, rule: answer.rule.trim(), allowed: answer.allowedSenders.filter((a) => a.trim() !== '') };
+  const reason = answer.reason?.trim() || 'Email to this team is not switched on yet.';
+  // the server's sentence already tells a non-admin to ask a workspace admin
+  return answer.canSetUp ? { kind: 'setup', reason } : { kind: 'none', reason };
+}
+
+/** The type that marks a concept holding action items (matched without regard to case, as the server does). */
+export const isActionItemsType = (type: string | null | undefined): boolean => (type ?? '').trim().toLowerCase() === 'action items';
+
+/** Whether any of the concepts an item became holds action items; the card then asks the server for the actions. */
+export function hasActionItems(paths: readonly string[], typeOf: ReadonlyMap<string, string>): boolean {
+  return paths.some((p) => isActionItemsType(typeOf.get(p)));
+}
+
+/** "Owner Nadia · due 2026-11-20", or the part that is there; null when the action names neither. */
+export function actionWhen(action: { ownerName: string | null; due: string | null }): string | null {
+  const parts = [action.ownerName ? `Owner ${action.ownerName}` : null, action.due ? `due ${action.due}` : null].filter((p): p is string => p !== null);
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 export const message = (e: unknown, fallback = 'Something went wrong. Try again.'): string => (e instanceof Error && e.message !== '' ? e.message : fallback);

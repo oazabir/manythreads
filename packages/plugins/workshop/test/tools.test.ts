@@ -223,7 +223,7 @@ describe('describe_self on a big team', () => {
     expect(inv['asker']).toMatchObject({ role: 'lead', canGrantDestructive: true });
     expect(inv['runtimeAllowed']).toEqual(['files', 'browser']);
     expect(inv['guardDefault']).toBe('customer-facing');
-    expect((inv['triggers'] as unknown[]).length).toBe(7);
+    expect((inv['triggers'] as unknown[]).length).toBe(8);
     // the policy fields are the first keys, before any list
     expect(Object.keys(inv).slice(0, 4)).toEqual(['asker', 'runtimeAllowed', 'guardDefault', 'triggers']);
     // something was cut, and the answer says what

@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { definePlugin, type BotRunnersProvider, type RunnerDoor } from '@manythreads/sdk';
+import { createDropDistiller } from './drop-run.ts';
 import { createHermesProvider, sweepStaleProfiles } from './hermes.ts';
 import { registerConnectionRoutes, resolveRunnerTarget, resolveTarget } from './connections.ts';
 import { createProfilesProvider, managedEnvFrom } from './profiles.ts';
@@ -15,6 +16,7 @@ export { GUARDED_TOOLSETS, RUNTIME_GRANT_TOOLSETS, hermesToolsets, type HermesTo
 export { parseHermesLine, replyText, type HermesEvent } from './stream.ts';
 export { childEnv, createHermesProvider, HERMES_RUNTIME_ID, sweepStaleProfiles, type HermesRuntimeOptions } from './hermes.ts';
 export { CLASSIFIER_INSTRUCTION, GATE_BUDGET_MS, wrapMessage, checkList, chunksOf, classifierPrompt, hasGate, parseAnswer, runGate, type ClassifierDoor, type GateInput, type GateVerdict } from './gate.ts';
+export { ARCHIVIST_PROVIDER_ID, buildDropPrompt, createDropDistiller, failureSentence, readProposalList } from './drop-run.ts';
 export { RUN_QUEUE, buildPrompt, matchTrigger, mentionedHandles, registerApprovalResume, registerRouter, registerRunJob, type MessageView, type RunPayload, type RoutedTrigger } from './router.ts';
 
 /** A profile directory older than this is a dead run's (the platform's own ceiling on a run is an hour). */
@@ -37,7 +39,7 @@ export default definePlugin({
     kind: 'server',
     // The run/tool door (mint a run per invocation, post the reply as the run's bot), the message subscription that routes
     // triggers, the job a run executes in, and the provider itself.
-    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.bot_runtime', 'provider.hermes.profiles', 'tool.invoke', 'hook.pre_egress'],
+    extends: ['event.subscribe', 'event.emit', 'job.register', 'provider.bot_runtime', 'provider.hermes.profiles', 'provider.inbox.distiller', 'tool.invoke', 'hook.pre_egress'],
     migrations: 'migrations',
     // `runtime.gate.held`: the gate stopped a run before any model call (P5-11). `hook.pre_egress` is used to redact the message an approver is shown.
     events: {
@@ -93,6 +95,8 @@ export default definePlugin({
       managedEnvFrom(process.env),
     );
     ctx.providers.register('hermes.profiles', profiles);
+    // The Archivist's drop run (P8-18): memory-inbox asks for it when it needs a dropped item turned into concepts, and files only a Reference when this is absent.
+    ctx.providers.register('inbox.distiller', createDropDistiller(ctx, { info: (line) => void process.stderr.write(`${line}\n`), warn: (line) => void process.stderr.write(`${line}\n`) }));
     registerProfileChanges(ctx, profiles.notify);
     registerConnectionRoutes(ctx, {}, profiles.notify);
     registerRouter(ctx);

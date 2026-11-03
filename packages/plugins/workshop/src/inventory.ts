@@ -20,15 +20,15 @@ const TRIGGERS: SetupInventory['triggers'] = [
   { type: 'channel_message', available: true },
   { type: 'task_assigned', available: true },
   { type: 'routine', available: true },
-  { type: 'inbox', available: false, note: 'Starting from an email inbox needs a connection to a mailbox, which is not available yet.' },
-  { type: 'drop', available: false, note: 'Starting from a file dropped into the team memory inbox needs the Archivist, which is not available yet.' },
+  { type: 'inbox', available: true, note: 'Starts when a mail arrives on a mailbox the team has connected. The mailbox and its email tools are given to a bot on its own page; the setup helper cannot give a bot a connection yet.' },
+  { type: 'drop', available: true, note: 'Starts when something is dropped into the team memory inbox. Each team has one Archivist for this, so a bot made here would only compete with it and the setup helper does not make one.' },
   { type: 'webhook', available: false, note: 'Starting from an outside event needs a connection to that app, which is not available yet.' },
 ];
 
 /** The model aliases a bot of a team may be pointed at. */
 const BOT_ALIASES = ['smart', 'fast', 'code', 'local'];
 
-const CONNECTIONS_NOTE = 'No connections to other apps (a mailbox, a CRM) exist in this release, so a bot cannot be given one.';
+const CONNECTIONS_NOTE = 'A team can connect a mailbox and other apps, but the setup helper cannot give a bot a connection yet: an admin or lead adds it on the bot’s own page.';
 
 export async function askerRole(tx: PluginTx, teamId: string): Promise<{ role: SetupAskerRole; onTeam: boolean; canGrantDestructive: boolean; canAddBot: boolean }> {
   const row = (

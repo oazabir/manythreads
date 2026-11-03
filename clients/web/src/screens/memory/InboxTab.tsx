@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { InboxItem } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { InboxCard } from './InboxCard';
-import { fetchConcepts, fetchInboxItems, uploadInboxFile } from './inboxApi';
+import { fetchConcepts, fetchInboxEmail, fetchInboxItems, setUpInboxMail, uploadInboxFile } from './inboxApi';
 import { useInboxPush } from './inboxLive';
-import { FILTERS, countsByFilter, dropProblem, emailAddressOf, inFilter, isProcessing, message, type FilterId } from './inboxWords';
+import { FILTERS, countsByFilter, dropProblem, emailLine, inFilter, isProcessing, message, type FilterId } from './inboxWords';
 import { NoteDialog } from './NoteDialog';
 
 type Upload = { id: number; name: string; state: 'sending' | 'done' | 'error'; fraction: number; message?: string };
@@ -21,6 +21,8 @@ const NO_ITEMS: readonly InboxItem[] = [];
 export function InboxTab({ slug }: { slug: string }) {
   const q = useQuery(`inbox:${slug}`, () => fetchInboxItems(slug));
   const concepts = useQuery(`inbox-concepts:${slug}`, () => fetchConcepts(slug));
+  const email = useQuery(`inbox-email:${slug}`, () => fetchInboxEmail(slug));
+  const [switching, setSwitching] = useState(false);
   const [filter, setFilter] = useState<FilterId>('all');
   const [teamOnly, setTeamOnly] = useState(false);
   const [noting, setNoting] = useState(false);
@@ -33,10 +35,12 @@ export function InboxTab({ slug }: { slug: string }) {
   const items = q.status === 'ok' ? q.data.items : NO_ITEMS;
   const canManage = q.status === 'ok' ? q.data.canManage : false;
   const maxBytes = q.status === 'ok' ? q.data.maxBytes : DEFAULT_MAX_BYTES;
-  const address = q.status === 'ok' ? emailAddressOf(q.data) : null;
+  const mail = emailLine(email.status === 'ok' ? email.data : null);
+  const address = mail?.kind === 'address' ? mail.address : null;
   const counts = useMemo(() => countsByFilter(items), [items]);
   const shown = useMemo(() => items.filter((i) => inFilter(i, filter)), [items, filter]);
   const titles = useMemo(() => new Map(concepts.status === 'ok' ? concepts.data.items.map((c) => [c.path, c.title]) : []), [concepts]);
+  const types = useMemo(() => new Map(concepts.status === 'ok' ? concepts.data.items.map((c) => [c.path, c.type]) : []), [concepts]);
 
   const { reload } = q;
   const conceptsReload = concepts.reload;
@@ -90,6 +94,19 @@ export function InboxTab({ slug }: { slug: string }) {
     }
   };
 
+  const switchOn = async (): Promise<void> => {
+    setSwitching(true);
+    try {
+      const done = await setUpInboxMail();
+      setSaid(done.created ? `Email is on. Every team now has an address at ${done.domain}.` : 'Email was already on.');
+      email.reload();
+    } catch (e) {
+      setSaid(message(e, 'Email could not be switched on.'));
+    } finally {
+      setSwitching(false);
+    }
+  };
+
   return (
     <div className="mi" data-testid="inbox-tab">
       <div
@@ -123,12 +140,23 @@ export function InboxTab({ slug }: { slug: string }) {
           <input type="checkbox" checked={teamOnly} onChange={(e) => setTeamOnly(e.target.checked)} data-testid="inbox-team-only" />
           <span>Team only: keep what is filed out of what is shared with other teams</span>
         </label>
-        {address ? (
-          <p className="mi-email" data-testid="inbox-email">
-            Or send it by email to <code className="mono" data-testid="inbox-email-address">{address}</code>
-            <button type="button" className="btn s" onClick={() => void copyAddress()} aria-label="Copy the team’s email address">Copy</button>
-          </p>
+        {mail?.kind === 'address' ? (
+          <div className="mi-email" data-testid="inbox-email">
+            <p>
+              Or send it by email to <code className="mono" data-testid="inbox-email-address">{mail.address}</code>
+              <button type="button" className="btn s" onClick={() => void copyAddress()} aria-label="Copy the team’s email address">Copy</button>
+            </p>
+            {mail.rule ? <p className="faint" data-testid="inbox-email-rule">{mail.rule}</p> : null}
+            {mail.allowed.length > 0 ? <p className="faint" data-testid="inbox-email-allowed">Also let in from outside the team: {mail.allowed.join(', ')}.</p> : null}
+          </div>
         ) : null}
+        {mail?.kind === 'setup' ? (
+          <div className="mi-email" data-testid="inbox-email-setup">
+            <p>{mail.reason}</p>
+            <button type="button" className="btn s p" disabled={switching} onClick={() => void switchOn()} data-testid="inbox-email-switch-on">{switching ? 'Switching on…' : 'Switch it on'}</button>
+          </div>
+        ) : null}
+        {mail?.kind === 'none' ? <p className="mi-email faint" data-testid="inbox-email-off">{mail.reason}</p> : null}
       </div>
 
       {uploads.length > 0 ? (
@@ -168,6 +196,7 @@ export function InboxTab({ slug }: { slug: string }) {
               item={item}
               canManage={canManage}
               titles={titles}
+              types={types}
               onChanged={(_next: InboxItem, line) => {
                 setSaid(line);
                 reload();

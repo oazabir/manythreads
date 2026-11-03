@@ -26,7 +26,7 @@ export interface PolicyInput {
 
 const refuse = (field: string, message: string): Refusal => ({ field, message });
 
-/** The triggers a bot of this release can have without a connection to another app. */
+/** The triggers a bot made by the setup helper cannot have: they need a connection to another app, which the helper cannot give a bot. */
 const CONNECTION_TRIGGERS = new Set(['inbox', 'webhook']);
 
 /** `role:on-call` and `on-call` both name the role tag "on-call". */
@@ -81,14 +81,18 @@ export function checkBotProposal(input: PolicyInput): Refusal[] {
     else if (!mayGrant) out.push(refuse('capabilities.runtime', `This team allows "${name}" for bots, but only a team lead or an admin may grant it.`));
   }
   if ((fm.capabilities?.connections ?? []).length > 0) {
-    out.push(refuse('capabilities.connections', 'Connections to other apps are not available yet, so a bot cannot be given one.'));
+    out.push(refuse('capabilities.connections', 'The setup helper cannot give a bot a connection to another app. Add it on the bot\'s own page.'));
   }
 
   // What starts it. The router fires `mention` and `channel_message` only in the team's public channels (never a private one, a DM or an archived one) and, left without `source`, in ALL of
   // them: so a `channel_message` trigger must name its channels, and every channel named must be one the asker can see in this team (the inventory lists exactly those).
   const channelNames = new Set(inv.channels.map((c) => c.name.toLowerCase()));
   for (const trigger of fm.triggers ?? []) {
-    if (CONNECTION_TRIGGERS.has(trigger.type)) out.push(refuse('triggers', `A "${trigger.type}" trigger needs a connection to another app, which is not available yet.`));
+    if (CONNECTION_TRIGGERS.has(trigger.type)) {
+      out.push(refuse('triggers', `A "${trigger.type}" trigger needs a connection to another app, and the setup helper cannot give a bot one. Add the connection and the trigger on the bot's own page.`));
+    }
+    // The team's Archivist is the one bot that starts from a drop into the memory inbox; a second one would compete with it for every dropped item.
+    if (trigger.type === 'drop') out.push(refuse('triggers', 'A "drop" trigger belongs to the team\'s Archivist, which files what is dropped into the memory inbox. A bot made here cannot take that over.'));
     if (trigger.type === 'channel_message' && trigger.source === undefined) {
       out.push(refuse('triggers', 'A channel_message trigger without source.channels would answer every message in every channel of the team. Name the channels it should read, like source: { channels: ["#dev"] }.'));
     }

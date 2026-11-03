@@ -86,12 +86,12 @@ test('a team member who is not a lead reads the queue without Release, Discard o
   }
 });
 
-test('the email address is shown only when the server sends one', async ({ browser, playwright }) => {
+test('the email address is shown when the workspace mailbox is on, and a switch-it-on prompt when it is not', async ({ browser, playwright }) => {
   const omar = await apiOn(playwright, stack, 'omar');
   let address: string | null = null;
   try {
-    const list = await omar.get<{ emailAddress?: string | null }>('/api/teams/engineering/inbox/items');
-    address = list.emailAddress ?? null;
+    const answer = await omar.get<{ address: string | null }>('/api/teams/engineering/inbox/email');
+    address = answer.address;
   } finally {
     await omar.ctx.dispose();
   }
@@ -99,7 +99,7 @@ test('the email address is shown only when the server sends one', async ({ brows
   try {
     await expect(page.getByTestId('inbox-tab')).toBeVisible();
     if (address) await expect(page.getByTestId('inbox-email-address')).toHaveText(address);
-    else await expect(page.getByTestId('inbox-email')).toHaveCount(0);
+    else await expect(page.getByTestId('inbox-email-switch-on')).toBeVisible();
   } finally {
     await context.close();
   }

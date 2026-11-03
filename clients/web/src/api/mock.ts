@@ -1049,7 +1049,8 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       const p = me();
       return isAdmin(p) || teamOf(slug).members.find((m) => m.personId === p.id)?.role === 'lead';
     },
-    emailAddress: (slug) => (slug === 'engineering' ? 'engineering@inbox.kahf.example' : null),
+    canSetUp: () => isAdmin(me()),
+    workspaceId: WORKSPACE_ID,
     nextId: () => nextId('7'),
     now: NOW,
     fail: (status, code, message) => {

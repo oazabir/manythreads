@@ -282,6 +282,14 @@
   font-size: 13px;
 }
 
+.mi-email p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  margin: 0;
+}
+
 .mi-email code {
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -447,6 +455,41 @@
 .mi-ref {
   margin: 0;
   color: var(--mute);
+  font-size: 12.5px;
+}
+
+.mi-actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.mi-actions-list .mi-links {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mi-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.mi-action-text {
+  flex: 1 1 260px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mi-action-done {
+  text-decoration: line-through;
+}
+
+.mi-action-added {
+  color: var(--ok-ink);
   font-size: 12.5px;
 }
 

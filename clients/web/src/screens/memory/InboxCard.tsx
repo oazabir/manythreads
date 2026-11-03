@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import type { InboxItem } from '@manythreads/shared';
 import { Time } from '../../components/ui';
+import { InboxActions } from './InboxActions';
 import { discardInboxItem, releaseInboxItem, retryInboxItem } from './inboxApi';
-import { conceptLink, conceptName, filedConcepts, filedReference, itemActions, itemLook, itemSentence, kindLabel, message, originLabel, sizeLabel } from './inboxWords';
+import { conceptLink, conceptName, filedConcepts, filedReference, hasActionItems, itemActions, itemLook, itemSentence, kindLabel, message, originLabel, sizeLabel } from './inboxWords';
 
 type Props = {
   slug: string;
@@ -11,6 +12,8 @@ type Props = {
   canManage: boolean;
   /** Concept titles by path, when the concepts could be read (a path with no title shows its file name). */
   titles: ReadonlyMap<string, string>;
+  /** Concept types by path, to know which of the item's concepts hold action items. */
+  types: ReadonlyMap<string, string>;
   /** After an action: the item as the server now has it. */
   onChanged: (item: InboxItem, said: string) => void;
 };
@@ -19,7 +22,7 @@ type Props = {
  * One drop in the queue: its name, where it stands, what it became (links to the concepts it wrote) and, for a team lead or a workspace admin, Retry,
  * Release and Discard. A discard deletes the original, so it asks first.
  */
-export function InboxCard({ slug, item, canManage, titles, onChanged }: Props) {
+export function InboxCard({ slug, item, canManage, titles, types, onChanged }: Props) {
   const look = itemLook(item);
   const can = itemActions(item, canManage);
   const [busy, setBusy] = useState<null | 'retry' | 'release' | 'discard'>(null);
@@ -74,6 +77,7 @@ export function InboxCard({ slug, item, canManage, titles, onChanged }: Props) {
                 ))}
               </ul>
             ) : null}
+            {hasActionItems(concepts, types) ? <InboxActions slug={slug} itemId={item.id} /> : null}
             {reference ? (
               <p className="mi-ref">
                 <Link to={conceptLink(slug, reference)} data-testid="inbox-reference-link">The reference</Link> keeps the full text and says where the original is.

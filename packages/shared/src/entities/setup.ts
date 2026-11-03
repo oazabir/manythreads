@@ -92,7 +92,7 @@ export const SetupInventory = z.object({
   runtimeAllowed: z.array(z.string()).max(20),
   /** The guard preset every bot of the team starts from, from `defaults.guardPreset` of TEAM.md (`standard` when it says nothing). */
   guardDefault: z.string(),
-  /** Connections to other apps (a mailbox, a CRM). None exist in this release; the note says so, so the helper does not invent one. */
+  /** Connections to other apps (a mailbox, a CRM). The helper cannot give a bot one yet, so the list is empty; the note says so, so the helper does not invent one. */
   connections: z.array(z.object({ name: z.string(), tools: z.array(z.string()).max(50) })).max(50),
   connectionsNote: z.string(),
 });

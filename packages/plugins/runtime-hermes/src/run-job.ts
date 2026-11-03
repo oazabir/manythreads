@@ -251,7 +251,7 @@ export async function recordRunnerRefusal(ctx: PluginContext, tx: PluginTx, run:
 export const MODEL_RUNTIME_ID = 'model';
 
 /** Is the runner this bot's `runs_on` names an LLM gateway runner? Asked of the runner catalog on the job's transaction; false when there is no `runs_on` or no catalog. */
-async function runsOnModelRunner(ctx: PluginContext, tx: PluginTx, bot: RunBotRow, runsOn: string | undefined): Promise<boolean> {
+export async function runsOnModelRunner(ctx: PluginContext, tx: PluginTx, bot: RunBotRow, runsOn: string | undefined): Promise<boolean> {
   // Only a Hermes bot has a runner to choose: a rules bot runs inside the server and must never be redirected.
   if (runsOn === undefined || bot.runtime !== 'hermes') return false;
   const runners = ctx.providers.get<BotRunnersProvider>('bot.runners');
@@ -479,6 +479,9 @@ export async function checkPreflight(input: {
   return { key, prompt };
 }
 
+/** What `buildScope` reads of a run's payload: a drop run (P8-18) has no channel, so `channelId` may be null and the run has no thread. */
+export type ScopePayload = Pick<RunPayload, 'askerActorId' | 'replyRootId'> & { trigger: string; channelId: string | null };
+
 // The scope a provider gets is the run's own authority, and the broker decides every call it makes: the runtime
 // implements what a model chose, so a call it makes is exactly as constrained as one made over the run's MCP
 // endpoint. Without this the allowlist compiled from `capabilities.native` would be a promise the platform keeps at
@@ -488,7 +491,7 @@ export function buildScope(input: {
   log: PluginLogger;
   bot: RunBotRow;
   definition: LoadedDefinition;
-  payload: RunPayload;
+  payload: ScopePayload;
   prompt: string;
   run: BotRunHandle;
   token: string;
@@ -512,7 +515,7 @@ export function buildScope(input: {
     trigger: payload.trigger,
     asker: payload.askerActorId === null ? null : { actorId: payload.askerActorId, personId: null, displayName: null },
     prompt,
-    thread: { channelId: payload.channelId, threadRootId: payload.replyRootId },
+    thread: payload.channelId === null ? null : { channelId: payload.channelId, threadRootId: payload.replyRootId },
     // The URL names the run and carries no credential (a URL is logged by proxies and access logs); the token travels as a
     // bearer header, which the rendered profile sets.
     endpoint: { runId: run.runId, url: mcpUrlOf(ctx.runtime.publicUrl), token },

@@ -1,14 +1,22 @@
 import {
   createInboxNoteRoute,
+  createTaskRoute,
   discardInboxItemRoute,
+  getInboxEmailRoute,
   getInboxItemRoute,
+  listInboxActionsRoute,
   listInboxItemsRoute,
   listMemoryConceptsRoute,
+  recordInboxActionRoute,
   releaseInboxItemRoute,
   retryInboxItemRoute,
   sendToMemoryRoute,
+  setUpInboxMailRoute,
   uploadInboxItemRoute,
   InboxItem,
+  Task,
+  TaskId,
+  type InboxAction,
   type InboxKind,
   type MemoryConceptSummary,
 } from '@manythreads/shared';
@@ -17,7 +25,9 @@ import {
  * The mock of the Memory screen's Inbox tab (P8-21): the same routes, shapes and words the memory-inbox plugin answers with. A drop starts `queued` and moves
  * one step every time the list is read (queued, filing, filed), so a page that waits for it sees the whole way. A `.zip` is held for a lead (it looks like a memory
  * bundle from elsewhere); a picture is kept but fails, as the server does today. A lead or workspace admin releases, discards and retries; everyone else gets
- * the server's refusals. `emailAddress` is sent only when the hooks give one, as the email door will.
+ * the server's refusals. The workspace mailbox starts off: a workspace admin switches it on (`POST /api/workspace/inbox-mail`) and every team then has an
+ * address on it; anyone else is told to ask an admin. The Engineering release notes became an Action Items concept, whose actions can be added to the board: the
+ * mock also answers the tasks API's create call (the only task call the Inbox makes), so the click works offline.
  */
 
 type Route = { method: string; path: string };
@@ -32,12 +42,15 @@ export type InboxMockHooks = {
   me(): { actorId: string; name: string };
   /** A team lead or a workspace admin of the team. */
   canManage(slug: string): boolean;
-  /** The team's email address, when the email door is on. */
-  emailAddress?(slug: string): string | null;
+  /** A workspace admin: the person who may switch the workspace mailbox on. */
+  canSetUp(): boolean;
+  workspaceId: string;
   nextId(): string;
   now: string;
   fail(status: number, code: 'not_found' | 'conflict' | 'forbidden' | 'validation_failed', message: string): never;
 };
+
+const ACTION_CONCEPT = 'memory/action-items/release-2-4-follow-ups.md';
 
 const created = (body: unknown): Reply => ({ status: 201, body });
 
@@ -70,10 +83,14 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
   const items = new Map<string, InboxItem[]>();
   const concepts = new Map<string, MemoryConceptSummary[]>();
   const seeded = new Set<string>();
+  /** The actions of a filed item's Action Items concepts, by item id. */
+  const actions = new Map<string, InboxAction[]>();
+  const tasks = new Map<string, Task>();
+  let mailOn = false;
   let counter = 0;
 
-  const concept = (path: string, title: string, description: string): MemoryConceptSummary => ({
-    path, type: path.includes('/references/') ? 'Reference' : 'Fact', title, description, tags: [], status: 'stable', staleAfter: null, trustTier: 'unverified', origin: 'drop',
+  const concept = (path: string, title: string, description: string, type?: string): MemoryConceptSummary => ({
+    path, type: type ?? (path.includes('/references/') ? 'Reference' : 'Fact'), title, description, tags: [], status: 'stable', staleAfter: null, trustTier: 'unverified', origin: 'drop',
     shareNever: false, fromTeam: null, blobSha: 'a'.repeat(40), generatedAt: h.now,
   });
   const itemsOf = (slug: string): InboxItem[] => {
@@ -110,12 +127,19 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
     if (team.slug !== 'engineering') return;
     const list = itemsOf(team.slug);
     const cs = conceptsOf(team.slug);
-    const filedPaths = ['memory/facts/release-process.md', 'memory/decisions/upgrade-test-on-2-3.md', 'memory/people/release-captain.md', 'memory/references/release-notes-2-4-7c1d9e02.md'];
+    const filedPaths = [
+      'memory/facts/release-process.md',
+      'memory/decisions/upgrade-test-on-2-3.md',
+      'memory/people/release-captain.md',
+      ACTION_CONCEPT,
+      'memory/references/release-notes-2-4-7c1d9e02.md',
+    ];
     cs.push(
       concept(filedPaths[0] as string, 'Release process', 'A release needs the upgrade test on a 2.3 fixture.'),
       concept(filedPaths[1] as string, 'Run the upgrade test on a 2.3 fixture', 'The decision to test upgrades from 2.3.'),
       concept(filedPaths[2] as string, 'The release captain', 'Who looks after a release.'),
-      concept(filedPaths[3] as string, 'Release notes 2.4', 'The full text of the release notes.'),
+      concept(ACTION_CONCEPT, 'Release 2.4 follow-ups', 'What the release notes left to do.', 'Action Items'),
+      concept(filedPaths[4] as string, 'Release notes 2.4', 'The full text of the release notes.'),
     );
     list.push(
       make(team, { name: 'Release notes 2.4.md', kind: 'markdown', state: 'filed', filedPaths, commitSha: 'b'.repeat(40), filedAt: h.now }),
@@ -125,6 +149,22 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
       make(team, { name: 'whiteboard.png', kind: 'image', state: 'failed', reason: 'Pictures cannot be read yet.', attempts: 1 }),
     );
     list.reverse();
+    const filed = list.find((i) => i.state === 'filed');
+    if (filed) {
+      const action = (index: number, what: string, ownerName: string | null, due: string | null, done: boolean): InboxAction => ({
+        conceptPath: ACTION_CONCEPT, index, what, ownerName, ownerActorId: null, due, done, taskId: null, addedBy: null,
+        prepared: {
+          title: what.slice(0, 200),
+          description: [ownerName ? `Owner: ${ownerName}.` : '', due ? `Due: ${due}.` : '', `From the inbox item ${filed.name}.`].filter((l) => l !== '').join('\n'),
+          kind: 'other', priority: 'normal', branch: 'main',
+        },
+      });
+      actions.set(filed.id, [
+        action(0, 'Run the upgrade test on a 2.3 fixture', 'Nadia', '2026-11-20', false),
+        action(1, 'Write the release announcement', 'Rafi', null, false),
+        action(2, 'Update the changelog', null, null, true),
+      ]);
+    }
   };
 
   const find = (team: { slug: string }, id: string | undefined): InboxItem => {
@@ -169,8 +209,7 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
     advance(team);
     const state = query.get('state');
     const rows = itemsOf(team.slug).filter((i) => (state ? i.state === state : i.state !== 'discarded'));
-    const address = h.emailAddress?.(team.slug) ?? null;
-    return { items: rows, canManage: h.canManage(team.slug), maxBytes: 25 * 1024 * 1024, ...(address ? { emailAddress: address } : {}) };
+    return { items: rows, canManage: h.canManage(team.slug), maxBytes: 25 * 1024 * 1024 };
   });
   on(getInboxItemRoute, ({ params }) => {
     const team = h.team(params['slug']);
@@ -231,6 +270,66 @@ export function installInboxMock(on: On, h: InboxMockHooks): void {
     const i = find(team, params['itemId']);
     if (i.state !== 'failed') h.fail(409, 'conflict', 'Only an item that failed can be tried again.');
     return { item: touch(i, { state: 'queued', reason: null, attempts: 0 }) };
+  });
+
+  const RULE = 'Mail from people on this team is filed straight away; mail from anyone else waits for a team lead or a workspace admin.';
+  on(getInboxEmailRoute, ({ params }) => {
+    const team = h.team(params['slug']);
+    seed(team);
+    const canSetUp = h.canSetUp();
+    if (!mailOn) {
+      return {
+        address: null, connection: null, allowedSenders: [], rule: RULE, canSetUp,
+        reason: canSetUp
+          ? 'Email to this team is not switched on yet. Switch it on and every team gets its own address.'
+          : 'Email to this team is not switched on yet. Ask a workspace admin to switch it on.',
+      };
+    }
+    return {
+      address: `inbox+${team.slug}@mail.kahf.example`, connection: { slug: 'inbox', name: 'Workspace inbox' }, reason: null,
+      allowedSenders: team.slug === 'engineering' ? ['partner@vendor.example', '@acme.example'] : [], rule: RULE, canSetUp,
+    };
+  });
+  on(setUpInboxMailRoute, () => {
+    if (!h.canSetUp()) h.fail(403, 'forbidden', 'Only a workspace admin can switch the workspace mailbox on.');
+    const first = !mailOn;
+    mailOn = true;
+    return created({ connection: { slug: 'inbox', name: 'Workspace inbox' }, created: first, domain: 'mail.kahf.example' });
+  });
+
+  on(listInboxActionsRoute, ({ params }) => {
+    const team = h.team(params['slug']);
+    seed(team);
+    const item = find(team, params['itemId']);
+    return { actions: actions.get(item.id) ?? [], canAdd: true };
+  });
+  on(recordInboxActionRoute, ({ params, body }) => {
+    const team = h.team(params['slug']);
+    seed(team);
+    const item = find(team, params['itemId']);
+    const action = (actions.get(item.id) ?? []).find((a) => a.conceptPath === body['conceptPath'] && a.index === body['index']);
+    if (!action) h.fail(404, 'not_found', 'No such action in this item.');
+    const taskId = String(body['taskId'] ?? '');
+    if (!tasks.has(taskId)) h.fail(409, 'conflict', 'That card does not exist.');
+    if (action.taskId !== null) h.fail(409, 'conflict', 'That action is already on the board.');
+    action.taskId = TaskId.parse(taskId);
+    action.addedBy = h.me().actorId;
+    return created({ action });
+  });
+
+  // the tasks API's create call: the Inbox's "Add to board" makes the card as the signed-in person
+  on(createTaskRoute, ({ params, body }) => {
+    const team = h.team(params['slug']);
+    const title = String(body['title'] ?? '').trim();
+    if (title === '') h.fail(400, 'validation_failed', 'A card needs a title.');
+    const task = Task.parse({
+      id: h.nextId(), workspaceId: h.workspaceId, teamId: team.id, goalId: null, title, description: String(body['description'] ?? ''), state: 'open',
+      kind: body['kind'] ?? 'code', priority: body['priority'] ?? 'normal', ownerId: null, branch: String(body['branch'] ?? 'main'), baseSha: null, testedSha: null,
+      environmentId: null, boardId: null, threadRootId: null, pullRequest: null, blockerReason: '', reworkCount: 0, handoffCount: 0, createdBy: h.me().actorId,
+      createdAt: h.now, updatedAt: h.now, completedAt: null,
+    });
+    tasks.set(task.id, task);
+    return created({ task });
   });
 
   on(listMemoryConceptsRoute, ({ params }) => {

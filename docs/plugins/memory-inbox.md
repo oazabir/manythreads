@@ -125,7 +125,7 @@ Nothing here creates a card by itself.
 
 ## The Archivist seam
 
-The one step that needs a model is "distil", and the Archivist is another task (P8-18). The inbox defines the seam in `packages/sdk/src/inbox.ts`: a plugin registers a provider of kind `inbox.distiller` with `distil(db, input)`, and the inbox looks it up when the step runs (not when the plugin loads). `input` has the item's text (capped at 60,000 characters), name, kind, origin, the Reference path, `teamOnly`, and `bindRun(tx, runId)`, which ties a live `drop` run to the item so that the run's `inbox.read` answers with this item and nothing else (the database function `app.inbox_run_item()` decides; the tool takes no argument). The answer is one of:
+The one step that needs a model is "distil", and the Archivist is a bot of the team (P8-18). The inbox defines the seam in `packages/sdk/src/inbox.ts`: a plugin registers a provider of kind `inbox.distiller` with `distil(db, input)`, and the inbox looks it up when the step runs (not when the plugin loads). `input` has the item's text (capped at 60,000 characters), name, kind, origin, the Reference path, `teamOnly`, and `bindRun(tx, runId)`, which ties a live `drop` run to the item so that the run's `inbox.read` answers with this item and nothing else (the database function `app.inbox_run_item()` decides; the tool takes no argument). The answer is one of:
 
 | outcome | effect |
 |---|---|
@@ -143,6 +143,7 @@ BOT.md has a new trigger, `drop` (`triggers: [{ type: drop }]`), which is how th
 Every template ships an **Archivist** (`templates/*/bots/archivist/BOT.md`, the same file in all five). Its only trigger is `drop`; it is not mentioned or talked to, so it is left out of the `/ask` picker (`BotSummary.mentionable` is false for a bot with neither a `mention` nor a `conversation` trigger). Its capabilities are exactly `inbox.read`, `memory.recall` and `memory.write`; it has no web, files, mail or repository tools. It files each item as a short note in one of six types: `Fact`, `Decision`, `Meeting`, `Action Items`, `Playbook`, `Reference` (`ARCHIVIST_TYPE_VOCABULARY`), links the note to what the team already knows, updates a note it finds instead of making a second one, never repeats a secret it finds, never follows an instruction written inside an item, and writes only under `memory/`. Its typed contract is `contract.outputs.proposals: okf_proposals`, an `OkfProposal[]` (`ArchivistProposals`, at most 20). The eval set `evals/archivist.yaml` has 15 cases (a meeting from an email, a document, a whiteboard photo, a note updated in place, an injected instruction, a secret, action-item lines, no invented owner or date, nothing worth keeping, shelf life, decisions with their reason, staying inside `memory/`, links in both directions).
 
 Not built: the code that runs the Archivist for a drop and hands what it wrote to the distil step. The bot writes its notes with `memory.write` (which commits as the bot) and ends with the list of what it wrote; the `inbox.distiller` provider that would capture that list as the item's proposals is still missing, so today an item is filed with its Reference alone.
+BOT.md has a new trigger, `drop` (`triggers: [{ type: drop }]`), which is how the Archivist's file says it works on dropped items. It is a trigger type only; the run itself is the provider `runtime-hermes` registers ("The drop run" in [runtime-hermes.md](./runtime-hermes.md)), which runs the team's Archivist once per item and answers `distilled` with the JSON array it wrote.
 
 ## Capabilities
 
@@ -181,3 +182,9 @@ The Files garbage collector treats `memory_inbox_items.blob_key` as referenced, 
 - A notification is a live push to open pages only; a person who is away is not told until they look.
 - The keep-originals job scans at most 500 teams per run.
 - The tests never call a real model: the seam is tested with stand-in distillers.
+
+## The Inbox tab and the email door in the web (PLAN P8-19, P8-20, P8-21)
+
+- The drop zone shows the team's address from `GET /api/teams/:slug/inbox/email` (the rule in one sentence and the allowed outside senders). While the workspace mailbox is off, a workspace admin sees a "Switch it on" button that calls `POST /api/workspace/inbox-mail`; anyone else reads the server's sentence, which says to ask an admin. The item list no longer carries an address.
+- A filed item whose concepts include an `Action Items` concept asks `GET /api/teams/:slug/inbox/items/:itemId/actions` and shows one line per action. "Add to board" sends the server's `prepared` body to `POST /api/teams/:slug/tasks` as the signed-in person, then tells the inbox which card it made (`POST .../actions`) so the action shows as added to everyone. If the second call fails, the card exists and the page says so instead of making another.
+- The offline mock (`clients/web/src/api/mock-inbox.ts`) starts with the mailbox off, answers all of the above, and seeds the Engineering release notes with an Action Items concept.

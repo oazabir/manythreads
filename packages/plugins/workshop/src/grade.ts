@@ -19,7 +19,7 @@ export interface Graded {
   reason: string;
 }
 
-/** The ways a bot can be started that exist in this release, and the two that need a connection to another app (none exist yet). */
+/** The two ways of starting a bot that need a connection to another app, which the setup helper cannot give a bot (the platform has them; the helper has no door to a connection). */
 const needsConnection = (type: string): boolean => type === 'inbox' || type === 'webhook';
 
 export function gradeRequirement(req: SetupRequirement, inv: SetupInventory): Graded {
@@ -57,7 +57,7 @@ export function gradeRequirement(req: SetupRequirement, inv: SetupInventory): Gr
     case 'connection':
       return inv.connections.length > 0 && name !== '' && inv.connections.some((c) => c.name === name)
         ? { grade: 'covered', reason: `The team has a connection called "${name}".` }
-        : { grade: 'missing', reason: 'Connections to other apps are not available yet, so the bot cannot reach it.' };
+        : { grade: 'missing', reason: 'The setup helper cannot give a bot a connection to another app yet, so the bot cannot reach it from here.' };
     case 'runner': {
       if (name === '') return { grade: 'covered', reason: "The bot will run on the team's default runner." };
       // the same words whether the runner does not exist or the team may not use it: the team learns nothing about runners it cannot use
@@ -69,6 +69,8 @@ export function gradeRequirement(req: SetupRequirement, inv: SetupInventory): Gr
       if (name === '') return { grade: 'unclear', reason: 'The brief does not say what should start the bot.' };
       const trigger = inv.triggers.find((t) => t.type === name);
       if (!trigger) return { grade: 'unclear', reason: `A bot cannot be started when ${plainTrigger(name)}.` };
+      // The team's Archivist is the one bot that starts from a drop; a bot made here would compete with it for every dropped item.
+      if (name === 'drop') return { grade: 'blocked', reason: trigger.note ?? 'The team’s Archivist already starts from what is dropped into the memory inbox.' };
       if (needsConnection(name) || !trigger.available) return { grade: 'missing', reason: trigger.note ?? `Starting the bot when ${plainTrigger(name)} needs a connection to another app, which is not available yet.` };
       return { grade: 'covered', reason: `A bot can be started when ${plainTrigger(name)}.` };
     }
