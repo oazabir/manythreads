@@ -100,11 +100,10 @@ describe('the mock answers as the plugin does', () => {
     expect((await createConnection('engineering', { kind: 'email', name: 'Sales Mailbox' })).connection.slug).toBe('sales-mailbox-2');
   });
 
-  it('refuses a taken short name, a kind that is unknown and Kubernetes, which is not available yet, each with words', async () => {
+  it('refuses a taken short name, and a kind that is unknown, each with words', async () => {
     as('omar');
     await expect(createConnection('engineering', { kind: 'email', name: 'Again', slug: 'support-mail' })).rejects.toThrow(/short name/);
     await expect(createConnection('engineering', { kind: 'telepathy', name: 'Mind' })).rejects.toThrow(/does not exist/);
-    await expect(createConnection('engineering', { kind: 'kubernetes', name: 'Prod cluster' })).rejects.toThrow(/not available yet/);
     await expect(putConnectionCredential((await fetchTeamConnections('engineering')).connections[0]!.id, 'nothing', 'x')).rejects.toThrow(/no credential called/);
   });
 
@@ -161,12 +160,14 @@ describe('the words', () => {
     expect(expiryDate(null)).toBe('');
   });
 
-  it('knows the Mailbox and lists Kubernetes as a kind that is not available, with the reason', () => {
+  it('knows the Mailbox and lists the SSH and Kubernetes kinds as available', () => {
     expect(kindLabel('email')).toBe('Mailbox');
     expect(kindLabel('github')).toBe('github');
-    const k = CONNECTION_KINDS.find((x) => x.kind === 'kubernetes');
-    expect(k?.available).toBe(false);
-    expect(k?.unavailableReason).toMatch(/not available yet/);
+    for (const kind of ['ssh', 'kubernetes']) {
+      const k = CONNECTION_KINDS.find((x) => x.kind === kind);
+      expect(k?.available).toBe(true);
+      expect(k?.unavailableReason).toBeUndefined();
+    }
   });
 
   it('tells a bot’s page where each connection it names stands', () => {
