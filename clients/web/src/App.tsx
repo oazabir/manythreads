@@ -26,6 +26,7 @@ import { BotUsage, TeamUsage, WorkspaceUsage } from './screens/usage/UsageScreen
 import { ImportScreen } from './screens/import/ImportScreen';
 import { Guardrails } from './screens/guardrails/Guardrails';
 import { LlmSettings } from './screens/admin/llm/LlmSettings';
+import { MemorySharing } from './screens/admin/memory/MemorySharing';
 import { RunnersScreen } from './screens/admin/runners/RunnersScreen';
 import { DirectMessageView, HomeView, RequireTeam, TeamHome } from './shell/views';
 import { BotPage } from './screens/bots/BotPage';
@@ -118,6 +119,7 @@ function AppRoutes() {
               <Route path="roles" element={<Roles />} />
               <Route path="llm" element={<LlmSettings />} />
               <Route path="runners" element={<RunnersScreen />} />
+              <Route path="memory-sharing" element={<MemorySharing />} />
               <Route path="https" element={<WorkspaceHttps />} />
               <Route path="health" element={<SystemHealth />} />
               <Route path="guardrails" element={<Guardrails />} />

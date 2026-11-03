@@ -4,6 +4,8 @@ import { isApiError } from '../../api/client';
 import { ago } from '../../channels/format';
 import { decideApproval, fetchApprovalArgs } from './api';
 import { announceApprovalsChanged } from './live';
+import { ShareApprovalPreview } from './ShareApprovalPreview';
+import { isShareApproval, shareKind, shareOutcomeLine } from './shareApproval';
 import { callOverdue } from './state';
 
 /*
@@ -28,6 +30,7 @@ export function approversLabel(approvers: Approval['approvers']): string {
 
 /** What became of an approved call, in one sentence. */
 function outcomeLine(a: Approval): string {
+  if (isShareApproval(a)) return shareOutcomeLine(a);
   if (a.status === 'denied') return 'Denied. The call was not made.';
   if (a.status === 'expired') return 'Nobody decided it in time, so it lapsed. The call was not made.';
   if (callOverdue(a)) return 'Approved, but no result came back. It may or may not have run; check before asking again.';
@@ -99,7 +102,8 @@ export function ApprovalCard({
   };
 
   const pending = approval.status === 'pending';
-  const who = approval.botName ?? 'A bot';
+  const share = isShareApproval(approval);
+  const who = share ? 'Memory sharing' : (approval.botName ?? 'A bot');
   return (
     <article
       className={`apr-card ${variant === 'thread' ? 'apr-card-thread' : ''}`}
@@ -118,9 +122,9 @@ export function ApprovalCard({
       </header>
       <h3 className="apr-summary" data-testid="approval-summary">{approval.summary}</h3>
       <p className="apr-meta">
-        Asked by <b data-testid="approval-requester">{approval.requesterName}</b> · <span className="apr-mono">{approval.tool}</span>
+        Asked by <b data-testid="approval-requester">{approval.requesterName}</b> · <span className="apr-mono">{share ? shareKind(approval.tool) : approval.tool}</span>
       </p>
-      <Preview preview={approval.argsPreview} />
+      {share ? <ShareApprovalPreview approval={approval} /> : <Preview preview={approval.argsPreview} />}
       {approval.argsTruncated ? (
         <div className="apr-truncated" data-testid="approval-truncated">
           <p className="apr-blocked">This preview is cut short.{approval.canDecide ? ' Open the full call before you decide.' : ''}</p>

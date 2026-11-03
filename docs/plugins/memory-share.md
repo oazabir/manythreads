@@ -142,5 +142,5 @@ Tables (all with forced row-level security): `memory_shares` (one per file, with
 ## Not built here
 
 - A baseline per destination (a team that accepts late gets only what changed since the last sent run), a digest summary written by the Archivist, and audit-trail mappers for the new events.
-- Any web page: the share list, the preview, the run history and the Approvals card (P8-26). The routes above are what that page will use.
+- The run history. The web page (P8-26) is built: Memory → Sharing (the share list, preview, Run now, New share, requests and "Received from"), the digest and request cards in Approvals, and Workspace → Memory sharing. It lists only each share's last digest.
 - The Archivist's narrative in `digest.md`: the summary is built by the platform from titles and descriptions only.

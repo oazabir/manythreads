@@ -106,6 +106,35 @@
   white-space: pre-wrap;
 }
 
+.apr-share {
+  display: grid;
+  gap: 6px;
+}
+
+.apr-share-note {
+  margin: 0;
+  color: var(--mute);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.apr-share-more {
+  font-size: 12px;
+}
+
+.apr-share-more summary {
+  cursor: pointer;
+  color: var(--mute);
+}
+
+.apr-share-list {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding: 0 0 0 16px;
+  overflow-wrap: anywhere;
+}
+
 .apr-actions {
   display: flex;
   flex-wrap: wrap;

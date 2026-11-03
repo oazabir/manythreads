@@ -83,6 +83,7 @@ export function SettingsFrame() {
         { to: '/settings/workspace/roles', label: 'Roles' },
         { to: '/settings/workspace/llm', label: 'LLM' },
         { to: '/settings/workspace/runners', label: 'Runners' },
+        { to: '/settings/workspace/memory-sharing', label: 'Memory sharing' },
         { to: '/settings/workspace/https', label: 'Domain & HTTPS' },
         { to: '/settings/workspace/health', label: 'System health' },
         { to: '/settings/workspace/guardrails', label: 'Data protection' },

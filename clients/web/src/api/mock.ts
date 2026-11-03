@@ -92,6 +92,7 @@ import {
 import type { Transport } from './client';
 import { installConnectionsMock } from './mock-connections';
 import { installInboxMock } from './mock-inbox';
+import { installSharesMock } from './mock-shares';
 import { installPersonConnectionsMock } from './mock-person-connections';
 import { installSetupMock } from './mock-setup';
 import { installTerminalMock } from './mock-terminal';
@@ -1053,6 +1054,31 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     workspaceId: WORKSPACE_ID,
     nextId: () => nextId('7'),
     now: NOW,
+    fail: (status, code, message) => {
+      throw new MockHttpError(status, code, message);
+    },
+  });
+
+  // The Memory screen's Sharing tab and the workspace Memory sharing switch (P8-26): outgoing shares, requests and received digests, in mock-shares.ts
+  installSharesMock(on, {
+    team: (slug) => {
+      const t = teamOf(slug);
+      return { id: t.id, slug: t.slug, name: t.name };
+    },
+    named: (slug) => {
+      const t = teams.find((x) => x.slug === slug);
+      if (!t) throw new MockHttpError(404, 'not_found', 'No such team.');
+      return { id: t.id, slug: t.slug, name: t.name };
+    },
+    me: () => ({ actorId: uuid('d', Number(me().id.slice(-4))), name: me().name }),
+    canManage: (slug) => {
+      const p = me();
+      return isAdmin(p) || teamOf(slug).members.find((m) => m.personId === p.id)?.role === 'lead';
+    },
+    isAdmin: () => isAdmin(me()),
+    nextId: () => nextId('7'),
+    now: NOW,
+    workspaceId: WORKSPACE_ID,
     fail: (status, code, message) => {
       throw new MockHttpError(status, code, message);
     },

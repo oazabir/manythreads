@@ -1,28 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type KeyboardEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 import { confirmConceptRoute, deprecateConceptRoute, ConfirmConceptResponse, DeprecateConceptResponse, type MemoryConceptSummary } from '@manythreads/shared';
 import { call } from '../../api/client';
 import { fetchConcepts } from './inboxApi';
 import { InboxTab } from './InboxTab';
-
-type TabId = 'concepts' | 'inbox';
+import { TABS, nextTab, tabFromParams, type TabId } from './memoryTabs';
+import { SharingTab } from './SharingTab';
 
 const isStale = (c: MemoryConceptSummary): boolean => c.staleAfter !== null && Date.parse(c.staleAfter) < Date.now();
 
-/** The Memory screen: the team's memory as concepts (the first tab) and the team's inbox (the second), where files, notes and messages are dropped (PLAN P5-28, P8-21). */
+/**
+ * The Memory screen: the team's memory as concepts (the first tab), the team's inbox (the second), where files, notes and messages are dropped, and Sharing (the
+ * third), where memory is passed to and received from other teams (PLAN P5-28, P8-21, P8-26).
+ */
 export function MemoryScreen() {
   const { team } = useParams<{ team: string }>();
   const [params, setParams] = useSearchParams();
-  // a link to a concept (`?concept=`) opens the concepts tab; `?tab=inbox` opens the inbox
+  // a link to a concept (`?concept=`) opens the concepts tab; `?tab=inbox` and `?tab=sharing` open the others
   const wantedConcept = params.get('concept');
-  const tab: TabId = params.get('tab') === 'inbox' && !wantedConcept ? 'inbox' : 'concepts';
+  const tab: TabId = tabFromParams(params.get('tab'), wantedConcept);
 
   const go = (next: TabId): void => {
     const q = new URLSearchParams(params);
     q.delete('concept');
-    if (next === 'inbox') q.set('tab', 'inbox');
-    else q.delete('tab');
+    if (next === 'concepts') q.delete('tab');
+    else q.set('tab', next);
     setParams(q, { replace: false });
+  };
+
+  // arrow keys move between the tabs (and select them), Home and End jump to the first and last, as a tab list does
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>): void => {
+    const target = nextTab(tab, e.key);
+    if (!target) return;
+    e.preventDefault();
+    go(target);
+    document.getElementById(`mm-tab-${target}`)?.focus();
   };
 
   return (
@@ -31,12 +43,13 @@ export function MemoryScreen() {
         <h1 className="mm-title">Memory</h1>
         <p className="mm-subtitle">The team's OKF memory bundle — concepts, trust tiers, and provenance.</p>
       </header>
-      <div className="mm-tabs" role="tablist" aria-label="Memory" data-testid="memory-tabs">
-        <button type="button" role="tab" id="mm-tab-concepts" aria-selected={tab === 'concepts'} aria-controls="mm-panel" className={`mm-tab ${tab === 'concepts' ? 'on' : ''}`} onClick={() => go('concepts')} data-testid="memory-tab-concepts">Concepts</button>
-        <button type="button" role="tab" id="mm-tab-inbox" aria-selected={tab === 'inbox'} aria-controls="mm-panel" className={`mm-tab ${tab === 'inbox' ? 'on' : ''}`} onClick={() => go('inbox')} data-testid="memory-tab-inbox">Inbox</button>
+      <div className="mm-tabs" role="tablist" aria-label="Memory" data-testid="memory-tabs" onKeyDown={onTabKey}>
+        {TABS.map((t) => (
+          <button key={t.id} type="button" role="tab" id={`mm-tab-${t.id}`} aria-selected={tab === t.id} aria-controls="mm-panel" tabIndex={tab === t.id ? 0 : -1} className={`mm-tab ${tab === t.id ? 'on' : ''}`} onClick={() => go(t.id)} data-testid={`memory-tab-${t.id}`}>{t.label}</button>
+        ))}
       </div>
-      <div id="mm-panel" role="tabpanel" aria-labelledby={tab === 'inbox' ? 'mm-tab-inbox' : 'mm-tab-concepts'}>
-        {team ? tab === 'inbox' ? <InboxTab slug={team} /> : <ConceptsTab slug={team} wanted={wantedConcept} /> : null}
+      <div id="mm-panel" role="tabpanel" aria-labelledby={`mm-tab-${tab}`}>
+        {team ? tab === 'inbox' ? <InboxTab slug={team} /> : tab === 'sharing' ? <SharingTab slug={team} /> : <ConceptsTab slug={team} wanted={wantedConcept} /> : null}
       </div>
     </section>
   );

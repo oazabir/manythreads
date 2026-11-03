@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router';
-import type { Approval } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { ago } from '../../channels/format';
@@ -11,6 +10,7 @@ import { useNarrow } from '../../shell/useNarrow';
 import { ApprovalCard } from './ApprovalCard';
 import { fetchApprovals } from './api';
 import { useApprovalsChanged, usePollWhileQueued } from './live';
+import { approvalRowLabel } from './shareApproval';
 import { callInFlight } from './state';
 
 /*
@@ -28,8 +28,6 @@ const EMPTY: Record<Tab, { title: string; body: string }> = {
   waiting: { title: 'Nothing waiting', body: 'Requests that need a person to decide show up here.' },
   decided: { title: 'Nothing decided yet', body: 'Approved and denied requests show up here.' },
 };
-
-const rowLabel = (a: Approval): string => (a.botName ? `${a.botName} · ${a.tool}` : a.tool);
 
 export function ApprovalsScreen() {
   const { team } = useShell();
@@ -117,7 +115,7 @@ export function ApprovalsScreen() {
                 <li key={a.id} role="option" aria-selected={a.id === selected} data-testid="approval-row" data-approval={a.id} data-status={a.status}>
                   <button type="button" className={`trow ${a.id === selected ? 'on' : ''}`} onClick={() => open(a.id)}>
                     <span className="trow-main">
-                      <span className="ch">{rowLabel(a)}</span>
+                      <span className="ch">{approvalRowLabel(a)}</span>
                       <span className="ttl">{a.summary}</span>
                       <span className="last">
                         {a.status === 'pending'
