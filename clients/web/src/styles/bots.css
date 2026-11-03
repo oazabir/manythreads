@@ -917,3 +917,75 @@
     flex-basis: 100%;
   }
 }
+
+/* The Deploy result (P8-34): a headline and the three parts, each with its own words. */
+.b-deploy {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+}
+
+.b-deploy-ok {
+  border-color: var(--ok-border);
+  background: var(--ok-wash);
+}
+
+.b-deploy-bad {
+  border-color: var(--alert-border);
+  background: var(--alert-wash);
+}
+
+.b-deploy-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.b-deploy-h {
+  margin: 0;
+  font-size: 14px;
+}
+
+.b-deploy-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.b-deploy-row {
+  display: grid;
+  grid-template-columns: 110px 140px 1fr;
+  gap: 4px 10px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.b-deploy-row.quiet {
+  opacity: 0.7;
+}
+
+.b-deploy-row.bad .b-deploy-state {
+  color: var(--alert-ink);
+  font-weight: 600;
+}
+
+.b-deploy-step {
+  font-weight: 600;
+}
+
+.b-deploy-msg {
+  overflow-wrap: anywhere;
+}
+
+.b-deploy-more {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+@media (width <= 640px) {
+  .b-deploy-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -132,6 +132,7 @@ const bot = (over: Record<string, unknown> = {}): BotSummary =>
     placement: null,
     mayTag: [],
     conversational: true,
+    mentionable: true,
     invalid: null,
     createdAt: AT,
     updatedAt: AT,

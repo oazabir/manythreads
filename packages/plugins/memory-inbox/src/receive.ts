@@ -27,6 +27,14 @@ export interface DropInput {
   teamOnly: boolean;
   sourceChannelId?: string | null;
   sourceMessageId?: string | null;
+  /**
+   * For a door that is not a signed-in person (the email door, PLAN P8-19): who the drop is credited to, and what the sender check said. Left out, the dropper is
+   * the transaction's actor. `dropperId: null` is a drop nobody is credited with (nobody is told when it is filed).
+   */
+  dropperId?: string | null;
+  dropperName?: string | null;
+  sender?: string | null;
+  senderCheck?: 'pass' | 'fail' | 'none' | null;
 }
 
 export interface DropResult {
@@ -60,13 +68,14 @@ export async function recordDrop(ctx: PluginContext, tx: PluginTx, input: DropIn
       [input.team.id, input.sha256, LIVE_STATES],
     )
   ).rows[0];
-  const name = (await nameOfCaller(tx))?.slice(0, 200) ?? null;
+  const dropperId = input.dropperId !== undefined ? input.dropperId : tx.actor.id;
+  const name = input.dropperName !== undefined ? input.dropperName?.slice(0, 200) ?? null : (await nameOfCaller(tx))?.slice(0, 200) ?? null;
   const duplicate = first !== undefined;
   const inserted = (
     await tx.query<ItemRow>(
       `INSERT INTO app.memory_inbox_items AS i
-         (workspace_id, team_id, origin, state, stage, kind, name, size, sha256, blob_key, dropper_id, dropper_name, team_only, reason, duplicate_of, source_channel_id, source_message_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         (workspace_id, team_id, origin, state, stage, kind, name, size, sha256, blob_key, dropper_id, dropper_name, team_only, reason, duplicate_of, source_channel_id, source_message_id, sender, sender_check)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING ${ITEM_COLUMNS}`,
       [
         input.team.workspace_id,
@@ -79,13 +88,15 @@ export async function recordDrop(ctx: PluginContext, tx: PluginTx, input: DropIn
         input.size,
         input.sha256,
         duplicate ? null : input.blobKey,
-        tx.actor.id,
+        dropperId,
         name,
         input.teamOnly,
         duplicate ? 'The same file is already in this team’s inbox, so nothing was written again.' : null,
         first?.id ?? null,
         input.sourceChannelId ?? null,
         input.sourceMessageId ?? null,
+        input.sender ?? null,
+        input.senderCheck ?? null,
       ],
     )
   ).rows[0] as ItemRow;
@@ -100,7 +111,7 @@ export async function recordDrop(ctx: PluginContext, tx: PluginTx, input: DropIn
     size: input.size,
     teamOnly: input.teamOnly,
     duplicate,
-    droppedBy: tx.actor.id,
+    droppedBy: dropperId,
     at,
   });
   if (!duplicate) {

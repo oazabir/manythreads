@@ -79,6 +79,8 @@ export const PROVIDER_KINDS = [
   'runner.nodes',
   /** Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): `InboxDistiller` in ./inbox.ts. */
   'inbox.distiller',
+  /** One step of the bot page's Deploy action (P8-34), registered by the plugin that owns it: `DeployStep` in ./deploy.ts. */
+  'deploy.step',
 ] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 export interface ProviderImpl {

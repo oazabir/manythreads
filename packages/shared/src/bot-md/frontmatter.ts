@@ -261,7 +261,8 @@ export const BotLimits = z.strictObject({
 });
 export type BotLimits = z.infer<typeof BotLimits>;
 
-export const ContractValueType = z.enum(['string', 'number', 'boolean', 'url', 'datetime']);
+/** `okf_proposals` is a list of memory-concept proposals (`OkfProposal[]`, entities/memory.ts): the typed output of the Archivist (PLAN P8-18). */
+export const ContractValueType = z.enum(['string', 'number', 'boolean', 'url', 'datetime', 'okf_proposals']);
 export type ContractValueType = z.infer<typeof ContractValueType>;
 
 export const BotContract = z.strictObject({

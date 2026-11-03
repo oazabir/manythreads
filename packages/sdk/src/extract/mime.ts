@@ -310,3 +310,59 @@ function decodeLatin1AsUtf8(v: string): string {
     return v;
   }
 }
+
+// ---- the envelope of a message (PLAN P8-19) --------------------------------------------------------------------------------------------------------------
+// The email door needs to know who a message is from, who it is for and what it is called BEFORE anything is stored, so it reads the headers alone. The same
+// header reader as `extractEml` is used, so a message the door accepts is read by the extractor with the same eyes. What a header says is what the SENDER wrote:
+// nothing here proves who sent it (SPF and DKIM do, and they come from the mail transport, never from a header).
+
+export interface MailEnvelope {
+  /** Addresses, lower-cased, at most 50 per header. */
+  from: string[];
+  to: string[];
+  cc: string[];
+  /** `Delivered-To` and `X-Original-To`: what the receiving server wrote about whom it was delivered to. */
+  deliveredTo: string[];
+  /** Decoded and cleaned, at most 300 characters; null when there is none. */
+  subject: string | null;
+  messageId: string | null;
+}
+
+const MAX_ADDRESSES = 50;
+
+/** The addresses in an address-list header: `Name <a@b>`, `a@b`, groups and comments handled; quoted names and comments are dropped. */
+export function parseAddresses(value: string | undefined): string[] {
+  if (value === undefined || value.length === 0) return [];
+  const cleaned = value.slice(0, 8_000).replace(/"(?:[^"\\]|\\.){0,200}"/g, ' ').replace(/\([^()]{0,200}\)/g, ' ');
+  const out: string[] = [];
+  for (const part of cleaned.split(',')) {
+    if (out.length >= MAX_ADDRESSES) break;
+    const angle = /<([^<>\s]{1,320})>/.exec(part);
+    const raw = angle ? (angle[1] as string) : (/[^\s<>;:,]{1,320}@[^\s<>;:,]{1,255}/.exec(part)?.[0] ?? '');
+    const address = raw.trim().toLowerCase();
+    if (/^[^@\s]{1,64}@[^@\s]{1,255}$/.test(address) && !out.includes(address)) out.push(address);
+  }
+  return out;
+}
+
+/** Reads the headers of a message (nothing else of it) into the fields the email door routes on. Never throws; a message with no headers gives empty fields. */
+export function readMailHeaders(bytes: Uint8Array): MailEnvelope {
+  const src = Buffer.from(bytes.subarray(0, MAX_HEADER_BYTES + 4)).toString('latin1');
+  const { head } = splitHeadBody(src);
+  const h = parseHeaders(head);
+  const text = (name: string, max: number): string | null => {
+    const v = h.get(name);
+    if (v === undefined || v.length === 0) return null;
+    const cleaned = clip(cleanText(decodeEncodedWords(decodeLatin1AsUtf8(v))), max).trim();
+    return cleaned.length > 0 ? cleaned : null;
+  };
+  const deliveredTo = [...parseAddresses(h.get('delivered-to')), ...parseAddresses(h.get('x-original-to'))].filter((a, i, all) => all.indexOf(a) === i);
+  return {
+    from: parseAddresses(h.get('from')),
+    to: parseAddresses(h.get('to')),
+    cc: parseAddresses(h.get('cc')),
+    deliveredTo,
+    subject: text('subject', 300),
+    messageId: text('message-id', 300),
+  };
+}

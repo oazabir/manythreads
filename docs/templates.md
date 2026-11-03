@@ -43,7 +43,7 @@ exists, and the bots' definitions are ordinary files of the team's repo that a l
 | Template | Definitions | Scenario sets |
 |---|---|---|
 | Engineering | Brain, Engineer, Plan reviewer, Coder, Code reviewer, Tester, Committer, Deployer, Web smoke tester, Alert triage, Standup relay | `brain`, `engineer`, `plan-reviewer`, `code-reviewer`, `tester`, `committer`, `deployer`, `web-smoke-tester`, `alert-triage`, `standup-relay` |
-| Customer support | Brain, Support responder, Enquiry bot, Escalation router, KB gardener | `brain`, `support-responder`, `enquiry-bot`, `escalation-router`, `kb-gardener` |
+| Customer support | Brain, Support responder, Enquiry bot, Escalation router, KB gardener, Support email, Customer support | `brain`, `support-responder`, `enquiry-bot`, `escalation-router`, `kb-gardener`, `support-email`, `customer-support` |
 | Marketing | Brain, Content drafter, Social scheduler, Analytics digest, Brand reviewer | `brain`, `content-drafter`, `social-scheduler`, `analytics-digest`, `brand-reviewer` |
 | Research | Brain, Literature scout, Summariser, Experiment tracker, Citation checker | `brain`, `literature-scout`, `summariser`, `experiment-tracker`, `citation-checker` |
 | Product design | Brain, Spec writer, Feedback synthesiser, Design critique, Figma watcher | `brain`, `spec-writer`, `feedback-synthesiser`, `design-critique`, `figma-watcher` |
@@ -80,6 +80,8 @@ whose output is a page.
 | Figma watcher | automation | `routine`, mention #design, conversation | nothing but an update message | none | `figma-watcher` (1) |
 | Escalation router | automation | mention #escalations/#support, conversation | cards (`tasks.create`) handed over (`tasks.handoff`) | support-responder; `role:escalation-owner`, `role:support-lead` | `escalation-router` (1) |
 | KB gardener | agent | `routine`, mention #kb-updates, conversation | `pages/kb-proposals/` and a note in #kb-updates | none | `kb-gardener` (1) |
+| Support email | agent | `inbox` on the `support-mail` connection (posts in #support-inbox), mention #support-inbox, conversation | a post per new mail thread in #support-inbox; `email.send` (waits for approval) | customer-support | `support-email` (1) |
+| Customer support | agent | mention #support-inbox, conversation | answers from the `manuals` base only (`answer_only_from`); a post in #support-inbox | support-email; `role:support-agent` | `customer-support` (1) |
 
 * **Which are automations** is the template's `automation: true`: Social scheduler, Figma watcher and Escalation router (the test refuses a
   `kind` that disagrees with `template.yaml`). Several agents also carry a `routine` trigger (Analytics digest, Literature scout, Feedback

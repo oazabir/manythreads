@@ -231,7 +231,26 @@ A Terminal view, not a terminal emulator: it shows the shell's lines as plain te
 * The slowing of fast output is per 100 ms window, not exact.
 * The real-shell tests are skipped on a machine that is not root or has no Python 3 (and say so).
 
+## The Deploy action (P8-34)
+
+One button on the bot page (a lead or a workspace admin) and one route, `POST /api/teams/:slug/bots/:botSlug/deploy`, that does three things and reports each:
+
+1. **Definition.** The bot's `bots/<slug>/BOT.md` is committed through the proposals plugin as "Propose and apply" (title `Deploy <slug>`): the commit is the asker's, the proposal stays on record, the same checks run, and a file someone else changed meanwhile is refused, never overwritten. With no body the repo's definition is deployed as it is (nothing to commit); with `{ content, baseBlobSha }` the page's unsaved text is committed first.
+2. **Knowledge.** Each base the definition lists under `knowledge:` gets the Knowledge tab's re-sync, then its own state is read: `ready` is done, `attention` (a document that failed) or `empty` (nothing to read) is refused.
+3. **Connection.** Each connection the definition names (`capabilities.connections[].name`, except `person:*`, and the `inbox` trigger's `connection`) is switched on exactly as `PATCH /api/connections/:id { status: 'enabled' }` does: a workspace admin's act, refused until a credential is stored.
+
+**It is not a lifecycle state.** The bot is live when the loader says so (`bots.status`), a base when `knowledge_bases.status` says `ready`, a connection when `connections.status` says `enabled`. Nothing new is stored. A deploy that changed nothing answers `deployed: false` and says "Nothing to deploy"; it is not counted as one.
+
+**The answer** is always 200 with `{ deployed, summary, outcomes: [definition, knowledge, connection] }`, each outcome `changed`, `unchanged`, `not_used`, `refused` or `not_run`. A refusal of one part is an outcome, not an HTTP error (the web client drops the body of an error, and the person needs the reason). A request that is wrong as a whole (not a lead or admin 403, no such bot 404, a definition that does not load 400, too many presses 429) is an error.
+
+**Order and refusal.** Every step's `check` runs first and writes nothing; if any refuses, nothing is changed and the other parts are `not_run`. If all pass, the steps run definition, knowledge, connection; a refusal found only while doing (for example a document that fails to convert) stops the rest, and what ran before stays done, as its owner does it. The definition step runs under a savepoint so a refused proposal leaves no half-made row.
+
+**How it is composed without a cycle.** The SDK has a provider kind `deploy.step` (manifest extension `provider.deploy.step`). `proposals` registers the `definition` step, `knowledge` the `knowledge` step and `connections` the `connection` step; the workshop plugin looks them up when the request runs and composes them. The workshop plugin lists `connections` in `dependsOn`; no plugin depends on the workshop.
+
 ## Decisions the owner should know about
+
+* **Deploy answers 200 with the three outcomes, even when a part is refused.** A 409 would be the plainer HTTP, but the page could not show which part and why.
+* **Deploying re-syncs the knowledge base**, which also reads the base's web-page sources (as the Re-sync button does).
 
 * **The terminal (P7-09) runs on the server host, in a per-session jail, and is off until the server is told to allow it.** A rehearsal has no filesystem of its own, so the sandbox is a new empty folder and an isolated shell, not the bot's real pod or runner. It needs the root user, Python 3 and Linux namespaces; the shipped container image has none of them, so the terminal is off there (with the reason shown) until a host or a dedicated terminal pod is chosen. See [the terminal](#the-terminal-into-a-sandbox-p7-09).
 * **Terminal records are admin-only and are not swept by retention yet.** Each holds the shell's output (secrets masked, 256 KiB at most) with the admin's name; the owner should decide how long they are kept.

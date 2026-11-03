@@ -64,7 +64,7 @@ describe('the bot roster and bot page', () => {
     expect(res.status).toBe(200);
     const zed = summaryOf(res.body, 'p505-zed')!;
     // Zed lists a mention trigger only, so nobody can talk to it (the router answers a conversation for the conversation trigger alone)
-    expect(zed).toMatchObject({ slug: 'p505-zed', name: 'Zed', role: 'Answers the roster tests', mayTag: ['reviewer'], status: 'active', invalid: null, conversational: false });
+    expect(zed).toMatchObject({ slug: 'p505-zed', name: 'Zed', role: 'Answers the roster tests', mayTag: ['reviewer'], status: 'active', invalid: null, conversational: false, mentionable: true });
     // a card names its holder by actor id, so the roster carries the bot's actor id (not the bots row id), for a member who cannot read the actor row
     const actor = await ownerSql(w.server.db.ownerUrl, `SELECT id FROM app.actors WHERE kind = 'bot' AND ref_id = $1`, [zed.id]);
     expect(zed.actorId).toBe(actor[0]?.['id']);
@@ -87,6 +87,16 @@ describe('the bot roster and bot page', () => {
     const without = validMd('Chatty', 'Talks', []);
     expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p516-chatty/BOT.md', content: without }], 'Chatty stops taking conversations')).status).toBe(201);
     await until(async () => ((await getBot(nadia, 'p516-chatty')).body.bot.conversational === false ? true : null), 10_000);
+  });
+
+  it('`mentionable` is false for a bot that is only started by a trigger of its own (a drop), so it stays out of the picker', async () => {
+    const dropOnly = validMd('Filer', 'Files drops', []).replace('  - type: mention\n', '  - type: drop\n').replace('[messages.post]', '[inbox.read, memory.recall]');
+    expect(dropOnly).toContain('type: drop');
+    expect((await w.commit(omar, engSlug, [{ op: 'put', path: 'bots/p818-filer/BOT.md', content: dropOnly }], 'Add Filer')).status).toBe(201);
+    await until(async () => summaryOf((await listRoster(nadia)).body, 'p818-filer'), 10_000);
+    expect(summaryOf((await listRoster(nadia)).body, 'p818-filer')).toMatchObject({ mentionable: false, conversational: false, status: 'active' });
+    expect((await getBot(nadia, 'p818-filer')).body.bot.mentionable).toBe(false);
+    expect(summaryOf((await listRoster(nadia)).body, 'p505-zed')?.mentionable).toBe(true);
   });
 
   it('the run list holds the runs of the team, and a conversation run only for the person who asked', async () => {

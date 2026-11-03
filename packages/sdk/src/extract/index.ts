@@ -6,6 +6,7 @@ import { ExtractError, type ExtractKind, type ExtractResult } from './core.ts';
 // else. The host stops the thread when the time is up, and a memory limit on the thread ends it if it grows too large. At most `MAX_PARALLEL` run at once.
 
 export { ExtractError } from './core.ts';
+export { parseAddresses, readMailHeaders, type MailEnvelope } from './mime.ts';
 export type { ExtractChild, ExtractKind, ExtractMetadata, ExtractResult, ExtractSection } from './core.ts';
 
 const intEnv = (name: string, fallback: number): number => {

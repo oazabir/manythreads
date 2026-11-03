@@ -23,6 +23,9 @@ bots:
   - slug: brain
     name: Brain
     role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: archivist
+    name: Archivist
+    role: "Files what lands in the memory inbox as short, linked notes in the team's memory."
   - slug: engineer
     name: Engineer
     role: "Plans a goal, has the plan reviewed, then runs the bots that code, review, test, deploy and smoke test it."

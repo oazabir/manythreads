@@ -52,7 +52,7 @@ describe('the sidebar directory (navChannelDirectoryRoute)', () => {
 
   it('shows a member only the teams they sit in, and nothing (200, not 404) for the others', async () => {
     expect(names(await directory(sameera, 'engineering'))).toEqual([]);
-    expect(names(await directory(sameera, 'customer-support'))).toEqual(['support', 'escalations', 'enquiries', 'kb-updates']);
+    expect(names(await directory(sameera, 'customer-support'))).toEqual(['support', 'escalations', 'enquiries', 'kb-updates', 'support-inbox']);
     expect(names(await directory(priya, 'engineering'))).toContain('dev');
     expect(names(await directory(priya, 'marketing')).length).toBeGreaterThan(0);
     expect(names(await directory(nadia, 'no-such-team'))).toEqual([]);
@@ -73,7 +73,7 @@ describe('the sidebar directory (navChannelDirectoryRoute)', () => {
         `SELECT c.name FROM app.channels c JOIN app.teams t ON t.id = c.team_id WHERE t.slug = 'customer-support' ORDER BY c.position`,
       )).rows.map((r) => r.name),
     );
-    expect(rows).toEqual(['support', 'escalations', 'enquiries', 'kb-updates']);
+    expect(rows).toEqual(['support', 'escalations', 'enquiries', 'kb-updates', 'support-inbox']);
     const again = await w.system(async (tx) => {
       const t = await tx.query<{ id: string }>("SELECT id FROM app.teams WHERE slug = 'customer-support'");
       return (await tx.query('SELECT * FROM app.channels_sync_template($1)', [t.rows[0]!.id])).rows.length;
@@ -94,14 +94,14 @@ describe('the sidebar directory (navChannelDirectoryRoute)', () => {
       w.system(async (tx) =>
         (await tx.query<{ name: string }>('SELECT name FROM app.channels WHERE team_id = $1 ORDER BY position', [first.team.id])).rows.map((r) => r.name),
       ),
-      (rows) => rows.length === 4,
+      (rows) => rows.length === 5,
     );
-    expect(created).toEqual(['support', 'escalations', 'enquiries', 'kb-updates']);
+    expect(created).toEqual(['support', 'escalations', 'enquiries', 'kb-updates', 'support-inbox']);
     const events = await w.system(async (tx) =>
       (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM app.events WHERE type = 'channel.channel.created' AND team_id = $1", [first.team.id])).rows[0]!.n,
     );
-    expect(events).toBe(4);
-    expect(names(await directory(omar, 'support-two'))).toEqual(['support', 'escalations', 'enquiries', 'kb-updates']);
+    expect(events).toBe(5);
+    expect(names(await directory(omar, 'support-two'))).toEqual(['support', 'escalations', 'enquiries', 'kb-updates', 'support-inbox']);
   });
 });
 

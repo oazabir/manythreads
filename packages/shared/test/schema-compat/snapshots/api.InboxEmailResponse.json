@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "address": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "connection": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "slug": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "slug",
+            "name"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "allowedSenders": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rule": {
+      "type": "string"
+    },
+    "canSetUp": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "address",
+    "connection",
+    "reason",
+    "allowedSenders",
+    "rule",
+    "canSetUp"
+  ]
+}

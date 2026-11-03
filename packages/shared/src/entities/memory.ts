@@ -128,6 +128,23 @@ export const OkfProposal = z.strictObject({
 export type OkfProposal = z.infer<typeof OkfProposal>;
 
 /**
+ * What the Archivist hands back for one inbox item (PLAN P8-18): a list of concept proposals, the typed output named in its BOT.md contract
+ * (`outputs.proposals: okf_proposals`). The inbox pipeline validates each proposal on its own (commit.ts), so one bad entry does not sink the rest.
+ * The cap is the most concepts one item may produce.
+ */
+export const ARCHIVIST_MAX_PROPOSALS = 20;
+export const ArchivistProposals = z.array(OkfProposal).max(ARCHIVIST_MAX_PROPOSALS);
+export type ArchivistProposals = z.infer<typeof ArchivistProposals>;
+
+/**
+ * The default type vocabulary the Archivist files concepts under (PLAN P8-18). A team may use other `type` values (OKF types are free text); these
+ * are what a team gets without configuring anything, and the Archivist prompt names them. `Action Items` concepts follow the line convention in
+ * okf/action-items.ts so "Add to board" can read them.
+ */
+export const ARCHIVIST_TYPE_VOCABULARY = ['Fact', 'Decision', 'Meeting', 'Action Items', 'Playbook', 'Reference'] as const;
+export type ArchivistType = (typeof ARCHIVIST_TYPE_VOCABULARY)[number];
+
+/**
  * One fact `memory.recall` answers with (PLAN P5-26; SPEC §12.1). It is the engine's fact (id, text, the engine's own `type`, context, tags,
  * document id) and — when the fact is a concept of the bundle, which the mirror's metadata says — the OKF provenance a reader needs to judge and
  * cite it: the bundle path, the concept's `type`, its trust tier, whether `now` has passed `stale_after`, whether it is deprecated, and its origin.

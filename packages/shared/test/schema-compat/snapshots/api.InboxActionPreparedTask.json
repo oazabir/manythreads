@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "kind": {
+      "type": "string",
+      "const": "other"
+    },
+    "priority": {
+      "type": "string",
+      "const": "normal"
+    },
+    "branch": {
+      "type": "string",
+      "const": "main"
+    }
+  },
+  "required": [
+    "title",
+    "description",
+    "kind",
+    "priority",
+    "branch"
+  ]
+}

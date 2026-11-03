@@ -13,6 +13,8 @@ channels:
     purpose: "New leads and enquiries classified by the Enquiry bot."
   - name: "#kb-updates"
     purpose: "Proposed changes to the knowledge base."
+  - name: "#support-inbox"
+    purpose: "Customer emails from the support mailbox, answered from the manuals."
 board:
   name: Support board
   columns: [Open, In progress, Verify, Waiting on a person, Done]
@@ -20,6 +22,9 @@ bots:
   - slug: brain
     name: Brain
     role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: archivist
+    name: Archivist
+    role: "Files what lands in the memory inbox as short, linked notes in the team's memory."
   - slug: support-responder
     name: Support responder
     role: "Drafts answers from the manuals knowledge base; sending email needs approval."
@@ -33,4 +38,10 @@ bots:
   - slug: kb-gardener
     name: KB gardener
     role: "Finds gaps and stale pages in the manuals and proposes edits."
-roleTags: [role:support-lead, role:escalation-owner]
+  - slug: support-email
+    name: Support email
+    role: "Reads the support mailbox, posts each new email into #support-inbox for the Customer support bot, and sends the approved answer back."
+  - slug: customer-support
+    name: Customer support
+    role: "Answers each email in #support-inbox from the manuals, or hands it to a person when the manuals do not cover it."
+roleTags: [role:support-lead, role:escalation-owner, role:support-agent]

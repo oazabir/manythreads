@@ -32,7 +32,7 @@ describe('shipped templates', () => {
   it('Engineering ships the whole chain of bots, and the server image carries the templates folder', async () => {
     const eng = (await loadTemplates(templatesDir)).find((t) => t.id === 'engineering')!;
     expect(eng.bots.map((b) => b.slug).sort()).toEqual(
-      ['alert-triage', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'plan-reviewer', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
+      ['alert-triage', 'archivist', 'brain', 'code-reviewer', 'coder', 'committer', 'deployer', 'engineer', 'plan-reviewer', 'standup-relay', 'tester', 'web-smoke-tester'].sort(),
     );
     // a fresh install reads `templates/` from the image: the server's docker ignore list must never drop it
     const ignored = (await readFile(path.resolve(templatesDir, '../deploy/docker/server.Dockerfile.dockerignore'), 'utf8')).split('\n').map((l) => l.trim());
@@ -49,13 +49,23 @@ describe('shipped templates', () => {
   it('ships Brain and its scenario set in every template, and a definition and a scenario set for every other bot a template lists', async () => {
     const all = await loadTemplates(templatesDir);
     for (const t of all) {
-      expect(Object.keys(t.files ?? {}), t.id).toEqual(expect.arrayContaining(['bots/brain/BOT.md', 'bots/brain/evals/brain.yaml']));
+      expect(Object.keys(t.files ?? {}), t.id).toEqual(expect.arrayContaining(['bots/brain/BOT.md', 'bots/brain/evals/brain.yaml', 'bots/archivist/BOT.md', 'bots/archivist/evals/archivist.yaml']));
     }
     const definitions = Object.fromEntries(all.map((t) => [t.id, Object.keys(t.files ?? {}).filter((k) => k.endsWith('/BOT.md')).sort()]));
     expect(definitions).toEqual({
-      'customer-support': ['bots/brain/BOT.md', 'bots/enquiry-bot/BOT.md', 'bots/escalation-router/BOT.md', 'bots/kb-gardener/BOT.md', 'bots/support-responder/BOT.md'],
+      'customer-support': [
+        'bots/archivist/BOT.md',
+        'bots/brain/BOT.md',
+        'bots/customer-support/BOT.md',
+        'bots/enquiry-bot/BOT.md',
+        'bots/escalation-router/BOT.md',
+        'bots/kb-gardener/BOT.md',
+        'bots/support-email/BOT.md',
+        'bots/support-responder/BOT.md',
+      ],
       engineering: [
         'bots/alert-triage/BOT.md',
+        'bots/archivist/BOT.md',
         'bots/brain/BOT.md',
         'bots/code-reviewer/BOT.md',
         'bots/coder/BOT.md',
@@ -67,9 +77,9 @@ describe('shipped templates', () => {
         'bots/tester/BOT.md',
         'bots/web-smoke-tester/BOT.md',
       ],
-      marketing: ['bots/analytics-digest/BOT.md', 'bots/brain/BOT.md', 'bots/brand-reviewer/BOT.md', 'bots/content-drafter/BOT.md', 'bots/social-scheduler/BOT.md'],
-      'product-design': ['bots/brain/BOT.md', 'bots/design-critique/BOT.md', 'bots/feedback-synthesiser/BOT.md', 'bots/figma-watcher/BOT.md', 'bots/spec-writer/BOT.md'],
-      research: ['bots/brain/BOT.md', 'bots/citation-checker/BOT.md', 'bots/experiment-tracker/BOT.md', 'bots/literature-scout/BOT.md', 'bots/summariser/BOT.md'],
+      marketing: ['bots/analytics-digest/BOT.md', 'bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/brand-reviewer/BOT.md', 'bots/content-drafter/BOT.md', 'bots/social-scheduler/BOT.md'],
+      'product-design': ['bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/design-critique/BOT.md', 'bots/feedback-synthesiser/BOT.md', 'bots/figma-watcher/BOT.md', 'bots/spec-writer/BOT.md'],
+      research: ['bots/archivist/BOT.md', 'bots/brain/BOT.md', 'bots/citation-checker/BOT.md', 'bots/experiment-tracker/BOT.md', 'bots/literature-scout/BOT.md', 'bots/summariser/BOT.md'],
     });
     // every bot a template lists is shipped (the Enquiry bot's folder is `enquiry-bot`); in Customer support each also has a scenario set of its own name
     // (the engineering Coder has none yet)
@@ -91,7 +101,7 @@ describe('shipped templates', () => {
 
   it('channel sets match SPEC §13', async () => {
     const byId = Object.fromEntries((await loadTemplates(templatesDir)).map((t) => [t.id, t.channels.map((c) => c.name)]));
-    expect(byId['customer-support']).toEqual(['#support', '#escalations', '#enquiries', '#kb-updates']);
+    expect(byId['customer-support']).toEqual(['#support', '#escalations', '#enquiries', '#kb-updates', '#support-inbox']);
     expect(byId.marketing).toEqual(['#campaigns', '#content', '#social', '#analytics', '#brand']);
     expect(byId.research).toEqual(['#papers', '#experiments', '#notes', '#reading-group']);
     expect(byId['product-design']).toEqual(['#design', '#feedback', '#specs', '#critique']);

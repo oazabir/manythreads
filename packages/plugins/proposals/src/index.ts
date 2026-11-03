@@ -1,6 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
 import { HttpError, requireTeam } from '@manythreads/sdk';
 import { CreateProposalRequest } from '@manythreads/shared';
+import { createDefinitionStep } from './deploy.ts';
 import { registerProposalRoutes } from './routes.ts';
 import { createProposal } from './service.ts';
 
@@ -18,7 +19,8 @@ export default definePlugin({
     name: 'proposals',
     version: '0.1.0',
     kind: 'server',
-    extends: ['event.emit'],
+    // `provider.deploy.step`: the definition step of the bot page's Deploy action (P8-34), composed by the workshop plugin.
+    extends: ['event.emit', 'provider.deploy.step'],
     // `proposals.propose` is what a bot is granted to propose a change; it never commits (the repo writer refuses a bot these four places outright).
     capabilities: [{ name: 'proposals.propose', destructive: false }],
     events: { emits: ['proposals.proposal.created', 'proposals.proposal.applied', 'proposals.proposal.rejected'], consumes: [] },
@@ -28,6 +30,7 @@ export default definePlugin({
   },
   register(ctx) {
     registerProposalRoutes(ctx);
+    ctx.providers.register('deploy.step', createDefinitionStep(ctx));
     // What the MCP gateway calls for a bot's `proposals.propose` tool: `{ team, path, op?, content?, title?, note? }` as the bot's transaction. The proposal is
     // based on the file as it is now. Answers `{ ok: true, proposal }` or `{ ok: false, status, code, message }`.
     ctx.capabilities.register('proposals.propose', async (input, tx) => {

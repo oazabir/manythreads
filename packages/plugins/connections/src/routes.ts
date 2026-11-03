@@ -62,6 +62,24 @@ async function requireMayChange(tx: PluginTx, row: ConnectionRow): Promise<void>
   await requireWorkspaceAdmin(tx);
 }
 
+/** Why a connection with nothing stored is not switched on. */
+export const CREDENTIAL_FIRST = 'Put the credential in first: a connection with nothing stored cannot be switched on.';
+
+/**
+ * Switches a team's connection on, as the route does for `PATCH { status: 'enabled' }`: a workspace admin's act, refused until a credential is stored, one audit line
+ * (`switched`). The Deploy action (deploy.ts) calls it; a connection that is already on is returned as it is.
+ */
+export async function enableConnection(ctx: PluginContext, tx: PluginTx, current: ConnectionRow): Promise<ConnectionRow> {
+  await requireMayChange(tx, current);
+  if (current.status === 'enabled') return current;
+  if (!current.has_credentials) throw conflict(CREDENTIAL_FIRST);
+  const updated = await tx.query<ConnectionRow>(`UPDATE app.connections c SET status = 'enabled', updated_at = now() WHERE c.id = $1::uuid RETURNING ${CONNECTION_COLUMNS}`, [current.id]);
+  const row = updated.rows[0];
+  if (!row) throw forbidden();
+  await audit(ctx, tx, row, 'switched');
+  return row;
+}
+
 const slugFromName = (name: string): string => {
   const base = name
     .toLowerCase()
@@ -169,7 +187,7 @@ export function registerRoutes(ctx: PluginContext): void {
       const current = await loadConnection(tx, id);
       await requireMayChange(tx, current);
       if (body.status === 'enabled' && current.status !== 'enabled' && !current.has_credentials) {
-        throw conflict('Put the credential in first: a connection with nothing stored cannot be switched on.');
+        throw conflict(CREDENTIAL_FIRST);
       }
       const sets: string[] = [];
       const values: unknown[] = [id];

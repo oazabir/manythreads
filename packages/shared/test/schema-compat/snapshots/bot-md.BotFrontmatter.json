@@ -593,7 +593,8 @@
               "number",
               "boolean",
               "url",
-              "datetime"
+              "datetime",
+              "okf_proposals"
             ]
           }
         }

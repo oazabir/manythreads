@@ -1,5 +1,7 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerActions } from './actions.ts';
 import { inboxDropFor, inboxRead } from './capability.ts';
+import { registerEmailDoor } from './email-door.ts';
 import { registerJobs } from './jobs.ts';
 import { registerRoutes } from './routes.ts';
 
@@ -23,14 +25,17 @@ export default definePlugin({
       { name: 'inbox.read', destructive: false },
       { name: 'inbox.drop', destructive: false },
     ],
+    // The email door reads the workspace mailbox (app.connections, the connections plugin) and a recorded action reads the card a person made (app.tasks);
     // app.inbox_run_item() reads the run and the bot; app.memory_run_context() (memory) names the run's team; the Reference and concepts go through the repo writer;
     // the original goes to blob storage; messages are read for Send to memory.
-    dependsOn: ['teams', 'channels', 'bots', 'files', 'memory', 'repo-git'],
+    dependsOn: ['teams', 'channels', 'bots', 'files', 'memory', 'repo-git', 'tasks', 'connections'],
   },
   register(ctx) {
     ctx.capabilities.register('inbox.read', inboxRead);
     ctx.capabilities.register('inbox.drop', inboxDropFor(ctx));
     registerRoutes(ctx);
+    registerEmailDoor(ctx);
+    registerActions(ctx);
     registerJobs(ctx);
   },
 });

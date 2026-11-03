@@ -39,7 +39,7 @@ export function useSlashWho(teamSlug: string | null, channelId: string, wanted: 
   const ask = wanted && !guest && teamSlug !== null;
   const q = useQuery<Loaded>(ask ? `slash-bots:${teamSlug}` : 'slash-bots:off', () =>
     ask && teamSlug
-      ? fetchBots(teamSlug).then((r) => ({ slug: teamSlug, bots: r.bots.filter((b) => b.status === 'active').map((b) => ({ slug: b.slug, name: b.name })) }))
+      ? fetchBots(teamSlug).then((r) => ({ slug: teamSlug, bots: r.bots.filter((b) => b.status === 'active' && b.mentionable).map((b) => ({ slug: b.slug, name: b.name })) }))
       : Promise.resolve(NOT_LOADED),
   );
   // the same query (and key) the channel screen itself makes, so asking again costs nothing

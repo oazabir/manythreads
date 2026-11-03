@@ -21,6 +21,9 @@ bots:
   - slug: brain
     name: Brain
     role: "Team memory. Answers from what the team did and wrote, and keeps per-person notes."
+  - slug: archivist
+    name: Archivist
+    role: "Files what lands in the memory inbox as short, linked notes in the team's memory."
   - slug: content-drafter
     name: Content drafter
     role: "Drafts posts, emails and pages in the team's voice."

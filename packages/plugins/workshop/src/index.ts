@@ -6,6 +6,7 @@ import { registerWorkshopRoutes } from './wroutes.ts';
 import { registerReplayRoutes } from './replay.ts';
 import { registerReassessmentRoutes, registerReassessmentSubscribers } from './reassess.ts';
 import { registerTerminalRoutes } from './terminal/routes.ts';
+import { registerDeployRoute } from './deploy.ts';
 
 export { checkBotProposal, checkSkill, checkTeamMdChange } from './policy.ts';
 export { gradeAll, gradeRequirement, questionsForGaps } from './grade.ts';
@@ -41,8 +42,8 @@ export default definePlugin({
         'bots.eval.run.finished',
       ],
     },
-    // teams, channels and bots: the tables read for the inventory; proposals and knowledge: the capabilities the tools call; bot-runners: the placement question; gateway-llm: the model; repo-git: TEAM.md and the skills folder; gateway-mcp: the sandbox where a bot is rehearsed (P7-05) and the one a terminal opens into (P7-09). The data-loss guard (guardrails-dlp) is deliberately NOT a dependency: without it only the terminal is unavailable (it refuses to open, and its record would never be stored unchecked); the rest of the Workshop still loads.
-    dependsOn: ['teams', 'channels', 'bots', 'proposals', 'knowledge', 'bot-runners', 'gateway-llm', 'repo-git', 'gateway-mcp'],
+    // teams, channels and bots: the tables read for the inventory; proposals and knowledge: the capabilities the tools call; bot-runners: the placement question; gateway-llm: the model; repo-git: TEAM.md and the skills folder; gateway-mcp: the sandbox where a bot is rehearsed (P7-05) and the one a terminal opens into (P7-09); connections (P8-34): the Deploy action runs the `deploy.step` providers of proposals, knowledge and connections, and no plugin depends on the workshop, so there is no cycle. The data-loss guard (guardrails-dlp) is deliberately NOT a dependency: without it only the terminal is unavailable (it refuses to open, and its record would never be stored unchecked); the rest of the Workshop still loads.
+    dependsOn: ['teams', 'channels', 'bots', 'proposals', 'knowledge', 'bot-runners', 'gateway-llm', 'repo-git', 'gateway-mcp', 'connections'],
     migrations: 'migrations',
   },
   register(ctx) {
@@ -54,5 +55,6 @@ export default definePlugin({
     registerReassessmentRoutes(ctx);
     registerReassessmentSubscribers(ctx);
     registerTerminalRoutes(ctx);
+    registerDeployRoute(ctx);
   },
 });

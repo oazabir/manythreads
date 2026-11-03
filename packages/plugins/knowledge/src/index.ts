@@ -1,5 +1,6 @@
 import { definePlugin } from '@manythreads/sdk';
 import { knowledgeSearchFor } from './capability.ts';
+import { createKnowledgeDeployStep } from './deploy.ts';
 import { registerJobs } from './jobs.ts';
 import { registerRoutes } from './routes.ts';
 
@@ -14,7 +15,8 @@ export default definePlugin({
     version: '0.1.0',
     kind: 'server',
     migrations: 'migrations',
-    extends: ['event.emit', 'job.register', 'hook.pre_egress'],
+    // `provider.deploy.step`: the knowledge step of the bot page's Deploy action (P8-34), composed by the workshop plugin.
+    extends: ['event.emit', 'job.register', 'hook.pre_egress', 'provider.deploy.step'],
     events: {
       emits: ['knowledge.base.created', 'knowledge.base.deleted', 'knowledge.document.added', 'knowledge.document.removed', 'knowledge.base.resynced'],
       consumes: [],
@@ -27,5 +29,6 @@ export default definePlugin({
     ctx.capabilities.register('knowledge.search', knowledgeSearchFor(ctx));
     registerRoutes(ctx);
     registerJobs(ctx);
+    ctx.providers.register('deploy.step', createKnowledgeDeployStep(ctx));
   },
 });

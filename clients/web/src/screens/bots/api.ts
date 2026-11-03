@@ -1,4 +1,7 @@
 import {
+  BotDeployRequest,
+  BotDeployResponse,
+  deployBotRoute,
   BotTestRequest,
   BotTestResult,
   BotTestStarted,
@@ -156,6 +159,11 @@ export function uploadKnowledgeDocument(slug: string, base: string, file: File, 
     xhr.send(file);
   });
 }
+
+// ---- the Deploy action (PLAN P8-34) ------------------------------------------------------------------------------------
+/** Commit the definition, make its knowledge bases ready and switch on its connections: one action, three outcomes. A refusal of one part is an outcome, not an error. */
+export const deployBot = (slug: string, botSlug: string, body: BotDeployRequest) =>
+  call(deployBotRoute, { request: BotDeployRequest, response: BotDeployResponse }, BotDeployRequest.parse(body), { slug, botSlug });
 
 // ---- the Test action (PLAN P7-11) --------------------------------------------------------------------------------------
 /** Ask the bot one question as a rehearsal, in the signed-in person's own conversation with it. The answer is a reply in the question's thread. */

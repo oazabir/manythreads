@@ -3,10 +3,10 @@ name: Customer support
 template: customer-support
 channelGroups:
   - name: Customers
-    channels: ["#support", "#enquiries"]
+    channels: ["#support", "#enquiries", "#support-inbox"]
   - name: Internal
     channels: ["#escalations", "#kb-updates"]
-roleTags: [role:support-lead, role:escalation-owner]
+roleTags: [role:support-lead, role:escalation-owner, role:support-agent]
 defaults:
   board: Support board
   approvers: [role:support-lead]
@@ -24,6 +24,7 @@ Purpose: answer customers quickly and correctly, and hand over what a bot should
 - `lead` runs the team and approves changes to `bots/`, `TEAM.md`, `skills/` and `routines/`.
 - `role:support-lead` approves outbound email drafted by a bot.
 - `role:escalation-owner` takes cases the Escalation router cannot settle.
+- `role:support-agent` takes the emails in `#support-inbox` that the Customer support bot hands over.
 
 ## Working agreements
 

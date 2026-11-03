@@ -548,7 +548,7 @@ export function PlacementTab({ draft, canEdit, slug }: TabProps) {
 }
 
 // ---- Contract -----------------------------------------------------------------------------------------------------------
-type OutputType = 'string' | 'number' | 'boolean' | 'url' | 'datetime';
+type OutputType = 'string' | 'number' | 'boolean' | 'url' | 'datetime' | 'okf_proposals';
 
 export function ContractTab({ draft, canEdit }: TabProps) {
   const outputs = fm(draft).contract?.outputs ?? {};
@@ -567,7 +567,7 @@ export function ContractTab({ draft, canEdit }: TabProps) {
               label="Type"
               value={type}
               readOnly={!canEdit}
-              options={[{ value: 'string', label: 'string' }, { value: 'number', label: 'number' }, { value: 'boolean', label: 'boolean' }, { value: 'url', label: 'url' }, { value: 'datetime', label: 'datetime' }]}
+              options={[{ value: 'string', label: 'string' }, { value: 'number', label: 'number' }, { value: 'boolean', label: 'boolean' }, { value: 'url', label: 'url' }, { value: 'datetime', label: 'datetime' }, { value: 'okf_proposals', label: 'list of memory notes' }]}
               onChange={(t) => setOutputs({ ...outputs, [key]: t })}
             />
             {canEdit ? <button type="button" className="btn s" onClick={() => setOutputs(Object.fromEntries(entries.filter(([n]) => n !== key)))}>Remove output</button> : null}

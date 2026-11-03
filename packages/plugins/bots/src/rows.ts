@@ -52,6 +52,14 @@ export const toBot = (r: BotRow): Bot =>
 export const hasConversationTrigger = (triggers: unknown): boolean =>
   Array.isArray(triggers) && triggers.some((t) => typeof t === 'object' && t !== null && (t as { type?: unknown }).type === 'conversation');
 
+/** Whether a person can address the bot: a `mention` or a `conversation` trigger. A bot with only `drop`, `schedule` or event triggers is never asked anything. */
+export const hasAddressableTrigger = (triggers: unknown): boolean =>
+  Array.isArray(triggers) &&
+  triggers.some((t) => {
+    const type = typeof t === 'object' && t !== null ? (t as { type?: unknown }).type : undefined;
+    return type === 'conversation' || type === 'mention';
+  });
+
 /** The roster's row: the bot plus the display fields the loader copied onto it and the reason its last load failed (`invalid_reason`, null once repaired). */
 export const toBotSummary = (r: BotRow, actorId: string | null = null): BotSummary =>
   BotSummary.parse({
@@ -62,6 +70,7 @@ export const toBotSummary = (r: BotRow, actorId: string | null = null): BotSumma
     mayTag: r.may_tag,
     invalid: r.invalid_reason ?? null,
     conversational: hasConversationTrigger(r.triggers),
+    mentionable: hasAddressableTrigger(r.triggers),
   });
 
 export type BotRunRow = {

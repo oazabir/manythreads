@@ -19,6 +19,7 @@ export * from './bot-runners.ts';
 export * from './hermes-profiles.ts';
 export * from './project-credentials.ts';
 export * from './inbox.ts';
+export * from './deploy.ts';
 export * from './runner-nodes.ts';
 export * from './http.ts';
 export * from './lockout.ts';

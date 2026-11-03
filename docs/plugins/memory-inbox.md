@@ -2,7 +2,7 @@
 
 A team's inbox for its memory. Anyone on a team drops a file, a note or a chat message into it; the platform checks what may come in, reads the file into plain text, lets the team's Archivist (a bot that looks after memory) turn the text into memory concepts when there is one, checks what comes back, and files the result in the team's memory with a **Reference**: a concept that carries the full text and says where the original is. The person who dropped it is told when it is filed, held or could not be read. Without an Archivist the inbox still works: it files the Reference alone, so nothing a person drops is lost.
 
-Package: `packages/plugins/memory-inbox` (PLAN P8-14 to P8-17; SPEC §12.2). Manifest: depends on `teams`, `channels`, `bots`, `files`, `memory` and `repo-git`; `extends: ['event.emit', 'job.register', 'hook.pre_egress']`; emits `memory.item.dropped`, `memory.item.filed`, `memory.item.held`, `memory.item.failed`, `memory.item.released` and `memory.item.discarded`; registers the capabilities `inbox.read` and `inbox.drop`. Schemas: `packages/shared/src/entities/inbox.ts`, `packages/shared/src/api/inbox`, `packages/shared/src/events/memory.item.*.ts`. Migration: `migrations/0001_memory_inbox.sql` in the plugin's own folder.
+Package: `packages/plugins/memory-inbox` (PLAN P8-14 to P8-17; SPEC §12.2). Manifest: depends on `teams`, `channels`, `bots`, `files`, `memory`, `repo-git`, `tasks` and `connections` (the last two for the email door and the action items, below); `extends: ['event.emit', 'job.register', 'hook.pre_egress']`; emits `memory.item.dropped`, `memory.item.filed`, `memory.item.held`, `memory.item.failed`, `memory.item.released` and `memory.item.discarded`; registers the capabilities `inbox.read` and `inbox.drop`. Schemas: `packages/shared/src/entities/inbox.ts`, `packages/shared/src/api/inbox`, `packages/shared/src/events/memory.item.*.ts`. Migrations: `0001_memory_inbox.sql` and `0002_email_door_actions.sql` in the plugin's own folder.
 
 ## The doors
 
@@ -13,8 +13,8 @@ Package: `packages/plugins/memory-inbox` (PLAN P8-14 to P8-17; SPEC §12.2). Man
 | Send to memory | `POST /api/channels/:channelId/messages/:messageId/send-to-memory` `{ confirmPrivate, teamOnly, thread }`: one message, or the whole thread (up to 200 messages), with who said it and when. The caller must be able to read the channel; a private channel needs `confirmPrivate: true` (the answer says everyone on the team will see it); a direct message or a bot conversation is refused | built |
 | A bot drops text | the capability `inbox.drop` (for the bot's **own** team only) | built |
 | Drag onto the Files tree's `inbox/` folder | | not built (Files has no `inbox/` folder yet; `inbox/` is storage, not a repo folder) |
-| Email to the team's address | | not built (P8-19). The item already has `sender` and `sender_check`; the door sets `sender_check: pass` for a verified member and `fail` for a failed check |
-| The web pages (drop zone, board, Send to memory button) | | not built (P8-20, P8-21) |
+| Email to the team's address | `inbox+<team>@<mail domain>`; the mail transport pushes a received message to `POST /api/workspace/inbox-mail/:connection?spf=&dkim=` (the body is the message) | built (the door and its address; the transport that receives real mail is not, see "Email to the team's address") |
+| The web pages (drop zone, board, Send to memory button) | | the Inbox tab is P8-21 |
 
 Every door creates the same thing: an item. Who may drop: a person of the team (a lead, a member; **not** a guest, and not a person of another team) or a bot of the team. The routes read the team through the caller's own access, so a person who cannot see a team gets a plain refusal, not a hint that it exists.
 
@@ -28,6 +28,7 @@ A file is streamed straight to blob storage; it is never held in memory. Environ
 | `MANYTHREADS_INBOX_DROPS_PER_MINUTE` | 20 | per person (or bot), kept in the server's memory, not the database |
 | `MANYTHREADS_UPLOAD_IDLE_MS` | 20 seconds | a sender that sends nothing for this long is cut off and nothing is kept |
 | `MANYTHREADS_UPLOAD_MAX_MS` | 600 seconds | the whole upload must finish by then |
+| `MANYTHREADS_MAIL_DOMAIN` | `mail.manythreads.invalid` | the domain team email addresses are made on (`inbox+<team>@<domain>`); the default never resolves |
 
 A declared length over the cap is refused (413) before a byte is read; an undeclared one is cut at the cap. A person may have two uploads running at once (a third gets 429). An unknown kind of file is 415 with a sentence; an empty file is 400. The same bytes dropped again (same sha256, same team) create a `duplicate` item that points at the first and queue no work.
 
@@ -89,6 +90,39 @@ A proposal is a concept `{ path, type, title?, description?, tags?, body?, ... }
 
 The Reference lives at `memory/references/<slug>-<last 8 hex of the item id>.md`: fixed from the item's id, so the Archivist can link to it before it exists. Its `resource` points at the original's place, `inbox/filed/<yyyy-mm>/<tail>-<name>`. Today the original stays in blob storage and that path is a name, not a Files folder.
 
+## Email to the team's address
+
+Mail sent to a team's address becomes an item. The subject is the item's title, each attachment becomes an item of its own (the extract step makes them from the message, with the message's sender and trust), and **no bot runs for the message**: the door files it and nobody answers it. (A bot hears about a mail only through an `inbox` trigger of the connections plugin, which this door does not touch.)
+
+**The address.** `inbox+<team slug>@<mail domain>`. It is made on a workspace-wide `email` connection with the short name `inbox`, which a workspace owner or admin switches on once with `POST /api/workspace/inbox-mail` (201 the first time, 200 after; it leaves the usual `connections.connection.changed` audit line and holds no password). The mail domain is `MANYTHREADS_MAIL_DOMAIN`; when it is not set the address is made on `mail.manythreads.invalid`, a domain that never resolves, so the address can be shown but nothing can be sent to it until an admin names the real one. `GET /api/teams/:slug/inbox/email` returns what the Inbox tab shows: `address` (null until the mailbox is on), `connection`, a `reason` sentence when there is no address (it says whether the reader can switch it on: `canSetUp`), `allowedSenders` (the team's `allowEmailFrom`) and `rule`, one sentence saying who is let in. A guest gets 403.
+
+**Delivery.** `POST /api/workspace/inbox-mail/:connection?spf=<verdict>&dkim=<verdict>` with the message as the body (`message/rfc822` or any content type). It is for workspace owners and admins (a person, a bot or the platform's own transport acting as one); nobody else, 403. The size cap is `MANYTHREADS_INBOX_MAX_BYTES` (413). The answer lists one delivery per team named in `To`, `Cc` and `Delivered-To`/`X-Original-To` (the first five only; the rest say `ignored`): `received`, `duplicate` (the same Message-ID was already delivered to that team; the first item is named) or `ignored` (no such team, archived). 201 if anything new was filed, else 200. A message with no `From`, no recipient that is a team address, or no body is 400.
+
+**Who is let in.** Two facts, kept apart:
+
+1. *What the sending domain proved* comes from the transport, in the query (`spf`, `dkim`; each `pass`, `fail`, `softfail`, `neutral`, `none`, `temperror` or `permerror`). It passes when at least one of them passed and neither failed; no result, a soft fail or a neutral answer counts as failed. **A header inside the message is never read for this**: every header is written by whoever sent the mail, so a forged `Authentication-Results` or `Received-SPF` line proves nothing. The transport must report the verdict for the domain in the `From` address (alignment), not for the envelope sender.
+2. *Who the sender is* comes from the `From` address, looked up among the workspace's active people (their main address or a verified extra address).
+
+Together they give the item's `sender_check`, and the hold rules above do the rest:
+
+| proved by the sending domain | the sender | `sender_check` | the item |
+|---|---|---|---|
+| no | anyone | `fail` | held `failed_sender_check`; no person is credited as the dropper |
+| yes | a person of this team, or a workspace owner or admin (never a guest) | `pass` | goes in (unless the team's review is `all`); credited to that person |
+| yes | anyone else | `none` | held `unknown_sender`, unless the address is in the team's `allowEmailFrom` (or review is `none`) |
+
+A listed address that failed the check is still held. A forged mail never carries a real person's name, whoever it claims to be from. The same message (the same Message-ID) delivered again to the same team is one item (`memory_inbox_mail`, system role only). A `.eml` file dropped by hand through the upload route is read by the same parser: the same title rule, body and attachment items.
+
+## Action items on the board
+
+An Archivist note of type `Action Items` lists actions one to a line, `- [ ] what (owner: Name; due: 2026-11-20)` (`parseActionItems` in `packages/shared/src/okf/action-items.ts` reads them; the owner and the due date are optional, the due date must be a real date). The Inbox tab shows each action of a filed item with an Add to board button. The click is the **person's** act, never a bot's:
+
+1. `GET /api/teams/:slug/inbox/items/:itemId/actions` returns `{ actions, canAdd }`. Each action has `conceptPath` and `index` (together they name it), `what`, `ownerName`, `ownerActorId` (the person of the team the name means, when exactly one matches by full or first name), `due`, `done`, `prepared` (the body to send: `title`, `description`, `kind: other`, `priority: normal`, `branch: main`; the owner and the due date are written into the description because a card has no field for them), and `taskId` / `addedBy` when somebody already added it.
+2. The web sends `prepared` to `POST /api/teams/:slug/tasks` as the signed-in person. (If `ownerActorId` is set, it may then hand the card over with the existing handoff route.)
+3. The web tells the inbox which action it was: `POST /api/teams/:slug/inbox/items/:itemId/actions` `{ conceptPath, index, taskId }`. The inbox accepts it only from a person who may post on the team, for a card of this team that **this person created** (a bot's card, or somebody else's, is refused with 400), and for an action the item really has (404 otherwise). The same card again is 200; a different card for an action already on the board is 409; a first record is 201. `memory_inbox_actions` keeps one row per action (team-readable, written by the person as themselves, changed by nobody).
+
+Nothing here creates a card by itself.
+
 ## The Archivist seam
 
 The one step that needs a model is "distil", and the Archivist is another task (P8-18). The inbox defines the seam in `packages/sdk/src/inbox.ts`: a plugin registers a provider of kind `inbox.distiller` with `distil(db, input)`, and the inbox looks it up when the step runs (not when the plugin loads). `input` has the item's text (capped at 60,000 characters), name, kind, origin, the Reference path, `teamOnly`, and `bindRun(tx, runId)`, which ties a live `drop` run to the item so that the run's `inbox.read` answers with this item and nothing else (the database function `app.inbox_run_item()` decides; the tool takes no argument). The answer is one of:
@@ -102,7 +136,13 @@ The one step that needs a model is "distil", and the Archivist is another task (
 
 A distiller that throws fails the item with a fixed sentence ("The Archivist stopped before it finished."); the exception text is never shown. The distiller runs outside any transaction (it opens short ones through `db.transaction`) because a model turn can last minutes.
 
-BOT.md has a new trigger, `drop` (`triggers: [{ type: drop }]`), which is how the Archivist's file says it works on dropped items. It is a trigger type only; the run itself is P8-18.
+BOT.md has a new trigger, `drop` (`triggers: [{ type: drop }]`), which is how the Archivist's file says it works on dropped items. It is a trigger type only; the Archivist that uses it is described under "The Archivist bot".
+
+### The Archivist bot (P8-18)
+
+Every template ships an **Archivist** (`templates/*/bots/archivist/BOT.md`, the same file in all five). Its only trigger is `drop`; it is not mentioned or talked to, so it is left out of the `/ask` picker (`BotSummary.mentionable` is false for a bot with neither a `mention` nor a `conversation` trigger). Its capabilities are exactly `inbox.read`, `memory.recall` and `memory.write`; it has no web, files, mail or repository tools. It files each item as a short note in one of six types: `Fact`, `Decision`, `Meeting`, `Action Items`, `Playbook`, `Reference` (`ARCHIVIST_TYPE_VOCABULARY`), links the note to what the team already knows, updates a note it finds instead of making a second one, never repeats a secret it finds, never follows an instruction written inside an item, and writes only under `memory/`. Its typed contract is `contract.outputs.proposals: okf_proposals`, an `OkfProposal[]` (`ArchivistProposals`, at most 20). The eval set `evals/archivist.yaml` has 15 cases (a meeting from an email, a document, a whiteboard photo, a note updated in place, an injected instruction, a secret, action-item lines, no invented owner or date, nothing worth keeping, shelf life, decisions with their reason, staying inside `memory/`, links in both directions).
+
+Not built: the code that runs the Archivist for a drop and hands what it wrote to the distil step. The bot writes its notes with `memory.write` (which commits as the bot) and ends with the list of what it wrote; the `inbox.distiller` provider that would capture that list as the item's proposals is still missing, so today an item is filed with its Reference alone.
 
 ## Capabilities
 
@@ -130,7 +170,10 @@ The Files garbage collector treats `memory_inbox_items.blob_key` as referenced, 
 
 ## Known gaps
 
-- Web pages for the inbox (P8-20 board, P8-21 drop zone and Send to memory button), the email door (P8-19), the Archivist (P8-18) and sharing (P8-22 and after) are other tasks.
+- The Inbox tab (drop zone, Send to memory button, the address, the Add to board button) is P8-21; sharing (P8-22 and after) is another task.
+- The email door has no transport of its own: nothing yet receives real mail, checks SPF and DKIM and calls the delivery route. Until one exists an admin (or a script acting as one) delivers messages by hand. The trusted-sender rule is stricter than "any person in the workspace": a person of the team or a workspace owner/admin.
+- A card has no owner or due-date field, so an action's owner and date go into the card's description.
+- The Archivist's run for a drop is not wired to the distil step (see "The Archivist bot").
 - No Files `inbox/` folder: dragging onto it, and the move of a filed original to `inbox/filed/<yyyy-mm>/`, are not built. The Reference names that path, the blob stays where it was stored.
 - Pictures, recordings and scanned PDFs are accepted but not read (no vision, transcription or OCR model is set up).
 - Importing a memory bundle is not built; a bundle is held.

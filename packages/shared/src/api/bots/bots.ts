@@ -31,6 +31,11 @@ export const BotSummary = Bot.extend({
    * conversation to open: `POST …/conversation` answers 409 `bot_has_no_conversation_trigger`, and the clients offer no Talk button.
    */
   conversational: z.boolean(),
+  /**
+   * Somebody can address the bot: the definition lists a `mention` or a `conversation` trigger. False for a bot that only runs on a drop, a schedule or
+   * an event (the Archivist, PLAN P8-18): the clients leave it out of the pickers where a person chooses a bot to ask.
+   */
+  mentionable: z.boolean(),
   invalid: z
     .object({
       fieldPath: z.string().nullable(),

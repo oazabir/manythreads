@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "connection": {
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "name"
+      ]
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "domain": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "connection",
+    "created",
+    "domain"
+  ]
+}

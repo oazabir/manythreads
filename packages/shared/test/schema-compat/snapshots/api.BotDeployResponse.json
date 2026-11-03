@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "deployed": {
+      "type": "boolean"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "outcomes": {
+      "minItems": 3,
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "definition",
+              "knowledge",
+              "connection"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "unchanged",
+              "not_used",
+              "refused",
+              "not_run"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "step",
+          "state",
+          "message"
+        ]
+      }
+    }
+  },
+  "required": [
+    "deployed",
+    "summary",
+    "outcomes"
+  ]
+}

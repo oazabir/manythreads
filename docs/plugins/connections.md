@@ -67,6 +67,10 @@ The **dummy transport** (`src/email/dummy.ts`) is what exists today: its mailbox
 * **Writing** `out` and `draft` rows is done only by `app.connection_mail_put_outbound`, which checks that the caller holds the grant for that tool on that connection (a bot with no grant writes nothing, whatever it calls). What is sent is from `<connection>@mail.manythreads.invalid`.
 * A connection must still look usable to be offered (switched on, not expired, `has_credentials`), so a dummy mail connection needs a **placeholder credential** stored like a real one. Nothing reads it.
 
+### The workspace mailbox for team inboxes (P8-19)
+
+Team memory inboxes take mail on one workspace-wide `email` connection with the short name `inbox` (`src/email/inbox-door.ts`). `POST /api/workspace/inbox-mail` (workspace owners and admins only; 403 otherwise) finds or makes it, switches it on when it was off, and leaves the usual `connections.connection.changed` audit line (`created` or `switched`); the answer is `{ connection: { slug, name }, created, domain }` (201 the first time, 200 after). It holds no credential and stores no mail: the **memory-inbox plugin** owns the address (`inbox+<team>@<MANYTHREADS_MAIL_DOMAIN>`), the delivery route and the sender check, and only looks the connection up. It does not use the dummy mailbox or the inbox trigger above, so a mail to a team address starts no bot run. A slug `inbox` that already belongs to a connection of another kind is a 409. See `docs/plugins/memory-inbox.md`, "Email to the team's address".
+
 ## The inbox trigger
 
 A bot whose BOT.md lists `- type: inbox` is woken by mail, not by a message in a channel:

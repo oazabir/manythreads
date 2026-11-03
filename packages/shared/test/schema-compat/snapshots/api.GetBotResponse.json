@@ -161,6 +161,9 @@
         "conversational": {
           "type": "boolean"
         },
+        "mentionable": {
+          "type": "boolean"
+        },
         "invalid": {
           "anyOf": [
             {
@@ -215,6 +218,7 @@
         "actorId",
         "mayTag",
         "conversational",
+        "mentionable",
         "invalid"
       ]
     },

@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
-import { BRAIN_BOT_SLUG, type BotRun, type BotSummary } from '@manythreads/shared';
+import { BRAIN_BOT_SLUG, type BotDeployResponse, type BotRun, type BotSummary } from '@manythreads/shared';
 import { isAdmin, useSession } from '../../app/session';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { AvatarPicker } from '../../avatars/AvatarPicker';
 import { Alert, Avatar, Notice } from '../../components/ui';
 import { useHeaderTopic } from '../../shell/topic';
-import { botMdPath, fetchMcpTools } from './api';
+import { botMdPath, deployBot, fetchMcpTools } from './api';
 import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { TabPanel } from './tabs';
 import { BotTestPanel } from './test-panel';
 import { canOfferTest } from './test-run';
+import { DeployResult } from './deploy-panel';
+import { deployBody, deployFailureText, deployProblem } from './deploy-run';
 
 /*
  * One bot's page (SPEC §7.2/§7.5, PLAN P5-05, `[proto §05]`): the same fourteen tabs for every bot in the workspace, reached from the
@@ -139,6 +141,30 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
     }
   };
 
+  // The Deploy action (P8-34): the definition (with this page's unsaved changes), its knowledge and its connection, in one go, with the three outcomes shown.
+  const [deploying, setDeploying] = useState(false);
+  const [deployed, setDeployed] = useState<BotDeployResponse | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+  const deployWait = deployProblem({ status: bot.status, busy: deploying || busy, issues: draft.issues.length });
+  const doDeploy = async (): Promise<void> => {
+    if (!draft.frontmatter || deployWait !== null) return;
+    const body = deployBody(draft);
+    if (body === null) return;
+    setDeploying(true);
+    setDeployError(null);
+    setDeployed(null);
+    try {
+      const res = await deployBot(slug, bot.slug, body);
+      setDeployed(res);
+      // a commit changes the file: read it again so the page and its base blob are the repo's
+      if (res.outcomes.some((o) => o.step === 'definition' && o.state === 'changed')) onSaved();
+    } catch (err) {
+      setDeployError(deployFailureText(err));
+    } finally {
+      setDeploying(false);
+    }
+  };
+
   const invalid = bot.invalid;
   return (
     <>
@@ -164,6 +190,12 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           {canOfferTest({ canEdit, status: bot.status, conversational: bot.conversational, runtime: bot.runtime }) ? (
             <button type="button" className="btn s" aria-expanded={testing} onClick={() => setTesting((v) => !v)} data-testid="open-test">Test</button>
           ) : null}
+          {/* the Deploy action (P8-34): commits the definition, makes the knowledge ready, switches the connection on; the server checks every part and reports each */}
+          {canEdit && draft.frontmatter ? (
+            <button type="button" className="btn s primary" disabled={deployWait !== null} title={deployWait ?? 'Commit the definition, make its knowledge ready and switch on its connection'} onClick={() => void doDeploy()} data-testid="deploy-bot">
+              {deploying ? 'Deploying…' : 'Deploy'}
+            </button>
+          ) : null}
           {canPick ? <button type="button" className="btn s" onClick={() => setPicking(true)} data-testid="bot-change-picture">Change picture</button> : null}
           <Link className="btn s" to={`/t/${slug}/bots`} data-testid="back-to-roster">Roster</Link>
           <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-in-files">Open the file</Link>
@@ -186,6 +218,9 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
       ) : null}
 
       {testing ? <BotTestPanel slug={slug} botSlug={bot.slug} botName={bot.name} onClose={() => setTesting(false)} /> : null}
+
+      {deployed ? <DeployResult slug={slug} result={deployed} onClose={() => setDeployed(null)} /> : null}
+      {deployError ? <Alert>{deployError}</Alert> : null}
 
       {save?.kind === 'ok' ? (
         <Notice>

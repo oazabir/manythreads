@@ -1,6 +1,8 @@
 import { definePlugin, type PluginEvent } from '@manythreads/sdk';
 import { ChannelMessagePostedEvent } from '@manythreads/shared';
 import { compileBot, compileTeam, dropBot, type Declared } from './compile.ts';
+import { registerInboxDoorSetup } from './email/inbox-door.ts';
+import { createConnectionDeployStep } from './deploy.ts';
 import { linkPost } from './link.ts';
 import type { OAuthDeps } from './oauth/store.ts';
 import { registerPersonRoutes } from './person-routes.ts';
@@ -34,7 +36,8 @@ export default definePlugin({
     migrations: 'migrations',
     // tool.source: this plugin offers tools to bots; secret.seal: credentials are sealed by the platform's secret service; event.subscribe: the compile
     // job.register: the inbox watch; event.emit: `connections.connection.changed` and `connections.inbox.claimed`
-    extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit', 'job.register'],
+    // provider.deploy.step: the connection step of the bot page's Deploy action (P8-34), composed by the workshop plugin
+    extends: ['tool.source', 'secret.seal', 'event.subscribe', 'event.emit', 'job.register', 'provider.deploy.step'],
     events: {
       emits: ['connections.connection.changed', 'connections.inbox.claimed'],
       consumes: ['bots.bot.loaded', 'bots.bot.removed', 'connections.connection.changed', 'channel.message.posted'],
@@ -86,6 +89,8 @@ export default definePlugin({
 
     registerWatch(ctx);
     registerRoutes(ctx);
+    registerInboxDoorSetup(ctx);
+    ctx.providers.register('deploy.step', createConnectionDeployStep(ctx));
     registerPersonRoutes(ctx, oauth);
   },
 });
