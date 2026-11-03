@@ -273,6 +273,116 @@ const notion: ConnectorEntry = {
   ...built('P8-02'),
 };
 
+// ---- work trackers: Jira, Linear, GitHub Issues, Asana (P16-06) -----------------------------------------------------------------------------------------
+// Each is a person's own sign-in (the bot works through it only for the person who asked). Reading and writing are separate services where the provider's scopes
+// allow it, so a person can agree to search and read without agreeing to create or comment (the write service lists the read scopes it needs as well). The card <-> issue mirror, "Create issue" on a message and the
+// `issue_changed` triggers are NOT built (docs/plugins/connections.md): the triggers stay `available: false`.
+
+const jira: ConnectorEntry = {
+  id: 'jira',
+  label: 'Jira',
+  provider: 'Atlassian',
+  categories: ['tickets'],
+  description: 'Search and read Jira issues, and create one, comment or move one to another status. Every change waits for your approval.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    svc('issues', 'Jira issues (read)', 'Search issues and read one, with its comments.', ['read:jira-work']),
+    svc('issues_write', 'Jira issues (create, comment, change status)', 'Create an issue, add a comment, or move an issue to another status. Each change waits for your approval.', ['read:jira-work', 'write:jira-work']),
+  ],
+  tools: [
+    tool('jira.search_issues', 'Search issues', 'read', 'issues'),
+    tool('jira.read_issue', 'Read an issue', 'read', 'issues'),
+    tool('jira.create_issue', 'Create an issue', 'write', 'issues_write'),
+    tool('jira.comment', 'Comment on an issue', 'write', 'issues_write'),
+    tool('jira.change_status', 'Change an issue’s status', 'write', 'issues_write'),
+    dangerous('jira.delete_issue', 'Delete an issue', 'issues_write'),
+  ],
+  triggers: [trig('issue_changed', 'An issue changes')],
+  syncTargets: [],
+  ...built('P16-06'),
+};
+
+const linear: ConnectorEntry = {
+  id: 'linear',
+  label: 'Linear',
+  provider: 'Linear',
+  categories: ['tickets'],
+  description: 'Search and read Linear issues, and create one, comment or move one to another status. Every change waits for your approval.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    svc('issues', 'Linear issues (read)', 'Search issues and read one, with its comments.', ['read']),
+    svc('issues_write', 'Linear issues (create, comment, change status)', 'Create an issue, add a comment, or move an issue to another status. Each change waits for your approval.', ['read', 'write']),
+  ],
+  tools: [
+    tool('linear.search_issues', 'Search issues', 'read', 'issues'),
+    tool('linear.read_issue', 'Read an issue', 'read', 'issues'),
+    tool('linear.create_issue', 'Create an issue', 'write', 'issues_write'),
+    tool('linear.comment', 'Comment on an issue', 'write', 'issues_write'),
+    tool('linear.change_status', 'Change an issue’s status', 'write', 'issues_write'),
+  ],
+  triggers: [trig('issue_changed', 'An issue changes')],
+  syncTargets: [],
+  ...built('P16-06'),
+};
+
+const githubIssues: ConnectorEntry = {
+  id: 'githubissues',
+  label: 'GitHub Issues',
+  provider: 'GitHub',
+  categories: ['tickets', 'code'],
+  description: 'Search and read the issues of the repositories you can open, and open one, comment or close or reopen one. Every change waits for your approval. (The GitHub app for pull requests is a separate connector.)',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    // GitHub's sign-in cannot grant less than write access to the issues of a repository (the scope `repo`), so the tools that write are held to approval, not by the scope.
+    svc('issues', 'GitHub Issues', 'Search and read issues, and open, comment on, close or reopen one in any repository you can open, private ones included. GitHub cannot grant read access alone, so every change waits for your approval.', ['repo']),
+  ],
+  tools: [
+    tool('github_issues.search_issues', 'Search issues', 'read', 'issues'),
+    tool('github_issues.read_issue', 'Read an issue', 'read', 'issues'),
+    tool('github_issues.create_issue', 'Open an issue', 'write', 'issues'),
+    tool('github_issues.comment', 'Comment on an issue', 'write', 'issues'),
+    tool('github_issues.change_status', 'Close or reopen an issue', 'write', 'issues'),
+  ],
+  triggers: [],
+  syncTargets: [],
+  ...built('P16-06'),
+};
+
+const asana: ConnectorEntry = {
+  id: 'asana',
+  label: 'Asana',
+  provider: 'Asana',
+  categories: ['tickets'],
+  description: 'Search and read Asana tasks, and create one, comment or mark one done or open again. Every change waits for your approval.',
+  source: 'first_party',
+  auth: 'oauth',
+  heldBy: ['person'],
+  kind: null,
+  services: [
+    svc('tasks', 'Asana tasks (read)', 'Search tasks and read one, with its comments.', ['tasks:read', 'stories:read', 'workspaces:read', 'users:read']),
+    svc('tasks_write', 'Asana tasks (create, comment, change status)', 'Create a task, add a comment, or mark a task done or open. Each change waits for your approval.', ['tasks:read', 'stories:read', 'workspaces:read', 'users:read', 'tasks:write', 'stories:write']),
+  ],
+  tools: [
+    tool('asana.search_tasks', 'Search tasks', 'read', 'tasks'),
+    tool('asana.read_task', 'Read a task', 'read', 'tasks'),
+    tool('asana.create_task', 'Create a task', 'write', 'tasks_write'),
+    tool('asana.comment', 'Comment on a task', 'write', 'tasks_write'),
+    tool('asana.change_status', 'Mark a task done or open', 'write', 'tasks_write'),
+  ],
+  triggers: [trig('task_changed', 'A task changes')],
+  syncTargets: [],
+  ...built('P16-06'),
+};
+
 // ---- connectors whose tools are not built yet: catalog data only ---------------------------------------------------------------------------------------
 
 const planned = (e: Omit<ConnectorEntry, 'kind' | 'syncTargets' | 'triggers' | 'services'> & Partial<Pick<ConnectorEntry, 'syncTargets' | 'triggers' | 'services'>>): ConnectorEntry => ({
@@ -284,43 +394,6 @@ const planned = (e: Omit<ConnectorEntry, 'kind' | 'syncTargets' | 'triggers' | '
 });
 
 const PLANNED_ENTRIES: ConnectorEntry[] = [
-  planned({
-    id: 'jira',
-    label: 'Jira',
-    provider: 'Atlassian',
-    categories: ['tickets'],
-    description: 'Link a board card to a Jira issue both ways, and create an issue from a message.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team', 'person'],
-    services: [svc('issues', 'Issues', 'Search and read issues, and create or change one with approval.', ['read:jira-work', 'write:jira-work', 'offline_access'], false)],
-    tools: [
-      tool('jira.search_issues', 'Search issues', 'read', 'issues', false),
-      tool('jira.read_issue', 'Read an issue', 'read', 'issues', false),
-      tool('jira.create_issue', 'Create an issue', 'write', 'issues', false),
-      tool('jira.comment', 'Comment on an issue', 'write', 'issues', false),
-      dangerous('jira.delete_issue', 'Delete an issue', 'issues'),
-    ],
-    triggers: [trig('issue_changed', 'An issue changes')],
-    ...soon('P16-06', 'Work trackers arrive in a later phase.'),
-  }),
-  planned({
-    id: 'linear',
-    label: 'Linear',
-    provider: 'Linear',
-    categories: ['tickets'],
-    description: 'Link a board card to a Linear issue both ways, and create an issue from a message.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team', 'person'],
-    services: [svc('issues', 'Issues', 'Search and read issues, and create one with approval.', ['read', 'issues:create'], false)],
-    tools: [
-      tool('linear.search_issues', 'Search issues', 'read', 'issues', false),
-      tool('linear.create_issue', 'Create an issue', 'write', 'issues', false),
-    ],
-    triggers: [trig('issue_changed', 'An issue changes')],
-    ...soon('P16-06', 'Work trackers arrive in a later phase.'),
-  }),
   planned({
     id: 'github',
     label: 'GitHub',
@@ -350,20 +423,6 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
     tools: [tool('gitlab.search_issues', 'Search issues', 'read', null, false), tool('gitlab.create_issue', 'Open an issue', 'write', null, false)],
     triggers: [trig('issue_opened', 'An issue is opened')],
     ...soon('P8-03', 'The GitLab connection is not built yet.'),
-  }),
-  planned({
-    id: 'asana',
-    label: 'Asana',
-    provider: 'Asana',
-    categories: ['tickets'],
-    description: 'Link a board card to an Asana task both ways, and create a task from a message.',
-    source: 'first_party',
-    auth: 'oauth',
-    heldBy: ['team', 'person'],
-    services: [svc('tasks', 'Tasks', 'Search and read tasks, and create one with approval.', ['default'], false)],
-    tools: [tool('asana.search_tasks', 'Search tasks', 'read', 'tasks', false), tool('asana.create_task', 'Create a task', 'write', 'tasks', false)],
-    triggers: [trig('task_changed', 'A task changes')],
-    ...soon('P16-06', 'Work trackers arrive in a later phase.'),
   }),
   planned({
     id: 'zendesk',
@@ -601,7 +660,7 @@ const PLANNED_ENTRIES: ConnectorEntry[] = [
 ];
 
 /** Every connector, in the order the gallery shows them: what works today first, then what is planned. */
-export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [...nativeEntries, google, microsoft, notion, ...PLANNED_ENTRIES];
+export const CONNECTOR_CATALOG: readonly ConnectorEntry[] = [...nativeEntries, google, microsoft, notion, jira, linear, githubIssues, asana, ...PLANNED_ENTRIES];
 
 // ---- reading the catalog -----------------------------------------------------------------------------------------------------------------------------------
 

@@ -2,12 +2,12 @@ import { z } from 'zod';
 import { IsoDateTime } from '../../common/time.ts';
 import type { ApiRoute } from '../client/route.ts';
 
-// The routes of a person's own connections to outside accounts (PLAN P8-02): Google, Microsoft and Notion. A person signs in to the provider once from here; what
+// The routes of a person's own connections to outside accounts (PLAN P8-02): Google, Microsoft and Notion, and the work trackers Jira, Linear, GitHub Issues and Asana (P16-06). A person signs in to the provider once from here; what
 // comes back (the tokens) is sealed by the platform and never returned by any route. A bot uses it only for a run that this person asked, and only the tools the
 // bot's definition names. docs/plugins/connections.md.
 
 /** The providers a person can connect. A new provider is a new entry here and in the connections plugin. */
-export const PersonProviderId = z.enum(['google', 'microsoft', 'notion']);
+export const PersonProviderId = z.enum(['google', 'microsoft', 'notion', 'jira', 'linear', 'githubissues', 'asana']);
 export type PersonProviderId = z.infer<typeof PersonProviderId>;
 
 export const PersonConnectionParams = z.object({ provider: PersonProviderId });

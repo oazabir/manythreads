@@ -118,7 +118,7 @@ afterAll(async () => {
 describe('connecting', () => {
   it('lists the providers with what each offers, and says whether the server is set up for it', async () => {
     const list = await providersOf(omar);
-    expect(list.map((p) => p.id)).toEqual(['google', 'microsoft', 'notion']);
+    expect(list.map((p) => p.id)).toEqual(['google', 'microsoft', 'notion', 'jira', 'linear', 'githubissues', 'asana']);
     const google = list[0]!;
     expect(google).toMatchObject({ configured: true, connected: false, state: null, accountLabel: null });
     expect(google.redirectUri).toMatch(/\/api\/me\/connections\/google\/callback$/);

@@ -23,11 +23,16 @@ export class ProviderError extends Error {
 }
 
 export interface ApiInit {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT';
   /** A list value is sent as the same parameter repeated (Gmail's `metadataHeaders`). */
   query?: Record<string, string | number | readonly string[] | undefined>;
   body?: unknown;
   headers?: Record<string, string>;
+  /**
+   * For a provider that answers "you are not signed in" inside a 200 (Linear's GraphQL errors): true when the answer says that, so the call is made once more with a freshly
+   * renewed token, like a 401. The answer is read by the caller; nothing of it is kept here.
+   */
+  signedOut?: (answer: unknown) => boolean;
 }
 
 /** What a tool calls. `connection` is already known to be the asker's own and usable. */
@@ -37,6 +42,12 @@ export interface ProviderApi {
   text(path: string, init?: ApiInit): Promise<{ text: string; truncated: boolean }>;
   now(): Date;
 }
+
+/** Headers a provider's API wants on every call (GitHub: its media type, API version and a user agent; Notion: its version). */
+const EXTRA_HEADERS: Readonly<Partial<Record<PersonProviderId, Record<string, string>>>> = {
+  notion: { 'notion-version': '2022-06-28' },
+  githubissues: { accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', 'user-agent': 'manythreads' },
+};
 
 function explain(provider: PersonProviderId, status: number): string {
   const label = PROVIDERS[provider].label;
@@ -60,7 +71,7 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
       if (typeof v === 'string' || typeof v === 'number') url.searchParams.set(k, String(v));
       else if (v !== undefined) for (const one of v) url.searchParams.append(k, one);
     }
-    const headers: Record<string, string> = { authorization: `Bearer ${token}`, accept: 'application/json', ...(connection.provider === 'notion' ? { 'notion-version': '2022-06-28' } : {}), ...init.headers };
+    const headers: Record<string, string> = { authorization: `Bearer ${token}`, accept: 'application/json', ...EXTRA_HEADERS[connection.provider], ...init.headers };
     let body: string | undefined;
     if (init.body !== undefined) {
       headers['content-type'] = 'application/json';
@@ -87,16 +98,21 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
     now: () => deps.now(),
 
     async json(path, init = {}) {
-      const res = await call(path, init);
-      if (!res.ok) {
-        await res.body?.cancel();
-        throw new ProviderError(res.status, explain(connection.provider, res.status));
-      }
-      try {
-        return await readJson(res);
-      } catch {
-        throw new ProviderError(502, `${PROVIDERS[connection.provider].label} answered with more than can be read.`);
-      }
+      const read = async (res: Response): Promise<unknown> => {
+        if (!res.ok) {
+          await res.body?.cancel();
+          throw new ProviderError(res.status, explain(connection.provider, res.status));
+        }
+        try {
+          return await readJson(res);
+        } catch {
+          throw new ProviderError(502, `${PROVIDERS[connection.provider].label} answered with more than can be read.`);
+        }
+      };
+      const answer = await read(await call(path, init));
+      // an answer that says "not signed in" in its body gets the same one renewal a 401 gets (the call did not run, so asking again cannot do it twice)
+      if (init.signedOut?.(answer)) return read(await send(await accessTokenFor(deps, connection, { force: true }), path, init));
+      return answer;
     },
 
     async text(path, init = {}) {
@@ -139,6 +155,17 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
   };
 }
 
+const rec = (v: unknown): Record<string, unknown> | null => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+/** Where each provider says whose account a token is (Notion gives it with the token). */
+const IDENTITY: Readonly<Partial<Record<PersonProviderId, { path: string; graphql?: string; pick(doc: Record<string, unknown> | null): unknown }>>> = {
+  google: { path: '/oauth2/v3/userinfo', pick: (d) => d?.['email'] },
+  microsoft: { path: '/me?$select=mail,userPrincipalName', pick: (d) => d?.['mail'] ?? d?.['userPrincipalName'] },
+  jira: { path: '/me', pick: (d) => d?.['email'] ?? d?.['name'] },
+  linear: { path: '/graphql', graphql: '{ viewer { email } }', pick: (d) => rec(rec(d?.['data'])?.['viewer'])?.['email'] },
+  githubissues: { path: '/user', pick: (d) => d?.['login'] },
+  asana: { path: '/users/me', pick: (d) => rec(d?.['data'])?.['email'] },
+};
+
 /**
  * Whose account a fresh sign-in is, in a few words for the screen (an address, or Notion's workspace name). Asked once, with the token that was just handed over and
  * before anything is saved; a failure just means the screen has no label.
@@ -146,11 +173,12 @@ export function createProviderApi(deps: OAuthDeps, connection: { id: string; wor
 export async function accountLabelFor(deps: Pick<OAuthDeps, 'env' | 'fetchImpl'>, provider: PersonProviderId, accessToken: string, hint: string | null): Promise<string | null> {
   if (provider === 'notion') return hint;
   const endpoints = endpointsFor(provider, deps.env);
-  const path = provider === 'google' ? '/oauth2/v3/userinfo' : '/me?$select=mail,userPrincipalName';
+  const who = IDENTITY[provider]!;
   try {
-    const res = await (deps.fetchImpl ?? ((url, init) => fetch(url, init)))(`${endpoints.apiBase}${path}`, {
-      method: 'GET',
-      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+    const res = await (deps.fetchImpl ?? ((url, init) => fetch(url, init)))(`${endpoints.apiBase}${who.path}`, {
+      method: who.graphql ? 'POST' : 'GET',
+      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json', ...EXTRA_HEADERS[provider], ...(who.graphql ? { 'content-type': 'application/json' } : {}) },
+      ...(who.graphql ? { body: JSON.stringify({ query: who.graphql }) } : {}),
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: 'manual',
     });
@@ -158,8 +186,7 @@ export async function accountLabelFor(deps: Pick<OAuthDeps, 'env' | 'fetchImpl'>
       await res.body?.cancel();
       return null;
     }
-    const doc = (await readJson(res)) as Record<string, unknown> | null;
-    const label = provider === 'google' ? doc?.['email'] : (doc?.['mail'] ?? doc?.['userPrincipalName']);
+    const label = who.pick((await readJson(res)) as Record<string, unknown> | null);
     return typeof label === 'string' && label !== '' ? label.slice(0, 200) : null;
   } catch {
     return null;

@@ -22,6 +22,11 @@ export interface PersonToolDef {
   run(api: ProviderApi, input: Record<string, unknown>): Promise<unknown>;
   /** For a write: the card an approver reads (a line for the inbox and the values that matter), built from the arguments after they passed the schema. */
   card?(input: Record<string, unknown>): ToolApprovalCard;
+  /**
+   * For a write that goes to one of several places the person owns (a Jira site): the words that name the place, asked of the provider when the card is made and added to the
+   * card (`site`, and in brackets at the end of the summary). Null, or a failure, adds nothing.
+   */
+  where?(api: ProviderApi): Promise<string | null>;
 }
 
 export const TEXT_CAP = 20_000;

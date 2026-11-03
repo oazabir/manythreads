@@ -4,6 +4,10 @@
   "enum": [
     "google",
     "microsoft",
-    "notion"
+    "notion",
+    "jira",
+    "linear",
+    "githubissues",
+    "asana"
   ]
 }

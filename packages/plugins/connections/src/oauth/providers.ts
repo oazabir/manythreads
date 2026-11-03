@@ -24,6 +24,8 @@ export interface OAuthProviderDef {
   clientAuth: 'body' | 'basic';
   /** The token address wants JSON (Notion) rather than a form. */
   tokenBody: 'form' | 'json';
+  /** What joins the scopes in the consent address: a space (the default) or, for Linear, a comma. */
+  scopeSeparator?: string;
   /** Scopes asked for on every sign-in, whatever the person ticked (identity, and the offline grant a refresh token needs). */
   baseScopes: readonly string[];
   /** The provider takes a `scope` parameter at all (Notion's permissions are set on the integration itself). */
@@ -90,6 +92,63 @@ export const PROVIDERS: Readonly<Record<PersonProviderId, OAuthProviderDef>> = {
     defaultServices: ['notion'],
     services: catalogServices('notion'),
   },
+  // ---- the work trackers (P16-06) ----
+  jira: {
+    id: 'jira',
+    label: 'Jira',
+    pkce: false,
+    clientAuth: 'body',
+    tokenBody: 'json',
+    // read:me is the identity the screen shows; offline_access is the refresh token (Atlassian rotates it on every renewal)
+    baseScopes: ['offline_access', 'read:me'],
+    scopeParam: true,
+    authorizeExtra: { audience: 'api.atlassian.com', prompt: 'consent' },
+    refreshes: true,
+    defaultServices: ['issues'],
+    services: catalogServices('jira'),
+  },
+  linear: {
+    id: 'linear',
+    label: 'Linear',
+    pkce: false,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    scopeSeparator: ',',
+    baseScopes: [],
+    scopeParam: true,
+    authorizeExtra: { prompt: 'consent' },
+    refreshes: true,
+    defaultServices: ['issues'],
+    services: catalogServices('linear'),
+  },
+  // the id has no underscore: a connection's slug is its provider id, and a slug is lower-case letters, digits and hyphens (a hyphen would not be a valid variable name in MANYTHREADS_OAUTH_<ID>_*)
+  githubissues: {
+    id: 'githubissues',
+    label: 'GitHub Issues',
+    pkce: true,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    baseScopes: [],
+    scopeParam: true,
+    authorizeExtra: {},
+    // an OAuth app's token does not expire; one made by a GitHub App with expiring tokens would send a refresh token, which this treats as none (the person connects again)
+    refreshes: false,
+    defaultServices: ['issues'],
+    services: catalogServices('githubissues'),
+  },
+  asana: {
+    id: 'asana',
+    label: 'Asana',
+    pkce: true,
+    clientAuth: 'body',
+    tokenBody: 'form',
+    baseScopes: [],
+    scopeParam: true,
+    authorizeExtra: {},
+    refreshes: true,
+    defaultServices: ['tasks'],
+    services: catalogServices('asana'),
+  },
 };
 
 export const providerIds = (): PersonProviderId[] => Object.keys(PROVIDERS) as PersonProviderId[];
@@ -116,7 +175,7 @@ export type Env = Readonly<Record<string, string | undefined>>;
 export interface Endpoints {
   authorizeUrl: string;
   tokenUrl: string;
-  /** Null when the provider has no revoke address (Microsoft: signing out of Graph is a wider act than this). */
+  /** Null when the provider has no revoke address (Microsoft: signing out of Graph is a wider act than this), or when its revoke call does not fit the shared one (Linear wants the token in a header; Asana wants the app's id and secret as well; GitHub revokes at a per-app address): the sealed tokens are deleted here either way, and the person can remove the grant at the provider. */
   revokeUrl: string | null;
   /** The base of the provider's API; the tools add their own paths. */
   apiBase: string;
@@ -156,6 +215,22 @@ export function endpointsFor(id: PersonProviderId, env: Env = process.env, tenan
         apiBase: 'https://graph.microsoft.com/v1.0',
       };
     }
+    case 'jira':
+      return fake
+        ? { authorizeUrl: `${fake}/jira/authorize`, tokenUrl: `${fake}/jira/oauth/token`, revokeUrl: null, apiBase: `${fake}/jira-api` }
+        : { authorizeUrl: 'https://auth.atlassian.com/authorize', tokenUrl: 'https://auth.atlassian.com/oauth/token', revokeUrl: null, apiBase: 'https://api.atlassian.com' };
+    case 'linear':
+      return fake
+        ? { authorizeUrl: `${fake}/linear/oauth/authorize`, tokenUrl: `${fake}/linear/oauth/token`, revokeUrl: null, apiBase: `${fake}/linear-api` }
+        : { authorizeUrl: 'https://linear.app/oauth/authorize', tokenUrl: 'https://api.linear.app/oauth/token', revokeUrl: null, apiBase: 'https://api.linear.app' };
+    case 'githubissues':
+      return fake
+        ? { authorizeUrl: `${fake}/github/login/oauth/authorize`, tokenUrl: `${fake}/github/login/oauth/access_token`, revokeUrl: null, apiBase: `${fake}/github-api` }
+        : { authorizeUrl: 'https://github.com/login/oauth/authorize', tokenUrl: 'https://github.com/login/oauth/access_token', revokeUrl: null, apiBase: 'https://api.github.com' };
+    case 'asana':
+      return fake
+        ? { authorizeUrl: `${fake}/asana/-/oauth_authorize`, tokenUrl: `${fake}/asana/-/oauth_token`, revokeUrl: null, apiBase: `${fake}/asana-api/api/1.0` }
+        : { authorizeUrl: 'https://app.asana.com/-/oauth_authorize', tokenUrl: 'https://app.asana.com/-/oauth_token', revokeUrl: null, apiBase: 'https://app.asana.com/api/1.0' };
     case 'notion':
       return fake
         ? { authorizeUrl: `${fake}/v1/oauth/authorize`, tokenUrl: `${fake}/v1/oauth/token`, revokeUrl: `${fake}/v1/oauth/revoke`, apiBase: `${fake}/v1` }

@@ -2,6 +2,7 @@ import type { ToolSourceTool } from '@manythreads/sdk';
 import { z } from 'zod';
 import { GOOGLE_TOOLS } from './google-tools.ts';
 import { MICROSOFT_TOOLS } from './microsoft-tools.ts';
+import { TRACKER_TOOLS } from './tracker-tools.ts';
 import { asArray, asRecord, clip, enc, idOf, limit, Q, query, str, title, untrusted, type PersonToolDef } from './person-kit.ts';
 
 // The tools of a person's Notion connection (PLAN P8-02), and the list of every person tool. The shared helpers are in person-kit.ts, Google's tools in google-tools.ts and Microsoft 365's in microsoft-tools.ts.
@@ -92,7 +93,7 @@ const NOTION_TOOLS: PersonToolDef[] = [
   },
 ];
 
-export const PERSON_TOOL_DEFS: readonly PersonToolDef[] = [...GOOGLE_TOOLS, ...MICROSOFT_TOOLS, ...NOTION_TOOLS];
+export const PERSON_TOOL_DEFS: readonly PersonToolDef[] = [...GOOGLE_TOOLS, ...MICROSOFT_TOOLS, ...NOTION_TOOLS, ...TRACKER_TOOLS];
 
 const BY_NAME: ReadonlyMap<string, PersonToolDef> = new Map(PERSON_TOOL_DEFS.map((t) => [t.name, t]));
 export const personToolDef = (name: string): PersonToolDef | undefined => BY_NAME.get(name);

@@ -99,7 +99,7 @@ export function authorizationUrl(
   url.searchParams.set('client_id', input.clientId);
   url.searchParams.set('redirect_uri', input.redirectUri);
   url.searchParams.set('state', input.state);
-  if (provider.scopeParam && input.scopes.length > 0) url.searchParams.set('scope', input.scopes.join(' '));
+  if (provider.scopeParam && input.scopes.length > 0) url.searchParams.set('scope', input.scopes.join(provider.scopeSeparator ?? ' '));
   if (input.challenge !== null) {
     url.searchParams.set('code_challenge', input.challenge);
     url.searchParams.set('code_challenge_method', 'S256');
@@ -148,13 +148,16 @@ async function tokenRequest(call: TokenCall, fields: Record<string, string>): Pr
   }
   if (!doc || typeof doc['access_token'] !== 'string' || doc['access_token'] === '') throw new OAuthError('rejected', `${provider.label} answered without an access token.`);
   const expires = typeof doc['expires_in'] === 'number' && Number.isFinite(doc['expires_in']) && doc['expires_in'] > 0 ? Math.floor(doc['expires_in']) : null;
-  const scope = typeof doc['scope'] === 'string' && doc['scope'].trim() !== '' ? doc['scope'].trim().split(/\s+/).slice(0, 64) : null;
+  // a string with spaces (most providers) or commas (Linear), or a list of strings (Linear's token answer)
+  const rawScope = doc['scope'];
+  const scopeWords = typeof rawScope === 'string' ? rawScope.trim().split(/[\s,]+/) : Array.isArray(rawScope) ? rawScope.filter((x): x is string => typeof x === 'string') : [];
+  const scope = scopeWords.filter((w) => w !== '').slice(0, 64);
   const workspace = typeof doc['workspace_name'] === 'string' ? doc['workspace_name'].slice(0, 120) : null;
   return {
     accessToken: doc['access_token'],
     refreshToken: typeof doc['refresh_token'] === 'string' && doc['refresh_token'] !== '' ? doc['refresh_token'] : null,
     expiresInSec: expires,
-    scopes: scope,
+    scopes: scope.length > 0 ? scope : null,
     accountHint: workspace,
   };
 }

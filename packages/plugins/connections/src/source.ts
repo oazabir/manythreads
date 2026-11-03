@@ -94,7 +94,21 @@ export function createConnectionsSource(deps: OAuthDeps): ToolSource {
     async approval(tx: PluginTx, run: BotRunHandle, tool: string, input: Record<string, unknown>): Promise<ToolApprovalCard | null> {
       // a write through a person's own connection waits whatever the definition says (the compile sets it); here the approver is shown what will really be sent or changed
       const person = personToolDef(tool);
-      if (person) return person.kind === 'write' && person.card && inputProblem(tool, input) === null ? person.card(input) : null;
+      if (person) {
+        if (person.kind !== 'write' || !person.card || inputProblem(tool, input) !== null) return null;
+        const card = person.card(input);
+        if (!person.where || !run.askerActorId) return card;
+        // the place the change goes to (a Jira site) is asked of the provider now, so the approver reads it; a failure here only leaves it off, the call itself answers on its own
+        try {
+          const connection = await usablePersonConnection(deps, { workspaceId: run.workspaceId, ownerId: run.askerActorId, provider: person.provider });
+          const place = connection ? await person.where(createProviderApi(deps, { id: connection.id, workspaceId: run.workspaceId, provider: person.provider })) : null;
+          if (place === null) return card;
+          const suffix = ` on ${place.replace(/\s+/g, ' ').trim().slice(0, 60)}`;
+          return { summary: `${card.summary.slice(0, 300 - suffix.length)}${suffix}`, preview: { ...card.preview, site: place.replace(/\s+/g, ' ').trim().slice(0, 150) } };
+        } catch {
+          return card;
+        }
+      }
       const granted = (await tx.query<ConnectionRow>(GRANTED, [run.botActorId, run.teamId, tool])).rows[0];
       if (!granted || !isUsable(granted) || inputProblem(tool, input) !== null) return null; // the call itself is refused for that reason
       const kind = kindOf(granted.kind);
