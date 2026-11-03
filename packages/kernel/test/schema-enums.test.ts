@@ -45,6 +45,13 @@ import {
   InboxKind,
   InboxOrigin,
   InboxSenderCheck,
+  ShareApproval,
+  ShareLinkEnd,
+  ShareLinkState,
+  ShareMode,
+  ShareRunState,
+  ShareRunTrigger,
+  ShareStatus,
   InboxState,
   BotRunnerKind,
   BotRunnerStatus,
@@ -114,6 +121,7 @@ import {
   connectionsMigrationSource,
   memoryInboxMigrationSource,
   memoryMigrationSource,
+  memoryShareMigrationSource,
   onboardingMigrationSource,
   proposalsMigrationSource,
   workshopMigrationSource,
@@ -195,6 +203,14 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'memory_inbox_items.hold_reason': InboxHoldReason,
   'memory_inbox_items.sender_check': InboxSenderCheck,
   'memory_inbox_items.failed_stage': InboxFailureStage,
+  'memory_shares.status': ShareStatus,
+  'memory_shares.mode': ShareMode,
+  'memory_shares.approval': ShareApproval,
+  'memory_share_links.state': ShareLinkState,
+  'memory_share_links.ended_reason': ShareLinkEnd,
+  'memory_share_runs.state': ShareRunState,
+  'memory_share_runs.trigger_kind': ShareRunTrigger,
+  'memory_share_runs.mode': ShareMode,
   'onboarding_marks.step': OnboardingMarkStep,
   'onboarding_marks.kind': OnboardingMarkKind,
   'approvals.source': ApprovalSource,
@@ -265,7 +281,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

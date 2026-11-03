@@ -498,6 +498,12 @@ export const memoryInboxMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/memory-inbox/migrations/', import.meta.url)),
 };
 
+/** Migrations of the memory-share plugin (`memory_shares`, `memory_share_links`, `memory_share_runs`, the digest approval doors); needs the kernel's, teams, channels, files, bots, approvals and memory migrations. */
+export const memoryShareMigrationSource: MigrationSource = {
+  namespace: 'memory-share',
+  dir: fileURLToPath(new URL('../../plugins/memory-share/migrations/', import.meta.url)),
+};
+
 /** Migrations of the analytics plugin (`analytics_events` and its monthly partitions, `analytics_daily`, `analytics_progress`); they read only kernel tables, so they can be passed in `sources` anywhere after the kernel's. */
 export const analyticsMigrationSource: MigrationSource = {
   namespace: 'analytics',

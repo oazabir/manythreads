@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "received",
+    "original",
+    "personal",
+    "draft",
+    "deprecated",
+    "team_only",
+    "trust",
+    "stale",
+    "unreadable",
+    "dlp",
+    "too_large"
+  ]
+}

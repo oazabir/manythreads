@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "string",
+  "enum": [
+    "building",
+    "empty",
+    "blocked",
+    "awaiting_approval",
+    "ready",
+    "denied",
+    "expired",
+    "failed",
+    "sent"
+  ]
+}

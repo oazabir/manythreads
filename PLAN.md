@@ -338,8 +338,8 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P8-19 | Email door. A team inbox address on a workspace email connection … | Not built |  | no email door, SPF/DKIM hold, .eml drop |
 | P8-20 | Action items to the board. An Action Items concept's item card offers … | Not built |  | no Add to board on Action Items |
 | P8-21 | Web: Memory screen Inbox tab: drop zone and New note, the team's … | Not built | clients/web/src/screens/memory/MemoryScreen.tsx has no Inbox tab | whole Inbox tab |
-| P8-22 | Shares: definition and selection. ShareDefinition Zod; loader for … | Not built | - (no memory-share plugin, no 0064, no ShareDefinition) | everything |
-| P8-23 | Digest builder and send. Build the OKF bundle (index.md with only … | Not built |  | no digest builder/send, no memory.digest.send approval |
+| P8-22 | Shares: definition and selection. ShareDefinition Zod; loader for … | Built | `plugins/memory-share` (migration 0001 in its own folder), `ShareDefinition`, loader, selection engine; docs/plugins/memory-share.md | accept and deliver (P8-24), receive (P8-25), web page (P8-26) |
+| P8-23 | Digest builder and send. Build the OKF bundle (index.md with only … | Built to `ready` | digest builder, OKF check, DLP at pre_egress, Approvals row `memory.digest.send`, `approval: auto`, cron tick | the send itself (P8-24) |
 | P8-24 | Accept and deliver. Naming a destination opens a requested link and … | Not built |  | no accept/deliver, no app.deliver_inbox_item, no Memory sharing switch |
 | P8-25 | Receive and import. The no-model fast path: validate the bundle (path … | Not built |  | no receive/import path |
 | P8-26 | Web: Memory screen Sharing tab: outgoing shares (destinations with … | Not built | clients/web/src/screens/memory/MemoryScreen.tsx has no Sharing tab; screens/admin has only llm | Sharing tab, approval card, workspace switch |

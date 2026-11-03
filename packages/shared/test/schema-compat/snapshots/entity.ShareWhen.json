@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "string",
+      "const": "manual"
+    },
+    {
+      "type": "object",
+      "properties": {
+        "manual": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "manual"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "cron": {
+          "type": "string",
+          "pattern": "^\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$"
+        }
+      },
+      "required": [
+        "cron"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

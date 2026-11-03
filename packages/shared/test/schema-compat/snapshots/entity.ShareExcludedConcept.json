@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "received",
+        "original",
+        "personal",
+        "draft",
+        "deprecated",
+        "team_only",
+        "trust",
+        "stale",
+        "unreadable",
+        "dlp",
+        "too_large"
+      ]
+    }
+  },
+  "required": [
+    "path",
+    "title",
+    "reason"
+  ],
+  "additionalProperties": false
+}

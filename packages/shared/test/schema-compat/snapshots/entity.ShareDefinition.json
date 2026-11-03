@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "to": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+      }
+    },
+    "select": {
+      "default": {
+        "minTrust": "unverified",
+        "skipStale": true
+      },
+      "type": "object",
+      "properties": {
+        "paths": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "types": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "tags": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "minTrust": {
+          "default": "unverified",
+          "type": "string",
+          "enum": [
+            "unverified",
+            "machine-confirmed",
+            "human-reviewed"
+          ]
+        },
+        "skipStale": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "minTrust",
+        "skipStale"
+      ],
+      "additionalProperties": false
+    },
+    "mode": {
+      "default": "summary",
+      "type": "string",
+      "enum": [
+        "full",
+        "summary"
+      ]
+    },
+    "when": {
+      "default": "manual",
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "manual"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "manual": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "manual"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "cron": {
+              "type": "string",
+              "pattern": "^\\S+\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S+$"
+            }
+          },
+          "required": [
+            "cron"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "approval": {
+      "default": "review",
+      "type": "string",
+      "enum": [
+        "review",
+        "auto"
+      ]
+    },
+    "approvers": {
+      "default": [
+        "role:lead"
+      ],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(role:[a-z][a-z0-9-]*|person:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+      }
+    }
+  },
+  "required": [
+    "name",
+    "to",
+    "select",
+    "mode",
+    "when",
+    "approval",
+    "approvers"
+  ],
+  "additionalProperties": false
+}
