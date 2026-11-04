@@ -53,6 +53,9 @@ importers:
       '@manythreads/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@proicons/react':
+        specifier: 4.13.7
+        version: 4.13.7(react@19.3.0)
       '@tiptap/core':
         specifier: ^3.31.4
         version: 3.31.4(@tiptap/pm@3.31.4)
@@ -2608,6 +2611,11 @@ packages:
     resolution: {integrity: sha512-vSMYtL/zOcFpvJCW71Q/OEGQb7KYBPAdKh35WNSkaZA75JlAO8ED8UN6GUNTm3drWomcbcqRPFqQbLae8yBTdg==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@proicons/react@4.13.7':
+    resolution: {integrity: sha512-7gU07LigfrbbePnO/j/a83UJbw8J7PalP9Aspb1OiBkJ3af8/QHd31X1Bq3ReZVUiZPb+5+9eCjWWMYP7dnReQ==}
+    peerDependencies:
+      react: ^19.2.0
 
   '@remix-run/route-pattern@0.22.1':
     resolution: {integrity: sha512-czdGJWh09Lapvcqt7Vb09KlrU2PhRJ8xQaI+AItTuD9aDJ5MAgxnS38lnys6Ll+6RJEqPiaUqTwIQhVLwFvv+w==}
@@ -5730,6 +5738,10 @@ snapshots:
   '@playwright/test@1.56.1':
     dependencies:
       playwright: 1.56.1
+
+  '@proicons/react@4.13.7(react@19.3.0)':
+    dependencies:
+      react: 19.3.0
 
   '@remix-run/route-pattern@0.22.1': {}
 

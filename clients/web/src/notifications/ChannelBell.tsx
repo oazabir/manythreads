@@ -4,6 +4,7 @@ import { BellIcon, BellOffIcon } from '../shell/icons';
 import { useDismiss } from '../shell/useDismiss';
 import { levelsStore } from './levelsStore';
 import { LEVEL_HELP, LEVEL_ORDER, levelOf } from './settingsModel';
+import { CheckIcon } from '../shell/icons';
 
 export type ChannelBellTarget = { channelId: string; channelName: string | null; channelKind: 'channel' | 'dm' | 'bot_conversation' };
 
@@ -53,7 +54,7 @@ export function ChannelBell({ channel }: { channel: ChannelBellTarget }) {
         <div className="chn-menu" role="menu" aria-label="Notifications for this channel">
           {LEVEL_ORDER.map((level) => (
             <button key={level} type="button" role="menuitemradio" aria-checked={effective === level} className="chn-opt" data-testid={`level-${level}`} onClick={() => void choose(level)}>
-              <span className="chn-name">{LEVEL_LABEL[level]}{effective === level ? <span className="chn-check" aria-hidden="true"> ✓</span> : null}</span>
+              <span className="chn-name">{LEVEL_LABEL[level]}{effective === level ? <span className="chn-check" aria-hidden="true"> <CheckIcon size={12} /></span> : null}</span>
               <span className="chn-help">{LEVEL_HELP[level]}</span>
             </button>
           ))}

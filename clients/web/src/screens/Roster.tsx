@@ -24,6 +24,7 @@ import { QueryView } from '../components/states';
 import { Alert, Avatar, Field, Notice, Time } from '../components/ui';
 import { PresenceDot } from '../presence/PresenceDot';
 import { PersonLink } from '../presence/ProfileCard';
+import { CloseIcon } from '../shell/icons';
 
 /** /teams/:slug is the roster. */
 export function TeamRedirect() {
@@ -87,7 +88,7 @@ function PersonRow({ m, slug, canManage, tagNames, act }: { m: RosterMember; slu
           <span key={t} className="tagx">
             {t}
             {canManage ? (
-              <button type="button" className="tag-x" aria-label={`Remove ${t} from ${m.displayName}`} onClick={() => void act(() => unassignTeamTag(slug, m.personId, t))}>×</button>
+              <button type="button" className="tag-x" aria-label={`Remove ${t} from ${m.displayName}`} onClick={() => void act(() => unassignTeamTag(slug, m.personId, t))}><CloseIcon size={10} /></button>
             ) : null}
           </span>
         ))}

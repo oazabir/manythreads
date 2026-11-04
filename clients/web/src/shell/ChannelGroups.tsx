@@ -7,7 +7,7 @@ import { useUnread } from '../channels/hooks';
 import { levelsStore } from '../notifications/levelsStore';
 import { useShell } from './context';
 import { useChannelFeed } from './channelFeed';
-import { ArrowDownIcon, ArrowUpIcon, CaretIcon, LockIcon, MoreIcon, OptionsIcon, StarIcon } from './icons';
+import { AddIcon, ArrowDownIcon, ArrowUpIcon, CaretIcon, LockIcon, MoreIcon, OptionsIcon, StarIcon } from './icons';
 import { channelPath } from './nav';
 import { NewChannelDialog } from './NewChannel';
 import { canCreateChannel } from './newChannel';
@@ -532,7 +532,7 @@ export function ChannelGroups({ slug, guest }: { slug: string; guest: boolean })
       {mayCreate ? (
         <div className="nc-row">
           <button type="button" className="it nc-btn" aria-haspopup="dialog" data-testid="new-channel" onClick={() => setCreatingIn(slug)}>
-            <span className="h" aria-hidden="true">+</span>
+            <span className="h" aria-hidden="true"><AddIcon size={14} /></span>
             <span className="it-label">New channel</span>
           </button>
         </div>

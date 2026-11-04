@@ -8,6 +8,7 @@ import { Field } from '../../components/ui';
 import { clearOAuthApp, fetchOAuthApps, putOAuthApp } from './personApi';
 import { message } from './personWords';
 import { appSourceLine, checkApp } from './appWords';
+import { BackIcon } from '../../shell/icons';
 
 /*
  * `/settings/connections/apps` (PLAN P16-02), for workspace admins: the app this workspace signs its people in to Google, Microsoft and Notion with. The admin makes an
@@ -18,7 +19,7 @@ export function OAuthApps() {
   const q = useQuery('oauth-apps', fetchOAuthApps);
   return (
     <PlainFrame title="Sign-in apps">
-      <p className="cn-back"><Link to="/settings/connections">← Back to connected accounts</Link></p>
+      <p className="cn-back"><Link to="/settings/connections"><BackIcon size={12} /> Back to connected accounts</Link></p>
       <p className="lede">
         People connect their own Google, Microsoft and Notion accounts with an app that belongs to your company, not to us. Make the app at the provider, register the
         address shown under it, then enter its client id and client secret here. The secret is kept sealed and cannot be shown again.

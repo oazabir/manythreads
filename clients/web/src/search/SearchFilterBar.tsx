@@ -6,6 +6,7 @@ import { useQuery } from '../app/useQuery';
 import { usePeople } from '../channels/hooks';
 import { usePanel } from '../kernel/panel';
 import { searchEntry } from './searchEntry';
+import { CloseIcon } from '../shell/icons';
 
 /** The words of a filter, in plain language (the chip and the screen-reader label). */
 export function filterChips(f: SearchFilters): { key: string; label: string; remove: SearchFilters }[] {
@@ -42,7 +43,7 @@ export function SearchFilterBar({ filters, channelId }: { filters: SearchFilters
             <li key={c.key} className="sf-chip" data-testid="search-chip">
               <span>{c.label}</span>
               <button type="button" className="sf-x" aria-label={`Remove filter: ${c.label}`} onClick={() => run(c.remove)}>
-                ×
+                <CloseIcon size={10} />
               </button>
             </li>
           ))}
@@ -172,7 +173,7 @@ function Saved({ id, filters, channelId }: { id: string; filters: SearchFilters;
                 <span>{s.query}</span>
               </button>
               <button type="button" className="sf-x" aria-label={`Delete saved search ${s.name}`} disabled={busy} onClick={() => void guard(() => deleteSavedSearch(s.id), 'Could not remove it. Try again.')}>
-                ×
+                <CloseIcon size={10} />
               </button>
             </li>
           ))}

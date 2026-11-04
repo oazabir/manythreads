@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { FileSummary } from '@manythreads/shared';
 import { fileContentUrl } from '../api/endpoints';
+import { CloseIcon } from '../shell/icons';
 
 /*
  * Pictures in the chat (PLAN P3-13's message row): an image attachment is drawn as a small, cropped preview instead of a file card,
@@ -36,7 +37,7 @@ function Lightbox({ file, onClose }: { file: FileSummary; onClose: () => void })
       <div className="imgbox" role="dialog" aria-modal="true" aria-label={file.name}>
         <img src={fileContentUrl(file.id)} alt={file.name} />
         <button ref={closeRef} type="button" className="imgbox-close" aria-label="Close image" onClick={onClose}>
-          ×
+          <CloseIcon size={18} />
         </button>
         <div className="imgbox-foot">
           <p className="imgbox-name">{file.name}</p>

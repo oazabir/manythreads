@@ -8,6 +8,7 @@ import { useHeaderTopic } from '../../shell/topic';
 import { approveProposal, fetchProposal, fetchProposals, rejectProposal, withdrawProposal } from './api';
 import { opWords, ProposalChecks, ProposalDiff, StatusPill } from './parts';
 import { placeOf, useProposalPerms } from './store';
+import { BackIcon } from '../../shell/icons';
 
 /*
  * Proposals (PLAN P7-01): every change to bots/, TEAM.md, skills/ and routines/ waits here until a team lead or workspace admin applies it. The list
@@ -137,7 +138,7 @@ export function ProposalPage() {
   const q = useQuery(`proposal:${slug}:${proposalId}`, () => fetchProposal(slug, proposalId));
   return (
     <div className="pp-screen" data-testid="proposal-page">
-      <p className="pp-back"><Link to={`/t/${slug}/proposals`}>← All proposals</Link></p>
+      <p className="pp-back"><Link to={`/t/${slug}/proposals`}><BackIcon size={12} /> All proposals</Link></p>
       <QueryView q={q}>
         {({ proposal: d }) => {
           const p = d.proposal;

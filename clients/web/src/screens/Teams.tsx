@@ -8,6 +8,7 @@ import { useQuery } from '../app/useQuery';
 import { useTeams } from '../components/frames';
 import { EmptyState, QueryView } from '../components/states';
 import { Alert, Notice } from '../components/ui';
+import { PencilIcon } from '../shell/icons';
 
 const BLANK = '__blank__';
 /** The order the picker lists templates in (proto §01 plate 4); any other template follows alphabetically. */
@@ -179,7 +180,7 @@ function PickFields({ label, pick, onPatch }: { label: string; pick: Pick; onPat
     <div className="nm-row">
       <span className="nm">
         <input aria-label={`${label} team name`} value={pick.name} onChange={(e) => onPatch({ name: e.target.value })} />
-        <span aria-hidden="true">✎</span>
+        <span aria-hidden="true"><PencilIcon size={12} /></span>
       </span>
       <span className="slug">
         /<input aria-label={`${label} team slug`} value={pick.slug} onChange={(e) => onPatch({ slug: e.target.value, slugTouched: true })} />

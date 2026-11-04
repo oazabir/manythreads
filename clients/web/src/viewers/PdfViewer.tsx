@@ -6,6 +6,7 @@ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import type { ViewerProps } from '../kernel/viewers';
 import { ViewerMessage } from './common';
 import { baseName } from './mime';
+import { AddIcon, SubtractIcon } from '../shell/icons';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -107,9 +108,9 @@ export default function PdfViewer({ path, url, downloadUrl }: ViewerProps & { do
         <span className="pdf-page" data-testid="pdf-page" aria-live="polite">{doc ? `${page}/${pages}` : '…'}</span>
         <button type="button" className="btn sm" aria-label="Next page" disabled={!doc || page >= pages} onClick={() => go(page + 1)}>&gt;</button>
         <span className="pdf-gap" />
-        <button type="button" className="btn sm" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]!} onClick={() => zoomBy(-1)}>-</button>
+        <button type="button" className="btn sm" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]!} onClick={() => zoomBy(-1)}><SubtractIcon size={14} /></button>
         <span className="pdf-zoom" data-testid="pdf-zoom">{zoom}%</span>
-        <button type="button" className="btn sm" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]!} onClick={() => zoomBy(1)}>+</button>
+        <button type="button" className="btn sm" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]!} onClick={() => zoomBy(1)}><AddIcon size={14} /></button>
         <span className="pdf-gap" />
         {url ? <a className="btn sm" href={downloadUrl ?? url} download={baseName(path)}>Download</a> : null}
       </div>

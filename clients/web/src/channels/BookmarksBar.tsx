@@ -7,6 +7,7 @@ import { addBookmark, fetchBookmarks, fetchChannelFiles, fileContentUrl, removeB
 import { useQuery } from '../app/useQuery';
 import { Dialog } from '../components/Dialog';
 import { BookmarkIcon } from '../shell/icons';
+import { CloseIcon } from '../shell/icons';
 
 /** Where a bookmark leads: a link and a file open in a new tab, a page opens in the team's Files screen. */
 export function bookmarkHref(b: Pick<ChannelBookmark, 'kind' | 'target'>, teamSlug: string | null): { href: string; external: boolean } | null {
@@ -62,7 +63,7 @@ export function BookmarksBar({ channelId, teamSlug, dm, canEdit, slot }: { chann
                     <Link className="bm-link" to={to.href} title={`${KIND_LABEL[b.kind]}: ${b.target}`}>{b.title}</Link>
                   )}
                   {canEdit ? (
-                    <button type="button" className="bm-x" aria-label={`Remove bookmark ${b.title}`} title="Remove" onClick={() => void remove(b)}>×</button>
+                    <button type="button" className="bm-x" aria-label={`Remove bookmark ${b.title}`} title="Remove" onClick={() => void remove(b)}><CloseIcon size={10} /></button>
                   ) : null}
                 </li>
               );

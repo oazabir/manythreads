@@ -12,6 +12,7 @@ import { announcement, asRule, messagesLeft, modeInfo, modeOf, usageLine } from 
 import { Compose, EarlierList, ModeTabs, Transcript, ViewTabs, viewPanelProps } from './parts';
 import { ReassessmentNotices, ReplayPanel } from './Replay';
 import { TerminalView } from './terminal/TerminalView';
+import { BackIcon } from '../../shell/icons';
 
 /*
  * The Workshop tab of a bot (PLAN P7-05, P7-06; mockup sections `workshop` and `setup`), at `/t/:team/bots/:botSlug/chat?view=workshop`.
@@ -207,7 +208,7 @@ export function WorkshopTab({ slug, botSlug, botName, onView }: { slug: string; 
   return (
     <div className="ws-screen" data-testid="workshop-tab" data-mode={mode} {...viewPanelProps('workshop')}>
       <div className="ws-head">
-        <p className="ws-back"><Link to={`/t/${slug}/bots`}>← All bots</Link></p>
+        <p className="ws-back"><Link to={`/t/${slug}/bots`}><BackIcon size={12} /> All bots</Link></p>
         <h2 className="ws-title">{botName} <span className="ws-sub">· Workshop</span></h2>
         <ViewTabs view="workshop" onChange={onView} />
         {admin && !terminal ? (

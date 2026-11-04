@@ -28,6 +28,7 @@ import {
   testWords,
 } from './commands';
 import { AddRunnerDialog, AdoptDialog, DeleteDialog, EditRunnerDialog, NodeDialog, TeamsDialog, TestDialog } from './dialogs';
+import { StarIcon } from '../../../shell/icons';
 
 /*
  * Workspace → Runners (PLAN P19-04, docs/plugins/bot-runners.md). A runner is a place where bots run; a workspace admin sets them up here once and a team lead
@@ -350,7 +351,7 @@ function RunnerRow({
               if (!noDefault && !busy) onDefault();
             }}
           >
-            <span aria-hidden="true">{r.isDefault ? '★' : '☆'}</span>
+            <StarIcon filled={r.isDefault} />
           </button>
           <strong className="rn-label">{r.label}</strong>
           <span className="mono faint">{r.name}</span>

@@ -5,6 +5,7 @@ import { AddCustomEmoji, RemoveCustomEmoji } from './CustomEmojiAdmin';
 import { loadCustomEmoji, useCustomEmoji } from './customEmoji';
 import { CustomEmojiImg, EmojiGlyph } from './EmojiGlyph';
 import { EMOJI_GROUPS, SKIN_TONES, loadRecent, loadTone, pushRecent, saveRecent, saveTone, searchEmoji, takesTone, withTone } from './emoji';
+import { StarIcon } from '../shell/icons';
 
 /** Cells in a row of the grid: the Up and Down arrows move by this many. */
 const COLUMNS = 8;
@@ -198,7 +199,7 @@ export function EmojiPicker({ onPick, onClose, label = 'Emoji' }: { onPick: (cha
         <div className="emp-tabs" role="toolbar" aria-label="Emoji groups">
           {customs.length > 0 || admin ? (
             <button type="button" className="emp-tab" aria-label="Custom" title="Custom" onClick={() => jump('custom')}>
-              <span aria-hidden="true">★</span>
+              <StarIcon filled />
             </button>
           ) : null}
           {EMOJI_GROUPS.map((g) => (

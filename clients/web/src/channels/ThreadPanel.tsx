@@ -9,7 +9,7 @@ import { useShell } from '../shell/context';
 import type { PanelEntry } from '../kernel/panel';
 import { usePanelSub } from '../kernel/panel/sub';
 import { ThreadApprovals } from '../screens/approvals/ThreadApprovals';
-import { FilesIcon, ThreadsIcon } from '../shell/icons';
+import { CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
@@ -188,7 +188,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           <div className="right">
             {threadState ? (
               <button type="button" className="btn s" aria-pressed={threadState.followed} disabled={busy} onClick={() => void toggleFollow()}>
-                {threadState.followed ? 'Following ✓' : 'Follow'}
+                {threadState.followed ? <>Following <CheckIcon size={12} /></> : 'Follow'}
               </button>
             ) : null}
             {channelName && teamForLink ? <Link className="btn s" to={`${channelPath(teamForLink, channelName)}?message=${rootId}`}>Open channel</Link> : null}

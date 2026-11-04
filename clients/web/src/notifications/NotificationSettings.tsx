@@ -9,6 +9,7 @@ import { disablePush, enablePush, inDesktopApp, readPushStatus, registerWorker, 
 import { LEVEL_HELP, LEVEL_ORDER, PUSH_SUPPORT_TEXT, addKeyword, channelTitle, digestDelayOptions, digestHelp } from './settingsModel';
 import { browserAlerts, notificationStore } from './store';
 import { useNotifications } from './Bell';
+import { CloseIcon } from '../shell/icons';
 
 /** Shown instead of the browser push note inside the desktop app, which raises system alerts itself while it is open. */
 const DESKTOP_PUSH_TEXT = 'The desktop app shows alerts while it is open. It does not send alerts after you close it.';
@@ -147,7 +148,7 @@ function KeywordsBlock() {
           {keywords.map((k) => (
             <li key={k} className="chip" data-testid="keyword">
               {k}
-              <button type="button" className="nset-x" aria-label={`Remove ${k}`} disabled={busy} onClick={() => void save(keywords.filter((x) => x !== k))}>×</button>
+              <button type="button" className="nset-x" aria-label={`Remove ${k}`} disabled={busy} onClick={() => void save(keywords.filter((x) => x !== k))}><CloseIcon size={10} /></button>
             </li>
           ))}
         </ul>

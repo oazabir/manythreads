@@ -5,6 +5,7 @@ import { useQuery } from '../app/useQuery';
 import { useSession } from '../app/session';
 import { useChannelFeed } from '../shell/channelFeed';
 import { CloseIcon } from '../shell/icons';
+import { CheckIcon } from '../shell/icons';
 
 /*
  * The first-day checklist of the Threads home for members (PLAN P3-14): join #general, follow a thread, ask Brain. Dismissing it is
@@ -24,7 +25,7 @@ function wasDismissed(personId: string): boolean {
 function Step({ done, label, children }: { done: boolean; label: string; children?: React.ReactNode }) {
   return (
     <li className={`wc-step ${done ? 'done' : ''}`} data-testid="welcome-step" data-done={done}>
-      <span className="wc-box" aria-hidden="true">{done ? '✓' : ''}</span>
+      <span className="wc-box" aria-hidden="true">{done ? <CheckIcon size={12} strokeWidth={2.6} /> : ''}</span>
       <span className="wc-label">{label}</span>
       <span className="wc-aside">{children}</span>
     </li>

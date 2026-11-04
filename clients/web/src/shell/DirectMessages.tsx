@@ -7,6 +7,7 @@ import { Avatar } from '../components/ui';
 import { levelsStore } from '../notifications/levelsStore';
 import { dmLabel, openConversation, useDms } from '../dms/store';
 import { navHref } from './nav';
+import { AddIcon } from './icons';
 import { useDismiss } from './useDismiss';
 import { badgeText, unreadLook } from './unreadLook';
 import { PresenceDot } from '../presence/PresenceDot';
@@ -111,7 +112,7 @@ export function DirectMessages({ item, slug }: { item: NavContribution; slug: st
       {feed.status === 'ok' && feed.items.length === 0 ? <p className="side-note dm-empty">{item.emptyState ?? 'No conversations yet'}</p> : null}
       <div className="dm-new" ref={box}>
         <button type="button" className="it dm-new-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-          <span className="h" aria-hidden="true">+</span>
+          <span className="h" aria-hidden="true"><AddIcon size={14} /></span>
           <span className="it-label">New</span>
         </button>
         {open ? <NewConversation slug={slug} onDone={() => setOpen(false)} /> : null}

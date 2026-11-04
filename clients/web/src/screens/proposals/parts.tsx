@@ -1,6 +1,7 @@
 import { parseUnifiedDiff, type Proposal } from '@manythreads/shared';
 import { useMemo } from 'react';
 import { STATUS_LABEL } from './store';
+import { CheckIcon } from '../../shell/icons';
 
 /** The lines a proposal changes, drawn the way the Files history draws a commit (the `.diff` styles of the Files screen). */
 export function ProposalDiff({ diff }: { diff: string }) {
@@ -30,7 +31,7 @@ export function ProposalChecks({ checks }: { checks: Proposal['checks'] }) {
     <ul className="pp-checks" data-testid="proposal-checks" aria-label="Checks">
       {checks.map((c) => (
         <li key={c.name} className={c.ok ? 'ok' : 'bad'} data-ok={c.ok}>
-          <span className="pp-check-mark" aria-hidden="true">{c.ok ? '✓' : '!'}</span>
+          <span className="pp-check-mark" aria-hidden="true">{c.ok ? <CheckIcon size={12} /> : '!'}</span>
           <span>
             <b>{c.name}</b>
             {c.ok ? <span className="pp-check-msg"> passed</span> : null}

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { linkPreviewImagePath, type LinkPreview } from '@manythreads/shared';
 import { linkPreviewStore, type MessageCards } from './store';
+import { CloseIcon } from '../shell/icons';
 
 /*
  * The cards under a message that carries a link (PLAN P14-08, docs/plugins/link-preview.md): the site, the title, a short description and the
@@ -54,7 +55,7 @@ function Card({ card }: { card: LinkPreview }) {
       </a>
       {card.canRemove ? (
         <button type="button" className="lp-x" aria-label={`Remove the preview of ${card.host}`} title="Remove preview" data-testid="link-preview-remove" onClick={() => void remove()}>
-          <span aria-hidden="true">×</span>
+          <CloseIcon size={12} />
         </button>
       ) : null}
       {error ? (

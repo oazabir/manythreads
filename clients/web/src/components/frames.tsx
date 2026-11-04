@@ -6,6 +6,7 @@ import { isAdmin, useSession } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { useHeartbeat, useWatchMyPresence } from '../presence/hooks';
 import { Brand } from './ui';
+import { BackIcon } from '../shell/icons';
 
 /** Centred card for sign-in, bootstrap and invite screens. */
 export function AuthFrame({ title, lede, children, footer }: { title: string; lede?: ReactNode; children: ReactNode; footer?: ReactNode }) {
@@ -127,7 +128,7 @@ export function SettingsFrame() {
       <div className="settings" data-testid="app-frame">
         <aside className="tabs" data-landmark="nav">
           <Link to="/" className="tabs-brand"><Brand name={session.workspace.name} mark={session.workspace.name.slice(0, 1)} /></Link>
-          <Link to="/" className="tab back">← Back to manythreads</Link>
+          <Link to="/" className="tab back"><BackIcon size={12} /> Back to manythreads</Link>
           <nav aria-label="Settings">
             {groups.map((g) => (
               <div key={g.heading} className="tgroup">

@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { Toggle } from '../../components/ui';
+import { CloseIcon } from '../../shell/icons';
 
 /*
  * The editing primitives of the bot page (PLAN P5-05). Every control here writes one part of the parsed frontmatter through the
@@ -108,7 +109,7 @@ export function ChipsField({ label, values, onChange, readOnly, placeholder, hin
         {values.map((v) => (
           <span className="b-chip on" key={v}>
             {v}
-            {readOnly ? null : <button type="button" className="b-chip-x" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}>×</button>}
+            {readOnly ? null : <button type="button" className="b-chip-x" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))}><CloseIcon size={10} /></button>}
           </span>
         ))}
       </div>

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { Notification as InboxItem } from '@manythreads/shared';
 import { useOpenMessage } from '../shell/messageLink';
-import { BellIcon, MoonIcon } from '../shell/icons';
+import { BellIcon, ClockIcon, HashIcon, MailIcon, MentionIcon, MoonIcon, ReplyIcon } from '../shell/icons';
 import { useMyDnd } from '../presence/hooks';
 import { PausedNote, resumeNow, useSaver } from '../presence/PresencePanels';
 import { bellLabel } from '../presence/settingsModel';
@@ -14,7 +14,7 @@ export function useNotifications() {
   return useSyncExternalStore(notificationStore.subscribe, notificationStore.snapshot);
 }
 
-const GLYPH: Record<InboxItem['kind'], string> = { mention: '@', reply: '↳', dm: '✉', message: '#', reminder: '⏰' };
+const GLYPH: Record<InboxItem['kind'], ReactNode> = { mention: <MentionIcon />, reply: <ReplyIcon />, dm: <MailIcon />, message: <HashIcon />, reminder: <ClockIcon /> };
 
 function Item({ n, onOpen }: { n: InboxItem; onOpen: (n: InboxItem) => void }) {
   const unread = n.readAt === null;

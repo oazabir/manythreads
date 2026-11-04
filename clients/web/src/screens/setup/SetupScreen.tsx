@@ -12,6 +12,7 @@ import { answerSetup, cancelSetup, fetchSetup, retrySetup, startSetup } from './
 import { announcement, answersFrom, examplesFrom, FOCUS_ID, pollDelay, stepOf, stopsPolling, workingLine, type Draft } from './model';
 import { BriefForm, Feasibility, InventoryPanel, Questions } from './parts';
 import { ProposalStep } from './Proposal';
+import { BackIcon } from '../../shell/icons';
 
 /*
  * "Add a bot" (PLAN P7-04, mockup section `setup`): a person writes what the bot should do, a helper looks at what the team has and grades each need, asks every open question in one
@@ -190,7 +191,7 @@ export function SetupScreen() {
   if (guest) {
     return (
       <div className="su-screen" data-testid="setup-screen">
-        <p className="su-back"><Link to={`/t/${slug}/bots`}>← All bots</Link></p>
+        <p className="su-back"><Link to={`/t/${slug}/bots`}><BackIcon size={12} /> All bots</Link></p>
         <h2 className="su-title">Add a bot</h2>
         <p className="su-summary" data-testid="setup-guest">Guests can't add bots. Ask a member of the team to add one.</p>
       </div>
@@ -199,7 +200,7 @@ export function SetupScreen() {
 
   return (
     <div className="su-screen" data-testid="setup-screen">
-      <p className="su-back"><Link to={`/t/${slug}/bots`}>← All bots</Link></p>
+      <p className="su-back"><Link to={`/t/${slug}/bots`}><BackIcon size={12} /> All bots</Link></p>
       <div className="su-head">
         <h2 className="su-title">Add a bot</h2>
         <p className="su-sub">Describe what a bot should do. It finds out what this team has, checks the brief can be done, asks for what is missing and drafts the configuration. A person approves it.</p>

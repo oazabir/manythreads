@@ -7,6 +7,7 @@ import { QueryView } from '../../components/states';
 import { fetchMyConnections } from './api';
 import { RemoveConnectionDialog } from './dialogs';
 import { ConnectionRow } from './parts';
+import { BackIcon } from '../../shell/icons';
 
 /*
  * Account → Connections (PLAN P8-06). The connections that belong to you alone: nobody else sees them, and a bot uses them only in a conversation you start.
@@ -21,7 +22,7 @@ export function AccountConnections() {
 
   return (
     <PlainFrame title="Connections">
-      <p className="cn-back"><Link to="/account">← Back to your account</Link></p>
+      <p className="cn-back"><Link to="/account"><BackIcon size={12} /> Back to your account</Link></p>
       <p className="lede">
         These connections are yours alone. Nobody else can see them, and a bot uses them only when you are the one asking. Credentials are stored sealed and cannot be
         shown again.

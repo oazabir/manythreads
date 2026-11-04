@@ -18,6 +18,7 @@ import {
   withoutResult,
   writesLine,
 } from './personWords';
+import { BackIcon } from '../../shell/icons';
 
 /*
  * `/settings/connections` (PLAN P8-02): the outside accounts a person signs in to once, for themselves. Google, Microsoft and Notion are listed with where each
@@ -42,7 +43,7 @@ export function PersonConnections() {
 
   return (
     <PlainFrame title="Connected accounts">
-      <p className="cn-back"><Link to="/account">← Back to your account</Link></p>
+      <p className="cn-back"><Link to="/account"><BackIcon size={12} /> Back to your account</Link></p>
       <p className="lede">
         Sign in to an outside account once, and a bot can use it for you: but only when you are the one asking, and only for the things you tick below. Nobody else
         can use your connection, and manythreads never shows the sign-in it keeps. You can disconnect at any time.

@@ -4,6 +4,7 @@ import { isApiError } from '../api/client';
 import { Dialog } from '../components/Dialog';
 import { channelStore } from './store';
 import { EMPTY_FORM, UNIT_LABEL, canAddOption, canRemoveOption, pollFailureText, requestOf, type CloseUnit, type PollForm } from './polls';
+import { CloseIcon } from '../shell/icons';
 
 /** The "Poll" composer action (and `/poll` with nothing after it): a small dialog for the question, two to ten options and the rules. */
 export function PollDialog({
@@ -79,7 +80,7 @@ export function PollDialog({
                 data-testid="poll-option-input"
               />
               <button type="button" className="icon-btn" aria-label={`Remove option ${i + 1}`} title="Remove" disabled={!canRemoveOption(form.options)} onClick={() => set({ options: form.options.filter((_, at) => at !== i) })}>
-                <span aria-hidden="true">×</span>
+                <CloseIcon size={12} />
               </button>
             </div>
           ))}
