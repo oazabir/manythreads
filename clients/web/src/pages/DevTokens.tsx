@@ -58,7 +58,7 @@ export function DevTokens() {
       <div className="fonts">
         <div className="sample sans" data-token="--sans">
           <small>--sans · {values['--sans'] ?? ''}</small>
-          Inter Tight. The quick brown fox jumps over the lazy dog 0123456789
+          Inter. The quick brown fox jumps over the lazy dog 0123456789
         </div>
         <div className="sample mono" data-token="--mono">
           <small>--mono · {values['--mono'] ?? ''}</small>

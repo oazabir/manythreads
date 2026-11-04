@@ -27,3 +27,12 @@ owner's own deployment.
 | `bot-kitty-1`, `bot-kitty-2`, `bot-laughing-cat`, `bot-unicorn-1`, `bot-puppy-1`, `bot-puppy-2`, `bot-unicorn-2`, `bot-panda`, `bot-fox-1`, `bot-chick`, `bot-penguin`, `bot-duck`, `bot-gorilla`, `bot-fox-2`, `bot-dino`, `bot-cat`, `bot-dog`, `bot-bear`, `bot-rabbit`, `bot-lion` | kitty_763769, kitty_763718, lol_3906557, unicorn_1049968, dog_1049417, dog_1049366, unicorn_3578628, panda_1326377, meerkat_1326390, chicken_1326405, penguin_9308879, duck_9308963, gorilla_9308979, fox_9308916, dinosaur_4681809, cat_4322991, dog_4322992, bear_3940403, rabbit_3940417, lion_1760998 |
 
 The number after the underscore is the icon's number on Flaticon (`https://www.flaticon.com/free-icon/<name>_<number>`).
+
+## Fonts (Inter, JetBrains Mono)
+
+Served from `clients/web/public/fonts` (declared in `clients/web/src/styles/fonts.css`); the app never loads a font from a CDN.
+
+| Font | Files | Licence |
+|---|---|---|
+| **Inter** (the default font of every screen), variable weight 100-900, by Rasmus Andersson (https://fonts.google.com/specimen/Inter) | `inter-<script>.woff2` for latin, latin-ext, vietnamese, cyrillic, cyrillic-ext, greek, greek-ext, and `inter-latin-italic`, `inter-latin-ext-italic` | SIL Open Font License 1.1; the text is `clients/web/public/fonts/OFL-Inter.txt`. |
+| **JetBrains Mono** (code and terminals only), latin subset | `jetbrains-mono-latin.woff2` | SIL Open Font License 1.1. |

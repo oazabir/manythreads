@@ -20,11 +20,12 @@ const dataUri = (file: string) => `data:font/woff2;base64,${readFileSync(resolve
 /**
  * The prototype loads Inter Tight and JetBrains Mono from Google Fonts, so a plate renders with whatever fallback the machine
  * has when the CDN is unreachable (sandbox) and with the real fonts when it is (CI). Answer the CDN requests with the same
- * font files the web client self-hosts, so a plate renders identically everywhere. Call before navigating to the prototype.
+ * font files the web client self-hosts, so a plate renders identically everywhere. The prototype still names its sans "Inter Tight"; it is
+ * answered with Inter, the font the app uses. Call before navigating to the prototype.
  */
 export async function useLocalFonts(target: Page | BrowserContext): Promise<void> {
   const css = `
-@font-face{font-family:'Inter Tight';font-style:normal;font-weight:400 700;src:url(${dataUri('inter-tight-latin.woff2')}) format('woff2');}
+@font-face{font-family:'Inter Tight';font-style:normal;font-weight:100 900;src:url(${dataUri('inter-latin.woff2')}) format('woff2');}
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;src:url(${dataUri('jetbrains-mono-latin.woff2')}) format('woff2');}`;
   await target.route('https://fonts.googleapis.com/**', (route) => route.fulfill({ contentType: 'text/css', body: css }));
   await target.route('https://fonts.gstatic.com/**', (route) => route.abort());

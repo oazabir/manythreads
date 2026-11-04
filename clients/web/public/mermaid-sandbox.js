@@ -20,7 +20,7 @@
   var n = 0;
   var start = function () {
     try {
-      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral', suppressErrorRendering: true, fontFamily: 'Inter Tight, system-ui, sans-serif' });
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral', suppressErrorRendering: true, fontFamily: 'Inter, system-ui, sans-serif' });
     } catch (e) { /* reported on the first render */ }
     window.addEventListener('message', function (ev) {
       if (ev.source !== host) return;

@@ -14,7 +14,7 @@ export const tokens = {
   warn: '#B08A3E',
   alert: '#B4472E',
   alertWash: '#FDF6F3',
-  fonts: { sans: 'Inter Tight', mono: 'JetBrains Mono' },
+  fonts: { sans: 'Inter', mono: 'JetBrains Mono' },
 } as const;
 
 export type Tokens = typeof tokens;

@@ -69,7 +69,7 @@ export async function openPage(
 }
 
 /** Families and weights the app and the plates use (variable weight files, see clients/web/src/styles/fonts.css). */
-const FONT_FACES = ['400 14px "Inter Tight"', '500 14px "Inter Tight"', '600 14px "Inter Tight"', '700 14px "Inter Tight"', '400 12px "JetBrains Mono"', '500 12px "JetBrains Mono"'];
+const FONT_FACES = ['400 14px "Inter"', '500 14px "Inter"', '600 14px "Inter"', '700 14px "Inter"', '400 12px "JetBrains Mono"', '500 12px "JetBrains Mono"'];
 
 /**
  * Every face is loaded, not only the ones already requested: `document.fonts.ready` answers at once when layout has not yet asked

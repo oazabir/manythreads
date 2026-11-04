@@ -57,7 +57,7 @@ The binding rules every change follows: how data, events, plugins and screens ar
   `req.routeOptions.url`, never the raw URL (percent-encoding bypass, see MISTAKES).
 - CSS: screen stylesheets prefix their classes (e.g. `f*` for Files); never redefine a shared class (`.linkish`, `.btn`) in a screen file.
 - Fonts are self-hosted (`clients/web/public/fonts`); never load Google Fonts at runtime (breaks visual baselines).
-- Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter Tight, JetBrains Mono.
+- Design tokens only from `tokens.css` (raw hex anywhere else fails lint). Fonts: Inter (default for all UI text), JetBrains Mono (code only).
 - Screens carry `data-testid="app-frame"`; dynamic regions `data-vt-mask`; landmarks `data-landmark`.
 - Commit messages start with the task id, e.g. `P1-03: migration runner`.
 

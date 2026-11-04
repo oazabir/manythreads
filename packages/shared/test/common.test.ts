@@ -73,7 +73,7 @@ describe('tokens', () => {
   it('maps every token to a css var', () => {
     expect(tokens.paper).toMatch(/^#[0-9A-F]{6}$/);
     expect(tokens.agentWash).toHaveLength(7);
-    expect(tokens.fonts.sans).toBe('Inter Tight');
+    expect(tokens.fonts.sans).toBe('Inter');
     expect(tokenCssVar.agentWash).toBe('--agent-wash');
     expect(tokenCssVar.alertWash).toBe('--alert-wash');
     expect(tokenCssVar.fonts.mono).toBe('--mono');
