@@ -43,8 +43,30 @@ const byId = (a: ChannelMessage, b: ChannelMessage): number => (a.id < b.id ? -1
 export function mergeItems(held: readonly ChannelMessage[], incoming: readonly ChannelMessage[]): ChannelMessage[] {
   if (incoming.length === 0) return held as ChannelMessage[];
   const map = new Map(held.map((m) => [m.id, m]));
-  for (const m of incoming) map.set(m.id, m);
+  for (const m of incoming) {
+    const old = map.get(m.id);
+    // a pushed copy has no reply preview (P21-03): keep the one the held message carries
+    map.set(m.id, old && (m.replyAuthors === undefined || m.unreadReplies === undefined) ? keepReplyPreview(m, old) : m);
+  }
   return [...map.values()].sort(byId);
+}
+
+function keepReplyPreview(m: ChannelMessage, old: ChannelMessage): ChannelMessage {
+  const next = { ...m };
+  if (m.replyAuthors === undefined && old.replyAuthors !== undefined) next.replyAuthors = old.replyAuthors;
+  if (m.unreadReplies === undefined && old.unreadReplies !== undefined) next.unreadReplies = old.unreadReplies;
+  return next;
+}
+
+/**
+ * A reply arrived for a thread root (P21-03): its author goes first in the root's preview (no repeats, at most three); the reader's own reply
+ * does not make the thread unread.
+ */
+export function withReply(root: ChannelMessage, reply: { author?: ChannelMessage['author'] | undefined }, own: boolean): ChannelMessage {
+  const author = reply.author;
+  const held = root.replyAuthors ?? [];
+  const replyAuthors = author ? [author, ...held.filter((a) => a.actorId !== author.actorId)].slice(0, 3) : held;
+  return { ...root, replyAuthors, unreadReplies: own ? (root.unreadReplies ?? false) : true };
 }
 
 /** A page from the API (newest first) as oldest-first items. */

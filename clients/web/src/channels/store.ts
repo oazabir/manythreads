@@ -44,6 +44,7 @@ import {
   mergeItems,
   patchMessage,
   removeMessage,
+  withReply,
   type PendingSend,
   type Timeline,
 } from './timeline';
@@ -233,7 +234,7 @@ export class ChannelStore {
       this.counted.add(message.id);
       if (this.counted.size > 5_000) this.counted.delete(this.counted.values().next().value as string);
       const chan = this.timelines.get(channelKey(message.channelId));
-      if (chan) this.put(channelKey(message.channelId), (t) => ({ ...t, items: patchMessage(t.items, root, (m) => ({ ...m, replyCount: m.replyCount + 1, lastReplyAt: message.createdAt })) }));
+      if (chan) this.put(channelKey(message.channelId), (t) => ({ ...t, items: patchMessage(t.items, root, (m) => withReply({ ...m, replyCount: m.replyCount + 1, lastReplyAt: message.createdAt }, message, mine)) }));
       const thread = this.timelines.get(threadKey(root));
       if (thread?.root) this.put(threadKey(root), (t) => (t.root ? { ...t, root: { ...t.root, replyCount: t.root.replyCount + 1, lastReplyAt: message.createdAt } } : t));
     }
@@ -292,6 +293,12 @@ export class ChannelStore {
     else {
       const th = this.timelines.get(threadKey(p.targetId));
       if (th?.thread) this.put(threadKey(p.targetId), (t) => (t.thread ? { ...t, thread: { ...t.thread, followed: p.followed, unreadCount: p.unreadCount, lastReadId: p.lastReadId } } : t));
+      // the dot on the reply count goes when the thread has nothing unread (P21-03)
+      if (p.unreadCount === 0) {
+        for (const [key, t] of this.timelines) {
+          if (key.startsWith('c:') && t.items.some((m) => m.id === p.targetId && m.unreadReplies === true)) this.put(key, (x) => ({ ...x, items: patchMessage(x.items, p.targetId, (m) => ({ ...m, unreadReplies: false })) }));
+        }
+      }
       this.refreshSummarySoon();
     }
   }
