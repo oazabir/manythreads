@@ -80,6 +80,10 @@ Spec v1.4.1 §2 already states these; the guide's queue wording is superseded.
 | Moving between spaces | Nothing moves without a person's action. Personal → Team is "Send to team" (a drop into the team inbox, D6) or "Copy to team files". Team → Personal is a copy. Leaving a team removes reach to it at once; a person's own copies stay |
 | Leaving the workspace | A deactivated person's Personal space is kept for 30 days (an admin may export it, audited), then deleted. It never moves into a team |
 
+**D11 · Icons are ProIcons (owner decision 2026-11-04).** The web client draws every icon with ProIcons (`@proicons/react`, MIT, 24-grid line icons) through `clients/web/src/shell/icons.tsx` (the call bar: `meetings/icons.tsx`) and `components/proicon.tsx`, which sets colour, stroke and `aria-hidden` in one place. No hand-drawn SVG and no text glyph (×, ✓, ←, ★, ✎, +) as an icon; emoji that people pick or type (statuses, reactions) stay emoji. New icons are added in those files. Built as P21-25.
+
+**D12 · Rhythms is called Jobs in the UI (owner decision 2026-11-05).** The sidebar, page title, quick switcher, buttons, empty state, recipe hints and messages say "Jobs". Routes (`/rhythms`), ids, API paths, the `rhythms` plugin, tables and events keep their names, so nothing outside the screens changes; this plan and the spec keep the word "rhythm" for the thing and "Jobs" for what a person reads. Built as part of P21-15.
+
 Everything else follows the spec: Hermes only, no bot modes, `BOT.md`, one LLM gateway, one MCP gateway, Hindsight bank per team chosen by the gateway with the OKF bundle as its editable mirror, two-stage gate, one `needsApproval`, first-party person connections.
 
 ## 4. Personas
@@ -138,7 +142,7 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
 | 7 | 14 | Messaging parity and moving in | XL | 6 | 20 of 25 built, 3 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 3 of 13 built, 2 partly |
-| 9 | 21 | Polish: a message view, navigation and look people expect | L | 14, 19 | 0 of 24 built |
+| 9 | 21 | Polish: a message view, navigation and look people expect | L | 14, 19 | 1 of 25 built, 2 partly |
 | 10 | 7 | Self-setup and the Workshop | L | 14 | 6 of 11 built, 5 partly |
 | 11 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 21 of 36 built, 13 partly |
 | 12 | 20 | Personal and Team spaces, one Brain, personal routines | XL | 8 | 0 of 15 built |
@@ -166,7 +170,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-11-03)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **147 of 335 tasks (the 334 rows of this plan plus the follow-up P14-01b) are built, 45 are partly built, 142 are not built and 1 was built as something else.** (Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's 24 rows the same day from `POLISH.md`; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **148 of 336 tasks (the 335 rows of this plan plus the follow-up P14-01b) are built, 47 are partly built, 140 are not built and 1 was built as something else.** (Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's rows the same day from `POLISH.md`; P21-25 and the Phase 21 rows marked partly were updated on 2026-11-05; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -192,7 +196,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 18 · Workflow automation and a team that runs itself | 0 | 0 | 14 | 0 |
 | 19 · Runners: where a bot runs, set up by an admin | 3 | 2 | 8 | 0 |
 | 20 · Personal and Team spaces, one Brain, personal routines | 0 | 0 | 15 | 0 |
-| 21 · Polish: a message view, navigation and look people expect | 0 | 0 | 24 | 0 |
+| 21 · Polish: a message view, navigation and look people expect | 1 | 2 | 22 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -461,7 +465,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P14-01 | Presence and status. Active or away from the socket heartbeat … | Partly built | packages/plugins/presence (migration 0001, heartbeat.ts, routes.ts); notifications/src/hold.ts; clients/web/src/presence/ (PresenceDot, ProfileCard with local time, OutOfOfficeEditor, tabLease); e2e/presence/presence-ui.spec.ts; e2e/screens/task.presence.shots.ts (live, 2026-11-01) | no channel "who is here" list, no dots on the workspace members settings page, no Message button on the card, no /status and /dnd commands, approvals do not read the delegate yet (P18-03); live card fields (status, local time) seen only on the devbox because no live user shared any |
 | P14-01b | (not a row of the plan; built as a follow-up) | Built | clients/web/src/presence/PresencePanels.tsx, PresenceSettings.tsx, DndIndicators.tsx; commit 47e30d0 | - (id not in PLAN table; commit-only follow-up of P14-01: status dialog, DND pause, schedule, hours editors) |
 | P14-02 | Composer parity. Formatting toolbar for the Markdown the renderer … | Built | clients/web/src/channels (Composer.tsx, EmojiPicker.tsx, CustomEmojiAdmin.tsx, customEmoji.ts, serverDraft.ts, broadcast.ts), plugins/channels (routes-emoji.ts, routes-drafts.ts, broadcast.ts, migration 0015) | custom emoji (admin adds, picture kept in the table, `:name:` in messages, reactions and the picker, audit), @here/@channel with the 409 confirmation above 20, drafts on the server (RLS on the person, cleared on send). Review round done: scheduled @channel/@here asks at schedule time and keeps the agreement on the row (channels migration 0016), clockless draft sync, "Send anyway" on a Not-sent message, a `sender` marker on authors (reminders migration 0003), picture size and frame caps, NUL text refused with a sentence. Checked live 2026-11-01 (custom emoji as admin and member, @channel under the limit and scheduled, drafts across two browsers, System badge, /status shortcode, 390px; e2e/screens/task.composer-parity.shots.ts). Left: renaming an emoji, a cross-channel Drafts list, live push of emoji changes to open pages. |
-| P14-03 | User groups from role tags. A TEAM.md role tag is a mention handle … | Built | packages/shared/src/markup/role-handles.ts; plugins/teams role-groups.ts, routes-tags.ts; plugins/channels mentions.ts, mention-budget.ts, routes-mentions.ts, migration 0012; clients/web/src/channels/mentionGroups.ts, Composer.tsx; e2e/channels/role-mention-picker.spec.ts; live check e2e/screens/task.groups.shots.ts (2026-11-01) | - (a person-owned, bot-owned or reserved word is never a group; budget 5 group mentions a minute and 1000 people an hour per author; cut at 500 people; no client notice yet for a cut group) |
+| P14-03 | User groups from role tags. A TEAM.md role tag is a mention handle … | Built | packages/shared/src/markup/role-handles.ts; plugins/teams role-groups.ts, routes-tags.ts; plugins/channels mentions.ts, mention-budget.ts, routes-mentions.ts, migration 0012; clients/web/src/channels/mentionGroups.ts, Composer.tsx; e2e/channels/role-mention-picker.spec.ts; live check e2e/screens/task.groups.shots.ts (2026-11-01) | - (a person-owned, bot-owned or reserved word is never a group; budget 5 group mentions a minute and 1000 people an hour per author; cut at 500 people; no client notice yet for a cut group; since 2026-11-05 the picker also lists the team's bots, see P21-04) |
 | P14-04 | Later and reminders. "Save for later" on any message (with done … | Built | packages/plugins/reminders (migrations 0001 later_items, 0002_reminders; send.ts minute job, routes-remind.ts); packages/shared/src/commands/when.ts, remind.ts; clients/web/src/later/RemindersDialog.tsx; e2e/channels/reminders.spec.ts; live spec e2e/screens/task.reminders.shots.ts | - |
 | P14-05 | Scheduled send. "Send later" on the send button; scheduled_messages … | Built | plugins/channels migration 0013, scheduled.ts, routes-scheduled.ts; clients/web/src/channels/SendLater.tsx, ScheduledStrip.tsx, scheduled.ts, styles/scheduled.css; e2e/channels/scheduled.spec.ts; live check e2e/screens/task.scheduled.shots.ts (2026-11-01) | - (text only, no files; 100 waiting per person; a refusal shows in the Not sent list, no notification kind yet) |
 | P14-06 | Slash commands. One registry in shared/commands (name, arguments … | Built | packages/shared/src/commands/ (registry with usage and needs; remind, status, dnd, away, poll, invite, leave, mute, topic, shrug); clients/web/src/channels/slash.ts, slashRun.ts, useSlash.ts; e2e/channels/slash-commands.spec.ts | the BOT.md `command` trigger (a bot declares a command) is skipped; `/status :shortcode:` is stored as text, not converted |
@@ -605,14 +609,14 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P20-14 | Guards | Not built | - | added 2026-11-04 (D10); nothing built yet |
 | P20-15 | Seed v20, event contracts, docs and retro | Not built | - | added 2026-11-04 (D10); nothing built yet |
 
-### Phase 21 · Polish: a message view, navigation and look people expect — 0 built, 0 partly, 24 not built
+### Phase 21 · Polish: a message view, navigation and look people expect — 1 built, 2 partly, 22 not built
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
 | P21-01 | Message runs, hover time, presence on the avatar | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-02 | Hover bar with quick reactions, the + pill, who reacted | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-03 | Reply previews, long-message clamp, bot mention chips | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
-| P21-04 | Composer: steady toolbar, shortcuts, :emoji:, richer @mentions | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-04 | Composer: steady toolbar, shortcuts, :emoji:, richer @mentions | Partly built | clients/web/src/channels/Composer.tsx, hooks.ts (`People.bots`), styles/channels.css (`.pk-badge.bot`); live check 2026-11-05 | the @ picker lists the team's bots (switched on, with a `mention` or `conversation` trigger; at most 4) after the people, with a purple Bot badge and `@slug` inserted. Still missing: a steady toolbar, shortcuts, `:emoji:` list, avatars and People / Bots / Channels groups in the picker, `@channel` and `@here` first, the Send icon button. Long bot names wrap in the picker |
 | P21-05 | Floating bits: Jump to latest, toasts, Esc, day pills | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-06 | Channel and DM header, channel details, channel intro | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-07 | Bot messages read as messages | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
@@ -623,7 +627,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P21-12 | One page header on every screen | Not built | - | added 2026-11-04 (POLISH.md §4.1); nothing built yet |
 | P21-13 | Plain words: no internal names in the screens | Not built | - | added 2026-11-04 (POLISH.md §4, §5); nothing built yet |
 | P21-14 | Files screen feels like a file manager | Not built | - | added 2026-11-04 (POLISH.md §4.3); nothing built yet |
-| P21-15 | Boards, Rhythms, Org chart and Memory screens | Not built | - | added 2026-11-04 (POLISH.md §4); nothing built yet |
+| P21-15 | Boards, Rhythms, Org chart and Memory screens | Partly built | clients/web/src/screens/boards (RhythmsScreen, RhythmsView, rhythm.ts), shell/nav.ts, app/quick-switcher.ts; live check 2026-11-05 | only the name: the screen is called **Jobs** in the UI (D12). Still missing: the Boards templates empty state, the Jobs empty-state tiles, the Org chart grid, the Memory preview pane |
 | P21-16 | Approvals inbox | Not built | - | added 2026-11-04 (POLISH.md §4.7); nothing built yet |
 | P21-17 | Bots list, bot page and save bar | Not built | - | added 2026-11-04 (POLISH.md §5); nothing built yet |
 | P21-18 | Add a bot, Recipes, Agents, Projects, bot chat | Not built | - | added 2026-11-04 (POLISH.md §5); nothing built yet |
@@ -633,6 +637,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P21-22 | Skeletons, empty-state icons and motion | Not built | - | added 2026-11-04 (POLISH.md §7); nothing built yet |
 | P21-23 | Phone layout | Not built | - | added 2026-11-04 (POLISH.md §8); nothing built yet |
 | P21-24 | Look checks, seed v21, docs and retro | Not built | - | added 2026-11-04 (POLISH.md); nothing built yet |
+| P21-25 | Icons are ProIcons (D11) | Built, checked live 2026-11-04 | clients/web/package.json (`@proicons/react` 4.13.7), clients/web/src/components/proicon.tsx, shell/icons.tsx, meetings/icons.tsx; the glyphs replaced in Composer, MessageImages, PollDialog, ThreadPanel, Bell, ChannelBell, LinkPreviewCards, BookmarksBar, Roster, Teams, RunnersScreen, WelcomeCard, EmojiPicker, SearchFilterBar, DirectMessages, ChannelGroups, PdfViewer and the back links; docs/engineering/conventions.md; 32 wireframe baselines refreshed (commit 2e2f09c1) | the call bar, the notification list, back links and the Follow button were not looked at live; `channel-thread` (P, against the prototype plate) is still over its limit (6.99% against 6%, 7.38% before the icons) |
 
 ---
 
@@ -2699,6 +2704,7 @@ Refactor with tests green; write `docs/retro/phase-21.md`.
 | P21-22 | **Skeletons, empty-state icons and motion.** (7.7, 7.8) Skeleton rows replace "Loading…" on lists and a skeleton message block on a channel; every empty state gets an outline icon and its one action; menus fade 120 ms, the right panel slides 200 ms, and a message reached from a link or search glows and fades; all of it off under `prefers-reduced-motion` | `clients/web/src/components`, `styles` | - | Sonnet |
 | P21-23 | **Phone layout.** (8.1 to 8.6) The channel name shows in full on one line, the topic under it or hidden. The bot page header stacks (avatar and name, description, then a scrolling row of actions or "…"). The thread panel wraps source chips and shows one "Aa" button for formatting. A **bottom bar** (Home, Messages, Activity, Search, You) with unread badges; swipe from the edge opens the sidebar, swipe right on a message replies; long press opens reactions; header icons are 40 px targets. Files and Bots stack their headers and show the date under the name | `clients/web/src/shell`, `clients/web/src/channels`, `screens/bots`, `screens/files` | D2 | Sonnet |
 | P21-24 | **Look checks, seed v21, docs and retro.** Visual baselines for every screen in this phase at 1440 and 390 px in light and dark; the contrast check and the copy lint of P21-13 in CI; one e2e per behaviour that is not only looks (runs and the New line, Esc, quick reactions, `:` list, collapse memory, tab title, theme choice kept, bottom bar); seed v21 (a long run of messages from one author, a long message, a bot answer with sources, a three-person thread); `docs/ui-guide.md` (the look rules, how to add a screen with `PageHeader`); retro | `e2e`, `tools`, `docs` | guide §6 | Sonnet; Haiku |
+| P21-25 | **Icons are ProIcons (D11).** Add `@proicons/react`; `shell/icons.tsx` and `meetings/icons.tsx` keep their export names on top of it and `components/proicon.tsx` sets colour, stroke and `aria-hidden`; every text glyph used as an icon (close, check, back, star, edit, add) and every hand-drawn SVG becomes a ProIcon; the rule is in `docs/engineering/conventions.md`. Added after the owner's request, not from `POLISH.md` | `clients/web/src/shell`, `components`, `meetings`, `channels`, `screens` | P3-12 | Sonnet |
 
 ### 2 · UI references
 
