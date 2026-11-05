@@ -60,7 +60,7 @@ test('the UI: pick a person, one conversation opens; picking again opens the sam
     await picker.getByRole('checkbox', { name: /Rafi/ }).check();
     await picker.getByRole('button', { name: 'Message' }).click();
     await expect(nadiaPage.page).toHaveURL(/\/t\/engineering\/dm\/[0-9a-f-]{36}$/);
-    await expect(nadiaPage.page.locator('h1')).toContainText('Nadia');
+    // the header names the other person only (P21-06)
     await expect(nadiaPage.page.locator('h1')).toContainText('Rafi');
     await expect(dmList(nadiaPage.page).locator('a.it')).toHaveCount(1);
     await expect(nadiaPage.page.getByTestId('channel-start')).toContainText('This is the start of your conversation with Rafi.');

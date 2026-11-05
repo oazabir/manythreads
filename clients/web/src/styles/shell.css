@@ -748,6 +748,12 @@ a.sec:hover {
   cursor: pointer;
 }
 
+.chd-stack .av {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
 .chd-count {
   margin-left: 4px;
   color: var(--mute);
@@ -829,4 +835,19 @@ a.sec:hover {
 .chd-menu-end {
   right: 0;
   left: auto;
+}
+
+/* on a phone the header's tools sit closer so the bell stays on the screen beside the name, the magnifier and the members (P21-06) */
+@media (width <= 760px) {
+  .chead {
+    gap: 6px;
+  }
+
+  .chead .chead-tools {
+    gap: 2px;
+  }
+
+  .chd-stack {
+    padding: 2px 3px;
+  }
 }

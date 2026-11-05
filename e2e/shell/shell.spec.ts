@@ -44,7 +44,7 @@ test.describe('Nadia, a member', () => {
     await expect(page.getByTestId('files-screen')).toBeVisible();
     await expect(page.locator('[data-landmark="header"]')).toContainText('Files');
     await page.goto(`/t/engineering/c/${dev}`);
-    await expect(page.locator('[data-landmark="header"]')).toContainText(`# ${dev}`);
+    await expect(page.locator('[data-landmark="header"]')).toContainText(`#${dev}`);
     await expect(page.locator('[data-landmark="content"]')).toContainText(`This is the very beginning of #${dev}.`);
     await page.goto('/t/engineering/dm/abc');
     await expect(page.locator('[data-landmark="header"]')).toContainText('Direct message');

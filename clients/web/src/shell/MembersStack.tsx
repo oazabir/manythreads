@@ -25,6 +25,7 @@ export function MembersStack({ channelId }: { channelId: string }) {
   useDismiss(open, () => setOpen(false), box);
   if (q.status !== 'ok') return null;
   const list = q.data.members;
+  if (list.length === 0) return null; // nobody to show: no lone "0"
   return (
     <div className="chd" ref={box}>
       <button type="button" className="chd-stack" aria-label={`Members (${list.length})`} aria-haspopup="menu" aria-expanded={open} data-testid="members-stack" data-count={list.length} onClick={() => setOpen((o) => !o)}>

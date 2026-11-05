@@ -465,7 +465,7 @@ test('when the server refuses a change, the old value comes back and one plain l
     await waitForList(page);
     await openChannelDetails(page);
     await page.getByTestId('channel-star').click();
-    await expect(page.locator('.sb-star-problem')).toHaveText('Could not save your sidebar. Try again.');
+    await expect(page.getByTestId('channel-details').getByRole('alert')).toHaveText('Could not save your sidebar. Try again.');
     await expect(page.getByTestId('channel-star')).toHaveAttribute('aria-pressed', 'false');
 
     // when it works again the same step succeeds and the line is gone

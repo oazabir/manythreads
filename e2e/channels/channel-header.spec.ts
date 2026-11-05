@@ -172,6 +172,12 @@ test('the header search is limited to the conversation and stays on the screen a
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${first.name}`, isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     await expect(messagesIn(page).first()).toBeVisible(T);
+    // every header button, the notifications bell included, is inside the screen
+    const vpw = page.viewportSize()!.width;
+    for (const b of await page.locator('[data-landmark="header"] button:visible').all()) {
+      const r = (await b.boundingBox())!;
+      expect(r.x + r.width, `${(await b.getAttribute('aria-label')) ?? (await b.textContent())} right edge`).toBeLessThanOrEqual(vpw);
+    }
     await page.getByRole('button', { name: 'Search this conversation' }).click();
     const box = page.getByRole('searchbox', { name: 'Search this conversation' });
     await expect(box).toBeFocused();
