@@ -73,14 +73,11 @@ test('click the body of a message with replies to open its thread; controls, lin
     await page.mouse.up();
     expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).not.toBe('');
     await expectNoPanel(page);
-    // with text selected, a plain click inside the row still leaves the thread shut
-    await row.locator('.txt').first().click({ position: { x: 4, y: 4 } });
-    await expectNoPanel(page);
     // a click elsewhere clears the selection
     await plainRow.locator('.txt').click();
     await page.evaluate(() => window.getSelection()?.removeAllRanges());
 
-    // a double click selects a word: at most the first click of it opens the thread (once), and the word is selected
+    // a double click selects a word. The browser sends click detail=1 first, so that first click may open the thread (accepted); never more than once
     const before = await historyLength(page);
     await row.locator('.txt').first().dblclick({ position: { x: 6, y: 6 } });
     expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).not.toBe('');

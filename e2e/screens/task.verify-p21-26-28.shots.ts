@@ -7,7 +7,7 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
  * Live check of P21-26 (click a message with a thread), P21-27 (a thread follows the window) and P21-28 (taller message box, no "Also send to" tick).
  * Run: set -a; . ~/manythreads.passwords.env; set +a; MANYTHREADS_URL=https://manythreads.kahf.to \
  *   pnpm -C e2e exec playwright test -c screens/task.config.ts task.verify-p21-26-28
- * Signs in as Rafi through the form (RAFI_EMAIL / RAFI_PASSWORD from the environment; never printed). It makes one channel of its own and leaves it.
+ * Signs in as Rafi through the form (RAFI_EMAIL / RAFI_PASSWORD from the environment; never printed). It makes one channel of its own and archives it at the end.
  */
 const BASE = process.env['MANYTHREADS_URL'] ?? 'https://manythreads.kahf.to';
 const OUT = process.env['MANYTHREADS_SHOTS_DIR'] ?? '/tmp/claude-0/-root-manythreads/daef2f10-3041-491b-8f76-f5e85142bb02/scratchpad/v2126';
@@ -63,6 +63,11 @@ test.beforeAll(async ({ browser }) => {
 });
 test.afterAll(async () => {
   log(`5xx responses: ${fivexx.length}`);
+  // do not leave the probe channel on the live site
+  if (chanId) {
+    const res = await page.request.post(`/api/channels/${chanId}/archive`, { headers: await csrf() }).catch(() => undefined);
+    log(`archive ${chanName}: ${res?.status() ?? 'failed'}`);
+  }
   await ctx?.close();
 });
 

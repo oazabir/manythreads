@@ -242,7 +242,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             onSend={send}
             slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
             autoFocus={variant === 'panel'}
-            // a scheduled reply is posted in the thread only: while "Also send to channel" is ticked there is no Send later (it would drop the tick)
+            // a scheduled reply is posted in the thread only (there is no "Also send to channel" tick any more, P21-28)
             sendLater={!answerTools}
             onEditLast={() => {
               const id = lastEditableOwn(tl.items, self);
