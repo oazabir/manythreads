@@ -311,6 +311,12 @@ a.sec:hover {
   white-space: nowrap;
 }
 
+.chd-stack .av {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
 .rail .foot .av {
   width: 22px;
   height: 22px;
@@ -746,12 +752,6 @@ a.sec:hover {
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
-}
-
-.chd-stack .av {
-  width: 24px;
-  height: 24px;
-  font-size: 10px;
 }
 
 .chd-count {
