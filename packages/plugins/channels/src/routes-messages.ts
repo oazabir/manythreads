@@ -22,6 +22,8 @@ import {
   PostMessageResponse,
   ReactRequest,
   ReactResponse,
+  ReactorsResponse,
+  reactorsRoute,
   UnreactPathParams,
   UnreactResponse,
   deleteMessageRoute,
@@ -289,6 +291,25 @@ export function registerMessageRoutes(deps: Deps): void {
       });
       const forwarded = await findChannelMessage(tx, targetChannelId, posted.id);
       return json(ForwardMessageResponse.parse(forwarded), 201);
+    }),
+  });
+
+  // Who reacted with one emoji. The rows are read under the same row-level security as the message, so a reader who cannot see the message gets nothing.
+  ctx.http.route({
+    ...reactorsRoute,
+    readOnly: true,
+    schema: { response: ReactorsResponse },
+    handler: route(async (req, tx) => {
+      const { channelId, messageId, emoji } = UnreactPathParams.parse(req.params);
+      await requireChannel(tx, channelId);
+      if (!(await findChannelMessage(tx, channelId, messageId))) throw notFound('No such message');
+      const res = await tx.query<{ actor_id: string; total: number }>(
+        `SELECT actor_id, count(*) OVER ()::int AS total FROM app.message_reactions WHERE message_id = $1 AND emoji = $2 ORDER BY created_at, actor_id LIMIT 20`,
+        [messageId, emoji],
+      );
+      // the window count is taken before LIMIT, so it is the whole number of people
+      const count = res.rows[0]?.total ?? 0;
+      return json(ReactorsResponse.parse({ reactors: res.rows.map((r) => ({ actorId: r.actor_id })), count }));
     }),
   });
 

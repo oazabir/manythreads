@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Message, Emoji } from '../../entities/message.ts';
 import { Page } from '../../common/page.ts';
-import { ChannelId, MessageId } from '../../ids.ts';
+import { ActorId, ChannelId, MessageId } from '../../ids.ts';
 import { IsoDateTime } from '../../common/time.ts';
 import { ReadStateEntry } from '../../entities/read-state.ts';
 import { ChannelMessage, ReactionSummary } from './common.ts';
@@ -101,3 +101,11 @@ export const forwardMessageRoute = { method: 'POST', path: '/api/channels/:chann
 export const MarkMessageUnreadResponse = ReadStateEntry;
 export type MarkMessageUnreadResponse = z.infer<typeof MarkMessageUnreadResponse>;
 export const markMessageUnreadRoute = { method: 'POST', path: '/api/channels/:channelId/messages/:messageId/unread' } as const;
+
+/**
+ * Who used one emoji on a message (P21-02): the first twenty, oldest first, and the whole count. The client puts names to the ids from the
+ * roster it already has; a reader without a roster (a guest) shows only the count.
+ */
+export const ReactorsResponse = z.object({ reactors: z.array(z.object({ actorId: ActorId })).max(20), count: z.number().int().nonnegative() });
+export type ReactorsResponse = z.infer<typeof ReactorsResponse>;
+export const reactorsRoute = { method: 'GET', path: '/api/channels/:channelId/messages/:messageId/reactions/:emoji' } as const;

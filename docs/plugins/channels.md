@@ -93,6 +93,7 @@ Every table has `ENABLE` and `FORCE ROW LEVEL SECURITY`, an `rls:` comment, and 
 | `GET /api/channels/:channelId/broadcast-reach` | How many people `@channel` and `@here` would tell here, below. `POST`/`PATCH` of a message take `confirmBroadcast`. |
 | `GET .../drafts`, `PUT .../draft`, `DELETE .../draft` | The caller's own unsent text per box, below. |
 | `POST .../messages/:messageId/reactions` `{ emoji }`, `DELETE .../reactions/:emoji` | Add or take back your reaction (needs the post permission to add). Both answer the message's reaction summary. |
+| `GET .../messages/:messageId/reactions/:emoji` | Who used one emoji: the first 20 people (oldest first) and the whole count. Read-only; anyone who can read the message. |
 | `POST /api/presence` `{ status? }`, `GET /api/presence` | The heartbeat (`online`, the default, or `away`; clients send one every 30 s) and who has beaten in the last 90 s (a guest sees only themself). Presence is read by polling; nothing is pushed. 120 per minute. |
 | `POST /api/channels/:channelId/typing` `{ threadRootId? }`, `GET .../typing` | "I am typing here" (needs the post permission; 409 in an archived channel): the row lives 5 s and the response says until when. The listing answers who is typing now, not the caller. Sending a message deletes the sender's row. 120 per minute. |
 

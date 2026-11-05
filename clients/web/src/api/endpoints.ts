@@ -318,6 +318,8 @@ import {
   postMessageRoute,
   reactRoute,
   unreactRoute,
+  reactorsRoute,
+  ReactorsResponse,
   changePasswordRoute,
   checkBootstrapRoute,
   createInvitationRoute,
@@ -770,6 +772,8 @@ export const deleteMessage = (channelId: string, messageId: string) =>
   call(deleteMessageRoute, { response: DeleteMessageResponse }, undefined, { channelId, messageId });
 export const addReaction = (channelId: string, messageId: string, emoji: string) =>
   call(reactRoute, { request: ReactRequest, response: ReactResponse }, { emoji }, { channelId, messageId });
+export const fetchReactors = (channelId: string, messageId: string, emoji: string) =>
+  call(reactorsRoute, { response: ReactorsResponse }, undefined, { channelId, messageId, emoji });
 export const removeReaction = (channelId: string, messageId: string, emoji: string) =>
   call(unreactRoute, { response: UnreactResponse }, undefined, { channelId, messageId, emoji });
 
