@@ -167,6 +167,12 @@ export function answeredForLine(a: AnswerPayloadView['answeredFor'], readerPerso
   return a.alias ? `${head} · ${ALIAS_WORD[a.alias] ?? `${a.alias} model`}` : head;
 }
 
+/** The closed line over lineage, reached and outside scope: "Sources (2)" by the citations, else by what was read; "Sources" when only the outside count is left. */
+export function sourcesLabel(cited: number, read: number): string {
+  const n = cited > 0 ? cited : read;
+  return n > 0 ? `Sources (${String(n)})` : 'Sources';
+}
+
 function CiteBody({ n, label }: { n: number; label: string }): ReactNode {
   return (
     <>
@@ -343,7 +349,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip, reade
 
       {lineage.length > 0 || reached.length > 0 || outside.count > 0 ? (
         <details className="an-details" data-testid="answer-sources">
-          <summary>{`Sources (${payload.citations.length > 0 ? payload.citations.length : lineage.length + reached.length})`}</summary>
+          <summary>{sourcesLabel(payload.citations.length, lineage.length + reached.length)}</summary>
       {lineage.length > 0 ? (
         <section className="an-sec" data-testid="answer-lineage" aria-label="Lineage">
           <div className="an-h" role="heading" aria-level={4}>Lineage</div>
