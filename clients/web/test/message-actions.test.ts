@@ -1,7 +1,7 @@
 import type { DirectMessageSummary, NavChannelGroup } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
-import { NO_THREAD_CLICK, channelTargets, dmLabel, dmTargets, filterTargets, messageLinkPath, messageLinkUrl, rowClickOpensThread, versionTime } from '../src/channels/messageActions';
+import { NO_THREAD_CLICK, channelTargets, dmLabel, dmTargets, escMarksRead, filterTargets, messageLinkPath, messageLinkUrl, reactorsText, rowClickOpensThread, rowShortcut, versionTime } from '../src/channels/messageActions';
 import { bookmarkHref } from '../src/channels/BookmarksBar';
 import { outcomeOfError } from '../src/notifications/OpenLink';
 
@@ -127,5 +127,61 @@ describe('a click on a message row opens its thread (P21-26)', () => {
     const asked: string[] = [];
     rowClickOpensThread({ ...base, target: { closest: (s: string) => (asked.push(s), null) } });
     expect(asked).toEqual([NO_THREAD_CLICK]);
+  });
+});
+
+describe('reactorsText (P21-02)', () => {
+  it('names up to three people and counts the rest as others', () => {
+    expect(reactorsText(['Nadia'], 1, '👍')).toBe('Nadia reacted with 👍');
+    expect(reactorsText(['Nadia', 'Omar'], 2, '👍')).toBe('Nadia and Omar reacted with 👍');
+    expect(reactorsText(['Nadia', 'Omar', 'Rafi'], 3, '👍')).toBe('Nadia, Omar and Rafi reacted with 👍');
+    expect(reactorsText(['Nadia', 'Omar', 'Rafi', 'Priya'], 5, '👍')).toBe('Nadia, Omar, Rafi and 2 others reacted with 👍');
+  });
+
+  it('one unnamed person and a whole count that outgrows the names', () => {
+    expect(reactorsText(['Nadia', 'Omar'], 3, '🎉')).toBe('Nadia, Omar and 1 other reacted with 🎉');
+    expect(reactorsText(['Nadia', 'Omar', 'Rafi', 'Priya'], 25, '🎉')).toContain('and 22 others reacted with 🎉');
+  });
+
+  it('without names it is only a count', () => {
+    expect(reactorsText([], 1, '✅')).toBe('1 person reacted with ✅');
+    expect(reactorsText([], 3, '✅')).toBe('3 people reacted with ✅');
+  });
+});
+
+describe('rowShortcut (P21-02)', () => {
+  const key = (k: string, o: Partial<Parameters<typeof rowShortcut>[0]> = {}) => rowShortcut({ key: k, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, isComposing: false, ...o });
+  it('e edits, r replies, either case', () => {
+    expect(key('e')).toBe('edit');
+    expect(key('r')).toBe('reply');
+    expect(key('E')).toBe('edit');
+    expect(key('R')).toBe('reply');
+  });
+  it('Ctrl or Cmd with Shift and C copies the link; not both together', () => {
+    expect(key('C', { ctrlKey: true, shiftKey: true })).toBe('copy-link');
+    expect(key('c', { metaKey: true, shiftKey: true })).toBe('copy-link');
+    expect(key('c', { metaKey: true, ctrlKey: true, shiftKey: true })).toBeNull();
+    expect(key('c', { ctrlKey: true })).toBeNull();
+    expect(key('c', { shiftKey: true })).toBeNull();
+  });
+  it('other modifiers, composition and other keys are not ours', () => {
+    expect(key('e', { ctrlKey: true })).toBeNull();
+    expect(key('r', { metaKey: true })).toBeNull();
+    expect(key('e', { shiftKey: true })).toBeNull();
+    expect(key('e', { altKey: true })).toBeNull();
+    expect(key('e', { isComposing: true })).toBeNull();
+    expect(key('x')).toBeNull();
+    expect(key('Enter')).toBeNull();
+  });
+});
+
+describe('escMarksRead (P21-05)', () => {
+  const base = { openCount: 0, focusInList: true, typing: false, panelOpen: false };
+  it('reads only with nothing open, focus on the list, no typing and no panel', () => {
+    expect(escMarksRead(base)).toBe(true);
+    expect(escMarksRead({ ...base, openCount: 1 })).toBe(false);
+    expect(escMarksRead({ ...base, focusInList: false })).toBe(false);
+    expect(escMarksRead({ ...base, typing: true })).toBe(false);
+    expect(escMarksRead({ ...base, panelOpen: true })).toBe(false);
   });
 });
