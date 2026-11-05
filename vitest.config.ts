@@ -25,6 +25,7 @@ export default defineConfig({
           include: ['**/test/**/*.test.ts'],
           exclude: [
             '**/node_modules/**',
+            '**/.claude/**',
             '**/dist/**',
             '**/test/rls/**',
             '**/test/events/**',
@@ -40,7 +41,7 @@ export default defineConfig({
         test: {
           name: 'rls',
           include: ['**/test/rls/**/*.test.ts'],
-          exclude: ['**/node_modules/**', '**/dist/**'],
+          exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
           testTimeout: TEST_TIMEOUT_MS,
@@ -50,7 +51,7 @@ export default defineConfig({
         test: {
           name: 'events',
           include: ['**/test/events/**/*.test.ts'],
-          exclude: ['**/node_modules/**', '**/dist/**'],
+          exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
           testTimeout: TEST_TIMEOUT_MS,
@@ -62,7 +63,7 @@ export default defineConfig({
         test: {
           name: 'memory-cross-team',
           include: ['packages/plugins/memory-hindsight/test/cross-team/**/*.test.ts'],
-          exclude: ['**/node_modules/**', '**/dist/**'],
+          exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
           passWithNoTests: false,
           hookTimeout: HOOK_TIMEOUT_MS,
           testTimeout: TEST_TIMEOUT_MS,
@@ -72,7 +73,7 @@ export default defineConfig({
         test: {
           name: 'schema-compat',
           include: ['packages/shared/test/schema-compat/**/*.test.ts'],
-          exclude: ['**/node_modules/**', '**/dist/**'],
+          exclude: ['**/node_modules/**', '**/dist/**', '**/.claude/**'],
           passWithNoTests: true,
           hookTimeout: HOOK_TIMEOUT_MS,
           testTimeout: TEST_TIMEOUT_MS,

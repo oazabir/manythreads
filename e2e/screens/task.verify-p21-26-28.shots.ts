@@ -7,10 +7,12 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test';
  * Live check of P21-26 (click a message with a thread), P21-27 (a thread follows the window) and P21-28 (taller message box, no "Also send to" tick).
  * Run: set -a; . ~/manythreads.passwords.env; set +a; MANYTHREADS_URL=https://manythreads.kahf.to \
  *   pnpm -C e2e exec playwright test -c screens/task.config.ts task.verify-p21-26-28
- * Signs in as Rafi through the form (RAFI_EMAIL / RAFI_PASSWORD from the environment; never printed). It makes one channel of its own and archives it at the end.
+ * Signs in as Omar through the form (OMAR_EMAIL / OMAR_PASSWORD from the environment; never printed). It makes one channel of its own and archives it at the end.
  */
 const BASE = process.env['MANYTHREADS_URL'] ?? 'https://manythreads.kahf.to';
 const OUT = process.env['MANYTHREADS_SHOTS_DIR'] ?? '/tmp/claude-0/-root-manythreads/daef2f10-3041-491b-8f76-f5e85142bb02/scratchpad/v2126';
+// Rafi is not a team lead, so he cannot create a channel (403); the default user is Omar. Set VERIFY_AS=RAFI to change.
+const WHO = process.env['VERIFY_AS'] ?? 'OMAR';
 const T = { timeout: 20_000 };
 const log = (s: string): void => console.log(`[v] ${s}`);
 const sfx = Date.now().toString(36);
@@ -56,8 +58,8 @@ test.beforeAll(async ({ browser }) => {
   });
   page.on('pageerror', (e) => log(`PAGEERROR ${e.message}`));
   await page.goto('/sign-in');
-  await page.getByLabel('Email').fill(process.env['RAFI_EMAIL'] ?? '');
-  await page.getByLabel('Password', { exact: true }).fill(process.env['RAFI_PASSWORD'] ?? '');
+  await page.getByLabel('Email').fill(process.env[`${WHO}_EMAIL`] ?? '');
+  await page.getByLabel('Password', { exact: true }).fill(process.env[`${WHO}_PASSWORD`] ?? '');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).not.toHaveURL(/\/sign-in/, T);
 });
@@ -74,6 +76,7 @@ test.afterAll(async () => {
 test('setup: a channel with a message that has two replies, a link, a mention and a reaction', async () => {
   chanName = `verify-p21-${sfx}`;
   const res = await page.request.post('/api/teams/engineering/channels', { headers: await csrf(), data: { name: chanName } });
+  if (res.status() >= 300) log(`create channel ${res.status()} ${(await res.text()).slice(0, 300)}`);
   expect(res.status(), 'create channel').toBeLessThan(300);
   chanId = ((await res.json()) as any).channel.id;
   rootId = await post('Release plan: read https://example.com/plan with @rafi before Friday please');
@@ -160,8 +163,13 @@ test('P21-28: the resting message box is two lines tall in the channel and the t
   await shoot('06-box-grown');
   await box.fill('');
   // a direct message has the same box
-  await page.goto('/t/engineering/dms');
-  await page.waitForLoadState('networkidle').catch(() => undefined);
+  await page.getByRole('link', { name: /Nadia/ }).first().click();
+  const dmBox = page.getByRole('textbox', { name: /^Message / }).first();
+  await expect(dmBox).toBeVisible(T);
+  await page.waitForTimeout(500);
+  const dh = (await page.getByRole('textbox', { name: /^Message / }).first().boundingBox())?.height ?? 0;
+  log(`direct message box resting height ${Math.round(dh)}`);
+  expect(dh).toBeGreaterThanOrEqual(44);
   await shoot('07-dms');
 });
 
