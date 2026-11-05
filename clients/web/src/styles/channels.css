@@ -379,7 +379,7 @@
 
 /* a bot's mention reads in the agent colour */
 .md .m.m-bot {
-  background: var(--agent-wash);
+  background: var(--agent-border);
   color: var(--agent-ink);
 }
 

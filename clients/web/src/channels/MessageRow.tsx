@@ -154,6 +154,13 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     if (el && plainText) setTall(el.scrollHeight > CLAMP_LINES * LINE_PX + 2);
   }, [m.body, plainText]);
   const clamped = plainText && tall && !opened && !highlight && !expand;
+  // a jump target or the first unread message was drawn whole: it stays whole when the highlight or the "New" line goes (no jump in the list)
+  useEffect(() => {
+    if (highlight || expand) {
+      rememberExpanded(m.id);
+      setOpened(true);
+    }
+  }, [highlight, expand, m.id]);
   // another row was marked unread after this one: only the latest mark says so
   useEffect(() => {
     const onMark = (e: Event): void => {
