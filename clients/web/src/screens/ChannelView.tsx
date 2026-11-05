@@ -77,7 +77,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const detailsManage = info.status === 'ok' && info.data.canManage;
   const detailsLabel = dm ? dm.label : `#${name}`;
   const detailsNode = useMemo(
-    () => <ChannelDetails channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} />,
+    () => <ChannelDetails key={channelId} channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} />,
     [channelId, name, teamSlug, dm, detailsManage, detailsLabel],
   );
   useHeaderTitle(detailsNode);
@@ -304,7 +304,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
 
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
-      {headerSlot && !dm ? createPortal(<MembersStack channelId={channelId} />, headerSlot) : null}
+      {headerSlot && !dm ? createPortal(<MembersStack key={channelId} channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<ChannelSearch channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
       {botBoard && headerSlot

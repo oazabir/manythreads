@@ -31,7 +31,7 @@ export function MembersStack({ channelId }: { channelId: string }) {
         {list.slice(0, 3).map((m) => <Avatar key={m.personId} name={m.displayName} personId={m.personId} />)}
         <span className="chd-count" aria-hidden="true">{list.length}</span>
       </button>
-      {open ? <div className="chd-menu" role="menu" aria-label="Members"><MembersList channelId={channelId} /></div> : null}
+      {open ? <div className="chd-menu chd-menu-end" role="menu" aria-label="Members"><MembersList channelId={channelId} /></div> : null}
     </div>
   );
 }

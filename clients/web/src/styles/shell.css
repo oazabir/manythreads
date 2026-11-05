@@ -821,3 +821,8 @@ a.sec:hover {
     width: min(60vw, 220px);
   }
 }
+
+.chd-menu-end {
+  right: 0;
+  left: auto;
+}

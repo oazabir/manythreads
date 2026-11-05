@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { leaveChannel } from '../api/endpoints';
 import { ChannelLevelOptions } from '../notifications/ChannelBell';
@@ -35,12 +35,24 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
   const close = (): void => {
     setOpen(false);
     setView('menu');
     setConfirmLeave(false);
   };
   useDismiss(open, close, box);
+  // Keyboard: opening (or switching view) puts focus on the first item; closing from inside gives it back to the name button.
+  useEffect(() => {
+    if (open) {
+      wasOpen.current = true;
+      box.current?.querySelector<HTMLElement>('.chd-menu button, .chd-menu a')?.focus();
+    } else if (wasOpen.current) {
+      wasOpen.current = false;
+      if (box.current?.contains(document.activeElement) || document.activeElement === document.body) trigger.current?.focus();
+    }
+  }, [open, view]);
   const prefs = useSidebarPrefs(teamSlug, !guest && !dm);
   const starred = prefs.status === 'ok' && isStarred(prefs.prefs.starred, channelId);
   const toggleStar = (): void => {
@@ -62,7 +74,7 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   const target = useMemo(() => ({ channelId, channelName: dm ? null : name, channelKind: dm ? ('dm' as const) : ('channel' as const) }), [channelId, name, dm]);
   return (
     <div className="chd" ref={box}>
-      <button type="button" className="chd-btn" aria-haspopup="menu" aria-expanded={open} data-testid="channel-details-button" onClick={() => (open ? close() : setOpen(true))}>
+      <button type="button" ref={trigger} className="chd-btn" aria-haspopup="menu" aria-expanded={open} data-testid="channel-details-button" onClick={() => (open ? close() : setOpen(true))}>
         {lead}
         <span className="chd-name">{label}</span>
         <CaretIcon open={open} />
