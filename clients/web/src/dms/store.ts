@@ -82,3 +82,15 @@ export function dmLabel(dm: DirectMessageSummary, selfPersonId: string): string 
 
 /** The header of a conversation: everyone in it, as the wireframe shows ("Nadia, Rafi"). */
 export const dmParticipants = (dm: DirectMessageSummary): string => dm.participants.map((p) => p.displayName).join(', ');
+
+/** What a conversation's header names: one other person (their dot, status and time are drawn), a group, or the person alone. */
+export type DmHeaderTitle = { kind: 'person'; personId: string; name: string } | { kind: 'group'; name: string } | { kind: 'plain'; name: string };
+
+/** The header title of a conversation: the other person for a one-to-one, the others' names (not the reader's own) for a group, plain text for Reminders and Notes to self. */
+export function dmHeaderTitle(dm: DirectMessageSummary, selfPersonId: string): DmHeaderTitle {
+  const name = dmLabel(dm, selfPersonId);
+  if (dm.channel.dmKey?.startsWith(REMINDERS_DM_KEY_PREFIX)) return { kind: 'plain', name };
+  const others = dm.participants.filter((p) => p.personId !== selfPersonId);
+  if (others.length === 0) return { kind: 'plain', name };
+  return others.length === 1 ? { kind: 'person', personId: others[0]!.personId, name } : { kind: 'group', name };
+}

@@ -770,3 +770,54 @@ a.sec:hover {
   color: var(--mute);
   font-size: 12.5px;
 }
+
+/* the DM header: the other person's face, status and local time (P21-06) */
+.chd-btn .av-wrap {
+  display: inline-flex;
+}
+
+.chd .chd-btn > .av-wrap > .av {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.dmh-trail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: 4px;
+  color: var(--mute);
+  font-size: 12.5px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.dmh-status {
+  overflow: hidden;
+  max-width: 22ch;
+  text-overflow: ellipsis;
+}
+
+@media (width <= 760px) {
+  .dmh-status {
+    display: none;
+  }
+}
+
+/* the magnifier of a conversation header and the box it opens */
+.chs-btn {
+  flex: none;
+}
+
+.search-box.chs-box {
+  display: flex;
+  width: 220px;
+}
+
+@media (width <= 760px) {
+  .search-box.chs-box {
+    width: min(60vw, 220px);
+  }
+}

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { openChannelDetails } from '../support/channel-details.ts';
 
 /**
  * P14-14 on the live site: a lead makes an incoming webhook on #alerts, a build server posts to its public address (a generic JSON call and
@@ -26,6 +27,7 @@ test('an incoming webhook, end to end', async ({ browser, request }) => {
 
   await page.goto('/t/engineering');
   await page.getByRole('link', { name: /alerts/ }).first().click();
+  await openChannelDetails(page);
   await page.getByTestId('webhooks-open').click();
   await page.getByTestId('webhook-name').fill('GitHub Actions');
   await page.getByTestId('webhook-create').click();
@@ -61,7 +63,10 @@ test('an incoming webhook, end to end', async ({ browser, request }) => {
     await page.screenshot({ path: join(OUT, 'p14-14-02-messages-arrive.png'), animations: 'disabled' });
   } finally {
     // switch the webhook off again
-    if (!(await page.getByTestId('webhook-revoke').first().isVisible())) await page.getByTestId('webhooks-open').click();
+    if (!(await page.getByTestId('webhook-revoke').first().isVisible())) {
+      await openChannelDetails(page);
+      await page.getByTestId('webhooks-open').click();
+    }
     await page.getByTestId('webhook-revoke').first().click();
     await page.getByTestId('webhook-revoke-confirm').click();
     await expect(page.getByTestId('webhooks-empty')).toBeVisible(T);

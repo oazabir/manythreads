@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { openChannelDetails } from '../support/channel-details.ts';
 
 /**
  * P14-09 on the live site: Account → Notifications (kinds, levels, keywords, this browser) and the bell in a channel header.
@@ -32,7 +33,9 @@ test('notification settings and the channel bell', async ({ browser }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/t/engineering');
   await page.getByRole('link', { name: /dev/ }).first().click();
-  const bell = page.getByRole('button', { name: /notification level|notifications for/i }).first();
+  // the channel's notification choice is in the details menu (P21-06)
+  await openChannelDetails(page);
+  const bell = page.getByTestId('details-notifications');
   await expect(bell).toBeVisible(T);
   await bell.click();
   await page.waitForTimeout(400);

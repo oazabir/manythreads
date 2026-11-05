@@ -2,6 +2,7 @@
 import { createServer, type Server } from 'node:http';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { openChannelDetails } from '../support/channel-details.ts';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 
 /** Live check of P14-14 Integrations on the deployed site (throwaway). Output: <OUT>/itg-*.png. Token is kept in memory only. */
@@ -83,12 +84,14 @@ test('1 member has no button; lead has dialog with three tabs (1280 and 390)', a
   await nadia.page.request.post(`/api/channels/${room}/join`, { headers: await csrf(nadia.context) });
   await nadia.page.goto(`/t/engineering/c/${name}`);
   await expect(nadia.page.getByText('Welcome to the scratch room')).toBeVisible(T);
+  await openChannelDetails(nadia.page);
   await expect(nadia.page.getByTestId('webhooks-open')).toHaveCount(0);
   log('member: no Integrations button');
   await shoot(nadia.page, '01-member-1280');
   await nadia.context.close();
 
   await omar.page.goto(`/t/engineering/c/${name}`);
+  await openChannelDetails(omar.page);
   await omar.page.getByTestId('webhooks-open').click();
   const d = omar.page.getByTestId('webhooks-dialog');
   await expect(d.getByRole('tab')).toHaveText(['Incoming webhooks', 'Outgoing webhooks', 'API tokens']);
@@ -103,6 +106,7 @@ test('1 member has no button; lead has dialog with three tabs (1280 and 390)', a
   await expect(m.page.getByText('Welcome to the scratch room')).toBeVisible(T);
   await scroll(m.page, '390 channel');
   await shoot(m.page, '03-lead-channel-390');
+  await openChannelDetails(m.page);
   const btn = m.page.getByTestId('webhooks-open');
   log(`390 button visible=${await btn.isVisible()}`);
   await btn.click();
@@ -124,6 +128,7 @@ test('1 member has no button; lead has dialog with three tabs (1280 and 390)', a
 test('2 token via UI, Slack API calls', async ({ browser }) => {
   const { page, context } = await signIn(browser, who('OMAR'));
   await page.goto(`/t/engineering/c/${name}`);
+  await openChannelDetails(page);
   await page.getByTestId('webhooks-open').click();
   await page.getByTestId('integrations-tab-tokens').click();
   await page.getByTestId('token-name').fill('Itg script');
@@ -173,6 +178,7 @@ test('2 token via UI, Slack API calls', async ({ browser }) => {
 test('3 outgoing webhook to localhost:9099', async ({ browser }) => {
   const { page, context } = await signIn(browser, who('OMAR'));
   await page.goto(`/t/engineering/c/${name}`);
+  await openChannelDetails(page);
   await page.getByTestId('webhooks-open').click();
   await page.getByTestId('integrations-tab-outgoing').click();
   await page.getByTestId('outgoing-name').fill('Itg hook');
@@ -190,6 +196,7 @@ test('3 outgoing webhook to localhost:9099', async ({ browser }) => {
 test('4 revoke in UI; token refused', async ({ browser }) => {
   const { page, context } = await signIn(browser, who('OMAR'));
   await page.goto(`/t/engineering/c/${name}`);
+  await openChannelDetails(page);
   await page.getByTestId('webhooks-open').click();
   await page.getByTestId('integrations-tab-tokens').click();
   await expect(page.getByTestId('token-row')).toContainText('calls so far', T);

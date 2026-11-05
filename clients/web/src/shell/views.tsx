@@ -1,5 +1,5 @@
 import { Link, Navigate, useParams } from 'react-router';
-import { dmLabel, useDms } from '../dms/store';
+import { dmHeaderTitle, useDms } from '../dms/store';
 import { ChannelBody, NoChannelAccess } from '../screens/ChannelView';
 import { useChannelFeed } from './channelFeed';
 import { GUEST_SLUG } from './messageLink';
@@ -70,5 +70,6 @@ export function DirectMessageView() {
   if (feed.status === 'loading') return <div className="view-empty" aria-busy="true" />;
   const dm = feed.items.find((d) => d.channel.id === id);
   if (!dm) return <NoChannelAccess />;
-  return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: dmLabel(dm, session.person.id) }} />;
+  const head = dmHeaderTitle(dm, session.person.id);
+  return <ChannelBody key={dm.channel.id} channelId={dm.channel.id} name="" teamSlug={slug} dm={{ label: head.name, personId: head.kind === 'person' ? head.personId : undefined }} />;
 }

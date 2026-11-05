@@ -100,3 +100,12 @@ export function profileFacts(card: PresenceCard | undefined, now: Date, ownZone:
     inHours: hours && zone ? withinWorkingHours(hours, zone, now) : null,
   };
 }
+
+/** `7:32 pm there`: the clock in `zone` as a short phrase for a conversation header; null when no zone is shared or the runtime does not know it. */
+export function localTimeThere(at: Date, zone: string | null | undefined): string | null {
+  if (!zone || !isValidTimeZone(zone)) return null;
+  const { minutes } = localClock(at, zone);
+  const h24 = Math.floor(minutes / 60);
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(minutes % 60).padStart(2, '0')} ${h24 < 12 ? 'am' : 'pm'} there`;
+}

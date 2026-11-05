@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { leaveChannel } from '../api/endpoints';
 import { ChannelLevelOptions } from '../notifications/ChannelBell';
@@ -14,7 +14,7 @@ import { useDismiss } from './useDismiss';
  * The channel's name in the header, as a button that opens the channel's details (P21-06): notifications, star, members, integrations, files and
  * Leave. It replaces the separate star, bell and Integrations buttons the header used to carry. A direct message has the notifications choice only.
  */
-export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label }: {
+export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label, lead, trail }: {
   channelId: string;
   name: string;
   teamSlug: string;
@@ -22,6 +22,10 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   canManage: boolean;
   /** What the button says: `#dev`, or the other person in a direct message. */
   label: string;
+  /** Drawn before the name inside the button (a direct message: the person's avatar with the presence dot). */
+  lead?: ReactNode;
+  /** Drawn after the button, outside it (a direct message: status and local time). */
+  trail?: ReactNode;
 }) {
   const { guest } = useShell();
   const navigate = useNavigate();
@@ -59,9 +63,11 @@ export function ChannelDetails({ channelId, name, teamSlug, dm, canManage, label
   return (
     <div className="chd" ref={box}>
       <button type="button" className="chd-btn" aria-haspopup="menu" aria-expanded={open} data-testid="channel-details-button" onClick={() => (open ? close() : setOpen(true))}>
+        {lead}
         <span className="chd-name">{label}</span>
         <CaretIcon open={open} />
       </button>
+      {trail}
       {open ? (
         <div className="chd-menu" role="menu" aria-label="Channel details" data-testid="channel-details">
           {view === 'menu' ? (

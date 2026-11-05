@@ -53,6 +53,9 @@ test('a bot finishes with an Answer: the sources the person may open, what was o
     await expect(cites).toHaveCount(1);
     await expect(cites.first()).toContainText(PUBLIC_TEXT);
     await expect(cites.first()).toHaveAttribute('data-n', '1');
+    // the lineage and the outside count sit under the closed "Sources" line (P21-07)
+    await expect(page.getByTestId('answer-sources')).not.toHaveAttribute('open', '');
+    await page.getByTestId('answer-sources').locator('summary').click();
     await expect(page.getByTestId('answer-lineage-row')).toHaveCount(1);
     await expect(page.getByTestId('answer-lineage')).toContainText(PUBLIC_TEXT);
     await expect(page.getByTestId('answer-outside')).toContainText('1 message · not read by this bot in this run');
@@ -62,7 +65,8 @@ test('a bot finishes with an Answer: the sources the person may open, what was o
     await expect(answer).not.toContainText(leadsMessage);
 
     // whom it was for, and the suggestions (data only here)
-    await expect(page.getByTestId('answer-for')).toHaveText('Answered for Nadia · scoped · smart');
+    await expect(page.getByTestId('answer-for')).toHaveText('Used your private notes · smart model')
+    await expect(page.getByTestId('answer-for')).toHaveAttribute('title', 'Answered for Nadia · scoped · smart');
     await expect(page.getByTestId('answer-chips')).toContainText('@Coder');
     await expect(page.getByTestId('answer-followups')).toContainText('When does it open?');
 

@@ -16,6 +16,8 @@ import { isApiError } from '../api/client';
 import { VirtualList, type VirtualListApi } from '../channels/VirtualList';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
+import { DmLead, DmTrail } from '../dms/DmHeadTitle';
+import { ChannelSearch } from '../search/ChannelSearch';
 import { ChannelDetails } from '../shell/ChannelDetails';
 import { MembersStack } from '../shell/MembersStack';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
@@ -60,7 +62,7 @@ function useNames(slug: string): string[] {
 }
 
 /** A conversation shown as a channel does: `dm` replaces the `#name` copy with who is in it. */
-export type DmCopy = { label: string };
+export type DmCopy = { label: string; /** The other person of a one-to-one, whose face, status and time the header shows. */ personId?: string | undefined };
 
 export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: string; name: string; teamSlug: string; dm?: DmCopy }) {
   const { guest } = useShell();
@@ -75,7 +77,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const detailsManage = info.status === 'ok' && info.data.canManage;
   const detailsLabel = dm ? dm.label : `#${name}`;
   const detailsNode = useMemo(
-    () => <ChannelDetails channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} />,
+    () => <ChannelDetails channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} lead={dm?.personId ? <DmLead personId={dm.personId} name={dm.label} /> : undefined} trail={dm?.personId ? <DmTrail personId={dm.personId} /> : undefined} />,
     [channelId, name, teamSlug, dm, detailsManage, detailsLabel],
   );
   useHeaderTitle(detailsNode);
@@ -303,6 +305,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
       {headerSlot && !dm ? createPortal(<MembersStack channelId={channelId} />, headerSlot) : null}
+      {headerSlot ? createPortal(<ChannelSearch channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
       {botBoard && headerSlot
         ? createPortal(

@@ -86,6 +86,7 @@ test('the UI: pick a person, one conversation opens; picking again opens the sam
     expect(await dmRows()).toHaveLength(1);
 
     // a conversation of its own: the header search is limited to it
+    await rafiPage.page.getByRole('button', { name: 'Search this conversation' }).click();
     await rafiPage.page.getByRole('searchbox', { name: 'Search this conversation' }).fill('rota');
     await rafiPage.page.getByRole('searchbox', { name: 'Search this conversation' }).press('Enter');
     await expect(rafiPage.page.getByTestId('search-results')).toContainText('in this conversation');

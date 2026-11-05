@@ -3,6 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
+import { openChannelDetails } from '../support/channel-details.ts';
 import { PHONE, apiOn, noSidewaysScroll, openOn, postAs, type StackApi } from '../support/stack-browser.ts';
 
 /**
@@ -76,12 +77,15 @@ test('a member does not get the Integrations button; a lead does, with three tab
   const member = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${roomName}`);
   try {
     await expect(member.page.getByText('Welcome to the room')).toBeVisible(T);   // the channel has loaded
+    await openChannelDetails(member.page);
+    await expect(member.page.getByTestId('channel-details')).toBeVisible();
     await expect(member.page.getByTestId('webhooks-open')).toHaveCount(0);
   } finally {
     await member.context.close();
   }
   const lead = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${roomName}`);
   try {
+    await openChannelDetails(lead.page);
     await lead.page.getByTestId('webhooks-open').click();
     const dialog = lead.page.getByTestId('webhooks-dialog');
     await expect(dialog.getByRole('heading', { name: `Integrations for #${roomName}` })).toBeVisible(T);
@@ -96,6 +100,7 @@ test('a member does not get the Integrations button; a lead does, with three tab
 test('the lead makes an API token on screen; a script posts, edits and reacts with it', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${roomName}`);
   try {
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-tokens').click();
     await expect(page.getByTestId('tokens-empty')).toBeVisible(T);
@@ -113,6 +118,7 @@ test('the lead makes an API token on screen; a script posts, edits and reacts wi
     await expect(page.getByTestId('token-row')).toContainText('Never used yet');
     // the secret is not shown again: reload and open the dialog
     await page.reload();
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-tokens').click();
     await expect(page.getByTestId('token-row')).toContainText('Deploy script');
@@ -149,6 +155,7 @@ test('the lead makes an API token on screen; a script posts, edits and reacts wi
     expect((await slack('chat.postMessage', { channel: room, text: 'x' }, null)).json).toEqual({ ok: false, error: 'not_authed' });
 
     // the list shows its use
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-tokens').click();
     await expect(page.getByTestId('token-row')).toContainText('calls so far', T);
@@ -161,6 +168,7 @@ test('the lead makes an outgoing webhook; a person\'s "deploy" message is sent s
   hits = [];
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${roomName}`);
   try {
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-outgoing').click();
     await expect(page.getByTestId('outgoing-empty')).toBeVisible(T);
@@ -217,6 +225,7 @@ test('the lead makes an outgoing webhook; a person\'s "deploy" message is sent s
     expect(hit.headers['x-manythreads-signature']).toBe(`v0=${createHmac('sha256', signingSecret).update(`v0:${stamp}:${hit.body}`).digest('hex')}`);
 
     // the screen tells what happened
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-outgoing').click();
     await expect(page.getByTestId('outgoing-row')).toContainText('Last message sent', T);
@@ -229,6 +238,7 @@ test('a hook can be paused and a pause sends nothing; on a phone the dialog does
   hits = [];
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${roomName}`, { viewport: PHONE, mobile: true });
   try {
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-outgoing').click();
     await expect(page.getByTestId('outgoing-row')).toBeVisible(T);
@@ -249,6 +259,7 @@ test('a hook can be paused and a pause sends nothing; on a phone the dialog does
 test('switching off: the token is refused at once and the hook is gone from the list', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${roomName}`);
   try {
+    await openChannelDetails(page);
     await page.getByTestId('webhooks-open').click();
     await page.getByTestId('integrations-tab-tokens').click();
     await page.getByTestId('token-revoke').click();

@@ -7,7 +7,7 @@ import { parseSearchEntry, searchEntry, SEARCH_PANEL } from './searchEntry';
  * A search box that opens the results in the right panel (`search:<query>`). Pressing Enter searches; searching again replaces the
  * results on top instead of stacking them. `channelId` limits the results to one conversation.
  */
-export function SearchBox({ placeholder, channelId = null, label = 'Search', className = '' }: { placeholder: string; channelId?: string | null; label?: string; className?: string }) {
+export function SearchBox({ placeholder, channelId = null, label = 'Search', className = '', autoFocus = false }: { placeholder: string; channelId?: string | null; label?: string; className?: string; autoFocus?: boolean }) {
   const panel = usePanel();
   const top = panel.entries.at(-1);
   const current = top?.type === SEARCH_PANEL ? parseSearchEntry(top.id) : null;
@@ -30,7 +30,7 @@ export function SearchBox({ placeholder, channelId = null, label = 'Search', cla
     <form role="search" className={`search-box ${className}`} onSubmit={submit} aria-label={label}>
       <SearchIcon />
       <span className="sr-only">{label}</span>
-      <input type="search" enterKeyHint="search" placeholder={placeholder} aria-label={label} value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} />
+      <input type="search" enterKeyHint="search" placeholder={placeholder} aria-label={label} autoFocus={autoFocus} value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} />
     </form>
   );
 }

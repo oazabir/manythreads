@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
+import { openChannelDetails } from '../support/channel-details.ts';
 import { PHONE, apiOn, channelsOf, openOn, postAs, type StackApi } from '../support/stack-browser.ts';
 
 /**
@@ -177,12 +178,16 @@ test('the star in the channel header does the same as the row menu', async ({ br
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/c/standup');
   try {
     await waitForList(page);
+    // the star lives in the channel details menu (P21-06); the menu closes once the star is saved
     const star = page.getByTestId('channel-star');
+    await openChannelDetails(page);
     await expect(star).toBeVisible();
     await expect(star).toHaveAttribute('aria-pressed', 'false');
     await star.click();
+    await openChannelDetails(page);
     await expect(star).toHaveAttribute('aria-pressed', 'true');
-    await expect(star).toHaveAccessibleName('Remove the star from #standup');
+    await expect(star).toHaveText(/Unstar/);
+    await page.keyboard.press('Escape');
     expect(await listed(group(page, 'starred'))).toEqual(['standup']);
     await expect(row(page, 'standup')).toHaveCount(1);
     await expect.poll(async () => (await prefsOf(nadia)).starred).toEqual([ids['standup']]);
@@ -192,10 +197,13 @@ test('the star in the channel header does the same as the row menu', async ({ br
 
     await page.reload();
     await waitForList(page);
+    await openChannelDetails(page);
     await expect(page.getByTestId('channel-star')).toHaveAttribute('aria-pressed', 'true');
 
     await page.getByTestId('channel-star').click();
+    await openChannelDetails(page);
     await expect(page.getByTestId('channel-star')).toHaveAttribute('aria-pressed', 'false');
+    await page.keyboard.press('Escape');
     await expect(group(page, 'starred')).toHaveCount(0);
     await expect.poll(async () => (await prefsOf(nadia)).starred).toEqual([]);
   } finally {
@@ -455,6 +463,7 @@ test('when the server refuses a change, the old value comes back and one plain l
     // the header star says it beside the star
     await page.goto('/t/engineering/c/dev');
     await waitForList(page);
+    await openChannelDetails(page);
     await page.getByTestId('channel-star').click();
     await expect(page.locator('.sb-star-problem')).toHaveText('Could not save your sidebar. Try again.');
     await expect(page.getByTestId('channel-star')).toHaveAttribute('aria-pressed', 'false');
@@ -583,10 +592,13 @@ test('at 390 px the options button and the row menu fit in the drawer and can be
     await expect.poll(async () => (await prefsOf(nadia)).starred.length).toBe(2);
     expect(await noSideways()).toBe(true);
 
-    // the header star is left out on a phone (the title needs the room); the row menu offers the same
+    // the star is in the channel details menu, so the phone header needs no star button of its own; the row menu offers the same
     await page.goto('/t/engineering/c/dev');
     await expect(page.getByTestId('channel-view')).toBeVisible();
     await expect(page.getByTestId('channel-star')).toBeHidden();
+    await openChannelDetails(page);
+    await expect(page.getByTestId('channel-star')).toBeVisible();
+    await page.keyboard.press('Escape');
     expect(await noSideways()).toBe(true);
   } finally {
     await context.close();

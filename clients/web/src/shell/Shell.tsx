@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
-import { dmParticipants, useDms } from '../dms/store';
+import { dmLabel, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
 import { InboxNotices } from '../screens/memory/InboxNotices';
 import { MeetingHost } from '../meetings/MeetingHost';
@@ -78,7 +78,7 @@ export function Shell() {
   // On a wide screen the Threads inbox draws its own two header bands (list: title and tabs; thread: its name and actions, as in the prototype), so the
   // shell's band is left out there; the bell then sits in the thread's band.
   const inboxOwnsHeader = onThreads && !narrow && !guest && team !== null;
-  const title = dmId ? (dm ? dmParticipants(dm) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
+  const title = dmId ? (dm ? dmLabel(dm, session.person.id) : 'Direct message') : slug === null && team ? 'Threads' : viewTitle(loc.pathname);
   const searchLabel = guest ? 'Search' : team ? `Search ${team.name}` : 'Search';
   const railSearch = useRef<HTMLDivElement>(null);
   const openSearch = (): void => {
@@ -125,7 +125,6 @@ export function Shell() {
             {topic ? <span className="topic" data-testid="channel-topic" title={topic}>{topic}</span> : null}
             <div className="right chead-tools">
               <div className="chead-actions" ref={setActionsSlot} />
-              {dmId && dm ? <SearchBox className="head-search" placeholder="Search this conversation" label="Search this conversation" channelId={dmId} /> : null}
               <button type="button" className="icon-btn find-btn" aria-label="Find" onClick={openSearch}>
                 <SearchIcon />
               </button>
