@@ -16,6 +16,7 @@ import {
   ListMessagesQuery,
   ListMessagesResponse,
   MessageDeletedPush,
+  type MessageAuthor,
   MessagePathParams,
   PostMessageRequest,
   PostMessageResponse,
@@ -31,6 +32,7 @@ import {
   reactRoute,
   unreactRoute,
 } from '@manythreads/shared';
+import type { PluginTx } from '@manythreads/sdk';
 import { conflict, forbidden, invalid, json, notFound, route } from './http.ts';
 import { clearDraft } from './routes-drafts.ts';
 import { pollsFor } from './poll-views.ts';
@@ -60,6 +62,39 @@ import {
 export function registerMessageRoutes(deps: Deps): void {
   const { ctx } = deps;
   const emit = ctx.audit.emit;
+
+  /** For thread roots with replies: the authors of the newest replies (at most three people, newest first, deleted replies left out) and whether the reader has unread replies. */
+  async function replyPreviews(
+    tx: PluginTx,
+    page: readonly MessageWithThreadRow[],
+  ): Promise<Map<string, { replyAuthors: MessageAuthor[]; unreadReplies: boolean }>> {
+    const out = new Map<string, { replyAuthors: MessageAuthor[]; unreadReplies: boolean }>();
+    const roots = page.filter((r) => (r.reply_count ?? 0) > 0).map((r) => r.id);
+    if (roots.length === 0) return out;
+    // the newest reply of each author in each thread; the newest three per thread are kept below (no max(uuid) in Postgres: DISTINCT ON)
+    const res = await tx.query<{ id: string; thread_root_id: string; author_id: string }>(
+      `SELECT DISTINCT ON (thread_root_id, author_id) id, thread_root_id, author_id
+         FROM app.messages WHERE thread_root_id = ANY($1::uuid[]) AND deleted_at IS NULL
+        ORDER BY thread_root_id, author_id, id DESC`,
+      [roots],
+    );
+    const authors = await authorsFor(tx, res.rows.map((r) => r.id));
+    const authorOf = new Map(res.rows.map((r) => [r.id, r.author_id]));
+    const byRoot = new Map<string, string[]>();
+    for (const r of res.rows) byRoot.set(r.thread_root_id, [...(byRoot.get(r.thread_root_id) ?? []), r.id]);
+    const me = await myPersonId(tx);
+    const unread = new Map<string, boolean>();
+    if (me) for (const e of await ctx.readState.get(tx, me, roots.map((id) => ({ targetType: 'thread', targetId: id })))) unread.set(e.targetId, e.unreadCount > 0);
+    for (const root of roots) {
+      const ids = (byRoot.get(root) ?? []).sort().reverse().slice(0, 3);
+      const replyAuthors = ids.flatMap((id) => {
+        const a = authors.get(authorOf.get(id) ?? '');
+        return a ? [a] : [];
+      });
+      out.set(root, { replyAuthors, unreadReplies: unread.get(root) ?? false });
+    }
+    return out;
+  }
 
   ctx.http.route({
     ...postMessageRoute,
@@ -123,10 +158,12 @@ export function registerMessageRoutes(deps: Deps): void {
       const authors = await authorsFor(tx, page.map((r) => r.id));
       const forwards = await forwardsFor(tx, page);
       const polls = await pollsFor(tx, page);
+      // the channel feed (not a thread) shows who replied and whether the reader has unread replies, for the roots that have replies (P21-03)
+      const replies = q.threadRootId ? new Map<string, { replyAuthors: MessageAuthor[]; unreadReplies: boolean }>() : await replyPreviews(tx, page);
       const oldest = page[page.length - 1];
       return json(
         ListMessagesResponse.parse({
-          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id), forwards.get(r.id), polls.get(r.id))),
+          items: page.map((r) => toChannelMessage(r, reactions.get(r.id) ?? [], attachments.get(r.id) ?? [], authors.get(r.author_id), forwards.get(r.id), polls.get(r.id), replies.get(r.id))),
           nextCursor: more && oldest ? oldest.id : null,
         }),
       );

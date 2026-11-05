@@ -66,6 +66,10 @@ export const ChannelMessage = Message.extend({
   reactions: z.array(ReactionSummary),
   replyCount: z.number().int().nonnegative(),
   lastReplyAt: IsoDateTime.nullable(),
+  /** Top-level feed only (P21-03): up to three people who replied, the newest reply's author first, for the avatars on the reply count. */
+  replyAuthors: z.array(MessageAuthor).max(3).optional(),
+  /** Top-level feed only (P21-03): the reader has unread replies in this message's thread. */
+  unreadReplies: z.boolean().optional(),
   /** `meta.attachments` resolved for the caller (a file they cannot read is left out). Always sent; optional here so older fixtures still parse. */
   attachments: z.array(FileSummary).optional(),
   /** The author's name and kind. Optional so older fixtures still parse; the server always sends it for a message the caller can read. */

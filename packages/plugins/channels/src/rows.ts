@@ -131,6 +131,7 @@ export const toChannelMessage = (
   author?: MessageAuthor,
   forward?: ForwardedMessage,
   poll?: PollView,
+  replies?: { replyAuthors: MessageAuthor[]; unreadReplies: boolean },
 ): ChannelMessage => {
   const alsoSentFromThread = r.deleted_at ? undefined : alsoSentFromThreadOf(r.meta);
   return ChannelMessage.parse({
@@ -139,6 +140,7 @@ export const toChannelMessage = (
     ...(forward ? { forward } : {}),
     ...(poll && !r.deleted_at ? { poll } : {}),
     ...(alsoSentFromThread ? { alsoSentFromThread } : {}),
+    ...(replies ? { replyAuthors: replies.replyAuthors, unreadReplies: replies.unreadReplies } : {}),
     reactions,
     attachments: r.deleted_at ? [] : attachments,   // a deleted message shows no cards
     replyCount: r.reply_count ?? 0,
