@@ -77,7 +77,7 @@ test('a reaction on the middle message ends the run: the next message gets its a
     await expect(content(page).locator('.msg .av')).toHaveCount(1);
     // live: the reaction arrives by push, the list redraws without a reload
     await nadiaApi.post(`/api/channels/${id}/messages/${b.id}/reactions`, { emoji: '👍' });
-    await expect(rowOf(page, b.id).locator('.rx')).toHaveCount(1, T);
+    await expect(rowOf(page, b.id).locator('.rx:not(.rx-add)')).toHaveCount(1, T);
     await expect(rowOf(page, b.id)).toHaveClass(/\brun\b/); // two still continues one: the reaction is under two, not one
     await expect(rowOf(page, c.id)).not.toHaveClass(/\brun\b/);
     await expect(rowOf(page, c.id).locator('.av')).toHaveCount(1);

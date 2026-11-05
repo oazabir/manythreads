@@ -48,7 +48,7 @@ test('Nadia posts and Rafi, with the channel open, sees it within a second; a re
     await first.hover();
     await first.getByRole('button', { name: 'Add reaction' }).click();
     await rafi.page.getByRole('menuitem', { name: 'React with 👍' }).click();
-    const onNadia = messages(nadia.page).nth(0).locator('.rx');
+    const onNadia = messages(nadia.page).nth(0).locator('.rx:not(.rx-add)');
     await expect(onNadia).toHaveCount(1);
     await expect(onNadia).toContainText('👍');
     await expect(onNadia).toContainText('1');
@@ -56,11 +56,11 @@ test('Nadia posts and Rafi, with the channel open, sees it within a second; a re
     await onNadia.click();
     await expect(onNadia).toContainText('2');
     await expect(onNadia).toHaveAttribute('aria-pressed', 'true');
-    await expect(messages(rafi.page).nth(0).locator('.rx')).toContainText('2');
+    await expect(messages(rafi.page).nth(0).locator('.rx:not(.rx-add)')).toContainText('2');
     // taking it back
     await onNadia.click();
     await expect(onNadia).toContainText('1');
-    await expect(messages(rafi.page).nth(0).locator('.rx')).toContainText('1');
+    await expect(messages(rafi.page).nth(0).locator('.rx:not(.rx-add)')).toContainText('1');
   } finally {
     await rafi.context.close();
     await nadia.context.close();
