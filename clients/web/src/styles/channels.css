@@ -84,6 +84,39 @@
   border-top: 1px solid var(--rule);
 }
 
+/* the day as a pill on the rule */
+.daysep > span {
+  padding: 2px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--mute);
+  font-weight: 600;
+}
+
+/* the pill of the day in view, laid over the top of the list while the real divider is out of sight */
+.day-float {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 0 20px;
+  pointer-events: none;
+}
+
+.day-float::before,
+.day-float::after {
+  border-top-color: transparent;
+}
+
+.unread-sep > span {
+  border-color: var(--human-border);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
 .daysep.unread-sep {
   color: var(--human);
   font-weight: 600;
@@ -776,6 +809,64 @@
 
 .rx:disabled {
   cursor: default;
+}
+
+.rx-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.rx-tip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: 260px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+/* the faint "+" after the reactions of a message: it adds one of the reader's own */
+.rx.rx-add {
+  border-style: dashed;
+  background: none;
+  opacity: 0;
+}
+
+.rx-add:focus-visible,
+.msg:hover .rx-add,
+.msg:focus-within .rx-add,
+.msg.tapped .rx-add {
+  opacity: 1;
+}
+
+.rx-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+.menu-item kbd {
+  margin-left: auto;
+  padding-left: 18px;
+  color: var(--mute);
+  font: inherit;
+  font-size: 11px;
+}
+
+.acts .menu-item:has(kbd) {
+  display: flex;
+  align-items: center;
+}
+
+.act-quick {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .replies {

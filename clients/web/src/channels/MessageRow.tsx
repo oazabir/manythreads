@@ -6,6 +6,8 @@ import { Avatar } from '../components/ui';
 import { AuthorLine } from '../components/AuthorLine';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
+import { ReactionPill } from './ReactionPill';
+import { loadReactions, rememberReaction } from './recentReactions';
 import { EmojiGlyph } from './EmojiGlyph';
 import { authorMark } from './authorMark';
 import { useDismiss } from '../shell/useDismiss';
@@ -17,7 +19,7 @@ import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
-import { NO_THREAD_CLICK, copyText, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
+import { NO_THREAD_CLICK, copyText, rowShortcut, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
@@ -28,6 +30,9 @@ import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import { usePeople, type People } from './hooks';
 import { PersonLink } from '../presence/ProfileCard';
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
+export const COPY_LINK_KEYS = isMac ? '⌘⇧C' : 'Ctrl+Shift+C';
 
 export const QUICK_EMOJI = ['👍', '✅', '🎉', '❤️', '👀', '🚀', '😄', '🙏'] as const;
 
@@ -170,6 +175,15 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     return () => window.removeEventListener(MARK_EVENT, onMark);
   }, [m.id]);
   const box = useRef<HTMLDivElement>(null);
+  // every reaction chosen from the bar or a menu goes to the front of the bar's three quick buttons
+  const react = (emoji: string): void => {
+    rememberReaction(emoji);
+    actions.react(m.id, emoji);
+  };
+  const [quick, setQuick] = useState<string[]>([]);
+  useEffect(() => {
+    if (hot) setQuick(loadReactions());
+  }, [hot, menu]);
   useDismiss(menu !== null, () => {
     setMenu(null);
     setConfirm(false);
@@ -245,14 +259,30 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         setTapped((t) => !t);
       }}
       onKeyDown={(e) => {
-        if (e.target !== e.currentTarget || e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.nativeEvent.isComposing) return;
-        if (!hasThread || editing !== null) return;
-        e.preventDefault();
-        actions.openThread?.(m.id);
+        if (e.target !== e.currentTarget || editing !== null || deleted) return;
+        const short = rowShortcut({ key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey, isComposing: e.nativeEvent.isComposing });
+        if (short === 'edit' && canEdit) {
+          e.preventDefault();
+          setEditing(m.body);
+        } else if (short === 'reply' && !inThread && canPost && actions.openThread) {
+          e.preventDefault();
+          actions.openThread(m.id);
+        } else if (short === 'copy-link') {
+          e.preventDefault();
+          void copyLink();
+        } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.nativeEvent.isComposing && hasThread) {
+          e.preventDefault();
+          actions.openThread?.(m.id);
+        }
       }}
     >
       {deleted || !(hot || tapped || menu !== null) ? null : (
         <div className="acts" ref={box} role="toolbar" aria-label="Message actions">
+          {canPost
+            ? quick.map((e) => (
+                <button key={e} type="button" className="act act-quick" aria-label={`React with ${e}`} title={`React with ${e}`} onClick={() => { setMenu(null); react(e); }}><EmojiGlyph value={e} /></button>
+              ))
+            : null}
           {!inThread && canPost ? (
             <button type="button" className="act" aria-label="Reply in thread" title="Reply in thread" onClick={() => actions.openThread?.(m.id)}><ReplyIcon /></button>
           ) : null}
@@ -265,14 +295,14 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           {menu === 'react' ? (
             <RowMenu className="emoji-menu" label="Reactions">
               {QUICK_EMOJI.map((e) => (
-                <button key={e} type="button" role="menuitem" className="emoji" aria-label={`React with ${e}`} onClick={() => { setMenu(null); actions.react(m.id, e); }}>{e}</button>
+                <button key={e} type="button" role="menuitem" className="emoji" aria-label={`React with ${e}`} onClick={() => { setMenu(null); react(e); }}>{e}</button>
               ))}
-              <button type="button" role="menuitem" className="emoji emoji-more" aria-label="More emoji" title="More emoji" onClick={() => setMenu('emoji')}>…</button>
+              <button type="button" role="menuitem" className="emoji emoji-more" aria-label="More emoji" title="More emoji" onClick={() => setMenu('emoji')}>More…</button>
             </RowMenu>
           ) : null}
           {menu === 'emoji' ? (
             <RowMenu className="emoji-menu emoji-menu-full" label="All emoji">
-              <EmojiPicker label="React with an emoji" onPick={(c) => { setMenu(null); actions.react(m.id, c); }} onClose={() => setMenu(null)} />
+              <EmojiPicker label="React with an emoji" onPick={(c) => { setMenu(null); react(c); }} onClose={() => setMenu(null)} />
             </RowMenu>
           ) : null}
           {menu === 'remind' ? (
@@ -282,7 +312,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           ) : null}
           {menu === 'more' ? (
             <RowMenu className="more-menu" label="Message">
-              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyLink(); }}>Copy link</button>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyLink(); }}>Copy link<kbd>{COPY_LINK_KEYS}</kbd></button>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void copyText(m.bodyPlain || m.body).then((ok) => setDone(ok ? 'Text copied' : 'Could not copy the text')); }}>Copy text</button>
               <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setForwarding(true); }}>Forward…</button>
               {teamSlug !== null && teamSlug !== GUEST_SLUG ? (
                 <button type="button" role="menuitem" className="menu-item" data-testid="send-to-memory" onClick={() => { setMenu(null); setSendingToMemory(true); }}>Send to memory…</button>
@@ -291,7 +322,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
                 <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void markUnread(); }}>Mark unread from here</button>
               ) : null}
               <LaterMenuItems messageId={m.id} say={setDone} close={() => setMenu(null)} onRemind={() => setMenu('remind')} />
-              {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit</button> : null}
+              {canEdit ? <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); setEditing(m.body); }}>Edit<kbd>E</kbd></button> : null}
               {canDelete ? (
                 confirm ? (
                   <button type="button" role="menuitem" className="menu-item danger" onClick={() => { setMenu(null); setConfirm(false); void actions.remove(m.id).catch(() => undefined); }}>Delete message</button>
@@ -389,18 +420,11 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         {!deleted && m.reactions.length > 0 ? (
           <div className="reactions">
             {m.reactions.map((r) => (
-              <button
-                key={r.emoji}
-                type="button"
-                className={`rx ${r.mine ? 'mine' : ''}`}
-                aria-pressed={r.mine}
-                aria-label={`${r.emoji} ${r.count}${r.mine ? ', you reacted' : ''}`}
-                disabled={!canPost}
-                onClick={() => actions.react(m.id, r.emoji)}
-              >
-                <span aria-hidden="true"><EmojiGlyph value={r.emoji} /></span> <span className="rx-n" data-vt-mask>{r.count}</span>
-              </button>
+              <ReactionPill key={r.emoji} channelId={m.channelId} messageId={m.id} reaction={r} people={people} selfActor={selfActor} canPost={canPost} onToggle={() => react(r.emoji)} />
             ))}
+            {canPost ? (
+              <button type="button" className="rx rx-add" aria-label="Add another reaction" title="Add reaction" onClick={() => setMenu('react')}><SmileIcon /><span aria-hidden="true">+</span></button>
+            ) : null}
           </div>
         ) : null}
         {!inThread && m.replyCount > 0 ? (

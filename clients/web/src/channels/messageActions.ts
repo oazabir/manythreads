@@ -111,3 +111,35 @@ export const isExpanded = (messageId: string): boolean => expandedRows.has(messa
 export function rememberExpanded(messageId: string): void {
   expandedRows.add(messageId);
 }
+
+/**
+ * The sentence a reaction pill shows on hover: "Nadia, Omar and 3 others reacted with 👍". `names` are the people the reader can name (the
+ * reader themselves reads "You"); `total` is the whole count, so people the reader cannot name are counted as others. Without any name the
+ * sentence is only a count ("3 people reacted with 👍").
+ */
+export function reactorsText(names: readonly string[], total: number, emoji: string): string {
+  const shown = names.slice(0, 3);
+  const rest = Math.max(0, total - shown.length);
+  if (shown.length === 0) return `${total} ${total === 1 ? 'person' : 'people'} reacted with ${emoji}`;
+  const head = rest > 0 ? `${shown.join(', ')} and ${rest} ${rest === 1 ? 'other' : 'others'}` : shown.length === 1 ? (shown[0] ?? '') : `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1] ?? ''}`;
+  return `${head} reacted with ${emoji}`;
+}
+
+/** What a key press on a focused message row does (P21-02); null for any other key. Modifiers other than Ctrl/Cmd+Shift+C are not ours. */
+export function rowShortcut(e: { key: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; isComposing: boolean }): 'edit' | 'reply' | 'copy-link' | null {
+  if (e.isComposing || e.altKey) return null;
+  const k = e.key.toLowerCase();
+  if (k === 'c' && e.shiftKey && (e.ctrlKey || e.metaKey) && !(e.ctrlKey && e.metaKey)) return 'copy-link';
+  if (e.ctrlKey || e.metaKey || e.shiftKey) return null;
+  if (k === 'e') return 'edit';
+  if (k === 'r') return 'reply';
+  return null;
+}
+
+/**
+ * Whether Esc marks the open conversation read (P21-05): only when no menu, popover or dialog is open, no side panel is open, the reader is
+ * not typing, and focus is on the page or in the message list. `openCount` counts the open menus, popovers and dialogs.
+ */
+export function escMarksRead(a: { openCount: number; focusInList: boolean; typing: boolean; panelOpen: boolean }): boolean {
+  return a.openCount === 0 && a.focusInList && !a.typing && !a.panelOpen;
+}
