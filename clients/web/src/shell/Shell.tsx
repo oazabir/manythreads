@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
 import { dmParticipants, useDms } from '../dms/store';
 import { Bell } from '../notifications/Bell';
@@ -22,7 +22,7 @@ import { GUEST_SLUG } from './messageLink';
 import { viewTitle } from './nav';
 import { SetupCard } from './SetupCard';
 import { Sidebar } from './Sidebar';
-import { HeaderActionsContext, HeaderTopicContext } from './topic';
+import { HeaderActionsContext, HeaderTitleContext, HeaderTopicContext } from './topic';
 import { TeamSwitch } from './TeamSwitch';
 import { useDismiss } from './useDismiss';
 import { useNarrow } from './useNarrow';
@@ -44,6 +44,7 @@ export function Shell() {
   const q = useQuery('shell-teams', () => fetchTeams());
   const narrow = useNarrow();
   const [topic, setTopic] = useState<string | null>(null);
+  const [titleNode, setTitleNode] = useState<ReactNode>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
 
   useRealtime();
@@ -89,6 +90,7 @@ export function Shell() {
     <ShellContext.Provider value={value}>
       <PeopleContext.Provider value={people}>
       <HeaderTopicContext.Provider value={setTopic}>
+      <HeaderTitleContext.Provider value={setTitleNode}>
       <HeaderActionsContext.Provider value={actionsSlot}>
       <div className="frame" data-testid="app-frame" data-drawer={drawerOpen ? 'open' : 'closed'}>
         <aside className="rail" id="shell-rail" ref={rail} aria-label="Workspace" inert={narrow && !drawerOpen}>
@@ -118,9 +120,9 @@ export function Shell() {
             </button>
             <h1 className="chead-title">
               <span className="sr-only">{`${session.workspace.name}: `}</span>
-              {title}
+              {titleNode ?? title}
             </h1>
-            {topic ? <span className="topic" data-testid="channel-topic">{topic}</span> : null}
+            {topic ? <span className="topic" data-testid="channel-topic" title={topic}>{topic}</span> : null}
             <div className="right chead-tools">
               <div className="chead-actions" ref={setActionsSlot} />
               {dmId && dm ? <SearchBox className="head-search" placeholder="Search this conversation" label="Search this conversation" channelId={dmId} /> : null}
@@ -141,6 +143,7 @@ export function Shell() {
         <RightPanel />
       </div>
       </HeaderActionsContext.Provider>
+      </HeaderTitleContext.Provider>
       </HeaderTopicContext.Provider>
       </PeopleContext.Provider>
     </ShellContext.Provider>

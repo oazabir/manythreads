@@ -74,7 +74,7 @@ test('edit and delete your own message, live for the other reader; empty channel
   const { id, name } = await createChannel(omar, 'edit');
   const empty = await openAs(browser, 'rafi', `/t/engineering/c/${name}`);
   try {
-    await expect(empty.page.getByTestId('channel-start')).toContainText(`This is the start of #${name}.`);
+    await expect(empty.page.getByTestId('channel-start')).toContainText(`This is the very beginning of #${name}.`);
   } finally {
     await empty.context.close();
   }

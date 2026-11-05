@@ -30,7 +30,7 @@ for (const [size, viewport, mobile] of [
     const { page, close } = await openPage(browser, stack, 'omar', viewport, mobile);
     try {
       await page.goto('/t/engineering/c/quiet');
-      await expect(page.getByText('This is the start of #quiet.')).toBeVisible();
+      await expect(page.getByText('This is the very beginning of #quiet.')).toBeVisible();
       await expectWireframe(page, `empty-channel-${size}`, order);
     } finally {
       await close();
@@ -52,7 +52,7 @@ for (const [size, viewport, mobile] of [
     const { page, close } = await openPage(browser, stack, 'omar', viewport, mobile);
     try {
       await page.goto('/t/engineering/c/quiet');
-      await expect(page.getByText('This is the start of #quiet.')).toBeVisible();
+      await expect(page.getByText('This is the very beginning of #quiet.')).toBeVisible();
       await page.route('**/api/channels/*/messages', (route) => (route.request().method() === 'POST' ? route.abort() : route.continue()));
       await page.getByRole('textbox', { name: 'Message #quiet' }).fill('Is the rota final?');
       await page.getByRole('button', { name: 'Send', exact: true }).click();

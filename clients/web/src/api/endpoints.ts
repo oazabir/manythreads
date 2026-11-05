@@ -455,6 +455,8 @@ import {
   CancelReminderResponse,
   CreateReminderRequest,
   LeaveChannelResponse,
+  ListChannelMembersResponse,
+  listChannelMembersRoute,
   ListRemindersQuery,
   ListRemindersResponse,
   Reminder,
@@ -670,6 +672,8 @@ export const createChannel = (slug: string, body: CreateChannelRequest) =>
   call(createChannelRoute, { request: CreateChannelRequest, response: CreateChannelResponse }, body, { slug });
 export const joinChannel = (channelId: string) => call(joinChannelRoute, { response: JoinChannelResponse }, undefined, { channelId });
 export const leaveChannel = (channelId: string) => call(leaveChannelRoute, { response: LeaveChannelResponse }, undefined, { channelId });
+/** The people in a channel, for the header's members stack (P21-06). */
+export const fetchChannelMembers = (channelId: string) => call(listChannelMembersRoute, { response: ListChannelMembersResponse }, undefined, { channelId });
 /** Adds a person to a channel (a team lead or a workspace admin; the person must be on the channel's team). */
 export const addChannelMember = (channelId: string, personId: string) =>
   call(addChannelMemberRoute, { request: AddChannelMemberRequest, response: AddChannelMemberResponse }, { personId }, { channelId });

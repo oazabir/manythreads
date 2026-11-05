@@ -29,10 +29,6 @@
   margin-bottom: 8px;
 }
 
-.an-details > .an-sec + .an-sec {
-  margin-top: 8px;
-}
-
 .an-text {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -467,4 +463,8 @@ button.an-chip:hover {
   border-radius: 5px;
   background: var(--warn-wash);
   color: var(--warn-ink);
+}
+
+.an-details > .an-sec + .an-sec {
+  margin-top: 8px;
 }

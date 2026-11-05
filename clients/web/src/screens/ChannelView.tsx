@@ -16,12 +16,11 @@ import { isApiError } from '../api/client';
 import { VirtualList, type VirtualListApi } from '../channels/VirtualList';
 import { usePanel } from '../kernel/panel';
 import { useShell } from '../shell/context';
-import { ChannelBell } from '../notifications/ChannelBell';
-import { ChannelStar } from '../shell/ChannelStar';
-import { WebhooksButton } from '../webhooks/WebhooksDialog';
+import { ChannelDetails } from '../shell/ChannelDetails';
+import { MembersStack } from '../shell/MembersStack';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { ArrowDownIcon, ArrowUpIcon } from '../shell/icons';
-import { useHeaderActionsSlot, useHeaderTopic } from '../shell/topic';
+import { useHeaderActionsSlot, useHeaderTitle, useHeaderTopic } from '../shell/topic';
 import { StartButton } from '../meetings/StartButton';
 import { fetchChannelBoards } from './boards/api';
 import { boardPath, botBoardOf } from './boards/board';
@@ -73,6 +72,13 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   // A channel tied to a project says so beside its title. A person who cannot read the team's projects (a guest) simply sees no chip.
   const projects = useQuery(`projects:${teamSlug}`, () => fetchProjects(teamSlug));
   const project = !dm && projects.status === 'ok' ? projectOfChannel(projects.data.items, channelId) : undefined;
+  const detailsManage = info.status === 'ok' && info.data.canManage;
+  const detailsLabel = dm ? dm.label : `#${name}`;
+  const detailsNode = useMemo(
+    () => <ChannelDetails channelId={channelId} name={name} teamSlug={teamSlug} dm={dm !== undefined} canManage={detailsManage} label={detailsLabel} />,
+    [channelId, name, teamSlug, dm, detailsManage, detailsLabel],
+  );
+  useHeaderTitle(detailsNode);
   useHeaderTopic(!dm && info.status === 'ok' ? headerTopic(project, info.data.channel.purpose) : null);
   // The channel's Bot Board (the board its bots keep their cards on), when it has one: a link beside the title. A person without access to
   // the channel's boards, or a conversation that is not a channel, simply gets none.
@@ -284,8 +290,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     <div className={`start ${tl.cursor === null ? 'top' : ''}`} data-testid="channel-start">
       {tl.cursor === null && tl.status === 'ready' ? (
         <>
-          <p className="start-title">{dm ? `This is the start of your conversation with ${dm.label}.` : `This is the start of #${name}.`}</p>
+          <p className="start-title">{dm ? `This is the start of your conversation with ${dm.label}.` : `This is the very beginning of #${name}.`}</p>
           {channel?.purpose ? <p className="start-body">{channel.purpose}</p> : null}
+          {channel && !dm ? <p className="start-body start-created" data-testid="channel-created" data-vt-mask>{`Created on ${new Date(channel.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}</p> : null}
         </>
       ) : (
         <p className="start-body" aria-live="polite">{tl.loadingOlder ? 'Loading earlier messages…' : ' '}</p>
@@ -295,14 +302,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
 
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
-      {headerSlot && !dm ? createPortal(<ChannelStar channelId={channelId} channelName={name} teamSlug={teamSlug} />, headerSlot) : null}
+      {headerSlot && !dm ? createPortal(<MembersStack channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
-      {headerSlot
-        ? createPortal(<ChannelBell channel={{ channelId, channelName: dm ? null : name, channelKind: dm ? 'dm' : 'channel' }} />, headerSlot)
-        : null}
-      {headerSlot && !dm && info.status === 'ok' && info.data.canManage
-        ? createPortal(<WebhooksButton channelId={channelId} channelName={name} />, headerSlot)
-        : null}
       {botBoard && headerSlot
         ? createPortal(
             <Link className="chv-botboard" to={boardPath(teamSlug, botBoard.id)} data-testid="bot-board-link">

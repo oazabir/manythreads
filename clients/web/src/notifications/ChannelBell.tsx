@@ -69,3 +69,39 @@ export function ChannelBell({ channel }: { channel: ChannelBellTarget }) {
     </div>
   );
 }
+
+/** The level choices of the bell as a menu body, for the channel details menu (P21-06): same store, same labels. */
+export function ChannelLevelOptions({ channel, onDone }: { channel: ChannelBellTarget; onDone: () => void }) {
+  const snap = useSyncExternalStore(levelsStore.subscribe, levelsStore.snapshot);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void levelsStore.load();
+  }, []);
+  if (snap.status === 'error') return null;
+  const { own, effective } = levelOf(snap.levels, channel.channelId, channel.channelKind);
+  const choose = async (level: NotificationLevel | null): Promise<void> => {
+    setError(null);
+    try {
+      await levelsStore.setChannel(channel, level);
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the setting.');
+    }
+  };
+  return (
+    <div role="group" aria-label="Notifications for this channel" data-testid="channel-levels" data-level={effective}>
+      {LEVEL_ORDER.map((level) => (
+        <button key={level} type="button" role="menuitemradio" aria-checked={effective === level} className="chn-opt" data-testid={`level-${level}`} onClick={() => void choose(level)}>
+          <span className="chn-name">{LEVEL_LABEL[level]}{effective === level ? <span className="chn-check" aria-hidden="true"> <CheckIcon size={12} /></span> : null}</span>
+          <span className="chn-help">{LEVEL_HELP[level]}</span>
+        </button>
+      ))}
+      {own !== null ? (
+        <button type="button" role="menuitem" className="chn-opt chn-reset" data-testid="level-default" onClick={() => void choose(null)}>
+          <span className="chn-name">Use the default</span>
+        </button>
+      ) : null}
+      {error ? <p className="chn-error" role="alert">{error}</p> : null}
+    </div>
+  );
+}
