@@ -6,7 +6,7 @@ import { fetchChannel } from '../api/endpoints';
 import { useQuery } from '../app/useQuery';
 import { BookmarksBar } from '../channels/BookmarksBar';
 import { Composer } from '../channels/Composer';
-import { estimateItem, buildListItems, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
+import { estimateItem, buildListItems, dayAt, messageKey, UNREAD_KEY, type ListItem } from '../channels/listItems';
 import { PendingRow, MessageRow, EDIT_EVENT, type RowActions } from '../channels/MessageRow';
 import { lastEditableOwn } from '../channels/messageActions';
 import { usePeople, useTimeline, useTyping } from '../channels/hooks';
@@ -96,6 +96,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   const [highlight, setHighlight] = useState<string | null>(null);
   const [hadUnread, setHadUnread] = useState<boolean | null>(null);
   const [seenUpTo, setSeenUpTo] = useState<string | null>(null);
+  // the day pill that floats at the top of the list while its day is in view (the rows above the window are not drawn, so a divider cannot stick by itself)
+  const [floatDay, setFloatDay] = useState<string | null>(null);
+  const itemsRef = useRef<ListItem[]>([]);
   const scrolledToUnread = useRef(false);
   // "Jump to first unread" was used (or the reader came to the line on their own): the button goes until another channel opens.
   const [unreadSeen, setUnreadSeen] = useState(false);
@@ -128,6 +131,15 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     () => buildListItems(tl.items, tl.pending, { lastReadId: lastRead, selfActor: self, allLoaded: tl.cursor === null, readKnown: readyToDivide }),
     [tl.items, tl.pending, tl.cursor, lastRead, self, readyToDivide],
   );
+  // what came in below the place the reader left the bottom at, not their own (P21-05)
+  const newCount = useMemo(() => (seenUpTo === null ? 0 : tl.items.reduce((n, m) => (m.id > seenUpTo && m.deletedAt === null && m.authorId !== self ? n + 1 : n), 0)), [tl.items, seenUpTo, self]);
+  itemsRef.current = items;
+  const onTopRow = useCallback((index: number, untilNext: number) => {
+    const list = itemsRef.current;
+    // a real divider at the top, or arriving within 36 px, is the pill the reader sees: the floating one steps aside
+    const real = list[index]?.kind === 'day' || (list[index + 1]?.kind === 'day' && untilNext < 36);
+    setFloatDay(real ? null : dayAt(list, index));
+  }, []);
   const unreadShown = items.some((i) => i.kind === 'unread');
   // the first unread message is always drawn whole, however long (P21-03)
   const afterUnreadKey = useMemo(() => {
@@ -220,7 +232,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     (item: ListItem) => {
       switch (item.kind) {
         case 'day':
-          return <div className="daysep" data-vt-mask>{item.label}</div>;
+          return <div className="daysep" data-vt-mask><span>{item.label}</span></div>;
         case 'unread':
           return <div className="daysep unread-sep" data-testid="unread-divider" role="separator" aria-label="New messages"><span>New messages</span></div>;
         case 'message':
@@ -320,11 +332,13 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
             anchorable={isMessage}
             onNearTop={onNearTop}
             onBottomChange={setAtBottom}
+            onTopRow={onTopRow}
             header={header}
             footer={typing ? <p className="typing" aria-live="polite">{typing}</p> : null}
             apiRef={api}
           />
         )}
+        {floatDay ? <div className="day-float daysep" aria-hidden="true" data-vt-mask><span>{floatDay}</span></div> : null}
         {unreadShown && hadUnread && !unreadSeen && tl.status === 'ready' ? (
           <button
             type="button"
@@ -340,9 +354,9 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           </button>
         ) : null}
         {!atBottom && tl.status === 'ready' && tl.items.length > 0 ? (
-          <button type="button" className="jump" onClick={() => api.current?.scrollToBottom()}>
+          <button type="button" className="jump" aria-label={newCount > 0 ? `Jump to latest, ${newCount} new ${newCount === 1 ? 'message' : 'messages'}` : 'Jump to latest'} onClick={() => api.current?.scrollToBottom()}>
             <ArrowDownIcon />
-            <span>Jump to latest</span>
+            <span>{newCount > 0 ? `${newCount} new ${newCount === 1 ? 'message' : 'messages'}` : 'Jump to latest'}</span>
           </button>
         ) : null}
       </div>

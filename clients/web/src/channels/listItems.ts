@@ -64,3 +64,12 @@ export function estimateItem(item: ListItem): number {
       return estimateMessageHeight({ body: item.pending.body, reactions: [], replyCount: 0, attachments: item.pending.attachments }) + 18;
   }
 }
+
+/** The day pill that belongs at the top of the view when row `index` is first: the nearest day divider at or above it, or null. */
+export function dayAt(items: readonly ListItem[], index: number): string | null {
+  for (let i = Math.min(index, items.length - 1); i >= 0; i -= 1) {
+    const it = items[i];
+    if (it && it.kind === 'day') return it.label;
+  }
+  return null;
+}

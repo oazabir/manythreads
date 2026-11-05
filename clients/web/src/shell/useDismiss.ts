@@ -3,6 +3,9 @@ import { useEffect, useRef, type RefObject } from 'react';
 /** The popovers and drawers that are open now, oldest first: Esc closes only the newest, so a menu inside a drawer goes before the drawer. */
 const openStack: symbol[] = [];
 
+/** True while a popover or drawer opened through `useDismiss` is open: Esc belongs to it. */
+export const anyDismissOpen = (): boolean => openStack.length > 0;
+
 /**
  * Close a popover or drawer on a press outside it or on Esc. Esc is taken first (capture phase) and marked handled, so
  * the right panel behind it stays open until the next press. When several are open (a menu in the phone's drawer), Esc closes

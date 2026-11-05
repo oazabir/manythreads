@@ -92,12 +92,22 @@
   font-size: 12px;
 }
 
-.qs-note {
+.toasts {
   position: fixed;
-  bottom: 18px;
-  left: 50%;
+  bottom: 112px;
+  left: 264px;
   z-index: 70;
-  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 7px 14px;
   border: 1px solid var(--rule);
   border-radius: 14px;
@@ -105,5 +115,22 @@
   box-shadow: var(--menu-shadow);
   color: var(--ink);
   font-size: 12.5px;
-  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.toast-undo {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--human);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (width <= 760px) {
+  .toasts {
+    bottom: 96px;
+    left: 12px;
+  }
 }

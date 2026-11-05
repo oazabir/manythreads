@@ -5,6 +5,7 @@ import { onSessionExpired } from '../api/client';
 import type { AuthenticatedSession } from '@manythreads/shared';
 import { FullPageMessage } from '../components/states';
 import { QuickSwitcher } from './QuickSwitcher';
+import { ToastHost } from '../kernel/toast';
 import { dropPersonData } from './caches';
 import { setAwayOwner } from '../presence/manualAway';
 import { signInUrl } from './paths';
@@ -101,6 +102,7 @@ export function RequireSession() {
   return (
     <>
       <QuickSwitcher />
+      <ToastHost />
       <Outlet />
     </>
   );

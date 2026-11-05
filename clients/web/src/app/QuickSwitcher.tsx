@@ -11,7 +11,10 @@ import { LockIcon } from '../shell/icons';
 import { findChannel, useChannelFeed } from '../shell/channelFeed';
 import { recalledTeam } from '../shell/views';
 import { PANEL_PARAM } from '../kernel/panel';
-import { markConversationRead, markEverythingRead } from './readAll';
+import { firstUnreadMessageId, markConversationRead, markEverythingRead, undoMarkRead } from './readAll';
+import { sayToast } from '../kernel/toast';
+import { anyDismissOpen } from '../shell/useDismiss';
+import { escMarksRead } from '../channels/messageActions';
 import { useSession } from './session';
 import {
   botItems,
@@ -37,7 +40,6 @@ type Mode = 'closed' | 'switcher' | 'sheet';
 
 const LIST_ID = 'quick-switcher-list';
 const optionId = (i: number): string => `quick-switcher-option-${i}`;
-const NOTE_MS = 2_500;
 
 /** What the switcher can search beyond the sidebar's own lists; each source is optional (a guest or a server without the plugin answers nothing). */
 type Sources = { people: readonly RosterMember[]; bots: readonly BotSummary[]; cards: readonly Task[]; pages: readonly { name: string; path: string; kind: string }[]; teamId: string | null };
@@ -94,6 +96,9 @@ function useFileHits(on: boolean, query: string): readonly SearchFileHit[] {
   return hits;
 }
 
+/** Focus is where Esc may read the conversation: nowhere in particular (the page itself) or in the message list of the open channel. */
+const focusOnList = (el: Element | null): boolean => el === null || el === document.body || el.closest('[data-testid="channel-view"] .vlist, [data-testid="channel-view"] .chview-list') !== null;
+
 /** True while a menu, dialog or popover is open: the Esc key belongs to it. */
 const somethingOpen = (): boolean => document.querySelector('[role="dialog"], [role="menu"], [aria-modal="true"], .menu, .vpop') !== null;
 
@@ -116,7 +121,6 @@ export function QuickSwitcher() {
   const [mode, setMode] = useState<Mode>('closed');
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const [note, setNote] = useState<string | null>(null);
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
@@ -144,14 +148,10 @@ export function QuickSwitcher() {
   const latest = useRef({ slug, feed, dms, pathname: loc.pathname });
   latest.current = { slug, feed, dms, pathname: loc.pathname };
 
-  const say = useCallback((text: string): void => {
-    setNote(text);
+  // a short notice at the bottom left (the toast list of the app); `undo` is offered when the notice changed what the reader has read
+  const say = useCallback((text: string, undo?: () => void | Promise<void>): void => {
+    sayToast(text, { testId: 'quick-switcher-note', ...(undo ? { undo } : {}) });
   }, []);
-  useEffect(() => {
-    if (!note) return;
-    const t = setTimeout(() => setNote(null), NOTE_MS);
-    return () => clearTimeout(t);
-  }, [note]);
 
   const open = useCallback((what: Exclude<Mode, 'closed'>): void => {
     setQuery('');
@@ -180,8 +180,10 @@ export function QuickSwitcher() {
       const here = openConversationOf(pathname);
       const id = here?.kind === 'dm' ? here.id : here?.kind === 'channel' ? findChannel(f.groups, here.name)?.id : undefined;
       if (!id) return;
+      // where the unread messages began, taken before they are read, so Undo can bring the "New" line back
+      const from = firstUnreadMessageId(id);
       void markConversationRead(id).then(
-        () => say(here?.kind === 'channel' ? `#${here.name} marked as read.` : 'Conversation marked as read.'),
+        () => say(here?.kind === 'channel' ? `#${here.name} marked as read.` : 'Conversation marked as read.', from ? () => undoMarkRead(id, from) : undefined),
         () => say('Could not mark it as read.'),
       );
     };
@@ -209,7 +211,17 @@ export function QuickSwitcher() {
       } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
         e.preventDefault();
         unreadJump(e.key === 'ArrowDown' ? 1 : -1);
-      } else if (e.key === 'Escape' && !e.repeat && plain && !typingIn(document.activeElement) && !somethingOpen() && !new URLSearchParams(window.location.search).has(PANEL_PARAM)) {
+      } else if (
+        e.key === 'Escape' &&
+        !e.repeat &&
+        plain &&
+        escMarksRead({
+          openCount: anyDismissOpen() || somethingOpen() ? 1 : 0,
+          focusInList: focusOnList(document.activeElement),
+          typing: typingIn(document.activeElement),
+          panelOpen: new URLSearchParams(window.location.search).has(PANEL_PARAM),
+        })
+      ) {
         e.preventDefault();
         if (e.shiftKey) readAll();
         else readOpen();
@@ -251,18 +263,11 @@ export function QuickSwitcher() {
     }
   };
 
-  const status = note ? (
-    <p className="qs-note" role="status" data-testid="quick-switcher-note">
-      {note}
-    </p>
-  ) : null;
-
-  if (mode === 'closed') return status;
+  if (mode === 'closed') return null;
 
   if (mode === 'sheet') {
     return (
       <>
-        {status}
         <Dialog title="Keyboard shortcuts" onClose={close} testId="shortcut-sheet" sheet>
           <div className="qs-sheet">
             <h3>Jump</h3>
@@ -275,11 +280,20 @@ export function QuickSwitcher() {
             <h3>Reading</h3>
             <dl>
               <dt><kbd className="qs-kbd">Esc</kbd></dt>
-              <dd>Mark the open conversation as read (outside a text box)</dd>
+              <dd>Mark the open conversation as read (with the message list focused, and nothing else open)</dd>
               <dt><kbd className="qs-kbd">Shift+Esc</kbd></dt>
               <dd>Mark everything as read</dd>
               <dt><kbd className="qs-kbd">j</kbd> <kbd className="qs-kbd">k</kbd> <kbd className="qs-kbd">e</kbd></dt>
               <dd>In Threads: move down or up, mark the thread read</dd>
+            </dl>
+            <h3>On a focused message</h3>
+            <dl>
+              <dt><kbd className="qs-kbd">E</kbd></dt>
+              <dd>Edit your message</dd>
+              <dt><kbd className="qs-kbd">R</kbd></dt>
+              <dd>Reply in a thread</dd>
+              <dt><kbd className="qs-kbd">Ctrl/Cmd+Shift+C</kbd></dt>
+              <dd>Copy the link to the message</dd>
             </dl>
             <h3>Help</h3>
             <dl>
@@ -295,7 +309,6 @@ export function QuickSwitcher() {
   const loading = feed.status === 'loading' && all.length === 0;
   return (
     <>
-      {status}
       <Dialog title="Jump to…" onClose={close} testId="quick-switcher">
         <input
           className="dlg-input"

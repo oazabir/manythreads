@@ -56,3 +56,19 @@ export async function markEverythingRead(slug: string): Promise<number> {
   await channelStore.refreshSummary();
   return marked;
 }
+
+/**
+ * The first message of a channel the reader has not read yet (the one "Mark unread from here" would need to put the read position back), or null
+ * when nothing is unread or the timeline is not held. Taken before a conversation is marked read, so the notice can offer Undo.
+ */
+export function firstUnreadMessageId(channelId: string): string | null {
+  if ((channelStore.snapshot().unread[channelId] ?? 0) <= 0) return null;
+  const last = channelStore.readState(`channel:${channelId}`)?.lastReadId ?? null;
+  const first = channelStore.get(channelKey(channelId)).items.find((m) => m.deletedAt === null && (last === null || m.id > last));
+  return first?.id ?? null;
+}
+
+/** Puts a channel's read position back to just before `messageId` (Undo on "marked as read"). */
+export async function undoMarkRead(channelId: string, messageId: string): Promise<void> {
+  await channelStore.markUnread(channelId, messageId, null);
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
-import { anchorAt, buildOffsets, scrollTopFor, shiftAfter, windowFor, type Anchor } from './virtual';
+import { anchorAt, buildOffsets, indexAt, scrollTopFor, shiftAfter, windowFor, type Anchor } from './virtual';
 
 export type VirtualListApi = {
   scrollToBottom(): void;
@@ -20,6 +20,8 @@ type Props<T> = {
   onNearTop?: () => void;
   /** True while the last row is in view (within 24 px). */
   onBottomChange?: (atBottom: boolean) => void;
+  /** Called when the row at the top of the view changes, or comes within reach of the next one: the row's index and the pixels left before the next row starts (day pills). */
+  onTopRow?: (index: number, untilNext: number) => void;
   /** Slots in the scroll area before and after the rows (the "start of channel" header, the typing line). */
   header?: ReactNode;
   footer?: ReactNode;
@@ -37,7 +39,7 @@ const AT_BOTTOM = 24;
  * stays glued to the bottom while the reader is there, older rows can be added in front without the view jumping, and a row
  * growing above the viewport does not push the reader's text down (WebKit has no `overflow-anchor`, so this is done by hand).
  */
-export function VirtualList<T>({ items, getKey, estimate, render, anchorable, className, onNearTop, onBottomChange, header, footer, apiRef, label }: Props<T>) {
+export function VirtualList<T>({ items, getKey, estimate, render, anchorable, className, onNearTop, onBottomChange, onTopRow, header, footer, apiRef, label }: Props<T>) {
   const scroller = useRef<HTMLDivElement>(null);
   const topSpacer = useRef<HTMLDivElement>(null);
   const headerBox = useRef<HTMLDivElement>(null);
@@ -82,7 +84,10 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
 
   const nearTop = useRef(onNearTop);
   const bottomCb = useRef(onBottomChange);
+  const topCb = useRef(onTopRow);
+  const lastTop = useRef('');
   useEffect(() => {
+    topCb.current = onTopRow;
     nearTop.current = onNearTop;
     bottomCb.current = onBottomChange;
   });
@@ -112,6 +117,16 @@ export function VirtualList<T>({ items, getKey, estimate, render, anchorable, cl
       bottomCb.current?.(now);
     }
     sync(false);
+    if (topCb.current) {
+      const y = Math.max(0, el.scrollTop - listTop.current);
+      const at = indexAt(offsetsRef.current, y);
+      const untilNext = Math.max(0, Math.min(999, Math.round(((offsetsRef.current[at + 1] as number | undefined) ?? y) - y)));
+      const sig = `${at}:${untilNext < 40 ? untilNext : 'x'}`;
+      if (sig !== lastTop.current) {
+        lastTop.current = sig;
+        topCb.current(at, untilNext);
+      }
+    }
     if (el.scrollTop < NEAR_TOP) nearTop.current?.();
   }, [sync, takeAnchor]);
 
