@@ -72,7 +72,7 @@ describe('the mark beside an author (follow-up to P14-04)', () => {
     expect(authorMark({ kind: 'system' })).toBeNull();
     expect(authorMark({ kind: 'system', sender: null })).toBeNull();
     expect(authorMark({ kind: 'person', sender: null })).toBeNull();
-    expect(authorMark({ kind: 'bot' })).toBeNull();
+    expect(authorMark({ kind: 'bot' })?.label).toBe('Bot');
     expect(authorMark(null)).toBeNull();
     expect(authorMark(undefined)).toBeNull();
   });

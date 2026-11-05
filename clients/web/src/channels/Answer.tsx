@@ -147,11 +147,24 @@ const REASON: Record<AnswerOutsideReason, string> = {
   not_reached: 'not read by this bot in this run',
 };
 
-/** "Answered for Omar · scoped · smart": whom the answer was for, how it was scoped, and the model alias it ran on. */
-export function answeredForLine(a: AnswerPayloadView['answeredFor']): string {
+/** The raw line, kept as the tooltip: "Answered for Omar · scoped · smart". */
+export function answeredForRaw(a: AnswerPayloadView['answeredFor']): string {
   const parts = [`Answered for ${a.name ?? 'the team'}`, a.scope];
   if (a.alias) parts.push(a.alias);
   return parts.join(' · ');
+}
+
+const ALIAS_WORD: Record<string, string> = { fast: 'fast model', smart: 'smart model' };
+
+/** What the footer says in words (P21-07): "Used your private notes · fast model", "Used Nadia's own access · smart model", "Used the team's sources". */
+export function answeredForLine(a: AnswerPayloadView['answeredFor'], readerPersonId: string | null = null): string {
+  const head =
+    a.scope === 'team' || (a.personId === null && a.name === null)
+      ? 'Used the team’s sources'
+      : a.personId !== null && a.personId === readerPersonId
+        ? 'Used your private notes'
+        : `Used ${a.name ?? 'the asker'}’s own access`;
+  return a.alias ? `${head} · ${ALIAS_WORD[a.alias] ?? `${a.alias} model`}` : head;
 }
 
 function CiteBody({ n, label }: { n: number; label: string }): ReactNode {
@@ -243,6 +256,8 @@ type Props = {
   teamSlugOf?: TeamSlugOf;
   /** What choosing a chip does (P5-17). Without it the chips are shown and inert: this version only carries their data. */
   onChip?: (chip: AnswerChip) => void;
+  /** Who is reading; "Used your private notes" is said only when the answer was for them. */
+  readerPersonId?: string | null;
 };
 
 function Chip({ className, kind, chip, onChip, bot, children }: { className: string; kind: string; chip: AnswerChip; onChip: ((chip: AnswerChip) => void) | undefined; bot?: string; children: ReactNode }) {
@@ -256,7 +271,7 @@ function Chip({ className, kind, chip, onChip, bot, children }: { className: str
 }
 
 /** The Answer, drawn from a stored payload. Pure of the shell: `AnswerMessage` below wires it to the reader's teams. */
-export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Props) {
+export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip, readerPersonId = null }: Props) {
   const slug = teamSlug ?? '';
   const byNumber = useMemo(() => new Map(payload.citations.map((c) => [c.n, c] as const)), [payload.citations]);
   // only a number the answer has a citation for becomes a superscript, and the gaps below its highest (a citation the answer left out keeps
@@ -309,7 +324,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
   );
 
   return (
-    <div className="an" data-testid="answer" data-citations={payload.citations.length} data-landmark="answer">
+    <div className={`an ${payload.citations.length > 0 ? 'an-card' : 'an-plain'}`} data-testid="answer" data-citations={payload.citations.length} data-landmark="answer">
       <div className="an-text txt" data-testid="answer-text">
         {/* the Answer's own text (`meta.answer.body`, which the platform keeps equal to the message's body) */}
         <Markdown source={payload.body} teamSlug={teamSlug} marker={marker} cited={citedNumbers} />
@@ -326,6 +341,9 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
         </ol>
       ) : null}
 
+      {lineage.length > 0 || reached.length > 0 || outside.count > 0 ? (
+        <details className="an-details" data-testid="answer-sources">
+          <summary>{`Sources (${payload.citations.length > 0 ? payload.citations.length : lineage.length + reached.length})`}</summary>
       {lineage.length > 0 ? (
         <section className="an-sec" data-testid="answer-lineage" aria-label="Lineage">
           <div className="an-h" role="heading" aria-level={4}>Lineage</div>
@@ -374,6 +392,9 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
         </section>
       ) : null}
 
+        </details>
+      ) : null}
+
       {followups.length > 0 ? (
         <div className="an-chips" data-testid="answer-followups">
           {followups.map((c, i) =>
@@ -397,7 +418,7 @@ export function Answer({ payload, teamSlug, teamSlugOf = NO_TEAMS, onChip }: Pro
         </section>
       ) : null}
 
-      <div className="an-foot" data-testid="answer-for">{answeredForLine(payload.answeredFor)}</div>
+      <div className="an-foot" data-testid="answer-for" title={answeredForRaw(payload.answeredFor)}>{answeredForLine(payload.answeredFor, readerPersonId)}</div>
     </div>
   );
 }

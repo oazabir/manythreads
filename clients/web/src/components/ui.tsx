@@ -1,5 +1,6 @@
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 import { PresenceDot } from '../presence/PresenceDot';
+import { BotBadgeIcon } from '../shell/icons';
 import { toneOf } from './tone';
 import { PASSWORD_MIN_LENGTH as PASSWORD_MIN, avatarSrc } from '@manythreads/shared';
 
@@ -134,7 +135,7 @@ export function Avatar({ name, kind = 'person', avatar, personId, presencePerson
   personId?: string | null | undefined;
   /** Draws that person's presence dot as a badge on the avatar's corner (P21-01); the dot draws nothing where presence is not shown. */
   presencePersonId?: string | null | undefined;
-  /** A badge on the corner for a kind of author; the slot only, the bot badge itself is drawn by the caller's page (P21-07). */
+  /** A badge on the corner for a kind of author (P21-07: `bot` draws the bot mark). */
   badge?: 'bot' | undefined;
 }) {
   const src = avatarSrc(avatar, personId);
@@ -156,7 +157,7 @@ export function Avatar({ name, kind = 'person', avatar, personId, presencePerson
     <span className="av-wrap">
       {face}
       {presencePersonId ? <PresenceDot personId={presencePersonId} /> : null}
-      {badge ? <span className={`av-badge ${badge}`} aria-hidden="true" /> : null}
+      {badge ? <span className={`av-badge ${badge}`} aria-hidden="true">{badge === 'bot' ? <BotBadgeIcon /> : null}</span> : null}
     </span>
   );
 }

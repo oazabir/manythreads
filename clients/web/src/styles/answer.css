@@ -9,10 +9,28 @@
   min-width: 0;
   max-width: 720px;
   margin-top: 4px;
+}
+
+/* a reply with sources is a card; one without reads as a plain message (P21-07) */
+.an-card {
   padding: 10px 12px;
   border: 1px solid var(--agent-border);
   border-radius: 8px;
   background: var(--agent-wash);
+}
+
+.an-details > summary {
+  color: var(--faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.an-details[open] > summary {
+  margin-bottom: 8px;
+}
+
+.an-details > .an-sec + .an-sec {
+  margin-top: 8px;
 }
 
 .an-text {
@@ -236,7 +254,7 @@ a.an-cite:hover {
 }
 
 @media (width <= 480px) {
-  .an {
+  .an-card {
     padding: 8px 10px;
   }
 

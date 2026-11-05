@@ -22,6 +22,8 @@ export interface SurfaceHost {
     teamSlug: string | null;
     teamSlugOf?: (teamId: string) => string | null;
     onChip?: (chip: AnswerChip) => void;
+    /** Who is reading: "Used your private notes" is said only when the answer was for them (P21-07). */
+    readerPersonId?: string | null;
   };
 }
 

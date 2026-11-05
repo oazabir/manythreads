@@ -4,9 +4,10 @@
  * name, which a webhook's admin chooses), so a webhook called "Reminders" still shows "Webhook", and a reminder is not labelled as a webhook.
  */
 
-export type AuthorMark = { label: 'Webhook' | 'System'; title: string };
+export type AuthorMark = { label: 'Webhook' | 'System' | 'Bot'; title: string };
 
 export function authorMark(author: { kind: string; sender?: 'reminders' | 'webhook' | null } | null | undefined): AuthorMark | null {
+  if (author?.kind === 'bot') return { label: 'Bot', title: 'A bot, not a person' };
   if (!author || author.kind !== 'system') return null;
   if (author.sender === 'reminders') return { label: 'System', title: 'Sent by manythreads, not by a person' };
   if (author.sender === 'webhook') return { label: 'Webhook', title: 'Posted by an incoming webhook, not by a person' };

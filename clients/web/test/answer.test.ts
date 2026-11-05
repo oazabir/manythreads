@@ -119,6 +119,7 @@ describe('the Answer', () => {
 
   it('says whom it was for, how it was scoped and on which alias, and offers the bots it may be handed to', () => {
     const out = html();
+    expect(out).toContain('Used Omar’s own access · smart model');
     expect(out).toContain('Answered for Omar · scoped · smart');
     expect(out).toContain('Hand to a bot');
     expect(out).toContain('@Coder');
@@ -130,13 +131,13 @@ describe('the Answer', () => {
   it('leaves out the sections that have nothing: no lineage, reached, outside scope or chips for a plain answer', () => {
     const out = html(payload({ citations: [], lineage: [], sourcesReached: [], outsideScope: { count: 0, items: [] }, chips: [], body: 'Just an answer.' }));
     for (const id of ['answer-lineage', 'answer-reached', 'answer-outside', 'answer-chips', 'answer-citations']) expect(out).not.toContain(`data-testid="${id}"`);
-    expect(out).toContain('Answered for Omar');
+    expect(out).toContain('Used Omar’s own access');
     expect(out).toContain('Just an answer.');
   });
 
   it('calls a run nobody asked the team’s', () => {
     const p = payload({ answeredFor: { personId: null, name: null, scope: 'team', alias: null, botId: uuid(21), runId: uuid(22) } });
-    expect(html(p)).toContain('Answered for the team · team');
+    expect(html(p)).toContain('Used the team’s sources');
   });
 
   it('never turns text into markup: a body and a label with tags stay characters', () => {
@@ -234,6 +235,9 @@ describe('the words', () => {
   });
 
   it('writes the foot line from whom, scope and alias', () => {
-    expect(answeredForLine({ personId: null, name: 'Nadia', scope: 'scoped', alias: null, botId: uuid(1) as never, runId: uuid(2) as never })).toBe('Answered for Nadia · scoped');
+    const base = { personId: 'p1' as never, name: 'Nadia', scope: 'scoped' as const, alias: null, botId: uuid(1) as never, runId: uuid(2) as never };
+    expect(answeredForLine(base)).toBe('Used Nadia’s own access');
+    expect(answeredForLine({ ...base, alias: 'fast' }, 'p1')).toBe('Used your private notes · fast model');
+    expect(answeredForLine({ ...base, alias: 'opus' })).toBe('Used Nadia’s own access · opus model');
   });
 });

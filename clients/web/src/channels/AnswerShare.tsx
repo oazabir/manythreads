@@ -304,12 +304,14 @@ export function AnswerActions({
   teamSlugOf,
   messageId,
   tools,
+  readerPersonId = null,
 }: {
   payload: AnswerPayloadView;
   teamSlug: string | null;
   teamSlugOf: TeamSlugOf;
   messageId: string;
   tools: AnswerTools;
+  readerPersonId?: string | null;
 }) {
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<Mode | null>(null);
@@ -341,7 +343,7 @@ export function AnswerActions({
 
   return (
     <div className="an-wrap" data-testid="answer-with-actions">
-      <AnswerSurface payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} onChip={onChip} />
+      <AnswerSurface payload={payload} teamSlug={teamSlug} teamSlugOf={teamSlugOf} onChip={onChip} readerPersonId={readerPersonId} />
       <div className="an-acts" data-testid="answer-actions">
         <button type="button" className="btn s" data-testid="answer-share-open" onClick={() => { setDone(null); setDialog('channel'); }}>Share to channel</button>
         <button type="button" className="btn s" data-testid="answer-save-open" onClick={() => { setDone(null); setDialog('page'); }}>Save as page</button>

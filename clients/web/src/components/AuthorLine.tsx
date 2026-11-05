@@ -28,7 +28,7 @@ export function AuthorLine({ name, person, mark, createdAt, continued = false, c
   return (
     <div className="who">
       <b>{person ? <PersonLink personId={person.personId} name={name} email={person.email} /> : name}</b>
-      {mark ? <span className="wh-mark" title={mark.title}>{mark.label}</span> : null}
+      {mark ? <span className={`wh-mark ${mark.label === 'Bot' ? 'bot' : ''}`} title={mark.title}>{mark.label}</span> : null}
       <time dateTime={createdAt} title={fullStamp(createdAt)} data-vt-mask>{clock(createdAt)}</time>
       {children}
     </div>

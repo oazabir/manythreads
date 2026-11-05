@@ -194,3 +194,20 @@
   width: 11px;
   height: 11px;
 }
+
+.av-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--surface);
+  border-radius: 50%;
+}
+
+.av-badge.bot {
+  background: var(--agent-ink);
+  color: var(--surface);
+}

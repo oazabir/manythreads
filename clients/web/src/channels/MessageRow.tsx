@@ -339,7 +339,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       ) : authorPerson ? (
         <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} presencePersonId={authorPerson.personId} /></PersonLink>
       ) : (
-        <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} avatar={m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null} />
+        <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} avatar={m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null} {...(m.author?.kind === 'bot' ? { badge: 'bot' as const } : {})} />
       )}
       <div className="msg-main">
         <AuthorLine name={name} person={authorPerson ? { personId: authorPerson.personId, email: authorPerson.email } : undefined} mark={mark} createdAt={m.createdAt} continued={continued}>

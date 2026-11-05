@@ -4,7 +4,7 @@ import {
   ChevronLeftIcon, ChevronUpIcon as ProChevronUp, ClockIcon as ProClock, CommentIcon, CommentMultipleIcon, EmojiIcon, FileMultipleIcon, FolderIcon as ProFolder,
   LinkIcon, LockIcon as ProLock, MenuIcon as ProMenu, MoonIcon as ProMoon, MoreIcon as ProMore, SearchIcon as ProSearch, SendIcon as ProSend, SettingsIcon,
   StarIcon as ProStar, ArrowSyncIcon, TuneIcon, CheckmarkIcon, AddIcon as ProAdd, SubtractIcon as ProSubtract, PencilIcon as ProPencil, MailIcon as ProMail, HashIcon as ProHash, MentionIcon as ProMention,
-  WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon,
+  WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon, SparkleIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -78,3 +78,4 @@ export const SaveForLaterIcon = proIcon(BookmarkAddIcon, 14);
 export const CopyLinkIcon = proIcon(LinkIcon, 14);
 export const AddIcon = proIcon(ProAdd, 14);
 export const SubtractIcon = proIcon(ProSubtract, 14);
+export const BotBadgeIcon = proIcon(SparkleIcon, 9, 2.4);

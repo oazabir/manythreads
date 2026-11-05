@@ -27,7 +27,7 @@ function AnswerPart({ props }: { props: Record<string, unknown> }): ReactNode {
     );
   }
   const payload = AnswerPayloadView.parse(props);
-  return <Answer payload={payload} teamSlug={lent.teamSlug} {...(lent.teamSlugOf ? { teamSlugOf: lent.teamSlugOf } : {})} {...(lent.onChip ? { onChip: lent.onChip } : {})} />;
+  return <Answer payload={payload} teamSlug={lent.teamSlug} {...(lent.teamSlugOf ? { teamSlugOf: lent.teamSlugOf } : {})} {...(lent.onChip ? { onChip: lent.onChip } : {})} readerPersonId={lent.readerPersonId ?? null} />;
 }
 
 /** Draws a stored answer through the registered view. This is what the app's messages use. */
@@ -36,15 +36,17 @@ export function AnswerSurface({
   teamSlug,
   teamSlugOf,
   onChip,
+  readerPersonId = null,
 }: {
   payload: AnswerPayloadView;
   teamSlug: string | null;
   teamSlugOf?: TeamSlugOf | undefined;
   onChip?: NonNullable<SurfaceHost['answer']>['onChip'];
+  readerPersonId?: string | null;
 }): ReactNode {
   const host = useMemo<SurfaceHost>(
-    () => ({ answer: { teamSlug, ...(teamSlugOf ? { teamSlugOf } : {}), ...(onChip ? { onChip } : {}) } }),
-    [teamSlug, teamSlugOf, onChip],
+    () => ({ answer: { teamSlug, ...(teamSlugOf ? { teamSlugOf } : {}), ...(onChip ? { onChip } : {}), readerPersonId } }),
+    [teamSlug, teamSlugOf, onChip, readerPersonId],
   );
   return <SurfaceHostContext.Provider value={host}>{answerView({ props: payload, children: null, nodeId: 'answer' })}</SurfaceHostContext.Provider>;
 }
