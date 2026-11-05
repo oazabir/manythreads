@@ -405,6 +405,10 @@ a.sec:hover {
 .chead-title {
   flex-shrink: 0;
   min-width: min(40%, 16ch);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   font-size: 15.5px;
   font-weight: 600;
