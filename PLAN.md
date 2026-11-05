@@ -616,9 +616,9 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
-| P21-01 | Message runs, hover time, presence on the avatar | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-01 | Message runs, hover time, presence on the avatar | Built, pending live check | - | built and tested locally (unit, e2e desktop and 390 px); not yet deployed or checked live |
 | P21-02 | Hover bar with quick reactions, the + pill, who reacted | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
-| P21-03 | Reply previews, long-message clamp, bot mention chips | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-03 | Reply previews, long-message clamp, bot mention chips | Built, pending live check | - | built and tested locally (unit, e2e desktop and 390 px); not yet deployed or checked live |
 | P21-04 | Composer: steady toolbar, shortcuts, :emoji:, richer @mentions | Partly built | clients/web/src/channels/Composer.tsx, hooks.ts (`People.bots`), styles/channels.css (`.pk-badge.bot`); live check 2026-11-05 | the @ picker lists the team's bots (switched on, with a `mention` or `conversation` trigger; at most 4) after the people, with a purple Bot badge and `@slug` inserted. Still missing: a steady toolbar, shortcuts, `:emoji:` list, avatars and People / Bots / Channels groups in the picker, `@channel` and `@here` first, the Send icon button. Long bot names wrap in the picker |
 | P21-05 | Floating bits: Jump to latest, toasts, Esc, day pills | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-06 | Channel and DM header, channel details, channel intro | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
