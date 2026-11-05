@@ -96,6 +96,8 @@ test('e and r act on a focused row, and are plain letters while typing in the co
   const omar = await apiAs('omar');
   const { id, name } = await createChannel(omar, 'keys');
   await postMessage(omar, id, 'my own words');
+  const theirs = await apiAs('nadia');
+  await postMessage(theirs, id, 'not mine to edit');
   const page: Page = (await openAs(browser, 'omar', `/t/engineering/c/${name}`)).page;
   try {
     const row = messages(page).first();
@@ -107,21 +109,31 @@ test('e and r act on a focused row, and are plain letters while typing in the co
     await page.keyboard.type('re');
     await expect(box).toContainText('re');
     await expect(page.getByRole('textbox', { name: 'Edit message' })).toHaveCount(0);
-    await expect(page.getByTestId('thread-panel')).toHaveCount(0);
+    await expect(page.getByTestId('thread-view')).toHaveCount(0);
     await box.clear();
 
     // r on the focused row opens the thread
     await row.focus();
     await page.keyboard.press('r');
-    await expect(page).toHaveURL(/panel=|thread/);
+    await expect(page.getByTestId('thread-view')).toBeVisible();
     await page.keyboard.press('Escape');
+    await expect(page.getByTestId('thread-view')).toHaveCount(0);
 
     // e on the focused row edits it
     await row.focus();
     await page.keyboard.press('e');
     await expect(row.getByRole('textbox', { name: 'Edit message' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(row.getByRole('textbox', { name: 'Edit message' })).toHaveCount(0);
+
+    // e on someone else's message edits nothing
+    const other = messages(page).filter({ hasText: 'not mine to edit' });
+    await other.focus();
+    await page.keyboard.press('e');
+    await expect(page.getByRole('textbox', { name: 'Edit message' })).toHaveCount(0);
   } finally {
     await page.context().close();
+    await theirs.ctx.dispose();
     await omar.ctx.dispose();
   }
 });
