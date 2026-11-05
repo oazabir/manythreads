@@ -1042,7 +1042,8 @@
 .cinput textarea {
   flex: 1;
   min-width: 0;
-  max-height: 188px;
+  min-height: 46px;
+  max-height: 376px;
   padding: 3px 4px;
   border: 0;
   outline: 0;
@@ -1704,6 +1705,10 @@
     display: none;
   }
 
+  .cinput textarea {
+    max-height: min(376px, calc(33dvh - 60px));
+  }
+
   /* twelve controls do not fit 390 px: the bar scrolls sideways instead of growing a second row */
   .ctools {
     overflow-x: auto;
@@ -1968,20 +1973,6 @@
 .also-from:hover {
   color: var(--ink);
   text-decoration: underline;
-}
-
-/* focus moving to the "also send" box must not fold the composer's toolbar: the box would slide away from under the pointer mid-click */
-.thread .rpf:focus-within .composer.resting .ctools {
-  display: flex;
-}
-
-.also-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px 0;
-  color: var(--mute);
-  font-size: 12px;
 }
 
 /* the bookmarks bar under the channel header (PLAN P14-12) */

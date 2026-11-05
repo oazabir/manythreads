@@ -129,19 +129,14 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
         : null,
     [channelId, rootId],
   );
-  // "Also send to channel": for the next reply only, and not in a conversation with a bot (its replies are answers, not channel talk)
-  const [also, setAlso] = useState(false);
   const send = useCallback(
     (body: string, attachments: FileSummary[], confirmBroadcast?: boolean) => {
       if (!channelId) return;
       stuck.current = true;
-      void channelStore.send(channelId, rootId, body, attachments, also, confirmBroadcast === true);
-      setAlso(false);
+      void channelStore.send(channelId, rootId, body, attachments, false, confirmBroadcast === true);
     },
-    [channelId, rootId, also],
+    [channelId, rootId],
   );
-  const channelKind = info.status === 'ok' && info.data ? info.data.channel.kind : null;
-  const alsoLabel = channelKind === 'channel' ? `Also send to #${channelName}` : channelKind === 'dm' ? 'Also send to the conversation' : null;
 
   if (tl.status === 'error' && !root) {
     return (
@@ -236,12 +231,6 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
       ) : canReply ? (
         <div className="rpf">
           {!answerTools ? <ScheduledStrip channelId={channelId} threadRootId={rootId} /> : null}
-          {alsoLabel && !answerTools ? (
-            <label className="also-row">
-              <input type="checkbox" checked={also} onChange={(e) => setAlso(e.target.checked)} data-testid="also-to-channel" />
-              <span>{alsoLabel}</span>
-            </label>
-          ) : null}
           <Composer
             draftKey={`thread:${rootId}`}
             placeholder={variant === 'main' ? 'Reply in thread…' : 'Reply…'}
@@ -254,7 +243,7 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
             slash={slug && !answerTools ? { teamSlug: slug, origin: tl.channel?.kind === 'dm' ? 'a thread in a direct message' : channelName ? `a thread in #${channelName}` : 'a thread' } : undefined}
             autoFocus={variant === 'panel'}
             // a scheduled reply is posted in the thread only: while "Also send to channel" is ticked there is no Send later (it would drop the tick)
-            sendLater={!answerTools && !(alsoLabel && also)}
+            sendLater={!answerTools}
             onEditLast={() => {
               const id = lastEditableOwn(tl.items, self);
               if (id) window.dispatchEvent(new CustomEvent(EDIT_EVENT, { detail: id }));

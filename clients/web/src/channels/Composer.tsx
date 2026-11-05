@@ -17,7 +17,7 @@ import { availability, isActionPlan, planSlash, taskFailureText, type ActionPlan
 import { announceChannelChanged, slashDeps } from './slashDeps';
 import { runSlashAction } from './slashRun';
 import { useSlashEnv, useSlashWho } from './useSlash';
-import { CODE_LANGUAGES, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
+import { CODE_LANGUAGES, COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection, type Edit, type LineKind } from './composerFormat';
 import { EmojiPicker } from './EmojiPicker';
 import { fileSize } from './format';
 import { MAX_UPLOAD_BYTES, TOO_LARGE, filesOf, useFilesSupport } from './files';
@@ -199,13 +199,13 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
     uploadsRef.current = uploads;
   });
 
-  // grow with the text, up to about eight lines
+  // grow with the text, up to COMPOSER_MAX_HEIGHT (about eighteen lines)
   useLayoutEffect(() => {
     const el = area.current;
     if (!el) return;
     el.style.height = 'auto';
     // not on screen (a hidden composer measures 0): leave it at its own one-line height
-    el.style.height = el.scrollHeight > 0 ? `${Math.min(el.scrollHeight, 188)}px` : '';
+    el.style.height = el.scrollHeight > 0 ? `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px` : '';
   }, [text]);
   useLayoutEffect(() => {
     const el = area.current;

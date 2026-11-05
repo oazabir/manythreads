@@ -121,3 +121,6 @@ export function insertText(text: string, a: number, b: number, piece: string): E
   const at = a + piece.length;
   return { text: text.slice(0, a) + piece + text.slice(b), from: at, to: at };
 }
+
+/** The tallest the message box grows before it scrolls, in px (a resting box is two lines, 46 px). Same number as `.cinput textarea` in channels.css. */
+export const COMPOSER_MAX_HEIGHT = 376;
