@@ -3,7 +3,10 @@ import type { ChannelMessage } from '@manythreads/shared';
 const CLOCK = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' });
 const DAY_PARTS = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 const WEEKDAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short' });
+const STAMP = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 const SHORT = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
+
+export { toneOf } from '../components/tone';
 
 export const clock = (iso: string): string => CLOCK.format(new Date(iso));
 
@@ -25,6 +28,14 @@ export function dayLabel(iso: string, now: Date = new Date()): string {
   return d.getFullYear() === now.getFullYear() ? label : `${label} ${d.getFullYear()}`;
 }
 
+/** The full date and time of a message, for a tooltip: "Mon 26 Oct, 20:39" (with the year when it is not this one). */
+export function fullStamp(iso: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const part = (type: Intl.DateTimeFormatPartTypes): string => STAMP.formatToParts(d).find((p) => p.type === type)?.value ?? '';
+  const label = `${part('weekday')} ${part('day')} ${part('month')}${d.getFullYear() === now.getFullYear() ? '' : ` ${d.getFullYear()}`}`;
+  return `${label}, ${clock(iso)}`;
+}
+
 /** "now", "2m", "1h", "Fri", "3 Sep": how long ago, for the Threads inbox. */
 export function ago(iso: string, now: Date = new Date()): string {
   const d = new Date(iso);
@@ -34,6 +45,13 @@ export function ago(iso: string, now: Date = new Date()): string {
   if (s < 86_400) return `${Math.round(s / 3_600)}h`;
   if (s < 6 * 86_400) return WEEKDAY.format(d);
   return SHORT.format(d);
+}
+
+/** "Last reply 2h ago", "Last reply just now", "Last reply Fri" / "Last reply 3 Sep": under the reply count. */
+export function lastReplyText(iso: string, now: Date = new Date()): string {
+  const a = ago(iso, now);
+  if (a === 'now') return 'Last reply just now';
+  return /^\d+[mh]$/.test(a) ? `Last reply ${a} ago` : `Last reply ${a}`;
 }
 
 export function fileSize(bytes: number): string {
@@ -55,5 +73,6 @@ export function fileKind(name: string, mime: string): { label: string; tone: 'pd
 /** What to assume a message's height is before it has been drawn (the list corrects it with the real height). */
 export function estimateMessageHeight(m: Pick<ChannelMessage, 'body' | 'reactions' | 'replyCount'> & { attachments?: readonly unknown[] }): number {
   const lines = m.body.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 88)), 0);
-  return 30 + Math.min(lines, 40) * 21 + (m.reactions.length > 0 ? 30 : 0) + (m.replyCount > 0 ? 28 : 0) + (m.attachments?.length ?? 0) * 46;
+  // a long text is clamped to four lines with a "Show more" line under it (P21-03)
+  return 30 + (lines > 6 ? 4 * 21 + 26 : lines * 21) + (m.reactions.length > 0 ? 30 : 0) + (m.replyCount > 0 ? 28 : 0) + (m.attachments?.length ?? 0) * 46;
 }

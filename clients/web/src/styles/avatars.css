@@ -123,3 +123,74 @@
   align-items: center;
   gap: 10px;
 }
+
+.av[data-tone='0'] {
+  background: var(--av-1-bg);
+  color: var(--av-1-ink);
+}
+
+.av[data-tone='1'] {
+  background: var(--av-2-bg);
+  color: var(--av-2-ink);
+}
+
+.av[data-tone='2'] {
+  background: var(--av-3-bg);
+  color: var(--av-3-ink);
+}
+
+.av[data-tone='3'] {
+  background: var(--av-4-bg);
+  color: var(--av-4-ink);
+}
+
+.av[data-tone='4'] {
+  background: var(--av-5-bg);
+  color: var(--av-5-ink);
+}
+
+.av[data-tone='5'] {
+  background: var(--av-6-bg);
+  color: var(--av-6-ink);
+}
+
+.av[data-tone='6'] {
+  background: var(--av-7-bg);
+  color: var(--av-7-ink);
+}
+
+.av[data-tone='7'] {
+  background: var(--av-8-bg);
+  color: var(--av-8-ink);
+}
+
+.av[data-tone='8'] {
+  background: var(--av-9-bg);
+  color: var(--av-9-ink);
+}
+
+.av[data-tone='9'] {
+  background: var(--av-10-bg);
+  color: var(--av-10-ink);
+}
+
+/* an avatar with a badge on its corner (the presence dot, later the bot mark) */
+.av-wrap {
+  position: relative;
+  display: block;
+  width: fit-content;
+}
+
+.av-wrap .pdot-wrap {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.av-wrap .pdot {
+  width: 11px;
+  height: 11px;
+}

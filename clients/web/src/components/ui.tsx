@@ -1,4 +1,6 @@
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
+import { PresenceDot } from '../presence/PresenceDot';
+import { toneOf } from './tone';
 import { PASSWORD_MIN_LENGTH as PASSWORD_MIN, avatarSrc } from '@manythreads/shared';
 
 export function Brand({ name = 'manythreads', mark = 'm' }: { name?: string; mark?: string }) {
@@ -125,20 +127,36 @@ export function initialsOf(name: string): string {
  * A person's or bot's picture (PLAN P14-23): the built-in picture or uploaded photo they chose (`avatar`: `preset:<id>` or `photo:<hash>`), else their
  * initials on a coloured disc. A picture that cannot be loaded falls back to the initials, so a broken frame is never drawn. `personId` is needed for a photo.
  */
-export function Avatar({ name, kind = 'person', avatar, personId }: { name: string; kind?: 'person' | 'agent' | 'automation'; avatar?: string | null | undefined; personId?: string | null | undefined }) {
+export function Avatar({ name, kind = 'person', avatar, personId, presencePersonId, badge }: {
+  name: string;
+  kind?: 'person' | 'agent' | 'automation';
+  avatar?: string | null | undefined;
+  personId?: string | null | undefined;
+  /** Draws that person's presence dot as a badge on the avatar's corner (P21-01); the dot draws nothing where presence is not shown. */
+  presencePersonId?: string | null | undefined;
+  /** A badge on the corner for a kind of author; the slot only, the bot badge itself is drawn by the caller's page (P21-07). */
+  badge?: 'bot' | undefined;
+}) {
   const src = avatarSrc(avatar, personId);
   const [broken, setBroken] = useState<string | null>(null);
   const shape = kind === 'agent' ? 'a' : kind === 'automation' ? 'r' : '';
-  if (src && broken !== src) {
-    return (
+  const face =
+    src && broken !== src ? (
       <span className={`av pic ${shape}`} aria-hidden="true" data-avatar={avatar}>
         <img src={src} alt="" loading="lazy" decoding="async" onError={() => setBroken(src)} />
       </span>
+    ) : (
+      // a person's initials sit on one of ten calm colours picked from their id; a bot keeps the agent purple
+      <span className={`av ${shape}`} aria-hidden="true" data-tone={kind === 'person' ? toneOf(personId ?? name) : undefined}>
+        {initialsOf(name)}
+      </span>
     );
-  }
+  if (!presencePersonId && !badge) return face;
   return (
-    <span className={`av ${shape}`} aria-hidden="true">
-      {initialsOf(name)}
+    <span className="av-wrap">
+      {face}
+      {presencePersonId ? <PresenceDot personId={presencePersonId} /> : null}
+      {badge ? <span className={`av-badge ${badge}`} aria-hidden="true" /> : null}
     </span>
   );
 }

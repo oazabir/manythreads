@@ -58,6 +58,28 @@
   --toggle-off: #CFD4DA;
   --scrim: rgb(27 36 48 / 40%);
   --menu-shadow: 0 6px 20px rgb(27 36 48 / 14%);
+
+  /* initials avatars: ten calm background and ink pairs, picked by a hash of the person (toneOf) */
+  --av-1-bg: #DCE8F4;
+  --av-1-ink: #1F4468;
+  --av-2-bg: #E6DDF2;
+  --av-2-ink: #4E3B6E;
+  --av-3-bg: #D6EBE0;
+  --av-3-ink: #2E5F41;
+  --av-4-bg: #F4E6C8;
+  --av-4-ink: #7A5D1F;
+  --av-5-bg: #F6DDD6;
+  --av-5-ink: #8A3520;
+  --av-6-bg: #D4EAEC;
+  --av-6-ink: #1F5E66;
+  --av-7-bg: #EBDDEA;
+  --av-7-ink: #70356A;
+  --av-8-bg: #E2E8CF;
+  --av-8-ink: #4A5A1C;
+  --av-9-bg: #F6E0CC;
+  --av-9-ink: #8E5A2E;
+  --av-10-bg: #DDE0E6;
+  --av-10-ink: #3B4452;
   --sans: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", monospace;
 }
