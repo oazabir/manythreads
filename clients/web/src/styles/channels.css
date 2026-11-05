@@ -164,6 +164,15 @@
   font-style: italic;
 }
 
+/* a message with replies opens its thread when clicked (P21-26); its text stays selectable */
+.msg[data-has-thread] {
+  cursor: pointer;
+}
+
+.msg[data-has-thread] .txt {
+  cursor: text;
+}
+
 .msg.gone .av {
   opacity: 0.5;
 }

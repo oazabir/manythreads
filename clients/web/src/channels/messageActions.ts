@@ -75,3 +75,32 @@ export function lastEditableOwn(
   }
   return null;
 }
+
+/**
+ * What a click inside a message row must leave alone (P21-26): controls, links, the toolbar and its menus, the editor, a poll, an Answer, a
+ * picture, a mention chip, a channel reference, the author's name. Clicking anywhere else on a row that has a thread opens the thread.
+ */
+export const NO_THREAD_CLICK = [
+  'a,button,textarea,.acts,.dlg-scrim,.vpop,.pcard-avatar',
+  'input,select,label,summary,details,img,video,audio,iframe,[role=button],[role=menu],[contenteditable]',
+  '.m,.chref,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap',
+].join(',');
+
+/** A click on a message row opens its thread only for a plain single click on the row's own text, space and picture-free parts. */
+export function rowClickOpensThread(a: {
+  target: { closest: (selector: string) => unknown };
+  /** The text the reader has selected inside this row ('' for none). */
+  selectionText: string;
+  /** `MouseEvent.detail`: 1 for a single click, 2 and up for the double and triple click that select words. */
+  detail: number;
+  mods: { ctrl: boolean; meta: boolean; shift: boolean; alt: boolean };
+  editing: boolean;
+  inThread: boolean;
+  replyCount: number;
+  hasOpen: boolean;
+}): boolean {
+  if (a.inThread || a.replyCount <= 0 || !a.hasOpen || a.editing || a.detail !== 1) return false;
+  if (a.mods.ctrl || a.mods.meta || a.mods.shift || a.mods.alt) return false;
+  if (a.selectionText !== '') return false;
+  return a.target.closest(NO_THREAD_CLICK) === null;
+}

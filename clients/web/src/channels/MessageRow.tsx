@@ -16,7 +16,7 @@ import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
-import { copyText, messageLinkUrl } from './messageActions';
+import { NO_THREAD_CLICK, copyText, messageLinkUrl, rowClickOpensThread } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
 import { clock, fileKind, fileSize } from './format';
 import { splitAttachments } from './images';
@@ -174,11 +174,16 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     }
   };
 
+  // a message with replies opens its thread when its body is clicked (P21-26); not inside the thread itself
+  const hasThread = !inThread && m.replyCount > 0 && actions.openThread !== undefined;
   return (
     <div
       className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''}`}
       data-testid="message"
       data-message-id={m.id}
+      data-has-thread={hasThread ? '' : undefined}
+      aria-keyshortcuts={hasThread ? 'Enter' : undefined}
+      title={hasThread ? 'Open the thread' : undefined}
       tabIndex={0}
       onMouseEnter={() => setHot(true)}
       onMouseLeave={() => setHot(false)}
@@ -187,8 +192,21 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         if (!e.currentTarget.contains(e.relatedTarget)) setHot(false);
       }}
       onClick={(e) => {
-        if ((e.target as HTMLElement).closest('a,button,textarea,.acts,.dlg-scrim,.vpop,.pcard-avatar')) return;
+        const target = e.target as HTMLElement;
+        const sel = window.getSelection();
+        const selectionText = sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode) ? sel.toString() : '';
+        if (rowClickOpensThread({ target, selectionText, detail: e.detail, mods: { ctrl: e.ctrlKey, meta: e.metaKey, shift: e.shiftKey, alt: e.altKey }, editing: editing !== null, inThread, replyCount: m.replyCount, hasOpen: actions.openThread !== undefined })) {
+          actions.openThread?.(m.id);
+          return;
+        }
+        if (target.closest(NO_THREAD_CLICK)) return;
         setTapped((t) => !t);
+      }}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || e.key !== 'Enter' || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.nativeEvent.isComposing) return;
+        if (!hasThread || editing !== null) return;
+        e.preventDefault();
+        actions.openThread?.(m.id);
       }}
     >
       {deleted || !(hot || tapped || menu !== null) ? null : (
