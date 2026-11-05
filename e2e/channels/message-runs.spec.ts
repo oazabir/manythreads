@@ -105,9 +105,12 @@ test('a long text is cut with Show more; Show more opens the text, not the threa
   const list = page.locator('.vlist');
   try {
     await expect(messages(content(page)).last()).toContainText('bulk 90', T);
-    await list.evaluate((el) => { el.scrollTop = 0; });
     const row = rowOf(page, long.id);
-    await expect(row).toBeVisible(T);
+    // the oldest page loads while the list is at the top, so keep asking for the top until the row is drawn (flaky on the phone otherwise)
+    await expect(async () => {
+      await list.evaluate((el) => { el.scrollTop = 0; });
+      await expect(row).toBeVisible({ timeout: 1500 });
+    }).toPass(T);
     await expect(rowOf(page, short.id).locator('.show-more')).toHaveCount(0);
     await expect(row.locator('.txt')).toHaveClass(/\bclamp\b/);
     const clampedHeight = (await row.locator('.txt').boundingBox())!.height;
@@ -126,8 +129,10 @@ test('a long text is cut with Show more; Show more opens the text, not the threa
     // away and back: the row is drawn again and is still whole
     await list.evaluate((el) => { el.scrollTop = el.scrollHeight; });
     await expect(row).toHaveCount(0, T);
-    await list.evaluate((el) => { el.scrollTop = 0; });
-    await expect(row).toBeVisible(T);
+    await expect(async () => {
+      await list.evaluate((el) => { el.scrollTop = 0; });
+      await expect(row).toBeVisible({ timeout: 1500 });
+    }).toPass(T);
     await expect(row.locator('.txt')).not.toHaveClass(/\bclamp\b/);
     await expect(row.getByRole('button', { name: 'Show more' })).toHaveCount(0);
   } finally {
