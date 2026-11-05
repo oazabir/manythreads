@@ -257,7 +257,7 @@ export function ConversationView() {
             <>
               <ul className="inlist" role="listbox" aria-label={`${TABS.find((t) => t.id === scope)?.label ?? ''} conversations`}>
                 {items.map((item) => (
-                  <ConversationRow key={`${item.source}:${item.threadRootId}`} item={item} botName={botName} on={item.threadRootId === thread} onOpen={() => go({ thread: item.threadRootId })} who={people.byPerson(item.personId)?.name ?? 'Someone'} />
+                  <ConversationRow key={`${item.source}:${item.threadRootId}`} item={item} on={item.threadRootId === thread} onOpen={() => go({ thread: item.threadRootId })} who={people.byPerson(item.personId)?.name ?? 'Someone'} />
                 ))}
               </ul>
               {more || older.failed ? (
@@ -353,8 +353,9 @@ export function ConversationView() {
   );
 }
 
-function ConversationRow({ item, botName, who, on, onOpen }: { item: ConversationListItem; botName: string; who: string; on: boolean; onOpen: () => void }) {
+function ConversationRow({ item, who, on, onOpen }: { item: ConversationListItem; who: string; on: boolean; onOpen: () => void }) {
   const unread = item.unreadCount > 0;
+  // A private conversation is the ordinary case and says nothing; only a mention, or a conversation that is shared, carries a label.
   const label =
     item.source === 'mention'
       ? `Channel mention · # ${item.channelName ?? ''}`
@@ -362,22 +363,23 @@ function ConversationRow({ item, botName, who, on, onOpen }: { item: Conversatio
         ? item.mine
           ? 'Shared with the team'
           : `Shared by ${who}`
-        : 'Private to you';
+        : null;
   // somebody else's shared conversation without a copy the reader can open: listed, never opened
   const closed = !item.mine && item.source === 'conversation' && item.sharedTo === null;
-  const speaker = item.lastAuthor === 'bot' ? botName : item.lastAuthor === 'person' ? (item.mine ? 'You' : who) : null;
+  // The bot's own words need no name in front (the whole list is with that bot); a person's do, so a question waiting for its answer reads "You: ...".
+  const speaker = item.lastAuthor === 'person' ? (item.mine ? 'You' : who) : null;
   const last = item.preview !== '' ? (speaker ? `${speaker}: ${item.preview}` : item.preview) : item.replyCount === 0 ? 'No answer yet' : '';
   return (
     <li role="option" aria-selected={on} data-root-id={item.threadRootId} data-testid="conversation-row" data-source={item.source} data-visibility={item.visibility ?? ''}>
       <button type="button" className={`trow ${unread ? 'unread' : ''} ${on ? 'on' : ''}`} disabled={closed} onClick={onOpen}>
         <span className="trow-main">
-          <span className="ch" data-testid="conversation-label">{label}</span>
+          {label !== null ? <span className="ch" data-testid="conversation-label">{label}</span> : null}
           <span className="ttl">{item.title !== '' ? item.title : 'A shared conversation'}</span>
           <span className="last">{last}</span>
         </span>
         <span className="meta">
           <span data-vt-mask>{ago(item.lastActivityAt)}</span>
-          {unread ? <span className="cnt" data-vt-mask>{item.unreadCount}</span> : item.replyCount > 0 ? <span className="rc">{item.replyCount === 1 ? '1 reply' : `${item.replyCount} replies`}</span> : null}
+          {unread ? <span className="cnt" data-vt-mask>{item.unreadCount}</span> : null}
         </span>
       </button>
     </li>

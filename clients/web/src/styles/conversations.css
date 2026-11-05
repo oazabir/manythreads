@@ -28,6 +28,24 @@
   font-weight: 400;
 }
 
+/* the list of conversations, more compact than the Threads inbox's rows it shares: title and time on top, one line of the last words under it */
+.cv .trow {
+  gap: 2px 8px;
+  padding: 7px 14px;
+}
+
+.cv .trow .ttl {
+  margin: 0 0 1px;
+}
+
+.cv .trow .meta {
+  align-items: flex-start;
+}
+
+.cv .trow .cnt {
+  margin-top: 2px;
+}
+
 /* the empty state: who the bot is, a few example questions, and the message box */
 .cv-start {
   display: flex;

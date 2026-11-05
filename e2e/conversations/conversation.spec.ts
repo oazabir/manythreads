@@ -115,8 +115,10 @@ test('sending starts a thread: the message is its root, the view switches to it 
     const row = page.getByTestId('conversation-row').first();
     await expect(row).toBeVisible();
     await expect(row).toContainText('What is blocking the schedule migration?');
-    await expect(row.getByTestId('conversation-label')).toHaveText('Private to you');
-    await expect(row).toContainText('Brain: Answering', { timeout: 30_000 });
+    await expect(row).toHaveAttribute('data-visibility', 'private');
+    await expect(row.getByTestId('conversation-label')).toHaveCount(0);
+    await expect(row).toContainText('Answering', { timeout: 30_000 });
+    await expect(row).not.toContainText('Brain:');
   } finally {
     await close();
   }
