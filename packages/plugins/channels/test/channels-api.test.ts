@@ -322,6 +322,59 @@ describe('messages', () => {
     expect(ListMessagesResponse.parse(ok(await w.call(nadia, 'GET', `/api/channels/${dev}/messages?limit=50`))).items.find((i) => i.id === gone.id)).toMatchObject({ deletedAt: expect.any(String), replyCount: 1 });
   });
 
+  it('reply previews (P21-03): at most three authors, newest first, no deleted replies; the dot is right for each reader', async () => {
+    const root = Message.parse(ok(await post(nadia, dev, 'Preview me'), 201));
+    const quiet = Message.parse(ok(await post(nadia, dev, 'No replies here'), 201));
+    const r1 = Message.parse(ok(await post(rafi, dev, 'first reply', root.id), 201));
+    const r2 = Message.parse(ok(await post(priya, dev, 'second reply', root.id), 201));
+    const r3 = Message.parse(ok(await post(omar, dev, 'third reply', root.id), 201));
+    const r4 = Message.parse(ok(await post(nadia, dev, 'fourth reply, the root author', root.id), 201));
+    await post(rafi, dev, 'fifth reply, rafi again', root.id);
+    const feedAs = async (who: typeof nadia): Promise<ChannelMessage[]> => ListMessagesResponse.parse(ok(await w.call(who, 'GET', `/api/channels/${dev}/messages?limit=100`))).items;
+    const find = (items: ChannelMessage[], id: string): ChannelMessage | undefined => items.find((i) => i.id === id);
+    let held = find(await feedAs(nadia), root.id);
+    // one entry per person, newest reply first: rafi (5th), nadia, omar; priya is cut by the limit of three
+    expect(held?.replyAuthors?.map((a) => a.actorId)).toEqual([rafi.actorId, nadia.actorId, omar.actorId]);
+    expect(held?.replyAuthors?.[0]).toMatchObject({ displayName: expect.any(String), kind: 'person' });
+    expect(held?.replyCount).toBe(5);
+    // a message without replies carries no preview at all
+    expect(find(await feedAs(nadia), quiet.id)).not.toHaveProperty('replyAuthors');
+    expect(find(await feedAs(nadia), quiet.id)).not.toHaveProperty('unreadReplies');
+    // the thread's own list (replies) carries none either
+    const inThread = ListMessagesResponse.parse(ok(await w.call(nadia, 'GET', `/api/channels/${dev}/messages?threadRootId=${root.id}`))).items;
+    expect(inThread.every((i) => i.replyAuthors === undefined)).toBe(true);
+    // unread for the reader: nadia (root author) has unread replies (rafi's fifth), rafi (wrote the latest) does not
+    expect(find(await feedAs(nadia), root.id)?.unreadReplies).toBe(true);
+    // each reader has their own dot: rafi reads to the newest reply and loses it, nadia keeps hers
+    const newest = ListMessagesResponse.parse(ok(await w.call(rafi, 'GET', `/api/channels/${dev}/messages?threadRootId=${root.id}`))).items[0]!;
+    expect(find(await feedAs(rafi), root.id)?.unreadReplies).toBe(true);
+    ok(await w.call(rafi, 'POST', '/api/read-state/mark', { targetType: 'thread', targetId: root.id, upTo: newest.id }));
+    expect(find(await feedAs(rafi), root.id)?.unreadReplies).toBe(false);
+    expect(find(await feedAs(nadia), root.id)?.unreadReplies).toBe(true);
+    // reading the thread clears the dot for nadia
+    ok(await w.call(nadia, 'POST', '/api/read-state/mark', { targetType: 'thread', targetId: root.id, upTo: r4.id }));
+    expect(find(await feedAs(nadia), root.id)?.unreadReplies).toBe(true); // the fifth reply is still unread
+    const latest = ListMessagesResponse.parse(ok(await w.call(nadia, 'GET', `/api/channels/${dev}/messages?threadRootId=${root.id}`))).items[0]!;
+    ok(await w.call(nadia, 'POST', '/api/read-state/mark', { targetType: 'thread', targetId: root.id, upTo: latest.id }));
+    expect(find(await feedAs(nadia), root.id)?.unreadReplies).toBe(false);
+    // a deleted reply drops out of the preview (rafi deletes the newest one: priya's older reply now makes the top three: nadia, omar, priya)
+    ok(await w.call(rafi, 'DELETE', `/api/channels/${dev}/messages/${latest.id}`));
+    held = find(await feedAs(nadia), root.id);
+    expect(held?.replyAuthors?.map((a) => a.actorId)).toEqual([nadia.actorId, omar.actorId, priya.actorId]);
+    expect(held?.replyAuthors?.some((a) => a.actorId === rafi.actorId)).toBe(false); // rafi's first reply is the oldest, cut by the limit
+    for (const [who, gone] of [[rafi, r1], [omar, r3], [nadia, r4]] as const) ok(await w.call(who, 'DELETE', `/api/channels/${dev}/messages/${gone.id}`));
+    expect(find(await feedAs(nadia), root.id)?.replyAuthors?.map((a) => a.actorId)).toEqual([priya.actorId]);
+    expect(r2.threadRootId).toBe(root.id);
+  }, 120_000);
+
+  it('reply previews stay optional in the schema: an older payload without them still parses', () => {
+    const old = { id: randomUUID(), workspaceId: randomUUID(), channelId: randomUUID(), authorId: randomUUID(), body: 'x', bodyPlain: 'x', threadRootId: null, editedAt: null, deletedAt: null, meta: {}, createdAt: new Date().toISOString(), reactions: [], replyCount: 0, lastReplyAt: null };
+    expect(ChannelMessage.safeParse(old).success).toBe(true);
+    const author = { actorId: randomUUID(), displayName: 'A', kind: 'person' };
+    expect(ChannelMessage.safeParse({ ...old, replyAuthors: [author, author, author], unreadReplies: false }).success).toBe(true);
+    expect(ChannelMessage.safeParse({ ...old, replyAuthors: [author, author, author, author] }).success).toBe(false);
+  });
+
   it('reactions: add, repeat, summary with mine, remove; read-only people cannot react', async () => {
     const m = Message.parse(ok(await post(nadia, dev, 'react to me'), 201));
     const path = `/api/channels/${dev}/messages/${m.id}/reactions`;
