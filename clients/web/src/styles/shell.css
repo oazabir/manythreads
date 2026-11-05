@@ -409,12 +409,9 @@ a.sec:hover {
 }
 
 .chead-title {
-  flex-shrink: 0;
+  flex-shrink: 1;
   min-width: min(40%, 16ch);
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   margin: 0;
   font-size: 15.5px;
   font-weight: 600;
@@ -425,6 +422,7 @@ a.sec:hover {
 }
 
 .chead > .topic {
+  flex-shrink: 4;
   min-width: 0;
   overflow: hidden;
   color: var(--mute);
@@ -703,10 +701,13 @@ a.sec:hover {
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .chd-btn {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
@@ -724,6 +725,8 @@ a.sec:hover {
 }
 
 .chd-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
