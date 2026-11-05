@@ -25,6 +25,32 @@ const T = { timeout: 15_000 };
 const details = (page: Page) => page.getByTestId('channel-details');
 const button = (page: Page) => page.getByTestId('channel-details-button');
 
+/* every item is on the screen, inside the menu, and not covered or clipped by an ancestor (the element at its centre is the item itself) */
+async function expectItemsFullyShown(page: Page, names: string[]): Promise<void> {
+  const vp = page.viewportSize()!;
+  const menuBox = (await details(page).boundingBox())!;
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(vp.width + 1);
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(vp.height + 1);
+  for (const name of names) {
+    const item = details(page).getByRole('menuitem', { name });
+    await expect(item, name).toBeVisible();
+    const r = (await item.boundingBox())!;
+    expect(r.height, `${name} height`).toBeGreaterThan(8);
+    expect(r.x, `${name} left`).toBeGreaterThanOrEqual(menuBox.x - 1);
+    expect(r.x + r.width, `${name} right`).toBeLessThanOrEqual(menuBox.x + menuBox.width + 1);
+    expect(r.y, `${name} top`).toBeGreaterThanOrEqual(menuBox.y - 1);
+    expect(r.y + r.height, `${name} bottom in menu`).toBeLessThanOrEqual(menuBox.y + menuBox.height + 1);
+    expect(r.y + r.height, `${name} bottom on screen`).toBeLessThanOrEqual(vp.height + 1);
+    const hit = await item.evaluate((el) => {
+      const b = el.getBoundingClientRect();
+      const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+      return top !== null && (top === el || el.contains(top)) ? 'ok' : `${top?.tagName}.${top?.className}[${top?.textContent?.slice(0, 30)}] at ${Math.round(b.x + b.width / 2)},${Math.round(b.y + b.height / 2)}`;
+    });
+    expect(hit, `${name} is the element at its own centre (not clipped or covered)`).toBe('ok');
+  }
+}
+
 test.beforeAll(async ({ playwright }) => {
   stack = await startStack({ MANYTHREADS_STACK_SEED: 'work' });
   [omar, nadia, rafi, lena] = (await Promise.all(['omar', 'nadia', 'rafi', 'lena'].map((who) => apiOn(playwright, stack, who)))) as [StackApi, StackApi, StackApi, StackApi];
@@ -61,9 +87,7 @@ test('the name opens the details menu; Esc closes it and focus returns to the na
     await button(page).click();
     await expect(details(page)).toBeVisible();
     await expect(button(page)).toHaveAttribute('aria-expanded', 'true');
-    for (const name of ['Notifications', 'Star', 'Members', 'Integrations', 'Files', 'Leave channel']) {
-      await expect(details(page).getByRole('menuitem', { name })).toBeVisible();
-    }
+    await expectItemsFullyShown(page, ['Notifications', 'Star', 'Members', 'Integrations', 'Files', 'Leave channel']);
     // focus moved into the menu
     await expect(details(page).getByRole('menuitem').first()).toBeFocused();
     await page.keyboard.press('Escape');
@@ -228,6 +252,45 @@ test('the channel name keeps its whole width with the right panel open', async (
     const box = (await title.boundingBox())!;
     expect(box.width).toBeGreaterThan(longName.length * 5);
     expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  } finally {
+    await context.close();
+  }
+});
+
+test('at 390 px the details menu shows every item fully, and a 44-character name keeps every header button on the screen', async ({ browser, playwright }) => {
+  const longName = 'hdr-' + 'x'.repeat(40);
+  expect(longName).toHaveLength(44);
+  const longId = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: longName })).channel.id;
+  expect(await rafi.post(`/api/channels/${longId}/join`)).toEqual({ joined: true });
+  expect(await omar.post(`/api/channels/${longId}/join`)).toEqual({ joined: true });
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${longName}`, { viewport: PHONE, mobile: true });
+  try {
+    await expect(button(page)).toBeVisible(T);
+    expect(page.viewportSize()!.width).toBe(390);
+    const vpw = 390;
+    // wait for the late tools (members stack, bell) so none is missed by the count below
+    await expect(page.getByTestId('members-stack')).toBeVisible(T);
+    await expect(page.locator('[data-landmark="header"]').getByRole('button', { name: /^Notifications/ })).toBeVisible(T);
+    const buttons = page.locator('[data-landmark="header"]').getByRole('button').filter({ visible: true });
+    const labels: string[] = [];
+    for (const b of await buttons.all()) {
+      const r = (await b.boundingBox())!;
+      const label = (await b.getAttribute('aria-label')) ?? (await b.textContent()) ?? '';
+      labels.push(label);
+      expect(r.x, `${label} left`).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.width, `${label} right`).toBeLessThanOrEqual(vpw);
+    }
+    expect(labels.join('|')).toMatch(/Search/i);
+    expect(labels.join('|')).toMatch(/Notification/i);
+    expect(labels.join('|')).toMatch(/Members/i);
+    expect(labels.join('|')).toMatch(/hdr-x/);
+    const name = page.locator('[data-landmark="header"] .chd-name');
+    const cut = await name.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(cut.scroll, 'the long name is cut with an ellipsis').toBeGreaterThan(cut.client);
+    expect(await noSidewaysScroll(page)).toBe(true);
+    await button(page).click();
+    await expect(details(page)).toBeVisible();
+    await expectItemsFullyShown(page, ['Notifications', 'Star', 'Members', 'Integrations', 'Files', 'Leave channel']);
   } finally {
     await context.close();
   }
