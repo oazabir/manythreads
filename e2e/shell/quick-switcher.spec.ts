@@ -133,7 +133,7 @@ test('Alt+Down and Alt+Up walk the conversations with unread messages; Shift+Esc
 
     // start from nothing unread: Shift+Esc reads everything, and says so
     await page.keyboard.press('Shift+Escape');
-    await expect(page.getByTestId('quick-switcher-note')).toContainText(/marked as read|Nothing was unread/);
+    await expect(page.getByTestId('quick-switcher-note').last()).toContainText(/marked as read|Nothing was unread/);
     await expect.poll(unreadChannels).toEqual([]);
 
     await postAs(nadia, one.id, 'first news');
@@ -155,7 +155,7 @@ test('Alt+Down and Alt+Up walk the conversations with unread messages; Shift+Esc
     // nothing else is unread now
     await blurFocus(page);
     await page.keyboard.press('Alt+ArrowUp');
-    await expect(page.getByTestId('quick-switcher-note')).toHaveText('Nothing else is unread.');
+    await expect(page.getByTestId('quick-switcher-note').last()).toHaveText('Nothing else is unread.');
 
     // a new message in the other channel: Alt+Up finds it from here
     await postAs(nadia, first.id, 'third news');
@@ -188,7 +188,7 @@ test('Esc marks the open conversation read, but not while a text box has focus',
 
     await blurFocus(page);
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('quick-switcher-note')).toHaveText(`#${chan.name} marked as read.`);
+    await expect(page.getByTestId('quick-switcher-note').last()).toHaveText(`#${chan.name} marked as read.`);
     await expect.poll(async () => (await unreadChannels()).includes(chan.id)).toBe(false);
   } finally {
     await context.close();

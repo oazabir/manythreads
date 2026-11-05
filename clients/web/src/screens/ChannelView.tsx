@@ -160,8 +160,10 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
   useEffect(() => {
     // not before the roster has answered: with `self` still unknown, every message of the reader's own counts as unread, and the list opens at the top
     if (hadUnread === null && tl.status === 'ready' && readAtOpen.known && peopleSettled) {
-      setHadUnread(firstUnreadIndex(tl.items, readAtOpen.lastReadId, self, tl.cursor === null) >= 0);
-      setSeenUpTo(readAtOpen.lastReadId);
+      const unread = firstUnreadIndex(tl.items, readAtOpen.lastReadId, self, tl.cursor === null) >= 0;
+      setHadUnread(unread);
+      // nothing unread on open: what is loaded now is already seen, so only later arrivals count toward "Jump to latest"
+      setSeenUpTo(unread ? readAtOpen.lastReadId : (tl.items.at(-1)?.id ?? readAtOpen.lastReadId));
     }
   }, [hadUnread, tl.status, tl.items, tl.cursor, readAtOpen, self, peopleSettled]);
   useEffect(() => {
