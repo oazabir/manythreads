@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
-import { apiAs, createChannel, messages, openAs } from './support.ts';
+import { expect, test, type Locator } from '@playwright/test';
+import { apiAs, createChannel, messages, openAs, postMessage } from './support.ts';
 
 // the desktop layout (hover actions, side panel); the phone layout has its own spec (mobile-web)
 test.skip(({ isMobile }) => isMobile, 'desktop layout');
@@ -204,5 +204,46 @@ test('attachments: upload with progress, a card for a file or a preview for a pi
   } finally {
     await rafi.context.close();
     await omar.ctx.dispose();
+  }
+});
+
+/** P21-28: the message box rests two lines tall (46 px), in a channel and in a thread, and grows with the text to 376 px, then scrolls. */
+test('the message box rests two lines tall and stops growing at 376 px', async ({ browser }) => {
+  const omar = await apiAs('omar');
+  const nadiaApi = await apiAs('nadia');
+  const { id, name } = await createChannel(omar, 'compose-height');
+  const root = await postMessage(nadiaApi, id, 'A message with a thread to reply in');
+  await postMessage(nadiaApi, id, 'A reply', root.id);
+  const rafi = await openAs(browser, 'rafi', `/t/engineering/c/${name}`);
+  const { page } = rafi;
+  const heightOf = async (box: Locator): Promise<number> => (await box.boundingBox())!.height;
+  try {
+    const box = page.getByRole('textbox', { name: `Message #${name}` });
+    await expect(box).toBeVisible();
+    expect(await heightOf(box)).toBeGreaterThanOrEqual(44);
+    expect(await heightOf(box)).toBeLessThanOrEqual(60);
+    // the same box in a thread
+    await page.locator(`[data-message-id="${root.id}"]`).getByRole('button', { name: '1 reply' }).click();
+    const reply = page.getByTestId('thread-view').getByRole('textbox', { name: 'Reply in thread' });
+    await expect(reply).toBeVisible();
+    expect(await heightOf(reply)).toBeGreaterThanOrEqual(44);
+    expect(await heightOf(reply)).toBeLessThanOrEqual(60);
+    // resting size does not change on focus
+    const resting = await heightOf(box);
+    await box.focus();
+    expect(await heightOf(box)).toBe(resting);
+    // thirty lines: it grew, and stops at 376 px (the text scrolls inside)
+    await box.fill(Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n'));
+    await expect.poll(() => heightOf(box)).toBeGreaterThan(resting + 100);
+    expect(await heightOf(box)).toBeLessThanOrEqual(376);
+    expect(await box.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await box.fill('');
+    await expect.poll(() => heightOf(box)).toBe(resting);
+    // the thread's box has no "Also send to" tick under or over it
+    await expect(page.getByTestId('thread-view').getByTestId('also-to-channel')).toHaveCount(0);
+  } finally {
+    await rafi.context.close();
+    await omar.ctx.dispose();
+    await nadiaApi.ctx.dispose();
   }
 });

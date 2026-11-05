@@ -75,6 +75,51 @@ test('drawer, channel, thread sheet, send: no sideways scroll anywhere', async (
   }
 });
 
+test('tapping the body of a message with replies opens its thread as a full sheet; one without replies shows its bar', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/c/dev', { viewport: PHONE, mobile: true });
+  try {
+    const row = page.locator(`[data-message-id="${root}"]`);
+    await expect(row).toBeVisible();
+    await row.locator('.txt').first().tap({ position: { x: 8, y: 8 } });
+    const sheet = page.locator('[data-landmark="right-panel"]');
+    await expect(page.getByTestId('thread-view')).toHaveAttribute('data-root-id', root);
+    expect(await sheet.boundingBox()).toMatchObject({ x: 0, y: 0, width: PHONE.width, height: PHONE.height });
+    // the row with a thread never opened its tap bar
+    await expect(row).not.toHaveClass(/tapped/);
+    await page.getByRole('button', { name: 'Close panel' }).click();
+    await expect(sheet).toBeHidden();
+    // a message nobody answered still opens its bar on a tap, and opens no thread
+    const plain = messagesIn(page).filter({ hasText: 'ready when you are' }).first();
+    await plain.locator('.txt').first().tap({ position: { x: 8, y: 8 } });
+    await expect(plain).toHaveClass(/tapped/);
+    await expect(page.getByTestId('thread-view')).toHaveCount(0);
+    expect(await noSidewaysScroll(page)).toBe(true);
+    // the root message inside the sheet still opens its bar on a tap
+    await row.getByRole('button', { name: /1 reply/ }).tap();
+    const inSheet = page.getByTestId('thread-view').locator(`[data-message-id="${root}"]`);
+    await inSheet.locator('.txt').first().tap({ position: { x: 8, y: 8 } });
+    await expect(inSheet).toHaveClass(/tapped/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('the message box rests two lines tall and never grows past a third of the screen', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/c/dev', { viewport: PHONE, mobile: true });
+  try {
+    const box = page.getByRole('textbox', { name: 'Message #dev' });
+    await expect(box).toBeVisible();
+    const resting = (await box.boundingBox())!.height;
+    expect(resting).toBeGreaterThanOrEqual(44);
+    await box.fill(Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n'));
+    await expect.poll(async () => (await box.boundingBox())!.height).toBeGreaterThan(resting + 40);
+    expect((await box.boundingBox())!.height).toBeLessThanOrEqual(Math.ceil(PHONE.height / 3));
+    await box.fill('');
+  } finally {
+    await context.close();
+  }
+});
+
 test('search and the bell from the header, and a direct message, fit the phone', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'rafi', '/t/engineering/c/dev', { viewport: PHONE, mobile: true });
   try {

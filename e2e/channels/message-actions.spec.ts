@@ -224,28 +224,35 @@ test('mark unread from here', async ({ browser }) => {
   }
 });
 
-/** "Also send to channel" from a thread reply shows the reply in the channel too, marked with its thread. */
-test('also send a thread reply to the channel', async ({ browser }) => {
+/** A thread reply has no "Also send to" tick (P21-28); one that was also sent to the channel (by the API) still shows there, marked with its thread. */
+test('a thread reply has no "Also send to" tick; a reply also sent to the channel shows its thread mark', async ({ browser }) => {
   const omar = await apiAs('omar');
   const { id, name } = await createChannel(omar, 'actions-also');
   const nadiaApi = await apiAs('nadia');
   const root = await postMessage(nadiaApi, id, 'which port do we use?');
+  await nadiaApi.post(`/api/channels/${id}/messages`, { channelId: id, body: 'port 8443, for everybody', threadRootId: root.id, alsoToChannel: true });
   const rafi = await openAs(browser, 'rafi', `/t/engineering/c/${name}`);
   try {
-    await messages(rafi.page).first().hover();
-    await messages(rafi.page).first().getByRole('button', { name: 'Reply in thread' }).click();
+    const rootRow = messages(rafi.page).filter({ hasText: 'which port do we use?' });
+    await rootRow.hover();
+    await rootRow.getByRole('button', { name: 'Reply in thread' }).click();
     const thread = rafi.page.getByTestId('thread-view');
     await expect(thread.getByRole('textbox')).toBeVisible();
-    await thread.getByTestId('also-to-channel').click();
-    await expect(thread.getByTestId('also-to-channel')).toBeChecked();
-    await thread.getByRole('textbox').fill('port 8443, for everybody');
-    await thread.getByRole('textbox').press('Enter');
     await expect(thread).toContainText('port 8443, for everybody');
+    // no tick in the thread, and no label for one
+    await expect(thread.getByTestId('also-to-channel')).toHaveCount(0);
+    await expect(thread.getByText(/Also send to/)).toHaveCount(0);
+    // the channel holds the copy, marked as sent from a thread
     const copy = messages(rafi.page.getByTestId('channel-view')).filter({ hasText: 'port 8443, for everybody' });
     await expect(copy).toHaveCount(1);
     await expect(copy.getByTestId('also-from-thread')).toContainText('Also sent from a thread');
-    await expect(thread.getByTestId('also-to-channel')).not.toBeChecked();
-    expect(root.id).toBeTruthy();
+    // Send later is offered with nothing to drop
+    await thread.getByRole('textbox').fill('a reply to send later');
+    await expect(thread.getByRole('button', { name: 'Send later', exact: true })).toBeVisible();
+    // a plain reply stays in the thread only
+    await thread.getByRole('textbox').press('Enter');
+    await expect(thread).toContainText('a reply to send later');
+    await expect(messages(rafi.page.getByTestId('channel-view')).filter({ hasText: 'a reply to send later' })).toHaveCount(0);
   } finally {
     await rafi.context.close();
   }

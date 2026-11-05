@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection } from '../src/channels/composerFormat';
+import { COMPOSER_MAX_HEIGHT, codeBlock, codeSpan, insertText, linkSelection, prefixLines, wrapSelection } from '../src/channels/composerFormat';
 import { lastEditableOwn } from '../src/channels/messageActions';
 import { parseMarkdown } from '../src/channels/markdown';
 
@@ -122,5 +122,11 @@ describe('edge cases of the toggles', () => {
 
   it('a selection that ends just after a line break does not reach the next line', () => {
     expect(apply(prefixLines('one\ntwo\nthree', 0, 8, 'quote'))).toBe('[> one\n> two]\nthree');
+  });
+});
+
+describe('the message box height (P21-28)', () => {
+  it('grows to 376 px, the number channels.css gives .cinput textarea', () => {
+    expect(COMPOSER_MAX_HEIGHT).toBe(376);
   });
 });

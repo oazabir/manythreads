@@ -225,32 +225,26 @@ test('message actions, end to end', async ({ browser }) => {
     await markFrom('db-conn-pool', '07-mark-unread-new-line');
     await markFrom('Normal at peak', '08-mark-unread-moved');
 
-    // 6. thread: "Also send to #alerts"
+    // 6. thread reply (no "Also send to" tick since P21-28)
     const root = msgs(page).filter({ hasText: `${TAG} third note` }).first();
     await root.hover();
     await root.getByRole('button', { name: 'Reply in thread' }).click();
     const thread = page.getByTestId('thread-view');
     await expect(thread).toBeVisible(T);
-    const also = page.getByTestId('also-to-channel');
-    await expect(also).toBeVisible(T);
-    await also.check();
-    await expect(also).toBeChecked();
+    // P21-28: a thread reply has no "Also send to" tick any more
+    await expect(page.getByTestId('also-to-channel')).toHaveCount(0);
     const reply = thread.getByRole('textbox', { name: 'Reply in thread' });
     await reply.click();
     await reply.fill(`${TAG} thread reply, also sent to the channel`);
     await shot('09-thread-also-send');
     await page.keyboard.press('Enter');
     await expect(thread).toContainText('thread reply, also sent', T);
-    const copy = msgs(page).filter({ hasText: 'thread reply, also sent' }).first();
-    await expect(copy.getByTestId('also-from-thread')).toBeVisible(T);
-    await expect(copy.getByTestId('also-from-thread')).toContainText('Also sent from a thread');
+    // without the tick the reply stays in the thread: the channel holds no copy of it
+    await expect(page.getByTestId('channel-view').getByTestId('message').filter({ hasText: 'thread reply, also sent' })).toHaveCount(0);
     const jump = page.getByRole('button', { name: 'Jump to latest' });
     if (await jump.isVisible()) await jump.click();
     await page.waitForTimeout(800);
     await shot('10-also-sent-copy');
-    made.unshift(async () => {
-      await removeMessage(page, msgs(page).filter({ hasText: 'thread reply, also sent' }).first());
-    });
     // the reply inside the thread
     made.unshift(async () => {
       const inThread = page.getByTestId('thread-view').getByTestId('message').filter({ hasText: 'thread reply, also sent' }).first();

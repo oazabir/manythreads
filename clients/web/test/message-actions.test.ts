@@ -1,7 +1,7 @@
 import type { DirectMessageSummary, NavChannelGroup } from '@manythreads/shared';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/api/client';
-import { channelTargets, dmLabel, dmTargets, filterTargets, messageLinkPath, messageLinkUrl, versionTime } from '../src/channels/messageActions';
+import { NO_THREAD_CLICK, channelTargets, dmLabel, dmTargets, filterTargets, messageLinkPath, messageLinkUrl, rowClickOpensThread, versionTime } from '../src/channels/messageActions';
 import { bookmarkHref } from '../src/channels/BookmarksBar';
 import { outcomeOfError } from '../src/notifications/OpenLink';
 
@@ -74,5 +74,58 @@ describe('where a bookmark leads', () => {
     expect(bookmarkHref({ kind: 'file', target: CH }, null)).toEqual({ href: `/api/files/${CH}/content`, external: true });
     expect(bookmarkHref({ kind: 'page', target: 'pages/a b.md' }, 'engineering')).toEqual({ href: '/t/engineering/files?open=pages%2Fa%20b.md', external: false });
     expect(bookmarkHref({ kind: 'page', target: 'pages/a.md' }, null)).toBeNull();
+  });
+});
+
+describe('a click on a message row opens its thread (P21-26)', () => {
+  /** A stand-in for a clicked element: `closest` answers yes when any listed simple selector (a tag, `.class`, `parent child`) of the product's selector fits `parts`. */
+  const target = (...parts: string[]) => ({
+    closest: (selector: string) => (selector.split(',').some((sel) => parts.includes(sel)) ? {} : null),
+  });
+  const base = {
+    target: target(),
+    selectionText: '',
+    detail: 1,
+    mods: { ctrl: false, meta: false, shift: false, alt: false },
+    editing: false,
+    inThread: false,
+    replyCount: 2,
+    hasOpen: true,
+  };
+
+  it('opens on a plain single click on the text of a message that has replies', () => {
+    expect(rowClickOpensThread(base)).toBe(true);
+  });
+
+  it('does not open without replies, inside the thread, while editing, or when nothing can open it', () => {
+    expect(rowClickOpensThread({ ...base, replyCount: 0 })).toBe(false);
+    expect(rowClickOpensThread({ ...base, inThread: true })).toBe(false);
+    expect(rowClickOpensThread({ ...base, editing: true })).toBe(false);
+    expect(rowClickOpensThread({ ...base, hasOpen: false })).toBe(false);
+  });
+
+  it('leaves a selection, a double or triple click, and a modified click alone', () => {
+    expect(rowClickOpensThread({ ...base, selectionText: 'some words' })).toBe(false);
+    expect(rowClickOpensThread({ ...base, detail: 2 })).toBe(false);
+    expect(rowClickOpensThread({ ...base, detail: 3 })).toBe(false);
+    for (const key of ['ctrl', 'meta', 'shift', 'alt'] as const) {
+      expect(rowClickOpensThread({ ...base, mods: { ...base.mods, [key]: true } }), key).toBe(false);
+    }
+  });
+
+  it('leaves a click on a control, a link, a chip, a picture, the toolbar, a poll or the author name alone', () => {
+    for (const part of ['a', 'button', 'input', 'label', 'img', '.acts', '.m', '.chref', '.poll', '.who b', '.edit-box']) {
+      expect(rowClickOpensThread({ ...base, target: target(part) }), part).toBe(false);
+    }
+    expect(rowClickOpensThread({ ...base, target: target('.txt') })).toBe(true);
+  });
+
+  it('asks the DOM with one selector that names each excluded part', () => {
+    for (const part of ['a', 'button', 'textarea', 'input', 'label', 'img', '.acts', '.m', '.chref', '.poll', '.who b', '.edit-box', '.vpop', '.dlg-scrim']) {
+      expect(NO_THREAD_CLICK.split(',')).toContain(part);
+    }
+    const asked: string[] = [];
+    rowClickOpensThread({ ...base, target: { closest: (s: string) => (asked.push(s), null) } });
+    expect(asked).toEqual([NO_THREAD_CLICK]);
   });
 });
