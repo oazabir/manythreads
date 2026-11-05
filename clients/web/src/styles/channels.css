@@ -1093,7 +1093,7 @@
 }
 
 .jump.jump-top {
-  top: 12px;
+  top: 40px; /* below the floating day pill (top 6px) */
   bottom: auto;
 }
 
