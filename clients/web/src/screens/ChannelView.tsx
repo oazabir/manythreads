@@ -217,7 +217,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
         case 'day':
           return <div className="daysep" data-vt-mask>{item.label}</div>;
         case 'unread':
-          return <div className="daysep unread-sep" data-testid="unread-divider" role="separator" aria-label="New messages"><span>New</span></div>;
+          return <div className="daysep unread-sep" data-testid="unread-divider" role="separator" aria-label="New messages"><span>New messages</span></div>;
         case 'message':
           return (
             <MessageRow
