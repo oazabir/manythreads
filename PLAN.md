@@ -4,7 +4,7 @@ Phase-wise build plan for Claude as orchestrating coding agent. Contract: `SPEC-
 
 ## 1. Purpose
 
-Build the spec in nineteen phases. Phases 1–11 and 14–19 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. Phase 19 (added 2026-11-01) gives the workspace admin a catalog of runners (a Hermes gateway, the team Hermes pod, a Claude Code pod in k3s signed in from an uploaded file, a model API) that bot editors simply pick from. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
+Build the spec in twenty-one phases. Phases 1–11 and 14–19 build the product, web first; phases 14–18 were added on 2026-10-24 so that a team leaving Slack, Mattermost or a standalone Hermes agent misses nothing (chat habits and moving in, voice rooms with on-device transcripts filed into team memory, connectors to the SaaS products a company already uses, video and a meeting assistant, and automations described in words). Phase 12 proves all of it for every persona and writes the user manual from the proof. Phase 13 reviews every screenshot and fixes what looks wrong. Phase 19 (added 2026-11-01) gives the workspace admin a catalog of runners (a Hermes gateway, the team Hermes pod, a Claude Code pod in k3s signed in from an uploaded file, a model API) that bot editors simply pick from. Phase 21 (added 2026-11-04) turns what a walk through the live site found (`POLISH.md`) into work: message runs, hover actions, one page header, plain words, dark mode, a phone bottom bar. **Phase numbers are names, not order:** the Order column of §7 decides what runs next.
 
 ## 2. How to use
 
@@ -118,7 +118,7 @@ Persona sign-in states live in `e2e/.auth/<persona>.json`, created through real 
 
 Baselines change only with `pnpm vt:update` in a PR that states why.
 
-**Tokens (P1-13).** From the prototype `:root`: `--paper #EDEEF0 --surface #FFFFFF --shell #F3F4F6 --ink #1B2430 --mute #5A6472 --faint #8A929C --rule #D4D8DE --human #2E5C8A --agent #7B5EA7 --agent-wash #FBF9FE --ok #3F7D58 --warn #B08A3E --alert #B4472E --alert-wash #FDF6F3`; fonts Inter Tight, JetBrains Mono. Lint fails on a raw hex outside `tokens.css`.
+**Tokens (P1-13).** From the prototype `:root`: `--paper #EDEEF0 --surface #FFFFFF --shell #F3F4F6 --ink #1B2430 --mute #5A6472 --faint #8A929C --rule #D4D8DE --human #2E5C8A --agent #7B5EA7 --agent-wash #FBF9FE --ok #3F7D58 --warn #B08A3E --alert #B4472E --alert-wash #FDF6F3`; fonts Inter Tight, JetBrains Mono. Lint fails on a raw hex outside `tokens.css`. **Look rules (P21-20):** one type scale, three radii, colours mean one thing each (blue you, purple bots, amber needs attention, red mentions and errors), one visible focus ring, one filled button per view, every screen born with `PageHeader`, text colours checked for AA in light and dark, and no internal key, path or config name in screen text.
 
 **Schema task = triple:** Zod in `packages/shared` + SQL migration with RLS + server mapper, in one diff.
 
@@ -138,22 +138,25 @@ Done when: `docs/retro/phase-N.md` exists; every task merged with a reviewer PAS
 | 6 | 6 | Tasks, boards, orchestration, rhythms and pages | XL | 5 | 7 of 13 built, 6 partly |
 | 7 | 14 | Messaging parity and moving in | XL | 6 | 20 of 25 built, 3 partly |
 | 8 | 19 | Runners: where a bot runs, set up by an admin | L | 6, 14 | 3 of 13 built, 2 partly |
-| 9 | 7 | Self-setup and the Workshop | L | 14 | 6 of 11 built, 5 partly |
-| 10 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 21 of 36 built, 13 partly |
-| 11 | 20 | Personal and Team spaces, one Brain, personal routines | XL | 8 | 0 of 15 built |
-| 12 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8, 20 | 5 of 25 built, 1 partly |
-| 13 | 16 | Connectors to the tools a company already uses | XL | 15 | 2 of 12 built, 1 partly |
-| 14 | 9 | Surfaces | M | 16 | 3 of 9 built |
-| 15 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 | 0 of 12 built |
-| 16 | 18 | Workflow automation and a team that runs itself | XL | 17 | 0 of 14 built |
-| 17 | 10 | Onboarding, admin and deployment | L | 18 | 3 of 16 built, 11 partly |
-| 18 | 11 | Mobile client | L | 10 | 0 of 10 built |
-| 19 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 0 of 8 built |
-| 20 | 13 | Screenshot UI review | M | 12 | 0 of 11 built |
+| 9 | 21 | Polish: a message view, navigation and look people expect | L | 14, 19 | 0 of 24 built |
+| 10 | 7 | Self-setup and the Workshop | L | 14 | 6 of 11 built, 5 partly |
+| 11 | 8 | Connections, knowledge, email bots, team inbox and memory sharing | XXL | 7 | 21 of 36 built, 13 partly |
+| 12 | 20 | Personal and Team spaces, one Brain, personal routines | XL | 8 | 0 of 15 built |
+| 13 | 15 | Voice rooms, meeting transcripts and meeting memory | XL | 8, 20 | 5 of 25 built, 1 partly |
+| 14 | 16 | Connectors to the tools a company already uses | XL | 15 | 2 of 12 built, 1 partly |
+| 15 | 9 | Surfaces | M | 16 | 3 of 9 built |
+| 16 | 17 | Video calls, screen sharing and the meeting assistant | L | 9 | 0 of 12 built |
+| 17 | 18 | Workflow automation and a team that runs itself | XL | 17 | 0 of 14 built |
+| 18 | 10 | Onboarding, admin and deployment | L | 18 | 3 of 16 built, 11 partly |
+| 19 | 11 | Mobile client | L | 10 | 0 of 10 built |
+| 20 | 12 | Full persona end-to-end automation and user manual | L | 10, 11, 14–18 | 0 of 8 built |
+| 21 | 13 | Screenshot UI review | M | 12 | 0 of 11 built |
 
 The last column counts tasks against the code; the task-by-task list is **§8 Build ledger**, placed after this section. `STATUS.md` keeps the dated history.
 
 **Why the added phases sit where they do (2026-10-24).** Phase 14 comes straight after 6: it needs only channels, files and bots, and the chat is the first thing a person leaving Slack or Mattermost judges. **Voice messages ship in phase 14 (P14-16, P14-17)**, so the on-device speech engine is built and proven on short clips before phase 15 streams live calls through it. Phase 15 comes after 8 because a meeting reaches memory through the team inbox and the Archivist that 8 builds, and its action items use 8's Add to board. Phase 16 follows 15 so calendars can schedule rooms and outside transcripts (Meet, Teams) land in the same `meetings/` folder. Phase 17 needs 9's surfaces for the end-of-meeting review. Phase 18 composes everything before it. Phases 10 and 11 gain the desktop and phone speech engines (P10-15, P11-09), and phase 12's journeys cover the added phases.
+
+**Why phase 21 sits after phase 19 (2026-11-04).** The chat is what a person leaving Slack or Mattermost judges first, and every later phase adds screens that should be born with the finished look. It comes after 19 so runner work already in progress is not interrupted, and it needs only 14 (the message view it polishes). From here on a new screen uses `PageHeader` and the tokens of P21-20 and passes the dark-mode contrast check.
 
 **Why phase 20 sits after phase 8 (2026-11-04, D10).** It needs the inbox, memory, knowledge and person sign-ins of phase 8, and phase 15's My files (P15-20), phase 16's document sync (P16-08) and phase 18's catch-me-up, follow-ups and personal assistant are built on its Personal space and personal routines, so it comes before all three.
 
@@ -163,7 +166,7 @@ The last column counts tasks against the code; the task-by-task list is **§8 Bu
 
 ## 8. Build ledger (synced with the code, 2026-11-03)
 
-This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **147 of 311 tasks (the 310 rows of this plan plus the follow-up P14-01b) are built, 45 are partly built, 118 are not built and 1 was built as something else.** (Phase 20's 15 rows were added on 2026-11-04 by D10; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
+This section records what the repository contains, task by task. It was written by reading the code (plugins, migrations, routes, screens, tests, tools, docs), not by trusting `STATUS.md` or commit messages. **147 of 335 tasks (the 334 rows of this plan plus the follow-up P14-01b) are built, 45 are partly built, 142 are not built and 1 was built as something else.** (Phase 20's 15 rows were added on 2026-11-04 by D10 and Phase 21's 24 rows the same day from `POLISH.md`; the other rows were not re-checked then.) The task rows in each phase below stay as the plan; this ledger says how far each one got. `STATUS.md` keeps the dated history.
 
 How to read it: **Built** = everything the row describes exists and is wired. **Partly built** = a recognisable part exists and the Gap column says what is missing. **Not built** = nothing meaningful exists (a doc, a type or a table with no behaviour counts as not built). **Different** = the id was used for other work. File and migration numbers named in the rows are the plan's; the code numbers migrations per plugin (`packages/plugins/<name>/migrations/0001_…`), so those numbers are stale. Rule: when a task lands or a gap closes, change its row here in the same commit.
 
@@ -189,6 +192,7 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | 18 · Workflow automation and a team that runs itself | 0 | 0 | 14 | 0 |
 | 19 · Runners: where a bot runs, set up by an admin | 3 | 2 | 8 | 0 |
 | 20 · Personal and Team spaces, one Brain, personal routines | 0 | 0 | 15 | 0 |
+| 21 · Polish: a message view, navigation and look people expect | 0 | 0 | 24 | 0 |
 
 ### Phase 1 · Foundations — 12 built, 1 partly, 0 not built
 
@@ -600,6 +604,35 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | P20-13 | Admin access and leaving | Not built | - | added 2026-11-04 (D10); nothing built yet |
 | P20-14 | Guards | Not built | - | added 2026-11-04 (D10); nothing built yet |
 | P20-15 | Seed v20, event contracts, docs and retro | Not built | - | added 2026-11-04 (D10); nothing built yet |
+
+### Phase 21 · Polish: a message view, navigation and look people expect — 0 built, 0 partly, 24 not built
+
+| ID | Task | State | Where it is | Gap |
+|---|---|---|---|---|
+| P21-01 | Message runs, hover time, presence on the avatar | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-02 | Hover bar with quick reactions, the + pill, who reacted | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-03 | Reply previews, long-message clamp, bot mention chips | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-04 | Composer: steady toolbar, shortcuts, :emoji:, richer @mentions | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-05 | Floating bits: Jump to latest, toasts, Esc, day pills | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-06 | Channel and DM header, channel details, channel intro | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-07 | Bot messages read as messages | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
+| P21-08 | Sidebar: calmer, collapsible, clearer unread | Not built | - | added 2026-11-04 (POLISH.md §2); nothing built yet |
+| P21-09 | Tab title and favicon carry the unread state | Not built | - | added 2026-11-04 (POLISH.md §2); nothing built yet |
+| P21-10 | Jump to, search and notifications panels | Not built | - | added 2026-11-04 (POLISH.md §2); nothing built yet |
+| P21-11 | Threads inbox | Not built | - | added 2026-11-04 (POLISH.md §3); nothing built yet |
+| P21-12 | One page header on every screen | Not built | - | added 2026-11-04 (POLISH.md §4.1); nothing built yet |
+| P21-13 | Plain words: no internal names in the screens | Not built | - | added 2026-11-04 (POLISH.md §4, §5); nothing built yet |
+| P21-14 | Files screen feels like a file manager | Not built | - | added 2026-11-04 (POLISH.md §4.3); nothing built yet |
+| P21-15 | Boards, Rhythms, Org chart and Memory screens | Not built | - | added 2026-11-04 (POLISH.md §4); nothing built yet |
+| P21-16 | Approvals inbox | Not built | - | added 2026-11-04 (POLISH.md §4.7); nothing built yet |
+| P21-17 | Bots list, bot page and save bar | Not built | - | added 2026-11-04 (POLISH.md §5); nothing built yet |
+| P21-18 | Add a bot, Recipes, Agents, Projects, bot chat | Not built | - | added 2026-11-04 (POLISH.md §5); nothing built yet |
+| P21-19 | Account and settings screens, sign-in screen | Not built | - | added 2026-11-04 (POLISH.md §6); nothing built yet |
+| P21-20 | Look tokens: type scale, radius, colour meaning, focus ring | Not built | - | added 2026-11-04 (POLISH.md §7); nothing built yet |
+| P21-21 | Dark mode and message density | Not built | - | added 2026-11-04 (POLISH.md §7.1); nothing built yet |
+| P21-22 | Skeletons, empty-state icons and motion | Not built | - | added 2026-11-04 (POLISH.md §7); nothing built yet |
+| P21-23 | Phone layout | Not built | - | added 2026-11-04 (POLISH.md §8); nothing built yet |
+| P21-24 | Look checks, seed v21, docs and retro | Not built | - | added 2026-11-04 (POLISH.md); nothing built yet |
 
 ---
 
@@ -2615,6 +2648,98 @@ The W baselines above.
 ### 6 · Exit
 
 Nadia opens Files and sees Personal and Engineering; she asks Brain in a DM and gets an answer from her own notes and the team's memory; she writes one sentence to get a daily mail summary and an action-items routine, and the next morning both are in her Personal space and nowhere else. Omar (admin) opens a person's Personal space with a reason and that person sees that he did. Deployed and checked on the live site at 1280 and 390 px.
+
+---
+
+# Phase 21 · Polish: a message view, navigation and look people expect
+
+Goal (found on 2026-11-04 by using the live site as a person coming from Slack, Mattermost or Teams; every finding is written up with its screen and reason in `POLISH.md`, and the finding ids below point there): **the app already has the features; it needs the density, hierarchy and plain words that make it feel modern.** The channel view shows one avatar, name and time per message even in a run; every screen headline looks different; internal names leak into the screens (`handover.mayTag`, file paths as titles, `scoped · smart`); there is no dark mode and no unread count in the browser tab; on a phone the channel name and the bot page buttons break.
+
+**What this phase is not.** No new product feature and no new table, except the person's appearance and density choice (P21-21). It changes how existing things look and behave, and removes wording a person should never see. A task here must not change who can read what.
+
+**Words.** **Run**: messages by one author within five minutes, drawn as one block. **Quiet**: a thing shown only when it differs from the default (a bot's "this team", a recipe's "Ready to add").
+
+**Reads.** `POLISH.md` (the findings), P3 (channel view), P14-02, P14-10, P14-12, P14-15, P14-19, P14-20, P14-23 to P14-25 (what is built and must not regress), P5 conversations and `Answer`, and the tokens in §5.
+
+### 0 · Reflect and refactor
+
+Prompts:
+- The message row, the thread row and the search row each format an author, a time and an avatar. Make one `AuthorLine` and one `Avatar` (colour from the person id, bot badge, presence corner) and use it in all three, then build runs on top of it (P21-01).
+- Every screen writes its own header. Make one `PageHeader` (breadcrumb in the top bar, one title, one line of description, actions on the right) and move all screens onto it before restyling any of them (P21-12).
+- Colours are tokens, but several washes are hard-coded and some screens use `--human` for things that are not "you". Write the colour meanings once (blue: you and yours; purple: bots; amber: needs attention; red: mentions and errors; grey: the rest) and fix the stragglers before dark mode (P21-20, P21-21).
+- Menus, popovers and dialogs each handle Esc, focus and outside click on their own. One `useDismiss` for all, because P21-05 changes what Esc does.
+
+Refactor with tests green; write `docs/retro/phase-21.md`.
+
+### 1 · Implementation tasks
+
+| ID | Task | Where | Spec | Agent |
+|---|---|---|---|---|
+| P21-01 | **Message runs, hover time, presence on the avatar.** (POLISH 1.1 to 1.3, 7.6) A message by the same author within five minutes of the last, with no reply count, reaction or date divider between, is drawn as a **run**: the first line has avatar, name and time, the rest only the text, and the time shows in the avatar column on hover. The time is in the body font with tabular numerals; hovering it shows the full date and time. The presence dot moves from beside the name to the avatar's corner. Each person gets a stable avatar colour (ten, from the person id) when they have no picture. Virtual list heights and the "New" line keep working across runs | `clients/web/src/channels` (MessageRow, listItems, VirtualList), `styles/channels.css`, `styles/avatars.css` | P3, P14-23 | Sonnet |
+| P21-02 | **Hover bar with quick reactions.** (1.4, 1.5, 1.7) The bar shows the person's three most recent reactions (default 👍 ✅ 👀) as one-click buttons, then reply, add reaction, more. The full picker gets a search box and a label "More…". A faint **+** after existing reactions adds one; hovering a reaction lists who reacted. The more-menu shows the shortcut of each action (`E` edit, `R` reply, `Ctrl+Shift+C` copy link) and those keys work on a focused message. Pin and copy text are added if the server already allows them; otherwise they are listed in the retro | `clients/web/src/channels` (MessageRow, EmojiPicker, messageActions) | P14-12 | Sonnet |
+| P21-03 | **Reply previews, long-message clamp, bot mention chips.** (1.6, 1.9) The reply link shows up to three participant avatars, the count, "last reply <relative time>", and a blue dot while any reply is unread. A message taller than six lines is cut to four with "Show more" (kept expanded for the session; the "New" line and jump-to-message always expand it). A mention of a bot is a soft purple chip, a person's a soft blue one | `clients/web/src/channels` (MessageRow, MessageMarkdown), `styles/channels.css` | P3, P14-19 | Sonnet |
+| P21-04 | **Composer: a steady toolbar, shortcuts, :emoji:, richer @mentions.** (1.10 to 1.14) The formatting toolbar's height is reserved so the list no longer jumps when the composer gets focus; icons are 16 px with tooltips naming the shortcut; `Ctrl/Cmd+B`, `I`, `K` work; in the thread panel the toolbar wraps and puts the rarer icons under "…" (and becomes one "Aa" button at 390 px). Typing `:` and two letters opens an emoji list (glyph and `:name:`, Tab or Enter to accept, custom emoji included). The @ list groups People, Bots and Channels, shows avatar, name and handle, offers `@channel` and `@here` first where the person may use them. Send becomes an icon button that turns primary when there is content; "Send later" has its own tooltip | `clients/web/src/channels` (Composer, ThreadPanel, composerFormat, emoji, SendLater) | P14-02, P14-03 | Sonnet |
+| P21-05 | **Floating bits, Esc and day pills.** (1.8, 1.15, 1.16) "Jump to latest" sits at the bottom centre above the composer and says "↓ 12 new messages"; toasts go to the bottom-left and never cover the composer; each toast that changes read state has **Undo**. Esc marks the conversation read only when no menu, popover or dialog is open and focus is on the message list. Day dividers become a pill on the rule, sticky while that day is in view | `clients/web/src/channels`, `clients/web/src/kernel`, `styles/shell.css` | P14-10 | Sonnet |
+| P21-06 | **Channel and DM header, channel details, channel intro.** (1.17 to 1.20, 8.1) The title never truncates (the topic does, with a tooltip). One bell: the header keeps the channel name with a member count and avatar stack (opens the member list), search in this conversation, Call, and the inbox bell. Channel notification level, Star, Pin, Members, Integrations, Files and Leave move into a **channel details** menu opened from the name. A channel's history starts with an intro card (topic, who made it, Add people). A DM header shows the other person: avatar, name, presence, status, their local time | `clients/web/src/shell`, `clients/web/src/channels/ChannelView.tsx`, `clients/web/src/dms` | P3, P14-01, P14-15 | Sonnet |
+| P21-07 | **Bot messages read as messages.** (1.21) A bot's reply is an ordinary message with a purple "Bot" tag and a small bot badge on its picture; the bordered card stays only for an `Answer` with sources. Sources, lineage and "reached" rows fold under "Sources (n)", closed by default. `scoped · smart` is replaced by words ("Used your private notes · fast model") and the raw names stay in a tooltip. Applies to channel messages, threads, DMs and the bot conversation | `clients/web/src/channels/AnswerMessage.tsx`, `Answer.tsx`, `MessageRow.tsx`, `surfaces` | P5, P9-07 | Sonnet |
+| P21-08 | **Sidebar: calmer, collapsible, clearer unread.** (2.1 to 2.6) The team switcher is one row with the team's avatar, and lists the other teams with their unread totals. Channels, Direct messages and Bots each collapse and the state is remembered per person; Bots starts collapsed once a team has more than five. "Finish setting up" shows to admins only, can be dismissed, and is out of the scrolling area. A mention badge is red, other unread is blue, a muted channel is faded; the active row differs from hover. A row has a hover **⋯** (mute, star, mark read, leave). "+ New" becomes "Add channel" and "New message". The Approvals badge shows nothing at zero and turns amber when anything has waited over 24 hours | `clients/web/src/shell` (sidebar, ChannelStar, TeamSwitcher), `styles/sidebar.css` | P14-15 | Sonnet |
+| P21-09 | **Tab title and favicon carry the unread state.** (2.7) `document.title` is `(3) # dev — Engineering · Kahf Software` (count of mentions and unread DMs, never of bot chatter in followed threads), and the favicon gets a dot when there is a mention. Every screen sets its own title. Respects the person's "do not disturb" | `clients/web/src/shell`, `clients/web/src/notifications` | P14-09 | Sonnet |
+| P21-10 | **Jump to, search and notifications panels.** (2.8 to 2.10) Jump to (Ctrl+K) lists recent places first, shows avatars and unread badges, drops the duplicate person row, filters by `Tab` (channels, people, bots, files); the sidebar search box shows "Ctrl K". Search shows its filters as chips under the box, author avatars and full dates, and `Enter` opens a full-page results view. The notifications panel gets avatars, Unread and All tabs, day groups, bold unread with a dot, hover Mark read and Open, and the full quoted line; its badge counts mentions (red) apart from activity (grey) | `clients/web/src/app/QuickSwitcher.tsx`, `clients/web/src/search`, `clients/web/src/notifications` | P14-10, P14-11, P14-09 | Sonnet |
+| P21-11 | **Threads inbox.** (3.1 to 3.5) The welcome checklist leaves the top of the page (a small dismissible card in the empty state), and a step that cannot be done yet is not shown. A row has the starter's avatar, the last replier's line, a bold title and a dot while unread, and day groups; the reply count sits under the snippet. The tabs are soft pills with a count each. The detail header says "Thread in #dev" and "Following" is a quiet toggle. The empty states get an icon and one suggestion | `clients/web/src/screens/ThreadsInbox.tsx`, `clients/web/src/welcome` | P3, P14 | Sonnet |
+| P21-12 | **One page header on every screen.** (4.1, 4.2) One `PageHeader`: the top bar holds only the breadcrumb (`Engineering / Boards`), the screen has one title (22/600) and one line of description, actions at the right. Remove "Boards Boards", "Home" over Agents and Projects, a doubled bell in a right pane, and the 4 px offset on Memory. An empty right pane in a two-pane screen says "Select an item" and nothing else. A unit test asserts that every route renders exactly one `h1` | `clients/web/src/screens/*`, `clients/web/src/shell`, `styles/screens.css` | - | Sonnet |
+| P21-13 | **Plain words: no internal names in the screens.** (4.5, 4.8, 5.4, 5.9, 5.8) Replace raw keys and paths with plain labels: `handover.mayTag is empty` becomes "Cannot hand work to other bots yet" with a link; memory notes show their title, one line and a relative date (the path in a tooltip); trigger names and `Identity name, role, kind…` hints become plain labels with the code name in a tooltip; design-note sentences ("There is no 'new conversation' button…") are removed; internal addresses (`http://10.42.0.1:8642`) show to admins only. A **copy lint** in CI fails on a backticked identifier, a `/path.md` or a dotted key in a screen's text outside code blocks, with an allowlist file | `clients/web/src/screens/**`, `tools/lint-copy` | conventions: plain language | Sonnet; Haiku |
+| P21-14 | **Files screen feels like a file manager.** (4.3) Rows are 40 px with hover actions (download, rename, share); column headers sort; the lock explains itself ("Changed by proposal only — why?"); "By" shows the bot's name and picture; drag and drop anywhere on the pane with an overlay; a click opens a preview panel; the filter chips scroll with a fade at 390 px | `clients/web/src/screens/files` | P4 | Sonnet |
+| P21-15 | **Boards, Rhythms, Org chart and Memory screens.** (4.4 to 4.6, 4.8) Boards' empty state offers three templates with a picture and "Start from this channel". Rhythms' empty state is three tiles (heartbeat, routine, task) each with an example and a Create button. Org chart is a grid: leads on top, members with avatars, bots as small cards with an arrow to what each may hand work to; every row aligns. Memory's Concepts list shows titles with one trust icon and a preview pane on the right | `clients/web/src/screens/boards`, `rhythms`, `memory` | P6, P8 | Sonnet |
+| P21-16 | **Approvals inbox.** (4.7) Approve and Deny are in the detail header and on the list row on hover; the asker has an avatar; the request reads as one sentence; a risk tag is coloured; Waiting is sorted oldest first with an amber age pill after 24 hours | `clients/web/src/screens/approvals` | P5, P9 | Sonnet |
+| P21-17 | **Bots list, bot page and save bar.** (5.1 to 5.5) The list shows placement and scope only when they differ from the team default, makes Talk the filled button and Configure a quiet icon, and explains a missing Talk ("Runs in the background"). The bot page keeps Talk and Deploy as the two actions and puts Test, Change picture, Roster, Open the file, Proposals and Usage under "…". The 14 tabs become five groups (Basics, What it can do, Safety, Where it runs, History). The save bar is sticky and appears only when something changed, with one "Save" and "Save as proposal" under its arrow | `clients/web/src/screens/bots`, `styles/bots.css` | P5, P7 | Sonnet |
+| P21-18 | **Add a bot, Recipes, Agents, Projects, bot chat.** (5.6 to 5.9) Add a bot: the text box first, the six examples most relevant to the team as cards and "See all" for the rest. Recipes: the "Ready to add" pill is shown only when something is missing; a hover Add button; a popular-first order. Agents and Projects: a status strip first and "How to connect" folded. A workspace admin who is not on the team sees "Join as admin" on the bot chat instead of a refusal | `clients/web/src/screens/setup`, `recipes`, `agents`, `projects`, `conversations` | P7, P19 | Sonnet |
+| P21-19 | **Account and settings screens, sign-in screen.** (6.1 to 6.8) The Account page uses the settings layout (Profile, Notifications, Connections, Appearance, Security) and opens from the account row; the settings nav is grouped (People, Bots and models, Security, Operations), has icons and stays in view. Members: avatars, last active, a row menu, search, and an Invite people button. System health shows a coloured dot and puts a problem first. Usage draws a 30-day axis and a tooltip, and shows an empty chart as a dotted line. Audit folds repeated sign-ins ("Omar signed in ×7") and uses chips for Who and Outcome. Setup folds finished steps. Sign-in: the product name larger, show password, a full-width button | `clients/web/src/screens/Account.tsx`, `admin`, `health`, `usage`, `audit`, `setup`, `SignIn.tsx` | P2, P10 | Sonnet |
+| P21-20 | **Look tokens: type scale, radius, colour meaning, focus ring.** (7.2 to 7.5, 7.9) Tokens for a type scale (22/600, 16/600, body 14.5/1.5, secondary 13, caption 12/500) and four text greys at most; radius 6, 10 and 14; the colour meanings of the reflect step applied to badges, tags, thread rows, approvals and the org chart (bots purple everywhere); one visible `:focus-visible` ring on every control; one filled button per view. Stylelint rules for each, and "Skip to messages" for keyboard users | `clients/web/src/styles/tokens.css`, `stylelint.config.js` | P1-13 | Sonnet |
+| P21-21 | **Dark mode and message density.** (7.1) A second set of tokens under `:root[data-theme=dark]`, following the system until a person chooses System, Light or Dark in Account → Appearance (stored with the person, applied before first paint so there is no flash). **Comfortable** and **Compact** message density (compact: smaller gaps, no avatar column in a run). Every hard-coded wash is replaced by a token; images and bot pictures keep their light plate. Contrast of every text token against its surface is checked for AA in both themes | `clients/web/src/styles`, `clients/web/src/shell`, `packages/shared` (appearance setting) | D1 | Sonnet |
+| P21-22 | **Skeletons, empty-state icons and motion.** (7.7, 7.8) Skeleton rows replace "Loading…" on lists and a skeleton message block on a channel; every empty state gets an outline icon and its one action; menus fade 120 ms, the right panel slides 200 ms, and a message reached from a link or search glows and fades; all of it off under `prefers-reduced-motion` | `clients/web/src/components`, `styles` | - | Sonnet |
+| P21-23 | **Phone layout.** (8.1 to 8.6) The channel name shows in full on one line, the topic under it or hidden. The bot page header stacks (avatar and name, description, then a scrolling row of actions or "…"). The thread panel wraps source chips and shows one "Aa" button for formatting. A **bottom bar** (Home, Messages, Activity, Search, You) with unread badges; swipe from the edge opens the sidebar, swipe right on a message replies; long press opens reactions; header icons are 40 px targets. Files and Bots stack their headers and show the date under the name | `clients/web/src/shell`, `clients/web/src/channels`, `screens/bots`, `screens/files` | D2 | Sonnet |
+| P21-24 | **Look checks, seed v21, docs and retro.** Visual baselines for every screen in this phase at 1440 and 390 px in light and dark; the contrast check and the copy lint of P21-13 in CI; one e2e per behaviour that is not only looks (runs and the New line, Esc, quick reactions, `:` list, collapse memory, tab title, theme choice kept, bottom bar); seed v21 (a long run of messages from one author, a long message, a bot answer with sources, a three-person thread); `docs/ui-guide.md` (the look rules, how to add a screen with `PageHeader`); retro | `e2e`, `tools`, `docs` | guide §6 | Sonnet; Haiku |
+
+### 2 · UI references
+
+No plates for most of this phase: the finding ids in `POLISH.md` are the reference. W baselines (light, dark, 1440 and 390): `channel/run`, `channel/hover-bar`, `channel/composer-focus`, `channel/header`, `channel/details-menu`, `channel/bot-answer`, `sidebar/collapsed`, `sidebar/unread`, `threads/inbox`, `search/panel`, `notifications/panel`, `files/manager`, `boards/empty`, `rhythms/empty`, `org/chart`, `memory/list`, `approvals/list`, `bots/list`, `bots/page`, `bots/save-bar`, `recipes/grid`, `account/appearance`, `settings/nav`, `health/status`, `signin/page`, `phone/bottom-bar`, `phone/channel`, `phone/bot-page`.
+
+### 3 · Acceptance criteria
+
+1. In a channel, five messages by Nadia within a few minutes are one run (one avatar, one name, one time); hovering a line shows its time and, on a line older than today, its date; a different author, a reply count or a day change starts a new block.
+2. One click on the hover bar adds one of the person's three recent reactions; typing `:smi` offers an emoji; typing `@ra` shows avatar, name and handle with People and Bots apart; the composer does not move the list when it gets focus.
+3. Pressing Esc to close a menu never marks a conversation read; Esc on the message list does, with a toast that has Undo.
+4. A channel name is readable at 1440 and 390 px with a thread or search panel open; there is one bell in the header; clicking the name opens the details menu with Notifications, Star, Members, Integrations and Leave.
+5. The browser tab reads `(2) # dev — Engineering · Kahf Software` with two mentions, and a screen of another kind has its own title.
+6. A bot's reply is a normal message with a Bot tag; its sources are folded; no `scoped`, `smart` or `lineage` appears without a hover.
+7. Every route renders one `h1` and the same header; no screen shows a backticked identifier, a dotted key or a file path as text (the copy lint is green).
+8. Choosing Dark in Account → Appearance changes every screen at once with no white flash on reload; it follows the system until a choice is made; AA contrast holds in both themes; Compact shortens the channel to at most 70% of its Comfortable height on the seed's long run.
+9. At 390 px: the bottom bar has five entries with badges; the bot page has no overlapping text; the thread composer has no sideways scroll; every header icon is at least 40 px.
+10. No behaviour that existed before this phase is lost: every e2e of phases 3, 14 and 19 still passes without edits other than selectors.
+
+### 4 · Automated end-to-end tests
+
+| Spec | Steps → assertions |
+|---|---|
+| `e2e/channels/runs.spec.ts` | a run of five, the break rules, hover time, the "New" line inside a run, virtual list heights |
+| `e2e/channels/hover-bar.spec.ts` | the three recent reactions, + pill, who reacted, shortcuts on a focused message |
+| `e2e/channels/composer-polish.spec.ts` | steady toolbar height, `:` list, @ groups, Ctrl+B/I/K, send icon states |
+| `e2e/channels/esc.spec.ts` | Esc in a menu does not mark read; Esc on the list does; Undo |
+| `e2e/shell/header.spec.ts` | the title stays at 390 px with a panel open; one bell; details menu |
+| `e2e/shell/title.spec.ts` | the tab title and favicon follow mentions and do-not-disturb |
+| `e2e/shell/sidebar.spec.ts` | collapse memory, badges, setup card for an admin and not for a member |
+| `e2e/shell/theme.spec.ts` | system, light, dark; no flash; density; kept across sign-in |
+| `e2e/screens/headers.spec.ts` | one `h1` and one header on every route of the router |
+| `e2e/screens/copy.spec.ts` | the copy lint over the rendered text of every route |
+| `e2e/mobile/bottom-bar.spec.ts` | 390 px: the bar, the drawer swipe, no overlap on the bot page |
+
+### 5 · Visual browser tests
+
+The W baselines above, in light and dark, at 1440×900 and 390×844.
+
+### 6 · Exit
+
+A person who has used Slack opens `#dev` and a thread, reacts, mentions a bot, finds a message, switches to dark mode and uses the same screens on a phone, and nothing in it looks unfinished, hides a channel name or shows a word they cannot read. Deployed and checked on the live site at 1440 and 390 px, in light and dark.
 
 ---
 
