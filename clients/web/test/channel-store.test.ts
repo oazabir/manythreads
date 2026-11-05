@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { ChannelMessage } from '@manythreads/shared';
 import { setTransport, type TransportRequest } from '../src/api/client';
-import { buildListItems } from '../src/channels/listItems';
+import { buildListItems, estimateItem } from '../src/channels/listItems';
 import { ChannelStore, channelKey, threadKey } from '../src/channels/store';
-import { applyReaction, firstUnreadIndex, mergeItems, removeMessage } from '../src/channels/timeline';
+import { applyReaction, firstUnreadIndex, mergeItems, removeMessage, withReply } from '../src/channels/timeline';
 
 const uuid = (n: number): string => `00000000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 const CH = uuid(900);
@@ -85,6 +85,38 @@ describe('timeline helpers', () => {
     expect(list.filter((i) => i.kind === 'unread')).toHaveLength(1);
     expect(list.find((i) => i.kind === 'day' && i.key.endsWith('09-08'))).toMatchObject({ label: 'Today' });
   });
+
+  it('list items: a message continues the run above unless a day or the unread divider sits between, pending never does', () => {
+    const opts = { lastReadId: null, selfActor: ME, allLoaded: true, readKnown: false, now: new Date('2026-09-08T12:00:00.000Z') };
+    const flags = (list: ReturnType<typeof buildListItems>): (boolean | null)[] => list.map((i) => (i.kind === 'message' ? i.continued : null));
+    const close = [msg(1), msg(2), msg(3)]; // one minute apart... ids differ, same author THEM
+    expect(flags(buildListItems(close, [], opts)).filter((f) => f !== null)).toEqual([false, true, true]);
+    const nextDay = [msg(1), msg(2, { createdAt: '2026-09-08T08:00:00.000Z' })];
+    expect(flags(buildListItems(nextDay, [], opts)).filter((f) => f !== null)).toEqual([false, false]);
+    const withUnread = buildListItems([msg(1), msg(2), msg(3)], [], { ...opts, lastReadId: msg(1).id, readKnown: true });
+    expect(withUnread.map((i) => i.kind)).toEqual(['day', 'message', 'unread', 'message', 'message']);
+    expect(flags(withUnread).filter((f) => f !== null)).toEqual([false, false, true]);
+    const pending = buildListItems([msg(1)], [{ localId: 'x', body: 'hi', attachments: [], status: 'sending', createdAt: msg(1).createdAt }], opts);
+    expect(pending.at(-1)?.kind).toBe('pending');
+  });
+
+  it('estimate: a continued row is 22px shorter and the cache keeps both answers', () => {
+    const m = msg(1);
+    const plain = estimateItem({ kind: 'message', key: 'a', message: m, continued: false });
+    const cont = estimateItem({ kind: 'message', key: 'a', message: m, continued: true });
+    expect(plain - cont).toBe(22);
+    expect(estimateItem({ kind: 'message', key: 'a', message: m, continued: false })).toBe(plain);
+    expect(estimateItem({ kind: 'message', key: 'a', message: m, continued: true })).toBe(cont);
+  });
+
+  it('estimate: a long text is capped at four lines plus the Show more line', () => {
+    const six = estimateItem({ kind: 'message', key: 'a', message: msg(1, { body: 'x'.repeat(88 * 6) }), continued: false });
+    const seven = estimateItem({ kind: 'message', key: 'b', message: msg(2, { body: 'x'.repeat(88 * 7) }), continued: false });
+    const huge = estimateItem({ kind: 'message', key: 'c', message: msg(3, { body: 'x'.repeat(88 * 400) }), continued: false });
+    expect(six).toBe(30 + 6 * 21);
+    expect(seven).toBe(30 + 4 * 21 + 26);
+    expect(huge).toBe(seven);
+  });
 });
 
 describe('channel store', () => {
@@ -154,6 +186,55 @@ describe('channel store', () => {
     await tick();
     expect(store.get(channelKey(CH)).items[0]?.replyCount).toBe(1);
     expect(store.get(threadKey(root.id)).items.map((m) => m.id)).toEqual([reply.id]);
+  });
+
+  it('a reply puts its author first in the root preview (no repeats, three at most); the reader\'s own reply leaves the dot alone', async () => {
+    const root = msg(1);
+    serve(() => ({ status: 200, body: { items: [root], nextCursor: null } }));
+    await store.loadChannel(CH);
+    const who = (n: number): NonNullable<ChannelMessage['author']> => ({ actorId: uuid(500 + n), kind: 'person', displayName: `P${n}` }) as NonNullable<ChannelMessage['author']>;
+    const reply = (n: number, author: NonNullable<ChannelMessage['author']>, mine = false): void =>
+      store.handlePush({ type: 'message.posted', id: `x${n}`, payload: { channelId: CH, messageId: uuid(300 + n), threadRootId: root.id, message: msg(10 + n, { id: uuid(300 + n) as ChannelMessage['id'], threadRootId: root.id as ChannelMessage['threadRootId'], authorId: (mine ? ME : THEM) as ChannelMessage['authorId'], author }) } });
+    reply(1, who(1));
+    reply(2, who(2));
+    reply(3, who(1)); // P1 again: moves to the front, no repeat
+    await tick();
+    let held = store.get(channelKey(CH)).items[0];
+    expect(held?.replyAuthors?.map((a) => a.displayName)).toEqual(['P1', 'P2']);
+    expect(held).toMatchObject({ replyCount: 3, unreadReplies: true });
+    reply(4, who(3));
+    reply(5, who(4));
+    await tick();
+    held = store.get(channelKey(CH)).items[0];
+    expect(held?.replyAuthors?.map((a) => a.displayName)).toEqual(['P4', 'P3', 'P1']);
+  });
+
+  it('withReply: own reply does not set the dot, another person\'s does, a reply without author keeps the preview', () => {
+    const a = { actorId: uuid(600), kind: 'person', displayName: 'A' } as NonNullable<ChannelMessage['author']>;
+    expect(withReply(msg(1), { author: a }, true)).toMatchObject({ replyAuthors: [a], unreadReplies: false });
+    expect(withReply(msg(1, { unreadReplies: true }), { author: a }, true).unreadReplies).toBe(true);
+    expect(withReply(msg(1), { author: a }, false).unreadReplies).toBe(true);
+    expect(withReply(msg(1, { replyAuthors: [a] }), {}, false).replyAuthors).toEqual([a]);
+  });
+
+  it('reading the thread clears the dot on the root in the channel; unread keeps it', async () => {
+    const root = msg(1, { replyCount: 2, unreadReplies: true, replyAuthors: [{ actorId: uuid(600), kind: 'person', displayName: 'A' } as NonNullable<ChannelMessage['author']>] });
+    serve(() => ({ status: 200, body: { items: [root], nextCursor: null } }));
+    await store.loadChannel(CH);
+    store.handlePush({ type: 'reading.state.changed', id: 'r1', payload: { targetType: 'thread', targetId: root.id, lastReadId: null, unreadCount: 1, followed: true, reason: 'posted' } });
+    expect(store.get(channelKey(CH)).items[0]?.unreadReplies).toBe(true);
+    store.handlePush({ type: 'reading.state.changed', id: 'r2', payload: { targetType: 'thread', targetId: root.id, lastReadId: msg(2).id, unreadCount: 0, followed: true, reason: 'read' } });
+    expect(store.get(channelKey(CH)).items[0]?.unreadReplies).toBe(false);
+    expect(store.get(channelKey(CH)).items[0]?.replyAuthors).toHaveLength(1);
+  });
+
+  it('a pushed copy without a preview (an edit) keeps the held preview', async () => {
+    const a = { actorId: uuid(600), kind: 'person', displayName: 'A' } as NonNullable<ChannelMessage['author']>;
+    serve(() => ({ status: 200, body: { items: [msg(1, { replyCount: 1, replyAuthors: [a], unreadReplies: true })], nextCursor: null } }));
+    await store.loadChannel(CH);
+    store.handlePush({ type: 'message.edited', id: 'e', payload: { channelId: CH, messageId: msg(1).id, threadRootId: null, message: msg(1, { replyCount: 1, body: 'changed' }) } });
+    await tick();
+    expect(store.get(channelKey(CH)).items[0]).toMatchObject({ body: 'changed', replyAuthors: [a], unreadReplies: true });
   });
 
   it('reaction pushes update counts; edits and deletes land on the message', async () => {

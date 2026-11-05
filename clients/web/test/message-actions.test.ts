@@ -114,14 +114,14 @@ describe('a click on a message row opens its thread (P21-26)', () => {
   });
 
   it('leaves a click on a control, a link, a chip, a picture, the toolbar, a poll or the author name alone', () => {
-    for (const part of ['a', 'button', 'input', 'label', 'img', '.acts', '.m', '.chref', '.poll', '.who b', '.edit-box']) {
+    for (const part of ['a', 'button', 'input', 'label', 'img', '.acts', '.m', '.chref', '.show-more', '.poll', '.who b', '.edit-box']) {
       expect(rowClickOpensThread({ ...base, target: target(part) }), part).toBe(false);
     }
     expect(rowClickOpensThread({ ...base, target: target('.txt') })).toBe(true);
   });
 
   it('asks the DOM with one selector that names each excluded part', () => {
-    for (const part of ['a', 'button', 'textarea', 'input', 'label', 'img', '.acts', '.m', '.chref', '.poll', '.who b', '.edit-box', '.vpop', '.dlg-scrim']) {
+    for (const part of ['a', 'button', 'textarea', 'input', 'label', 'img', '.acts', '.m', '.chref', '.show-more', '.poll', '.who b', '.edit-box', '.vpop', '.dlg-scrim']) {
       expect(NO_THREAD_CLICK.split(',')).toContain(part);
     }
     const asked: string[] = [];
