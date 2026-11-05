@@ -144,8 +144,38 @@
 
 .who time {
   color: var(--faint);
-  font-family: var(--mono);
-  font-size: 11px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* a message that continues the run above (P21-01): no avatar, no name; the time shows in the avatar column while the row is hovered, focused or tapped */
+.msg.run {
+  padding-top: 1px;
+}
+
+.msg.run .run-who {
+  margin: 0;
+}
+
+.msg.run .run-who.has-note {
+  margin-bottom: 2px;
+}
+
+.run-time {
+  align-self: start;
+  padding-top: 3px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+  text-align: right;
+  opacity: 0;
+}
+
+.msg:hover .run-time,
+.msg:focus-within .run-time,
+.msg.tapped .run-time {
+  opacity: 1;
 }
 
 .who .edited {
@@ -154,9 +184,23 @@
 }
 
 .txt {
+  --lh: 21px;
+
   color: var(--txt);
   font-size: 14px;
   overflow-wrap: anywhere;
+}
+
+/* a long text shows four lines, fading out, with "Show more" under it (P21-03) */
+.txt.clamp {
+  max-height: calc(4 * var(--lh));
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, rgb(0 0 0) calc(100% - 1.6 * var(--lh)), transparent);
+}
+
+.show-more {
+  margin-top: 2px;
+  font-size: 12.5px;
 }
 
 .txt.tomb {
@@ -326,8 +370,17 @@
 }
 
 .md .m {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--human-wash);
   color: var(--human);
   font-weight: 500;
+}
+
+/* a bot's mention reads in the agent colour */
+.md .m.m-bot {
+  background: var(--agent-wash);
+  color: var(--agent-ink);
 }
 
 .atts {
@@ -747,6 +800,29 @@
 .replies .last {
   color: var(--faint);
   font-weight: 400;
+}
+
+/* the people who replied, newest first, overlapping a little (P21-03) */
+.rp-avs {
+  display: inline-flex;
+}
+
+.replies .rp-avs .av {
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 1.5px var(--surface);
+  font-size: 8px;
+}
+
+.replies .rp-avs .av + .av {
+  margin-left: -5px;
+}
+
+.rp-unread {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--human);
 }
 
 /* hover toolbar (reply, react, more) */

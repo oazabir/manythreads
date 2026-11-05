@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { ChannelMessage, FileSummary } from '@manythreads/shared';
 import { isApiError } from '../api/client';
 import { fileContentUrl } from '../api/endpoints';
 import { Avatar } from '../components/ui';
+import { AuthorLine } from '../components/AuthorLine';
 import { MoreIcon, ReplyIcon, SmileIcon } from '../shell/icons';
 import { EmojiPicker } from './EmojiPicker';
 import { EmojiGlyph } from './EmojiGlyph';
@@ -16,9 +17,9 @@ import { SendToMemoryDialog } from './SendToMemoryDialog';
 import { GUEST_SLUG } from '../shell/messageLink';
 import { LaterMenuItems, RemindChoices, RemindDialog } from '../later/RemindMenu';
 import { EditedMark, ForwardCard } from './MessageExtras';
-import { NO_THREAD_CLICK, copyText, messageLinkUrl, rowClickOpensThread } from './messageActions';
+import { NO_THREAD_CLICK, copyText, isExpanded, messageLinkUrl, rememberExpanded, rowClickOpensThread } from './messageActions';
 import type { AnswerTools } from './AnswerShare';
-import { clock, fileKind, fileSize } from './format';
+import { clock, fileKind, fileSize, fullStamp, lastReplyText } from './format';
 import { splitAttachments } from './images';
 import { Markdown } from './MessageMarkdown';
 import { PollCard } from './PollCard';
@@ -26,7 +27,6 @@ import { MessageImages } from './MessageImages';
 import { LinkPreviewCards } from '../linkpreview/LinkPreviewCards';
 import { TOMBSTONE, type PendingSend } from './timeline';
 import { usePeople, type People } from './hooks';
-import { PresenceDot } from '../presence/PresenceDot';
 import { PersonLink } from '../presence/ProfileCard';
 
 export const QUICK_EMOJI = ['👍', '✅', '🎉', '❤️', '👀', '🚀', '😄', '🙏'] as const;
@@ -41,6 +41,26 @@ export function AttachmentCard({ file }: { file: FileSummary }) {
         <small>{fileSize(file.size)}</small>
       </span>
     </a>
+  );
+}
+
+/** How many lines a text may have before it is cut, how many lines the cut keeps (CSS `.txt.clamp`), and the line height in pixels (`--lh`). */
+const CLAMP_LINES = 6;
+const LINE_PX = 21;
+
+/** Up to three small avatars of the people who replied, the newest first, in front of the reply count. */
+function ReplyAvatars({ authors, people }: { authors: readonly NonNullable<ChannelMessage['replyAuthors']>[number][]; people: People }) {
+  return (
+    <span className="rp-avs" aria-hidden="true">
+      {authors.map((a) => {
+        const person = a.kind === 'bot' || a.kind === 'system' ? undefined : people.byActor(a.actorId);
+        return person ? (
+          <Avatar key={a.actorId} name={a.displayName} avatar={person.avatar} personId={person.personId} />
+        ) : (
+          <Avatar key={a.actorId} name={a.displayName} kind={a.kind === 'bot' || a.kind === 'system' ? 'agent' : 'person'} avatar={a.kind === 'bot' ? people.botAvatar(a.actorId) : null} />
+        );
+      })}
+    </span>
   );
 }
 
@@ -84,13 +104,17 @@ type Props = {
   /** Inside a thread: no reply count, no "reply" action. */
   inThread?: boolean;
   highlight?: boolean;
+  /** The message continues the run above: same author within five minutes, so no avatar and no name (P21-01). */
+  continued?: boolean;
+  /** Drawn whole, however long (the first unread message); the jump target (`highlight`) is whole too. */
+  expand?: boolean;
   actions: RowActions;
   /** Set in the reader's own conversation with a bot: an Answer in it that was for them can be shared, saved as a page and handed on (P5-17). */
   answerTools?: AnswerTools;
 };
 
 /** One message: avatar, name, time, markdown, attachments, reactions, the reply count, and (on hover) the actions. */
-export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, canVote, canManage = false, inThread = false, highlight = false, actions, answerTools }: Props) {
+export const MessageRow = memo(function MessageRow({ message: m, teamSlug, people, selfActor, canPost, canVote, canManage = false, inThread = false, highlight = false, continued = false, expand = false, actions, answerTools }: Props) {
   // the roster knows the team's people; the server names the author of every message the reader can read (a guest has no roster)
   const name = people.byActor(m.authorId)?.name ?? m.author?.displayName ?? 'Someone';
   const own = selfActor !== null && m.authorId === selfActor;
@@ -99,6 +123,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const mark = authorMark(m.author);
   const deleted = m.deletedAt !== null || m.body === TOMBSTONE;
   const [tapped, setTapped] = useState(false);
+  // a long text is cut to four lines with "Show more"; the rows opened in this tab stay open (P21-03)
+  const [opened, setOpened] = useState(() => isExpanded(m.id));
+  const [tall, setTall] = useState(false);
+  const txt = useRef<HTMLDivElement>(null);
   // the toolbar exists only while the row is under the pointer or has focus: 5,000 rows do not each carry three buttons
   const [hot, setHot] = useState(false);
   const [menu, setMenu] = useState<null | 'react' | 'more' | 'emoji' | 'remind'>(null);
@@ -119,6 +147,13 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
     const t = setTimeout(() => setDone(null), 2_500);
     return () => clearTimeout(t);
   }, [done]);
+  // measured once per text, when the row is drawn (never on hover): taller than six lines is cut
+  const plainText = !deleted && editing === null && !m.meta.answer && !m.meta.surfaceRef && !m.poll;
+  useLayoutEffect(() => {
+    const el = txt.current;
+    if (el && plainText) setTall(el.scrollHeight > CLAMP_LINES * LINE_PX + 2);
+  }, [m.body, plainText]);
+  const clamped = plainText && tall && !opened && !highlight && !expand;
   // another row was marked unread after this one: only the latest mark says so
   useEffect(() => {
     const onMark = (e: Event): void => {
@@ -178,7 +213,7 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
   const hasThread = !inThread && m.replyCount > 0 && actions.openThread !== undefined;
   return (
     <div
-      className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''}`}
+      className={`msg ${highlight ? 'hl' : ''} ${tapped ? 'tapped' : ''} ${deleted ? 'gone' : ''} ${continued ? 'run' : ''}`}
       data-testid="message"
       data-message-id={m.id}
       data-has-thread={hasThread ? '' : undefined}
@@ -261,20 +296,18 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           ) : null}
         </div>
       )}
-      {authorPerson ? (
-        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} /></PersonLink>
+      {continued ? (
+        <time className="run-time" dateTime={m.createdAt} title={fullStamp(m.createdAt)} data-vt-mask>{clock(m.createdAt)}</time>
+      ) : authorPerson ? (
+        <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} decorative><Avatar name={name} avatar={authorPerson.avatar} personId={authorPerson.personId} presencePersonId={authorPerson.personId} /></PersonLink>
       ) : (
         <Avatar name={name} kind={m.author?.kind === 'bot' || m.author?.kind === 'system' ? 'agent' : 'person'} avatar={m.author?.kind === 'bot' ? people.botAvatar(m.authorId) : null} />
       )}
       <div className="msg-main">
-        <div className="who">
-          <b>{authorPerson ? <PersonLink personId={authorPerson.personId} name={name} email={authorPerson.email} /> : name}</b>
-          {authorPerson ? <PresenceDot personId={authorPerson.personId} status /> : null}
-          {mark ? <span className="wh-mark" title={mark.title}>{mark.label}</span> : null}
-          <time dateTime={m.createdAt} data-vt-mask>{clock(m.createdAt)}</time>
+        <AuthorLine name={name} person={authorPerson ? { personId: authorPerson.personId, email: authorPerson.email } : undefined} mark={mark} createdAt={m.createdAt} continued={continued}>
           {m.editedAt && !deleted ? <EditedMark message={m} own={own} /> : null}
           {done ? <span className="row-done" role="status">{done}</span> : null}
-        </div>
+        </AuthorLine>
         {deleted ? (
           <div className="txt tomb">This message was deleted.</div>
         ) : editing !== null ? (
@@ -328,7 +361,12 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           // a poll: the card replaces the text (the text is still stored, for search and for bots)
           <PollCard message={m} canClose={own || canManage} canVote={canVote ?? canPost} />
         ) : (
-          <div className="txt"><Markdown source={m.body} teamSlug={teamSlug} /></div>
+          <>
+            <div ref={txt} className={`txt ${clamped ? 'clamp' : ''}`}><Markdown source={m.body} teamSlug={teamSlug} /></div>
+            {clamped ? (
+              <button type="button" className="link-btn show-more" onClick={() => { rememberExpanded(m.id); setOpened(true); }}>Show more</button>
+            ) : null}
+          </>
         )}
         {!deleted && m.forward ? <ForwardCard card={m.forward} /> : null}
         {!deleted && m.alsoSentFromThread ? (
@@ -360,8 +398,10 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
         ) : null}
         {!inThread && m.replyCount > 0 ? (
           <button type="button" className="replies" onClick={() => actions.openThread?.(m.id)}>
+            {m.replyAuthors && m.replyAuthors.length > 0 ? <ReplyAvatars authors={m.replyAuthors} people={people} /> : null}
             {m.replyCount === 1 ? '1 reply' : `${m.replyCount} replies`}
-            {m.lastReplyAt ? <span className="last" data-vt-mask>{` · last ${clock(m.lastReplyAt)}`}</span> : null}
+            {m.lastReplyAt ? <span className="last" data-vt-mask>{` · ${lastReplyText(m.lastReplyAt)}`}</span> : null}
+            {m.unreadReplies ? <span className="rp-unread"><span className="sr-only">unread</span></span> : null}
           </button>
         ) : null}
       </div>
@@ -383,10 +423,7 @@ export function PendingRow({ pending, name, onRetry, onDiscard }: { pending: Pen
     <div className={`msg pending ${failed ? 'failed' : ''}`} data-testid="pending-message" data-status={pending.status}>
       <Avatar name={name} avatar={me?.avatar} personId={me?.personId} />
       <div className="msg-main">
-        <div className="who">
-          <b>{name}</b>
-          <time dateTime={pending.createdAt} data-vt-mask>{clock(pending.createdAt)}</time>
-        </div>
+        <AuthorLine name={name} createdAt={pending.createdAt} />
         <div className="txt"><Markdown source={pending.body} /></div>
         <MessageImages files={attached.images} />
         {attached.files.length > 0 ? <div className="atts">{attached.files.map((f) => <AttachmentCard key={f.id} file={f} />)}</div> : null}

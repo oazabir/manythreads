@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import type { CustomEmoji } from '@manythreads/shared';
 import { splitCustomEmoji, useCustomEmoji } from './customEmoji';
 import { CustomEmojiImg } from './EmojiGlyph';
+import { usePeople } from './hooks';
 import { parseMarkdown, type Block, type Inline } from './markdown';
 
 /** Parsed messages by their text: scrolling back over a row does not parse it again. Bounded, oldest out first. */
@@ -101,7 +102,7 @@ function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: Cit
         );
       }
       case 'mention':
-        return <span key={k} className="m" data-mention={n.handle.toLowerCase()}>{`@${n.handle}`}</span>;
+        return <MentionChip key={k} handle={n.handle} />;
       case 'channel':
         return teamSlug ? (
           <Link key={k} className="chref" to={`/t/${encodeURIComponent(teamSlug)}/c/${encodeURIComponent(n.name.toLowerCase())}`}>{`#${n.name}`}</Link>
@@ -110,6 +111,12 @@ function inline(nodes: Inline[], teamSlug: string | null, key = '', marker?: Cit
         );
     }
   });
+}
+
+/** An @mention chip: a bot of the team is drawn in the agent colour, a person (and @channel, @here, a group) in the person colour. */
+function MentionChip({ handle }: { handle: string }) {
+  const bot = usePeople().isBotHandle(handle);
+  return <span className={bot ? 'm m-bot' : 'm'} data-mention={handle.toLowerCase()}>{`@${handle}`}</span>;
 }
 
 /** A code block: the language label, a Copy button, and the code in monospace that scrolls sideways instead of wrapping. */

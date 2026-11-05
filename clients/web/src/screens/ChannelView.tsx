@@ -129,6 +129,11 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
     [tl.items, tl.pending, tl.cursor, lastRead, self, readyToDivide],
   );
   const unreadShown = items.some((i) => i.kind === 'unread');
+  // the first unread message is always drawn whole, however long (P21-03)
+  const afterUnreadKey = useMemo(() => {
+    const at = items.findIndex((i) => i.kind === 'unread');
+    return at >= 0 ? (items[at + 1]?.key ?? null) : null;
+  }, [items]);
   // The rows are not drawn until the opening decision is made (the roster has answered and the read position is known): the "New" line goes in front of the
   // first unread message, so drawing the rows first and the line a moment later pushed them down under the reader's pointer or finger (a message's action
   // bar vanished while it was being pressed). Not for ever: a roster that never answers must not keep the channel blank, so after a moment the rows show
@@ -229,6 +234,8 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
               canVote={canVote}
               canManage={canManage}
               highlight={highlight === item.message.id}
+              continued={item.continued}
+              expand={item.key === afterUnreadKey}
               actions={actions}
             />
           );
@@ -243,7 +250,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
           );
       }
     },
-    [teamSlug, people, self, canPost, canVote, canManage, highlight, actions, channelId, pendingName],
+    [teamSlug, people, self, canPost, canVote, canManage, highlight, actions, channelId, pendingName, afterUnreadKey],
   );
 
   const send = useCallback(

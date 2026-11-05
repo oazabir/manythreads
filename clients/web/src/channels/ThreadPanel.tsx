@@ -13,6 +13,7 @@ import { CheckIcon, FilesIcon, ThreadsIcon } from '../shell/icons';
 import type { AnswerTools } from './AnswerShare';
 import { Composer } from './Composer';
 import { usePeople, useTimeline, useTyping } from './hooks';
+import { continuesRun } from './runs';
 import { EDIT_EVENT, MessageRow, PendingRow, type RowActions } from './MessageRow';
 import { lastEditableOwn } from './messageActions';
 import { ScheduledStrip } from './ScheduledStrip';
@@ -209,8 +210,8 @@ export function ThreadBody({ rootId, variant, channelId: channelHint = null, awa
           </button>
         ) : null}
         {tl.items.length === 0 && tl.pending.length === 0 ? <p className="thread-empty">No replies yet. Start the conversation.</p> : null}
-        {tl.items.map((m) => (
-          <MessageRow key={m.id} message={m} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
+        {tl.items.map((m, i) => (
+          <MessageRow key={m.id} message={m} continued={continuesRun(tl.items[i - 1], m)} teamSlug={slug} people={people} selfActor={self} canPost={canReply} canVote={canVote} canManage={canManage} inThread actions={replyActions} {...(answerTools ? { answerTools } : {})} />
         ))}
         <ThreadApprovals rootId={rootId} slug={slug ?? null} />
         {waiting ? <p className="typing" aria-live="polite" data-testid="awaiting-reply">{awaiting} is working on it…</p> : null}

@@ -83,7 +83,7 @@ export function lastEditableOwn(
 export const NO_THREAD_CLICK = [
   'a,button,textarea,.acts,.dlg-scrim,.vpop,.pcard-avatar',
   'input,select,label,summary,details,img,video,audio,iframe,[role=button],[role=menu],[contenteditable]',
-  '.m,.chref,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap',
+  '.m,.chref,.show-more,.edit-box,.poll,.att,.atts,.who b,.an,.sf-message,.lp-card,.fwd,.msg-imgs,.edited-wrap',
 ].join(',');
 
 /** A click on a message row opens its thread only for a plain single click on the row's own text, space and picture-free parts. */
@@ -103,4 +103,11 @@ export function rowClickOpensThread(a: {
   if (a.mods.ctrl || a.mods.meta || a.mods.shift || a.mods.alt) return false;
   if (a.selectionText !== '') return false;
   return a.target.closest(NO_THREAD_CLICK) === null;
+}
+
+/** The messages whose long text the reader opened with "Show more" in this tab: they stay open when the row is drawn again after scrolling away. */
+const expandedRows = new Set<string>();
+export const isExpanded = (messageId: string): boolean => expandedRows.has(messageId);
+export function rememberExpanded(messageId: string): void {
+  expandedRows.add(messageId);
 }
