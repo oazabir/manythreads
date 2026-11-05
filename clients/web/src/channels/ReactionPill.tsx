@@ -21,6 +21,8 @@ export function ReactionPill({ channelId, messageId, reaction: r, people, selfAc
   const [tip, setTip] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alive = useRef(true);
+  // the pointer or focus is still on the pill: an answer that comes back after it left must not open the tip
+  const over = useRef(false);
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -35,6 +37,7 @@ export function ReactionPill({ channelId, messageId, reaction: r, people, selfAc
     setTip(reactorsText(names, r.count, r.emoji));
   };
   const open = (): void => {
+    over.current = true;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       const cached = known.get(key);
@@ -43,12 +46,13 @@ export function ReactionPill({ channelId, messageId, reaction: r, people, selfAc
         .then((res) => {
           const actors = res.reactors.map((x) => x.actorId as string);
           known.set(key, actors);
-          if (alive.current) say(actors);
+          if (alive.current && over.current) say(actors);
         })
         .catch(() => undefined);
     }, 300);
   };
   const close = (): void => {
+    over.current = false;
     if (timer.current) clearTimeout(timer.current);
     setTip(null);
   };
