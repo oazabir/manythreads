@@ -183,7 +183,6 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
       data-message-id={m.id}
       data-has-thread={hasThread ? '' : undefined}
       aria-keyshortcuts={hasThread ? 'Enter' : undefined}
-      title={hasThread ? 'Open the thread' : undefined}
       tabIndex={0}
       onMouseEnter={() => setHot(true)}
       onMouseLeave={() => setHot(false)}
@@ -199,7 +198,8 @@ export const MessageRow = memo(function MessageRow({ message: m, teamSlug, peopl
           actions.openThread?.(m.id);
           return;
         }
-        if (target.closest(NO_THREAD_CLICK)) return;
+        // a row with a thread never toggles the tap bar: a double click, a selection or a modifier click would leave it flipped
+        if (hasThread || target.closest(NO_THREAD_CLICK)) return;
         setTapped((t) => !t);
       }}
       onKeyDown={(e) => {
