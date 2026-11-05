@@ -18,30 +18,30 @@ import {
   orgChart,
   ownerLabel,
 } from '../src/screens/boards/board';
-import { cronNote, emptyRhythm, rhythmRequest } from '../src/screens/boards/rhythm';
+import { cronNote, emptyScheduledJob, scheduledJobRequest } from '../src/screens/boards/scheduled-job';
 import {
   claimTask,
   completeTask,
   createBoard,
-  createRhythm,
+  createScheduledJob,
   createTask,
   fetchBoard,
   fetchBoards,
   fetchColumnTasks,
-  fetchRhythmRuns,
-  fetchRhythms,
+  fetchScheduledJobRuns,
+  fetchScheduledJobs,
   fetchTaskEvents,
   handoffTask,
   moveTask,
   releaseTask,
   reworkTask,
-  runRhythm,
-  updateRhythm,
+  runScheduledJob,
+  updateScheduledJob,
 } from '../src/screens/boards/api';
 
 /*
  * The Boards screen's two halves, neither of which the gate could otherwise see: the pure rules (which column a card is drawn in, which
- * moves the screen will send, how the chart and the rhythm form read) and the client calls (each one reaching the path the plugin
+ * moves the screen will send, how the chart and the scheduled job form read) and the client calls (each one reaching the path the plugin
  * mounts, with the body the shared schema expects). The React screen itself is proved by Playwright, as every other screen is.
  */
 
@@ -276,20 +276,20 @@ describe('the org chart', () => {
   });
 });
 
-describe('the rhythm form', () => {
+describe('the scheduled job form', () => {
   it('accepts a heartbeat with no contract, and turns the blank optional fields into null', () => {
-    const built = rhythmRequest({ ...emptyRhythm('brain'), name: 'Hourly nudge' });
+    const built = scheduledJobRequest({ ...emptyScheduledJob('brain'), name: 'Hourly nudge' });
     expect(built).toMatchObject({ ok: true, body: { modelAlias: null, effort: null, contractPath: null, outputPath: null, enabled: true } });
   });
 
   it('refuses a routine without a contract, and accepts one under routines/', () => {
-    const base = { ...emptyRhythm('brain'), name: 'Weekly', kind: 'routine' as const };
-    expect(rhythmRequest(base)).toMatchObject({ ok: false, message: 'a routine needs a contract path' });
-    expect(rhythmRequest({ ...base, contractPath: 'routines/weekly.yaml', outputPath: 'pages/reports/weekly.md' })).toMatchObject({ ok: true });
+    const base = { ...emptyScheduledJob('brain'), name: 'Weekly', kind: 'routine' as const };
+    expect(scheduledJobRequest(base)).toMatchObject({ ok: false, message: 'a routine needs a contract path' });
+    expect(scheduledJobRequest({ ...base, contractPath: 'routines/weekly.yaml', outputPath: 'pages/reports/weekly.md' })).toMatchObject({ ok: true });
   });
 
   it('refuses a schedule that is not five fields', () => {
-    expect(rhythmRequest({ ...emptyRhythm('brain'), name: 'Bad', schedule: 'every hour' })).toMatchObject({ ok: false });
+    expect(scheduledJobRequest({ ...emptyScheduledJob('brain'), name: 'Bad', schedule: 'every hour' })).toMatchObject({ ok: false });
   });
 
   it('says when the schedule next fires, and why it never will', () => {
@@ -333,9 +333,9 @@ const REPLIES: Record<string, unknown> = {
     pendingApproval: false,
     approvalId: null,
   },
-  [`GET /api/teams/engineering/rhythms`]: { items: [] },
-  [`POST /api/teams/engineering/rhythms`]: {
-    rhythm: {
+  [`GET /api/teams/engineering/scheduled-jobs`]: { items: [] },
+  [`POST /api/teams/engineering/scheduled-jobs`]: {
+    scheduledJob: {
       id: '00000000-0000-7000-8000-0000000000f2',
       workspaceId: WS,
       teamId: TEAM,
@@ -354,8 +354,8 @@ const REPLIES: Record<string, unknown> = {
       updatedAt: AT,
     },
   },
-  [`PATCH /api/teams/engineering/rhythms/00000000-0000-7000-8000-0000000000f2`]: {
-    rhythm: {
+  [`PATCH /api/teams/engineering/scheduled-jobs/00000000-0000-7000-8000-0000000000f2`]: {
+    scheduledJob: {
       id: '00000000-0000-7000-8000-0000000000f2',
       workspaceId: WS,
       teamId: TEAM,
@@ -374,11 +374,11 @@ const REPLIES: Record<string, unknown> = {
       updatedAt: AT,
     },
   },
-  [`GET /api/teams/engineering/rhythms/00000000-0000-7000-8000-0000000000f2/runs`]: { items: [] },
-  [`POST /api/teams/engineering/rhythms/00000000-0000-7000-8000-0000000000f2/run`]: {
+  [`GET /api/teams/engineering/scheduled-jobs/00000000-0000-7000-8000-0000000000f2/runs`]: { items: [] },
+  [`POST /api/teams/engineering/scheduled-jobs/00000000-0000-7000-8000-0000000000f2/run`]: {
     run: {
       id: '00000000-0000-7000-8000-0000000000f3',
-      rhythmId: '00000000-0000-7000-8000-0000000000f2',
+      scheduledJobId: '00000000-0000-7000-8000-0000000000f2',
       teamId: TEAM,
       runId: null,
       taskId: null,
@@ -468,24 +468,24 @@ describe('the board endpoints reach the routes the plugins mount', () => {
   });
 });
 
-describe('the rhythm endpoints reach the routes the rhythms plugin mounts', () => {
+describe('the scheduled job endpoints reach the routes the scheduled jobs plugin mounts', () => {
   const id = '00000000-0000-7000-8000-0000000000f2';
   it('lists, creates, updates, reads runs and runs one now', async () => {
-    await fetchRhythms('engineering');
-    expect(last()).toMatchObject({ method: 'GET', url: '/api/teams/engineering/rhythms' });
+    await fetchScheduledJobs('engineering');
+    expect(last()).toMatchObject({ method: 'GET', url: '/api/teams/engineering/scheduled-jobs' });
 
-    await createRhythm('engineering', { botSlug: 'brain', name: 'Hourly', kind: 'heartbeat', schedule: '0 * * * *', modelAlias: null, effort: null, contractPath: null, outputPath: null, enabled: true });
-    expect(last()).toMatchObject({ method: 'POST', url: '/api/teams/engineering/rhythms' });
+    await createScheduledJob('engineering', { botSlug: 'brain', name: 'Hourly', kind: 'heartbeat', schedule: '0 * * * *', modelAlias: null, effort: null, contractPath: null, outputPath: null, enabled: true });
+    expect(last()).toMatchObject({ method: 'POST', url: '/api/teams/engineering/scheduled-jobs' });
 
-    await updateRhythm('engineering', id, { enabled: false });
-    expect(last()).toMatchObject({ method: 'PATCH', url: `/api/teams/engineering/rhythms/${id}` });
+    await updateScheduledJob('engineering', id, { enabled: false });
+    expect(last()).toMatchObject({ method: 'PATCH', url: `/api/teams/engineering/scheduled-jobs/${id}` });
     expect(JSON.parse(last().body ?? 'null')).toEqual({ enabled: false });
 
-    await fetchRhythmRuns('engineering', id);
-    expect(last()).toMatchObject({ method: 'GET', url: `/api/teams/engineering/rhythms/${id}/runs` });
+    await fetchScheduledJobRuns('engineering', id);
+    expect(last()).toMatchObject({ method: 'GET', url: `/api/teams/engineering/scheduled-jobs/${id}/runs` });
 
-    await runRhythm('engineering', id);
-    expect(last()).toMatchObject({ method: 'POST', url: `/api/teams/engineering/rhythms/${id}/run` });
+    await runScheduledJob('engineering', id);
+    expect(last()).toMatchObject({ method: 'POST', url: `/api/teams/engineering/scheduled-jobs/${id}/run` });
   });
 });
 

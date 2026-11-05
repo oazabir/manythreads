@@ -4,8 +4,8 @@ import {
   CompleteTaskResponse,
   CreateBoardRequest,
   CreateBoardResponse,
-  CreateRhythmRequest,
-  CreateRhythmResponse,
+  CreateScheduledJobRequest,
+  CreateScheduledJobResponse,
   CreateTaskRequest,
   CreateTaskResponse,
   GetBoardResponse,
@@ -14,8 +14,8 @@ import {
   HandoffTaskResponse,
   ListBoardsResponse,
   ListChannelBoardsResponse,
-  ListRhythmRunsResponse,
-  ListRhythmsResponse,
+  ListScheduledJobRunsResponse,
+  ListScheduledJobsResponse,
   ListTaskEventsResponse,
   ListTasksQuery,
   ListTasksResponse,
@@ -24,21 +24,21 @@ import {
   ReleaseTaskResponse,
   ReworkTaskRequest,
   ReworkTaskResponse,
-  RunRhythmResponse,
-  UpdateRhythmRequest,
-  UpdateRhythmResponse,
+  RunScheduledJobResponse,
+  UpdateScheduledJobRequest,
+  UpdateScheduledJobResponse,
   claimTaskRoute,
   completeTaskRoute,
   createBoardRoute,
-  createRhythmRoute,
+  createScheduledJobRoute,
   createTaskRoute,
   getBoardRoute,
   getTaskRoute,
   handoffTaskRoute,
   listBoardsRoute,
   listChannelBoardsRoute,
-  listRhythmRunsRoute,
-  listRhythmsRoute,
+  listScheduledJobRunsRoute,
+  listScheduledJobsRoute,
   listTaskEventsRoute,
   listTasksRoute,
   moveTaskRoute,
@@ -47,8 +47,8 @@ import {
   TickTaskRequest,
   TickTaskResponse,
   tickTaskRoute,
-  runRhythmRoute,
-  updateRhythmRoute,
+  runScheduledJobRoute,
+  updateScheduledJobRoute,
 } from '@manythreads/shared';
 import { call } from '../../api/client';
 
@@ -113,19 +113,19 @@ export const tickTask = (slug: string, taskId: string, body: TickTaskRequest) =>
 export const handoffTask = (slug: string, taskId: string, body: HandoffTaskRequest) =>
   call(handoffTaskRoute, { request: HandoffTaskRequest, response: HandoffTaskResponse }, body, { slug, taskId });
 
-// ---- rhythms (the board's third tab, SPEC §6.5) ------------------------------------------------------------
+// ---- scheduled jobs (the board's third tab, SPEC §6.5) ------------------------------------------------------------
 
-export const fetchRhythms = (slug: string) => call(listRhythmsRoute, { response: ListRhythmsResponse }, undefined, { slug });
+export const fetchScheduledJobs = (slug: string) => call(listScheduledJobsRoute, { response: ListScheduledJobsResponse }, undefined, { slug });
 
-export const createRhythm = (slug: string, body: CreateRhythmRequest) =>
-  call(createRhythmRoute, { request: CreateRhythmRequest, response: CreateRhythmResponse }, body, { slug });
+export const createScheduledJob = (slug: string, body: CreateScheduledJobRequest) =>
+  call(createScheduledJobRoute, { request: CreateScheduledJobRequest, response: CreateScheduledJobResponse }, body, { slug });
 
-export const updateRhythm = (slug: string, rhythmId: string, body: UpdateRhythmRequest) =>
-  call(updateRhythmRoute, { request: UpdateRhythmRequest, response: UpdateRhythmResponse }, body, { slug, rhythmId });
+export const updateScheduledJob = (slug: string, scheduledJobId: string, body: UpdateScheduledJobRequest) =>
+  call(updateScheduledJobRoute, { request: UpdateScheduledJobRequest, response: UpdateScheduledJobResponse }, body, { slug, scheduledJobId });
 
-export const fetchRhythmRuns = (slug: string, rhythmId: string) =>
-  call(listRhythmRunsRoute, { response: ListRhythmRunsResponse }, undefined, { slug, rhythmId });
+export const fetchScheduledJobRuns = (slug: string, scheduledJobId: string) =>
+  call(listScheduledJobRunsRoute, { response: ListScheduledJobRunsResponse }, undefined, { slug, scheduledJobId });
 
 /** "Run now": the same path a tick takes, so a contract that would fail at 09:00 fails here too. */
-export const runRhythm = (slug: string, rhythmId: string) =>
-  call(runRhythmRoute, { response: RunRhythmResponse }, undefined, { slug, rhythmId });
+export const runScheduledJob = (slug: string, scheduledJobId: string) =>
+  call(runScheduledJobRoute, { response: RunScheduledJobResponse }, undefined, { slug, scheduledJobId });

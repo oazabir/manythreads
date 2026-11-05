@@ -40,7 +40,7 @@ export const RecipeCard = z.object({
   state: RecipeState,
   /** Proposals of this recipe that are open right now. */
   openProposals: z.number().int().min(0),
-  /** The routine already has a schedule (a rhythm with this recipe's contract). */
+  /** The routine already has a schedule (a scheduled job with this recipe's contract). */
   scheduled: z.boolean(),
 });
 export type RecipeCard = z.infer<typeof RecipeCard>;

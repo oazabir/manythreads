@@ -4,7 +4,7 @@ import { buildInboxPrompt } from './match.ts';
 import { RUN_QUEUE, type RunPayload } from './run-job.ts';
 
 // The `inbox` trigger (PLAN P8-30). The connections plugin's watch claims a mail thread for a bot and says so with `connections.inbox.claimed`; this turns that into
-// exactly one bot run, the way `router-rhythms.ts` turns a firing into one.
+// exactly one bot run, the way `router-scheduled-jobs.ts` turns a firing into one.
 //
 //  * The ids in the event are only a pointer. The bot, the claim, the mail and the connection are read again from their rows and must agree with each other and with the
 //    event; a bot that is no longer active, or no longer lists an `inbox` trigger, gets no run (the claim stays: the thread is not answered later by surprise).

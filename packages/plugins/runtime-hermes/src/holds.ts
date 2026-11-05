@@ -69,7 +69,7 @@ export async function postNotice(
   log: (line: string) => void,
 ): Promise<void> {
   try {
-    if (payload.rhythm) return; // a scheduled firing has no one waiting; its reason lives on the firing in the rhythms ledger
+    if (payload.scheduledJob) return; // a scheduled firing has no one waiting; its reason lives on the firing in the scheduledJobs ledger
     const args = { channelId: payload.channelId, body, threadRootId: payload.replyRootId };
     if (!personAddressed(payload)) {
       const decision = await ctx.runs.authorize(run, 'messages.post', authorizeContext(args));

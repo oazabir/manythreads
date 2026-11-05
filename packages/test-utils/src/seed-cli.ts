@@ -23,7 +23,7 @@ Set MANYTHREADS_CLOCK=fixed for the same timestamps every time.
                     sign in (the CI release on the devbox; never a public deployment)
   --no-content     only the workspace, teams and people (no channels or messages)
   --no-repo        leave out seed v4 (the repositories and the three extra attachments)
-  --no-work        leave out seed v6 (the Engineering board, rhythms, page and production environment)
+  --no-work        leave out seed v6 (the Engineering board, scheduledJobs, page and production environment)
   --guard          add seed v5: the standard guard preset and the local alias bound to a model on this machine (needs the gateway-llm tables)
   --no-attachment  leave out the attachments (when this process cannot reach the server's store, e.g. a Job without the blob volume)
   --migrate        apply the kernel migrations first (a fresh dev database); the server does this itself at start

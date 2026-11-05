@@ -4,15 +4,15 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { KAHF_WORKSPACE_ID, ownerSql, personas, seedWorld, SEED_WORK, startTestServer, TEAM_IDS, type TestServer } from '../src/index.ts';
 
-// Seed v6 (PLAN P6-11): the Engineering team's board, rhythms, page and production environment. The database comes from a started test
-// server (its plugin migrations create the tasks, rhythms, bots and repo tables, and it loads the coder bot from the v4 placeholder).
+// Seed v6 (PLAN P6-11): the Engineering team's board, scheduled jobs, page and production environment. The database comes from a started test
+// server (its plugin migrations create the tasks, scheduled jobs, bots and repo tables, and it loads the coder bot from the v4 placeholder).
 let server: TestServer;
 let storageDir: string;
 const servers: TestServer[] = [];
 const sqlOn = <T extends Record<string, unknown>>(s: TestServer, text: string, params: readonly unknown[] = []): Promise<T[]> => ownerSql<T>(s.db.ownerUrl, text, params);
 const sql = <T extends Record<string, unknown>>(text: string, params: readonly unknown[] = []): Promise<T[]> => sqlOn<T>(server, text, params);
 const options = { content: true, repo: true, work: true, workOptions: { botWaitMs: 60_000 } } as const;
-const TABLES = ['tasks', 'task_events', 'task_claims', 'boards', 'goals', 'environments', 'rhythms', 'rhythm_runs', 'repo_commits'] as const;
+const TABLES = ['tasks', 'task_events', 'task_claims', 'boards', 'goals', 'environments', 'scheduled_jobs', 'scheduled_job_runs', 'repo_commits'] as const;
 const counts = async (s: TestServer): Promise<Record<string, number>> =>
   Object.fromEntries(await Promise.all(TABLES.map(async (t) => [t, Number((await sqlOn<{ n: number }>(s, `SELECT count(*)::int AS n FROM app.${t}`))[0]?.n)] as const)));
 
@@ -31,7 +31,7 @@ afterAll(async () => {
 });
 
 describe('seedWorld with work (seed v6)', () => {
-  it('writes the environment, board, cards, disabled rhythms, past runs, contract and page; a second run writes nothing', async () => {
+  it('writes the environment, board, cards, disabled scheduled jobs, past runs, contract and page; a second run writes nothing', async () => {
     const first = await seedWorld(server.db, options);
     expect(first.work).toMatchObject({ skipped: null, notes: [] });
     expect(first.work?.written).toBeGreaterThan(0);
@@ -56,11 +56,11 @@ describe('seedWorld with work (seed v6)', () => {
       ),
     ).toEqual([{ name: 'Bot Board', channel: 'dev', cards: 1 }]);
 
-    expect(await sql(`SELECT kind, enabled, next_run_at FROM app.rhythms WHERE team_id = $1 ORDER BY kind`, [TEAM_IDS.Engineering])).toEqual([
+    expect(await sql(`SELECT kind, enabled, next_run_at FROM app.scheduled_jobs WHERE team_id = $1 ORDER BY kind`, [TEAM_IDS.Engineering])).toEqual([
       { kind: 'heartbeat', enabled: false, next_run_at: null },
       { kind: 'routine', enabled: false, next_run_at: null },
     ]);
-    const runs = await sql<{ status: string; reason: string }>(`SELECT status, reason FROM app.rhythm_runs WHERE team_id = $1 ORDER BY status`, [TEAM_IDS.Engineering]);
+    const runs = await sql<{ status: string; reason: string }>(`SELECT status, reason FROM app.scheduled_job_runs WHERE team_id = $1 ORDER BY status`, [TEAM_IDS.Engineering]);
     expect(runs.map((r) => r.status)).toEqual(['done', 'failed']);
     expect(runs[1]?.reason).not.toBe('');
 
@@ -93,17 +93,17 @@ describe('seedWorld with work (seed v6)', () => {
   it('never puts back what a person deleted, and leaves a card they moved where it is', async () => {
     await sql(`UPDATE app.tasks SET state = 'verify' WHERE id = $1`, [SEED_WORK.cards.open]);
     await sql(`DELETE FROM app.tasks WHERE id = $1`, [SEED_WORK.cards.verify]);
-    await sql(`DELETE FROM app.rhythms WHERE id = $1`, [SEED_WORK.rhythms.heartbeat]);
+    await sql(`DELETE FROM app.scheduled_jobs WHERE id = $1`, [SEED_WORK.scheduledJobs.heartbeat]);
     await sql(`DELETE FROM app.environments WHERE team_id = $1`, [TEAM_IDS.Engineering]);
     await seedWorld(server.db, options);
     expect(await sql(`SELECT state FROM app.tasks WHERE id = $1`, [SEED_WORK.cards.open])).toEqual([{ state: 'verify' }]);
     expect(await sql(`SELECT 1 FROM app.tasks WHERE id = $1`, [SEED_WORK.cards.verify])).toEqual([]);
-    expect(await sql(`SELECT 1 FROM app.rhythms WHERE id = $1`, [SEED_WORK.rhythms.heartbeat])).toEqual([]);
+    expect(await sql(`SELECT 1 FROM app.scheduled_jobs WHERE id = $1`, [SEED_WORK.scheduledJobs.heartbeat])).toEqual([]);
     expect(await sql(`SELECT 1 FROM app.environments WHERE team_id = $1`, [TEAM_IDS.Engineering])).toEqual([]);
   });
 
-  it('the Rhythms API lists the rhythms that are left, switched off', async () => {
-    const res = await fetch(`${server.url}/api/teams/engineering/rhythms`, {
+  it('the ScheduledJobs API lists the scheduled jobs that are left, switched off', async () => {
+    const res = await fetch(`${server.url}/api/teams/engineering/scheduled-jobs`, {
       headers: { 'x-manythreads-dev-actor': JSON.stringify({ kind: 'person', id: personas.omar.actorId, workspaceId: KAHF_WORKSPACE_ID }) },
     });
     expect(res.status).toBe(200);
@@ -140,7 +140,7 @@ describe('seed v6 when the coder bot is not loaded', () => {
     const first = await seedWorld(s.db, { content: true, work: true, workOptions: { botWaitMs: 0 } });
     expect(first.work?.skipped).toBeNull();
     expect(first.work?.notes.join(' ')).toMatch(/coder bot is not loaded/);
-    expect(await sqlOn(s, `SELECT count(*)::int AS n FROM app.rhythms`)).toEqual([{ n: 0 }]);
+    expect(await sqlOn(s, `SELECT count(*)::int AS n FROM app.scheduled_jobs`)).toEqual([{ n: 0 }]);
     expect((await sqlOn<{ n: number }>(s, `SELECT count(*)::int AS n FROM app.tasks`))[0]?.n).toBe(6);
     const second = await seedWorld(s.db, { content: true, work: true, workOptions: { botWaitMs: 0 } });
     expect(second.work).toMatchObject({ written: 0 });

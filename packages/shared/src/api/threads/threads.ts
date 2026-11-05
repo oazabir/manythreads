@@ -3,7 +3,7 @@ import { ChannelKind } from '../../entities/channel.ts';
 import { Page } from '../../common/page.ts';
 import { IsoDateTime } from '../../common/time.ts';
 import { ActorId, ChannelId, MessageId, TeamId } from '../../ids.ts';
-import { ChannelMessage } from '../channels/common.ts';
+import { ChannelMessage, MessageAuthor } from '../channels/common.ts';
 import { TeamSlug } from '../teams/common.ts';
 
 // Threads: one thread per root message (SPEC 6.1, PLAN P3-06). A reply is posted with `postMessageRoute` (threadRootId set); these
@@ -70,6 +70,9 @@ export const ListThreadsQuery = z.object({
 });
 export type ListThreadsQuery = z.infer<typeof ListThreadsQuery>;
 
+/** The most authors an inbox row carries (it draws a stack of their pictures). */
+export const THREAD_PARTICIPANTS_SHOWN = 5;
+
 /** One row of the inbox. Sorted by `lastReplyAt`, newest first. */
 export const ThreadInboxItem = z.object({
   rootMessageId: MessageId,
@@ -82,6 +85,14 @@ export const ThreadInboxItem = z.object({
   unreadCount: z.number().int().nonnegative(),
   /** The caller wrote the root message. */
   mine: z.boolean(),
+  /** Who wrote the root message, named the way the channel list names an author; null when the server may not name them. */
+  rootAuthor: MessageAuthor.nullable(),
+  /** Up to `THREAD_PARTICIPANTS_SHOWN` people (or bots) who wrote in the thread: the root's author first, then the newest repliers. */
+  participants: z.array(MessageAuthor).max(THREAD_PARTICIPANTS_SHOWN),
+  /** How many distinct authors the thread has, which may be more than `participants` lists. */
+  participantCount: z.number().int().nonnegative(),
+  /** Unread replies that name the caller (a tag): the row shows it as a number in place of the unread dot. Never more than `unreadCount`. */
+  mentionCount: z.number().int().nonnegative(),
   /** The newest live reply, as the row shows it ("Tester: 213 passing ..."); null when none is left to show. */
   lastReply: z.object({ authorName: z.string(), preview: z.string().max(160) }).nullable(),
 });

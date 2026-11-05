@@ -22,7 +22,7 @@ const PLATE: PlateSpec = {
     'thread-list': '.inl',
     'thread-view': '.inr',
   },
-  masks: ['.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.lane', '.trow .meta', '.tabs2 span:nth-child(2)'],
+  masks: ['.av', 'time', '.nav .pill', '.nav > .grp', '.nav > .grp ~ *', '.lane', '.thc-time', '.thc-replies', '.tabs2 span:nth-child(2)'],
 };
 
 let stack: Stack;
@@ -55,7 +55,7 @@ test('the Threads inbox matches plate 2 (P)', async ({ browser }, testInfo) => {
       spec: PLATE,
       liveRegion: '[data-testid="app-frame"]',
       height: 700,
-      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.trow .meta'],
+      liveMasks: ['.av', '.rail .hint', '.rail .channel-groups', '.rail [data-slot="direct-messages"]', '.rail .sec', '.thc-time', '.thc-replies'],
       order: ['team-switch', 'search', 'sidebar', 'thread-list', 'thread-view'],
       exact: ['team-switch', 'search', 'sidebar', 'thread-list', 'thread-view'],
     });

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createWorld, ensureChannels, personas, type World } from './world.ts';
 
 // `messages.post` names the run that wrote a post (`meta.runId`) only where the run has a place to answer: a thread it was asked in, or the top of its channel for an `inbox` run
-// (the connections plugin links a mail to the bot's post that way). A run of any other kind that has a channel but no thread (a routine, a rhythm, a task) must NOT be stamped:
+// (the connections plugin links a mail to the bot's post that way). A run of any other kind that has a channel but no thread (a routine, a scheduled job, a task) must NOT be stamped:
 // the runtime reads `meta.runId` as "this run already answered" and would skip its final reply (security review of P8-29/P8-30).
 
 const { nadia } = personas;

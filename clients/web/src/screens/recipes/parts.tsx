@@ -109,7 +109,7 @@ export function Filed({ slug, result }: { slug: string; result: InstallRecipeRes
         ))}
       </ul>
       {failed > 0 ? <p className="rg-p">A proposal with a failed check cannot be approved as it is. Open it to read the reason.</p> : null}
-      <p className="rg-p faint">After the bot is approved, a team lead turns the schedule on in <Link to={`/t/${slug}/rhythms`}>Jobs</Link>.</p>
+      <p className="rg-p faint">After the bot is approved, a team lead turns the schedule on in <Link to={`/t/${slug}/jobs`}>Jobs</Link>.</p>
     </div>
   );
 }

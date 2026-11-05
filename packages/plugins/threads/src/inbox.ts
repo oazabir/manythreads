@@ -1,5 +1,5 @@
 import type { PluginTx } from '@manythreads/sdk';
-import { ListThreadsResponse, type ThreadsTab } from '@manythreads/shared';
+import { ListThreadsResponse, THREAD_PARTICIPANTS_SHOWN, type ThreadsTab } from '@manythreads/shared';
 import { invalid } from './http.ts';
 import { CHANNEL_REF_COLUMNS, toChannelRef, type ChannelRefRow } from './rows.ts';
 
@@ -80,7 +80,11 @@ export async function listInbox(
   const more = res.rows.length > input.limit;
   const page = more ? res.rows.slice(0, input.limit) : res.rows;
   const last = page[page.length - 1];
-  // who wrote each newest reply: the channels plugin's definer function names only authors of messages the caller can read
+  const rootIds = page.map((r) => r.root_message_id);
+  // one transaction, so these run one after the other
+  const participants = rootIds.length > 0 ? await listParticipants(tx, rootIds) : new Map<string, Participants>();
+  const mentions = rootIds.length > 0 ? await countMentions(tx, input.personId, rootIds) : new Map<string, number>();
+  // who wrote what: the channels plugin's definer function names only authors of messages the caller can read
   const lastIds = page.flatMap((r) => (r.last_reply_id ? [r.last_reply_id] : []));
   const names = new Map<string, string>();
   if (lastIds.length > 0) {
@@ -92,6 +96,7 @@ export async function listInbox(
     );
     for (const a of authors.rows) names.set(a.message_id, a.display_name);
   }
+  const authorOf = await nameAuthors(tx, [...participants.values()].flatMap((p) => p.rows.map((x) => x.id)).concat(page.map((r) => r.root_message_id)));
   return ListThreadsResponse.parse({
     items: page.map((r) => ({
       rootMessageId: r.root_message_id,
@@ -103,8 +108,71 @@ export async function listInbox(
       followed: r.followed,
       unreadCount: r.unread_count ?? 0,
       mine: r.mine,
+      rootAuthor: authorOf.get(r.author_id) ?? null,
+      participants: (participants.get(r.root_message_id)?.rows ?? []).flatMap((p) => authorOf.get(p.author_id) ?? []),
+      participantCount: participants.get(r.root_message_id)?.total ?? 0,
+      mentionCount: Math.min(mentions.get(r.root_message_id) ?? 0, r.unread_count ?? 0),
       lastReply: r.last_reply_id && names.has(r.last_reply_id) ? { authorName: names.get(r.last_reply_id)!, preview: (r.last_reply_plain ?? '').replace(/\s+/g, ' ').trim() } : null,
     })),
     nextCursor: more && last ? encodeCursor(last.cursor_ts, last.root_message_id) : null,
   });
+}
+
+/** An author as the lookup names them; the response schema brands the id and checks the kind. */
+type NamedAuthor = { actorId: string; displayName: string; kind: string };
+type Participants = { total: number; rows: { id: string; author_id: string }[] };
+
+/**
+ * The authors of each thread's live messages (the root included): the root's author first, then the newest writers, at most
+ * `THREAD_PARTICIPANTS_SHOWN` per thread, with the count of all of them. `id` is the author's newest message in the thread, which
+ * `nameAuthors` needs to ask the visibility-checked author lookup.
+ */
+async function listParticipants(tx: PluginTx, rootIds: string[]): Promise<Map<string, Participants>> {
+  const res = await tx.query<{ root_id: string; author_id: string; last_id: string; total: number }>(
+    `SELECT t.root_id, w.author_id, w.last_id, w.total::int AS total
+       FROM unnest($1::uuid[]) AS t(root_id)
+       CROSS JOIN LATERAL (
+         SELECT g.author_id, g.last_id, count(*) OVER () AS total
+           FROM (
+             SELECT r.author_id, (array_agg(r.id ORDER BY r.id DESC))[1] AS last_id, bool_or(r.id = t.root_id) AS is_root
+               FROM app.messages r
+              WHERE (r.thread_root_id = t.root_id OR r.id = t.root_id) AND r.deleted_at IS NULL
+              GROUP BY r.author_id
+           ) g
+          ORDER BY g.is_root DESC, g.last_id DESC
+          LIMIT ${String(THREAD_PARTICIPANTS_SHOWN)}
+       ) w`,
+    [rootIds],
+  );
+  const out = new Map<string, Participants>();
+  for (const r of res.rows) {
+    const entry = out.get(r.root_id) ?? { total: r.total, rows: [] };
+    entry.rows.push({ id: r.last_id, author_id: r.author_id });
+    out.set(r.root_id, entry);
+  }
+  return out;
+}
+
+/** Names the authors of the given messages the way the message list does; an author of messages the caller cannot read is left out. */
+async function nameAuthors(tx: PluginTx, messageIds: string[]): Promise<Map<string, NamedAuthor>> {
+  const out = new Map<string, NamedAuthor>();
+  if (messageIds.length === 0) return out;
+  const res = await tx.query<{ actor_id: string; display_name: string; kind: string }>('SELECT actor_id, display_name, kind FROM app.message_authors($1::uuid[])', [[...new Set(messageIds)]]);
+  for (const a of res.rows) out.set(a.actor_id, { actorId: a.actor_id, displayName: a.display_name, kind: a.kind });
+  return out;
+}
+
+/** Per thread, the replies the caller has not read that name them (a person mention; a tag of @channel is not counted). */
+async function countMentions(tx: PluginTx, personId: string, rootIds: string[]): Promise<Map<string, number>> {
+  const res = await tx.query<{ root_id: string; n: number }>(
+    `SELECT r.thread_root_id AS root_id, count(*)::int AS n
+       FROM app.messages r
+       JOIN app.message_mentions mm ON mm.message_id = r.id AND mm.mentioned_id = $2::uuid AND mm.kind <> 'channel'
+       JOIN app.read_state rs ON rs.person_id = $1 AND rs.target_type = 'thread' AND rs.target_id = r.thread_root_id AND rs.unread_count > 0
+      WHERE r.thread_root_id = ANY ($3::uuid[]) AND r.deleted_at IS NULL AND r.author_id <> $2::uuid
+        AND (rs.last_read_id IS NULL OR r.id > rs.last_read_id)
+      GROUP BY r.thread_root_id`,
+    [personId, tx.actor.id, rootIds],
+  );
+  return new Map(res.rows.map((r) => [r.root_id, r.n]));
 }

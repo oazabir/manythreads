@@ -10,7 +10,7 @@ import { MAX_CONVERSATION_PROMPTS } from './frontmatter.ts';
 import { parseBotMd } from './render.ts';
 
 // What a recipe has to satisfy before it may sit in the gallery (PLAN P18-01). The loader (kernel `loadRecipes`), the gallery routes and the tests all call
-// `recipeProblems`, so a recipe that passes here is one the bots loader, the rhythms scheduler and the eval harness will each accept. Pure: no files, no database,
+// `recipeProblems`, so a recipe that passes here is one the bots loader, the scheduled-jobs scheduler and the eval harness will each accept. Pure: no files, no database,
 // no model.
 
 /**

@@ -1,4 +1,4 @@
-/* The Boards screen (PLAN P6-07/P6-08): the board's columns and cards, the card panel, the org chart and the Rhythms tab. Every class
+/* The Boards screen (PLAN P6-07/P6-08): the board's columns and cards, the card panel, the org chart and the Jobs tab. Every class
  * here is prefixed `bd-` so nothing can collide with a shared class; colours come from tokens.css only (a raw hex fails lint). */
 
 .bd-screen {
@@ -292,7 +292,7 @@
 
 .bd-new-board,
 .bd-new-card,
-.bd-new-rhythm {
+.bd-new-scheduled-job {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -565,20 +565,20 @@
   font-size: 11px;
 }
 
-/* ---- rhythms ---- */
-.bd-rhythms {
+/* ---- scheduled jobs ---- */
+.bd-scheduled-jobs {
   overflow: auto;
   min-height: 0;
 }
 
-.bd-rhythm-list {
+.bd-scheduled-job-list {
   border: 1px solid var(--rule);
   border-radius: 8px;
   overflow: hidden;
   background: var(--surface);
 }
 
-.bd-rhythm {
+.bd-scheduled-job {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -586,15 +586,15 @@
   border-bottom: 1px solid var(--hairline);
 }
 
-.bd-rhythm:last-child {
+.bd-scheduled-job:last-child {
   border-bottom: 0;
 }
 
-.bd-rhythm.on {
+.bd-scheduled-job.on {
   background: var(--human-wash);
 }
 
-.bd-rhythm-main {
+.bd-scheduled-job-main {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -609,17 +609,17 @@
   cursor: pointer;
 }
 
-.bd-rhythm-name {
+.bd-scheduled-job-name {
   font-weight: 500;
   font-size: 13px;
 }
 
-.bd-rhythm-schedule {
+.bd-scheduled-job-schedule {
   font-size: 12px;
   color: var(--mute);
 }
 
-.bd-rhythm-act {
+.bd-scheduled-job-act {
   display: flex;
   gap: 6px;
 }

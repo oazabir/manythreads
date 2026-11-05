@@ -7,8 +7,8 @@ import { fetchBoards } from './api';
 import { BoardView } from './BoardView';
 
 /*
- * Boards (SPEC §6.5, PLAN P6-07): the team's saved views over the task substrate. The org chart and Rhythms are their own screens
- * now, each with a sidebar entry (`/t/<team>/org` and `/t/<team>/rhythms`); this page is only the board.
+ * Boards (SPEC §6.5, PLAN P6-07): the team's saved views over the task substrate. The org chart and Jobs are their own screens
+ * now, each with a sidebar entry (`/t/<team>/org` and `/t/<team>/jobs`); this page is only the board.
  */
 
 export function BoardsScreen() {

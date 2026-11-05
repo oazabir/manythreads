@@ -80,7 +80,7 @@ The five import events become `import.uploaded`, `import.analysed`, `import.star
 
 ## Left out on purpose
 
-Message posted and edited, reactions, reading state, presence, notifications (except the two email digest events below), tasks and boards, rhythms, run starts and ends, conversations starting, `ops.health.changed`, and `repo.committed` (the guarded paths are covered by proposals) are not audited: they are volume or content, not decisions. Also not built: a CSV export, a bot filter in the screen (the Who list holds people; the API takes a bot id), team-lead access, and rows for the inbox withheld items (that feature does not exist yet).
+Message posted and edited, reactions, reading state, presence, notifications (except the two email digest events below), tasks and boards, scheduled jobs, run starts and ends, conversations starting, `ops.health.changed`, and `repo.committed` (the guarded paths are covered by proposals) are not audited: they are volume or content, not decisions. Also not built: a CSV export, a bot filter in the screen (the Who list holds people; the API takes a bot id), team-lead access, and rows for the inbox withheld items (that feature does not exist yet).
 
 ## Rules to keep
 

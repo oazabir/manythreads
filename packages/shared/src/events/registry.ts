@@ -51,7 +51,7 @@ import { TasksTaskUpdatedEvent } from './tasks.task.updated.ts';
 import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
 import { TasksTaskCompletedEvent } from './tasks.task.completed.ts';
 import { TasksTaskHandedOffEvent } from './tasks.task.handed_off.ts';
-import { RhythmsRhythmRanEvent } from './rhythms.rhythm.ran.ts';
+import { ScheduledJobsScheduledJobRanEvent } from './scheduled_jobs.scheduled_job.ran.ts';
 import { HermesConnectionCreatedEvent } from './hermes.connection.created.ts';
 import { HermesConnectionUpdatedEvent } from './hermes.connection.updated.ts';
 import { HermesConnectionDeletedEvent } from './hermes.connection.deleted.ts';
@@ -135,8 +135,8 @@ import { MemorySharingSwitchedEvent } from './memory.sharing.switched.ts';
 import { MemoryDigestDeliveredEvent } from './memory.digest.delivered.ts';
 import { MemoryDigestImportedEvent } from './memory.digest.imported.ts';
 import { RuntimeGateHeldEvent } from './runtime.gate.held.ts';
-import { RuntimeRhythmFinishedEvent } from './runtime.rhythm.finished.ts';
-import { RuntimeRhythmStartedEvent } from './runtime.rhythm.started.ts';
+import { RuntimeScheduledJobFinishedEvent } from './runtime.scheduled_job.finished.ts';
+import { RuntimeScheduledJobStartedEvent } from './runtime.scheduled_job.started.ts';
 import { RuntimeTaskNotWokenEvent } from './runtime.task.not_woken.ts';
 import { IdentityEmailVerifiedEvent } from './identity.email.verified.ts';
 import { IdentityPasswordAdminSetEvent } from './identity.password.admin_set.ts';
@@ -256,8 +256,8 @@ export const eventRegistry = {
   'memory.digest.imported': { 1: MemoryDigestImportedEvent },
   'runtime.gate.held': { 1: RuntimeGateHeldEvent },
   'runtime.task.not_woken': { 1: RuntimeTaskNotWokenEvent },
-  'runtime.rhythm.started': { 1: RuntimeRhythmStartedEvent },
-  'runtime.rhythm.finished': { 1: RuntimeRhythmFinishedEvent },
+  'runtime.scheduled_job.started': { 1: RuntimeScheduledJobStartedEvent },
+  'runtime.scheduled_job.finished': { 1: RuntimeScheduledJobFinishedEvent },
   'identity.email.verified': { 1: IdentityEmailVerifiedEvent },
   'identity.password.admin_set': { 1: IdentityPasswordAdminSetEvent },
   'identity.password.reset': { 1: IdentityPasswordResetEvent },
@@ -297,7 +297,7 @@ export const eventRegistry = {
   'tasks.task.claimed': { 1: TasksTaskClaimedEvent },
   'tasks.task.completed': { 1: TasksTaskCompletedEvent },
   'tasks.task.handed_off': { 1: TasksTaskHandedOffEvent },
-  'rhythms.rhythm.ran': { 1: RhythmsRhythmRanEvent },
+  'scheduled_jobs.scheduled_job.ran': { 1: ScheduledJobsScheduledJobRanEvent },
   'runners.runner.connected': { 1: RunnersRunnerConnectedEvent },
   'runners.runner.disconnected': { 1: RunnersRunnerDisconnectedEvent },
   'runners.job.refused': { 1: RunnersJobRefusedEvent },
@@ -433,7 +433,7 @@ export type AnyEvent =
   | z.infer<typeof TasksTaskClaimedEvent>
   | z.infer<typeof TasksTaskCompletedEvent>
   | z.infer<typeof TasksTaskHandedOffEvent>
-  | z.infer<typeof RhythmsRhythmRanEvent>
+  | z.infer<typeof ScheduledJobsScheduledJobRanEvent>
   | z.infer<typeof WorkshopTerminalOpenedEvent>
   | z.infer<typeof WorkshopTerminalClosedEvent>
   | z.infer<typeof MeetingsMeetingStartedEvent>
@@ -524,7 +524,7 @@ export type LatestEvent =
   | z.infer<typeof TasksTaskClaimedEvent>
   | z.infer<typeof TasksTaskCompletedEvent>
   | z.infer<typeof TasksTaskHandedOffEvent>
-  | z.infer<typeof RhythmsRhythmRanEvent>
+  | z.infer<typeof ScheduledJobsScheduledJobRanEvent>
   | z.infer<typeof WorkshopTerminalOpenedEvent>
   | z.infer<typeof WorkshopTerminalClosedEvent>
   | z.infer<typeof MeetingsMeetingStartedEvent>

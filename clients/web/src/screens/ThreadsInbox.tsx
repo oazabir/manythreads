@@ -5,12 +5,11 @@ import { LaterTab, type LaterView } from '../later/LaterPanes';
 import { useLater } from '../later/RemindMenu';
 import { laterStore } from '../later/store';
 import { isApiError } from '../api/client';
-import { fetchThreadInbox } from '../api/endpoints';
+import { fetchThread, fetchThreadInbox } from '../api/endpoints';
 import { typingIn } from '../app/quick-switcher';
 import { useQuery } from '../app/useQuery';
 import { useSession } from '../app/session';
 import { ThreadBody } from '../channels/ThreadPanel';
-import { ago } from '../channels/format';
 import { useUnread } from '../channels/hooks';
 import { channelStore, threadKey } from '../channels/store';
 import { useShell } from '../shell/context';
@@ -18,6 +17,7 @@ import { useNarrow } from '../shell/useNarrow';
 import { Bell } from '../notifications/Bell';
 import { BackIcon } from '../shell/icons';
 import { WelcomeCard } from '../welcome/WelcomeCard';
+import { ThreadCard } from './ThreadCard';
 
 type Tab = 'followed' | 'unread' | 'mine' | 'later';
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
@@ -121,6 +121,18 @@ export function ThreadsInbox() {
     [],
   );
 
+  // From a row's Actions menu: the thread may not be open, so its newest reply is asked for when the timeline has not got it
+  const markThreadRead = useCallback(
+    async (rootId: string): Promise<void> => {
+      const held = channelStore.get(threadKey(rootId)).items.at(-1)?.id;
+      const upTo = held ?? (await fetchThread(rootId, { limit: 1 })).replies.items[0]?.id ?? rootId;
+      await channelStore.markRead('thread', rootId, upTo);
+      setDone((s) => new Set(s).add(rootId));
+      q.reload();
+    },
+    [q],
+  );
+
   // A layout effect: the listener is swapped in the same commit that paints the new selection. A passive effect ran later, and a key pressed in
   // between (j, j, k, e one after the other, on a loaded machine) acted on the thread selected two renders ago.
   useLayoutEffect(() => {
@@ -208,25 +220,18 @@ export function ThreadsInbox() {
             </div>
           ) : (
             <ul className="inlist" ref={listRef} role="listbox" aria-label={`${TABS.find((t) => t.id === tab)?.label ?? ''} threads`}>
-              {items.map((it) => {
-                const unread = it.unreadCount > 0;
-                const on = it.rootMessageId === selected;
-                return (
-                  <li key={it.rootMessageId} role="option" aria-selected={on} data-root-id={it.rootMessageId} data-testid="thread-row">
-                    <button type="button" className={`trow ${unread ? 'unread' : ''} ${on ? 'on' : ''}`} onClick={() => open(it.rootMessageId)}>
-                      <span className="trow-main">
-                        <span className="ch">{it.channel.kind === 'dm' ? 'Direct message' : it.channel.kind === 'bot_conversation' ? 'Conversation with a bot' : `# ${it.channel.name.replace(/^#/, '')}`}</span>
-                        <span className="ttl">{it.title}</span>
-                        <span className="last">{it.lastReply ? `${it.lastReply.authorName}: ${it.lastReply.preview}` : it.replyCount === 1 ? '1 reply' : `${it.replyCount} replies`}</span>
-                      </span>
-                      <span className="meta">
-                        <span data-vt-mask>{ago(it.lastReplyAt)}</span>
-                        {unread ? <span className="cnt" data-vt-mask>{it.unreadCount}</span> : <span className="rc">{it.replyCount === 1 ? '1 reply' : `${it.replyCount} replies`}</span>}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
+              {items.map((it) => (
+                <ThreadCard
+                  key={it.rootMessageId}
+                  item={it}
+                  teamSlug={slug}
+                  selected={it.rootMessageId === selected}
+                  onOpen={() => open(it.rootMessageId)}
+                  onMarkRead={() => markThreadRead(it.rootMessageId)}
+                  onChanged={q.reload}
+                  onOpenInChannel={(to) => navigate(to)}
+                />
+              ))}
             </ul>
           )}
         </div>

@@ -28,11 +28,11 @@ export const SEED_WORK = {
     botWaiting: '00000000-0000-7000-8000-0000000c0108',
     botBoard: '00000000-0000-7000-8000-0000000c0109',
   },
-  rhythms: {
+  scheduledJobs: {
     heartbeat: '00000000-0000-7000-8000-0000000c0201',
     routine: '00000000-0000-7000-8000-0000000c0202',
   },
-  rhythmRuns: {
+  scheduledJobRuns: {
     done: '00000000-0000-7000-8000-0000000c0211',
     failed: '00000000-0000-7000-8000-0000000c0212',
   },
@@ -121,10 +121,10 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  *    repo writer (so history, authorship and events are the production ones). The pages plugin reads a page from git and makes its own
  *    `page_docs` row when somebody opens it, so none is seeded.
  * Seeded once: two commits in the team's history mark the parts as done (the report page: the board, cards, environment and goal; the routine
- * contract: the Bot Board, bot cards and rhythms), so what a person later deletes or moves is never put back. A run that could not do the bot part
+ * contract: the Bot Board, bot cards and scheduled jobs), so what a person later deletes or moves is never put back. A run that could not do the bot part
  * (no bot row yet, no #dev) does it on a later run. An environment, Bot Board or other row of the same name that a person made first is used, not duplicated.
  * Needs seed v3 and v4 first (the channel #dev, the `coder` bot placeholder). The bot's row is made by the running server from that file: this
- * waits briefly for it, and leaves the bot's cards and rhythms for the next run when it is not there.
+ * waits briefly for it, and leaves the bot's cards and scheduled jobs for the next run when it is not there.
  */
 export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: SeedWorkOptions = {}): Promise<SeedWorkResult> {
   const log = options.log ?? (() => undefined);
@@ -139,13 +139,13 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
         (
           await tx.query<{ ok: boolean }>(
             `SELECT bool_and(to_regclass('app.' || n) IS NOT NULL) AS ok FROM unnest($1::text[]) AS n`,
-            [['tasks', 'environments', 'boards', 'goals', 'task_events', 'task_claims', 'rhythms', 'rhythm_runs', 'repos', 'repo_commits', 'bots', 'channels']],
+            [['tasks', 'environments', 'boards', 'goals', 'task_events', 'task_claims', 'scheduled_jobs', 'scheduled_job_runs', 'repos', 'repo_commits', 'bots', 'channels']],
           )
         ).rows[0]?.ok === true,
       { pool, workspaceId: KAHF_WORKSPACE_ID },
     );
     if (!ready) {
-      result.skipped = 'the tasks, rhythms, bots or repo tables are not there yet (start the server once so its plugin migrations run, then seed again)';
+      result.skipped = 'the tasks, scheduled jobs, bots or repo tables are not there yet (start the server once so its plugin migrations run, then seed again)';
       log(`work skipped: ${result.skipped}`);
       return result;
     }
@@ -167,7 +167,7 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
       return written.noop ? 0 : 1;
     };
     // The two commits are the markers that say a part was seeded once, and they stay in the team's history whatever people later delete.
-    // Without that, a card, board, environment or rhythm a person deleted would come back with every release.
+    // Without that, a card, board, environment or scheduled job a person deleted would come back with every release.
     const coreDone = await committed(PAGE_COMMIT);
     const botDone = await committed(ROUTINE_COMMIT);
 
@@ -298,8 +298,8 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
         async (tx) => (await tx.query<{ id: string }>(`SELECT id FROM app.channels WHERE team_id = $1 AND name = $2 AND kind = 'channel'`, [team, SEED_WORK.channel])).rows[0]?.id ?? null,
         { pool, workspaceId: KAHF_WORKSPACE_ID },
       );
-      if (!bot?.actorId) result.notes.push(`the ${SEED_WORK.bot} bot is not loaded yet: its Bot Board card and rhythms wait for the next seed run`);
-      else if (!dev) result.notes.push(`#${SEED_WORK.channel} does not exist yet: the Bot Board and the bot's rhythms wait for the conversations (seed v3)`);
+      if (!bot?.actorId) result.notes.push(`the ${SEED_WORK.bot} bot is not loaded yet: its Bot Board card and scheduled jobs wait for the next seed run`);
+      else if (!dev) result.notes.push(`#${SEED_WORK.channel} does not exist yet: the Bot Board and the bot's scheduled jobs wait for the conversations (seed v3)`);
       else {
         const botId = bot.id;
         const botActor = bot.actorId;
@@ -320,30 +320,30 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
               { id: SEED_WORK.cards.botBoard, title: 'Summarise the overnight CI failures', description: 'List the CI runs that failed overnight and the likely cause of each.', state: 'in_progress', kind: 'other', priority: 'normal', owner: botActor, branch: 'card/ci-failures-summary', board: botBoard, createdBy: botActor, hours: 9 },
             ];
             for (const c of cards) n += await insertCard(tx, c);
-            // Both rhythms are off (`enabled = false`, no next slot): the seeded site never wakes a bot on a timer. A lead turns them on.
+            // Both scheduled jobs are off (`enabled = false`, no next slot): the seeded site never wakes a bot on a timer. A lead turns them on.
             n += await rows(
-              `INSERT INTO app.rhythms (id, workspace_id, team_id, bot_id, name, kind, schedule, effort, enabled, next_run_at, created_by, created_at, updated_at)
+              `INSERT INTO app.scheduled_jobs (id, workspace_id, team_id, bot_id, name, kind, schedule, effort, enabled, next_run_at, created_by, created_at, updated_at)
                VALUES ($1, $2, $3, $4, 'Morning check-in', 'heartbeat', '0 8 * * 1-5', 'low', false, NULL, $5, $6, $6) ON CONFLICT DO NOTHING`,
-              [SEED_WORK.rhythms.heartbeat, KAHF_WORKSPACE_ID, team, botId, omar, at(-1)],
+              [SEED_WORK.scheduledJobs.heartbeat, KAHF_WORKSPACE_ID, team, botId, omar, at(-1)],
             );
             n += await rows(
-              `INSERT INTO app.rhythms (id, workspace_id, team_id, bot_id, name, kind, schedule, model_alias, effort, contract_path, output_path, enabled, next_run_at, created_by, created_at, updated_at)
+              `INSERT INTO app.scheduled_jobs (id, workspace_id, team_id, bot_id, name, kind, schedule, model_alias, effort, contract_path, output_path, enabled, next_run_at, created_by, created_at, updated_at)
                VALUES ($1, $2, $3, $4, 'Weekly deploy health', 'routine', '0 8 * * 1', 'smart', 'medium', $5, $6, false, NULL, $7, $8, $8) ON CONFLICT DO NOTHING`,
-              [SEED_WORK.rhythms.routine, KAHF_WORKSPACE_ID, team, botId, SEED_WORK.routinePath, SEED_WORK.pagePath, omar, at(-1)],
+              [SEED_WORK.scheduledJobs.routine, KAHF_WORKSPACE_ID, team, botId, SEED_WORK.routinePath, SEED_WORK.pagePath, omar, at(-1)],
             );
             // Two past firings for the run ledger: last Monday's done, the one before it failed.
             const week = 7 * 24;
             n += await rows(
-              `INSERT INTO app.rhythm_runs (id, rhythm_id, team_id, status, output_path, reason, started_at, ended_at)
+              `INSERT INTO app.scheduled_job_runs (id, scheduled_job_id, team_id, status, output_path, reason, started_at, ended_at)
                SELECT $1, $2, $3, 'done', $4, '', $5::timestamptz, $5::timestamptz + interval '4 minutes'
-                WHERE EXISTS (SELECT 1 FROM app.rhythms WHERE id = $2) ON CONFLICT DO NOTHING`,
-              [SEED_WORK.rhythmRuns.done, SEED_WORK.rhythms.routine, team, SEED_WORK.pagePath, at(-week)],
+                WHERE EXISTS (SELECT 1 FROM app.scheduled_jobs WHERE id = $2) ON CONFLICT DO NOTHING`,
+              [SEED_WORK.scheduledJobRuns.done, SEED_WORK.scheduledJobs.routine, team, SEED_WORK.pagePath, at(-week)],
             );
             n += await rows(
-              `INSERT INTO app.rhythm_runs (id, rhythm_id, team_id, status, output_path, reason, started_at, ended_at)
+              `INSERT INTO app.scheduled_job_runs (id, scheduled_job_id, team_id, status, output_path, reason, started_at, ended_at)
                SELECT $1, $2, $3, 'failed', $4, $5, $6::timestamptz, $6::timestamptz + interval '1 minute'
-                WHERE EXISTS (SELECT 1 FROM app.rhythms WHERE id = $2) ON CONFLICT DO NOTHING`,
-              [SEED_WORK.rhythmRuns.failed, SEED_WORK.rhythms.routine, team, SEED_WORK.pagePath, 'The model alias smart was over its daily budget, so the run stopped before it wrote the page.', at(-2 * week)],
+                WHERE EXISTS (SELECT 1 FROM app.scheduled_jobs WHERE id = $2) ON CONFLICT DO NOTHING`,
+              [SEED_WORK.scheduledJobRuns.failed, SEED_WORK.scheduledJobs.routine, team, SEED_WORK.pagePath, 'The model alias smart was over its daily budget, so the run stopped before it wrote the page.', at(-2 * week)],
             );
             return n;
           },
@@ -352,7 +352,7 @@ export async function seedWork(db: Pick<TestDatabase, 'systemUrl'>, options: See
         result.written += await commit(ROUTINE_COMMIT, SEED_WORK.routinePath, ROUTINE_YAML);
       }
     }
-    log(`work: ${result.written} new rows and commits for the Engineering board, rhythms, page and production environment${result.notes.length ? ` (${result.notes.join('; ')})` : ''}`);
+    log(`work: ${result.written} new rows and commits for the Engineering board, scheduled jobs, page and production environment${result.notes.length ? ` (${result.notes.join('; ')})` : ''}`);
   } finally {
     await pool.end();
   }

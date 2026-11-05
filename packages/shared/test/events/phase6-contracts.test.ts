@@ -1,5 +1,5 @@
 import {
-  RhythmsRhythmRanEvent,
+  ScheduledJobsScheduledJobRanEvent,
   TasksTaskClaimedEvent,
   TasksTaskCompletedEvent,
   TasksTaskCreatedEvent,
@@ -24,7 +24,7 @@ describe('phase 6 events are registered at version 1', () => {
     'tasks.task.claimed',
     'tasks.task.completed',
     'tasks.task.handed_off',
-    'rhythms.rhythm.ran',
+    'scheduled_jobs.scheduled_job.ran',
   ])('%s', (type) => {
     expect(Object.keys(eventRegistry)).toContain(type);
     expect(latestVersion(type as keyof typeof eventRegistry)).toBe(1);
@@ -111,15 +111,15 @@ describe('task events', () => {
   });
 });
 
-describe('rhythm events', () => {
+describe('scheduled job events', () => {
   it('carries the run, the output page and the failure reason', () => {
-    const run = RhythmsRhythmRanEvent.parse({
-      type: 'rhythms.rhythm.ran',
+    const run = ScheduledJobsScheduledJobRanEvent.parse({
+      type: 'scheduled_jobs.scheduled_job.ran',
       schemaVersion: 1,
       workspaceId: WS,
       teamId: TEAM,
-      rhythmId: '00000000-0000-7000-8000-0000000f0004',
-      rhythmRunId: '00000000-0000-7000-8000-0000000f0005',
+      scheduledJobId: '00000000-0000-7000-8000-0000000f0004',
+      scheduledJobRunId: '00000000-0000-7000-8000-0000000f0005',
       botId: BOT,
       kind: 'routine',
       status: 'failed',
@@ -128,7 +128,7 @@ describe('rhythm events', () => {
       reason: 'the contract routines/weekly.yaml is invalid: output.page must live under pages/',
     });
     expect(run.status).toBe('failed');
-    expect(() => RhythmsRhythmRanEvent.parse({ ...run, kind: 'cron' })).toThrow();
-    expect(() => RhythmsRhythmRanEvent.parse({ ...run, status: 'queued-ish' })).toThrow();
+    expect(() => ScheduledJobsScheduledJobRanEvent.parse({ ...run, kind: 'cron' })).toThrow();
+    expect(() => ScheduledJobsScheduledJobRanEvent.parse({ ...run, status: 'queued-ish' })).toThrow();
   });
 });

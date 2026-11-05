@@ -18,15 +18,15 @@ describe('sidebar contract', () => {
   it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
     const byId = Object.fromEntries(CORE_NAV.map((i) => [i.id, i]));
     expect(navHref(byId['org']!, 'engineering')).toBe('/t/engineering/org');
-    expect(navHref(byId['rhythms']!, 'engineering')).toBe('/t/engineering/rhythms');
+    expect(navHref(byId['jobs']!, 'engineering')).toBe('/t/engineering/jobs');
     expect(byId['org']!.icon).toBe('org');
-    expect(byId['rhythms']!.icon).toBe('rhythms');
+    expect(byId['jobs']!.icon).toBe('jobs');
   });
 
   it('sorts a plugin contribution into place by order and keeps ties in the order given', () => {
     const plugin = contribution({ id: 'wiki', order: 25 });
     expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(0, 4)).toEqual(['files', 'boards', 'org', 'wiki']);
-    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(4, 6)).toEqual(['rhythms', 'threads']);
+    expect(sortNav([...CORE_NAV, plugin]).map((i) => i.id).slice(4, 6)).toEqual(['jobs', 'threads']);
     const a = contribution({ id: 'a', order: 5 });
     const b = contribution({ id: 'b', order: 5 });
     expect(sortNav([b, a]).map((i) => i.id)).toEqual(['b', 'a']);
@@ -78,7 +78,7 @@ describe('team switching and titles', () => {
   it('keeps the section when switching teams and falls back to Threads for a channel or DM', () => {
     expect(teamSwitchPath('/t/engineering/files', 'support')).toBe('/t/support/files');
     expect(teamSwitchPath('/t/engineering/approvals', 'support')).toBe('/t/support/approvals');
-    expect(teamSwitchPath('/t/engineering/rhythms', 'support')).toBe('/t/support/rhythms');
+    expect(teamSwitchPath('/t/engineering/jobs', 'support')).toBe('/t/support/jobs');
     expect(teamSwitchPath('/t/engineering/org', 'support')).toBe('/t/support/org');
     expect(teamSwitchPath('/t/engineering/c/dev', 'support')).toBe('/t/support/threads');
     expect(teamSwitchPath('/t/engineering/dm/abc', 'support')).toBe('/t/support/threads');
@@ -93,7 +93,7 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/bots/brain/chat')).toBe('Conversation');
     expect(viewTitle('/t/engineering/bots/brain')).toBe('Bots');
     expect(viewTitle('/t/engineering/org')).toBe('Org chart');
-    expect(viewTitle('/t/engineering/rhythms')).toBe('Jobs');
+    expect(viewTitle('/t/engineering/jobs')).toBe('Jobs');
     expect(viewTitle('/')).toBe('Home');
     expect(viewTitle('/t/engineering/memory')).toBe('Memory');
   });

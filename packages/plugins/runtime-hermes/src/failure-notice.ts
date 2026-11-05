@@ -26,11 +26,11 @@ export const FAILURE_NOTICE: Record<FailureCategory, string> = {
 
 /**
  * Did a person address this run, so that someone is waiting for an answer in the thread? A conversation or a mention, and a card handed to the bot
- * (`task_assigned`) when it has a thread to answer in. A watched channel (`channel_message`) and a scheduled firing (`rhythm`) are not: nobody asked,
+ * (`task_assigned`) when it has a thread to answer in. A watched channel (`channel_message`) and a scheduled firing (`scheduled job`) are not: nobody asked,
  * so a bot that was deliberately given no `messages.post` stays quiet there, and the notice keeps going through the grant like any bot's post.
  */
 export function personAddressed(payload: RunPayload): boolean {
-  if (payload.rhythm) return false;
+  if (payload.scheduledJob) return false;
   return payload.trigger === 'conversation' || payload.trigger === 'mention' || (payload.trigger === 'task_assigned' && payload.replyRootId !== null);
 }
 
@@ -70,7 +70,7 @@ export async function postFailureNotice(
   /** The platform's own sentence for this run, in place of the category's fixed one (a refusal that names the runner). Built from names, never from a remote answer. */
   line?: string,
 ): Promise<boolean> {
-  if (payload.rhythm) return false; // a scheduled firing has no one waiting; its reason lives on the firing in the rhythms ledger
+  if (payload.scheduledJob) return false; // a scheduled firing has no one waiting; its reason lives on the firing in the scheduledJobs ledger
   const messages = ctx.providers.get<MessageProvider>('messages');
   if (!messages) {
     log(`runtime-hermes: run ${run.runId}: no failure notice posted (no message door)`);

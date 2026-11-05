@@ -39,7 +39,8 @@ test('three tabs list the right threads; opening one reads it; j, k and e move a
     await tab('Unread').click();
     await expect(rows.filter({ hasText: 'T1 Priya asks' })).toHaveCount(1);
     await expect(rows.filter({ hasText: 'T2 Nadia proposes' })).toHaveCount(0);
-    await expect(rows.filter({ hasText: 'T1 Priya asks' }).locator('.cnt')).toHaveText('1');
+    await expect(rows.filter({ hasText: 'T1 Priya asks' }).getByTestId('thread-replies')).toHaveText('1 new reply');
+    await expect(rows.filter({ hasText: 'T1 Priya asks' }).getByTestId('thread-dot')).toBeVisible();
     await expect(page.locator('[data-landmark="sidebar"] > a.it', { hasText: 'Threads' }).locator('.pill')).toHaveText(/^[1-9]/);
 
     // Mine: T1 only (she wrote the root)
@@ -53,7 +54,8 @@ test('three tabs list the right threads; opening one reads it; j, k and e move a
     const view = page.getByTestId('thread-view');
     await expect(view).toContainText('T1 reply from Nadia');
     await expect(view).toContainText('T1 Priya asks about the rollback runbook');
-    await expect(rows.filter({ hasText: 'T1 Priya asks' }).locator('.cnt')).toHaveCount(0, { timeout: 4_000 }); // read: the count on its row goes
+    await expect(rows.filter({ hasText: 'T1 Priya asks' }).getByTestId('thread-dot')).toHaveCount(0, { timeout: 4_000 }); // read: the dot on its row goes
+    await expect(rows.filter({ hasText: 'T1 Priya asks' }).getByTestId('thread-replies')).toHaveText('1 reply');
     await tab('Unread').click();
     await expect(rows.filter({ hasText: 'T1 Priya asks' })).toHaveCount(0, { timeout: 4_000 });
     await expect(page.getByTestId('threads-empty')).toContainText('You are all caught up');
@@ -103,5 +105,56 @@ test('a thread in the inbox opens in the main area and the channel link goes to 
     await nadia.context.close();
     await omar.ctx.dispose();
     await nadiaApi.ctx.dispose();
+  }
+});
+
+test('a row marks replies that tag the reader, and its Actions menu follows, reads and copies', async ({ browser }) => {
+  const omar = await apiAs('omar');
+  const nadiaApi = await apiAs('nadia');
+  const priyaApi = await apiAs('priya');
+  const { id } = await createChannel(omar, 'inbox3');
+  const root = await postMessage(priyaApi, id, 'Cards root asks who owns the cutover');
+  const probe = await priyaApi.ctx.get(`/api/threads/${root.id}`);
+  test.skip(probe.status() === 404, 'no threads service on this server');
+  await postMessage(nadiaApi, id, 'I can, @priya do you agree?', root.id);
+  await postMessage(omar, id, 'plain reply from Omar', root.id);
+
+  const reader = await openAs(browser, 'priya', '/t/engineering/threads?tab=unread');
+  const { page } = reader;
+  await reader.context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => undefined);
+  const row = page.getByTestId('thread-row').filter({ hasText: 'Cards root asks' });
+  try {
+    // two unread replies, one of them tags her: the number sits where the dot would
+    await expect(row.getByTestId('thread-replies')).toHaveText('2 new replies');
+    await expect(row.getByTestId('thread-tags')).toHaveText('1');
+    await expect(row.getByTestId('thread-dot')).toHaveCount(0);
+
+    // the menu lists the actions of the design
+    await row.hover();
+    await row.getByRole('button', { name: 'Actions' }).click();
+    const menu = page.getByRole('menu', { name: 'Thread actions' });
+    for (const name of ['Open in new window', 'Unfollow thread', 'Open in channel', 'Mark as read', 'Copy link']) await expect(menu.getByRole('menuitem', { name: new RegExp(name) })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+
+    // Mark as read from the menu clears the marker and the new count without opening the thread
+    await row.hover();
+    await row.getByRole('button', { name: 'Actions' }).click();
+    await page.getByRole('menuitem', { name: 'Mark as read' }).click();
+    await expect(row).toHaveCount(0, { timeout: 4_000 }); // it leaves Unread
+    await page.getByRole('tab', { name: /^Followed/ }).click();
+    await expect(row.getByTestId('thread-tags')).toHaveCount(0);
+    await expect(row.getByTestId('thread-replies')).toHaveText('2 replies');
+
+    // Unfollow takes the thread off Followed
+    await row.hover();
+    await row.getByRole('button', { name: 'Actions' }).click();
+    await page.getByRole('menuitem', { name: /Unfollow thread/ }).click();
+    await expect(row).toHaveCount(0, { timeout: 4_000 });
+  } finally {
+    await reader.context.close();
+    await omar.ctx.dispose();
+    await nadiaApi.ctx.dispose();
+    await priyaApi.ctx.dispose();
   }
 });

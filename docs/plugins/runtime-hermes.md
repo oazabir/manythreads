@@ -86,11 +86,11 @@ job, never a prompt template's.
 
 ### The `routine` trigger (schedules)
 
-A rhythm's firing (the `rhythms` plugin files it and announces `rhythms.rhythm.ran`) starts the bot through `src/router-rhythms.ts`: one run per
+A scheduled job's firing (the `scheduled_jobs` plugin files it and announces `scheduled_jobs.scheduled_job.ran`) starts the bot through `src/router-scheduled-jobs.ts`: one run per
 firing, trigger `routine`, no asker. The bot must be active and list a `routine` trigger; otherwise the firing is settled failed with a plain
 reason. The run has no thread, so its output goes at the top of the team's first public channel the bot may post in; a routine's reply is written
-to the contract's page with `pages.write` and a "wrote <page> · diff" line follows (`src/rhythm-run.ts`). The runtime reports back with
-`runtime.rhythm.started` and `runtime.rhythm.finished`; see [rhythms.md](./rhythms.md).
+to the contract's page with `pages.write` and a "wrote <page> · diff" line follows (`src/scheduled-job-run.ts`). The runtime reports back with
+`runtime.scheduled_job.started` and `runtime.scheduled_job.finished`; see [scheduled-jobs.md](./scheduled-jobs.md).
 
 ## The profile
 
@@ -242,7 +242,7 @@ can carry a key's first characters, a hash, an address or a stack trace; that te
 | `not_on_team` | a person who is not on the bot's team mentioned it (a run reads as its asker, so none opens); the line is posted from a run with no asker, once per job | I only answer people on the team, and you are not on it; ask a lead to add you |
 | `other` | anything else | something went wrong on our side |
 
-For a run a person addressed (a `conversation` or `mention` run, or a `task_assigned` run with a thread) the line is posted as the bot but not through the broker — a `messages.post` grant limits what the model may choose to call, and this is the platform's own fixed text — so a bot whose definition lacks the grant is still heard, never silent. For every other run (a watched channel's `channel_message`, nobody asked) the broker is asked first, so a bot deliberately given no `messages.post` stays quiet; a scheduled firing posts no line at all (its reason is on the firing in the rhythms ledger). The channel's own posting rule applies either way; a refusal (an archived channel, say) is logged and the run still closes. The `not_allowed` category comes from a typed error (`CapabilityRefusedError`, thrown by the runtime's door when the broker refuses `messages.post`), not from reading text. The run id and
+For a run a person addressed (a `conversation` or `mention` run, or a `task_assigned` run with a thread) the line is posted as the bot but not through the broker — a `messages.post` grant limits what the model may choose to call, and this is the platform's own fixed text — so a bot whose definition lacks the grant is still heard, never silent. For every other run (a watched channel's `channel_message`, nobody asked) the broker is asked first, so a bot deliberately given no `messages.post` stays quiet; a scheduled firing posts no line at all (its reason is on the firing in the scheduled jobs ledger). The channel's own posting rule applies either way; a refusal (an archived channel, say) is logged and the run still closes. The `not_allowed` category comes from a typed error (`CapabilityRefusedError`, thrown by the runtime's door when the broker refuses `messages.post`), not from reading text. The run id and
 the category are in the message's `meta` (`runId`, `runFailure`), not its body; before posting, the runtime looks for a message with that `runId` and `runFailure`, so a run is
 announced at most once. A run that is waiting on a person (an approval card, or the gate's own notice) gets no second line: the card or notice is the explanation, and the
 gate's refusals and "nobody could decide" notices are posted where they happen. A run that finishes `ok` with no text posts nothing new. When the error is the proxy's 401, the runtime

@@ -142,7 +142,7 @@ const server = await startServer({
 if (seedMode === 'content') await seedWorld(db, { content: true });
 else if (seedMode === 'repo') await seedWorld(db, { content: true, repo: true });
 else if (seedMode === 'guard') await seedWorld(db, { content: true, repo: true, guard: true });
-// `work` is seed v6 on top of v4: the Engineering board, rhythms (off), routine page and the protected `production` environment.
+// `work` is seed v6 on top of v4: the Engineering board, scheduled jobs (off), routine page and the protected `production` environment.
 else if (seedMode === 'work') await seedWorld(db, { content: true, repo: true, work: true });
 // The plugins have migrated: a seeded workspace starts with its setup checklist already put away (an empty stack, `none`, is a fresh install and keeps it).
 if (seedMode !== 'none') await seedFinishedSetup(db);

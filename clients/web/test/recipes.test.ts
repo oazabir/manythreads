@@ -192,7 +192,7 @@ describe('the parts', () => {
     expect(out).toContain(`href="/t/marketing/proposals/${PROPOSAL(3)}"`);
     expect(out).toContain('3 proposals are filed');
     expect(out).toContain('a check failed, open it to see why');
-    expect(out).toContain('href="/t/marketing/rhythms"');
+    expect(out).toContain('href="/t/marketing/jobs"');
   });
 });
 

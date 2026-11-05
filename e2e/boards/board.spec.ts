@@ -5,7 +5,7 @@ import { apiAs, openAs } from '../channels/support.ts';
 /*
  * The Boards screen (PLAN P6-07/P6-08, SPEC §6.5): the five columns of a saved view, the card panel with its history, the move a drag
  * makes, the freshness rule a code card cannot bypass, and — on their own sidebar entries, not tabs inside Boards — the org chart and
- * Rhythms.
+ * Jobs.
  *
  * The cards are made through the task API as Omar (the lead) and the screen is read and driven as Nadia, a member: what is asserted is
  * what a person gets, not what the API returns. The board is made by the route the screen uses, because the seed has no board yet.
@@ -189,26 +189,26 @@ test('the org chart has its own page, and puts the lead above the member', async
   }
 });
 
-test('Rhythms has its own page, and only a lead may add one', async ({ browser }) => {
-  const nadia = await openAs(browser, 'nadia', '/t/engineering/rhythms');
+test('Jobs has its own page, and only a lead may add one', async ({ browser }) => {
+  const nadia = await openAs(browser, 'nadia', '/t/engineering/jobs');
   try {
-    await expect(nadia.page.getByTestId('rhythms-screen')).toBeVisible();
-    await expect(nadia.page.getByTestId('rhythms')).toBeVisible();
-    await expect(nadia.page.getByTestId('new-rhythm')).toHaveCount(0);
-    await expect(nadia.page.getByTestId('rhythms')).toContainText('A lead saves a new one');
+    await expect(nadia.page.getByTestId('scheduled-jobs-screen')).toBeVisible();
+    await expect(nadia.page.getByTestId('scheduled-jobs')).toBeVisible();
+    await expect(nadia.page.getByTestId('new-scheduled-job')).toHaveCount(0);
+    await expect(nadia.page.getByTestId('scheduled-jobs')).toContainText('A lead saves a new one');
   } finally {
     await nadia.context.close();
   }
-  const omar = await openAs(browser, 'omar', '/t/engineering/rhythms');
+  const omar = await openAs(browser, 'omar', '/t/engineering/jobs');
   try {
-    await omar.page.getByTestId('new-rhythm').click();
-    await expect(omar.page.getByTestId('new-rhythm-form')).toBeVisible();
-    await expect(omar.page.getByTestId('rhythm-cron-note')).toContainText('Next run');
-    await expect(omar.page.getByTestId('rhythm-kind')).toHaveValue('heartbeat');
+    await omar.page.getByTestId('new-scheduled-job').click();
+    await expect(omar.page.getByTestId('new-scheduled-job-form')).toBeVisible();
+    await expect(omar.page.getByTestId('scheduled-job-cron-note')).toContainText('Next run');
+    await expect(omar.page.getByTestId('scheduled-job-kind')).toHaveValue('heartbeat');
     // it is a page of its own, so it can be linked to and survives a reload
-    await expect(omar.page).toHaveURL(/\/t\/engineering\/rhythms$/);
+    await expect(omar.page).toHaveURL(/\/t\/engineering\/jobs$/);
     await omar.page.reload();
-    await expect(omar.page.getByTestId('rhythms-screen')).toBeVisible();
+    await expect(omar.page.getByTestId('scheduled-jobs-screen')).toBeVisible();
   } finally {
     await omar.context.close();
   }

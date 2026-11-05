@@ -21,7 +21,7 @@ import { plainTool } from './labels.ts';
 // The recipe gallery (PLAN P18-01, docs/plugins/workshop.md "The recipe gallery"). The recipes are files on disk (`templates/recipes/`, read and checked by the kernel's
 // `ctx.templates.recipes()`); this file is the two routes that show them to a team and install one. Installing changes nothing in the team's repository: it FILES PROPOSALS
 // (docs/plugins/proposals.md), one per file, as the signed-in person, so the usual rule decides who may apply them (a bot is added by a workspace admin, the rest by a lead
-// or an admin) and each person reads the lines before anything is committed. The schedule is a rhythm, which a lead turns on once the bot exists.
+// or an admin) and each person reads the lines before anything is committed. The schedule is a scheduled job, which a lead turns on once the bot exists.
 
 const WRITE_LIMIT = { limit: 20, windowMs: 60_000 } as const;
 const READ_LIMIT = { limit: 600, windowMs: 60_000 } as const;
@@ -62,7 +62,7 @@ async function standing(tx: PluginTx, team: TeamRow, recipes: readonly Recipe[])
     await tx.query<{ path: string; n: string }>("SELECT path, count(*) AS n FROM app.proposals WHERE team_id = $1::uuid AND status = 'open' AND path = ANY ($2::text[]) GROUP BY path", [team.id, paths])
   ).rows;
   const scheduled = (
-    await tx.query<{ contract_path: string }>('SELECT DISTINCT contract_path FROM app.rhythms WHERE team_id = $1::uuid AND contract_path = ANY ($2::text[])', [team.id, recipes.map((r) => `routines/${r.id}.yaml`)])
+    await tx.query<{ contract_path: string }>('SELECT DISTINCT contract_path FROM app.scheduled_jobs WHERE team_id = $1::uuid AND contract_path = ANY ($2::text[])', [team.id, recipes.map((r) => `routines/${r.id}.yaml`)])
   ).rows;
   return { bots: new Set(bots.map((b) => b.slug)), open: new Map(open.map((o) => [o.path, Number(o.n)])), scheduled: new Set(scheduled.map((s) => s.contract_path)) };
 }

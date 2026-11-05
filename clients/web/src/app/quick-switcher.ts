@@ -95,7 +95,7 @@ const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['files', 'Files'],
   ['boards', 'Boards'],
   ['org', 'Org chart'],
-  ['rhythms', 'Jobs'],
+  ['jobs', 'Jobs'],
   ['approvals', 'Approvals'],
   ['bots', 'Bots'],
 ];

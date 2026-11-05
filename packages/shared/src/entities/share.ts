@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CronExpression } from './rhythm.ts';
+import { CronExpression } from './scheduled-job.ts';
 import { parseCron } from '../common/cron.ts';
 import { IsoDateTime } from '../common/time.ts';
 import { ActorId, ApprovalId, TeamId, WorkspaceId } from '../ids.ts';

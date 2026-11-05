@@ -48,7 +48,7 @@ export interface PostMessageAnswer {
 /**
  * Where the bot run this transaction acts for answers (its own row; a bot reads its live run), or null outside a run or for a run with no place to answer. A run answers in a
  * thread (`replyRootId`), or at the top of its channel when it is an `inbox` run: only then does a top-level post name the run (`meta.runId`), which is how the connections plugin
- * ties a mail to the bot's post. Any other run with a channel but no thread (a routine, a rhythm, a task) has no place here: stamping its top-level posts would make the runtime
+ * ties a mail to the bot's post. Any other run with a channel but no thread (a routine, a scheduled job, a task) has no place here: stamping its top-level posts would make the runtime
  * believe the run already answered and skip its final reply.
  */
 async function runReplyPlace(tx: PluginTx): Promise<{ runId: string; channelId: string; replyRootId: string | null } | null> {

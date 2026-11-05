@@ -32,7 +32,7 @@ export * from './approval.ts';
 export * from './memory.ts';
 export * from './retention.ts';
 export * from './task.ts';
-export * from './rhythm.ts';
+export * from './scheduled-job.ts';
 export * from './hermes.ts';
 export * from './bot-runner.ts';
 export * from './project.ts';

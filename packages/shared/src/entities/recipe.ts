@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CronExpression } from './rhythm.ts';
+import { CronExpression } from './scheduled-job.ts';
 
 // The recipe gallery (PLAN P18-01): a recipe is a ready automation a team can ask for. It is data on disk, `templates/recipes/<id>/`, made of
 //   recipe.yaml                          the card: name, one-sentence summary, shelf, the suggested schedule, what the team needs to have
@@ -7,7 +7,7 @@ import { CronExpression } from './rhythm.ts';
 //   bots/<slug>/evals/<set>.yaml         the scenario set that checks it
 //   routines/<id>.yaml                   the routine contract the schedule runs (name, prompt, the page its output goes to)
 // Installing a recipe files each of those files as a proposal in the team (docs/plugins/proposals.md), so a person with the right to approve
-// reads every line before anything is committed. The schedule itself is a rhythm (docs/plugins/rhythms.md) that a lead turns on afterwards.
+// reads every line before anything is committed. The schedule itself is a scheduled job (docs/plugins/scheduled-jobs.md) that a lead turns on afterwards.
 
 export const RecipeId = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'lowercase slug');
 

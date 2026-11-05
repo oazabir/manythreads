@@ -4,6 +4,7 @@ import {
   ChevronLeftIcon, ChevronUpIcon as ProChevronUp, ClockIcon as ProClock, CommentIcon, CommentMultipleIcon, EmojiIcon, FileMultipleIcon, FolderIcon as ProFolder,
   LinkIcon, LockIcon as ProLock, MenuIcon as ProMenu, MoonIcon as ProMoon, MoreIcon as ProMore, SearchIcon as ProSearch, SendIcon as ProSend, SettingsIcon,
   StarIcon as ProStar, ArrowSyncIcon, TuneIcon, CheckmarkIcon, AddIcon as ProAdd, SubtractIcon as ProSubtract, PencilIcon as ProPencil, MailIcon as ProMail, HashIcon as ProHash, MentionIcon as ProMention,
+  WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon,
 } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
@@ -13,7 +14,7 @@ export const FilesIcon = proIcon(FileMultipleIcon);
 export const FolderIcon = proIcon(ProFolder, 14);
 export const BoardsIcon = proIcon(BoardIcon);
 export const OrgIcon = proIcon(BuildingMultipleIcon);
-export const RhythmsIcon = proIcon(ArrowSyncIcon);
+export const ScheduledJobsIcon = proIcon(ArrowSyncIcon);
 export const ThreadsIcon = proIcon(CommentMultipleIcon);
 export const ApprovalsIcon = proIcon(CheckmarkCircleIcon);
 export const DmIcon = proIcon(CommentIcon);
@@ -33,7 +34,7 @@ export const BackIcon = proIcon(ChevronLeftIcon, 14);
 export const GearIcon = proIcon(SettingsIcon);
 export const LockIcon = proIcon(ProLock, 12);
 
-export const NAV_ICONS = { files: FilesIcon, boards: BoardsIcon, org: OrgIcon, rhythms: RhythmsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
+export const NAV_ICONS = { files: FilesIcon, boards: BoardsIcon, org: OrgIcon, jobs: ScheduledJobsIcon, threads: ThreadsIcon, approvals: ApprovalsIcon, dm: DmIcon } as const;
 
 export const ReplyIcon = proIcon(ArrowReplyIcon, 14);
 export const SmileIcon = proIcon(EmojiIcon, 14);
@@ -67,5 +68,13 @@ export const PencilIcon = proIcon(ProPencil, 14);
 export const MailIcon = proIcon(ProMail, 14);
 export const HashIcon = proIcon(ProHash, 14);
 export const MentionIcon = proIcon(ProMention, 14);
+/** Two windows: open something in a window of its own. */
+export const NewWindowIcon = proIcon(WindowMultipleIcon, 14);
+/** An opened envelope: mark as read. */
+export const MarkReadIcon = proIcon(MailOpenIcon, 14);
+/** A bookmark with a plus: save a message for later. */
+export const SaveForLaterIcon = proIcon(BookmarkAddIcon, 14);
+/** Two chain links: copy the address of something. */
+export const CopyLinkIcon = proIcon(LinkIcon, 14);
 export const AddIcon = proIcon(ProAdd, 14);
 export const SubtractIcon = proIcon(ProSubtract, 14);

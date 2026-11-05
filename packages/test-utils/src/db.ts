@@ -108,10 +108,10 @@ export const runnersMigrationSource: MigrationSource = {
   dir: fileURLToPath(new URL('../../plugins/runners/migrations/', import.meta.url)),
 };
 
-/** Migrations of the rhythms plugin (`rhythms`, `rhythm_runs`); pass it after `botsMigrationSource` (a rhythm runs as a bot). */
-export const rhythmsMigrationSource: MigrationSource = {
-  namespace: 'rhythms',
-  dir: fileURLToPath(new URL('../../plugins/rhythms/migrations/', import.meta.url)),
+/** Migrations of the scheduled jobs plugin (`scheduled_jobs`, `scheduled_job_runs`); pass it after `botsMigrationSource` (a scheduled job runs as a bot). */
+export const scheduledJobsMigrationSource: MigrationSource = {
+  namespace: 'scheduled-jobs',
+  dir: fileURLToPath(new URL('../../plugins/scheduled-jobs/migrations/', import.meta.url)),
 };
 
 /**

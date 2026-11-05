@@ -1,6 +1,6 @@
 import { OpenRoute } from './notifications/OpenLink';
 import { Suspense, lazy } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router';
 import { RequireSession, SessionProvider } from './app/session';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsFrame } from './components/frames';
@@ -39,7 +39,7 @@ import { ProposalPage, ProposalsList } from './screens/proposals/ProposalsScreen
 import { RecipesScreen } from './screens/recipes/RecipesScreen';
 import { BoardsScreen } from './screens/boards/BoardsScreen';
 import { OrgScreen } from './screens/boards/OrgScreen';
-import { RhythmsScreen } from './screens/boards/RhythmsScreen';
+import { ScheduledJobsScreen } from './screens/boards/ScheduledJobsScreen';
 import { ConversationRedirect, ConversationView } from './screens/conversations/ConversationView';
 import { ChannelView } from './screens/ChannelView';
 import { ThreadsInbox } from './screens/ThreadsInbox';
@@ -57,6 +57,12 @@ function ExpiredRoute() {
   const [params] = useSearchParams();
   const kind = params.get('kind');
   return <ExpiredLinkPage kind={kind === 'bootstrap' ? 'bootstrap' : kind === 'reset' ? 'reset' : 'invitation'} />;
+}
+
+/** The Jobs page used to live at `/t/<team>/rhythms`; bookmarks and old links still arrive there. */
+function OldJobsAddress() {
+  const { team = '' } = useParams();
+  return <Navigate to={`/t/${team}/jobs`} replace />;
 }
 
 function AppRoutes() {
@@ -84,7 +90,8 @@ function AppRoutes() {
             <Route path="/t/:team/memory" element={<RequireTeam><Suspense fallback={<div className="view-empty" aria-busy="true" />}><MemoryScreen /></Suspense></RequireTeam>} />
             <Route path="/t/:team/boards" element={<RequireTeam><BoardsScreen /></RequireTeam>} />
             <Route path="/t/:team/org" element={<RequireTeam><OrgScreen /></RequireTeam>} />
-            <Route path="/t/:team/rhythms" element={<RequireTeam><RhythmsScreen /></RequireTeam>} />
+            <Route path="/t/:team/jobs" element={<RequireTeam><ScheduledJobsScreen /></RequireTeam>} />
+            <Route path="/t/:team/rhythms" element={<OldJobsAddress />} />
             <Route path="/t/:team/approvals" element={<RequireTeam><ApprovalsScreen /></RequireTeam>} />
             <Route path="/t/:team/bots" element={<RequireTeam><BotRoster /></RequireTeam>} />
             <Route path="/t/:team/agents" element={<RequireTeam><AgentsScreen /></RequireTeam>} />

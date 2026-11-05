@@ -44,7 +44,7 @@ A bot has no list (403), no session is 401. Rate limits live in process memory l
 
 ## The minute job
 
-`reminders.fire_due` runs every minute (`* * * * *`, so a reminder is at most a minute late; the same job mechanism as the rhythms tick). In one transaction it takes the due rows with
+`reminders.fire_due` runs every minute (`* * * * *`, so a reminder is at most a minute late; the same job mechanism as the scheduled jobs tick). In one transaction it takes the due rows with
 `FOR UPDATE SKIP LOCKED` (two replicas cannot take the same row), sets `fired_at`, and writes one `reminders.reminder.due` event for each item whose message still exists. Items whose message is
 gone are marked fired and announced to **nobody**. Whether the person can still read the channel is **not** checked here: a cron job has no workspace in its transaction, which the audience
 function needs, so the notifications plugin checks it when it handles the event (see below). `fired_at` and the event are written together, so a reminder is announced **once**: a second run finds

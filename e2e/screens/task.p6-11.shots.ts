@@ -4,7 +4,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 
 /**
  * P6-11 on the live site: seed v6 in the Engineering team — the team board with cards in all five columns, the Bot Board on #dev with
- * the coder's card, and the Rhythms page with the two switched-off rhythms and their past runs. Read-only.
+ * the coder's card, and the Jobs page with the two switched-off scheduled jobs and their past runs. Read-only.
  * Output: <MANYTHREADS_TASK_SHOTS_DIR>/p6-11-*.png (default temp/screenshots).
  */
 const BASE = (process.env['MANYTHREADS_LIVE_URL'] ?? 'https://manythreads.kahf.to').replace(/\/+$/, '');
@@ -42,7 +42,7 @@ async function openBoard(page: Page, name: string): Promise<void> {
   await expect(board.getByText('Loading…')).toHaveCount(0, T);
 }
 
-test('seed v6: the Engineering board, its Bot Board and its rhythms', async ({ browser }) => {
+test('seed v6: the Engineering board, its Bot Board and its scheduled jobs', async ({ browser }) => {
   const page = await signIn(browser);
   try {
     await openBoard(page, 'Engineering board');
@@ -55,9 +55,9 @@ test('seed v6: the Engineering board, its Bot Board and its rhythms', async ({ b
     await expect(board.getByText('Summarise the overnight CI failures')).toBeVisible(T);
     await shoot(page, 'p6-11-02-bot-board');
 
-    await page.goto('/t/engineering/rhythms');
+    await page.goto('/t/engineering/jobs');
     await expect(page.getByText('Weekly deploy health').first()).toBeVisible(T);
-    await shoot(page, 'p6-11-03-rhythms');
+    await shoot(page, 'p6-11-03-scheduled-jobs');
   } finally {
     await page.context().close();
   }

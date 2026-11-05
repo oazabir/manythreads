@@ -120,6 +120,34 @@ describe('the Threads inbox: membership of each tab (criterion 4)', () => {
   });
 });
 
+describe('the inbox row: who is in the thread, and whether a reply names the reader', () => {
+  let root = '';
+  beforeAll(async () => {
+    root = await post(nadia, dev, 'Which region do we cut over first?');
+    await post(rafi, dev, 'EU, it has the least traffic', root);
+    await post(priya, dev, 'Agreed, EU first', root);
+  });
+
+  it('names the root author and lists the writers: the root author first, then the newest', async () => {
+    const item = (await inbox(nadia, 'followed')).items.find((i) => i.rootMessageId === root)!;
+    expect(item.rootAuthor).toMatchObject({ displayName: nadia.name, kind: 'person' });
+    expect(item.participants.map((p) => p.displayName)).toEqual([nadia.name, priya.name, rafi.name]);
+    expect(item.participantCount).toBe(3);
+  });
+
+  it('counts the unread replies that tag the reader, and only until they are read', async () => {
+    const tagged = await post(rafi, dev, `@${nadia.name.split(' ')[0]!.toLowerCase()} can you confirm the date?`, root);
+    await post(priya, dev, 'also an untagged reply', root);
+    const before = (await inbox(nadia, 'unread')).items.find((i) => i.rootMessageId === root)!;
+    expect(before.unreadCount).toBeGreaterThanOrEqual(2);
+    expect(before.mentionCount).toBe(1);
+    expect((await inbox(rafi, 'followed')).items.find((i) => i.rootMessageId === root)?.mentionCount).toBe(0);
+    ok(await markRead(nadia, root, tagged));
+    const after = (await inbox(nadia, 'followed')).items.find((i) => i.rootMessageId === root)!;
+    expect(after.mentionCount).toBe(0);
+  });
+});
+
 describe('following (one source of truth: thread_follows, mirrored into read_state)', () => {
   let root = '';
   beforeAll(async () => {

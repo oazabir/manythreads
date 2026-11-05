@@ -112,7 +112,7 @@ describe('installing files proposals and commits nothing', () => {
     const c = await card(omar, 'engineering', 'request-intake');
     expect(c.openProposals).toBe(0);
     expect(c.scheduled).toBe(false);
-    const made = await w.call(omar, 'POST', '/api/teams/engineering/rhythms', { name: c.name, kind: 'routine', schedule: c.schedule.cron, contractPath: 'routines/request-intake.yaml', botSlug: c.bot.slug });
+    const made = await w.call(omar, 'POST', '/api/teams/engineering/scheduled-jobs', { name: c.name, kind: 'routine', schedule: c.schedule.cron, contractPath: 'routines/request-intake.yaml', botSlug: c.bot.slug });
     expect(made.status, JSON.stringify(made.body)).toBeLessThan(300);
     expect((await card(omar, 'engineering', 'request-intake')).scheduled).toBe(true);
   });

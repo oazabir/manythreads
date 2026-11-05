@@ -123,7 +123,7 @@ export type SurfaceEventId = z.infer<typeof SurfaceEventId>;
 export const ApprovalId = z.uuid().brand<'ApprovalId'>();
 export type ApprovalId = z.infer<typeof ApprovalId>;
 
-// Phase 6: tasks, boards, rhythms.
+// Phase 6: tasks, boards, scheduled jobs.
 
 export const GoalId = z.uuid().brand<'GoalId'>();
 export type GoalId = z.infer<typeof GoalId>;
@@ -162,11 +162,11 @@ export type HermesConnectionId = z.infer<typeof HermesConnectionId>;
 export const BotRunnerId = z.uuid().brand<'BotRunnerId'>();
 export type BotRunnerId = z.infer<typeof BotRunnerId>;
 
-export const RhythmId = z.uuid().brand<'RhythmId'>();
-export type RhythmId = z.infer<typeof RhythmId>;
+export const ScheduledJobId = z.uuid().brand<'ScheduledJobId'>();
+export type ScheduledJobId = z.infer<typeof ScheduledJobId>;
 
-export const RhythmRunId = z.uuid().brand<'RhythmRunId'>();
-export type RhythmRunId = z.infer<typeof RhythmRunId>;
+export const ScheduledJobRunId = z.uuid().brand<'ScheduledJobRunId'>();
+export type ScheduledJobRunId = z.infer<typeof ScheduledJobRunId>;
 
 export const ProjectId = z.uuid().brand<'ProjectId'>();
 export type ProjectId = z.infer<typeof ProjectId>;

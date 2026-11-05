@@ -65,9 +65,9 @@ import {
   HermesConnectionKind,
   HermesConnectionStatus,
   HandoffMode,
-  RhythmEffort,
-  RhythmKind,
-  RhythmRunStatus,
+  ScheduledJobEffort,
+  ScheduledJobKind,
+  ScheduledJobRunStatus,
   RunnerStatus,
   TaskEventType,
   TaskPullRequestState,
@@ -136,7 +136,7 @@ import {
   workshopMigrationSource,
   auditMigrationSource,
   guardrailsDlpMigrationSource,
-  rhythmsMigrationSource,
+  scheduledJobsMigrationSource,
   botRunnersMigrationSource,
   runtimeHermesMigrationSource,
   tasksMigrationSource,
@@ -255,9 +255,9 @@ const ENUM_COLUMNS: Record<string, { options: readonly string[] }> = {
   'hermes_connections.status': HermesConnectionStatus,
   'bot_runners.kind': BotRunnerKind,
   'bot_runners.status': BotRunnerStatus,
-  'rhythms.kind': RhythmKind,
-  'rhythms.effort': RhythmEffort,
-  'rhythm_runs.status': RhythmRunStatus,
+  'scheduled_jobs.kind': ScheduledJobKind,
+  'scheduled_jobs.effort': ScheduledJobEffort,
+  'scheduled_job_runs.status': ScheduledJobRunStatus,
   'proposals.author_kind': ProposalAuthorKind,
   'proposals.op': ProposalOp,
   'proposals.status': ProposalStatus,
@@ -299,7 +299,7 @@ const checkValues = (definition: string): string[] => [...definition.matchAll(/'
 
 beforeAll(async () => {
   db = await createTestDatabase({
-    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, rhythmsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource],
+    sources: [testKernelMigrationSource, teamsMigrationSource, channelsMigrationSource, filesMigrationSource, botsMigrationSource, gatewayLlmMigrationSource, approvalsMigrationSource, memoryMigrationSource, conversationsMigrationSource, tasksMigrationSource, scheduledJobsMigrationSource, runtimeHermesMigrationSource, botRunnersMigrationSource, proposalsMigrationSource, workshopMigrationSource, auditMigrationSource, guardrailsDlpMigrationSource, onboardingMigrationSource, knowledgeMigrationSource, connectionsMigrationSource, memoryInboxMigrationSource, memoryShareMigrationSource, meetingsMigrationSource, surfacesMigrationSource],
   });
   owner = testClient({ connectionString: db.ownerUrl });
   await owner.connect();

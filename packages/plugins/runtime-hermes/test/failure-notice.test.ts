@@ -42,6 +42,6 @@ describe('personAddressed', () => {
   it('is false for a watched channel, a handover with no thread and a scheduled firing', () => {
     expect(personAddressed(run({ trigger: 'channel_message' }))).toBe(false);
     expect(personAddressed(run({ trigger: 'task_assigned', replyRootId: null }))).toBe(false);
-    expect(personAddressed(run({ rhythm: {} as RunPayload['rhythm'] }))).toBe(false);
+    expect(personAddressed(run({ scheduledJob: {} as RunPayload['scheduledJob'] }))).toBe(false);
   });
 });
