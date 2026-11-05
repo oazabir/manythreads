@@ -63,7 +63,7 @@ export function rhythmRequest(draft: RhythmDraft): RhythmBuild {
   });
   if (parsed.success) return { ok: true, body: parsed.data };
   const issue = parsed.error.issues[0];
-  return { ok: false, message: issue?.message ?? 'The rhythm is not complete.' };
+  return { ok: false, message: issue?.message ?? 'The job is not complete.' };
 }
 
 const TIME = new Intl.DateTimeFormat('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });

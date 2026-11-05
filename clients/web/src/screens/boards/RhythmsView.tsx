@@ -90,7 +90,7 @@ export function RhythmsView({ slug, canManage }: { slug: string; canManage: bool
   if (listQ.status === 'error') {
     return (
       <div>
-        <Alert>{isApiError(listQ.error) && listQ.error.status === 404 ? 'The rhythms plugin is not loaded on this server.' : listQ.error.message}</Alert>
+        <Alert>{isApiError(listQ.error) && listQ.error.status === 404 ? 'The jobs plugin is not loaded on this server.' : listQ.error.message}</Alert>
         <button type="button" className="btn" onClick={listQ.reload}>Try again</button>
       </div>
     );
@@ -100,12 +100,12 @@ export function RhythmsView({ slug, canManage }: { slug: string; canManage: bool
     <div className="bd-rhythms" data-testid="rhythms">
       <div className="bd-toolbar">
         <p className="bd-hint">
-          Rhythms run as a bot on a schedule. {canManage ? 'As a lead you can add one here.' : 'A lead saves a new one; a member proposes it in Files, under routines/, and a lead applies it.'}
+          Jobs run as a bot on a schedule. {canManage ? 'As a lead you can add one here.' : 'A lead saves a new one; a member proposes it in Files, under routines/, and a lead applies it.'}
         </p>
         {canManage ? (
           <div className="bd-toolbar-act">
             <button type="button" className="btn s" onClick={() => { setDraft(emptyRhythm(people.bots[0]?.slug ?? '')); setProblem(null); }} data-testid="new-rhythm">
-              New rhythm
+              New job
             </button>
           </div>
         ) : null}
@@ -180,7 +180,7 @@ export function RhythmsView({ slug, canManage }: { slug: string; canManage: bool
           <div className="bd-toolbar-act">
             <button type="button" className="btn s" onClick={() => setDraft(null)}>Cancel</button>
             <button type="button" className="btn primary" disabled={draft.name.trim() === '' || draft.botSlug === ''} onClick={() => void save()} data-testid="save-rhythm">
-              Save rhythm
+              Save job
             </button>
           </div>
         </div>
@@ -188,7 +188,7 @@ export function RhythmsView({ slug, canManage }: { slug: string; canManage: bool
 
       {rhythms.length === 0 ? (
         <div className="bd-empty" data-testid="rhythms-empty">
-          <p className="bd-empty-title">No rhythms yet</p>
+          <p className="bd-empty-title">No jobs yet</p>
           <p className="bd-empty-body">A heartbeat nudges a bot on a schedule; a routine runs a contract and writes a page; a task opens a card. None is running right now.</p>
         </div>
       ) : (

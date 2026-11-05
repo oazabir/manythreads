@@ -16,7 +16,7 @@ export function stateLook(c: Pick<RecipeCard, 'state' | 'scheduled' | 'openPropo
   if (c.state === 'installed') {
     return c.scheduled
       ? { tone: 'ok', glyph: '✓', label: 'Installed and running', hint: 'The bot is in the team and its schedule is on.' }
-      : { tone: 'warn', glyph: '!', label: 'Installed, schedule off', hint: 'The bot is in the team. A team lead turns the schedule on in Rhythms.' };
+      : { tone: 'warn', glyph: '!', label: 'Installed, schedule off', hint: 'The bot is in the team. A team lead turns the schedule on in Jobs.' };
   }
   return { tone: 'idle', glyph: '–', label: 'Ready to add', hint: 'Nothing of this recipe is in the team yet.' };
 }

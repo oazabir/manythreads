@@ -79,7 +79,7 @@ function SourcesList({ team, base, sources, writer, busy, run }: { team: string;
                     const next = e.target.value === '' ? null : Number(e.target.value);
                     run('rhythm', async () => {
                       await setKnowledgeSourceRhythm(team, base, s.id, next);
-                      return 'The rhythm was saved.';
+                      return 'The job was saved.';
                     });
                   }}
                 >

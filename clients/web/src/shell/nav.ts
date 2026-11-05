@@ -9,7 +9,7 @@ export const CORE_NAV: NavContribution[] = [
   { id: 'files', order: 10, label: 'Files', kind: 'item', path: '/files', icon: 'files' },
   { id: 'boards', order: 20, label: 'Boards', kind: 'item', path: '/boards', icon: 'boards' },
   { id: 'org', order: 23, label: 'Org chart', kind: 'item', path: '/org', icon: 'org' },
-  { id: 'rhythms', order: 26, label: 'Rhythms', kind: 'item', path: '/rhythms', icon: 'rhythms' },
+  { id: 'rhythms', order: 26, label: 'Jobs', kind: 'item', path: '/rhythms', icon: 'rhythms' },
   { id: 'threads', order: 30, label: 'Threads', kind: 'item', path: '/threads', icon: 'threads', badge: { source: 'threads.unread', tone: 'unread' } },
   { id: 'approvals', order: 35, label: 'Approvals', kind: 'item', path: '/approvals', icon: 'approvals', emptyState: 'Nothing waiting', badge: { source: 'approvals.waiting', tone: 'quiet' } },
   { id: 'channels', order: 40, label: 'Channels', kind: 'group-list', guests: true },
@@ -47,7 +47,7 @@ export function teamSwitchPath(pathname: string, toSlug: string): string {
   return `/t/${toSlug}/${section}`;
 }
 
-const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Rhythms', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory' };
+const TITLES: Record<string, string> = { threads: 'Threads', files: 'Files', boards: 'Boards', org: 'Org chart', rhythms: 'Jobs', approvals: 'Approvals', bots: 'Bots', recipes: 'Recipes', memory: 'Memory' };
 
 /** The header title of the shell for a path. */
 export function viewTitle(pathname: string): string {

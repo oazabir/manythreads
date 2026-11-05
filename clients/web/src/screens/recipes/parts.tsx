@@ -59,7 +59,7 @@ export function RecipeFacts({ card }: { card: RecipeCard }) {
       <p className="rg-lede">{card.summary}</p>
       <Facts title="When it runs">
         <p className="rg-p">{card.schedule.label} <span className="mono rg-cron">({card.schedule.cron})</span></p>
-        <p className="rg-p faint">Adding the recipe does not start the schedule. After the bot is approved, a team lead turns it on in Rhythms.</p>
+        <p className="rg-p faint">Adding the recipe does not start the schedule. After the bot is approved, a team lead turns it on in Jobs.</p>
       </Facts>
       <Facts title="What it needs">
         {card.needs.length === 0 ? <p className="rg-p">Nothing. It works in any team.</p> : <Words items={card.needs} />}
@@ -109,7 +109,7 @@ export function Filed({ slug, result }: { slug: string; result: InstallRecipeRes
         ))}
       </ul>
       {failed > 0 ? <p className="rg-p">A proposal with a failed check cannot be approved as it is. Open it to read the reason.</p> : null}
-      <p className="rg-p faint">After the bot is approved, a team lead turns the schedule on in <Link to={`/t/${slug}/rhythms`}>Rhythms</Link>.</p>
+      <p className="rg-p faint">After the bot is approved, a team lead turns the schedule on in <Link to={`/t/${slug}/rhythms`}>Jobs</Link>.</p>
     </div>
   );
 }

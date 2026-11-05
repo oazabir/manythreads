@@ -5,7 +5,7 @@ import type { PersonaKey } from '../support/env.ts';
 
 /**
  * PLAN phase 3 criterion 10, second half and the exit line "the sidebar matches the contract for every persona including Lena":
- * Files (10) · Boards (20) · Org chart (23) · Rhythms (26) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) · Bots (50), in exactly that
+ * Files (10) · Boards (20) · Org chart (23) · Jobs (26) · Threads (30) · Approvals (35) · channel groups (40) · Direct messages (45) · Bots (50), in exactly that
  * order for each of the seven people (a guest sees the one entry that allows guests: the channels she was granted). The sections are
  * read from the page, in DOM order, on a stack with the seed's channels.
  */
@@ -20,7 +20,7 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-const CONTRACT = ['Files', 'Boards', 'Org chart', 'Rhythms', 'Threads', 'Approvals', 'channel groups', 'Direct messages', 'Bots'];
+const CONTRACT = ['Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals', 'channel groups', 'Direct messages', 'Bots'];
 
 const PEOPLE: ReadonlyArray<[PersonaKey, string[]]> = [
   ['omar', CONTRACT],
@@ -64,7 +64,7 @@ test('priya (two teams): the second team has the same contract', async ({ browse
     const sidebar = page.locator('[data-landmark="sidebar"]');
     await expect(sidebar.locator('.channel-groups .group').first()).toBeVisible();
     const labels = await sidebar.locator(':scope > .it').evaluateAll((els) => els.filter((e) => !e.classList.contains('dm-new-btn')).map((e) => (e.querySelector('.it-label')?.textContent ?? '').trim()));
-    expect(labels).toEqual(['Files', 'Boards', 'Org chart', 'Rhythms', 'Threads', 'Approvals']);
+    expect(labels).toEqual(['Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals']);
     await expect(sidebar.locator(':scope > .sec')).toHaveText([/^Direct messages/, /^Bots/]);
     // this seed has no bot: the Bots section says so, and lists no rows (the roster spec covers a team that has one)
     await expect(sidebar.locator(':scope > .sec').nth(1)).toContainText('No bots yet');

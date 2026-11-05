@@ -6,16 +6,16 @@ const contribution = (over: Partial<NavContribution> & Pick<NavContribution, 'id
   NavContribution.parse({ label: over.id, kind: 'item', ...over });
 
 describe('sidebar contract', () => {
-  it('is exactly Files, Boards, Org chart, Rhythms, Threads, Approvals, channel groups, Direct messages, Bots in orders 10 20 23 26 30 35 40 45 50', () => {
+  it('is exactly Files, Boards, Org chart, Jobs, Threads, Approvals, channel groups, Direct messages, Bots in orders 10 20 23 26 30 35 40 45 50', () => {
     const sorted = sortNav(CORE_NAV);
     expect(sorted.map((i) => [i.order, i.label])).toEqual([
-      [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Rhythms'], [30, 'Threads'], [35, 'Approvals'], [40, 'Channels'],
+      [10, 'Files'], [20, 'Boards'], [23, 'Org chart'], [26, 'Jobs'], [30, 'Threads'], [35, 'Approvals'], [40, 'Channels'],
       [45, 'Direct messages'], [50, 'Bots'],
     ]);
     expect(sorted.map((i) => i.kind)).toEqual(['item', 'item', 'item', 'item', 'item', 'item', 'group-list', 'header', 'header']);
   });
 
-  it('gives the org chart and Rhythms pages of their own, not tabs inside Boards', () => {
+  it('gives the org chart and Jobs pages of their own, not tabs inside Boards', () => {
     const byId = Object.fromEntries(CORE_NAV.map((i) => [i.id, i]));
     expect(navHref(byId['org']!, 'engineering')).toBe('/t/engineering/org');
     expect(navHref(byId['rhythms']!, 'engineering')).toBe('/t/engineering/rhythms');
@@ -93,7 +93,7 @@ describe('team switching and titles', () => {
     expect(viewTitle('/t/engineering/bots/brain/chat')).toBe('Conversation');
     expect(viewTitle('/t/engineering/bots/brain')).toBe('Bots');
     expect(viewTitle('/t/engineering/org')).toBe('Org chart');
-    expect(viewTitle('/t/engineering/rhythms')).toBe('Rhythms');
+    expect(viewTitle('/t/engineering/rhythms')).toBe('Jobs');
     expect(viewTitle('/')).toBe('Home');
     expect(viewTitle('/t/engineering/memory')).toBe('Memory');
   });

@@ -18,7 +18,7 @@ export function RhythmsScreen() {
     <div className="bd-screen" data-testid="rhythms-screen">
       <header className="bd-head">
         <div>
-          <h2 className="bd-title">Rhythms</h2>
+          <h2 className="bd-title">Jobs</h2>
           <p className="bd-sub">Bot work on a schedule: heartbeats, routines and cards that open themselves.</p>
         </div>
       </header>
