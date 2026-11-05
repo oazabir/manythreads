@@ -16,11 +16,15 @@ export function useUnread(): Snapshot {
 }
 
 export type Person = { personId: string; actorId: string; name: string; email: string; role: RosterMember['role']; /** `preset:<id>`, `photo:<hash>` or null (initials). */ avatar: string | null };
+/** A bot of the team that a person can address with `@slug` (switched on, with a `mention` or `conversation` trigger): what the @ picker offers beside the people. */
+export type MentionableBot = { slug: string; name: string; avatar: string | null };
 export type People = {
   loaded: boolean;
   /** The roster of this team has answered (or failed): until then `me` is unknown, not absent. False without a team (a guest has no roster). */
   settled: boolean;
   list: Person[];
+  /** The team's bots a person can @mention; empty until they load, and for a guest. */
+  bots: readonly MentionableBot[];
   byActor(actorId: string): Person | undefined;
   byPerson(personId: string): Person | undefined;
   /** The picture a bot of this team has (by its actor id, the author of its messages); undefined for an actor that is not a known bot. */
@@ -35,7 +39,7 @@ export type People = {
 
 export const PeopleContext = createContext<People | null>(null);
 
-const NOBODY: People = { loaded: false, settled: false, list: [], byActor: () => undefined, byPerson: () => undefined, botAvatar: () => undefined, botAvatarBySlug: () => undefined, me: undefined, canModerate: false };
+const NOBODY: People = { loaded: false, settled: false, list: [], bots: [], byActor: () => undefined, byPerson: () => undefined, botAvatar: () => undefined, botAvatarBySlug: () => undefined, me: undefined, canModerate: false };
 
 /** The team's people as the shell loaded them (outside the shell: nobody). */
 export function usePeople(): People {
@@ -49,10 +53,10 @@ export function useLoadPeople(teamSlug: string | null): People {
   const q = useQuery<{ slug: string | null; members: RosterMember[] }>(`people:${teamSlug ?? ''}`, () =>
     teamSlug ? fetchRoster(teamSlug).then((r) => ({ slug: teamSlug, members: r.members })) : Promise.resolve({ slug: null, members: [] }),
   );
-  // the team's bots, only for their pictures; a roster that cannot be read (a guest) simply leaves the initials
-  const botsQ = useQuery<{ slug: string | null; bots: { slug: string; actorId: string | null; avatar: string | null }[] }>(`people-bots:${teamSlug ?? ''}`, () =>
+  // the team's bots, for their pictures and the @ picker; a roster that cannot be read (a guest) simply leaves the initials
+  const botsQ = useQuery<{ slug: string | null; bots: { slug: string; name: string; actorId: string | null; avatar: string | null; mentionable: boolean }[] }>(`people-bots:${teamSlug ?? ''}`, () =>
     teamSlug
-      ? fetchBots(teamSlug).then((r) => ({ slug: teamSlug, bots: r.bots.map((b) => ({ slug: b.slug, actorId: b.actorId ?? null, avatar: b.avatar })) })).catch(() => ({ slug: teamSlug, bots: [] }))
+      ? fetchBots(teamSlug).then((r) => ({ slug: teamSlug, bots: r.bots.map((b) => ({ slug: b.slug, name: b.name, actorId: b.actorId ?? null, avatar: b.avatar, mentionable: b.status === 'active' && b.mentionable })) })).catch(() => ({ slug: teamSlug, bots: [] }))
       : Promise.resolve({ slug: null, bots: [] }),
   );
   const botList = botsQ.status === 'ok' && botsQ.data.slug === teamSlug ? botsQ.data.bots : undefined;
@@ -67,7 +71,7 @@ export function useLoadPeople(teamSlug: string | null): People {
     const byPerson = new Map(list.map((p) => [p.personId, p]));
     const me = byPerson.get(session.person.id);
     const admin = session.role === 'owner' || session.role === 'admin';
-    return { loaded: members !== undefined, settled, list, byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), botAvatar: (id) => botByActor.get(id), botAvatarBySlug: (s) => botBySlug.get(s), me, canModerate: admin || me?.role === 'lead' };
+    return { loaded: members !== undefined, settled, list, bots: (botList ?? []).filter((b) => b.mentionable).map((b) => ({ slug: b.slug, name: b.name, avatar: b.avatar })), byActor: (id) => byActor.get(id), byPerson: (id) => byPerson.get(id), botAvatar: (id) => botByActor.get(id), botAvatarBySlug: (s) => botBySlug.get(s), me, canModerate: admin || me?.role === 'lead' };
   }, [members, botList, settled, session.person.id, session.person.avatar, session.role]);
   useEffect(() => {
     channelStore.setSelf(value.me?.actorId ?? null);

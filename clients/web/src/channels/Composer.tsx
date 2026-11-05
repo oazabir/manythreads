@@ -102,6 +102,8 @@ type PickItem = {
   personId?: string;
   /** A role group offered by the @ picker (`@on-call`): drawn with a "Group" badge and the number of people it reaches. */
   group?: true;
+  /** A bot offered by the @ picker: drawn with a "Bot" badge. */
+  bot?: true;
 };
 
 type Notice = { tone: 'bad' | 'ok'; text: string; href?: string; linkText?: string };
@@ -259,12 +261,17 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
         .filter((p) => q === '' || p.name.toLowerCase().includes(q) || handleFor(p, people.list).startsWith(q))
         .slice(0, 6)
         .map((p) => ({ key: p.personId, label: p.name, hint: `@${handleFor(p, people.list)}`, insert: `@${handleFor(p, people.list)} `, from: trigger.start, to: caret, personId: p.personId }));
-      // role groups after the people: a person's own handle always wins, so a group is offered only when its word is not one of theirs
-      const shown = new Set(persons.map((p) => p.insert.trim().toLowerCase()));
+      // the team's bots (`@slug` wakes one that listens for mentions), after the people
+      const bots: PickItem[] = people.bots
+        .filter((b) => q === '' || b.slug.toLowerCase().startsWith(q) || b.name.toLowerCase().includes(q))
+        .slice(0, 4)
+        .map((b) => ({ key: `bot:${b.slug}`, label: b.name, hint: `@${b.slug}`, insert: `@${b.slug} `, from: trigger.start, to: caret, bot: true as const }));
+      // role groups after the people and bots: a person's own handle always wins, so a group is offered only when its word is not one of theirs
+      const shown = new Set([...persons, ...bots].map((p) => p.insert.trim().toLowerCase()));
       const roles: PickItem[] = matchGroups(groups, q)
         .filter((g) => !shown.has(`@${g.handle}`))
         .map((g) => ({ key: `group:${g.handle}`, label: `@${g.handle}`, hint: groupCountText(g.memberCount), insert: `@${g.handle} `, from: trigger.start, to: caret, group: true as const }));
-      return [...persons, ...roles];
+      return [...persons, ...bots, ...roles];
     }
     return channelNames
       .filter((n) => q === '' || n.toLowerCase().includes(q))
@@ -877,6 +884,7 @@ export function Composer({ draftKey, placeholder, label, channelId, threadRootId
                 >
                   <span className="pk-name">{it.label}</span>
                   {it.group ? <span className="pk-badge">Group</span> : null}
+                  {it.bot ? <span className="pk-badge bot">Bot</span> : null}
                   {it.personId ? <PresenceDot personId={it.personId} status /> : null}
                   {it.hint ? <small className="pk-hint">{it.hint}</small> : null}
                 </li>

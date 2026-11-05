@@ -1118,6 +1118,13 @@
   letter-spacing: 0.02em;
 }
 
+/* a bot in the @ picker: the same badge in the bot colour, so a bot is not mistaken for a person */
+.picker .pk-badge.bot {
+  border-color: var(--agent-border);
+  background: var(--agent-wash);
+  color: var(--agent-ink);
+}
+
 /* the slash-command menu: the same list as the @ picker, with a name above its plain sentence and rows tall enough for a thumb */
 .picker.slash {
   width: min(400px, calc(100% - 16px));
