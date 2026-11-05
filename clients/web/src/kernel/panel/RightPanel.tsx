@@ -2,7 +2,7 @@ import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type Poi
 import './builtins';
 import { BackIcon, CloseIcon, ExpandIcon, RestoreIcon } from '../../shell/icons';
 import { useNarrow } from '../../shell/useNarrow';
-import { PANEL_MIN, PANEL_STEP, clampPanelWidth, maxPanelWidth, usePanelWidth, widthFromPointer } from './panelSize';
+import { PANEL_MIN, PANEL_STEP, clampPanelWidth, maxPanelWidth, threadLayout, usePanelWidth, widthFromPointer } from './panelSize';
 import { panelRegistry } from './registry';
 import { PanelSubContext, PanelTitleContext } from './sub';
 import { useEscapeToClose, usePanel } from './usePanel';
@@ -33,8 +33,11 @@ export function RightPanel() {
   useEscapeToClose(panel.open, expanded ? () => setExpanded(false) : panel.close);
 
   const shown = clampPanelWidth(size.width, viewport);
-  const resizable = !narrow;
-  const fill = expanded && resizable && isThread;
+  // where the entry is drawn follows the window (never stored): a thread that no longer fits beside the channel fills the area, and goes back to the person's width when the window is wide again
+  const layout = threadLayout({ viewport, narrow, isThread, expanded });
+  const resizable = layout !== 'sheet';
+  const fill = layout === 'fill';
+  const auto = fill && !expanded;
   const onDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return;
     e.preventDefault(); // no text selection starts under the drag
@@ -62,7 +65,7 @@ export function RightPanel() {
     <aside
       className="region right-panel"
       data-landmark="right-panel"
-      data-expanded={fill ? 'true' : undefined}
+      data-expanded={auto ? 'auto' : fill ? 'true' : undefined}
       data-dragging={dragging ? 'true' : undefined}
       aria-label="Panel"
       hidden={!top}
@@ -90,14 +93,16 @@ export function RightPanel() {
             />
           ) : null}
           <header className="panel-head" data-landmark="panel-header">
-            {panel.hasBack ? (
+            {auto ? (
+              <button type="button" className="icon-btn" aria-label="Back to the channel" data-testid="panel-back-channel" onClick={panel.hasBack ? panel.back : panel.close}><BackIcon /></button>
+            ) : panel.hasBack ? (
               <button type="button" className="icon-btn" aria-label="Back" onClick={panel.back}><BackIcon /></button>
             ) : null}
             <div className="panel-titles">
               <h2 className="panel-title" data-testid="panel-title">{title ?? def?.label ?? 'Panel'}</h2>
               {sub ? <p className="panel-sub" data-testid="thread-channel">{sub}</p> : null}
             </div>
-            {resizable && isThread ? (
+            {resizable && isThread && !auto ? (
               <button type="button" className="icon-btn panel-expand" aria-label={expanded ? 'Restore' : 'Expand thread'} aria-pressed={expanded} title={expanded ? 'Restore' : 'Expand thread'} data-testid="panel-expand" onClick={() => setExpanded((v) => !v)}>
                 {expanded ? <RestoreIcon /> : <ExpandIcon />}
               </button>

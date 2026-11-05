@@ -612,6 +612,8 @@ a.sec:hover {
 }
 
 /* ---- phone: drawer and sheet ---- */
+
+/* the phone width: PHONE_MAX in kernel/panel/panelSize.ts; a media query cannot read it, so keep both in step */
 @media (width <= 760px) {
   .frame,
   .frame:has(.right-panel:not([hidden])) {

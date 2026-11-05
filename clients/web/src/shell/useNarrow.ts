@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from 'react';
+import { PHONE_MAX } from '../kernel/panel/panelSize';
 
 /** The phone layout starts here: the sidebar becomes a drawer and the right panel a full-height sheet (styles/shell.css). */
-export const NARROW_QUERY = '(width <= 760px)';
+export const NARROW_QUERY = `(width <= ${PHONE_MAX}px)`;
 
 const subscribe = (cb: () => void): (() => void) => {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => undefined;
