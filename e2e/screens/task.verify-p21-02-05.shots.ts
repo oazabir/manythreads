@@ -120,13 +120,36 @@ test('P21-02 desktop: quick reactions in the hover bar, + pill, who reacted', as
   await expect(page.getByRole('menu', { name: 'Reactions' })).toBeVisible();
   await shoot('03-plus-pill-menu-desktop');
   await page.keyboard.press('Escape');
+  await target.hover();
+  await target.getByRole('button', { name: 'More actions' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Copy text' })).toBeVisible(T);
+  await shoot('03a-more-menu-desktop');
+  await page.keyboard.press('Escape');
 });
 
 test('P21-05 desktop: Esc on the list reads with a toast and Undo; Jump to latest; the day pill', async () => {
-  // the other person's messages are unread for the reader only when someone else posts: Nadia posts, then Omar's read position is put back
-  const unread = await page.request.post(`/api/channels/${chanId}/messages/${ids['target']}/unread`, { headers: await csrf() });
-  expect(unread.status()).toBeLessThan(300);
-  await row('target').focus();
+  // real unread: leave the channel, the other person posts, the reader comes back and the "New" line is there
+  await page.goto('/t/engineering/c/general');
+  await page.waitForLoadState('networkidle').catch(() => undefined);
+  for (const t of ['Nadia says one', 'Nadia says two', 'Nadia says three']) {
+    const r = await other.post(`/api/channels/${chanId}/messages`, { headers: otherCsrf, data: { channelId: chanId, body: t, threadRootId: null } });
+    expect(r.status()).toBeLessThan(300);
+    ids[t] = ((await r.json()) as any).id as string;
+  }
+  await page.waitForTimeout(2500);
+  await page.getByRole('link', { name: new RegExp(chanName) }).first().click();
+  await expect(page.getByText('Nadia says three')).toBeVisible(T);
+  await page.waitForTimeout(800);
+  await shoot('03b-new-line-desktop');
+  // opening the channel already read it (the "New" line stays), so Undo has nothing to put back; use Mark unread from here on the other person's message
+  await page.getByText('Nadia says one').click();
+  const nrow = row('Nadia says one');
+  await nrow.hover();
+  await nrow.getByRole('button', { name: 'More actions' }).click();
+  await page.getByRole('menuitem', { name: /Mark unread from here/ }).click();
+  await page.waitForTimeout(1000);
+  await shoot('03c-marked-unread-desktop');
+  await page.getByText('Nadia says one').click();
   await page.keyboard.press('Escape');
   const toast = page.getByTestId('toast');
   await expect(toast).toContainText('marked as read', T);
@@ -140,6 +163,22 @@ test('P21-05 desktop: Esc on the list reads with a toast and Undo; Jump to lates
   });
   await expect(page.getByRole('button', { name: /Jump to latest/ })).toBeVisible(T);
   await shoot('06-day-pill-top-desktop');
+  for (const t of ['Late one', 'Late two']) {
+    const r = await other.post(`/api/channels/${chanId}/messages`, { headers: otherCsrf, data: { channelId: chanId, body: t, threadRootId: null } });
+    expect(r.status()).toBeLessThan(300);
+  }
+  await expect(page.getByRole('button', { name: /2 new messages/ })).toBeVisible(T);
+  await shoot('06b-jump-n-new-desktop');
+  for (const w of [1024, 390]) {
+    await page.setViewportSize({ width: w, height: 844 });
+    await page.waitForTimeout(500);
+    await page.locator('.vlist').focus();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    await shoot(`06c-toast-${w}`);
+    await page.waitForTimeout(1500);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await list.evaluate((el) => {
     el.scrollTop = 600;
   });

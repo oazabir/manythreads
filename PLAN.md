@@ -617,10 +617,10 @@ How to read it: **Built** = everything the row describes exists and is wired. **
 | ID | Task | State | Where it is | Gap |
 |---|---|---|---|---|
 | P21-01 | Message runs, hover time, presence on the avatar | Built | - | built, tested (unit, e2e desktop and 390 px), deployed at 0a8d1841; live check 2026-11-05 |
-| P21-02 | Hover bar with quick reactions, the + pill, who reacted | Built, pending live check | Pin not built | hover bar, quick reactions, + pill, who reacted, row keys built |
+| P21-02 | Hover bar with quick reactions, the + pill, who reacted | Built (live check 2026-11-05) | Pin not built | hover bar, quick reactions, + pill, who reacted, row keys built |
 | P21-03 | Reply previews, long-message clamp, bot mention chips | Built | - | built, tested (unit, e2e desktop and 390 px), deployed at 0a8d1841; live check 2026-11-05 (bot chip not run live: it would start a bot run) |
 | P21-04 | Composer: steady toolbar, shortcuts, :emoji:, richer @mentions | Partly built | clients/web/src/channels/Composer.tsx, hooks.ts (`People.bots`), styles/channels.css (`.pk-badge.bot`); live check 2026-11-05 | the @ picker lists the team's bots (switched on, with a `mention` or `conversation` trigger; at most 4) after the people, with a purple Bot badge and `@slug` inserted. Still missing: a steady toolbar, shortcuts, `:emoji:` list, avatars and People / Bots / Channels groups in the picker, `@channel` and `@here` first, the Send icon button. Long bot names wrap in the picker |
-| P21-05 | Floating bits: Jump to latest, toasts, Esc, day pills | Built, pending live check | Thread panel has no Jump to latest | Jump to latest count, toasts with Undo, Esc mark-read, day pills built |
+| P21-05 | Floating bits: Jump to latest, toasts, Esc, day pills | Built (live check 2026-11-05) | Thread panel has no Jump to latest | Jump to latest count, toasts with Undo, Esc mark-read, day pills built |
 | P21-06 | Channel and DM header, channel details, channel intro | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-07 | Bot messages read as messages | Not built | - | added 2026-11-04 (POLISH.md §1); nothing built yet |
 | P21-08 | Sidebar: calmer, collapsible, clearer unread | Not built | - | added 2026-11-04 (POLISH.md §2); nothing built yet |
