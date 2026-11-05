@@ -192,3 +192,37 @@ test('the header search is limited to the conversation and stays on the screen a
     await context.close();
   }
 });
+
+test('a channel that has just started opens with its intro card: "This is the very beginning of #name" and the day it was created', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${first.name}`);
+  try {
+    const start = page.getByTestId('channel-start');
+    await expect(start.locator('.start-title')).toHaveText(`This is the very beginning of #${first.name}.`, T);
+    // a day, a short month and a year; the channel was made by this run, so the year is this year
+    await expect(page.getByTestId('channel-created')).toHaveText(new RegExp(`^Created on \\d{1,2} [A-Z][a-z]{2} ${new Date().getFullYear()}$`));
+  } finally {
+    await context.close();
+  }
+});
+
+test('the channel name keeps its whole width with the right panel open', async ({ browser, playwright, isMobile }) => {
+  const longName = 'hdr-long-channel-name';
+  const id = (await omar.post<{ channel: { id: string } }>('/api/teams/engineering/channels', { name: longName })).channel.id;
+  const root = await postAs(omar, id, 'a root with a thread');
+  await postAs(omar, id, 'a reply', root.id);
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${longName}?panel=thread:${root.id}`, isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    await expect(page.locator('[data-panel-entry]')).toBeVisible(T);
+    await expect(button(page)).toContainText(longName, T);
+    const title = page.locator('[data-landmark="header"] .chead-title');
+    // nothing is clipped: the text is fully in the box, and the box is inside the screen
+    const fit = await button(page).evaluate((el) => ({ clipped: el.scrollWidth > el.clientWidth + 1, text: el.textContent ?? '' }));
+    expect(fit.clipped).toBe(false);
+    expect(fit.text).toContain(longName);
+    const box = (await title.boundingBox())!;
+    expect(box.width).toBeGreaterThan(longName.length * 5);
+    expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  } finally {
+    await context.close();
+  }
+});

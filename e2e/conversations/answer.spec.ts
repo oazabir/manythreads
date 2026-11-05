@@ -65,7 +65,7 @@ test('a bot finishes with an Answer: the sources the person may open, what was o
     await expect(answer).not.toContainText(leadsMessage);
 
     // whom it was for, and the suggestions (data only here)
-    await expect(page.getByTestId('answer-for')).toHaveText('Used your private notes · smart model')
+    await expect(page.getByTestId('answer-for')).toHaveText('Used your private notes · smart model');
     await expect(page.getByTestId('answer-for')).toHaveAttribute('title', 'Answered for Nadia · scoped · smart');
     await expect(page.getByTestId('answer-chips')).toContainText('@Coder');
     await expect(page.getByTestId('answer-followups')).toContainText('When does it open?');
