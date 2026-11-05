@@ -102,33 +102,35 @@ const TRANSPARENT = /^(rgba\(0, 0, 0, 0\)|transparent)$/;
 test.describe('desktop', () => {
   test.skip(({ isMobile }) => isMobile, 'the desktop layout; the phone has its own tests below');
 
-  test('a person with a heartbeat is Active beside the author name, with the status emoji; a person who never beat has the Offline ring; a bot has no dot', async ({ browser, playwright }) => {
+  test('a person with a heartbeat is Active on the corner of the avatar (P21-01), the status said in words and no longer drawn as an emoji; a person who never beat has the Offline ring; a bot has no dot', async ({ browser, playwright }) => {
     await beat(rafi);
     await beat(omar);
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
     try {
       for (const who of ['Rafi writes', 'Priya writes', 'Omar writes', 'Coder writes']) await expect(row(page, who)).toBeVisible(T);
 
-      // Rafi: Active (a filled dot), named in words, with the picture of his status
-      const rafiDot = dotOf(row(page, 'Rafi writes').locator('.who'));
+      // Rafi: Active (a filled dot), named in words, with his status in the words (the picture of the status is not drawn on a message row any more)
+      const rafiDot = dotOf(row(page, 'Rafi writes').locator('.av-wrap'));
       await expect(rafiDot).toHaveCount(1, T);
       await expect(rafiDot).toHaveAttribute('data-presence', 'online');
       await expect(rafiDot).toHaveAccessibleName(/^Active, .*Lunch/);
       await expect(rafiDot).toHaveAttribute('title', /^Active, .*Lunch/);
-      await expect(rafiDot.locator('.pdot-emoji')).toContainText('🍽');
+      await expect(rafiDot.locator('.pdot-emoji')).toHaveCount(0);
       expect(await fill(rafiDot)).not.toMatch(TRANSPARENT);
-      // it sits beside the name, on the same line
-      const [nameBox, dotBox] = [await row(page, 'Rafi writes').locator('.who b').boundingBox(), await rafiDot.boundingBox()];
-      expect(Math.abs((nameBox!.y + nameBox!.height / 2) - (dotBox!.y + dotBox!.height / 2))).toBeLessThan(10);
-      expect(dotBox!.x).toBeGreaterThanOrEqual(nameBox!.x);
+      // it sits on the bottom-right corner of the avatar, and no longer beside the name
+      await expect(row(page, 'Rafi writes').locator('.who').getByTestId('presence-dot')).toHaveCount(0);
+      const [avBox, dotBox] = [await row(page, 'Rafi writes').locator('.av-wrap .av').boundingBox(), await rafiDot.boundingBox()];
+      expect(dotBox!.x + dotBox!.width / 2).toBeGreaterThan(avBox!.x + avBox!.width / 2);
+      expect(dotBox!.y + dotBox!.height / 2).toBeGreaterThan(avBox!.y + avBox!.height / 2);
+      expect(dotBox!.x).toBeLessThan(avBox!.x + avBox!.width + 6);
 
       // Omar: Active with words only, so no picture is drawn, and the words are in the name
-      const omarDot = dotOf(row(page, 'Omar writes').locator('.who'));
+      const omarDot = dotOf(row(page, 'Omar writes').locator('.av-wrap'));
       await expect(omarDot).toHaveAccessibleName('Active, Heads down');
       await expect(omarDot.locator('.pdot-emoji')).toHaveCount(0);
 
       // Priya never beat: an empty ring, Offline
-      const priyaDot = dotOf(row(page, 'Priya writes').locator('.who'));
+      const priyaDot = dotOf(row(page, 'Priya writes').locator('.av-wrap'));
       await expect(priyaDot).toHaveAttribute('data-presence', 'offline');
       await expect(priyaDot).toHaveAccessibleName('Offline');
       expect(await fill(priyaDot)).toMatch(TRANSPARENT);
@@ -149,7 +151,7 @@ test.describe('desktop', () => {
     await beat(rafi, 'away');
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
     try {
-      const dot = dotOf(row(page, 'Rafi writes').locator('.who'));
+      const dot = dotOf(row(page, 'Rafi writes').locator('.av-wrap'));
       await expect(dot).toHaveAttribute('data-presence', 'away', T);
       await expect(dot).toHaveAccessibleName(/^Away, /);
       // half filled: a gradient, not a flat fill and not an empty ring
@@ -362,7 +364,7 @@ test.describe('desktop', () => {
       await beat(rafi);
       const nadiaPage = await openOn(browser, playwright, stack, 'nadia', `/t/engineering/c/${chan.name}`);
       try {
-        const dot = dotOf(row(nadiaPage.page, 'Rafi writes').locator('.who'));
+        const dot = dotOf(row(nadiaPage.page, 'Rafi writes').locator('.av-wrap'));
         await expect(dot).toHaveAccessibleName(/^Active, .*Lunch, Out of office$/, T);
         await row(nadiaPage.page, 'Rafi writes').getByTestId('profile-open').click();
         const card = nadiaPage.page.getByTestId('profile-card');
@@ -382,7 +384,7 @@ test.describe('desktop', () => {
         expect((await meOf(rafi)).outOfOffice).toBeNull();
         await beat(rafi);
         await nadiaPage.page.reload();
-        await expect(dotOf(row(nadiaPage.page, 'Rafi writes').locator('.who'))).toHaveAccessibleName(/^Active, .*Lunch$/, T);
+        await expect(dotOf(row(nadiaPage.page, 'Rafi writes').locator('.av-wrap'))).toHaveAccessibleName(/^Active, .*Lunch$/, T);
         await row(nadiaPage.page, 'Rafi writes').getByTestId('profile-open').click();
         await expect(nadiaPage.page.getByTestId('profile-card')).toBeVisible();
         await expect(nadiaPage.page.getByTestId('profile-ooo')).toHaveCount(0);
@@ -431,7 +433,7 @@ test.describe('phone', () => {
     try {
       const mine = row(page, 'Rafi writes');
       await expect(mine).toBeVisible(T);
-      const dot = dotOf(mine.locator('.who'));
+      const dot = dotOf(mine.locator('.av-wrap'));
       await expect(dot).toHaveAttribute('data-presence', 'online', T);
       await expect(dot).toHaveAccessibleName(/^Active, .*Out at lunch/);
       expect(await noSidewaysScroll(page)).toBe(true);
