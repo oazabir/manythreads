@@ -73,8 +73,7 @@ test('click the body of a message with replies to open its thread; controls, lin
     await page.mouse.up();
     expect(await page.evaluate(() => window.getSelection()?.toString() ?? '')).not.toBe('');
     await expectNoPanel(page);
-    // a click elsewhere clears the selection
-    await plainRow.locator('.txt').click();
+    // clear the selection (a click on the plain row would toggle its tap bar, which is checked below)
     await page.evaluate(() => window.getSelection()?.removeAllRanges());
 
     // a double click selects a word. The browser sends click detail=1 first, so that first click may open the thread (accepted); never more than once

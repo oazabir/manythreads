@@ -51,7 +51,7 @@ test('drawer, channel, thread sheet, send: no sideways scroll anywhere', async (
     expect(await noSidewaysScroll(page)).toBe(true);
 
     // a thread is a full sheet over the channel
-    await page.locator(`[data-message-id="${root}"]`).getByRole('button', { name: /1 reply/ }).click();
+    await page.locator(`[data-message-id="${root}"]`).getByRole('button', { name: /\d+ repl(y|ies)/ }).click();
     const sheet = page.locator('[data-landmark="right-panel"]');
     await expect(page.getByTestId('thread-view')).toBeVisible();
     expect(await sheet.boundingBox()).toMatchObject({ x: 0, y: 0, width: PHONE.width, height: PHONE.height });
@@ -78,9 +78,9 @@ test('drawer, channel, thread sheet, send: no sideways scroll anywhere', async (
 test('tapping the body of a message with replies opens its thread as a full sheet; one without replies shows its bar', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/c/dev', { viewport: PHONE, mobile: true });
   try {
-    const row = page.locator(`[data-message-id="${root}"]`);
+    const row = page.getByTestId('channel-view').locator(`[data-message-id="${root}"]`); // not the same message inside the sheet, once it is open
     await expect(row).toBeVisible();
-    await row.locator('.txt').first().tap({ position: { x: 8, y: 8 } });
+    await row.locator('.txt').first().tap({ position: { x: 150, y: 14 } }); // plain text, away from the name button above (a touch snaps to the nearest button)
     const sheet = page.locator('[data-landmark="right-panel"]');
     await expect(page.getByTestId('thread-view')).toHaveAttribute('data-root-id', root);
     expect(await sheet.boundingBox()).toMatchObject({ x: 0, y: 0, width: PHONE.width, height: PHONE.height });
@@ -90,14 +90,14 @@ test('tapping the body of a message with replies opens its thread as a full shee
     await expect(sheet).toBeHidden();
     // a message nobody answered still opens its bar on a tap, and opens no thread
     const plain = messagesIn(page).filter({ hasText: 'ready when you are' }).first();
-    await plain.locator('.txt').first().tap({ position: { x: 8, y: 8 } });
+    await plain.locator('.txt').first().tap({ position: { x: 150, y: 14 } }); // past the @nadia chip, which has a click of its own
     await expect(plain).toHaveClass(/tapped/);
     await expect(page.getByTestId('thread-view')).toHaveCount(0);
     expect(await noSidewaysScroll(page)).toBe(true);
     // the root message inside the sheet still opens its bar on a tap
-    await row.getByRole('button', { name: /1 reply/ }).tap();
+    await row.getByRole('button', { name: /\d+ repl(y|ies)/ }).tap();
     const inSheet = page.getByTestId('thread-view').locator(`[data-message-id="${root}"]`);
-    await inSheet.locator('.txt').first().tap({ position: { x: 8, y: 8 } });
+    await inSheet.locator('.txt').first().tap({ position: { x: 150, y: 14 } });
     await expect(inSheet).toHaveClass(/tapped/);
   } finally {
     await context.close();
