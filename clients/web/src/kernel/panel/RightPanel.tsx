@@ -1,4 +1,5 @@
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { flushSync } from 'react-dom';
 import './builtins';
 import { BackIcon, CloseIcon, ExpandIcon, RestoreIcon } from '../../shell/icons';
 import { useNarrow } from '../../shell/useNarrow';
@@ -22,7 +23,9 @@ export function RightPanel() {
   const isThread = top?.type === 'thread';
   // a narrower window clamps the kept width again; the panel closing, or showing something that is not a thread, ends the expanded view
   useEffect(() => {
-    const on = (): void => setViewport(window.innerWidth);
+    // Rendered at once, before the browser lays the frame out: a layout that waited a frame would squeeze the channel beside a 500 px panel to
+    // ~100 px, and its message list would measure every row at that width (and lose the reader's place).
+    const on = (): void => flushSync(() => setViewport(window.innerWidth));
     window.addEventListener('resize', on);
     return () => window.removeEventListener('resize', on);
   }, []);
