@@ -120,7 +120,7 @@ test('setup: a run of three, a long message, a root answered by another person, 
 });
 
 test('P21-01 desktop: one avatar per run, the gutter time on hover with the full date, presence on the avatar corner', async () => {
-  const avatars = async (key: string): Promise<number> => row(key).locator('.av').count();
+  const avatars = async (key: string): Promise<number> => row(key).locator('.av:not(.rp-avs .av)').count();
   expect(await avatars('run1'), 'first of the run has the avatar').toBe(1);
   expect(await avatars('run2'), 'second has none').toBe(0);
   expect(await avatars('run3'), 'third has none').toBe(0);
@@ -196,7 +196,7 @@ test('phone 390x844: the same run, a tap shows the gutter time, Show more, reply
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/t/engineering/c/${chanName}`);
   await expect(row('run1')).toBeVisible(T);
-  expect(await row('run2').locator('.av').count()).toBe(0);
+  expect(await row('run2').locator('.av:not(.rp-avs .av)').count()).toBe(0);
   await shoot('08-phone-channel');
   await row('run2').locator('.txt').click({ position: { x: 4, y: 4 } });
   await expect(row('run2').locator('.run-time')).toHaveCSS('opacity', '1');
