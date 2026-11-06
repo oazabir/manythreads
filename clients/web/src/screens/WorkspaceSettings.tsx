@@ -1,11 +1,17 @@
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { isApiError } from '../api/client';
-import { fetchTeamTags, fetchTeams, fetchWorkspace, fetchWorkspaceMembers, updateWorkspace } from '../api/endpoints';
+import { fetchTeamTags, fetchTeams, fetchWorkspace, fetchWorkspaceMembers, requestPasswordReset, updateWorkspace, updateWorkspaceMember } from '../api/endpoints';
 import { useSession, useSessionState } from '../app/session';
 import { useQuery } from '../app/useQuery';
 import { QueryView } from '../components/states';
-import { Alert, Field, Notice, Time, Toggle } from '../components/ui';
-import type { UpdateWorkspaceRequest, WorkspaceSettings } from '@manythreads/shared';
+import { Dialog } from '../components/Dialog';
+import { Alert, Avatar, Field, Notice, Time, Toggle } from '../components/ui';
+import { sayToast } from '../kernel/toast';
+import { AddIcon, SearchIcon } from '../shell/icons';
+import type { ListWorkspaceMembersResponse, UpdateWorkspaceRequest, WorkspaceRole, WorkspaceSettings } from '@manythreads/shared';
+import { InviteDialog } from './InviteDialog';
+import { MoreMenu, type MoreItem } from './bots/MoreMenu';
+import { filterMembers, lastActiveText } from './members';
 import { PageHeader } from '../components/PageHeader';
 
 export function WorkspaceGeneral() {
@@ -94,36 +100,132 @@ export function WorkspaceGeneral() {
   );
 }
 
+type Member = ListWorkspaceMembersResponse['members'][number];
+const ROLE_CHOICES: ReadonlyArray<{ role: WorkspaceRole; label: string; hint: string }> = [
+  { role: 'owner', label: 'Owner', hint: 'Everything an admin can do, and can make or remove other owners.' },
+  { role: 'admin', label: 'Admin', hint: 'Changes workspace settings and manages people.' },
+  { role: 'member', label: 'Member', hint: 'Works in the teams they belong to.' },
+  { role: 'guest', label: 'Guest', hint: 'Sees only the channels they were given.' },
+];
+
 export function Members() {
+  const session = useSession();
   const q = useQuery('members', fetchWorkspaceMembers);
+  const [search, setSearch] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [changing, setChanging] = useState<Member | null>(null);
+  const searchId = useId();
+
+  const sendReset = (m: Member): void => {
+    requestPasswordReset(m.email).then(
+      () => sayToast(`A password reset link is on its way to ${m.email}.`, { testId: 'member-note' }),
+      (e: unknown) => sayToast(isApiError(e) ? e.message : 'Could not send the reset link. Try again.', { testId: 'member-note' }),
+    );
+  };
+  const menuFor = (m: Member): ReadonlyArray<MoreItem> => {
+    const items: MoreItem[] = [];
+    // you do not change your own role here (it could lock you out), and only an owner touches an owner
+    if (m.personId !== session.person.id && (m.role !== 'owner' || session.role === 'owner')) {
+      items.push({ label: 'Change role', testId: 'member-change-role', onSelect: () => setChanging(m) });
+    }
+    items.push({ label: 'Send a password reset', testId: 'member-reset', onSelect: () => sendReset(m) });
+    return items;
+  };
+
   return (
     <>
-      <PageHeader title="Members" />
+      <PageHeader
+        title="Members"
+        description={q.status === 'ok' ? `${q.data.members.length} ${q.data.members.length === 1 ? 'person' : 'people'} in this workspace.` : undefined}
+        actions={<button type="button" className="btn primary" data-testid="invite-people" onClick={() => setInviting(true)}><AddIcon size={14} /> Invite people</button>}
+      />
       <QueryView q={q}>
-        {({ members }) => (
-          <>
-            <p className="lede">{members.length} people in this workspace.</p>
-            <div className="block table-wrap" data-landmark="members-table">
-              <table className="table">
-                <thead>
-                  <tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Tags</th></tr>
-                </thead>
-                <tbody>
-                  {members.map((m) => (
-                    <tr key={m.personId}>
-                      <td data-label="Name">{m.displayName}</td>
-                      <td data-label="Email" className="d-cell">{m.email}</td>
-                      <td data-label="Role"><span className={`kind ${m.role === 'guest' ? 'ru' : 'h'}`}>{m.role}</span></td>
-                      <td data-label="Tags">{m.tags.length ? m.tags.map((t) => <span key={t} className="tagx">{t}</span>) : <span className="faint">none</span>}</td>
+        {({ members }) => {
+          const shown = filterMembers(members, search);
+          return (
+            <>
+              <div className="mem-search">
+                <label htmlFor={searchId} className="sr-only">Search people</label>
+                <span className="mem-search-ico" aria-hidden="true"><SearchIcon size={14} /></span>
+                <input id={searchId} className="mem-input" type="search" placeholder="Search by name or email" value={search} onChange={(e) => setSearch(e.target.value)} autoComplete="off" data-testid="members-search" />
+              </div>
+              <div className="block mem-wrap" data-landmark="members-table">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Name</th><th scope="col">Email</th><th scope="col">Role</th><th scope="col">Tags</th><th scope="col">Last active</th>
+                      <th scope="col"><span className="sr-only">Actions</span></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+                  </thead>
+                  <tbody>
+                    {shown.map((m) => (
+                      <tr key={m.personId} data-testid="member-row">
+                        <td data-label="Name" className="mem-c"><span className="mem-name"><Avatar name={m.displayName} personId={m.personId} /><span>{m.displayName}</span></span></td>
+                        <td data-label="Email" className="mem-c d-cell">{m.email}</td>
+                        <td data-label="Role" className="mem-c"><span className={`kind ${m.role === 'guest' ? 'ru' : 'h'}`}>{m.role}</span></td>
+                        <td data-label="Tags" className="mem-c">{m.tags.length ? m.tags.map((t) => <span key={t} className="tagx">{t}</span>) : <span className="faint">none</span>}</td>
+                        <td data-label="Last active" className="mem-c d-cell" title={m.lastActiveAt ?? undefined}><span data-vt-mask>{lastActiveText(m.lastActiveAt)}</span></td>
+                        <td className="mem-c mem-act"><MoreMenu compact label={`Options for ${m.displayName}`} testId="member-menu" items={menuFor(m)} /></td>
+                      </tr>
+                    ))}
+                    {shown.length === 0 ? <tr><td colSpan={6} className="faint" data-testid="members-none">No one matches "{search.trim()}".</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          );
+        }}
       </QueryView>
+      {inviting ? <InviteDialog onClose={() => setInviting(false)} /> : null}
+      {changing ? <ChangeRoleDialog member={changing} onClose={() => setChanging(null)} onChanged={q.reload} /> : null}
     </>
+  );
+}
+
+function ChangeRoleDialog({ member, onClose, onChanged }: { member: Member; onClose: () => void; onChanged: () => void }) {
+  const session = useSession();
+  const roleId = useId();
+  const [role, setRole] = useState<WorkspaceRole>(member.role);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const choices = ROLE_CHOICES.filter((c) => c.role !== 'owner' || session.role === 'owner');
+
+  async function save(): Promise<void> {
+    setError(null);
+    setBusy(true);
+    try {
+      await updateWorkspaceMember(member.personId, { role });
+      sayToast(`${member.displayName} is now ${role === 'admin' || role === 'owner' ? 'an' : 'a'} ${role}.`, { testId: 'member-note' });
+      onChanged();
+      onClose();
+    } catch (e) {
+      setError(isApiError(e) ? e.message : 'Could not change the role. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      title={`Change role for ${member.displayName}`}
+      onClose={onClose}
+      testId="change-role-dialog"
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn primary" disabled={busy || role === member.role} data-testid="change-role-save" onClick={() => void save()}>Save role</button>
+        </>
+      }
+    >
+      <div className="fld">
+        <label htmlFor={roleId}>Role</label>
+        <select id={roleId} value={role} onChange={(e) => setRole(e.target.value as WorkspaceRole)} data-testid="change-role-select">
+          {choices.map((c) => <option key={c.role} value={c.role}>{c.label}</option>)}
+        </select>
+        <div className="fld-hint">{ROLE_CHOICES.find((c) => c.role === role)?.hint}</div>
+      </div>
+      {error ? <Alert>{error}</Alert> : null}
+    </Dialog>
   );
 }
 

@@ -14,6 +14,8 @@ export const WorkspaceMemberSummary = z.object({
   role: WorkspaceRole,
   tags: z.array(RoleTagName),
   joinedAt: IsoDateTime,
+  /** The newest time any of their sessions was used here (null: they have never signed in). */
+  lastActiveAt: IsoDateTime.nullable(),
 });
 export type WorkspaceMemberSummary = z.infer<typeof WorkspaceMemberSummary>;
 

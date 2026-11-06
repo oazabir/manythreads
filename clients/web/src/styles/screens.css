@@ -360,9 +360,20 @@ a.btn.primary {
 .settings .tabs {
   display: flex;
   flex-direction: column;
-  padding: 16px 10px;
   border-right: 1px solid var(--rule);
   background: var(--shell);
+}
+
+/* the navigation stays in view while the page scrolls; when it is taller than the screen it scrolls inside itself */
+.tabs-sticky {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 100vh;
+  padding: 16px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .tabs-brand {
@@ -372,7 +383,9 @@ a.btn.primary {
 }
 
 .tab {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   color: var(--mute);
@@ -388,6 +401,21 @@ a.btn.primary {
   background: var(--nav-on);
   color: var(--ink);
   font-weight: 500;
+}
+
+.tab-ico {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+}
+
+.tab.on .tab-ico {
+  color: var(--ink);
+}
+
+.tab-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .tab.faint {
@@ -1265,5 +1293,80 @@ a.btn.primary {
 @media (width <= 640px) {
   .tpls {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---- Members (P21-19): search, avatar + name, last active, a row menu ---- */
+.mem-search {
+  position: relative;
+  max-width: 340px;
+  margin-bottom: 14px;
+}
+
+.mem-search-ico {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  display: inline-flex;
+  color: var(--faint);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.mem-input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-body);
+}
+
+/* the row menu opens over the table's edge, so this block does not clip (a plain .block does) */
+.block.mem-wrap {
+  overflow: visible;
+}
+
+.mem-wrap .table thead th:first-child {
+  border-top-left-radius: calc(var(--radius-md) - 1px);
+}
+
+.mem-wrap .table thead th:last-child {
+  border-top-right-radius: calc(var(--radius-md) - 1px);
+}
+
+.mem-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.mem-wrap .mem-c {
+  vertical-align: middle;
+}
+
+.table td.mem-act {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (width <= 600px) {
+  .mem-search {
+    max-width: none;
+  }
+
+  .mem-wrap .table td.mem-act {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 6px;
+  }
+
+  .mem-wrap .table td.mem-act::before {
+    content: none;
   }
 }

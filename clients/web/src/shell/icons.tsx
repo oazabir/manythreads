@@ -9,6 +9,8 @@ import {
 } from '@proicons/react';
 import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon } from '@proicons/react';
 import { CalendarIcon, ClipboardIcon, PersonMultipleIcon, VideoClipIcon } from '@proicons/react';
+import { ArrowDownloadIcon, BrainIcon, ComputerIcon, DatabaseIcon, GlobeIcon, HomeIcon, KeyIcon, LayersIcon, LockOpenIcon, PersonIcon, PulseIcon, RocketIcon, ShieldCheckmarkIcon, ShieldIcon, TaskListIcon } from '@proicons/react';
+import { EyeIcon, EyeOffIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -115,3 +117,27 @@ export const RecipeCustomersIcon = proIcon(ChatQuestionIcon, 18);
 export const RecipeEngineeringIcon = proIcon(CodeIcon, 18);
 export const RecipePeopleIcon = proIcon(PersonMultipleIcon, 18);
 export const RecipeContentIcon = proIcon(VideoClipIcon, 18);
+
+// the settings navigation: one icon for each page
+export const SettingsGeneralIcon = proIcon(HomeIcon, 16);
+export const SettingsMembersIcon = proIcon(PersonMultipleIcon, 16);
+export const SettingsRolesIcon = proIcon(KeyIcon, 16);
+export const SettingsSignInIcon = proIcon(LockOpenIcon, 16);
+export const SettingsLlmIcon = proIcon(SparkleIcon, 16);
+export const SettingsRunnersIcon = proIcon(ComputerIcon, 16);
+export const SettingsMemoryIcon = proIcon(BrainIcon, 16);
+export const SettingsDataIcon = proIcon(ShieldCheckmarkIcon, 16);
+export const SettingsDomainIcon = proIcon(GlobeIcon, 16);
+export const SettingsAuditIcon = proIcon(TaskListIcon, 16);
+export const SettingsSetupIcon = proIcon(RocketIcon, 16);
+export const SettingsHealthIcon = proIcon(PulseIcon, 16);
+export const SettingsUsageIcon = proIcon(DatabaseIcon, 16);
+export const SettingsImportIcon = proIcon(ArrowDownloadIcon, 16);
+export const SettingsTeamsIcon = proIcon(BuildingMultipleIcon, 16);
+export const SettingsTemplateIcon = proIcon(LayersIcon, 16);
+export const SettingsProfileIcon = proIcon(PersonIcon, 16);
+export const SettingsSecurityIcon = proIcon(ShieldIcon, 16);
+
+// the Show password button: the eye is open while the password is hidden, crossed out while it is shown
+export const ShowPasswordIcon = proIcon(EyeIcon, 18);
+export const HidePasswordIcon = proIcon(EyeOffIcon, 18);

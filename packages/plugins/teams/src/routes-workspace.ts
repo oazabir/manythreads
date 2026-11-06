@@ -46,6 +46,7 @@ interface MemberRow extends Record<string, unknown> {
   role: string;
   tags: string[];
   created_at: Date;
+  last_active_at: Date | null;
 }
 
 export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): void {
@@ -57,6 +58,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
       if (!(await isWorkspaceAdmin(tx))) throw notFound('Not found');
       const res = await tx.query<MemberRow>(
         `SELECT p.id AS person_id, p.display_name, p.primary_email, p.status, wm.role, wm.created_at,
+                (SELECT max(s.last_seen_at) FROM app.sessions s WHERE s.person_id = p.id AND s.workspace_id = wm.workspace_id) AS last_active_at,
                 coalesce((SELECT array_agg(r.name ORDER BY r.name) FROM app.role_members rm JOIN app.roles r ON r.id = rm.role_id
                           WHERE rm.person_id = p.id), '{}'::text[]) AS tags
          FROM app.workspace_members wm JOIN app.people p ON p.id = wm.person_id
@@ -73,6 +75,7 @@ export function registerWorkspaceRoutes(ctx: PluginContext, { emit }: Deps): voi
             role: r.role,
             tags: r.tags,
             joinedAt: r.created_at.toISOString(),
+            lastActiveAt: r.last_active_at ? r.last_active_at.toISOString() : null,
           })),
         }),
       );
