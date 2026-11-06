@@ -28,14 +28,14 @@ export function registerActivityRoute(ctx: PluginContext): void {
   });
 }
 
-/** Tell the open tabs of a team's people to read the activity again. A hint only: it carries the team and nothing about a card or a bot. */
+/** Tell the open tabs of a team's people (a push goes to a person id, which is the actor's ref_id, not the actor id) to read the activity again. A hint only: it carries the team and nothing about a card or a bot. */
 async function pushActivityChanged(ctx: PluginContext, tx: PluginTx, teamId: string): Promise<void> {
   const people = (
-    await tx.query<{ actor_id: string }>(
-      `SELECT m.actor_id FROM app.team_members m JOIN app.actors a ON a.id = m.actor_id AND a.kind = 'person' WHERE m.team_id = $1::uuid`,
+    await tx.query<{ person_id: string }>(
+      `SELECT a.ref_id AS person_id FROM app.team_members m JOIN app.actors a ON a.id = m.actor_id AND a.kind = 'person' WHERE m.team_id = $1::uuid`,
       [teamId],
     )
-  ).rows.map((r) => r.actor_id);
+  ).rows.map((r) => r.person_id);
   if (people.length === 0) return;
   await ctx.realtime.pushToPeople(tx, people, cardActivityChangedPushType, CardActivityChangedPush.parse({ teamId }));
 }
