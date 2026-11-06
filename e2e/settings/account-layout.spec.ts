@@ -55,6 +55,10 @@ test('/account and its old anchors land on the page that holds the section', asy
     await expect(page.getByRole('heading', { level: 2, name: 'What can interrupt you' })).toBeInViewport();
     await page.goto('/account#' + 'acc-sessions');
     await expect(page).toHaveURL(new RegExp('/account/security' + '#' + 'acc-sessions$'));
+    await page.goto('/account#' + 'acc-methods');
+    await expect(page).toHaveURL(new RegExp('/account/security' + '#' + 'acc-methods$'));
+    // the section the old link names is scrolled into view after the redirect
+    await expect(page.getByRole('heading', { level: 2, name: 'Sign-in methods' })).toBeInViewport();
     await page.goto('/account#' + 'acc-connections');
     await expect(page).toHaveURL(new RegExp('/account/connections' + '#' + 'acc-connections$'));
   } finally {
