@@ -60,6 +60,38 @@ export interface TeamRunnerInfo {
   podNode?: string | null;
 }
 
+/** A bot placed on a pod runner (`placement.runs_on`), as the pod controller needs it to write the bridge's profile for it. */
+export interface PodRunnerBot {
+  teamId: string;
+  teamSlug: string;
+  botSlug: string;
+}
+
+/** One Claude Code runner, as the `claude-pods` controller reads it (P19-05). No key, no address: those stay in the catalog. */
+export interface PodRunnerInfo {
+  id: string;
+  workspaceId: string;
+  name: string;
+  enabled: boolean;
+  /** The machine the admin chose, or null (the cluster chooses). */
+  node: string | null;
+  /** Runs at once; null = the controller's default. */
+  maxConcurrent: number | null;
+  /** The teams on the runner's list (the list is the permission); empty with `allTeams` true means every team. */
+  teams: { id: string; slug: string }[];
+  allTeams: boolean;
+  /** The bots placed on the runner, from the teams it serves. */
+  bots: PodRunnerBot[];
+}
+
+/** What the controller found about a runner's pod; written to the catalog's status column. */
+export interface PodRunnerState {
+  runnerId: string;
+  status: 'waiting_for_sign_in' | 'starting' | 'ready' | 'waiting_for_node' | 'moving' | 'not_set_up';
+  /** One plain sentence for the admin page, or null. Never a cluster message. */
+  detail: string | null;
+}
+
 export interface BotRunnersProvider extends ProviderImpl {
   id: 'bot.runners';
   /**
@@ -80,6 +112,10 @@ export interface BotRunnersProvider extends ProviderImpl {
   kindOf(tx: PluginTx, query: { teamId: string; runner: string }): Promise<{ kind: RunnerTarget['kind']; modelAlias: string | null } | null>;
   /** The default runner and the pod runners that apply to a team (P19-03). Runs as the system actor. */
   teamRunners(query: { teamId: string }): Promise<TeamRunnerInfo>;
+  /** The runners of one pod kind (P19-05): the Claude Code pod controller asks for its list here, so it never reads the catalog's tables. Runs as the system actor. */
+  podRunners(query: { kind: 'claude_cli' }): Promise<PodRunnerInfo[]>;
+  /** The pod controller reports what it found; the catalog stores it as the runner's status. A runner the admin has paused or that needs a sign-in keeps that state. */
+  reportPodState(state: PodRunnerState): Promise<void>;
 }
 
 /**

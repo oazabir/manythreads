@@ -21,6 +21,7 @@ export * from './project-credentials.ts';
 export * from './inbox.ts';
 export * from './deploy.ts';
 export * from './runner-nodes.ts';
+export * from './claude-pods.ts';
 export * from './media.ts';
 export * from './http.ts';
 export * from './lockout.ts';

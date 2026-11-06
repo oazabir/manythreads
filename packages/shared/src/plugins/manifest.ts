@@ -40,6 +40,8 @@ export const EXTENSION_POINTS = [
   'provider.bot.runners',
   // The machines (nodes) of the cluster and where the team Hermes pods stand on them (hermes-pods, P19-08): read by bot-runners for the admin's node picker.
   'provider.runner.nodes',
+  // Where the Claude Code runners' pods stand and the admin's confirmation of a move (claude-pods, P19-05): read by bot-runners, which never talks to the cluster itself.
+  'provider.claude.pods',
   // Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): read by memory-inbox, which has a plain fallback while no plugin provides it.
   'provider.inbox.distiller',
   // Checks a received bundle (another team's digest, or an OKF bundle) and files it under memory/shared/ without a model (memory-share, P8-25): read by memory-inbox.

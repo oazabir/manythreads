@@ -385,6 +385,19 @@ importers:
         specifier: ^8
         version: 8.23.1
 
+  packages/plugins/claude-pods:
+    dependencies:
+      '@manythreads/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@manythreads/shared':
+        specifier: workspace:*
+        version: link:../../shared
+    devDependencies:
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+
   packages/plugins/connections:
     dependencies:
       '@manythreads/sdk':

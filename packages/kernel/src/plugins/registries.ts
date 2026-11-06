@@ -74,6 +74,7 @@ export class ExtensionRegistries {
     presence: new ExtensionRegistry(),
     'bot.runners': new ExtensionRegistry(),
     'runner.nodes': new ExtensionRegistry(),
+    'claude.pods': new ExtensionRegistry(),
     'inbox.distiller': new ExtensionRegistry(),
     'inbox.importer': new ExtensionRegistry(),
     'deploy.step': new ExtensionRegistry(),

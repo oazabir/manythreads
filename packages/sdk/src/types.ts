@@ -77,6 +77,8 @@ export const PROVIDER_KINDS = [
   'bot.runners',
   /** The cluster's machines and where the team Hermes pods stand on them (hermes-pods): `RunnerNodesProvider` in ./runner-nodes.ts. */
   'runner.nodes',
+  /** Where the Claude Code runners' pods stand, and the admin's confirmation of a move (claude-pods): `ClaudePodsProvider` in ./claude-pods.ts. */
+  'claude.pods',
   /** Turns one inbox item's text into proposed memory concepts (the Archivist, P8-18): `InboxDistiller` in ./inbox.ts. */
   'inbox.distiller',
   /** Checks a received bundle and files it under memory/shared/ (memory-share, P8-25): `InboxImporter` in ./inbox.ts. */

@@ -1,4 +1,4 @@
-import type { BotRunnersProvider, PluginContext, PluginTx, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
+import type { BotRunnersProvider, PluginContext, PluginTx, PodRunnerInfo, PodRunnerState, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
 import { BotRunnerName, modelRunnerProblem } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 
@@ -171,6 +171,69 @@ export async function podNodesByTeam(
   return out;
 }
 
+/**
+ * The Claude Code runners with what their pod needs to be built: the machine, the concurrency, the teams on the list and the bots placed on them (P19-05). A runner open to every team
+ * serves every team of its workspace. Runs as the system actor; no key or address is read.
+ */
+export async function podRunners(ctx: PluginContext, query: { kind: 'claude_cli' }): Promise<PodRunnerInfo[]> {
+  return ctx.db.system(async (tx) => {
+    const runners = (
+      await tx.query<{ id: string; workspace_id: string; name: string; enabled: boolean; all_teams: boolean; node: string | null; max_concurrent: number | null }>(
+        'SELECT id, workspace_id, name, enabled, all_teams, node, max_concurrent FROM app.bot_runners WHERE kind = $1 ORDER BY workspace_id, name',
+        [query.kind],
+      )
+    ).rows;
+    const out: PodRunnerInfo[] = [];
+    for (const r of runners) {
+      const teams = (
+        await tx.query<{ id: string; slug: string }>(
+          r.all_teams
+            ? 'SELECT id, slug FROM app.teams WHERE workspace_id = $1::uuid AND archived_at IS NULL ORDER BY slug'
+            : 'SELECT t.id, t.slug FROM app.bot_runner_teams rt JOIN app.teams t ON t.id = rt.team_id WHERE rt.runner_id = $1::uuid AND t.archived_at IS NULL ORDER BY t.slug',
+          [r.all_teams ? r.workspace_id : r.id],
+        )
+      ).rows;
+      const bots =
+        teams.length === 0
+          ? []
+          : (
+              await tx.query<{ team_id: string; team_slug: string; bot_slug: string }>(
+                `SELECT b.team_id, t.slug AS team_slug, b.slug AS bot_slug
+                   FROM app.bots b JOIN app.teams t ON t.id = b.team_id
+                  WHERE b.team_id = ANY($1::uuid[]) AND b.status = 'active' AND b.placement ->> 'runs_on' = $2
+                  ORDER BY t.slug, b.slug`,
+                [teams.map((t) => t.id), r.name],
+              )
+            ).rows.map((b) => ({ teamId: b.team_id, teamSlug: b.team_slug, botSlug: b.bot_slug }));
+      out.push({ id: r.id, workspaceId: r.workspace_id, name: r.name, enabled: r.enabled, node: r.node, maxConcurrent: r.max_concurrent, teams, allTeams: r.all_teams, bots });
+    }
+    return out;
+  });
+}
+
+/** States the controller may overwrite. `paused` and `needs_sign_in` are decided elsewhere (a limit, a refused sign-in) and only a new sign-in or the clock clears them. */
+const POD_OWNED_STATES = ['not_set_up', 'waiting_for_sign_in', 'starting', 'ready', 'waiting_for_node', 'moving'];
+
+export async function reportPodState(ctx: PluginContext, state: PodRunnerState): Promise<void> {
+  await ctx.db.system(async (tx) => {
+    await tx.query(
+      `UPDATE app.bot_runners
+          SET status = $2, status_detail = $3, last_checked_at = now(), updated_at = now()
+        WHERE id = $1::uuid AND kind = 'claude_cli' AND status = ANY($4::text[])
+          AND (status, status_detail) IS DISTINCT FROM ($2, $3)`,
+      [state.runnerId, state.status, state.detail, POD_OWNED_STATES],
+    );
+  });
+}
+
 export function createBotRunnersProvider(ctx: PluginContext): BotRunnersProvider {
-  return { id: 'bot.runners', resolveRunner: (query) => resolveRunner(ctx, query), checkPlacement: (tx, query) => checkPlacement(tx, query), kindOf: (tx, query) => kindOf(tx, query), teamRunners: (query) => teamRunners(ctx, query) };
+  return {
+    id: 'bot.runners',
+    resolveRunner: (query) => resolveRunner(ctx, query),
+    checkPlacement: (tx, query) => checkPlacement(tx, query),
+    kindOf: (tx, query) => kindOf(tx, query),
+    teamRunners: (query) => teamRunners(ctx, query),
+    podRunners: (query) => podRunners(ctx, query),
+    reportPodState: (state) => reportPodState(ctx, state),
+  };
 }
