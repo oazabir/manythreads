@@ -12,6 +12,7 @@
     "test": "vitest run --root ../.. --project unit clients/web"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@manythreads/shared": "workspace:*",
     "@proicons/react": "4.13.7",
     "@tiptap/core": "^3.31.4",

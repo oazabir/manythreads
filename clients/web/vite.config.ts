@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defaultClientConditions, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { devFixtures } from './vite.dev-fixtures';
 
@@ -15,6 +15,13 @@ const proxy = {
 
 export default defineConfig({
   plugins: [react(), devFixtures()],
+  // The speech worker (src/speech/worker.ts) is a module worker and loads the model library with import(), so it needs the `es` format (the
+  // default `iife` cannot split code). The library is left out of dev pre-bundling: it picks its ONNX Runtime files by address at run time.
+  worker: { format: 'es' },
+  optimizeDeps: { exclude: ['@huggingface/transformers'] },
+  // ONNX Runtime Web has two builds: one with its script and a 21 MB `.wasm` file folded into the bundle, one that expects them to be served.
+  // We serve them ourselves (/models/ort/<revision>/, pinned and hash-checked by models.lock.json), so take the second: no second copy in the image.
+  resolve: { conditions: [...defaultClientConditions, 'onnxruntime-web-use-extern-wasm'] },
   server: {
     port: 5173,
     strictPort: true,
