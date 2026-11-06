@@ -5,3 +5,5 @@
 e2e
 docs
 tools
+# a developer's own `pnpm models:fetch` output: the image fetches (and checks) its own copy in the `models` stage
+clients/web/public/models

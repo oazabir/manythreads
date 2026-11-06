@@ -60,6 +60,16 @@ No CRDs of our own (D4). Postgres is a CNPG `Cluster` `manythreads-pg` (service 
 `manythreads-db-app` (generated once, kept across upgrades). LiteLLM and Hindsight are real workloads (below); Hermes is not a cluster workload (it runs on the host through a runner) and `hermes.enabled` only fails the render.
 nginx in the web image serves the SPA and proxies `/api`, `/healthz`, `/readyz`, `/ws` to `manythreads-server`.
 
+**Speech model files (PLAN P14-16).** The web image also carries the files the browser needs to turn a voice message into text on the person's own device
+(Whisper tiny and base, a voice-activity model, and the ONNX Runtime files that run them; about 140 MB). They are listed with their SHA-256 and size in
+`clients/web/models.lock.json`, downloaded while the image is built (the `models` stage of `deploy/docker/web.Dockerfile`, by `clients/web/scripts/fetch-models.mjs`,
+which refuses any file whose hash differs) and served at `/models/<name>/<revision>/...`. So **the image build needs network access to huggingface.co and
+cdn.jsdelivr.net** (a mirror: `MANYTHREADS_MODELS_HF_BASE`, `MANYTHREADS_MODELS_NPM_BASE`); the running site never contacts either. nginx sends these files with
+`Cache-Control: public, immutable` for a year (the revision is in the address, so a new model is a new address), and the service worker keeps them for offline reuse.
+The page policy allows `'wasm-unsafe-eval'` (compiling WebAssembly, not JavaScript `eval`) and the `Permissions-Policy` header allows the microphone and camera to this site only.
+To use a different model: change `revision`, set `sha256` and `bytes` to `PENDING`, run `pnpm models:fetch --pin`, compare with the upstream page, commit. `pnpm models:fetch`
+downloads the same files into `clients/web/public/models/` (not committed) for local development.
+
 **Bot tools stream (PLAN P14-22).** A bot's Hermes keeps `GET /mcp` (or `GET /api/mcp/bots/<id>`) open with `Accept: text/event-stream` for up to 30 minutes; the server sends a
 keepalive comment every 25 s and the header `X-Accel-Buffering: no`. The path to the server must not buffer it and must not time out before 30 minutes. In the chart: the web pod's nginx has
 `proxy_buffering off` on `/mcp` and reads `web.mcpStreamTimeout` (default `1900s`, env `MANYTHREADS_MCP_STREAM_TIMEOUT`; keep it over `1800s`); `/api/` already waits 3600 s. Traefik, the k3s

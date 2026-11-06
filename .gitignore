@@ -13,3 +13,4 @@ temp/
 .codegraph/
 clients/desktop/src-tauri/target/
 clients/desktop/src-tauri/gen/
+clients/web/public/models/

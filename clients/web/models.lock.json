@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "note": "Speech model files served at /models/<name>/<revision>/<path>. Fetched and checked by clients/web/scripts/fetch-models.mjs (pnpm models:fetch). To change a model: set the new revision, set sha256 and bytes to PENDING, run the script with --pin, compare the values with the upstream page, commit.",
+  "sources": [
+    {
+      "name": "whisper-tiny",
+      "kind": "huggingface",
+      "repo": "onnx-community/whisper-tiny",
+      "revision": "ff4177021cc41f7db950912b73ea4fdf7d01d8e7",
+      "licence": "Apache-2.0 (openai/whisper-tiny card)",
+      "files": [
+        {
+          "path": "config.json",
+          "sha256": "46aeea0a406afbeb563fc8e59ca10609203df4299af6a83f73752fef369efd2d",
+          "bytes": 2243
+        },
+        {
+          "path": "generation_config.json",
+          "sha256": "f5c67e5a4f7102f8cb4d058bc95da276bbc19eeec997267c3bb0f25ef68facd1",
+          "bytes": 3772
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+          "bytes": 339
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+          "bytes": 2480466
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce",
+          "bytes": 282683
+        },
+        {
+          "path": "onnx/encoder_model_quantized.onnx",
+          "sha256": "2af4a414ca47aa30f61246017e5fe82b0a8d229281d1255ba666a2a7f6b84d19",
+          "bytes": 10124990
+        },
+        {
+          "path": "onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "25e807a962b6349356d0ea5d0dfe530b7e5bf0e2a484aeca0359d03143faddd3",
+          "bytes": 30719241
+        }
+      ]
+    },
+    {
+      "name": "whisper-base",
+      "kind": "huggingface",
+      "repo": "onnx-community/whisper-base",
+      "revision": "27a07b4b52b3a4c5886134bb4320e93e1a4bbc7c",
+      "licence": "Apache-2.0 (onnx-community/whisper-base card)",
+      "files": [
+        {
+          "path": "config.json",
+          "sha256": "f4d0608f7d918166da7edb3e188de5ef1bfe70d9802e785d271fd88111e9cf4b",
+          "bytes": 2243
+        },
+        {
+          "path": "generation_config.json",
+          "sha256": "61070cf8de25b1e9256e8e102ded49d8d24a8369ed36ef84fdf21549e68125a0",
+          "bytes": 3832
+        },
+        {
+          "path": "preprocessor_config.json",
+          "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+          "bytes": 339
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+          "bytes": 2480466
+        },
+        {
+          "path": "tokenizer_config.json",
+          "sha256": "2e036e4dbacfdeb7242c7d4ec4149f4a16e86026048f94d1637e3a8ee9c6a573",
+          "bytes": 282682
+        },
+        {
+          "path": "onnx/encoder_model_quantized.onnx",
+          "sha256": "5862993336bf33acd23736071aae2b32261d3b1b2f37780194460d4ef974dd46",
+          "bytes": 23201314
+        },
+        {
+          "path": "onnx/decoder_model_merged_quantized.onnx",
+          "sha256": "fa3ef9902734ce5ae6f9ef2bdb2ba9a6c4b5785b09f4f420ce036573dc9d090b",
+          "bytes": 53693315
+        }
+      ]
+    },
+    {
+      "name": "silero-vad",
+      "kind": "huggingface",
+      "repo": "onnx-community/silero-vad",
+      "revision": "e71cae966052b992a7eca6b17738916ce0eca4ec",
+      "licence": "MIT",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+          "bytes": 1075
+        },
+        {
+          "path": "onnx/model.onnx",
+          "sha256": "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808",
+          "bytes": 2243022
+        }
+      ]
+    },
+    {
+      "name": "ort",
+      "kind": "npm",
+      "package": "onnxruntime-web",
+      "revision": "1.22.0-dev.20250409-89f8206ba4",
+      "licence": "MIT",
+      "files": [
+        {
+          "path": "dist/ort-wasm-simd-threaded.jsep.mjs",
+          "serve": "ort-wasm-simd-threaded.jsep.mjs",
+          "sha256": "08fb86ec433c78bfb032c5d84a68b8e8e5a8d81268fa39e24314179a5767a5b9",
+          "bytes": 44484
+        },
+        {
+          "path": "dist/ort-wasm-simd-threaded.jsep.wasm",
+          "serve": "ort-wasm-simd-threaded.jsep.wasm",
+          "sha256": "c46655e8a94afc45338d4cb2b840475f88e5012d524509916e505079c00bfa39",
+          "bytes": 21596019
+        }
+      ]
+    }
+  ]
+}

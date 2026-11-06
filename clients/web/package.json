@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "models:fetch": "node scripts/fetch-models.mjs",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run --root ../.. --project unit clients/web"
   },

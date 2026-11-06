@@ -5,8 +5,11 @@
  * What it does, and no more:
  *  - on a push: read the small JSON the server sent (a title, one line of body, a tag and a path), and show it as a system notification; if a tab of
  *    this site is open, visible and focused, show nothing (the page already tells the person);
- *  - on a click: close the notification and bring up the site at the path the push named, but only a path of this site that opens a message.
- * It caches nothing, intercepts no requests and keeps no data.
+ *  - on a click: close the notification and bring up the site at the path the push named, but only a path of this site that opens a message;
+ *  - on a fetch of a speech model file (PLAN P14-16): a GET under `/models/` is answered from the cache `manythreads-models-v1` when it is there, and
+ *    otherwise fetched, kept (only a complete 200 answer) and returned. The address carries the model's pinned revision
+ *    (`/models/<name>/<revision>/...`), so a cached file is never stale; when a new revision of a model arrives, the older revisions of that same
+ *    model are dropped from the cache. Nothing else is cached or intercepted, and no personal data is kept.
  */
 (function () {
   'use strict';
@@ -42,6 +45,48 @@
       return '/';
     }
   };
+
+  var MODEL_CACHE = 'manythreads-models-v1';
+
+  /** `/models/<name>/<revision>/...` of this site, or null. */
+  var modelPath = function (url) {
+    if (url.origin !== self.location.origin) return null;
+    var parts = url.pathname.split('/');
+    return parts.length >= 5 && parts[0] === '' && parts[1] === 'models' && parts[2] && parts[3] ? { name: parts[2], revision: parts[3] } : null;
+  };
+
+  /** After a new revision of a model is stored, the cached files of that model's other revisions go. */
+  var dropOldRevisions = function (cache, keep) {
+    return cache.keys().then(function (requests) {
+      return Promise.all(
+        requests.map(function (r) {
+          var other = modelPath(new URL(r.url));
+          return other && other.name === keep.name && other.revision !== keep.revision ? cache.delete(r) : undefined;
+        }),
+      );
+    });
+  };
+
+  self.addEventListener('fetch', function (event) {
+    var request = event.request;
+    if (request.method !== 'GET' || request.headers.has('range')) return;
+    var model = modelPath(new URL(request.url));
+    if (!model) return;
+    event.respondWith(
+      caches.open(MODEL_CACHE).then(function (cache) {
+        return cache.match(request).then(function (hit) {
+          if (hit) return hit;
+          return fetch(request).then(function (response) {
+            // only a whole, successful answer is worth keeping (a 404, a redirect or a partial answer is not)
+            if (response.status !== 200) return response;
+            var copy = response.clone();
+            event.waitUntil(cache.put(request, copy).then(function () { return dropOldRevisions(cache, model); }, function () { return undefined; }));
+            return response;
+          });
+        });
+      }),
+    );
+  });
 
   self.addEventListener('install', function () {
     self.skipWaiting();
