@@ -1,0 +1,61 @@
+/* P21-17: the bot page's sticky save bar. It lives at the end of .bot-screen (the scroller) and holds to the bottom edge while the page is longer. */
+.b-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px -20px -28px;
+  padding: 10px 20px max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+  box-shadow: 0 -6px 14px -10px rgb(0 0 0 / 25%);
+}
+
+.b-savebar-msg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+}
+
+.b-savebar-state {
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.b-savebar .b-warnline {
+  margin: 0;
+}
+
+.b-savebar-act {
+  position: relative;
+  flex: none;
+}
+
+.b-split {
+  display: inline-flex;
+}
+
+.b-split-main {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.b-split-arrow {
+  padding-inline: 8px;
+  border-inline-start: 1px solid rgb(255 255 255 / 35%);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+.menu.b-savebar-pop {
+  right: 0;
+  left: auto;
+  min-width: 190px;
+  max-width: calc(100vw - 32px);
+}

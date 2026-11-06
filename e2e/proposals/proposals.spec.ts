@@ -103,6 +103,7 @@ test('the bot page: Save as proposal leaves it waiting; the list shows it; the l
     await expect(page.getByTestId('bot-page')).toBeVisible();
     const role = page.getByTestId('bot-role');
     await role.fill('Reviews code for Engineering');
+    await page.getByTestId('save-more').click();
     await page.getByTestId('propose-bot').click();
     await expect(page.getByTestId('save-notice')).toContainText('Proposal saved');
     await page.getByTestId('open-proposal').click();

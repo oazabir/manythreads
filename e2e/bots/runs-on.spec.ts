@@ -103,7 +103,7 @@ test('a lead picks a runner: only what the team may use is listed, a runner that
     await expect(page.getByTestId('dirty-state')).toContainText('Unsaved changes');
 
     await page.getByTestId('save-bot').click();
-    await expect(page.getByTestId('dirty-state')).toContainText('No changes', { timeout: 15_000 });
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0, { timeout: 15_000 });
   } finally {
     await close();
   }
@@ -162,7 +162,7 @@ test('an older placement shows read-only under "Old placement" and "Move to a ru
     await expect(page.getByTestId('runs-on-select')).toBeVisible();
     await expect(page.getByTestId('dirty-state')).toContainText('Unsaved changes');
     await page.getByTestId('save-bot').click();
-    await expect(page.getByTestId('dirty-state')).toContainText('No changes', { timeout: 15_000 });
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0, { timeout: 15_000 });
   } finally {
     await close();
   }

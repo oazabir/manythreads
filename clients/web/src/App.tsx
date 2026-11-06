@@ -1,6 +1,6 @@
 import { OpenRoute } from './notifications/OpenLink';
 import { Suspense, lazy } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router';
+import { createBrowserRouter, Navigate, Route, RouterProvider, Routes, useLocation, useParams, useSearchParams } from 'react-router';
 import { RequireSession, SessionProvider } from './app/session';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsFrame } from './components/frames';
@@ -163,12 +163,21 @@ function AppRoutes() {
   );
 }
 
-export function App() {
-  return (
-    <BrowserRouter>
+/*
+ * A data router (one splat route around the whole app) rather than `BrowserRouter`: only a data router can hold a screen back with `useBlocker`
+ * (the bot page asks "Leave without saving?", P21-17). The routes themselves stay in `AppRoutes`.
+ */
+const router = createBrowserRouter([
+  {
+    path: '*',
+    element: (
       <SessionProvider>
         <AppRoutes />
       </SessionProvider>
-    </BrowserRouter>
-  );
+    ),
+  },
+]);
+
+export function App() {
+  return <RouterProvider router={router} />;
 }

@@ -94,7 +94,8 @@ test('p5-05 one bot page: Identity, with Save', async ({ browser }) => {
   await shoot(browser, 'p5-05-bot-identity', BOT_PATH, async (page) => {
     await expect(page.getByTestId('bot-page')).toBeVisible();
     await expect(page.getByTestId('bot-name')).toHaveValue(/./);
-    await expect(page.getByTestId('save-bot')).toBeVisible();
+    // P21-17: the save bar is drawn only after a change
+    await expect(page.getByTestId('save-bot')).toHaveCount(0);
   });
 });
 

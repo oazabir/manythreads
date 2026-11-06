@@ -139,9 +139,11 @@ test('a team lead who is not a workspace admin edits an existing bot, but cannot
     const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/bots/coder');
     try {
       await expect(page.getByTestId('bot-page')).toBeVisible();
-      // a lead of the team has Save and no read-only note
+      // a lead of the team has no read-only note, and Save appears with the first change (P21-17)
+      await expect(page.getByTestId('read-only-note')).toHaveCount(0);
+      await expect(page.getByTestId('save-bot')).toHaveCount(0);
+      await page.getByTestId('bot-role').fill('A role typed by the lead');
       await expect(page.getByTestId('save-bot')).toBeVisible();
-      await expect(page.getByTestId('bot-foot').getByTestId('read-only-note')).toHaveCount(0);
     } finally {
       await context.close();
     }

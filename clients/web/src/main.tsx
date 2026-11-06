@@ -16,6 +16,7 @@ import './styles/status-strip.css';
 import './styles/projects.css';
 import './styles/bots.css';
 import './styles/approvals.css';
+import './styles/savebar.css';
 import './styles/conversations.css';
 import './styles/answer.css';
 import './styles/surfaces.css';

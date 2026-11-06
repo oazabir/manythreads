@@ -203,6 +203,7 @@ test('Omar and Priya: propose, check, apply, refuse, stale, read-only, phone', a
     const body = omar.getByTestId('bot-body');
     await body.fill(`${(await body.inputValue()).trimEnd()}\n\n<!-- ${TAG} a trailing comment line -->\n`);
     await shot(omar, '08-bot-editor-edited');
+    await omar.getByTestId('save-more').click();
     await omar.getByTestId('propose-bot').click();
     await expect(omar.getByTestId('save-notice')).toContainText('Proposal saved', T);
     await shot(omar, '09-bot-editor-saved-as-proposal');

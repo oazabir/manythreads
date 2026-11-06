@@ -32,7 +32,8 @@ test('a lead edits the definition in the page: one commit by him, and the loader
     await expect(page.getByTestId('dirty-state')).toContainText('Unsaved changes');
     await page.getByTestId('save-bot').click();
     await expect(page.getByTestId('bot-page').getByRole('status')).toContainText('Saved');
-    await expect(page.getByTestId('dirty-state')).toContainText('No changes');
+    // saved: nothing is left to save, so the bar goes away
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0);
     const omar = await apiOn(playwright, stack, 'omar');
     const { content } = await definitionOf(omar);
     await omar.ctx.dispose();
@@ -129,7 +130,7 @@ test('clearing Name shows the schema’s message beside it and turns Save off; r
 
     // putting the original back is no change at all
     await name.fill(original);
-    await expect(save).toBeDisabled();
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0);
   } finally {
     await close();
   }
@@ -173,6 +174,105 @@ test('five groups; an old ?tab= link opens the right group and section', async (
     const tops = await tabs.getByRole('tab').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
     expect(new Set(tops).size).toBe(1);
     expect(await tabs.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  } finally {
+    await close();
+  }
+});
+
+test('the save bar appears only after a change, sticks to the bottom and never takes focus', async ({ browser, playwright }) => {
+  const before = await commitsOf(stack);
+  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'coder');
+  try {
+    const role = page.getByTestId('bot-role');
+    await expect(role).toBeVisible();
+    const original = await role.inputValue();
+    // untouched: no bar, no Save, no "No changes" line
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0);
+    await expect(page.getByTestId('save-bot')).toHaveCount(0);
+
+    await role.fill('A role that is only a draft');
+    const bar = page.getByRole('region', { name: 'Unsaved changes' });
+    await expect(bar).toBeVisible();
+    await expect(bar.getByTestId('dirty-state')).toContainText('Unsaved changes');
+    // the field keeps focus: the bar does not pull it
+    await expect(role).toBeFocused();
+    expect(await bar.evaluate((el) => getComputedStyle(el).position)).toBe('sticky');
+
+    // a short window: the bar still sits inside the viewport, at its bottom edge
+    await page.setViewportSize({ width: 1280, height: 420 });
+    const box = await bar.boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.round(box!.y + box!.height)).toBeLessThanOrEqual(420);
+    expect(box!.y).toBeGreaterThan(0);
+
+    // putting the saved value back removes it again
+    await role.fill(original);
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0);
+  } finally {
+    await close();
+  }
+  expect((await commitsOf(stack)).length).toBe(before.length);
+});
+
+test('Save as proposal sits under Save’s arrow, with Discard changes', async ({ browser, playwright }) => {
+  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'coder');
+  try {
+    const role = page.getByTestId('bot-role');
+    const original = await role.inputValue();
+    await role.fill('A role to discard');
+    const bar = page.getByTestId('bot-foot');
+    // one primary Save; the other two ways are not drawn until the arrow opens
+    await expect(bar.getByTestId('save-bot')).toHaveText('Save');
+    await expect(page.getByTestId('propose-bot')).toHaveCount(0);
+    const arrow = bar.getByTestId('save-more');
+    await expect(arrow).toHaveAttribute('aria-haspopup', 'menu');
+    await arrow.click();
+    await expect(arrow).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('menu', { name: 'More ways to save' }).getByRole('menuitem')).toHaveText(['Save as proposal', 'Discard changes']);
+    // Esc closes it and gives the arrow its focus back
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('propose-bot')).toHaveCount(0);
+    await expect(arrow).toBeFocused();
+
+    // Discard changes puts the saved value back and the bar goes
+    await arrow.click();
+    await page.getByTestId('reset-bot').click();
+    await expect(role).toHaveValue(original);
+    await expect(page.getByTestId('bot-foot')).toHaveCount(0);
+  } finally {
+    await close();
+  }
+});
+
+test('leaving with unsaved changes asks first; moving between the page’s groups does not', async ({ browser, playwright }) => {
+  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'coder');
+  try {
+    const role = page.getByTestId('bot-role');
+    await role.fill('A role that is not saved');
+
+    // another group of the same page keeps the draft and asks nothing
+    await page.getByTestId('tab-safety').click();
+    await expect(page.getByTestId('tab-safety')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('leave-dialog')).toHaveCount(0);
+    await expect(page.getByTestId('bot-foot')).toBeVisible();
+    await page.getByTestId('tab-basics').click();
+
+    // a link to another page asks; "Keep editing" stays with the draft intact
+    await page.getByTestId('bot-more').click();
+    await page.getByTestId('back-to-roster').click();
+    const dialog = page.getByRole('dialog', { name: 'Leave without saving?' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByTestId('leave-stay').click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/bots\/coder/);
+    await expect(role).toHaveValue('A role that is not saved');
+
+    // leaving goes on and drops the draft
+    await page.getByTestId('bot-more').click();
+    await page.getByTestId('back-to-roster').click();
+    await dialog.getByTestId('leave-confirm').click();
+    await expect(page.getByTestId('bot-page')).toHaveCount(0);
+    await expect(page).toHaveURL(/\/bots$/);
   } finally {
     await close();
   }

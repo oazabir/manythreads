@@ -12,6 +12,8 @@ import { botMdPath, deployBot, fetchMcpTools } from './api';
 import { saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { MoreMenu, type MoreItem } from './MoreMenu';
 import { GroupPanel } from './tabs';
+import { SaveBar, showSaveBar } from './SaveBar';
+import { LeaveGuard } from './LeaveGuard';
 import { BOT_GROUPS, viewOf, type BotGroupId, type BotView } from './groups';
 import { BotTestPanel } from './test-panel';
 import { canOfferTest } from './test-run';
@@ -290,31 +292,12 @@ function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, 
         {draft.frontmatter ? <GroupPanel group={group} bot={bot} draft={draft} slug={slug} canEdit={canEdit} runs={runs} /> : null}
       </div>
 
-      {draft.frontmatter && (group !== 'history' || draft.dirty) ? (
+      {draft.frontmatter && canEdit ? <LeaveGuard dirty={draft.dirty} /> : null}
+      {draft.frontmatter && canEdit && showSaveBar(draft) ? <SaveBar busy={busy} issues={draft.issues} onSave={(applyNow) => void doSave(applyNow)} onDiscard={draft.reset} /> : null}
+      {draft.frontmatter && !canEdit && group !== 'history' ? (
         <footer className="b-foot" data-testid="bot-foot">
-          {canEdit ? (
-            <>
-              <button type="button" className="btn primary" data-testid="save-bot" disabled={!draft.dirty || busy || draft.issues.length > 0} onClick={() => void doSave(true)}>
-                {busy ? 'Applying…' : 'Propose and apply'}
-              </button>
-              <button type="button" className="btn" data-testid="propose-bot" disabled={!draft.dirty || busy || draft.issues.length > 0} onClick={() => void doSave(false)}>
-                Save as proposal
-              </button>
-              <button type="button" className="btn" data-testid="reset-bot" disabled={!draft.dirty || busy} onClick={draft.reset}>Discard changes</button>
-              <span className="b-hint" data-testid="dirty-state">{draft.dirty ? 'Unsaved changes' : 'No changes'}</span>
-              {draft.issues.length > 0 ? (
-                <span className="b-warnline" role="alert" data-testid="draft-issues">
-                  Cannot save yet: {draft.issues[0]!.path ? `${draft.issues[0]!.path}: ` : ''}{draft.issues[0]!.message}
-                  {draft.issues.length > 1 ? ` (+${draft.issues.length - 1} more)` : ''}
-                </span>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <span className="b-hint" data-testid="read-only-note">You can read this definition but not change it. To change it, propose a change in Files; a team lead or workspace admin applies it.</span>
-              <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-readonly">Open in Files</Link>
-            </>
-          )}
+          <span className="b-hint" data-testid="read-only-note">You can read this definition but not change it. To change it, propose a change in Files; a team lead or workspace admin applies it.</span>
+          <Link className="btn s" to={`/t/${slug}/files?open=${encodeURIComponent(path)}`} data-testid="open-readonly">Open in Files</Link>
         </footer>
       ) : null}
     </>
