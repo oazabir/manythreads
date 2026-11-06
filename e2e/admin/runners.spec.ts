@@ -82,7 +82,7 @@ test('the page starts empty with three steps; the chooser offers the kinds, keep
       await expect(chooser.locator(':focus')).toHaveCount(1);
     }
     for (const kind of ['hermes_gateway', 'hermes_pod', 'claude_cli', 'codex_cli', 'llm_gateway']) await expect(chooser.getByTestId(`runner-kind-${kind}`)).toBeVisible();
-    await expect(chooser.getByTestId('runner-kind-claude_cli')).toContainText('Needs a Claude sign-in; coming with the Claude pod.');
+    await expect(chooser.getByTestId('runner-kind-claude_cli')).toContainText('Not turned on in this install.');
     await expect(chooser.getByTestId('runner-kind-codex_cli')).toContainText('Needs a Codex sign-in; coming with the Claude pod.');
     await expect(chooser.getByTestId('runner-kind-claude_cli')).toHaveAttribute('aria-disabled', 'true');
     // pressing a shut card does nothing: still the chooser
