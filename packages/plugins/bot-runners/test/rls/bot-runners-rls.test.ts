@@ -191,9 +191,15 @@ describe('the usage table (P19-07)', () => {
     expect(await q(tariq, 'SELECT runs FROM app.bot_runner_usage')).toHaveLength(0);
     expect(await q(nadia, 'SELECT runs FROM app.bot_runner_usage')).toHaveLength(0);
     // not even an admin writes it: the numbers come from runs
-    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.bot_runner_usage SET runs = 99`)))).toBeUndefined();
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.bot_runner_usage SET runs = 99`)))).toBe('42501');
     expect((await sys((tx) => tx.query('SELECT runs FROM app.bot_runner_usage'))).rows[0]).toMatchObject({ runs: 2 });
     expect(await code(as(omar, (tx) => tx.query(`INSERT INTO app.bot_runner_usage (workspace_id, runner_id, team_id, day) VALUES ($1, $2, $3, current_date - 1)`, [omar.workspaceId, sharedId, TEAM_IDS.Engineering])))).toBe('42501');
     expect(await code(as(tariq, (tx) => tx.query(`INSERT INTO app.bot_runner_usage (workspace_id, runner_id, team_id, day) VALUES ($1, $2, $3, current_date - 1)`, [omar.workspaceId, sharedId, TEAM_IDS.Engineering])))).toBe('42501');
+  });
+  it('gives the app role the right to read the table and nothing else (0004)', async () => {
+    const rows = (await sys((tx) => tx.query<{ priv: string; ok: boolean }>(
+      `SELECT p AS priv, has_table_privilege('manythreads_app', 'app.bot_runner_usage', p) AS ok FROM unnest(ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) AS p`,
+    ))).rows;
+    expect(Object.fromEntries(rows.map((r) => [r.priv, r.ok]))).toEqual({ SELECT: true, INSERT: false, UPDATE: false, DELETE: false, TRUNCATE: false });
   });
 });

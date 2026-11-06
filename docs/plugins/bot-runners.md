@@ -146,6 +146,7 @@ With the `claude.pods` provider present (see [claude-pods](claude-pods.md)), a r
 - `PUT /api/admin/bot-runners/:id/credentials`: the body is the file as it is (`application/json`, at most 256 KB, read as a stream). Both `x-terms-ack: 1` and `x-signins-ack: 1` are required. The file must be a Claude login with the `user:inference` permission. A login another runner holds (keyed hash) or a file with the same SHA-256 is refused with the sentence "every Claude runner needs its own sign-in file". The runner moves to `starting`; the pod provider writes the Secret last, so a refusal by the cluster rolls the rows back.
 - `DELETE /api/admin/bot-runners/:id/credentials`, `POST /api/admin/bot-runners/:id/check` (words in `CHECK_MESSAGES`; a refused or expired sign-in sets `needs_sign_in`), `GET /api/admin/bot-runners/usage`.
 - Migration `0003_claude_runner.sql`: `credentials_sha256`, `signins_ack_by/at`, a unique login per workspace, and `app.bot_runner_usage` (runner, team, day: runs, seconds, the CLI's own cost figure; admins read, the system writes).
+- Migration `0004_usage_grants.sql`: the app role keeps only `SELECT` on `app.bot_runner_usage`; `0003` had also granted it write rights, which only the system role needs.
 
 ### Using a Claude runner (P19-07)
 `resolveRunner` answers a ready `claude_cli` runner as agent `claude-code` with the pod's address and bridge key (from the `claude.pods` provider), no guard, and the
