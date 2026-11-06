@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { PERSONA_PASSWORD, personaEmail } from '../support/env.ts';
+import { expectInApp } from '../fixtures/oidc.ts';
 
 async function fillAndSubmit(page: import('@playwright/test').Page, email: string, password: string) {
   await page.getByLabel('Email').fill(email);
@@ -13,7 +14,7 @@ test('Nadia signs in and the session cookie is HttpOnly', async ({ page, context
   await fillAndSubmit(page, personaEmail('nadia'), PERSONA_PASSWORD);
 
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.locator('[data-landmark="header"]')).toContainText('Kahf Software');
+  await expectInApp(page);
 
   const cookies = await context.cookies();
   const session = cookies.find((c) => c.name === 'manythreads_session' || c.name === '__Host-manythreads_session');

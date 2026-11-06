@@ -216,7 +216,7 @@ test('an admin (who also leads Engineering) writes a brief, sees the grades and 
 
     // ---- the proposal: the file as a diff, what it will not do, and a button that waits for a person
     await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId('setup-file').first()).toContainText('bots/release-helper/BOT.md');
+    await expect(page.getByTestId('setup-file').first()).toContainText('Bots › release-helper › Bot file');
     await expect(page.getByTestId('proposal-diff')).toContainText('name: "Release helper"');
     await expect(page.getByTestId('setup-limits')).toContainText('mailbox');
     expect(await noSidewaysScroll(page)).toBe(true);
@@ -249,7 +249,7 @@ test('a team lead who is not an admin gets the same help, but the approval waits
     await page.locator('#su-a-q2').fill('Short answers');
     await page.getByTestId('setup-send').click();
     await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId('setup-file').first()).toContainText('bots/lead-helper/BOT.md');
+    await expect(page.getByTestId('setup-file').first()).toContainText('Bots › lead-helper › Bot file');
     await expect(page.getByTestId('setup-approve')).toHaveCount(0);
     await expect(page.getByTestId('setup-cannot-approve')).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
@@ -322,7 +322,7 @@ test('a helper that stops after the answers offers Try again, which finishes fro
     await expect(page.getByTestId('setup-announce')).toContainText('working');
     await expect(page.getByTestId('setup-proposal')).toBeVisible({ timeout: 60_000 });
     expect(page.url()).toBe(url);
-    await expect(page.getByTestId('setup-file').first()).toContainText('bots/retry-helper/BOT.md');
+    await expect(page.getByTestId('setup-file').first()).toContainText('Bots › retry-helper › Bot file');
     // what the person decided is shown as decided, not as still open
     await expect(page.getByTestId('setup-limits')).toContainText('You decided');
     await expect(page.getByTestId('setup-limits')).not.toContainText('Not settled');

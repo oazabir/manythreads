@@ -25,6 +25,7 @@ export interface SessionJson {
   authenticated: boolean;
   person?: { id: string; name: string; email: string };
   role?: string;
+  workspace?: { name: string };
 }
 
 /** `GET /api/session` of the origin the page is on, with the page's cookies. */
@@ -34,8 +35,12 @@ export async function sessionOf(page: Page): Promise<SessionJson> {
   return (await res.json()) as SessionJson;
 }
 
-/** Waits until the browser is out of the sign-in flow and showing the workspace (the heading names it). */
+/**
+ * Waits until the browser is out of the sign-in flow and showing the app (the shell or the settings frame is drawn), and that the session is the named workspace's.
+ * The workspace name is not read from a page heading: screens that draw their own header (Threads, Approvals) do not carry it.
+ */
 export async function expectInApp(page: Page, workspace = 'Kahf Software'): Promise<void> {
   await expect(page).not.toHaveURL(/\/sign-in/);
-  await expect(page.getByRole('heading', { level: 1, name: workspace })).toBeVisible();
+  await expect(page.getByTestId('app-frame')).toBeVisible();
+  expect((await sessionOf(page)).workspace?.name).toBe(workspace);
 }

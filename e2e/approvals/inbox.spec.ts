@@ -82,6 +82,8 @@ test("a waiting row shows the asker's picture, one sentence and a risk tag", asy
     await expect(row.getByTestId('approval-age')).toHaveAttribute('data-overdue', 'false');
     // the detail says the same in its header
     const open = row.locator('.apr-trow');
+    // on a wide screen the first request is already open: open another one first, so the mark has to move
+    await page.locator(`[data-testid="approval-row"]:not([data-approval="${approve.id}"]) .apr-trow`).first().click();
     await expect(open).not.toHaveAttribute('aria-current', 'true');
     await open.click();
     // the open row is marked for a screen reader, and only that one

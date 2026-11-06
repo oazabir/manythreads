@@ -26,6 +26,7 @@ test('an admin sees four workspace groups in order, with an icon on each item', 
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/settings/workspace/general');
   try {
     const nav = page.getByRole('navigation', { name: 'Settings' });
+    await expect(nav.locator('.tgrp').first()).toBeVisible();
     const headings = await nav.locator('.tgrp').allTextContents();
     expect(headings.slice(0, 6)).toEqual(['Account', 'People', 'Bots and models', 'Security', 'Operations', 'Teams']);
     for (const [heading, items] of Object.entries(GROUPS)) {
@@ -71,6 +72,7 @@ test('a member sees Account and Teams only', async ({ browser, playwright, isMob
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/profile');
   try {
     const nav = page.getByRole('navigation', { name: 'Settings' });
+    await expect(nav.locator('.tgrp').first()).toBeVisible();
     const headings = await nav.locator('.tgrp').allTextContents();
     expect(headings.slice(0, 2)).toEqual(['Account', 'Teams']);
     await expect(nav.getByRole('link', { name: 'Members', exact: true })).toHaveCount(0);
@@ -83,6 +85,7 @@ test('a member sees Account and Teams only', async ({ browser, playwright, isMob
 test('a member sees the same two groups in the phone select', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/profile', { viewport: PHONE, mobile: true });
   try {
+    await expect(page.locator('#settings-section optgroup').first()).toBeAttached();
     const groups = await page.locator('#settings-section optgroup').evaluateAll((os) => os.map((o) => (o as HTMLOptGroupElement).label));
     expect(groups.slice(0, 2)).toEqual(['Account', 'Teams']);
     expect(groups).not.toContain('People');

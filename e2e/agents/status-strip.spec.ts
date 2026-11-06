@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
+import { actorOf } from '../files/support.ts';
 import { noSidewaysScroll, openOn, PHONE } from '../support/stack-browser.ts';
 
 /*
@@ -56,8 +57,10 @@ test('Agents opens with a status strip and folds How to connect', async ({ brows
   }
 });
 
-test('a member sees the strip without the internal address', async ({ browser, playwright, isMobile }) => {
-  const { page, context } = await openOn(browser, playwright, stack, 'priya', '/t/engineering/agents', isMobile ? { viewport: PHONE, mobile: true } : {});
+test('a team lead who is not an admin sees the strip without the internal address', async ({ browser, playwright, isMobile }) => {
+  // the connections list is for a lead or an admin (the route answers 403 to a plain member), so the non-admin reader is a lead
+  await stack.sql("UPDATE app.team_members SET role = 'lead' WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf('nadia')]);
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/agents', isMobile ? { viewport: PHONE, mobile: true } : {});
   try {
     const item = page.getByTestId('agents-strip').locator('[data-item="pod-one"]');
     await expect(item).toBeVisible();

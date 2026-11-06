@@ -1,5 +1,6 @@
 import { expect, request, test } from '@playwright/test';
 import { IDLE_SECONDS, PERSONA_PASSWORD, WEB, WEB_IDLE, authState, personaEmail } from '../support/env.ts';
+import { expectInApp } from '../fixtures/oidc.ts';
 
 /**
  * Criterion 4: an idle session answers 401 and the client returns to sign-in keeping the return path. The idle server
@@ -41,7 +42,7 @@ test('sign out everywhere ends every session of the person, in every browser, an
     await page.getByLabel('Email').fill(personaEmail('sameera'));
     await page.getByLabel('Password', { exact: true }).fill(PERSONA_PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page.locator('[data-landmark="header"]')).toContainText('Kahf Software');
+    await expectInApp(page);
     return { context, page };
   };
   const a = await signIn();

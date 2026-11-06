@@ -52,9 +52,15 @@ test.afterEach(async () => {
       );
     }
   }
+  await standIn('member');
 });
 
+/** Omar is the only lead of Engineering and a team must keep one (a trigger refuses the delete), so Nadia leads while he is off the team. */
+const standIn = async (role: 'lead' | 'member'): Promise<void> => {
+  await stack.sql("UPDATE app.team_members SET role = $2 WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf('nadia'), role]);
+};
 const leave = async (who: Who): Promise<void> => {
+  if (who === 'omar') await standIn('lead');
   await stack.sql("DELETE FROM app.team_members WHERE team_id = (SELECT id FROM app.teams WHERE slug = 'engineering') AND actor_id = $1", [actorOf(who)]);
 };
 const roleOf = async (who: Who): Promise<string | undefined> =>
@@ -87,14 +93,15 @@ test('an admin not on the team joins and can talk', async ({ browser, playwright
   }
 });
 
-test('a member is told to ask a lead', async ({ browser, playwright, isMobile }) => {
+test('a member who is off the team is told whom to ask and has no way in', async ({ browser, playwright, isMobile }) => {
   await leave('priya');
   const { page, close } = await openChat(browser, playwright, stack, 'priya', '/t/engineering/bots/brain/chat', isMobile);
   try {
-    const refusal = page.getByTestId('conversation-unavailable');
+    // a person who is not an admin does not see the team at all once off it: the shell answers with its own "no access" page (who to ask), and no way in
+    const refusal = page.getByRole('alert').filter({ hasText: 'You do not have access' });
     await expect(refusal).toBeVisible();
-    await expect(refusal).toContainText('You cannot talk to this bot');
-    await expect(refusal).toContainText('Ask a lead of Engineering to add you.');
+    await expect(refusal).toContainText('Ask a workspace admin or the team lead');
+    await expect(page.getByTestId('conversation-unavailable')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Join as admin' })).toHaveCount(0);
     if (isMobile) expect(await noSidewaysScroll(page)).toBe(true);
   } finally {

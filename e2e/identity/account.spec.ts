@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { PERSONA_PASSWORD, SEED_EMAILS } from '../fixtures/seed.ts';
 import { startStack, type Stack } from '../fixtures/stack.ts';
+import { expectInApp } from '../fixtures/oidc.ts';
 
 /**
  * Account: a person edits their own name and changes their password. The change needs the current password, ends the
@@ -25,7 +26,7 @@ async function signIn(browser: Browser, email: string, password: string): Promis
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.locator('[data-landmark="header"]')).toContainText('Kahf Software');
+  await expectInApp(page);
   return page;
 }
 
@@ -94,7 +95,7 @@ test('changing the password needs the current one, ends the other sessions and k
   await expect(elsewhere.getByRole('alert')).toHaveText(/Incorrect email or password\./);
   await elsewhere.getByLabel('Password', { exact: true }).fill(NEW_PASSWORD);
   await elsewhere.getByRole('button', { name: 'Sign in' }).click();
-  await expect(elsewhere.locator('[data-landmark="header"]')).toContainText('Kahf Software');
+  await expectInApp(elsewhere);
 
   await here.context().close();
   await elsewhere.context().close();

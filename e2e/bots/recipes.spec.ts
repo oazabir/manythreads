@@ -60,7 +60,7 @@ test('desktop: Add appears on hover and on keyboard focus, and opens the details
   test.skip(isMobile, 'hover layout');
   const page = await gallery(browser, playwright, false);
   const first = POPULAR[0]!;
-  await expect(page.locator(`li:has([data-recipe="${first}"]) [data-testid="recipe-add"]`)).toHaveAttribute('aria-label', 'Add Daily standup');
+  await expect(page.locator(`li:has([data-recipe="${first}"]) [data-testid="recipe-add"]`)).toHaveAttribute('aria-label', 'Add Daily stand-up');
   expect(await opacityOf(page, first)).toBe('0');
   await page.locator(`[data-recipe="${first}"]`).hover();
   await expect.poll(() => opacityOf(page, first)).toBe('1');
