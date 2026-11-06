@@ -1258,3 +1258,15 @@ a.btn.primary {
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
 }
+
+/* P21-20 live check: the team picker cards must not push the page wider than a phone */
+.tpls > *,
+.tpl > * {
+  min-width: 0;
+}
+
+@media (width <= 640px) {
+  .tpls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

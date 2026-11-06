@@ -981,3 +981,18 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* P21-20 live check: at phone width the bot header actions drop under the name instead of squeezing it to one letter per line */
+@media (width <= 720px) {
+  .b-head {
+    flex-wrap: wrap;
+  }
+
+  .b-head-who {
+    flex: 1 1 0;
+  }
+
+  .b-head-act {
+    flex: 1 1 100%;
+  }
+}
