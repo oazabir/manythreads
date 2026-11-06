@@ -7,7 +7,8 @@ import { Dialog } from '../../../components/Dialog';
 import { Field } from '../../../components/ui';
 import { adoptOldConnection, createBotRunner, deleteBotRunner, fetchRunnerNodes, setBotRunnerTeams, setRunnerNode, testBotRunner, updateBotRunner } from './api';
 import {
-  KIND_CARDS,
+  cardsFor,
+  type KindCard,
   NODE_AUTO,
   moveWarning,
   needsMoveConfirm,
@@ -48,19 +49,19 @@ function FormError({ text }: { text: string | null }) {
 
 // ---- add -------------------------------------------------------------------------------------------------------
 
-type AddProps = { teams: readonly TeamOption[]; aliases: readonly string[]; onClose: () => void; onDone: (runner: BotRunner) => void };
+type AddProps = { claudePodsAvailable?: boolean; teams: readonly TeamOption[]; aliases: readonly string[]; onClose: () => void; onDone: (runner: BotRunner) => void };
 
-export function AddRunnerDialog({ teams, aliases, onClose, onDone }: AddProps) {
+export function AddRunnerDialog({ claudePodsAvailable = false, teams, aliases, onClose, onDone }: AddProps) {
   const [kind, setKind] = useState<BotRunnerKind | null>(null);
-  return kind === null ? <Chooser onClose={onClose} onPick={setKind} /> : <AddForm kind={kind} teams={teams} aliases={aliases} onBack={() => setKind(null)} onClose={onClose} onDone={onDone} />;
+  return kind === null ? <Chooser cards={cardsFor(claudePodsAvailable)} onClose={onClose} onPick={setKind} /> : <AddForm kind={kind} teams={teams} aliases={aliases} onBack={() => setKind(null)} onClose={onClose} onDone={onDone} />;
 }
 
-function Chooser({ onClose, onPick }: { onClose: () => void; onPick: (k: BotRunnerKind) => void }) {
+function Chooser({ cards, onClose, onPick }: { cards: readonly KindCard[]; onClose: () => void; onPick: (k: BotRunnerKind) => void }) {
   return (
     <Dialog title="Add a runner" onClose={onClose} wide testId="runner-add-chooser" footer={<button type="button" className="btn" onClick={onClose}>Cancel</button>}>
       <p className="dlg-text">A runner is a place where bots run. Choose what kind of place to add.</p>
       <ul className="rn-kinds">
-        {KIND_CARDS.map((c) => (
+        {cards.map((c) => (
           <li key={c.kind}>
             {/* aria-disabled, not disabled: a keyboard user can still reach the card and hear why it is not available yet */}
             <button
@@ -157,6 +158,18 @@ function AddForm({ kind, teams, aliases, onBack, onClose, onDone }: AddProps & {
             <Field label="Key" type="password" autoComplete="new-password" value={v.apiKey} hint="Stored once, encrypted. It is never shown again." error={errors.apiKey} onChange={(e) => set({ apiKey: e.target.value })} />
             <Field label="Profile name rule" className="mono" value={v.profileRule} hint="How a bot’s profile is named on the gateway. {bot} stands for the bot’s short name." error={errors.profileRule} onChange={(e) => set({ profileRule: e.target.value })} />
           </>
+        ) : null}
+
+        {kind === 'claude_cli' ? (
+          <div className="rn-field">
+            <div className="fld">
+              <label htmlFor="runner-concurrency">Runs at once</label>
+              <select id="runner-concurrency" value={v.maxConcurrent} onChange={(e) => set({ maxConcurrent: Number(e.target.value) })} data-testid="runner-concurrency">
+                {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <div className="fld-hint">How many bot runs this runner does at the same time. Each Claude runner needs its own sign-in file; you upload it after adding the runner.</div>
+            </div>
+          </div>
         ) : null}
 
         {kind === 'hermes_pod' ? <p className="dlg-text">Nothing else to type. Each team that you choose below gets its own Hermes pod inside this cluster.</p> : null}

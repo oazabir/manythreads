@@ -69,7 +69,7 @@ export function RunnersScreen() {
         placements[r.id] = await fetchRunnerNodes(r.id).then((n) => n.placement, () => null);
       }),
     );
-    return { runners: runners.items, placements, old: old.items, teams: teams.teams.map((t) => ({ id: t.id as string, name: t.name })), aliases: boundAliases(aliases.aliases) };
+    return { runners: runners.items, claudePodsAvailable: runners.claudePodsAvailable, placements, old: old.items, teams: teams.teams.map((t) => ({ id: t.id as string, name: t.name })), aliases: boundAliases(aliases.aliases) };
   });
   const heading = useRef<HTMLHeadingElement>(null);
   const [dialog, setDialog] = useState<Dialogs>(null);
@@ -195,6 +195,7 @@ export function RunnersScreen() {
 
             {dialog?.kind === 'add' ? (
               <AddRunnerDialog
+                claudePodsAvailable={data.claudePodsAvailable}
                 teams={data.teams}
                 aliases={data.aliases}
                 onClose={close}

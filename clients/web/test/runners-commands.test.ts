@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { OldConnection, TeamId } from '@manythreads/shared';
 import {
   KIND_CARDS,
+  cardsFor,
   addedWords,
   editChanged,
   teamOptions,
@@ -61,7 +62,9 @@ describe('the chooser of kinds', () => {
     expect(KIND_CARDS.map((c) => c.kind)).toEqual(['hermes_gateway', 'hermes_pod', 'claude_cli', 'codex_cli', 'llm_gateway']);
     for (const c of KIND_CARDS) expect(c.sentence.length, c.kind).toBeGreaterThan(20);
     expect(KIND_CARDS.filter((c) => c.available).map((c) => c.kind)).toEqual(['hermes_gateway', 'hermes_pod', 'llm_gateway']);
-    expect(KIND_CARDS.find((c) => c.kind === 'claude_cli')?.unavailable).toBe('Needs a Claude sign-in; coming with the Claude pod.');
+    expect(KIND_CARDS.find((c) => c.kind === 'claude_cli')?.unavailable).toBe('Not turned on in this install.');
+    expect(cardsFor(true).find((c) => c.kind === 'claude_cli')?.available).toBe(true);
+    expect(cardsFor(false).find((c) => c.kind === 'claude_cli')?.available).toBe(false);
     expect(KIND_CARDS.find((c) => c.kind === 'codex_cli')?.unavailable).toBe('Needs a Codex sign-in; coming with the Claude pod.');
   });
 
@@ -225,6 +228,11 @@ describe('the Hermes gateway form', () => {
     const r = validateNew('hermes_pod', form({ teams: { mode: 'all' } }));
     expect(r).toEqual({ ok: true, body: { name: 'office-hermes', label: 'Office Hermes', kind: 'hermes_pod', teams: { all: true } } });
   });
+  it('sends the number of runs at once for Claude Code, 2 unless changed', () => {
+    const r = validateNew('claude_cli', form({ teams: { mode: 'all' } }));
+    expect(r).toEqual({ ok: true, body: { name: 'office-hermes', label: 'Office Hermes', kind: 'claude_cli', teams: { all: true }, maxConcurrent: 2 } });
+    expect(validateNew('claude_cli', form({ teams: { mode: 'all' }, maxConcurrent: 9 })).ok).toBe(false);
+  });
 });
 
 describe('the LLM gateway form', () => {
@@ -336,7 +344,8 @@ describe('the machine a pod runner stands on (P19-08)', () => {
 
   it('only the team Hermes pod has a machine to choose', () => {
     expect(hasNodeChoice({ kind: 'hermes_pod' })).toBe(true);
-    for (const kind of ['hermes_gateway', 'llm_gateway', 'claude_cli', 'codex_cli'] as const) expect(hasNodeChoice({ kind })).toBe(false);
+    expect(hasNodeChoice({ kind: 'claude_cli' })).toBe(true);
+    for (const kind of ['hermes_gateway', 'llm_gateway', 'codex_cli'] as const) expect(hasNodeChoice({ kind })).toBe(false);
   });
 
   it('puts the state in the three plain sentences, and names the machine in each', () => {

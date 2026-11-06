@@ -730,11 +730,11 @@ export function createMockTransport(options: MockOptions = {}): Transport {
     if (!r) throw new MockHttpError(404, 'not_found', 'No such runner.');
     return r;
   };
-  const newRunner = (init: { name: string; label: string; kind: string; baseUrl?: unknown; profileRule?: unknown; modelAlias?: unknown; status?: string; teamIds?: string[]; allTeams?: boolean; botCount?: number }): MockRunner => ({
+  const newRunner = (init: { maxConcurrent?: number; name: string; label: string; kind: string; baseUrl?: unknown; profileRule?: unknown; modelAlias?: unknown; status?: string; teamIds?: string[]; allTeams?: boolean; botCount?: number }): MockRunner => ({
     id: nextId('8'), workspaceId: WORKSPACE_ID, name: init.name, label: init.label, kind: init.kind, enabled: true, isDefault: false, allTeams: init.allTeams ?? false,
     teamIds: init.teamIds ?? [], baseUrl: (init.baseUrl as string | undefined) ?? null, hasKey: init.kind === 'hermes_gateway', profileRule: (init.profileRule as string | undefined) ?? (init.kind === 'hermes_gateway' || init.kind === 'hermes_pod' ? '{bot}' : null),
     node: null, modelAlias: (init.modelAlias as string | undefined) ?? null, ownerActorId: null, ownerName: null, planLabel: null, credentialsExpiresAt: null, uploadedAt: null, termsAcceptedBy: null,
-    termsAcceptedAt: null, maxConcurrent: null, status: init.status ?? 'not_set_up', statusDetail: null, pausedUntil: null, lastCheckedAt: null, botCount: init.botCount ?? 0, createdAt: NOW, updatedAt: NOW,
+    termsAcceptedAt: null, maxConcurrent: init.maxConcurrent ?? null, status: init.status ?? 'not_set_up', statusDetail: null, pausedUntil: null, lastCheckedAt: null, botCount: init.botCount ?? 0, createdAt: NOW, updatedAt: NOW,
   });
   const teamIdsFrom = (body: Record<string, unknown>): { allTeams: boolean; teamIds: string[] } => {
     if (body['all'] === true) return { allTeams: true, teamIds: [] };
@@ -752,13 +752,13 @@ export function createMockTransport(options: MockOptions = {}): Transport {
       ? [{ id: uuid('e', 950), teamId: mkt.id, teamSlug: mkt.slug, teamName: mkt.name, name: 'laptop', kind: 'external', agent: 'hermes', baseUrl: 'http://192.168.1.20:8642', adoptable: true, adoptableReason: null, botCount: 1 }]
       : [];
   };
-  on(listBotRunnersRoute, () => (requireAdmin(), seedRunners(), { items: runners.map(runnerBody) }));
+  on(listBotRunnersRoute, () => (requireAdmin(), seedRunners(), { items: runners.map(runnerBody), claudePodsAvailable: true }));
   on(createBotRunnerRoute, ({ body }) => {
     requireAdmin();
     seedRunners();
-    if (body['kind'] === 'claude_cli' || body['kind'] === 'codex_cli') throw new MockHttpError(409, 'conflict', 'Claude Code and Codex runners are not available yet.');
+    if (body['kind'] === 'codex_cli') throw new MockHttpError(409, 'conflict', 'Codex runners are not available yet.');
     if (runners.some((r) => r.name === body['name'])) throw new MockHttpError(409, 'conflict', 'A runner with that name already exists. Names are used in bot files, so pick a different one.');
-    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], modelAlias: body['modelAlias'], ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
+    const r = newRunner({ name: String(body['name']), label: String(body['label']), kind: String(body['kind']), baseUrl: body['baseUrl'], profileRule: body['profileRule'], modelAlias: body['modelAlias'], ...(typeof body['maxConcurrent'] === 'number' ? { maxConcurrent: body['maxConcurrent'] } : {}), ...(body['teams'] ? teamIdsFrom(body['teams'] as Record<string, unknown>) : {}), status: body['kind'] === 'claude_cli' ? 'waiting_for_sign_in' : body['kind'] === 'hermes_pod' || (body['kind'] === 'llm_gateway' && MOCK_ALIASES.includes(String(body['modelAlias']))) ? 'ready' : 'not_set_up' });
     runners.push(r);
     return created({ runner: runnerBody(r) });
   });

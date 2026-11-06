@@ -52,7 +52,7 @@ export const KIND_CARDS: readonly KindCard[] = [
     title: 'Claude Code',
     sentence: 'Runs the Claude Code program in its own pod, signed in with a Claude plan.',
     available: false,
-    unavailable: 'Needs a Claude sign-in; coming with the Claude pod.',
+    unavailable: 'Not turned on in this install.',
   },
   {
     kind: 'codex_cli',
@@ -261,6 +261,10 @@ export function suggestName(label: string): string {
   return BotRunnerName.safeParse(slug).success ? slug : '';
 }
 
+/** The chooser's cards; the Claude Code card can be picked only when the server says Claude pods are turned on. */
+export const cardsFor = (claudePodsAvailable: boolean): readonly KindCard[] =>
+  KIND_CARDS.map((c) => (c.kind === 'claude_cli' && claudePodsAvailable ? { ...c, available: true } : c));
+
 export const DEFAULT_PROFILE_RULE = '{bot}';
 
 export type RunnerFormValues = {
@@ -271,9 +275,11 @@ export type RunnerFormValues = {
   profileRule: string;
   modelAlias: string;
   teams: TeamsChoice;
+  /** Claude Code only: how many bot runs at once, 1 to 4. */
+  maxConcurrent: number;
 };
 
-export const emptyForm = (): RunnerFormValues => ({ label: '', name: '', baseUrl: '', apiKey: '', profileRule: DEFAULT_PROFILE_RULE, modelAlias: '', teams: NO_TEAMS });
+export const emptyForm = (): RunnerFormValues => ({ label: '', name: '', baseUrl: '', apiKey: '', profileRule: DEFAULT_PROFILE_RULE, modelAlias: '', teams: NO_TEAMS, maxConcurrent: 2 });
 
 type Checked = { ok: true; body: CreateBotRunnerRequest } | { ok: false; errors: FormErrors };
 
@@ -289,6 +295,7 @@ export function validateNew(kind: BotRunnerKind, v: RunnerFormValues): Checked {
     draft['apiKey'] = v.apiKey;
     draft['profileRule'] = v.profileRule.trim() === '' ? DEFAULT_PROFILE_RULE : v.profileRule.trim();
   }
+  if (kind === 'claude_cli') draft['maxConcurrent'] = v.maxConcurrent;
   if (kind === 'llm_gateway') {
     if (v.modelAlias === '') errors.modelAlias = FRIENDLY.modelAlias;
     else draft['modelAlias'] = v.modelAlias;
@@ -357,7 +364,7 @@ export function adoptWords(c: Pick<OldConnection, 'kind' | 'teamName'>): string 
 export const NODE_AUTO = '';
 
 /** Only the team Hermes pod has a machine to choose; the other kinds run elsewhere. */
-export const hasNodeChoice = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'hermes_pod';
+export const hasNodeChoice = (r: Pick<BotRunner, 'kind'>): boolean => r.kind === 'hermes_pod' || r.kind === 'claude_cli';
 
 /**
  * The state line under a pod runner: where its pods stand now, in plain words. `placement` comes from the server live (the cluster is asked); `chosen` is the
