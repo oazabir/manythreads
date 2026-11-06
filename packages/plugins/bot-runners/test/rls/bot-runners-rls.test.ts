@@ -72,7 +72,7 @@ describe('the runner tables pass the RLS harness', () => {
     await admin.connect();
     try {
       expect(await explainRlsViolations(admin)).toEqual([]);
-      for (const table of ['bot_runners', 'bot_runner_teams']) {
+      for (const table of ['bot_runners', 'bot_runner_teams', 'bot_runner_usage']) {
         expect(await findPerRowPolicyCalls(admin, table), table).toEqual([]);
         const plan = await admin.query('SELECT relrowsecurity AS on, relforcerowsecurity AS forced FROM pg_class WHERE oid = $1::regclass', [`app.${table}`]);
         expect(plan.rows[0], table).toEqual({ on: true, forced: true });
@@ -179,5 +179,21 @@ describe('a team lead can no longer write a Hermes connection', () => {
     expect((await as(tariq, (tx) => tx.query("UPDATE app.hermes_connections SET base_url = 'http://other.test' WHERE id = $1 RETURNING id", [made.id]))).rows).toHaveLength(0);
     expect((await as(tariq, (tx) => tx.query('DELETE FROM app.hermes_connections WHERE id = $1 RETURNING id', [made.id]))).rows).toHaveLength(0);
     expect((await sys((tx) => tx.query('UPDATE app.hermes_connections SET status = $2 WHERE id = $1 RETURNING id', [made.id, 'ok']))).rows).toHaveLength(1);
+  });
+});
+
+describe('the usage table (P19-07)', () => {
+  it('is read by a workspace admin, invisible to a team lead and a member, and written by the system only', async () => {
+    await sys((tx) =>
+      tx.query(`INSERT INTO app.bot_runner_usage (workspace_id, runner_id, team_id, day, runs, seconds, cli_cost) VALUES ($1, $2, $3, current_date, 2, 40, 0.5)`, [omar.workspaceId, sharedId, TEAM_IDS.Engineering]),
+    );
+    expect(await q(omar, 'SELECT runs FROM app.bot_runner_usage')).toHaveLength(1);
+    expect(await q(tariq, 'SELECT runs FROM app.bot_runner_usage')).toHaveLength(0);
+    expect(await q(nadia, 'SELECT runs FROM app.bot_runner_usage')).toHaveLength(0);
+    // not even an admin writes it: the numbers come from runs
+    expect(await code(as(omar, (tx) => tx.query(`UPDATE app.bot_runner_usage SET runs = 99`)))).toBeUndefined();
+    expect((await sys((tx) => tx.query('SELECT runs FROM app.bot_runner_usage'))).rows[0]).toMatchObject({ runs: 2 });
+    expect(await code(as(omar, (tx) => tx.query(`INSERT INTO app.bot_runner_usage (workspace_id, runner_id, team_id, day) VALUES ($1, $2, $3, current_date - 1)`, [omar.workspaceId, sharedId, TEAM_IDS.Engineering])))).toBe('42501');
+    expect(await code(as(tariq, (tx) => tx.query(`INSERT INTO app.bot_runner_usage (workspace_id, runner_id, team_id, day) VALUES ($1, $2, $3, current_date - 1)`, [omar.workspaceId, sharedId, TEAM_IDS.Engineering])))).toBe('42501');
   });
 });

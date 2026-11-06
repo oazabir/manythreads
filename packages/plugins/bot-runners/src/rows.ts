@@ -45,7 +45,12 @@ export const RUNNER_SELECT = `r.id, r.workspace_id, r.name, r.label, r.kind, r.e
 const iso = (d: Date | null): string | null => (d === null ? null : d.toISOString());
 
 /** A disabled runner always reads `off`, whatever was last found. */
-export const effectiveStatus = (r: Pick<RunnerRow, 'enabled' | 'status'>): BotRunnerStatus => (r.enabled ? r.status : 'off');
+export const effectiveStatus = (r: Pick<RunnerRow, 'enabled' | 'status'> & { paused_until?: Date | null }, now: number = Date.now()): BotRunnerStatus => {
+  if (!r.enabled) return 'off';
+  // a plan limit pause ends by itself when its time has passed
+  if (r.status === 'paused' && r.paused_until != null && r.paused_until.getTime() <= now) return 'ready';
+  return r.status;
+};
 
 export function toBotRunner(r: RunnerRow, teams: readonly BotRunnerTeam[], botCount: number): BotRunner {
   return BotRunner.parse({

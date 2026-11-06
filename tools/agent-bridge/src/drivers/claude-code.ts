@@ -76,12 +76,12 @@ function preview(input: unknown, secrets: readonly string[]): string {
   return redact(text, secrets).slice(0, 200);
 }
 
-function usageOf(raw: unknown): Usage | null {
+function usageOf(raw: unknown, cost?: unknown): Usage | null {
   if (!isRecord(raw)) return null;
   // Cache reads and writes are input the model was billed for, so they count as input.
   const input = num(raw['input_tokens']) + num(raw['cache_creation_input_tokens']) + num(raw['cache_read_input_tokens']);
   const output = num(raw['output_tokens']);
-  return { input_tokens: input, output_tokens: output, total_tokens: input + output };
+  return { input_tokens: input, output_tokens: output, total_tokens: input + output, ...(typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? { cost } : {}) };
 }
 
 interface Attempt {
@@ -162,7 +162,7 @@ async function attempt(job: DriverJob, mode: 'new' | 'resume' | 'none', uuid: st
           const why = redact(text, secrets).replace(/\s+/g, ' ').trim().slice(0, 300);
           out.result = { ok: false, error: why !== '' ? why : `Claude Code ended with ${String(msg['subtype'] ?? 'an error')}` };
         } else {
-          out.result = { ok: true, output: redact((text.trim() !== '' ? text : texts.join('')).trim(), secrets), usage: usageOf(msg['usage']) };
+          out.result = { ok: true, output: redact((text.trim() !== '' ? text : texts.join('')).trim(), secrets), usage: usageOf(msg['usage'], msg['total_cost_usd']) };
         }
         break;
       }

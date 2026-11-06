@@ -1,4 +1,4 @@
-import type { BotRunnersProvider, PluginContext, PluginTx, PodRunnerInfo, PodRunnerState, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
+import type { BotRunnersProvider, ClaudePodsProvider, PluginContext, PluginTx, PodRunnerInfo, PodRunnerState, RunnerPlacementCheck, RunnerResolution, RunnerTarget, TeamRunnerInfo } from '@manythreads/sdk';
 import { BotRunnerName, modelRunnerProblem } from '@manythreads/shared';
 import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 
@@ -9,14 +9,16 @@ import { effectiveStatus, RUNNER_SELECT, type RunnerRow } from './rows.ts';
 // and a log carry the name only. The refusals are plain sentences safe to post in a thread; none of them holds an address, a key or a node.
 
 export const DEFAULT_PROFILE_RULE = '{bot}';
+/** The bridge's profile of a bot in a shared Claude pod: `<team>--<bot>`. `{team}` is filled in by runtime-hermes. */
+export const CLAUDE_PROFILE_RULE = '{team}--{bot}';
 
 const refuse = (reason: Extract<RunnerResolution, { ok: false }>['reason'], message: string): RunnerResolution => ({ ok: false, reason, message });
 
 /** The name as a sentence may carry it: only what the name rule allows, so a hostile BOT.md cannot put text into a message by way of it. */
 const shown = (name: string): string => (BotRunnerName.safeParse(name).success ? `"${name}"` : 'that name');
 
-/** The kinds that run a bot today. The others (Claude Code, Codex) are listed to admins and teams but answer `not_runnable` until their tasks are built. */
-const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod', 'llm_gateway']);
+/** The kinds that run a bot today. The other (Codex) is listed to admins and teams but answer `not_runnable` until their tasks are built. */
+const RUNNABLE_KINDS: ReadonlySet<string> = new Set(['hermes_gateway', 'hermes_pod', 'llm_gateway', 'claude_cli']);
 
 /**
  * The states in which a runner turns a run away, in the words a thread may carry. `ready` runs; so does `not_set_up` when the runner has an address and a key (an admin changed
@@ -51,13 +53,24 @@ export async function resolveRunner(ctx: PluginContext, query: { teamId: string;
     if (!RUNNABLE_KINDS.has(runner.kind)) return refuse('not_runnable', `This bot runs on ${runner.label}, which cannot run bots yet.`);
     const status = effectiveStatus(runner);
     const unready = UNREADY_STATES[status];
-    if (unready !== undefined) return refuse('not_ready', `This bot runs on ${runner.label}, which is not ready: it is ${unready}.`);
+    if (unready !== undefined) {
+      const until = status === 'paused' && runner.paused_until !== null ? ` until ${runner.paused_until.toISOString().slice(11, 16)} UTC` : '';
+      return refuse('not_ready', `This bot runs on ${runner.label}, which is not ready: it is ${unready}${until}.`);
+    }
     const base = { runner: runner.name, label: runner.label, status, profileRule: runner.profile_rule ?? DEFAULT_PROFILE_RULE, modelAlias: null } as const;
 
     if (runner.kind === 'hermes_gateway') {
       if (runner.base_url === null || runner.secret_id === null) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not set up yet. An admin has to give it an address and a key.`);
       const key = await ctx.secrets.get(tx, runner.secret_id);
       const target: RunnerTarget = { ...base, kind: 'hermes_gateway', address: runner.base_url, key, agent: 'hermes', guard: true };
+      return { ok: true, target };
+    }
+    // A Claude Code runner is one pod for every team on its list (shared mode, spec section 10.3): the address is its Service and the key its bridge key, which only this resolver reads. No outbound
+    // guard: nobody types this address. The team list was judged above, so a trigger of any kind (a person, a mention, a hand-off, a routine) is allowed for a team on it.
+    if (runner.kind === 'claude_cli') {
+      const bridge = await ctx.providers.get<ClaudePodsProvider>('claude.pods')?.bridge({ runnerName: runner.name }).catch(() => null);
+      if (!bridge) return refuse('not_set_up', `This bot runs on ${runner.label}, which is not running yet.`);
+      const target: RunnerTarget = { ...base, kind: 'claude_cli', address: bridge.address, key: bridge.key, agent: 'claude-code', guard: false, profileRule: runner.profile_rule ?? CLAUDE_PROFILE_RULE };
       return { ok: true, target };
     }
     // An LLM gateway runner has no address or key of its own: the run is a loop of model calls made through the platform's gateway on the runner's alias (`model-runtime.ts`).
@@ -219,10 +232,50 @@ export async function reportPodState(ctx: PluginContext, state: PodRunnerState):
     await tx.query(
       `UPDATE app.bot_runners
           SET status = $2, status_detail = $3, last_checked_at = now(), updated_at = now()
-        WHERE id = $1::uuid AND kind = 'claude_cli' AND status = ANY($4::text[])
+        WHERE id = $1::uuid AND kind = 'claude_cli'
+          AND (status = ANY($4::text[]) OR (status = 'paused' AND paused_until IS NOT NULL AND paused_until <= now()))
           AND (status, status_detail) IS DISTINCT FROM ($2, $3)`,
       [state.runnerId, state.status, state.detail, POD_OWNED_STATES],
     );
+  });
+}
+
+/** Count one run for a team and day. A runner that is not a Claude runner of the team's workspace is ignored. */
+export async function recordUsage(ctx: PluginContext, input: { runner: string; teamId: string; seconds: number; cost: number | null }): Promise<void> {
+  await ctx.db.system(async (tx) => {
+    await tx.query(
+      `INSERT INTO app.bot_runner_usage (workspace_id, runner_id, team_id, day, runs, seconds, cli_cost)
+       SELECT r.workspace_id, r.id, t.id, (now() AT TIME ZONE 'UTC')::date, 1, $3::int, $4::numeric
+         FROM app.bot_runners r JOIN app.teams t ON t.workspace_id = r.workspace_id AND t.id = $2::uuid
+        WHERE r.name = $1 AND r.kind = 'claude_cli'
+       ON CONFLICT (runner_id, team_id, day) DO UPDATE
+         SET runs = app.bot_runner_usage.runs + 1, seconds = app.bot_runner_usage.seconds + EXCLUDED.seconds, cli_cost = app.bot_runner_usage.cli_cost + EXCLUDED.cli_cost`,
+      [input.runner, input.teamId, Math.max(0, Math.round(input.seconds)), input.cost !== null && Number.isFinite(input.cost) && input.cost >= 0 ? input.cost : 0],
+    );
+  });
+}
+
+/** The words an admin reads on the page for each pause. */
+const PAUSE_DETAIL = {
+  plan_limit: "The Claude plan's limit was reached. Runs wait until it resets.",
+  needs_sign_in: 'Claude refused this sign-in. Upload a new sign-in file to start this runner again.',
+} as const;
+
+export async function pauseRunner(ctx: PluginContext, input: { runner: string; teamId: string; reason: 'plan_limit' | 'needs_sign_in'; until: string | null }): Promise<void> {
+  await ctx.db.system(async (tx) => {
+    const status = input.reason === 'plan_limit' ? 'paused' : 'needs_sign_in';
+    const until = input.reason === 'plan_limit' ? input.until : null;
+    const changed = await tx.query<{ id: string; workspace_id: string; name: string }>(
+      `UPDATE app.bot_runners r
+          SET status = $3, status_detail = $4, paused_until = $5::timestamptz, last_checked_at = now(), updated_at = now()
+         FROM app.teams t
+        WHERE r.name = $1 AND r.kind = 'claude_cli' AND t.id = $2::uuid AND t.workspace_id = r.workspace_id
+          AND (r.status, r.paused_until) IS DISTINCT FROM ($3, $5::timestamptz)
+        RETURNING r.id, r.workspace_id, r.name`,
+      [input.runner, input.teamId, status, PAUSE_DETAIL[input.reason], until],
+    );
+    const row = changed.rows[0];
+    if (row) await ctx.audit.emit(tx, { type: 'claude_pod.runner.paused', workspaceId: row.workspace_id, runnerId: row.id, name: row.name, reason: input.reason, until, at: ctx.runtime.now().toISOString() });
   });
 }
 
@@ -235,5 +288,7 @@ export function createBotRunnersProvider(ctx: PluginContext): BotRunnersProvider
     teamRunners: (query) => teamRunners(ctx, query),
     podRunners: (query) => podRunners(ctx, query),
     reportPodState: (state) => reportPodState(ctx, state),
+    recordUsage: (input) => recordUsage(ctx, input),
+    pauseRunner: (input) => pauseRunner(ctx, input),
   };
 }

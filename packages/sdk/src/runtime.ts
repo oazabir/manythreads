@@ -182,6 +182,11 @@ export type BotRuntimeEvent =
        * line for it (and raises `bot_runner.run.unmetered` when there is none). `runner` is the pod runner's name.
        */
       viaPod?: { runner: string };
+      /**
+       * Set when the run was served by a shared Claude Code runner (P19-07): the run job counts it per team (`recordUsage`) and, when the plan's limit was reached or the sign-in was
+       * refused, pauses the runner (`pauseRunner`). `failure` is a fixed word from the bridge; `resetsAt` an ISO time; `cost` is the CLI's own figure, its number and not a price.
+       */
+      viaClaude?: { runner: string; seconds: number; cost: number | null; failure?: 'plan_limit' | 'needs_sign_in'; resetsAt?: string | null };
     };
 
 export interface BotRuntimeHandle {

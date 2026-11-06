@@ -5,6 +5,7 @@ import {
   requestToolApproval,
   type ApprovalProvider,
   type BotRunHandle,
+  type BotRuntimeEvent,
   type BotRuntimeFailure,
   type BotRuntimeHandle,
   type JobInfo,
@@ -828,6 +829,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
         let failure: BotRuntimeFailure | undefined;
         let refusal: RunnerRefusal | undefined;
         let viaPod: { runner: string } | undefined;
+        let viaClaude: Extract<BotRuntimeEvent, { type: 'result' }>['viaClaude'];
         let tokens: { input: number; output: number; total: number } | null | undefined;
         for await (const event of handle.events) {
           // The agent's tool calls are the run's whole footprint on the workspace, and nothing else writes them down: say each one, and
@@ -844,6 +846,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           failure = event.failure;
           refusal = event.refusal;
           viaPod = event.viaPod;
+          viaClaude = event.viaClaude;
           tokens = event.tokens;
           if (event.tokens) job.log.info(`runtime-hermes: run ${run.runId} used ${event.tokens.total} tokens over ${toolCalls} tool calls`);
           if (!event.ok) job.log.warn(`runtime-hermes: run ${run.runId} failed: ${event.error ?? 'no reason given'}`);
@@ -856,6 +859,18 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
           await job.transaction((tx) => meterPodRun({ ctx, tx, log: job.log, run, botId: bot.id, runner: pod.runner, ok, alias: runAlias, tokens })).catch((err: unknown) => {
             job.log.warn(`runtime-hermes: run ${run.runId}: the pod run could not be metered: ${err instanceof Error ? err.message : String(err)}`);
           });
+        }
+
+        // 2c. A run a shared Claude runner served is counted for the team; a plan limit or a refused sign-in pauses the runner (once; the next run is refused at the start).
+        if (viaClaude) {
+          const claude = viaClaude;
+          const runners = ctx.providers.get<BotRunnersProvider>('bot.runners');
+          try {
+            await runners?.recordUsage({ runner: claude.runner, teamId: input.bot.teamId, seconds: claude.seconds, cost: claude.cost });
+            if (claude.failure) await runners?.pauseRunner({ runner: claude.runner, teamId: input.bot.teamId, reason: claude.failure, until: claude.resetsAt ?? null });
+          } catch (err) {
+            job.log.warn(`runtime-hermes: run ${run.runId}: the Claude runner's usage could not be written: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
 
         // 3. Post the reply and close the run (one short transaction).

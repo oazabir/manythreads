@@ -65,6 +65,41 @@ describe('the names a run goes by', () => {
   });
 });
 
+describe('a shared Claude Code runner (P19-07)', () => {
+  const claude = (): GatewayRuntimeOptions =>
+    options({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent: 'claude-code' as const, claudeRunner: 'shared-claude' }) });
+  const run = async () => resultOf(await collect((await runOnGateway(claude(), input(), scope, { connection: 'shared-claude', profile: 'mt-coder' })).events));
+
+  it('marks a finished run with the runner, its seconds and the CLI cost, for the run job to count', async () => {
+    gw.setScript(() => [{ type: 'finish', output: 'done', usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, cost: 0.02 } }]);
+    const r = await run();
+    expect(r).toMatchObject({ ok: true, viaClaude: { runner: 'shared-claude', cost: 0.02 } });
+    expect(r.viaClaude?.failure).toBeUndefined();
+  });
+
+  it('turns a plan limit into one plain line with the reset time, and asks for the pause', async () => {
+    gw.setScript(() => [{ type: 'fail', error: 'Claude AI usage limit reached|1900000000', extra: { reason: 'plan_limit', resets_at: 1900000000000 } }]);
+    const r = await run();
+    expect(r).toMatchObject({ ok: false, failure: 'runner_refused', viaClaude: { failure: 'plan_limit', resetsAt: '2030-03-17T17:46:40.000Z' } });
+    expect(r.error).toBe("The Claude plan's limit was reached; it resets at 17:46 UTC.");
+    expect(r.refusal).toMatchObject({ runner: 'shared-claude', reason: 'plan_limit' });
+  });
+
+  it('turns a refused sign-in into a line for the thread and no retry', async () => {
+    gw.setScript(() => [{ type: 'fail', error: 'API Error: 401', extra: { reason: 'needs_sign_in' } }]);
+    const r = await run();
+    expect(r).toMatchObject({ ok: false, failure: 'runner_refused', viaClaude: { failure: 'needs_sign_in' } });
+    expect(r.error).toMatch(/upload a new sign-in file/);
+    expect(gw.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/runs'))).toHaveLength(1);
+  });
+
+  it('adds nothing for a target that is not a Claude runner', async () => {
+    gw.setScript(() => [{ type: 'finish', output: 'done' }]);
+    const r = resultOf(await collect((await runOnGateway(options({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent: 'claude-code' as const }) }), input(), scope, { connection: 'host', profile: 'mt-coder' })).events));
+    expect(r.viaClaude).toBeUndefined();
+  });
+});
+
 describe('what a run carries to the gateway', () => {
   const external = (agent: 'hermes' | 'claude-code' | 'codex') => ({ resolve: async () => ({ baseUrl: gw.url, apiKey: KEY, kind: 'external' as const, agent }) });
   const bodyOf = (): Record<string, unknown> => gw.calls.find((c) => c.method === 'POST' && c.path === '/p/mt-coder/v1/runs')!.body as Record<string, unknown>;

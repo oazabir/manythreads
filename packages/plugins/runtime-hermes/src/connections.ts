@@ -110,6 +110,13 @@ async function targetOfRunner(ctx: PluginContext, teamId: string, runner: string
     if (target.key === null) return cannot('which is not set up yet. An admin has to give it a key.');
     return { baseUrl: target.address, apiKey: target.key, guarded: target.guard, kind: 'external', agent: target.agent, profileRule: target.profileRule };
   }
+  if (target.kind === 'claude_cli') {
+    if (target.key === null) return cannot('which is not set up yet.');
+    // One pod for every team on the runner's list: the bridge's profile is `<team>--<bot>`, so the team's slug is put into the rule here.
+    const slug = (await ctx.db.system(async (tx) => (await tx.query<{ slug: string }>('SELECT slug FROM app.teams WHERE id = $1::uuid', [teamId])).rows[0]))?.slug;
+    if (!slug) return cannot('but the bot\'s team could not be found.');
+    return { baseUrl: target.address, apiKey: target.key, guarded: false, kind: 'external', agent: 'claude-code', profileRule: target.profileRule.split('{team}').join(slug), runner, claudeRunner: runner };
+  }
   if (target.kind === 'hermes_pod') {
     if (!bot) return cannot('but the bot could not be found on this team.');
     const secrets = await ensureProfileSecrets(ctx, bot);

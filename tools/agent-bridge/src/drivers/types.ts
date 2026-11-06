@@ -7,6 +7,8 @@ export interface Usage {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  /** The CLI's own cost figure for the run (`total_cost_usd`), when it gives one. Its number, not a price. */
+  cost?: number;
 }
 
 export type DriverResult = { ok: true; output: string; usage: Usage | null } | { ok: false; error: string };

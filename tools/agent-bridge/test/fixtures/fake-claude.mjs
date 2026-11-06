@@ -90,5 +90,5 @@ if (stdin.includes('SLOW') || stdin.includes('TRAP')) {
   out({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't2', name: 'mcp__manythreads__post', input: { text: 'x' } }] } });
   out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't2', content: 'denied', is_error: true }] } });
   out({ type: 'assistant', message: { content: [{ type: 'text', text: 'Done.' }] } });
-  out({ type: 'result', subtype: 'success', is_error: false, result: stdin.includes('ECHOTOKEN') ? `Done. token=${process.env.MANYTHREADS_RUN_TOKEN}` : 'Looking. Done.', session_id: sid, usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100 } });
+  out({ type: 'result', subtype: 'success', is_error: false, result: stdin.includes('ECHOTOKEN') ? `Done. token=${process.env.MANYTHREADS_RUN_TOKEN}` : 'Looking. Done.', session_id: sid, usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100 }, total_cost_usd: 0.0123 });
 }

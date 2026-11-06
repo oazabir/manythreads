@@ -32,6 +32,8 @@ export interface GatewayTarget {
   profileRule?: string;
   /** The name of the runner of the catalog this target came from (a pod runner), when it came from one. Used to name the runner in the unmetered-run event. */
   runner?: string;
+  /** Set when the target is a shared Claude Code runner (P19-07): the run's result then carries `viaClaude` so the run job can count it and pause the runner. */
+  claudeRunner?: string;
 }
 
 /**
@@ -200,6 +202,7 @@ export async function runOnGateway(
     return doFetch(`${base}${path}`, { ...init, redirect: 'error', headers: { ...headers, ...(init.headers as Record<string, string> | undefined) }, signal });
   };
 
+  const claudeRunner = target.claudeRunner;
   const budgetMs = (input.limits.runBudgetSeconds ?? DEFAULT_BUDGET_SECONDS) * 1000;
   const startedAt = Date.now();
   const unreachable = (what: string): BotRuntimeHandle => {
@@ -247,7 +250,7 @@ export async function runOnGateway(
         await res.body?.cancel().catch(() => undefined);
         const asked = Number(res.headers.get('retry-after'));
         const pause = Math.min(30, Math.max(Number.isFinite(asked) && asked > 0 ? asked : 1, 2 ** Math.min(attempt, 5)));
-        if ((Date.now() - startedAt) / 1000 + pause > MAX_START_WAIT_SECONDS) return { handle: refusedRun("the bot's Hermes is busy: it is at its limit of runs at once") };
+        if ((Date.now() - startedAt) / 1000 + pause > MAX_START_WAIT_SECONDS) return { handle: refusedRun(target.claudeRunner !== undefined ? 'This Claude runner is busy: it is at its limit of runs at once. Try again in a few minutes.' : "the bot's Hermes is busy: it is at its limit of runs at once") };
         scope.log(`runtime-hermes: run ${runId}: the gateway is at its run limit; retrying in ${pause}s`);
         await sleep(pause * retryUnitMs);
         continue;
@@ -363,6 +366,21 @@ export async function runOnGateway(
     yield { kind: 'end', terminal: null };
   }
 
+  /** The words the bridge gives for an account-level failure (`reason`) and when the plan comes back (`resets_at`, ms since the epoch). */
+  const accountFailureOf = (f: Record<string, unknown>): { failure: 'plan_limit' | 'needs_sign_in'; resetsAt: string | null } | null => {
+    if (f['reason'] !== 'plan_limit' && f['reason'] !== 'needs_sign_in') return null;
+    const at = typeof f['resets_at'] === 'number' && Number.isFinite(f['resets_at']) ? new Date(f['resets_at']).toISOString() : null;
+    return { failure: f['reason'], resetsAt: f['reason'] === 'plan_limit' ? at : null };
+  };
+  /** What a result of a shared Claude runner adds for the run job (usage and pause); nothing for any other target. */
+  const claudeMark = (f: Record<string, unknown>): { viaClaude?: NonNullable<Extract<BotRuntimeEvent, { type: 'result' }>['viaClaude']> } => {
+    if (claudeRunner === undefined) return {};
+    const account = accountFailureOf(f);
+    const usage = f['usage'];
+    const cost = usage !== null && typeof usage === 'object' && typeof (usage as Record<string, unknown>)['cost'] === 'number' ? ((usage as Record<string, number>)['cost'] ?? null) : null;
+    return { viaClaude: { runner: claudeRunner, seconds: (Date.now() - startedAt) / 1000, cost, ...(account ? { failure: account.failure, resetsAt: account.resetsAt } : {}) } };
+  };
+
   async function* events(): AsyncGenerator<BotRuntimeEvent> {
     const deltas: string[] = [];
     const tools = new Map<string, number>();
@@ -433,7 +451,7 @@ export async function runOnGateway(
     const f = terminal.fields;
     if (terminal.event === 'run.completed') {
       const output = typeof f['output'] === 'string' && f['output'].trim() !== '' ? f['output'] : streamed;
-      yield { type: 'result', text: output, ok: true, tokens: tokensOf(f['usage']) };
+      yield { type: 'result', text: output, ok: true, tokens: tokensOf(f['usage']), ...claudeMark(f) };
       return;
     }
     const error =
@@ -442,6 +460,13 @@ export async function runOnGateway(
         : terminal.event === 'run.interrupted'
           ? "the bot's Hermes restarted during the run"
           : f['own'] === true && typeof f['error'] === 'string' ? f['error'] : f['error'] === undefined ? "the run failed on the bot's Hermes" : "the run failed on the bot's Hermes (its message is not repeated)";
+    // A shared Claude runner that reports a standing account failure: say it in a plain line, once, and let the run job pause the runner.
+    const account = claudeRunner !== undefined ? accountFailureOf(f) : null;
+    if (account !== null) {
+      const line = account.failure === 'plan_limit' ? `The Claude plan's limit was reached${account.resetsAt ? `; it resets at ${account.resetsAt.slice(11, 16)} UTC` : ''}.` : 'Claude refused the sign-in of this runner. An admin has to upload a new sign-in file.';
+      yield { type: 'result', text: streamed, ok: false, error: line, failure: 'runner_refused', refusal: { runner: claudeRunner!, reason: account.failure, line }, tokens: null, ...claudeMark(f) };
+      return;
+    }
     yield {
       type: 'result',
       text: streamed,
@@ -449,6 +474,7 @@ export async function runOnGateway(
       error,
       ...(timedOut ? { failure: 'timeout' as const } : terminal.event === 'run.interrupted' ? { failure: 'hermes_unreachable' as const } : {}),
       tokens: tokensOf(f['usage']),
+      ...claudeMark(f),
     };
   }
 

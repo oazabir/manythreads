@@ -32,8 +32,9 @@ export type FakeRunStep =
   | { type: 'wait'; ms: number }
   /** Wait until the run is stopped (or `ms` pass), then end cancelled. */
   | { type: 'hang'; ms?: number }
-  | { type: 'finish'; output?: string; usage?: { input_tokens: number; output_tokens: number; total_tokens: number } }
-  | { type: 'fail'; error: string };
+  | { type: 'finish'; output?: string; usage?: { input_tokens: number; output_tokens: number; total_tokens: number; cost?: number } }
+  /** `extra`: more fields on the terminal frame, as the agent bridge adds (`reason`, `resets_at`). */
+  | { type: 'fail'; error: string; extra?: Record<string, unknown> };
 
 export type FakeRunScript = (run: FakeHermesRun) => FakeRunStep[] | Promise<FakeRunStep[]>;
 
@@ -183,7 +184,7 @@ export async function startFakeHermesGateway(options: FakeHermesOptions): Promis
           step.onResult?.(outcome);
         } else if (step.type === 'fail') {
           state.error = step.error;
-          finish('failed', { error: step.error });
+          finish('failed', { error: step.error, ...(step.extra ?? {}) });
           return;
         } else if (step.type === 'finish') {
           state.output = step.output ?? deltas;
