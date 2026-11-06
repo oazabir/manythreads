@@ -66,6 +66,20 @@ test('search, row menu change role, invite people', async ({ browser, playwright
     await expect(dialog).toBeHidden();
     await expect(rowOf(page, 'rafi@kahf.example')).toContainText('admin');
     await expect(page.getByTestId('member-note')).toContainText('Rafi is now an admin.');
+    // it was saved on the server, not only drawn: a reload still shows it
+    await page.reload();
+    await expect(rowOf(page, 'rafi@kahf.example')).toContainText('admin');
+
+    // and back: the spec leaves the person as it found them (the stack is its own and is dropped, but a later test in this file reads the list)
+    await rafiMenu.click();
+    await page.getByRole('menuitem', { name: 'Change role' }).click();
+    const back = page.getByRole('dialog', { name: 'Change role for Rafi' });
+    await expect(back.getByLabel('Role')).toHaveValue('admin');
+    await back.getByLabel('Role').selectOption('member');
+    await back.getByRole('button', { name: 'Save role' }).click();
+    await expect(back).toBeHidden();
+    await expect(page.getByTestId('member-note').last()).toContainText('Rafi is now a member.');
+    await expect(rowOf(page, 'rafi@kahf.example')).toContainText('member');
 
     // Send a password reset
     await rafiMenu.click();
@@ -96,6 +110,13 @@ test('on a phone the rows stack, the menu opens and nothing scrolls sideways', a
   try {
     await expect(page.getByTestId('member-row').first()).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
+    // the two controls above the list are on screen at 390 px
+    await expect(page.getByRole('searchbox', { name: 'Search people' })).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'Invite people' })).toBeInViewport();
+    // a long address wraps inside its card instead of pushing the page sideways
+    await page.getByRole('searchbox', { name: 'Search people' }).fill('kahf.example');
+    expect(await noSidewaysScroll(page)).toBe(true);
+    await page.getByRole('searchbox', { name: 'Search people' }).fill('');
     await page.getByRole('button', { name: 'Options for Nadia' }).click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();

@@ -15,5 +15,12 @@ describe('accountPageFor', () => {
     expect(accountPageFor(h('acc-sessions'))).toBe('security');
     expect(accountPageFor(h('acc-password'))).toBe('security');
     expect(accountPageFor(h('acc-connections'))).toBe('connections');
+    expect(accountPageFor(h('acc-presence'))).toBe('notifications');
+    expect(accountPageFor(h('acc-methods'))).toBe('security');
+  });
+  it('reads the anchor without the hash sign and does not guess from a part of a name', () => {
+    expect(accountPageFor('acc-sessions')).toBe('security');
+    expect(accountPageFor(h('acc-sessions-extra'))).toBe('profile');
+    expect(accountPageFor(h('%E0%A4%A'))).toBe('profile');
   });
 });

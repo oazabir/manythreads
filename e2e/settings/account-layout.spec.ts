@@ -26,10 +26,16 @@ test('the account row opens Profile in the settings layout', async ({ browser, p
     await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
     const nav = page.getByRole('navigation', { name: 'Settings' });
     for (const label of ['Profile', 'Notifications', 'Connections', 'Security']) await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Security', exact: true })).toBeVisible();
+    // the page you are on is the one marked current (a screen reader hears "current page")
+    await expect(nav.getByRole('link', { name: 'Profile', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(nav.getByRole('link', { name: 'Security', exact: true })).not.toHaveAttribute('aria-current', 'page');
+    await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
     await nav.getByRole('link', { name: 'Notifications', exact: true }).click();
     await expect(page).toHaveURL(/\/account\/notifications$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible();
     await expect(page.getByTestId('notification-settings')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: 'What can interrupt you' })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Notifications', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page).toHaveTitle(/^Notifications · /);
   } finally {
     await context.close();
@@ -45,6 +51,44 @@ test('/account and its old anchors land on the page that holds the section', asy
     await expect(page.getByTestId('presence-settings')).toBeVisible();
     await page.goto('/account#' + 'acc-notifications');
     await expect(page).toHaveURL(new RegExp('/account/notifications' + '#' + 'acc-notifications$'));
+    // the digest mail links here: the section it names is scrolled into view after the redirect
+    await expect(page.getByRole('heading', { level: 2, name: 'What can interrupt you' })).toBeInViewport();
+    await page.goto('/account#' + 'acc-sessions');
+    await expect(page).toHaveURL(new RegExp('/account/security' + '#' + 'acc-sessions$'));
+    await page.goto('/account#' + 'acc-connections');
+    await expect(page).toHaveURL(new RegExp('/account/connections' + '#' + 'acc-connections$'));
+  } finally {
+    await context.close();
+  }
+});
+
+test('a hand-typed anchor with a broken %-sequence does not break Notifications', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/notifications');
+  try {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto('/account/notifications#' + '%E0%A4%A');
+    await expect(page.getByRole('heading', { level: 1, name: 'Notifications' })).toBeVisible();
+    await expect(page.getByTestId('notification-settings')).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a guest sees only the Account pages in the settings layout', async ({ browser, playwright, isMobile }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'lena', '/account/profile');
+  try {
+    await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible();
+    // the section select (the phone's navigation) holds the same: one group, the four pages, no workspace and no Teams
+    const groups = await page.locator('#settings-section optgroup').evaluateAll((os) => os.map((o) => (o as HTMLOptGroupElement).label));
+    expect(groups).toEqual(['Account']);
+    const options = await page.locator('#settings-section option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).label));
+    expect(options).toEqual(['Profile', 'Notifications', 'Connections', 'Security']);
+    if (!isMobile) {
+      const nav = page.getByRole('navigation', { name: 'Settings' });
+      expect(await nav.locator('.tgrp').allTextContents()).toEqual(['Account']);
+    }
   } finally {
     await context.close();
   }
@@ -69,9 +113,14 @@ test('on a phone the account pages use the section select and fit the width', as
   try {
     const select = page.getByLabel('Settings section');
     await expect(select).toHaveValue('/account/profile');
-    await select.selectOption('/account/security');
-    await expect(page).toHaveURL(/\/account\/security$/);
-    expect(await noSidewaysScroll(page)).toBe(true);
+    // every Account page fits 390 px (the Security page holds the sessions list, Notifications the widest forms)
+    for (const to of ['/account/security', '/account/notifications', '/account/connections', '/account/profile']) {
+      await select.selectOption(to);
+      await expect(page).toHaveURL(new RegExp(`${to}$`));
+      await expect(select).toHaveValue(to);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      expect(await noSidewaysScroll(page), to).toBe(true);
+    }
   } finally {
     await context.close();
   }

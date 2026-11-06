@@ -9,6 +9,17 @@ describe('usage chart days', () => {
     const out = fillDays([day('2026-11-01', 4), day('2026-11-04', 9)], 7, '2026-11-05');
     expect(out.map((d) => d.day)).toEqual(['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05']);
     expect(out.map((d) => d.runs)).toEqual([0, 0, 4, 0, 0, 9, 0]);
+    // a reader who may see money sees a missing day as $0, not as hidden
+    expect(out.map((d) => d.spendUsd)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it('drops the oldest days when the range is shorter than what it was given, and keeps the newest', () => {
+    const out = fillDays([day('2026-11-01', 1), day('2026-11-02', 2), day('2026-11-03', 3)], 2, '2026-11-03');
+    expect(out.map((d) => d.day)).toEqual(['2026-11-02', '2026-11-03']);
+  });
+
+  it('does not throw for a malformed end day', () => {
+    expect(fillDays([], 3, 'not-a-day')).toHaveLength(3);
   });
 
   it('draws 30 days from nothing at all', () => {
@@ -40,5 +51,7 @@ describe('usage chart days', () => {
     expect(dayMonth('2026-11-03')).toBe('3 Nov');
     expect(barLabel('2026-11-03', '18', 'runs')).toBe('3 Nov: 18 runs');
     expect(barLabel('2026-11-03', '18', 'runs', 2)).toBe('3 Nov: 18 runs (2 failed)');
+    // money has no unit word: "$3.20", with no trailing space
+    expect(barLabel('2026-11-03', '$3.20', '')).toBe('3 Nov: $3.20');
   });
 });

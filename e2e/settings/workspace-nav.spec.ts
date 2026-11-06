@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { startStack, type Stack } from '../fixtures/stack.ts';
-import { openOn } from '../support/stack-browser.ts';
+import { PHONE, openOn } from '../support/stack-browser.ts';
 
 /*
  * The settings navigation (PLAN P21-19, POLISH 6.2): grouped (People, Bots and models, Security, Operations), an icon on every item, and it stays
@@ -34,6 +34,8 @@ test('an admin sees four workspace groups in order, with an icon on each item', 
       await expect(group.locator('.tab-ico svg')).toHaveCount(items.length);
     }
     await expect(nav.getByRole('link', { name: 'General', exact: true })).toHaveClass(/\bon\b/);
+    await expect(nav.getByRole('link', { name: 'General', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(nav.getByRole('link', { name: 'Members', exact: true })).not.toHaveAttribute('aria-current', 'page');
     await nav.getByRole('link', { name: 'Members', exact: true }).click();
     await expect(page).toHaveURL(/\/settings\/workspace\/members$/);
     await expect(page).toHaveTitle(/^Members · /);
@@ -42,7 +44,7 @@ test('an admin sees four workspace groups in order, with an icon on each item', 
   }
 });
 
-test('the navigation is sticky and fits a 900 px screen by scrolling inside itself', async ({ browser, playwright, isMobile }) => {
+test('the navigation is sticky and, on a 700 px high screen, scrolls inside itself', async ({ browser, playwright, isMobile }) => {
   test.skip(isMobile, 'the side navigation is hidden on a phone');
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/settings/workspace/general', { viewport: { width: 1440, height: 700 } });
   try {
@@ -72,6 +74,20 @@ test('a member sees Account and Teams only', async ({ browser, playwright, isMob
     const headings = await nav.locator('.tgrp').allTextContents();
     expect(headings.slice(0, 2)).toEqual(['Account', 'Teams']);
     await expect(nav.getByRole('link', { name: 'Members', exact: true })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: 'Audit', exact: true })).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a member sees the same two groups in the phone select', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/account/profile', { viewport: PHONE, mobile: true });
+  try {
+    const groups = await page.locator('#settings-section optgroup').evaluateAll((os) => os.map((o) => (o as HTMLOptGroupElement).label));
+    expect(groups.slice(0, 2)).toEqual(['Account', 'Teams']);
+    expect(groups).not.toContain('People');
+    const values = await page.locator('#settings-section option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+    expect(values).not.toContain('/settings/workspace/members');
   } finally {
     await context.close();
   }

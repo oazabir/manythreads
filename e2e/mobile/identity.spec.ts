@@ -41,6 +41,11 @@ test('sign-in on the phone: the card has 16 px gutters, the Show password button
   await page.getByLabel('Password', { exact: true }).fill('typed-on-a-phone');
   await page.getByRole('button', { name: 'Show password' }).tap();
   await expect(page.getByLabel('Password', { exact: true })).toHaveAttribute('type', 'text');
+  await expect(page.getByRole('button', { name: 'Show password' })).toHaveAttribute('aria-pressed', 'true');
+  // the button sits inside the password box, on its right edge
+  const box = await page.getByLabel('Password', { exact: true }).boundingBox();
+  const eye = await page.getByRole('button', { name: 'Show password' }).boundingBox();
+  expect(box!.x + box!.width).toBeGreaterThanOrEqual(eye!.x + eye!.width - 1);
   await noSideScroll(page);
 });
 

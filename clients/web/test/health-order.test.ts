@@ -26,6 +26,13 @@ describe('System health order and verdict', () => {
     expect(checkStatus(off)).toEqual({ tone: 'off', word: 'Off' });
   });
 
+  it('says Off for a switched-off check even when it has no reading, and never counts it as a problem', () => {
+    const silent = check('silent', { threshold: 0, value: null });
+    expect(checkStatus(silent)).toEqual({ tone: 'off', word: 'Off' });
+    expect(healthSummary([silent, fine]).problems).toBe(0);
+    expect(healthSummary([]).text).toBe('All fine');
+  });
+
   it('puts problems first, the worst of them on top, and keeps the server order inside a group', () => {
     const list = [fine, check('fine2'), off, over, check('over2', { value: 70, breached: true }), down];
     expect(sortChecks(list).map((c) => c.name)).toEqual(['down', 'over', 'over2', 'fine', 'fine2', 'off']);

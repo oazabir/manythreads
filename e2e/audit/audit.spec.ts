@@ -71,7 +71,8 @@ test('the admin sees the proposal applied, the approval decided and the sign-in,
   }
 });
 
-test('repeated sign-ins fold into one row that opens; Who and Outcome are chips; the header stays in view', async ({ browser, playwright }) => {
+test('repeated sign-ins fold into one row that opens; Who and Outcome are chips; the header stays in view', async ({ browser, playwright, isMobile }) => {
+  test.setTimeout(120_000); // the audit rows arrive from the event outbox: the first wait below is allowed 60 s
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/settings/workspace/audit');
   try {
     await expect(page.getByTestId('audit-table')).toBeVisible();
@@ -87,24 +88,40 @@ test('repeated sign-ins fold into one row that opens; Who and Outcome are chips;
     await toggle.click();
     await expect(page.locator('tr.audit-sub')).toHaveCount(0);
 
-    // Who: a chip toggles, pressing it again clears
+    // Who: a chip toggles, pressing it again clears. The rows must change to Omar's alone; an empty list would also pass "every row is Omar's", so it must hold some.
     const omarChip = page.getByRole('group', { name: 'Who' }).getByRole('button', { name: 'Omar', exact: true });
+    await expect(omarChip).toHaveAttribute('aria-pressed', 'false');
     await omarChip.click();
     await expect(omarChip).toHaveAttribute('aria-pressed', 'true');
-    await expect.poll(async () => (await page.locator('[data-testid="audit-table"] tbody tr .audit-who').allTextContents()).every((t) => t === 'Omar')).toBe(true);
+    await expect
+      .poll(async () => {
+        const who = await page.locator('[data-testid="audit-table"] tbody tr .audit-who').allTextContents();
+        return who.length > 0 && who.every((t) => t === 'Omar');
+      })
+      .toBe(true);
     await omarChip.click();
     await expect(omarChip).toHaveAttribute('aria-pressed', 'false');
+    // the other person (the refused sign-in was Nadia's address) is back in the list
+    await expect.poll(async () => (await page.locator('[data-testid="audit-table"] tbody tr .audit-who').allTextContents()).includes('Nadia')).toBe(true);
 
-    // Outcome: Refused keeps the refused sign-in and drops the done ones
+    // Outcome: Refused keeps the refused sign-in (the audit maps sign_in.failed to the "denied" outcome, worded Refused) and drops the done ones.
+    // Poll for both halves together: the list before the click already holds the failed row, so a lone "contains" would pass on the old list.
     const refused = page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: 'Refused', exact: true });
     await refused.click();
-    await expect.poll(async () => await actions(page)).toContain('sign_in.failed');
-    expect(await actions(page)).not.toContain('sign_in.succeeded');
+    await expect(refused).toHaveAttribute('aria-pressed', 'true');
+    await expect
+      .poll(async () => {
+        const seen = await actions(page);
+        return seen.includes('sign_in.failed') && !seen.includes('sign_in.succeeded') && !seen.includes('proposal.applied');
+      })
+      .toBe(true);
+    await expect(page.locator('tr.audit-fold')).toHaveCount(0);
     await refused.click();
     await expect(refused).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(async () => (await actions(page)).includes('sign_in.succeeded')).toBe(true);
 
-    // the column heads are sticky
-    await expect(page.locator('.audit-table th').first()).toHaveCSS('position', 'sticky');
+    // the column heads are sticky (on a phone the head row is hidden and each cell carries its own label)
+    if (!isMobile) await expect(page.locator('.audit-table th').first()).toHaveCSS('position', 'sticky');
     expect(await noSidewaysScroll(page)).toBe(true);
   } finally {
     await context.close();

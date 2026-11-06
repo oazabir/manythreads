@@ -23,6 +23,13 @@ describe('folding the finished steps of Setup', () => {
     expect(isStepOpen('signin', folded, {})).toBe(true);
   });
 
+  it('opens a step that was folded at the start but is to do again, unless the person folded it', () => {
+    const folded = collapsedAtStart(steps);
+    expect(isStepOpen('bootstrap', folded, {}, 'todo')).toBe(true);
+    expect(isStepOpen('bootstrap', folded, {}, 'done')).toBe(false);
+    expect(isStepOpen('bootstrap', folded, { bootstrap: false }, 'todo')).toBe(false);
+  });
+
   it("lets a person's own fold or unfold win over the start", () => {
     const folded = collapsedAtStart(steps);
     expect(isStepOpen('bootstrap', folded, { bootstrap: true })).toBe(true);
