@@ -94,6 +94,10 @@ test('the bot page header keeps Talk, Deploy and the "…" button in one row, an
     const tops = await Promise.all(row.map(async (el) => Math.round((await el.boundingBox())!.y)));
     expect(new Set(tops).size, `Talk, Deploy and the menu share one row: ${tops.join(', ')}`).toBe(1);
     for (const el of row) await insideScreen(el, 'a header button');
+    for (const el of row) {
+      const box = (await el.boundingBox())!;
+      expect(Math.min(box.width, box.height), 'a header button is at least 44 px each way').toBeGreaterThanOrEqual(44);
+    }
     expect(await noSidewaysScroll(page)).toBe(true);
 
     // the icon-only button is named for a screen reader

@@ -5,6 +5,14 @@
   align-content: start;
 }
 
+.usage-bare {
+  padding-bottom: 28px;
+}
+
+.usage-bare > :not(.ph) {
+  margin-inline: 20px;
+}
+
 .usage-page .lede {
   margin-bottom: 4px;
 }

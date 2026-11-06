@@ -167,6 +167,7 @@ export function BotUsage() {
   return (
     <Page
       testId="usage-bot"
+      bare
       title={q.status === 'ok' ? `${q.data.bot.name} usage` : 'Bot usage'}
       lede="What this bot did: runs, tool calls, approvals and answers. Money is shown to workspace admins only. Only counts are kept, never what anyone wrote or read."
     >

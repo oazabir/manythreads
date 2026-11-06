@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- live probe */
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
@@ -179,9 +178,9 @@ test('3 settings nav and account pages', async () => {
   const p = omar.page;
   await go(p, '/account');
   log(`/account -> ${p.url().replace(BASE, '')}`);
-  await go(p, '/account#acc-notifications');
-  log(`/account#acc-notifications -> ${p.url().replace(BASE, '')} h1="${await p.locator('h1').first().textContent()}" h2s=${JSON.stringify(await p.locator('h2').allTextContents())}`);
-  const nav = p.locator('nav[aria-label], aside nav').first();
+  const hash = '#' + 'acc-notifications';
+  await go(p, `/account${hash}`);
+  log(`/account${hash} -> ${p.url().replace(BASE, '')} h1="${await p.locator('h1').first().textContent()}" h2s=${JSON.stringify(await p.locator('h2').allTextContents())}`);
   log(`nav text: ${JSON.stringify((await p.locator('nav').filter({ hasText: 'Profile' }).first().innerText().catch(() => '')).replace(/\n+/g, ' / ').slice(0, 400))}`);
   await both('/account/profile', '03-account-profile');
   await both('/account/notifications', '03-account-notifications');

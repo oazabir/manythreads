@@ -1136,6 +1136,10 @@
 
   .bot-screen .b-head-act .btn {
     min-height: 44px; /* a touch target: Talk, Deploy and the "…" */
+    min-width: 44px;
+    display: inline-flex; /* Talk is a link: centre its word the way Deploy's button does */
+    align-items: center;
+    justify-content: center;
     white-space: nowrap;
   }
 

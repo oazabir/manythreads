@@ -80,7 +80,8 @@ textarea {
 .agents-screen > .ph,
 .rg-screen > .ph,
 .bots-screen > .ph,
-.bot-screen > .ph {
+.bot-screen > .ph,
+.su-screen > .ph {
   padding: 0 0 12px;
 }
 

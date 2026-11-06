@@ -126,9 +126,10 @@ export function Updated({ at, onRefresh }: { at: string; onRefresh: () => void }
   );
 }
 
-export function Page({ title, lede, children, testId }: { title: string; lede: string; children: ReactNode; testId: string }) {
+export function Page({ title, lede, children, testId, bare }: { title: string; lede: string; children: ReactNode; testId: string; bare?: boolean }) {
+  // `bare`: the page is a route of its own (the bot's), not inside the settings frame, so it keeps its own side gutters
   return (
-    <div className="usage-page" data-landmark="usage" data-testid={testId}>
+    <div className={bare ? 'usage-page usage-bare' : 'usage-page'} data-landmark="usage" data-testid={testId}>
       <PageHeader title={title} />
       <p className="lede" data-landmark="lede">{lede}</p>
       {children}
