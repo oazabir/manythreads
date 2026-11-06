@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { TASK_STATES, type TaskState } from '@manythreads/shared';
+import { MAX_BOARD_COLUMNS, TASK_STATES, type TaskState } from '@manythreads/shared';
 import { AddIcon } from '../../shell/icons';
 import { STATE_LABEL } from './board';
 
@@ -8,9 +8,9 @@ import { STATE_LABEL } from './board';
  * every move into the column; two columns may count as the same state.
  */
 
-type Props = { onAdd: (name: string, state: TaskState) => Promise<void> };
+type Props = { onAdd: (name: string, state: TaskState) => Promise<void>; full?: boolean };
 
-export function AddColumn({ onAdd }: Props) {
+export function AddColumn({ onAdd, full = false }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [state, setState] = useState<TaskState>('in_progress');
@@ -19,7 +19,7 @@ export function AddColumn({ onAdd }: Props) {
   if (!open) {
     return (
       <div className="bd-addcol">
-        <button type="button" className="btn s" data-testid="add-column" onClick={() => setOpen(true)}>
+        <button type="button" className="btn s" data-testid="add-column" disabled={full} title={full ? `A board holds at most ${MAX_BOARD_COLUMNS} columns` : undefined} onClick={() => setOpen(true)}>
           <AddIcon /> Add column
         </button>
       </div>
@@ -39,7 +39,7 @@ export function AddColumn({ onAdd }: Props) {
   };
 
   return (
-    <div className="bd-addcol open" data-testid="add-column-form">
+    <div className="bd-addcol open" data-testid="add-column-form" onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}>
       <label className="bd-field">
         <span>Column name</span>
         <input value={name} maxLength={60} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void submit()} data-testid="add-column-name" />

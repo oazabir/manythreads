@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import type { Board, BoardColumn, Task } from '@manythreads/shared';
+import { MAX_BOARD_COLUMNS, type Board, type BoardColumn, type Task } from '@manythreads/shared';
 import { useQuery } from '../../app/useQuery';
 import { isApiError } from '../../api/client';
 import { Alert } from '../../components/ui';
@@ -428,7 +428,7 @@ export function BoardView({ slug, boards, canManage, onBoardsChanged }: Props) {
                 ))}
               </section>
             ))}
-            {canManage ? <AddColumn onAdd={(name, state) => editColumns(() => addColumn(slug, board.id, { name, state })).then(() => undefined)} /> : null}
+            {canManage ? <AddColumn full={board.columns.length >= MAX_BOARD_COLUMNS} onAdd={(name, state) => editColumns(() => addColumn(slug, board.id, { name, state })).then(() => undefined)} /> : null}
           </div>
         )}
         <p className="sr-only bd-live" role="status" aria-live="polite" data-testid="board-live">{live}</p>

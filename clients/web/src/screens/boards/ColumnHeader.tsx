@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { BoardColumn } from '@manythreads/shared';
 import { CloseIcon, ColumnDeleteIcon, ColumnGripIcon, ColumnLeftIcon, ColumnRightIcon, MoreIcon, PencilIcon } from '../../shell/icons';
 
@@ -25,8 +25,21 @@ export function ColumnHeader({ column, index, last, total, canManage, onRename, 
   const [menu, setMenu] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  /** Set by Escape so the blur that follows the input going away does not save the half-typed name. */
+  const cancelled = useRef(false);
+
+  // Opening the menu puts the focus on its first button, so the keyboard can use it at once.
+  useEffect(() => {
+    if (menu) menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+  }, [menu, confirm]);
 
   const saveName = async (): Promise<void> => {
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
+    }
     const next = (name ?? '').trim();
     setName(null);
     if (next !== '' && next !== column.name) await onRename(next);
@@ -65,7 +78,10 @@ export function ColumnHeader({ column, index, last, total, canManage, onRename, 
           onBlur={() => void saveName()}
           onKeyDown={(e) => {
             if (e.key === 'Enter') void saveName();
-            if (e.key === 'Escape') setName(null);
+            if (e.key === 'Escape') {
+              cancelled.current = true;
+              setName(null);
+            }
           }}
         />
       ) : (
@@ -76,11 +92,23 @@ export function ColumnHeader({ column, index, last, total, canManage, onRename, 
       </span>
       {canManage ? (
         <span className="bd-col-menu-wrap">
-          <button type="button" className="bd-col-more" aria-label={`Options for column ${column.name}`} aria-expanded={menu} data-testid="column-menu" onClick={() => { setMenu((v) => !v); setConfirm(false); }}>
+          <button type="button" ref={moreRef} className="bd-col-more" aria-label={`Options for column ${column.name}`} aria-expanded={menu} data-testid="column-menu" onClick={() => { setMenu((v) => !v); setConfirm(false); }}>
             <MoreIcon />
           </button>
           {menu ? (
-            <div className="bd-col-menu" role="group" aria-label={`Column ${column.name}`}>
+            <div
+              className="bd-col-menu"
+              role="group"
+              aria-label={`Column ${column.name}`}
+              ref={menuRef}
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return;
+                e.stopPropagation();
+                setMenu(false);
+                setConfirm(false);
+                moreRef.current?.focus();
+              }}
+            >
               {confirm ? (
                 <>
                   <p className="bd-muted">Delete {column.name}?</p>
