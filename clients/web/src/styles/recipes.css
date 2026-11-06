@@ -80,6 +80,7 @@
 }
 
 .rg-item {
+  position: relative;
   display: flex;
   min-width: 0;
 }
@@ -112,14 +113,51 @@
 
 .rg-card-top {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px 10px;
+  align-items: center;
+  gap: 8px;
   width: 100%;
+  min-width: 0;
+}
+
+/* the shelf's picture: a small tinted square before the name */
+.rg-ico {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--human-wash);
+  color: var(--human);
+}
+
+/* the Add button sits where the state pill would (a recipe with a pill never has the button) */
+.rg-add {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.rg-item.has-add .rg-card-top {
+  padding-right: 52px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rg-add {
+    opacity: 0;
+  }
+
+  .rg-add:focus-visible,
+  .rg-item:hover .rg-add,
+  .rg-item:focus-within .rg-add {
+    opacity: 1;
+  }
 }
 
 .rg-name {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-body);
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -138,11 +176,18 @@
 }
 
 .rg-meta {
+  display: block;
+  width: 100%;
   margin-top: auto;
-  color: var(--faint);
+  overflow: hidden;
+  color: var(--mute);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .rg-state {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -287,5 +332,13 @@
   .rg-head-act .btn,
   .rg-chip {
     min-height: 36px;
+  }
+
+  .rg-add {
+    min-height: 36px;
+  }
+
+  .rg-item.has-add .rg-card-top {
+    padding-right: 60px;
   }
 }

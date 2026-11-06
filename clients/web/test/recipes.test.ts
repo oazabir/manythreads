@@ -82,6 +82,7 @@ describe('where a recipe stands', () => {
     expect(out).toContain('Installed, schedule off');
     expect(out).toContain('data-state="installed"');
   });
+  // the pill for a recipe nobody has touched is covered by recipes-pill.test.ts
 });
 
 describe('what a card says it needs', () => {
@@ -150,8 +151,8 @@ describe('the parts', () => {
     expect(out).toContain('Bug triage');
     expect(out).toContain('Each morning sorts new bug reports into cards.');
     expect(out).toContain('Needs: A channel called #bugs');
-    expect(out).toContain('Ready to add');
-    expect(out).toContain('aria-label="Bug triage: Ready to add. Open the details."');
+    expect(out).not.toContain('Ready to add');
+    expect(out).toContain('aria-label="Bug triage. Open the details."');
   });
 
   it('draws the facts: schedule, needs, abilities, result page, checks and the three files', () => {

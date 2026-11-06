@@ -2,15 +2,17 @@ import type { InstallRecipeResponse, RecipeCard } from '@manythreads/shared';
 import type { ReactNode } from 'react';
 import { friendlyPath } from '../../components/friendlyPath';
 import { Link } from 'react-router';
-import { checksLine, fileRole, filedLine, needsLine, runtimeLine, stateLook, type InstallGate } from './words';
+import { RecipeContentIcon, RecipeCustomersIcon, RecipeEngineeringIcon, RecipePeopleIcon, RecipeRequestsIcon, RecipeRhythmIcon } from '../../shell/icons';
+import { canOfferAdd, checksLine, fileRole, filedLine, needsLine, pillShown, runtimeLine, stateLook, type InstallGate } from './words';
 
 /*
  * The pieces of the recipe gallery: a card on the shelf, the facts a recipe shows before anyone installs it, and what is shown after the install filed its proposals.
  * They only draw what they are given (no requests here), so a test can render each one to markup.
  */
 
-/** The state of a recipe as a word, a shape and a colour. */
+/** The state of a recipe as a word, a shape and a colour. A recipe nobody has touched ("Ready to add") draws nothing. */
 export function StatePill({ card }: { card: Pick<RecipeCard, 'state' | 'scheduled' | 'openProposals'> }) {
+  if (!pillShown(card)) return null;
   const s = stateLook(card);
   return (
     <span className={`rg-state ${s.tone}`} title={s.hint} data-testid="recipe-state" data-state={card.state}>
@@ -19,19 +21,50 @@ export function StatePill({ card }: { card: Pick<RecipeCard, 'state' | 'schedule
   );
 }
 
-/** One recipe on the shelf: its name, what it does in a line, what it needs, and where it stands. The whole card opens the detail. */
+const CATEGORY_ICONS = {
+  requests: RecipeRequestsIcon,
+  rhythm: RecipeRhythmIcon,
+  customers: RecipeCustomersIcon,
+  engineering: RecipeEngineeringIcon,
+  people: RecipePeopleIcon,
+  content: RecipeContentIcon,
+} as const;
+
+/** The small picture of a recipe's shelf (its category). */
+export function CategoryIcon({ category }: { category: RecipeCard['category'] }) {
+  const Icon = CATEGORY_ICONS[category];
+  return <span className="rg-ico" data-category={category}><Icon /></span>;
+}
+
+/**
+ * One recipe on the shelf: a picture for its shelf, its name, what it does in a line, what it needs, and where it stands. The card opens the detail. A recipe that is not in the team
+ * yet also has an Add button (it opens the same detail, where Install lives, so nobody files three proposals unread): shown on hover and on focus with a mouse, always with touch.
+ */
 export function RecipeTile({ card, onOpen }: { card: RecipeCard; onOpen: (card: RecipeCard) => void }) {
+  const offerAdd = canOfferAdd(card);
+  const meta = `${card.categoryLabel} · ${card.schedule.label}`;
   return (
-    <li className="rg-item">
-      <button type="button" className="rg-card" onClick={() => onOpen(card)} data-testid="recipe-card" data-recipe={card.id} aria-label={`${card.name}: ${stateLook(card).label}. Open the details.`}>
+    <li className={`rg-item ${offerAdd ? 'has-add' : ''}`}>
+      <button
+        type="button"
+        className="rg-card"
+        onClick={() => onOpen(card)}
+        data-testid="recipe-card"
+        data-recipe={card.id}
+        aria-label={pillShown(card) ? `${card.name}: ${stateLook(card).label}. Open the details.` : `${card.name}. Open the details.`}
+      >
         <span className="rg-card-top">
+          <CategoryIcon category={card.category} />
           <span className="rg-name">{card.name}</span>
           <StatePill card={card} />
         </span>
         <span className="rg-summary">{card.summary}</span>
         <span className="rg-needs">{needsLine(card)}</span>
-        <span className="rg-meta">{card.categoryLabel} · {card.schedule.label}</span>
+        <span className="rg-meta" title={meta}>{meta}</span>
       </button>
+      {offerAdd ? (
+        <button type="button" className="btn primary s rg-add" onClick={() => onOpen(card)} data-testid="recipe-add" aria-label={`Add ${card.name}`}>Add</button>
+      ) : null}
     </li>
   );
 }

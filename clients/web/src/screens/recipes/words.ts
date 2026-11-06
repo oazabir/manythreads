@@ -7,7 +7,10 @@ import { RECIPE_CATEGORIES, type RecipeCard, type RecipeCategory } from '@manyth
 
 export type StateLook = { tone: 'ok' | 'warn' | 'idle'; glyph: string; label: string; hint: string };
 
-/** One phrase for where a recipe stands in this team: ready to add, waiting for approval, installed but not yet on a schedule, or running. */
+/**
+ * One phrase for where a recipe stands in this team: ready to add, waiting for approval, installed but not yet on a schedule, or running.
+ * "Ready to add" is the default every card starts in, so it is kept for screen readers and never drawn as a pill (see `pillShown`).
+ */
 export function stateLook(c: Pick<RecipeCard, 'state' | 'scheduled' | 'openProposals'>): StateLook {
   if (c.state === 'waiting') {
     const n = c.openProposals;
@@ -20,6 +23,12 @@ export function stateLook(c: Pick<RecipeCard, 'state' | 'scheduled' | 'openPropo
   }
   return { tone: 'idle', glyph: '–', label: 'Ready to add', hint: 'Nothing of this recipe is in the team yet.' };
 }
+
+/** Whether the state pill is drawn: only when something has happened (waiting, installed); a recipe nobody touched carries no pill, and offers an Add button instead. */
+export const pillShown = (c: Pick<RecipeCard, 'state' | 'scheduled' | 'openProposals'>): boolean => stateLook(c).tone !== 'idle';
+
+/** Whether the card offers the Add button: the recipe is not in this team yet and nothing waits for approval. */
+export const canOfferAdd = (c: Pick<RecipeCard, 'state'>): boolean => c.state === 'available';
 
 /** What a recipe needs, in plain words, for the one-line summary on a card: the first need, and how many more. */
 export function needsLine(c: Pick<RecipeCard, 'needs'>): string {
@@ -40,9 +49,24 @@ export function shelves(cards: ReadonlyArray<Pick<RecipeCard, 'category'>>): She
   return out;
 }
 
-/** The recipes on one shelf (every recipe for "all"). */
-export function onShelf<T extends Pick<RecipeCard, 'category'>>(cards: ReadonlyArray<T>, shelf: RecipeCategory | 'all'): T[] {
-  return shelf === 'all' ? [...cards] : cards.filter((c) => c.category === shelf);
+/**
+ * The recipes people reach for first, in the order they are shown. No usage numbers exist yet, so the list is chosen by hand (owner default, PLAN F10-7);
+ * replace it with real install counts when there are some.
+ */
+export const POPULAR_RECIPES: ReadonlyArray<string> = ['daily-standup', 'weekly-digest', 'request-intake', 'bug-triage', 'release-notes', 'meeting-prep', 'follow-up-chaser', 'incident-watch'];
+
+/** The cards in gallery order: the popular ones first, in the list's order, then every other one by name (a tie keeps the order the server sent). */
+export function byPopularity<T extends Pick<RecipeCard, 'id' | 'name'>>(cards: ReadonlyArray<T>): T[] {
+  const rank = (c: T): number => {
+    const i = POPULAR_RECIPES.indexOf(c.id);
+    return i === -1 ? POPULAR_RECIPES.length : i;
+  };
+  return [...cards].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
+/** The recipes on one shelf (every recipe for "all"), popular first. */
+export function onShelf<T extends Pick<RecipeCard, 'id' | 'name' | 'category'>>(cards: ReadonlyArray<T>, shelf: RecipeCategory | 'all'): T[] {
+  return byPopularity(shelf === 'all' ? cards : cards.filter((c) => c.category === shelf));
 }
 
 /** A shelf named in the address (`?shelf=`), or "all" when it names none. */
