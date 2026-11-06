@@ -291,10 +291,110 @@
   overflow-wrap: anywhere;
 }
 
+.su-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
 .su-examples {
   display: flex;
   flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.su-ex-grid,
+.su-ex-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.su-ex-list {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: min(55vh, 26rem);
+  overflow-y: auto;
+}
+
+.su-ex {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.su-ex:hover {
+  background: var(--msg-hover);
+}
+
+.su-ex[aria-pressed="true"] {
+  background: var(--human-wash);
+  border-color: var(--human);
+}
+
+.su-ex:focus-visible {
+  outline: 2px solid var(--human);
+  outline-offset: 1px;
+}
+
+.su-ex-icon {
+  display: inline-flex;
+  flex: none;
+  padding-top: 1px;
+  color: var(--mute);
+}
+
+.su-ex-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.su-ex-name {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.su-ex-role {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: var(--fs-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.su-ex-all {
+  align-self: flex-start;
+}
+
+/* the two side notes read as quiet help beside the box, not as cards of their own */
+.su-note {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--mute);
+}
+
+.su-h-quiet {
+  color: var(--mute);
+  font-weight: 500;
 }
 
 .su-options {
@@ -375,6 +475,10 @@
   }
 
   .su-brief-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .su-ex-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

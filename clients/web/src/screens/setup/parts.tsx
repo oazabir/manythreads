@@ -1,17 +1,79 @@
 import type { GradedRequirement, SetupInventory, SetupQuestion } from '@manythreads/shared';
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
+import { Dialog } from '../../components/Dialog';
+import { proIcon } from '../../components/proicon';
 import { Alert } from '../../components/ui';
-import { GRADE_WORDS, GUARD_WORDS, RUNTIME_WORDS, TRIGGER_WORDS, answeredCount, briefFromExample, briefReady, feasibilitySummary, sortedByGrade, type Draft, type Example } from './model';
+import { BotWorkingIcon, TemplateDesignIcon, TemplateEngineeringIcon, TemplateMarketingIcon, TemplateResearchIcon, TemplateSupportIcon } from '../../shell/icons';
+import { EXAMPLE_CARDS, GRADE_WORDS, GUARD_WORDS, RUNTIME_WORDS, TRIGGER_WORDS, answeredCount, briefFromExample, briefReady, feasibilitySummary, filterExamples, sortedByGrade, type Draft, type Example } from './model';
 
 /*
  * The pieces of the "Add a bot" screen (mockup section `setup`): the brief, what the helper found, the grades, the questions. Every class is prefixed `su-`.
  */
 
+const TEMPLATE_ICONS: Record<string, ReturnType<typeof proIcon>> = {
+  engineering: TemplateEngineeringIcon,
+  'customer-support': TemplateSupportIcon,
+  marketing: TemplateMarketingIcon,
+  'product-design': TemplateDesignIcon,
+  research: TemplateResearchIcon,
+};
+
+/** One example as a card: the icon of the template it comes from, the bot's name and one line about it. */
+function ExampleCard({ example, picked, describedBy, testId, onPick }: { example: Example; picked: boolean; describedBy?: string; testId: string; onPick: (e: Example) => void }) {
+  const Icon = TEMPLATE_ICONS[example.templateId] ?? BotWorkingIcon;
+  return (
+    <button
+      type="button"
+      className="su-ex"
+      aria-pressed={picked}
+      aria-describedby={describedBy}
+      title={`${example.name}, from the ${example.template} template: ${example.role}`}
+      data-testid={testId}
+      data-example={example.key}
+      onClick={() => onPick(example)}
+    >
+      <span className="su-ex-icon"><Icon /></span>
+      <span className="su-ex-text">
+        <b className="su-ex-name">{example.name}</b>
+        <span className="su-ex-role">{example.role}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Every example in a dialog, with a box that narrows the list as the person types. Picking one closes the dialog and fills the brief. */
+function AllExamples({ examples, picked, onPick, onClose }: { examples: ReadonlyArray<Example>; picked: string | null; onPick: (e: Example) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const filterId = useId();
+  const shown = filterExamples(examples, query);
+  return (
+    <Dialog title="All examples" onClose={onClose} wide testId="setup-examples-dialog" footer={<button type="button" className="btn" onClick={onClose}>Close</button>}>
+      <label className="su-label" htmlFor={filterId}>Filter examples</label>
+      <input id={filterId} type="search" className="su-input" value={query} placeholder="A name or a word, like “review”" autoComplete="off" data-testid="setup-examples-filter" onChange={(e) => setQuery(e.target.value)} />
+      <p className="su-hint" role="status" aria-live="polite" data-testid="setup-examples-count">{shown.length === examples.length ? `${examples.length} examples` : `${shown.length} of ${examples.length} examples`}</p>
+      {shown.length === 0 ? (
+        <p className="su-hint">No example matches that. Clear the box to see them all.</p>
+      ) : (
+        <ul className="su-ex-list">
+          {shown.map((e) => (
+            <li key={e.key}>
+              <ExampleCard example={e} picked={picked === e.key} testId="setup-example-all" onPick={onPick} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Dialog>
+  );
+}
+
 export function BriefForm({ slug, busy, error, onStart, examples = [] }: { slug: string; busy: boolean; error: string | null; onStart: (brief: string, name: string) => void; examples?: ReadonlyArray<Example> }) {
   const [brief, setBrief] = useState('');
   const [name, setName] = useState('');
   const [picked, setPicked] = useState<string | null>(null);
+  const [all, setAll] = useState(false);
+  const [pickCount, setPickCount] = useState(0);
+  const box = useRef<HTMLTextAreaElement>(null);
   const exampleId = useId();
   const briefId = useId();
   const nameId = useId();
@@ -19,60 +81,69 @@ export function BriefForm({ slug, busy, error, onStart, examples = [] }: { slug:
     e.preventDefault();
     if (briefReady(brief) && !busy) onStart(brief.trim(), name.trim());
   };
+  const pick = (e: Example): void => {
+    setPicked(e.key);
+    setBrief(briefFromExample(e));
+    setAll(false);
+    setPickCount((n) => n + 1);
+  };
+  // after a pick the person's next move is to change the text: put the cursor in the box (after the dialog, if one was open, has given focus back)
+  useEffect(() => {
+    if (pickCount === 0) return;
+    const el = box.current;
+    el?.focus();
+    el?.setSelectionRange(el.value.length, el.value.length);
+  }, [pickCount]);
+  const cards = examples.slice(0, EXAMPLE_CARDS);
   return (
     <div className="su-brief-grid">
-      <form className="su-card" onSubmit={submit} data-testid="setup-brief-form" data-landmark="setup-brief">
-        {examples.length > 0 ? (
-          <div className="su-examples" role="group" aria-labelledby={`${exampleId}-h`} data-testid="setup-examples">
-            <p className="su-label" id={`${exampleId}-h`}>Start from an example <span className="su-opt">(optional)</span></p>
-            <p className="su-hint" id={`${exampleId}-hint`}>These bots come with the team templates. Pick one to fill in the box below, then change it to fit.</p>
-            <div className="su-options">
-              {examples.map((e) => (
-                <button
-                  key={e.key}
-                  type="button"
-                  className="su-option"
-                  aria-pressed={picked === e.key}
-                  aria-describedby={`${exampleId}-hint`}
-                  title={`${e.name}, from the ${e.template} template`}
-                  data-testid="setup-example"
-                  onClick={() => {
-                    setPicked(e.key);
-                    setBrief(briefFromExample(e));
-                  }}
-                >
-                  {e.name}
-                </button>
-              ))}
-            </div>
+      <div className="su-main">
+        <form className="su-card" onSubmit={submit} data-testid="setup-brief-form" data-landmark="setup-brief">
+          <label className="su-label" htmlFor={briefId}>What should this bot do?</label>
+          <p className="su-hint" id={`${briefId}-hint`}>A few sentences. It will work out the rest and ask you about anything it can't find.</p>
+          <textarea
+            id={briefId}
+            ref={box}
+            className="su-textarea"
+            rows={7}
+            maxLength={4000}
+            value={brief}
+            aria-describedby={`${briefId}-hint`}
+            data-testid="setup-brief"
+            onChange={(e) => {
+              setBrief(e.target.value);
+              setPicked(null);
+            }}
+          />
+          <label className="su-label" htmlFor={nameId}>Name <span className="su-opt">(optional — it will suggest one)</span></label>
+          <input id={nameId} className="su-input" value={name} maxLength={80} data-testid="setup-name" onChange={(e) => setName(e.target.value)} />
+          {error ? <Alert>{error}</Alert> : null}
+          <div className="su-actions">
+            <button type="submit" className="btn primary" disabled={!briefReady(brief) || busy} data-testid="setup-start">{busy ? 'Starting…' : 'Let it explore'}</button>
+            <Link className="btn" to={`/t/${slug}/files?path=bots`} data-testid="setup-by-hand">Configure by hand instead</Link>
           </div>
+        </form>
+        {cards.length > 0 ? (
+          <section className="su-examples" aria-labelledby={`${exampleId}-h`} data-testid="setup-examples">
+            <h3 className="su-h" id={`${exampleId}-h`}>Or start from an example</h3>
+            <p className="su-hint" id={`${exampleId}-hint`}>Bots that come with the team templates, the ones closest to this team first. Pick one to fill in the box above, then change it to fit.</p>
+            <ul className="su-ex-grid">
+              {cards.map((e) => (
+                <li key={e.key}>
+                  <ExampleCard example={e} picked={picked === e.key} describedBy={`${exampleId}-hint`} testId="setup-example" onPick={pick} />
+                </li>
+              ))}
+            </ul>
+            {examples.length > cards.length ? (
+              <button type="button" className="btn su-ex-all" aria-haspopup="dialog" data-testid="setup-examples-all" onClick={() => setAll(true)}>See all {examples.length}</button>
+            ) : null}
+          </section>
         ) : null}
-        <label className="su-label" htmlFor={briefId}>What should this bot do?</label>
-        <p className="su-hint" id={`${briefId}-hint`}>A few sentences. It will work out the rest and ask you about anything it can't find.</p>
-        <textarea
-          id={briefId}
-          className="su-textarea"
-          rows={7}
-          maxLength={4000}
-          value={brief}
-          aria-describedby={`${briefId}-hint`}
-          data-testid="setup-brief"
-          onChange={(e) => {
-            setBrief(e.target.value);
-            setPicked(null);
-          }}
-        />
-        <label className="su-label" htmlFor={nameId}>Name <span className="su-opt">(optional — it will suggest one)</span></label>
-        <input id={nameId} className="su-input" value={name} maxLength={80} data-testid="setup-name" onChange={(e) => setName(e.target.value)} />
-        {error ? <Alert>{error}</Alert> : null}
-        <div className="su-actions">
-          <button type="submit" className="btn primary" disabled={!briefReady(brief) || busy} data-testid="setup-start">{busy ? 'Starting…' : 'Let it explore'}</button>
-          <Link className="btn" to={`/t/${slug}/files?path=bots`} data-testid="setup-by-hand">Configure by hand instead</Link>
-        </div>
-      </form>
+        {all ? <AllExamples examples={examples} picked={picked} onPick={pick} onClose={() => setAll(false)} /> : null}
+      </div>
       <aside className="su-side" aria-label="How it works">
-        <section className="su-card">
-          <h3 className="su-h">What happens next</h3>
+        <section className="su-note">
+          <h3 className="su-h su-h-quiet">What happens next</h3>
           <ol className="su-steps">
             <li>It lists what this team has: tools, notes to read, places a bot can run and ways to start one.</li>
             <li>It checks each thing you asked for: covered, needs approval, missing, not allowed, or unclear.</li>
@@ -80,8 +151,8 @@ export function BriefForm({ slug, busy, error, onStart, examples = [] }: { slug:
             <li>It drafts the bot (its description file and its settings). A person approves it.</li>
           </ol>
         </section>
-        <section className="su-card">
-          <h3 className="su-h">What it cannot do</h3>
+        <section className="su-note">
+          <h3 className="su-h su-h-quiet">What it cannot do</h3>
           <ul className="su-list">
             <li>Give itself a tool, a connection to another app or a set of notes.</li>
             <li>Loosen a safety setting or give more than you may give.</li>

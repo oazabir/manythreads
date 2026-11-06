@@ -62,23 +62,57 @@ export const briefReady = (brief: string): boolean => brief.trim().length >= BRI
 /** A bot that ships in a team template, offered as a starting point for the brief. */
 export interface Example {
   readonly key: string;
+  /** The name of the first template that ships it (shown in the card's tooltip). */
   readonly template: string;
+  /** The id of that template, and of every other template that ships the same bot. */
+  readonly templateId: string;
+  readonly templateIds: ReadonlyArray<string>;
   readonly name: string;
   readonly role: string;
 }
 
-/** The bots of the team templates the person can start from. Brain is left out (every team already has one); a bot that two templates share is listed once. */
-export function examplesFrom(templates: ReadonlyArray<{ name: string; bots: ReadonlyArray<{ slug: string; name: string; role: string }> }>): Example[] {
-  const seen = new Set<string>();
-  const out: Example[] = [];
+/** The bots of the team templates the person can start from. Brain is left out (every team already has one); a bot that two templates share is listed once, under the first. */
+export function examplesFrom(templates: ReadonlyArray<{ id?: string; name: string; bots: ReadonlyArray<{ slug: string; name: string; role: string }> }>): Example[] {
+  const byKey = new Map<string, { example: Example; ids: string[] }>();
   for (const t of templates) {
+    const id = t.id ?? '';
     for (const b of t.bots) {
-      if (b.slug === 'brain' || b.role.trim() === '' || seen.has(b.slug)) continue;
-      seen.add(b.slug);
-      out.push({ key: b.slug, template: t.name, name: b.name, role: b.role.trim() });
+      if (b.slug === 'brain' || b.role.trim() === '') continue;
+      const seen = byKey.get(b.slug);
+      if (seen) {
+        if (id !== '' && !seen.ids.includes(id)) seen.ids.push(id);
+        continue;
+      }
+      byKey.set(b.slug, { example: { key: b.slug, template: t.name, templateId: id, templateIds: [], name: b.name, role: b.role.trim() }, ids: id === '' ? [] : [id] });
     }
   }
-  return out;
+  return [...byKey.values()].map(({ example, ids }) => ({ ...example, templateIds: ids }));
+}
+
+/** How many example cards the screen shows before "See all". */
+export const EXAMPLE_CARDS = 6;
+
+/**
+ * The examples in the order this team should see them: the bots of the team's own template first, then the rest in template order. A bot the team already has is left out.
+ * The sort is stable, so inside each group the templates' own order holds.
+ */
+export function rankExamples(
+  examples: ReadonlyArray<Example>,
+  { teamTemplate, existingSlugs }: { teamTemplate: string | null; existingSlugs: ReadonlyArray<string> },
+): Example[] {
+  const have = new Set(existingSlugs);
+  const own = (e: Example): boolean => teamTemplate !== null && e.templateIds.includes(teamTemplate);
+  return examples.filter((e) => !have.has(e.key)).sort((a, b) => Number(own(b)) - Number(own(a)));
+}
+
+/** The examples whose name, one-line description or template mention every word typed in the filter box of "See all". */
+export function filterExamples(examples: ReadonlyArray<Example>, query: string): Example[] {
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w !== '');
+  if (words.length === 0) return [...examples];
+  return examples.filter((e) => {
+    const hay = `${e.name} ${e.role} ${e.template}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
 }
 
 /** The brief a picked example starts the box with: what the bot is for, in the template's own words, for the person to change. */

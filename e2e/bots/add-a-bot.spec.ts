@@ -70,6 +70,103 @@ async function askAndWait(page: Page): Promise<void> {
   await expect(page.getByTestId('setup-questions')).toBeVisible({ timeout: 60_000 });
 }
 
+/** What the example cards should offer the Engineering team, worked out from the server's own lists: not from the screen's code. */
+async function expectedExamples(api: Awaited<ReturnType<typeof apiOn>>): Promise<{ teamOwn: string[]; available: string[] }> {
+  const { templates } = await api.get<{ templates: Array<{ id: string; bots: Array<{ slug: string; role: string }> }> }>('/api/templates');
+  const { team } = await api.get<{ team: { template: string | null } }>('/api/teams/engineering');
+  const { bots } = await api.get<{ bots: Array<{ slug: string }> }>('/api/teams/engineering/bots');
+  const have = new Set(bots.map((b) => b.slug));
+  const offered = (t: { bots: Array<{ slug: string; role: string }> }): string[] => t.bots.filter((b) => b.slug !== 'brain' && b.role.trim() !== '' && !have.has(b.slug)).map((b) => b.slug);
+  const available = [...new Set(templates.flatMap(offered))];
+  const own = templates.find((t) => t.id === team.template);
+  return { teamOwn: own ? offered(own) : [], available };
+}
+
+test('the box comes first and six cards fit the team', async ({ browser, playwright, isMobile }) => {
+  const api = await apiOn(playwright, stack, 'omar');
+  const { teamOwn, available } = await expectedExamples(api);
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    const box = page.getByTestId('setup-brief');
+    const cards = page.getByTestId('setup-example');
+    await expect(box).toBeVisible();
+    await expect(cards).toHaveCount(Math.min(6, available.length));
+    // the box is above the cards, not after them
+    const boxY = (await box.boundingBox())?.y ?? Number.NaN;
+    const firstY = (await cards.first().boundingBox())?.y ?? Number.NaN;
+    expect(boxY).toBeLessThan(firstY);
+
+    // the team's own template leads, and a bot the team already has is not offered
+    const shown = await cards.evaluateAll((els) => els.map((el) => el.getAttribute('data-example') ?? ''));
+    expect(new Set(shown).size).toBe(shown.length);
+    for (const slug of shown) expect(available).toContain(slug);
+    expect(shown.slice(0, Math.min(6, teamOwn.length))).toEqual(teamOwn.slice(0, 6));
+    // each card shows a name and one line about it
+    await expect(cards.first().locator('.su-ex-name')).not.toBeEmpty();
+    await expect(cards.first().locator('.su-ex-role')).not.toBeEmpty();
+
+    // phone: one card per row; desktop: two
+    const a = await cards.nth(0).boundingBox();
+    const b = await cards.nth(1).boundingBox();
+    if (isMobile) expect(Math.abs((a?.x ?? 0) - (b?.x ?? 99))).toBeLessThan(2);
+    else expect(Math.abs((a?.y ?? 0) - (b?.y ?? 99))).toBeLessThan(2);
+    expect(await noSidewaysScroll(page)).toBe(true);
+
+    // picking a card fills the box, marks the card and leaves the cursor in the box
+    await cards.nth(1).click();
+    await expect(cards.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(box).toHaveValue(/^Like the .+ bot\./);
+    await expect(box).toBeFocused();
+    await expect(page.getByTestId('setup-start')).toBeEnabled();
+    // typing in the box lets go of the pick
+    await box.press('End');
+    await page.keyboard.type(' Only on weekdays.');
+    await expect(cards.nth(1)).toHaveAttribute('aria-pressed', 'false');
+    expect(await noSidewaysScroll(page)).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test('See all lists every example', async ({ browser, playwright, isMobile }) => {
+  const api = await apiOn(playwright, stack, 'omar');
+  const { available } = await expectedExamples(api);
+  test.skip(available.length <= 6, 'the stack offers six examples or fewer, so there is no "See all"');
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/bots/new', isMobile ? { viewport: PHONE, mobile: true } : {});
+  try {
+    const open = page.getByTestId('setup-examples-all');
+    await expect(open).toHaveText(`See all ${available.length}`);
+    await open.click();
+    const dialog = page.getByRole('dialog', { name: 'All examples' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId('setup-example-all')).toHaveCount(available.length);
+    expect(await noSidewaysScroll(page)).toBe(true);
+
+    // the filter box narrows the list and says how many are left
+    const filter = dialog.getByTestId('setup-examples-filter');
+    await filter.fill('zzzz-no-such-bot');
+    await expect(dialog.getByTestId('setup-example-all')).toHaveCount(0);
+    await expect(dialog.getByTestId('setup-examples-count')).toContainText(`0 of ${available.length}`);
+    await filter.fill('');
+    await expect(dialog.getByTestId('setup-example-all')).toHaveCount(available.length);
+
+    // Esc closes it and focus goes back to the button that opened it
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(open).toBeFocused();
+
+    // picking from the list fills the box, closes the dialog and leaves the cursor in the box
+    await open.click();
+    const last = page.getByRole('dialog', { name: 'All examples' }).getByTestId('setup-example-all').last();
+    await last.click();
+    await expect(page.getByRole('dialog', { name: 'All examples' })).toHaveCount(0);
+    await expect(page.getByTestId('setup-brief')).toHaveValue(/^Like the .+ bot\./);
+    await expect(page.getByTestId('setup-brief')).toBeFocused();
+  } finally {
+    await context.close();
+  }
+});
+
 test('an admin (who also leads Engineering) writes a brief, sees the grades and the questions, answers them by keyboard, and approves: the bot exists only then', async ({ browser, playwright, isMobile }) => {
   test.setTimeout(240_000);
   script = [

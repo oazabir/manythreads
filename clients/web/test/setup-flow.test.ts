@@ -150,7 +150,7 @@ describe('the parts', () => {
     expect(out).toMatch(/<button[^>]*disabled=""[^>]*data-testid="setup-start"/);
   });
 
-  it('the brief form lists template bots as examples to start from, as buttons with a state, and none when there are none', () => {
+  it('the brief form puts the box before the example cards, which are buttons with a state, and shows none when there are none', () => {
     expect(html(createElement(BriefForm, { slug: 'engineering', busy: false, error: null, onStart: noop }))).not.toContain('setup-examples');
     const out = html(
       createElement(BriefForm, {
@@ -158,12 +158,15 @@ describe('the parts', () => {
         busy: false,
         error: null,
         onStart: noop,
-        examples: [{ key: 'reviewer', template: 'Engineering', name: 'Reviewer', role: 'Reviews a change.' }],
+        examples: [{ key: 'reviewer', template: 'Engineering', templateId: 'engineering', templateIds: ['engineering'], name: 'Reviewer', role: 'Reviews a change.' }],
       }),
     );
-    expect(out).toContain('Start from an example');
-    expect(out).toMatch(/<button[^>]*aria-pressed="false"[^>]*data-testid="setup-example"[^>]*>Reviewer<\/button>/);
+    expect(out).toContain('Or start from an example');
+    expect(out).toMatch(/<button[^>]*aria-pressed="false"[^>]*data-testid="setup-example"[^>]*>.*Reviewer.*Reviews a change\./);
     expect(out).toContain('from the Engineering template');
+    // the box comes first, then the cards; one example is under the six-card limit, so there is no "See all"
+    expect(out.indexOf('setup-brief"')).toBeLessThan(out.indexOf('setup-examples"'));
+    expect(out).not.toContain('setup-examples-all');
   });
 
   it('the feasibility list shows each grade as words, not only colour', () => {

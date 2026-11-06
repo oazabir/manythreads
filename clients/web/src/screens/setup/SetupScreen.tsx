@@ -3,13 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useSession } from '../../app/session';
 import { isApiError } from '../../api/client';
-import { fetchTemplates } from '../../api/endpoints';
+import { fetchTeam, fetchTemplates } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { Alert } from '../../components/ui';
 import { PageHeader } from '../../components/PageHeader';
+import { fetchBots } from '../bots/api';
 import { useProposalPerms } from '../proposals/store';
 import { answerSetup, cancelSetup, fetchSetup, retrySetup, startSetup } from './api';
-import { announcement, answersFrom, examplesFrom, FOCUS_ID, pollDelay, stepOf, stopsPolling, workingLine, type Draft } from './model';
+import { announcement, answersFrom, examplesFrom, FOCUS_ID, pollDelay, rankExamples, stepOf, stopsPolling, workingLine, type Draft } from './model';
 import { BriefForm, Feasibility, InventoryPanel, Questions } from './parts';
 import { ProposalStep } from './Proposal';
 import { BackIcon } from '../../shell/icons';
@@ -95,10 +96,18 @@ export function SetupScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>({});
-  // the bots of the team templates, offered as starting points for the brief; if they cannot be loaded the box simply has no examples
+  // the bots of the team templates, offered as starting points for the brief, the team's own template first and the bots it already has left out;
+  // if any of the three reads fails the box simply has fewer hints (no examples, or an unranked list)
   const templates = useQuery('setup-examples', fetchTemplates);
+  const team = useQuery(`team:${slug}`, () => fetchTeam(slug));
+  const roster = useQuery(`bots:${slug}`, () => fetchBots(slug));
   const templateList = templates.status === 'ok' ? templates.data.templates : null;
-  const examples = useMemo(() => (templateList ? examplesFrom(templateList) : []), [templateList]);
+  const teamTemplate = team.status === 'ok' ? team.data.team.template : null;
+  const existing = roster.status === 'ok' ? roster.data.bots : null;
+  const examples = useMemo(
+    () => (templateList && team.status !== 'loading' && roster.status !== 'loading' ? rankExamples(examplesFrom(templateList), { teamTemplate, existingSlugs: existing?.map((b) => b.slug) ?? [] }) : []),
+    [templateList, team.status, roster.status, teamTemplate, existing],
+  );
   // while an earlier conversation is being fetched there is nothing to show yet: not the empty brief box
   const step = id === null ? 'brief' : session === null ? 'loading' : stepOf(session);
 

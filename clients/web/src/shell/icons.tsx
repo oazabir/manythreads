@@ -7,6 +7,7 @@ import {
   WindowMultipleIcon, MailOpenIcon, BookmarkAddIcon, SparkleIcon, AndroidIcon, ArrowLeftIcon, ArrowRightIcon, DeleteIcon, ArrowLeftRightIcon,
   MicrophoneIcon, PauseIcon as PauseIcon_, PlayIcon as PlayIcon_, SquareIcon,
 } from '@proicons/react';
+import { BeakerIcon, ChatQuestionIcon, CodeIcon, ColorPaletteIcon, MegaphoneIcon } from '@proicons/react';
 import { proIcon } from '../components/proicon';
 
 /* The shell's icons are ProIcons (see components/proicon.tsx); the names below are what the screens import. */
@@ -98,3 +99,10 @@ export const StopIcon = proIcon(SquareIcon, 14);
 export const PlayIcon = proIcon(PlayIcon_, 14);
 export const PauseIcon = proIcon(PauseIcon_, 14);
 export const TrashIcon = proIcon(DeleteIcon, 15);
+
+// the "Add a bot" example cards: one icon for each team template
+export const TemplateEngineeringIcon = proIcon(CodeIcon, 18);
+export const TemplateSupportIcon = proIcon(ChatQuestionIcon, 18);
+export const TemplateMarketingIcon = proIcon(MegaphoneIcon, 18);
+export const TemplateDesignIcon = proIcon(ColorPaletteIcon, 18);
+export const TemplateResearchIcon = proIcon(BeakerIcon, 18);
