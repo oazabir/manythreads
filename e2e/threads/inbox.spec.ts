@@ -35,6 +35,11 @@ test('three tabs list the right threads; opening one reads it; j, k and e move a
     await expect(rows.filter({ hasText: 'T2 Nadia proposes' })).toHaveCount(1);
     await expect(rows.filter({ hasText: 'T3 Nadia and Omar' })).toHaveCount(0);
 
+    // the list is cut into day groups by the newest reply, and the page has one heading: Threads
+    await expect(page.getByTestId('thread-day')).toHaveText(['Today']);
+    await expect(page.getByRole('heading', { level: 1, name: /Threads/ })).toHaveCount(1);
+    await expect(tab('Followed')).toContainText(/· \d+/);
+
     // Unread: only T1 (Nadia's reply she has not read); T2's only reply is her own
     await tab('Unread').click();
     await expect(rows.filter({ hasText: 'T1 Priya asks' })).toHaveCount(1);
@@ -98,6 +103,7 @@ test('a thread in the inbox opens in the main area and the channel link goes to 
   try {
     await nadia.page.getByTestId('thread-row').filter({ hasText: 'Inbox link target' }).click();
     await expect(nadia.page.getByTestId('thread-view')).toContainText('a reply');
+    await expect(nadia.page.getByTestId('thread-place')).toHaveText(`Thread in #${name}`);
     await nadia.page.getByRole('link', { name: 'Open channel' }).click();
     await expect(nadia.page).toHaveURL(new RegExp(`/c/${name}\\?message=${root.id}`));
     await expect(messages(nadia.page).filter({ hasText: 'Inbox link target' })).toBeVisible();

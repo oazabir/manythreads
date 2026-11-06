@@ -55,6 +55,36 @@ async function search(page: import('@playwright/test').Page, q: string): Promise
   await expect(page.getByTestId('search-results')).toHaveAttribute('data-query', q);
 }
 
+test('See all results links to the whole-page search, which keeps the query in the address and runs it', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/threads');
+  try {
+    await search(page, 'rollback');
+    const all = page.getByRole('link', { name: 'See all results' });
+    await expect(all).toHaveAttribute('href', '/t/engineering/search?q=rollback');
+    await page.goto('/t/engineering/search?q=rollback');
+    await expect(page.getByRole('heading', { level: 1, name: 'Search' })).toHaveCount(1);
+    const results = page.getByTestId('search-results');
+    await expect(results).toHaveAttribute('data-query', 'rollback');
+    await expect(results.getByTestId('search-messages').getByTestId('search-hit')).toHaveCount(3);
+    // the link is not offered on the page that already is the whole list
+    await expect(page.getByRole('link', { name: 'See all results' })).toHaveCount(0);
+
+    await page.goto('/t/engineering/search?q=zebra%20crossing');
+    await expect(page.getByTestId('search-results')).toHaveAttribute('data-query', 'zebra crossing');
+    await expect(page.getByTestId('search-empty')).toBeVisible();
+
+    // Escape in the sidebar search box empties it; a second Escape leaves it
+    const box = page.locator('[data-landmark="search"]').getByRole('searchbox');
+    await box.fill('abc');
+    await box.press('Escape');
+    await expect(box).toHaveValue('');
+    await box.press('Escape');
+    await expect(box).not.toBeFocused();
+  } finally {
+    await context.close();
+  }
+});
+
 test('Nadia: results grouped with counts, the words marked, a click lands on the message and flashes it', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'nadia', '/t/engineering/threads');
   try {

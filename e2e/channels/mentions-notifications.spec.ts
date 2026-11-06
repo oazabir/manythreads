@@ -46,7 +46,10 @@ test('a mention reaches Rafi live: badge, popover item, and the click lands on t
     await page.getByTestId('bell').click();
     const pop = page.getByTestId('notifications-popover');
     await expect(pop).toContainText('Notifications');
-    await expect(pop.getByRole('button', { name: 'Mark all' })).toBeEnabled();
+    await expect(pop.getByRole('button', { name: 'Mark all read', exact: true })).toBeEnabled();
+    // the list opens on Unread, grouped by day
+    await expect(pop.getByRole('button', { name: 'Unread', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(pop.getByRole('heading', { name: 'Today' })).toBeVisible();
     const item = pop.getByTestId('notification');
     await expect(item).toHaveCount(1);
     await expect(item).toContainText(`Nadia mentioned you in #${chan.name}`);
@@ -63,6 +66,10 @@ test('a mention reaches Rafi live: badge, popover item, and the click lands on t
     // opening it read it: the badge is gone, the item stays in the list as read
     await expect(page.getByTestId('bell-count')).toHaveCount(0);
     await page.getByTestId('bell').click();
+    // Unread no longer lists it (and says so); All keeps it, as read
+    await expect(page.getByTestId('notification')).toHaveCount(0);
+    await expect(page.getByTestId('notifications-empty')).toContainText('You are all caught up');
+    await page.getByTestId('notifications-popover').getByRole('button', { name: 'All', exact: true }).click();
     await expect(page.getByTestId('notification')).toHaveAttribute('data-unread', 'false');
   } finally {
     await context.close();
@@ -83,6 +90,9 @@ test('a reply on a followed thread and a direct message arrive too; Mark all cle
 
     await first.page.getByTestId('bell').click();
     const items = first.page.getByTestId('notification');
+    // Unread lists the two new ones; All adds the earlier mention that was already read
+    await expect(items).toHaveCount(2);
+    await first.page.getByTestId('notifications-popover').getByRole('button', { name: 'All', exact: true }).click();
     await expect(items).toHaveCount(3);
     await expect(items.filter({ hasText: 'replied in a thread' })).toHaveCount(1);
     await expect(items.filter({ hasText: 'sent you a message' })).toHaveCount(1);
@@ -93,11 +103,14 @@ test('a reply on a followed thread and a direct message arrive too; Mark all cle
     await expect(first.page).toHaveURL(new RegExp(`panel=thread(%3A|:)${root.id}`));
 
     await first.page.getByTestId('bell').click();
-    await first.page.getByRole('button', { name: 'Mark all' }).click();
+    await first.page.getByRole('button', { name: 'Mark all read', exact: true }).click();
     await expect(first.page.getByTestId('bell-count')).toHaveCount(0);
     await expect(second.page.getByTestId('bell-count')).toHaveCount(0, { timeout: 3_000 });
 
-    // the popover stays open after Mark all: the DM item (now read) lands on the conversation
+    // the popover stays open after Mark all: Unread empties, All still has the DM item (now read), and it lands on the conversation
+    await first.page.getByTestId('notifications-popover').getByRole('button', { name: 'Unread', exact: true }).click();
+    await expect(first.page.getByTestId('notifications-empty')).toBeVisible();
+    await first.page.getByTestId('notifications-popover').getByRole('button', { name: 'All', exact: true }).click();
     await first.page.getByTestId('notification').filter({ hasText: 'sent you a message' }).click();
     await expect(first.page).toHaveURL(new RegExp(`/t/engineering/dm/${dm.dm.channel.id}`));
     await expect(messagesIn(first.page).filter({ hasText: 'Do you have a minute?' })).toBeVisible();

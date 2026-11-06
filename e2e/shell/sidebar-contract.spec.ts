@@ -43,9 +43,9 @@ for (const [key, expected] of PEOPLE) {
       const sections = await sidebar.locator(':scope > *').evaluateAll((children) =>
         children.flatMap((el) => {
           if (el.classList.contains('channel-groups')) return ['channel groups'];
-          if (el.classList.contains('sec')) return [(el.textContent ?? '').trim().replace(/\s+/g, ' ').replace(/(No conversations yet|No bots yet)$/, '').trim()];
+          if (el.classList.contains('sec-row')) return [(el.querySelector('.sec')?.textContent ?? '').trim().replace(/\s+/g, ' ').replace(/(No conversations yet|No bots yet)$/, '').trim()];
           if (el.classList.contains('it') && !el.classList.contains('dm-new-btn')) return [(el.querySelector('.it-label')?.textContent ?? '').trim()];
-          return []; // the rows and the "New" button that belong to Direct messages
+          return []; // the rows and the "New message" button that belong to Direct messages; the Bots rows
         }),
       );
       expect(sections).toEqual(expected);
@@ -65,9 +65,9 @@ test('priya (two teams): the second team has the same contract', async ({ browse
     await expect(sidebar.locator('.channel-groups .group').first()).toBeVisible();
     const labels = await sidebar.locator(':scope > .it').evaluateAll((els) => els.filter((e) => !e.classList.contains('dm-new-btn')).map((e) => (e.querySelector('.it-label')?.textContent ?? '').trim()));
     expect(labels).toEqual(['Files', 'Boards', 'Org chart', 'Jobs', 'Threads', 'Approvals']);
-    await expect(sidebar.locator(':scope > .sec')).toHaveText([/^Direct messages/, /^Bots/]);
+    await expect(sidebar.locator(':scope > .sec-row > .sec')).toHaveText([/^Direct messages/, /^Bots/]);
     // this seed has no bot: the Bots section says so, and lists no rows (the roster spec covers a team that has one)
-    await expect(sidebar.locator(':scope > .sec').nth(1)).toContainText('No bots yet');
+    await expect(sidebar.locator(':scope > .sec-row > .sec').nth(1)).toContainText('No bots yet');
     await expect(sidebar.getByTestId('sidebar-bot')).toHaveCount(0);
   } finally {
     await context.close();

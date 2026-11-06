@@ -3,8 +3,8 @@ import { startStack, type Stack } from '../fixtures/stack.ts';
 import { apiOn, channelsOf, openOn, type StackApi } from '../support/stack-browser.ts';
 
 /**
- * The welcome card of the Threads home (PLAN P3-14): a first-day checklist for members: Join #general, Follow a thread, Ask Brain (inert,
- * "Available soon"). Joining ticks the first step, dismissing is remembered in the browser, and a guest never sees it.
+ * The welcome card of the Threads home (PLAN P3-14): a first-day checklist for members: Join #general, Follow a thread (the Ask Brain step was dropped;
+ * it shows in the empty Followed list only). Joining ticks the first step, dismissing is remembered in the browser, and a guest never sees it.
  */
 test.use({ actionTimeout: 10_000 });
 test.skip(({ isMobile }) => isMobile, 'desktop layout');

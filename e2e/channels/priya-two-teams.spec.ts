@@ -38,14 +38,16 @@ test('Priya replies in an Engineering thread, switches to Marketing and back, an
     await expect(panel.getByTestId('pending-message')).toHaveCount(0);
 
     // the team switch lists exactly her two teams and keeps the URL shape
-    await page.getByRole('button', { name: /Team/ }).click();
+    await page.locator('[data-landmark="team-switch"]').getByRole('button').click();
     const menu = page.getByRole('menu', { name: 'Teams' });
     await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(menu.getByRole('menuitemradio').nth(0)).toContainText('Alt+1'); // the shortcut is shown on the row
+    await expect(menu.getByRole('menuitemradio').nth(1)).toContainText('Alt+2');
     await menu.getByRole('menuitemradio', { name: 'Marketing' }).click();
     await expect(page).toHaveURL(/\/t\/marketing\/threads/);
     await expect(page.locator('[data-landmark="search"] input')).toHaveAttribute('placeholder', 'Search Marketing');
 
-    await page.getByRole('button', { name: /Team/ }).click();
+    await page.locator('[data-landmark="team-switch"]').getByRole('button').click();
     await page.getByRole('menu', { name: 'Teams' }).getByRole('menuitemradio', { name: 'Engineering' }).click();
     await expect(page).toHaveURL(/\/t\/engineering\/threads/);
     await page.goto(`/t/engineering/c/two-teams?panel=thread:${root.id}`);

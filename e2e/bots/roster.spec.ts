@@ -61,7 +61,7 @@ test('the Bots entry opens the team roster; every row says who the bot is and wh
     await expect(bots).toHaveCount(1, { timeout: 15_000 });
     await expect(bots.first()).toContainText('Coder');
     await expect(bots.first()).toHaveAttribute('href', '/t/engineering/bots/coder');
-    await expect(sidebar.locator(':scope > .sec', { hasText: 'Bots' })).not.toContainText('No bots yet');
+    await expect(sidebar.locator(':scope > .sec-row', { hasText: 'Bots' })).not.toContainText('No bots yet');
     await sidebar.getByRole('link', { name: /Bots/ }).first().click();
     await expect(page).toHaveURL(/\/t\/engineering\/bots$/);
     await expect(page.getByTestId('bots-roster')).toBeVisible();

@@ -231,7 +231,7 @@ test.describe('desktop', () => {
       expect(await noSidewaysScroll(page)).toBe(true);
 
       // the "New message" picker lists people with the same dots
-      await page.getByRole('button', { name: 'New', exact: true }).click();
+      await page.getByRole('button', { name: 'New message', exact: true }).click();
       const picker = page.getByRole('dialog', { name: 'New message' });
       await expect(dotOf(picker.locator('label', { hasText: 'Rafi' }))).toHaveAttribute('data-presence', 'online', T);
       await expect(dotOf(picker.locator('label', { hasText: 'Priya' }))).toHaveAttribute('data-presence', 'offline');

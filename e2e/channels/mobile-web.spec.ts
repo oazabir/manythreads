@@ -43,7 +43,7 @@ test('drawer, channel, thread sheet, send: no sideways scroll anywhere', async (
     await page.getByRole('button', { name: 'Open menu' }).click();
     await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'open');
     await expect(rail.getByRole('link', { name: /dev/ })).toBeVisible();
-    await expect(rail.getByRole('button', { name: 'New', exact: true })).toBeVisible();
+    await expect(rail.getByRole('button', { name: 'New message', exact: true })).toBeVisible();
     await rail.getByRole('link', { name: /dev/ }).click();
     await expect(page.locator('.frame')).toHaveAttribute('data-drawer', 'closed');
     await expect(page).toHaveURL(/\/t\/engineering\/c\/dev/);
@@ -148,7 +148,7 @@ test('search and the bell from the header, and a direct message, fit the phone',
 
     // direct message from the drawer picker
     await page.getByRole('button', { name: 'Open menu' }).click();
-    await page.getByRole('button', { name: 'New', exact: true }).click();
+    await page.getByRole('button', { name: 'New message', exact: true }).click();
     const picker = page.getByRole('dialog', { name: 'New message' });
     await picker.getByRole('checkbox', { name: /Priya/ }).check();
     await picker.getByRole('button', { name: 'Message' }).click();

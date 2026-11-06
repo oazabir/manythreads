@@ -98,7 +98,8 @@ test('the switcher also finds people, bots and screens', async ({ browser, playw
     // a person: Enter opens (or makes) the conversation with them
     await page.keyboard.press('ControlOrMeta+k');
     await search.pressSequentially('nadia');
-    await expect(options.first()).toHaveAttribute('data-kind', 'person');
+    // once a 1:1 conversation exists the person row is dropped and the conversation row stands in for it
+    await expect(options.first()).toHaveAttribute('data-kind', /^(person|dm)$/);
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(/\/t\/engineering\/dm\/[0-9a-f-]{36}$/);
 
@@ -229,6 +230,52 @@ test('? opens the shortcut list outside a text box and not inside the composer',
     await expect(sheet).toContainText('Shift+Esc');
     await page.keyboard.press('Escape');
     await expect(sheet).toBeHidden();
+  } finally {
+    await context.close();
+  }
+});
+
+test('the switcher lists recent places first, one row per person, and Tab moves between the chips', async ({ browser, playwright }) => {
+  const a = await channel('recent-a');
+  const b = await channel('recent-b');
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', `/t/engineering/c/${a.name}`);
+  try {
+    await expect(page.getByTestId('app-frame')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: `Message #${a.name}` })).toBeVisible();
+    await page.getByRole('link', { name: new RegExp(`${b.name}`) }).first().click();
+    await expect(page).toHaveURL(new RegExp(`/c/${b.name}$`));
+    await expect(page.getByRole('textbox', { name: `Message #${b.name}` })).toBeVisible();
+    await blurFocus(page);
+
+    const options = page.getByTestId('quick-switcher-option');
+    await page.keyboard.press('ControlOrMeta+k');
+    // nothing typed: where the person was last comes first (this channel, then the one before it)
+    await expect(options.nth(0).locator('.qs-label')).toHaveText(b.name);
+    await expect(options.nth(1).locator('.qs-label')).toHaveText(a.name);
+
+    // one row for Nadia: the conversation (a person row would open the same place)
+    const search = page.getByTestId('quick-switcher-search');
+    await search.pressSequentially('nadia');
+    await expect(options.filter({ hasText: 'Nadia' })).toHaveCount(1);
+    await search.fill('');
+
+    // chips: All is pressed; Tab moves to Channels and narrows the list; Shift+Tab goes back; the last wraps to the first
+    const chip = (name: string) => page.getByRole('group', { name: 'Show' }).getByRole('button', { name, exact: true });
+    await expect(chip('All')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Tab');
+    await expect(chip('Channels')).toHaveAttribute('aria-pressed', 'true');
+    await expect(search).toBeFocused();
+    expect(await options.evaluateAll((els) => els.map((e) => e.getAttribute('data-kind')))).toEqual(expect.arrayContaining(['channel']));
+    expect(await options.evaluateAll((els) => els.every((e) => e.getAttribute('data-kind') === 'channel'))).toBe(true);
+    await page.keyboard.press('Shift+Tab');
+    await expect(chip('All')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Shift+Tab');
+    await expect(chip('Files')).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Tab');
+    await expect(chip('All')).toHaveAttribute('aria-pressed', 'true');
+    await chip('People').click();
+    await expect(chip('People')).toHaveAttribute('aria-pressed', 'true');
+    expect(await options.evaluateAll((els) => els.every((e) => /^(dm|person)$/.test(e.getAttribute('data-kind') ?? '')))).toBe(true);
   } finally {
     await context.close();
   }

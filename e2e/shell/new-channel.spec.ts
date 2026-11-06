@@ -32,6 +32,7 @@ test('a team lead makes a channel through the dialog, with plain answers to a ba
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/t/engineering/threads');
   try {
     await expect(page.getByTestId('app-frame')).toBeVisible();
+    await expect(page.getByTestId('new-channel')).toContainText('Add channel');
     await page.getByTestId('new-channel').click();
     const dlg = page.getByTestId('new-channel-dialog');
     await expect(dlg).toBeVisible();
@@ -69,6 +70,7 @@ test('a team lead makes a channel through the dialog, with plain answers to a ba
     expect(detail.channel).toMatchObject({ purpose: 'Plans for the launch', private: false });
 
     // Esc closes the dialog and creates nothing
+    await expect(page.getByTestId('new-channel')).toContainText('Add channel');
     await page.getByTestId('new-channel').click();
     await expect(dlg).toBeVisible();
     await page.keyboard.press('Escape');
@@ -155,6 +157,8 @@ test('a conversation set to "nothing" keeps a grey count and no bold label; a di
     const dmRow = page.locator(`[data-landmark="sidebar"] a.it[href$="/dm/${dm.channel.id}"]`);
     await expect(dmRow).toHaveClass(/unread/);
     await expect(dmRow.locator('.pill')).toHaveText('1');
+    await expect(dmRow.locator('.pill')).toHaveClass(/\bmention\b/); // a direct message is always addressed to you
+    await expect(link).toHaveClass(/\bmuted\b/);
     await dmRow.click();
     await expect(dmRow).not.toHaveClass(/unread/);
     await expect(dmRow.locator('.pill')).toHaveCount(0);

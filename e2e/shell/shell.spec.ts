@@ -8,7 +8,7 @@ import { authState } from '../support/env.ts';
  */
 
 const sidebarRows = async (page: import('@playwright/test').Page): Promise<string[]> =>
-  page.locator('[data-landmark="sidebar"] > .it, [data-landmark="sidebar"] > .sec').allInnerTexts().then((rows) => rows.map((r) => r.split('\n')[0]!.trim()));
+  page.locator('[data-landmark="sidebar"] > .it, [data-landmark="sidebar"] > .sec-row').allInnerTexts().then((rows) => rows.map((r) => r.split('\n')[0]!.trim()));
 
 // channels are real now: the URL names a channel the directory lists (a made-up name is "You cannot see this channel.")
 let dev = '';
