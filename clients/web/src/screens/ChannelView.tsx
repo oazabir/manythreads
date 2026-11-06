@@ -303,7 +303,7 @@ export function ChannelBody({ channelId, name, teamSlug, dm }: { channelId: stri
 
   return (
     <div className="chview" data-testid="channel-view" data-channel-id={channelId} aria-busy={tl.status === 'loading' || deciding || undefined}>
-      {headerSlot && !dm ? createPortal(<MembersStack key={channelId} channelId={channelId} />, headerSlot) : null}
+      {headerSlot && !dm && !guest ? createPortal(<MembersStack key={channelId} channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<ChannelSearch channelId={channelId} />, headerSlot) : null}
       {headerSlot ? createPortal(<StartButton channelId={channelId} dm={dm !== undefined} />, headerSlot) : null}
       {botBoard && headerSlot
