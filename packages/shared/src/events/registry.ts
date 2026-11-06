@@ -29,6 +29,7 @@ import { BotsBotLoadedEvent } from './bots.bot.loaded.ts';
 import { BotsBotInvalidEvent } from './bots.bot.invalid.ts';
 import { BotsBotRemovedEvent } from './bots.bot.removed.ts';
 import { BotsRunClosedEvent } from './bots.run.closed.ts';
+import { BotsRunOpenedEvent } from './bots.run.opened.ts';
 import { AnswerAnswerPostedEvent } from './answer.answer.posted.ts';
 import { AnswerAnswerSharedEvent } from './answer.answer.shared.ts';
 import { ConversationsConversationStartedEvent } from './conversations.conversation.started.ts';
@@ -46,6 +47,7 @@ import { ApprovalsApprovalRequestedEvent } from './approvals.approval.requested.
 import { ApprovalsApprovalDecidedEvent } from './approvals.approval.decided.ts';
 import { ApprovalsApprovalResumedEvent } from './approvals.approval.resumed.ts';
 import { TasksBoardCreatedEvent } from './tasks.board.created.ts';
+import { TasksBoardUpdatedEvent } from './tasks.board.updated.ts';
 import { TasksTaskCreatedEvent } from './tasks.task.created.ts';
 import { TasksTaskUpdatedEvent } from './tasks.task.updated.ts';
 import { TasksTaskClaimedEvent } from './tasks.task.claimed.ts';
@@ -206,6 +208,7 @@ export const eventRegistry = {
   'bots.bot.invalid': { 1: BotsBotInvalidEvent },
   'bots.bot.removed': { 1: BotsBotRemovedEvent },
   'bots.run.closed': { 1: BotsRunClosedEvent },
+  'bots.run.opened': { 1: BotsRunOpenedEvent },
   'conversations.conversation.started': { 1: ConversationsConversationStartedEvent },
   'answer.answer.posted': { 1: AnswerAnswerPostedEvent },
   'answer.answer.shared': { 1: AnswerAnswerSharedEvent },
@@ -292,6 +295,7 @@ export const eventRegistry = {
   'reading.state.changed': { 1: ReadingStateChangedEvent },
   'kernel.capability.denied': { 1: KernelCapabilityDeniedEvent },
   'tasks.board.created': { 1: TasksBoardCreatedEvent },
+  'tasks.board.updated': { 1: TasksBoardUpdatedEvent },
   'tasks.task.created': { 1: TasksTaskCreatedEvent },
   'tasks.task.updated': { 1: TasksTaskUpdatedEvent },
   'tasks.task.claimed': { 1: TasksTaskClaimedEvent },
@@ -409,6 +413,7 @@ export type AnyEvent =
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof BotsRunClosedEvent>
+  | z.infer<typeof BotsRunOpenedEvent>
   | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>
@@ -504,6 +509,7 @@ export type LatestEvent =
   | z.infer<typeof BotsBotInvalidEvent>
   | z.infer<typeof BotsBotRemovedEvent>
   | z.infer<typeof BotsRunClosedEvent>
+  | z.infer<typeof BotsRunOpenedEvent>
   | z.infer<typeof ConversationsConversationStartedEvent>
   | z.infer<typeof RetentionSweepCompletedEvent>
   | z.infer<typeof RetentionSettingsChangedEvent>

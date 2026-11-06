@@ -1,5 +1,5 @@
 import type { PluginTx } from '@manythreads/sdk';
-import { Board, Environment, Goal, Handoff, Runner, Task, TaskEvent } from '@manythreads/shared';
+import { Board, Environment, Goal, Handoff, Runner, Task, TaskEvent, readStoredColumn } from '@manythreads/shared';
 
 /** A row as the SQL columns come back; PostgreSQL returns timestamptz as Date. */
 export interface TaskRow extends Record<string, unknown> {
@@ -189,7 +189,8 @@ export interface BoardRow extends Record<string, unknown> {
   workspace_id: string;
   team_id: string;
   name: string;
-  columns: Array<{ state: string; title: string }>;
+  /** Stored columns: `{id, name, state, title}`, or the older `{state, title}` (read by `readStoredColumn`). */
+  columns: Array<Record<string, unknown>>;
   filter: Record<string, unknown>;
   channel_id: string | null;
   created_at: Date;
@@ -201,7 +202,7 @@ export function toBoard(r: BoardRow): Board {
     workspaceId: r.workspace_id,
     teamId: r.team_id,
     name: r.name,
-    columns: r.columns ?? [],
+    columns: (r.columns ?? []).map(readStoredColumn).filter((c) => c !== null),
     filter: r.filter ?? {},
     channelId: r.channel_id,
     createdAt: iso(r.created_at),

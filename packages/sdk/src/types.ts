@@ -362,6 +362,8 @@ export interface OpenRunInput {
   delegationDepth?: number | null;
   /** The queue job that opens this run (`JobInfo.jobId`): recorded on the run, so a retried job can tell its own earlier run from another job's. */
   jobId?: string | null;
+  /** The card this run works on (a `task_assigned` run): recorded on the run, and a `bots.run.opened` event is written so a board can show the bot at work. */
+  taskId?: string | null;
   /** The run is a rehearsal (see `BotRunHandle.rehearsal`). Only the runtime router sets it, from a question the Test route recorded. */
   rehearsal?: boolean;
   /** How long the run's endpoint stays usable (seconds); the service's default applies when omitted. */

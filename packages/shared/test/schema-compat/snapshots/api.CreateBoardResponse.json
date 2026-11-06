@@ -27,11 +27,20 @@
         },
         "columns": {
           "minItems": 1,
-          "maxItems": 5,
+          "maxItems": 12,
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_-]{1,40}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
               "state": {
                 "type": "string",
                 "enum": [
@@ -49,6 +58,8 @@
               }
             },
             "required": [
+              "id",
+              "name",
               "state",
               "title"
             ],

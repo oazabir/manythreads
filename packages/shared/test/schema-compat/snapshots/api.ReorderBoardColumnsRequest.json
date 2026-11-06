@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "columnIds": {
+      "minItems": 1,
+      "maxItems": 12,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_-]{1,40}$"
+      }
+    }
+  },
+  "required": [
+    "columnIds"
+  ],
+  "additionalProperties": false
+}

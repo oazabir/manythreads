@@ -150,8 +150,8 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
         }
         const inserted = (
           await tx.query<{ id: string }>(
-            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, job_id, rehearsal, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'running') RETURNING id`,
+            `INSERT INTO app.bot_runs (workspace_id, bot_id, team_id, trigger_type, asker_id, thread_id, channel_id, reply_root_id, delegation_depth, job_id, rehearsal, task_id, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'running') RETURNING id`,
             [
               input.workspaceId,
               input.botId,
@@ -164,10 +164,24 @@ export function createRunService(options: RunServiceOptions): PluginRuns {
               Math.max(0, Math.floor(input.delegationDepth ?? 0)),
               input.jobId ?? null,
               input.rehearsal === true,
+              input.taskId ?? null,
             ],
           )
         ).rows[0];
         if (!inserted) throw new Error('the run insert answered no row');
+        // Only a run that works on a card is announced (a board shows the bot at work); the end is `bots.run.closed`.
+        if (input.taskId) {
+          await emit(tx, {
+            type: 'bots.run.opened',
+            schemaVersion: 1,
+            workspaceId: input.workspaceId,
+            teamId: input.teamId,
+            botId: input.botId,
+            runId: inserted.id,
+            trigger: input.trigger,
+            taskId: input.taskId,
+          });
+        }
         const minted = (
           await tx.query<{ expires_at: Date }>(
             `INSERT INTO app.mcp_run_tokens (run_id, bot_id, token_hash, expires_at)

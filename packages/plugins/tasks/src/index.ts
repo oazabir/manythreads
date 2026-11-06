@@ -1,4 +1,5 @@
 import { definePlugin } from '@manythreads/sdk';
+import { registerActivitySubscribers } from './activity.ts';
 import { registerCapabilities } from './capabilities.ts';
 import { registerTurnCapabilities } from './capabilities-turns.ts';
 import { registerApprovalSubscriber, registerNotWokenSubscriber } from './events.ts';
@@ -37,8 +38,8 @@ export default definePlugin({
       { name: 'tasks.deploy', destructive: false },
     ],
     events: {
-      emits: ['tasks.board.created', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
-      consumes: ['approvals.approval.decided', 'runtime.task.not_woken'],
+      emits: ['tasks.board.created', 'tasks.board.updated', 'tasks.task.created', 'tasks.task.updated', 'tasks.task.claimed', 'tasks.task.completed', 'tasks.task.handed_off'],
+      consumes: ['approvals.approval.decided', 'runtime.task.not_woken', 'bots.run.opened', 'bots.run.closed'],
     },
     dependsOn: ['approvals', 'channels', 'projects'],
     migrations: 'migrations',
@@ -51,5 +52,6 @@ export default definePlugin({
     registerPullRequestSync(ctx);
     registerApprovalSubscriber(ctx);
     registerNotWokenSubscriber(ctx);
+    registerActivitySubscribers(ctx);
   },
 });

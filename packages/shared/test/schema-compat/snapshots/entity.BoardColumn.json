@@ -2,6 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,40}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
     "state": {
       "type": "string",
       "enum": [
@@ -19,6 +28,8 @@
     }
   },
   "required": [
+    "id",
+    "name",
     "state",
     "title"
   ],

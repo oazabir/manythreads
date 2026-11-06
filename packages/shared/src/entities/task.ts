@@ -196,17 +196,37 @@ export const Environment = z.object({
 });
 export type Environment = z.infer<typeof Environment>;
 
-/** One column of a board: a task state and the heading the board shows for it. */
-export const BoardColumn = z.strictObject({ state: TaskState, title: z.string().min(1).max(60) });
+/** The id of one column of one board (stable while the column is renamed or moved). A column stored before ids existed uses its state's name. */
+export const BoardColumnId = z.string().regex(/^[a-z0-9_-]{1,40}$/);
+export type BoardColumnId = z.infer<typeof BoardColumnId>;
+
+/**
+ * One column of a board: its own id, the name people see, and the task state it counts as. Two columns of a board may count as the same state
+ * (for example "Code review" and "QA" both count as `verify`). `title` is a copy of `name` kept so a tab opened before columns had names still
+ * draws its headings; new code reads `name`.
+ */
+export const BoardColumn = z.strictObject({
+  id: BoardColumnId,
+  name: z.string().trim().min(1).max(60),
+  state: TaskState,
+  title: z.string().min(1).max(60),
+});
 export type BoardColumn = z.infer<typeof BoardColumn>;
+
+/** The most columns a board holds. */
+export const MAX_BOARD_COLUMNS = 12;
 
 export const Board = z.object({
   id: BoardId,
   workspaceId: WorkspaceId,
   teamId: TeamId,
   name: z.string().min(1).max(80),
-  /** The states in the order the board draws them (a saved view may merge or reorder them, never add one). */
-  columns: z.array(BoardColumn).min(1).max(5),
+  /** The columns in the order the board draws them (the array order). Ids are unique; two columns may count as the same state. */
+  columns: z
+    .array(BoardColumn)
+    .min(1)
+    .max(MAX_BOARD_COLUMNS)
+    .refine((cols) => new Set(cols.map((c) => c.id)).size === cols.length, { message: 'column ids must be unique' }),
   /** A `ListTasksQuery`-shaped filter (`goalId`, `ownerId`, `kind`), applied on read. */
   filter: JsonObject,
   /** The channel the board belongs to, or null for a team-level saved view. A channel board shows the cards filed on it, not a filter. */
@@ -254,9 +274,24 @@ export const MAX_HANDOFFS = 30;
 
 /** The defaults of a new board: the five states, in pipeline order. */
 export const DEFAULT_BOARD_COLUMNS: readonly BoardColumn[] = [
-  { state: 'open', title: 'Open' },
-  { state: 'in_progress', title: 'In progress' },
-  { state: 'verify', title: 'Verify' },
-  { state: 'waiting_on_person', title: 'Waiting on a person' },
-  { state: 'done', title: 'Done' },
+  { id: 'open', name: 'Open', state: 'open', title: 'Open' },
+  { id: 'in_progress', name: 'In progress', state: 'in_progress', title: 'In progress' },
+  { id: 'verify', name: 'Verify', state: 'verify', title: 'Verify' },
+  { id: 'waiting_on_person', name: 'Waiting on a person', state: 'waiting_on_person', title: 'Waiting on a person' },
+  { id: 'done', name: 'Done', state: 'done', title: 'Done' },
 ];
+
+/**
+ * Reads one stored column leniently. Boards written before columns had ids and names hold `{state, title}`: the id is then the state's name
+ * (unique, because the old rule allowed each state once) and the name is the title. Returns null for something that is not a column.
+ */
+export function readStoredColumn(raw: unknown): BoardColumn | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const c = raw as Record<string, unknown>;
+  const state = TaskState.safeParse(c['state']);
+  if (!state.success) return null;
+  const name = typeof c['name'] === 'string' && c['name'] !== '' ? c['name'] : typeof c['title'] === 'string' ? c['title'] : '';
+  if (name === '') return null;
+  const id = typeof c['id'] === 'string' && c['id'] !== '' ? c['id'] : state.data;
+  return BoardColumn.safeParse({ id, name, state: state.data, title: name }).data ?? null;
+}

@@ -16,11 +16,14 @@
         "waiting_on_person",
         "done"
       ]
+    },
+    "columnId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]{1,40}$"
     }
   },
   "required": [
-    "taskId",
-    "to"
+    "taskId"
   ],
   "additionalProperties": false
 }

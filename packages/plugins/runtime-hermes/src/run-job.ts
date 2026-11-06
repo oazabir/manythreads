@@ -99,6 +99,8 @@ export const RunPayload = z.strictObject({
    * mail to that post. Such a run has no reply root (the post it makes opens the thread) and no asker.
    */
   inbox: z.strictObject({ claimId: z.uuid(), connectionId: z.uuid(), mailId: z.uuid() }).optional(),
+  /** The card this run works on (a `task_assigned` run). Absent on a run queued before cards were recorded, and on every other trigger. Read by the board's bot icon. */
+  taskId: z.uuid().optional(),
   /** Marks the payload stored with a gate hold, so that approving it resumes the run past the gate (not past the DLP check). */
   gateHold: z.literal(true).optional(),
   /**
@@ -757,6 +759,7 @@ export function registerRunJob(ctx: PluginContext, options: { concurrency?: numb
               // where the reply goes, so an approval this run raises leaves its card in that thread
               channelId: payload.channelId,
               replyRootId: payload.replyRootId,
+              ...(payload.taskId ? { taskId: payload.taskId } : {}),
               ttlSeconds,
               ...(payload.rehearsal === true ? { rehearsal: true } : {}),
             });

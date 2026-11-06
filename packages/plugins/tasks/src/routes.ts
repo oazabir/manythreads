@@ -1,6 +1,9 @@
 import type { PluginContext, PluginTx, RoleGroupProvider } from '@manythreads/sdk';
 import {
   ClaimTaskResponse,
+  DEFAULT_BOARD_COLUMNS,
+  readStoredColumn,
+  type BoardColumn,
   CompleteTaskRequest,
   CompleteTaskResponse,
   CreateBoardRequest,
@@ -75,6 +78,9 @@ import {
   Handoff,
   Task,
 } from '@manythreads/shared';
+import { randomBytes } from 'node:crypto';
+import { registerActivityRoute } from './activity.ts';
+import { registerColumnRoutes } from './columns.ts';
 import { conflict, forbidden, json, notFound, requireManage, requireTeam, route } from '@manythreads/sdk';
 import { insertCard } from './create.ts';
 import { postHandoffCard } from './card.ts';
@@ -95,6 +101,8 @@ async function nameOf(tx: PluginTx, actorId: string): Promise<string> {
 }
 
 export function registerRoutes(ctx: PluginContext): void {
+  registerColumnRoutes(ctx);
+  registerActivityRoute(ctx);
   // List --------------------------------------------------------------------------------------------------
   ctx.http.route({
     ...listTasksRoute,
@@ -645,13 +653,10 @@ export function registerRoutes(ctx: PluginContext): void {
       const team = await requireTeam(tx, slug);
       await requireManage(tx, team);
       const body = CreateBoardRequest.parse(req.body);
-      const columns = body.columns ?? [
-        { state: 'open', title: 'Open' },
-        { state: 'in_progress', title: 'In progress' },
-        { state: 'verify', title: 'Verify' },
-        { state: 'waiting_on_person', title: 'Waiting on a person' },
-        { state: 'done', title: 'Done' },
-      ];
+      // The server makes the ids: a column keeps its id when renamed or moved. The default five use their state's name as id, like boards from before ids.
+      const columns: BoardColumn[] = body.columns
+        ? body.columns.map((c) => ({ id: `c_${randomBytes(5).toString('hex')}`, name: c.name, state: c.state, title: c.name }))
+        : [...DEFAULT_BOARD_COLUMNS];
       const row = (
         await tx.query<BoardRow>(
           `INSERT INTO app.boards (workspace_id, team_id, name, columns, created_by)
@@ -685,14 +690,22 @@ export function registerRoutes(ctx: PluginContext): void {
       const body = MoveTaskRequest.parse(req.body);
       const board = (await tx.query<BoardRow>('SELECT * FROM app.boards WHERE id = $1::uuid AND team_id = $2::uuid', [boardId, team.id])).rows[0];
       if (!board) throw notFound('No such board');
-      const states = (board.columns ?? []).map((c) => c.state);
-      if (!states.includes(body.to)) throw conflict(`this board has no ${body.to} column`);
+      const columns = board.columns.map(readStoredColumn).filter((c): c is BoardColumn => c !== null);
+      // A column id names its column; a bare state (an older client) means the first column of that state.
+      const target = body.columnId ? columns.find((c) => c.id === body.columnId) : columns.find((c) => c.state === body.to);
+      if (!target) throw conflict(body.columnId ? 'this board has no such column' : `this board has no ${body.to} column`);
+      if (body.to !== undefined && body.to !== target.state) throw conflict('that column does not count as the state you named');
       const before = await taskOf(tx, team.id, body.taskId);
-      const res = (await tx.query<{ o_outcome: string; o_reason: string }>('SELECT o_outcome, o_reason FROM app.tasks_move($1::uuid, $2)', [body.taskId, body.to])).rows[0];
-      if (!res || res.o_outcome === 'not_found') throw notFound('No such card');
-      if (res.o_outcome !== 'moved') throw conflict(res.o_reason || res.o_outcome);
+      if (before.state !== target.state) {
+        const res = (await tx.query<{ o_outcome: string; o_reason: string }>('SELECT o_outcome, o_reason FROM app.tasks_move($1::uuid, $2)', [body.taskId, target.state])).rows[0];
+        if (!res || res.o_outcome === 'not_found') throw notFound('No such card');
+        if (res.o_outcome !== 'moved') throw conflict(res.o_reason || res.o_outcome);
+      }
+      const placed = (await tx.query<{ o: string }>('SELECT app.tasks_board_place($1::uuid, $2::uuid, $3) AS o', [boardId, body.taskId, target.id])).rows[0]?.o;
+      if (placed === 'not_found') throw notFound('No such card on this board');
+      if (placed !== 'placed') throw conflict('The card could not be put in that column');
       const after = await taskOf(tx, team.id, body.taskId);
-      await emitUpdated(ctx, tx, before, after);
+      if (before.state !== after.state) await emitUpdated(ctx, tx, before, after);
       return json(MoveTaskResponse.parse({ task: after }));
     }),
   });

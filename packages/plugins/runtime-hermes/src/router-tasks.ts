@@ -191,6 +191,7 @@ async function enqueueTaskRun(
     runThreadId: thread.threadKnown ? thread.rootId : null,
     prompt,
     text: `${input.note}\n${input.card.title}\n${input.card.description}`.slice(0, 40_000),
+    taskId: input.card.id,
   };
   await ctx.jobs.enqueue(tx, RUN_QUEUE, payload, { dedupeKey: input.dedupeKey });
 }
