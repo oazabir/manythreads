@@ -88,11 +88,15 @@ export function DevSpeech() {
     if (!clip || running) return;
     stop.current = false;
     setRows([]);
+    const gpu = (await readDeviceFacts()).webgpu;
     for (const model of MODELS) {
       for (const device of DEVICES) {
         if (stop.current) break;
         setRunning(`${model} on ${device === 'wasm' ? 'the processor' : 'the graphics card'}…`);
-        const row = await runOne(clip.blob, model, device);
+        // no graphics card in this browser: say so, instead of the "couldn't get the speech model" a forced WebGPU run would print
+        const row: Row = device === 'webgpu' && !gpu
+          ? { model, requested: device, device: '–', loadMs: 0, vadMs: 0, languageMs: 0, decodeMs: 0, wallMs: 0, audioMs: 0, rtf: null, heapMb: null, language: null, text: '', wer: null, error: 'WebGPU is not available in this browser.' }
+          : await runOne(clip.blob, model, device);
         setRows((r) => [...r, row]);
       }
     }

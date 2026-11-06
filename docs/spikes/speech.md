@@ -69,3 +69,5 @@ If the numbers show tiny is too slow on phones (RTF over about 3), change `DEVIC
 ## Where the tests stand
 
 Browser tests (`e2e/channels/voice-*.spec.ts`) use the fake engine (`VITE_MANYTHREADS_FAKE_ASR=1`), a fixed sentence for every clip, and Chromium's fake microphone fed from `e2e/fixtures/speech/hello.wav`. They prove the recording, preview, correction, sending, playback and search flow, **not** that the real Whisper model hears words. The real engine was run only through the bench page by the coder, and in the live check (PLAN F9 section "Live check").
+
+**Live check 2026-11-06 (c01b68de, `e2e/screens/task.verify-f9.shots.ts`).** The real tiny engine ran on https://manythreads.kahf.to in the devbox's Chromium (WASM, 8 threads) on the synthetic `hello.wav`: first use 9.9 s for a 3 s clip, warm 3.7 s. `/dev/speech`, 6 s clip: tiny/WASM total 6.07 s (RTF 0.71, load 1.8 s); base/WASM total 15.0 s (RTF 1.45, load 6.4 s). The clip is not speech, so the words ("Okay.", "(humming)", base chose Japanese) say nothing about accuracy. Everything in "Not measured" above is still not measured.

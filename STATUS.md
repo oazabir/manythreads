@@ -8,6 +8,16 @@ Current state (synced with the code on 2026-11-03; task by task in PLAN.md §8 B
 - **Owner question:** the icon is `AndroidIcon` as a stand-in (ProIcons 4.13.7 has no bot icon); `SparkleIcon` or `BrainIcon` is a one-line change in `shell/icons.tsx`.
 - **Gaps:** no phone column switcher (the strip snaps column by column); a bot that claims a card during a mention run does not show on it (only `task_assigned` runs record the card); a queued run shows only when the board reads again (no push when the job is queued).
 
+## Loop 2026-11-06 (sixth pass): live check of P14-16 and P14-17 at c01b68de
+
+Checked as Omar on https://manythreads.kahf.to with Chromium's fake microphone (the synthetic `hello.wav`, not speech) and the REAL on-device engine, in a throwaway private channel that was emptied and archived afterwards. 1440 and 390 x 844, no 5xx, no page errors, no CSP violation on sign-in, channel, boards, search and threads.
+- **Files and headers:** the tiny encoder is 200, `cache-control: public, immutable` (a year), length 10124990 and sha256 equal to `models.lock.json`; `/models/missing` is a real nginx 404; the page CSP has `'wasm-unsafe-eval'` and `Permissions-Policy: microphone=(self), camera=(self)`.
+- **P14-16 (speech engine): Built.** First use downloaded the model with a progress line and the 40 MB note, tiny on WASM wrote the 3 s clip in 9.9 s (8.3 s on a fresh 390 px context); a warm page 3.7 s and no model request; the service worker holds 10+ files in `manythreads-models-v1`. `/dev/speech`: tiny/WASM load 1792 ms, finder 207, language 1941, decode 2116, total 6068 ms for a 6 s clip (RTF 0.71, heap 14 MB); base/WASM total 15031 ms (RTF 1.45, load 6353). The clip is not speech: tiny printed "Okay." in the message box and "(humming)" on the bench, base guessed Japanese. Only the app's own host was contacted (plus the Cloudflare analytics beacon, no audio): no clip or text left to any other host.
+- **P14-17 (voice messages): Built.** Mic button 28 px at 1440 and 44 px at 390; record, stop, preview with words and language, correct, Send; the player renders, plays, changes speed, seeks by keyboard (Home, End, arrows), shows "Transcript in English, corrected by hand". "Send without waiting" posts "No transcript" and the words arrive as an edit; search finds the transcript at 1440 and 390 (search shows the words, no "Voice message" row).
+- **Fixed in this pass (redeploy needed, dev page only):** `/dev/speech` printed "Couldn't get the speech model" for the WebGPU rows on a device without WebGPU; it now says "WebGPU is not available in this browser."
+- **Not tested (stays open):** WebGPU, Bangla, word error rate, phones, Safari, Firefox, real speech clips, multithreaded WASM. Guest and bot rules were not run live (e2e covers them).
+- **Nits seen:** a late transcript written by the device is labelled "Transcript, corrected by hand"; the seek's `aria-valuenow` at the end reads 4 while the clip shows 0:03 (the clip is 3.x s).
+
 ## Loop 2026-11-06 (fifth pass): live re-check of the bot icon push and Runners (P19-01, P19-04 to P19-09) at fd1bf88d
 
 - **PASS live (task A, fix 7b811222):** on an open board with no reload the bot icon appeared 3 s after a handoff (a `tasks.activity.changed` frame reached the page) and was gone at 21 s when the run ended; the server list was empty after the run.
