@@ -84,77 +84,78 @@ export function ApprovalsScreen() {
   const showMain = !narrow || selected !== null;
 
   return (
-    <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="approvals-inbox">
-      {showList ? (
-        <div className="inl" data-landmark="approval-list">
-          <header className="inh" data-landmark={narrow ? undefined : 'header'}>
-            <PageHeader compact title="Approvals" />
-            {waiting !== null ? <span className="apr-count" data-testid="approvals-count" data-vt-mask>{waiting} waiting</span> : null}
-            <div className="tabs2" role="tablist" aria-label="Approvals">
-              {TABS.map((t) => (
-                <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} data-testid={`approvals-tab-${t.id}`} onClick={() => setTab(t.id)}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </header>
-          {q.status === 'loading' ? (
-            <p className="loading" aria-busy="true">Loading…</p>
-          ) : absent || (q.status === 'ok' && items.length === 0) ? (
-            <div className="inl-empty" data-testid="approvals-empty">
-              <p className="view-empty-title">{EMPTY[tab].title}</p>
-              <p className="view-empty-body">{EMPTY[tab].body}</p>
-            </div>
-          ) : q.status === 'error' ? (
-            <div className="inl-empty" role="alert">
-              <p className="view-empty-title">Could not load approvals.</p>
-              <button type="button" className="btn s" onClick={q.reload}>Try again</button>
-            </div>
-          ) : (
-            <ul className="inlist" role="listbox" aria-label={`${tab === 'waiting' ? 'Waiting' : 'Decided'} approvals`}>
-              {items.map((a) => (
-                <li key={a.id} role="option" aria-selected={a.id === selected} data-testid="approval-row" data-approval={a.id} data-status={a.status}>
-                  <button type="button" className={`trow ${a.id === selected ? 'on' : ''}`} onClick={() => open(a.id)}>
-                    <span className="trow-main">
-                      <span className="ch">{approvalRowLabel(a)}</span>
-                      <span className="ttl">{a.summary}</span>
-                      <span className="last">
-                        {a.status === 'pending'
-                          ? a.canDecide
-                            ? `asked by ${a.requesterName} · you can decide`
-                            : `asked by ${a.requesterName}`
-                          : `${a.status} by ${a.decision?.deciderName ?? 'someone'}`}
-                      </span>
-                    </span>
-                    <span className="meta">
-                      <span data-vt-mask>{ago(a.status === 'pending' ? a.createdAt : (a.decision?.decidedAt ?? a.createdAt))}</span>
-                    </span>
+    <div className="apr-screen">
+    <PageHeader title="Approvals" description={waiting !== null ? `${waiting} waiting` : undefined} testIds={{ description: 'approvals-count' }} />
+      <div className={`inbox ${narrow ? 'narrow' : ''}`} data-testid="approvals-inbox">
+        {showList ? (
+          <div className="inl" data-landmark="approval-list">
+            <header className="inh" data-landmark={narrow ? undefined : 'header'}>
+              <div className="tabs2" role="tablist" aria-label="Approvals">
+                {TABS.map((t) => (
+                  <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} data-testid={`approvals-tab-${t.id}`} onClick={() => setTab(t.id)}>
+                    {t.label}
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ) : null}
-      {showMain ? (
-        <div className="inr" data-landmark="approval-view">
-          {narrow ? (
-            <button type="button" className="btn s back-to-list" onClick={() => open(null)}>
-              <BackIcon />
-              <span>Approvals</span>
-            </button>
-          ) : null}
-          {current ? (
-            <div className="apr-detail">
-              <ApprovalCard key={`${current.id}:${current.status}:${current.outcome}`} approval={current} slug={slug} onDecided={q.reload} />
-            </div>
-          ) : items.length > 0 ? (
-            <div className="inr-empty">
-              <SelectAnItem>Select a request to see what it is, who asked and who can decide.</SelectAnItem>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+                ))}
+              </div>
+            </header>
+            {q.status === 'loading' ? (
+              <p className="loading" aria-busy="true">Loading…</p>
+            ) : absent || (q.status === 'ok' && items.length === 0) ? (
+              <div className="inl-empty" data-testid="approvals-empty">
+                <p className="view-empty-title">{EMPTY[tab].title}</p>
+                <p className="view-empty-body">{EMPTY[tab].body}</p>
+              </div>
+            ) : q.status === 'error' ? (
+              <div className="inl-empty" role="alert">
+                <p className="view-empty-title">Could not load approvals.</p>
+                <button type="button" className="btn s" onClick={q.reload}>Try again</button>
+              </div>
+            ) : (
+              <ul className="inlist" role="listbox" aria-label={`${tab === 'waiting' ? 'Waiting' : 'Decided'} approvals`}>
+                {items.map((a) => (
+                  <li key={a.id} role="option" aria-selected={a.id === selected} data-testid="approval-row" data-approval={a.id} data-status={a.status}>
+                    <button type="button" className={`trow ${a.id === selected ? 'on' : ''}`} onClick={() => open(a.id)}>
+                      <span className="trow-main">
+                        <span className="ch">{approvalRowLabel(a)}</span>
+                        <span className="ttl">{a.summary}</span>
+                        <span className="last">
+                          {a.status === 'pending'
+                            ? a.canDecide
+                              ? `asked by ${a.requesterName} · you can decide`
+                              : `asked by ${a.requesterName}`
+                            : `${a.status} by ${a.decision?.deciderName ?? 'someone'}`}
+                        </span>
+                      </span>
+                      <span className="meta">
+                        <span data-vt-mask>{ago(a.status === 'pending' ? a.createdAt : (a.decision?.decidedAt ?? a.createdAt))}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
+        {showMain ? (
+          <div className="inr" data-landmark="approval-view">
+            {narrow ? (
+              <button type="button" className="btn s back-to-list" onClick={() => open(null)}>
+                <BackIcon />
+                <span>Approvals</span>
+              </button>
+            ) : null}
+            {current ? (
+              <div className="apr-detail">
+                <ApprovalCard key={`${current.id}:${current.status}:${current.outcome}`} approval={current} slug={slug} onDecided={q.reload} />
+              </div>
+            ) : (
+              <div className="inr-empty">
+                <SelectAnItem>Select a request to see what it is, who asked and who can decide.</SelectAnItem>
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

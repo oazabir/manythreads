@@ -2,10 +2,23 @@
  * so nothing in this file can collide with a shared class — the inbox itself reuses `.inbox`, `.inl`, `.trow` and `.inr` from channels.css
  * and never redefines them. Colours come from tokens.css only; a raw hex here fails lint. */
 
-.apr-count {
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: var(--fs-caption);
+/* The page header sits above both panes; the two panes fill what is left (the same shape as the other screens). */
+.apr-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.apr-screen > .inbox {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.apr-screen .tabs2 {
+  margin-left: 0;
 }
 
 .apr-detail {
