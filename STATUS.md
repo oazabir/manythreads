@@ -8,6 +8,13 @@ Current state (synced with the code on 2026-11-03; task by task in PLAN.md §8 B
 - **Owner question:** the icon is `AndroidIcon` as a stand-in (ProIcons 4.13.7 has no bot icon); `SparkleIcon` or `BrainIcon` is a one-line change in `shell/icons.tsx`.
 - **Gaps:** no phone column switcher (the strip snaps column by column); a bot that claims a card during a mention run does not show on it (only `task_assigned` runs record the card); a queued run shows only when the board reads again (no push when the job is queued).
 
+## Loop 2026-11-06 (eighth pass): re-check of the seventh-pass defects at 0c8f8e4d9bcc-e9f924a0
+
+Checked as Omar on https://manythreads.kahf.to at 390 x 844 and 1440 x 900; script `e2e/screens/task.verify-f10b.shots.ts`, shots in the session scratchpad `f10b/`, each one viewed. Read-only (no save, approve, deny, install, role change, join). No page error, no 4xx/5xx, no sideways scroll on any page checked.
+- **PASS (390):** bot page Talk 44x44, Deploy 59x44, "..." 44x44 (menu inside the screen); Members row "..." 44x44 and its menu inside the screen with the last item hit at its centre; notification switches draw 34x19 but a 46x45 tap layer (`::before`) is the element hit across the whole 44 px square (121 of 121 points); sign-in Show password 44x44, Forgot password 125x44; recipe Add 44x44 on 19 cards, "Decision log" title 135 px on one line with its pill beside it (390) and the pill under the title (1440); first Setup step's fold button 44x44 on the title line; bot usage page has 20 px side gutters; Add a bot heading at x=16 with the cards; Model and Safety read in plain words (no "Gateway aliases", "Resolved at Workspace -> LLM", "stage 2", "local alias").
+- **PASS (1440):** the usage tooltip sits above the plot and no longer overlaps the chart title; Esc hides it (the bar keeps focus), the next arrow key brings it back.
+- **Nits, not fixed:** the pill reads "... Waiting for approval" (a three-dot glyph before the words); one Add button (Daily stand-up) was drawn grey in one 390 shot and dark in the next run (a transition, not disabled); Safety still says "Set in Workspace -> LLM" (a settings path, not jargon).
+
 ## Loop 2026-11-06 (seventh pass): live check of feature 10 (P21-16 to P21-19) at 9c34e32e
 
 Checked as Omar (owner) on https://manythreads.kahf.to at 1440 and 390 x 844, plus Nadia (member) and Lena (guest) for the account pages; shots in the session scratchpad `f10/`, script `e2e/screens/task.verify-f10.shots.ts`. Read-only: nothing was approved, denied, saved, installed, invited, reset or joined; the one bot-page edit was discarded with Discard changes and the field was back to its value.
