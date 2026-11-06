@@ -22,6 +22,12 @@ test.beforeAll(async ({ playwright }) => {
   const ok = await anon.post('/api/auth/password/sign-in', { data: { email: personaEmail('omar'), password: PERSONA_PASSWORD } });
   expect(ok.status()).toBe(200);
   await anon.dispose();
+  // two more in a row: the console folds the three into "Omar signed in ×3"
+  for (let i = 0; i < 2; i += 1) {
+    const again = await playwright.request.newContext({ baseURL: stack.origin });
+    expect((await again.post('/api/auth/password/sign-in', { data: { email: personaEmail('omar'), password: PERSONA_PASSWORD } })).status()).toBe(200);
+    await again.dispose();
+  }
   // a fresh context: the first sign-in left a session cookie, and the next write would then need its CSRF header
   const stranger = await playwright.request.newContext({ baseURL: stack.origin });
   const refused = await stranger.post('/api/auth/password/sign-in', { data: { email: personaEmail('nadia'), password: 'not-the-password' } });
@@ -65,11 +71,53 @@ test('the admin sees the proposal applied, the approval decided and the sign-in,
   }
 });
 
+test('repeated sign-ins fold into one row that opens; Who and Outcome are chips; the header stays in view', async ({ browser, playwright }) => {
+  const { page, context } = await openOn(browser, playwright, stack, 'omar', '/settings/workspace/audit');
+  try {
+    await expect(page.getByTestId('audit-table')).toBeVisible();
+    const toggle = page.getByTestId('audit-fold-toggle').filter({ hasText: 'Signed in ×3' });
+    await expect(toggle).toBeVisible({ timeout: 60_000 });
+    await expect(toggle).toHaveAccessibleName(/Omar signed in ×3/);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('tr.audit-sub')).toHaveCount(0);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('tr.audit-sub[data-action="sign_in.succeeded"]')).toHaveCount(3);
+    expect(await noSidewaysScroll(page)).toBe(true);
+    await toggle.click();
+    await expect(page.locator('tr.audit-sub')).toHaveCount(0);
+
+    // Who: a chip toggles, pressing it again clears
+    const omarChip = page.getByRole('group', { name: 'Who' }).getByRole('button', { name: 'Omar', exact: true });
+    await omarChip.click();
+    await expect(omarChip).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(async () => (await page.locator('[data-testid="audit-table"] tbody tr .audit-who').allTextContents()).every((t) => t === 'Omar')).toBe(true);
+    await omarChip.click();
+    await expect(omarChip).toHaveAttribute('aria-pressed', 'false');
+
+    // Outcome: Refused keeps the refused sign-in and drops the done ones
+    const refused = page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: 'Refused', exact: true });
+    await refused.click();
+    await expect.poll(async () => await actions(page)).toContain('sign_in.failed');
+    expect(await actions(page)).not.toContain('sign_in.succeeded');
+    await refused.click();
+    await expect(refused).toHaveAttribute('aria-pressed', 'false');
+
+    // the column heads are sticky
+    await expect(page.locator('.audit-table th').first()).toHaveCSS('position', 'sticky');
+    expect(await noSidewaysScroll(page)).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
 test('a filter with no match shows the empty state', async ({ browser, playwright }) => {
   const { page, context } = await openOn(browser, playwright, stack, 'omar', '/settings/workspace/audit');
   try {
     await expect(page.getByTestId('audit-table')).toBeVisible();
-    await page.getByLabel('Outcome').selectOption('withheld');
+    const withheld = page.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: 'Withheld', exact: true });
+    await withheld.click();
+    await expect(withheld).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('audit-empty')).toBeVisible();
     expect(await noSidewaysScroll(page)).toBe(true);
   } finally {

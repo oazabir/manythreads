@@ -5,10 +5,16 @@
 }
 
 .ob-progress {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 0 0 18px;
+  margin: 0 0 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--paper);
   color: var(--mute);
   font-size: var(--fs-small);
 }
@@ -77,6 +83,49 @@
 
 .ob-head .chip {
   font-weight: 400;
+}
+
+/* the fold button sits at the end of the head; a folded step is one line: number, title, tag, button */
+.ob-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.ob-toggle:hover {
+  background: var(--table-head);
+  color: var(--mute);
+}
+
+.ob-toggle-caret {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.ob-toggle[aria-expanded='false'] .ob-toggle-caret {
+  transform: rotate(-45deg);
+}
+
+.ob-step[data-open='false'] {
+  align-items: center;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.ob-step[data-open='false'] .ob-head {
+  font-weight: 500;
+  color: var(--mute);
 }
 
 .ob-hint {

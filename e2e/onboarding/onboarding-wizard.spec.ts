@@ -48,6 +48,21 @@ test('a fresh install walks to the first answer from Brain; the card counts the 
     for (const id of ['signin', 'models', 'bots', 'launch']) await expect(step(page, id)).toHaveAttribute('data-done', 'false');
     await expect(count(page)).toHaveText(/^2 of 9/);
     await expect(step(page, 'launch').locator('textarea')).toHaveCount(0); // no Brain yet: nothing to ask
+    // finished steps are one line each, the current one is open, and the bar stays at the top while the steps scroll
+    for (const id of ['bootstrap', 'teams']) {
+      await expect(step(page, id)).toHaveAttribute('data-open', 'false');
+      await expect(step(page, id).locator('.ob-body')).toHaveCount(0);
+    }
+    await expect(step(page, 'signin')).toHaveAttribute('data-open', 'true');
+    await expect(step(page, 'signin')).toHaveAttribute('data-next', 'true');
+    await expect(page.locator('.ob-progress')).toHaveCSS('position', 'sticky');
+    const fold = page.getByTestId('ob-toggle-bootstrap');
+    await expect(fold).toHaveAttribute('aria-expanded', 'false');
+    await fold.click();
+    await expect(step(page, 'bootstrap')).toHaveAttribute('data-open', 'true');
+    await expect(step(page, 'bootstrap').locator('.ob-body')).toHaveCount(1);
+    await fold.click();
+    await expect(step(page, 'bootstrap')).toHaveAttribute('data-open', 'false');
     expect(await noSidewaysScroll(page)).toBe(true);
     if (!isMobile) {
       // the card sits in the team sidebar and counts the same steps

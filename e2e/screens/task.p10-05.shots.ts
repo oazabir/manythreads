@@ -219,7 +219,7 @@ test('Omar and Priya: audit rows, filters, fresh events, content-blind, signed e
     // filter by outcome (withheld, then refused)
     await omar.getByRole('button', { name: 'Clear filters' }).click();
     for (const [label, word] of [['Withheld', 'withheld'], ['Refused', 'denied']] as const) {
-      await omar.getByLabel('Outcome').selectOption({ label });
+      await omar.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: label, exact: true }).click();
       await omar.waitForTimeout(900);
       const n = await omar.locator('.audit-row').count();
       const outs = await omar.locator('.audit-row').evaluateAll((els) => [...new Set(els.map((e) => e.getAttribute('data-outcome')))]);
@@ -424,16 +424,16 @@ test('Omar and Priya: audit rows, filters, fresh events, content-blind, signed e
     await phone.locator('.audit-results').scrollIntoViewIfNeeded();
     await phone.evaluate(() => window.scrollBy(0, 0));
     await shot(phone, '15-phone-audit-cards');
-    await phone.getByLabel('Outcome').selectOption({ label: 'Withheld' });
+    await phone.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: 'Withheld', exact: true }).click();
     await expect(phone.locator('.audit-row[data-outcome="withheld"]').first()).toBeVisible(T);
     await phone.waitForTimeout(800);
     await phone.locator('.audit-results').scrollIntoViewIfNeeded();
     await shot(phone, '16-phone-withheld-cards');
-    await phone.getByLabel('Outcome').selectOption({ label: 'Refused' });
+    await phone.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: 'Refused', exact: true }).click();
     await phone.waitForTimeout(1000);
     await phone.locator('.audit-results').scrollIntoViewIfNeeded();
     await shot(phone, '17-phone-refused-cards');
-    await phone.getByLabel('Outcome').selectOption({ label: 'Any outcome' });
+    await phone.getByRole('group', { name: 'Outcome' }).getByRole('button', { name: 'Refused', exact: true }).click(); // pressing the chosen chip again clears it
     await phone.waitForTimeout(800);
     await phone.getByTestId('audit-export').click();
     await expect(phone.getByTestId('audit-export-done')).toBeVisible({ timeout: 60_000 });

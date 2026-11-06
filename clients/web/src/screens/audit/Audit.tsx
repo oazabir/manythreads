@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AuditCategory, AuditEntry, AuditOutcome } from '@manythreads/shared';
 import { exportAudit, fetchAudit, fetchAuditSigningKey, fetchTeams, fetchWorkspaceMembers, type AuditExportFile } from '../../api/endpoints';
 import { isApiError } from '../../api/client';
 import { useQuery } from '../../app/useQuery';
 import { Alert, Notice, Time } from '../../components/ui';
 import { ForbiddenBody } from '../../components/states';
-import { CATEGORY_LABELS, NO_FILTERS, OUTCOME_LABELS, actionWords, actionsIn, exportFileName, outcomeWord, targetWords, toExportRequest, toQuery, verifyCommands, type AuditFilters } from './format';
+import { CATEGORY_LABELS, NO_FILTERS, OUTCOME_LABELS, actionWords, actionsIn, exportFileName, foldAudit, foldLabel, foldTarget, outcomeWord, targetWords, toExportRequest, toQuery, topActors, verifyCommands, type ActorChip, type AuditFilters, type AuditGroup } from './format';
 import { PageHeader } from '../../components/PageHeader';
 
 const PAGE = 50;
+const WHO_CHIPS = 5;
 
 /** Hands a text to the browser as a file to save. */
 function saveText(name: string, text: string, type: string): void {
@@ -34,6 +35,8 @@ export function Audit() {
   const [state, setState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [error, setError] = useState<Error | null>(null);
   const [more, setMore] = useState(false);
+  const [chipActors, setChipActors] = useState<ActorChip[]>([]);
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const run = useRef(0);
 
   const people = useQuery('audit-people', fetchWorkspaceMembers);
@@ -47,6 +50,8 @@ export function Audit() {
         if (run.current !== mine) return;
         setRows(res.entries);
         setNext(res.nextCursor);
+        // the Who chips are the people who appear most; while one person is chosen the rows hold only them, so the chips stay as they were
+        if (!f.actor) setChipActors(topActors(res.entries, WHO_CHIPS));
         setState('ok');
       },
       (e: unknown) => {
@@ -87,6 +92,13 @@ export function Audit() {
       if (key === 'category' && n.action && !actionsIn(n.category).some((a) => a.value === n.action)) n.action = '';
       return n;
     });
+  const groups = useMemo(() => foldAudit(rows), [rows]);
+  const toggle = (key: string): void =>
+    setOpen((o) => {
+      const n = new Set(o);
+      if (!n.delete(key)) n.add(key);
+      return n;
+    });
   const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
 
   if (state === 'error' && isForbidden(error)) {
@@ -106,14 +118,16 @@ export function Audit() {
       </p>
 
       <section className="box audit-filters" aria-label="Filters" data-landmark="audit-filters">
+        <div className="audit-chip-rows">
+          <WhoChips chips={chipActors} people={people.status === 'ok' ? people.data.members.map((m) => ({ id: m.personId, name: m.displayName })) : []} value={filters.actor} onChange={(v) => set('actor', v)} />
+          <div className="audit-chip-row" role="group" aria-label="Outcome" data-testid="audit-outcome">
+            <span className="audit-chip-label" aria-hidden="true">Outcome</span>
+            {(Object.keys(OUTCOME_LABELS) as AuditOutcome[]).map((o) => (
+              <button key={o} type="button" className="audit-chip" aria-pressed={filters.outcome === o} data-outcome={o} onClick={() => set('outcome', filters.outcome === o ? '' : o)}>{OUTCOME_LABELS[o]}</button>
+            ))}
+          </div>
+        </div>
         <div className="audit-filter-grid">
-          <label className="audit-f">
-            <span>Who</span>
-            <select value={filters.actor} onChange={(e) => set('actor', e.target.value)}>
-              <option value="">Anyone</option>
-              {people.status === 'ok' ? people.data.members.map((m) => <option key={m.personId} value={m.personId}>{m.displayName}</option>) : null}
-            </select>
-          </label>
           <label className="audit-f">
             <span>Group</span>
             <select value={filters.category} onChange={(e) => set('category', e.target.value as '' | AuditCategory)}>
@@ -133,13 +147,6 @@ export function Audit() {
             <select value={filters.team} onChange={(e) => set('team', e.target.value)}>
               <option value="">Any team</option>
               {teams.status === 'ok' ? teams.data.teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>) : null}
-            </select>
-          </label>
-          <label className="audit-f">
-            <span>Outcome</span>
-            <select value={filters.outcome} onChange={(e) => set('outcome', e.target.value as '' | AuditOutcome)}>
-              <option value="">Any outcome</option>
-              {(Object.keys(OUTCOME_LABELS) as AuditOutcome[]).map((o) => <option key={o} value={o}>{OUTCOME_LABELS[o]}</option>)}
             </select>
           </label>
           <label className="audit-f">
@@ -188,7 +195,7 @@ export function Audit() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((e) => <Row key={e.id} e={e} />)}
+              {groups.map((g) => (g.rows.length === 1 ? <Row key={g.key} e={g.rows[0]!} /> : <FoldedRows key={g.key} g={g} open={open.has(g.key)} onToggle={() => toggle(g.key)} />))}
             </tbody>
           </table>
         ) : null}
@@ -205,9 +212,64 @@ export function Audit() {
 
 const isForbidden = (e: Error | null): boolean => isApiError(e) && e.status === 403;
 
-function Row({ e }: { e: AuditEntry }) {
+/** The Who filter: the people who appear most as toggles, the rest behind "More…". Pressing the chosen one again clears it. */
+function WhoChips({ chips, people, value, onChange }: { chips: ActorChip[]; people: ActorChip[]; value: string; onChange: (id: string) => void }) {
+  const shown = value && !chips.some((c) => c.id === value) ? [...chips, { id: value, name: people.find((p) => p.id === value)?.name ?? 'Chosen person' }] : chips;
+  const rest = people.filter((p) => !shown.some((c) => c.id === p.id));
   return (
-    <tr className="audit-row" data-action={e.action} data-outcome={e.outcome}>
+    <div className="audit-chip-row" role="group" aria-label="Who" data-testid="audit-who">
+      <span className="audit-chip-label" aria-hidden="true">Who</span>
+      {shown.map((c) => (
+        <button key={c.id} type="button" className="audit-chip" aria-pressed={value === c.id} data-vt-mask onClick={() => onChange(value === c.id ? '' : c.id)}>{c.name}</button>
+      ))}
+      {rest.length > 0 ? (
+        <select className="audit-more-who" aria-label="More people" value="" onChange={(e) => onChange(e.target.value)} data-vt-mask>
+          <option value="">More…</option>
+          {rest.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      ) : null}
+    </div>
+  );
+}
+
+/** A run of the same thing by the same person as one row ("Omar signed in ×7") that opens to the rows it holds. */
+function FoldedRows({ g, open, onToggle }: { g: AuditGroup; open: boolean; onToggle: () => void }) {
+  const first = g.rows[0]!;
+  const last = g.rows[g.rows.length - 1]!;
+  const n = g.rows.length;
+  const teams = new Set(g.rows.map((r) => r.team?.name ?? '—'));
+  return (
+    <>
+      <tr className="audit-row audit-fold" data-action={first.action} data-outcome={first.outcome} data-folded={n} data-open={open ? 'true' : 'false'}>
+        <td data-label="When"><Time iso={first.occurredAt} /><span className="audit-span">to <Time iso={last.occurredAt} /></span></td>
+        <td data-label="Who" data-vt-mask>
+          <div className="audit-cell">
+            <span className="audit-who">{first.actor.name}</span>
+            {first.actor.kind !== 'person' ? <span className="audit-kind">{first.actor.kind === 'bot' ? 'bot' : 'system'}</span> : null}
+          </div>
+        </td>
+        <td data-label="Did what">
+          <button type="button" className="audit-fold-btn" aria-expanded={open} aria-label={`${foldLabel(g)}. ${open ? 'Hide' : 'Show'} the ${n} rows`} data-testid="audit-fold-toggle" onClick={onToggle}>
+            <span className="audit-fold-caret" aria-hidden="true" />
+            <span className="audit-what">{actionWords(first)} ×{n}</span>
+          </button>
+        </td>
+        <td data-label="To what" data-vt-mask>{foldTarget(g)}</td>
+        <td data-label="Team" data-vt-mask>{teams.size === 1 ? [...teams][0] : `${teams.size} teams`}</td>
+        <td data-label="Outcome">
+          <div className="audit-cell">
+            <span className={`audit-out ${first.outcome}`}>{outcomeWord(first.outcome)}</span>
+          </div>
+        </td>
+      </tr>
+      {open ? g.rows.map((e) => <Row key={e.id} e={e} sub />) : null}
+    </>
+  );
+}
+
+function Row({ e, sub = false }: { e: AuditEntry; sub?: boolean }) {
+  return (
+    <tr className={sub ? 'audit-row audit-sub' : 'audit-row'} data-action={e.action} data-outcome={e.outcome}>
       <td data-label="When"><Time iso={e.occurredAt} /></td>
       <td data-label="Who" data-vt-mask>
         <div className="audit-cell">

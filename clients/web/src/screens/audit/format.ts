@@ -99,3 +99,71 @@ export const exportFileName = (now: Date): string => `manythreads-audit-${now.to
 export function verifyCommands(file: string): string[] {
   return [`base64 -d < ${file}.sig > ${file}.sig.bin`, `openssl pkeyutl -verify -pubin -inkey audit-key.pem -rawin -in ${file} -sigfile ${file}.sig.bin`];
 }
+
+// ---- folding: a run of the same thing by the same person ("Omar signed in ×7")
+
+/** Consecutive rows with the same actor, action and outcome fold when each is within this long of the one before it. */
+export const FOLD_WINDOW_MS = 10 * 60_000;
+
+export interface AuditGroup {
+  /** The id of the newest row, which stays the same as older rows are loaded after it. */
+  key: string;
+  /** Newest first, as the server sends them; one row when nothing folded into it. */
+  rows: AuditEntry[];
+}
+
+const actorKey = (e: Pick<AuditEntry, 'actor'>): string => `${e.actor.kind}|${e.actor.id ?? ''}|${e.actor.id ? '' : e.actor.name}`;
+
+/**
+ * Folds the rows (newest first) into groups: neighbours with the same actor, action and outcome, each within `windowMs` of the one next to it, make
+ * one group. Rows that differ in anything else stay apart, and the order is never changed.
+ */
+export function foldAudit(rows: readonly AuditEntry[], windowMs: number = FOLD_WINDOW_MS): AuditGroup[] {
+  const groups: AuditGroup[] = [];
+  for (const row of rows) {
+    const g = groups[groups.length - 1];
+    const prev = g?.rows[g.rows.length - 1];
+    if (g && prev && actorKey(prev) === actorKey(row) && prev.action === row.action && prev.outcome === row.outcome && Math.abs(Date.parse(prev.occurredAt) - Date.parse(row.occurredAt)) <= windowMs) {
+      g.rows.push(row);
+    } else {
+      groups.push({ key: row.id, rows: [row] });
+    }
+  }
+  return groups;
+}
+
+/** An action's label as the middle of a sentence: "Signed in" becomes "signed in"; a label that opens with a name or acronym is left alone. */
+const sentenceCase = (label: string): string => (/^[A-Z][a-z]/.test(label) ? label.charAt(0).toLowerCase() + label.slice(1) : label);
+
+/** "Omar signed in ×7" for a folded group, the plain sentence for a single row. */
+export function foldLabel(g: AuditGroup): string {
+  const first = g.rows[0]!;
+  const base = `${first.actor.name} ${sentenceCase(actionWords(first))}`;
+  return g.rows.length > 1 ? `${base} ×${g.rows.length}` : base;
+}
+
+/** What a group was done to: the one thing when all the rows agree, else how many different things. */
+export function foldTarget(g: AuditGroup): string {
+  const words = new Set(g.rows.map(targetWords));
+  return words.size === 1 ? [...words][0]! : `${words.size} different things`;
+}
+
+export interface ActorChip {
+  id: string;
+  name: string;
+}
+
+/** The people who appear most in these rows, most first (a tie keeps the order of first appearance), for the Who chips. Bots and the system are not chips. */
+export function topActors(rows: readonly AuditEntry[], limit = 5): ActorChip[] {
+  const seen = new Map<string, { name: string; n: number }>();
+  for (const r of rows) {
+    if (r.actor.kind !== 'person' || !r.actor.id) continue;
+    const have = seen.get(r.actor.id);
+    if (have) have.n += 1;
+    else seen.set(r.actor.id, { name: r.actor.name, n: 1 });
+  }
+  return [...seen.entries()]
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, limit)
+    .map(([id, v]) => ({ id, name: v.name }));
+}

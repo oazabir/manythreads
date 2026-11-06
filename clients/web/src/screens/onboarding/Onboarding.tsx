@@ -2,10 +2,11 @@ import { Link } from 'react-router';
 import { dismissOnboarding } from '../../api/endpoints';
 import { isApiError } from '../../api/client';
 import { Alert } from '../../components/ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StepPanel } from './panels';
 import type { OnboardingStep } from './steps';
 import { announceOnboardingChange, useOnboarding } from './useOnboarding';
+import { collapsedAtStart, isStepOpen } from './fold';
 import { PageHeader } from '../../components/PageHeader';
 
 /*
@@ -25,6 +26,10 @@ function badge(step: OnboardingStep, next: boolean): { text: string; tone: strin
 export function Onboarding() {
   const view = useOnboarding('wizard');
   const [error, setError] = useState<string | null>(null);
+  // What was already handled when the page opened is folded to one line. A step that is handled while the page is open stays as it is, so the
+  // result of what the person just did is not taken away from under them. A person's own fold or unfold wins over both.
+  const startFolded = useRef<ReadonlySet<string> | null>(null);
+  const [chosen, setChosen] = useState<Readonly<Record<string, boolean>>>({});
 
   return (
     <div className="onboarding ob" data-landmark="onboarding">
@@ -39,6 +44,8 @@ export function Onboarding() {
         (() => {
           const { summary, state, tests, aliases, hasProviders } = view;
           const pct = Math.round((summary.handled / summary.total) * 100);
+          startFolded.current ??= collapsedAtStart(summary.steps);
+          const folded = startFolded.current;
           return (
             <>
               <div className="ob-progress" data-landmark="progress">
@@ -49,19 +56,33 @@ export function Onboarding() {
                 {summary.steps.map((s) => {
                   const next = summary.next?.id === s.id;
                   const b = badge(s, next);
+                  const open = isStepOpen(s.id, folded, chosen);
                   return (
-                    <div key={s.id} className="ob-step" id={`ob-${s.id}`} data-step={s.id} data-done={s.done ? 'true' : 'false'} data-status={s.status} data-next={next ? 'true' : 'false'}>
+                    <div key={s.id} className="ob-step" id={`ob-${s.id}`} data-step={s.id} data-done={s.done ? 'true' : 'false'} data-status={s.status} data-next={next ? 'true' : 'false'} data-open={open ? 'true' : 'false'}>
                       <span className="ob-num" aria-hidden="true">{s.n}</span>
                       <div>
-                        <div className="ob-head">
+                        <div className="ob-head" title={open ? undefined : s.hint}>
                           <span>{s.title}</span>
                           <span className={`chip ${b.tone}`}>{b.text}</span>
+                          <button
+                            type="button"
+                            className="ob-toggle"
+                            aria-expanded={open}
+                            aria-controls={`ob-body-${s.id}`}
+                            aria-label={`${open ? 'Fold' : 'Open'} step ${s.n}, ${s.title}`}
+                            data-testid={`ob-toggle-${s.id}`}
+                            onClick={() => setChosen((c) => ({ ...c, [s.id]: !open }))}
+                          >
+                            <span className="ob-toggle-caret" aria-hidden="true" />
+                          </button>
                         </div>
-                        <p className="ob-hint">{s.hint}</p>
+                        {open ? <p className="ob-hint">{s.hint}</p> : null}
                       </div>
-                      <div className="ob-body">
-                        <StepPanel step={s} summary={summary} state={state} tests={tests} aliases={aliases} hasProviders={hasProviders} />
-                      </div>
+                      {open ? (
+                        <div className="ob-body" id={`ob-body-${s.id}`}>
+                          <StepPanel step={s} summary={summary} state={state} tests={tests} aliases={aliases} hasProviders={hasProviders} />
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}

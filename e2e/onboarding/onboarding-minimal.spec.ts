@@ -20,6 +20,13 @@ test('Omar opens the setup checklist and every step links to the page that does 
   }
   await expect(steps.locator('[data-step="bootstrap"]')).toHaveAttribute('data-done', 'true');
 
+  // finished steps are folded to one line; open each one so its link can be seen
+  for (const id of ['bootstrap', 'signin', 'models', 'code', 'infrastructure', 'teams', 'bots', 'servers', 'launch']) {
+    const toggle = page.getByTestId(`ob-toggle-${id}`);
+    if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+    await expect(steps.locator(`[data-step="${id}"]`)).toHaveAttribute('data-open', 'true');
+  }
+
   await expect(steps.locator('[data-step="signin"] a[href="/settings/workspace/sign-in"]').first()).toBeVisible();
   await expect(steps.locator('[data-step="models"] a[href="/settings/workspace/llm"]').first()).toBeVisible();
   await expect(steps.locator('[data-step="teams"] a[href="/teams"]').first()).toBeVisible();
