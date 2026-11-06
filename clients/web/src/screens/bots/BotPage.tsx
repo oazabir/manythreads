@@ -1,5 +1,5 @@
 import { PageHeader } from '../../components/PageHeader';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { BRAIN_BOT_SLUG, type BotDeployResponse, type BotRun, type BotSummary } from '@manythreads/shared';
 import { isAdmin, useSession } from '../../app/session';
@@ -9,17 +9,19 @@ import { AvatarPicker } from '../../avatars/AvatarPicker';
 import { Alert, Avatar, Notice } from '../../components/ui';
 import { useCrumbTail } from '../../shell/topic';
 import { botMdPath, deployBot, fetchMcpTools } from './api';
-import { BOT_TABS, saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
+import { saveFailureOf, saveMessage, useBot, useDefinition, proposeDefinition, type SaveFailure } from './store';
 import { MoreMenu, type MoreItem } from './MoreMenu';
-import { TabPanel } from './tabs';
+import { GroupPanel } from './tabs';
+import { BOT_GROUPS, viewOf, type BotGroupId, type BotView } from './groups';
 import { BotTestPanel } from './test-panel';
 import { canOfferTest } from './test-run';
 import { DeployResult } from './deploy-panel';
 import { deployBody, deployFailureText, deployProblem } from './deploy-run';
 
 /*
- * One bot's page (SPEC §7.2/§7.5, PLAN P5-05, `[proto §05]`): the same fourteen tabs for every bot in the workspace, reached from the
- * roster's Configure button. The head carries the bot's identity; the tabs describe it and — for the team's lead or a workspace admin — edit
+ * One bot's page (SPEC §7.2/§7.5, PLAN P5-05, `[proto §05]`): the same fourteen sections for every bot in the workspace, shown under five
+ * group tabs (Basics, What it can do, Safety, Where it runs, History; P21-17), reached from the roster's Configure button. `?tab=` takes a
+ * group id or an old section id (`guard`): the second opens its group and scrolls to the section. The head carries the bot's identity; the tabs describe it and — for the team's lead or a workspace admin — edit
  * the definition, which is the file `bots/<slug>/BOT.md` of the team repo.
  *
  * Three things the page owes a reader:
@@ -55,22 +57,18 @@ function HermesTools({ slug, botSlug }: { slug: string; botSlug: string }) {
 
 type SaveState = { kind: 'ok'; message: string; proposalId?: string } | { kind: 'bad'; failure: SaveFailure } | null;
 
-/** The tab of the URL, or Identity: an unknown value falls back rather than rendering an empty page.
- */
-const tabOf = (raw: string | null): string => (BOT_TABS.some((t) => t.id === raw) ? (raw as string) : 'identity');
-
 export function BotPage() {
   const { team = '', botSlug = '' } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab = tabOf(params.get('tab'));
+  const view = viewOf(params.get('tab'));
   const { slug, canEdit, q } = useBot(botSlug);
   const [revision, setRevision] = useState(0);
   const [save, setSave] = useState<SaveState>(null);
   useCrumbTail(q.status === 'ok' ? q.data.bot.name : null);
 
-  const goTab = (id: string): void => {
+  const goTab = (id: BotGroupId): void => {
     const next = new URLSearchParams(params);
-    if (id === 'identity') next.delete('tab');
+    if (id === 'basics') next.delete('tab');
     else next.set('tab', id);
     void setParams(next, { replace: true });
   };
@@ -85,7 +83,7 @@ export function BotPage() {
             bot={data.bot}
             path={data.path || botMdPath(botSlug)}
             runs={data.runs}
-            tab={tab}
+            view={view}
             onTab={goTab}
             revision={revision}
             save={save}
@@ -98,14 +96,14 @@ export function BotPage() {
   );
 }
 
-function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, onSave, onSaved }: {
+function BotBody({ slug, canEdit, bot, path, runs, view, onTab, revision, save, onSave, onSaved }: {
   slug: string;
   canEdit: boolean;
   bot: BotSummary;
   path: string;
   runs: BotRun[];
-  tab: string;
-  onTab: (id: string) => void;
+  view: BotView;
+  onTab: (id: BotGroupId) => void;
   revision: number;
   save: SaveState;
   onSave: (s: SaveState) => void;
@@ -180,6 +178,28 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
     { label: 'Usage', testId: 'bot-usage', to: `/t/${slug}/bots/${bot.slug}/usage` },
   ];
 
+  const group = view.group;
+  const ready = draft.frontmatter !== null;
+  // An old `?tab=guard` link opens its group and brings the section into view once the sections are drawn (once per link, not on every render).
+  const scrolled = useRef<string | null>(null);
+  useEffect(() => {
+    if (view.section === null) scrolled.current = null;
+    if (!ready || view.section === null || scrolled.current === view.section) return;
+    scrolled.current = view.section;
+    document.getElementById(`sec-${view.section}`)?.scrollIntoView({ block: 'start' });
+  }, [ready, view.section]);
+
+  // The group strip is a tablist: arrow keys move between the five, Home and End jump to the ends, and the focus follows.
+  const onTabKey = (e: KeyboardEvent<HTMLElement>): void => {
+    const at = BOT_GROUPS.findIndex((g) => g.id === group);
+    const last = BOT_GROUPS.length - 1;
+    const next = e.key === 'ArrowRight' ? (at + 1) % BOT_GROUPS.length : e.key === 'ArrowLeft' ? (at + last) % BOT_GROUPS.length : e.key === 'Home' ? 0 : e.key === 'End' ? last : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    onTab(BOT_GROUPS[next]!.id);
+    e.currentTarget.querySelector<HTMLElement>(`[data-testid="tab-${BOT_GROUPS[next]!.id}"]`)?.focus();
+  };
+
   const invalid = bot.invalid;
   return (
     <>
@@ -234,20 +254,24 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
       ) : null}
       {save?.kind === 'bad' ? <Alert>{save.failure.message}</Alert> : null}
 
-      <nav className="b-tabs" aria-label="Bot sections" data-landmark="bot-tabs">
-        {BOT_TABS.map((t) => (
+      <div className="b-tabs" role="tablist" aria-label="Bot sections" data-landmark="bot-tabs" onKeyDown={onTabKey}>
+        {BOT_GROUPS.map((g) => (
           <button
-            key={t.id}
+            key={g.id}
             type="button"
-            data-testid={`tab-${t.id}`}
-            aria-current={t.id === tab ? 'page' : undefined}
-            className={`b-tab ${t.id === tab ? 'on' : ''}`}
-            onClick={() => onTab(t.id)}
+            role="tab"
+            id={`bot-tab-${g.id}`}
+            data-testid={`tab-${g.id}`}
+            aria-selected={g.id === group}
+            aria-controls="bot-panel"
+            tabIndex={g.id === group ? 0 : -1}
+            className={`b-tab ${g.id === group ? 'on' : ''}`}
+            onClick={() => onTab(g.id)}
           >
-            {t.label}
+            {g.label}
           </button>
         ))}
-      </nav>
+      </div>
 
       {draft.status === 'error' ? <Alert>{draft.error ?? 'Could not read the definition.'}</Alert> : null}
       {draft.status === 'unreadable' ? (
@@ -261,12 +285,12 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
         </div>
       ) : null}
 
-      <div className="b-pane" data-testid={`pane-${tab}`}>
+      <div className="b-pane" id="bot-panel" role="tabpanel" aria-labelledby={`bot-tab-${group}`} data-testid={`pane-${group}`}>
         {draft.status === 'loading' ? <p className="loading" aria-busy="true">Loading the definition…</p> : null}
-        {draft.frontmatter ? <TabPanel id={tab} bot={bot} draft={draft} slug={slug} canEdit={canEdit} runs={runs} /> : null}
+        {draft.frontmatter ? <GroupPanel group={group} bot={bot} draft={draft} slug={slug} canEdit={canEdit} runs={runs} /> : null}
       </div>
 
-      {draft.frontmatter && tab !== 'audit' ? (
+      {draft.frontmatter && (group !== 'history' || draft.dirty) ? (
         <footer className="b-foot" data-testid="bot-foot">
           {canEdit ? (
             <>

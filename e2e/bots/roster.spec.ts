@@ -103,8 +103,8 @@ test('a member who does not lead the team reads every tab of one bot, with no Sa
     await expect(page.locator('[data-landmark="bot-head"]')).not.toContainText('BOT.md');
     await expect(page.getByTestId('bot-head-runtime')).toHaveAttribute('title', 'bots/coder/BOT.md');
 
-    // every section of SPEC §7.2 is one tab (Identity … Audit)
-    await expect(page.locator('[data-landmark="bot-tabs"] button')).toHaveCount(14);
+    // the fourteen sections of SPEC §7.2 sit under five group tabs (P21-17)
+    await expect(page.locator('[data-landmark="bot-tabs"] button')).toHaveCount(5);
     await expect(page.getByTestId('bot-foot').getByTestId('read-only-note')).toContainText('propose a change in Files');
     await expect(page.getByTestId('save-bot')).toHaveCount(0);
     await expect(page.getByTestId('open-readonly')).toHaveAttribute('href', /bots%2Fcoder%2FBOT.md/);
@@ -114,15 +114,15 @@ test('a member who does not lead the team reads every tab of one bot, with no Sa
     await expect(page.getByTestId('bot-name')).toHaveAttribute('readonly', '');
 
     // a tab of its own: the URL follows and the pane is the tab's
-    await page.getByTestId('tab-capabilities').click();
-    await expect(page).toHaveURL(/tab=capabilities/);
+    await page.getByTestId('tab-abilities').click();
+    await expect(page).toHaveURL(/tab=abilities/);
     await expect(page.getByTestId('pane-capabilities')).toContainText('Never bot-writable');
     // the seed declares no capability, and there is no control to add one
     await expect(page.getByTestId('caps-native')).toContainText('none');
     await expect(page.getByTestId('caps-native').getByLabel('Add granted')).toHaveCount(0);
 
-    // Audit is the last tab and carries the runs (none yet) and the definition's file
-    await page.getByTestId('tab-audit').click();
+    // Audit is the last section (under History) and carries the runs (none yet) and the definition's file
+    await page.getByTestId('tab-history').click();
     await expect(page.getByTestId('pane-audit')).toContainText('No runs yet');
     await expect(page.getByTestId('pane-audit')).toContainText("Open the bot's file");
   } finally {
@@ -235,7 +235,7 @@ test('a team made from a template starts with its bots: Brain in every template,
     await brain.getByTestId('bot-open').click();
     await expect(page.getByTestId('bot-page')).toBeVisible();
     await expect(page.getByTestId('bot-head-runtime')).toHaveAttribute('title', 'bots/brain/BOT.md');
-    await page.getByTestId('tab-capabilities').click();
+    await page.getByTestId('tab-abilities').click();
     const native = page.getByTestId('caps-native');
     for (const capability of ['knowledge.search', 'files.search', 'memory.recall', 'messages.search', 'answer.post', 'pages.write']) {
       await expect(native).toContainText(capability);

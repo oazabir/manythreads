@@ -136,3 +136,44 @@ test('clearing Name shows the schema’s message beside it and turns Save off; r
   // nothing was committed by any of that
   expect((await commitsOf(stack)).length).toBe(before.length);
 });
+
+test('five groups; an old ?tab= link opens the right group and section', async ({ browser, playwright }) => {
+  const { page, close } = await openBot(browser, playwright, stack, 'omar', 'coder', '?tab=guard');
+  try {
+    const tabs = page.locator('[data-landmark="bot-tabs"]');
+    await expect(tabs.getByRole('tab')).toHaveText(['Basics', 'What it can do', 'Safety', 'Where it runs', 'History']);
+
+    // an old section id opens its group and brings the section into view
+    await expect(page.getByTestId('tab-safety')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('pane-safety')).toBeVisible();
+    await expect(page.locator('#sec-guard')).toBeInViewport();
+    await expect(page.getByRole('heading', { level: 2, name: 'Guard' })).toBeVisible();
+    // the group stacks its three sections, each with its own heading
+    await expect(page.getByTestId('pane-safety').getByRole('heading', { level: 2 })).toHaveText(['Guard', 'Approvals', 'Contract']);
+
+    // a group id works as well; an unknown value falls back to Basics
+    await page.goto(page.url().replace('tab=guard', 'tab=history'));
+    await expect(page.getByTestId('tab-history')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('pane-audit')).toBeVisible();
+    await page.goto(page.url().replace('tab=history', 'tab=nonsense'));
+    await expect(page.getByTestId('tab-basics')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('pane-identity')).toBeVisible();
+
+    // arrow keys move along the strip
+    await page.getByTestId('tab-basics').focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByTestId('tab-abilities')).toBeFocused();
+    await expect(page.getByTestId('tab-abilities')).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/tab=abilities/);
+    await page.keyboard.press('End');
+    await expect(page.getByTestId('tab-history')).toBeFocused();
+
+    // at 390 px the strip stays one row that scrolls sideways
+    await page.setViewportSize({ width: 390, height: 844 });
+    const tops = await tabs.getByRole('tab').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1);
+    expect(await tabs.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  } finally {
+    await close();
+  }
+});

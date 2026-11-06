@@ -250,21 +250,34 @@
 
 .b-tabs {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   margin-bottom: 14px;
   border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.b-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .b-tab {
-  padding: 6px 10px;
+  flex: none;
+  padding: 8px 14px;
+  white-space: nowrap;
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
   color: var(--mute);
   font: inherit;
-  font-size: var(--fs-caption);
+  font-size: var(--fs-small);
   cursor: pointer;
+}
+
+.b-tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
 .b-tab:hover {
@@ -279,6 +292,28 @@
 
 .b-pane {
   max-width: 980px;
+}
+
+/* one section of a group (P21-17): the old tab under its own heading; a link to `?tab=guard` scrolls here */
+.b-sec {
+  margin-bottom: 26px;
+  scroll-margin-top: 8px;
+}
+
+.b-sec:last-child {
+  margin-bottom: 0;
+}
+
+.b-sec-h {
+  margin: 0 0 8px;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* the block that repeats the section's title keeps only its count and action */
+.b-block > .bh-same {
+  font-size: var(--fs-caption);
 }
 
 .b-block {

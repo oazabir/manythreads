@@ -34,7 +34,9 @@ export function useBot(botSlug: string) {
   return { slug, canEdit, q: useQuery(`bot:${slug}:${botSlug}`, () => fetchBot(slug, botSlug)) };
 }
 
-/** The tabs of the bot page, in the order of SPEC §7.2 (the prototype's own order, `[proto §05]`). */
+export { BOT_GROUPS } from './groups';
+
+/** The fourteen sections of the bot page, in the order of SPEC §7.2 (the prototype's own order, `[proto §05]`); the page shows them under five groups (`groups.ts`). */
 export const BOT_TABS: ReadonlyArray<{ id: string; label: string; section: BotSection }> = [
   { id: 'identity', label: 'Identity', section: 'Identity' },
   { id: 'behaviour', label: 'Behaviour', section: 'Behaviour' },

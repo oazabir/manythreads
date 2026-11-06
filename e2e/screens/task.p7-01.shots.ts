@@ -199,7 +199,7 @@ test('Omar and Priya: propose, check, apply, refuse, stale, read-only, phone', a
     // the bot editor: change the behaviour, Save as proposal, read it on the Proposals page, Apply
     await omar.goto(`/t/${TEAM}/bots/${SLUG}`);
     await expect(omar.getByTestId('bot-page')).toBeVisible(T);
-    await omar.getByTestId('tab-behaviour').click();
+    await omar.getByTestId('tab-basics').click();
     const body = omar.getByTestId('bot-body');
     await body.fill(`${(await body.inputValue()).trimEnd()}\n\n<!-- ${TAG} a trailing comment line -->\n`);
     await shot(omar, '08-bot-editor-edited');

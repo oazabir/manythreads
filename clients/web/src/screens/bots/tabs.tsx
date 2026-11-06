@@ -8,12 +8,13 @@ import { botConnectionStanding } from '../connections/words';
 import { ChipsField, NumberField, SelectField, SwitchRow, TextField } from './fields';
 import { EvalRunPanel } from './evals';
 import { KnowledgeBasePanel } from './knowledge';
-import { Block, Mono, NotSet, Row } from './parts';
+import { Block, Mono, NotSet, Row, Section } from './parts';
+import { BOT_GROUPS, type BotGroupId } from './groups';
 import { RunsOn } from './RunsOn';
-import type { DefinitionDraft } from './store';
+import { BOT_TABS, type DefinitionDraft } from './store';
 
 /*
- * The fourteen tabs of one bot page (SPEC §7.2, PLAN P5-05, `[proto §05]`). Every tab is a view of the same file — BOT.md — and
+ * The fourteen sections of one bot page (shown under five groups, `groups.ts`) (SPEC §7.2, PLAN P5-05, `[proto §05]`). Every tab is a view of the same file — BOT.md — and
  * most of them edit one section of it through the draft, which keeps what was typed and validates the whole document on every change:
  * Save stays off while the loader would refuse the definition. Audit reads the runs the server holds.
  *
@@ -66,7 +67,7 @@ export function IdentityTab({ draft, canEdit }: TabProps) {
         value={f.runtime}
         readOnly={!canEdit}
         testId="bot-runtime"
-        options={[{ value: 'hermes', label: 'hermes' }, { value: 'rules', label: 'rules' }]}
+        options={[{ value: 'hermes', label: 'Hermes — runs with a model' }, { value: 'rules', label: 'Rules — fixed steps, no model' }]}
         onChange={(runtime) => set('runtime', runtime)}
       />
       <SelectField
@@ -117,6 +118,8 @@ export const TRIGGER_LABEL: Record<TriggerType, string> = {
   channel_message: 'On every message in a channel',
   webhook: 'When another service calls in',
 };
+/** A trigger's code name in plain words; a name this page does not know stays as it is. */
+const triggerWords = (type: string): string => (TRIGGER_LABEL as Record<string, string>)[type] ?? type;
 type Triggers = NonNullable<BotFrontmatter['triggers']>;
 
 export function TriggersTab({ draft, canEdit }: TabProps) {
@@ -136,7 +139,7 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
       ) : null}
       {triggers.map((t, i) => (
         <div className="b-trg" key={`${t.type}-${String(i)}`} data-testid="trigger-row" data-trigger={t.type}>
-          <span className="b-trg-type">{t.type}</span>
+          <span className="b-trg-type" title={t.type}>{triggerWords(t.type)}</span>
           <div className="b-trg-what">
             {t.type === 'mention' || t.type === 'channel_message' ? (
               <ChipsField
@@ -171,7 +174,7 @@ export function TriggersTab({ draft, canEdit }: TabProps) {
             {t.type === 'conversation' ? <div className="b-hint">Lets people talk to this bot in a conversation; without it, nobody can.</div> : null}
             {t.type === 'task_assigned' ? <div className="b-hint">Runs when a task on the board is assigned to this bot.</div> : null}
           </div>
-          {canEdit ? <button type="button" className="btn s" aria-label={`Remove the ${t.type} trigger`} onClick={() => set(triggers.filter((_x, j) => j !== i))}>Remove</button> : null}
+          {canEdit ? <button type="button" className="btn s" aria-label={`Remove the trigger: ${triggerWords(t.type).toLowerCase()}`} title={`Remove the ${t.type} trigger`} onClick={() => set(triggers.filter((_x, j) => j !== i))}>Remove</button> : null}
         </div>
       ))}
       {canEdit ? (
@@ -655,7 +658,7 @@ export function AuditTab({ bot, runs, slug }: TabProps) {
           runs.map((r) => (
             <div className="b-runrow" key={r.id} data-testid="run-row">
               <div>
-                <div className="b-run-trigger">{r.trigger}</div>
+                <div className="b-run-trigger" title={r.trigger}>{triggerWords(r.trigger)}</div>
                 <div className="d">
                   {r.status === 'running' ? 'running now' : 'ended '}
                   {r.endedAt ? <Time iso={r.endedAt} /> : null}
@@ -681,6 +684,20 @@ export function AuditTab({ bot, runs, slug }: TabProps) {
 }
 
 /** The tab panel for one id; Audit and Behaviour need the page's data, the rest only the draft. */
+/** One group of the bot page: its sections stacked, each under its own heading (P21-17). */
+export function GroupPanel({ group, ...props }: TabProps & { group: BotGroupId }) {
+  const sections = BOT_GROUPS.find((g) => g.id === group)?.sections ?? [];
+  return (
+    <>
+      {sections.map((id) => (
+        <Section key={id} id={id} title={BOT_TABS.find((t) => t.id === id)?.label ?? id}>
+          <TabPanel id={id} {...props} />
+        </Section>
+      ))}
+    </>
+  );
+}
+
 export function TabPanel({ id, ...props }: TabProps & { id: string }) {
   switch (id) {
     case 'identity':

@@ -216,7 +216,7 @@ test('6a survey bots', async () => {
       if (!slug || slug === 'new') continue;
       await page.goto(`/t/${team}/bots/${slug}?tab=placement`);
       await page.waitForTimeout(1800);
-      await page.getByTestId('tab-placement').click().catch(() => undefined);
+      await page.getByTestId('tab-where').click().catch(() => undefined);
       await page.waitForTimeout(800);
       const ro = await page.getByTestId('runs-on-select').count();
       const old = await page.getByTestId('old-placement').count();
@@ -249,7 +249,7 @@ test('6b select via probe runner (draft only, never saved)', async () => {
   await shoot(page, '6b-probe-shared');
   try {
     await page.goto('/t/engineering/bots/brain');
-    await page.getByTestId('tab-placement').click();
+    await page.getByTestId('tab-where').click();
     await page.waitForTimeout(1500);
     const mv = page.getByTestId('move-to-runner');
     log(`6b move button enabled=${await mv.isEnabled()}`);
