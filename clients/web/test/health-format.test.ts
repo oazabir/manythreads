@@ -37,8 +37,8 @@ describe('System health formatting', () => {
 
   it('gives each check one status', () => {
     expect(checkStatus(check()).tone).toBe('ok');
-    expect(checkStatus(check({ breached: true })).tone).toBe('fail');
+    expect(checkStatus(check({ breached: true })).tone).toBe('warn');
     expect(checkStatus(check({ threshold: 0 })).word).toBe('Off');
-    expect(checkStatus(check({ value: null })).word).toBe('Unknown');
+    expect(checkStatus(check({ value: null })).word).toBe('Down');
   });
 });

@@ -1,7 +1,7 @@
 import { fetchOpsHealth } from '../../api/endpoints';
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
-import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds, volumeTitle } from './format';
+import { checkStatus, formatBytes, formatCheckValue, formatLimit, formatSeconds, healthSummary, sortChecks, volumeTitle } from './format';
 import { PageHeader } from '../../components/PageHeader';
 
 /**
@@ -19,15 +19,21 @@ export function SystemHealth() {
         When a number passes its limit, workspace admins get one mail, and one more when it is back to normal.
       </p>
       <QueryView q={q}>
-        {({ snapshot: s, checks }) => (
+        {({ snapshot: s, checks }) => {
+        const summary = healthSummary(checks);
+        return (
           <>
             <section className="box" aria-labelledby="health-checks" data-landmark="health-checks">
-              <h2 className="box-h" id="health-checks">Checks <span className="push"><button type="button" className="btn" onClick={q.reload}>Refresh</button></span></h2>
-              {checks.map((c) => {
+              <h2 className="box-h" id="health-checks">
+                Checks
+                <span className={`health-summary ${summary.problems > 0 ? 'bad' : 'good'}`} data-testid="health-summary">{summary.text}</span>
+                <span className="push"><button type="button" className="btn" onClick={q.reload}>Refresh</button></span>
+              </h2>
+              {sortChecks(checks).map((c) => {
                 const st = checkStatus(c);
                 return (
                   <div className="health-row" key={c.name} data-check={c.name} data-status={st.tone}>
-                    <div><span className={`health-st ${st.tone}`}>{st.word}</span></div>
+                    <div><span className={`health-st ${st.tone}`}><span className="health-dot" aria-hidden="true" />{st.word}</span></div>
                     <div>
                       <div>{c.label}</div>
                       <div className="d" data-vt-mask>
@@ -71,7 +77,8 @@ export function SystemHealth() {
               )}
             </section>
           </>
-        )}
+        );
+        }}
       </QueryView>
     </div>
   );

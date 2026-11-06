@@ -5,7 +5,8 @@ import { fetchBotUsage, fetchTeamUsage, fetchWorkspaceUsage } from '../../api/en
 import { useQuery } from '../../app/useQuery';
 import { QueryView } from '../../components/states';
 import { count, percent, usd, usdOrHidden } from './format';
-import { BudgetBar, DayChart, Headline, Page, QualityPanel, RangePicker, SpendByModel, Updated, type UsageBody } from './UsageReport';
+import { DayChart } from './DayChart';
+import { BudgetBar, Headline, Page, QualityPanel, RangePicker, SpendByModel, Updated, type UsageBody } from './UsageReport';
 
 // The three usage pages (PLAN P8-11). Each is the same report for a different subject: the workspace (admins), one team (its members) and one bot.
 
@@ -14,9 +15,9 @@ const DEFAULT_DAYS = 30;
 function Charts({ body }: { body: UsageBody }) {
   return (
     <>
-      <DayChart id="usage-runs-chart" title="Bot runs per day" days={body.daily} pick={(d) => d.runs} failed={(d) => d.failedRuns} unit="bot runs" format={count} />
+      <DayChart id="usage-runs-chart" title="Bot runs per day" days={body.daily} rangeDays={body.range.days} pick={(d) => d.runs} failed={(d) => d.failedRuns} unit="bot runs" barUnit="runs" format={count} />
       {body.totals.spendUsd !== null ? (
-        <DayChart id="usage-spend-chart" title="Model spend per day" days={body.daily} pick={(d) => d.spendUsd ?? 0} unit="dollars of model spend" format={usd} />
+        <DayChart id="usage-spend-chart" title="Model spend per day" days={body.daily} rangeDays={body.range.days} pick={(d) => d.spendUsd ?? 0} unit="dollars of model spend" barUnit="" format={usd} />
       ) : null}
     </>
   );

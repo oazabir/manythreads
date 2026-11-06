@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { AnswerQuality, UsageAliasRow, UsageBudget, UsageDay, UsageRange, UsageTotals } from '@manythreads/shared';
-import { RANGES, barHeight, budgetView, chartSummary, count, dayLabel, failedShare, percent, perAnswer, usd, usdOrHidden, waitText } from './format';
+import { RANGES, budgetView, count, percent, perAnswer, usd, usdOrHidden, waitText } from './format';
 import { PageHeader } from '../../components/PageHeader';
 
 /** What every usage page shares: the answer's common part. */
@@ -56,46 +56,6 @@ export function Headline({ totals }: { totals: UsageTotals }) {
       />
       <Kpi testId="usage-spend" label="Model spend" value={usdOrHidden(totals.spendUsd)} note={totals.llmCalls === null ? 'Only workspace admins see money.' : `${count(totals.llmCalls)} calls · ${count(totals.tokens ?? 0)} tokens`} />
     </div>
-  );
-}
-
-/** A bar chart in plain CSS: one column per day, tallest day = full height. The failed part of a bar is drawn at its foot. */
-export function DayChart({ title, id, days, pick, failed, unit, format }: {
-  title: string;
-  id: string;
-  days: readonly UsageDay[];
-  pick: (d: UsageDay) => number;
-  failed?: (d: UsageDay) => number;
-  unit: string;
-  format: (n: number) => string;
-}) {
-  const max = days.reduce((m, d) => Math.max(m, pick(d)), 0);
-  const first = days[0];
-  const last = days[days.length - 1];
-  return (
-    <section className="box" aria-labelledby={id} data-testid={`usage-chart-${id}`}>
-      <h2 className="box-h" id={id}>{title}</h2>
-      <div className="usage-bars" role="img" aria-label={chartSummary(days, pick, unit)}>
-        {days.map((d) => {
-          const v = pick(d);
-          const f = failed ? failed(d) : 0;
-          return (
-            <div className="usage-col" key={d.day} title={`${dayLabel(d.day)}: ${format(v)}${f > 0 ? ` (${count(f)} failed)` : ''}`}>
-              <div className="usage-bar" style={{ height: `${barHeight(v, max)}%` }}>
-                {f > 0 ? <div className="usage-bar-bad" style={{ height: `${failedShare(f, v)}%` }} /> : null}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {first && last ? (
-        <div className="usage-axis d" aria-hidden="true">
-          <span>{dayLabel(first.day)}</span>
-          <span>{max > 0 ? `busiest day: ${format(max)}` : `no ${unit} yet`}</span>
-          <span>{dayLabel(last.day)}</span>
-        </div>
-      ) : null}
-    </section>
   );
 }
 

@@ -77,3 +77,34 @@ export function chartSummary(days: readonly UsageDay[], pick: (d: UsageDay) => n
   if (days.length === 0 || total === 0) return `No ${unit} in this range.`;
   return `${count(Math.round(total))} ${unit} over ${days.length} days; the busiest day was ${dayLabel(busiest!.day)}.`;
 }
+
+/** "3 Nov" for a UTC day: the day first, as the chart's bar labels read it. */
+export function dayMonth(iso: string): string {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+const DAY_MS = 86_400_000;
+const isoOf = (t: number): string => new Date(t).toISOString().slice(0, 10);
+
+/**
+ * The days a chart draws: exactly `rangeDays` of them, oldest first, ending on `until` (or on the last day given). A day the server left out
+ * is a day with nothing in it, drawn as 0; a day outside the range is dropped.
+ */
+export function fillDays(days: readonly UsageDay[], rangeDays: number, until?: string): UsageDay[] {
+  const end = until ?? days[days.length - 1]?.day ?? isoOf(Date.now());
+  const last = new Date(`${end}T00:00:00.000Z`).getTime();
+  const byDay = new Map(days.map((d) => [d.day, d]));
+  const moneyHidden = days.length > 0 && days.every((d) => d.spendUsd === null);
+  const out: UsageDay[] = [];
+  for (let i = rangeDays - 1; i >= 0; i -= 1) {
+    const day = isoOf(last - i * DAY_MS);
+    out.push(byDay.get(day) ?? { day, runs: 0, failedRuns: 0, toolCalls: 0, answers: 0, spendUsd: moneyHidden ? null : 0 });
+  }
+  return out;
+}
+
+/** What a bar says when it is focused or hovered, and what a screen reader reads: "3 Nov: 18 runs". */
+export function barLabel(day: string, value: string, unit: string, failed = 0): string {
+  return `${dayMonth(day)}: ${[value, unit].filter(Boolean).join(' ')}${failed > 0 ? ` (${count(failed)} failed)` : ''}`;
+}
