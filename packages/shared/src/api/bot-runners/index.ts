@@ -17,6 +17,8 @@ import { TeamSlug } from '../teams/common.ts';
 // The runner catalog (PLAN Phase 19, P19-02, docs/plugins/bot-runners.md). A workspace admin makes, changes, tests, shares and removes runners; a team member
 // only reads the short view of the runners available to their team. A key is accepted on create and update and never returned.
 
+export * from './credentials.ts';
+
 export const BotRunnerPathParams = z.object({ id: BotRunnerId });
 export const TeamBotRunnersPathParams = z.object({ slug: TeamSlug });
 

@@ -2,7 +2,7 @@ import { definePlugin, type BotRunnersProvider, type ClaudePodsProvider, type Pl
 import { HttpK8s, confirmMark, type K8s, type ProjectRepo } from '@manythreads/sdk/pods';
 import { configFrom, type ClaudePodConfig } from './config.ts';
 import { Reconciler, type RunnerSource } from './reconcile.ts';
-import { MANAGED_BY, namesFor } from './render.ts';
+import { labelsFor, MANAGED_BY, namesFor } from './render.ts';
 
 export { Reconciler, stateFor } from './reconcile.ts';
 export { configFrom } from './config.ts';
@@ -57,10 +57,46 @@ function platformSource(ctx: PluginContext): RunnerSource {
   };
 }
 
-function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: ClaudePodConfig, now: () => number = Date.now): ClaudePodsProvider {
+/** What the bridge's sign-in check answers; anything else (or no answer) reads as `unreachable`. The words are the bridge's own, in tools/agent-bridge/src/signin.ts. */
+const CHECK_RESULTS = ['ok', 'rejected', 'expired', 'no_scope', 'limit'] as const;
+
+export function providerFor(reconciler: () => Reconciler, k8s: () => K8s, cfg: ClaudePodConfig, now: () => number = Date.now, doFetch: typeof fetch = fetch): ClaudePodsProvider {
+  const bridge: ClaudePodsProvider['bridge'] = async ({ runnerName }) => {
+    const names = namesFor(runnerName);
+    const secret = await k8s().get('Secret', cfg.namespace, names.key);
+    const key = secret?.data ? Buffer.from(String((secret.data as Record<string, string>)['api-key'] ?? ''), 'base64').toString('utf8') : '';
+    return key === '' ? null : { address: `http://${names.base}.${cfg.namespace}.svc:8650`, key };
+  };
   return {
     id: 'claude.pods',
     podPlacements: (q) => reconciler().placements(q.runnerIds),
+    async putCredentials({ runnerName, runnerId, bytes, uploadId }) {
+      const names = namesFor(runnerName);
+      // The bytes go in exactly as they came. The controller never applies this Secret again, so a refreshed copy the keeper writes back is not overwritten.
+      await k8s().apply({
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: { name: names.credentials, namespace: cfg.namespace, labels: labelsFor({ id: runnerId, name: runnerName }) },
+        type: 'Opaque',
+        data: { '.credentials.json': Buffer.from(bytes).toString('base64'), 'upload-id': Buffer.from(uploadId).toString('base64') },
+      });
+    },
+    async removeCredentials({ runnerName }) {
+      await k8s().delete('Secret', cfg.namespace, namesFor(runnerName).credentials);
+    },
+    bridge,
+    async checkSignin({ runnerName }) {
+      try {
+        const target = await bridge({ runnerName });
+        if (!target) return 'unreachable';
+        const res = await doFetch(`${target.address}/v1/signin/check`, { method: 'POST', headers: { authorization: `Bearer ${target.key}` }, signal: AbortSignal.timeout(60_000) });
+        if (!res.ok) return 'unreachable';
+        const body = (await res.json()) as { result?: unknown };
+        return (CHECK_RESULTS as readonly unknown[]).includes(body.result) ? (body.result as (typeof CHECK_RESULTS)[number]) : 'unreachable';
+      } catch {
+        return 'unreachable';
+      }
+    },
     async confirmMove({ runnerId, node }) {
       const claims = (await k8s().list('PersistentVolumeClaim', cfg.namespace, `app.kubernetes.io/managed-by=${MANAGED_BY},manythreads.io/runner-id=${runnerId}`)).filter((c) => /-(state|work)$/.test(c.metadata.name));
       for (const c of claims) await k8s().annotate?.('PersistentVolumeClaim', cfg.namespace, c.metadata.name, { 'manythreads.io/move-confirmed': node === null ? null : confirmMark(node, now()) });

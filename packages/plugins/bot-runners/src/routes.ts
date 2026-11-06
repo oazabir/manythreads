@@ -31,6 +31,7 @@ import {
 } from '@manythreads/shared';
 import { registerAdoptionRoutes } from './adopt.ts';
 import { registerNodeRoutes } from './nodes.ts';
+import { registerSigninRoutes } from './signin.ts';
 import { loadRunner, presentOne, presentRunners, requireAllowedAddress, requireWorkspaceAdmin } from './common.ts';
 import { DEFAULT_PROFILE_RULE } from './resolve.ts';
 import { effectiveStatus, placementsOf, RUNNER_SELECT, type RunnerRow } from './rows.ts';
@@ -377,4 +378,5 @@ export function registerRoutes(ctx: PluginContext): void {
 
   registerAdoptionRoutes(ctx);
   registerNodeRoutes(ctx);
+  registerSigninRoutes(ctx);
 }

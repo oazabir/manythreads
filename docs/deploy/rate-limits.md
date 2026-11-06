@@ -76,6 +76,9 @@ until the limit and `429` after). "Before" is the limit before task P10-14; "non
 | `POST /api/admin/bot-runners` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `PATCH /api/admin/bot-runners/:id` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/admin/bot-runners/:id/test` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
+| `PUT /api/admin/bot-runners/:id/credentials` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
+| `DELETE /api/admin/bot-runners/:id/credentials` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
+| `POST /api/admin/bot-runners/:id/check` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `PUT /api/admin/bot-runners/default` | 30 per 60 s | 30 per 60 s | 60 s | person | none |
 | `POST /api/admin/bot-runners/old-connections/:connectionId/adopt` | 20 per 60 s | 20 per 60 s | 60 s | person | none |
 | `POST /api/teams/:slug/connections` | 20 per 60 s | 20 per 60 s | 60 s | person | none |

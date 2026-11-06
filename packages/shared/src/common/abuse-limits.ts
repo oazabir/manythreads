@@ -76,6 +76,10 @@ export const ABUSE_ROUTES: readonly AbuseRoute[] = [
   r('POST', '/api/admin/bot-runners', 20, 'person'),
   r('PATCH', '/api/admin/bot-runners/:id', 30, 'person'),
   r('POST', '/api/admin/bot-runners/:id/test', 20, 'person'),
+  // Claude Code sign-in (P19-06): the file is sealed in the pod's Secret and never read back.
+  r('PUT', '/api/admin/bot-runners/:id/credentials', 20, 'person'),
+  r('DELETE', '/api/admin/bot-runners/:id/credentials', 20, 'person'),
+  r('POST', '/api/admin/bot-runners/:id/check', 20, 'person'),
   r('PUT', '/api/admin/bot-runners/default', 30, 'person'),
   r('POST', '/api/admin/bot-runners/old-connections/:connectionId/adopt', 20, 'person'),
   // Connections (P8-06): a workspace admin adds a team's connection and puts its credential in; the value is sealed and never read back.

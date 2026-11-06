@@ -33,6 +33,9 @@ const PATHS: Record<string, { prefix: string; plural: string }> = {
   ConfigMap: { prefix: '/api/v1', plural: 'configmaps' },
   PersistentVolumeClaim: { prefix: '/api/v1', plural: 'persistentvolumeclaims' },
   Pod: { prefix: '/api/v1', plural: 'pods' },
+  ServiceAccount: { prefix: '/api/v1', plural: 'serviceaccounts' },
+  Role: { prefix: '/apis/rbac.authorization.k8s.io/v1', plural: 'roles' },
+  RoleBinding: { prefix: '/apis/rbac.authorization.k8s.io/v1', plural: 'rolebindings' },
 };
 
 export function resourcePath(kind: string, namespace: string, name?: string): string {

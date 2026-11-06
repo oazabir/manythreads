@@ -437,6 +437,15 @@ export const MAPPERS: Readonly<Record<string, Mapper>> = {
         : 'The cluster chooses the machine again',
   }),
   'bot_runner.terms.accepted': (e) => ({ action: 'bot_runner.terms_accepted', who: actor(e['acceptedBy']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'claude_pod.credentials.uploaded': (e) => ({ action: 'claude_pod.credentials_uploaded', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'claude_pod.credentials.replaced': (e) => ({ action: 'claude_pod.credentials_replaced', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'claude_pod.credentials.removed': (e) => ({ action: 'claude_pod.credentials_removed', who: actor(e['actorId']), target: of('bot_runner', uuid(e['runnerId']), code(e['name'])) }),
+  'claude_pod.runner.paused': (e) => ({
+    action: 'claude_pod.runner_paused',
+    who: 'system',
+    target: of('bot_runner', uuid(e['runnerId']), code(e['name'])),
+    reason: e['reason'] === 'plan_limit' ? "The Claude plan's limit was reached" : 'The sign-in was refused',
+  }),
   'bot_runner.run.refused': (e) => ({
     action: 'bot_runner.run_refused',
     who: bot(e['botId']),

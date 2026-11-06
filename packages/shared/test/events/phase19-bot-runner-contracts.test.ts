@@ -18,6 +18,10 @@ const samples = {
   'bot_runner.node.changed': { ...base, type: 'bot_runner.node.changed', runnerId: uuid(2), name: 'team-pod', wasPinned: false, isPinned: true, recreatesWorkVolume: true, actorId: uuid(4) },
   'bot_runner.terms.accepted': { ...base, type: 'bot_runner.terms.accepted', runnerId: uuid(2), name: 'claude-max', acceptedBy: uuid(4) },
   'bot_runner.run.refused': { ...base, type: 'bot_runner.run.refused', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'host', reason: 'disabled' },
+  'claude_pod.credentials.uploaded': { ...base, type: 'claude_pod.credentials.uploaded', runnerId: uuid(2), name: 'claude-a', actorId: uuid(4) },
+  'claude_pod.credentials.replaced': { ...base, type: 'claude_pod.credentials.replaced', runnerId: uuid(2), name: 'claude-a', actorId: uuid(4) },
+  'claude_pod.credentials.removed': { ...base, type: 'claude_pod.credentials.removed', runnerId: uuid(2), name: 'claude-a', actorId: uuid(4) },
+  'claude_pod.runner.paused': { ...base, type: 'claude_pod.runner.paused', runnerId: uuid(2), name: 'claude-a', reason: 'plan_limit', until: '2026-11-06T18:00:00.000Z' },
   'bot_runner.run.unmetered': { ...base, type: 'bot_runner.run.unmetered', teamId: uuid(5), botId: uuid(6), runId: uuid(7), runner: 'team-pod' },
 } as const;
 

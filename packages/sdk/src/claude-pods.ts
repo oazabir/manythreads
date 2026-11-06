@@ -30,4 +30,15 @@ export interface ClaudePodsProvider extends ProviderImpl {
    * mark on the volume claims; `node: null` clears it. Returns how many claims were marked or cleared. Rejects when the cluster cannot be asked.
    */
   confirmMove(input: { runnerId: string; node: string | null }): Promise<number>;
+  /**
+   * Store the runner's sign-in file in its Secret (`claude-<runner>-credentials`, key `.credentials.json`): the bytes exactly as given. `uploadId` is a fresh random string the pod's
+   * start-up step compares with its own copy to know the file was replaced. The bytes are never logged. Rejects when the cluster cannot be asked.
+   */
+  putCredentials(input: { runnerName: string; runnerId: string; bytes: Uint8Array; uploadId: string }): Promise<void>;
+  /** Remove the runner's sign-in Secret (the pod is stopped by the next pass). Rejects when the cluster cannot be asked. */
+  removeCredentials(input: { runnerName: string }): Promise<void>;
+  /** Where the runner's bridge answers and the key it wants, or null when the runner has no pod object yet. The key never leaves the server. */
+  bridge(input: { runnerName: string }): Promise<{ address: string; key: string } | null>;
+  /** Ask the pod's bridge whether the saved sign-in still works; `unreachable` when the pod is not running. */
+  checkSignin(input: { runnerName: string }): Promise<'ok' | 'rejected' | 'expired' | 'no_scope' | 'limit' | 'unreachable'>;
 }

@@ -78,6 +78,10 @@ import { BotRunnerAvailabilityChangedEvent } from './bot_runner.availability.cha
 import { BotRunnerDefaultChangedEvent } from './bot_runner.default.changed.ts';
 import { BotRunnerNodeChangedEvent } from './bot_runner.node.changed.ts';
 import { BotRunnerTermsAcceptedEvent } from './bot_runner.terms.accepted.ts';
+import { ClaudePodCredentialsUploadedEvent } from './claude_pod.credentials.uploaded.ts';
+import { ClaudePodCredentialsReplacedEvent } from './claude_pod.credentials.replaced.ts';
+import { ClaudePodCredentialsRemovedEvent } from './claude_pod.credentials.removed.ts';
+import { ClaudePodRunnerPausedEvent } from './claude_pod.runner.paused.ts';
 import { BotRunnerRunRefusedEvent } from './bot_runner.run.refused.ts';
 import { BotRunnerRunUnmeteredEvent } from './bot_runner.run.unmetered.ts';
 import { BotsPairingRotatedEvent } from './bots.pairing.rotated.ts';
@@ -333,6 +337,10 @@ export const eventRegistry = {
   'bot_runner.default.changed': { 1: BotRunnerDefaultChangedEvent },
   'bot_runner.node.changed': { 1: BotRunnerNodeChangedEvent },
   'bot_runner.terms.accepted': { 1: BotRunnerTermsAcceptedEvent },
+  'claude_pod.credentials.uploaded': { 1: ClaudePodCredentialsUploadedEvent },
+  'claude_pod.credentials.replaced': { 1: ClaudePodCredentialsReplacedEvent },
+  'claude_pod.credentials.removed': { 1: ClaudePodCredentialsRemovedEvent },
+  'claude_pod.runner.paused': { 1: ClaudePodRunnerPausedEvent },
   'bot_runner.run.refused': { 1: BotRunnerRunRefusedEvent },
   'bot_runner.run.unmetered': { 1: BotRunnerRunUnmeteredEvent },
   'bots.pairing.rotated': { 1: BotsPairingRotatedEvent },
