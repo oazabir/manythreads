@@ -175,7 +175,7 @@ function BotBody({ slug, canEdit, bot, path, runs, tab, onTab, revision, save, o
           <PageHeader
             title={<>{bot.name}<span className={`kind ${bot.kind === 'automation' ? 'ru' : 'ag'}`}>{bot.kind}</span></>}
             testIds={{ title: 'bot-title' }}
-            description={<>{bot.runtime === 'hermes' ? 'Hermes' : 'Rules'} · <span className="mono">{path}</span>{bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}</>}
+            description={<><span title={path} data-testid="bot-head-runtime">{bot.runtime === 'hermes' ? 'Hermes' : 'Rules'}</span>{bot.visibility === 'workspace' ? ' · shared with the workspace' : ''}</>}
           />
           {bot.runtime === 'hermes' && bot.status === 'active' && bot.placement?.gateway !== undefined ? <HermesTools slug={slug} botSlug={bot.slug} /> : null}
         </div>

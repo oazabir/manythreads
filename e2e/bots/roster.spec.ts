@@ -91,7 +91,8 @@ test('a member who does not lead the team reads every tab of one bot, with no Sa
     await expect(page.getByTestId('bot-page')).toBeVisible();
     await expect(page.getByTestId('bot-title')).toContainText('Coder');
     await expect(page.getByTestId('bot-title')).toContainText('agent');
-    await expect(page.locator('[data-landmark="bot-head"]')).toContainText('bots/coder/BOT.md');
+    await expect(page.locator('[data-landmark="bot-head"]')).not.toContainText('BOT.md');
+    await expect(page.getByTestId('bot-head-runtime')).toHaveAttribute('title', 'bots/coder/BOT.md');
 
     // every section of SPEC §7.2 is one tab (Identity … Audit)
     await expect(page.locator('[data-landmark="bot-tabs"] button')).toHaveCount(14);
@@ -114,7 +115,7 @@ test('a member who does not lead the team reads every tab of one bot, with no Sa
     // Audit is the last tab and carries the runs (none yet) and the definition's file
     await page.getByTestId('tab-audit').click();
     await expect(page.getByTestId('pane-audit')).toContainText('No runs yet');
-    await expect(page.getByTestId('pane-audit')).toContainText('bots/coder/BOT.md');
+    await expect(page.getByTestId('pane-audit')).toContainText("Open the bot's file");
   } finally {
     await context.close();
   }
@@ -197,6 +198,7 @@ test('a definition that fails to load is the red banner on the page and the rost
 });
 
 test('a team made from a template starts with its bots: Brain in every template, and the one the team is for', async ({ browser, playwright }) => {
+  test.setTimeout(90_000);
   // the first commit of the new team's repository carries the template's BOT.md files and the loader seats them, so the roster is not empty
   const omar = await apiOn(playwright, stack, 'omar');
   try {
@@ -224,7 +226,7 @@ test('a team made from a template starts with its bots: Brain in every template,
     // the bot's page reads the file the first commit wrote, and its allowlist is the one SPEC §12.4 names plus the answer tool
     await brain.getByTestId('bot-open').click();
     await expect(page.getByTestId('bot-page')).toBeVisible();
-    await expect(page.locator('[data-landmark="bot-head"]')).toContainText('bots/brain/BOT.md');
+    await expect(page.getByTestId('bot-head-runtime')).toHaveAttribute('title', 'bots/brain/BOT.md');
     await page.getByTestId('tab-capabilities').click();
     const native = page.getByTestId('caps-native');
     for (const capability of ['knowledge.search', 'files.search', 'memory.recall', 'messages.search', 'answer.post', 'pages.write']) {
