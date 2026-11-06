@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { PASSWORD_MIN_LENGTH } from '@manythreads/shared';
 import { isApiError } from '../../api/client';
@@ -16,7 +16,11 @@ export function Security() {
   const { setSession } = useSessionState();
   const navigate = useNavigate();
   const { hash } = useLocation();
-  // an old link such as /account#acc-sessions arrives here after a redirect, which the browser does not scroll for; the three headings are drawn at once
+  const sessions = useQuery('account-sessions', fetchSessions);
+  // an old link such as /account#acc-sessions arrives here after a redirect, which the browser does not scroll for; the three headings are drawn at once,
+  // but the session list above "Sign-in methods" arrives later and pushes it down, so that one waits for the list; each hash scrolls once (a reload of the list must not pull the page back)
+  const scrolledFor = useRef('');
+  const listSettled = sessions.status !== 'loading';
   useEffect(() => {
     let id = '';
     try {
@@ -24,9 +28,11 @@ export function Security() {
     } catch {
       return; // a malformed %-sequence in a hand-typed link: nothing to scroll to
     }
-    if (id === 'acc-password' || id === 'acc-sessions' || id === 'acc-methods') document.getElementById(id)?.scrollIntoView({ block: 'start' });
-  }, [hash]);
-  const sessions = useQuery('account-sessions', fetchSessions);
+    if (id !== 'acc-password' && id !== 'acc-sessions' && id !== 'acc-methods') return;
+    if (scrolledFor.current === id || (id === 'acc-methods' && !listSettled)) return;
+    scrolledFor.current = id;
+    document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, [hash, listSettled]);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
   const [changing, setChanging] = useState(false);
