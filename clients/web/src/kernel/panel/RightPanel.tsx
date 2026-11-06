@@ -102,8 +102,9 @@ export function RightPanel() {
               <button type="button" className="icon-btn" aria-label="Back" onClick={panel.back}><BackIcon /></button>
             ) : null}
             <div className="panel-titles">
+              {/* a file's line names who changed it last and when, so the visual tests paint it over */}
               <h2 className="panel-title" data-testid="panel-title">{title ?? def?.label ?? 'Panel'}</h2>
-              {sub ? <p className="panel-sub" data-testid="thread-channel">{sub}</p> : null}
+              {sub ? <p className="panel-sub" data-testid="thread-channel" data-vt-mask={top.type === 'file' ? true : undefined}>{sub}</p> : null}
             </div>
             {resizable && isThread && !auto ? (
               <button type="button" className="icon-btn panel-expand" aria-label={expanded ? 'Restore' : 'Expand thread'} aria-pressed={expanded} title={expanded ? 'Restore' : 'Expand thread'} data-testid="panel-expand" onClick={() => setExpanded((v) => !v)}>
