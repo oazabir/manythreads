@@ -167,6 +167,12 @@
   max-width: calc(100vw - 24px);
 }
 
+/* the word button ("More" on the roster) sits in the middle of a row on a phone: its menu opens from its left edge, so it stays on the screen */
+.menu.b-more-pop.b-more-pop-start {
+  right: auto;
+  left: 0;
+}
+
 .b-state {
   display: inline-flex;
   align-items: center;
@@ -1133,6 +1139,12 @@
   }
 
   .bot-screen .b-head-act .b-more {
+    display: flex;
+    align-self: stretch;
     margin-inline-start: auto;
+  }
+
+  .bot-screen .b-head-act .b-more-btn {
+    align-self: stretch; /* as tall as Talk and Deploy, so the three share one row to the pixel */
   }
 }

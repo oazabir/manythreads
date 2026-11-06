@@ -59,3 +59,11 @@
   min-width: 190px;
   max-width: calc(100vw - 32px);
 }
+
+/* the page's side padding is 12 px on a phone (bots.css), so the bar reaches out by 12, not 20: it must not be wider than the screen */
+@media (width <= 720px) {
+  .b-savebar {
+    margin: 16px -12px -20px;
+    padding-inline: 12px;
+  }
+}
